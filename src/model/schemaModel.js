@@ -165,7 +165,7 @@ class SchemaModel {
 						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {
 							operand = new ObjectId(operand);
 						}
-						if (propSchema.__type === 'id' && Array.isArray(operand)) {
+						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
 							operand = operand.map((o) => new ObjectId(o));
 						}
 					}
