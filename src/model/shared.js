@@ -128,6 +128,9 @@ const __getPropDefault = (config) => {
 	case 'object':
 		res = config.__default === undefined ? {} : config.__default;
 		break;
+	case 'time':
+		res = config.__default === undefined? null : config.__default;
+		break;
 	case 'id':
 		if (config.__default) {
 			res = config.__default;
@@ -209,6 +212,9 @@ const __validateProp = (prop, config) => {
 		break;
 	case 'array':
 		valid = Array.isArray(prop.value);
+		break;
+	case 'time':
+		valid = (prop.value.match(/^(2[0-3]|[01][0-9]):([0-5][0-9])$/))? true : false;
 		break;
 	case 'date':
 		if (prop.value === null) {
@@ -397,20 +403,25 @@ const _validateAppProperties = function(schema, body) {
 };
 
 const __inflateObject = (parent, path, value) => {
+	if (path.length === 0) {
+		parent = value;
+		return parent;
+	}
+
 	if (path.length > 1) {
 		const parentKey = path.shift();
 		if (!parent[parentKey]) {
 			parent[parentKey] = {};
 		}
 		__inflateObject(parent[parentKey], path, value);
-		return;
+		return parent;
 	}
 
 	parent[path.shift()] = value;
-	return;
+	return parent;
 };
 
-const __populateObject = (schema, values) => {
+const __populateObject = (schema, values, body = null) => {
 	const res = {};
 	const objects = {};
 
@@ -418,6 +429,23 @@ const __populateObject = (schema, values) => {
 		if (!{}.hasOwnProperty.call(schema, property)) continue;
 		let propVal = values.find((v) => v.path === property);
 		const config = schema[property];
+
+		if (body && propVal === undefined && schema && schema[property] && schema[property].__type === 'object') {
+			const definedObjectKeys = Object.keys(schema).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
+			const blankObjectValues = Object.keys(body[property]).reduce((arr, key) => {
+				if (!definedObjectKeys.includes(key) || property !== key) {
+					arr[key] = body[property][key];
+				}
+
+				return arr;
+			}, {});
+
+			if (blankObjectValues) {
+				propVal = {};
+				propVal.path = property;
+				propVal.value = blankObjectValues;
+			}
+		}
 
 		if (propVal === undefined) {
 			propVal = {
@@ -433,14 +461,14 @@ const __populateObject = (schema, values) => {
 		const root = path.shift();
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
-			value = value.map((v) => __populateObject(config.__schema, __getFlattenedBody(v)));
+			value = value.map((v) => __populateObject(config.__schema, __getFlattenedBody(v), body));
 		}
 
-		if (path.length > 0) {
+		if (path.length > 0 || schema[property].__type === 'object') {
 			if (!objects[root]) {
 				objects[root] = {};
 			}
-			__inflateObject(objects[root], path, value);
+			objects[root] = __inflateObject(objects[root], path, value);
 			value = objects[root];
 		}
 
@@ -461,7 +489,7 @@ const _applyAppProperties = function(schema, body) {
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
 	const flattenedBody = __getFlattenedBody(body);
 
-	return __populateObject(flattenedSchema, flattenedBody);
+	return __populateObject(flattenedSchema, flattenedBody, body);
 };
 
 module.exports.validateAppProperties = _validateAppProperties;
@@ -590,7 +618,7 @@ const _doUpdate = (entity, body, pathContext, config, collection, id) => {
 			let value = null;
 			if (config && config.__schema) {
 				const fb = __getFlattenedBody(body.value);
-				value = __populateObject(config.__schema, fb);
+				value = __populateObject(config.__schema, fb, body);
 			} else {
 				value = body.value;
 			}
@@ -641,7 +669,7 @@ const _doUpdate = (entity, body, pathContext, config, collection, id) => {
 			let value = null;
 			if (config && config.__schema) {
 				const fb = __getFlattenedBody(body.value);
-				value = __populateObject(config.__schema, fb);
+				value = __populateObject(config.__schema, fb, body);
 			} else {
 				value = body.value;
 			}

@@ -121,6 +121,10 @@ class SearchList extends Route {
 					query.$and.push(req.body.query);
 				}
 
+				if (req.body && req.body.query && req.body.query.zeroResults) {
+					return false;
+				}
+
 				return SchemaModel.parseQuery(query, {}, this.model.flatSchemaData);
 			})
 			.then((query) => {
@@ -130,6 +134,10 @@ class SearchList extends Route {
 	}
 
 	_exec(req, res, validateResult) {
+		if (validateResult.query === false) {
+			return [];
+		}
+
 		return this.model.find(validateResult.query, {}, true,
 			validateResult.limit, validateResult.skip, validateResult.sort, validateResult.project);
 	}
@@ -186,6 +194,10 @@ class SearchCount extends Route {
 					query.$and.push(req.body);
 				}
 
+				if (req.body && req.body.query && req.body.query.zeroResults) {
+					return false;
+				}
+
 				return SchemaModel.parseQuery(query, {}, this.model.flatSchemaData);
 			})
 			.then((query) => {
@@ -195,6 +207,10 @@ class SearchCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
+		if (validateResult.query === false) {
+			return 0;
+		}
+
 		return this.model.count(validateResult.query);
 	}
 }

@@ -130,6 +130,11 @@ class UserSchemaModel extends SchemaModelMongoDB {
 					__required: true,
 					__allowUpdate: true,
 				},
+				_attribute: {
+					__type: 'array',
+					__required: true,
+					__allowUpdate: true,
+				},
 			},
 		};
 	}

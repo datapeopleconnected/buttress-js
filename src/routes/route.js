@@ -16,7 +16,6 @@ const Logging = require('../logging');
 // const Schema = require('../schema');
 const Model = require('../model');
 const Shared = require('../model/shared');
-const Mongo = require('mongodb');
 const NRP = require('node-redis-pubsub');
 const Helpers = require('../helpers');
 
