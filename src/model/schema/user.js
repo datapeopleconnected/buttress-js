@@ -163,6 +163,7 @@ class UserSchemaModel extends SchemaModelMongoDB {
 
 		let _user = null;
 		return super.add(user, {
+			_attribute: body.attributes,
 			_apps: [Model.authApp._id],
 		})
 			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))

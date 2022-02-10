@@ -37,7 +37,6 @@ class BootstrapRest {
 		Logging.setLogLevel(Logging.Constants.LogLevel.INFO);
 
 		this.processes = os.cpus().length;
-		this.processes = 1;
 		this.workers = [];
 
 		this.routes = null;
@@ -128,7 +127,7 @@ class BootstrapRest {
 				this.routes.loadTokens();
 			} else if (payload.type === 'app-routes:bust-attribute-cache') {
 				Logging.logDebug(`App Routes: attributes cache bust`);
-				this.routes.loadAttributes(payload.appId);
+				await this.routes.loadAttributes(payload.appId);
 			}
 		});
 

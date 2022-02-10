@@ -12,13 +12,12 @@
 
 const ObjectId = require('mongodb').ObjectId;
 
-const SchemaModel = require('../schemaModel');
-const Model = require('../');
+const SchemaModelMongoDB = require('../type/mongoDB');
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 
-class AttributeSchemaModel extends SchemaModel {
+class AttributeSchemaModel extends SchemaModelMongoDB {
 	constructor(MongoDb) {
 		const schema = AttributeSchemaModel.Schema;
 		super(MongoDb, schema);
