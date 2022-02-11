@@ -138,16 +138,17 @@ class SchemaModelMongoDB extends SchemaModel {
 
 	/**
 	 * @param {String} id - entity id to get
+	 * @param {Boolean} project - mongoDB project ids
 	 * @return {Promise} - resolves to an array of Companies
 	 */
-	findById(id) {
+	findById(id, project = null) {
 		// Logging.logSilly(`Schema:findById: ${this.collectionName} ${id}`);
 
 		if (id instanceof ObjectId === false) {
 			id = new ObjectId(id);
 		}
 
-		return this.collection.findOne({_id: id}, {});
+		return this.collection.findOne({_id: id}, {projection: project});
 	}
 
 	/**
@@ -176,7 +177,8 @@ class SchemaModelMongoDB extends SchemaModel {
 		return this.collection.find(query, excludes)
 			.skip(skip)
 			.limit(limit)
-			.sort(sort);
+			.sort(sort)
+			.project(project);
 	}
 
 	/**
@@ -206,12 +208,15 @@ class SchemaModelMongoDB extends SchemaModel {
 
 	/**
 	 * @param {Array} ids - Array of entities ids to get
+	 * @param {Boolean} project - mongoDB project ids
 	 * @return {Promise} - resolves to an array of Companies
 	 */
-	findAllById(ids) {
+	findAllById(ids, project) {
 		// Logging.logSilly(`update: ${this.collectionName} ${ids}`);
 
-		return this.collection.find({_id: {$in: ids.map((id) => new ObjectId(id))}}, {});
+		return this.collection
+			.find({_id: {$in: ids.map((id) => new ObjectId(id))}}, {})
+			.project(project);
 	}
 
 	/**

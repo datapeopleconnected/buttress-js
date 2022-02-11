@@ -38,7 +38,7 @@ class AccessControl {
 
 	async accessControlDisposition(req, userSchemaAttributes) {
 		const verb = req.originalMethod;
-		const disposition = userSchemaAttributes.pop().disposition;
+		const disposition = userSchemaAttributes[userSchemaAttributes.length - 1].disposition;
 		return (disposition[verb] === 'allow')? true : false;
 	}
 
@@ -212,7 +212,7 @@ class AccessControl {
 	async addAccessControlPolicyQuery(req, userSchemaAttributes) {
 		return userSchemaAttributes.reduce((prev, attr) => {
 			return prev.then(() => {
-				if (!attr.query || !Object.keys(attr.query).length) return;
+				if ((!attr.query || !Object.keys(attr.query).length) && (!attr.properties || !Object.keys(attr.properties).length)) return;
 
 				return this.__addAccessControlPolicyAttributeQuery(req, attr.query)
 					.then(() => this.__addAccessControlPolicyQueryProjection(req, attr.properties));

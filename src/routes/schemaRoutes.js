@@ -53,18 +53,47 @@ class GetList extends Route {
 
 	_validate(req, res, token) {
 		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-		let query = Promise.resolve({});
+		let generateQuery = Promise.resolve({});
 		if (token.authLevel < 3) {
-			query = this.model.generateRoleFilterQuery(token, req.roles, Model);
+			generateQuery = this.model.generateRoleFilterQuery(token, req.roles, Model);
 		}
 
-		Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-		return query;
+		const result = {
+			query: {},
+			project: (req.body && req.body.project)? req.body.project : false,
+		};
+
+		return generateQuery
+			.then((query) => {
+				if (!query.$and) {
+					query.$and = [];
+				}
+
+				// access control query
+				if (req.body && req.body.query) {
+					query.$and.push(req.body.query);
+				}
+
+				if (req.body && req.body.query && req.body.query.zeroResults) {
+					return false;
+				}
+
+				Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+				return SchemaModel.parseQuery(query, {}, this.model.flatSchemaData);
+			})
+			.then((query) => {
+				result.query = query;
+				return result;
+			});
 	}
 
-	_exec(req, res, query) {
+	_exec(req, res, validateResult) {
+		if (validateResult.query === false) {
+			return [];
+		}
+
 		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-		return this.model.find(query, {}, true);
+		return this.model.find(validateResult.query, {}, true, 0, 0, {}, validateResult.project);
 	}
 }
 routes.push(GetList);
@@ -116,7 +145,7 @@ class SearchList extends Route {
 					query.$and = [];
 				}
 
-				// TODO: Vaildate this input against the schema, schema properties should be tagged with what can be queried
+				// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
 				if (req.body && req.body.query) {
 					query.$and.push(req.body.query);
 				}
@@ -246,6 +275,8 @@ class GetOne extends Route {
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
 			let objectId = null;
+			const project = (req.body && req.body.project)? req.body.project : false;
+
 			try {
 				objectId = new ObjectId(req.params.id);
 			} catch (err) {
@@ -253,7 +284,7 @@ class GetOne extends Route {
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
 			}
 
-			this.model.findById(objectId)
+			this.model.findById(objectId, project)
 				.then((entity) => {
 					if (!entity) {
 						this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
@@ -299,7 +330,9 @@ class GetMany extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const _ids = req.body;
+			const _ids = req.body.query.ids;
+			const project = (req.body && req.body.project)? req.body.project : false;
+
 			if (!_ids) {
 				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
@@ -308,12 +341,12 @@ class GetMany extends Route {
 				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
 			}
-			resolve(_ids);
+			resolve({ids: _ids, project: project});
 		});
 	}
 
-	_exec(req, res, ids) {
-		return this.model.findAllById(ids);
+	_exec(req, res, query) {
+		return this.model.findAllById(query.ids, query.project);
 	}
 }
 routes.push(GetMany);
