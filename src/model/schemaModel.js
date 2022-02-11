@@ -242,11 +242,11 @@ class SchemaModel {
 							const result = collection.find(propertyQuery, fields);
 
 							if (Helpers.isCursor(result)) {
-								const stream = result.clone().stream();
-
 								return new Promise((resolve) => {
+									const stream = result.stream();
+									if (!env[property]) env[property] = [];
+
 									stream.on('data', (res) => {
-										if (!env[property]) env[property] = [];
 										// Map fetched properties into a array.
 										env[property].push(res[propertyMap]);
 										// Hack - Flattern any sub arrays down to the single level.
