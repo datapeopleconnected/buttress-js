@@ -225,10 +225,10 @@ class SchemaModelMongoDB extends SchemaModel {
 	/**
 	 * @return {Promise}
 	 */
-	 drop() {
+	drop() {
 		return this.collection.drop()
 			.catch((err) => {
-				if (err.code === 26) return true; //NamespaceNotFound
+				if (err.code === 26) return true; // NamespaceNotFound
 
 				throw err;
 			});

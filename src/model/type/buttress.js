@@ -25,6 +25,7 @@ class SchemaModelButtress extends SchemaModel {
 	constructor(schemaData, app, dataSharing) {
 		super(schemaData, app);
 
+		// eslint-disable-next-line no-unused-vars
 		const [_, collection] = schemaData.remote.split('.');
 
 		this.endpoint = dataSharing.remoteApp.endpoint;
