@@ -18,6 +18,8 @@ const {ObjectId, AbstractCursor, FindCursor, AggregationCursor, ListCollectionsC
 
 module.exports.Errors = Errors;
 
+module.exports.Schema = require('./helpers/schema');
+
 class Timer {
 	constructor() {
 		this._start = 0;
