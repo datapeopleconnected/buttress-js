@@ -21,7 +21,7 @@ const Model = require('../model');
 const Mongo = require('mongodb');
 const Config = require('node-env-obj')();
 
-const SchemaRoutes = require('./schemaRoutes');
+const SchemaRoutes = require('./schema-routes');
 
 class Routes {
 	/**
