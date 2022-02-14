@@ -15,7 +15,6 @@ const Config = require('node-env-obj')();
 const Logging = require('../logging');
 // const Schema = require('../schema');
 const Model = require('../model');
-const Shared = require('../model/shared');
 const NRP = require('node-redis-pubsub');
 const Helpers = require('../helpers');
 
