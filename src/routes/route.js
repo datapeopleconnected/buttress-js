@@ -205,7 +205,7 @@ class Route {
 				chunkCount++;
 				if (chunkCount % this.timingChunkSample === 0) req.timings.stream.push(req.timer.interval);
 				if (!this.redactResults) return chunk;
-				return Shared.prepareSchemaResult(chunk, dataDisposition, filter, permissions, req.token);
+				return Helpers.Schema.prepareSchemaResult(chunk, dataDisposition, filter, permissions, req.token);
 			});
 
 			res.set('Content-Type', 'application/json');
@@ -224,7 +224,7 @@ class Route {
 		}
 
 		if (this.redactResults) {
-			res.json(Shared.prepareSchemaResult(result, dataDisposition, filter, permissions, req.token));
+			res.json(Helpers.Schema.prepareSchemaResult(result, dataDisposition, filter, permissions, req.token));
 		} else {
 			res.json(result);
 		}
@@ -409,13 +409,13 @@ class Route {
 
 		if (isReadStream) {
 			broadcastResult.on('data', (data) => {
-				emit(Shared.prepareSchemaResult(data, dataDisposition, filter, permissions));
+				emit(Helpers.Schema.prepareSchemaResult(data, dataDisposition, filter, permissions));
 			});
 			Logging.logTimer('_broadcast:end-stream', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
 		}
 
-		emit(Shared.prepareSchemaResult(broadcastResult, dataDisposition, filter, permissions));
+		emit(Helpers.Schema.prepareSchemaResult(broadcastResult, dataDisposition, filter, permissions));
 		Logging.logTimer('_broadcast:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
 
