@@ -509,7 +509,12 @@ class Routes {
 			return;
 		}
 
-		await AccessControl.addAccessControlPolicyQuery(req, schemaAttributes);
+		const passedAccessControlPolicy = await AccessControl.addAccessControlPolicyQuery(req, schemaAttributes);
+		if (!passedAccessControlPolicy) {
+			Logging.logTimer(`_accessControlPolicy:access-control-properties-permission-error`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			res.status(401).json({message: 'Can not edit properties without privileged access'});
+			return;
+		}
 		await AccessControl.applyAccessControlPolicyQuery(req);
 
 		next();

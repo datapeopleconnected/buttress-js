@@ -52,49 +52,50 @@ class AccessControl {
 			return prev.then(() => {
 				if (!accessControlPolicy.authorised) return;
 
-				accessControlPolicy.authorised = this.__checkAttributeConditions(attr.conditions);
+				accessControlPolicy.authorised = this.__checkAttributeConditions(attr);
 			});
 		}, Promise.resolve())
 			.then(() => accessControlPolicy.authorised);
 	}
 
-	__checkAttributeConditions(conditions) {
+	__checkAttributeConditions(attr) {
+		const conditions = attr.conditions;
 		if (!conditions || !Object.keys(conditions).length) return true;
 
 		let isConditionFullFilled = false;
 		Object.keys(conditions).forEach((key) => {
 			if (this.logicalOperator.includes(key)) {
-				isConditionFullFilled = this.__checkLogicalOperatorCondition(conditions[key], key, isConditionFullFilled);
+				isConditionFullFilled = this.__checkLogicalOperatorCondition(attr, conditions[key], key, isConditionFullFilled);
 			}
 		});
 
 		return isConditionFullFilled;
 	}
 
-	__checkLogicalOperatorCondition(operation, operator) {
+	__checkLogicalOperatorCondition(attr, operation, operator) {
 		let result = false;
 
 		if (operator === '@and') {
 			operation.forEach((conditionObj) => {
-				result = this.__checkCondition(conditionObj, false);
+				result = this.__checkCondition(attr, conditionObj, false);
 			});
 		}
 
 		if (operator === '@or') {
 			operation.forEach((conditionObj) => {
-				result = this.__checkCondition(conditionObj);
+				result = this.__checkCondition(attr, conditionObj);
 			});
 		}
 
 		return result;
 	}
 
-	__checkCondition(conditionObj, partialPass = true) {
+	__checkCondition(attr, conditionObj, partialPass = true) {
 		let passed = false;
 
 		Object.keys(conditionObj).forEach((key) => {
 			if (typeof conditionObj[key] === 'object' && !this.conditionKeys.includes(key)) {
-				passed = this.__checkCondition(conditionObj[key], partialPass);
+				passed = this.__checkCondition(attr, conditionObj[key], partialPass);
 				return;
 			}
 
@@ -104,17 +105,20 @@ class AccessControl {
 					return;
 				}
 
-				let lhs = null;
+				let lhs = conditionObj[key][operator];
 				let rhs = null;
 
 				if (key === '@location') {
 					rhs = '217.114.52.106';
-					lhs = conditionObj[key][operator];
 				}
 
 				if (key === '@date' || key === '@time') {
+					if (!Sugar.Date.isValid(Sugar.Date.create(lhs))) {
+						lhs = this.__getEnvironmentVar(attr, lhs);
+					}
+
 					rhs = Sugar.Date.create('now');
-					lhs = Sugar.Date.create(conditionObj[key][operator]);
+					lhs = Sugar.Date.create(lhs);
 				}
 
 				if (!lhs || !rhs) {
@@ -210,14 +214,15 @@ class AccessControl {
 	}
 
 	async addAccessControlPolicyQuery(req, userSchemaAttributes) {
+		let allowedUpdates = false;
+
 		return userSchemaAttributes.reduce((prev, attr) => {
 			return prev.then(() => {
-				if ((!attr.query || !Object.keys(attr.query).length) && (!attr.properties || !Object.keys(attr.properties).length)) return;
-
 				return this.__addAccessControlPolicyAttributeQuery(req, attr.query)
-					.then(() => this.__addAccessControlPolicyQueryProjection(req, attr.properties));
+					.then(() => allowedUpdates = this.__addAccessControlPolicyQueryProjection(req, attr.properties));
 			});
-		}, Promise.resolve());
+		}, Promise.resolve())
+			.then(() => allowedUpdates);
 	}
 
 	__addAccessControlPolicyAttributeQuery(req, attributeQuery) {
@@ -246,9 +251,18 @@ class AccessControl {
 	}
 
 	__addAccessControlPolicyQueryProjection(req, props) {
+		const requestBody = req.body;
+		const isUpdate = Array.isArray(requestBody);
 		const requestMethod = req.originalMethod;
 		const method = (this.readMethods.includes(requestMethod))? 'READ' : (this.writeMethods.includes(req.originalMethod))? 'WRITE' : 'DEL';
+		const projectionUpdateKeys = Object.keys(props).map((key) => {
+			if (props[key].includes('WRITE')) {
+				return key;
+			}
+		})
+			.filter((v) => v);
 		const projection = {};
+		let allowedUpdates = false;
 
 		Object.keys(props).forEach((key) => {
 			if (props[key].includes(method)) {
@@ -257,6 +271,19 @@ class AccessControl {
 		});
 
 		req.body.project = projection;
+
+		if (isUpdate && (method === 'WRITE' || method === 'DEL')) {
+			const updatePaths = requestBody.map((elem) => elem.path);
+			const allowedPathUpdates = projectionUpdateKeys.filter((key) => updatePaths.some((updateKey) => updateKey === key));
+			if (allowedPathUpdates.length === updatePaths.length) {
+				allowedUpdates = true;
+			}
+		} else {
+			allowedUpdates = true;
+		}
+
+
+		return allowedUpdates;
 	}
 
 	__convertPrefixToQueryPrefix(obj, baseKey = null, newObj = {}) {
@@ -489,6 +516,32 @@ class AccessControl {
 
 	__replacePrefix(str) {
 		return str.replace('@', '$');
+	}
+
+	__getEnvironmentVar(attr, environmentVar) {
+		const path = environmentVar.split('.');
+		let val = null;
+		let obj = attr;
+
+		path.forEach((key) => {
+			if (val && !Array.isArray(val) && typeof val === 'object') {
+				obj = val;
+			}
+			val = this.__getObjectValByPathKey(obj, key);
+			if (!val) return;
+		});
+
+		return val;
+	}
+
+	__getObjectValByPathKey(obj, key) {
+		let value = null;
+
+		if (obj && obj[key]) {
+			value = obj[key];
+		}
+
+		return value;
 	}
 }
 module.exports = new AccessControl();
