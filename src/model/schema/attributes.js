@@ -34,6 +34,7 @@ class AttributeSchemaModel extends SchemaModelMongoDB {
 			properties: {
 				extends: {
 					__type: 'array',
+					__itemtype: 'string',
 					__required: true,
 					__allowUpdate: true,
 				},
@@ -103,10 +104,11 @@ class AttributeSchemaModel extends SchemaModelMongoDB {
 			env: (body.attribute.env)? body.attribute.env : {},
 			conditions: (body.attribute.conditions)? body.attribute.conditions : {},
 			query: (body.attribute.query)? body.attribute.query : {},
-			_appId: body.appId,
 		};
 
-		return super.add(attribute)
+		return super.add(attribute, {
+			_appId: body.appId,
+		})
 			.then((attributeCursor) => attributeCursor.next())
 			.then((attribute) => {
 				nrp.emit('app-routes:bust-attribute-cache', {appId: body.appId});
