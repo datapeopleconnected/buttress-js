@@ -317,3 +317,57 @@ const __prepareSchemaResult = (result, dataDisposition, filter, permissions, tok
 	return (Array.isArray(result)) ? result.map((c) => _prepare(c, [])) : _prepare(result, []);
 };
 module.exports.prepareSchemaResult = __prepareSchemaResult;
+
+const __inflateObject = (parent, path, value) => {
+	if (path.length > 1) {
+		const parentKey = path.shift();
+		if (!parent[parentKey]) {
+			parent[parentKey] = {};
+		}
+		__inflateObject(parent[parentKey], path, value);
+		return;
+	}
+
+	parent[path.shift()] = value;
+	return;
+};
+
+const __populateObject = (schema, values) => {
+	const res = {};
+	const objects = {};
+
+	for (const property in schema) {
+		if (!{}.hasOwnProperty.call(schema, property)) continue;
+		let propVal = values.find((v) => v.path === property);
+		const config = schema[property];
+
+		if (propVal === undefined) {
+			propVal = {
+				path: property,
+				value: __getPropDefault(config),
+			};
+		}
+
+		if (propVal === undefined) continue;
+		__validateProp(propVal, config);
+
+		const path = propVal.path.split('.');
+		const root = path.shift();
+		let value = propVal.value;
+		if (config.__type === 'array' && config.__schema) {
+			value = value.map((v) => __populateObject(config.__schema, __getFlattenedBody(v)));
+		}
+
+		if (path.length > 0) {
+			if (!objects[root]) {
+				objects[root] = {};
+			}
+			__inflateObject(objects[root], path, value);
+			value = objects[root];
+		}
+
+		res[root] = value;
+	}
+	return res;
+};
+module.exports.populateObject = __populateObject;

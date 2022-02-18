@@ -12,10 +12,11 @@
  */
 
 const Crypto = require('crypto');
-const SchemaModelMongoDB = require('../type/mongoDB');
 const ObjectId = require('mongodb').ObjectId;
 // const Shared = require('../shared');
 const Logging = require('../../logging');
+
+const SchemaModel = require('../schemaModel');
 
 /**
  * Constants
@@ -35,10 +36,10 @@ const AuthLevel = {
 	SUPER: 3,
 };
 
-class TokenSchemaModel extends SchemaModelMongoDB {
-	constructor(MongoDb) {
+class TokenSchemaModel extends SchemaModel {
+	constructor(datastore) {
 		const schema = TokenSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 	}
 
 	static get Constants() {
@@ -183,14 +184,9 @@ class TokenSchemaModel extends SchemaModelMongoDB {
 	 * @return {Promise} - resolves to an array of Tokens
 	 */
 	findUserAuthTokens(userId, appId) {
-		return new Promise((resolve) => {
-			this.collection.find({
-				_app: new ObjectId(appId),
-				_user: new ObjectId(userId),
-			}).toArray((err, doc) => {
-				if (err) throw err;
-				resolve(doc);
-			});
+		return this.find({
+			_app: new ObjectId(appId),
+			_user: new ObjectId(userId),
 		});
 	}
 
@@ -200,13 +196,7 @@ class TokenSchemaModel extends SchemaModelMongoDB {
 	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
 	 */
 	updateRole(tokenId, role) {
-		return new Promise((resolve, reject) => {
-			this.collection.updateOne({_id: tokenId}, {$set: {role: role}}, {}, (err, object) => {
-				if (err) throw new Error(err);
-
-				resolve(object);
-			});
-		});
+		return this.update({_id: tokenId}, {$set: {role: role}});
 	}
 }
 

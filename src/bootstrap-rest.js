@@ -25,9 +25,10 @@ const Model = require('./model');
 const Routes = require('./routes');
 const Logging = require('./logging');
 const Schema = require('./schema');
-const MongoClient = require('mongodb').MongoClient;
 const NRP = require('node-redis-pubsub');
 const shortId = require('./helpers').shortId;
+
+const Datastore = require('./datastore');
 
 morgan.token('id', (req) => req.id);
 
@@ -45,25 +46,27 @@ class BootstrapRest {
 
 		this.id = (cluster.isMaster) ? 'MASTER' : cluster.worker.id;
 
-		let restInitTask = null;
-		if (cluster.isMaster) {
-			restInitTask = (db) => this.__initMaster(db);
-		} else {
-			restInitTask = (db) => this.__initWorker(db);
-		}
-
-		return this.__nativeMongoConnect()
-			.then(restInitTask)
-			.then(() => cluster.isMaster);
+		this.primaryDatastore = new Datastore(Config.datastore);
 	}
 
-	async __initMaster(db) {
+	async init() {
+		await this.primaryDatastore.connect();
+		if (cluster.isMaster) {
+			await this.__initMaster();
+		} else {
+			await this.__initWorker();
+		}
+
+		return cluster.isMaster;
+	}
+
+	async __initMaster() {
 		const isPrimary = Config.rest.app === 'primary';
 		let initMasterTask = Promise.resolve();
 
 		if (isPrimary) {
 			Logging.logVerbose(`Primary Master REST`);
-			initMasterTask = Model.initCoreModels(db)
+			initMasterTask = Model.initCoreModels(this.primaryDatastore)
 				.then(() => this.__systemInstall())
 				.then(() => Model.App.findAll().toArray())
 				.then((apps) => this.__updateAppSchema(apps))
@@ -92,13 +95,13 @@ class BootstrapRest {
 
 		if (this.workerProcesses === 0) {
 			Logging.logWarn(`Running in SINGLE Instance mode, BUTTRESS_APP_WORKERS has been set to 0`);
-			await this.__initWorker(db);
+			await this.__initWorker();
 		} else {
 			await this.__spawnWorkers();
 		}
 	}
 
-	__initWorker(db) {
+	__initWorker() {
 		const app = express();
 		app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 		app.enable('trust proxy', 1);
@@ -119,7 +122,7 @@ class BootstrapRest {
 		process.on('message', async (payload) => {
 			if (payload.type === 'app-schema:updated') {
 				Logging.logDebug(`App Schema Updated: ${payload.appId}`);
-				await Model.initSchema(db);
+				await Model.initSchema(this.primaryDatastore);
 				await this.routes.regenerateAppRoutes(payload.appId);
 				Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
 			} else if (payload.type === 'app-routes:bust-cache') {
@@ -129,7 +132,7 @@ class BootstrapRest {
 			}
 		});
 
-		return Model.init(db)
+		return Model.init(this.primaryDatastore)
 			.then(() => {
 				const localSchema = this._getLocalSchemas();
 				Model.App.setLocalSchema(localSchema);
@@ -139,16 +142,6 @@ class BootstrapRest {
 				return this.routes.initRoutes();
 			})
 			.then(() => app.listen(Config.listenPorts.rest))
-			.catch(Logging.Promise.logError());
-	}
-
-	__nativeMongoConnect() {
-		const dbName = `${Config.app.code}-${Config.env}`;
-		const mongoUrl = `mongodb://${Config.mongoDb.url}`;
-		Logging.logDebug(`Attempting connection to ${mongoUrl}`);
-
-		return MongoClient.connect(mongoUrl, Config.mongoDb.options)
-			.then((client) => client.db(dbName))
 			.catch(Logging.Promise.logError());
 	}
 

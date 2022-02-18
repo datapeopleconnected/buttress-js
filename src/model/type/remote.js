@@ -42,7 +42,7 @@ class SchemaModelRemote extends SchemaModel {
 	update(details, id) {
 		// Seperate local updates from remote
 
-		return this.remote.update(details, id);
+		return this.remote.updateById(id, details);
 	}
 
 	/**

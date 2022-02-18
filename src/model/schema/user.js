@@ -11,7 +11,6 @@
  *
  */
 
-const SchemaModelMongoDB = require('../type/mongoDB');
 const Model = require('../');
 const Logging = require('../../logging');
 // const Shared = require('../shared');
@@ -20,8 +19,7 @@ const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 
-const collectionName = 'users';
-const collection = Model.mongoDb.collection(collectionName);
+const SchemaModel = require('../schemaModel');
 
 /**
  * Constants
@@ -34,10 +32,10 @@ const App = {
 	LINKEDIN: apps[3],
 };
 
-class UserSchemaModel extends SchemaModelMongoDB {
-	constructor(MongoDb) {
+class UserSchemaModel extends SchemaModel {
+	constructor(datastore) {
 		const schema = UserSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 	}
 
 	static get Constants() {
@@ -240,7 +238,7 @@ class UserSchemaModel extends SchemaModelMongoDB {
 
 		const update = {};
 		update[`auth.${authIdx}`] = auth;
-		return super.update(update, user._id).then(() => true);
+		return super.updateById(user._id, update).then(() => true);
 	}
 
 	updateApps(user, app) {
@@ -262,13 +260,6 @@ class UserSchemaModel extends SchemaModelMongoDB {
 		return super.update({
 			_apps: user._apps,
 		}, user._id);
-	}
-
-	exists(id) {
-		return collection.find({_id: new ObjectId(id)})
-			.limit(1)
-			.count()
-			.then((count) => count > 0);
 	}
 
 	/**

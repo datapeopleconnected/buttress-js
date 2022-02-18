@@ -96,7 +96,7 @@ class DeleteAllTokens extends Route {
 	}
 
 	_validate(req, res, token) {
-		return Promise.resolve(req.params.type === 'user');
+		return Promise.resolve();
 	}
 
 	_exec(req, res, validate) {

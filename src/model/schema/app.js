@@ -19,8 +19,9 @@ const NRP = require('node-redis-pubsub');
 const Model = require('../');
 const Schema = require('../../schema');
 const Logging = require('../../logging');
-const SchemaModelMongoDB = require('../type/mongoDB');
 const shortId = require('../../helpers').shortId;
+
+const SchemaModel = require('../schemaModel');
 
 const nrp = new NRP(Config.redis);
 
@@ -35,10 +36,10 @@ const Type = {
 	BROWSER: type[3],
 };
 
-class AppSchemaModel extends SchemaModelMongoDB {
-	constructor(MongoDb) {
+class AppSchemaModel extends SchemaModel {
+	constructor(datastore) {
 		const schema = AppSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 
 		this._localSchema = null;
 	}
@@ -148,15 +149,11 @@ class AppSchemaModel extends SchemaModelMongoDB {
 		appSchema = Schema.encode(appSchema);
 		// this.__schema = appSchema;
 
-		return new Promise((resolve, reject) => {
-			this.collection.updateOne({_id: appId}, {$set: {__schema: appSchema}}, {}, (err, object) => {
-				if (err) throw new Error(err);
-
+		return super.update({_id: appId}, {$set: {__schema: appSchema}})
+			.then((res) => {
 				nrp.emit('app-schema:updated', {appId: appId});
-
-				resolve(object);
+				return res;
 			});
-		});
 	}
 
 	setLocalSchema(schema) {
@@ -171,13 +168,7 @@ class AppSchemaModel extends SchemaModelMongoDB {
 	updateRoles(appId, roles) {
 		// nrp.emit('app-metadata:changed', {appId: appId});
 
-		return new Promise((resolve, reject) => {
-			this.collection.updateOne({_id: appId}, {$set: {__roles: roles}}, {}, (err, object) => {
-				if (err) throw new Error(err);
-
-				resolve(object);
-			});
-		});
+		return super.update({_id: appId}, {$set: {__roles: roles}});
 	}
 
 	/**
@@ -189,15 +180,14 @@ class AppSchemaModel extends SchemaModelMongoDB {
 		Logging.log(route, Logging.Constants.LogLevel.DEBUG);
 		Logging.log(permission, Logging.Constants.LogLevel.DEBUG);
 
-		return new Promise((resolve, reject) => {
-			this.getToken()
-				.then((token) => {
-					if (!token) {
-						return reject(new Error('No valid authentication token.'));
-					}
-					token.addOrUpdatePermission().then(resolve, reject);
-				});
-		});
+		return this.getToken()
+			.then((token) => {
+				if (!token) {
+					throw new Error('No valid authentication token.');
+				}
+
+				return token.addOrUpdatePermission();
+			});
 	}
 
 	/**

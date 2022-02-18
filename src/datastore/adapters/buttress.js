@@ -11,9 +11,9 @@
  *
  */
 
-const Buttress = require('@buttress/api');
+const ButtressAPI = require('@buttress/api');
 
-const SchemaModel = require('../schemaModel');
+const AbstractAdapter = require('../abstract-adapter');
 
 /* ********************************************************************************
  *
@@ -21,9 +21,9 @@ const SchemaModel = require('../schemaModel');
  *
  **********************************************************************************/
 
-class SchemaModelButtress extends SchemaModel {
+module.exports = class Buttress extends AbstractAdapter {
 	constructor(schemaData, app, dataSharing) {
-		super(schemaData, app);
+		super();
 
 		// eslint-disable-next-line no-unused-vars
 		const [_, collection] = schemaData.remote.split('.');
@@ -32,15 +32,13 @@ class SchemaModelButtress extends SchemaModel {
 		this.token = dataSharing.remoteApp.token;
 		this.apiPath = dataSharing.remoteApp.apiPath;
 
-		this.buttress = Buttress.new();
+		this.buttress = ButtressAPI.new();
 
 		// Hack - Give a little time for another instance to get up to speed
 		// before trying to init
 
 		this.init = false;
 		this.initPendingResolve = [];
-
-		throw new Error('FOO');
 
 		// TOOD: Handle the case we're another instance isn't available
 		setTimeout(() => {
@@ -75,11 +73,11 @@ class SchemaModelButtress extends SchemaModel {
 	}
 
 	/**
-	 * @param {object} id
-	 * @param {string} details
+	 * @param {object} details
+	 * @param {string} id
 	 * @return {Promise}
 	 */
-	update(id, details) {
+	update(details, id) {
 		return this.resolveAfterInit()
 			.then(() => this.collection.update(id, details));
 	}
@@ -181,6 +179,4 @@ class SchemaModelButtress extends SchemaModel {
 		return this.resolveAfterInit()
 			.then(() => this.collection.count(query));
 	}
-}
-
-module.exports = SchemaModelButtress;
+};

@@ -15,19 +15,20 @@ const Config = require('node-env-obj')();
 
 const NRP = require('node-redis-pubsub');
 
-const SchemaModelMongoDB = require('../type/mongoDB');
 const Schema = require('../../schema');
 const Model = require('..');
+
+const SchemaModel = require('../schemaModel');
 
 const nrp = new NRP(Config.redis);
 
 /**
  * @class AppDataSharingSchemaModel
  */
-class AppDataSharingSchemaModel extends SchemaModelMongoDB {
-	constructor(MongoDb) {
+class AppDataSharingSchemaModel extends SchemaModel {
+	constructor(datastore) {
 		const schema = AppDataSharingSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 
 		this._localSchema = null;
 	}
@@ -174,16 +175,10 @@ class AppDataSharingSchemaModel extends SchemaModelMongoDB {
 			update.$set['dataSharing.localApp'] = policy;
 		}
 
-		return new Promise((resolve) => {
-			this.collection.updateOne({
-				'_id': new ObjectId(appDataSharingId),
-				'_appId': new ObjectId(appId),
-			}, update, {}, (err, object) => {
-				if (err) throw new Error(err);
-
-				resolve(object);
-			});
-		});
+		return this.update({
+			'_id': new ObjectId(appDataSharingId),
+			'_appId': new ObjectId(appId),
+		}, update);
 	}
 
 	/**
@@ -204,15 +199,9 @@ class AppDataSharingSchemaModel extends SchemaModelMongoDB {
 
 		nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
 
-		return new Promise((resolve) => {
-			this.collection.updateOne({
-				'_id': new ObjectId(appDataSharingId),
-			}, update, {}, (err, object) => {
-				if (err) throw new Error(err);
-
-				resolve(object);
-			});
-		});
+		return this.update({
+			'_id': new ObjectId(appDataSharingId),
+		}, update);
 	}
 }
 

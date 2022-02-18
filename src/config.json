@@ -39,12 +39,9 @@
 			"rest": "%BUTTRESS_REST_LISTEN_PORT%",
 			"sock": "%BUTTRESS_SOCK_LISTEN_PORT%"
 		},
-		"mongoDb": {
-			"url": "%BUTTRESS_MONGO_URL%",
-			"options": {
-				"appName": "%BUTTRESS_APP_CODE%",
-				"maxPoolSize": 100
-			}
+		"datastore": {
+			"connectionString": "%BUTTRESS_MONGO_URL%",
+			"options": "appName=%BUTTRESS_APP_CODE%&maxPoolSize=100"
 		},
 		"redis": {
 			"port": "%BUTTRESS_REDIS_PORT%",

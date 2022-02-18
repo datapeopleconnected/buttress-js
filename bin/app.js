@@ -19,7 +19,7 @@ const Config = require('node-env-obj')({
 	configPath: '../src',
 });
 
-const Bootstrap = require('../src/bootstrap');
+const BootstrapRest = require('../src/bootstrap-rest');
 const Logging = require('../src/logging');
 
 /**
@@ -27,7 +27,8 @@ const Logging = require('../src/logging');
  */
 Logging.init('REST');
 
-Bootstrap.rest()
+const app = new BootstrapRest();
+app.init()
 	.then((isMaster) => {
 		if (isMaster) {
 			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Master v${Config.app.version} listening on port ` +

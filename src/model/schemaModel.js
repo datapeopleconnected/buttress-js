@@ -17,6 +17,8 @@ const Shared = require('./shared');
 const Helpers = require('../helpers');
 const shortId = require('../helpers').shortId;
 
+const Sugar = require('sugar');
+
 /* ********************************************************************************
  *
  * LOCALS
@@ -24,13 +26,18 @@ const shortId = require('../helpers').shortId;
  **********************************************************************************/
 
 class SchemaModel {
-	constructor(schemaData, app) {
+	constructor(schemaData, app, datastore) {
 		this.schemaData = schemaData;
 		this.flatSchemaData = Helpers.getFlattenedSchema(this.schemaData);
 
 		this.app = app || null;
 
 		this.appShortId = (app) ? shortId(app._id) : null;
+
+		if (datastore) {
+			this.adapter = datastore.adapter.cloneAdapterConnection();
+			this.adapter.setCollection(`${schemaData.collection}`);
+		}
 	}
 
 	__doValidation(body) {
@@ -275,18 +282,46 @@ class SchemaModel {
 			.then(() => SchemaModel.parseQuery(roles.schema.authFilter.query, env, this.flatSchemaData));
 	}
 
-	/**
-	 * @throws Error
-	 */
-	add() {
-		throw new Error('not yet implemented');
+	/*
+	* @param {Object} body - body passed through from a POST request
+	* @return {Promise} - returns a promise that is fulfilled when the database request is completed
+	*/
+	__parseAddBody(body, internals) {
+		const entity = Object.assign({}, internals);
+
+		if (body.id) {
+			entity._id = this.adapter.createId(body.id);
+		}
+
+		if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {
+			entity.createdAt = Sugar.Date.create();
+			entity.updatedAt = (body.updatedAt) ? Sugar.Date.create(body.updatedAt) : null;
+		}
+
+		const validated = Shared.applyAppProperties(this.schemaData, body);
+
+		return Object.assign(validated, entity);
+	}
+	add(body, internals) {
+		return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
 	}
 
 	/**
-	 * @throws Error
+	 * @param {*} query
+	 * @param {*} update
+	 * @return {promise}
 	 */
-	update() {
-		throw new Error('not yet implemented');
+	update(query, update) {
+		return this.adapter.update(query, update);
+	}
+
+	/**
+	 * @param {*} id
+	 * @param {*} query
+	 * @return {promise}
+	 */
+	updateById(id, query) {
+		return this.adapter.updateById(id, query);
 	}
 
 	/**
@@ -303,9 +338,7 @@ class SchemaModel {
 	 * @param {string} id
 	 * @return {promise}
 	 */
-	updateByPath(body, id) {
-		const sharedFn = Shared.updateByPath({}, this.schemaData, this.collection);
-
+	async updateByPath(body, id) {
 		if (body instanceof Array === false) {
 			body = [body];
 		}
@@ -318,84 +351,118 @@ class SchemaModel {
 			});
 		}
 
-		return sharedFn(body, id);
+		// const schema = __getCollectionSchema(collectionName);
+		const flattenedSchema = this.schemaData ? Helpers.getFlattenedSchema(this.schemaData) : false;
+		const extendedPathContext = Shared.extendPathContext({}, flattenedSchema, '');
+
+		return await body.reduce(async (prev, update) => {
+			const arr = await prev;
+			const config = flattenedSchema === false ? false : flattenedSchema[update.path];
+			return arr.concat([
+				await this.adapter.batchUpdateProcess(id, update, extendedPathContext[update.contextPath], config),
+			]);
+		}, Promise.resolve([]));
 	}
 
 	/**
-	 * @throws Error
+	 * @param {*} id
+	 * @param {*} extra
+	 * @return {Promise}
 	 */
-	exists() {
-		throw new Error('not yet implemented');
+	exists(id, extra = {}) {
+		return this.adapter.exists(id, extra);
 	}
 
 	/**
-	 * @throws Error
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	isDuplicate() {
-		throw new Error('not yet implemented');
+		return this.adapter.isDuplicate();
 	}
 
 	/**
-	 * @throws Error
+	 * @param {string} id - id to be deleted
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rm() {
-		throw new Error('not yet implemented');
+	rm(id) {
+		return this.adapter.rm(id);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Array} ids - Array of entity ids to delete
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rmBulk() {
-		throw new Error('not yet implemented');
+	rmBulk(ids) {
+		return this.adapter.rmBulk(ids);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Object} query - mongoDB query
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rmAll() {
-		throw new Error('not yet implemented');
+	rmAll(query) {
+		return this.adapter.rmAll(query);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {String} id - entity id to get
+	 * @return {Promise} - resolves to an array of Companies
 	 */
-	findById() {
-		throw new Error('not yet implemented');
+	findById(id) {
+		return this.adapter.findById(id);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Object} query - mongoDB query
+	 * @param {Object} excludes - mongoDB query excludes
+	 * @param {Boolean} stream - should return a stream
+	 * @param {Int} limit - should return a stream
+	 * @param {Int} skip - should return a stream
+	 * @param {Object} sort - mongoDB sort object
+	 * @param {Boolean} project - mongoDB project ids
+	 * @return {Promise} - resolves to an array of docs
 	 */
-	find() {
-		throw new Error('not yet implemented');
+	find(query, excludes = {}, stream = false, limit = 0, skip = 0, sort, project = null) {
+		return this.adapter.find(query, excludes, stream, limit, skip, sort, project);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Object} query - mongoDB query
+	 * @param {Object} excludes - mongoDB query excludes
+	 * @return {Promise} - resolves to an array of docs
 	 */
-	findOne() {
-		throw new Error('not yet implemented');
+	findOne(query, excludes = {}) {
+		return this.adapter.findOne(query, excludes);
 	}
 
 	/**
-	 * @throws Error
+	 * @return {Promise} - resolves to an array of Companies
 	 */
 	findAll() {
-		throw new Error('not yet implemented');
+		return this.adapter.findAll();
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Array} ids - Array of entities ids to get
+	 * @return {Promise} - resolves to an array of Companies
 	 */
-	findAllById() {
-		throw new Error('not yet implemented');
+	findByIds(ids) {
+		return this.adapter.findAllById(ids);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Object} query - mongoDB query
+	 * @return {Promise} - resolves to an array of Companies
 	 */
-	count() {
-		throw new Error('not yet implemented');
+	count(query) {
+		return this.adapter.count(query);
+	}
+
+	/**
+	 * @return {Promise}
+	 */
+	drop() {
+		return this.adapter.drop();
 	}
 }
 

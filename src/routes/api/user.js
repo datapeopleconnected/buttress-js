@@ -65,6 +65,7 @@ class GetUser extends Route {
 			Model.User.findById(req.params.id)
 				.then((_user) => {
 					if (_user) {
+						// TODO: findUserAuthTokens no longer returns a promises!
 						Model.Token.findUserAuthTokens(_user._id, req.authApp._id)
 							.then((tokens) => {
 								resolve({
@@ -108,6 +109,7 @@ class FindUser extends Route {
 			Model.User.getByAppId(req.params.app, req.params.id)
 				.then((_user) => {
 					if (_user) {
+						// TODO: findUserAuthTokens no longer returns a promises!
 						Model.Token.findUserAuthTokens(_user._id, req.authApp._id)
 							.then((tokens) => {
 								resolve({
