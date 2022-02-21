@@ -137,18 +137,21 @@ class SchemaModelMongoDB extends SchemaModel {
 	}
 
 	/**
-	 * @param {String} id - entity id to get
+	 * @param {String} query - a query that contains an entity id to get
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {Promise} - resolves to an array of Companies
 	 */
-	findById(id, project = null) {
+	findById(query, project = null) {
 		// Logging.logSilly(`Schema:findById: ${this.collectionName} ${id}`);
-
-		if (id instanceof ObjectId === false) {
-			id = new ObjectId(id);
+		if (query instanceof ObjectId === true || typeof query !== 'object') {
+			query = {_id: query}
 		}
 
-		return this.collection.findOne({_id: id}, {projection: project});
+		if (query._id instanceof ObjectId === false) {
+			query._id = new ObjectId(query._id);
+		}
+
+		return this.collection.findOne(query, {projection: project});
 	}
 
 	/**

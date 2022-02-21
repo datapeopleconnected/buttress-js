@@ -284,13 +284,28 @@ class GetOne extends Route {
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
 			}
 
-			this.model.findById(objectId, project)
-				.then((entity) => {
-					if (!entity) {
-						this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-						return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
+			const generateQuery = Promise.resolve({_id: objectId});
+			return generateQuery
+				.then((generateQuery) => {
+					let query = generateQuery;
+					if (req.body.query && Object.keys(req.body.query).length > 0) {
+						query = req.body.query;
+
+						query = SchemaModel.parseQuery(query, {}, this.model.flatSchemaData);
+						query._id = objectId;
 					}
-					resolve(entity);
+
+					return query;
+				})
+				.then((query) => {
+					this.model.findById(query, project)
+						.then((entity) => {
+							if (!entity) {
+								this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+								return reject(new Helpers.Errors.RequestError(400, 'invalid_id or access_control_not_fullfilled'));
+							}
+							resolve(entity);
+						});
 				});
 		});
 	}
@@ -307,7 +322,7 @@ routes.push(GetOne);
 class GetMany extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}/bulk/load`, `BULK GET ${schema.name}`);
-		this.verb = Route.Constants.Verbs.POST;
+		this.verb = Route.Constants.Verbs.SEARCH;
 		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.READ;
 

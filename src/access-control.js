@@ -1,4 +1,7 @@
 const Sugar = require('sugar');
+
+const Helpers = require('./helpers');
+const Shared = require('./model/shared');
 class AccessControl {
 	constructor() {
 		this.conditionKeys = [
@@ -32,8 +35,8 @@ class AccessControl {
 			'@elMatch',
 		];
 
-		this.readMethods = ['SEARCH', 'GET'];
-		this.writeMethods = ['POST', 'PUT'];
+		this.IPv4Regex = /((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}/g;
+		this.IPv6Regex = /(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))/g;
 	}
 
 	async accessControlDisposition(req, userSchemaAttributes) {
@@ -42,7 +45,108 @@ class AccessControl {
 		return (disposition[verb] === 'allow')? true : false;
 	}
 
-	async applyAccessControlPolicyConditions(userSchemaAttributes) {
+	__requestIPAddress(req) {
+		const requestIPAddress = {};
+		const proxyIPAddress = {};
+
+		if (req['x-client-ip']) {
+			requestIPAddress['x-client-ip'] = req['x-client-ip'];
+		}
+
+		if (req['x-forwarded-for']) {
+			proxyIPAddress['x-forwarded-for'] = req['x-forwarded-for'];
+		}
+
+		if (req['cf-connecting-ip']) {
+			requestIPAddress['cf-connecting-ip'] = req['cf-connecting-ip'];
+		}
+
+		if (req['fastly-client-ip']) {
+			requestIPAddress['fastly-client-ip'] = req['fastly-client-ip'];
+		}
+
+		if (req['true-client-ip']) {
+			requestIPAddress['true-client-ip'] = req['true-client-ip'];
+		}
+
+		if (req['x-real-ip']) {
+			requestIPAddress['x-real-ip'] = req['x-real-ip'];
+		}
+
+		if (req['x-cluster-client-ip']) {
+			requestIPAddress['x-cluster-client-ip'] = req['x-cluster-client-ip'];
+		}
+
+		if (req['x-forwarded'] || req['forwarded-for'] || req['forwarded']) {
+			proxyIPAddress['x-forwarded'] = req['x-forwarded'] || req['forwarded-for'] || req['forwarded'];
+		}
+
+		if (req.connection && req.connection.remoteAddress) {
+			requestIPAddress.connectionRemoteAddress = req.connection.remoteAddress;
+		}
+
+		if (req.socket && req.socket.remoteAddress) {
+			requestIPAddress.socketRemoteAddress = req.socket.remoteAddress;
+		}
+
+		if (req.connection && req.connection.socket && req.connection.socket.remoteAddress) {
+			requestIPAddress.connectionSocketRemoteAddress = req.connection.socket.remoteAddress;
+		}
+
+		if (req.info && req.info.remoteAddress) {
+			requestIPAddress.infoRemoteAddress = req.info.remoteAddress;
+		}
+
+		const proxyClientIP = Object.keys(proxyIPAddress).reduce((arr, key) => {
+			const ipAddress = this.__getClientIpFromXForwardedFor(key);
+			if (ipAddress) {
+				arr.push(ipAddress);
+			}
+
+			return arr;
+		}, []);
+
+		if (proxyClientIP.length > 0) {
+			return proxyClientIP.shift();
+		}
+
+		const clientIP = Object.keys(requestIPAddress).reduce((arr, key) => {
+			const IPv4 = requestIPAddress[key].match(this.IPv4Regex).pop();
+			const IPv6 = requestIPAddress[key].match(this.IPv6Regex).pop();
+			arr.push((IPv4)? IPv4 : IPv6);
+
+			return arr;
+		}, []);
+
+		const firstClientIP = clientIP.slice().pop();
+		const isDiffIPs = clientIP.every((ipAddress) => ipAddress === firstClientIP);
+		if (isDiffIPs) {
+			// should throw an error?
+		}
+
+		return firstClientIP;
+	}
+
+	__getClientIpFromXForwardedFor(str) {
+		const forwardedIPs = str.split(',').map((ip) => {
+			ip = ip.trim();
+			if (ip.includes(':')) {
+				const splitted = ip.split(':');
+				// make sure we only use this if it's ipv4 (ip:port)
+				if (splitted.length === 2) {
+					return splitted[0];
+				}
+			}
+
+			return ip;
+		});
+
+		return forwardedIPs.find((ip) => {
+			return ip.match(this.IPv4Regex) || ip.match(this.IPv6Regex);
+		});
+	}
+
+	async applyAccessControlPolicyConditions(req, userSchemaAttributes) {
 		const accessControlPolicy = {
 			authorised: true,
 			query: null,
@@ -52,50 +156,51 @@ class AccessControl {
 			return prev.then(() => {
 				if (!accessControlPolicy.authorised) return;
 
-				accessControlPolicy.authorised = this.__checkAttributeConditions(attr);
+				accessControlPolicy.authorised = this.__checkAttributeConditions(req, attr);
 			});
 		}, Promise.resolve())
 			.then(() => accessControlPolicy.authorised);
 	}
 
-	__checkAttributeConditions(attr) {
+	__checkAttributeConditions(req, attr) {
 		const conditions = attr.conditions;
 		if (!conditions || !Object.keys(conditions).length) return true;
 
 		let isConditionFullFilled = false;
 		Object.keys(conditions).forEach((key) => {
 			if (this.logicalOperator.includes(key)) {
-				isConditionFullFilled = this.__checkLogicalOperatorCondition(attr, conditions[key], key, isConditionFullFilled);
+				isConditionFullFilled = this.__checkLogicalOperatorCondition(req, attr, conditions[key], key);
 			}
 		});
 
 		return isConditionFullFilled;
 	}
 
-	__checkLogicalOperatorCondition(attr, operation, operator) {
+	__checkLogicalOperatorCondition(req, attr, operation, operator) {
 		let result = false;
 
 		if (operator === '@and') {
 			operation.forEach((conditionObj) => {
-				result = this.__checkCondition(attr, conditionObj, false);
+				result = this.__checkCondition(req, attr, conditionObj, false);
 			});
 		}
 
 		if (operator === '@or') {
 			operation.forEach((conditionObj) => {
-				result = this.__checkCondition(attr, conditionObj);
+				result = this.__checkCondition(req, attr, conditionObj);
 			});
 		}
 
 		return result;
 	}
 
-	__checkCondition(attr, conditionObj, partialPass = true) {
+	__checkCondition(req, attr, conditionObj, partialPass = true) {
 		let passed = false;
 
 		Object.keys(conditionObj).forEach((key) => {
-			if (typeof conditionObj[key] === 'object' && !this.conditionKeys.includes(key)) {
-				passed = this.__checkCondition(attr, conditionObj[key], partialPass);
+			const conditionKey = key.replace('env.', '');
+			if (typeof conditionObj[key] === 'object' && !this.conditionKeys.includes(conditionKey)) {
+				passed = this.__checkCondition(req, attr, conditionObj[key], partialPass);
 				return;
 			}
 
@@ -106,13 +211,17 @@ class AccessControl {
 				}
 
 				let lhs = conditionObj[key][operator];
-				let rhs = null;
+				let rhs = this.__getEnvironmentVar(attr, key);
 
-				if (key === '@location') {
-					rhs = '217.114.52.106';
+				if (conditionKey === '@location') {
+					if (!lhs.match(this.IPv4Regex) && !lhs.match(this.IPv6Regex)) {
+						lhs = this.__getEnvironmentVar(attr, lhs);
+					}
+
+					rhs = this.__requestIPAddress(req);
 				}
 
-				if (key === '@date' || key === '@time') {
+				if (conditionKey === '@date' || conditionKey === '@time') {
 					if (!Sugar.Date.isValid(Sugar.Date.create(lhs))) {
 						lhs = this.__getEnvironmentVar(attr, lhs);
 					}
@@ -213,13 +322,13 @@ class AccessControl {
 		return passed;
 	}
 
-	async addAccessControlPolicyQuery(req, userSchemaAttributes) {
+	async addAccessControlPolicyQuery(req, userSchemaAttributes, schema) {
 		let allowedUpdates = false;
 
 		return userSchemaAttributes.reduce((prev, attr) => {
 			return prev.then(() => {
 				return this.__addAccessControlPolicyAttributeQuery(req, attr.query)
-					.then(() => allowedUpdates = this.__addAccessControlPolicyQueryProjection(req, attr.properties));
+					.then(() => allowedUpdates = this.__addAccessControlPolicyQueryProjection(req, attr.properties, schema));
 			});
 		}, Promise.resolve())
 			.then(() => allowedUpdates);
@@ -250,29 +359,37 @@ class AccessControl {
 			});
 	}
 
-	__addAccessControlPolicyQueryProjection(req, props) {
+	__addAccessControlPolicyQueryProjection(req, props, schema) {
 		const requestBody = req.body;
-		const isUpdate = Array.isArray(requestBody);
-		const requestMethod = req.originalMethod;
-		const method = (this.readMethods.includes(requestMethod))? 'READ' : (this.writeMethods.includes(req.originalMethod))? 'WRITE' : 'DEL';
-		const projectionUpdateKeys = Object.keys(props).map((key) => {
-			if (props[key].includes('WRITE')) {
-				return key;
-			}
-		})
-			.filter((v) => v);
+		const requestMethod = (req.originalMethod === 'SEARCH')? 'GET' : req.originalMethod;
+		const flattenedSchema = Helpers.getFlattenedSchema(schema);
+		const projectionUpdateKeys = [];
 		const projection = {};
 		let allowedUpdates = false;
 
 		Object.keys(props).forEach((key) => {
-			if (props[key].includes(method)) {
+			console.log('requestMethod', requestMethod);
+			console.log('props[key]', props[key]);
+			if (props[key].includes(requestMethod)) {
+				projectionUpdateKeys.push(key);
 				projection[key] = 1;
 			}
 		});
 
-		req.body.project = projection;
+		if (requestMethod === 'POST') {
+			const updatePaths = Object.keys(requestBody).map((key) => key);
+			const removedPaths = updatePaths
+				.filter((key) => projectionUpdateKeys.every((updateKey) => updateKey !== key))
+				.filter((path) => flattenedSchema[path]);
 
-		if (isUpdate && (method === 'WRITE' || method === 'DEL')) {
+			removedPaths.forEach((i) => {
+				// TODO think about required fields that users do not have write access to
+				const config = flattenedSchema[i];
+				requestBody[i] = Shared.getPropDefault(config);
+			});
+
+			allowedUpdates = true;
+		} else if (requestMethod === 'PUT') {
 			const updatePaths = requestBody.map((elem) => elem.path);
 			const allowedPathUpdates = projectionUpdateKeys.filter((key) => updatePaths.some((updateKey) => updateKey === key));
 			if (allowedPathUpdates.length === updatePaths.length) {
@@ -282,7 +399,7 @@ class AccessControl {
 			allowedUpdates = true;
 		}
 
-
+		req.body.project = projection;
 		return allowedUpdates;
 	}
 
@@ -519,7 +636,7 @@ class AccessControl {
 	}
 
 	__getEnvironmentVar(attr, environmentVar) {
-		const path = environmentVar.split('.');
+		const path = environmentVar.replace('@', '').split('.');
 		let val = null;
 		let obj = attr;
 

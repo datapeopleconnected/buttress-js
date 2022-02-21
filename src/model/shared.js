@@ -151,6 +151,7 @@ const __getPropDefault = (config) => {
 	}
 	return res;
 };
+module.exports.getPropDefault = __getPropDefault;
 
 const __validateProp = (prop, config) => {
 	let type = typeof prop.value;
@@ -232,7 +233,7 @@ const __validateProp = (prop, config) => {
 	return valid;
 };
 
-const __validate = (schema, values, parentProperty) => {
+const __validate = (schema, values, parentProperty, body = null) => {
 	const res = {
 		isValid: true,
 		missing: [],
@@ -243,8 +244,27 @@ const __validate = (schema, values, parentProperty) => {
 		if (!{}.hasOwnProperty.call(schema, property)) continue;
 		let propVal = values.find((v) => v.path === property);
 		const config = schema[property];
-
 		if (propVal === undefined) {
+			if (body && schema && schema[property] && schema[property].__type === 'object') {
+				const definedObjectKeys = Object.keys(schema).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
+				const blankObjectValues = Object.keys(body[property]).reduce((arr, key) => {
+					if (!definedObjectKeys.includes(key) || property !== key) {
+						arr[key] = body[property][key];
+					}
+
+					return arr;
+				}, {});
+
+				if (blankObjectValues) {
+					propVal = {};
+					propVal.path = property;
+					propVal.value = blankObjectValues;
+				}
+
+				values.push(propVal);
+				continue;
+			}
+
 			if (config.__required) {
 				res.isValid = false;
 				Logging.logWarn(`Missing required ${property}`);
@@ -399,7 +419,7 @@ const _validateAppProperties = function(schema, body) {
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
 	const flattenedBody = __getFlattenedBody(body);
 
-	return __validate(flattenedSchema, flattenedBody, '');
+	return __validate(flattenedSchema, flattenedBody, '', body);
 };
 
 const __inflateObject = (parent, path, value) => {

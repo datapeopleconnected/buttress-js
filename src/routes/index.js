@@ -502,14 +502,15 @@ class Routes {
 			return;
 		}
 
-		const accessControlAuthorisation = await AccessControl.applyAccessControlPolicyConditions(schemaAttributes);
+		const accessControlAuthorisation = await AccessControl.applyAccessControlPolicyConditions(req, schemaAttributes);
 		if (!accessControlAuthorisation) {
 			Logging.logTimer(`_accessControlPolicy:conditions-not-fulfilled`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			res.status(401).json({message: 'Access control policy conditions are not fulfilled'});
 			return;
 		}
 
-		const passedAccessControlPolicy = await AccessControl.addAccessControlPolicyQuery(req, schemaAttributes);
+		const schema = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection').find((s) => s.name === schemaName);
+		const passedAccessControlPolicy = await AccessControl.addAccessControlPolicyQuery(req, schemaAttributes, schema);
 		if (!passedAccessControlPolicy) {
 			Logging.logTimer(`_accessControlPolicy:access-control-properties-permission-error`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			res.status(401).json({message: 'Can not edit properties without privileged access'});
