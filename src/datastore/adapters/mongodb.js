@@ -298,7 +298,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {Int} skip - should return a stream
 	 * @param {Object} sort - mongoDB sort object
 	 * @param {Boolean} project - mongoDB project ids
-	 * @return {Promise} - resolves to an array of docs
+	 * @return {ReadableStream} - stream
 	 */
 	find(query, excludes = {}, stream = false, limit = 0, skip = 0, sort, project = null) {
 		Logging.logSilly(`find: ${this.collectionName} ${query}`);
@@ -316,7 +316,8 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return this.collection.find(query, excludes)
 			.skip(skip)
 			.limit(limit)
-			.sort(sort);
+			.sort(sort)
+			.stream();
 	}
 
 	/**

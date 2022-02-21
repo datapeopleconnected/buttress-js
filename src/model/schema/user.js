@@ -14,7 +14,6 @@
 const Model = require('../');
 const Logging = require('../../logging');
 // const Shared = require('../shared');
-const ObjectId = require('mongodb').ObjectId;
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
@@ -268,34 +267,11 @@ class UserSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves to an array of Apps
 	 */
 	findAll(appId, tokenAuthLevel) {
-		// Logging.logSilly(`findAll: ${appId}`);
+		if (tokenAuthLevel && tokenAuthLevel === Model.Token.Constants.AuthLevel.SUPER) {
+			return super.find({});
+		}
 
-		return new Promise((resolve) => {
-			let findTask = () => super.find({_apps: appId});
-			if (tokenAuthLevel && tokenAuthLevel === Model.Token.Constants.AuthLevel.SUPER) {
-				findTask = () => super.find({});
-			}
-
-			return Promise.all([
-				findTask(),
-				Model.Token.find({
-					type: 'user',
-					_app: new ObjectId(appId),
-				}),
-			])
-				.then((data) => {
-					resolve(data[0].map((user) => {
-						const tokens = data[1].filter((t) => user._id.equals(t._user));
-						user.tokens = [];
-
-						if (tokens) {
-							user.tokens = tokens;
-						}
-
-						return user;
-					}));
-				});
-		});
+		return super.find({_apps: appId});
 	}
 
 	/**

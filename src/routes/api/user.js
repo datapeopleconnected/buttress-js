@@ -66,19 +66,21 @@ class GetUser extends Route {
 				.then((_user) => {
 					if (_user) {
 						// TODO: findUserAuthTokens no longer returns a promises!
-						Model.Token.findUserAuthTokens(_user._id, req.authApp._id)
-							.then((tokens) => {
-								resolve({
-									id: _user._id,
-									auth: _user.auth,
-									tokens: tokens.map((t) => {
-										return {
-											value: t.value,
-											role: t.role,
-										};
-									}),
-								});
+						const output = {
+							id: _user._id,
+							auth: _user.auth,
+							tokens: [],
+						};
+
+						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
+
+						rxTokens.on('data', (token) => {
+							output.tokens.push({
+								value: token.value,
+								role: token.role,
 							});
+						});
+						rxTokens.once('end', () => resolve(output));
 					} else {
 						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 						resolve({statusCode: 400});
@@ -109,20 +111,21 @@ class FindUser extends Route {
 			Model.User.getByAppId(req.params.app, req.params.id)
 				.then((_user) => {
 					if (_user) {
-						// TODO: findUserAuthTokens no longer returns a promises!
-						Model.Token.findUserAuthTokens(_user._id, req.authApp._id)
-							.then((tokens) => {
-								resolve({
-									id: _user._id,
-									auth: _user.auth,
-									tokens: tokens.map((t) => {
-										return {
-											value: t.value,
-											role: t.role,
-										};
-									}),
-								});
+						const output = {
+							id: _user._id,
+							auth: _user.auth,
+							tokens: [],
+						};
+
+						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
+
+						rxTokens.on('data', (token) => {
+							output.tokens.push({
+								value: token.value,
+								role: token.role,
 							});
+						});
+						rxTokens.once('end', () => resolve(output));
 					} else {
 						resolve(false);
 					}

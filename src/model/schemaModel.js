@@ -246,28 +246,18 @@ class SchemaModel {
 						fields[propertyPath] = true;
 
 						tasks.push(() => {
-							const result = collection.find(propertyQuery, fields);
+							const rxsResult = collection.find(propertyQuery, fields);
 
-							if (Helpers.isCursor(result)) {
-								return new Promise((resolve) => {
-									const stream = result.stream();
-									if (!env[property]) env[property] = [];
+							return new Promise((resolve) => {
+								if (!env[property]) env[property] = [];
 
-									stream.on('data', (res) => {
-										// Map fetched properties into a array.
-										env[property].push(res[propertyMap]);
-										// Hack - Flattern any sub arrays down to the single level.
-										env[property] = [].concat(...env[property]);
-									});
-									stream.once('end', () => resolve());
+								rxsResult.on('data', (res) => {
+									// Map fetched properties into a array.
+									env[property].push(res[propertyMap]);
+									// Hack - Flattern any sub arrays down to the single level.
+									env[property] = [].concat(...env[property]);
 								});
-							}
-
-							return result.then((res) => {
-								// Map fetched properties into a array.
-								env[property] = res.map((i) => i[propertyMap]);
-								// Hack - Flattern any sub arrays down to the single level.
-								env[property] = [].concat(...env[property]);
+								rxsResult.once('end', () => resolve());
 							});
 						});
 					} else {
