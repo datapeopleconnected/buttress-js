@@ -360,17 +360,16 @@ class AccessControl {
 	}
 
 	__addAccessControlPolicyQueryProjection(req, props, schema) {
-		const requestBody = req.body;
 		const requestMethod = (req.originalMethod === 'SEARCH')? 'GET' : req.originalMethod;
 		const flattenedSchema = Helpers.getFlattenedSchema(schema);
+		const projectionMethod = (requestMethod === 'GET')? 'READ' : 'WRITE';
 		const projectionUpdateKeys = [];
 		const projection = {};
+		let requestBody = req.body;
 		let allowedUpdates = false;
 
 		Object.keys(props).forEach((key) => {
-			console.log('requestMethod', requestMethod);
-			console.log('props[key]', props[key]);
-			if (props[key].includes(requestMethod)) {
+			if (props[key].includes(projectionMethod)) {
 				projectionUpdateKeys.push(key);
 				projection[key] = 1;
 			}
@@ -390,6 +389,10 @@ class AccessControl {
 
 			allowedUpdates = true;
 		} else if (requestMethod === 'PUT') {
+			if (!Array.isArray(requestBody) && typeof requestBody === 'object') {
+				requestBody = [requestBody];
+			}
+
 			const updatePaths = requestBody.map((elem) => elem.path);
 			const allowedPathUpdates = projectionUpdateKeys.filter((key) => updatePaths.some((updateKey) => updateKey === key));
 			if (allowedPathUpdates.length === updatePaths.length) {

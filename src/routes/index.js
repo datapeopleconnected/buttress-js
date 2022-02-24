@@ -510,6 +510,8 @@ class Routes {
 		}
 
 		const schema = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection').find((s) => s.name === schemaName);
+		if (!schema) return next();
+
 		const passedAccessControlPolicy = await AccessControl.addAccessControlPolicyQuery(req, schemaAttributes, schema);
 		if (!passedAccessControlPolicy) {
 			Logging.logTimer(`_accessControlPolicy:access-control-properties-permission-error`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
