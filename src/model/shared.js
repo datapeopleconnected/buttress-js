@@ -14,7 +14,6 @@
 const Logging = require('../logging');
 const Helpers = require('../helpers');
 // const Model = require('./index');
-// const ObjectId = require('mongodb').ObjectId;
 
 /* ********************************************************************************
 *

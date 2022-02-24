@@ -33,6 +33,9 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	createId(id) {
 		return new ObjectId(id);
 	}
+	isValidId(id) {
+		return true;
+	}
 
 	add(body, modifier) {
 		return this.__batchAddProcess(body, modifier);
@@ -58,18 +61,14 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			};
 		});
 
-		return await new Promise((resolve, reject) => {
-			if (ops.length < 1) return resolve([]);
+		// return await new Promise((resolve, reject) => {
+		if (ops.length < 1) return Promise.resolve([]);
 
-			this.collection.bulkWrite(ops, (err, res) => {
-				if (err) return reject(err);
+		const res = await this.collection.bulkWrite(ops);
 
-				const insertedIds = Sugar.Object.values(res.insertedIds).map((id) => new ObjectId(id));
-				if (insertedIds.length < 1) return resolve([]);
+		const insertedIds = Object.values(res.insertedIds).map((id) => new ObjectId(id));
 
-				resolve(this.collection.find({_id: {$in: insertedIds}}));
-			});
-		});
+		return this.find({_id: {$in: insertedIds}});
 	}
 
 	update(filter, update) {
@@ -293,31 +292,25 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	/**
 	 * @param {Object} query - mongoDB query
 	 * @param {Object} excludes - mongoDB query excludes
-	 * @param {Boolean} stream - should return a stream
 	 * @param {Int} limit - should return a stream
 	 * @param {Int} skip - should return a stream
 	 * @param {Object} sort - mongoDB sort object
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {ReadableStream} - stream
 	 */
-	find(query, excludes = {}, stream = false, limit = 0, skip = 0, sort, project = null) {
+	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
 		Logging.logSilly(`find: ${this.collectionName} ${query}`);
-		if (stream) {
-			let results = this.collection.find(query, excludes).skip(skip).limit(limit).sort(sort);
 
-			if (project) {
-				results = results.project(project);
-			}
-
-			return results;
-		}
-
-		// return new Promise((resolve) => {
-		return this.collection.find(query, excludes)
+		let results = this.collection.find(query, excludes)
 			.skip(skip)
 			.limit(limit)
-			.sort(sort)
-			.stream();
+			.sort(sort);
+
+		if (project) {
+			results = results.project(project);
+		}
+
+		return results.stream();
 	}
 
 	/**
@@ -342,7 +335,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	findAll() {
 		// Logging.logSilly(`findAll: ${this.collectionName}`);
 
-		return this.collection.find({});
+		return this.find({});
 	}
 
 	/**
@@ -352,7 +345,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	findAllById(ids) {
 		// Logging.logSilly(`update: ${this.collectionName} ${ids}`);
 
-		return this.collection.find({_id: {$in: ids.map((id) => new ObjectId(id))}}, {});
+		return this.find({_id: {$in: ids.map((id) => new ObjectId(id))}}, {});
 	}
 
 	/**

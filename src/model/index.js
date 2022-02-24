@@ -64,17 +64,16 @@ class Model {
 	async initSchema(datastore) {
 		if (datastore) this.primaryDatastore = datastore;
 
-		const apps = await this.models.App.findAll().toArray();
+		const rxsApps = this.models.App.findAll();
 
-		await apps.reduce(async (prev, app) => {
-			await prev;
+		for await (const app of rxsApps) {
 			if (!app || !app.__schema) return;
 
 			await Schema.buildCollections(Schema.decode(app.__schema)).reduce(async (prev, schema) => {
 				await prev;
 				await this._initSchemaModel(app, schema);
 			}, Promise.resolve());
-		}, Promise.resolve());
+		}
 	}
 
 	initModel(modelName) {

@@ -96,15 +96,14 @@ class SchemaModelRemote extends SchemaModel {
 	/**
 	 * @param {Object} query - mongoDB query
 	 * @param {Object} excludes - mongoDB query excludes
-	 * @param {Boolean} stream - should return a stream
 	 * @param {Int} limit - should return a stream
 	 * @param {Int} skip - should return a stream
 	 * @param {Object} sort - mongoDB sort object
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {Promise} - resolves to an array of docs
 	 */
-	find(query, excludes = {}, stream = false, limit = 0, skip = 0, sort, project = null) {
-		return this.remote.find(query, excludes, stream, limit, skip, sort, project);
+	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+		return this.remote.find(query, excludes, limit, skip, sort, project);
 	}
 
 	/**

@@ -46,7 +46,7 @@ class BootstrapRest {
 
 		this.id = (cluster.isMaster) ? 'MASTER' : cluster.worker.id;
 
-		this.primaryDatastore = new Datastore(Config.datastore);
+		this.primaryDatastore = Datastore.createInstance(Config.datastore);
 	}
 
 	async init() {
@@ -62,19 +62,6 @@ class BootstrapRest {
 
 	async __initMaster() {
 		const isPrimary = Config.rest.app === 'primary';
-		let initMasterTask = Promise.resolve();
-
-		if (isPrimary) {
-			Logging.logVerbose(`Primary Master REST`);
-			initMasterTask = Model.initCoreModels(this.primaryDatastore)
-				.then(() => this.__systemInstall())
-				.then(() => Model.App.findAll().toArray())
-				.then((apps) => this.__updateAppSchema(apps))
-				.then(() => Model.initSchema())
-				.catch((e) => Logging.logError(e));
-		} else {
-			Logging.logVerbose(`Secondary Master REST`);
-		}
 
 		const nrp = new NRP(Config.redis);
 		nrp.on('app-schema:updated', (data) => {
@@ -91,7 +78,15 @@ class BootstrapRest {
 			}));
 		});
 
-		await initMasterTask;
+		if (isPrimary) {
+			Logging.logVerbose(`Primary Master REST`);
+			await Model.initCoreModels(this.primaryDatastore);
+			await this.__systemInstall();
+			await this.__updateAppSchema();
+			await Model.initSchema();
+		} else {
+			Logging.logVerbose(`Secondary Master REST`);
+		}
 
 		if (this.workerProcesses === 0) {
 			Logging.logWarn(`Running in SINGLE Instance mode, BUTTRESS_APP_WORKERS has been set to 0`);
@@ -157,48 +152,36 @@ class BootstrapRest {
 		}
 	}
 
-	__systemInstall() {
-		let isInstalled = false;
-
+	async __systemInstall() {
 		Logging.log('Checking for existing apps.');
 
-		return Model.App.findAll().toArray()
-			.then((apps) => {
-				if (apps.length > 0) {
-					isInstalled = true;
-					Logging.log('Existing apps found - Skipping install.');
-					return {app: apps[0], token: null}; // If any apps, assume we've got a Super Admin app
-				}
+		const appCount = await Model.App.count();
 
-				Logging.log('No apps found - Creating super app.');
-				return Model.App.add({
-					name: `${Config.app.title} ADMIN`,
-					type: Model.App.Constants.Type.SERVER,
-					authLevel: Model.Token.Constants.AuthLevel.SUPER,
-					permissions: [{route: '*', permission: '*'}],
-					apiPath: 'bjs',
-					domain: '',
-				});
-			})
-			.then((res) => {
-				if (isInstalled) {
-					return res.app;
-				}
+		if (appCount > 0) {
+			Logging.log('Existing apps found - Skipping install.');
+			return;
+		}
 
-				const pathName = path.join(Config.paths.appData, 'super.json');
-				Logging.log(`Super app created: ${res.app.id}`);
-				return new Promise((resolve, reject) => {
-					const app = Object.assign(res.app, {token: res.token.value});
-					fs.writeFile(pathName, JSON.stringify(app), (err) => {
-						if (err) {
-							return reject(err);
-						}
-						Logging.log(`Created ${pathName}`);
+		const res = await Model.App.add({
+			name: `${Config.app.title} TEST`,
+			type: Model.App.Constants.Type.SERVER,
+			authLevel: Model.Token.Constants.AuthLevel.SUPER,
+			permissions: [{route: '*', permission: '*'}],
+			apiPath: 'bjs',
+			domain: '',
+		});
 
-						resolve(res.app);
-					});
-				});
+		const pathName = path.join(Config.paths.appData, 'super.json');
+		Logging.log(`Super app created: ${res.app.id}`);
+
+		await new Promise((resolve, reject) => {
+			const app = Object.assign(res.app, {token: res.token.value});
+			fs.writeFile(pathName, JSON.stringify(app), (err) => {
+				if (err) return reject(err);
+				Logging.log(`Created ${pathName}`);
 			});
+			resolve();
+		});
 	}
 
 	/**
@@ -217,17 +200,16 @@ class BootstrapRest {
 		return files;
 	}
 
-	__updateAppSchema(apps) {
-		const schemaUpdates = [];
-
+	async __updateAppSchema() {
 		// Load local defined schemas into super app
 		const localSchema = this._getLocalSchemas();
 
 		// Add local schema to Model.App
 		Model.App.setLocalSchema(localSchema);
 
-		// Build a update queue for merging local schema with each app schema
-		apps.forEach((app) => {
+		const rxsApps = Model.App.findAll();
+
+		for await (const app of rxsApps) {
 			const appSchema = Schema.decode(app.__schema);
 			const appShortId = shortId(app._id);
 			Logging.log(`Adding ${localSchema.length} local schema for ${appShortId}:${app.name}:${appSchema.length}`);
@@ -241,13 +223,8 @@ class BootstrapRest {
 				appSchema[appSchemaIdx] = schema;
 			});
 
-			schemaUpdates.push(() => Model.App.updateSchema(app._id, appSchema));
-		});
-
-		// Run update queue
-		return schemaUpdates.reduce((prev, task) => {
-			return prev.then(() => task());
-		}, Promise.resolve());
+			await Model.App.updateSchema(app._id, appSchema);
+		};
 	}
 }
 

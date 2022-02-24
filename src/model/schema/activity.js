@@ -10,7 +10,6 @@
  * @author Chris Bates-Keegan
  *
  */
-const ObjectId = require('mongodb').ObjectId;
 const Model = require('../');
 const Logging = require('../../logging');
 const Schema = require('../../schema');
@@ -170,7 +169,7 @@ class ActivitySchemaModel extends SchemaModel {
 		}
 
 		return super.find({
-			_app: new ObjectId(appId),
+			_app: this.createId(appId),
 			visibility: ActivitySchemaModel.Constants.Visibility.PUBLIC,
 		});
 	}

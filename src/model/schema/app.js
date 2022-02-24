@@ -11,7 +11,6 @@
  *
  */
 
-const ObjectId = require('mongodb').ObjectId;
 const Config = require('node-env-obj')();
 
 const NRP = require('node-redis-pubsub');
@@ -19,7 +18,7 @@ const NRP = require('node-redis-pubsub');
 const Model = require('../');
 const Schema = require('../../schema');
 const Logging = require('../../logging');
-const shortId = require('../../helpers').shortId;
+const Helpers = require('../../helpers');
 
 const SchemaModel = require('../schemaModel');
 
@@ -95,9 +94,9 @@ class AppSchemaModel extends SchemaModel {
 	 * @param {Object} body - body passed through from a POST request
 	 * @return {Promise} - fulfilled with App Object when the database request is completed
 	 */
-	add(body) {
-		const app = {
-			id: new ObjectId(),
+	async add(body) {
+		const appBody = {
+			id: this.createId(),
 			name: body.name,
 			type: body.type,
 			authLevel: body.authLevel,
@@ -105,28 +104,23 @@ class AppSchemaModel extends SchemaModel {
 			domain: body.domain,
 			apiPath: body.apiPath,
 		};
-		let _token = null;
 
-		return Model.Token.add({
+		const rxsToken = await Model.Token.add({
 			type: Model.Token.Constants.Type.APP,
 			authLevel: body.authLevel,
 			permissions: body.permissions,
 		}, {
-			_app: new ObjectId(app.id),
-		})
-			.then((tokenCursor) => tokenCursor.next())
-			.then((token) => {
-				_token = token;
+			_app: this.createId(appBody.id),
+		});
+		const token = await Helpers.streamFirst(rxsToken);
 
-				nrp.emit('app-routes:bust-cache', {});
-				nrp.emit('app-schema:updated', {appId: app.id});
+		const rxsApp = await super.add(appBody, {_token: token._id});
+		const app = await Helpers.streamFirst(rxsApp);
 
-				return super.add(app, {_token: token._id});
-			})
-			.then((appCursor) => appCursor.next())
-			.then((app) => {
-				return Promise.resolve({app: app, token: _token});
-			});
+		nrp.emit('app-routes:bust-cache', {});
+		nrp.emit('app-schema:updated', {appId: app.id});
+
+		return Promise.resolve({app: app, token: token});
 	}
 
 	/**
@@ -204,7 +198,7 @@ class AppSchemaModel extends SchemaModel {
 	async rm(entity) {
 		await Model.AppDataSharing.rmAll({_appId: entity._id});
 
-		const appShortId = (entity) ? shortId(entity._id) : null;
+		const appShortId = (entity) ? Helpers.shortId(entity._id) : null;
 
 		// Delete Schema collections
 		if (appShortId) {

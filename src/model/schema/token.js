@@ -12,7 +12,6 @@
  */
 
 const Crypto = require('crypto');
-const ObjectId = require('mongodb').ObjectId;
 // const Shared = require('../shared');
 const Logging = require('../../logging');
 
@@ -185,8 +184,8 @@ class TokenSchemaModel extends SchemaModel {
 	 */
 	findUserAuthTokens(userId, appId) {
 		return this.find({
-			_app: new ObjectId(appId),
-			_user: new ObjectId(userId),
+			_app: this.model.createId(appId),
+			_user: this.model.createId(userId),
 		});
 	}
 

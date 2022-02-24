@@ -2,7 +2,6 @@ const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
-const ObjectId = require('mongodb').ObjectId;
 
 /**
  * @class DeleteMany
@@ -45,7 +44,7 @@ module.exports = class DeleteMany extends Route {
 			}
 
 			try {
-				ids = ids.map((id) => new ObjectId(id));
+				ids = ids.map((id) => this.model.createId(id));
 			} catch (err) {
 				return reject(new Helpers.Errors.RequestError(400, `All ids must be string of 12 bytes or a string of 24 hex characters`));
 			}

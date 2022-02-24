@@ -48,7 +48,7 @@ module.exports = class GetList extends Route {
 	}
 
 	_exec(req, res, query) {
-		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-		return this.model.find(query, {}, true);
+		Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		return this.model.find(query);
 	}
 };

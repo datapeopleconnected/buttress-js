@@ -10,7 +10,6 @@
  * @author Tom Cahill
  */
 
-const ObjectId = require('mongodb').ObjectId;
 const Config = require('node-env-obj')();
 
 const NRP = require('node-redis-pubsub');
@@ -112,7 +111,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 	 */
 	add(body) {
 		const appDataSharing = {
-			id: new ObjectId(),
+			id: this.createId(),
 			name: body.name,
 
 			active: false,
@@ -139,15 +138,15 @@ class AppDataSharingSchemaModel extends SchemaModel {
 			authLevel: Model.Token.Constants.AuthLevel.USER,
 			permissions: [{route: '*', permission: '*'}],
 		}, {
-			_app: new ObjectId(body._appId),
-			_appDataSharingId: new ObjectId(appDataSharing.id),
+			_app: this.createId(body._appId),
+			_appDataSharingId: this.createId(appDataSharing.id),
 		})
 			.then((tokenCursor) => tokenCursor.next())
 			.then((token) => {
 				_token = token;
 
 				return super.add(appDataSharing, {
-					_appId: new ObjectId(body._appId),
+					_appId: this.createId(body._appId),
 					_tokenId: token._id,
 				});
 			})
@@ -176,8 +175,8 @@ class AppDataSharingSchemaModel extends SchemaModel {
 		}
 
 		return this.update({
-			'_id': new ObjectId(appDataSharingId),
-			'_appId': new ObjectId(appId),
+			'_id': this.createId(appDataSharingId),
+			'_appId': this.createId(appId),
 		}, update);
 	}
 
@@ -200,7 +199,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 		nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
 
 		return this.update({
-			'_id': new ObjectId(appDataSharingId),
+			'_id': this.createId(appDataSharingId),
 		}, update);
 	}
 }

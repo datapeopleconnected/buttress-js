@@ -2,7 +2,6 @@ const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
-const ObjectId = require('mongodb').ObjectId;
 
 /**
  * @class GetOne
@@ -35,7 +34,7 @@ module.exports = class GetOne extends Route {
 		return new Promise((resolve, reject) => {
 			let objectId = null;
 			try {
-				objectId = new ObjectId(req.params.id);
+				objectId = this.model.createId(req.params.id);
 			} catch (err) {
 				this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));

@@ -14,6 +14,7 @@
 const Model = require('../');
 const Logging = require('../../logging');
 // const Shared = require('../shared');
+const Helpers = require('../../helpers');
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
@@ -136,8 +137,8 @@ class UserSchemaModel extends SchemaModel {
 	 * @param {Object} auth - OPTIONAL authentication details for a user token
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	add(body, auth) {
-		const user = {
+	async add(body, auth) {
+		const userBody = {
 			auth: [{
 				app: body.app,
 				appId: body.id,
@@ -153,37 +154,33 @@ class UserSchemaModel extends SchemaModel {
 			}],
 		};
 
-		let _user = null;
-		return super.add(user, {
+		const rxsUser = await super.add(userBody, {
 			_apps: [Model.authApp._id],
-		})
-			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))
-			.then((user) => {
-				_user = user;
-				if (!auth) {
-					return false;
-				}
+		});
+		const user = await Helpers.streamFirst(rxsUser);
 
-				return Model.Token.add(auth, {
-					_app: Model.authApp._id,
-					_user: _user._id,
-				});
-			})
-			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))
-			.then((token) => {
-				_user.tokens = [];
+		user.tokens = [];
 
-				nrp.emit('app-routes:bust-cache', {});
+		if (!auth) {
+			return user;
+		}
 
-				if (token) {
-					_user.tokens.push({
-						value: token.value,
-						role: token.role,
-					});
-				}
+		const rxsToken = await Model.Token.add(auth, {
+			_app: Model.authApp._id,
+			_user: user._id,
+		});
+		const token = await Helpers.streamFirst(rxsToken);
 
-				return _user;
+		nrp.emit('app-routes:bust-cache', {});
+
+		if (token) {
+			user.tokens.push({
+				value: token.value,
+				role: token.role,
 			});
+		}
+
+		return user;
 	}
 
 	addAuth(auth) {

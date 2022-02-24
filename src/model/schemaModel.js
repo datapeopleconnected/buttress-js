@@ -11,7 +11,6 @@
  *
  */
 
-const ObjectId = require('mongodb').ObjectId;
 // const Logging = require('../logging');
 const Shared = require('./shared');
 const Helpers = require('../helpers');
@@ -38,6 +37,10 @@ class SchemaModel {
 			this.adapter = datastore.adapter.cloneAdapterConnection();
 			this.adapter.setCollection(`${schemaData.collection}`);
 		}
+	}
+
+	createId(id) {
+		return this.adapter.createId(id);
 	}
 
 	__doValidation(body) {
@@ -158,7 +161,7 @@ class SchemaModel {
 							Object.keys(operand).forEach((op) => {
 								if (propSchema.__schema[op].__type === 'id') {
 									Object.keys(operand[op]).forEach((key) => {
-										operand[op][key] = new ObjectId(operand[op][key]);
+										operand[op][key] = this.createId(operand[op][key]);
 									});
 								}
 							});
@@ -169,10 +172,11 @@ class SchemaModel {
 						}
 
 						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {
-							operand = new ObjectId(operand);
+							operand = this.createId(operand);
 						}
 						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
-							operand = operand.map((o) => new ObjectId(o));
+							console.log(this);
+							operand = operand.map((o) => this.createId(o));
 						}
 					}
 
@@ -405,15 +409,15 @@ class SchemaModel {
 	/**
 	 * @param {Object} query - mongoDB query
 	 * @param {Object} excludes - mongoDB query excludes
-	 * @param {Boolean} stream - should return a stream
 	 * @param {Int} limit - should return a stream
 	 * @param {Int} skip - should return a stream
 	 * @param {Object} sort - mongoDB sort object
 	 * @param {Boolean} project - mongoDB project ids
-	 * @return {Promise} - resolves to an array of docs
+	 * @return {ReadableStream} - stream
 	 */
-	find(query, excludes = {}, stream = false, limit = 0, skip = 0, sort, project = null) {
-		return this.adapter.find(query, excludes, stream, limit, skip, sort, project);
+	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+		const test = this.adapter.find(query, excludes, limit, skip, sort, project);
+		return test;
 	}
 
 	/**

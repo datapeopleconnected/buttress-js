@@ -66,7 +66,7 @@ module.exports = class SearchList extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return this.model.find(validateResult.query, {}, true,
+		return this.model.find(validateResult.query, {},
 			validateResult.limit, validateResult.skip, validateResult.sort, validateResult.project);
 	}
 };

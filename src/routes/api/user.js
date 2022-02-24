@@ -14,7 +14,6 @@ const Route = require('../route');
 const Model = require('../../model');
 const Logging = require('../../logging');
 const Helpers = require('../../helpers');
-const ObjectId = require('mongodb').ObjectId;
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
@@ -57,7 +56,7 @@ class GetUser extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			if (!req.params.id || !ObjectId.isValid(req.params.id)) {
+			if (!req.params.id) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
@@ -165,7 +164,7 @@ class CreateUserAuthToken extends Route {
 
 			req.body.type = Model.Token.Constants.Type.USER;
 
-			if (!req.params.id || !ObjectId.isValid(req.params.id)) {
+			if (!req.params.id) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
@@ -183,8 +182,8 @@ class CreateUserAuthToken extends Route {
 
 	_exec(req, res, user) {
 		return Model.Token.add(req.body, {
-			_app: new ObjectId(req.authApp._id),
-			_user: new ObjectId(user._id),
+			_app: this.model.createId(req.authApp._id),
+			_user: this.model.createId(user._id),
 		})
 			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))
 			.then((t) => {
@@ -351,7 +350,7 @@ class DeleteUser extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			if (!req.params.id || !ObjectId.isValid(req.params.id)) {
+			if (!req.params.id) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
