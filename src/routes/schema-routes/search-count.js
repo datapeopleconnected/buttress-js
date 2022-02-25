@@ -48,7 +48,7 @@ module.exports = class SearchCount extends Route {
 					query.$and = [];
 				}
 
-				// TODO: Vaildate this input against the schema, schema properties should be tagged with what can be queried
+				// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
 				if (req.body && req.body.query) {
 					query.$and.push(req.body.query);
 				} else if (req.body && !req.body.query) {

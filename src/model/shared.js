@@ -81,7 +81,7 @@ const _validateAppProperties = function(schema, body) {
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
 	const flattenedBody = Helpers.Schema.getFlattenedBody(body);
 
-	return Helpers.Schema.validate(flattenedSchema, flattenedBody, '');
+	return Helpers.Schema.validate(flattenedSchema, flattenedBody, '', body);
 };
 
 const __inflateObject = (parent, path, value) => {

@@ -1,7 +1,6 @@
 const Sugar = require('sugar');
 
 const Helpers = require('./helpers');
-const Shared = require('./model/shared');
 class AccessControl {
 	constructor() {
 		this.conditionKeys = [
@@ -384,7 +383,7 @@ class AccessControl {
 			removedPaths.forEach((i) => {
 				// TODO think about required fields that users do not have write access to
 				const config = flattenedSchema[i];
-				requestBody[i] = Shared.getPropDefault(config);
+				requestBody[i] = Helpers.Schema.getPropDefault(config);
 			});
 
 			allowedUpdates = true;

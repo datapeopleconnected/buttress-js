@@ -5,6 +5,8 @@ const Helpers = require('../../helpers');
 const Logging = require('../../logging');
 const Schema = require('../../schema');
 
+const SchemaModel = require('../../model/schemaModel');
+
 /**
  * @class GetList
  */
@@ -38,17 +40,46 @@ module.exports = class GetList extends Route {
 
 	_validate(req, res, token) {
 		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-		let query = Promise.resolve({});
+		let generateQuery = Promise.resolve({});
 		if (token.authLevel < 3) {
-			query = this.model.generateRoleFilterQuery(token, req.roles, Model);
+			generateQuery = this.model.generateRoleFilterQuery(token, req.roles, Model);
 		}
 
-		Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-		return query;
+		const result = {
+			query: {},
+			project: (req.body && req.body.project)? req.body.project : false,
+		};
+
+		return generateQuery
+			.then((query) => {
+				if (!query.$and) {
+					query.$and = [];
+				}
+
+				// access control query
+				if (req.body && req.body.query) {
+					query.$and.push(req.body.query);
+				}
+
+				if (req.body && req.body.query && req.body.query.zeroResults) {
+					return false;
+				}
+
+				Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+				return SchemaModel.parseQuery(query, {}, this.model.flatSchemaData);
+			})
+			.then((query) => {
+				result.query = query;
+				return result;
+			});
 	}
 
-	_exec(req, res, query) {
+	_exec(req, res, validateResult) {
+		if (validateResult.query === false) {
+			return [];
+		}
+
 		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-		return this.model.find(query, {}, true);
+		return this.model.find(validateResult.query, {}, true, 0, 0, {}, validateResult.project);
 	}
 };

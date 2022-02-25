@@ -9,7 +9,7 @@ const Schema = require('../../schema');
 module.exports = class GetMany extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}/bulk/load`, `BULK GET ${schema.name}`);
-		this.verb = Route.Constants.Verbs.POST;
+		this.verb = Route.Constants.Verbs.SEARCH;
 		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -32,7 +32,9 @@ module.exports = class GetMany extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const _ids = req.body;
+			const _ids = req.body.query.ids;
+			const project = (req.body && req.body.project)? req.body.project : false;
+
 			if (!_ids) {
 				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
@@ -41,11 +43,11 @@ module.exports = class GetMany extends Route {
 				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
 			}
-			resolve(_ids);
+			resolve({ids: _ids, project: project});
 		});
 	}
 
-	_exec(req, res, ids) {
-		return this.model.findAllById(ids);
+	_exec(req, res, query) {
+		return this.model.findAllById(query.ids, query.project);
 	}
 };

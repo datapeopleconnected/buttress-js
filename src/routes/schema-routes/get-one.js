@@ -4,6 +4,8 @@ const Helpers = require('../../helpers');
 const Schema = require('../../schema');
 const ObjectId = require('mongodb').ObjectId;
 
+const SchemaModel = require('../../model/schemaModel');
+
 /**
  * @class GetOne
  */
@@ -34,6 +36,8 @@ module.exports = class GetOne extends Route {
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
 			let objectId = null;
+			const project = (req.body && req.body.project)? req.body.project : false;
+
 			try {
 				objectId = new ObjectId(req.params.id);
 			} catch (err) {
@@ -41,13 +45,28 @@ module.exports = class GetOne extends Route {
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
 			}
 
-			this.model.findById(objectId)
-				.then((entity) => {
-					if (!entity) {
-						this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-						return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
+			const generateQuery = Promise.resolve({_id: objectId});
+			return generateQuery
+				.then((generateQuery) => {
+					let query = generateQuery;
+					if (req.body.query && Object.keys(req.body.query).length > 0) {
+						query = req.body.query;
+
+						query = SchemaModel.parseQuery(query, {}, this.model.flatSchemaData);
+						query._id = objectId;
 					}
-					resolve(entity);
+
+					return query;
+				})
+				.then((query) => {
+					this.model.findById(query, project)
+						.then((entity) => {
+							if (!entity) {
+								this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+								return reject(new Helpers.Errors.RequestError(400, 'invalid_id or access_control_not_fullfilled'));
+							}
+							resolve(entity);
+						});
 				});
 		});
 	}
