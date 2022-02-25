@@ -88,6 +88,16 @@ class BootstrapRest {
 			}));
 		});
 
+		nrp.on('app-routes:bust-attribute-cache', (data) => {
+			Logging.logDebug(`App Routes: Bust attributes cache for ${data.appId}, notifying ${this.workers.length} Workers`);
+			this.workers.forEach((w) => w.send({
+				type: 'app-routes:bust-attribute-cache',
+				appId: data.appId,
+			}));
+		});
+
+		return initMasterTask
+			.then(() => this.__spawnWorkers());
 		await initMasterTask;
 
 		if (this.workerProcesses === 0) {
@@ -126,6 +136,10 @@ class BootstrapRest {
 				// TODO: Maybe do this better than
 				Logging.logDebug(`App Routes: cache bust`);
 				await this.routes.loadTokens();
+				this.routes.loadTokens();
+			} else if (payload.type === 'app-routes:bust-attribute-cache') {
+				Logging.logDebug(`App Routes: attributes cache bust`);
+				await this.routes.loadAttributes(payload.appId);
 			}
 		});
 

@@ -234,6 +234,16 @@ const __getFlattenedSchema = (schema) => {
 				if (childProp === '__schema') {
 					parent[property].__schema = __getFlattenedSchema({properties: parent[property].__schema});
 				}
+
+				if (parent[property].__type === 'object' && !flattened[path.join('.')]) {
+					flattened[path.join('.')] = {};
+					Object.keys(parent[property]).forEach((key) => {
+						if (/^__/.test(key)) {
+							flattened[path.join('.')][key] = parent[property][key];
+						}
+					});
+				}
+
 				continue;
 			}
 

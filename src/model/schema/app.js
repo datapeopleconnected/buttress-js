@@ -70,6 +70,12 @@ class AppSchemaModel extends SchemaModelMongoDB {
 					__default: '',
 					__allowUpdate: true,
 				},
+				accessControlPrompt: {
+					__type: 'boolean',
+					__default: false,
+					__required: true,
+					__allowUpdate: true,
+				},
 				_token: {
 					__type: 'id',
 					__required: true,

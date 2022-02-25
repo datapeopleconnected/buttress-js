@@ -85,20 +85,25 @@ const _validateAppProperties = function(schema, body) {
 };
 
 const __inflateObject = (parent, path, value) => {
+	if (path.length === 0) {
+		parent = value;
+		return parent;
+	}
+
 	if (path.length > 1) {
 		const parentKey = path.shift();
 		if (!parent[parentKey]) {
 			parent[parentKey] = {};
 		}
 		__inflateObject(parent[parentKey], path, value);
-		return;
+		return parent;
 	}
 
 	parent[path.shift()] = value;
-	return;
+	return parent;
 };
 
-const __populateObject = (schema, values) => {
+const __populateObject = (schema, values, body = null) => {
 	const res = {};
 	const objects = {};
 
@@ -106,6 +111,23 @@ const __populateObject = (schema, values) => {
 		if (!{}.hasOwnProperty.call(schema, property)) continue;
 		let propVal = values.find((v) => v.path === property);
 		const config = schema[property];
+
+		if (body && propVal === undefined && schema && schema[property] && schema[property].__type === 'object') {
+			const definedObjectKeys = Object.keys(schema).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
+			const blankObjectValues = Object.keys(body[property]).reduce((arr, key) => {
+				if (!definedObjectKeys.includes(key) || property !== key) {
+					arr[key] = body[property][key];
+				}
+
+				return arr;
+			}, {});
+
+			if (blankObjectValues) {
+				propVal = {};
+				propVal.path = property;
+				propVal.value = blankObjectValues;
+			}
+		}
 
 		if (propVal === undefined) {
 			propVal = {
@@ -124,11 +146,11 @@ const __populateObject = (schema, values) => {
 			value = value.map((v) => __populateObject(config.__schema, Helpers.Schema.getFlattenedBody(v)));
 		}
 
-		if (path.length > 0) {
+		if (path.length > 0 || schema[property].__type === 'object') {
 			if (!objects[root]) {
 				objects[root] = {};
 			}
-			__inflateObject(objects[root], path, value);
+			objects[root] = __inflateObject(objects[root], path, value);
 			value = objects[root];
 		}
 
@@ -149,7 +171,7 @@ const _applyAppProperties = function(schema, body) {
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
 	const flattenedBody = Helpers.Schema.getFlattenedBody(body);
 
-	return __populateObject(flattenedSchema, flattenedBody);
+	return __populateObject(flattenedSchema, flattenedBody, body);
 };
 
 module.exports.validateAppProperties = _validateAppProperties;
