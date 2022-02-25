@@ -35,13 +35,19 @@ class Model {
 		this.models = {};
 		this.Schema = {};
 		this.Constants = {};
-		this.primaryDatastore = null;
 		this.app = false;
 		this.appMetadataChanged = false;
+
+		this.primaryDatastore = null;
 	}
 
-	async init(datastore) {
-		this.primaryDatastore = datastore;
+	getDatastoreInstance() {
+		if (this.primaryDatastore) return;
+		this.primaryDatastore = Datastore.getInstance();
+	}
+
+	async init() {
+		this.getDatastoreInstance();
 
 		// Core Models
 		await this.initCoreModels();
@@ -49,20 +55,20 @@ class Model {
 		await this.initSchema();
 	}
 
-	async initCoreModels(datastore) {
-		if (datastore) this.primaryDatastore = datastore;
+	async initCoreModels() {
+		this.getDatastoreInstance();
 
 		// Core Models
 		const models = _getModels();
 		Logging.log(models, Logging.Constants.LogLevel.SILLY);
 
 		for (let x = 0; x < models.length; x++) {
-			this._initCoreModel(models[x]);
+			await this._initCoreModel(models[x]);
 		}
 	}
 
 	async initSchema(datastore) {
-		if (datastore) this.primaryDatastore = datastore;
+		this.getDatastoreInstance();
 
 		const rxsApps = this.models.App.findAll();
 
@@ -85,12 +91,13 @@ class Model {
 	 * @return {object} SchemaModel - initiated schema model built from passed schema object
 	 * @private
 	 */
-	_initCoreModel(model) {
+	async _initCoreModel(model) {
 		const name = Sugar.String.camelize(model);
 		const CoreSchemaModel = require(`./schema/${model.toLowerCase()}`);
 
 		if (!this.models[name]) {
-			this.models[name] = new CoreSchemaModel(this.primaryDatastore);
+			this.models[name] = new CoreSchemaModel();
+			await this.models[name].initAdapter(this.primaryDatastore);
 		}
 
 		this.__defineGetter__(name, () => this.models[name]);
@@ -129,22 +136,28 @@ class Model {
 					return;
 				}
 
+				let {endpoint, apiPath, token} = dataSharing.remoteApp;
+
+				if (endpoint) endpoint = endpoint.replace(/(https|http):\/\//ig, '');
+
 				// Create a remote datastore
-				const remoteDatastore = new Datastore({
-					connectionString: `buttress://${dataSharing.remoteApp}/${dataSharing.remoteApp.apiPath}?token=${dataSharing.remoteApp.token}`,
+				const remoteDatastore = new Datastore.Class({
+					connectionString: `buttress://${endpoint}/${apiPath}?token=${token}`,
 					options: '',
 				});
 
 				this.models[name] = new SchemaModelRemote(
 					schemaData, app,
-					new SchemaModel(schemaData, app, this.primaryDatastore),
-					new SchemaModel(schemaData, app, remoteDatastore),
+					new SchemaModel(schemaData, app),
+					new SchemaModel(schemaData, app),
 				);
+				await this.models[name].initAdapter(this.primaryDatastore, remoteDatastore);
 
 				this.__defineGetter__(name, () => this.models[name]);
 				return this.models[name];
 			} else {
 				this.models[name] = new SchemaModel(schemaData, app, this.primaryDatastore);
+				await this.models[name].initAdapter(this.primaryDatastore);
 			}
 		}
 

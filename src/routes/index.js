@@ -111,16 +111,18 @@ class Routes {
 
 		this._registerRouter('core', coreRouter);
 
-		const rxsApps = Model.App.findAll();
-		for await (const app of rxsApps) {
-			this._generateAppRoutes(app);
-		}
-
 		await this.loadTokens();
 
 		this.app.use((err, req, res, next) => this.logErrors(err, req, res, next));
 
 		Logging.logSilly(`init:registered-routes`);
+	}
+
+	async initAppRoutes() {
+		const rxsApps = Model.App.findAll();
+		for await (const app of rxsApps) {
+			this._generateAppRoutes(app);
+		}
 	}
 
 	/**
@@ -443,6 +445,7 @@ class Routes {
 	}
 
 	logErrors(err, req, res, next) {
+		Logging.logSilly(`logErrors ${err}`);
 		if (err instanceof Helpers.Errors.RequestError) {
 			res.status(err.code).json({statusMessage: err.message, message: err.message});
 		} else {

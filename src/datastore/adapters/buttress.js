@@ -22,38 +22,73 @@ const AbstractAdapter = require('../abstract-adapter');
  **********************************************************************************/
 
 module.exports = class Buttress extends AbstractAdapter {
-	constructor(schemaData, app, dataSharing) {
-		super();
+	constructor(uri, options, connection = null) {
+		super(uri, options, connection);
+
+		this.connection = ButtressAPI.new();
+
+		// console.log(uri, options, connection);
 
 		// eslint-disable-next-line no-unused-vars
-		const [_, collection] = schemaData.remote.split('.');
+		// const [_, collection] = schemaData.remote.split('.');
 
-		this.endpoint = dataSharing.remoteApp.endpoint;
-		this.token = dataSharing.remoteApp.token;
-		this.apiPath = dataSharing.remoteApp.apiPath;
+		// this.endpoint = dataSharing.remoteApp.endpoint;
+		// this.token = dataSharing.remoteApp.token;
+		// this.apiPath = dataSharing.remoteApp.apiPath;
 
-		this.buttress = ButtressAPI.new();
+		// this.buttress = ButtressAPI.new();
 
-		// Hack - Give a little time for another instance to get up to speed
-		// before trying to init
+		// // Hack - Give a little time for another instance to get up to speed
+		// // before trying to init
 
-		this.init = false;
-		this.initPendingResolve = [];
+		// this.init = false;
+		// this.initPendingResolve = [];
 
-		// TOOD: Handle the case we're another instance isn't available
-		setTimeout(() => {
-			this.buttress.init({
-				buttressUrl: this.endpoint,
-				appToken: this.token,
-				apiPath: this.apiPath,
-				allowUnauthorized: true, // WUT!?
-			})
-				.then(() => {
-					this.collection = this.buttress.getCollection(collection);
-					this.init = true;
-					this.initPendingResolve.forEach((r) => r());
-				});
-		}, 500);
+		// // TOOD: Handle the case we're another instance isn't available
+		// setTimeout(() => {
+		// 	this.buttress.init({
+		// 		buttressUrl: this.endpoint,
+		// 		appToken: this.token,
+		// 		apiPath: this.apiPath,
+		// 		allowUnauthorized: true, // WUT!?
+		// 	})
+		// 		.then(() => {
+		// 			this.collection = this.buttress.getCollection(collection);
+		// 			this.init = true;
+		// 			this.initPendingResolve.forEach((r) => r());
+		// 		});
+		// }, 500);
+	}
+
+	async connect() {
+		if (this.init) return this.connection;
+
+		await this.connection.init({
+			buttressUrl: `https://${this.uri.host}`,
+			appToken: this.uri.searchParams.get('token'),
+			apiPath: this.uri.pathname,
+			allowUnauthorized: true, // WUT!?
+		});
+
+		// this.collection = this.buttress.getCollection(collection);
+		// this.setCollection(this.uri.pathname.replace(/\//g, ''));
+		this.init = true;
+		// this.initPendingResolve.forEach((r) => r());
+	}
+
+	cloneAdapterConnection() {
+		return new Buttress(this.uri, this.options, this.connection);
+	}
+
+	setCollection(collectionName) {
+		this.collection = this.connection.getCollection(collectionName);
+	}
+
+	createId(id) {
+		return new ObjectId(id);
+	}
+	isValidId(id) {
+		return true;
 	}
 
 	resolveAfterInit() {
@@ -151,7 +186,7 @@ module.exports = class Buttress extends AbstractAdapter {
 
 		// Stream this?
 		return this.resolveAfterInit()
-			.then(() => this.collection.search(query, limit, skip, sort, {project}));
+			.then(() => this.collection.search(query, limit, skip, sort, project));
 	}
 
 	/**
@@ -178,5 +213,13 @@ module.exports = class Buttress extends AbstractAdapter {
 	count(query) {
 		return this.resolveAfterInit()
 			.then(() => this.collection.count(query));
+	}
+
+	/**
+	 * @return {Promise}
+	 */
+	drop() {
+		return this.resolveAfterInit()
+			.then(() => this.collection.removeAll());
 	}
 };

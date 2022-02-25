@@ -65,25 +65,24 @@ class BootstrapRest {
 
 		const nrp = new NRP(Config.redis);
 		nrp.on('app-schema:updated', (data) => {
-			Logging.logDebug(`App Schema Updated: ${data.appId}, notifying ${this.workers.length} Workers`);
-			this.workers.forEach((w) => w.send({
+			Logging.logDebug(`App Schema Updated: ${data.appId}`);
+			this.notifyWorkers({
 				type: 'app-schema:updated',
 				appId: data.appId,
-			}));
+			});
 		});
-		nrp.on('app-routes:bust-cache', (data) => {
-			Logging.logDebug(`App Routes: Bust token cache, notifying ${this.workers.length} Workers`);
-			this.workers.forEach((w) => w.send({
+		nrp.on('app-routes:bust-cache', () => {
+			Logging.logDebug(`App Routes: Bust token cache`);
+			this.notifyWorkers({
 				type: 'app-routes:bust-cache',
-			}));
+			});
 		});
 
 		if (isPrimary) {
 			Logging.logVerbose(`Primary Master REST`);
-			await Model.initCoreModels(this.primaryDatastore);
+			await Model.initCoreModels();
 			await this.__systemInstall();
 			await this.__updateAppSchema();
-			await Model.initSchema();
 		} else {
 			Logging.logVerbose(`Secondary Master REST`);
 		}
@@ -94,9 +93,13 @@ class BootstrapRest {
 		} else {
 			await this.__spawnWorkers();
 		}
+
+		if (isPrimary) {
+			// await Model.initSchema();
+		}
 	}
 
-	__initWorker() {
+	async __initWorker() {
 		const app = express();
 		app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 		app.enable('trust proxy', 1);
@@ -114,30 +117,44 @@ class BootstrapRest {
 			Logging.logError(error);
 		});
 
-		process.on('message', async (payload) => {
-			if (payload.type === 'app-schema:updated') {
-				Logging.logDebug(`App Schema Updated: ${payload.appId}`);
-				await Model.initSchema(this.primaryDatastore);
-				await this.routes.regenerateAppRoutes(payload.appId);
-				Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
-			} else if (payload.type === 'app-routes:bust-cache') {
-				// TODO: Maybe do this better than
-				Logging.logDebug(`App Routes: cache bust`);
-				await this.routes.loadTokens();
-			}
-		});
+		process.on('message', this.handleProcessMessage);
 
-		return Model.init(this.primaryDatastore)
-			.then(() => {
-				const localSchema = this._getLocalSchemas();
-				Model.App.setLocalSchema(localSchema);
+		await Model.initCoreModels();
 
-				this.routes = new Routes(app);
+		const localSchema = this._getLocalSchemas();
+		Model.App.setLocalSchema(localSchema);
 
-				return this.routes.initRoutes();
-			})
-			.then(() => app.listen(Config.listenPorts.rest))
-			.catch(Logging.Promise.logError());
+		this.routes = new Routes(app);
+
+		await this.routes.initRoutes();
+
+		await app.listen(Config.listenPorts.rest);
+
+		await Model.initSchema();
+		await this.routes.initAppRoutes();
+	}
+
+	async notifyWorkers(payload) {
+		if (this.workerProcesses > 0) {
+			Logging.logDebug(`notifying ${this.workers.length} Workers`);
+			this.workers.forEach((w) => w.send(payload));
+		} else {
+			Logging.logSilly(`single instance mode notification`);
+			await this.handleProcessMessage(payload);
+		}
+	}
+
+	async handleProcessMessage(payload) {
+		if (payload.type === 'app-schema:updated') {
+			Logging.logDebug(`App Schema Updated: ${payload.appId}`);
+			await Model.initSchema();
+			await this.routes.regenerateAppRoutes(payload.appId);
+			Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
+		} else if (payload.type === 'app-routes:bust-cache') {
+			// TODO: Maybe do this better than
+			Logging.logDebug(`App Routes: cache bust`);
+			await this.routes.loadTokens();
+		}
 	}
 
 	__spawnWorkers() {

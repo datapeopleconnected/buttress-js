@@ -117,7 +117,9 @@ class AppSchemaModel extends SchemaModel {
 		const rxsApp = await super.add(appBody, {_token: token._id});
 		const app = await Helpers.streamFirst(rxsApp);
 
+		Logging.logSilly(`Emitting app-routes:bust-cache`);
 		nrp.emit('app-routes:bust-cache', {});
+		Logging.logSilly(`Emitting app-schema:updated ${app.id}`);
 		nrp.emit('app-schema:updated', {appId: app.id});
 
 		return Promise.resolve({app: app, token: token});
@@ -145,6 +147,7 @@ class AppSchemaModel extends SchemaModel {
 
 		return super.update({_id: appId}, {$set: {__schema: appSchema}})
 			.then((res) => {
+				Logging.logSilly(`Emitting app-schema:updated ${appId}`);
 				nrp.emit('app-schema:updated', {appId: appId});
 				return res;
 			});

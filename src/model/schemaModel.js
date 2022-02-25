@@ -11,7 +11,7 @@
  *
  */
 
-// const Logging = require('../logging');
+const Logging = require('../logging');
 const Shared = require('./shared');
 const Helpers = require('../helpers');
 const shortId = require('../helpers').shortId;
@@ -25,17 +25,21 @@ const Sugar = require('sugar');
  **********************************************************************************/
 
 class SchemaModel {
-	constructor(schemaData, app, datastore) {
+	constructor(schemaData, app) {
 		this.schemaData = schemaData;
 		this.flatSchemaData = Helpers.getFlattenedSchema(this.schemaData);
 
 		this.app = app || null;
 
 		this.appShortId = (app) ? shortId(app._id) : null;
+	}
 
+	initAdapter(datastore) {
 		if (datastore) {
+			Logging.logSilly(`initAdapter ${this.schemaData.collection}`);
 			this.adapter = datastore.adapter.cloneAdapterConnection();
-			this.adapter.setCollection(`${schemaData.collection}`);
+			this.adapter.connect();
+			this.adapter.setCollection(`${this.schemaData.collection}`);
 		}
 	}
 
@@ -175,7 +179,6 @@ class SchemaModel {
 							operand = this.createId(operand);
 						}
 						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
-							console.log(this);
 							operand = operand.map((o) => this.createId(o));
 						}
 					}

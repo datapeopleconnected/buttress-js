@@ -14,6 +14,7 @@ const Config = require('node-env-obj')();
 
 const NRP = require('node-redis-pubsub');
 
+const Helpers = require('../../helpers');
 const Schema = require('../../schema');
 const Model = require('..');
 
@@ -109,8 +110,8 @@ class AppDataSharingSchemaModel extends SchemaModel {
 	 * @param {Object} body - body passed through from a POST request
 	 * @return {Promise} - fulfilled with App Object when the database request is completed
 	 */
-	add(body) {
-		const appDataSharing = {
+	async add(body) {
+		const appDataSharingBody = {
 			id: this.createId(),
 			name: body.name,
 
@@ -131,29 +132,23 @@ class AppDataSharingSchemaModel extends SchemaModel {
 			_tokenId: null,
 		};
 
-		let _token = null;
-
-		return Model.Token.add({
+		const rxsToken = await Model.Token.add({
 			type: Model.Token.Constants.Type.DATA_SHARING,
 			authLevel: Model.Token.Constants.AuthLevel.USER,
 			permissions: [{route: '*', permission: '*'}],
 		}, {
 			_app: this.createId(body._appId),
-			_appDataSharingId: this.createId(appDataSharing.id),
-		})
-			.then((tokenCursor) => tokenCursor.next())
-			.then((token) => {
-				_token = token;
+			_appDataSharingId: this.createId(appDataSharingBody.id),
+		});
+		const token = await Helpers.streamFirst(rxsToken);
 
-				return super.add(appDataSharing, {
-					_appId: this.createId(body._appId),
-					_tokenId: token._id,
-				});
-			})
-			.then((cursor) => cursor.next())
-			.then((dataSharing) => {
-				return Promise.resolve({dataSharing: dataSharing, token: _token});
-			});
+		const rxsDataShare = await super.add(appDataSharingBody, {
+			_appId: this.createId(body._appId),
+			_tokenId: token._id,
+		});
+		const dataSharing = await Helpers.streamFirst(rxsDataShare);
+
+		return {dataSharing: dataSharing, token: token};
 	}
 
 	/**

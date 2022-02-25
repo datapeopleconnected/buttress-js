@@ -9,7 +9,10 @@
 		"BUTTRESS_HOST_URL": "",
 		"BUTTRESS_REST_LISTEN_PORT": "6000",
 		"BUTTRESS_SOCK_LISTEN_PORT": "6010",
-		"BUTTRESS_MONGO_URL": "",
+
+		"BUTTRESS_DATASTORE_CONNECTION_STRING": "",
+		"BUTTRESS_DATASTORE_OPTIONS": "appName=%BUTTRESS_APP_CODE%&maxPoolSize=100",
+
 		"BUTTRESS_REDIS_PORT": "6379",
 		"BUTTRESS_REDIS_HOST": "localhost",
 		"BUTTRESS_REST_APP": "primary",
@@ -40,8 +43,8 @@
 			"sock": "%BUTTRESS_SOCK_LISTEN_PORT%"
 		},
 		"datastore": {
-			"connectionString": "%BUTTRESS_MONGO_URL%",
-			"options": "appName=%BUTTRESS_APP_CODE%&maxPoolSize=100"
+			"connectionString": "%BUTTRESS_DATASTORE_CONNECTION_STRING%",
+			"options": "%BUTTRESS_DATASTORE_OPTIONS%"
 		},
 		"redis": {
 			"port": "%BUTTRESS_REDIS_PORT%",

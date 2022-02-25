@@ -24,6 +24,19 @@ class SchemaModelRemote extends SchemaModel {
 		this.remote = remote;
 	}
 
+	async initAdapter(localDataStore, remoteDatastore) {
+		if (localDataStore) {
+			this.local.adapter = localDataStore.adapter.cloneAdapterConnection();
+			await this.local.adapter.connect();
+			this.local.adapter.setCollection(`${this.schemaData.collection}`);
+		}
+		if (remoteDatastore) {
+			this.remote.adapter = remoteDatastore.adapter.cloneAdapterConnection();
+			await this.remote.adapter.connect();
+			this.remote.adapter.setCollection(`${this.schemaData.collection}`);
+		}
+	}
+
 	/**
 	 * @param {object} body
 	 * @return {Promise}
@@ -127,6 +140,14 @@ class SchemaModelRemote extends SchemaModel {
 	 */
 	count(query) {
 		return this.remote.count(query);
+	}
+
+	/**
+	 * @param {Object} query - mongoDB query
+	 * @return {Promise}
+	 */
+	drop() {
+		return this.local.drop();
 	}
 }
 
