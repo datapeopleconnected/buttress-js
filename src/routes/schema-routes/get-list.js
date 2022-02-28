@@ -79,7 +79,7 @@ module.exports = class GetList extends Route {
 			return [];
 		}
 
-		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
 		return this.model.find(validateResult.query, {}, true, 0, 0, {}, validateResult.project);
 	}
 };

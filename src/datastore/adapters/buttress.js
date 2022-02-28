@@ -11,9 +11,9 @@
  *
  */
 
-const Buttress = require('@buttress/api');
+const ButtressAPI = require('@buttress/api');
 
-const SchemaModel = require('../schemaModel');
+const AbstractAdapter = require('../abstract-adapter');
 
 /* ********************************************************************************
  *
@@ -21,41 +21,74 @@ const SchemaModel = require('../schemaModel');
  *
  **********************************************************************************/
 
-class SchemaModelButtress extends SchemaModel {
-	constructor(schemaData, app, dataSharing) {
-		super(schemaData, app);
+module.exports = class Buttress extends AbstractAdapter {
+	constructor(uri, options, connection = null) {
+		super(uri, options, connection);
+
+		this.connection = ButtressAPI.new();
+
+		// console.log(uri, options, connection);
 
 		// eslint-disable-next-line no-unused-vars
-		const [_, collection] = schemaData.remote.split('.');
+		// const [_, collection] = schemaData.remote.split('.');
 
-		this.endpoint = dataSharing.remoteApp.endpoint;
-		this.token = dataSharing.remoteApp.token;
-		this.apiPath = dataSharing.remoteApp.apiPath;
+		// this.endpoint = dataSharing.remoteApp.endpoint;
+		// this.token = dataSharing.remoteApp.token;
+		// this.apiPath = dataSharing.remoteApp.apiPath;
 
-		this.buttress = Buttress.new();
+		// this.buttress = ButtressAPI.new();
 
-		// Hack - Give a little time for another instance to get up to speed
-		// before trying to init
+		// // Hack - Give a little time for another instance to get up to speed
+		// // before trying to init
 
-		this.init = false;
-		this.initPendingResolve = [];
+		// this.init = false;
+		// this.initPendingResolve = [];
 
-		throw new Error('FOO');
+		// // TOOD: Handle the case we're another instance isn't available
+		// setTimeout(() => {
+		// 	this.buttress.init({
+		// 		buttressUrl: this.endpoint,
+		// 		appToken: this.token,
+		// 		apiPath: this.apiPath,
+		// 		allowUnauthorized: true, // WUT!?
+		// 	})
+		// 		.then(() => {
+		// 			this.collection = this.buttress.getCollection(collection);
+		// 			this.init = true;
+		// 			this.initPendingResolve.forEach((r) => r());
+		// 		});
+		// }, 500);
+	}
 
-		// TOOD: Handle the case we're another instance isn't available
-		setTimeout(() => {
-			this.buttress.init({
-				buttressUrl: this.endpoint,
-				appToken: this.token,
-				apiPath: this.apiPath,
-				allowUnauthorized: true, // WUT!?
-			})
-				.then(() => {
-					this.collection = this.buttress.getCollection(collection);
-					this.init = true;
-					this.initPendingResolve.forEach((r) => r());
-				});
-		}, 500);
+	async connect() {
+		if (this.init) return this.connection;
+
+		await this.connection.init({
+			buttressUrl: `https://${this.uri.host}`,
+			appToken: this.uri.searchParams.get('token'),
+			apiPath: this.uri.pathname,
+			allowUnauthorized: true, // WUT!?
+		});
+
+		// this.collection = this.buttress.getCollection(collection);
+		// this.setCollection(this.uri.pathname.replace(/\//g, ''));
+		this.init = true;
+		// this.initPendingResolve.forEach((r) => r());
+	}
+
+	cloneAdapterConnection() {
+		return new Buttress(this.uri, this.options, this.connection);
+	}
+
+	setCollection(collectionName) {
+		this.collection = this.connection.getCollection(collectionName);
+	}
+
+	createId(id) {
+		return new ObjectId(id);
+	}
+	isValidId(id) {
+		return true;
 	}
 
 	resolveAfterInit() {
@@ -75,11 +108,11 @@ class SchemaModelButtress extends SchemaModel {
 	}
 
 	/**
-	 * @param {object} id
-	 * @param {string} details
+	 * @param {object} details
+	 * @param {string} id
 	 * @return {Promise}
 	 */
-	update(id, details) {
+	update(details, id) {
 		return this.resolveAfterInit()
 			.then(() => this.collection.update(id, details));
 	}
@@ -141,18 +174,19 @@ class SchemaModelButtress extends SchemaModel {
 	/**
 	 * @param {Object} query - mongoDB query
 	 * @param {Object} excludes - mongoDB query excludes
+	 * @param {Boolean} stream - should return a stream
 	 * @param {Int} limit - should return a stream
 	 * @param {Int} skip - should return a stream
 	 * @param {Object} sort - mongoDB sort object
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {Promise} - resolves to an array of docs
 	 */
-	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+	find(query, excludes = {}, stream = false, limit = 0, skip = 0, sort, project = null) {
 		// Logging.logSilly(`find: ${this.collectionName} ${query}`);
 
 		// Stream this?
 		return this.resolveAfterInit()
-			.then(() => this.collection.search(query, limit, skip, sort, {project}));
+			.then(() => this.collection.search(query, limit, skip, sort, project));
 	}
 
 	/**
@@ -180,6 +214,12 @@ class SchemaModelButtress extends SchemaModel {
 		return this.resolveAfterInit()
 			.then(() => this.collection.count(query));
 	}
-}
 
-module.exports = SchemaModelButtress;
+	/**
+	 * @return {Promise}
+	 */
+	drop() {
+		return this.resolveAfterInit()
+			.then(() => this.collection.removeAll());
+	}
+};

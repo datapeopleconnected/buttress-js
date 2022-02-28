@@ -20,15 +20,14 @@ const sioClient = require('socket.io-client');
 const redisAdapter = require('@socket.io/redis-adapter');
 const {Emitter} = require('@socket.io/redis-emitter');
 
-const MongoClient = require('mongodb').MongoClient;
-const ObjectId = require('mongodb').ObjectId;
-
 const NRP = require('node-redis-pubsub');
 
 const Config = require('node-env-obj')();
 
 const Model = require('./model');
 const Logging = require('./logging');
+
+const Datastore = require('./datastore');
 
 class BootstrapSocket {
 	constructor() {
@@ -49,16 +48,32 @@ class BootstrapSocket {
 
 		this.emitter = null;
 
-		let socketInitTask = null;
+		this.primaryDatastore = new Datastore(Config.datastore);
+
+		// let socketInitTask = null;
+		// if (cluster.isMaster) {
+		// 	socketInitTask = (db) => this.__initMaster(db);
+		// } else {
+		// 	socketInitTask = (db) => this.__initWorker(db);
+		// }
+
+		// return this.__nativeMongoConnect()
+		// 	.then(socketInitTask)
+		// 	.then(() => cluster.isMaster);
+	}
+
+	async init() {
+		await this.primaryDatastore.connect();
+
+		await Model.init(this.primaryDatastore);
+
 		if (cluster.isMaster) {
-			socketInitTask = (db) => this.__initMaster(db);
+			await this.__initMaster();
 		} else {
-			socketInitTask = (db) => this.__initWorker(db);
+			await this.__initWorker();
 		}
 
-		return this.__nativeMongoConnect()
-			.then(socketInitTask)
-			.then(() => cluster.isMaster);
+		return cluster.isMaster;
 	}
 
 	async __initMaster(db) {
@@ -75,8 +90,6 @@ class BootstrapSocket {
 				await this.__createDataShareConnection(dataShare);
 			});
 		}
-
-		await this.__initMongoConnect();
 
 		const apps = await Model.App.findAll();
 
@@ -127,8 +140,6 @@ class BootstrapSocket {
 			},
 		});
 
-		await this.__initMongoConnect();
-
 		// As of v7, the library will no longer create Redis clients on behalf of the user.
 		const redisClient = createClient(Config.redis);
 		io.adapter(redisAdapter(redisClient, redisClient.duplicate()));
@@ -163,7 +174,7 @@ class BootstrapSocket {
 			if (token.type === 'dataSharing') {
 				Logging.logDebug(`Fetching data share with tokenId: ${token._id}`);
 				const dataShare = await Model.AppDataSharing.findOne({
-					_tokenId: new ObjectId(token._id),
+					_tokenId: this.primaryDatastore.createId(token._id),
 					active: true,
 				});
 				if (!dataShare) {
@@ -354,22 +365,6 @@ class BootstrapSocket {
 		socket.on('disconnect', () => {
 			Logging.logSilly(`Disconnected from ${url} with id ${socket.id}`);
 		});
-	}
-
-	async __nativeMongoConnect() {
-		const dbName = `${Config.app.code}-${Config.env}`;
-		const mongoUrl = `mongodb://${Config.mongoDb.url}`;
-		Logging.logDebug(`Attempting connection to ${mongoUrl}`);
-
-		const client = await MongoClient.connect(mongoUrl, Config.mongoDb.options);
-
-		return await client.db(dbName);
-	}
-
-	async __initMongoConnect() {
-		const db = await this.__nativeMongoConnect();
-		await Model.init(db);
-		return db;
 	}
 }
 

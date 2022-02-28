@@ -24,6 +24,19 @@ class SchemaModelRemote extends SchemaModel {
 		this.remote = remote;
 	}
 
+	async initAdapter(localDataStore, remoteDatastore) {
+		if (localDataStore) {
+			this.local.adapter = localDataStore.adapter.cloneAdapterConnection();
+			await this.local.adapter.connect();
+			this.local.adapter.setCollection(`${this.schemaData.collection}`);
+		}
+		if (remoteDatastore) {
+			this.remote.adapter = remoteDatastore.adapter.cloneAdapterConnection();
+			await this.remote.adapter.connect();
+			this.remote.adapter.setCollection(`${this.schemaData.collection}`);
+		}
+	}
+
 	/**
 	 * @param {object} body
 	 * @return {Promise}
@@ -42,7 +55,7 @@ class SchemaModelRemote extends SchemaModel {
 	update(details, id) {
 		// Seperate local updates from remote
 
-		return this.remote.update(details, id);
+		return this.remote.updateById(id, details);
 	}
 
 	/**
@@ -96,15 +109,14 @@ class SchemaModelRemote extends SchemaModel {
 	/**
 	 * @param {Object} query - mongoDB query
 	 * @param {Object} excludes - mongoDB query excludes
-	 * @param {Boolean} stream - should return a stream
 	 * @param {Int} limit - should return a stream
 	 * @param {Int} skip - should return a stream
 	 * @param {Object} sort - mongoDB sort object
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {Promise} - resolves to an array of docs
 	 */
-	find(query, excludes = {}, stream = false, limit = 0, skip = 0, sort, project = null) {
-		return this.remote.find(query, excludes, stream, limit, skip, sort, project);
+	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+		return this.remote.find(query, excludes, limit, skip, sort, project);
 	}
 
 	/**
@@ -128,6 +140,14 @@ class SchemaModelRemote extends SchemaModel {
 	 */
 	count(query) {
 		return this.remote.count(query);
+	}
+
+	/**
+	 * @param {Object} query - mongoDB query
+	 * @return {Promise}
+	 */
+	drop() {
+		return this.local.drop();
 	}
 }
 

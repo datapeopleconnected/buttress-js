@@ -11,11 +11,12 @@
  *
  */
 
-const ObjectId = require('mongodb').ObjectId;
-// const Logging = require('../logging');
+const Logging = require('../logging');
 const Shared = require('./shared');
 const Helpers = require('../helpers');
 const shortId = require('../helpers').shortId;
+
+const Sugar = require('sugar');
 
 /* ********************************************************************************
  *
@@ -31,6 +32,19 @@ class SchemaModel {
 		this.app = app || null;
 
 		this.appShortId = (app) ? shortId(app._id) : null;
+	}
+
+	initAdapter(datastore) {
+		if (datastore) {
+			Logging.logSilly(`initAdapter ${this.schemaData.collection}`);
+			this.adapter = datastore.adapter.cloneAdapterConnection();
+			this.adapter.connect();
+			this.adapter.setCollection(`${this.schemaData.collection}`);
+		}
+	}
+
+	createId(id) {
+		return this.adapter.createId(id);
 	}
 
 	__doValidation(body) {
@@ -59,13 +73,12 @@ class SchemaModel {
 	}
 
 	/**
-	 * @static
 	 * @param {object} query
 	 * @param {object} [envFlat={}]
 	 * @param {object} [schemaFlat={}]
 	 * @return {object} query
 	 */
-	static parseQuery(query, envFlat = {}, schemaFlat = {}) {
+	parseQuery(query, envFlat = {}, schemaFlat = {}) {
 		const output = {};
 
 		for (let property in query) {
@@ -74,9 +87,9 @@ class SchemaModel {
 			const command = query[property];
 
 			if (property === '$or' && Array.isArray(command) && command.length > 0) {
-				output['$or'] = command.map((q) => SchemaModel.parseQuery(q, envFlat, schemaFlat));
+				output['$or'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
 			} else if (property === '$and' && Array.isArray(command) && command.length > 0) {
-				output['$and'] = command.map((q) => SchemaModel.parseQuery(q, envFlat, schemaFlat));
+				output['$and'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
 			} else {
 				for (let operator in command) {
 					if (!{}.hasOwnProperty.call(command, operator)) continue;
@@ -145,13 +158,13 @@ class SchemaModel {
 					}
 
 					if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
-						operand = SchemaModel.parseQuery(operand, envFlat, propSchema.__schema);
+						operand = this.parseQuery(operand, envFlat, propSchema.__schema);
 					} else if (propSchema) {
 						if (propSchema.__type === 'array' && propSchema.__schema) {
 							Object.keys(operand).forEach((op) => {
 								if (propSchema.__schema[op].__type === 'id') {
 									Object.keys(operand[op]).forEach((key) => {
-										operand[op][key] = new ObjectId(operand[op][key]);
+										operand[op][key] = this.createId(operand[op][key]);
 									});
 								}
 							});
@@ -162,10 +175,10 @@ class SchemaModel {
 						}
 
 						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {
-							operand = new ObjectId(operand);
+							operand = this.createId(operand);
 						}
 						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
-							operand = operand.map((o) => new ObjectId(o));
+							operand = operand.map((o) => this.createId(o));
 						}
 					}
 
@@ -233,34 +246,24 @@ class SchemaModel {
 
 						let propertyQuery = {};
 						propertyQuery[propertyPath] = query[command];
-						propertyQuery = SchemaModel.parseQuery(propertyQuery, env);
+						propertyQuery = this.parseQuery(propertyQuery, env);
 
 						const fields = {};
 						fields[propertyPath] = true;
 
 						tasks.push(() => {
-							const result = collection.find(propertyQuery, fields);
+							const rxsResult = collection.find(propertyQuery, fields);
 
-							if (Helpers.isCursor(result)) {
-								return new Promise((resolve) => {
-									const stream = result.stream();
-									if (!env[property]) env[property] = [];
+							return new Promise((resolve) => {
+								if (!env[property]) env[property] = [];
 
-									stream.on('data', (res) => {
-										// Map fetched properties into a array.
-										env[property].push(res[propertyMap]);
-										// Hack - Flattern any sub arrays down to the single level.
-										env[property] = [].concat(...env[property]);
-									});
-									stream.once('end', () => resolve());
+								rxsResult.on('data', (res) => {
+									// Map fetched properties into a array.
+									env[property].push(res[propertyMap]);
+									// Hack - Flattern any sub arrays down to the single level.
+									env[property] = [].concat(...env[property]);
 								});
-							}
-
-							return result.then((res) => {
-								// Map fetched properties into a array.
-								env[property] = res.map((i) => i[propertyMap]);
-								// Hack - Flattern any sub arrays down to the single level.
-								env[property] = [].concat(...env[property]);
+								rxsResult.once('end', () => resolve());
 							});
 						});
 					} else {
@@ -272,21 +275,49 @@ class SchemaModel {
 
 		// Engage.
 		return tasks.reduce((prev, task) => prev.then(() => task()), Promise.resolve())
-			.then(() => SchemaModel.parseQuery(roles.schema.authFilter.query, env, this.flatSchemaData));
+			.then(() => this.parseQuery(roles.schema.authFilter.query, env, this.flatSchemaData));
+	}
+
+	/*
+	* @param {Object} body - body passed through from a POST request
+	* @return {Promise} - returns a promise that is fulfilled when the database request is completed
+	*/
+	__parseAddBody(body, internals) {
+		const entity = Object.assign({}, internals);
+
+		if (body.id) {
+			entity._id = this.adapter.createId(body.id);
+		}
+
+		if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {
+			entity.createdAt = Sugar.Date.create();
+			entity.updatedAt = (body.updatedAt) ? Sugar.Date.create(body.updatedAt) : null;
+		}
+
+		const validated = Shared.applyAppProperties(this.schemaData, body);
+
+		return Object.assign(validated, entity);
+	}
+	add(body, internals) {
+		return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
 	}
 
 	/**
-	 * @throws Error
+	 * @param {*} query
+	 * @param {*} update
+	 * @return {promise}
 	 */
-	add() {
-		throw new Error('not yet implemented');
+	update(query, update) {
+		return this.adapter.update(query, update);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {*} id
+	 * @param {*} query
+	 * @return {promise}
 	 */
-	update() {
-		throw new Error('not yet implemented');
+	updateById(id, query) {
+		return this.adapter.updateById(id, query);
 	}
 
 	/**
@@ -303,9 +334,7 @@ class SchemaModel {
 	 * @param {string} id
 	 * @return {promise}
 	 */
-	updateByPath(body, id) {
-		const sharedFn = Shared.updateByPath({}, this.schemaData, this.collection);
-
+	async updateByPath(body, id) {
 		if (body instanceof Array === false) {
 			body = [body];
 		}
@@ -318,84 +347,118 @@ class SchemaModel {
 			});
 		}
 
-		return sharedFn(body, id);
+		// const schema = __getCollectionSchema(collectionName);
+		const flattenedSchema = this.schemaData ? Helpers.getFlattenedSchema(this.schemaData) : false;
+		const extendedPathContext = Shared.extendPathContext({}, flattenedSchema, '');
+
+		return await body.reduce(async (prev, update) => {
+			const arr = await prev;
+			const config = flattenedSchema === false ? false : flattenedSchema[update.path];
+			return arr.concat([
+				await this.adapter.batchUpdateProcess(id, update, extendedPathContext[update.contextPath], config),
+			]);
+		}, Promise.resolve([]));
 	}
 
 	/**
-	 * @throws Error
+	 * @param {*} id
+	 * @param {*} extra
+	 * @return {Promise}
 	 */
-	exists() {
-		throw new Error('not yet implemented');
+	exists(id, extra = {}) {
+		return this.adapter.exists(id, extra);
 	}
 
 	/**
-	 * @throws Error
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	isDuplicate() {
-		throw new Error('not yet implemented');
+		return this.adapter.isDuplicate();
 	}
 
 	/**
-	 * @throws Error
+	 * @param {string} id - id to be deleted
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rm() {
-		throw new Error('not yet implemented');
+	rm(id) {
+		return this.adapter.rm(id);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Array} ids - Array of entity ids to delete
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rmBulk() {
-		throw new Error('not yet implemented');
+	rmBulk(ids) {
+		return this.adapter.rmBulk(ids);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Object} query - mongoDB query
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rmAll() {
-		throw new Error('not yet implemented');
+	rmAll(query) {
+		return this.adapter.rmAll(query);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {String} id - entity id to get
+	 * @return {Promise} - resolves to an array of Companies
 	 */
-	findById() {
-		throw new Error('not yet implemented');
+	findById(id) {
+		return this.adapter.findById(id);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Object} query - mongoDB query
+	 * @param {Object} excludes - mongoDB query excludes
+	 * @param {Int} limit - should return a stream
+	 * @param {Int} skip - should return a stream
+	 * @param {Object} sort - mongoDB sort object
+	 * @param {Boolean} project - mongoDB project ids
+	 * @return {ReadableStream} - stream
 	 */
-	find() {
-		throw new Error('not yet implemented');
+	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+		const test = this.adapter.find(query, excludes, limit, skip, sort, project);
+		return test;
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Object} query - mongoDB query
+	 * @param {Object} excludes - mongoDB query excludes
+	 * @return {Promise} - resolves to an array of docs
 	 */
-	findOne() {
-		throw new Error('not yet implemented');
+	findOne(query, excludes = {}) {
+		return this.adapter.findOne(query, excludes);
 	}
 
 	/**
-	 * @throws Error
+	 * @return {Promise} - resolves to an array of Companies
 	 */
 	findAll() {
-		throw new Error('not yet implemented');
+		return this.adapter.findAll();
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Array} ids - Array of entities ids to get
+	 * @return {Promise} - resolves to an array of Companies
 	 */
-	findAllById() {
-		throw new Error('not yet implemented');
+	findByIds(ids) {
+		return this.adapter.findAllById(ids);
 	}
 
 	/**
-	 * @throws Error
+	 * @param {Object} query - mongoDB query
+	 * @return {Promise} - resolves to an array of Companies
 	 */
-	count() {
-		throw new Error('not yet implemented');
+	count(query) {
+		return this.adapter.count(query);
+	}
+
+	/**
+	 * @return {Promise}
+	 */
+	drop() {
+		return this.adapter.drop();
 	}
 }
 

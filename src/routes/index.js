@@ -40,7 +40,7 @@ class Routes {
 	 * Init core routes & app schema
 	 * @return {promise}
 	 */
-	initRoutes() {
+	async initRoutes() {
 		this.app.get('/favicon.ico', (req, res, next) => res.sendStatus(404));
 		this.app.get(['/', '/index.html'], (req, res, next) => res.sendFile(path.join(__dirname, '../static/index.html')));
 
@@ -113,12 +113,17 @@ class Routes {
 
 		this._registerRouter('core', coreRouter);
 
-		return Model.App.findAll().toArray()
-			.then((apps) => apps.forEach((app) => this._generateAppRoutes(app)))
-			.then(() => this.loadAttributes())
-			.then(() => this.loadTokens())
-			.then(() => this.app.use((err, req, res, next) => this.logErrors(err, req, res, next)))
-			.then(() => Logging.logSilly(`init:registered-routes`));
+		await this.loadTokens();
+        await this.loadAttributes();
+
+		Logging.logSilly(`init:registered-routes`);
+	}
+
+	async initAppRoutes() {
+		const rxsApps = Model.App.findAll();
+		for await (const app of rxsApps) {
+			this._generateAppRoutes(app);
+		}
 	}
 
 	/**
@@ -150,6 +155,8 @@ class Routes {
 		Logging.logSilly(`Routes:_registerRouter Register ${key}`);
 		this._routerMap[key] = router;
 		this.app.use('', (...args) => this._getRouter(key)(...args));
+
+		this.app.use((err, req, res, next) => this.logErrors(err, req, res, next));
 	}
 
 	/**
@@ -323,7 +330,7 @@ class Routes {
 	 * @param  {String} req - request object
 	 * @return {Promise} - resolves with the matching token if any
 	 */
-	_getToken(req) {
+	async _getToken(req) {
 		Logging.logTimer('_getToken:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		let token = null;
 
@@ -331,20 +338,16 @@ class Routes {
 			token = this._lookupToken(this._tokens, req.query.token);
 			if (token) {
 				Logging.logTimer('_getToken:end-cache', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				return Promise.resolve(token);
+				return token;
 			}
 		}
 
-		return new Promise((resolve) => {
-			Model.Token.findAll().toArray()
-				.then((tokens) => {
-					this._tokens = tokens;
-					Model.appMetadataChanged = false;
-					token = this._lookupToken(this._tokens, req.query.token);
-					Logging.logTimer('_getToken:end-lookup', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-					return resolve(token);
-				});
-		});
+		await this.loadTokens();
+
+		Model.appMetadataChanged = false;
+		token = this._lookupToken(this._tokens, req.query.token);
+		Logging.logTimer('_getToken:end-lookup', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		return token;
 	}
 
 	/**
@@ -362,11 +365,15 @@ class Routes {
 	 * @return {Promise} - resolves with tokens
 	 * @private
 	 */
-	loadTokens() {
-		return Model.Token.findAll().toArray()
-			.then((tokens) => {
-				this._tokens = tokens;
-			});
+	async loadTokens() {
+		const tokens = [];
+		const rxsToken = Model.Token.findAll();
+
+		for await (const token of rxsToken) {
+			tokens.push(token);
+		}
+
+		this._tokens = tokens;
 	}
 
 	/**
@@ -450,6 +457,7 @@ class Routes {
 	}
 
 	logErrors(err, req, res, next) {
+		Logging.logSilly(`logErrors ${err}`);
 		if (err instanceof Helpers.Errors.RequestError) {
 			res.status(err.code).json({statusMessage: err.message, message: err.message});
 		} else {

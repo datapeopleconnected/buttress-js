@@ -14,7 +14,6 @@ const Errors = require('./helpers/errors');
 
 const stream = require('stream');
 const Transform = stream.Transform;
-const {ObjectId, AbstractCursor, FindCursor, AggregationCursor, ListCollectionsCursor} = require('mongodb');
 
 module.exports.Errors = Errors;
 
@@ -204,24 +203,24 @@ const __flattenRoles = (data, path) => {
 };
 module.exports.flattenRoles = __flattenRoles;
 
-const __flatternObject = (obj, output, paths) => {
-	if (!output) output = {};
-	if (!paths) paths = [];
+// const __flatternObject = (obj, output, paths) => {
+// 	if (!output) output = {};
+// 	if (!paths) paths = [];
 
-	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
-		paths.push(key);
-		if (typeof obj[key] === 'object' && ObjectId.isValid(obj[key])) {
-			out[paths.join('.')] = obj[key];
-		} else if (typeof obj[key] === 'object') {
-			__flatternObject(obj[key], out, paths);
-		} else {
-			out[paths.join('.')] = obj[key];
-		}
-		paths.pop();
-		return out;
-	}, output);
-};
-module.exports.flatternObject = __flatternObject;
+// 	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
+// 		paths.push(key);
+// 		if (typeof obj[key] === 'object' && ObjectId.isValid(obj[key])) {
+// 			out[paths.join('.')] = obj[key];
+// 		} else if (typeof obj[key] === 'object') {
+// 			__flatternObject(obj[key], out, paths);
+// 		} else {
+// 			out[paths.join('.')] = obj[key];
+// 		}
+// 		paths.pop();
+// 		return out;
+// 	}, output);
+// };
+// module.exports.flatternObject = __flatternObject;
 
 const __getFlattenedSchema = (schema) => {
 	const __buildFlattenedSchema = (property, parent, path, flattened) => {
@@ -275,10 +274,11 @@ const __getFlattenedSchema = (schema) => {
 };
 module.exports.getFlattenedSchema = __getFlattenedSchema;
 
-const isCursor = (r) => (
-	r instanceof AbstractCursor ||
-	r instanceof FindCursor ||
-	r instanceof AggregationCursor ||
-	r instanceof ListCollectionsCursor
-);
-module.exports.isCursor = isCursor;
+module.exports.streamFirst = (stream) => {
+	return new Promise((resolve) => {
+		stream.on('data', (item) => {
+			stream.destroy();
+			resolve(item);
+		});
+	});
+};

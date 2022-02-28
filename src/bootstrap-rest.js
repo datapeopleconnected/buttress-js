@@ -25,9 +25,10 @@ const Model = require('./model');
 const Routes = require('./routes');
 const Logging = require('./logging');
 const Schema = require('./schema');
-const MongoClient = require('mongodb').MongoClient;
 const NRP = require('node-redis-pubsub');
 const shortId = require('./helpers').shortId;
+
+const Datastore = require('./datastore');
 
 morgan.token('id', (req) => req.id);
 
@@ -45,70 +46,68 @@ class BootstrapRest {
 
 		this.id = (cluster.isMaster) ? 'MASTER' : cluster.worker.id;
 
-		let restInitTask = null;
-		if (cluster.isMaster) {
-			restInitTask = (db) => this.__initMaster(db);
-		} else {
-			restInitTask = (db) => this.__initWorker(db);
-		}
-
-		return this.__nativeMongoConnect()
-			.then(restInitTask)
-			.then(() => cluster.isMaster);
+		this.primaryDatastore = Datastore.createInstance(Config.datastore);
 	}
 
-	async __initMaster(db) {
-		const isPrimary = Config.rest.app === 'primary';
-		let initMasterTask = Promise.resolve();
-
-		if (isPrimary) {
-			Logging.logVerbose(`Primary Master REST`);
-			initMasterTask = Model.initCoreModels(db)
-				.then(() => this.__systemInstall())
-				.then(() => Model.App.findAll().toArray())
-				.then((apps) => this.__updateAppSchema(apps))
-				.then(() => Model.initSchema())
-				.catch((e) => Logging.logError(e));
+	async init() {
+		await this.primaryDatastore.connect();
+		if (cluster.isMaster) {
+			await this.__initMaster();
 		} else {
-			Logging.logVerbose(`Secondary Master REST`);
+			await this.__initWorker();
 		}
+
+		return cluster.isMaster;
+	}
+
+	async __initMaster() {
+		const isPrimary = Config.rest.app === 'primary';
 
 		const nrp = new NRP(Config.redis);
 		nrp.on('app-schema:updated', (data) => {
-			Logging.logDebug(`App Schema Updated: ${data.appId}, notifying ${this.workers.length} Workers`);
-			this.workers.forEach((w) => w.send({
+			Logging.logDebug(`App Schema Updated: ${data.appId}`);
+			this.notifyWorkers({
 				type: 'app-schema:updated',
 				appId: data.appId,
-			}));
+			});
 		});
-		nrp.on('app-routes:bust-cache', (data) => {
-			Logging.logDebug(`App Routes: Bust token cache, notifying ${this.workers.length} Workers`);
-			this.workers.forEach((w) => w.send({
+		nrp.on('app-routes:bust-cache', () => {
+			Logging.logDebug(`App Routes: Bust token cache`);
+			this.notifyWorkers({
 				type: 'app-routes:bust-cache',
-			}));
+			});
 		});
 
 		nrp.on('app-routes:bust-attribute-cache', (data) => {
 			Logging.logDebug(`App Routes: Bust attributes cache for ${data.appId}, notifying ${this.workers.length} Workers`);
-			this.workers.forEach((w) => w.send({
+			this.notifyWorkers({
 				type: 'app-routes:bust-attribute-cache',
 				appId: data.appId,
 			}));
 		});
 
-		return initMasterTask
-			.then(() => this.__spawnWorkers());
-		await initMasterTask;
+		if (isPrimary) {
+			Logging.logVerbose(`Primary Master REST`);
+			await Model.initCoreModels();
+			await this.__systemInstall();
+			await this.__updateAppSchema();
+		} else {
+			Logging.logVerbose(`Secondary Master REST`);
+		}
 
 		if (this.workerProcesses === 0) {
 			Logging.logWarn(`Running in SINGLE Instance mode, BUTTRESS_APP_WORKERS has been set to 0`);
-			await this.__initWorker(db);
+			await this.__initWorker();
 		} else {
 			await this.__spawnWorkers();
 		}
+
+		if (isPrimary) {
+			// await Model.initSchema();
+		}
 	}
 
-	__initWorker(db) {
+	async __initWorker() {
 		const app = express();
 		app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 		app.enable('trust proxy', 1);
@@ -126,44 +125,47 @@ class BootstrapRest {
 			Logging.logError(error);
 		});
 
-		process.on('message', async (payload) => {
-			if (payload.type === 'app-schema:updated') {
-				Logging.logDebug(`App Schema Updated: ${payload.appId}`);
-				await Model.initSchema(db);
-				await this.routes.regenerateAppRoutes(payload.appId);
-				Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
-			} else if (payload.type === 'app-routes:bust-cache') {
-				// TODO: Maybe do this better than
-				Logging.logDebug(`App Routes: cache bust`);
-				await this.routes.loadTokens();
-				this.routes.loadTokens();
-			} else if (payload.type === 'app-routes:bust-attribute-cache') {
-				Logging.logDebug(`App Routes: attributes cache bust`);
-				await this.routes.loadAttributes(payload.appId);
-			}
-		});
+		process.on('message', (payload) => this.handleProcessMessage(payload));
 
-		return Model.init(db)
-			.then(() => {
-				const localSchema = this._getLocalSchemas();
-				Model.App.setLocalSchema(localSchema);
+		await Model.initCoreModels();
 
-				this.routes = new Routes(app);
+		const localSchema = this._getLocalSchemas();
+		Model.App.setLocalSchema(localSchema);
 
-				return this.routes.initRoutes();
-			})
-			.then(() => app.listen(Config.listenPorts.rest))
-			.catch(Logging.Promise.logError());
+		this.routes = new Routes(app);
+
+		await this.routes.initRoutes();
+
+		await app.listen(Config.listenPorts.rest);
+
+		await Model.initSchema();
+		await this.routes.initAppRoutes();
 	}
 
-	__nativeMongoConnect() {
-		const dbName = `${Config.app.code}-${Config.env}`;
-		const mongoUrl = `mongodb://${Config.mongoDb.url}`;
-		Logging.logDebug(`Attempting connection to ${mongoUrl}`);
+	async notifyWorkers(payload) {
+		if (this.workerProcesses > 0) {
+			Logging.logDebug(`notifying ${this.workers.length} Workers`);
+			this.workers.forEach((w) => w.send(payload));
+		} else {
+			Logging.logSilly(`single instance mode notification`);
+			await this.handleProcessMessage(payload);
+		}
+	}
 
-		return MongoClient.connect(mongoUrl, Config.mongoDb.options)
-			.then((client) => client.db(dbName))
-			.catch(Logging.Promise.logError());
+	async handleProcessMessage(payload) {
+		if (payload.type === 'app-schema:updated') {
+			Logging.logDebug(`App Schema Updated: ${payload.appId}`);
+			await Model.initSchema();
+			await this.routes.regenerateAppRoutes(payload.appId);
+			Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
+		} else if (payload.type === 'app-routes:bust-cache') {
+			// TODO: Maybe do this better than
+			Logging.logDebug(`App Routes: cache bust`);
+			await this.routes.loadTokens();
+		} else if (payload.type === 'app-routes:bust-attribute-cache') {
+            Logging.logDebug(`App Routes: attributes cache bust`);
+            await this.routes.loadAttributes(payload.appId);
+        }
 	}
 
 	__spawnWorkers() {
@@ -178,48 +180,36 @@ class BootstrapRest {
 		}
 	}
 
-	__systemInstall() {
-		let isInstalled = false;
-
+	async __systemInstall() {
 		Logging.log('Checking for existing apps.');
 
-		return Model.App.findAll().toArray()
-			.then((apps) => {
-				if (apps.length > 0) {
-					isInstalled = true;
-					Logging.log('Existing apps found - Skipping install.');
-					return {app: apps[0], token: null}; // If any apps, assume we've got a Super Admin app
-				}
+		const appCount = await Model.App.count();
 
-				Logging.log('No apps found - Creating super app.');
-				return Model.App.add({
-					name: `${Config.app.title} ADMIN`,
-					type: Model.App.Constants.Type.SERVER,
-					authLevel: Model.Token.Constants.AuthLevel.SUPER,
-					permissions: [{route: '*', permission: '*'}],
-					apiPath: 'bjs',
-					domain: '',
-				});
-			})
-			.then((res) => {
-				if (isInstalled) {
-					return res.app;
-				}
+		if (appCount > 0) {
+			Logging.log('Existing apps found - Skipping install.');
+			return;
+		}
 
-				const pathName = path.join(Config.paths.appData, 'super.json');
-				Logging.log(`Super app created: ${res.app.id}`);
-				return new Promise((resolve, reject) => {
-					const app = Object.assign(res.app, {token: res.token.value});
-					fs.writeFile(pathName, JSON.stringify(app), (err) => {
-						if (err) {
-							return reject(err);
-						}
-						Logging.log(`Created ${pathName}`);
+		const res = await Model.App.add({
+			name: `${Config.app.title} TEST`,
+			type: Model.App.Constants.Type.SERVER,
+			authLevel: Model.Token.Constants.AuthLevel.SUPER,
+			permissions: [{route: '*', permission: '*'}],
+			apiPath: 'bjs',
+			domain: '',
+		});
 
-						resolve(res.app);
-					});
-				});
+		const pathName = path.join(Config.paths.appData, 'super.json');
+		Logging.log(`Super app created: ${res.app._id}`);
+
+		await new Promise((resolve, reject) => {
+			const app = Object.assign(res.app, {token: res.token.value});
+			fs.writeFile(pathName, JSON.stringify(app), (err) => {
+				if (err) return reject(err);
+				Logging.log(`Created ${pathName}`);
+				resolve();
 			});
+		});
 	}
 
 	/**
@@ -238,17 +228,16 @@ class BootstrapRest {
 		return files;
 	}
 
-	__updateAppSchema(apps) {
-		const schemaUpdates = [];
-
+	async __updateAppSchema() {
 		// Load local defined schemas into super app
 		const localSchema = this._getLocalSchemas();
 
 		// Add local schema to Model.App
 		Model.App.setLocalSchema(localSchema);
 
-		// Build a update queue for merging local schema with each app schema
-		apps.forEach((app) => {
+		const rxsApps = Model.App.findAll();
+
+		for await (const app of rxsApps) {
 			const appSchema = Schema.decode(app.__schema);
 			const appShortId = shortId(app._id);
 			Logging.log(`Adding ${localSchema.length} local schema for ${appShortId}:${app.name}:${appSchema.length}`);
@@ -262,13 +251,8 @@ class BootstrapRest {
 				appSchema[appSchemaIdx] = schema;
 			});
 
-			schemaUpdates.push(() => Model.App.updateSchema(app._id, appSchema));
-		});
-
-		// Run update queue
-		return schemaUpdates.reduce((prev, task) => {
-			return prev.then(() => task());
-		}, Promise.resolve());
+			await Model.App.updateSchema(app._id, appSchema);
+		};
 	}
 }
 

@@ -57,7 +57,7 @@ module.exports = class SearchList extends Route {
 					query.$and.push(req.body.query);
 				}
 
-				return SchemaModel.parseQuery(query, {}, this.model.flatSchemaData);
+				return this.model.parseQuery(query, {}, this.model.flatSchemaData);
 			})
 			.then((query) => {
 				result.query = query;
@@ -66,7 +66,7 @@ module.exports = class SearchList extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return this.model.find(validateResult.query, {}, true,
+		return this.model.find(validateResult.query, {},
 			validateResult.limit, validateResult.skip, validateResult.sort, validateResult.project);
 	}
 };

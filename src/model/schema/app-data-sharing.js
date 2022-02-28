@@ -10,24 +10,25 @@
  * @author Tom Cahill
  */
 
-const ObjectId = require('mongodb').ObjectId;
 const Config = require('node-env-obj')();
 
 const NRP = require('node-redis-pubsub');
 
-const SchemaModelMongoDB = require('../type/mongoDB');
+const Helpers = require('../../helpers');
 const Schema = require('../../schema');
 const Model = require('..');
+
+const SchemaModel = require('../schemaModel');
 
 const nrp = new NRP(Config.redis);
 
 /**
  * @class AppDataSharingSchemaModel
  */
-class AppDataSharingSchemaModel extends SchemaModelMongoDB {
-	constructor(MongoDb) {
+class AppDataSharingSchemaModel extends SchemaModel {
+	constructor(datastore) {
 		const schema = AppDataSharingSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 
 		this._localSchema = null;
 	}
@@ -109,9 +110,9 @@ class AppDataSharingSchemaModel extends SchemaModelMongoDB {
 	 * @param {Object} body - body passed through from a POST request
 	 * @return {Promise} - fulfilled with App Object when the database request is completed
 	 */
-	add(body) {
-		const appDataSharing = {
-			id: new ObjectId(),
+	async add(body) {
+		const appDataSharingBody = {
+			id: this.createId(),
 			name: body.name,
 
 			active: false,
@@ -131,29 +132,23 @@ class AppDataSharingSchemaModel extends SchemaModelMongoDB {
 			_tokenId: null,
 		};
 
-		let _token = null;
-
-		return Model.Token.add({
+		const rxsToken = await Model.Token.add({
 			type: Model.Token.Constants.Type.DATA_SHARING,
 			authLevel: Model.Token.Constants.AuthLevel.USER,
 			permissions: [{route: '*', permission: '*'}],
 		}, {
-			_app: new ObjectId(body._appId),
-			_appDataSharingId: new ObjectId(appDataSharing.id),
-		})
-			.then((tokenCursor) => tokenCursor.next())
-			.then((token) => {
-				_token = token;
+			_app: this.createId(body._appId),
+			_appDataSharingId: this.createId(appDataSharingBody.id),
+		});
+		const token = await Helpers.streamFirst(rxsToken);
 
-				return super.add(appDataSharing, {
-					_appId: new ObjectId(body._appId),
-					_tokenId: token._id,
-				});
-			})
-			.then((cursor) => cursor.next())
-			.then((dataSharing) => {
-				return Promise.resolve({dataSharing: dataSharing, token: _token});
-			});
+		const rxsDataShare = await super.add(appDataSharingBody, {
+			_appId: this.createId(body._appId),
+			_tokenId: token._id,
+		});
+		const dataSharing = await Helpers.streamFirst(rxsDataShare);
+
+		return {dataSharing: dataSharing, token: token};
 	}
 
 	/**
@@ -174,16 +169,10 @@ class AppDataSharingSchemaModel extends SchemaModelMongoDB {
 			update.$set['dataSharing.localApp'] = policy;
 		}
 
-		return new Promise((resolve) => {
-			this.collection.updateOne({
-				'_id': new ObjectId(appDataSharingId),
-				'_appId': new ObjectId(appId),
-			}, update, {}, (err, object) => {
-				if (err) throw new Error(err);
-
-				resolve(object);
-			});
-		});
+		return this.update({
+			'_id': this.createId(appDataSharingId),
+			'_appId': this.createId(appId),
+		}, update);
 	}
 
 	/**
@@ -204,15 +193,9 @@ class AppDataSharingSchemaModel extends SchemaModelMongoDB {
 
 		nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
 
-		return new Promise((resolve) => {
-			this.collection.updateOne({
-				'_id': new ObjectId(appDataSharingId),
-			}, update, {}, (err, object) => {
-				if (err) throw new Error(err);
-
-				resolve(object);
-			});
-		});
+		return this.update({
+			'_id': this.createId(appDataSharingId),
+		}, update);
 	}
 }
 

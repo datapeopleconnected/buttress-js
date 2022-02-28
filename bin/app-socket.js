@@ -20,12 +20,12 @@ const Config = require('node-env-obj')({
 });
 
 const Logging = require('../src/logging');
-const Bootstrap = require('../src/bootstrap');
+const BootstrapSocket = require('../src/bootstrap-socket');
 
 Logging.init('SOCK');
 
-Bootstrap
-	.socket()
+const app = new BootstrapSocket();
+app.init()
 	.then((isMaster) => {
 		if (isMaster) {
 			Logging.log(`${Config.app.title} Socket Master v${Config.app.version} listening on port ` +

@@ -137,7 +137,6 @@ module.exports.captureOutput = (mode = false) => {
 	_captureOutput = mode;
 };
 module.exports.flush = () => {
-	console.log('-- Log captured during test:');
 	_captureOutputBuffer.forEach((line) => {
 		winston.log(line);
 	});

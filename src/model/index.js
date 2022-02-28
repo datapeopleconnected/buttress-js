@@ -17,9 +17,10 @@ const Sugar = require('sugar');
 const Schema = require('../schema');
 const shortId = require('../helpers').shortId;
 
+const Datastore = require('../datastore');
+
+const SchemaModel = require('./schemaModel');
 const SchemaModelRemote = require('./type/remote');
-const SchemaModelButtress = require('./type/buttress');
-const SchemaModelMongoDB = require('./type/mongoDB');
 
 /**
  * @param {string} model - name of the model to load
@@ -34,46 +35,51 @@ class Model {
 		this.models = {};
 		this.Schema = {};
 		this.Constants = {};
-		this.mongoDb = null;
 		this.app = false;
 		this.appMetadataChanged = false;
+
+		this.primaryDatastore = null;
 	}
 
-	init(db) {
-		this.mongoDb = db;
+	getDatastoreInstance() {
+		if (this.primaryDatastore) return;
+		this.primaryDatastore = Datastore.getInstance();
+	}
+
+	async init() {
+		this.getDatastoreInstance();
 
 		// Core Models
-		return this.initCoreModels()
-			.then(() => this.initSchema());
+		await this.initCoreModels();
+
+		await this.initSchema();
 	}
 
-	initCoreModels(db) {
-		return new Promise((resolve) => {
-			if (db) this.mongoDb = db;
-			// Core Models
-			const models = _getModels();
-			Logging.log(models, Logging.Constants.LogLevel.SILLY);
-			for (let x = 0; x < models.length; x++) {
-				this._initCoreModel(models[x]);
-			}
-			resolve();
-		});
+	async initCoreModels() {
+		this.getDatastoreInstance();
+
+		// Core Models
+		const models = _getModels();
+		Logging.log(models, Logging.Constants.LogLevel.SILLY);
+
+		for (let x = 0; x < models.length; x++) {
+			await this._initCoreModel(models[x]);
+		}
 	}
 
-	async initSchema(db) {
-		if (db) this.mongoDb = db;
+	async initSchema(datastore) {
+		this.getDatastoreInstance();
 
-		const apps = await this.models.App.findAll().toArray();
+		const rxsApps = this.models.App.findAll();
 
-		await apps.reduce(async (prev, app) => {
-			await prev;
+		for await (const app of rxsApps) {
 			if (!app || !app.__schema) return;
 
 			await Schema.buildCollections(Schema.decode(app.__schema)).reduce(async (prev, schema) => {
 				await prev;
 				await this._initSchemaModel(app, schema);
 			}, Promise.resolve());
-		}, Promise.resolve());
+		}
 	}
 
 	initModel(modelName) {
@@ -85,12 +91,13 @@ class Model {
 	 * @return {object} SchemaModel - initiated schema model built from passed schema object
 	 * @private
 	 */
-	_initCoreModel(model) {
+	async _initCoreModel(model) {
 		const name = Sugar.String.camelize(model);
 		const CoreSchemaModel = require(`./schema/${model.toLowerCase()}`);
 
 		if (!this.models[name]) {
-			this.models[name] = new CoreSchemaModel(this.mongoDb);
+			this.models[name] = new CoreSchemaModel();
+			await this.models[name].initAdapter(this.primaryDatastore);
 		}
 
 		this.__defineGetter__(name, () => this.models[name]);
@@ -129,16 +136,28 @@ class Model {
 					return;
 				}
 
+				let {endpoint, apiPath, token} = dataSharing.remoteApp;
+
+				if (endpoint) endpoint = endpoint.replace(/(https|http):\/\//ig, '');
+
+				// Create a remote datastore
+				const remoteDatastore = new Datastore.Class({
+					connectionString: `buttress://${endpoint}/${apiPath}?token=${token}`,
+					options: '',
+				});
+
 				this.models[name] = new SchemaModelRemote(
 					schemaData, app,
-					new SchemaModelMongoDB(this.mongoDb, schemaData, app),
-					new SchemaModelButtress(schemaData, app, dataSharing),
+					new SchemaModel(schemaData, app),
+					new SchemaModel(schemaData, app),
 				);
+				await this.models[name].initAdapter(this.primaryDatastore, remoteDatastore);
 
 				this.__defineGetter__(name, () => this.models[name]);
 				return this.models[name];
 			} else {
-				this.models[name] = new SchemaModelMongoDB(this.mongoDb, schemaData, app);
+				this.models[name] = new SchemaModel(schemaData, app, this.primaryDatastore);
+				await this.models[name].initAdapter(this.primaryDatastore);
 			}
 		}
 

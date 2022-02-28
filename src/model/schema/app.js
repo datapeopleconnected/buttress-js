@@ -11,7 +11,6 @@
  *
  */
 
-const ObjectId = require('mongodb').ObjectId;
 const Config = require('node-env-obj')();
 
 const NRP = require('node-redis-pubsub');
@@ -19,8 +18,9 @@ const NRP = require('node-redis-pubsub');
 const Model = require('../');
 const Schema = require('../../schema');
 const Logging = require('../../logging');
-const SchemaModelMongoDB = require('../type/mongoDB');
-const shortId = require('../../helpers').shortId;
+const Helpers = require('../../helpers');
+
+const SchemaModel = require('../schemaModel');
 
 const nrp = new NRP(Config.redis);
 
@@ -35,10 +35,10 @@ const Type = {
 	BROWSER: type[3],
 };
 
-class AppSchemaModel extends SchemaModelMongoDB {
-	constructor(MongoDb) {
+class AppSchemaModel extends SchemaModel {
+	constructor(datastore) {
 		const schema = AppSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 
 		this._localSchema = null;
 	}
@@ -94,9 +94,9 @@ class AppSchemaModel extends SchemaModelMongoDB {
 	 * @param {Object} body - body passed through from a POST request
 	 * @return {Promise} - fulfilled with App Object when the database request is completed
 	 */
-	add(body) {
-		const app = {
-			id: new ObjectId(),
+	async add(body) {
+		const appBody = {
+			id: this.createId(),
 			name: body.name,
 			type: body.type,
 			authLevel: body.authLevel,
@@ -104,28 +104,25 @@ class AppSchemaModel extends SchemaModelMongoDB {
 			domain: body.domain,
 			apiPath: body.apiPath,
 		};
-		let _token = null;
 
-		return Model.Token.add({
+		const rxsToken = await Model.Token.add({
 			type: Model.Token.Constants.Type.APP,
 			authLevel: body.authLevel,
 			permissions: body.permissions,
 		}, {
-			_app: new ObjectId(app.id),
-		})
-			.then((tokenCursor) => tokenCursor.next())
-			.then((token) => {
-				_token = token;
+			_app: this.createId(appBody.id),
+		});
+		const token = await Helpers.streamFirst(rxsToken);
 
-				nrp.emit('app-routes:bust-cache', {});
-				nrp.emit('app-schema:updated', {appId: app.id});
+		const rxsApp = await super.add(appBody, {_token: token._id});
+		const app = await Helpers.streamFirst(rxsApp);
 
-				return super.add(app, {_token: token._id});
-			})
-			.then((appCursor) => appCursor.next())
-			.then((app) => {
-				return Promise.resolve({app: app, token: _token});
-			});
+		Logging.logSilly(`Emitting app-routes:bust-cache`);
+		nrp.emit('app-routes:bust-cache', {});
+		Logging.logSilly(`Emitting app-schema:updated ${app.id}`);
+		nrp.emit('app-schema:updated', {appId: app.id});
+
+		return Promise.resolve({app: app, token: token});
 	}
 
 	/**
@@ -148,15 +145,12 @@ class AppSchemaModel extends SchemaModelMongoDB {
 		appSchema = Schema.encode(appSchema);
 		// this.__schema = appSchema;
 
-		return new Promise((resolve, reject) => {
-			this.collection.updateOne({_id: appId}, {$set: {__schema: appSchema}}, {}, (err, object) => {
-				if (err) throw new Error(err);
-
+		return super.update({_id: appId}, {$set: {__schema: appSchema}})
+			.then((res) => {
+				Logging.logSilly(`Emitting app-schema:updated ${appId}`);
 				nrp.emit('app-schema:updated', {appId: appId});
-
-				resolve(object);
+				return res;
 			});
-		});
 	}
 
 	setLocalSchema(schema) {
@@ -171,13 +165,7 @@ class AppSchemaModel extends SchemaModelMongoDB {
 	updateRoles(appId, roles) {
 		// nrp.emit('app-metadata:changed', {appId: appId});
 
-		return new Promise((resolve, reject) => {
-			this.collection.updateOne({_id: appId}, {$set: {__roles: roles}}, {}, (err, object) => {
-				if (err) throw new Error(err);
-
-				resolve(object);
-			});
-		});
+		return super.update({_id: appId}, {$set: {__roles: roles}});
 	}
 
 	/**
@@ -189,15 +177,14 @@ class AppSchemaModel extends SchemaModelMongoDB {
 		Logging.log(route, Logging.Constants.LogLevel.DEBUG);
 		Logging.log(permission, Logging.Constants.LogLevel.DEBUG);
 
-		return new Promise((resolve, reject) => {
-			this.getToken()
-				.then((token) => {
-					if (!token) {
-						return reject(new Error('No valid authentication token.'));
-					}
-					token.addOrUpdatePermission().then(resolve, reject);
-				});
-		});
+		return this.getToken()
+			.then((token) => {
+				if (!token) {
+					throw new Error('No valid authentication token.');
+				}
+
+				return token.addOrUpdatePermission();
+			});
 	}
 
 	/**
@@ -214,7 +201,7 @@ class AppSchemaModel extends SchemaModelMongoDB {
 	async rm(entity) {
 		await Model.AppDataSharing.rmAll({_appId: entity._id});
 
-		const appShortId = (entity) ? shortId(entity._id) : null;
+		const appShortId = (entity) ? Helpers.shortId(entity._id) : null;
 
 		// Delete Schema collections
 		if (appShortId) {

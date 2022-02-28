@@ -132,8 +132,8 @@ class Route {
 				return this._exec(req, res, validate);
 			})
 			.then((result) => this._respond(req, res, result))
-			.then((result) => this._logActivity(req, res, result))
-			.then((result) => this._boardcastByAppRole(req, res, result))
+			// .then((result) => this._logActivity(req, res, result))
+			// .then((result) => this._boardcastByAppRole(req, res, result))
 			.then(Logging.Promise.logTimer(`Route:exec:end`, this._timer, Logging.Constants.LogLevel.DEBUG, req.id));
 	}
 
@@ -146,8 +146,10 @@ class Route {
 	 */
 	_respond(req, res, result) {
 		req.timings.respond = req.timer.interval;
-		const isCursor = Helpers.isCursor(result);
-		Logging.logTimer(`_respond:start cursor:${isCursor}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+
+		const isReadStream = result instanceof Stream.Readable;
+
+		Logging.logTimer(`_respond:start isReadStream:${isReadStream}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
 
 		// Fetch app roles if they exist
 		let appRoles = null;
@@ -191,13 +193,6 @@ class Route {
 			return properties;
 		}, {});
 
-		let stream = result;
-		if (isCursor) {
-			stream = result.clone().stream();
-		}
-
-		const isReadStream = stream instanceof Stream.Readable;
-
 		if (isReadStream) {
 			let chunkCount = 0;
 			const stringifyStream = new Helpers.JSONStringifyStream({}, (chunk) => {
@@ -211,13 +206,13 @@ class Route {
 
 			Logging.logTimer(`_respond:start-stream`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
 
-			stream.once('end', () => {
+			result.once('end', () => {
 				// Logging.logTimerException(`PERF: STREAM DONE: ${this.path}`, req.timer, 0.05, req.id);
 				Logging.logTimer(`_respond:end-stream`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
 				this._close(req);
 			});
 
-			stream.pipe(stringifyStream).pipe(res);
+			result.pipe(stringifyStream).pipe(res);
 
 			return result;
 		}
@@ -337,13 +332,8 @@ class Route {
 	 */
 	_broadcast(req, res, result, role, path, isSuper = false) {
 		Logging.logTimer('_broadcast:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		let broadcastResult = result;
 
-		if (Helpers.isCursor(result)) {
-			broadcastResult = result.clone().stream();
-		}
-
-		const isReadStream = broadcastResult instanceof Stream.Readable;
+		const isReadStream = result instanceof Stream.Readable;
 
 		let filter = null;
 		let permissions = {};
@@ -407,14 +397,14 @@ class Route {
 		};
 
 		if (isReadStream) {
-			broadcastResult.on('data', (data) => {
+			result.on('data', (data) => {
 				emit(Helpers.Schema.prepareSchemaResult(data, dataDisposition, filter, permissions));
 			});
 			Logging.logTimer('_broadcast:end-stream', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
 		}
 
-		emit(Helpers.Schema.prepareSchemaResult(broadcastResult, dataDisposition, filter, permissions));
+		emit(Helpers.Schema.prepareSchemaResult(result, dataDisposition, filter, permissions));
 		Logging.logTimer('_broadcast:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
 

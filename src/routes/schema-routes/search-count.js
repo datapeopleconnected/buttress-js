@@ -55,7 +55,7 @@ module.exports = class SearchCount extends Route {
 					query.$and.push(req.body);
 				}
 
-				return SchemaModel.parseQuery(query, {}, this.model.flatSchemaData);
+				return this.model.parseQuery(query, {}, this.model.flatSchemaData);
 			})
 			.then((query) => {
 				result.query = query;

@@ -14,10 +14,11 @@ const Route = require('../route');
 const Model = require('../../model');
 const Logging = require('../../logging');
 const Helpers = require('../../helpers');
-const ObjectId = require('mongodb').ObjectId;
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
+
+const Datastore = require('../../datastore');
 
 const routes = [];
 
@@ -57,7 +58,7 @@ class GetUser extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			if (!req.params.id || !ObjectId.isValid(req.params.id)) {
+			if (!req.params.id) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
@@ -65,19 +66,22 @@ class GetUser extends Route {
 			Model.User.findById(req.params.id)
 				.then((_user) => {
 					if (_user) {
-						Model.Token.findUserAuthTokens(_user._id, req.authApp._id)
-							.then((tokens) => {
-								resolve({
-									id: _user._id,
-									auth: _user.auth,
-									tokens: tokens.map((t) => {
-										return {
-											value: t.value,
-											role: t.role,
-										};
-									}),
-								});
+						// TODO: findUserAuthTokens no longer returns a promises!
+						const output = {
+							id: _user._id,
+							auth: _user.auth,
+							tokens: [],
+						};
+
+						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
+
+						rxTokens.on('data', (token) => {
+							output.tokens.push({
+								value: token.value,
+								role: token.role,
 							});
+						});
+						rxTokens.once('end', () => resolve(output));
 					} else {
 						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 						resolve({statusCode: 400});
@@ -108,19 +112,21 @@ class FindUser extends Route {
 			Model.User.getByAppId(req.params.app, req.params.id)
 				.then((_user) => {
 					if (_user) {
-						Model.Token.findUserAuthTokens(_user._id, req.authApp._id)
-							.then((tokens) => {
-								resolve({
-									id: _user._id,
-									auth: _user.auth,
-									tokens: tokens.map((t) => {
-										return {
-											value: t.value,
-											role: t.role,
-										};
-									}),
-								});
+						const output = {
+							id: _user._id,
+							auth: _user.auth,
+							tokens: [],
+						};
+
+						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
+
+						rxTokens.on('data', (token) => {
+							output.tokens.push({
+								value: token.value,
+								role: token.role,
 							});
+						});
+						rxTokens.once('end', () => resolve(output));
 					} else {
 						resolve(false);
 					}
@@ -160,7 +166,7 @@ class CreateUserAuthToken extends Route {
 
 			req.body.type = Model.Token.Constants.Type.USER;
 
-			if (!req.params.id || !ObjectId.isValid(req.params.id)) {
+			if (!req.params.id) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
@@ -176,20 +182,19 @@ class CreateUserAuthToken extends Route {
 		});
 	}
 
-	_exec(req, res, user) {
-		return Model.Token.add(req.body, {
-			_app: new ObjectId(req.authApp._id),
-			_user: new ObjectId(user._id),
-		})
-			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))
-			.then((t) => {
-				nrp.emit('app-routes:bust-cache', {});
+	async _exec(req, res, user) {
+		const rxsToken = await Model.Token.add(req.body, {
+			_app: Datastore.getInstance().createId(req.authApp._id),
+			_user: Datastore.getInstance().createId(user._id),
+		});
+		const token = await Helpers.streamFirst(rxsToken);
 
-				return {
-					value: t.value,
-					role: t.role,
-				};
-			});
+		nrp.emit('app-routes:bust-cache', {});
+
+		return {
+			value: token.value,
+			role: token.role,
+		};
 	}
 }
 routes.push(CreateUserAuthToken);
@@ -346,7 +351,7 @@ class DeleteUser extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			if (!req.params.id || !ObjectId.isValid(req.params.id)) {
+			if (!req.params.id) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}

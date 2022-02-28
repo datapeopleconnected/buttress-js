@@ -12,7 +12,6 @@
 
 const Route = require('../route');
 const Model = require('../../model');
-const ObjectId = require('mongodb').ObjectId;
 // var Logging = require('../../logging');
 const Helpers = require('../../helpers');
 
@@ -61,7 +60,7 @@ class UpdateTokenRoles extends Route {
 				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
-			if (!req.body.token || !ObjectId.isValid(req.body.token)) {
+			if (!req.body.token) {
 				this.log('ERROR: token is missing', Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_token`));
 			}
@@ -76,7 +75,7 @@ class UpdateTokenRoles extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Token.updateRole(new ObjectId(req.body.token), req.body.role)
+		return Model.Token.updateRole(this.createId(req.body.token), req.body.role)
 			.then((res) => true);
 	}
 }
@@ -96,7 +95,7 @@ class DeleteAllTokens extends Route {
 	}
 
 	_validate(req, res, token) {
-		return Promise.resolve(req.params.type === 'user');
+		return Promise.resolve();
 	}
 
 	_exec(req, res, validate) {

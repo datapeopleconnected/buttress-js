@@ -11,17 +11,15 @@
  *
  */
 
-const SchemaModelMongoDB = require('../type/mongoDB');
 const Model = require('../');
 const Logging = require('../../logging');
 // const Shared = require('../shared');
-const ObjectId = require('mongodb').ObjectId;
+const Helpers = require('../../helpers');
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 
-const collectionName = 'users';
-const collection = Model.mongoDb.collection(collectionName);
+const SchemaModel = require('../schemaModel');
 
 /**
  * Constants
@@ -34,10 +32,10 @@ const App = {
 	LINKEDIN: apps[3],
 };
 
-class UserSchemaModel extends SchemaModelMongoDB {
-	constructor(MongoDb) {
+class UserSchemaModel extends SchemaModel {
+	constructor(datastore) {
 		const schema = UserSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 	}
 
 	static get Constants() {
@@ -144,8 +142,8 @@ class UserSchemaModel extends SchemaModelMongoDB {
 	 * @param {Object} auth - OPTIONAL authentication details for a user token
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	add(body, auth) {
-		const user = {
+	async add(body, auth) {
+		const userBody = {
 			auth: [{
 				app: body.app,
 				appId: body.id,
@@ -161,38 +159,34 @@ class UserSchemaModel extends SchemaModelMongoDB {
 			}],
 		};
 
-		let _user = null;
-		return super.add(user, {
+		const rxsUser = await super.add(userBody, {
 			_attribute: body.attributes,
 			_apps: [Model.authApp._id],
-		})
-			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))
-			.then((user) => {
-				_user = user;
-				if (!auth) {
-					return false;
-				}
+		});
+		const user = await Helpers.streamFirst(rxsUser);
 
-				return Model.Token.add(auth, {
-					_app: Model.authApp._id,
-					_user: _user._id,
-				});
-			})
-			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))
-			.then((token) => {
-				_user.tokens = [];
+		user.tokens = [];
 
-				nrp.emit('app-routes:bust-cache', {});
+		if (!auth) {
+			return user;
+		}
 
-				if (token) {
-					_user.tokens.push({
-						value: token.value,
-						role: token.role,
-					});
-				}
+		const rxsToken = await Model.Token.add(auth, {
+			_app: Model.authApp._id,
+			_user: user._id,
+		});
+		const token = await Helpers.streamFirst(rxsToken);
 
-				return _user;
+		nrp.emit('app-routes:bust-cache', {});
+
+		if (token) {
+			user.tokens.push({
+				value: token.value,
+				role: token.role,
 			});
+		}
+
+		return user;
 	}
 
 	addAuth(auth) {
@@ -246,7 +240,7 @@ class UserSchemaModel extends SchemaModelMongoDB {
 
 		const update = {};
 		update[`auth.${authIdx}`] = auth;
-		return super.update(update, user._id).then(() => true);
+		return super.updateById(user._id, update).then(() => true);
 	}
 
 	updateApps(user, app) {
@@ -270,47 +264,17 @@ class UserSchemaModel extends SchemaModelMongoDB {
 		}, user._id);
 	}
 
-	exists(id) {
-		return collection.find({_id: new ObjectId(id)})
-			.limit(1)
-			.count()
-			.then((count) => count > 0);
-	}
-
 	/**
 	 * @param {ObjectId} appId - id of the App that owns the user
 	 * @param {int} tokenAuthLevel - level of the current token in use.
 	 * @return {Promise} - resolves to an array of Apps
 	 */
 	findAll(appId, tokenAuthLevel) {
-		// Logging.logSilly(`findAll: ${appId}`);
+		if (tokenAuthLevel && tokenAuthLevel === Model.Token.Constants.AuthLevel.SUPER) {
+			return super.find({});
+		}
 
-		return new Promise((resolve) => {
-			let findTask = () => super.find({_apps: appId});
-			if (tokenAuthLevel && tokenAuthLevel === Model.Token.Constants.AuthLevel.SUPER) {
-				findTask = () => super.find({});
-			}
-
-			return Promise.all([
-				findTask(),
-				Model.Token.find({
-					type: 'user',
-					_app: new ObjectId(appId),
-				}),
-			])
-				.then((data) => {
-					resolve(data[0].map((user) => {
-						const tokens = data[1].filter((t) => user._id.equals(t._user));
-						user.tokens = [];
-
-						if (tokens) {
-							user.tokens = tokens;
-						}
-
-						return user;
-					}));
-				});
-		});
+		return super.find({_apps: appId});
 	}
 
 	/**
