@@ -418,8 +418,7 @@ class SchemaModel {
 	 * @return {ReadableStream} - stream
 	 */
 	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
-		const test = this.adapter.find(query, excludes, limit, skip, sort, project);
-		return test;
+		return this.adapter.find(query, excludes, limit, skip, sort, project);
 	}
 
 	/**

@@ -275,10 +275,11 @@ const __getFlattenedSchema = (schema) => {
 module.exports.getFlattenedSchema = __getFlattenedSchema;
 
 module.exports.streamFirst = (stream) => {
-	return new Promise((resolve) => {
+	return new Promise((resolve, reject) => {
 		stream.on('data', (item) => {
 			stream.destroy();
 			resolve(item);
 		});
+		stream.on('end', () => resolve(undefined));
 	});
 };

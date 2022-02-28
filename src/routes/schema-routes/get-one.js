@@ -32,45 +32,42 @@ module.exports = class GetOne extends Route {
 		}
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			let objectId = null;
-			const project = (req.body && req.body.project)? req.body.project : false;
+	async _validate(req, res, token) {
+		let objectId = null;
+		const project = (req.body && req.body.project)? req.body.project : false;
 
-			try {
-				objectId = this.model.createId(req.params.id);
-			} catch (err) {
-				this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
-			}
+		try {
+			objectId = this.model.createId(req.params.id);
+		} catch (err) {
+			this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+			throw new Helpers.Errors.RequestError(400, 'invalid_id');
+		}
 
-			const generateQuery = Promise.resolve({_id: objectId});
-			return generateQuery
-				.then((generateQuery) => {
-					let query = generateQuery;
-					if (req.body.query && Object.keys(req.body.query).length > 0) {
-						query = req.body.query;
+		let query = {_id: objectId};
+		if (req.body.query && Object.keys(req.body.query).length > 0) {
+			query = req.body.query;
 
-						query = SchemaModel.parseQuery(query, {}, this.model.flatSchemaData);
-						query._id = objectId;
-					}
+			query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+			query._id = objectId;
+		}
 
-					return query;
-				})
-				.then((query) => {
-					this.model.findById(query, project)
-						.then((entity) => {
-							if (!entity) {
-								this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-								return reject(new Helpers.Errors.RequestError(400, 'invalid_id or access_control_not_fullfilled'));
-							}
-							resolve(entity);
-						});
-				});
-		});
+		query._id = this.model.createId();
+
+		return {
+			query,
+			project,
+		};
 	}
 
-	_exec(req, res, entity) {
-		return Promise.resolve(entity);
+	async _exec(req, res, validate) {
+		const rxsEntity = await this.model.find(validate.query, {}, 1, 0, null, validate.project);
+		const entity = await Helpers.streamFirst(rxsEntity);
+
+		if (!entity) {
+			this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+			throw new Helpers.Errors.RequestError(400, 'invalid_id or access_control_not_fullfilled');
+		}
+
+		return entity;
 	}
 };

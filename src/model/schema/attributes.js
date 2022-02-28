@@ -10,17 +10,18 @@
  * @author Tom Cahill
  */
 
-const ObjectId = require('mongodb').ObjectId;
+// const ObjectId = require('mongodb').ObjectId;
 
-const SchemaModelMongoDB = require('../type/mongoDB');
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 
-class AttributeSchemaModel extends SchemaModelMongoDB {
-	constructor(MongoDb) {
+const SchemaModel = require('../schemaModel');
+
+class AttributeSchemaModel extends SchemaModel {
+	constructor(datastore) {
 		const schema = AttributeSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 	}
 
 	static get Schema() {

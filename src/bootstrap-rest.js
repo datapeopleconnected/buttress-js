@@ -83,7 +83,7 @@ class BootstrapRest {
 			this.notifyWorkers({
 				type: 'app-routes:bust-attribute-cache',
 				appId: data.appId,
-			}));
+			});
 		});
 
 		if (isPrimary) {

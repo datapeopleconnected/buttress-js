@@ -6,6 +6,7 @@ const Logging = require('../../logging');
 const Schema = require('../../schema');
 
 const SchemaModel = require('../../model/schemaModel');
+const { reply_to_object } = require('redis/lib/utils');
 
 /**
  * @class GetList
@@ -66,7 +67,7 @@ module.exports = class GetList extends Route {
 				}
 
 				Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-				return SchemaModel.parseQuery(query, {}, this.model.flatSchemaData);
+				return this.model.parseQuery(query, {}, this.model.flatSchemaData);
 			})
 			.then((query) => {
 				result.query = query;
@@ -80,6 +81,6 @@ module.exports = class GetList extends Route {
 		}
 
 		Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-		return this.model.find(validateResult.query, {}, true, 0, 0, {}, validateResult.project);
+		return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
 	}
 };

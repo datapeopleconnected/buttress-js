@@ -381,7 +381,14 @@ class Routes {
 	 * @private
 	 */
 	async loadAttributes() {
-		this._attributes = await Model.Attributes.findAll().toArray();
+		const attributes = [];
+		const rxsAttributes = Model.Attributes.findAll();
+
+		for await (const token of rxsAttributes) {
+			attributes.push(token);
+		}
+
+		this._attributes = attributes;
 	}
 
 	/**
