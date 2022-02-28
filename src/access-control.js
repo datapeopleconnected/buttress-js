@@ -35,6 +35,7 @@ class AccessControl {
 		];
 
 		this.IPv4Regex = /((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}/g;
+		// eslint-disable-next-line max-len
 		this.IPv6Regex = /(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))/g;
 	}
 
@@ -516,11 +517,13 @@ class AccessControl {
 					// 	[aKey]: accessControlObj[aKey],
 					// };
 
-					// TODO should prompt the user to tell them that they do not have access to these property or send empty array
+					// TODO should prompt the user to tell them that they do not have access to these
+					//      property or send empty array
 					return;
 				}
 
-				// TODO prompt the user that one of the property does not match their access control policies or return different results that expected
+				// TODO prompt the user that one of the property does not match their access control
+				//      policies or return different results that expected
 				originalQuery[key].push(accessControlObj);
 			});
 		});
@@ -540,7 +543,8 @@ class AccessControl {
 				// 	[acKey]: accessControlQuery[acKey],
 				// };
 
-				// TODO prompt the user that one of the property does not match their access control policies or return different results that expected
+				// TODO prompt the user that one of the property does not match their access control
+				//      policies or return different results that expected
 			}
 		});
 
@@ -570,7 +574,8 @@ class AccessControl {
 				// TODO needs to give the option to return an error at the minute it returns zero results
 				return true;
 			} else {
-				// TODO prompt the user that one of the property does not match their access control policies or return different results that expected
+				// TODO prompt the user that one of the property does not match their access control
+				//      policies or return different results that expected
 			}
 
 			return false;
@@ -601,7 +606,8 @@ class AccessControl {
 
 		originalQueryKeys.forEach((key) => {
 			if (accessControlQueryKeys.includes(key)) {
-				// TODO prompt the user that one of the property does not match their access control policies or return different results that expected
+				// TODO prompt the user that one of the property does not match their access control
+				//      policies or return different results that expected
 				const keyIndex = accessControlLogicalArr.findIndex((obj) => Object.keys(obj).some((i) => i === key));
 				if (JSON.stringify(accessControlLogicalArr[keyIndex][key]) !== JSON.stringify(originalQuery[key])) {
 					modifiedQuery = true;
@@ -637,6 +643,8 @@ class AccessControl {
 		return str.replace('@', '$');
 	}
 
+	// TODO: Refactor the file so max-lines is < 500
+	// eslint-disable-next-line max-lines
 	__getEnvironmentVar(attr, environmentVar) {
 		const path = environmentVar.replace('@', '').split('.');
 		let val = null;

@@ -252,7 +252,7 @@ class BootstrapRest {
 			});
 
 			await Model.App.updateSchema(app._id, appSchema);
-		};
+		}
 	}
 }
 

@@ -11,7 +11,7 @@
  *
  */
 
-const Buttress = require('@buttress/api');
+// const Buttress = require('@buttress/api');
 
 const SchemaModel = require('../schemaModel');
 
@@ -22,40 +22,8 @@ const SchemaModel = require('../schemaModel');
  **********************************************************************************/
 
 class SchemaModelButtress extends SchemaModel {
-	constructor(schemaData, app, dataSharing) {
-		super(schemaData, app);
-
-		// eslint-disable-next-line no-unused-vars
-		const [_, collection] = schemaData.remote.split('.');
-
-		this.endpoint = dataSharing.remoteApp.endpoint;
-		this.token = dataSharing.remoteApp.token;
-		this.apiPath = dataSharing.remoteApp.apiPath;
-
-		this.buttress = Buttress.new();
-
-		// Hack - Give a little time for another instance to get up to speed
-		// before trying to init
-
-		this.init = false;
-		this.initPendingResolve = [];
-
-		throw new Error('FOO');
-
-		// TOOD: Handle the case we're another instance isn't available
-		setTimeout(() => {
-			this.buttress.init({
-				buttressUrl: this.endpoint,
-				appToken: this.token,
-				apiPath: this.apiPath,
-				allowUnauthorized: true, // WUT!?
-			})
-				.then(() => {
-					this.collection = this.buttress.getCollection(collection);
-					this.init = true;
-					this.initPendingResolve.forEach((r) => r());
-				});
-		}, 500);
+	constructor() {
+		throw new Error('THIS CLASS IS TO BE USED NO MORE, DOWN THIS THIS SORT OF THING');
 	}
 
 	resolveAfterInit() {

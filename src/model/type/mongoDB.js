@@ -144,7 +144,7 @@ class SchemaModelMongoDB extends SchemaModel {
 	findById(query, project = null) {
 		// Logging.logSilly(`Schema:findById: ${this.collectionName} ${id}`);
 		if (query instanceof ObjectId === true || typeof query !== 'object') {
-			query = {_id: query}
+			query = {_id: query};
 		}
 
 		if (query._id instanceof ObjectId === false) {

@@ -5,9 +5,6 @@ const Helpers = require('../../helpers');
 const Logging = require('../../logging');
 const Schema = require('../../schema');
 
-const SchemaModel = require('../../model/schemaModel');
-const { reply_to_object } = require('redis/lib/utils');
-
 /**
  * @class GetList
  */

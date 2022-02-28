@@ -3,8 +3,6 @@ const Model = require('../../model');
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
 
-const SchemaModel = require('../../model/schemaModel');
-
 /**
  * @class SearchList
  */
