@@ -19,10 +19,11 @@ const Schema = require('../schema');
 const Helpers = require('../helpers');
 const AccessControl = require('../access-control');
 const Model = require('../model');
-const Mongo = require('mongodb');
 const Config = require('node-env-obj')();
 
 const SchemaRoutes = require('./schema-routes');
+
+const Datastore = require('../datastore');
 
 class Routes {
 	/**
@@ -114,7 +115,7 @@ class Routes {
 		this._registerRouter('core', coreRouter);
 
 		await this.loadTokens();
-        await this.loadAttributes();
+		await this.loadAttributes();
 
 		Logging.logSilly(`init:registered-routes`);
 	}
@@ -184,6 +185,7 @@ class Routes {
 	 * @param {object} app - Buttress app object
 	 */
 	_generateAppRoutes(app) {
+		if (!app) throw new Error(`Expected app object to be passed through to _generateAppRoutes, got ${app}`);
 		if (!app.__schema) return;
 
 		const appRouter = this._createRouter();
@@ -245,7 +247,7 @@ class Routes {
 
 	_timeRequest(req, res, next) {
 		// Just assign a arbitrary id to the request to help identify it in the logs
-		req.id = new Mongo.ObjectID();
+		req.id = Datastore.getInstance().createId();
 		req.timer = new Helpers.Timer();
 		req.timer.start();
 

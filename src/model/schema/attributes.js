@@ -16,6 +16,7 @@ const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 
+const Helpers = require('../../helpers');
 const SchemaModel = require('../schemaModel');
 
 class AttributeSchemaModel extends SchemaModel {
@@ -94,9 +95,9 @@ class AttributeSchemaModel extends SchemaModel {
 	 * @param {Object} body - body passed through from a POST request
 	 * @return {Promise} - fulfilled with attribute Object when the database request is completed
 	 */
-	add(body) {
-		const attribute = {
-			id: new ObjectId(),
+	async add(body) {
+		const attributeBody = {
+			id: this.createId(),
 			name: body.attribute.name,
 			extends: (body.attribute.extends)? body.attribute.extends : [],
 			disposition: (body.attribute.disposition)? body.attribute.disposition : {},
@@ -107,15 +108,14 @@ class AttributeSchemaModel extends SchemaModel {
 			query: (body.attribute.query)? body.attribute.query : {},
 		};
 
-		return super.add(attribute, {
+		const rxsAttribute = await super.add(attributeBody, {
 			_appId: body.appId,
-		})
-			.then((attributeCursor) => attributeCursor.next())
-			.then((attribute) => {
-				nrp.emit('app-routes:bust-attribute-cache', {appId: body.appId});
+		});
+		const attribute = await Helpers.streamFirst(rxsAttribute);
 
-				return Promise.resolve(attribute);
-			});
+		nrp.emit('app-routes:bust-attribute-cache', {appId: attribute.appId});
+
+		return attribute;
 	}
 }
 

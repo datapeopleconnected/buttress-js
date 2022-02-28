@@ -163,9 +163,9 @@ class BootstrapRest {
 			Logging.logDebug(`App Routes: cache bust`);
 			await this.routes.loadTokens();
 		} else if (payload.type === 'app-routes:bust-attribute-cache') {
-            Logging.logDebug(`App Routes: attributes cache bust`);
-            await this.routes.loadAttributes(payload.appId);
-        }
+			Logging.logDebug(`App Routes: attributes cache bust`);
+			await this.routes.loadAttributes(payload.appId);
+		}
 	}
 
 	__spawnWorkers() {

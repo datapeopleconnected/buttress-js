@@ -9,13 +9,13 @@
  * @author Chris Bates-Keegan
  *
  */
-const ObjectId = require('mongodb').ObjectId;
-
 const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
 
 const routes = [];
+
+const Datastore = require('../../datastore');
 
 /**
  * @class GetAttributeList
@@ -33,7 +33,7 @@ class GetAttributeList extends Route {
 		if (ids && ids.length > 0) {
 			ids.forEach((id) => {
 				try {
-					new ObjectId(id);
+					Datastore.getInstance().createId(id);
 				} catch (err) {
 					this.log(`ATTRIBUTE: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
 					return Promise.reject(new Helpers.RequestError(400, 'invalid_id'));

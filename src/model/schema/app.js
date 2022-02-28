@@ -119,8 +119,8 @@ class AppSchemaModel extends SchemaModel {
 
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
 		nrp.emit('app-routes:bust-cache', {});
-		Logging.logSilly(`Emitting app-schema:updated ${app.id}`);
-		nrp.emit('app-schema:updated', {appId: app.id});
+		Logging.logSilly(`Emitting app-schema:updated ${app._id}`);
+		nrp.emit('app-schema:updated', {appId: app._id});
 
 		return Promise.resolve({app: app, token: token});
 	}

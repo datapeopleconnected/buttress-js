@@ -11,6 +11,7 @@
  *
  */
 
+const ObjectId = require('mongodb').ObjectId;
 const ButtressAPI = require('@buttress/api');
 
 const AbstractAdapter = require('../abstract-adapter');
@@ -174,19 +175,21 @@ module.exports = class Buttress extends AbstractAdapter {
 	/**
 	 * @param {Object} query - mongoDB query
 	 * @param {Object} excludes - mongoDB query excludes
-	 * @param {Boolean} stream - should return a stream
 	 * @param {Int} limit - should return a stream
 	 * @param {Int} skip - should return a stream
 	 * @param {Object} sort - mongoDB sort object
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {Promise} - resolves to an array of docs
 	 */
-	find(query, excludes = {}, stream = false, limit = 0, skip = 0, sort, project = null) {
+	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
 		// Logging.logSilly(`find: ${this.collectionName} ${query}`);
 
 		// Stream this?
 		return this.resolveAfterInit()
-			.then(() => this.collection.search(query, limit, skip, sort, project));
+			.then(() => this.collection.search(query, limit, skip, sort, {
+				project,
+				stream: true,
+			}));
 	}
 
 	/**

@@ -1,4 +1,3 @@
-const Sugar = require('sugar');
 const ObjectId = require('mongodb').ObjectId;
 const MongoClient = require('mongodb').MongoClient;
 

@@ -46,6 +46,9 @@ module.exports = class SearchList extends Route {
 			project: (req.body && req.body.project)? req.body.project : false,
 		};
 
+		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+		if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+
 		return generateQuery
 			.then((query) => {
 				if (!query.$and) {
