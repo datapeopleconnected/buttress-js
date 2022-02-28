@@ -117,7 +117,7 @@ class BootstrapRest {
 			Logging.logError(error);
 		});
 
-		process.on('message', this.handleProcessMessage);
+		process.on('message', (payload) => this.handleProcessMessage(payload));
 
 		await Model.initCoreModels();
 
@@ -189,15 +189,15 @@ class BootstrapRest {
 		});
 
 		const pathName = path.join(Config.paths.appData, 'super.json');
-		Logging.log(`Super app created: ${res.app.id}`);
+		Logging.log(`Super app created: ${res.app._id}`);
 
 		await new Promise((resolve, reject) => {
 			const app = Object.assign(res.app, {token: res.token.value});
 			fs.writeFile(pathName, JSON.stringify(app), (err) => {
 				if (err) return reject(err);
 				Logging.log(`Created ${pathName}`);
+				resolve();
 			});
-			resolve();
 		});
 	}
 

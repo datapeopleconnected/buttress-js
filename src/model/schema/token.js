@@ -184,8 +184,8 @@ class TokenSchemaModel extends SchemaModel {
 	 */
 	findUserAuthTokens(userId, appId) {
 		return this.find({
-			_app: this.model.createId(appId),
-			_user: this.model.createId(userId),
+			_app: this.createId(appId),
+			_user: this.createId(userId),
 		});
 	}
 

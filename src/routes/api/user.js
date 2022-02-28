@@ -18,6 +18,8 @@ const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 
+const Datastore = require('../../datastore');
+
 const routes = [];
 
 /**
@@ -180,20 +182,19 @@ class CreateUserAuthToken extends Route {
 		});
 	}
 
-	_exec(req, res, user) {
-		return Model.Token.add(req.body, {
-			_app: this.model.createId(req.authApp._id),
-			_user: this.model.createId(user._id),
-		})
-			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))
-			.then((t) => {
-				nrp.emit('app-routes:bust-cache', {});
+	async _exec(req, res, user) {
+		const rxsToken = await Model.Token.add(req.body, {
+			_app: Datastore.getInstance().createId(req.authApp._id),
+			_user: Datastore.getInstance().createId(user._id),
+		});
+		const token = await Helpers.streamFirst(rxsToken);
 
-				return {
-					value: t.value,
-					role: t.role,
-				};
-			});
+		nrp.emit('app-routes:bust-cache', {});
+
+		return {
+			value: token.value,
+			role: token.role,
+		};
 	}
 }
 routes.push(CreateUserAuthToken);

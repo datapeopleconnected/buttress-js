@@ -73,13 +73,12 @@ class SchemaModel {
 	}
 
 	/**
-	 * @static
 	 * @param {object} query
 	 * @param {object} [envFlat={}]
 	 * @param {object} [schemaFlat={}]
 	 * @return {object} query
 	 */
-	static parseQuery(query, envFlat = {}, schemaFlat = {}) {
+	parseQuery(query, envFlat = {}, schemaFlat = {}) {
 		const output = {};
 
 		for (let property in query) {
@@ -88,9 +87,9 @@ class SchemaModel {
 			const command = query[property];
 
 			if (property === '$or' && Array.isArray(command) && command.length > 0) {
-				output['$or'] = command.map((q) => SchemaModel.parseQuery(q, envFlat, schemaFlat));
+				output['$or'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
 			} else if (property === '$and' && Array.isArray(command) && command.length > 0) {
-				output['$and'] = command.map((q) => SchemaModel.parseQuery(q, envFlat, schemaFlat));
+				output['$and'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
 			} else {
 				for (let operator in command) {
 					if (!{}.hasOwnProperty.call(command, operator)) continue;
@@ -159,7 +158,7 @@ class SchemaModel {
 					}
 
 					if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
-						operand = SchemaModel.parseQuery(operand, envFlat, propSchema.__schema);
+						operand = this.parseQuery(operand, envFlat, propSchema.__schema);
 					} else if (propSchema) {
 						if (propSchema.__type === 'array' && propSchema.__schema) {
 							Object.keys(operand).forEach((op) => {
@@ -247,7 +246,7 @@ class SchemaModel {
 
 						let propertyQuery = {};
 						propertyQuery[propertyPath] = query[command];
-						propertyQuery = SchemaModel.parseQuery(propertyQuery, env);
+						propertyQuery = this.parseQuery(propertyQuery, env);
 
 						const fields = {};
 						fields[propertyPath] = true;
@@ -276,7 +275,7 @@ class SchemaModel {
 
 		// Engage.
 		return tasks.reduce((prev, task) => prev.then(() => task()), Promise.resolve())
-			.then(() => SchemaModel.parseQuery(roles.schema.authFilter.query, env, this.flatSchemaData));
+			.then(() => this.parseQuery(roles.schema.authFilter.query, env, this.flatSchemaData));
 	}
 
 	/*

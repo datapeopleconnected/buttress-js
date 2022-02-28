@@ -113,8 +113,6 @@ class Routes {
 
 		await this.loadTokens();
 
-		this.app.use((err, req, res, next) => this.logErrors(err, req, res, next));
-
 		Logging.logSilly(`init:registered-routes`);
 	}
 
@@ -153,6 +151,8 @@ class Routes {
 		Logging.logSilly(`Routes:_registerRouter Register ${key}`);
 		this._routerMap[key] = router;
 		this.app.use('', (...args) => this._getRouter(key)(...args));
+
+		this.app.use((err, req, res, next) => this.logErrors(err, req, res, next));
 	}
 
 	/**

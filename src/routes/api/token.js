@@ -75,7 +75,7 @@ class UpdateTokenRoles extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Token.updateRole(this.model.createId(req.body.token), req.body.role)
+		return Model.Token.updateRole(this.createId(req.body.token), req.body.role)
 			.then((res) => true);
 	}
 }
