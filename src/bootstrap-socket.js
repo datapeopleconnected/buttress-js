@@ -48,7 +48,7 @@ class BootstrapSocket {
 
 		this.emitter = null;
 
-		this.primaryDatastore = new Datastore(Config.datastore);
+		this.primaryDatastore = Datastore.createInstance(Config.datastore);
 
 		// let socketInitTask = null;
 		// if (cluster.isMaster) {
@@ -65,7 +65,7 @@ class BootstrapSocket {
 	async init() {
 		await this.primaryDatastore.connect();
 
-		await Model.init(this.primaryDatastore);
+		await Model.init();
 
 		if (cluster.isMaster) {
 			await this.__initMaster();
@@ -76,7 +76,7 @@ class BootstrapSocket {
 		return cluster.isMaster;
 	}
 
-	async __initMaster(db) {
+	async __initMaster() {
 		const nrp = new NRP(Config.redis);
 
 		const redisClient = createClient(Config.redis);
@@ -91,7 +91,7 @@ class BootstrapSocket {
 			});
 		}
 
-		const apps = await Model.App.findAll();
+		const rxsApps = Model.App.findAll();
 
 		this.__namespace['stats'] = {
 			emitter: this.emitter.of(`/stats`),
@@ -102,8 +102,7 @@ class BootstrapSocket {
 		};
 
 		// Spawn worker processes, pass through build app objects
-		while (await apps.hasNext()) {
-			const app = await apps.next();
+		for await (const app of rxsApps) {
 			if (!app._token) return Logging.logWarn(`App with no token`);
 
 			await this.__createAppNamespace(app);
@@ -112,10 +111,13 @@ class BootstrapSocket {
 		// This should be distributed across instances
 		if (this.isPrimary) {
 			Logging.logSilly(`Setting up data sharing connections`);
-			await Model.AppDataSharing.find({
+			const rxsDataShare = await Model.AppDataSharing.find({
 				active: true,
-			})
-				.forEach((dataShare) => this.__createDataShareConnection(dataShare));
+			});
+
+			for await (const dataShare of rxsDataShare) {
+				await this.__createDataShareConnection(dataShare);
+			}
 		}
 
 		this.__spawnWorkers({
