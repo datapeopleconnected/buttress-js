@@ -43,11 +43,15 @@ module.exports = class GetMany extends Route {
 				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
 			}
+
 			resolve({ids: _ids, project: project});
 		});
 	}
 
 	_exec(req, res, query) {
-		return this.model.findAllById(query.ids, query.project);
+		return this.model.find(
+			{_id: {$in: query.ids.map((id) => this.model.createId(id))}},
+			{}, 0, 0, null, query.project,
+		);
 	}
 };
