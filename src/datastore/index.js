@@ -20,8 +20,8 @@ class Datastore {
 		return this.adapter.connect();
 	}
 
-	createId(id) {
-		return this.adapter.createId(id);
+	get ID() {
+		return this.adapter.ID;
 	}
 
 	get adapter() {

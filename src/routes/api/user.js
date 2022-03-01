@@ -184,8 +184,8 @@ class CreateUserAuthToken extends Route {
 
 	async _exec(req, res, user) {
 		const rxsToken = await Model.Token.add(req.body, {
-			_app: Datastore.getInstance().createId(req.authApp._id),
-			_user: Datastore.getInstance().createId(user._id),
+			_app: Datastore.getInstance().ID.new(req.authApp._id),
+			_user: Datastore.getInstance().ID.new(user._id),
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 

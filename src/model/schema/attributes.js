@@ -10,8 +10,6 @@
  * @author Tom Cahill
  */
 
-// const ObjectId = require('mongodb').ObjectId;
-
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);

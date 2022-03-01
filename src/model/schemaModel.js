@@ -44,7 +44,7 @@ class SchemaModel {
 	}
 
 	createId(id) {
-		return this.adapter.createId(id);
+		return this.adapter.ID.new(id);
 	}
 
 	__doValidation(body) {
@@ -286,7 +286,7 @@ class SchemaModel {
 		const entity = Object.assign({}, internals);
 
 		if (body.id) {
-			entity._id = this.adapter.createId(body.id);
+			entity._id = this.adapter.ID.new(body.id);
 		}
 
 		if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {

@@ -247,7 +247,7 @@ class Routes {
 
 	_timeRequest(req, res, next) {
 		// Just assign a arbitrary id to the request to help identify it in the logs
-		req.id = Datastore.getInstance().createId();
+		req.id = Datastore.getInstance().ID.new();
 		req.timer = new Helpers.Timer();
 		req.timer.start();
 

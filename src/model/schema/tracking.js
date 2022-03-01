@@ -197,7 +197,7 @@ class TrackingSchemaModel extends SchemaModel {
 			return this.find({});
 		}
 
-		return this.find({_app: this.adapter.createId(appId)});
+		return this.find({_app: this.adapter.ID.new(appId)});
 	}
 }
 

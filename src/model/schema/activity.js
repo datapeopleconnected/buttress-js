@@ -148,7 +148,7 @@ class ActivitySchemaModel extends SchemaModel {
 		};
 
 		if (body.id) {
-			md._id = this.adapter.createId(body.id);
+			md._id = this.adapter.ID.new(body.id);
 		}
 
 		const validated = Shared.applyAppProperties(false, body);

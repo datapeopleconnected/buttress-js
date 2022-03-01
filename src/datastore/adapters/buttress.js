@@ -16,11 +16,15 @@ const ButtressAPI = require('@buttress/api');
 
 const AbstractAdapter = require('../abstract-adapter');
 
-/* ********************************************************************************
- *
- * LOCALS
- *
- **********************************************************************************/
+class AdapterId {
+	static new(id) {
+		return new ObjectId(id);
+	}
+
+	static isValid(id) {
+		return ObjectId.isValid(id);
+	}
+}
 
 module.exports = class Buttress extends AbstractAdapter {
 	constructor(uri, options, connection = null) {
@@ -85,11 +89,8 @@ module.exports = class Buttress extends AbstractAdapter {
 		this.collection = this.connection.getCollection(collectionName);
 	}
 
-	createId(id) {
-		return new ObjectId(id);
-	}
-	isValidId(id) {
-		return true;
+	get ID() {
+		return AdapterId;
 	}
 
 	resolveAfterInit() {

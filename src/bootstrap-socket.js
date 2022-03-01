@@ -174,7 +174,7 @@ class BootstrapSocket {
 			if (token.type === 'dataSharing') {
 				Logging.logDebug(`Fetching data share with tokenId: ${token._id}`);
 				const dataShare = await Model.AppDataSharing.findOne({
-					_tokenId: this.primaryDatastore.createId(token._id),
+					_tokenId: this.primaryDatastore.ID.new(token._id),
 					active: true,
 				});
 				if (!dataShare) {

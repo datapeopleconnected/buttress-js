@@ -1,6 +1,7 @@
 const Logging = require('../logging');
-const ObjectId = require('mongodb').ObjectId;
 const Sugar = require('sugar');
+
+const Datastore = require('../datastore');
 
 /* ********************************************************************************
 *
@@ -14,7 +15,7 @@ const __getFlattenedBody = (body) => {
 
 		if (typeof parent[property] !== 'object' || parent[property] instanceof Date ||
 			Array.isArray(parent[property]) || parent[property] === null ||
-			ObjectId.isValid(body[property])) {
+			Datastore.getInstance().ID.isValid(body[property])) {
 			flattened.push({
 				path: path.join('.'),
 				value: parent[property],
@@ -66,7 +67,7 @@ const __getPropDefault = (config) => {
 		if (config.__default) {
 			res = config.__default;
 		} else if (config.__default === 'new') {
-			res = new ObjectId();
+			res = Datastore.getInstance().ID.new();
 		} else {
 			res = null;
 		}
@@ -120,7 +121,7 @@ const __validateProp = (prop, config) => {
 	case 'id':
 		if (type === 'string') {
 			try {
-				prop.value = new ObjectId(prop.value); // eslint-disable-line new-cap
+				prop.value = Datastore.getInstance().ID.new(prop.value); // eslint-disable-line new-cap
 			} catch (e) {
 				valid = false;
 				return;
@@ -267,7 +268,7 @@ const __prepareSchemaResult = (result, dataDisposition, filter, permissions, tok
 		}
 
 		if (typeof chunk === 'object') {
-			if (ObjectId.isValid(chunk)) {
+			if (Datastore.getInstance().ID.isValid(chunk)) {
 				return chunk;
 			}
 			if (chunk instanceof Date) {

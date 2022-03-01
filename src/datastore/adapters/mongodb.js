@@ -6,6 +6,16 @@ const Logging = require('../../logging');
 
 const AbstractAdapter = require('../abstract-adapter');
 
+class AdapterId {
+	static new(id) {
+		return new ObjectId(id);
+	}
+
+	static isValid(id) {
+		return ObjectId.isValid(id);
+	}
+}
+
 module.exports = class MongodbAdapter extends AbstractAdapter {
 	constructor(uri, options, connection = null) {
 		super(uri, options, connection);
@@ -29,11 +39,8 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		this.collection = this.connection.collection(collectionName);
 	}
 
-	createId(id) {
-		return new ObjectId(id);
-	}
-	isValidId(id) {
-		return true;
+	get ID() {
+		return AdapterId;
 	}
 
 	add(body, modifier) {
