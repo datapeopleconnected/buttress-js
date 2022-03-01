@@ -86,9 +86,6 @@ class BootstrapRest {
 			});
 		});
 
-		const id = Datastore.getInstance().ID.isValid();
-		console.log(id);
-
 		if (isPrimary) {
 			Logging.logVerbose(`Primary Master REST`);
 			await Model.initCoreModels();
