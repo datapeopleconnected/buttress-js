@@ -142,6 +142,26 @@ class Routes {
 	}
 
 	/**
+	 * Make sure the error handler catch is at the bottom of the stack.
+	 */
+	_repositionErrorHandler() {
+		const logErrors = (err, req, res, next) => this.logErrors(err, req, res, next);
+
+		let stackIndex = this.app._router.stack.findIndex((s) => s.name === 'logErrors');
+
+		// Remove middleware from stack if it's within
+		if (stackIndex !== -1 && stackIndex !== this.app._router.stack - 1) {
+			this.app._router.stack.splice(stackIndex, 1);
+			stackIndex = -1;
+		}
+
+		if (stackIndex === -1) {
+			Logging.logSilly(`Repositioned error handler on express stack`);
+			this.app.use(logErrors);
+		}
+	}
+
+	/**
 	 * Register a router in _routerMap
 	 * @param {string} key
 	 * @param {object} router - express router object
@@ -157,7 +177,7 @@ class Routes {
 		this._routerMap[key] = router;
 		this.app.use('', (...args) => this._getRouter(key)(...args));
 
-		this.app.use((err, req, res, next) => this.logErrors(err, req, res, next));
+		this._repositionErrorHandler();
 	}
 
 	/**
