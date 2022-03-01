@@ -49,8 +49,6 @@ module.exports = class GetOne extends Route {
 			query._id = objectId;
 		}
 
-		query._id = this.model.createId();
-
 		return {
 			query,
 			project,
