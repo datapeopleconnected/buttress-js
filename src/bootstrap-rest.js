@@ -154,15 +154,18 @@ class BootstrapRest {
 
 	async handleProcessMessage(payload) {
 		if (payload.type === 'app-schema:updated') {
+			if (!this.routes) return Logging.logDebug(`Skipping app schema update, router not created yet`);
 			Logging.logDebug(`App Schema Updated: ${payload.appId}`);
 			await Model.initSchema();
 			await this.routes.regenerateAppRoutes(payload.appId);
 			Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
 		} else if (payload.type === 'app-routes:bust-cache') {
+			if (!this.routes) return Logging.logDebug(`Skipping token cache bust, router not created yet`);
 			// TODO: Maybe do this better than
 			Logging.logDebug(`App Routes: cache bust`);
 			await this.routes.loadTokens();
 		} else if (payload.type === 'app-routes:bust-attribute-cache') {
+			if (!this.routes) return Logging.logDebug(`Skipping attributes cache bust, router not created yet`);
 			Logging.logDebug(`App Routes: attributes cache bust`);
 			await this.routes.loadAttributes(payload.appId);
 		}
@@ -183,10 +186,22 @@ class BootstrapRest {
 	async __systemInstall() {
 		Logging.log('Checking for existing apps.');
 
+		const pathName = path.join(Config.paths.appData, 'super.json');
+
 		const appCount = await Model.App.count();
 
 		if (appCount > 0) {
 			Logging.log('Existing apps found - Skipping install.');
+
+			if (fs.existsSync(pathName)) {
+				Logging.logWarn(`--------------------------------------------------------`);
+				Logging.logWarn(' !!WARNING!!');
+				Logging.logWarn(' Super token file still exists on the file system.');
+				Logging.logWarn(' Please capture this token and remove delete the file:');
+				Logging.logWarn(` rm ${pathName}`);
+				Logging.logWarn(`--------------------------------------------------------`);
+			}
+
 			return;
 		}
 
@@ -199,14 +214,22 @@ class BootstrapRest {
 			domain: '',
 		});
 
-		const pathName = path.join(Config.paths.appData, 'super.json');
-		Logging.log(`Super app created: ${res.app._id}`);
-
 		await new Promise((resolve, reject) => {
 			const app = Object.assign(res.app, {token: res.token.value});
+
+			if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, {recursive: true});
+
 			fs.writeFile(pathName, JSON.stringify(app), (err) => {
 				if (err) return reject(err);
-				Logging.log(`Created ${pathName}`);
+				Logging.log(`--------------------------------------------------------`);
+				Logging.log(` SUPER APP CREATED: ${res.app._id}`);
+				Logging.log(``);
+				Logging.log(` Token can be found at the following path:`);
+				Logging.log(` ${pathName}`);
+				Logging.log(``);
+				Logging.log(` IMPORTANT:`);
+				Logging.log(` Please delete this file once you've captured the token`);
+				Logging.log(`--------------------------------------------------------`);
 				resolve();
 			});
 		});
