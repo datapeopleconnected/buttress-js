@@ -1,6 +1,7 @@
 // const Config = require('node-env-obj')();
-
 const Factory = require('./adapter-factory');
+
+const Logging = require('../logging');
 
 let mainDatastore = null;
 
@@ -17,6 +18,7 @@ class Datastore {
 	}
 
 	connect() {
+		Logging.logSilly(`Attempting to connect to datastore ${this._adapter.uri}`);
 		return this.adapter.connect();
 	}
 

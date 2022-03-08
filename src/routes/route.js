@@ -17,6 +17,7 @@ const Logging = require('../logging');
 const Model = require('../model');
 const NRP = require('node-redis-pubsub');
 const Helpers = require('../helpers');
+const {ReadableStreamClone} = require('../helpers/stream');
 
 const nrp = new NRP(Config.redis);
 
@@ -111,7 +112,7 @@ class Route {
 	 * @param {Object} res - ExpresJS response object
 	 * @return {Promise} - Promise is fulfilled once execution has completed
 	 */
-	exec(req, res) {
+	async exec(req, res) {
 		const ip = req.ip || req._remoteAddress || (req.connection && req.connection.remoteAddress) || undefined;
 		Logging.logTimer(`${req.method} ${req.originalUrl || req.url} ${ip}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
 		Logging.logTimer('Route:exec:start', req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
@@ -122,19 +123,37 @@ class Route {
 			return Promise.reject(new Helpers.Errors.RequestError(500));
 		}
 
-		return this._authenticate(req, res)
-			.then((token) => {
-				req.timings.validate = req.timer.interval;
-				return this._validate(req, res, token);
-			})
-			.then((validate) => {
-				req.timings.exec = req.timer.interval;
-				return this._exec(req, res, validate);
-			})
-			.then((result) => this._respond(req, res, result))
-			// .then((result) => this._logActivity(req, res, result))
-			// .then((result) => this._boardcastByAppRole(req, res, result))
-			.then(Logging.Promise.logTimer(`Route:exec:end`, this._timer, Logging.Constants.LogLevel.DEBUG, req.id));
+		const token = await this._authenticate(req, res);
+
+		req.timings.validate = req.timer.interval;
+		const validate = await this._validate(req, res, token);
+
+		req.timings.exec = req.timer.interval;
+		const result = await this._exec(req, res, validate);
+
+		// Send the result back to the client and resolve the request from
+		// this point onward you should treat the request as furfilled.
+		if (result instanceof Stream.Readable) {
+			const resStream = new Stream.PassThrough({objectMode: true});
+			const broadcastStream = new Stream.PassThrough({objectMode: true});
+
+			result.pipe(resStream);
+			result.pipe(broadcastStream);
+
+			await this._respond(req, res, resStream);
+
+			await this._logActivity(req, res);
+
+			await this._boardcastByAppRole(req, res, broadcastStream);
+		} else {
+			await this._respond(req, res, result);
+
+			await this._logActivity(req, res);
+
+			await this._boardcastByAppRole(req, res, result);
+		}
+
+		Logging.logTimer(`Route:exec:end`, this._timer, Logging.Constants.LogLevel.DEBUG, req.id);
 	}
 
 	/**
@@ -231,16 +250,16 @@ class Route {
 		return result;
 	}
 
-	_logActivity(req, res, result) {
+	_logActivity(req, res) {
 		req.timings.logActivity = req.timer.interval;
 		Logging.logTimer('_logActivity:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		if (this.verb === Constants.Verbs.GET) {
 			Logging.logTimer('_logActivity:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			return result;
+			return;
 		}
 		if (this.verb === Constants.Verbs.SEARCH) {
 			Logging.logTimer('_logActivity:end-search', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			return result;
+			return;
 		}
 
 		let addActivty = true;
@@ -257,7 +276,6 @@ class Route {
 		}
 
 		Logging.logTimer('_logActivity:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		return result;
 	}
 
 	_addLogActivity(req, path, verb) {
@@ -284,14 +302,13 @@ class Route {
 	 * @param {Object} req
 	 * @param {Object} res
 	 * @param {*} result
-	 * @return {*} result
 	 */
 	_boardcastByAppRole(req, res, result) {
 		req.timings.boardcastByAppRole = req.timer.interval;
 		Logging.logTimer('_boardcastByAppRole:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		if (this.verb === Constants.Verbs.GET) {
 			Logging.logTimer('_boardcastByAppRole:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			return result;
+			return;
 		}
 
 		// App role
@@ -318,7 +335,6 @@ class Route {
 		}
 
 		Logging.logTimer('_boardcastByAppRole:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		return result;
 	}
 
 	/**

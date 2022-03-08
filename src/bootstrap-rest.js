@@ -50,6 +50,7 @@ class BootstrapRest {
 	}
 
 	async init() {
+		Logging.log(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 		if (cluster.isMaster) {
 			await this.__initMaster();
