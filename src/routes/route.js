@@ -17,7 +17,6 @@ const Logging = require('../logging');
 const Model = require('../model');
 const NRP = require('node-redis-pubsub');
 const Helpers = require('../helpers');
-const {ReadableStreamClone} = require('../helpers/stream');
 
 const nrp = new NRP(Config.redis);
 
