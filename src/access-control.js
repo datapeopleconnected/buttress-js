@@ -1,8 +1,9 @@
 const Sugar = require('sugar');
 
 const Helpers = require('./helpers');
+const Model = require('./model');
 class AccessControl {
-	constructor() {
+	constructor(app) {
 		this.conditionKeys = [
 			'@location',
 			'@date',
@@ -37,6 +38,21 @@ class AccessControl {
 		this.IPv4Regex = /((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}/g;
 		// eslint-disable-next-line max-len
 		this.IPv6Regex = /(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))/g;
+
+		this.appShortId = null;
+		this.schemaNames = null;
+		this.passedCondition = {
+			partial: false,
+			full: true,
+		}
+	}
+
+	setAppShortId(app) {
+		this.appShortId = Helpers.shortId(app);
+	}
+
+	setSchemaNames(schemaNames) {
+		this.schemaNames = schemaNames;
 	}
 
 	async accessControlDisposition(req, userSchemaAttributes) {
@@ -162,92 +178,117 @@ class AccessControl {
 			.then(() => accessControlPolicy.authorised);
 	}
 
-	__checkAttributeConditions(req, attr) {
+	async __checkAttributeConditions(req, attr) {
 		const conditions = attr.conditions;
 		if (!conditions || !Object.keys(conditions).length) return true;
 
+		this.passedCondition.partial = false;
+		this.passedCondition.full = true;
 		let isConditionFullFilled = false;
-		Object.keys(conditions).forEach((key) => {
-			if (this.logicalOperator.includes(key)) {
-				isConditionFullFilled = this.__checkLogicalOperatorCondition(req, attr, conditions[key], key);
-			}
-		});
+		await Object.keys(conditions).reduce(async (prev, key) => {
+			await prev;
+			isConditionFullFilled = await this.__checkLogicalOperatorCondition(req, attr, conditions[key], key);
+		}, Promise.resolve());
 
 		return isConditionFullFilled;
 	}
 
-	__checkLogicalOperatorCondition(req, attr, operation, operator) {
+	async __checkLogicalOperatorCondition(req, attr, operation, operator) {
 		let result = false;
 
 		if (operator === '@and') {
-			operation.forEach((conditionObj) => {
-				result = this.__checkCondition(req, attr, conditionObj, false);
-			});
-		}
-
-		if (operator === '@or') {
-			operation.forEach((conditionObj) => {
-				result = this.__checkCondition(req, attr, conditionObj);
-			});
+			await operation.reduce(async (prev, conditionObj) => {
+				await prev;
+				result = await this.__checkCondition(req, attr, conditionObj, false, false);
+			}, Promise.resolve());
+		} else if (operator === '@or') {
+			await operation.reduce(async (prev, conditionObj) => {
+				await prev;
+				result = await this.__checkCondition(req, attr, conditionObj, false);
+			}, Promise.resolve());
+		} else {
+			result = await this.__checkCondition(req, attr, operation, false, false);
 		}
 
 		return result;
 	}
 
-	__checkCondition(req, attr, conditionObj, partialPass = true) {
-		let passed = false;
-
-		Object.keys(conditionObj).forEach((key) => {
-			const conditionKey = key.replace('env.', '');
-			if (typeof conditionObj[key] === 'object' && !this.conditionKeys.includes(conditionKey)) {
-				passed = this.__checkCondition(req, attr, conditionObj[key], partialPass);
-				return;
+	async __checkCondition(req, attr, conditionObj, passed, partialPass = true) {
+		const objectKeys = Object.keys(conditionObj);
+		for await (const key of objectKeys) {
+			passed = await this.__checkInnerConditions(req, attr, conditionObj, key, passed, partialPass);
+			if (partialPass && passed) {
+				this.passedCondition.partial = true;
 			}
 
-			Object.keys(conditionObj[key]).forEach((operator) => {
-				if (!this.queryOperator.includes(operator)) {
-					// TODO throw an error bad operator
-					return;
-				}
+			if (!partialPass && !passed) {
+				this.passedCondition.full = false;
+			}
+		}
 
-				let lhs = conditionObj[key][operator];
-				let rhs = this.__getEnvironmentVar(attr, key);
+		return (partialPass & this.passedCondition.partial)? this.passedCondition.partial : this.passedCondition.full;
+	}
 
-				if (conditionKey === '@location') {
-					if (!lhs.match(this.IPv4Regex) && !lhs.match(this.IPv6Regex)) {
-						lhs = this.__getEnvironmentVar(attr, lhs);
-					}
+	async __checkInnerConditions(req, attr, conditionObj, key, passed, partialPass) {
+		const conditionKey = key.replace('env.', '');
+		const schemaName = conditionKey.replace('@', '');
+		const isSchemaQuery = this.schemaNames.some((n) => n === schemaName);
 
-					rhs = this.__requestIPAddress(req);
-				}
+		if (this.passedCondition.partial) {
+			return true;
+		}
 
-				if (conditionKey === '@date' || conditionKey === '@time') {
-					if (!Sugar.Date.isValid(Sugar.Date.create(lhs))) {
-						lhs = this.__getEnvironmentVar(attr, lhs);
-					}
+		if (typeof conditionObj[key] === 'object' && !this.conditionKeys.includes(conditionKey) && !isSchemaQuery) {
+			return await this.__checkCondition(req, attr, conditionObj[key], passed, partialPass);
+		}
 
-					rhs = Sugar.Date.create('now');
-					lhs = Sugar.Date.create(lhs);
-				}
+		if (isSchemaQuery) {
+			const dbConditionQuery = this.__getEnvironmentVar(attr, key);
+			return await this.__getDbConditionQueryResult(dbConditionQuery, schemaName);
+		}
 
-				if (!lhs || !rhs) {
-					// TODO throw an error for incomplete operation sides
-					return;
-				}
+		return await Object.keys(conditionObj[key]).reduce(async (innerPrev, operator) => {
+			await innerPrev;
+			return await this.__checkConditionQuery(req, attr, operator, conditionObj, key, conditionKey);
+		}, Promise.resolve());
+	}
 
-				passed = this.__evaluateOperation(lhs, rhs, operator);
+	async __checkConditionQuery(req, attr, operator, conditionObj, key, conditionKey) {
+		let evaluationRes = false;
 
-				if (partialPass && passed) {
-					return;
-				}
+		if (!this.queryOperator.includes(operator)) {
+			// TODO throw an error bad operator
+			return evaluationRes;
+		}
 
-				if (!partialPass && !passed) {
-					return;
-				}
-			});
-		});
+		let lhs = conditionObj[key][operator];
+		let rhs = this.__getEnvironmentVar(attr, key);
 
-		return passed;
+		if (conditionKey === '@location') {
+			if (!lhs.match(this.IPv4Regex) && !lhs.match(this.IPv6Regex)) {
+				lhs = this.__getEnvironmentVar(attr, lhs);
+			}
+
+			rhs = this.__requestIPAddress(req);
+		}
+
+		if (conditionKey === '@date' || conditionKey === '@time') {
+			if (!Sugar.Date.isValid(Sugar.Date.create(lhs))) {
+				lhs = this.__getEnvironmentVar(attr, lhs);
+			}
+
+			rhs = Sugar.Date.create('now');
+			lhs = Sugar.Date.create(lhs);
+		}
+
+		if (!lhs || !rhs) {
+			// TODO throw an error for incomplete operation sides
+			return evaluationRes;
+		}
+
+		evaluationRes = this.__evaluateOperation(lhs, rhs, operator);
+
+		return evaluationRes;
 	}
 
 	__evaluateOperation(lhs, rhs, operator) {
@@ -334,27 +375,27 @@ class AccessControl {
 			.then(() => allowedUpdates);
 	}
 
-	__addAccessControlPolicyAttributeQuery(req, attributeQuery) {
+	__addAccessControlPolicyAttributeQuery(req, attributeQuery, str = 'accessControlQuery') {
 		return this.__convertPrefixToQueryPrefix(attributeQuery)
 			.then((translatedQuery) => {
-				if (!req.accessControlQuery) {
-					req.accessControlQuery = {};
+				if (!req[str]) {
+					req[str] = {};
 				}
 
 				Object.keys(translatedQuery).forEach((key) => {
 					if (!Object.keys(translatedQuery[key]).length) return;
 
-					if (req.accessControlQuery[key] && Array.isArray(req.accessControlQuery[key]) && Array.isArray(translatedQuery[key])) {
+					if (req[str][key] && Array.isArray(req[str][key]) && Array.isArray(translatedQuery[key])) {
 						translatedQuery[key].forEach((elem) => {
-							const elementExist = req.accessControlQuery[key].findIndex((el) => JSON.stringify(el) === JSON.stringify(elem));
+							const elementExist = req[str][key].findIndex((el) => JSON.stringify(el) === JSON.stringify(elem));
 							if (elementExist !== -1) return;
 
-							req.accessControlQuery[key].push(elem);
+							req[str][key].push(elem);
 						});
 						return;
 					}
 
-					req.accessControlQuery[key] = translatedQuery[key];
+					req[str][key] = translatedQuery[key];
 				});
 			});
 	}
@@ -669,6 +710,14 @@ class AccessControl {
 		}
 
 		return value;
+	}
+
+	async __getDbConditionQueryResult(query, schemaName) {
+		const collection = `${this.appShortId}-${schemaName}`;
+		const convertedQuery = {};
+		await this.__addAccessControlPolicyAttributeQuery(convertedQuery, query, 'conditionQuery');
+		query = Model[collection].parseQuery(convertedQuery.conditionQuery, {}, Model[collection].flatSchemaData);
+		return await Model[collection].count(query) > 0;
 	}
 }
 module.exports = new AccessControl();

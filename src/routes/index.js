@@ -531,6 +531,13 @@ class Routes {
 		if (schemaBaseAttribute.length < 1) return next();
 		const schemaAttributes = this._getSchemaRelatedAttributes(schemaBaseAttribute, userAttributes);
 
+		const schemaNames = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection').map((s) => s.name);
+		const schema = schemaNames.some((n) => n === schemaName);
+		if (!schema) return next();
+
+		AccessControl.setAppShortId(req.authApp._id);
+		AccessControl.setSchemaNames(schemaNames);
+
 		const passedDisposition = await AccessControl.accessControlDisposition(req, schemaAttributes);
 
 		if (!passedDisposition) {
@@ -545,9 +552,6 @@ class Routes {
 			res.status(401).json({message: 'Access control policy conditions are not fulfilled'});
 			return;
 		}
-
-		const schema = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection').find((s) => s.name === schemaName);
-		if (!schema) return next();
 
 		const passedAccessControlPolicy = await AccessControl.addAccessControlPolicyQuery(req, schemaAttributes, schema);
 		if (!passedAccessControlPolicy) {
@@ -568,7 +572,7 @@ class Routes {
 	 */
 	_getAttributesChain(attributeNames, attributes = []) {
 		const attrs = this._attributes.filter((attr) => attributeNames.includes(attr.name));
-		attributes = attributes.concat(attrs);
+		attributes = attrs.concat(attributes);
 
 		const extendedAttributes = attrs.reduce((arr, attr) => {
 			attr.extends.forEach((a) => {
