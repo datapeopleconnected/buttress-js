@@ -535,10 +535,7 @@ class Routes {
 		const schema = schemaNames.some((n) => n === schemaName);
 		if (!schema) return next();
 
-		AccessControl.setAppShortId(req.authApp._id);
-		AccessControl.setSchemaNames(schemaNames);
-
-		const passedDisposition = await AccessControl.accessControlDisposition(req, schemaAttributes);
+		const passedDisposition = await AccessControl.disposition.accessControlDisposition(req, schemaAttributes);
 
 		if (!passedDisposition) {
 			Logging.logTimer(`_accessControlPolicy:disposition-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -546,20 +543,21 @@ class Routes {
 			return;
 		}
 
-		const accessControlAuthorisation = await AccessControl.applyAccessControlPolicyConditions(req, schemaAttributes);
+		AccessControl.conditions.setAppShortId(req.authApp._id);
+		const accessControlAuthorisation = await AccessControl.conditions.applyAccessControlPolicyConditions(req, schemaAttributes);
 		if (!accessControlAuthorisation) {
 			Logging.logTimer(`_accessControlPolicy:conditions-not-fulfilled`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			res.status(401).json({message: 'Access control policy conditions are not fulfilled'});
 			return;
 		}
 
-		const passedAccessControlPolicy = await AccessControl.addAccessControlPolicyQuery(req, schemaAttributes, schema);
+		const passedAccessControlPolicy = await AccessControl.filter.addAccessControlPolicyQuery(req, schemaAttributes, schema);
 		if (!passedAccessControlPolicy) {
 			Logging.logTimer(`_accessControlPolicy:access-control-properties-permission-error`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			res.status(401).json({message: 'Can not edit properties without privileged access'});
 			return;
 		}
-		await AccessControl.applyAccessControlPolicyQuery(req);
+		await AccessControl.filter.applyAccessControlPolicyQuery(req);
 
 		next();
 	}
