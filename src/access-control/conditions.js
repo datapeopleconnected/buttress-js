@@ -35,6 +35,11 @@ class Conditions {
 			'@time',
 		];
 
+		this.logicalOperator = [
+			'@and',
+			'@or',
+		];
+
 		this.conditionQueryRegex = new RegExp('query.', 'g');
 		this.envStr = 'env.';
 		this.appShortId = null;
@@ -54,61 +59,132 @@ class Conditions {
 			query: null,
 		};
 
-		return userSchemaAttributes.reduce((prev, attr) => {
-			return prev.then(() => {
-				if (!accessControlPolicy.authorised) return;
+		const prioritisedConditions = await this.__prioritiseConditionOrder(userSchemaAttributes);
+		accessControlPolicy.authorised = await this.__checkAttributeConditions(req, prioritisedConditions);
 
-				accessControlPolicy.authorised = this.__checkAttributeConditions(req, attr);
-			});
-		}, Promise.resolve())
-			.then(() => accessControlPolicy.authorised);
+		return accessControlPolicy.authorised;
 	}
 
-	async __checkAttributeConditions(req, attr) {
-		const conditions = attr.conditions;
-		if (!conditions || !Object.keys(conditions).length) return true;
+	async __checkAttributeConditions(req, conditions) {
+		if (!conditions || !conditions.length) return true;
 
-		this.passedCondition.partial = false;
-		this.passedCondition.full = true;
-		let isConditionFullFilled = false;
+		let isConditionFullFilled = null;
 
-		const prioritisedCondition = await this.__prioritiseConditionOrder(conditions);
-		await Object.keys(prioritisedCondition).reduce(async (prev, key) => {
+		await conditions.reduce(async (prev, item) => {
 			await prev;
-			isConditionFullFilled = await this.__checkLogicalOperatorCondition(req, attr, conditions[key], key);
+
+			if (!isConditionFullFilled && isConditionFullFilled !== null) {
+				return;
+			}
+			isConditionFullFilled = await this.__checkLogicalCondition(req, item);
 		}, Promise.resolve());
 
 		return isConditionFullFilled;
 	}
 
-	async __prioritiseConditionOrder(conditions) {
-		return conditions;
+	async __prioritiseConditionOrder(attributes) {
+		const conditions = attributes.map((attr) => {
+			return {
+				envVar: attr.env,
+				condition: attr.conditions,
+			};
+		});
+
+		return conditions.reduce((arr, obj) => {
+			const condition = obj.condition;
+			const environmentVar = obj.envVar;
+
+			Object.keys(condition).forEach((key) => {
+				if (key !== '@or') {
+					condition[key].forEach((item) => {
+						const itemKeys = Object.keys(item);
+						let flag = false;
+
+						itemKeys.forEach((iKey) => {
+							flag = this.__checkDuplicateCondition(arr, item, environmentVar, iKey);
+
+							if (flag) return;
+
+							arr.push({
+								condition: {
+									[iKey]: item[iKey],
+								},
+								environmentVar,
+							});
+						});
+					});
+				} else {
+					arr.push({
+						condition: {
+							[key]: condition[key],
+						},
+						environmentVar,
+					});
+				}
+			});
+
+			return arr;
+		}, []);
 	}
 
-	async __checkLogicalOperatorCondition(req, attr, operation, operator) {
+	__checkDuplicateCondition(conditions, newCondition, environmentVar, key) {
+		const keyIndex = [];
+
+		conditions.forEach((obj, idx) => {
+			const keyExist = Object.keys(obj['condition']).some((oKey) => oKey === key);
+			if (keyExist) {
+				keyIndex.push(idx);
+			}
+		});
+
+		if (keyIndex.length < 1) return false;
+
+		const passed = keyIndex.some((index) => {
+			const existingConditionKeys = Object.keys(conditions[index]['condition'][key][`@${this.envStr}${key}`]);
+			const newConditionKeys = Object.keys(newCondition[key][`@${this.envStr}${key}`]);
+			const isSameCondition = existingConditionKeys.every((i) => newConditionKeys.includes(i));
+			if (!isSameCondition) return false;
+
+			conditions[index] = {
+				condition: {
+					[key]: newCondition[key],
+				},
+				environmentVar,
+			};
+			return true;
+		});
+
+		return passed;
+	}
+
+	async __checkLogicalCondition(req, item) {
+		const condition = item.condition;
+		this.passedCondition.partial = false;
+		this.passedCondition.full = true;
 		let result = false;
 
-		if (operator === '@and') {
-			await operation.reduce(async (prev, conditionObj) => {
-				await prev;
-				result = await this.__checkCondition(req, attr, conditionObj, false, false);
-			}, Promise.resolve());
-		} else if (operator === '@or') {
-			await operation.reduce(async (prev, conditionObj) => {
-				await prev;
-				result = await this.__checkCondition(req, attr, conditionObj, false);
-			}, Promise.resolve());
-		} else {
-			result = await this.__checkCondition(req, attr, operation, false, false);
-		}
+		await Object.keys(condition).reduce(async (prev, key) => {
+			await prev;
+
+			const obj = condition[key];
+			if (this.logicalOperator.includes(key)) {
+				await obj.reduce(async (prev, conditionObj) => {
+					await prev;
+					result = await this.__checkCondition(req, item.environmentVar, conditionObj, false);
+				}, Promise.resolve());
+			} else {
+				result = await this.__checkCondition(req, item.environmentVar, obj, false, false);
+			}
+		}, Promise.resolve());
 
 		return result;
 	}
 
-	async __checkCondition(req, attr, conditionObj, passed, partialPass = true) {
+	async __checkCondition(req, envVar, conditionObj, passed, partialPass = true) {
 		const objectKeys = Object.keys(conditionObj);
+
 		for await (const key of objectKeys) {
-			passed = await this.__checkInnerConditions(req, attr, conditionObj, key, passed, partialPass);
+			passed = await this.__checkInnerConditions(req, envVar, conditionObj, key, passed, partialPass);
 			if (partialPass && passed) {
 				this.passedCondition.partial = true;
 			}
@@ -118,10 +194,10 @@ class Conditions {
 			}
 		}
 
-		return (partialPass & this.passedCondition.partial)? this.passedCondition.partial : this.passedCondition.full;
+		return (partialPass)? this.passedCondition.partial : this.passedCondition.full;
 	}
 
-	async __checkInnerConditions(req, attr, conditionObj, key, passed, partialPass) {
+	async __checkInnerConditions(req, envVar, conditionObj, key, passed, partialPass) {
 		const conditionKey = key.replace(this.envStr, '');
 		const isSchemaQuery = this.conditionQueryRegex.test(conditionKey);
 
@@ -130,20 +206,20 @@ class Conditions {
 		}
 
 		if (typeof conditionObj[key] === 'object' && !this.conditionKeys.includes(conditionKey) && !isSchemaQuery) {
-			return await this.__checkCondition(req, attr, conditionObj[key], passed, partialPass);
+			return await this.__checkCondition(req, envVar, conditionObj[key], passed, partialPass);
 		}
 
 		if (isSchemaQuery) {
 			const varSchemaKey = key.replace('query.', '');
-			const dbConditionQuery = Object.assign({}, attr.env[varSchemaKey]);
-			this.__buildDbConditionQuery(attr.env, conditionObj[key], varSchemaKey, dbConditionQuery);
+			const dbConditionQuery = Object.assign({}, envVar[varSchemaKey]);
+			this.__buildDbConditionQuery(envVar, conditionObj[key], varSchemaKey, dbConditionQuery);
 
 			return await this.__getDbConditionQueryResult(dbConditionQuery, varSchemaKey);
 		}
 
 		return await Object.keys(conditionObj[key]).reduce(async (innerPrev, operator) => {
 			await innerPrev;
-			return await this.__checkConditionQuery(req, attr, operator, conditionObj, key, conditionKey);
+			return await this.__checkConditionQuery(req, envVar, operator, conditionObj, key, conditionKey);
 		}, Promise.resolve());
 	}
 
@@ -180,7 +256,7 @@ class Conditions {
 		return await Model[collection].count(query) > 0;
 	}
 
-	async __checkConditionQuery(req, attr, operator, conditionObj, key, conditionKey) {
+	async __checkConditionQuery(req, envVar, operator, conditionObj, key, conditionKey) {
 		let evaluationRes = false;
 
 		if (!this.queryOperator.includes(operator)) {
@@ -189,11 +265,11 @@ class Conditions {
 		}
 
 		let lhs = conditionObj[key][operator];
-		let rhs = this.__getEnvironmentVar(attr, key);
+		let rhs = this.__getEnvironmentVar(envVar, key);
 
 		if (conditionKey === '@location') {
 			if (!lhs.match(this.IPv4Regex) && !lhs.match(this.IPv6Regex)) {
-				lhs = this.__getEnvironmentVar(attr, lhs);
+				lhs = this.__getEnvironmentVar(envVar, lhs);
 			}
 
 			rhs = this.__requestIPAddress(req);
@@ -201,7 +277,7 @@ class Conditions {
 
 		if (conditionKey === '@date' || conditionKey === '@time') {
 			if (!Sugar.Date.isValid(Sugar.Date.create(lhs))) {
-				lhs = this.__getEnvironmentVar(attr, lhs);
+				lhs = this.__getEnvironmentVar(envVar, lhs);
 			}
 
 			rhs = Sugar.Date.create('now');
@@ -391,10 +467,12 @@ class Conditions {
 		return passed;
 	}
 
-	__getEnvironmentVar(attr, environmentVar) {
+	__getEnvironmentVar(envVars, environmentVar) {
+		if (!environmentVar.includes('env')) return environmentVar;
+
 		const path = environmentVar.replace('@', '').split('.');
 		let val = null;
-		let obj = attr;
+		let obj = envVars;
 
 		path.forEach((key) => {
 			if (val && !Array.isArray(val) && typeof val === 'object') {
