@@ -89,6 +89,9 @@ class BootstrapSocket {
 				const dataShare = await Model.AppDataSharing.findById(data.appDataSharingId);
 				await this.__createDataShareConnection(dataShare);
 			});
+
+			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
+			});
 		}
 
 		const rxsApps = Model.App.findAll();
@@ -367,6 +370,10 @@ class BootstrapSocket {
 		socket.on('disconnect', () => {
 			Logging.logSilly(`Disconnected from ${url} with id ${socket.id}`);
 		});
+	}
+
+	async __accessControlPolicyCloseSocketConnection(io, room) {
+		io.socketsLeave(room);
 	}
 }
 

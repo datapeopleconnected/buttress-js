@@ -40,6 +40,13 @@ class Conditions {
 			'@or',
 		];
 
+		this.conditionEndRange = [
+			'@gt',
+			'@gte',
+			'@gtDate',
+			'@gteDate',
+		];
+
 		this.conditionQueryRegex = new RegExp('query.', 'g');
 		this.envStr = 'env.';
 		this.appShortId = null;
@@ -47,6 +54,30 @@ class Conditions {
 			partial: false,
 			full: true,
 		};
+	}
+
+	async isAttributeTimeConditioned(conditions, pass = false, test = false) {
+		await Object.keys(conditions).reduce(async (res, key) => {
+			if (Array.isArray(conditions[key])) {
+				if (this. logicalOperator.includes(conditions[key])) {
+					return await this.isAttributeTimeConditioned(conditions[key], pass);
+				} else {
+					// TODO throw an error
+				}
+			}
+
+			if ((key === 'time' || pass) && typeof conditions[key] === 'object') {
+				const isTimeCondition = Object.keys(conditions[key]).some((cKey) => this.conditionEndRange.includes(cKey));
+
+				if (isTimeCondition) {
+					res = isTimeCondition;
+					return res;
+				}
+				return await this.isAttributeTimeConditioned(conditions[key], true, true);
+			}
+
+			return res;
+		}, false);
 	}
 
 	setAppShortId(app) {
