@@ -8,11 +8,18 @@
  *
  */
 
+const Config = require('node-env-obj')();
+const Sugar = require('sugar');
+const NRP = require('node-redis-pubsub');
+
+const Model = require('../model');
 const Logging = require('../logging');
 const Schema = require('../schema');
 const AccessControlDisposition = require('./disposition');
 const AccessControlConditions = require('./conditions');
 const AccessControlFilter = require('./filter');
+
+const nrp = new NRP(Config.redis);
 
 class AccessControl {
 	constructor() {
@@ -147,22 +154,41 @@ class AccessControl {
 		const prioritisedConditions = await AccessControlConditions.__prioritiseConditionOrder(attributes);
 		await prioritisedConditions.reduce(async (prev, attribute) => {
 			await prev;
-			await this._queueEvent(attribute);
+			await this._queueEvent(attribute, room);
 		}, Promise.resolve());
 
 		this._attributeCloseSocketEvents.push(room);
 	}
 
-	async _queueEvent(attribute) {
+	async _queueEvent(attribute, room) {
 		const envVars = attribute.environmentVar;
 		const conditions = attribute.condition;
 		// just for now only for time and date condition
 		const isTimeCondition = await AccessControlConditions.isAttributeTimeConditioned(conditions);
-		console.log('isTimeCondition event', isTimeCondition);
-		// const timeout = 
-		// setTimeout(() => {
-			
-		// }, );
+		if (isTimeCondition) {
+			const conditionEndTime = AccessControlConditions.getEnvironmentVar(envVars, 'env.endTime');
+			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
+			setTimeout(() => {
+				nrp.emit('accessControlPolicy:disconnectSocket', {
+					room,
+				});
+			}, 5000);
+		}
+	}
+
+	async getAttributeChannels(appId) {
+		const attributes = [];
+		const users = [];
+		const rxsUsers = await Model.User.findAll(appId);
+		for await (const user of rxsUsers) {
+			users.push(user);
+		}
+
+		await users.reduce(async (prev, user) => {
+			await prev;
+
+			attributes.push(await )
+		}, Promise.resolve());
 	}
 }
 module.exports = new AccessControl();

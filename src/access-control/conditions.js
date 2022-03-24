@@ -57,7 +57,7 @@ class Conditions {
 	}
 
 	async isAttributeTimeConditioned(conditions, pass = false, test = false) {
-		await Object.keys(conditions).reduce(async (res, key) => {
+		return await Object.keys(conditions).reduce(async (res, key) => {
 			if (Array.isArray(conditions[key])) {
 				if (this. logicalOperator.includes(conditions[key])) {
 					return await this.isAttributeTimeConditioned(conditions[key], pass);
@@ -296,11 +296,11 @@ class Conditions {
 		}
 
 		let lhs = conditionObj[key][operator];
-		let rhs = this.__getEnvironmentVar(envVar, key);
+		let rhs = this.getEnvironmentVar(envVar, key);
 
 		if (conditionKey === '@location') {
 			if (!lhs.match(this.IPv4Regex) && !lhs.match(this.IPv6Regex)) {
-				lhs = this.__getEnvironmentVar(envVar, lhs);
+				lhs = this.getEnvironmentVar(envVar, lhs);
 			}
 
 			rhs = this.__requestIPAddress(req);
@@ -308,7 +308,7 @@ class Conditions {
 
 		if (conditionKey === '@date' || conditionKey === '@time') {
 			if (!Sugar.Date.isValid(Sugar.Date.create(lhs))) {
-				lhs = this.__getEnvironmentVar(envVar, lhs);
+				lhs = this.getEnvironmentVar(envVar, lhs);
 			}
 
 			rhs = Sugar.Date.create('now');
@@ -498,7 +498,7 @@ class Conditions {
 		return passed;
 	}
 
-	__getEnvironmentVar(envVars, environmentVar) {
+	getEnvironmentVar(envVars, environmentVar) {
 		if (!environmentVar.includes('env')) return environmentVar;
 
 		const path = environmentVar.replace('@', '').split('.');

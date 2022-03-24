@@ -302,7 +302,7 @@ class Route {
 	 * @param {Object} res
 	 * @param {*} result
 	 */
-	_boardcastByAppRole(req, res, result) {
+	async _boardcastByAppRole(req, res, result) {
 		req.timings.boardcastByAppRole = req.timer.interval;
 		Logging.logTimer('_boardcastByAppRole:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		if (this.verb === Constants.Verbs.GET) {
@@ -310,12 +310,19 @@ class Route {
 			return;
 		}
 
-		// App role
-		let appRoles = [];
-		if (req.authApp && req.authApp.__roles && req.authApp.__roles.roles) {
-			// This needs to be cached on startup
-			appRoles = Helpers.flattenRoles(req.authApp.__roles);
+		// appAttributes
+		const users = [];
+		let appAttributes = null;
+		if (req.authApp) {
+			appAttributes = AccessControl.getAttributeChannels(req.authApp._id);
 		}
+
+		// // App role
+		// let appRoles = [];
+		// if (req.authApp && req.authApp.__roles && req.authApp.__roles.roles) {
+		// 	// This needs to be cached on startup
+		// 	appRoles = Helpers.flattenRoles(req.authApp.__roles);
+		// }
 
 		let path = req.path.split('/');
 		if (path[0] === '') path.shift();
@@ -327,11 +334,17 @@ class Route {
 
 		this._broadcast(req, res, result, null, path, true);
 
-		if (appRoles.length < 1) {
+		if (appAttributes.length < 1) {
 			this._broadcast(req, res, result, null, path);
 		} else {
-			appRoles.forEach((role) => this._broadcast(req, res, result, role, path));
+			appAttributes.forEach((attr) => this._broadcast(req, res, result, attr, path));
 		}
+
+		// if (appRoles.length < 1) {
+		// 	this._broadcast(req, res, result, null, path);
+		// } else {
+		// 	appRoles.forEach((role) => this._broadcast(req, res, result, role, path));
+		// }
 
 		Logging.logTimer('_boardcastByAppRole:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
