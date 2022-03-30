@@ -15,6 +15,8 @@ const Errors = require('./helpers/errors');
 const stream = require('stream');
 const Transform = stream.Transform;
 
+const Datastore = require('./datastore');
+
 module.exports.Errors = Errors;
 
 module.exports.Schema = require('./helpers/schema');
@@ -173,6 +175,9 @@ module.exports.shortId = (id) => {
 	let output = '';
 	if (!id) return output;
 
+	// HACK: need to make sure the id is in the correct format to extract the timestamp
+	id = Datastore.getInstance().ID.new(id);
+
 	const date = id.getTimestamp();
 	let time = date.getTime();
 
@@ -275,11 +280,26 @@ const __getFlattenedSchema = (schema) => {
 module.exports.getFlattenedSchema = __getFlattenedSchema;
 
 module.exports.streamFirst = (stream) => {
+	// TODO: Handle none stream being passed through
+
+	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
+		throw new Error(`Expected Stream but got '${stream}'`);
+	}
+
 	return new Promise((resolve, reject) => {
+		stream.on('error', (err) => reject(err));
+		stream.on('end', () => resolve(undefined));
 		stream.on('data', (item) => {
 			stream.destroy();
 			resolve(item);
 		});
-		stream.on('end', () => resolve(undefined));
 	});
+};
+
+module.exports.awaitAll = async (arr, handler) => await Promise.all(arr.map(async (item) => await handler(item)));
+module.exports.awaitForEach = async (arr, handler) => {
+	await arr.reduce(async (prev, item) => {
+		await prev;
+		await handler(item);
+	}, Promise.resolve());
 };

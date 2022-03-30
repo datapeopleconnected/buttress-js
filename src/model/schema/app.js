@@ -112,6 +112,7 @@ class AppSchemaModel extends SchemaModel {
 		}, {
 			_app: this.createId(appBody.id),
 		});
+
 		const token = await Helpers.streamFirst(rxsToken);
 
 		const rxsApp = await super.add(appBody, {_token: token._id});

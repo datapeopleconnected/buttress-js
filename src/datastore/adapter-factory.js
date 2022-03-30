@@ -16,6 +16,8 @@ module.exports = class Datastore {
 				return require('./adapters/mongodb.js');
 			case 'buttress:':
 				return require('./adapters/buttress.js');
+			case 'mysql:':
+				return require('./adapters/mysql.js');
 			default:
 				return null;
 			}

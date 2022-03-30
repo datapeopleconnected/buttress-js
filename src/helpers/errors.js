@@ -6,9 +6,16 @@ module.exports.RequestError = class RequestError extends Error {
 	}
 };
 
-module.exports.RouteMissingModel = class RequestError extends Error {
+module.exports.RouteMissingModel = class RouteMissingModel extends Error {
 	constructor(message) {
 		super(message);
 		this.name = 'RouteMissingModel';
+	}
+};
+
+module.exports.NotYetImplemented = class NotYetImplemented extends Error {
+	constructor(message) {
+		super(message);
+		this.name = 'NotYetImplemented';
 	}
 };

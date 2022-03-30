@@ -85,7 +85,7 @@ module.exports = class Buttress extends AbstractAdapter {
 		return new Buttress(this.uri, this.options, this.connection);
 	}
 
-	setCollection(collectionName) {
+	async setCollection(collectionName) {
 		this.collection = this.connection.getCollection(collectionName);
 	}
 

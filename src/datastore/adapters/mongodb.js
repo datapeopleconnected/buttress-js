@@ -21,21 +21,22 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		super(uri, options, connection);
 	}
 
-	connect() {
+	async connect() {
 		if (this.connection) return this.connection;
 
 		// Remove the pathname as we'll selected the db using the client method
 		const connectionString = this.uri.href.replace(this.uri.pathname, '');
 
-		return MongoClient.connect(connectionString, this.options)
-			.then((client) => this.connection = client.db(this.uri.pathname.replace(/\//g, '')));
+		const client = await MongoClient.connect(connectionString, this.options);
+
+		return this.connection = client.db(this.uri.pathname.replace(/\//g, ''));
 	}
 
 	cloneAdapterConnection() {
 		return new MongodbAdapter(this.uri, this.options, this.connection);
 	}
 
-	setCollection(collectionName) {
+	async setCollection(collectionName) {
 		this.collection = this.connection.collection(collectionName);
 	}
 

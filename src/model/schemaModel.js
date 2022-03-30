@@ -34,12 +34,13 @@ class SchemaModel {
 		this.appShortId = (app) ? shortId(app._id) : null;
 	}
 
-	initAdapter(datastore) {
+	async initAdapter(datastore) {
 		if (datastore) {
 			Logging.logSilly(`initAdapter ${this.schemaData.collection}`);
 			this.adapter = datastore.adapter.cloneAdapterConnection();
-			this.adapter.connect();
-			this.adapter.setCollection(`${this.schemaData.collection}`);
+			await this.adapter.connect();
+			await this.adapter.setCollection(`${this.schemaData.collection}`);
+			await this.adapter.updateSchema(this.schemaData);
 		}
 	}
 
@@ -287,6 +288,8 @@ class SchemaModel {
 
 		if (body.id) {
 			entity._id = this.adapter.ID.new(body.id);
+		} else {
+			entity._id = this.adapter.ID.new();
 		}
 
 		if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {
