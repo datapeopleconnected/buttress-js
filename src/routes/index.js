@@ -314,6 +314,9 @@ class Routes {
 						return;
 					}
 
+					console.log(token);
+					throw new Error('Foo');
+
 					req.token = token;
 
 					Logging.logTimer(`_authenticateToken:got-token ${(req.token) ? req.token._id : token}`,
@@ -392,6 +395,9 @@ class Routes {
 		const rxsToken = Model.Token.findAll();
 
 		for await (const token of rxsToken) {
+
+			console.log(token);
+
 			tokens.push(token);
 		}
 

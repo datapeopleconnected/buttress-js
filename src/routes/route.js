@@ -468,6 +468,7 @@ class Route {
 
 			let authorised = false;
 			const token = req.token;
+
 			for (let x = 0; x < token.permissions.length; x++) {
 				const p = token.permissions[x];
 				if (this._matchRoute(req, p.route) && this._matchPermission(p.permission)) {

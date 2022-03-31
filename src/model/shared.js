@@ -246,6 +246,7 @@ const __extendPathContext = (pathContext, schema, prefix) => {
 			extended[`^${prefix}${property}$`] = {type: 'scalar', values: []};
 			break;
 		case 'string':
+		case 'text':
 			if (config.__enum) {
 				extended[`^${prefix}${property}$`] = {type: 'scalar', values: config.__enum};
 			} else {

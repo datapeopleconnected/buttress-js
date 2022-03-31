@@ -52,6 +52,7 @@ const __getPropDefault = (config) => {
 		res = config.__default === undefined ? false : config.__default;
 		break;
 	case 'string':
+	case 'text':
 		res = config.__default === undefined ? '' : config.__default;
 		break;
 	case 'number':
@@ -133,6 +134,7 @@ const __validateProp = (prop, config) => {
 		valid = type === config.__type;
 		break;
 	case 'string':
+	case 'text':
 		if (type === 'number') {
 			prop.value = String(prop.value);
 			type = typeof prop.value;

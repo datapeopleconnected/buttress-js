@@ -76,7 +76,7 @@ class AppSchemaModel extends SchemaModel {
 					__allowUpdate: false,
 				},
 				__schema: {
-					__type: 'string',
+					__type: 'text',
 					__required: true,
 					__default: '[]',
 					__allowUpdate: true,

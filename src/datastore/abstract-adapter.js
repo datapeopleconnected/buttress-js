@@ -21,6 +21,8 @@ module.exports = class AbstractAdapter {
 	}
 
 	updateSchema(schemaData) {
+		if (!this.requiresFormalSchema) return;
+
 		throw new Errors.NotYetImplemented('updateSchema');
 	}
 

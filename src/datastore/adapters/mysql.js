@@ -24,6 +24,8 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		this.requiresFormalSchema = true;
 
 		this._databaseName = this.uri.pathname.replace(/\//g, '');
+
+		this._tables = [];
 	}
 
 	async connect() {
@@ -60,6 +62,8 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 		this.collection = collectionName;
 
+		this._tableKeys = [];
+
 		return true;
 	}
 
@@ -68,14 +72,12 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 		// Parse out MySQL tables and columns from the schema
 		const tables = await this.parseTablesFromSchema(this.collection, schemaData.properties);
-		const tableKeys = Object.keys(tables);
+		this._tableKeys = Object.keys(tables);
 
-		Logging.logSilly(`Parsed ${tableKeys.length} tables from schema`);
-
-		console.log(tables);
+		Logging.logSilly(`Parsed ${this._tableKeys.length} tables from schema`);
 
 		// Create / Update table from parsed data
-		await Helpers.awaitForEach(tableKeys, async (key) => await this.createOrUpdateTable(key, tables[key]));
+		await Helpers.awaitForEach(this._tableKeys, async (key) => await this.createOrUpdateTable(key, tables[key]));
 	}
 
 	async parseTablesFromSchema(name, properties, parentReference = null) {
@@ -166,7 +168,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			drops.forEach((k) => commands.push(`DROP COLUMN \`${k}\``));
 			updates.forEach((k) => this.createOrUpdateColumn(k, columns[k], currentSchema[k], null, commands));
 
-			console.log(`ALTER TABLE \`${name}\` ${commands.join(', ')}`);
+			if (commands.length < 1) return;
 
 			return this._query(`ALTER TABLE \`${name}\` ${commands.join(', ')}`);
 		}
@@ -226,6 +228,9 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		case 'string':
 			rtn.type = 'VARCHAR(255)';
 			break;
+		case 'text':
+			rtn.type = 'TEXT';
+			break;
 		default:
 			rtn.type = 'VARCHAR(255)';
 			break;
@@ -251,6 +256,40 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return await Helpers.streamFirst(stream);
 	}
 
+	_buildQuery(command, table, selectParts, joinParts, whereParts) {
+		const queryParts = [];
+
+		if (command === 'UPDATE') {
+			queryParts.push(`${command} ${table}`);
+
+			queryParts.push(`SET ${selectParts.join(', ')}`);
+		} else {
+			queryParts.push(command);
+
+			// Selectors
+			// TODO: PROJECT
+			if (selectParts.length > 0) queryParts.push(selectParts.join(', '));
+			else queryParts.push('*');
+
+			// Table
+			queryParts.push(`FROM ${table}`);
+
+			// Joins
+			if (joinParts.length > 0) queryParts.push(joinParts.join(', '));
+		}
+
+		// Where
+		if (whereParts.length > 0) queryParts.push(`WHERE ${whereParts.join(', ')}`);
+
+		// TODO: SKIP
+		// TODO: LIMIT
+		// TODO: SORT
+
+		console.log(queryParts.join(' '));
+
+		return queryParts.join(' ');
+	}
+
 	/**
 	 * @param {Object} query - mongoDB query
 	 * @param {Object} excludes - mongoDB query excludes
@@ -263,52 +302,45 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
 		Logging.logSilly(`find: ${this.collection} ${query}`);
 
-		const whereParts = [];
+		const queryParts = this._parseBJSQuery(query);
 
-		const parseQuery = (_query) => {
-			for (const field of Object.keys(query)) {
-				const command = query[field];
-				for (const operator in command) {
-					if (!command.hasOwnProperty(operator)) continue;
-					const operand = command[operator];
-					parseOperations(field, operator, operand);
-				}
-			}
-		};
-		const parseOperations = (field, operator, operand) => {
-			if (operator === '$in') {
-				whereParts.push(`${field} IN (${operand.map((v) => `'${v}'`).join(', ')})`);
-			} else {
-				throw new Error(`Unknown operator '${operator}'`);
-			}
-		};
+		// Perform joins to fetch info about secondary tables
+		const selectParts = [];
+		const joinParts = [];
+		if (this._tableKeys.length > 1) {
+			selectParts.push(`\`${this.collection}\`.*`);
+			this._tableKeys.forEach((table) => {
+				if (table === this.collection) return;
+				const tableNameSplit = table.split('.');
+				const leftTable = tableNameSplit.slice(0, tableNameSplit.length - 1).join('.');
+				console.log(leftTable);
+				const foreignKey = '_'+ leftTable + 'Id';
+				selectParts.push(`json_array((SELECT GROUP_CONCAT(json_object('_id',id,'route',route)) from \`tokens.permissions\` where _tokensId = \`tokens\`._id)))`);
+				// joinParts.push(`LEFT JOIN \`${table}\` ON \`${leftTable}\`.\`_id\`=\`${table}\`.\`${foreignKey}\``);
+			});
+		}
 
-		parseQuery(query);
 
-		const queryParts = [];
-
-		queryParts.push('SELECT');
-
-		// Selectors
-		// TODO: PROJECT
-		queryParts.push('*');
-
-		// Table
-		queryParts.push(`FROM ${this.collection}`);
-
-		// Joins
-
-		// Where
-		if (whereParts.length > 0) queryParts.push(`WHERE ${whereParts.join(', ')}`);
-
-		// TODO: SKIP
-		// TODO: LIMIT
-		// TODO: SORT
-
-		console.log(queryParts.join(' '));
-
-		return this._queryStream(queryParts.join(' '));
+		return this._queryStream(
+			this._buildQuery('SELECT', this.collection, selectParts, joinParts, queryParts.where),
+		);
+			// Need reformat data into schema;
 	}
+
+	/**
+	 * @param {String} id - entity id to get
+	 * @return {Promise} - resolves to an array of Companies
+	 */
+	async findById(id) {
+		// Logging.logSilly(`Schema:findById: ${this.collectionName} ${id}`);
+
+		if (id instanceof ObjectId === false) {
+			id = new ObjectId(id);
+		}
+
+		return await Helpers.streamFirst(this.find({_id: id}, {}));
+	}
+
 
 	/**
 	 * @return {Promise} - resolves to an array of Companies
@@ -378,6 +410,56 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		const insertedIds = documents.map((v) => this.ID.new(v._id));
 
 		return this.find({_id: {$in: insertedIds}});
+	}
+
+	update(filter, update) {
+		const filterParts = this._parseBJSQuery(filter);
+		const updateParts = this._parseBJSQuery(update);
+
+		return this._query(
+			this._buildQuery('UPDATE', this.collection, updateParts.set, [], filterParts.where),
+		);
+	}
+
+	_parseBJSQuery(_query) {
+		const parts = {
+			set: [],
+			where: [],
+		};
+
+		for (const field in _query) {
+			if (!{}.hasOwnProperty.call(_query, field)) continue;
+			if (field === '$set') {
+				for (const prop in _query[field]) {
+					if (!{}.hasOwnProperty.call(_query[field], prop)) continue;
+					// TODO: Not taking into account data type
+					parts.set.push(`\`${prop}\`='${_query[field][prop]}'`);
+				}
+			} else {
+				if (typeof _query[field] === 'object' && !Array.isArray(_query[field]) && _query[field] !== null) {
+					for (const operator in _query[field]) {
+						if (!{}.hasOwnProperty.call(_query[field], operator)) continue;
+
+						const operand = _query[field][operator];
+						parts.where.push(this._parseOperations(field, operator, operand));
+					}
+				} else {
+					parts.where.push(this._parseOperations(field, '$eq', _query[field]));
+				}
+			}
+		}
+
+		return parts;
+	}
+	_parseOperations(field, operator, operand) {
+		switch (operator) {
+		case '$eq':
+			return `\`${field}\`='${operand}'`;
+		case '$in':
+			return `\`${field}\` IN (${operand.map((v) => `'${v}'`).join(', ')})`;
+		default:
+			throw new Error(`Unknown operator '${operator}'`);
+		}
 	}
 
 	/**

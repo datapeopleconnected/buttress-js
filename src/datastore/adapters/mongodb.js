@@ -83,6 +83,9 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			this.collection.updateMany(filter, update, (err, object) => {
 				if (err) return reject(new Error(err));
 
+				console.log(object);
+				throw new Error('BLA');
+
 				resolve(object);
 			});
 		});
