@@ -392,9 +392,6 @@ class Routes {
 		const rxsToken = Model.Token.findAll();
 
 		for await (const token of rxsToken) {
-
-			console.log(token);
-
 			tokens.push(token);
 		}
 

@@ -18,17 +18,15 @@ module.exports = {
 
 // ISC © Julien Fontanet
 const getSymbol =
-	typeof Symbol === 'function'
-		? name => {
-			const symbol = Symbol[name];
-			return symbol !== undefined ? symbol : `@@${name}`;
-		}
-		: name => `@@${name}`;
+	typeof Symbol === 'function' ? (name) => {
+		const symbol = Symbol[name];
+		return symbol !== undefined ? symbol : `@@${name}`;
+	} : (name) => `@@${name}`;
 
 const $$asyncIterator = (asyncIteratorToStream.$$asyncIterator = getSymbol('asyncIterator'));
 const $$iterator = (asyncIteratorToStream.$$iterator = getSymbol('iterator'));
 
-const resolveToIterator = value => {
+const resolveToIterator = (value) => {
 	let tmp;
 	if (typeof (tmp = value[$$asyncIterator]) === 'function') {
 		return tmp.call(value); // async iterable
@@ -50,20 +48,18 @@ const resolveToIterator = value => {
 // ask for it without generating a value by yielding `undefined`.
 function asyncIteratorToStream(iterable, options) {
 	if (typeof iterable === 'function') {
-		return function() {
-			return asyncIteratorToStream(iterable.apply(this, arguments), options);
+		return function(...args) {
+			return asyncIteratorToStream(iterable.apply(this, args), options);
 		};
 	}
 
-	const { then } = iterable;
+	const {then} = iterable;
 	if (typeof then === 'function') {
-		return then.call(iterable, iterable =>
-			asyncIteratorToStream(iterable, options)
-		);
+		return then.call(iterable, (iterable) => asyncIteratorToStream(iterable, options));
 	}
 
 	const iterator = resolveToIterator(iterable);
-	const isGenerator = "return" in iterator;
+	const isGenerator = 'return' in iterator;
 	const readable =
 		options instanceof Readable ? options : new Readable(options);
 	if (isGenerator) {
@@ -77,7 +73,7 @@ function asyncIteratorToStream(iterable, options) {
 		};
 	}
 	let running = false;
-	readable._read = async size => {
+	readable._read = async (size) => {
 		if (running) {
 			return;
 		}
@@ -116,7 +112,7 @@ function asyncIteratorToStream(iterable, options) {
 				value = cursor.value;
 			} while (value === undefined || readable.push(value));
 		} catch (error) {
-			process.nextTick(readable.emit.bind(readable, "error", error));
+			process.nextTick(readable.emit.bind(readable, 'error', error));
 		} finally {
 			running = false;
 		}
