@@ -20,6 +20,7 @@ const Datastore = require('./datastore');
 module.exports.Errors = Errors;
 
 module.exports.Schema = require('./helpers/schema');
+module.exports.Stream = require('./helpers/stream');
 
 class Timer {
 	constructor() {

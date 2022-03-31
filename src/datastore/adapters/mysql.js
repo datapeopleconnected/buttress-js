@@ -1,6 +1,7 @@
 const ObjectId = require('mongodb').ObjectId;
 // const mysql = require('mysql2/promise');
 const mysql = require('mysql2');
+const stream = require('stream');
 
 const Helpers = require('../../helpers');
 const Logging = require('../../logging');
@@ -307,24 +308,35 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		// Perform joins to fetch info about secondary tables
 		const selectParts = [];
 		const joinParts = [];
+
+		// !!! Warning, doth not behold at the code beyond this pointeth!
+		const joinTransformQuery = Helpers.Stream.asyncIteratorToStream.obj(async function* (_self, queryStream) {
+			for await (const chunk of queryStream) {
+				await Helpers.awaitAll(_self._tableKeys, async (table) => {
+					if (table === _self.collection) return;
+					const tableNameSplit = table.split('.');
+					const property = tableNameSplit.pop();
+					const foreignKey = '_'+ tableNameSplit.join('.') + 'Id';
+					const [rows] = await _self._query(`SELECT * FROM \`${table}\` WHERE \`${foreignKey}\`='${chunk._id}'`);
+					chunk[property] = rows;
+				});
+
+				yield chunk;
+			}
+		});
+
 		if (this._tableKeys.length > 1) {
-			selectParts.push(`\`${this.collection}\`.*`);
-			this._tableKeys.forEach((table) => {
-				if (table === this.collection) return;
-				const tableNameSplit = table.split('.');
-				const leftTable = tableNameSplit.slice(0, tableNameSplit.length - 1).join('.');
-				console.log(leftTable);
-				const foreignKey = '_'+ leftTable + 'Id';
-				selectParts.push(`json_array((SELECT GROUP_CONCAT(json_object('_id',id,'route',route)) from \`tokens.permissions\` where _tokensId = \`tokens\`._id)))`);
-				// joinParts.push(`LEFT JOIN \`${table}\` ON \`${leftTable}\`.\`_id\`=\`${table}\`.\`${foreignKey}\``);
-			});
+			return joinTransformQuery(
+				this,
+				this._queryStream(
+					this._buildQuery('SELECT', this.collection, selectParts, joinParts, queryParts.where),
+				),
+			);
+		} else {
+			return this._queryStream(
+				this._buildQuery('SELECT', this.collection, selectParts, joinParts, queryParts.where),
+			);
 		}
-
-
-		return this._queryStream(
-			this._buildQuery('SELECT', this.collection, selectParts, joinParts, queryParts.where),
-		);
-			// Need reformat data into schema;
 	}
 
 	/**

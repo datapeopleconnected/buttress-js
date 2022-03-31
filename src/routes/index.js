@@ -314,9 +314,6 @@ class Routes {
 						return;
 					}
 
-					console.log(token);
-					throw new Error('Foo');
-
 					req.token = token;
 
 					Logging.logTimer(`_authenticateToken:got-token ${(req.token) ? req.token._id : token}`,
