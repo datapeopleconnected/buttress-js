@@ -264,6 +264,10 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			queryParts.push(`${command} ${table}`);
 
 			queryParts.push(`SET ${selectParts.join(', ')}`);
+		} else if (command === 'DELETE') {
+			queryParts.push(command);
+
+			queryParts.push(`FROM ${table}`);
 		} else {
 			queryParts.push(command);
 
@@ -286,9 +290,41 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		// TODO: LIMIT
 		// TODO: SORT
 
-		console.log(queryParts.join(' '));
+		// console.log(queryParts.join(' '));
 
 		return queryParts.join(' ');
+	}
+
+	/**
+	 * @param {App} entity - entity object to be deleted
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+	 */
+	rm(entity) {
+		return this.rmAll({_id: this.ID.new(entity._id)});
+	}
+
+	/**
+	 * @param {Array} ids - Array of entity ids to delete
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+	 */
+	rmBulk(ids) {
+		return this.rmAll({_id: {$in: ids}});
+	}
+
+	/*
+	 * @param {Object} query - mongoDB query
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+	 */
+	rmAll(query) {
+		if (!query) query = {};
+		// Logging.logSilly(`rmAll: ${this.collectionName} ${query}`);
+
+		const queryParts = this._parseBJSQuery(query);
+
+		console.log(queryParts);
+		return this._query(
+			this._buildQuery('DELETE', this.collection, [], [], queryParts.where),
+		);
 	}
 
 	/**
@@ -346,9 +382,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	async findById(id) {
 		// Logging.logSilly(`Schema:findById: ${this.collectionName} ${id}`);
 
-		if (id instanceof ObjectId === false) {
-			id = new ObjectId(id);
-		}
+		if (id instanceof ObjectId === false) id = this.ID.new(id);
 
 		return await Helpers.streamFirst(this.find({_id: id}, {}));
 	}
@@ -391,33 +425,55 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			]);
 		}, Promise.resolve([]));
 
-		// TODO: Handle arrays, currently stripping them out.
-		documents.forEach((properties) => {
-			for (const [key, value] of Object.entries(properties)) {
-				if (Array.isArray(value)) {
-					delete properties[key];
+		const unpackArrays = (documents, parentPath) => {
+			let arrayMap = {};
+			documents.forEach((properties) => Object.keys(properties).forEach((path) => {
+				if (Array.isArray(properties[path])) {
+					const fullPath = (parentPath) ? parentPath+'.'+path : path;
+					const ref = (parentPath) ?
+						`_${parentPath.split('.').map((p, idx) => (idx === 0) ? p : p.charAt(0).toUpperCase() + p.substring(1)).join('')}Id` :
+						null;
+
+					arrayMap[fullPath] = properties[path];
+					arrayMap[fullPath].map((item) => {
+						if (!item._id) item['_id'] = this.ID.new();
+						if (ref) item[ref] = properties._id;
+					});
+					arrayMap = {...arrayMap, ...unpackArrays(properties[path], fullPath)};
+					delete properties[path];
 				}
-			}
-		});
+			}));
+			return arrayMap;
+		};
 
-		documents.forEach((properties) => {
-			const columns = Object.keys(properties);
+		const tables = unpackArrays(documents, this.collection);
+		tables[this.collection] = documents;
 
-			// TODO: ESCAPES NEEDED
-			const formattedValues = Object.values(properties).map((value) => {
-				if (value === null) {
-					return 'NULL';
-				}
+		console.log(tables);
 
-				return `'${value}'`;
+		Object.keys(tables).forEach((table) => {
+			tables[table].forEach((properties) => {
+				const columns = Object.keys(properties);
+
+				// TODO: ESCAPES NEEDED
+				const formattedValues = Object.values(properties).map((value) => {
+					if (value === null) {
+						return 'NULL';
+					}
+
+					return `'${value}'`;
+				});
+
+				commands.push(`INSERT INTO \`${table}\` (\`${columns.join('`,`')}\`) VALUES (${formattedValues.join(',')});`);
 			});
-
-			commands.push(`INSERT INTO ${this.collection} (\`${columns.join('`,`')}\`) VALUES (${formattedValues.join(',')});`);
 		});
 
 		if (commands.length < 1) return;
 
-		await this._query(commands.join(';'));
+		await commands.reduce(async (prev, command) => {
+			await prev;
+			await this._query(command);
+		}, Promise.resolve());
 
 		const insertedIds = documents.map((v) => this.ID.new(v._id));
 

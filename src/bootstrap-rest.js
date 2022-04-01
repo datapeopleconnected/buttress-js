@@ -259,14 +259,8 @@ class BootstrapRest {
 		// Add local schema to Model.App
 		Model.App.setLocalSchema(localSchema);
 
-		console.log('Here?');
-
 		const rxsApps = Model.App.findAll();
-
-		console.log('Here?');
-
 		for await (const app of rxsApps) {
-			console.log('Here?');
 			const appSchema = Schema.decode(app.__schema);
 			const appShortId = shortId(app._id);
 			Logging.log(`Adding ${localSchema.length} local schema for ${appShortId}:${app.name}:${appSchema.length}`);
