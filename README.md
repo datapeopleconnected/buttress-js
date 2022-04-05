@@ -1,5 +1,5 @@
 # ButtressJS
-Realtime datastore for software.
+The federated real-time open data platform.
 
 # What's New
 

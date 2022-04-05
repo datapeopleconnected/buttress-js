@@ -1,9 +1,9 @@
 {
   "name": "ButtresJS",
   "version": "2.4.3",
-  "description": "Realtime datastore for software",
-  "author": "Lighten",
-  "license": "MIT",
+  "description": "The federated real-time open data platform",
+  "author": "Data Performance Consultancy LTD",
+  "license": "AGPL-3.0-or-later",
   "private": true,
   "engines": {
     "node": "^6.11.x",

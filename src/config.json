@@ -21,7 +21,7 @@
 		"env": "%NODE_ENV%",
 		"app": {
 			"title": "%BUTTRESS_APP_TITLE%",
-			"description": "Realtime datastore for software",
+			"description": "The federated real-time open data platform",
 			"code": "%BUTTRESS_APP_CODE%",
 			"version": "2.4.0",
 			"protocol": "http",
