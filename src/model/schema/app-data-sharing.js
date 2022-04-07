@@ -169,10 +169,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 			update.$set['dataSharing.localApp'] = policy;
 		}
 
-		return this.update({
-			'_id': this.createId(appDataSharingId),
-			'_appId': this.createId(appId),
-		}, update);
+		return this.updateById(this.createId(appDataSharingId), update);
 	}
 
 	/**
@@ -193,9 +190,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 
 		nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
 
-		return this.update({
-			'_id': this.createId(appDataSharingId),
-		}, update);
+		return this.updateById(this.createId(appDataSharingId), update);
 	}
 }
 

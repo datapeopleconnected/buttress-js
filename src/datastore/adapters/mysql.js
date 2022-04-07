@@ -27,6 +27,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		this._databaseName = this.uri.pathname.replace(/\//g, '');
 
 		this._tables = [];
+		this._flatSchema = null;
 	}
 
 	async connect() {
@@ -70,6 +71,16 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 	async updateSchema(schemaData) {
 		if (!this.requiresFormalSchema) return;
+
+		Logging.logSilly('updateSchema', schemaData.name);
+
+		this._flatSchema = Helpers.getFlattenedSchema(schemaData);
+		this._flatSchema['_id'] = {
+			'__type': 'id',
+			'__default': 'new',
+			'__required': true,
+			'__allowUpdate': false,
+		};
 
 		// Parse out MySQL tables and columns from the schema
 		const tables = await this.parseTablesFromSchema(this.collection, schemaData.properties);
@@ -197,7 +208,6 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		}
 
 		if (column.key === 'PRI' && !current.Key.includes('PRI')) {
-			console.log(current.Key);
 			commands.push(`ADD PRIMARY KEY (\`${columnName}\`)`);
 			commands.push(`ADD UNIQUE INDEX \`${columnName}_UNIQUE\` (\`${columnName}\` ASC) VISIBLE`);
 		}
@@ -260,6 +270,9 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	_buildQuery(command, table, selectParts, joinParts, whereParts) {
 		const queryParts = [];
 
+		// TODO: Refactor to parse in AST
+		// TODO: Handle enforcing data type conversions
+
 		if (command === 'UPDATE') {
 			queryParts.push(`${command} ${table}`);
 
@@ -295,6 +308,27 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return queryParts.join(' ');
 	}
 
+	_unpackArrays(documents, parentPath, parentId) {
+		let arrayMap = {};
+		documents.forEach((properties) => Object.keys(properties).forEach((path) => {
+			if (Array.isArray(properties[path])) {
+				const fullPath = (parentPath) ? parentPath+'.'+path : path;
+				const ref = (parentPath) ?
+					`_${parentPath.split('.').map((p, idx) => (idx === 0) ? p : p.charAt(0).toUpperCase() + p.substring(1)).join('')}Id` :
+					null;
+
+				arrayMap[fullPath] = properties[path];
+				arrayMap[fullPath].map((item) => {
+					if (!item._id) item['_id'] = this.ID.new();
+					if (ref) item[ref] = (parentId) ? parentId : properties._id;
+				});
+				arrayMap = {...arrayMap, ...this._unpackArrays(properties[path], fullPath)};
+				delete properties[path];
+			}
+		}));
+		return arrayMap;
+	}
+
 	/**
 	 * @param {App} entity - entity object to be deleted
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
@@ -321,7 +355,6 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 		const queryParts = this._parseBJSQuery(query);
 
-		console.log(queryParts);
 		return this._query(
 			this._buildQuery('DELETE', this.collection, [], [], queryParts.where),
 		);
@@ -425,41 +458,22 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			]);
 		}, Promise.resolve([]));
 
-		const unpackArrays = (documents, parentPath) => {
-			let arrayMap = {};
-			documents.forEach((properties) => Object.keys(properties).forEach((path) => {
-				if (Array.isArray(properties[path])) {
-					const fullPath = (parentPath) ? parentPath+'.'+path : path;
-					const ref = (parentPath) ?
-						`_${parentPath.split('.').map((p, idx) => (idx === 0) ? p : p.charAt(0).toUpperCase() + p.substring(1)).join('')}Id` :
-						null;
-
-					arrayMap[fullPath] = properties[path];
-					arrayMap[fullPath].map((item) => {
-						if (!item._id) item['_id'] = this.ID.new();
-						if (ref) item[ref] = properties._id;
-					});
-					arrayMap = {...arrayMap, ...unpackArrays(properties[path], fullPath)};
-					delete properties[path];
-				}
-			}));
-			return arrayMap;
-		};
-
-		const tables = unpackArrays(documents, this.collection);
+		const tables = this._unpackArrays(documents, this.collection);
 		tables[this.collection] = documents;
-
-		console.log(tables);
 
 		Object.keys(tables).forEach((table) => {
 			tables[table].forEach((properties) => {
 				const columns = Object.keys(properties);
 
 				// TODO: ESCAPES NEEDED
-				const formattedValues = Object.values(properties).map((value) => {
+				const formattedValues = Object.entries(properties).map(([field, value]) => {
 					if (value === null) {
 						return 'NULL';
 					}
+
+					// return this._convertDataTypes(type? operand);
+
+					console.log(this._getTypeFromField(field));
 
 					return `'${value}'`;
 				});
@@ -480,16 +494,20 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return this.find({_id: {$in: insertedIds}});
 	}
 
-	update(filter, update) {
-		const filterParts = this._parseBJSQuery(filter);
-		const updateParts = this._parseBJSQuery(update);
+	updateById(id, query) {
+		// const filterParts = this._parseBJSQuery({_id: id});
+		const updates = {...{_id: id}, ...query};
+		const queryParts = this._parseBJSQuery(updates, id);
+
+		console.log('updates', updates);
+		console.log('queryParts', queryParts);
 
 		return this._query(
-			this._buildQuery('UPDATE', this.collection, updateParts.set, [], filterParts.where),
+			this._buildQuery('UPDATE', this.collection, queryParts.set, [], queryParts.where),
 		);
 	}
 
-	_parseBJSQuery(_query) {
+	_parseBJSQuery(_query, parentId) {
 		const parts = {
 			set: [],
 			where: [],
@@ -498,10 +516,20 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		for (const field in _query) {
 			if (!{}.hasOwnProperty.call(_query, field)) continue;
 			if (field === '$set') {
+				// _unpackArrays
+				// TODO: Deconstruct array properties
+				// console.log(_query[field]);
+				console.log(this._unpackArrays([_query[field]], this.collection, parentId));
+
 				for (const prop in _query[field]) {
 					if (!{}.hasOwnProperty.call(_query[field], prop)) continue;
-					// TODO: Not taking into account data type
-					parts.set.push(`\`${prop}\`='${_query[field][prop]}'`);
+
+					// TODO: Deconstruct array properties
+
+					// Set field;
+					// Generate updates for tables
+
+					parts.set.push(this._parseOperations(prop, '$eq', _query[field][prop]));
 				}
 			} else {
 				if (typeof _query[field] === 'object' && !Array.isArray(_query[field]) && _query[field] !== null) {
@@ -521,12 +549,47 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 	_parseOperations(field, operator, operand) {
 		switch (operator) {
-		case '$eq':
-			return `\`${field}\`='${operand}'`;
+		case '$eq': {
+			const type = this._getTypeFromField(field);
+
+			if (type === 'array') {
+				console.log(field, operand);
+			}
+
+			return `\`${field}\`=${this._castToSQLType(this._getTypeFromField(field), operand)}`;
+		}
 		case '$in':
 			return `\`${field}\` IN (${operand.map((v) => `'${v}'`).join(', ')})`;
 		default:
 			throw new Error(`Unknown operator '${operator}'`);
+		}
+	}
+
+	_getTypeFromField(field) {
+		if (!this._flatSchema[field]) {
+			throw new Error(`Unable to find type for field: ${field}`);
+		}
+		if (!this._flatSchema[field].__type) {
+			throw new Error(`Unable to find type for field ${field}`);
+		}
+
+		return this._flatSchema[field].__type;
+	}
+
+	_castToSQLType(type, value) {
+		if (value === null) {
+			return 'NULL';
+		}
+
+		switch (type) {
+		case 'id':
+		case 'string':
+		case 'text':
+			return `'${value.toString()}'`;
+		case 'date':
+			return value;
+		default:
+			throw new Error(`_castToSQLType: Unknown data type '${type}'`);
 		}
 	}
 

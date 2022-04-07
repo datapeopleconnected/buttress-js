@@ -249,7 +249,7 @@ class AddUser extends Route {
 					}
 				}
 				if (!role) {
-					role = req.authApp.__roles.default;
+					role = req.authApp.__defaultRole;
 				}
 
 				req.body.auth.role = role;

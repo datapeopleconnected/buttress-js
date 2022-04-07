@@ -110,16 +110,6 @@ module.exports = class Buttress extends AbstractAdapter {
 	}
 
 	/**
-	 * @param {object} details
-	 * @param {string} id
-	 * @return {Promise}
-	 */
-	update(details, id) {
-		return this.resolveAfterInit()
-			.then(() => this.collection.update(id, details));
-	}
-
-	/**
 	 * @param {string} id
 	 * @return {Boolean}
 	 */

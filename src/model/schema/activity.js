@@ -62,7 +62,7 @@ class ActivitySchemaModel extends SchemaModel {
 					__allowUpdate: false,
 				},
 				description: {
-					__type: 'string',
+					__type: 'text',
 					__default: '',
 					__allowUpdate: false,
 				},
@@ -92,10 +92,18 @@ class ActivitySchemaModel extends SchemaModel {
 					__default: '',
 					__allowUpdate: false,
 				},
-				params: { },
-				query: { },
-				body: { },
-				response: { },
+				params: {
+					id: {
+						__type: 'id',
+						__default: null,
+						__allowUpdate: false,
+					},
+				},
+				body: {
+					__type: 'text',
+					__default: '',
+					__allowUpdate: false,
+				},
 				_token: {
 					__type: 'id',
 					__required: true,

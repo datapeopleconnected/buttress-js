@@ -78,16 +78,6 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return this.find({_id: {$in: insertedIds}});
 	}
 
-	update(filter, update) {
-		return new Promise((resolve, reject) => {
-			this.collection.updateMany(filter, update, (err, object) => {
-				if (err) return reject(new Error(err));
-
-				resolve(object);
-			});
-		});
-	}
-
 	async batchUpdateProcess(id, body, context, schemaConfig) {
 		if (!context) {
 			throw new Error(`batchUpdateProcess called without context; ${id}`);

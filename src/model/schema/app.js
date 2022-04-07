@@ -81,9 +81,31 @@ class AppSchemaModel extends SchemaModel {
 					__default: '[]',
 					__allowUpdate: true,
 				},
+				__defaultRole: {
+					__type: 'string',
+					__default: null,
+					__allowUpdate: true,
+				},
 				__roles: {
 					__type: 'array',
 					__required: true,
+					__schema: {
+						name: {
+							__type: 'string',
+							__required: true,
+							__allowUpdate: true,
+						},
+						endpointDisposition: {
+							__type: 'string',
+							__required: true,
+							__allowUpdate: true,
+						},
+						dataDisposition: {
+							__type: 'string',
+							__required: true,
+							__allowUpdate: true,
+						},
+					},
 					__allowUpdate: true,
 				},
 			},
@@ -146,7 +168,7 @@ class AppSchemaModel extends SchemaModel {
 		appSchema = Schema.encode(appSchema);
 		// this.__schema = appSchema;
 
-		return super.update({_id: appId}, {$set: {__schema: appSchema}})
+		return super.updateById(appId, {$set: {__schema: appSchema}})
 			.then((res) => {
 				Logging.logSilly(`Emitting app-schema:updated ${appId}`);
 				nrp.emit('app-schema:updated', {appId: appId});
@@ -166,7 +188,10 @@ class AppSchemaModel extends SchemaModel {
 	updateRoles(appId, roles) {
 		// nrp.emit('app-metadata:changed', {appId: appId});
 
-		return super.update({_id: appId}, {$set: {__roles: roles}});
+		return super.updateById(appId, {$set: {
+			__defaultRole: roles.default,
+			__roles: Helpers.flattenRoles(roles),
+		}});
 	}
 
 	/**

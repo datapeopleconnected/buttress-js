@@ -34,11 +34,6 @@ module.exports = class AbstractAdapter {
 		throw new Errors.NotYetImplemented('add');
 	}
 
-
-	update(filter, update) {
-		throw new Errors.NotYetImplemented('update');
-	}
-
 	async batchUpdateProcess(id, body, context, schemaConfig) {
 		throw new Errors.NotYetImplemented('batchUpdateProcess');
 	}

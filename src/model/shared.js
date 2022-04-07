@@ -112,7 +112,7 @@ const __populateObject = (schema, values, body = null) => {
  */
 const _applyAppProperties = function(schema, body) {
 	// const schema = __getCollectionSchema(collection);
-	if (schema === false) return {isValid: true};
+	if (schema === false) return {};
 
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
 	const flattenedBody = Helpers.Schema.getFlattenedBody(body);

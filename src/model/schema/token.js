@@ -195,7 +195,7 @@ class TokenSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
 	 */
 	updateRole(tokenId, role) {
-		return this.update({_id: tokenId}, {$set: {role: role}});
+		return this.updateById(tokenId, {$set: {role: role}});
 	}
 }
 

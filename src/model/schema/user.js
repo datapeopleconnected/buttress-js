@@ -259,9 +259,7 @@ class UserSchemaModel extends SchemaModel {
 		Logging.log(`not present: ${Model.authApp._id}`, Logging.Constants.LogLevel.DEBUG);
 		user._apps.push(app._id);
 
-		return super.update({
-			_apps: user._apps,
-		}, user._id);
+		return super.updateById(user._id, {$set: {_apps: user._apps}});
 	}
 
 	/**
