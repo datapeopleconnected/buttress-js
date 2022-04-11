@@ -47,6 +47,9 @@ class Conditions {
 			'@gteDate',
 		];
 
+		this.IPv4Regex = /((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}/g;
+		this.IPv6Regex = /(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))/g;
+
 		this.conditionQueryRegex = new RegExp('query.', 'g');
 		this.envStr = 'env.';
 		this.appShortId = null;
@@ -56,24 +59,24 @@ class Conditions {
 		};
 	}
 
-	async isAttributeTimeConditioned(conditions, pass = false, test = false) {
+	async isAttributeDateTimeBased(conditions, pass = false) {
 		return await Object.keys(conditions).reduce(async (res, key) => {
 			if (Array.isArray(conditions[key])) {
 				if (this. logicalOperator.includes(conditions[key])) {
-					return await this.isAttributeTimeConditioned(conditions[key], pass);
+					return await this.isAttributeDateTimeBased(conditions[key], pass);
 				} else {
 					// TODO throw an error
 				}
 			}
 
-			if ((key === 'time' || pass) && typeof conditions[key] === 'object') {
-				const isTimeCondition = Object.keys(conditions[key]).some((cKey) => this.conditionEndRange.includes(cKey));
+			if ((key === 'date' || pass) || (key === 'time' || pass) && typeof conditions[key] === 'object') {
+				const isDateTimeCondition = Object.keys(conditions[key]).some((cKey) => this.conditionEndRange.includes(cKey));
 
-				if (isTimeCondition) {
-					res = isTimeCondition;
+				if (isDateTimeCondition) {
+					res = key.replace(`@${this.envStr}`, '');
 					return res;
 				}
-				return await this.isAttributeTimeConditioned(conditions[key], true, true);
+				return await this.isAttributeDateTimeBased(conditions[key], true);
 			}
 
 			return res;
@@ -118,6 +121,7 @@ class Conditions {
 			return {
 				envVar: attr.env,
 				condition: attr.conditions,
+				name: attr.name,
 			};
 		});
 
@@ -141,6 +145,7 @@ class Conditions {
 									[iKey]: item[iKey],
 								},
 								environmentVar,
+								name: obj.name,
 							});
 						});
 					});
@@ -150,6 +155,7 @@ class Conditions {
 							[key]: condition[key],
 						},
 						environmentVar,
+						name: obj.name,
 					});
 				}
 			});

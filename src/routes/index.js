@@ -33,7 +33,6 @@ class Routes {
 		this.app = app;
 
 		this._tokens = [];
-		this._attributes = [];
 		this._routerMap = {};
 	}
 
@@ -115,7 +114,6 @@ class Routes {
 		this._registerRouter('core', coreRouter);
 
 		await this.loadTokens();
-		await this.loadAttributes();
 
 		Logging.logSilly(`init:registered-routes`);
 	}
@@ -135,7 +133,7 @@ class Routes {
 
 		apiRouter.use((...args) => this._timeRequest(...args));
 		apiRouter.use((...args) => this._authenticateToken(...args));
-		apiRouter.use((...args) => AccessControl.accessControlPolicy(...args, this._attributes));
+		apiRouter.use((...args) => AccessControl.accessControlPolicy(...args));
 		apiRouter.use((...args) => this._configCrossDomain(...args));
 
 		return apiRouter;
@@ -396,21 +394,6 @@ class Routes {
 		}
 
 		this._tokens = tokens;
-	}
-
-	/**
-	 * @return {Promise} - resolves with attributes
-	 * @private
-	 */
-	async loadAttributes() {
-		const attributes = [];
-		const rxsAttributes = Model.Attributes.findAll();
-
-		for await (const token of rxsAttributes) {
-			attributes.push(token);
-		}
-
-		this._attributes = attributes;
 	}
 
 	/**

@@ -250,7 +250,7 @@ const __validate = (schema, values, parentProperty, body = null) => {
 };
 module.exports.validate = __validate;
 
-const __prepareSchemaResult = (result, dataDisposition, filter, permissions, token = false) => {
+const __prepareSchemaResult = (result, token = false) => {
 	const _prepare = (chunk, path) => {
 		if (!chunk) return chunk;
 
@@ -283,51 +283,8 @@ const __prepareSchemaResult = (result, dataDisposition, filter, permissions, tok
 				return chunk;
 			}
 
-			let filterChunk = false;
-			if (token) {
-				const tokenUser = token._user.toString();
-				if (filter) {
-					Object.keys(filter).forEach((key) => {
-						const keyPath = key.split('.');
-						keyPath.pop();
-						if (keyPath.toString() === path.toString()) {
-							if (chunk[key] && Array.isArray(chunk[key])) {
-								if (chunk[key].indexOf(tokenUser) === -1) {
-									filterChunk = true;
-								}
-							} else {
-								if (chunk[key] !== tokenUser) {
-									filterChunk = true;
-								}
-							}
-						}
-					});
-				}
-			}
-
-			if (filterChunk) {
-				return null;
-			}
-
 			Object.keys(chunk).forEach((key) => {
-				path.push(key);
-				let readDisposition = false;
-
-				const property = path.join('.');
-				if (permissions[property]) {
-					readDisposition = permissions[property].READ === 'allow';
-				} else {
-					readDisposition = dataDisposition.READ === 'allow';
-				}
-
-				if (!readDisposition) {
-					delete chunk[key];
-					path.pop();
-					return;
-				}
-
-				chunk[key] = (Array.isArray(chunk[key])) ? chunk[key].map((c) => _prepare(c, path)) : _prepare(chunk[key], path);
-				path.pop();
+				chunk[key] = (Array.isArray(chunk[key])) ? chunk[key].map((c) => _prepare(c, key)) : _prepare(chunk[key], key);
 			});
 		}
 

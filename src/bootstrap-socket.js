@@ -26,6 +26,7 @@ const Config = require('node-env-obj')();
 
 const Model = require('./model');
 const Logging = require('./logging');
+const AccessControl = require('./access-control');
 
 const Datastore = require('./datastore');
 
@@ -90,7 +91,13 @@ class BootstrapSocket {
 				await this.__createDataShareConnection(dataShare);
 			});
 
-			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
+			nrp.on('dbClientLeaveRoom', async (data) => {
+				data.rooms.forEach((room) => {
+					this.__namespace[data.apiPath].emitter.in(room).emit('db-disconnect-room', {
+						target: data.type,
+						sequence: this.__namespace[data.apiPath].sequence[room],
+					});
+				});
 			});
 		}
 
@@ -199,15 +206,42 @@ class BootstrapSocket {
 				});
 
 				Logging.log(`[${apiPath}][DataShare] Connected ${socket.id} to room ${dataShare.name}`);
-			} else if (token.role) {
-				socket.join(token.role);
-				Logging.log(`[${apiPath}][${token.role}] Connected ${socket.id} to room ${token.role}`);
+			} else if (token.type === 'user') {
+				Logging.logDebug(`Fetching user with id: ${token._user}`);
+				const user = await Model.User.findById(token._user);
+				if (!user) {
+					Logging.logWarn(`Invalid token user ID, closing connection: ${socket.id}`);
+					return next('invalid-token-user-ID');
+				}
+
+				const roomName = (await AccessControl.getAttributesChainForUser(user._attribute)).map((attr) => attr.name).join(',');
+				socket.join(roomName);
+				Logging.log(`[${apiPath}][${token.role}] Connected ${socket.id} to room ${roomName}`);
 			} else {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
 			}
 
 			socket.on('disconnect', () => {
 				Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
+			});
+
+			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
+				const rooms = socket.adapter.rooms;
+				const regex = new RegExp(data.room, 'g');
+				const attributeRooms = [];
+				rooms.forEach((value, key) => {
+					if (key.match(regex)) {
+						attributeRooms.push(key);
+					}
+				});
+
+				socket.leave(data.room);
+
+				nrp.emit('dbClientLeaveRoom', {
+					apiPath,
+					type: data.type,
+					rooms: attributeRooms,
+				});
 			});
 
 			next();
@@ -235,7 +269,7 @@ class BootstrapSocket {
 
 		this.__namespace['stats'].emitter.emit('activity', 1);
 
-		Logging.logSilly(`[${apiPath}][${data.role}][${data.verb}] activity in on ${data.path}`);
+		Logging.logSilly(`[${apiPath}][${data.attribute}][${data.verb}] activity in on ${data.path}`);
 
 		// Super apps?
 		if (data.isSuper) {
@@ -252,7 +286,7 @@ class BootstrapSocket {
 
 		// Disable broadcasting to public space
 		if (data.broadcast === false) {
-			Logging.logDebug(`[${apiPath}][${data.role}][${data.verb}] ${data.path} - Early out as it isn't public.`);
+			Logging.logDebug(`[${apiPath}][${data.attribute}][${data.verb}] ${data.path} - Early out as it isn't public.`);
 			return;
 		}
 
@@ -273,15 +307,15 @@ class BootstrapSocket {
 			};
 		}
 
-		if (data.role) {
-			if (!this.__namespace[apiPath].sequence[data.role]) {
-				this.__namespace[apiPath].sequence[data.role] = 0;
+		if (data.attribute) {
+			if (!this.__namespace[apiPath].sequence[data.attribute]) {
+				this.__namespace[apiPath].sequence[data.attribute] = 0;
 			}
-			Logging.logDebug(`[${apiPath}][${data.role}][${data.verb}] ${data.path}`);
-			this.__namespace[apiPath].sequence[data.role]++;
-			this.__namespace[apiPath].emitter.in(data.role).emit('db-activity', {
+			Logging.logDebug(`[${apiPath}][${data.attribute}][${data.verb}] ${data.path}`);
+			this.__namespace[apiPath].sequence[data.attribute]++;
+			this.__namespace[apiPath].emitter.in(data.attribute).emit('db-activity', {
 				data: data,
-				sequence: this.__namespace[apiPath].sequence[data.role],
+				sequence: this.__namespace[apiPath].sequence[data.attribute],
 			});
 		} else {
 			Logging.logDebug(`[${apiPath}][global]: [${data.verb}] ${data.path}`);
@@ -370,10 +404,6 @@ class BootstrapSocket {
 		socket.on('disconnect', () => {
 			Logging.logSilly(`Disconnected from ${url} with id ${socket.id}`);
 		});
-	}
-
-	async __accessControlPolicyCloseSocketConnection(io, room) {
-		io.socketsLeave(room);
 	}
 }
 

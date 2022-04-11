@@ -17,6 +17,7 @@ const Logging = require('../logging');
 const Model = require('../model');
 const NRP = require('node-redis-pubsub');
 const Helpers = require('../helpers');
+const AccessControl = require('../access-control');
 
 const nrp = new NRP(Config.redis);
 
@@ -162,54 +163,55 @@ class Route {
 	 * @param {*} result
 	 * @return {*} result
 	 */
-	_respond(req, res, result) {
+	async _respond(req, res, result) {
 		req.timings.respond = req.timer.interval;
 
 		const isReadStream = result instanceof Stream.Readable;
 
 		Logging.logTimer(`_respond:start isReadStream:${isReadStream}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
 
-		// Fetch app roles if they exist
-		let appRoles = null;
-		if (req.authApp && req.authApp.__roles && req.authApp.__roles.roles) {
-			// This needs to be cached on startup
-			appRoles = Helpers.flattenRoles(req.authApp.__roles);
-		}
+		// respond based on old role-access-control
+		// // Fetch app roles if they exist
+		// let appRoles = null;
+		// if (req.authApp && req.authApp.__roles && req.authApp.__roles.roles) {
+		// 	// This needs to be cached on startup
+		// 	appRoles = Helpers.flattenRoles(req.authApp.__roles);
+		// }
 
-		let filter = null;
-		const tokenRole = (req.token.role) ? req.token.role : '';
-		const dataDisposition = {
-			READ: 'deny',
-		};
+		// let filter = null;
+		// const tokenRole = (req.token.role) ? req.token.role : '';
+		// const dataDisposition = {
+		// 	READ: 'deny',
+		// };
 
-		if (appRoles) {
-			const role = appRoles.find((r) => r.name === tokenRole);
-			if (role && role.dataDisposition) {
-				if (role.dataDisposition === 'allowAll') {
-					dataDisposition.READ = 'allow';
-				}
-			}
-		}
+		// if (appRoles) {
+		// 	const role = appRoles.find((r) => r.name === tokenRole);
+		// 	if (role && role.dataDisposition) {
+		// 		if (role.dataDisposition === 'allowAll') {
+		// 			dataDisposition.READ = 'allow';
+		// 		}
+		// 	}
+		// }
 
-		if (tokenRole && this.schema && this.schema.data.roles) {
-			const schemaRole = this.schema.data.roles.find((r) => r.name === tokenRole);
-			if (schemaRole && schemaRole.dataDisposition) {
-				if (schemaRole.dataDisposition.READ) dataDisposition.READ = schemaRole.dataDisposition.READ;
-			}
+		// if (tokenRole && this.schema && this.schema.data.roles) {
+		// 	const schemaRole = this.schema.data.roles.find((r) => r.name === tokenRole);
+		// 	if (schemaRole && schemaRole.dataDisposition) {
+		// 		if (schemaRole.dataDisposition.READ) dataDisposition.READ = schemaRole.dataDisposition.READ;
+		// 	}
 
-			if (schemaRole && schemaRole.filter) {
-				filter = schemaRole.filter;
-			}
-		}
+		// 	if (schemaRole && schemaRole.filter) {
+		// 		filter = schemaRole.filter;
+		// 	}
+		// }
 
-		const permissionProperties = (this.schema) ? this.schema.getFlatPermissionProperties() : {};
-		const permissions = Object.keys(permissionProperties).reduce((properties, property) => {
-			const permission = permissionProperties[property].find((p) => p.role === tokenRole);
-			if (!permission) return properties;
+		// const permissionProperties = (this.schema) ? this.schema.getFlatPermissionProperties() : {};
+		// const permissions = Object.keys(permissionProperties).reduce((properties, property) => {
+		// 	const permission = permissionProperties[property].find((p) => p.role === tokenRole);
+		// 	if (!permission) return properties;
 
-			properties[property] = permission;
-			return properties;
-		}, {});
+		// 	properties[property] = permission;
+		// 	return properties;
+		// }, {});
 
 		if (isReadStream) {
 			let chunkCount = 0;
@@ -217,7 +219,7 @@ class Route {
 				chunkCount++;
 				if (chunkCount % this.timingChunkSample === 0) req.timings.stream.push(req.timer.interval);
 				if (!this.redactResults) return chunk;
-				return Helpers.Schema.prepareSchemaResult(chunk, dataDisposition, filter, permissions, req.token);
+				return Helpers.Schema.prepareSchemaResult(chunk, req.token);
 			});
 
 			res.set('Content-Type', 'application/json');
@@ -236,7 +238,7 @@ class Route {
 		}
 
 		if (this.redactResults) {
-			res.json(Helpers.Schema.prepareSchemaResult(result, dataDisposition, filter, permissions, req.token));
+			res.json(Helpers.Schema.prepareSchemaResult(result, req.token));
 		} else {
 			res.json(result);
 		}
@@ -311,18 +313,10 @@ class Route {
 		}
 
 		// appAttributes
-		const users = [];
-		let appAttributes = null;
+		let attributeChannels = null;
 		if (req.authApp) {
-			appAttributes = AccessControl.getAttributeChannels(req.authApp._id);
+			attributeChannels = await AccessControl.getAttributeChannels(req.authApp._id);
 		}
-
-		// // App role
-		// let appRoles = [];
-		// if (req.authApp && req.authApp.__roles && req.authApp.__roles.roles) {
-		// 	// This needs to be cached on startup
-		// 	appRoles = Helpers.flattenRoles(req.authApp.__roles);
-		// }
 
 		let path = req.path.split('/');
 		if (path[0] === '') path.shift();
@@ -334,70 +328,65 @@ class Route {
 
 		this._broadcast(req, res, result, null, path, true);
 
-		if (appAttributes.length < 1) {
+		if (!attributeChannels) {
 			this._broadcast(req, res, result, null, path);
 		} else {
-			appAttributes.forEach((attr) => this._broadcast(req, res, result, attr, path));
+			attributeChannels.forEach((channel) => this._broadcast(req, res, result, channel, path));
 		}
-
-		// if (appRoles.length < 1) {
-		// 	this._broadcast(req, res, result, null, path);
-		// } else {
-		// 	appRoles.forEach((role) => this._broadcast(req, res, result, role, path));
-		// }
 
 		Logging.logTimer('_boardcastByAppRole:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
 
 	/**
-	 * Handle result based on role and broadcast
+	 * Handle result based on user's attributes and broadcast
 	 * @param {*} req
 	 * @param {*} res
 	 * @param {*} result
-	 * @param {*} role
+	 * @param {*} attribute
 	 * @param {*} path
 	 * @param {boolean} isSuper
 	 */
-	_broadcast(req, res, result, role, path, isSuper = false) {
+	_broadcast(req, res, result, attribute, path, isSuper = false) {
 		Logging.logTimer('_broadcast:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		const isReadStream = result instanceof Stream.Readable;
 
-		let filter = null;
-		let permissions = {};
-		const dataDisposition = {
-			READ: 'deny',
-		};
+		// broadcasting based on old role-access-control
+		// let filter = null;
+		// let permissions = {};
+		// const dataDisposition = {
+		// 	READ: 'deny',
+		// };
 
-		if (role) {
-			if (role.dataDisposition && role.dataDisposition === 'allowAll') {
-				dataDisposition.READ = 'allow';
-			}
+		// if (role) {
+		// 	if (role.dataDisposition && role.dataDisposition === 'allowAll') {
+		// 		dataDisposition.READ = 'allow';
+		// 	}
 
-			if (this.schema && this.schema.data && this.schema.data.roles) {
-				const schemaRole = this.schema.data.roles.find((r) => r.name === role.name);
-				if (schemaRole && schemaRole.dataDisposition) {
-					if (schemaRole.dataDisposition.READ) dataDisposition.READ = schemaRole.dataDisposition.READ;
-				}
+		// 	if (this.schema && this.schema.data && this.schema.data.roles) {
+		// 		const schemaRole = this.schema.data.roles.find((r) => r.name === role.name);
+		// 		if (schemaRole && schemaRole.dataDisposition) {
+		// 			if (schemaRole.dataDisposition.READ) dataDisposition.READ = schemaRole.dataDisposition.READ;
+		// 		}
 
-				if (schemaRole && schemaRole.filter) {
-					filter = schemaRole.filter;
-				}
-			}
+		// 		if (schemaRole && schemaRole.filter) {
+		// 			filter = schemaRole.filter;
+		// 		}
+		// 	}
 
-			const permissionProperties = (this.schema) ? this.schema.getFlatPermissionProperties() : {};
-			permissions = Object.keys(permissionProperties).reduce((properties, property) => {
-				const permission = permissionProperties[property].find((p) => p.role === role.name);
-				if (!permission) return properties;
+		// 	const permissionProperties = (this.schema) ? this.schema.getFlatPermissionProperties() : {};
+		// 	permissions = Object.keys(permissionProperties).reduce((properties, property) => {
+		// 		const permission = permissionProperties[property].find((p) => p.role === role.name);
+		// 		if (!permission) return properties;
 
-				properties[property] = permission;
-				return properties;
-			}, {});
-		}
+		// 		properties[property] = permission;
+		// 		return properties;
+		// 	}, {});
+		// }
 
-		if (isSuper) {
-			dataDisposition.READ = 'allow';
-		}
+		// if (isSuper) {
+		// 	dataDisposition.READ = 'allow';
+		// }
 
 		const emit = (_result) => {
 			if (this.activityBroadcast === true) {
@@ -406,7 +395,7 @@ class Route {
 					description: this.activityDescription,
 					visibility: this.activityVisibility,
 					broadcast: this.activityBroadcast,
-					role: (role) ? role.name : null,
+					attribute: (attribute) ? attribute : null,
 					path: path,
 					pathSpec: this.path,
 					verb: this.verb,
@@ -426,13 +415,13 @@ class Route {
 
 		if (isReadStream) {
 			result.on('data', (data) => {
-				emit(Helpers.Schema.prepareSchemaResult(data, dataDisposition, filter, permissions));
+				emit(Helpers.Schema.prepareSchemaResult(data));
 			});
 			Logging.logTimer('_broadcast:end-stream', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
 		}
 
-		emit(Helpers.Schema.prepareSchemaResult(result, dataDisposition, filter, permissions));
+		emit(Helpers.Schema.prepareSchemaResult(result));
 		Logging.logTimer('_broadcast:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
 

@@ -24,6 +24,9 @@ const nrp = new NRP(Config.redis);
 class AccessControl {
 	constructor() {
 		this._attributeCloseSocketEvents = [];
+		this._attributes = [];
+
+		this._oneWeekMilliseconds = Sugar.Number.day(7);
 	}
 
 	/**
@@ -31,11 +34,10 @@ class AccessControl {
 	 * @param {Object} req - Request object
 	 * @param {Object} res - Response object
 	 * @param {Function} next - next handler function
-	 * @param {Array} attributes - app attributes
 	 * @return {Void}
 	 * @private
 	 */
-	async accessControlPolicy(req, res, next, attributes) {
+	async accessControlPolicy(req, res, next) {
 		// access control policy
 		const authUser = req.authUser;
 
@@ -52,7 +54,9 @@ class AccessControl {
 
 		if (!userAttributes) return next();
 
-		userAttributes = this._getAttributesChain(attributes, userAttributes);
+		await this.__getAttributes();
+
+		userAttributes = this._getAttributesChain(userAttributes);
 
 		const schemaBaseAttribute = userAttributes.filter((attr) => attr.targettedSchema.includes(schemaName) || attr.targettedSchema.length < 1);
 		if (schemaBaseAttribute.length < 1) return next();
@@ -93,13 +97,12 @@ class AccessControl {
 
 	/**
 	 * lookup attributes and fetch user attributes chain
-	 * @param {Array} appAttributes
 	 * @param {Array} attributeNames
 	 * @param {Array} attributes
 	 * @return {Array} attributes
 	 */
-	_getAttributesChain(appAttributes, attributeNames, attributes = []) {
-		const attrs = appAttributes.filter((attr) => attributeNames.includes(attr.name));
+	_getAttributesChain(attributeNames, attributes = []) {
+		const attrs = this._attributes.filter((attr) => attributeNames.includes(attr.name));
 		attributes = attrs.concat(attributes);
 
 		const extendedAttributes = attrs.reduce((arr, attr) => {
@@ -113,7 +116,7 @@ class AccessControl {
 		}, []);
 
 		if (extendedAttributes.length > 0) {
-			return this._getAttributesChain(appAttributes, extendedAttributes, attributes);
+			return this._getAttributesChain(extendedAttributes, attributes);
 		}
 
 		return attributes;
@@ -147,48 +150,95 @@ class AccessControl {
 	}
 
 	async _queueAttributeCloseSocketEvent(attributes) {
-		const room = attributes.map((attr) => attr.name).join(',');
-		const attributeIdx = this._attributeCloseSocketEvents.findIndex((event) => event === room);
-		if (attributeIdx !== -1) return;
-
 		const prioritisedConditions = await AccessControlConditions.__prioritiseConditionOrder(attributes);
 		await prioritisedConditions.reduce(async (prev, attribute) => {
 			await prev;
-			await this._queueEvent(attribute, room);
-		}, Promise.resolve());
 
-		this._attributeCloseSocketEvents.push(room);
+			const name = attribute.name;
+			let attributeIdx = this._attributeCloseSocketEvents.findIndex((event) => event === name);
+			if (attributeIdx !== -1) return;
+
+			attributeIdx = this._attributeCloseSocketEvents.push(name);
+
+			await this._queueEvent(attribute, attributeIdx);
+		}, Promise.resolve());
 	}
 
-	async _queueEvent(attribute, room) {
+	async _queueEvent(attribute, idx) {
 		const envVars = attribute.environmentVar;
 		const conditions = attribute.condition;
+
 		// just for now only for time and date condition
-		const isTimeCondition = await AccessControlConditions.isAttributeTimeConditioned(conditions);
-		if (isTimeCondition) {
+		const dateTimeBasedCondition = await AccessControlConditions.isAttributeDateTimeBased(conditions);
+
+		if (dateTimeBasedCondition === 'time') {
 			const conditionEndTime = AccessControlConditions.getEnvironmentVar(envVars, 'env.endTime');
 			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
 			setTimeout(() => {
 				nrp.emit('accessControlPolicy:disconnectSocket', {
-					room,
+					id: attribute.name,
+					type: 'generic',
 				});
-			}, 5000);
+				this._attributeCloseSocketEvents.splice(idx - 1, 1);
+			}, timeout);
+		}
+
+		if (dateTimeBasedCondition === 'date') {
+			const conditionEndDate = AccessControlConditions.getEnvironmentVar(envVars, 'env.endDate');
+			const nearlyExpired = Sugar.Number.day(Sugar.Date.create(conditionEndDate));
+			if (this._oneWeekMilliseconds > nearlyExpired) {
+				setTimeout(() => {
+					nrp.emit('accessControlPolicy:disconnectSocket', {
+						id: attribute.name,
+						type: 'generic',
+					});
+					this._attributeCloseSocketEvents.splice(idx - 1, 1);
+				}, nearlyExpired);
+			}
 		}
 	}
 
 	async getAttributeChannels(appId) {
-		const attributes = [];
-		const users = [];
-		const rxsUsers = await Model.User.findAll(appId);
-		for await (const user of rxsUsers) {
-			users.push(user);
-		}
+		const channels = [];
+
+		const users = await this.__getUsers(appId);
+
+		await this.__getAttributes();
 
 		await users.reduce(async (prev, user) => {
 			await prev;
-
-			attributes.push(await )
+			const userAttributes = await this._getAttributesChain(user._attribute);
+			channels.push(userAttributes.map((attr) => attr.name).join(','));
 		}, Promise.resolve());
+
+		return channels;
+	}
+
+	async getAttributesChainForUser(userAttribute) {
+		await this.__getAttributes();
+		return await this._getAttributesChain(userAttribute);
+	}
+
+	async __getUsers(appId) {
+		const users = [];
+		const rxsUsers = Model.User.findAll(appId);
+		for await (const token of rxsUsers) {
+			users.push(token);
+		}
+
+		return users;
+	}
+
+	async __getAttributes() {
+		if (this._attributes.length > 0) return;
+
+		const attributes = [];
+		const rxsAttributes = Model.Attributes.findAll();
+		for await (const token of rxsAttributes) {
+			attributes.push(token);
+		}
+
+		this._attributes = attributes;
 	}
 }
 module.exports = new AccessControl();
