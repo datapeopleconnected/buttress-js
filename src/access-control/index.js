@@ -24,6 +24,7 @@ const nrp = new NRP(Config.redis);
 class AccessControl {
 	constructor() {
 		this._attributeCloseSocketEvents = [];
+		this._queryBasedConditions = [];
 		this._attributes = [];
 
 		this._oneWeekMilliseconds = Sugar.Number.day(7);
@@ -90,7 +91,7 @@ class AccessControl {
 		}
 		await AccessControlFilter.applyAccessControlPolicyQuery(req);
 
-		await this._queueAttributeCloseSocketEvent(schemaAttributes);
+		await this._queueAttributeCloseSocketEvent(schemaAttributes, schemaNames);
 
 		next();
 	}
@@ -149,30 +150,54 @@ class AccessControl {
 		return attrs;
 	}
 
-	async _queueAttributeCloseSocketEvent(attributes) {
+	async _queueAttributeCloseSocketEvent(attributes, schemaNames) {
 		const prioritisedConditions = await AccessControlConditions.__prioritiseConditionOrder(attributes);
 		await prioritisedConditions.reduce(async (prev, attribute) => {
 			await prev;
 
 			const name = attribute.name;
-			let attributeIdx = this._attributeCloseSocketEvents.findIndex((event) => event === name);
-			if (attributeIdx !== -1) return;
+			const conditionStr = JSON.stringify(attribute.condition);
+			let attributeIdx = this._attributeCloseSocketEvents.findIndex((event) => event.name === name);
+			if (attributeIdx === -1) {
+				attributeIdx = this._attributeCloseSocketEvents.push({
+					name,
+					conditions: [
+						conditionStr,
+					],
+				});
+			} else {
+				const attributeConditionExist = this._attributeCloseSocketEvents[attributeIdx].conditions.some((c) => c === conditionStr);
+				if (attributeConditionExist) return;
 
-			attributeIdx = this._attributeCloseSocketEvents.push(name);
+				this._attributeCloseSocketEvents[attributeIdx].conditions.push(conditionStr);
+			}
 
-			await this._queueEvent(attribute, attributeIdx);
+			await this._queueEvent(attribute, schemaNames, attributeIdx);
 		}, Promise.resolve());
 	}
 
-	async _queueEvent(attribute, idx) {
-		const envVars = attribute.environmentVar;
+	async _queueEvent(attribute, schemaNames, idx) {
 		const conditions = attribute.condition;
-
-		// just for now only for time and date condition
 		const dateTimeBasedCondition = await AccessControlConditions.isAttributeDateTimeBased(conditions);
+		if (dateTimeBasedCondition) {
+			await this._queueDateTimeEvent(attribute, dateTimeBasedCondition, idx);
+		}
 
+		const queryBasedCondition = await AccessControlConditions.isAttributeQueryBasedCondition(conditions, schemaNames);
+		if (queryBasedCondition) {
+			this._queryBasedConditions.push({
+				collection: queryBasedCondition.name,
+				entityId: queryBasedCondition.entityId,
+			});
+		}
+	}
+
+	async _queueDateTimeEvent(attribute, dateTimeBasedCondition, idx) {
+		const envVars = attribute.environmentVar;
 		if (dateTimeBasedCondition === 'time') {
 			const conditionEndTime = AccessControlConditions.getEnvironmentVar(envVars, 'env.endTime');
+			if (!conditionEndTime) return;
+
 			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
 			setTimeout(() => {
 				nrp.emit('accessControlPolicy:disconnectSocket', {
@@ -185,6 +210,8 @@ class AccessControl {
 
 		if (dateTimeBasedCondition === 'date') {
 			const conditionEndDate = AccessControlConditions.getEnvironmentVar(envVars, 'env.endDate');
+			if (!conditionEndDate) return;
+
 			const nearlyExpired = Sugar.Number.day(Sugar.Date.create(conditionEndDate));
 			if (this._oneWeekMilliseconds > nearlyExpired) {
 				setTimeout(() => {
@@ -239,6 +266,11 @@ class AccessControl {
 		}
 
 		this._attributes = attributes;
+	}
+
+	async checkAccessControlQueryBasedCondition(path, id) {
+		// const basedQueryConditionExists = this._queryBasedConditions.find((c) => path.includes(c.collection) && id === c.entityId);
+		// if (!basedQueryConditionExists) return;
 	}
 }
 module.exports = new AccessControl();

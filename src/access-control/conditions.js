@@ -59,6 +59,10 @@ class Conditions {
 		};
 	}
 
+	setAppShortId(app) {
+		this.appShortId = Helpers.shortId(app);
+	}
+
 	async isAttributeDateTimeBased(conditions, pass = false) {
 		return await Object.keys(conditions).reduce(async (res, key) => {
 			if (Array.isArray(conditions[key])) {
@@ -69,13 +73,13 @@ class Conditions {
 				}
 			}
 
-			if ((key === 'date' || pass) || (key === 'time' || pass) && typeof conditions[key] === 'object') {
+			if (((key === 'date' || pass) || (key === 'time' || pass)) && typeof conditions[key] === 'object') {
 				const isDateTimeCondition = Object.keys(conditions[key]).some((cKey) => this.conditionEndRange.includes(cKey));
-
 				if (isDateTimeCondition) {
 					res = key.replace(`@${this.envStr}`, '');
 					return res;
 				}
+
 				return await this.isAttributeDateTimeBased(conditions[key], true);
 			}
 
@@ -83,8 +87,26 @@ class Conditions {
 		}, false);
 	}
 
-	setAppShortId(app) {
-		this.appShortId = Helpers.shortId(app);
+	async isAttributeQueryBasedCondition(conditions, schemaNames, pass = false) {
+		return await Object.keys(conditions).reduce(async (res, key) => {
+			if (Array.isArray(conditions[key])) {
+				if (this. logicalOperator.includes(conditions[key])) {
+					return await this.isAttributeQueryBasedCondition(conditions[key], schemaNames, pass);
+				} else {
+					// TODO throw an error
+				}
+			}
+
+			const queryBasedCondition = schemaNames.find((n) => key.includes(n));
+			if (queryBasedCondition) {
+				return {
+					name: queryBasedCondition,
+					entityId: Object.values(conditions[key][`${queryBasedCondition}.id`]).pop(),
+				};
+			}
+
+			return res;
+		}, false);
 	}
 
 	async applyAccessControlPolicyConditions(req, userSchemaAttributes) {
@@ -210,7 +232,7 @@ class Conditions {
 					result = await this.__checkCondition(req, item.environmentVar, conditionObj, false);
 				}, Promise.resolve());
 			} else {
-				result = await this.__checkCondition(req, item.environmentVar, obj, false, false);
+				result = await this.__checkCondition(req, item.environmentVar, condition, false, false);
 			}
 		}, Promise.resolve());
 
