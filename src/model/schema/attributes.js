@@ -56,7 +56,7 @@ class AttributeSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
-				targettedSchema: {
+				targetedSchema: {
 					__type: 'array',
 					__itemtype: 'string',
 					__required: true,
@@ -100,7 +100,7 @@ class AttributeSchemaModel extends SchemaModel {
 			extends: (body.attribute.extends)? body.attribute.extends : [],
 			disposition: (body.attribute.disposition)? body.attribute.disposition : {},
 			properties: (body.attribute.properties)? body.attribute.properties : {},
-			targettedSchema: (body.attribute.targettedSchema)? body.attribute.targettedSchema : [],
+			targetedSchema: (body.attribute.targetedSchema)? body.attribute.targetedSchema : [],
 			env: (body.attribute.env)? body.attribute.env : {},
 			conditions: (body.attribute.conditions)? body.attribute.conditions : {},
 			query: (body.attribute.query)? body.attribute.query : {},

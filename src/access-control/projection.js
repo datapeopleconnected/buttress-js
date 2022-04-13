@@ -7,7 +7,7 @@ class Projection {
 	constructor() {}
 
 	addAccessControlPolicyQueryProjection(req, props, schema) {
-		const requestMethod = (req.originalMethod === 'SEARCH')? 'GET' : req.originalMethod;
+		const requestMethod = (req.method === 'SEARCH')? 'GET' : req.method;
 		const flattenedSchema = Helpers.getFlattenedSchema(schema);
 		const projectionMethod = (requestMethod === 'GET')? 'READ' : 'WRITE';
 		const projectionUpdateKeys = [];
@@ -24,15 +24,18 @@ class Projection {
 
 		if (requestMethod === 'POST') {
 			const updatePaths = Object.keys(requestBody).map((key) => key);
-			const removedPaths = updatePaths
-				.filter((key) => projectionUpdateKeys.every((updateKey) => updateKey !== key))
-				.filter((path) => flattenedSchema[path]);
 
-			removedPaths.forEach((i) => {
-				// TODO think about required fields that users do not have write access to
-				const config = flattenedSchema[i];
-				requestBody[i] = Helpers.Schema.getPropDefault(config);
-			});
+			if (projectionUpdateKeys.length > 0) {
+				const removedPaths = updatePaths
+					.filter((key) => projectionUpdateKeys.every((updateKey) => updateKey !== key))
+					.filter((path) => flattenedSchema[path]);
+
+				removedPaths.forEach((i) => {
+					// TODO think about required fields that users do not have write access to
+					const config = flattenedSchema[i];
+					requestBody[i] = Helpers.Schema.getPropDefault(config);
+				});
+			}
 
 			allowedUpdates = true;
 		} else if (requestMethod === 'PUT') {
@@ -42,7 +45,7 @@ class Projection {
 
 			const updatePaths = requestBody.map((elem) => elem.path);
 			const allowedPathUpdates = projectionUpdateKeys.filter((key) => updatePaths.some((updateKey) => updateKey === key));
-			if (allowedPathUpdates.length === updatePaths.length) {
+			if (allowedPathUpdates.length === updatePaths.length || projectionUpdateKeys.length < 1) {
 				allowedUpdates = true;
 			}
 		} else {

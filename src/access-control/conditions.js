@@ -144,6 +144,7 @@ class Conditions {
 				envVar: attr.env,
 				condition: attr.conditions,
 				name: attr.name,
+				targetedSchema: attr.targetedSchema,
 			};
 		});
 
@@ -168,6 +169,7 @@ class Conditions {
 								},
 								environmentVar,
 								name: obj.name,
+								targetedSchema: obj.targetedSchema,
 							});
 						});
 					});
@@ -178,6 +180,7 @@ class Conditions {
 						},
 						environmentVar,
 						name: obj.name,
+						targetedSchema: obj.targetedSchema,
 					});
 				}
 			});

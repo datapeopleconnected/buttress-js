@@ -45,9 +45,12 @@ class AccessControl {
 		// TODO: better way to figure out the requested schema
 		let requestedURL = req.originalUrl || req.url;
 		requestedURL = requestedURL.split('?').shift();
-		const schemaName = requestedURL.split('v1/').pop().split('/').shift();
+		const schemaPath = requestedURL.split('v1/').pop().split('/');
+		const schemaName = schemaPath.shift();
 
 		let userAttributes = null;
+
+		await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
 
 		if (authUser) {
 			userAttributes = authUser._attribute;
@@ -59,12 +62,13 @@ class AccessControl {
 
 		userAttributes = this._getAttributesChain(userAttributes);
 
-		const schemaBaseAttribute = userAttributes.filter((attr) => attr.targettedSchema.includes(schemaName) || attr.targettedSchema.length < 1);
+		const schemaBaseAttribute = userAttributes.filter((attr) => attr.targetedSchema.includes(schemaName) || attr.targetedSchema.length < 1);
 		if (schemaBaseAttribute.length < 1) return next();
 		const schemaAttributes = this._getSchemaRelatedAttributes(schemaBaseAttribute, userAttributes);
 
-		const schemaNames = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection').map((s) => s.name);
-		const schema = schemaNames.some((n) => n === schemaName);
+		const schemas = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
+		const schemaNames = schemas.map((s) => s.name);
+		const schema = schemas.find((s) => s.name === schemaName);
 		if (!schema) return next();
 
 		const passedDisposition = await AccessControlDisposition.accessControlDisposition(req, schemaAttributes);
@@ -188,6 +192,7 @@ class AccessControl {
 			this._queryBasedConditions.push({
 				collection: queryBasedCondition.name,
 				entityId: queryBasedCondition.entityId,
+				attribute,
 			});
 		}
 	}
@@ -205,7 +210,7 @@ class AccessControl {
 					type: 'generic',
 				});
 				this._attributeCloseSocketEvents.splice(idx - 1, 1);
-			}, timeout);
+			}, 20000);
 		}
 
 		if (dateTimeBasedCondition === 'date') {
@@ -268,9 +273,21 @@ class AccessControl {
 		this._attributes = attributes;
 	}
 
-	async checkAccessControlQueryBasedCondition(path, id) {
-		// const basedQueryConditionExists = this._queryBasedConditions.find((c) => path.includes(c.collection) && id === c.entityId);
-		// if (!basedQueryConditionExists) return;
+	async _checkAccessControlQueryBasedCondition(req, updatedSchema, path) {
+		const requestMethod = req.method;
+		if (requestMethod !== 'PUT') return;
+
+		const id = path.pop();
+		const schemaBasedConditionIdx = this._queryBasedConditions.findIndex((c) => c.collection === updatedSchema && c.entityId === id);
+		if (schemaBasedConditionIdx === -1) return;
+
+		const attribute = this._queryBasedConditions[schemaBasedConditionIdx].attribute;
+		nrp.emit('accessControlPolicy:disconnectSocket', {
+			id: attribute.name,
+			type: (attribute.targetedSchema.length > 0)? attribute.targetedSchema : 'generic',
+		});
+
+		this._queryBasedConditions.splice(schemaBasedConditionIdx, 1);
 	}
 }
 module.exports = new AccessControl();
