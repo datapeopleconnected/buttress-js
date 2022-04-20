@@ -9,7 +9,6 @@
  */
 
 const Config = require('node-env-obj')();
-const Sugar = require('sugar');
 const NRP = require('node-redis-pubsub');
 
 const Model = require('../model');
@@ -24,10 +23,7 @@ const nrp = new NRP(Config.redis);
 class AccessControl {
 	constructor() {
 		this._attributeCloseSocketEvents = [];
-		this._queryBasedConditions = [];
 		this._attributes = [];
-
-		this._oneWeekMilliseconds = Sugar.Number.day(7);
 	}
 
 	/**
@@ -75,7 +71,7 @@ class AccessControl {
 
 		if (!passedDisposition) {
 			Logging.logTimer(`_accessControlPolicy:disposition-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).json({message: 'Access control policy disposition not allowed'});
+			res.status(401).send('Access control policy disposition not allowed');
 			return;
 		}
 
@@ -83,14 +79,14 @@ class AccessControl {
 		const accessControlAuthorisation = await AccessControlConditions.applyAccessControlPolicyConditions(req, schemaAttributes);
 		if (!accessControlAuthorisation) {
 			Logging.logTimer(`_accessControlPolicy:conditions-not-fulfilled`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).json({message: 'Access control policy conditions are not fulfilled'});
+			res.status(401).send('Access control policy conditions are not fulfilled');
 			return;
 		}
 
 		const passedAccessControlPolicy = await AccessControlFilter.addAccessControlPolicyQuery(req, schemaAttributes, schema);
 		if (!passedAccessControlPolicy) {
 			Logging.logTimer(`_accessControlPolicy:access-control-properties-permission-error`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).json({message: 'Can not edit properties without privileged access'});
+			res.status(401).send('Can not edit properties without privileged access');
 			return;
 		}
 		await AccessControlFilter.applyAccessControlPolicyQuery(req);
@@ -155,79 +151,10 @@ class AccessControl {
 	}
 
 	async _queueAttributeCloseSocketEvent(attributes, schemaNames) {
-		const prioritisedConditions = await AccessControlConditions.__prioritiseConditionOrder(attributes);
-		await prioritisedConditions.reduce(async (prev, attribute) => {
-			await prev;
-
-			const name = attribute.name;
-			const conditionStr = JSON.stringify(attribute.condition);
-			let attributeIdx = this._attributeCloseSocketEvents.findIndex((event) => event.name === name);
-			if (attributeIdx === -1) {
-				attributeIdx = this._attributeCloseSocketEvents.push({
-					name,
-					conditions: [
-						conditionStr,
-					],
-				});
-			} else {
-				const attributeConditionExist = this._attributeCloseSocketEvents[attributeIdx].conditions.some((c) => c === conditionStr);
-				if (attributeConditionExist) return;
-
-				this._attributeCloseSocketEvents[attributeIdx].conditions.push(conditionStr);
-			}
-
-			await this._queueEvent(attribute, schemaNames, attributeIdx);
-		}, Promise.resolve());
-	}
-
-	async _queueEvent(attribute, schemaNames, idx) {
-		const conditions = attribute.condition;
-		const dateTimeBasedCondition = await AccessControlConditions.isAttributeDateTimeBased(conditions);
-		if (dateTimeBasedCondition) {
-			await this._queueDateTimeEvent(attribute, dateTimeBasedCondition, idx);
-		}
-
-		const queryBasedCondition = await AccessControlConditions.isAttributeQueryBasedCondition(conditions, schemaNames);
-		if (queryBasedCondition) {
-			this._queryBasedConditions.push({
-				collection: queryBasedCondition.name,
-				entityId: queryBasedCondition.entityId,
-				attribute,
-			});
-		}
-	}
-
-	async _queueDateTimeEvent(attribute, dateTimeBasedCondition, idx) {
-		const envVars = attribute.environmentVar;
-		if (dateTimeBasedCondition === 'time') {
-			const conditionEndTime = AccessControlConditions.getEnvironmentVar(envVars, 'env.endTime');
-			if (!conditionEndTime) return;
-
-			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
-			setTimeout(() => {
-				nrp.emit('accessControlPolicy:disconnectSocket', {
-					id: attribute.name,
-					type: 'generic',
-				});
-				this._attributeCloseSocketEvents.splice(idx - 1, 1);
-			}, 20000);
-		}
-
-		if (dateTimeBasedCondition === 'date') {
-			const conditionEndDate = AccessControlConditions.getEnvironmentVar(envVars, 'env.endDate');
-			if (!conditionEndDate) return;
-
-			const nearlyExpired = Sugar.Number.day(Sugar.Date.create(conditionEndDate));
-			if (this._oneWeekMilliseconds > nearlyExpired) {
-				setTimeout(() => {
-					nrp.emit('accessControlPolicy:disconnectSocket', {
-						id: attribute.name,
-						type: 'generic',
-					});
-					this._attributeCloseSocketEvents.splice(idx - 1, 1);
-				}, nearlyExpired);
-			}
-		}
+		nrp.emit('queueAttributeCloseSocketEvent', {
+			attributes,
+			schemaNames,
+		});
 	}
 
 	async getAttributeChannels(appId) {
@@ -278,16 +205,11 @@ class AccessControl {
 		if (requestMethod !== 'PUT') return;
 
 		const id = path.pop();
-		const schemaBasedConditionIdx = this._queryBasedConditions.findIndex((c) => c.collection === updatedSchema && c.entityId === id);
-		if (schemaBasedConditionIdx === -1) return;
 
-		const attribute = this._queryBasedConditions[schemaBasedConditionIdx].attribute;
-		nrp.emit('accessControlPolicy:disconnectSocket', {
-			id: attribute.name,
-			type: (attribute.targetedSchema.length > 0)? attribute.targetedSchema : 'generic',
+		nrp.emit('accessControlPolicy:disconnectQueryBasedSocket', {
+			updatedSchema,
+			id,
 		});
-
-		this._queryBasedConditions.splice(schemaBasedConditionIdx, 1);
 	}
 }
 module.exports = new AccessControl();
