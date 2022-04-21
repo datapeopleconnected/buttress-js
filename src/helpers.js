@@ -177,7 +177,7 @@ module.exports.shortId = (id) => {
 	if (!id) return output;
 
 	// HACK: need to make sure the id is in the correct format to extract the timestamp
-	id = Datastore.getInstance().ID.new(id);
+	id = Datastore.getInstance('core').ID.new(id);
 
 	const date = id.getTimestamp();
 	let time = date.getTime();
@@ -195,10 +195,10 @@ module.exports.shortId = (id) => {
 const __flattenRoles = (data, path) => {
 	if (!path) path = [];
 
-	return data.roles.reduce((_roles, role) => {
+	return data.reduce((_roles, role) => {
 		const _path = path.concat(`${role.name}`);
 		if (role.roles && role.roles.length > 0) {
-			return _roles.concat(__flattenRoles(role, _path));
+			return _roles.concat(__flattenRoles(role.roles, _path));
 		}
 
 		const flatRole = Object.assign({}, role);
@@ -209,24 +209,24 @@ const __flattenRoles = (data, path) => {
 };
 module.exports.flattenRoles = __flattenRoles;
 
-// const __flatternObject = (obj, output, paths) => {
-// 	if (!output) output = {};
-// 	if (!paths) paths = [];
+const __flatternObject = (obj, output, paths) => {
+	if (!output) output = {};
+	if (!paths) paths = [];
 
-// 	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
-// 		paths.push(key);
-// 		if (typeof obj[key] === 'object' && ObjectId.isValid(obj[key])) {
-// 			out[paths.join('.')] = obj[key];
-// 		} else if (typeof obj[key] === 'object') {
-// 			__flatternObject(obj[key], out, paths);
-// 		} else {
-// 			out[paths.join('.')] = obj[key];
-// 		}
-// 		paths.pop();
-// 		return out;
-// 	}, output);
-// };
-// module.exports.flatternObject = __flatternObject;
+	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
+		paths.push(key);
+		if (typeof obj[key] === 'object' && Datastore.getInstance('core').ID.isValid(obj[key])) {
+			out[paths.join('.')] = obj[key];
+		} else if (typeof obj[key] === 'object' && obj[key] !== null) {
+			__flatternObject(obj[key], out, paths);
+		} else {
+			out[paths.join('.')] = obj[key];
+		}
+		paths.pop();
+		return out;
+	}, output);
+};
+module.exports.flatternObject = __flatternObject;
 
 const __getFlattenedSchema = (schema) => {
 	const __buildFlattenedSchema = (property, parent, path, flattened) => {

@@ -48,7 +48,7 @@ class BootstrapSocket {
 
 		this.emitter = null;
 
-		this.primaryDatastore = Datastore.createInstance(Config.datastore);
+		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
 		// let socketInitTask = null;
 		// if (cluster.isMaster) {
@@ -91,7 +91,7 @@ class BootstrapSocket {
 			});
 		}
 
-		const rxsApps = Model.App.findAll();
+		const rxsApps = await Model.App.findAll();
 
 		this.__namespace['stats'] = {
 			emitter: this.emitter.of(`/stats`),

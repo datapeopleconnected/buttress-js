@@ -89,17 +89,27 @@ class AddApp extends Route {
 		this.verb = Route.Constants.Verbs.POST;
 		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.ADD;
+
+		// Fetch model
+		this.schema = new Schema(Model.App.schemaData);
+		this.model = Model.App;
 	}
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			if (!req.body.name || !req.body.type || !req.body.authLevel) {
-				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
-			if (req.body.type === Model.App.Constants.Type.Browser && !req.body.domain) {
-				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			const validation = this.model.validate(req.body);
+			if (!validation.isValid) {
+				if (validation.missing.length > 0) {
+					this.log(`${this.schema.name}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
+					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Missing field: ${validation.missing[0]}`));
+				}
+				if (validation.invalid.length > 0) {
+					this.log(`${this.schema.name}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
+					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Invalid value: ${validation.invalid[0]}`));
+				}
+
+				this.log(`${this.schema.name}: Unhandled Error`, Route.LogLevel.ERR, req.id);
+				return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Unhandled error.`));
 			}
 
 			if (!req.body.permissions || req.body.permissions.length === 0) {
@@ -130,7 +140,14 @@ class AddApp extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_json`));
 			}
 
-			resolve(true);
+			this.model.isDuplicate(req.body)
+				.then((res) => {
+					if (res === true) {
+						this.log(`${this.schema.name}: Duplicate entity`, Route.LogLevel.ERR, req.id);
+						return reject(new Helpers.Errors.RequestError(400, `duplicate`));
+					}
+					resolve(true);
+				});
 		});
 	}
 

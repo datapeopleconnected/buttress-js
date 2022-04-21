@@ -33,7 +33,7 @@ class GetAttributeList extends Route {
 		if (ids && ids.length > 0) {
 			ids.forEach((id) => {
 				try {
-					Datastore.getInstance().ID.new(id);
+					Datastore.getInstance('core').ID.new(id);
 				} catch (err) {
 					this.log(`ATTRIBUTE: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
 					return Promise.reject(new Helpers.RequestError(400, 'invalid_id'));

@@ -115,6 +115,9 @@ const _applyAppProperties = function(schema, body) {
 	if (schema === false) return {};
 
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
+
+	// TODO: Strip body of fields that don't match schema
+
 	const flattenedBody = Helpers.Schema.getFlattenedBody(body);
 
 	return __populateObject(flattenedSchema, flattenedBody, body);

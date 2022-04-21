@@ -46,7 +46,7 @@ class BootstrapRest {
 
 		this.id = (cluster.isMaster) ? 'MASTER' : cluster.worker.id;
 
-		this.primaryDatastore = Datastore.createInstance(Config.datastore);
+		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 	}
 
 	async init() {
@@ -259,7 +259,7 @@ class BootstrapRest {
 		// Add local schema to Model.App
 		Model.App.setLocalSchema(localSchema);
 
-		const rxsApps = Model.App.findAll();
+		const rxsApps = await Model.App.findAll();
 		for await (const app of rxsApps) {
 			const appSchema = Schema.decode(app.__schema);
 			const appShortId = shortId(app._id);

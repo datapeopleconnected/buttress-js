@@ -167,11 +167,11 @@ class Route {
 
 		const isReadStream = result instanceof Stream.Readable;
 
-		Logging.logTimer(`_respond:start isReadStream:${isReadStream}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		Logging.logTimer(`_respond:start isReadStream:${isReadStream} redactResults:${this.redactResults}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
 
 		// Fetch app roles if they exist
 		let appRoles = null;
-		if (req.authApp && req.authApp.__roles && req.authApp.__roles.roles) {
+		if (req.authApp && req.authApp.__roles) {
 			// This needs to be cached on startup
 			appRoles = Helpers.flattenRoles(req.authApp.__roles);
 		}
@@ -226,7 +226,7 @@ class Route {
 
 			result.once('end', () => {
 				// Logging.logTimerException(`PERF: STREAM DONE: ${this.path}`, req.timer, 0.05, req.id);
-				Logging.logTimer(`_respond:end-stream`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+				Logging.logTimer(`_respond:end-stream chunks:${chunkCount}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
 				this._close(req);
 			});
 
@@ -312,7 +312,7 @@ class Route {
 
 		// App role
 		let appRoles = [];
-		if (req.authApp && req.authApp.__roles && req.authApp.__roles.roles) {
+		if (req.authApp && req.authApp.__roles) {
 			// This needs to be cached on startup
 			appRoles = Helpers.flattenRoles(req.authApp.__roles);
 		}
@@ -508,7 +508,7 @@ class Route {
 
 			// Fetch app roles if they exist
 			let appRoles = null;
-			if (req.authApp && req.authApp.__roles && req.authApp.__roles.roles) {
+			if (req.authApp && req.authApp.__roles) {
 				// This needs to be cached on startup
 				appRoles = Helpers.flattenRoles(req.authApp.__roles);
 			}

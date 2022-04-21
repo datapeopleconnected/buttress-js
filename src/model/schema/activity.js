@@ -159,8 +159,12 @@ class ActivitySchemaModel extends SchemaModel {
 			md._id = this.adapter.ID.new(body.id);
 		}
 
-		const validated = Shared.applyAppProperties(false, body);
-		return Object.assign(md, validated);
+		delete body.req;
+		delete body.res;
+
+		const validated = Shared.applyAppProperties(ActivitySchemaModel.Schema, body);
+
+		return validated;
 	}
 
 	add(body, internals) {

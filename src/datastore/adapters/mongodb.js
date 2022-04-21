@@ -201,12 +201,10 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	updateById(id, query) {
-		// Logging.logSilly(`update: ${this.collectionName} ${id} ${query}`);
+		// Logging.logSilly(`updateById: ${id} ${query}`);
 
 		return new Promise((resolve, reject) => {
-			this.collection.updateOne({_id: id}, {
-				$set: query,
-			}, (err, object) => {
+			this.collection.updateOne({_id: id}, query, (err, object) => {
 				if (err) return reject(new Error(err));
 
 				resolve(object);

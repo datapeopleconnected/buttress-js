@@ -28,19 +28,30 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 		this._tables = [];
 		this._flatSchema = null;
+
+		this._connections = [];
 	}
 
 	async connect() {
 		if (this.connection) return this.connection;
 
-		const conn = mysql.createConnection({
-			host: this.uri.host,
-			user: this.uri.username,
-			password: this.uri.password,
-			database: this._databaseName,
-		}, this.options);
+		this.connection = {
+			pool: [],
+			queue: [],
+		};
 
-		return this.connection = conn;
+		for (let x = 0; x < 5; x++) {
+			const con = mysql.createConnection({
+				host: this.uri.host,
+				user: this.uri.username,
+				password: this.uri.password,
+				database: this._databaseName,
+			}, this.options);
+
+			con.lock = false;
+
+			this.connection.pool.push(con);
+		}
 	}
 
 	cloneAdapterConnection() {
@@ -57,7 +68,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		if (!showTablesRows || showTablesRows.length < 1) {
 			Logging.logSilly(`Table with name ${collectionName} doesn't, attempting to create one`);
 			// Create the table, need schema data though?
-			await this._query(`CREATE TABLE ${collectionName} (_id BINARY(12) NOT NULL);`);
+			await this._query(`CREATE TABLE \`${collectionName}\` (_id BINARY(12) NOT NULL);`);
 		}
 
 		Logging.logSilly(`Found table with the name ${collectionName}`);
@@ -74,17 +85,19 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 		Logging.logSilly('updateSchema', schemaData.name);
 
-		this._flatSchema = Helpers.getFlattenedSchema(schemaData);
-		this._flatSchema['_id'] = {
-			'__type': 'id',
-			'__default': 'new',
-			'__required': true,
-			'__allowUpdate': false,
-		};
-
 		// Parse out MySQL tables and columns from the schema
+		// This will also modify the schema properties, adding in
+		// fields for ids and foreign keys
 		const tables = await this.parseTablesFromSchema(this.collection, schemaData.properties);
 		this._tableKeys = Object.keys(tables);
+
+		this._flatSchema = Helpers.getFlattenedSchema(schemaData);
+		// this._flatSchema['_id'] = {
+		// 	'__type': 'id',
+		// 	'__default': 'new',
+		// 	'__required': true,
+		// 	'__allowUpdate': false,
+		// };
 
 		Logging.logSilly(`Parsed ${this._tableKeys.length} tables from schema`);
 
@@ -95,22 +108,24 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	async parseTablesFromSchema(name, properties, parentReference = null) {
 		let tables = {};
 
+		properties['_id'] = {
+			'__type': 'id',
+			'__default': 'new',
+			'__required': false,
+			'__allowUpdate': false,
+		};
 		tables[name] = {
-			'_id': this.getColumnType({
-				'__type': 'id',
-				'__default': 'new',
-				'__required': true,
-				'__allowUpdate': false,
-			}),
+			'_id': this.getColumnType(properties['_id']),
 		};
 
 		if (parentReference) {
-			tables[name][parentReference] = this.getColumnType({
+			properties[parentReference] = {
 				'__type': 'id',
-				'__default': null,
-				'__required': true,
+				'__default': 'new',
+				'__required': false,
 				'__allowUpdate': true,
-			});
+			};
+			tables[name][parentReference] = this.getColumnType(properties[parentReference]);
 		}
 
 		const parseProp = async (key, prop) => {
@@ -139,7 +154,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		let currentSchemaArr = null;
 
 		try {
-			[currentSchemaArr] = await this._query(`DESCRIBE \`${name}\``);
+			currentSchemaArr = await this._query(`DESCRIBE \`${name}\``);
 		} catch (err) {
 			if (err && err.code === 'ER_NO_SUCH_TABLE') createTable = true;
 			else throw err;
@@ -254,16 +269,56 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return AdapterId;
 	}
 
-	async _query(query, params = []) {
-		return this.connection.promise().execute(query, params);
+	getConnection() {
+		const con = this.connection.pool.find((con) => con.lock === false);
+
+		if (con) {
+			con.lock = true;
+			return Promise.resolve(con);
+		}
+
+		return new Promise((resolve) => this.connection.queue.push(resolve));
+	}
+	releaseConnection(con) {
+		const queued = this.connection.queue.shift();
+
+		if (queued) {
+			queued(con);
+		} else {
+			const conIdx = this.connection.pool.findIndex((_con) => _con === con);
+			if (conIdx === -1) throw new Error('Unable to find connection in pool');
+			this.connection.pool[conIdx].lock = false;
+		}
 	}
 
-	_queryStream(query, params = []) {
-		return this.connection.execute(query, params).stream();
+	async _query(query, params = []) {
+		const con = await this.getConnection();
+		const res = await new Promise((res, rej) => con.execute(query, params, (err, result) => {
+			if (err) {
+				return rej(err);
+			}
+			return res(result);
+		}));
+		this.releaseConnection(con);
+		return res;
+		// .then((res) => {
+		// 	this.connection.releaseConnection(con);
+		// 	return res;
+		// });
+	}
+
+	async _queryStream(query, params = []) {
+		const con = await this.getConnection();
+		const rx = con.execute(query, params).stream();
+
+		// Handle closing stream
+		rx.on('close', () => this.releaseConnection(con));
+
+		return rx;
 	}
 
 	async _fetchRow(query, params = []) {
-		const stream = this._queryStream(query, params);
+		const stream = await this._queryStream(query, params);
 		return await Helpers.streamFirst(stream);
 	}
 
@@ -280,7 +335,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		} else if (command === 'DELETE') {
 			queryParts.push(command);
 
-			queryParts.push(`FROM ${table}`);
+			queryParts.push(`FROM \`${table}\``);
 		} else {
 			queryParts.push(command);
 
@@ -290,7 +345,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			else queryParts.push('*');
 
 			// Table
-			queryParts.push(`FROM ${table}`);
+			queryParts.push(`FROM \`${table}\``);
 
 			// Joins
 			if (joinParts.length > 0) queryParts.push(joinParts.join(', '));
@@ -329,6 +384,13 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return arrayMap;
 	}
 
+	/*
+	* @return {Promise} - returns a promise that is fulfilled when the database request is completed
+	*/
+	isDuplicate(details) {
+		return Promise.resolve(false);
+	}
+
 	/**
 	 * @param {App} entity - entity object to be deleted
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
@@ -353,11 +415,13 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		if (!query) query = {};
 		// Logging.logSilly(`rmAll: ${this.collectionName} ${query}`);
 
-		const queryParts = this._parseBJSQuery(query);
+		const queryParts = this._parseBJSQueries(this.collection, query);
 
-		return this._query(
-			this._buildQuery('DELETE', this.collection, [], [], queryParts.where),
-		);
+		const queries = Object.keys(queryParts).map((table) => {
+			return this._buildQuery('DELETE', table, [], [], queryParts[table].where);
+		});
+
+		return this._query(queries.join(';'));
 	}
 
 	/**
@@ -369,10 +433,10 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {ReadableStream} - stream
 	 */
-	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+	async find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
 		Logging.logSilly(`find: ${this.collection} ${query}`);
 
-		const queryParts = this._parseBJSQuery(query);
+		const queryParts = this._parseBJSQueries(this.collection, query);
 
 		// Perform joins to fetch info about secondary tables
 		const selectParts = [];
@@ -386,7 +450,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 					const tableNameSplit = table.split('.');
 					const property = tableNameSplit.pop();
 					const foreignKey = '_'+ tableNameSplit.join('.') + 'Id';
-					const [rows] = await _self._query(`SELECT * FROM \`${table}\` WHERE \`${foreignKey}\`='${chunk._id}'`);
+					const rows = await _self._query(`SELECT * FROM \`${table}\` WHERE \`${foreignKey}\`='${chunk._id}'`);
 					chunk[property] = rows;
 				});
 
@@ -394,16 +458,18 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			}
 		});
 
+		Logging.logSilly(`find: ${this.collection} ${this._tableKeys}`);
+
 		if (this._tableKeys.length > 1) {
 			return joinTransformQuery(
 				this,
-				this._queryStream(
-					this._buildQuery('SELECT', this.collection, selectParts, joinParts, queryParts.where),
+				await this._queryStream(
+					this._buildQuery('SELECT', this.collection, selectParts, joinParts, queryParts[this.collection].where),
 				),
 			);
 		} else {
-			return this._queryStream(
-				this._buildQuery('SELECT', this.collection, selectParts, joinParts, queryParts.where),
+			return await this._queryStream(
+				this._buildQuery('SELECT', this.collection, selectParts, joinParts, queryParts[this.collection].where),
 			);
 		}
 	}
@@ -417,9 +483,16 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 		if (id instanceof ObjectId === false) id = this.ID.new(id);
 
-		return await Helpers.streamFirst(this.find({_id: id}, {}));
+		return await Helpers.streamFirst(await this.find({_id: id}, {}));
 	}
 
+	/**
+	 * @param {Object} query - mongoDB query
+	 * @return {Promise} - resolves to an array of docs
+	 */
+	async findOne(query) {
+		return await Helpers.streamFirst(await this.find(query, {}));
+	}
 
 	/**
 	 * @return {Promise} - resolves to an array of Companies
@@ -463,19 +536,15 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 		Object.keys(tables).forEach((table) => {
 			tables[table].forEach((properties) => {
+				if (!properties._id) properties['_id'] = this.ID.new();
+
+				properties = Helpers.flatternObject(properties);
+
 				const columns = Object.keys(properties);
 
 				// TODO: ESCAPES NEEDED
 				const formattedValues = Object.entries(properties).map(([field, value]) => {
-					if (value === null) {
-						return 'NULL';
-					}
-
-					// return this._convertDataTypes(type? operand);
-
-					console.log(this._getTypeFromField(field));
-
-					return `'${value}'`;
+					return this._castToSQLType(this._getTypeFromFieldPath(`${table}.${field}`, this.collection), value);
 				});
 
 				commands.push(`INSERT INTO \`${table}\` (\`${columns.join('`,`')}\`) VALUES (${formattedValues.join(',')});`);
@@ -495,68 +564,74 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	updateById(id, query) {
-		// const filterParts = this._parseBJSQuery({_id: id});
+		// const filterParts = this._parseBJSQueries({_id: id});
 		const updates = {...{_id: id}, ...query};
-		const queryParts = this._parseBJSQuery(updates, id);
+		const queryParts = this._parseBJSQueries(this.collection, updates, id);
 
-		console.log('updates', updates);
-		console.log('queryParts', queryParts);
+		const queries = Object.keys(queryParts).map((table) => {
+			return this._buildQuery('UPDATE', table, queryParts[table].set, [], queryParts[table].where);
+		});
 
-		return this._query(
-			this._buildQuery('UPDATE', this.collection, queryParts.set, [], queryParts.where),
-		);
+		return this._query(queries.join(';'));
 	}
 
-	_parseBJSQuery(_query, parentId) {
-		const parts = {
-			set: [],
-			where: [],
-		};
+	_parseBJSQueries(collection, _query, parentId) {
+		const tables = {};
+
+		const createTable = (key) => tables[key] = {set: [], where: []};
+
+		createTable(collection);
+
+		if (_query && !_query['$set']) {
+			// Repack Objects
+			_query = Helpers.Schema.unflattenObject(_query);
+		}
 
 		for (const field in _query) {
 			if (!{}.hasOwnProperty.call(_query, field)) continue;
 			if (field === '$set') {
-				// _unpackArrays
-				// TODO: Deconstruct array properties
-				// console.log(_query[field]);
-				console.log(this._unpackArrays([_query[field]], this.collection, parentId));
+				// Unpack arrays
+				const unpackedArrays = this._unpackArrays([_query[field]], this.collection, parentId);
+				Object.keys(unpackedArrays).forEach((table) => {
+					if (!tables[collection]) createTable(table);
+					tables[collection] = {...tables[collection], ...this._parseBJSQueries(table, tables[table])};
+				});
+
+				// TODO: Unpack objects
+				_query[field] = Helpers.flatternObject(_query[field]);
 
 				for (const prop in _query[field]) {
 					if (!{}.hasOwnProperty.call(_query[field], prop)) continue;
 
-					// TODO: Deconstruct array properties
-
-					// Set field;
-					// Generate updates for tables
-
-					parts.set.push(this._parseOperations(prop, '$eq', _query[field][prop]));
+					tables[collection].set.push(this._parseOperations(prop, '$eq', _query[field][prop], collection));
 				}
 			} else {
-				if (typeof _query[field] === 'object' && !Array.isArray(_query[field]) && _query[field] !== null) {
+				if (
+					typeof _query[field] === 'object' &&
+					!Array.isArray(_query[field]) &&
+					_query[field] !== null &&
+					!AdapterId.isValid(_query[field])
+				) {
 					for (const operator in _query[field]) {
 						if (!{}.hasOwnProperty.call(_query[field], operator)) continue;
 
 						const operand = _query[field][operator];
-						parts.where.push(this._parseOperations(field, operator, operand));
+						tables[collection].where.push(this._parseOperations(field, operator, operand, collection));
 					}
 				} else {
-					parts.where.push(this._parseOperations(field, '$eq', _query[field]));
+					tables[collection].where.push(this._parseOperations(field, '$eq', _query[field], collection));
 				}
 			}
 		}
 
-		return parts;
+		return tables;
 	}
-	_parseOperations(field, operator, operand) {
+	_parseOperations(field, operator, operand, table) {
 		switch (operator) {
 		case '$eq': {
-			const type = this._getTypeFromField(field);
+			const type = this._getTypeFromFieldPath(field, this.collection);
 
-			if (type === 'array') {
-				console.log(field, operand);
-			}
-
-			return `\`${field}\`=${this._castToSQLType(this._getTypeFromField(field), operand)}`;
+			return `\`${field}\`=${this._castToSQLType(type, operand)}`;
 		}
 		case '$in':
 			return `\`${field}\` IN (${operand.map((v) => `'${v}'`).join(', ')})`;
@@ -565,15 +640,62 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		}
 	}
 
-	_getTypeFromField(field) {
-		if (!this._flatSchema[field]) {
-			throw new Error(`Unable to find type for field: ${field}`);
-		}
-		if (!this._flatSchema[field].__type) {
-			throw new Error(`Unable to find type for field ${field}`);
+	_getTypeFromFieldPath(path, table) {
+		if (path.indexOf(table) === 0) {
+			path = path.substring(table.length + 1);
 		}
 
-		return this._flatSchema[field].__type;
+		// Extra field from array
+		const parts = path.split('.');
+
+		// The first key will be the table, lets discard it
+		// if (parts.length > 1 && parts[0] === table) parts.shift();
+
+		const type = parts.reduce((data, part) => {
+			const node = data.node;
+
+			if (!node || data.found) return data;
+
+			if (node && !node[part]) {
+				const combined = parts.join('.');
+				if (node[combined]) {
+					data.found = true;
+					data.node = node[combined].__type;
+					return data;
+				}
+
+				// Check to see if we've got an object with
+				const subKeys = Object.keys(node).filter((k) => k.indexOf(`${part}.`) === 0);
+				if (subKeys.length > 0) return 'object';
+				throw new Error(`Unable to find field: ${path}`);
+			}
+
+			if (node[part].__type === 'array') {
+				if (node[part].__schema) {
+					data.node = node[part].__schema;
+					return data;
+				} else if (node[part].__itemtype) {
+					data.found = true;
+					data.node = node[part].__itemtype;
+					return data;
+				} else {
+					throw new Error(`Array doesn't have a schema or type ${path}`);
+				}
+			}
+
+			data.found = true;
+			data.node = node[part].__type;
+			return data;
+		}, {
+			found: false,
+			node: this._flatSchema,
+		});
+
+		if (!type.found) {
+			throw new Error(`Unable to find field: ${path}`);
+		}
+
+		return type.node;
 	}
 
 	_castToSQLType(type, value) {
@@ -588,6 +710,8 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			return `'${value.toString()}'`;
 		case 'date':
 			return value;
+		case 'number':
+			return value;
 		default:
 			throw new Error(`_castToSQLType: Unknown data type '${type}'`);
 		}
@@ -601,5 +725,12 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		const result = await this._fetchRow(`SELECT COUNT(*) AS count FROM ${this.collection}`);
 
 		return result.count;
+	}
+
+	/**
+	 * @return {Promise}
+	 */
+	drop() {
+		return this.rmAll({});
 	}
 };

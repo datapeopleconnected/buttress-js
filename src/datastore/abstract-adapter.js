@@ -99,7 +99,7 @@ module.exports = class AbstractAdapter {
 	 * @param {Object} excludes - mongoDB query excludes
 	 */
 	findOne(query, excludes = {}) {
-		throw new Errors.NotYetImplemented('afindOnedd');
+		throw new Errors.NotYetImplemented('findOnedd');
 	}
 
 	/**
