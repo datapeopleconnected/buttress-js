@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 const ObjectId = require('mongodb').ObjectId;
 // const mysql = require('mysql2/promise');
 const mysql = require('mysql2');
@@ -292,6 +293,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	async _query(query, params = []) {
+		console.log('_query', query);
 		const con = await this.getConnection();
 		const res = await new Promise((res, rej) => con.execute(query, params, (err, result) => {
 			if (err) {
@@ -308,6 +310,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	async _queryStream(query, params = []) {
+		console.log('_queryStream', query);
 		const con = await this.getConnection();
 		const rx = con.execute(query, params).stream();
 
@@ -329,7 +332,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		// TODO: Handle enforcing data type conversions
 
 		if (command === 'UPDATE') {
-			queryParts.push(`${command} ${table}`);
+			queryParts.push(`${command} \`${table}\``);
 
 			queryParts.push(`SET ${selectParts.join(', ')}`);
 		} else if (command === 'DELETE') {
@@ -563,6 +566,72 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return this.find({_id: {$in: insertedIds}});
 	}
 
+	async batchUpdateProcess(id, body, context, schemaConfig) {
+		if (!context) {
+			throw new Error(`batchUpdateProcess called without context; ${id}`);
+		}
+
+		const updateType = context.type;
+		let response = null;
+
+		const ops = {};
+
+		switch (updateType) {
+		default: {
+			throw new Error(`Invalid update type: ${updateType}`);
+		}
+		case 'vector-add': {
+			throw new Helpers.Errors.NotYetImplemented('batchUpdateProcess:vector-add');
+		}
+		case 'vector-rm': {
+			throw new Helpers.Errors.NotYetImplemented('batchUpdateProcess:vector-rm');
+		}
+		case 'scalar': {
+			let value = null;
+			if (schemaConfig && schemaConfig.__schema) {
+				const fb = Helpers.Schema.getFlattenedBody(body.value);
+				value = Helpers.Schema.populateObject(schemaConfig.__schema, fb);
+			} else {
+				value = body.value;
+			}
+
+			if (!ops[id]) {
+				ops[id] = {
+					_id: AdapterId.new(id),
+					$set: {
+						[body.path]: value,
+					},
+				};
+			} else {
+				ops[id]['$set'][body.path] = value;
+			}
+
+			response = value;
+		} break;
+		case 'scalar-increment': {
+			throw new Helpers.Errors.NotYetImplemented('batchUpdateProcess:scalar-increment');
+		}
+		}
+
+		if (Object.keys(ops).length < 1) return;
+
+		const queries = Object.keys(ops).map((id) => {
+			const queryParts = this._parseBJSQueries(this.collection, ops[id], AdapterId.new(id));
+
+			return Object.keys(queryParts).map((table) => {
+				return this._buildQuery('UPDATE', table, queryParts[table].set, [], queryParts[table].where);
+			});
+		}).flat();
+
+		await this._query(queries.join(';'));
+
+		return {
+			type: updateType,
+			path: body.path,
+			value: response,
+		};
+	}
+
 	updateById(id, query) {
 		// const filterParts = this._parseBJSQueries({_id: id});
 		const updates = {...{_id: id}, ...query};
@@ -575,8 +644,26 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return this._query(queries.join(';'));
 	}
 
+	async exists(id, extra = null) {
+		Logging.logSilly(`exists: ${this.collection} ${id}`);
+
+		if (extra && Object.keys(extra).length > 0) {
+			throw new Helpers.Errors.NotYetImplemented('exists');
+		}
+
+		const res = await this._fetchRow(
+			this._buildQuery('SELECT', this.collection, [`COUNT(_id) AS count`], [], [`\`_id\`=${this._castToSQLType('string', id)}`]),
+		);
+
+		if (res && res.count > 0) {
+			return true;
+		}
+
+		return false;
+	}
+
 	_parseBJSQueries(collection, _query, parentId) {
-		const tables = {};
+		let tables = {};
 
 		const createTable = (key) => tables[key] = {set: [], where: []};
 
@@ -589,7 +676,10 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 		for (const field in _query) {
 			if (!{}.hasOwnProperty.call(_query, field)) continue;
-			if (field === '$set') {
+			if (field === '$and') {
+				// Do somthing
+				tables = {...tables, ...this._parseBJSQueries(collection, _query[field])};
+			} else if (field === '$set') {
 				// Unpack arrays
 				const unpackedArrays = this._unpackArrays([_query[field]], this.collection, parentId);
 				Object.keys(unpackedArrays).forEach((table) => {
