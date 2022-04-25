@@ -173,7 +173,8 @@ class Route {
 
 		const isReadStream = result instanceof Stream.Readable;
 
-		Logging.logTimer(`_respond:start isReadStream:${isReadStream} redactResults:${this.redactResults}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		Logging.logTimer(`_respond:start isReadStream:${isReadStream} redactResults:${this.redactResults}`,
+			req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
 
 		// Fetch app roles if they exist
 		let appRoles = null;

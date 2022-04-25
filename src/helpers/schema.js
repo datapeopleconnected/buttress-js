@@ -385,9 +385,9 @@ const __inflateObject = (parent, path, value) => {
 };
 
 function __unflattenObject(data) {
-	let result = {};
-	for (let i in data) {
-		let keys = i.split('.');
+	const result = {};
+	for (const i of Object.keys(data)) {
+		const keys = i.split('.');
 		keys.reduce(function(r, e, j) {
 			return r[e] || (r[e] = isNaN(Number(keys[j + 1])) ? (keys.length - 1 == j ? data[i] : {}) : []);
 		}, result);
