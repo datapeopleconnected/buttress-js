@@ -13,6 +13,13 @@ module.exports.RouteMissingModel = class RouteMissingModel extends Error {
 	}
 };
 
+module.exports.UnsupportedDatastore = class UnsupportedDatastore extends Error {
+	constructor(message) {
+		super(message);
+		this.name = 'UnsupportedDatastore';
+	}
+};
+
 module.exports.NotYetImplemented = class NotYetImplemented extends Error {
 	constructor(message) {
 		super(message);

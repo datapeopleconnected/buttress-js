@@ -17,6 +17,8 @@ const Sugar = require('sugar');
 const Schema = require('../schema');
 const shortId = require('../helpers').shortId;
 
+const {Errors} = require('../helpers');
+
 const Datastore = require('../datastore');
 
 const SchemaModel = require('./schemaModel');
@@ -65,8 +67,17 @@ class Model {
 			// Check for connection
 			let datastore = null;
 			if (app.datastore && app.datastore.connectionString) {
-				datastore = Datastore.createInstance(app.datastore);
-				await datastore.connect();
+				try {
+					datastore = Datastore.createInstance(app.datastore);
+					await datastore.connect();
+				} catch (err) {
+					if (err instanceof Errors.UnsupportedDatastore) {
+						Logging.logWarn(`${err} for ${app._id}`);
+						return;
+					}
+
+					throw err;
+				}
 			} else {
 				datastore = Datastore.getInstance('core');
 			}
