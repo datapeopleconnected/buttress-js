@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+const Helpers = require('../helpers');
 const Config = require('node-env-obj')();
 
 module.exports = class Datastore {
@@ -37,7 +38,7 @@ module.exports = class Datastore {
 			}
 		})();
 
-		if (Adapter === null) throw new Error(`Unknown datastore '${uri.protocol}'`);
+		if (Adapter === null) throw new Helpers.Errors.UnsupportedDatastore(`Unknown datastore '${uri.protocol}'`);
 
 		return new Adapter(uri, options);
 	}

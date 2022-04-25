@@ -21,9 +21,12 @@ const Errors = require('./helpers/errors');
 const stream = require('stream');
 const Transform = stream.Transform;
 
+const Datastore = require('./datastore');
+
 module.exports.Errors = Errors;
 
 module.exports.Schema = require('./helpers/schema');
+module.exports.Stream = require('./helpers/stream');
 
 class Timer {
 	constructor() {
@@ -179,6 +182,9 @@ module.exports.shortId = (id) => {
 	let output = '';
 	if (!id) return output;
 
+	// HACK: need to make sure the id is in the correct format to extract the timestamp
+	id = Datastore.getInstance('core').ID.new(id);
+
 	const date = id.getTimestamp();
 	let time = date.getTime();
 
@@ -195,10 +201,10 @@ module.exports.shortId = (id) => {
 const __flattenRoles = (data, path) => {
 	if (!path) path = [];
 
-	return data.roles.reduce((_roles, role) => {
+	return data.reduce((_roles, role) => {
 		const _path = path.concat(`${role.name}`);
 		if (role.roles && role.roles.length > 0) {
-			return _roles.concat(__flattenRoles(role, _path));
+			return _roles.concat(__flattenRoles(role.roles, _path));
 		}
 
 		const flatRole = Object.assign({}, role);
@@ -209,24 +215,24 @@ const __flattenRoles = (data, path) => {
 };
 module.exports.flattenRoles = __flattenRoles;
 
-// const __flatternObject = (obj, output, paths) => {
-// 	if (!output) output = {};
-// 	if (!paths) paths = [];
+const __flatternObject = (obj, output, paths) => {
+	if (!output) output = {};
+	if (!paths) paths = [];
 
-// 	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
-// 		paths.push(key);
-// 		if (typeof obj[key] === 'object' && ObjectId.isValid(obj[key])) {
-// 			out[paths.join('.')] = obj[key];
-// 		} else if (typeof obj[key] === 'object') {
-// 			__flatternObject(obj[key], out, paths);
-// 		} else {
-// 			out[paths.join('.')] = obj[key];
-// 		}
-// 		paths.pop();
-// 		return out;
-// 	}, output);
-// };
-// module.exports.flatternObject = __flatternObject;
+	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
+		paths.push(key);
+		if (typeof obj[key] === 'object' && Datastore.getInstance('core').ID.isValid(obj[key])) {
+			out[paths.join('.')] = obj[key];
+		} else if (typeof obj[key] === 'object' && obj[key] !== null) {
+			__flatternObject(obj[key], out, paths);
+		} else {
+			out[paths.join('.')] = obj[key];
+		}
+		paths.pop();
+		return out;
+	}, output);
+};
+module.exports.flatternObject = __flatternObject;
 
 const __getFlattenedSchema = (schema) => {
 	const __buildFlattenedSchema = (property, parent, path, flattened) => {
@@ -281,11 +287,26 @@ const __getFlattenedSchema = (schema) => {
 module.exports.getFlattenedSchema = __getFlattenedSchema;
 
 module.exports.streamFirst = (stream) => {
+	// TODO: Handle none stream being passed through
+
+	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
+		throw new Error(`Expected Stream but got '${stream}'`);
+	}
+
 	return new Promise((resolve, reject) => {
+		stream.on('error', (err) => reject(err));
+		stream.on('end', () => resolve(undefined));
 		stream.on('data', (item) => {
 			stream.destroy();
 			resolve(item);
 		});
-		stream.on('end', () => resolve(undefined));
 	});
+};
+
+module.exports.awaitAll = async (arr, handler) => await Promise.all(arr.map(async (item) => await handler(item)));
+module.exports.awaitForEach = async (arr, handler) => {
+	await arr.reduce(async (prev, item) => {
+		await prev;
+		await handler(item);
+	}, Promise.resolve());
 };

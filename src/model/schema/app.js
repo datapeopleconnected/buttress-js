@@ -67,28 +67,57 @@ class AppSchemaModel extends SchemaModel {
 			properties: {
 				name: {
 					__type: 'string',
-					__default: '',
+					__default: null,
 					__allowUpdate: true,
 				},
 				apiPath: {
 					__type: 'string',
-					__default: '',
+					__default: null,
 					__allowUpdate: true,
 				},
 				_token: {
 					__type: 'id',
-					__required: true,
+					__required: false,
 					__allowUpdate: false,
 				},
 				__schema: {
-					__type: 'string',
-					__required: true,
+					__type: 'text',
+					__required: false,
 					__default: '[]',
 					__allowUpdate: true,
 				},
+				__defaultRole: {
+					__type: 'string',
+					__default: null,
+					__allowUpdate: true,
+				},
+				datastore: {
+					connectionString: {
+						__type: 'string',
+						__default: null,
+						__allowUpdate: true,
+					},
+				},
 				__roles: {
 					__type: 'array',
-					__required: true,
+					__required: false,
+					__schema: {
+						name: {
+							__type: 'string',
+							__required: true,
+							__allowUpdate: true,
+						},
+						endpointDisposition: {
+							__type: 'string',
+							__required: true,
+							__allowUpdate: true,
+						},
+						dataDisposition: {
+							__type: 'string',
+							__required: true,
+							__allowUpdate: true,
+						},
+					},
 					__allowUpdate: true,
 				},
 			},
@@ -100,26 +129,19 @@ class AppSchemaModel extends SchemaModel {
 	 * @return {Promise} - fulfilled with App Object when the database request is completed
 	 */
 	async add(body) {
-		const appBody = {
-			id: this.createId(),
-			name: body.name,
-			type: body.type,
-			authLevel: body.authLevel,
-			permissions: body.permissions,
-			domain: body.domain,
-			apiPath: body.apiPath,
-		};
+		body.id = this.createId();
 
 		const rxsToken = await Model.Token.add({
 			type: Model.Token.Constants.Type.APP,
 			authLevel: body.authLevel,
 			permissions: body.permissions,
 		}, {
-			_app: this.createId(appBody.id),
+			_app: body.id,
 		});
+
 		const token = await Helpers.streamFirst(rxsToken);
 
-		const rxsApp = await super.add(appBody, {_token: token._id});
+		const rxsApp = await super.add(body, {_token: token._id});
 		const app = await Helpers.streamFirst(rxsApp);
 
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
@@ -136,6 +158,7 @@ class AppSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
 	 */
 	updateSchema(appId, appSchema) {
+		Logging.logSilly(`Update Schema ${appId}`);
 		this._localSchema.forEach((cS) => {
 			const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);
 			const schema = appSchema[appSchemaIdx];
@@ -150,7 +173,7 @@ class AppSchemaModel extends SchemaModel {
 		appSchema = Schema.encode(appSchema);
 		// this.__schema = appSchema;
 
-		return super.update({_id: appId}, {$set: {__schema: appSchema}})
+		return super.updateById(appId, {$set: {__schema: appSchema}})
 			.then((res) => {
 				Logging.logSilly(`Emitting app-schema:updated ${appId}`);
 				nrp.emit('app-schema:updated', {appId: appId});
@@ -170,7 +193,10 @@ class AppSchemaModel extends SchemaModel {
 	updateRoles(appId, roles) {
 		// nrp.emit('app-metadata:changed', {appId: appId});
 
-		return super.update({_id: appId}, {$set: {__roles: roles}});
+		return super.updateById(appId, {$set: {
+			__defaultRole: roles.default,
+			__roles: Helpers.flattenRoles(roles.roles),
+		}});
 	}
 
 	/**
@@ -205,7 +231,6 @@ class AppSchemaModel extends SchemaModel {
 	 */
 	async rm(entity) {
 		await Model.AppDataSharing.rmAll({_appId: entity._id});
-
 		const appShortId = (entity) ? Helpers.shortId(entity._id) : null;
 
 		// Delete Schema collections

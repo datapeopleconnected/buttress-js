@@ -67,7 +67,7 @@ class ActivitySchemaModel extends SchemaModel {
 					__allowUpdate: false,
 				},
 				description: {
-					__type: 'string',
+					__type: 'text',
 					__default: '',
 					__allowUpdate: false,
 				},
@@ -97,10 +97,18 @@ class ActivitySchemaModel extends SchemaModel {
 					__default: '',
 					__allowUpdate: false,
 				},
-				params: { },
-				query: { },
-				body: { },
-				response: { },
+				params: {
+					id: {
+						__type: 'id',
+						__default: null,
+						__allowUpdate: false,
+					},
+				},
+				body: {
+					__type: 'text',
+					__default: '',
+					__allowUpdate: false,
+				},
 				_token: {
 					__type: 'id',
 					__required: true,
@@ -156,8 +164,12 @@ class ActivitySchemaModel extends SchemaModel {
 			md._id = this.adapter.ID.new(body.id);
 		}
 
-		const validated = Shared.applyAppProperties(false, body);
-		return Object.assign(md, validated);
+		delete body.req;
+		delete body.res;
+
+		const validated = Shared.applyAppProperties(ActivitySchemaModel.Schema, body);
+
+		return validated;
 	}
 
 	add(body, internals) {

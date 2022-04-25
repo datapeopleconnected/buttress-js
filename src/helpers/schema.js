@@ -31,7 +31,7 @@ const __getFlattenedBody = (body) => {
 
 		if (typeof parent[property] !== 'object' || parent[property] instanceof Date ||
 			Array.isArray(parent[property]) || parent[property] === null ||
-			Datastore.getInstance().ID.isValid(body[property])) {
+			Datastore.getInstance('core').ID.isValid(body[property])) {
 			flattened.push({
 				path: path.join('.'),
 				value: parent[property],
@@ -68,6 +68,7 @@ const __getPropDefault = (config) => {
 		res = config.__default === undefined ? false : config.__default;
 		break;
 	case 'string':
+	case 'text':
 		res = config.__default === undefined ? '' : config.__default;
 		break;
 	case 'number':
@@ -81,9 +82,11 @@ const __getPropDefault = (config) => {
 		break;
 	case 'id':
 		if (config.__default) {
-			res = config.__default;
-		} else if (config.__default === 'new') {
-			res = Datastore.getInstance().ID.new();
+			if (config.__default === 'new') {
+				res = Datastore.getInstance('core').ID.new();
+			} else {
+				res = config.__default;
+			}
 		} else {
 			res = null;
 		}
@@ -137,24 +140,37 @@ const __validateProp = (prop, config) => {
 	case 'id':
 		if (type === 'string') {
 			try {
-				prop.value = Datastore.getInstance().ID.new(prop.value); // eslint-disable-line new-cap
+				prop.value = Datastore.getInstance('core').ID.new(prop.value); // eslint-disable-line new-cap
+				valid = type === 'string';
 			} catch (e) {
 				valid = false;
-				return;
 			}
+		} else if (type === 'object') {
+			if (Datastore.getInstance('core').ID.isValid(prop.value)) {
+				try {
+					prop.value = Datastore.getInstance('core').ID.new(prop.value); // eslint-disable-line new-cap
+					valid = true;
+				} catch (e) {
+					valid = false;
+				}
+			} else {
+				valid = false;
+			}
+		} else {
+			valid = false;
 		}
-		valid = type === 'string';
 		break;
 	case 'object':
 		valid = type === config.__type;
 		break;
 	case 'string':
+	case 'text':
 		if (type === 'number') {
 			prop.value = String(prop.value);
 			type = typeof prop.value;
 		}
 
-		valid = type === config.__type;
+		valid = type === 'string';
 		if (config.__enum && Array.isArray(config.__enum)) {
 			valid = !prop.value || config.__enum.indexOf(prop.value) !== -1;
 		}
@@ -284,7 +300,7 @@ const __prepareSchemaResult = (result, dataDisposition, filter, permissions, tok
 		}
 
 		if (typeof chunk === 'object') {
-			if (Datastore.getInstance().ID.isValid(chunk)) {
+			if (Datastore.getInstance('core').ID.isValid(chunk)) {
 				return chunk;
 			}
 			if (chunk instanceof Date) {
@@ -367,6 +383,18 @@ const __inflateObject = (parent, path, value) => {
 	parent[path.shift()] = value;
 	return;
 };
+
+function __unflattenObject(data) {
+	let result = {};
+	for (let i in data) {
+		let keys = i.split('.');
+		keys.reduce(function(r, e, j) {
+			return r[e] || (r[e] = isNaN(Number(keys[j + 1])) ? (keys.length - 1 == j ? data[i] : {}) : []);
+		}, result);
+	}
+	return result;
+}
+module.exports.unflattenObject = __unflattenObject;
 
 const __populateObject = (schema, values) => {
 	const res = {};

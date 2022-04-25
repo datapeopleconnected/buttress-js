@@ -23,6 +23,8 @@ const Sugar = require('sugar');
 const Schema = require('../schema');
 const shortId = require('../helpers').shortId;
 
+const {Errors} = require('../helpers');
+
 const Datastore = require('../datastore');
 
 const SchemaModel = require('./schemaModel');
@@ -43,18 +45,9 @@ class Model {
 		this.Constants = {};
 		this.app = false;
 		this.appMetadataChanged = false;
-
-		this.primaryDatastore = null;
-	}
-
-	getDatastoreInstance() {
-		if (this.primaryDatastore) return;
-		this.primaryDatastore = Datastore.getInstance();
 	}
 
 	async init() {
-		this.getDatastoreInstance();
-
 		// Core Models
 		await this.initCoreModels();
 
@@ -62,8 +55,6 @@ class Model {
 	}
 
 	async initCoreModels() {
-		this.getDatastoreInstance();
-
 		// Core Models
 		const models = _getModels();
 		Logging.log(models, Logging.Constants.LogLevel.SILLY);
@@ -73,17 +64,33 @@ class Model {
 		}
 	}
 
-	async initSchema(datastore) {
-		this.getDatastoreInstance();
-
-		const rxsApps = this.models.App.findAll();
+	async initSchema() {
+		const rxsApps = await this.models.App.findAll();
 
 		for await (const app of rxsApps) {
 			if (!app || !app.__schema) return;
 
+			// Check for connection
+			let datastore = null;
+			if (app.datastore && app.datastore.connectionString) {
+				try {
+					datastore = Datastore.createInstance(app.datastore);
+					await datastore.connect();
+				} catch (err) {
+					if (err instanceof Errors.UnsupportedDatastore) {
+						Logging.logWarn(`${err} for ${app._id}`);
+						return;
+					}
+
+					throw err;
+				}
+			} else {
+				datastore = Datastore.getInstance('core');
+			}
+
 			await Schema.buildCollections(Schema.decode(app.__schema)).reduce(async (prev, schema) => {
 				await prev;
-				await this._initSchemaModel(app, schema);
+				await this._initSchemaModel(app, schema, datastore);
 			}, Promise.resolve());
 		}
 	}
@@ -103,7 +110,7 @@ class Model {
 
 		if (!this.models[name]) {
 			this.models[name] = new CoreSchemaModel();
-			await this.models[name].initAdapter(this.primaryDatastore);
+			await this.models[name].initAdapter(Datastore.getInstance('core'));
 		}
 
 		this.__defineGetter__(name, () => this.models[name]);
@@ -113,10 +120,11 @@ class Model {
 	/**
 	 * @param {object} app - application container
 	 * @param {object} schemaData - schema data object
+	 * @param {object} datastore - datastore object to be used
 	 * @return {object} SchemaModel - initiated schema model built from passed schema object
 	 * @private
 	 */
-	async _initSchemaModel(app, schemaData) {
+	async _initSchemaModel(app, schemaData, datastore) {
 		let name = `${schemaData.collection}`;
 		const appShortId = (app) ? shortId(app._id) : null;
 
@@ -157,13 +165,13 @@ class Model {
 					new SchemaModel(schemaData, app),
 					new SchemaModel(schemaData, app),
 				);
-				await this.models[name].initAdapter(this.primaryDatastore, remoteDatastore);
+				await this.models[name].initAdapter(datastore, remoteDatastore);
 
 				this.__defineGetter__(name, () => this.models[name]);
 				return this.models[name];
 			} else {
-				this.models[name] = new SchemaModel(schemaData, app, this.primaryDatastore);
-				await this.models[name].initAdapter(this.primaryDatastore);
+				this.models[name] = new SchemaModel(schemaData, app, datastore);
+				await this.models[name].initAdapter(datastore);
 			}
 		}
 

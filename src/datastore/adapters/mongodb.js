@@ -37,21 +37,22 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		super(uri, options, connection);
 	}
 
-	connect() {
+	async connect() {
 		if (this.connection) return this.connection;
 
 		// Remove the pathname as we'll selected the db using the client method
 		const connectionString = this.uri.href.replace(this.uri.pathname, '');
 
-		return MongoClient.connect(connectionString, this.options)
-			.then((client) => this.connection = client.db(this.uri.pathname.replace(/\//g, '')));
+		const client = await MongoClient.connect(connectionString, this.options);
+
+		return this.connection = client.db(this.uri.pathname.replace(/\//g, ''));
 	}
 
 	cloneAdapterConnection() {
 		return new MongodbAdapter(this.uri, this.options, this.connection);
 	}
 
-	setCollection(collectionName) {
+	async setCollection(collectionName) {
 		this.collection = this.connection.collection(collectionName);
 	}
 
@@ -91,16 +92,6 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		const insertedIds = Object.values(res.insertedIds).map((id) => new ObjectId(id));
 
 		return this.find({_id: {$in: insertedIds}});
-	}
-
-	update(filter, update) {
-		return new Promise((resolve, reject) => {
-			this.collection.updateMany(filter, update, (err, object) => {
-				if (err) return reject(new Error(err));
-
-				resolve(object);
-			});
-		});
 	}
 
 	async batchUpdateProcess(id, body, context, schemaConfig) {
@@ -226,12 +217,10 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	updateById(id, query) {
-		// Logging.logSilly(`update: ${this.collectionName} ${id} ${query}`);
+		// Logging.logSilly(`updateById: ${id} ${query}`);
 
 		return new Promise((resolve, reject) => {
-			this.collection.updateOne({_id: id}, {
-				$set: query,
-			}, (err, object) => {
+			this.collection.updateOne({_id: id}, query, (err, object) => {
 				if (err) return reject(new Error(err));
 
 				resolve(object);

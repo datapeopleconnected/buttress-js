@@ -34,6 +34,7 @@
     "method-override": "~3.0.0",
     "mongodb": "~4.2.0",
     "morgan": "~1.10.0",
+    "mysql2": "^2.3.3",
     "node-env-obj": "~0.2.5",
     "node-redis-pubsub": "~5.0.0",
     "redis": "~3.1.2",

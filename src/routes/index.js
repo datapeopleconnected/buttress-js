@@ -127,7 +127,7 @@ class Routes {
 	}
 
 	async initAppRoutes() {
-		const rxsApps = Model.App.findAll();
+		const rxsApps = await Model.App.findAll();
 		for await (const app of rxsApps) {
 			this._generateAppRoutes(app);
 		}
@@ -273,7 +273,7 @@ class Routes {
 
 	_timeRequest(req, res, next) {
 		// Just assign a arbitrary id to the request to help identify it in the logs
-		req.id = Datastore.getInstance().ID.new();
+		req.id = Datastore.getInstance('core').ID.new();
 		req.timer = new Helpers.Timer();
 		req.timer.start();
 
@@ -395,7 +395,7 @@ class Routes {
 	 */
 	async loadTokens() {
 		const tokens = [];
-		const rxsToken = Model.Token.findAll();
+		const rxsToken = await Model.Token.findAll();
 
 		for await (const token of rxsToken) {
 			tokens.push(token);
@@ -410,7 +410,7 @@ class Routes {
 	 */
 	async loadAttributes() {
 		const attributes = [];
-		const rxsAttributes = Model.Attributes.findAll();
+		const rxsAttributes = await Model.Attributes.findAll();
 
 		for await (const token of rxsAttributes) {
 			attributes.push(token);

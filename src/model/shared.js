@@ -117,9 +117,12 @@ const __populateObject = (schema, values, body = null) => {
  */
 const _applyAppProperties = function(schema, body) {
 	// const schema = __getCollectionSchema(collection);
-	if (schema === false) return {isValid: true};
+	if (schema === false) return {};
 
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
+
+	// TODO: Strip body of fields that don't match schema
+
 	const flattenedBody = Helpers.Schema.getFlattenedBody(body);
 
 	return __populateObject(flattenedSchema, flattenedBody, body);
@@ -251,6 +254,7 @@ const __extendPathContext = (pathContext, schema, prefix) => {
 			extended[`^${prefix}${property}$`] = {type: 'scalar', values: []};
 			break;
 		case 'string':
+		case 'text':
 			if (config.__enum) {
 				extended[`^${prefix}${property}$`] = {type: 'scalar', values: config.__enum};
 			} else {

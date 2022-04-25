@@ -37,14 +37,20 @@ class SchemaModel {
 		this.app = app || null;
 
 		this.appShortId = (app) ? shortId(app._id) : null;
+		this.collectionName = `${schemaData.collection}`;
+
+		if (this.appShortId) {
+			this.collectionName = `${this.appShortId}-${this.collectionName}`;
+		}
 	}
 
-	initAdapter(datastore) {
+	async initAdapter(datastore) {
 		if (datastore) {
 			Logging.logSilly(`initAdapter ${this.schemaData.collection}`);
 			this.adapter = datastore.adapter.cloneAdapterConnection();
-			this.adapter.connect();
-			this.adapter.setCollection(`${this.schemaData.collection}`);
+			await this.adapter.connect();
+			await this.adapter.setCollection(this.collectionName);
+			await this.adapter.updateSchema(this.schemaData);
 		}
 	}
 
@@ -256,8 +262,8 @@ class SchemaModel {
 						const fields = {};
 						fields[propertyPath] = true;
 
-						tasks.push(() => {
-							const rxsResult = collection.find(propertyQuery, fields);
+						tasks.push(async () => {
+							const rxsResult = await collection.find(propertyQuery, fields);
 
 							return new Promise((resolve) => {
 								if (!env[property]) env[property] = [];
@@ -292,6 +298,8 @@ class SchemaModel {
 
 		if (body.id) {
 			entity._id = this.adapter.ID.new(body.id);
+		} else {
+			entity._id = this.adapter.ID.new();
 		}
 
 		if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {
@@ -305,15 +313,6 @@ class SchemaModel {
 	}
 	add(body, internals) {
 		return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
-	}
-
-	/**
-	 * @param {*} query
-	 * @param {*} update
-	 * @return {promise}
-	 */
-	update(query, update) {
-		return this.adapter.update(query, update);
 	}
 
 	/**

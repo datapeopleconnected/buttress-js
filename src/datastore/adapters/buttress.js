@@ -90,7 +90,7 @@ module.exports = class Buttress extends AbstractAdapter {
 		return new Buttress(this.uri, this.options, this.connection);
 	}
 
-	setCollection(collectionName) {
+	async setCollection(collectionName) {
 		this.collection = this.connection.getCollection(collectionName);
 	}
 
@@ -112,16 +112,6 @@ module.exports = class Buttress extends AbstractAdapter {
 	add(body) {
 		return this.resolveAfterInit()
 			.then(() => this.collection.save(body));
-	}
-
-	/**
-	 * @param {object} details
-	 * @param {string} id
-	 * @return {Promise}
-	 */
-	update(details, id) {
-		return this.resolveAfterInit()
-			.then(() => this.collection.update(id, details));
 	}
 
 	/**
