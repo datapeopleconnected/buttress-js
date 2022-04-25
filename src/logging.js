@@ -148,6 +148,23 @@ module.exports.clean = () => {
 	_captureOutputBuffer = [];
 };
 
+module.exports.startupMessage = () => {
+	console.log(`***`);
+	console.log(` * Buttress - The federated real-time open data platform`);
+	console.log(` * Copyright (C) 2016-2022 Data Performance Consultancy LTD.`);
+	console.log(` * <https://dataperformanceconsultancy.com/>`);
+	console.log(` *`);
+	console.log(` * Buttress is free software: you can redistribute it and/or modify it under the`);
+	console.log(` * terms of the GNU Affero General Public Licence as published by the Free Software`);
+	console.log(` * Foundation, either version 3 of the Licence, or (at your option) any later version.`);
+	console.log(` * Buttress is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;`);
+	console.log(` * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.`);
+	console.log(` * See the GNU Affero General Public Licence for more details.`);
+	console.log(` * You should have received a copy of the GNU Affero General Public Licence along with`);
+	console.log(` * this program. If not, see <http://www.gnu.org/licenses/>.`);
+	console.log(`***`);
+};
+
 /**
  *
  * @param {string} log - log entry

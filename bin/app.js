@@ -24,11 +24,15 @@ const Config = require('node-env-obj')({
 	envPath: '../',
 	configPath: '../src',
 });
+const cluster = require('cluster');
+const Sugar = require('sugar');
+
+Sugar.Date.setLocale('en-GB');
 
 const BootstrapRest = require('../src/bootstrap-rest');
 const Logging = require('../src/logging');
-const Sugar = require('sugar');
-Sugar.Date.setLocale('en-GB');
+
+if (cluster.isMaster) Logging.startupMessage();
 
 /**
  *
