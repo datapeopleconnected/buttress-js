@@ -165,7 +165,7 @@ class SchemaModel {
 					} else if (schemaFlat[property]) {
 						propSchema = schemaFlat[property];
 					} else {
-						// TODO: Should maybe reject query
+						throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
 					}
 
 					if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
