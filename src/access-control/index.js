@@ -36,7 +36,8 @@ class AccessControl {
 	 */
 	async accessControlPolicy(req, res, next) {
 		// access control policy
-		const authUser = req.authUser;
+		const token = req.token;
+		if (!token._user) return next();
 
 		// TODO: better way to figure out the requested schema
 		let requestedURL = req.originalUrl || req.url;
@@ -44,23 +45,27 @@ class AccessControl {
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
-		let userAttributes = null;
+		let tokenAttributes = null;
 
 		await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
 
-		if (authUser) {
-			userAttributes = authUser._attribute;
+		if (token) {
+			tokenAttributes = token._attribute;
 		}
 
-		if (!userAttributes) return next();
+		if (tokenAttributes.length < 1) {
+			Logging.logTimer(`_accessControlPolicy:access-control-policy-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			res.status(401).send('Request token does not have any access control attributes');
+			return;
+		}
 
 		await this.__getAttributes();
 
-		userAttributes = this._getAttributesChain(userAttributes);
+		tokenAttributes = this._getAttributesChain(tokenAttributes);
 
-		const schemaBaseAttribute = userAttributes.filter((attr) => attr.targetedSchema.includes(schemaName) || attr.targetedSchema.length < 1);
+		const schemaBaseAttribute = tokenAttributes.filter((attr) => attr.targetedSchema.includes(schemaName) || attr.targetedSchema.length < 1);
 		if (schemaBaseAttribute.length < 1) return next();
-		const schemaAttributes = this._getSchemaRelatedAttributes(schemaBaseAttribute, userAttributes);
+		const schemaAttributes = this._getSchemaRelatedAttributes(schemaBaseAttribute, tokenAttributes);
 
 		const schemas = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
 		const schemaNames = schemas.map((s) => s.name);
@@ -97,7 +102,7 @@ class AccessControl {
 	}
 
 	/**
-	 * lookup attributes and fetch user attributes chain
+	 * lookup attributes and fetch token attributes chain
 	 * @param {Array} attributeNames
 	 * @param {Array} attributes
 	 * @return {Array} attributes
@@ -124,19 +129,19 @@ class AccessControl {
 	}
 
 	/**
-	 * Fetch schema related attributes from the user attributes
+	 * Fetch schema related attributes from the token attributes
 	 * @param {Array} attributes
-	 * @param {Array} userAttributes
+	 * @param {Array} tokenAttributes
 	 * @param {Array} attrs
 	 * @return {Array}
 	 */
-	_getSchemaRelatedAttributes(attributes, userAttributes, attrs = []) {
+	_getSchemaRelatedAttributes(attributes, tokenAttributes, attrs = []) {
 		const attributeIds = attributes.map((attr) => attr._id);
 
 		attributes.forEach((attr) => {
 			if (attr.extends.length > 1) {
 				attr.extends.forEach((extendedAttr) => {
-					const extendedAttribute = userAttributes.find((attr) => attr.name === extendedAttr && !attributeIds.includes(attr._id));
+					const extendedAttribute = tokenAttributes.find((attr) => attr.name === extendedAttr && !attributeIds.includes(attr._id));
 
 					if (!extendedAttribute) return;
 
@@ -160,32 +165,34 @@ class AccessControl {
 	async getAttributeChannels(appId) {
 		const channels = [];
 
-		const users = await this.__getUsers(appId);
+		const tokens = await this.__getTokens(appId);
 
 		await this.__getAttributes();
 
-		await users.reduce(async (prev, user) => {
+		await tokens.reduce(async (prev, token) => {
 			await prev;
-			const userAttributes = await this._getAttributesChain(user._attribute);
-			channels.push(userAttributes.map((attr) => attr.name).join(','));
+			if (token._attribute.length < 1) return;
+
+			const tokenAttributes = await this._getAttributesChain(token._attribute);
+			channels.push(tokenAttributes.map((attr) => attr.name).join(','));
 		}, Promise.resolve());
 
 		return channels;
 	}
 
-	async getAttributesChainForUser(userAttribute) {
+	async getAttributesChainForToken(tokenAttribute) {
 		await this.__getAttributes();
-		return await this._getAttributesChain(userAttribute);
+		return await this._getAttributesChain(tokenAttribute);
 	}
 
-	async __getUsers(appId) {
-		const users = [];
-		const rxsUsers = Model.User.findAll(appId);
-		for await (const token of rxsUsers) {
-			users.push(token);
+	async __getTokens(appId) {
+		const tokens = [];
+		const rxsTokens = Model.Token.findAll(appId);
+		for await (const token of rxsTokens) {
+			tokens.push(token);
 		}
 
-		return users;
+		return tokens;
 	}
 
 	async __getAttributes() {

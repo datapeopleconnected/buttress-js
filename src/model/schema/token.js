@@ -127,6 +127,11 @@ class TokenSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: false,
 				},
+				_attribute: {
+					__type: 'array',
+					__required: true,
+					__allowUpdate: true,
+				},
 			},
 		};
 	}

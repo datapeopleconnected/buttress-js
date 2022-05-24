@@ -232,7 +232,7 @@ class BootstrapSocket {
 					return next('invalid-token-user-ID');
 				}
 
-				const roomName = (await AccessControl.getAttributesChainForUser(user._attribute)).map((attr) => attr.name).join(',');
+				const roomName = (await AccessControl.getAttributesChainForToken(token._attribute)).map((attr) => attr.name).join(',');
 				socket.join(roomName);
 				Logging.log(`[${apiPath}][${token.role}] Connected ${socket.id} to room ${roomName}`);
 			} else {
