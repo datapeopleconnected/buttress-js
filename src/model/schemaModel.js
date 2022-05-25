@@ -164,7 +164,7 @@ class SchemaModel {
 						};
 					} else if (schemaFlat[property]) {
 						propSchema = schemaFlat[property];
-					} else {
+					} else if (Object.keys(schemaFlat) > 0) {
 						throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
 					}
 
