@@ -13,6 +13,9 @@
 
 const Crypto = require('crypto');
 // const Shared = require('../shared');
+const Config = require('node-env-obj')();
+const NRP = require('node-redis-pubsub');
+const nrp = new NRP(Config.redis);
 const Logging = require('../../logging');
 
 const SchemaModel = require('../schemaModel');
@@ -127,7 +130,7 @@ class TokenSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: false,
 				},
-				_attribute: {
+				attributes: {
 					__type: 'array',
 					__required: true,
 					__allowUpdate: true,
@@ -201,6 +204,19 @@ class TokenSchemaModel extends SchemaModel {
 	 */
 	updateRole(tokenId, role) {
 		return this.update({_id: tokenId}, {$set: {role: role}});
+	}
+
+	/**
+	 * @param {ObjectId} tokenId - token ID which will be updated
+	 * @param {string} tokenAttributes - the token's attributes
+	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
+	 */
+	updateAttributes(tokenId, tokenAttributes) {
+		return this.update({_id: this.createId(tokenId)}, {$push: {attributes: {$each: tokenAttributes}}})
+			.then(() => {
+				Logging.logSilly(`Emitting app-routes:bust-cache`);
+				nrp.emit('app-routes:bust-cache', {});
+			});
 	}
 }
 

@@ -111,7 +111,8 @@ class AttributeSchemaModel extends SchemaModel {
 		});
 		const attribute = await Helpers.streamFirst(rxsAttribute);
 
-		nrp.emit('app-routes:bust-attribute-cache', {appId: attribute.appId});
+		// NOT needed for now
+		// nrp.emit('app-routes:bust-attribute-cache', {appId: attribute.appId});
 
 		return attribute;
 	}

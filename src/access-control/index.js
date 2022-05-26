@@ -50,12 +50,12 @@ class AccessControl {
 		await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
 
 		if (token) {
-			tokenAttributes = token._attribute;
+			tokenAttributes = token.attributes;
 		}
 
 		if (tokenAttributes.length < 1) {
 			Logging.logTimer(`_accessControlPolicy:access-control-policy-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send('Request token does not have any access control attributes');
+			res.status(401).send({message: 'Request token does not have any access control attributes'});
 			return;
 		}
 
@@ -76,7 +76,7 @@ class AccessControl {
 
 		if (!passedDisposition) {
 			Logging.logTimer(`_accessControlPolicy:disposition-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send('Access control policy disposition not allowed');
+			res.status(401).send({message: 'Access control policy disposition not allowed'});
 			return;
 		}
 
@@ -84,14 +84,14 @@ class AccessControl {
 		const accessControlAuthorisation = await AccessControlConditions.applyAccessControlPolicyConditions(req, schemaAttributes);
 		if (!accessControlAuthorisation) {
 			Logging.logTimer(`_accessControlPolicy:conditions-not-fulfilled`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send('Access control policy conditions are not fulfilled');
+			res.status(401).send({message: 'Access control policy conditions are not fulfilled'});
 			return;
 		}
 
 		const passedAccessControlPolicy = await AccessControlFilter.addAccessControlPolicyQuery(req, schemaAttributes, schema);
 		if (!passedAccessControlPolicy) {
 			Logging.logTimer(`_accessControlPolicy:access-control-properties-permission-error`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send('Can not edit properties without privileged access');
+			res.status(401).send({message: 'Can not edit properties without privileged access'});
 			return;
 		}
 		await AccessControlFilter.applyAccessControlPolicyQuery(req);
@@ -171,9 +171,9 @@ class AccessControl {
 
 		await tokens.reduce(async (prev, token) => {
 			await prev;
-			if (token._attribute.length < 1) return;
+			if (token.attributes.length < 1) return;
 
-			const tokenAttributes = await this._getAttributesChain(token._attribute);
+			const tokenAttributes = await this._getAttributesChain(token.attributes);
 			channels.push(tokenAttributes.map((attr) => attr.name).join(','));
 		}, Promise.resolve());
 
@@ -196,12 +196,12 @@ class AccessControl {
 	}
 
 	async __getAttributes() {
-		if (this._attributes.length > 0) return;
+		// if (this._attributes.length > 0) return;
 
 		const attributes = [];
 		const rxsAttributes = Model.Attributes.findAll();
-		for await (const token of rxsAttributes) {
-			attributes.push(token);
+		for await (const attribute of rxsAttributes) {
+			attributes.push(attribute);
 		}
 
 		this._attributes = attributes;
