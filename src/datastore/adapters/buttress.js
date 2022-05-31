@@ -126,10 +126,10 @@ module.exports = class Buttress extends AbstractAdapter {
 
 	/**
 	 * @param {object} details
-	 * @throws Error
+	 * @return {Promise}
 	 */
-	isDuplicate(details) {
-		throw new Error('not yet implemented');
+	isDuplicate() {
+		return Promise.resolve(false);
 	}
 
 	/**

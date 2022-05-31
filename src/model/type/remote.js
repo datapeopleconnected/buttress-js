@@ -74,10 +74,10 @@ class SchemaModelRemote extends SchemaModel {
 
 	/**
 	 * @param {object} details
-	 * @throws Error
+	 * @return {Boolean}
 	 */
 	isDuplicate(details) {
-		throw new Error('not yet implemented');
+		return this.remote.isDuplicate(details);
 	}
 
 	/**
