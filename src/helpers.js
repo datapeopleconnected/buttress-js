@@ -303,6 +303,10 @@ module.exports.streamFirst = (stream) => {
 	});
 };
 
+module.exports.trimSlashes = (str) => {
+	return (str) ? str.replace(/^\/+|\/+$/g, '') : str;
+};
+
 module.exports.awaitAll = async (arr, handler) => await Promise.all(arr.map(async (item) => await handler(item)));
 module.exports.awaitForEach = async (arr, handler) => {
 	await arr.reduce(async (prev, item) => {

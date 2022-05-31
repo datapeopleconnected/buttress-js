@@ -124,8 +124,8 @@ class AppDataSharingSchemaModel extends SchemaModel {
 			active: false,
 
 			remoteApp: {
-				endpoint: body.remoteApp.endpoint,
-				apiPath: body.remoteApp.apiPath,
+				endpoint: Helpers.trimSlashes(body.remoteApp.endpoint),
+				apiPath: Helpers.trimSlashes(body.remoteApp.apiPath),
 				token: body.remoteApp.token,
 			},
 
