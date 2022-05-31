@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
+const Sugar = require('sugar');
 const os = require('os');
 const cluster = require('cluster');
 const net = require('net');
@@ -33,6 +33,8 @@ const Config = require('node-env-obj')();
 
 const Model = require('./model');
 const Logging = require('./logging');
+const AccessControl = require('./access-control');
+const AccessControlConditions = require('./access-control/conditions');
 
 const Datastore = require('./datastore');
 
@@ -50,6 +52,10 @@ class BootstrapSocket {
 		this._dataShareSockets = {};
 
 		this.__superApps = [];
+
+		this._attributeCloseSocketEvents = [];
+
+		this._oneWeekMilliseconds = Sugar.Number.day(7);
 
 		this.isPrimary = Config.sio.app === 'primary';
 
@@ -95,6 +101,27 @@ class BootstrapSocket {
 			nrp.on('dataShare:activated', async (data) => {
 				const dataShare = await Model.AppDataSharing.findById(data.appDataSharingId);
 				await this.__createDataShareConnection(dataShare);
+			});
+
+			nrp.on('dbClientLeaveRoom', async (data) => {
+				data.rooms.forEach((room) => {
+					this.__namespace[data.apiPath].emitter.in(room).emit('db-disconnect-room', {
+						target: data.type,
+						sequence: this.__namespace[data.apiPath].sequence[room],
+					});
+				});
+			});
+
+			nrp.on('queueAttributeCloseSocketEvent', async (data) => {
+				await this._queueAttributeCloseSocketEvent(nrp, data.attributes, data.schemaNames);
+			});
+
+			nrp.on('queueBasedConditionQuery', async (data) => {
+				this._attributeCloseSocketEvents.push(data);
+			});
+
+			nrp.on('accessControlPolicy:disconnectQueryBasedSocket', async (data) => {
+				await this._disconnectQueryBasedSocket(nrp, data.updatedSchema, data.id);
 			});
 		}
 
@@ -203,15 +230,42 @@ class BootstrapSocket {
 				});
 
 				Logging.log(`[${apiPath}][DataShare] Connected ${socket.id} to room ${dataShare.name}`);
-			} else if (token.role) {
-				socket.join(token.role);
-				Logging.log(`[${apiPath}][${token.role}] Connected ${socket.id} to room ${token.role}`);
+			} else if (token.type === 'user') {
+				Logging.logDebug(`Fetching user with id: ${token._user}`);
+				const user = await Model.User.findById(token._user);
+				if (!user) {
+					Logging.logWarn(`Invalid token user ID, closing connection: ${socket.id}`);
+					return next('invalid-token-user-ID');
+				}
+
+				const roomName = (await AccessControl.getAttributesChainForToken(token.attributes)).map((attr) => attr.name).join(',');
+				socket.join(roomName);
+				Logging.log(`[${apiPath}][${token.role}] Connected ${socket.id} to room ${roomName}`);
 			} else {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
 			}
 
 			socket.on('disconnect', () => {
 				Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
+			});
+
+			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
+				const rooms = socket.adapter.rooms;
+				const regex = new RegExp(data.room, 'g');
+				const attributeRooms = [];
+				rooms.forEach((value, key) => {
+					if (key.match(regex)) {
+						attributeRooms.push(key);
+					}
+				});
+
+				socket.leave(data.room);
+
+				nrp.emit('dbClientLeaveRoom', {
+					apiPath,
+					type: data.type,
+					rooms: attributeRooms,
+				});
 			});
 
 			next();
@@ -239,7 +293,7 @@ class BootstrapSocket {
 
 		this.__namespace['stats'].emitter.emit('activity', 1);
 
-		Logging.logSilly(`[${apiPath}][${data.role}][${data.verb}] activity in on ${data.path}`);
+		Logging.logSilly(`[${apiPath}][${data.attribute}][${data.verb}] activity in on ${data.path}`);
 
 		// Super apps?
 		if (data.isSuper) {
@@ -256,7 +310,7 @@ class BootstrapSocket {
 
 		// Disable broadcasting to public space
 		if (data.broadcast === false) {
-			Logging.logDebug(`[${apiPath}][${data.role}][${data.verb}] ${data.path} - Early out as it isn't public.`);
+			Logging.logDebug(`[${apiPath}][${data.attribute}][${data.verb}] ${data.path} - Early out as it isn't public.`);
 			return;
 		}
 
@@ -277,15 +331,15 @@ class BootstrapSocket {
 			};
 		}
 
-		if (data.role) {
-			if (!this.__namespace[apiPath].sequence[data.role]) {
-				this.__namespace[apiPath].sequence[data.role] = 0;
+		if (data.attribute) {
+			if (!this.__namespace[apiPath].sequence[data.attribute]) {
+				this.__namespace[apiPath].sequence[data.attribute] = 0;
 			}
-			Logging.logDebug(`[${apiPath}][${data.role}][${data.verb}] ${data.path}`);
-			this.__namespace[apiPath].sequence[data.role]++;
-			this.__namespace[apiPath].emitter.in(data.role).emit('db-activity', {
+			Logging.logDebug(`[${apiPath}][${data.attribute}][${data.verb}] ${data.path}`);
+			this.__namespace[apiPath].sequence[data.attribute]++;
+			this.__namespace[apiPath].emitter.in(data.attribute).emit('db-activity', {
 				data: data,
-				sequence: this.__namespace[apiPath].sequence[data.role],
+				sequence: this.__namespace[apiPath].sequence[data.attribute],
 			});
 		} else {
 			Logging.logDebug(`[${apiPath}][global]: [${data.verb}] ${data.path}`);
@@ -373,6 +427,110 @@ class BootstrapSocket {
 		});
 		socket.on('disconnect', () => {
 			Logging.logSilly(`Disconnected from ${url} with id ${socket.id}`);
+		});
+	}
+
+	async _queueAttributeCloseSocketEvent(nrp, attributes, schemaNames) {
+		const prioritisedConditions = await AccessControlConditions.__prioritiseConditionOrder(attributes);
+		await prioritisedConditions.reduce(async (prev, attribute) => {
+			await prev;
+
+			const name = attribute.name;
+			const conditionStr = JSON.stringify(attribute.condition);
+			let attributeIdx = this._attributeCloseSocketEvents.findIndex((event) => event.name === name);
+			if (attributeIdx === -1) {
+				attributeIdx = this._attributeCloseSocketEvents.push({
+					name,
+					conditions: [
+						conditionStr,
+					],
+				});
+			} else {
+				const attributeConditionExist = this._attributeCloseSocketEvents[attributeIdx].conditions.some((c) => c === conditionStr);
+				if (attributeConditionExist) return;
+
+				this._attributeCloseSocketEvents[attributeIdx].conditions.push(conditionStr);
+			}
+
+			await this._queueEvent(nrp, attribute, schemaNames, attributeIdx);
+		}, Promise.resolve());
+
+		return;
+	}
+
+	async _queueEvent(nrp, attribute, schemaNames, idx) {
+		const conditions = attribute.condition;
+		const dateTimeBasedCondition = await AccessControlConditions.isAttributeDateTimeBased(conditions);
+		if (dateTimeBasedCondition) {
+			await this._queueDateTimeEvent(nrp, attribute, dateTimeBasedCondition, idx);
+			return;
+		}
+
+		const queryBasedCondition = await AccessControlConditions.isAttributeQueryBasedCondition(conditions, schemaNames);
+		if (queryBasedCondition) {
+			nrp.emit('queueBasedConditionQuery', {
+				name: attribute.name,
+				collection: queryBasedCondition.name,
+				entityId: queryBasedCondition.entityId,
+				attribute,
+			});
+		}
+	}
+
+	async _queueDateTimeEvent(nrp, attribute, dateTimeBasedCondition, idx) {
+		const envVars = attribute.environmentVar;
+		if (dateTimeBasedCondition === 'time') {
+			const conditionEndTime = AccessControlConditions.getEnvironmentVar(envVars, 'env.endTime');
+			if (!conditionEndTime) return;
+
+			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
+			setTimeout(() => {
+				nrp.emit('accessControlPolicy:disconnectSocket', {
+					id: attribute.name,
+					type: 'generic',
+				});
+				this._attributeCloseSocketEvents.splice(idx - 1, 1);
+			}, timeout);
+		}
+
+		if (dateTimeBasedCondition === 'date') {
+			const conditionEndDate = AccessControlConditions.getEnvironmentVar(envVars, 'env.endDate');
+			if (!conditionEndDate) return;
+
+			const nearlyExpired = Sugar.Number.day(Sugar.Date.create(conditionEndDate));
+			if (this._oneWeekMilliseconds > nearlyExpired) {
+				setTimeout(() => {
+					nrp.emit('accessControlPolicy:disconnectSocket', {
+						id: attribute.name,
+						type: 'generic',
+					});
+					this._attributeCloseSocketEvents.splice(idx - 1, 1);
+				}, nearlyExpired);
+			}
+		}
+	}
+
+	async _disconnectQueryBasedSocket(nrp, updatedSchema, id) {
+		const schemaBasedConditionIdx = this._attributeCloseSocketEvents.findIndex((c) => {
+			return c.collection === updatedSchema && c.entityId === id;
+		});
+		if (schemaBasedConditionIdx === -1) return;
+
+		const attribute = this._attributeCloseSocketEvents[schemaBasedConditionIdx].attribute;
+		const attributeName = attribute.name;
+
+		nrp.emit('accessControlPolicy:disconnectSocket', {
+			id: attribute.name,
+			type: (attribute.targetedSchema.length > 0)? attribute.targetedSchema : 'generic',
+		});
+
+		this._attributeCloseSocketEvents.splice(schemaBasedConditionIdx, 1);
+
+		this._attributeCloseSocketEvents.forEach((obj, idx) => {
+			if (obj.name === attributeName) {
+				const conditionIdx = obj.conditions.findIndex((c) => c === JSON.stringify(attribute.condition));
+				this._attributeCloseSocketEvents[idx].conditions.splice(conditionIdx, 1);
+			}
 		});
 	}
 }

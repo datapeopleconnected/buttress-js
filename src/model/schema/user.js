@@ -133,11 +133,6 @@ class UserSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
-				_attribute: {
-					__type: 'array',
-					__required: true,
-					__allowUpdate: true,
-				},
 			},
 		};
 	}
@@ -165,7 +160,6 @@ class UserSchemaModel extends SchemaModel {
 		};
 
 		const rxsUser = await super.add(userBody, {
-			_attribute: body.attributes,
 			_apps: [Model.authApp._id],
 		});
 		const user = await Helpers.streamFirst(rxsUser);

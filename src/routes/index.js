@@ -39,7 +39,6 @@ class Routes {
 		this.app = app;
 
 		this._tokens = [];
-		this._attributes = [];
 		this._routerMap = {};
 	}
 
@@ -121,7 +120,6 @@ class Routes {
 		this._registerRouter('core', coreRouter);
 
 		await this.loadTokens();
-		await this.loadAttributes();
 
 		Logging.logSilly(`init:registered-routes`);
 	}
@@ -141,7 +139,7 @@ class Routes {
 
 		apiRouter.use((...args) => this._timeRequest(...args));
 		apiRouter.use((...args) => this._authenticateToken(...args));
-		apiRouter.use((...args) => this._accessControlPolicy(...args));
+		apiRouter.use((...args) => AccessControl.accessControlPolicy(...args));
 		apiRouter.use((...args) => this._configCrossDomain(...args));
 
 		return apiRouter;
@@ -405,21 +403,6 @@ class Routes {
 	}
 
 	/**
-	 * @return {Promise} - resolves with attributes
-	 * @private
-	 */
-	async loadAttributes() {
-		const attributes = [];
-		const rxsAttributes = await Model.Attributes.findAll();
-
-		for await (const token of rxsAttributes) {
-			attributes.push(token);
-		}
-
-		this._attributes = attributes;
-	}
-
-	/**
 	 *
 	 * @param {Object} req - Request object
 	 * @param {Object} res - Response object
@@ -504,120 +487,6 @@ class Routes {
 
 		res.end();
 		next(err);
-	}
-
-	/**
-	 * Check access control policy before granting access to the data
-	 * @param {Object} req - Request object
-	 * @param {Object} res - Response object
-	 * @param {Function} next - next handler function
-	 * @return {Void}
-	 * @private
-	 */
-	async _accessControlPolicy(req, res, next) {
-		// access control policy
-		const authUser = req.authUser;
-
-		// TODO: better way to figure out the requested schema
-		let requestedURL = req.originalUrl || req.url;
-		requestedURL = requestedURL.split('?').shift();
-		const schemaName = requestedURL.split('v1/').pop().split('/').shift();
-
-		let userAttributes = null;
-
-		if (authUser) {
-			userAttributes = authUser._attribute;
-		}
-
-		if (!userAttributes) return next();
-
-		userAttributes = this._getAttributesChain(userAttributes);
-
-		const schemaBaseAttribute = userAttributes.filter((attr) => attr.targettedSchema.includes(schemaName) || attr.targettedSchema.length < 1);
-		if (schemaBaseAttribute.length < 1) return next();
-		const schemaAttributes = this._getSchemaRelatedAttributes(schemaBaseAttribute, userAttributes);
-
-		const passedDisposition = await AccessControl.accessControlDisposition(req, schemaAttributes);
-
-		if (!passedDisposition) {
-			Logging.logTimer(`_accessControlPolicy:disposition-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).json({message: 'Access control policy disposition not allowed'});
-			return;
-		}
-
-		const accessControlAuthorisation = await AccessControl.applyAccessControlPolicyConditions(req, schemaAttributes);
-		if (!accessControlAuthorisation) {
-			Logging.logTimer(`_accessControlPolicy:conditions-not-fulfilled`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).json({message: 'Access control policy conditions are not fulfilled'});
-			return;
-		}
-
-		const schema = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection').find((s) => s.name === schemaName);
-		if (!schema) return next();
-
-		const passedAccessControlPolicy = await AccessControl.addAccessControlPolicyQuery(req, schemaAttributes, schema);
-		if (!passedAccessControlPolicy) {
-			Logging.logTimer(`_accessControlPolicy:access-control-properties-permission-error`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).json({message: 'Can not edit properties without privileged access'});
-			return;
-		}
-		await AccessControl.applyAccessControlPolicyQuery(req);
-
-		next();
-	}
-
-	/**
-	 * lookup attributes and fetch user attributes chain
-	 * @param {Array} attributeNames
-	 * @param {Array} attributes
-	 * @return {Array} attributes
-	 */
-	_getAttributesChain(attributeNames, attributes = []) {
-		const attrs = this._attributes.filter((attr) => attributeNames.includes(attr.name));
-		attributes = attributes.concat(attrs);
-
-		const extendedAttributes = attrs.reduce((arr, attr) => {
-			attr.extends.forEach((a) => {
-				if (arr.includes(a)) return;
-
-				arr.push(a);
-			});
-
-			return arr;
-		}, []);
-
-		if (extendedAttributes.length > 0) {
-			return this._getAttributesChain(extendedAttributes, attributes);
-		}
-
-		return attributes;
-	}
-
-	/**
-	 * Fetch schema related attributes from the user attributes
-	 * @param {Array} attributes
-	 * @param {Array} userAttributes
-	 * @param {Array} attrs
-	 * @return {Array}
-	 */
-	_getSchemaRelatedAttributes(attributes, userAttributes, attrs = []) {
-		const attributeIds = attributes.map((attr) => attr._id);
-
-		attributes.forEach((attr) => {
-			if (attr.extends.length > 1) {
-				attr.extends.forEach((extendedAttr) => {
-					const extendedAttribute = userAttributes.find((attr) => attr.name === extendedAttr && !attributeIds.includes(attr._id));
-
-					if (!extendedAttribute) return;
-
-					attrs.push(extendedAttribute);
-				});
-			}
-
-			attrs.push(attr);
-		});
-
-		return attrs;
 	}
 
 	/**

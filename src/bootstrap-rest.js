@@ -85,13 +85,14 @@ class BootstrapRest {
 			});
 		});
 
-		nrp.on('app-routes:bust-attribute-cache', (data) => {
-			Logging.logDebug(`App Routes: Bust attributes cache for ${data.appId}, notifying ${this.workers.length} Workers`);
-			this.notifyWorkers({
-				type: 'app-routes:bust-attribute-cache',
-				appId: data.appId,
-			});
-		});
+		// Not needed for now
+		// nrp.on('app-routes:bust-attribute-cache', (data) => {
+		// 	Logging.logDebug(`App Routes: Bust attributes cache for ${data.appId}, notifying ${this.workers.length} Workers`);
+		// 	this.notifyWorkers({
+		// 		type: 'app-routes:bust-attribute-cache',
+		// 		appId: data.appId,
+		// 	});
+		// });
 
 		if (isPrimary) {
 			Logging.logVerbose(`Primary Master REST`);
@@ -171,11 +172,11 @@ class BootstrapRest {
 			// TODO: Maybe do this better than
 			Logging.logDebug(`App Routes: cache bust`);
 			await this.routes.loadTokens();
-		} else if (payload.type === 'app-routes:bust-attribute-cache') {
-			if (!this.routes) return Logging.logDebug(`Skipping attributes cache bust, router not created yet`);
-			Logging.logDebug(`App Routes: attributes cache bust`);
-			await this.routes.loadAttributes(payload.appId);
-		}
+		} // else if (payload.type === 'app-routes:bust-attribute-cache') { // not needed for now
+		// if (!this.routes) return Logging.logDebug(`Skipping attributes cache bust, router not created yet`);
+		// Logging.logDebug(`App Routes: attributes cache bust`);
+		// await this.routes.loadAttributes(payload.appId);
+		// }
 	}
 
 	__spawnWorkers() {

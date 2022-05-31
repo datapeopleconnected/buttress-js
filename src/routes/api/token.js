@@ -40,9 +40,14 @@ class GetTokenList extends Route {
 		return Promise.resolve(true);
 	}
 
-	_exec(req, res, validate) {
-		return Model.Token.getAll()
-			.then((tokens) => tokens.map((t) => t.details));
+	async _exec(req, res, validate) {
+		const rxsToken = Model.Token.findAll();
+		const tokens = [];
+		for await (const token of rxsToken) {
+			tokens.push(token);
+		}
+
+		return tokens.filter((t) => t.authLevel < 3);
 	}
 }
 routes.push(GetTokenList);
@@ -56,6 +61,9 @@ class UpdateTokenRoles extends Route {
 		this.verb = Route.Constants.Verbs.PUT;
 		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
+
+		// Fetch model
+		this.model = Model['token'];
 
 		this.redactResults = false;
 	}
@@ -81,11 +89,51 @@ class UpdateTokenRoles extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Token.updateRole(this.createId(req.body.token), req.body.role)
+		return Model.Token.updateRole(this.model.createId(req.body.token), req.body.role)
 			.then((res) => true);
 	}
 }
 routes.push(UpdateTokenRoles);
+
+/**
+ * @class UpdateTokenAttributes
+ */
+class UpdateTokenAttributes extends Route {
+	constructor() {
+		super('token/attributes', 'UPDATE TOKEN ATTRIBUTES');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.redactResults = false;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			if (!req.body) {
+				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+			if (!req.body.tokenId) {
+				this.log('ERROR: token is missing', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_token`));
+			}
+			if (!req.body.attributes) {
+				this.log('ERROR: attributes is a required field', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_attributes`));
+			}
+
+			// TODO: Fetch the app attributes and vaildate that its a valid app attribute
+			resolve(true);
+		});
+	}
+
+	_exec(req, res, validate) {
+		return Model.Token.updateAttributes(req.body.tokenId, req.body.attributes)
+			.then(() => true);
+	}
+}
+routes.push(UpdateTokenAttributes);
 
 /**
  * @class DeleteAllTokens
