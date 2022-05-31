@@ -422,8 +422,10 @@ class Conditions {
 		}
 
 		const clientIP = Object.keys(requestIPAddress).reduce((arr, key) => {
-			const IPv4 = requestIPAddress[key].match(this.IPv4Regex).pop();
-			const IPv6 = requestIPAddress[key].match(this.IPv6Regex).pop();
+			let IPv4 = requestIPAddress[key].match(this.IPv4Regex);
+			IPv4 = (IPv4)? IPv4.pop() : null;
+			let IPv6 = requestIPAddress[key].match(this.IPv6Regex);
+			IPv6 = (IPv6)? IPv6.pop() : null;
 			arr.push((IPv4)? IPv4 : IPv6);
 
 			return arr;
