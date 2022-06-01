@@ -36,8 +36,11 @@ class AccessControl {
 	 */
 	async accessControlPolicy(req, res, next) {
 		// access control policy
-		const token = req.token;
-		if (!token._user) return next();
+		let token = req.token;
+		if (!token._user && !token._appDataSharingId) return next();
+
+		const tokens = await this.__getTokens(req.authApp._id);
+		token = tokens.find((t) => t._id.equals(token._id));
 
 		// TODO: better way to figure out the requested schema
 		let requestedURL = req.originalUrl || req.url;

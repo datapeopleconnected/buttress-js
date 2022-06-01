@@ -114,13 +114,13 @@ class UpdateTokenAttributes extends Route {
 				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
-			if (!req.body.tokenId) {
-				this.log('ERROR: token is missing', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_token`));
+			if (!req.body.userId) {
+				this.log('ERROR: user ID is missing', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_user_ID`));
 			}
-			if (!req.body.attributes) {
-				this.log('ERROR: attributes is a required field', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_attributes`));
+			if (!req.body.attributeNames) {
+				this.log('ERROR: attribute names is a required field', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_attribute_names`));
 			}
 
 			// TODO: Fetch the app attributes and vaildate that its a valid app attribute
@@ -129,7 +129,7 @@ class UpdateTokenAttributes extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Token.updateAttributes(req.body.tokenId, req.body.attributes)
+		return Model.Token.updateAttributes(req.authApp._id, req.body.userId, req.body.attributeNames)
 			.then(() => true);
 	}
 }
