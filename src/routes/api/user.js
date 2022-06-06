@@ -349,9 +349,9 @@ routes.push(DeleteAllUsers);
 class DeleteUser extends Route {
 	constructor() {
 		super('user/:id', 'DELETE USER');
-		this.verb = Route.Constants.Verbs.GET;
+		this.verb = Route.Constants.Verbs.DEL;
 		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.GET;
+		this.permissions = Route.Constants.Permissions.DELETE;
 		this._user = false;
 	}
 
@@ -386,10 +386,10 @@ routes.push(DeleteUser);
  */
 class clearUserLocalData extends Route {
 	constructor() {
-		super('user/clearLocalData/:id', 'GET USER');
-		this.verb = Route.Constants.Verbs.GET;
+		super('user/:id/clearLocalData', 'DELETE USER LOCAL DATA');
+		this.verb = Route.Constants.Verbs.DEL;
 		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.READ;
+		this.permissions = Route.Constants.Permissions.DELETE;
 
 		this._user = false;
 	}
