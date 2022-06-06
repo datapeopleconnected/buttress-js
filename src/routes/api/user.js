@@ -349,9 +349,9 @@ routes.push(DeleteAllUsers);
 class DeleteUser extends Route {
 	constructor() {
 		super('user/:id', 'DELETE USER');
-		this.verb = Route.Constants.Verbs.DEL;
+		this.verb = Route.Constants.Verbs.GET;
 		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.DELETE;
+		this.permissions = Route.Constants.Permissions.GET;
 		this._user = false;
 	}
 
@@ -380,6 +380,47 @@ class DeleteUser extends Route {
 	}
 }
 routes.push(DeleteUser);
+
+/**
+ * @class clearUserLocalData
+ */
+class clearUserLocalData extends Route {
+	constructor() {
+		super('user/clearLocalData/:id', 'GET USER');
+		this.verb = Route.Constants.Verbs.GET;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.READ;
+
+		this._user = false;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			if (!req.params.id) {
+				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+
+			Model.User.findById(req.params.id)
+				.then((user) => {
+					if (user) {
+						return resolve(user);
+					}
+
+					this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+				});
+		});
+	}
+
+	_exec(req, res, user) {
+		nrp.emit('clearUserLocalData', {
+			appAPIPath: req.authApp ? req.authApp.apiPath : '',
+			userId: user._id,
+		});
+	}
+}
+routes.push(clearUserLocalData);
 
 /**
  * @type {*[]}

@@ -98,6 +98,7 @@ class BootstrapSocket {
 		if (this.isPrimary) {
 			Logging.logDebug(`Primary Master`);
 			nrp.on('activity', (data) => this.__onActivity(data));
+			nrp.on('clearUserLocalData', (data) => this.__clearUserLocalData(data));
 			nrp.on('dataShare:activated', async (data) => {
 				const dataShare = await Model.AppDataSharing.findById(data.appDataSharingId);
 				await this.__createDataShareConnection(dataShare);
@@ -349,6 +350,14 @@ class BootstrapSocket {
 				sequence: this.__namespace[apiPath].sequence.global,
 			});
 		}
+	}
+
+	__clearUserLocalData(data) {
+		const apiPath = data.appAPIPath;
+
+		this.__namespace[apiPath].emitter.emit('clear-local-db', {
+			data: data,
+		});
 	}
 
 	__spawnWorkers() {
