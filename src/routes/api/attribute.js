@@ -29,7 +29,7 @@ const Datastore = require('../../datastore');
  */
 class GetAttributeList extends Route {
 	constructor() {
-		super('attributes', 'GET ATTRIBUTE LIST');
+		super('attribute', 'GET ATTRIBUTE LIST');
 		this.verb = Route.Constants.Verbs.GET;
 		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
