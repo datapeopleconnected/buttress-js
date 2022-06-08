@@ -8,6 +8,8 @@ class Filter {
 		this.logicalOperator = [
 			'@and',
 			'@or',
+			'$and',
+			'$or',
 		];
 	}
 
@@ -23,29 +25,33 @@ class Filter {
 			.then(() => allowedUpdates);
 	}
 
-	addAccessControlPolicyAttributeQuery(req, attributeQuery, str = 'accessControlQuery') {
-		return this.__convertPrefixToQueryPrefix(attributeQuery)
-			.then((translatedQuery) => {
-				if (!req[str]) {
-					req[str] = {};
-				}
+	async addAccessControlPolicyAttributeQuery(req, attributeQuery, str = 'accessControlQuery') {
+		const translatedQuery = await this.__convertPrefixToQueryPrefix(attributeQuery);
+		if (!req[str]) {
+			req[str] = {};
+		}
 
-				Object.keys(translatedQuery).forEach((key) => {
-					if (!Object.keys(translatedQuery[key]).length) return;
+		await Object.keys(translatedQuery).reduce(async (prev, key) => {
+			await prev;
 
-					if (req[str][key] && Array.isArray(req[str][key]) && Array.isArray(translatedQuery[key])) {
-						translatedQuery[key].forEach((elem) => {
-							const elementExist = req[str][key].findIndex((el) => JSON.stringify(el) === JSON.stringify(elem));
-							if (elementExist !== -1) return;
+			if (!Object.keys(translatedQuery[key]).length) return;
+			if (req[str][key] && Array.isArray(req[str][key]) && Array.isArray(translatedQuery[key])) {
+				await translatedQuery[key].reduce(async (prev, elem) => {
+					await prev;
 
-							req[str][key].push(elem);
-						});
-						return;
-					}
+					const elementExist = req[str][key].findIndex((el) => {
+						return JSON.stringify(el) === JSON.stringify(elem);
+					});
 
-					req[str][key] = translatedQuery[key];
-				});
-			});
+					if (elementExist !== -1) return;
+					req[str][key].push(elem);
+				}, Promise.resolve());
+
+				return;
+			}
+
+			req[str][key] = translatedQuery[key];
+		}, Promise.resolve());
 	}
 
 	async applyAccessControlPolicyQuery(req) {
@@ -91,7 +97,13 @@ class Filter {
 
 		const originalQueryLogicalArr = originalQuery[key];
 		if (!originalQueryLogicalArr) {
-			return this.__prioritiseAccessControlQuery(accessControlQueryLogicalArr, originalQuery, key);
+			modifiedQuery = this.__prioritiseAccessControlQuery(accessControlQueryLogicalArr, originalQuery, key);
+
+			if (!modifiedQuery) {
+				originalQuery[key] = accessControlQuery[key];
+			}
+
+			return modifiedQuery;
 			// or modify query and return different results
 			// originalQuery[key] = accessControlQueryLogicalArr;
 		}
@@ -200,7 +212,8 @@ class Filter {
 			});
 
 			return arr;
-		}, []);
+		}, [])
+			.filter((v, idx, arr) => arr.indexOf(v) === idx);
 
 		originalQueryKeys.forEach((key) => {
 			if (accessControlQueryKeys.includes(key)) {
