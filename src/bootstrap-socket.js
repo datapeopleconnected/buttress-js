@@ -138,7 +138,10 @@ class BootstrapSocket {
 
 		// Spawn worker processes, pass through build app objects
 		for await (const app of rxsApps) {
-			if (!app._token) return Logging.logWarn(`App with no token`);
+			if (!app._token) {
+				Logging.logWarn(`App with no token`);
+				continue;
+			}
 
 			await this.__createAppNamespace(app);
 		}
