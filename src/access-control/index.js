@@ -48,11 +48,11 @@ class AccessControl {
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
-		let tokenAttributes = null;
+		let tokenAttributes = [];
 
 		await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
 
-		if (token) {
+		if (token && token.attributes) {
 			tokenAttributes = token.attributes;
 		}
 
