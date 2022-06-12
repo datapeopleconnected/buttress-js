@@ -96,6 +96,47 @@ class AddAttribute extends Route {
 }
 routes.push(AddAttribute);
 
+/**
+ * @class SyncAttributes
+ */
+class SyncAttributes extends Route {
+	constructor() {
+		super('attribute/sync', 'SYNC ATTRIBUTES');
+		this.verb = Route.Constants.Verbs.POST;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.ADD;
+	}
+
+	async _validate(req, res, token) {
+		const app = req.authApp;
+
+		if (!app || !req.body) {
+			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `missing_field`);
+		}
+
+		if (!Array.isArray(req.body)) {
+			this.log(`[${this.name}] invalid field`, Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `invalid_field`);
+		}
+
+		return true;
+	}
+
+	async _exec(req, res, validate) {
+		await Model.Attributes.rmAll({
+			_appId: req.authApp._id,
+		});
+
+		for await (const attribute of req.body ) {
+			await Model.Attributes.add({attribute: attribute, appId: req.authApp._id});
+		}
+
+		return true;
+	}
+}
+routes.push(SyncAttributes);
+
 
 /**
  * @class DeleteApp
