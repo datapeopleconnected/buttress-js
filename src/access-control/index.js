@@ -174,7 +174,7 @@ class AccessControl {
 
 		await tokens.reduce(async (prev, token) => {
 			await prev;
-			if (token.attributes.length < 1) return;
+			if (!token.attributes || token.attributes.length < 1) return;
 
 			const tokenAttributes = await this._getAttributesChain(token.attributes);
 			channels.push(tokenAttributes.map((attr) => attr.name).join(','));
