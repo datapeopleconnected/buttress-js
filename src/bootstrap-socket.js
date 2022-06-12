@@ -241,7 +241,7 @@ class BootstrapSocket {
 
 				const roomName = (await AccessControl.getAttributesChainForToken(token.attributes)).map((attr) => attr.name).join(',');
 				socket.join(roomName);
-				Logging.log(`[${apiPath}][${token.role}] Connected ${socket.id} to room ${roomName}`);
+				Logging.log(`[${apiPath}][${token._id}] Connected ${socket.id} to room ${roomName}`);
 			} else {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
 			}
