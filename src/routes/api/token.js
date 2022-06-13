@@ -96,46 +96,6 @@ class UpdateTokenRoles extends Route {
 routes.push(UpdateTokenRoles);
 
 /**
- * @class UpdateTokenAttributes
- */
-class UpdateTokenAttributes extends Route {
-	constructor() {
-		super('token/attributes', 'UPDATE TOKEN ATTRIBUTES');
-		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.WRITE;
-
-		this.redactResults = false;
-	}
-
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.body) {
-				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
-			if (!req.body.userId) {
-				this.log('ERROR: user ID is missing', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_user_ID`));
-			}
-			if (!req.body.attributeNames) {
-				this.log('ERROR: attribute names is a required field', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_attribute_names`));
-			}
-
-			// TODO: Fetch the app attributes and vaildate that its a valid app attribute
-			resolve(true);
-		});
-	}
-
-	_exec(req, res, validate) {
-		return Model.Token.updateAttributes(req.authApp._id, req.body.userId, req.body.attributeNames)
-			.then(() => true);
-	}
-}
-routes.push(UpdateTokenAttributes);
-
-/**
  * @class DeleteAllTokens
  */
 class DeleteAllTokens extends Route {

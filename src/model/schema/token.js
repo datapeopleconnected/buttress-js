@@ -210,21 +210,6 @@ class TokenSchemaModel extends SchemaModel {
 	updateRole(tokenId, role) {
 		return this.updateById(tokenId, {$set: {role: role}});
 	}
-
-	/**
-	 * @param {ObjectId} appId - app ID
-	 * @param {ObjectId} userId - user ID which will be updated
-	 * @param {string} attributeName - attribute name
-	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
-	 */
-	async updateAttributes(appId, userId, attributeName) {
-		const rxsTokens = this.findUserAuthTokens(userId, appId);
-		for await (const token of rxsTokens) {
-			return this.updateById(token._id, {$set: {attributes: attributeName}});
-		}
-
-		nrp.emit('app-routes:bust-cache', {});
-	}
 }
 
 /**

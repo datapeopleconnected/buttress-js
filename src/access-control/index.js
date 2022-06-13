@@ -17,6 +17,7 @@ const Schema = require('../schema');
 const AccessControlDisposition = require('./disposition');
 const AccessControlConditions = require('./conditions');
 const AccessControlFilter = require('./filter');
+const AccessControlPolicyMatch = require('./policy-match');
 
 const nrp = new NRP(Config.redis);
 
@@ -36,11 +37,14 @@ class AccessControl {
 	 */
 	async accessControlPolicy(req, res, next) {
 		// access control policy
-		let token = req.token;
-		if (!token._user && !token._appDataSharingId) return next();
 
-		const tokens = await this.__getTokens(req.authApp._id);
-		token = tokens.find((t) => t._id.equals(token._id));
+		// TODO need to take into consideration appDataSharingId
+
+		let user = req.authUser;
+		if (!user) return next();
+
+		const users = await this.__getUsers(req.authApp._id);
+		user = users.find((t) => t._id.equals(user._id));
 
 		// TODO: better way to figure out the requested schema
 		let requestedURL = req.originalUrl || req.url;
@@ -48,27 +52,21 @@ class AccessControl {
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
-		let tokenAttributes = [];
-
+		let policyAttributes = await this.__getPolicyAttributes(user);
 		await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
 
-		if (token && token.attributes) {
-			tokenAttributes = token.attributes;
-		}
-
-		if (tokenAttributes.length < 1) {
+		if (policyAttributes.length < 1) {
 			Logging.logTimer(`_accessControlPolicy:access-control-policy-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send({message: 'Request token does not have any access control attributes'});
+			res.status(401).send({message: 'Request policy does not have any access control attributes'});
 			return;
 		}
 
 		await this.__getAttributes();
 
-		tokenAttributes = this._getAttributesChain(tokenAttributes);
-
-		const schemaBaseAttribute = tokenAttributes.filter((attr) => attr.targetedSchema.includes(schemaName) || attr.targetedSchema.length < 1);
+		policyAttributes = this._getAttributesChain(policyAttributes);
+		const schemaBaseAttribute = policyAttributes.filter((attr) => attr.targetedSchema.includes(schemaName) || attr.targetedSchema.length < 1);
 		if (schemaBaseAttribute.length < 1) return next();
-		const schemaAttributes = this._getSchemaRelatedAttributes(schemaBaseAttribute, tokenAttributes);
+		const schemaAttributes = this._getSchemaRelatedAttributes(schemaBaseAttribute, policyAttributes);
 
 		const schemas = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
 		const schemaNames = schemas.map((s) => s.name);
@@ -168,16 +166,11 @@ class AccessControl {
 	async getAttributeChannels(appId) {
 		const channels = [];
 
-		const tokens = await this.__getTokens(appId);
-
 		await this.__getAttributes();
 
-		await tokens.reduce(async (prev, token) => {
+		await this._attributes.reduce(async (prev, attribute) => {
 			await prev;
-			if (!token.attributes || token.attributes.length < 1) return;
-
-			const tokenAttributes = await this._getAttributesChain(token.attributes);
-			channels.push(tokenAttributes.map((attr) => attr.name).join(','));
+			channels.push(attribute.name);
 		}, Promise.resolve());
 
 		return channels;
@@ -188,14 +181,14 @@ class AccessControl {
 		return await this._getAttributesChain(tokenAttribute);
 	}
 
-	async __getTokens(appId) {
-		const tokens = [];
-		const rxsTokens = Model.Token.findAll(appId);
-		for await (const token of rxsTokens) {
-			tokens.push(token);
+	async __getUsers(appId) {
+		const users = [];
+		const rxsUsers = Model.User.findAll(appId);
+		for await (const user of rxsUsers) {
+			users.push(user);
 		}
 
-		return tokens;
+		return users;
 	}
 
 	async __getAttributes() {
@@ -208,6 +201,16 @@ class AccessControl {
 		}
 
 		this._attributes = attributes;
+	}
+
+	async __getPolicyAttributes(user) {
+		const policies = [];
+		const rxsPolicies = Model.Policy.findAll();
+		for await (const policy of rxsPolicies) {
+			policies.push(policy);
+		}
+
+		return await AccessControlPolicyMatch.__getUserPolicies(policies, user);
 	}
 
 	async _checkAccessControlQueryBasedCondition(req, updatedSchema, path) {
