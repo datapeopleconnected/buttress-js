@@ -323,6 +323,52 @@ class UpdateUser extends Route {
 routes.push(UpdateUser);
 
 /**
+ * @class SetUserPolicyProperties
+ */
+class SetUserPolicyProperties extends Route {
+	constructor() {
+		super('user/:id/policyProperty', 'SET USER POLICY PROPERTY');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			if (!req.body) {
+				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+
+			if (!req.body.policyProperties) {
+				this.log('ERROR: policy properties is a required field', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_policy_properties`));
+			}
+
+			Model.User.exists(req.params.id)
+				.then((exists) => {
+					if (!exists) {
+						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+					}
+					resolve(true);
+				});
+
+			// TODO: Fetch the app roles and vaildate that its a valid app role
+			resolve(true);
+		});
+	}
+
+	_exec(req, res, validate) {
+		return Model.User.setPolicyPropertiesById(req.params.id, req.body.policyProperties);
+	}
+}
+routes.push(SetUserPolicyProperties);
+
+/**
  * @class DeleteAllUsers
  */
 class DeleteAllUsers extends Route {

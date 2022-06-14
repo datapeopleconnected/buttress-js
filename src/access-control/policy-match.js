@@ -1,9 +1,9 @@
 const AccessControlConditions = require('./conditions');
 
 /**
- * @class Shared
+ * @class PolicyMatch
  */
-class Shared {
+class PolicyMatch {
 	constructor() {}
 
 	__getUserPolicies(policies, user) {
@@ -30,4 +30,4 @@ class Shared {
 		return match;
 	}
 }
-module.exports = new Shared();
+module.exports = new PolicyMatch();

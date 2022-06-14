@@ -317,14 +317,13 @@ class UserSchemaModel extends SchemaModel {
 	 * @param {Object} policyProperties - Policy properties
 	 * @return {Promise} - resolves to an array of Apps
 	 */
-	updatePolicyPropertiesById(userId, policyProperties) {
+	setPolicyPropertiesById(userId, policyProperties) {
 		const policy = Object.keys(policyProperties).reduce((obj, key) => {
-			obj[`policyProperties`.key] = policyProperties[key];
+			obj[key] = policyProperties[key];
 			return obj;
 		}, {});
 
-		console.log(policy);
-		return super.updateById(userId, {$set: policy});
+		return super.updateById(this.createId(userId), {$set: {policyProperties: policy}});
 	}
 }
 

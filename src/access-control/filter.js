@@ -127,13 +127,11 @@ class Filter {
 					// 	[aKey]: accessControlObj[aKey],
 					// };
 
-					// TODO should prompt the user to tell them that they do not have access to these
-					//      property or send empty array
+					// TODO should prompt the user to tell them that they do not have access to these property or send empty array
 					return;
 				}
 
-				// TODO prompt the user that one of the property does not match their access control
-				//      policies or return different results that expected
+				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
 				originalQuery[key].push(accessControlObj);
 			});
 		});
@@ -150,11 +148,10 @@ class Filter {
 
 				// We can change the query to return the data that a user can access
 				// originalQuery[key][keyIndex] = {
-				// 	[acKey]: accessControlQuery[acKey],
+				// [acKey]: accessControlQuery[acKey],
 				// };
 
-				// TODO prompt the user that one of the property does not match their access control
-				//      policies or return different results that expected
+				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
 			}
 		});
 
@@ -184,8 +181,7 @@ class Filter {
 				// TODO needs to give the option to return an error at the minute it returns zero results
 				return true;
 			} else {
-				// TODO prompt the user that one of the property does not match their access control
-				//      policies or return different results that expected
+				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
 			}
 
 			return false;
@@ -217,8 +213,7 @@ class Filter {
 
 		originalQueryKeys.forEach((key) => {
 			if (accessControlQueryKeys.includes(key)) {
-				// TODO prompt the user that one of the property does not match their access control
-				//      policies or return different results that expected
+				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
 				const keyIndex = accessControlLogicalArr.findIndex((obj) => Object.keys(obj).some((i) => i === key));
 				if (JSON.stringify(accessControlLogicalArr[keyIndex][key]) !== JSON.stringify(originalQuery[key])) {
 					modifiedQuery = true;

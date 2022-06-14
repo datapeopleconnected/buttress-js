@@ -40,11 +40,8 @@ class AccessControl {
 
 		// TODO need to take into consideration appDataSharingId
 
-		let user = req.authUser;
+		const user = req.authUser;
 		if (!user) return next();
-
-		const users = await this.__getUsers(req.authApp._id);
-		user = users.find((t) => t._id.equals(user._id));
 
 		// TODO: better way to figure out the requested schema
 		let requestedURL = req.originalUrl || req.url;
@@ -179,16 +176,6 @@ class AccessControl {
 	async getAttributesChainForToken(tokenAttribute) {
 		await this.__getAttributes();
 		return await this._getAttributesChain(tokenAttribute);
-	}
-
-	async __getUsers(appId) {
-		const users = [];
-		const rxsUsers = Model.User.findAll(appId);
-		for await (const user of rxsUsers) {
-			users.push(user);
-		}
-
-		return users;
 	}
 
 	async __getAttributes() {
