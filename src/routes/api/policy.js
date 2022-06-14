@@ -98,6 +98,46 @@ class AddPolicy extends Route {
 }
 routes.push(AddPolicy);
 
+/**
+ * @class SyncPolicies
+ */
+class SyncPolicies extends Route {
+	constructor() {
+		super('policy/sync', 'SYNC POLICIES');
+		this.verb = Route.Constants.Verbs.POST;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.ADD;
+	}
+
+	async _validate(req, res, token) {
+		const app = req.authApp;
+
+		if (!app || !req.body) {
+			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `missing_field`);
+		}
+
+		if (!Array.isArray(req.body)) {
+			this.log(`[${this.name}] invalid field`, Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `invalid_field`);
+		}
+
+		return true;
+	}
+
+	async _exec(req, res, validate) {
+		await Model.Policy.rmAll({
+			_appId: req.authApp._id,
+		});
+
+		for await (const policy of req.body ) {
+			await Model.Policy.add({policy: policy, appId: req.authApp._id});
+		}
+
+		return true;
+	}
+}
+routes.push(SyncPolicies);
 
 /**
  * @class DeletePolicy

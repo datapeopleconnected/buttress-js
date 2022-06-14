@@ -40,6 +40,7 @@ class PolicySchemaModel extends SchemaModel {
 				},
 				attributes: {
 					__type: 'array',
+					__itemtype: 'string',
 					__required: true,
 					__allowUpdate: true,
 				},
