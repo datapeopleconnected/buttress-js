@@ -144,7 +144,10 @@ class Route {
 			const broadcastStream = new Stream.PassThrough({objectMode: true});
 
 			result.pipe(resStream);
-			result.pipe(broadcastStream);
+
+			if (this.verb !== Constants.Verbs.GET && this.verb !== Constants.Verbs.SEARCH) {
+				result.pipe(broadcastStream);
+			}
 
 			await this._respond(req, res, resStream);
 
@@ -314,7 +317,7 @@ class Route {
 	async _boardcastByAppRole(req, res, result) {
 		req.timings.boardcastByAppRole = req.timer.interval;
 		Logging.logTimer('_boardcastByAppRole:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		if (this.verb === Constants.Verbs.GET) {
+		if (this.verb === Constants.Verbs.GET || this.verb === Constants.Verbs.SEARCH) {
 			Logging.logTimer('_boardcastByAppRole:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
 		}
