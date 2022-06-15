@@ -120,6 +120,7 @@ class FindUser extends Route {
 					if (_user) {
 						const output = {
 							id: _user._id,
+							policyProperties: _user.policyProperties,
 							auth: _user.auth,
 							tokens: [],
 						};

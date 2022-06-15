@@ -150,7 +150,7 @@ class UserSchemaModel extends SchemaModel {
 	 */
 	async add(body, auth) {
 		const userBody = {
-			policyProperties: body.policyProperties,
+			policyProperties: (body.policyProperties)? body.policyProperties : {},
 			auth: [{
 				app: body.app,
 				appId: body.id,

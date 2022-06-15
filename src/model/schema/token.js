@@ -18,9 +18,6 @@
 
 const Crypto = require('crypto');
 // const Shared = require('../shared');
-const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
 const Logging = require('../../logging');
 
 const SchemaModel = require('../schemaModel');
@@ -134,11 +131,6 @@ class TokenSchemaModel extends SchemaModel {
 					__default: null,
 					__required: true,
 					__allowUpdate: false,
-				},
-				attributes: {
-					__type: 'array',
-					__required: true,
-					__allowUpdate: true,
 				},
 			},
 		};
