@@ -24,7 +24,7 @@ class PolicyMatch {
 			const [selectionCriterionKey] = Object.keys(selection[key]);
 			const [selectionCriterionValue] = Object.values(selection[key]);
 
-			match = AccessControlConditions.__evaluateOperation(selectionCriterionValue, user.policyProperties[key], selectionCriterionKey);
+			match = AccessControlConditions.__evaluateOperation(user.policyProperties[key], selectionCriterionValue, selectionCriterionKey);
 		});
 
 		return match;
