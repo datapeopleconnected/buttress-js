@@ -86,11 +86,19 @@ class AttributeSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
-				override: {
-					__type: 'boolean',
-					__default: false,
-					__required: false,
-					__allowUpdate: false,
+				overrideConfiguration: {
+					override: {
+						__type: 'boolean',
+						__required: true,
+						__default: false,
+						__allowUpdate: true,
+					},
+					limit: {
+						__type: 'date',
+						__default: null,
+						__required: true,
+						__allowUpdate: true,
+					},
 				},
 				_appId: {
 					__type: 'id',
@@ -116,7 +124,7 @@ class AttributeSchemaModel extends SchemaModel {
 			env: (body.attribute.env)? body.attribute.env : {},
 			conditions: (body.attribute.conditions)? body.attribute.conditions : {},
 			query: (body.attribute.query)? body.attribute.query : {},
-			override: (body.attribute.override)? body.attribute.override : false,
+			overrideConfiguration: body.attribute.overrideConfiguration,
 		};
 
 		const rxsAttribute = await super.add(attributeBody, {
