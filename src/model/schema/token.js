@@ -18,9 +18,6 @@
 
 const Crypto = require('crypto');
 // const Shared = require('../shared');
-const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
 const Logging = require('../../logging');
 
 const SchemaModel = require('../schemaModel');
@@ -135,11 +132,6 @@ class TokenSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: false,
 				},
-				attributes: {
-					__type: 'array',
-					__required: true,
-					__allowUpdate: true,
-				},
 			},
 		};
 	}
@@ -209,21 +201,6 @@ class TokenSchemaModel extends SchemaModel {
 	 */
 	updateRole(tokenId, role) {
 		return this.updateById(tokenId, {$set: {role: role}});
-	}
-
-	/**
-	 * @param {ObjectId} appId - app ID
-	 * @param {ObjectId} userId - user ID which will be updated
-	 * @param {string} attributeName - attribute name
-	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
-	 */
-	async updateAttributes(appId, userId, attributeName) {
-		const rxsTokens = this.findUserAuthTokens(userId, appId);
-		for await (const token of rxsTokens) {
-			return this.updateById(token._id, {$set: {attributes: attributeName}});
-		}
-
-		nrp.emit('app-routes:bust-cache', {});
 	}
 }
 

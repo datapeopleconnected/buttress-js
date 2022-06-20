@@ -59,6 +59,12 @@ class UserSchemaModel extends SchemaModel {
 			collection: 'users',
 			extends: [],
 			properties: {
+				policyProperties: {
+					__type: 'object',
+					__default: null,
+					__required: true,
+					__allowUpdate: true,
+				},
 				auth: {
 					__type: 'array',
 					__required: true,
@@ -144,6 +150,7 @@ class UserSchemaModel extends SchemaModel {
 	 */
 	async add(body, auth) {
 		const userBody = {
+			policyProperties: (body.policyProperties)? body.policyProperties : {},
 			auth: [{
 				app: body.app,
 				appId: body.id,
@@ -303,6 +310,20 @@ class UserSchemaModel extends SchemaModel {
 			'auth.app': appName,
 			'auth.appId': appUserId,
 		}, {});
+	}
+
+	/**
+	 * @param {String} userId - AppId of the user
+	 * @param {Object} policyProperties - Policy properties
+	 * @return {Promise} - resolves to an array of Apps
+	 */
+	setPolicyPropertiesById(userId, policyProperties) {
+		const policy = Object.keys(policyProperties).reduce((obj, key) => {
+			obj[key] = policyProperties[key];
+			return obj;
+		}, {});
+
+		return super.updateById(this.createId(userId), {$set: {policyProperties: policy}});
 	}
 }
 
