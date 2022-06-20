@@ -4,7 +4,12 @@ const Helpers = require('../helpers');
  * @class Projection
  */
 class Projection {
-	constructor() {}
+	constructor() {
+		this.logicalOperator = [
+			'$and',
+			'$or',
+		];
+	}
 
 	addAccessControlPolicyQueryProjection(req, props, schema) {
 		const requestMethod = (req.method === 'SEARCH')? 'GET' : req.method;
@@ -49,11 +54,30 @@ class Projection {
 				allowedUpdates = true;
 			}
 		} else {
-			allowedUpdates = true;
+			allowedUpdates = (projectionUpdateKeys.length > 0)? this.__checkPorjectionPath(requestBody.query, projectionUpdateKeys) : true;
 		}
 
 		req.body.project = projection;
 		return allowedUpdates;
+	}
+
+	__checkPorjectionPath(query, projectionUpdateKeys) {
+		const paths = Object.keys(query).filter((key) => key && key !== '__crPath');
+
+		let queryKeys = [];
+		paths.forEach((path) => {
+			if (this.logicalOperator.includes(path)) {
+				query[path].forEach((p) => {
+					queryKeys = queryKeys.concat(Object.keys(p));
+				});
+				return;
+			}
+
+			queryKeys = queryKeys.concat(Object.keys(path));
+		});
+
+
+		return queryKeys.every((key) => projectionUpdateKeys.includes(key));
 	}
 }
 module.exports = new Projection();

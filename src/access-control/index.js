@@ -89,7 +89,7 @@ class AccessControl {
 		const passedAccessControlPolicy = await AccessControlFilter.addAccessControlPolicyQuery(req, schemaAttributes, schema);
 		if (!passedAccessControlPolicy) {
 			Logging.logTimer(`_accessControlPolicy:access-control-properties-permission-error`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send({message: 'Can not edit properties without privileged access'});
+			res.status(401).send({message: 'Can not access properties without privileged access'});
 			return;
 		}
 		await AccessControlFilter.applyAccessControlPolicyQuery(req);
@@ -149,6 +149,10 @@ class AccessControl {
 
 			attrs.push(attr);
 		});
+
+		if (attrs.some((attr) => attr.override)) {
+			attrs = attrs.filter((attr) => attr.override);
+		}
 
 		return attrs;
 	}
