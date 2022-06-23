@@ -180,6 +180,20 @@ class AppDataSharingSchemaModel extends SchemaModel {
 
 	/**
 	 * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
+	 * @param {String} token - activation token for remote app
+	 * @return {Promise} - resolves when save operation is completed
+	 */
+	updateActivationToken(appDataSharingId, token) {
+		const update = {$set: {}};
+
+		update.$set['remoteApp.token'] = token;
+		update.$set['remoteApp.active'] = false;
+
+		return this.updateById(this.createId(appDataSharingId), update);
+	}
+
+	/**
+	 * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
 	 * @param {String} remoteAppToken - token for remote app
 	 * @return {Promise} - resolves when save operation is completed
 	 */

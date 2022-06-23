@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 'use strict';
 
 /**
@@ -312,6 +313,8 @@ class GetAppSchema extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_schema`));
 			}
 
+			// TODO: Check params for any core scheam thats been requested
+
 			// Filter the returned schema based token role
 			let schema = Schema.buildCollections(Schema.decode(req.authApp.__schema));
 
@@ -547,6 +550,73 @@ class AddDataSharing extends Route {
 routes.push(AddDataSharing);
 
 /**
+* @class GetDataSharing
+*/
+class GetDataSharing extends Route {
+	constructor() {
+		super('app/dataSharing', 'GET Data Sharing');
+		this.verb = Route.Constants.Verbs.GET;
+		this.auth = Route.Constants.Auth.USER;
+		this.permissions = Route.Constants.Permissions.LIST;
+
+		this.activityBroadcast = false;
+		this.slowLogging = false;
+
+		// Fetch model
+		this.schema = new Schema(Model.AppDataSharing.schemaData);
+		this.model = Model.AppDataSharing;
+
+		Logging.logSilly(`Created route: ${this.name} for Data Sharing`);
+	}
+
+	_validate(req, res, token) {
+		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		let generateQuery = Promise.resolve({});
+		if (token.authLevel < 3) {
+			generateQuery = this.model.generateRoleFilterQuery(token, req.roles, Model);
+		}
+
+		const result = {
+			query: {},
+			project: (req.body && req.body.project)? req.body.project : false,
+		};
+
+		return generateQuery
+			.then((query) => {
+				if (!query.$and) {
+					query.$and = [];
+				}
+
+				// access control query
+				if (req.body && req.body.query) {
+					query.$and.push(req.body.query);
+				}
+
+				if (req.body && req.body.query && req.body.query.zeroResults) {
+					return false;
+				}
+
+				Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+				return this.model.parseQuery(query, {}, this.model.flatSchemaData);
+			})
+			.then((query) => {
+				result.query = query;
+				return result;
+			});
+	}
+
+	_exec(req, res, validateResult) {
+		if (validateResult.query === false) {
+			return [];
+		}
+
+		Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
+	}
+}
+routes.push(GetDataSharing);
+
+/**
  * @class UpdateAppDataSharingPolicy
  */
 class UpdateAppDataSharingPolicy extends Route {
@@ -596,7 +666,79 @@ class UpdateAppDataSharingPolicy extends Route {
 routes.push(UpdateAppDataSharingPolicy);
 
 /**
- * @class activ
+ * @class UpdateAppDataSharingToken
+ */
+class UpdateAppDataSharingToken extends Route {
+	constructor() {
+		super('app/dataSharing/:dataSharingId/token', 'UPDATE App Data Sharing Token');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		// Fetch model
+		this.schema = new Schema(Model.AppDataSharing.schemaData);
+		this.model = Model.AppDataSharing;
+	}
+
+	async _validate(req, res, token) {
+		if (!req.authApp) {
+			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `no_authenticated_app`);
+		}
+
+		if (!req.body.token) {
+			this.log('ERROR: missing data sharing activation token', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `missing_data_token`);
+		}
+
+		if (!req.params.dataSharingId) {
+			this.log('ERROR: No Data Sharing Id', Route.LogLevel.ERR);
+			return new Helpers.Errors.RequestError(400, `missing_data_sharing_id`);
+		}
+
+		// Lookup
+		const entity = await Helpers.streamFirst(await this.model.find({
+			_id: this.model.createId(req.params.dataSharingId),
+			_appId: req.authApp._id,
+		}));
+
+		if (!entity) {
+			this.log(`${this.schema.name}: unknown data sharing`, Route.LogLevel.ERR, req.id);
+			throw new Helpers.Errors.RequestError(400, `unknown_data_sharing`);
+		}
+
+		return entity;
+	}
+
+	async _exec(req, res, entity) {
+		await this.model.updateActivationToken(req.params.dataSharingId, req.body.token);
+
+		const api = Buttress.new();
+		await api.init({
+			buttressUrl: entity.remoteApp.endpoint,
+			apiPath: entity.remoteApp.apiPath,
+			appToken: entity.remoteApp.token,
+			allowUnauthorized: true, // Move along, nothing to see here...
+		});
+
+		const token = await Model.Token.findById(entity._tokenId);
+
+		// Our token
+		const remoteActivation = await api.App.activateAppDataSharing({
+			token: token.value,
+		});
+
+		if (!remoteActivation) return false;
+
+		await this.model.activate(entity._id);
+
+		return true;
+	}
+}
+routes.push(UpdateAppDataSharingToken);
+
+/**
+ * @class ActivateAppDataSharing
  */
 class ActivateAppDataSharing extends Route {
 	constructor() {
