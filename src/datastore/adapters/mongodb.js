@@ -231,12 +231,10 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	exists(id, extra = {}) {
 		Logging.logSilly(`exists: ${this.collectionName} ${id}`);
 
-		return this.collection.find({
+		return this.collection.countDocuments({
 			_id: new ObjectId(id),
 			...extra,
 		})
-			.limit(1)
-			.count()
 			.then((count) => count > 0);
 	}
 
