@@ -21,6 +21,8 @@ class PolicyMatch {
 		const selection = p.selection;
 
 		Object.keys(selection).forEach((key) => {
+			if (!user.policyProperties || !(key in user.policyProperties)) return;
+
 			const [selectionCriterionKey] = Object.keys(selection[key]);
 			const [selectionCriterionValue] = Object.values(selection[key]);
 
