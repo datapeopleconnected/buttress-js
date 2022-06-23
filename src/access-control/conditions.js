@@ -152,6 +152,8 @@ class Conditions {
 			const condition = obj.condition;
 			const environmentVar = obj.envVar;
 
+			if (condition === null) return arr;
+
 			Object.keys(condition).forEach((key) => {
 				if (key !== '@or') {
 					condition[key].forEach((item) => {

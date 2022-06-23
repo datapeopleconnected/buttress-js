@@ -20,12 +20,14 @@ class Projection {
 		let requestBody = req.body;
 		let allowedUpdates = false;
 
-		Object.keys(props).forEach((key) => {
-			if (props[key].includes(projectionMethod)) {
-				projectionUpdateKeys.push(key);
-				projection[key] = 1;
-			}
-		});
+		if (props !== null) {
+			Object.keys(props).forEach((key) => {
+				if (props[key].includes(projectionMethod)) {
+					projectionUpdateKeys.push(key);
+					projection[key] = 1;
+				}
+			});
+		}
 
 		if (requestMethod === 'POST') {
 			const updatePaths = Object.keys(requestBody).map((key) => key);

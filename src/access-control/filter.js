@@ -31,6 +31,8 @@ class Filter {
 			req[str] = {};
 		}
 
+		if (translatedQuery === null) return req[str];
+
 		await Object.keys(translatedQuery).reduce(async (prev, key) => {
 			await prev;
 
@@ -226,6 +228,8 @@ class Filter {
 	}
 
 	__convertPrefixToQueryPrefix(obj, baseKey = null, newObj = {}) {
+		if (obj === null) return null;
+
 		return Object.keys(obj).reduce((prev, key) => {
 			return prev.then(() => {
 				if (typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
