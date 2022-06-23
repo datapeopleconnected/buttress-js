@@ -40,6 +40,17 @@ const __getFlattenedBody = (body) => {
 			return;
 		}
 
+		// Treat an empty object as null
+		if (typeof parent[property] === 'object') {
+			const keys = Object.keys(parent[property]);
+			if (keys < 1) {
+				flattened.push({
+					path: path.join('.'),
+					value: null,
+				});
+			}
+		}
+
 		for (const childProp in parent[property]) {
 			if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;
 			__buildFlattenedBody(childProp, parent[property], path, flattened);
@@ -207,6 +218,7 @@ const __validate = (schema, values, parentProperty, body = null) => {
 		let propVal = values.find((v) => v.path === property);
 		const config = schema[property];
 		if (propVal === undefined) {
+			// NOTE: This feels wrong
 			if (body && schema && schema[property] && schema[property].__type === 'object') {
 				const definedObjectKeys = Object.keys(schema).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
 				const blankObjectValues = Object.keys(body[property]).reduce((arr, key) => {
@@ -218,12 +230,16 @@ const __validate = (schema, values, parentProperty, body = null) => {
 				}, {});
 
 				if (blankObjectValues) {
-					propVal = {};
-					propVal.path = property;
-					propVal.value = blankObjectValues;
+					values.push({
+						path: property,
+						value: blankObjectValues,
+					});
+				} else {
+					values.push({
+						path: property,
+						value: __getPropDefault(config),
+					});
 				}
-
-				values.push(propVal);
 				continue;
 			}
 

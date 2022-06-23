@@ -196,6 +196,7 @@ class AccessControl {
 
 	async __getPolicyAttributes(user) {
 		const policies = [];
+		// TODO: Rein in this in so it only gets poilices that could match user
 		const rxsPolicies = Model.Policy.findAll();
 		for await (const policy of rxsPolicies) {
 			policies.push(policy);
