@@ -49,7 +49,7 @@ class AccessControl {
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
-		let policyAttributes = await this.__getPolicyAttributes(user);
+		let policyAttributes = await this.__getPolicyAttributes(user, req.authApp._id);
 		await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
 
 		if (policyAttributes.length < 1) {
@@ -194,15 +194,17 @@ class AccessControl {
 		this._attributes = attributes;
 	}
 
-	async __getPolicyAttributes(user) {
+	async __getPolicyAttributes(user, appId) {
 		const policies = [];
 		// TODO: Rein in this in so it only gets poilices that could match user
-		const rxsPolicies = Model.Policy.findAll();
+		const rxsPolicies = Model.Policy.find({
+			_appId: appId,
+		});
 		for await (const policy of rxsPolicies) {
 			policies.push(policy);
 		}
 
-		return await AccessControlPolicyMatch.__getUserPolicies(policies, user);
+		return await AccessControlPolicyMatch.__getUserPolicies(policies, appId, user);
 	}
 
 	async _checkAccessControlQueryBasedCondition(req, updatedSchema, path) {

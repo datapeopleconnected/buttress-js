@@ -59,12 +59,6 @@ class UserSchemaModel extends SchemaModel {
 			collection: 'users',
 			extends: [],
 			properties: {
-				policyProperties: {
-					__type: 'object',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
 				auth: {
 					__type: 'array',
 					__required: true,
@@ -139,6 +133,24 @@ class UserSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
+				_appMetadata: {
+					__type: 'array',
+					__required: true,
+					__allowUpdate: true,
+					__schema: {
+						appId: {
+							__type: 'array',
+							__required: true,
+							__allowUpdate: true,
+						},
+						policyProperties: {
+							__type: 'object',
+							__default: null,
+							__required: true,
+							__allowUpdate: true,
+						},
+					},
+				},
 			},
 		};
 	}
@@ -150,7 +162,6 @@ class UserSchemaModel extends SchemaModel {
 	 */
 	async add(body, auth) {
 		const userBody = {
-			policyProperties: (body.policyProperties)? body.policyProperties : {},
 			auth: [{
 				app: body.app,
 				appId: body.id,
@@ -168,6 +179,10 @@ class UserSchemaModel extends SchemaModel {
 
 		const rxsUser = await super.add(userBody, {
 			_apps: [Model.authApp._id],
+			_appMetadata: [{
+				appId: Model.authApp._id,
+				policyProperties: (body.policyProperties) ? body.policyProperties : null,
+			}],
 		});
 		const user = await Helpers.streamFirst(rxsUser);
 
@@ -313,17 +328,21 @@ class UserSchemaModel extends SchemaModel {
 	}
 
 	/**
-	 * @param {String} userId - AppId of the user
+	 * @param {String} userId - id of the user
+	 * @param {String} appId - id of the app
 	 * @param {Object} policyProperties - Policy properties
 	 * @return {Promise} - resolves to an array of Apps
 	 */
-	setPolicyPropertiesById(userId, policyProperties) {
-		const policy = Object.keys(policyProperties).reduce((obj, key) => {
-			obj[key] = policyProperties[key];
-			return obj;
-		}, {});
+	setPolicyPropertiesById(userId, appId, policyProperties) {
+		// const policy = Object.keys(policyProperties).reduce((obj, key) => {
+		// 	obj[key] = policyProperties[key];
+		// 	return obj;
+		// }, {});
 
-		return super.updateById(this.createId(userId), {$set: {policyProperties: policy}});
+		return super.update({
+			'_id': this.createId(userId),
+			'_appMetadata.appId': this.createId(appId),
+		}, {$set: {'_appMetadata.$.policyProperties': policyProperties}});
 	}
 }
 

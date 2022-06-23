@@ -216,6 +216,16 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		});
 	}
 
+	update(select, update) {
+		return new Promise((resolve, reject) => {
+			this.collection.update(select, update, (err, object) => {
+				if (err) return reject(new Error(err));
+
+				resolve(object);
+			});
+		});
+	}
+
 	updateById(id, query) {
 		// Logging.logSilly(`updateById: ${id} ${query}`);
 

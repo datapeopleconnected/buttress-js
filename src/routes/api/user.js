@@ -120,7 +120,7 @@ class FindUser extends Route {
 					if (_user) {
 						const output = {
 							id: _user._id,
-							policyProperties: _user.policyProperties,
+							policyProperties: _user._appMetadata.find((md) => md.appId === req.authApp._id),
 							auth: _user.auth,
 							tokens: [],
 						};
@@ -231,7 +231,7 @@ class AddUser extends Route {
 			if (!app ||
 					!req.body.user.id ||
 					!req.body.user.token ||
-					!req.body.user.profileImgUrl) {
+					req.body.user.policyProperties === undefined) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
@@ -246,7 +246,7 @@ class AddUser extends Route {
 					return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 				}
 				req.body.auth.type = Model.Token.Constants.Type.USER;
-				req.body.auth.app = req.authApp.id;
+				req.body.auth.app = req.authApp._id;
 
 				let role = false;
 				if (req.body.auth.role && appRoles) {
@@ -272,6 +272,7 @@ class AddUser extends Route {
 	_exec(req, res, validate) {
 		return Model.User.add(req.body.user, req.body.auth)
 			.then((user) => {
+				// TODO: Strip back return data, should match find user
 				return user;
 			});
 	}
@@ -364,6 +365,9 @@ class SetUserPolicyProperties extends Route {
 	}
 
 	_exec(req, res, validate) {
+		// Get the current app
+		console.log(req.authApp._id);
+		throw new Errro('Foo');
 		return Model.User.setPolicyPropertiesById(req.params.id, req.body.policyProperties);
 	}
 }
