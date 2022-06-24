@@ -10,6 +10,7 @@
 
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
+const Sugar = require('sugar');
 
 const Model = require('../model');
 const Logging = require('../logging');
@@ -63,8 +64,7 @@ class AccessControl {
 		policyAttributes = this._getAttributesChain(policyAttributes);
 		const schemaBaseAttribute = policyAttributes.filter((attr) => attr.targetedSchema.includes(schemaName) || attr.targetedSchema.length < 1);
 		if (schemaBaseAttribute.length < 1) return next();
-		const schemaAttributes = this._getSchemaRelatedAttributes(schemaBaseAttribute, policyAttributes);
-
+		const schemaAttributes = await this._getSchemaRelatedAttributes(req, schemaBaseAttribute, policyAttributes);
 		const schemas = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
 		const schemaNames = schemas.map((s) => s.name);
 		const schema = schemas.find((s) => s.name === schemaName);
@@ -128,18 +128,19 @@ class AccessControl {
 
 	/**
 	 * Fetch schema related attributes from the token attributes
+	 * @param {Object} req
 	 * @param {Array} attributes
-	 * @param {Array} tokenAttributes
+	 * @param {Array} policyAttributes
 	 * @param {Array} attrs
 	 * @return {Array}
 	 */
-	_getSchemaRelatedAttributes(attributes, tokenAttributes, attrs = []) {
+	async _getSchemaRelatedAttributes(req, attributes, policyAttributes, attrs = []) {
 		const attributeIds = attributes.map((attr) => attr._id);
 
 		attributes.forEach((attr) => {
 			if (attr.extends.length > 1) {
 				attr.extends.forEach((extendedAttr) => {
-					const extendedAttribute = tokenAttributes.find((attr) => attr.name === extendedAttr && !attributeIds.includes(attr._id));
+					const extendedAttribute = policyAttributes.find((attr) => attr.name === extendedAttr && !attributeIds.includes(attr._id));
 
 					if (!extendedAttribute) return;
 
@@ -150,8 +151,24 @@ class AccessControl {
 			attrs.push(attr);
 		});
 
-		if (attrs.some((attr) => attr.override)) {
-			attrs = attrs.filter((attr) => attr.override);
+		if (attrs.some((attr) => attr.configuration.override)) {
+			const dominantAttrs = [];
+			await attrs.reduce(async (prev, attr) => {
+				await prev;
+
+				if (Sugar.Date.isAfter(Sugar.Date.create('now'), Sugar.Date.create(attr.configuration.limit))) return;
+				if (!attr.configuration.optionalCondition) {
+					dominantAttrs.push(attr);
+				}
+
+				if (attr.configuration.optionalCondition && await AccessControlConditions.applyAccessControlPolicyConditions(req, [attr])) {
+					dominantAttrs.push(attr);
+				}
+
+				return;
+			}, Promise.resolve());
+
+			attrs = (dominantAttrs.length > 0)? dominantAttrs : attrs.filter((attr) => !attr.configuration.override);
 		}
 
 		return attrs;

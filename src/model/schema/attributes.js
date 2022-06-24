@@ -86,7 +86,13 @@ class AttributeSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
-				overrideConfiguration: {
+				configuration: {
+					optionalCondition: {
+						__type: 'boolean',
+						__required: true,
+						__default: false,
+						__allowUpdate: true,
+					},
 					override: {
 						__type: 'boolean',
 						__required: true,
@@ -124,7 +130,7 @@ class AttributeSchemaModel extends SchemaModel {
 			env: (body.attribute.env)? body.attribute.env : {},
 			conditions: (body.attribute.conditions)? body.attribute.conditions : {},
 			query: (body.attribute.query)? body.attribute.query : {},
-			overrideConfiguration: body.attribute.overrideConfiguration,
+			configuration: body.attribute.configuration,
 		};
 
 		const rxsAttribute = await super.add(attributeBody, {
@@ -136,6 +142,17 @@ class AttributeSchemaModel extends SchemaModel {
 		// nrp.emit('app-routes:bust-attribute-cache', {appId: attribute.appId});
 
 		return attribute;
+	}
+
+	/**
+	 * @param {String} attributeId - id of the attribute
+	 * @param {Object} query - query
+	 * @return {Promise}
+	 */
+	updateAttributeById(attributeId, query) {
+		return super.update({
+			'_id': this.createId(attributeId),
+		}, {$set: {[query.path]: query.value}});
 	}
 }
 

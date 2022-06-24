@@ -344,6 +344,33 @@ class UserSchemaModel extends SchemaModel {
 			'_appMetadata.appId': this.createId(appId),
 		}, {$set: {'_appMetadata.$.policyProperties': policyProperties}});
 	}
+
+	/**
+	 * @param {String} userId - AppId of the user
+	 * @param {String} appId - id of the app
+	 * @param {Object} policyProperties - Policy properties
+	 * @param {Object} user - Policy properties
+	 * @return {Promise} - resolves to an array of Apps
+	 */
+	updatePolicyPropertiesById(userId, appId, policyProperties, user) {
+		const userPolicy = user._appMetadata.find((m) => m.appId.equals(appId)).policyProperties;
+		const policy = Object.keys(policyProperties).reduce((obj, key) => {
+			obj[key] = policyProperties[key];
+			return obj;
+		}, []);
+
+		return super.update({
+			'_id': this.createId(userId),
+			'_appMetadata.appId': this.createId(appId),
+		}, {
+			$set: {
+				'_appMetadata.$.policyProperties': {
+					...userPolicy,
+					...policy,
+				},
+			},
+		});
+	}
 }
 
 /**

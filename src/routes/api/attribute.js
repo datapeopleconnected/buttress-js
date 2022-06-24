@@ -78,7 +78,7 @@ class AddAttribute extends Route {
 			const app = req.authApp;
 
 			if (!app ||
-				!req.body.attribute.name) {
+				!req.body.name) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.RequestError(400, `missing_field`));
 			}
@@ -88,7 +88,7 @@ class AddAttribute extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Attributes.add({attribute: req.body.attribute, appId: req.authApp._id})
+		return Model.Attributes.add({attribute: req.body, appId: req.authApp._id})
 			.then((attribute) => {
 				return attribute;
 			});
@@ -137,11 +137,52 @@ class SyncAttributes extends Route {
 }
 routes.push(SyncAttributes);
 
+/**
+ * @class UpdateAttribute
+ */
+class UpdateAttribute extends Route {
+	constructor() {
+		super('attribute/:id', 'UPDATE ATTRIBUTE');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	_validate(req) {
+		return new Promise((resolve, reject) => {
+			if (!req.params.id) {
+				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
+				return reject(new Helpers.RequestError(400, `missing_field`));
+			}
+			if (!req.body) {
+				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
+				return reject(new Helpers.RequestError(400, `missing_field`));
+			}
+
+			Model.Attributes.findById(req.params.id).then((attribute) => {
+				if (!attribute) {
+					this.log('ERROR: Invalid Attribute ID', Route.LogLevel.ERR);
+					return reject(new Helpers.RequestError(400, `invalid_id`));
+				}
+				resolve({
+					attribute,
+				});
+			});
+		});
+	}
+
+	_exec(req, res, validate) {
+		return new Promise((resolve, reject) => {
+			Model.Attributes.updateAttributeById(validate.attribute._id, req.body).then(() => true).then(resolve, reject);
+		});
+	}
+}
+routes.push(UpdateAttribute);
 
 /**
- * @class DeleteApp
+ * @class DeleteAttribute
  */
-class DeleteApp extends Route {
+class DeleteAttribute extends Route {
 	constructor() {
 		super('attribute/:id', 'DELETE ATTRIBUTE');
 		this.verb = Route.Constants.Verbs.DEL;
@@ -173,7 +214,7 @@ class DeleteApp extends Route {
 		});
 	}
 }
-routes.push(DeleteApp);
+routes.push(DeleteAttribute);
 
 /**
  * @type {*[]}

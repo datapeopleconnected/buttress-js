@@ -366,12 +366,56 @@ class SetUserPolicyProperties extends Route {
 
 	_exec(req, res, validate) {
 		// Get the current app
-		console.log(req.authApp._id);
-		throw new Errro('Foo');
-		return Model.User.setPolicyPropertiesById(req.params.id, req.body.policyProperties);
+		return Model.User.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body.policyProperties);
 	}
 }
 routes.push(SetUserPolicyProperties);
+
+/**
+ * @class UpdateUserPolicyProperties
+ */
+class UpdateUserPolicyProperties extends Route {
+	constructor() {
+		super('user/:id/updatePolicyProperty', 'UPDATE USER POLICY PROPERTY');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			if (!req.body) {
+				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+
+			if (!req.body.policyProperties) {
+				this.log('ERROR: policy properties is a required field', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_policy_properties`));
+			}
+
+			Model.User.findById(req.params.id)
+				.then((user) => {
+					if (!user) {
+						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+					}
+
+					resolve({
+						user,
+					});
+				});
+		});
+	}
+
+	_exec(req, res, validate) {
+		return Model.User.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body.policyProperties, validate.user);
+	}
+}
+routes.push(UpdateUserPolicyProperties);
 
 /**
  * @class DeleteAllUsers
@@ -437,10 +481,10 @@ routes.push(DeleteUser);
  */
 class clearUserLocalData extends Route {
 	constructor() {
-		super('user/:id/clearLocalData', 'DELETE USER LOCAL DATA');
-		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.DELETE;
+		super('user/:id/clearLocalData', 'CLEAR USER LOCAL DATA');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.USER;
+		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this._user = false;
 	}
@@ -468,6 +512,7 @@ class clearUserLocalData extends Route {
 		nrp.emit('clearUserLocalData', {
 			appAPIPath: req.authApp ? req.authApp.apiPath : '',
 			userId: user._id,
+			collections: (req.body.collections)? req.body.collections : false,
 		});
 	}
 }
