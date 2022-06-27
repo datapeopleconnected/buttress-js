@@ -63,8 +63,18 @@ class AccessControl {
 
 		policyAttributes = this._getAttributesChain(policyAttributes);
 		const schemaBaseAttribute = policyAttributes.filter((attr) => attr.targetedSchema.includes(schemaName) || attr.targetedSchema.length < 1);
-		if (schemaBaseAttribute.length < 1) return next();
+		if (schemaBaseAttribute.length < 1) {
+			Logging.logTimer(`_accessControlPolicy:access-control-policy-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			res.status(401).send({message: 'Request policy does not have any access control attributes'});
+			return;
+		}
 		const schemaAttributes = await this._getSchemaRelatedAttributes(req, schemaBaseAttribute, policyAttributes);
+		if (schemaBaseAttribute.length < 1) {
+			Logging.logTimer(`_accessControlPolicy:access-control-policy-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			res.status(401).send({message: 'Request policy does not have any access control attributes'});
+			return;
+		}
+
 		const schemas = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
 		const schemaNames = schemas.map((s) => s.name);
 		const schema = schemas.find((s) => s.name === schemaName);

@@ -371,6 +371,22 @@ class UserSchemaModel extends SchemaModel {
 			},
 		});
 	}
+
+	/**
+	 * @param {String} userId - AppId of the user
+	 * @param {String} appId - id of the app
+	 * @return {Promise}
+	 */
+	clearPolicyPropertiesById(userId, appId) {
+		return super.update({
+			'_id': this.createId(userId),
+			'_appMetadata.appId': this.createId(appId),
+		}, {
+			$set: {
+				'_appMetadata.$.policyProperties': {},
+			},
+		});
+	}
 }
 
 /**
