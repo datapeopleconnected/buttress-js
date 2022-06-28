@@ -333,16 +333,20 @@ class UserSchemaModel extends SchemaModel {
 	 * @param {Object} policyProperties - Policy properties
 	 * @return {Promise} - resolves to an array of Apps
 	 */
-	setPolicyPropertiesById(userId, appId, policyProperties) {
-		// const policy = Object.keys(policyProperties).reduce((obj, key) => {
-		// 	obj[key] = policyProperties[key];
-		// 	return obj;
-		// }, {});
+	async setPolicyPropertiesById(userId, appId, policyProperties) {
+		const user = await this.findById(userId);
+		const metaDataExists = user._appMetadata.find((md) => md.appId === appId);
 
-		return super.update({
-			'_id': this.createId(userId),
-			'_appMetadata.appId': this.createId(appId),
-		}, {$set: {'_appMetadata.$.policyProperties': policyProperties}});
+		if (metaDataExists) {
+			return super.update({
+				'_id': this.createId(userId),
+				'_appMetadata.appId': this.createId(appId),
+			}, {$set: {'_appMetadata.$.policyProperties': policyProperties}});
+		} else {
+			return super.update({
+				'_id': this.createId(userId),
+			}, {$push: {'_appMetadata': {appId, policyProperties}}});
+		}
 	}
 }
 

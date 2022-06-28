@@ -72,15 +72,15 @@ class GetUser extends Route {
 			Model.User.findById(req.params.id)
 				.then((_user) => {
 					if (_user) {
-						// TODO: findUserAuthTokens no longer returns a promises!
 						const output = {
 							id: _user._id,
 							auth: _user.auth,
 							tokens: [],
+							policyProperties: _user._appMetadata.find((md) => md.appId === req.authApp._id),
 						};
 
+						// TODO: This should really only be a single token now
 						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
-
 						rxTokens.on('data', (token) => {
 							output.tokens.push({
 								value: token.value,
@@ -120,13 +120,12 @@ class FindUser extends Route {
 					if (_user) {
 						const output = {
 							id: _user._id,
-							policyProperties: _user._appMetadata.find((md) => md.appId === req.authApp._id),
 							auth: _user.auth,
 							tokens: [],
+							policyProperties: _user._appMetadata.find((md) => md.appId === req.authApp._id),
 						};
 
 						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
-
 						rxTokens.on('data', (token) => {
 							output.tokens.push({
 								value: token.value,
@@ -345,11 +344,6 @@ class SetUserPolicyProperties extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
-			if (!req.body.policyProperties) {
-				this.log('ERROR: policy properties is a required field', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_policy_properties`));
-			}
-
 			Model.User.exists(req.params.id)
 				.then((exists) => {
 					if (!exists) {
@@ -365,10 +359,7 @@ class SetUserPolicyProperties extends Route {
 	}
 
 	_exec(req, res, validate) {
-		// Get the current app
-		console.log(req.authApp._id);
-		throw new Errro('Foo');
-		return Model.User.setPolicyPropertiesById(req.params.id, req.body.policyProperties);
+		return Model.User.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body);
 	}
 }
 routes.push(SetUserPolicyProperties);
