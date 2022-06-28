@@ -24,16 +24,19 @@ class PolicyMatch {
 		if (!userAppMetaData || !userAppMetaData.policyProperties) return;
 
 		const policyProperties = userAppMetaData.policyProperties;
-		Object.keys(selection).forEach((key) => {
-			if (!(key in policyProperties)) return;
 
+		const matches = Object.keys(selection).reduce((arr, key) => {
+			if (!(key in policyProperties)) return arr;
 			const [selectionCriterionKey] = Object.keys(selection[key]);
 			const [selectionCriterionValue] = Object.values(selection[key]);
 
 			match = AccessControlConditions.__evaluateOperation(policyProperties[key], selectionCriterionValue, selectionCriterionKey);
-		});
+			arr.push(match);
 
-		return match;
+			return arr;
+		}, []);
+
+		return (matches.length > 0)? matches.every((v) => v) : match;
 	}
 }
 module.exports = new PolicyMatch();
