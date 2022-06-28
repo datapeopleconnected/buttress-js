@@ -397,6 +397,11 @@ class UpdateUserPolicyProperties extends Route {
 						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 					}
+					const appMetadataExists = user._appMetadata.find((md) => md.appId.equals(req.authApp._id));
+					if (!appMetadataExists) {
+						this.log('ERROR: Invalid User app metadata', Route.LogLevel.ERR);
+						return reject(new Helpers.Errors.RequestError(400, `invalid_app_metadata`));
+					}
 
 					resolve({
 						user,

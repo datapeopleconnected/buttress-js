@@ -159,7 +159,7 @@ class DeletePolicy extends Route {
 			}
 			Model.Policy.findById(req.params.id).then((policy) => {
 				if (!policy) {
-					this.log('ERROR: Invalid Attribute ID', Route.LogLevel.ERR);
+					this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
 					return reject(new Helpers.RequestError(400, `invalid_id`));
 				}
 				this._policy = policy;

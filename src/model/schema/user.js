@@ -335,12 +335,16 @@ class UserSchemaModel extends SchemaModel {
 	 */
 	async setPolicyPropertiesById(userId, appId, policyProperties) {
 		const user = await this.findById(userId);
-		const metaDataExists = user._appMetadata.find((md) => md.appId === appId);
+		appId = this.createId(appId);
+		const metaDataExists = user._appMetadata.find((md) => {
+			const mdAppId = this.createId(md.appId);
+			return mdAppId.equals(appId);
+		});
 
 		if (metaDataExists) {
 			return super.update({
 				'_id': this.createId(userId),
-				'_appMetadata.appId': this.createId(appId),
+				'_appMetadata.appId': appId,
 			}, {$set: {'_appMetadata.$.policyProperties': policyProperties}});
 		} else {
 			return super.update({
