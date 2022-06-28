@@ -78,9 +78,9 @@ class AddPolicy extends Route {
 			const app = req.authApp;
 
 			if (!app ||
-				!req.body.policy.selection ||
-				!req.body.policy.attributes ||
-				(req.body.policy.attributes && req.body.policy.attributes.length < 1)) {
+				!req.body.selection ||
+				!req.body.attributes ||
+				(req.body.attributes && req.body.attributes.length < 1)) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.RequestError(400, `missing_field`));
 			}
@@ -90,7 +90,7 @@ class AddPolicy extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Policy.add({policy: req.body.policy, appId: req.authApp._id})
+		return Model.Policy.add({policy: req.body, appId: req.authApp._id})
 			.then((policy) => {
 				return policy;
 			});

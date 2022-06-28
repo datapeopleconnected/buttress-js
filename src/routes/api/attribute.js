@@ -63,6 +63,47 @@ class GetAttributeList extends Route {
 routes.push(GetAttributeList);
 
 /**
+ * @class SearchAttributeList
+ */
+class SearchAttributeList extends Route {
+	constructor() {
+		super('attribute', 'SEARCH ATTRIBUTE LIST');
+		this.verb = Route.Constants.Verbs.SEARCH;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.LIST;
+	}
+
+	_validate(req, res, token) {
+		const result = {
+			query: {
+				$and: [],
+			},
+			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
+			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
+			sort: (req.body && req.body.sort) ? req.body.sort : {},
+			project: (req.body && req.body.project)? req.body.project : false,
+		};
+
+		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+		if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+
+		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+		if (req.body && req.body.query) {
+			result.query.$and.push(req.body.query);
+		}
+
+		result.query = Model.Attributes.parseQuery(result.query, {}, Model.Attributes.flatSchemaData);
+		return result;
+	}
+
+	_exec(req, res, validate) {
+		return Model.Attributes.find(validate.query, {},
+			validate.limit, validate.skip, validate.sort, validate.project);
+	}
+}
+routes.push(SearchAttributeList);
+
+/**
  * @class AddAttribute
  */
 class AddAttribute extends Route {
@@ -78,7 +119,7 @@ class AddAttribute extends Route {
 			const app = req.authApp;
 
 			if (!app ||
-				!req.body.attribute.name) {
+				!req.body.name) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.RequestError(400, `missing_field`));
 			}
@@ -88,7 +129,7 @@ class AddAttribute extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Attributes.add({attribute: req.body.attribute, appId: req.authApp._id})
+		return Model.Attributes.add({attribute: req.body, appId: req.authApp._id})
 			.then((attribute) => {
 				return attribute;
 			});
@@ -137,11 +178,52 @@ class SyncAttributes extends Route {
 }
 routes.push(SyncAttributes);
 
+/**
+ * @class UpdateAttribute
+ */
+class UpdateAttribute extends Route {
+	constructor() {
+		super('attribute/:id', 'UPDATE ATTRIBUTE');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	_validate(req) {
+		return new Promise((resolve, reject) => {
+			if (!req.params.id) {
+				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
+				return reject(new Helpers.RequestError(400, `missing_field`));
+			}
+			if (!req.body) {
+				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
+				return reject(new Helpers.RequestError(400, `missing_field`));
+			}
+
+			Model.Attributes.findById(req.params.id).then((attribute) => {
+				if (!attribute) {
+					this.log('ERROR: Invalid Attribute ID', Route.LogLevel.ERR);
+					return reject(new Helpers.RequestError(400, `invalid_id`));
+				}
+				resolve({
+					attribute,
+				});
+			});
+		});
+	}
+
+	_exec(req, res, validate) {
+		return new Promise((resolve, reject) => {
+			Model.Attributes.updateAttributeById(validate.attribute._id, req.body).then(() => true).then(resolve, reject);
+		});
+	}
+}
+routes.push(UpdateAttribute);
 
 /**
- * @class DeleteApp
+ * @class DeleteAttribute
  */
-class DeleteApp extends Route {
+class DeleteAttribute extends Route {
 	constructor() {
 		super('attribute/:id', 'DELETE ATTRIBUTE');
 		this.verb = Route.Constants.Verbs.DEL;
@@ -173,7 +255,7 @@ class DeleteApp extends Route {
 		});
 	}
 }
-routes.push(DeleteApp);
+routes.push(DeleteAttribute);
 
 /**
  * @type {*[]}
