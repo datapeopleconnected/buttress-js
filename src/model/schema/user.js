@@ -335,21 +335,17 @@ class UserSchemaModel extends SchemaModel {
 	 */
 	async setPolicyPropertiesById(userId, appId, policyProperties) {
 		const user = await this.findById(userId);
-		appId = this.createId(appId);
-		const metaDataExists = user._appMetadata.find((md) => {
-			const mdAppId = this.createId(md.appId);
-			return mdAppId.equals(appId);
-		});
+		const metaDataExists = user._appMetadata.find((md) => md.appId.toString() === appId.toString());
 
 		if (metaDataExists) {
 			return super.update({
 				'_id': this.createId(userId),
-				'_appMetadata.appId': appId,
+				'_appMetadata.appId': this.createId(appId),
 			}, {$set: {'_appMetadata.$.policyProperties': policyProperties}});
 		} else {
 			return super.update({
 				'_id': this.createId(userId),
-			}, {$push: {'_appMetadata': {appId, policyProperties}}});
+			}, {$push: {'_appMetadata': {appId: this.createId(appId), policyProperties}}});
 		}
 	}
 
@@ -361,7 +357,7 @@ class UserSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves to an array of Apps
 	 */
 	updatePolicyPropertiesById(userId, appId, policyProperties, user) {
-		const userPolicy = user._appMetadata.find((m) => m.appId.equals(appId)).policyProperties;
+		const userPolicy = user._appMetadata.find((m) => m.appId.toString() === appId.toString()).policyProperties;
 		const policy = Object.keys(policyProperties).reduce((obj, key) => {
 			obj[key] = policyProperties[key];
 			return obj;

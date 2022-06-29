@@ -76,7 +76,7 @@ class GetUser extends Route {
 							id: _user._id,
 							auth: _user.auth,
 							tokens: [],
-							policyProperties: _user._appMetadata.find((md) => md.appId === req.authApp._id),
+							policyProperties: _user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString()),
 						};
 
 						// TODO: This should really only be a single token now
@@ -122,7 +122,7 @@ class FindUser extends Route {
 							id: _user._id,
 							auth: _user.auth,
 							tokens: [],
-							policyProperties: _user._appMetadata.find((md) => md.appId === req.authApp._id),
+							policyProperties: _user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString()),
 						};
 
 						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
@@ -397,7 +397,7 @@ class UpdateUserPolicyProperties extends Route {
 						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 					}
-					const appMetadataExists = user._appMetadata.find((md) => md.appId.equals(req.authApp._id));
+					const appMetadataExists = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
 					if (!appMetadataExists) {
 						this.log('ERROR: Invalid User app metadata', Route.LogLevel.ERR);
 						return reject(new Helpers.Errors.RequestError(400, `invalid_app_metadata`));
