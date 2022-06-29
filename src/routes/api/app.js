@@ -313,7 +313,11 @@ class GetAppSchema extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_schema`));
 			}
 
-			// TODO: Check params for any core scheam thats been requested
+			// TODO: Check params for any core scheam thats been requested.
+
+			// TODO: Any data sharing schema should be resolved.
+
+			// TODO: Policy should be used to dictate what schema the user can access.
 
 			// Filter the returned schema based token role
 			let schema = Schema.buildCollections(Schema.decode(req.authApp.__schema));
@@ -601,6 +605,11 @@ class GetDataSharing extends Route {
 			})
 			.then((query) => {
 				result.query = query;
+
+				if (token.authLevel < 3) {
+					result.query['_appId'] = req.authApp._id;
+				}
+
 				return result;
 			});
 	}
