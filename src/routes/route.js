@@ -142,7 +142,7 @@ class Route {
 
 		// Send the result back to the client and resolve the request from
 		// this point onward you should treat the request as furfilled.
-		if (result instanceof Stream.Readable) {
+		if (result instanceof Stream && result.readable) {
 			const resStream = new Stream.PassThrough({objectMode: true});
 			const broadcastStream = new Stream.PassThrough({objectMode: true});
 
@@ -178,7 +178,7 @@ class Route {
 	async _respond(req, res, result) {
 		req.timings.respond = req.timer.interval;
 
-		const isReadStream = result instanceof Stream.Readable;
+		const isReadStream = (result instanceof Stream && result.readable);
 
 		Logging.logTimer(`_respond:start isReadStream:${isReadStream} redactResults:${this.redactResults}`,
 			req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
@@ -245,11 +245,7 @@ class Route {
 				this._close(req);
 			});
 
-			if (this.model instanceof SchemaModelRemote) {
-				result.pipe(JSONStream.parse('.')).pipe(stringifyStream).pipe(res);
-			} else {
-				result.pipe(stringifyStream).pipe(res);
-			}
+			result.pipe(stringifyStream).pipe(res);
 
 			return result;
 		}
@@ -366,7 +362,7 @@ class Route {
 	_broadcast(req, res, result, attribute, path, isSuper = false) {
 		Logging.logTimer('_broadcast:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-		const isReadStream = result instanceof Stream.Readable;
+		const isReadStream = (result instanceof Stream && result.readable);
 
 		// broadcasting based on old role-access-control
 		// let filter = null;

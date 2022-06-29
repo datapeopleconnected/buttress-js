@@ -43,6 +43,10 @@ class SchemaModelRemote extends SchemaModel {
 		}
 	}
 
+	createId(id) {
+		return this.remote.adapter.ID.new(id);
+	}
+
 	/**
 	 * @param {object} body
 	 * @return {Promise}

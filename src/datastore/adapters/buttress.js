@@ -16,8 +16,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+const Stream = require('stream');
+const JSONStream = require('JSONStream');
 const ObjectId = require('mongodb').ObjectId;
 const ButtressAPI = require('@buttress/api');
+
+const Helpers = require('../../helpers');
 
 const AbstractAdapter = require('../abstract-adapter');
 
@@ -105,11 +109,34 @@ module.exports = class Buttress extends AbstractAdapter {
 		});
 	}
 
+	convertBSONObjects(target) {
+		if (target instanceof ObjectId) {
+			target = target.toString();
+		} else if (Array.isArray(target)) {
+			target.forEach((value) => this.convertBSONObjects(value));
+			// Loop
+		} else if (typeof target === 'object' && target !== null) {
+			for (const key in target) {
+				if (!{}.hasOwnProperty.call(target, key)) continue;
+				this.convertBSONObjects(target[key]);
+			}
+		}
+	}
+
+	handleResult(result) {
+		if (result instanceof Stream && result.readable) {
+			return result.pipe(JSONStream.parse('.'));
+		}
+
+		return result;
+	}
+
 	/**
 	 * @param {object} body
 	 * @return {Promise}
 	 */
 	add(body) {
+		body = this.convertBSONObjects(body);
 		return this.resolveAfterInit()
 			.then(() => this.collection.save(body));
 	}
@@ -119,6 +146,7 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @return {Boolean}
 	 */
 	exists(id) {
+		id = this.convertBSONObjects(id);
 		return this.resolveAfterInit()
 			.then(() => this.collection.get(id))
 			.then((res) => (res) ? true : false);
@@ -137,6 +165,7 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @return {Promise}
 	 */
 	rm(entity) {
+		entity = this.convertBSONObjects(entity);
 		return this.resolveAfterInit()
 			.then(() => this.collection.remove(entity._id));
 	}
@@ -146,6 +175,7 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @return {Promise}
 	 */
 	rmBulk(ids) {
+		ids = this.convertBSONObjects(ids);
 		return this.resolveAfterInit()
 			.then(() => this.collection.bulkRemove(ids));
 	}
@@ -164,6 +194,7 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @return {Promise}
 	 */
 	findById(id) {
+		id = this.convertBSONObjects(id);
 		return this.resolveAfterInit()
 			.then(() => this.collection.get(id));
 	}
@@ -177,23 +208,27 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {Promise} - resolves to an array of docs
 	 */
-	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+	async find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
 		// Logging.logSilly(`find: ${this.collectionName} ${query}`);
+		query = this.convertBSONObjects(query);
 
 		// Stream this?
-		return this.resolveAfterInit()
-			.then(() => this.collection.search(query, limit, skip, sort, {
-				project,
-				stream: true,
-			}));
+		await this.resolveAfterInit();
+		const result = await this.collection.search(query, limit, skip, sort, {
+			project,
+			stream: true,
+		});
+
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @return {Promise}
 	 */
-	findAll() {
-		return this.resolveAfterInit()
-			.then(() => this.collection.getAll());
+	async findAll() {
+		await this.resolveAfterInit();
+		const result = await this.collection.getAll();
+		return this.handleResult(result);
 	}
 
 	/**
@@ -201,6 +236,7 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @return {Promise}
 	 */
 	findAllById(ids) {
+		ids = this.convertBSONObjects(ids);
 		return this.resolveAfterInit()
 			.then(() => this.collection.bulkGet(ids));
 	}
@@ -210,6 +246,7 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @return {Promise}
 	 */
 	count(query) {
+		query = this.convertBSONObjects(query);
 		return this.resolveAfterInit()
 			.then(() => this.collection.count(query));
 	}
