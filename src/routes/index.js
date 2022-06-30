@@ -127,7 +127,7 @@ class Routes {
 	async initAppRoutes() {
 		const rxsApps = await Model.App.findAll();
 		for await (const app of rxsApps) {
-			this._generateAppRoutes(app);
+			await this._generateAppRoutes(app);
 		}
 	}
 
@@ -208,14 +208,28 @@ class Routes {
 	 * Genereate app routes & register for given app
 	 * @param {object} app - Buttress app object
 	 */
-	_generateAppRoutes(app) {
+	async _generateAppRoutes(app) {
 		if (!app) throw new Error(`Expected app object to be passed through to _generateAppRoutes, got ${app}`);
 		if (!app.__schema) return;
+
+		// Get DS agreements
+		const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
+			'_appId': app._id,
+		}));
 
 		const appRouter = this._createRouter();
 
 		Schema.decode(app.__schema)
-			.filter((s) => s.type === 'collection')
+			.filter((schema) => schema.type === 'collection')
+			.filter((schema) => {
+				if (!schema.remote) return true;
+				const [dsaName] = schema.remote.split('.');
+
+				if (appDSAs.find((dsa) => dsa.active && dsa.name === dsaName)) return true;
+
+				Logging.logWarn(`Routes:_generateAppRoutes ${app._id} skipping route /${app.apiPath} for ${schema.collection}, DSA not active`);
+				return false;
+			})
 			.forEach((schema) => {
 				Logging.logSilly(`Routes:_generateAppRoutes ${app._id} init routes /${app.apiPath} for ${schema.collection}`);
 				return this._initSchemaRoutes(appRouter, app, schema);
@@ -249,6 +263,11 @@ class Routes {
 			let route = null;
 
 			const appShortId = Helpers.shortId(app._id);
+
+			if (schemaData.remote) {
+				// Check that DS agreement is active
+				console.log('Floop');
+			}
 
 			try {
 				route = new Route(schemaData, appShortId);

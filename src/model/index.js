@@ -150,6 +150,11 @@ class Model {
 					return;
 				}
 
+				if (!dataSharing.active) {
+					Logging.logDebug(`Data sharing not active yet, skipping (${dataSharingName}.${collection}) ${app}`);
+					return;
+				}
+
 				let {endpoint, apiPath, token} = dataSharing.remoteApp;
 
 				if (endpoint) endpoint = endpoint.replace(/(https|http):\/\//ig, '');

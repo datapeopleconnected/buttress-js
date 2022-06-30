@@ -302,6 +302,20 @@ module.exports.streamFirst = (stream) => {
 		});
 	});
 };
+module.exports.streamAll = (stream) => {
+	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
+		throw new Error(`Expected Stream but got '${stream}'`);
+	}
+
+	return new Promise((resolve, reject) => {
+		const arr = [];
+		stream.on('error', (err) => reject(err));
+		stream.on('end', () => resolve(arr));
+		stream.on('data', (item) => {
+			arr.push(item);
+		});
+	});
+};
 
 module.exports.trimSlashes = (str) => {
 	return (str) ? str.replace(/^\/+|\/+$/g, '') : str;

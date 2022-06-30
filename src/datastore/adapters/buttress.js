@@ -22,6 +22,7 @@ const ObjectId = require('mongodb').ObjectId;
 const ButtressAPI = require('@buttress/api');
 
 const Helpers = require('../../helpers');
+const Logging = require('../../logging');
 
 const AbstractAdapter = require('../abstract-adapter');
 
@@ -77,6 +78,7 @@ module.exports = class Buttress extends AbstractAdapter {
 	async connect() {
 		if (this.init) return this.connection;
 
+		Logging.logSilly(`Attempting to connect to: ${this.uri.host}`);
 		await this.connection.init({
 			buttressUrl: `https://${this.uri.host}`,
 			appToken: this.uri.searchParams.get('token'),
