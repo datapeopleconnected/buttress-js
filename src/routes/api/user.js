@@ -392,11 +392,6 @@ class UpdateUserPolicyProperties extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
-			if (!req.body.policyProperties) {
-				this.log('ERROR: policy properties is a required field', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_policy_properties`));
-			}
-
 			Model.User.findById(req.params.id)
 				.then((user) => {
 					if (!user) {
@@ -417,7 +412,7 @@ class UpdateUserPolicyProperties extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.User.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body.policyProperties, validate.user);
+		return Model.User.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body, validate.user);
 	}
 }
 routes.push(UpdateUserPolicyProperties);
