@@ -59,7 +59,7 @@ class Projection {
 			allowedUpdates = (projectionUpdateKeys.length > 0)? this.__checkPorjectionPath(requestBody.query, projectionUpdateKeys) : true;
 		}
 
-		req.body.project = projection;
+		req.body.project = (req.body.project)? {...req.body.project, ...projection} : projection;
 		return allowedUpdates;
 	}
 
@@ -77,7 +77,6 @@ class Projection {
 
 			queryKeys = queryKeys.concat(Object.keys(path));
 		});
-
 
 		return queryKeys.every((key) => projectionUpdateKeys.includes(key));
 	}
