@@ -21,6 +21,7 @@ const Buttress = require('@buttress/api');
 const Sugar = require('sugar');
 
 const Route = require('../route');
+const Datastore = require('../../datastore');
 const Model = require('../../model');
 const Logging = require('../../logging');
 const Helpers = require('../../helpers');
@@ -302,41 +303,97 @@ class GetAppSchema extends Route {
 		this.redactResults = false;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.authApp) {
-				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
-			}
-			if (!req.authApp.__schema) {
-				this.log('ERROR: No app schema defined', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_schema`));
-			}
+	async _validate(req, res, token) {
+		if (!req.authApp) {
+			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `no_authenticated_app`);
+		}
 
-			// TODO: Check params for any core scheam thats been requested.
+		if (!req.authApp.__schema) {
+			this.log('ERROR: No app schema defined', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `no_authenticated_schema`);
+		}
 
-			// TODO: Any data sharing schema should be resolved.
+		let schema = [
+			...Schema.buildCollections(Schema.decode(req.authApp.__schema)),
+		];
 
-			// TODO: Policy should be used to dictate what schema the user can access.
+		if (req.query.core) {
+			const cores = req.query.core.split(',');
 
-			// Filter the returned schema based token role
-			let schema = Schema.buildCollections(Schema.decode(req.authApp.__schema));
-
-			const denyAll = (req.roles.app && req.roles.app.endpointDisposition === 'denyAll');
-			schema = schema.filter((s) => {
-				if (!s.roles || !req.roles.app) return !denyAll;
-				const role = s.roles.find((r) => r.name === req.roles.app.name);
-				if (role && role.endpointDisposition && role.endpointDisposition.GET === 'allow') return true;
-
-				return !denyAll;
+			cores.forEach((core) => {
+				const coreModel = Model[Sugar.String.capitalize(core)];
+				if (coreModel && coreModel.appShortId === null) {
+					schema.push(coreModel.schemaData);
+				}
 			});
+		}
 
-			resolve(schema);
+		if (req.query.only) {
+			const only = req.query.only.split(',');
+			schema = schema.filter((s) => only.includes(s.name));
+		}
+
+		const denyAll = (req.roles.app && req.roles.app.endpointDisposition === 'denyAll');
+		schema = schema.filter((s) => {
+			if (!s.roles || !req.roles.app) return !denyAll;
+			const role = s.roles.find((r) => r.name === req.roles.app.name);
+			if (role && role.endpointDisposition && role.endpointDisposition.GET === 'allow') return true;
+
+			return !denyAll;
 		});
+
+		return schema;
 	}
 
-	_exec(req, res, schema) {
-		return schema;
+	async _exec(req, res, collections) {
+		// TODO: Check params for any core scheam thats been requested.
+		const dataSharingSchema = collections.reduce((map, collection) => {
+			if (!collection.remote) return map;
+			const [DSA, ...schema] = collection.remote.split('.');
+			console.log(`Fetch the remote schema DAS:${DSA}, schema:${schema}`);
+			if (!map[DSA]) map[DSA] = [];
+			map[DSA].push(schema);
+			return map;
+		}, {});
+
+		// Load DSA for curent app
+		const requiredDSAs = Object.keys(dataSharingSchema);
+
+		if (requiredDSAs.length > 0) {
+			const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
+				'_appId': req.authApp._id,
+				'name': {
+					$in: requiredDSAs,
+				}
+			}));
+
+			for await (const DSAName of Object.keys(dataSharingSchema)) {
+				const DSA = appDSAs.find((dsa) => dsa.name === DSAName);
+				// Load DSA
+				const dsHash = Datastore.hashConfig({
+					connectionString: `buttress://${DSA.remoteApp.endpoint}/${DSA.remoteApp.apiPath}?token=${DSA.remoteApp.token}`,
+					options: '',
+				});
+
+				// TODO: Request schemas from dsa app
+				const dsaDatastore = Datastore.getInstance(dsHash);
+
+				console.log(dsaDatastore);
+
+
+				// console.log(Datastore);
+				// throw new Error('Foo');
+			}
+		}
+
+		// TODO: Any data sharing schema should be resolved.
+
+		// TODO: Policy should be used to dictate what schema the user can access.
+
+		// Filter the returned schema based token role
+
+		return collections;
 	}
 }
 routes.push(GetAppSchema);

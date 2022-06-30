@@ -264,11 +264,6 @@ class Routes {
 
 			const appShortId = Helpers.shortId(app._id);
 
-			if (schemaData.remote) {
-				// Check that DS agreement is active
-				console.log('Floop');
-			}
-
 			try {
 				route = new Route(schemaData, appShortId);
 			} catch (err) {
