@@ -24,11 +24,3 @@ lint-test-job:   # This job also runs in the test stage.
   stage: test    # It can run at the same time as unit-test-job (in parallel).
   script:
     - npm run lint
-
-coverage-test-job:
-  stage: test
-  script:
-    - npm run coverage
-  artifacts:
-    reports:
-      cobertura: coverage/cobertura-coverage.xml
