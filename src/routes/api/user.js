@@ -118,11 +118,17 @@ class FindUser extends Route {
 			Model.User.getByAppId(req.params.app, req.params.id)
 				.then((_user) => {
 					if (_user) {
+						let policyProperties = null;
+						if (_user._appMetadata) {
+							const _appMetadata = _user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
+							policyProperties = (_appMetadata) ? _appMetadata.policyProperties : null;
+						}
+
 						const output = {
 							id: _user._id,
 							auth: _user.auth,
 							tokens: [],
-							policyProperties: _user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString()),
+							policyProperties,
 						};
 
 						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
@@ -358,9 +364,9 @@ class SetUserPolicyProperties extends Route {
 		});
 	}
 
-	_exec(req, res, validate) {
-		// Get the current app
-		return Model.User.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body.policyProperties);
+	async _exec(req, res, validate) {
+		await Model.User.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body);
+		return true;
 	}
 }
 routes.push(SetUserPolicyProperties);
