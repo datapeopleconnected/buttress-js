@@ -16,9 +16,9 @@ module.exports = class SearchList extends Route {
 		this.activityDescription = `SEARCH ${schema.name} LIST`;
 		this.activityBroadcast = false;
 
-		let schemaCollection = schema.collection;
+		let schemaCollection = schema.name;
 		if (appShort) {
-			schemaCollection = `${appShort}-${schema.collection}`;
+			schemaCollection = `${appShort}-${schema.name}`;
 		}
 
 		// Fetch model

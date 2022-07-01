@@ -37,7 +37,7 @@ class SchemaModel {
 		this.app = app || null;
 
 		this.appShortId = (app) ? shortId(app._id) : null;
-		this.collectionName = `${schemaData.collection}`;
+		this.collectionName = `${schemaData.name}`;
 
 		if (this.appShortId) {
 			this.collectionName = `${this.appShortId}-${this.collectionName}`;
@@ -46,7 +46,7 @@ class SchemaModel {
 
 	async initAdapter(datastore) {
 		if (datastore) {
-			Logging.logSilly(`initAdapter ${this.schemaData.collection}`);
+			Logging.logSilly(`initAdapter ${this.schemaData.name}`);
 			this.adapter = datastore.adapter.cloneAdapterConnection();
 			await this.adapter.connect();
 			await this.adapter.setCollection(this.collectionName);

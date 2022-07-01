@@ -227,11 +227,11 @@ class Routes {
 
 				if (appDSAs.find((dsa) => dsa.active && dsa.name === dsaName)) return true;
 
-				Logging.logWarn(`Routes:_generateAppRoutes ${app._id} skipping route /${app.apiPath} for ${schema.collection}, DSA not active`);
+				Logging.logWarn(`Routes:_generateAppRoutes ${app._id} skipping route /${app.apiPath} for ${schema.name}, DSA not active`);
 				return false;
 			})
 			.forEach((schema) => {
-				Logging.logSilly(`Routes:_generateAppRoutes ${app._id} init routes /${app.apiPath} for ${schema.collection}`);
+				Logging.logSilly(`Routes:_generateAppRoutes ${app._id} init routes /${app.apiPath} for ${schema.name}`);
 				return this._initSchemaRoutes(appRouter, app, schema);
 			});
 

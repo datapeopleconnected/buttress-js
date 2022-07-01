@@ -16,9 +16,9 @@ module.exports = class SearchCount extends Route {
 		this.activityDescription = `COUNT ${schema.name}`;
 		this.activityBroadcast = false;
 
-		let schemaCollection = schema.collection;
+		let schemaCollection = schema.name;
 		if (appShort) {
-			schemaCollection = `${appShort}-${schema.collection}`;
+			schemaCollection = `${appShort}-${schema.name}`;
 		}
 
 		// Fetch model
