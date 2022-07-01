@@ -16,9 +16,9 @@ module.exports = class GetOne extends Route {
 		this.activityDescription = `GET ${schema.name}`;
 		this.activityBroadcast = false;
 
-		let schemaCollection = schema.collection;
+		let schemaCollection = schema.name;
 		if (appShort) {
-			schemaCollection = `${appShort}-${schema.collection}`;
+			schemaCollection = `${appShort}-${schema.name}`;
 		}
 
 		// Fetch model

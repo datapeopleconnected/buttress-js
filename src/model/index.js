@@ -125,10 +125,10 @@ class Model {
 	 * @private
 	 */
 	async _initSchemaModel(app, schemaData, datastore) {
-		let name = `${schemaData.collection}`;
+		let name = `${schemaData.name}`;
 		const appShortId = (app) ? shortId(app._id) : null;
 
-		name = (appShortId) ? `${appShortId}-${schemaData.collection}` : name;
+		name = (appShortId) ? `${appShortId}-${schemaData.name}` : name;
 
 		// Is data sharing
 		if (!this.models[name]) {

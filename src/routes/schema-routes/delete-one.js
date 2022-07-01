@@ -16,9 +16,9 @@ module.exports = class DeleteOne extends Route {
 		this.activityDescription = `DELETE ${schema.name}`;
 		this.activityBroadcast = true;
 
-		let schemaCollection = schema.collection;
+		let schemaCollection = schema.name;
 		if (appShort) {
-			schemaCollection = `${appShort}-${schema.collection}`;
+			schemaCollection = `${appShort}-${schema.name}`;
 		}
 
 		// Fetch model

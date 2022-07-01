@@ -75,4 +75,5 @@ module.exports = {
 	getInstance(hash) {
 		return datastores[hash];
 	},
+	datastores,
 };

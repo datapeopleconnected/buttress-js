@@ -18,9 +18,9 @@ module.exports = class GetList extends Route {
 		this.activityDescription = `GET ${schema.name} LIST`;
 		this.activityBroadcast = false;
 
-		let schemaCollection = schema.collection;
+		let schemaCollection = schema.name;
 		if (appShort) {
-			schemaCollection = `${appShort}-${schema.collection}`;
+			schemaCollection = `${appShort}-${schema.name}`;
 		}
 
 		this.slowLogging = false;
