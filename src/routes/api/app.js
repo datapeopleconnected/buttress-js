@@ -347,9 +347,10 @@ class GetAppSchema extends Route {
 	}
 
 	async _exec(req, res, collections) {
+		const schemaWithRemoteRef = collections.filter((s) => s.remote);
+
 		// TODO: Check params for any core scheam thats been requested.
-		const dataSharingSchema = collections.reduce((map, collection) => {
-			if (!collection.remote) return map;
+		const dataSharingSchema = schemaWithRemoteRef.reduce((map, collection) => {
 			const [DSA, ...schema] = collection.remote.split('.');
 			console.log(`Fetch the remote schema DAS:${DSA}, schema:${schema}`);
 			if (!map[DSA]) map[DSA] = [];
@@ -359,35 +360,49 @@ class GetAppSchema extends Route {
 
 		// Load DSA for curent app
 		const requiredDSAs = Object.keys(dataSharingSchema);
-
 		if (requiredDSAs.length > 0) {
 			const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
 				'_appId': req.authApp._id,
 				'name': {
 					$in: requiredDSAs,
-				}
+				},
+				'active': true,
 			}));
 
 			for await (const DSAName of Object.keys(dataSharingSchema)) {
 				const DSA = appDSAs.find((dsa) => dsa.name === DSAName);
+				if (!DSA) continue;
 				// Load DSA
-				const dsHash = Datastore.hashConfig({
-					connectionString: `buttress://${DSA.remoteApp.endpoint}/${DSA.remoteApp.apiPath}?token=${DSA.remoteApp.token}`,
-					options: '',
+
+				const api = Buttress.new();
+				await api.init({
+					buttressUrl: DSA.remoteApp.endpoint,
+					apiPath: DSA.remoteApp.apiPath,
+					appToken: DSA.remoteApp.token,
+					allowUnauthorized: true, // Move along, nothing to see here...
 				});
 
-				// TODO: Request schemas from dsa app
-				const dsaDatastore = Datastore.getInstance(dsHash);
+				console.log(`Fetching schema ${dataSharingSchema[DSAName].join(',')}`);
+				const remoteSchema = await api.App.getSchema({
+					params: {
+						only: dataSharingSchema[DSAName].join(','),
+					},
+				});
 
-				console.log(dsaDatastore);
-
-
-				// console.log(Datastore);
-				// throw new Error('Foo');
+				remoteSchema.forEach((rs) => {
+					schemaWithRemoteRef
+						.filter((s) => s.remote === `${DSAName}.${rs.name}`)
+						.forEach((s) => {
+							// Merge RS into schema
+							delete s.remote;
+							s = Object.assign(rs, s);
+						});
+				});
 			}
 		}
 
-		// TODO: Any data sharing schema should be resolved.
+		// Quicky, remove extends as nobody needs it outside of buttress
+		collections.forEach((s) => delete s.extends);
 
 		// TODO: Policy should be used to dictate what schema the user can access.
 
