@@ -55,9 +55,9 @@ class PolicySchemaModel extends SchemaModel {
 	 */
 	async add(body) {
 		const policyBody = {
-			id: this.createId(),
-			selection: (body.policy.selection)? body.policy.selection : [],
-			attributes: (body.policy.attributes)? body.policy.attributes : {},
+			id: (body.policy.id) ? this.createId(body.policy.id) : this.createId(),
+			selection: (body.policy.selection) ? body.policy.selection : [],
+			attributes: (body.policy.attributes) ? body.policy.attributes : {},
 		};
 
 		const rxsAttribute = await super.add(policyBody, {

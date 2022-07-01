@@ -16,10 +16,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
-
 const Helpers = require('../../helpers');
 const SchemaModel = require('../schemaModel');
 
@@ -121,15 +117,15 @@ class AttributeSchemaModel extends SchemaModel {
 	 */
 	async add(body) {
 		const attributeBody = {
-			id: this.createId(),
+			id: (body.attribute.id) ? this.createId(body.attribute.id) : this.createId(),
 			name: body.attribute.name,
-			extends: (body.attribute.extends)? body.attribute.extends : [],
-			disposition: (body.attribute.disposition)? body.attribute.disposition : {},
-			properties: (body.attribute.properties)? body.attribute.properties : {},
-			targetedSchema: (body.attribute.targetedSchema)? body.attribute.targetedSchema : [],
-			env: (body.attribute.env)? body.attribute.env : {},
-			conditions: (body.attribute.conditions)? body.attribute.conditions : {},
-			query: (body.attribute.query)? body.attribute.query : {},
+			extends: (body.attribute.extends) ? body.attribute.extends : [],
+			disposition: (body.attribute.disposition) ? body.attribute.disposition : {},
+			properties: (body.attribute.properties) ? body.attribute.properties : {},
+			targetedSchema: (body.attribute.targetedSchema) ? body.attribute.targetedSchema : [],
+			env: (body.attribute.env) ? body.attribute.env : {},
+			conditions: (body.attribute.conditions) ? body.attribute.conditions : {},
+			query: (body.attribute.query) ? body.attribute.query : {},
 			configuration: body.attribute.configuration,
 		};
 
