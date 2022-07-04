@@ -65,13 +65,14 @@ const __populateObject = (schema, values, body = null) => {
 
 		if (body && propVal === undefined && schema && schema[property] && schema[property].__type === 'object') {
 			const definedObjectKeys = Object.keys(schema).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
-			const blankObjectValues = Object.keys(body[property]).reduce((arr, key) => {
-				if (!definedObjectKeys.includes(key) || property !== key) {
-					arr[key] = body[property][key];
-				}
-
-				return arr;
-			}, {});
+			let blankObjectValues = null;
+			if (Array.isArray(body)) {
+				body.forEach((item) => {
+					blankObjectValues = __getBlankObjectValues(item[property], definedObjectKeys, item[property], property);
+				});
+			} else {
+				blankObjectValues = __getBlankObjectValues(body[property], definedObjectKeys, body, property);
+			}
 
 			if (blankObjectValues) {
 				propVal = {};
@@ -94,7 +95,7 @@ const __populateObject = (schema, values, body = null) => {
 		const root = path.shift();
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
-			value = value.map((v) => __populateObject(config.__schema, Helpers.Schema.getFlattenedBody(v)));
+			value = value.map((v) => __populateObject(config.__schema, Helpers.Schema.getFlattenedBody(v), body[property]));
 		}
 
 		if (path.length > 0 || schema[property].__type === 'object') {
@@ -108,6 +109,24 @@ const __populateObject = (schema, values, body = null) => {
 		res[root] = value;
 	}
 	return res;
+};
+
+/**
+ * @param {Object} item - item object
+ * @param {Array} keys - array of blank object keys
+ * @param {Object} body - blank object body
+ * @param {String} property - object property key
+ * @return {Object}
+ */
+
+const __getBlankObjectValues = (item, keys, body, property) => {
+	return Object.keys(item).reduce((arr, key) => {
+		if (!keys.includes(key) || property !== key) {
+			arr[key] = (body[property])? body[property][key] : body[key];
+		}
+
+		return arr;
+	}, {});
 };
 
 /**

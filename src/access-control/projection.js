@@ -11,30 +11,25 @@ class Projection {
 		];
 	}
 
-	addAccessControlPolicyQueryProjection(req, props, schema) {
-		const requestMethod = (req.method === 'SEARCH')? 'GET' : req.method;
+	addAccessControlPolicyQueryProjection(req, projectionKeys, schema) {
+		const requestMethod = req.method;
 		const flattenedSchema = Helpers.getFlattenedSchema(schema);
-		const projectionMethod = (requestMethod === 'GET')? 'READ' : 'WRITE';
-		const projectionUpdateKeys = [];
 		const projection = {};
 		let requestBody = req.body;
 		let allowedUpdates = false;
 
-		if (props !== null) {
-			Object.keys(props).forEach((key) => {
-				if (props[key].includes(projectionMethod)) {
-					projectionUpdateKeys.push(key);
-					projection[key] = 1;
-				}
+		if (projectionKeys && projectionKeys.length > 0) {
+			projectionKeys.forEach((key) => {
+				projection[key] = 1;
 			});
 		}
 
 		if (requestMethod === 'POST') {
 			const updatePaths = Object.keys(requestBody).map((key) => key);
 
-			if (projectionUpdateKeys.length > 0) {
+			if (projectionKeys.length > 0) {
 				const removedPaths = updatePaths
-					.filter((key) => projectionUpdateKeys.every((updateKey) => updateKey !== key))
+					.filter((key) => projectionKeys.every((updateKey) => updateKey !== key))
 					.filter((path) => flattenedSchema[path]);
 
 				removedPaths.forEach((i) => {
@@ -51,19 +46,20 @@ class Projection {
 			}
 
 			const updatePaths = requestBody.map((elem) => elem.path);
-			const allowedPathUpdates = projectionUpdateKeys.filter((key) => updatePaths.some((updateKey) => updateKey === key));
-			if (allowedPathUpdates.length === updatePaths.length || projectionUpdateKeys.length < 1) {
+			const allowedPathUpdates = projectionKeys.filter((key) => updatePaths.some((updateKey) => updateKey === key));
+			if (allowedPathUpdates.length === updatePaths.length || projectionKeys.length < 1) {
 				allowedUpdates = true;
 			}
 		} else {
-			allowedUpdates = (projectionUpdateKeys.length > 0)? this.__checkPorjectionPath(requestBody.query, projectionUpdateKeys) : true;
+			allowedUpdates = (projectionKeys.length > 0)? this.__checkPorjectionPath(requestBody, projectionKeys) : true;
 		}
 
 		req.body.project = (req.body.project)? {...req.body.project, ...projection} : projection;
 		return allowedUpdates;
 	}
 
-	__checkPorjectionPath(query, projectionUpdateKeys) {
+	__checkPorjectionPath(requestBody, projectionKeys) {
+		const query = (requestBody.query) ? requestBody.query : requestBody;
 		const paths = Object.keys(query).filter((key) => key && key !== '__crPath');
 
 		let queryKeys = [];
@@ -78,7 +74,7 @@ class Projection {
 			queryKeys = queryKeys.concat(Object.keys(path));
 		});
 
-		return queryKeys.every((key) => projectionUpdateKeys.includes(key));
+		return queryKeys.every((key) => projectionKeys.includes(key));
 	}
 }
 module.exports = new Projection();

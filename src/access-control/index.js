@@ -15,7 +15,6 @@ const Sugar = require('sugar');
 const Model = require('../model');
 const Logging = require('../logging');
 const Schema = require('../schema');
-const AccessControlDisposition = require('./disposition');
 const AccessControlConditions = require('./conditions');
 const AccessControlFilter = require('./filter');
 const AccessControlPolicyMatch = require('./policy-match');
@@ -37,41 +36,45 @@ class AccessControl {
 	 * @private
 	 */
 	async accessControlPolicy(req, res, next) {
-		// access control policy
-
 		// TODO need to take into consideration appDataSharingId
-
 		const user = req.authUser;
 		if (!user) return next();
 
 		// TODO: better way to figure out the requested schema
+		const requestVerb = req.method || req.originalMethod;
 		let requestedURL = req.originalUrl || req.url;
 		requestedURL = requestedURL.split('?').shift();
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
-		let policyAttributes = await this.__getPolicyAttributes(user, req.authApp._id);
-		await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
+		const userPolicies = await this.__getUserPolicies(user, req.authApp._id);
+		// await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
 
-		if (policyAttributes.length < 1) {
+		if (userPolicies.length < 1) {
 			Logging.logTimer(`_accessControlPolicy:access-control-policy-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send({message: 'Request policy does not have any access control attributes'});
+			res.status(401).send({message: 'Request does not have any policy associated to it'});
 			return;
 		}
 
-		await this.__getAttributes();
-
-		policyAttributes = this._getAttributesChain(policyAttributes);
-		const schemaBaseAttribute = policyAttributes.filter((attr) => attr.targetedSchema.includes(schemaName) || attr.targetedSchema.length < 1);
-		if (schemaBaseAttribute.length < 1) {
+		const schemaBasePolicies = userPolicies.filter((policy) => policy.targetedSchema.includes(schemaName) || policy.targetedSchema.length < 1);
+		if (schemaBasePolicies.length < 1) {
 			Logging.logTimer(`_accessControlPolicy:access-control-policy-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send({message: 'Request policy does not have any access control attributes'});
+			res.status(401).send({message: 'Request does not have any policy associated to the requested schema'});
 			return;
 		}
-		const schemaAttributes = await this._getSchemaRelatedAttributes(req, schemaBaseAttribute, policyAttributes);
-		if (schemaBaseAttribute.length < 1) {
+
+		const policiesConfig = schemaBasePolicies.reduce((arr, policy) => {
+			const config = policy.config.find((c) => c.endpoints.includes(requestVerb));
+			if (config) {
+				arr.push(config);
+			}
+
+			return arr;
+		}, []);
+
+		if (policiesConfig.length < 1) {
 			Logging.logTimer(`_accessControlPolicy:access-control-policy-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send({message: 'Request policy does not have any access control attributes'});
+			res.status(401).send({message: 'Request does not have any policy rules matching the request verb'});
 			return;
 		}
 
@@ -80,31 +83,23 @@ class AccessControl {
 		const schema = schemas.find((s) => s.name === schemaName);
 		if (!schema) return next();
 
-		const passedDisposition = await AccessControlDisposition.accessControlDisposition(req, schemaAttributes);
-
-		if (!passedDisposition) {
-			Logging.logTimer(`_accessControlPolicy:disposition-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send({message: 'Access control policy disposition not allowed'});
-			return;
-		}
-
 		AccessControlConditions.setAppShortId(req.authApp._id);
-		const accessControlAuthorisation = await AccessControlConditions.applyAccessControlPolicyConditions(req, schemaAttributes);
+		const accessControlAuthorisation = await AccessControlConditions.applyAccessControlPolicyConditions(req, policiesConfig);
 		if (!accessControlAuthorisation) {
 			Logging.logTimer(`_accessControlPolicy:conditions-not-fulfilled`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			res.status(401).send({message: 'Access control policy conditions are not fulfilled'});
 			return;
 		}
 
-		const passedAccessControlPolicy = await AccessControlFilter.addAccessControlPolicyQuery(req, schemaAttributes, schema);
+		const passedAccessControlPolicy = await AccessControlFilter.addAccessControlPolicyQuery(req, policiesConfig, schema);
 		if (!passedAccessControlPolicy) {
 			Logging.logTimer(`_accessControlPolicy:access-control-properties-permission-error`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send({message: 'Can not access properties without privileged access'});
+			res.status(401).send({message: 'Can not access/edit properties without privileged access'});
 			return;
 		}
 		await AccessControlFilter.applyAccessControlPolicyQuery(req);
 
-		await this._queueAttributeCloseSocketEvent(schemaAttributes, schemaNames);
+		await this._queueAttributeCloseSocketEvent(policiesConfig, schemaNames);
 
 		next();
 	}
@@ -194,8 +189,6 @@ class AccessControl {
 	async getAttributeChannels(appId) {
 		const channels = [];
 
-		await this.__getAttributes();
-
 		await this._attributes.reduce(async (prev, attribute) => {
 			await prev;
 			channels.push(attribute.name);
@@ -205,23 +198,10 @@ class AccessControl {
 	}
 
 	async getAttributesChainForToken(tokenAttribute) {
-		await this.__getAttributes();
 		return await this._getAttributesChain(tokenAttribute);
 	}
 
-	async __getAttributes() {
-		// if (this._attributes.length > 0) return;
-
-		const attributes = [];
-		const rxsAttributes = Model.Attributes.findAll();
-		for await (const attribute of rxsAttributes) {
-			attributes.push(attribute);
-		}
-
-		this._attributes = attributes;
-	}
-
-	async __getPolicyAttributes(user, appId) {
+	async __getUserPolicies(user, appId) {
 		const policies = [];
 		// TODO: Rein in this in so it only gets poilices that could match user
 		const rxsPolicies = Model.Policy.find({
