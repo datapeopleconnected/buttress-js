@@ -352,7 +352,6 @@ class GetAppSchema extends Route {
 		// TODO: Check params for any core scheam thats been requested.
 		const dataSharingSchema = schemaWithRemoteRef.reduce((map, collection) => {
 			const [DSA, ...schema] = collection.remote.split('.');
-			console.log(`Fetch the remote schema DAS:${DSA}, schema:${schema}`);
 			if (!map[DSA]) map[DSA] = [];
 			map[DSA].push(schema);
 			return map;
