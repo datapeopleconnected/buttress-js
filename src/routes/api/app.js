@@ -395,7 +395,9 @@ class GetAppSchema extends Route {
 						.forEach((s) => {
 							// Merge RS into schema
 							delete s.remote;
-							s = Object.assign(rs, s);
+							const collectionIdx = collections.findIndex((s) => s.name === rs.name);
+							if (collectionIdx === -1) return;
+							collections[collectionIdx] = Object.assign(rs, s);
 						});
 				});
 			}
