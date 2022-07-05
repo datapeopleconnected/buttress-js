@@ -13,20 +13,18 @@ class Filter {
 		];
 	}
 
-	async addAccessControlPolicyQuery(req, userSchemaAttributes, schema) {
-		let allowedUpdates = false;
-
-		return userSchemaAttributes.reduce((prev, attr) => {
-			return prev.then(() => {
-				return this.addAccessControlPolicyAttributeQuery(req, attr.query)
-					.then(() => allowedUpdates = Projection.addAccessControlPolicyQueryProjection(req, attr.properties, schema));
-			});
-		}, Promise.resolve())
-			.then(() => allowedUpdates);
+	async addAccessControlPolicyQuery(req, userPolicies) {
+		await Object.keys(userPolicies).reduce(async (prev, key) => {
+			await prev;
+			await userPolicies[key].query.reduce(async (prev, q) => {
+				await prev;
+				await this.addAccessControlPolicyRuleQuery(req, q);
+			}, Promise.resolve());
+		}, Promise.resolve());
 	}
 
-	async addAccessControlPolicyAttributeQuery(req, attributeQuery, str = 'accessControlQuery') {
-		const translatedQuery = await this.__convertPrefixToQueryPrefix(attributeQuery);
+	async addAccessControlPolicyRuleQuery(req, policyQuery, str = 'accessControlQuery') {
+		const translatedQuery = await this.__convertPrefixToQueryPrefix(policyQuery);
 		if (!req[str]) {
 			req[str] = {};
 		}

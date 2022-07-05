@@ -43,12 +43,6 @@ class PolicySchemaModel extends SchemaModel {
 					__required: false,
 					__allowUpdate: true,
 				},
-				targetedSchema: {
-					__type: 'array',
-					__itemtype: 'string',
-					__required: false,
-					__allowUpdate: true,
-				},
 				selection: {
 					__type: 'object',
 					__default: null,
@@ -72,30 +66,24 @@ class PolicySchemaModel extends SchemaModel {
 							__allowUpdate: true,
 						},
 						conditions: {
-							__type: 'object',
-							__default: null,
+							__type: 'array',
+							__itemtype: 'object',
 							__required: true,
 							__allowUpdate: true,
 						},
-						properties: {
+						projection: {
 							__type: 'array',
-							__itemtype: 'string',
+							__itemtype: 'object',
 							__required: true,
 							__allowUpdate: true,
 						},
 						query: {
-							__type: 'object',
-							__default: null,
+							__type: 'array',
+							__itemtype: 'object',
 							__required: true,
 							__allowUpdate: true,
 						},
 					},
-				},
-				optionalCondition: {
-					__type: 'boolean',
-					__required: false,
-					__default: false,
-					__allowUpdate: true,
 				},
 				override: {
 					__type: 'boolean',
@@ -130,9 +118,9 @@ class PolicySchemaModel extends SchemaModel {
 				policyConfig.push({
 					endpoints: (item.endpoints) ? item.endpoints : [],
 					env: (item.env) ? item.env : null,
-					conditions: (item.conditions) ? item.conditions : null,
-					properties: (item.properties) ? item.properties : [],
-					query: (item.query) ? item.query : null,
+					conditions: (item.conditions) ? item.conditions : [],
+					projection: (item.projection) ? item.projection : [],
+					query: (item.query) ? item.query : [],
 				});
 			});
 		}
@@ -141,10 +129,8 @@ class PolicySchemaModel extends SchemaModel {
 			id: (body.policy.id) ? this.createId(body.policy.id) : this.createId(),
 			name: (body.policy.name) ? body.policy.name : null,
 			priority: (body.policy.priority) ? body.policy.priority : 0,
-			targetedSchema: (body.policy.targetedSchema) ? body.policy.targetedSchema : [],
 			selection: (body.policy.selection) ? body.policy.selection : [],
 			config: policyConfig,
-			optionalCondition: (body.policy.optionalCondition) ? body.policy.optionalCondition : false,
 			override: (body.policy.override) ? body.policy.override : false,
 			limit: (body.policy.limit) ? body.policy.limit : null,
 		};

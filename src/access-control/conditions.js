@@ -63,11 +63,11 @@ class Conditions {
 		this.appShortId = Helpers.shortId(app);
 	}
 
-	async isAttributeDateTimeBased(conditions, pass = false) {
+	async isPolicyDateTimeBased(conditions, pass = false) {
 		return await Object.keys(conditions).reduce(async (res, key) => {
 			if (Array.isArray(conditions[key])) {
 				if (this. logicalOperator.includes(conditions[key])) {
-					return await this.isAttributeDateTimeBased(conditions[key], pass);
+					return await this.isPolicyDateTimeBased(conditions[key], pass);
 				} else {
 					// TODO throw an error
 				}
@@ -80,18 +80,18 @@ class Conditions {
 					return res;
 				}
 
-				return await this.isAttributeDateTimeBased(conditions[key], true);
+				return await this.isPolicyDateTimeBased(conditions[key], true);
 			}
 
 			return res;
 		}, false);
 	}
 
-	async isAttributeQueryBasedCondition(conditions, schemaNames, pass = false) {
+	async isPolicyQueryBasedCondition(conditions, schemaNames, pass = false) {
 		return await Object.keys(conditions).reduce(async (res, key) => {
 			if (Array.isArray(conditions[key])) {
 				if (this. logicalOperator.includes(conditions[key])) {
-					return await this.isAttributeQueryBasedCondition(conditions[key], schemaNames, pass);
+					return await this.isPolicyQueryBasedCondition(conditions[key], schemaNames, pass);
 				} else {
 					// TODO throw an error
 				}
@@ -109,151 +109,68 @@ class Conditions {
 		}, false);
 	}
 
-	async applyAccessControlPolicyConditions(req, userSchemaAttributes) {
-		const accessControlPolicy = {
-			authorised: true,
-			query: null,
-		};
-
-		const prioritisedConditions = await this.__prioritiseConditionOrder(userSchemaAttributes);
-		accessControlPolicy.authorised = await this.__checkAttributeConditions(req, prioritisedConditions);
-
-		return accessControlPolicy.authorised;
+	async applyPolicyConditions(req, userPolicies) {
+		return await Object.keys(userPolicies).reduce(async (prev, policyKey) => {
+			await prev;
+			await this.__checkPolicyConditions(req, userPolicies, policyKey);
+		}, Promise.resolve());
 	}
 
-	async __checkAttributeConditions(req, conditions) {
-		if (!conditions || !conditions.length) return true;
+	async __checkPolicyConditions(req, userPolicies, key) {
+		const conditions = userPolicies[key].conditions;
+		if (!conditions || !conditions.length) return;
 
 		let isConditionFullFilled = null;
-
-		await conditions.reduce(async (prev, item) => {
+		await conditions.reduce(async (prev, condition) => {
 			await prev;
 
 			if (!isConditionFullFilled && isConditionFullFilled !== null) {
 				return;
 			}
-			isConditionFullFilled = await this.__checkLogicalCondition(req, item);
+
+			isConditionFullFilled = await this.__checkLogicalCondition(req, condition, userPolicies[key].env);
 		}, Promise.resolve());
 
-		return isConditionFullFilled;
+		if (!isConditionFullFilled) {
+			delete userPolicies[key];
+		}
 	}
 
-	async __prioritiseConditionOrder(attributes) {
-		const conditions = attributes.map((attr) => {
-			return {
-				envVar: attr.env,
-				condition: attr.conditions,
-				name: attr.name,
-				targetedSchema: attr.targetedSchema,
-			};
-		});
-
-		return conditions.reduce((arr, obj) => {
-			const condition = obj.condition;
-			const environmentVar = obj.envVar;
-
-			if (condition === null) return arr;
-
-			Object.keys(condition).forEach((key) => {
-				if (key !== '@or') {
-					condition[key].forEach((item) => {
-						const itemKeys = Object.keys(item);
-						let flag = false;
-
-						itemKeys.forEach((iKey) => {
-							flag = this.__checkDuplicateCondition(arr, item, environmentVar, iKey);
-
-							if (flag) return;
-
-							arr.push({
-								condition: {
-									[iKey]: item[iKey],
-								},
-								environmentVar,
-								name: obj.name,
-								targetedSchema: obj.targetedSchema,
-							});
-						});
-					});
-				} else {
-					arr.push({
-						condition: {
-							[key]: condition[key],
-						},
-						environmentVar,
-						name: obj.name,
-						targetedSchema: obj.targetedSchema,
-					});
-				}
-			});
-
-			return arr;
-		}, []);
-	}
-
-	__checkDuplicateCondition(conditions, newCondition, environmentVar, key) {
-		const keyIndex = [];
-
-		conditions.forEach((obj, idx) => {
-			const keyExist = Object.keys(obj['condition']).some((oKey) => oKey === key);
-			if (keyExist) {
-				keyIndex.push(idx);
-			}
-		});
-
-		if (keyIndex.length < 1) return false;
-
-		const passed = keyIndex.some((index) => {
-			const existingConditionKeys = Object.keys(conditions[index]['condition'][key][`@${this.envStr}${key}`]);
-			const newConditionKeys = Object.keys(newCondition[key][`@${this.envStr}${key}`]);
-			const isSameCondition = existingConditionKeys.every((i) => newConditionKeys.includes(i));
-			if (!isSameCondition) return false;
-
-			conditions[index] = {
-				condition: {
-					[key]: newCondition[key],
-				},
-				environmentVar,
-			};
-			return true;
-		});
-
-		return passed;
-	}
-
-	async __checkLogicalCondition(req, item) {
-		const condition = item.condition;
+	async __checkLogicalCondition(req, condition, envVariables) {
 		this.passedCondition.partial = false;
-		this.passedCondition.full = true;
 		let result = false;
 
 		await Object.keys(condition).reduce(async (prev, key) => {
 			await prev;
 
 			const obj = condition[key];
+			const partialPass = (key === '@or') ? true : false;
+			this.passedCondition.full = (!partialPass) ? true : false;
 			if (this.logicalOperator.includes(key)) {
 				await obj.reduce(async (prev, conditionObj) => {
 					await prev;
-					result = await this.__checkCondition(req, item.environmentVar, conditionObj, false);
+					result = await this.__checkCondition(req, envVariables, conditionObj, false, partialPass);
 				}, Promise.resolve());
 			} else {
-				result = await this.__checkCondition(req, item.environmentVar, condition, false, false);
+				result = await this.__checkCondition(req, envVariables, condition, false, false);
 			}
 		}, Promise.resolve());
 
 		return result;
 	}
 
-	async __checkCondition(req, envVar, conditionObj, passed, partialPass = true) {
+	async __checkCondition(req, envVar, conditionObj, passed, partialPass) {
 		const objectKeys = Object.keys(conditionObj);
 
 		for await (const key of objectKeys) {
 			passed = await this.__checkInnerConditions(req, envVar, conditionObj, key, passed, partialPass);
+			if (this.conditionKeys.includes(`@${key}`)) continue;
+
 			if (partialPass && passed) {
 				this.passedCondition.partial = true;
 			}
 
-			if (!partialPass && !passed) {
+			if (!passed) {
 				this.passedCondition.full = false;
 			}
 		}
@@ -315,7 +232,7 @@ class Conditions {
 	async __getDbConditionQueryResult(query, varSchemaKey) {
 		const collection = `${this.appShortId}-${varSchemaKey}`;
 		const convertedQuery = {};
-		await Filter.addAccessControlPolicyAttributeQuery(convertedQuery, query, 'conditionQuery');
+		await Filter.addAccessControlPolicyRuleQuery(convertedQuery, query, 'conditionQuery');
 		query = Model[collection].parseQuery(convertedQuery.conditionQuery, {}, Model[collection].flatSchemaData);
 		return await Model[collection].count(query) > 0;
 	}

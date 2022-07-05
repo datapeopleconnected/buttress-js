@@ -10,13 +10,13 @@
 
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
-const Sugar = require('sugar');
 
 const Model = require('../model');
 const Logging = require('../logging');
 const Schema = require('../schema');
 const AccessControlConditions = require('./conditions');
 const AccessControlFilter = require('./filter');
+const AccessControlProjection = require('./projection');
 const AccessControlPolicyMatch = require('./policy-match');
 
 const nrp = new NRP(Config.redis);
@@ -47,7 +47,8 @@ class AccessControl {
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
-		const userPolicies = await this.__getUserPolicies(user, req.authApp._id);
+		let userPolicies = await this.__getUserPolicies(user, req.authApp._id);
+		userPolicies = userPolicies.sort((a, b) => a.priority - b.priority);
 		// await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
 
 		if (userPolicies.length < 1) {
@@ -56,17 +57,13 @@ class AccessControl {
 			return;
 		}
 
-		const schemaBasePolicies = userPolicies.filter((policy) => policy.targetedSchema.includes(schemaName) || policy.targetedSchema.length < 1);
-		if (schemaBasePolicies.length < 1) {
-			Logging.logTimer(`_accessControlPolicy:access-control-policy-not-allowed`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(401).send({message: 'Request does not have any policy associated to the requested schema'});
-			return;
-		}
-
-		const policiesConfig = schemaBasePolicies.reduce((arr, policy) => {
+		const policiesConfig = userPolicies.reduce((arr, policy) => {
 			const config = policy.config.find((c) => c.endpoints.includes(requestVerb));
 			if (config) {
-				arr.push(config);
+				arr.push({
+					name: policy.name,
+					config,
+				});
 			}
 
 			return arr;
@@ -78,28 +75,67 @@ class AccessControl {
 			return;
 		}
 
+		const schemaBasePolicyConfig = policiesConfig.reduce((arr, policy) => {
+			const conditionSchemaIdx = policy.config.conditions.findIndex((cond) => cond.schema.includes(schemaName));
+			if (!arr[policy.name]) {
+				arr[policy.name] = {
+					env: {},
+					conditions: [],
+					query: [],
+					projection: [],
+				};
+			}
+
+			if (conditionSchemaIdx !== -1) {
+				const condition = this.__getInnerObjectValue(policy.config.conditions[conditionSchemaIdx]);
+				arr[policy.name].conditions.push(condition);
+			}
+
+			const querySchemaIdx = policy.config.query.findIndex((q) => q.schema.includes(schemaName));
+			if (querySchemaIdx !== -1) {
+				const query = this.__getInnerObjectValue(policy.config.query[querySchemaIdx]);
+				arr[policy.name].query.push(query);
+			}
+
+			const projectionSchemaIdx = policy.config.projection.findIndex((project) => project.schema.includes(schemaName));
+			if (projectionSchemaIdx !== -1) {
+				const projection = this.__getInnerObjectValue(policy.config.projection[projectionSchemaIdx]);
+				arr[policy.name].projection.push(projection);
+			}
+
+			if (conditionSchemaIdx !== -1 || querySchemaIdx !== -1 || projectionSchemaIdx !== -1) {
+				arr[policy.name].env = {
+					...arr.env,
+					...policy.config.env,
+				};
+			}
+
+			return arr;
+		}, {});
+
 		const schemas = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
 		const schemaNames = schemas.map((s) => s.name);
 		const schema = schemas.find((s) => s.name === schemaName);
 		if (!schema) return next();
 
 		AccessControlConditions.setAppShortId(req.authApp._id);
-		const accessControlAuthorisation = await AccessControlConditions.applyAccessControlPolicyConditions(req, policiesConfig);
-		if (!accessControlAuthorisation) {
+		await AccessControlConditions.applyPolicyConditions(req, schemaBasePolicyConfig);
+		if (Object.keys(schemaBasePolicyConfig).length < 1) {
 			Logging.logTimer(`_accessControlPolicy:conditions-not-fulfilled`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			res.status(401).send({message: 'Access control policy conditions are not fulfilled'});
 			return;
 		}
 
-		const passedAccessControlPolicy = await AccessControlFilter.addAccessControlPolicyQuery(req, policiesConfig, schema);
-		if (!passedAccessControlPolicy) {
+		await AccessControlFilter.addAccessControlPolicyQuery(req, schemaBasePolicyConfig);
+		const policyProjection = await AccessControlProjection.addAccessControlPolicyQueryProjection(req, schemaBasePolicyConfig, schema);
+		if (!policyProjection) {
 			Logging.logTimer(`_accessControlPolicy:access-control-properties-permission-error`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			res.status(401).send({message: 'Can not access/edit properties without privileged access'});
 			return;
 		}
 		await AccessControlFilter.applyAccessControlPolicyQuery(req);
 
-		await this._queueAttributeCloseSocketEvent(policiesConfig, schemaNames);
+		await this._queueAttributeCloseSocketEvent(schemaBasePolicyConfig, schemaNames);
 
 		next();
 	}
@@ -129,54 +165,6 @@ class AccessControl {
 		}
 
 		return attributes;
-	}
-
-	/**
-	 * Fetch schema related attributes from the token attributes
-	 * @param {Object} req
-	 * @param {Array} attributes
-	 * @param {Array} policyAttributes
-	 * @param {Array} attrs
-	 * @return {Array}
-	 */
-	async _getSchemaRelatedAttributes(req, attributes, policyAttributes, attrs = []) {
-		const attributeIds = attributes.map((attr) => attr._id);
-
-		attributes.forEach((attr) => {
-			if (attr.extends.length > 1) {
-				attr.extends.forEach((extendedAttr) => {
-					const extendedAttribute = policyAttributes.find((attr) => attr.name === extendedAttr && !attributeIds.includes(attr._id));
-
-					if (!extendedAttribute) return;
-
-					attrs.push(extendedAttribute);
-				});
-			}
-
-			attrs.push(attr);
-		});
-
-		if (attrs.some((attr) => attr.configuration.override)) {
-			const dominantAttrs = [];
-			await attrs.reduce(async (prev, attr) => {
-				await prev;
-
-				if (Sugar.Date.isAfter(Sugar.Date.create('now'), Sugar.Date.create(attr.configuration.limit))) return;
-				if (!attr.configuration.optionalCondition) {
-					dominantAttrs.push(attr);
-				}
-
-				if (attr.configuration.optionalCondition && await AccessControlConditions.applyAccessControlPolicyConditions(req, [attr])) {
-					dominantAttrs.push(attr);
-				}
-
-				return;
-			}, Promise.resolve());
-
-			attrs = (dominantAttrs.length > 0)? dominantAttrs : attrs.filter((attr) => !attr.configuration.override);
-		}
-
-		return attrs;
 	}
 
 	async _queueAttributeCloseSocketEvent(attributes, schemaNames) {
@@ -224,6 +212,16 @@ class AccessControl {
 			updatedSchema,
 			id,
 		});
+	}
+
+	__getInnerObjectValue(originalObj) {
+		return Object.keys(originalObj).reduce((obj, key) => {
+			if (key !== 'schema') {
+				obj[key] = originalObj[key];
+			}
+
+			return obj;
+		}, {});
 	}
 }
 module.exports = new AccessControl();
