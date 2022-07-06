@@ -381,7 +381,6 @@ class GetAppSchema extends Route {
 					allowUnauthorized: true, // Move along, nothing to see here...
 				});
 
-				console.log(`Fetching schema ${dataSharingSchema[DSAName].join(',')}`);
 				const remoteSchema = await api.App.getSchema({
 					params: {
 						only: dataSharingSchema[DSAName].join(','),

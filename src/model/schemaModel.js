@@ -90,22 +90,27 @@ class SchemaModel {
 	 * @return {object} query
 	 */
 	parseQuery(query, envFlat = {}, schemaFlat = {}) {
-		const output = {};
+		let output = {};
 
-		for (let property in query) {
+		for (const property in query) {
 			if (!{}.hasOwnProperty.call(query, property)) continue;
 			if (property === '__crPath') continue;
 			const command = query[property];
 
-			if (property === '$or' && Array.isArray(command) && command.length > 0) {
-				output['$or'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
-			} else if (property === '$and' && Array.isArray(command) && command.length > 0) {
-				output['$and'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
-			} else {
+			if (property === '$or' && Array.isArray(command)) {
+				if (command.length > 0) {
+					output['$or'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
+				}
+			} else if (property === '$and' && Array.isArray(command)) {
+				if (command.length > 0) {
+					output['$and'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
+				}
+			} else if (typeof command === 'object') {
 				for (let operator in command) {
 					if (!{}.hasOwnProperty.call(command, operator)) continue;
-					let operand = command[operator];
+					const operand = command[operator];
 					let operandOptions = null;
+
 					switch (operator) {
 					case '$not':
 						operator = '$ne';
@@ -140,74 +145,84 @@ class SchemaModel {
 						// TODO: Throw an error if operator isn't supported
 					}
 
-					// Check to see if operand is a path and fetch value
-					if (operand && operand.indexOf && operand.indexOf('.') !== -1) {
-						let path = operand.split('.');
-						const key = path.shift();
-
-						path = path.join('.');
-
-						if (key === 'env' && envFlat[path]) {
-							operand = envFlat[path];
-						} else {
-							// throw new Error(`Unable to find ${path} in schema.authFilter.env`);
-						}
-					}
-
-					// Convert id
-					let propSchema = null;
-					if (!schemaFlat[property] && property === 'id') {
-						// Convert id -> _id to handle querying of document root index without having to pass _id
-						property = '_id';
-						propSchema = {
-							__type: 'id',
-						};
-					} else if (schemaFlat[property]) {
-						propSchema = schemaFlat[property];
-					} else if (Object.keys(schemaFlat) > 0) {
-						throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
-					}
-
-					if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
-						operand = this.parseQuery(operand, envFlat, propSchema.__schema);
-					} else if (propSchema) {
-						if (propSchema.__type === 'array' && propSchema.__schema) {
-							Object.keys(operand).forEach((op) => {
-								if (propSchema.__schema[op].__type === 'id') {
-									Object.keys(operand[op]).forEach((key) => {
-										operand[op][key] = this.createId(operand[op][key]);
-									});
-								}
-							});
-						}
-
-						if (propSchema.__type === 'date' && typeof operand === 'string') {
-							operand = new Date(operand);
-						}
-
-						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {
-							operand = this.createId(operand);
-						}
-						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
-							operand = operand.map((o) => this.createId(o));
-						}
-					}
-
-					if (!output[property]) {
-						output[property] = {};
-					}
-
-					if (operandOptions) {
-						output[property][`$options`] = operandOptions;
-					}
-
-					if (operator.indexOf('$') !== 0) {
-						output[property][`$${operator}`] = operand;
-					} else {
-						output[property][`${operator}`] = operand;
-					}
+					output = this.parseQueryProperty(property, operator, operand, operandOptions, output, envFlat, schemaFlat);
 				}
+			} else {
+				// Direct compare
+				output = this.parseQueryProperty(property, '$eq', command, null, output, envFlat, schemaFlat);
 			}
+		}
+
+		return output;
+	}
+
+	parseQueryProperty(property, operator, operand, operandOptions = null, output = {}, envFlat = {}, schemaFlat = {}) {
+		// Check to see if operand is a path and fetch value
+		if (operand && operand.indexOf && operand.indexOf('.') !== -1) {
+			let path = operand.split('.');
+			const key = path.shift();
+
+			path = path.join('.');
+
+			if (key === 'env' && envFlat[path]) {
+				operand = envFlat[path];
+			} else {
+				// throw new Error(`Unable to find ${path} in schema.authFilter.env`);
+			}
+		}
+
+		// Convert id
+		let propSchema = null;
+		if (!schemaFlat[property] && (property === 'id' || property === '_id')) {
+		// if (!schemaFlat[property] && (property === 'id' || property === 'id')) {
+			// Convert id -> _id to handle querying of document root index without having to pass _id
+			property = '_id';
+			propSchema = {
+				__type: 'id',
+			};
+		} else if (schemaFlat[property]) {
+			propSchema = schemaFlat[property];
+		} else if (Object.keys(schemaFlat) > 0) {
+			throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
+		}
+
+		if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
+			operand = this.parseQuery(operand, envFlat, propSchema.__schema);
+		} else if (propSchema) {
+			if (propSchema.__type === 'array' && propSchema.__schema) {
+				Object.keys(operand).forEach((op) => {
+					if (propSchema.__schema[op].__type === 'id') {
+						Object.keys(operand[op]).forEach((key) => {
+							operand[op][key] = this.createId(operand[op][key]);
+						});
+					}
+				});
+			}
+
+			if (propSchema.__type === 'date' && typeof operand === 'string') {
+				operand = new Date(operand);
+			}
+
+			if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {
+				operand = this.createId(operand);
+			}
+			if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
+				operand = operand.map((o) => this.createId(o));
+			}
+		}
+
+		if (!output[property]) {
+			output[property] = {};
+		}
+
+		if (operandOptions) {
+			output[property][`$options`] = operandOptions;
+		}
+
+		if (operator.indexOf('$') !== 0) {
+			output[property][`$${operator}`] = operand;
+		} else {
+			output[property][`${operator}`] = operand;
 		}
 
 		return output;
