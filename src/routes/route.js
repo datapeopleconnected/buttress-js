@@ -156,13 +156,13 @@ class Route {
 
 			await this._logActivity(req, res);
 
-			await this._boardcastByAppRole(req, res, broadcastStream);
+			await this._boardcastByAppPolicies(req, res, broadcastStream);
 		} else {
 			await this._respond(req, res, result);
 
 			await this._logActivity(req, res);
 
-			await this._boardcastByAppRole(req, res, result);
+			await this._boardcastByAppPolicies(req, res, result);
 		}
 
 		Logging.logTimer(`Route:exec:end`, this._timer, Logging.Constants.LogLevel.DEBUG, req.id);
@@ -312,23 +312,17 @@ class Route {
 	}
 
 	/**
-	 * Handle broadcasting the result by app role
+	 * Handle broadcasting the result by app policies
 	 * @param {Object} req
 	 * @param {Object} res
 	 * @param {*} result
 	 */
-	async _boardcastByAppRole(req, res, result) {
+	async _boardcastByAppPolicies(req, res, result) {
 		req.timings.boardcastByAppRole = req.timer.interval;
-		Logging.logTimer('_boardcastByAppRole:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		Logging.logTimer('_boardcastByAppPolicies:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		if (this.verb === Constants.Verbs.GET || this.verb === Constants.Verbs.SEARCH) {
-			Logging.logTimer('_boardcastByAppRole:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			Logging.logTimer('_boardcastByAppPolicies:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
-		}
-
-		// appAttributes
-		let attributeChannels = null;
-		if (req.authApp) {
-			attributeChannels = await AccessControl.getAttributeChannels(req.authApp._id);
 		}
 
 		let path = req.path.split('/');
@@ -340,12 +334,6 @@ class Route {
 		path = `/${path.join('/')}`.replace(Config.app.apiPrefix, '');
 
 		this._broadcast(req, res, result, null, path, true);
-
-		if (!attributeChannels) {
-			this._broadcast(req, res, result, null, path);
-		} else {
-			attributeChannels.forEach((channel) => this._broadcast(req, res, result, channel, path));
-		}
 
 		Logging.logTimer('_boardcastByAppRole:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}

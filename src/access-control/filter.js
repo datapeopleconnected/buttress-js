@@ -1,5 +1,3 @@
-const Projection = require('./projection');
-
 /**
  * @class Filter
  */
@@ -55,9 +53,7 @@ class Filter {
 	}
 
 	async applyAccessControlPolicyQuery(req) {
-		const accessControlPrompt = req.authApp.accessControlPrompt;
 		const accessControlQuery = req.accessControlQuery;
-		let queryModified = false;
 
 		if (!accessControlQuery) return;
 
@@ -72,7 +68,7 @@ class Filter {
 
 		Object.keys(accessControlQuery).forEach((key) => {
 			if (Array.isArray(accessControlQuery[key]) && this.logicalOperator.includes(key)) {
-				queryModified = this.__crossCheckAccessControlMatchLogicalOperation(reqQuery, accessControlQuery, key);
+				this.__crossCheckAccessControlMatchLogicalOperation(reqQuery, accessControlQuery, key);
 				return;
 			}
 
@@ -81,13 +77,8 @@ class Filter {
 				return;
 			}
 
-			queryModified = this.__addAccessControlQueryPropertyToOriginalQuery(reqQuery, accessControlQuery, key);
+			this.__addAccessControlQueryPropertyToOriginalQuery(reqQuery, accessControlQuery, key);
 		});
-
-		if (!accessControlPrompt && queryModified) {
-			// return zero results as the query is modified
-			reqQuery['zeroResults'] = true;
-		}
 	}
 
 	__crossCheckAccessControlMatchLogicalOperation(originalQuery, accessControlQuery, key) {

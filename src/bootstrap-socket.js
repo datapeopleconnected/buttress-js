@@ -63,6 +63,8 @@ class BootstrapSocket {
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
+		this._policyRooms = {};
+
 		// let socketInitTask = null;
 		// if (cluster.isMaster) {
 		// 	socketInitTask = (db) => this.__initMaster(db);
@@ -242,10 +244,13 @@ class BootstrapSocket {
 					return next('invalid-token-user-ID');
 				}
 
-				const userAttributes = await AccessControl.__getPolicyAttributes(user, app._id);
-				const roomName = (await AccessControl.getAttributesChainForToken(userAttributes)).map((attr) => attr.name).join(',');
-				socket.join(roomName);
-				Logging.log(`[${apiPath}][${token._id}] Connected ${socket.id} to room ${roomName}`);
+				if (!this._policyRooms[app._id]) {
+					this._policyRooms[app._id] = {};
+				}
+
+				const userRooms = await AccessControl.getUserRooms(user, socket.request, app._id, this._policyRooms[app._id]);
+				socket.join(userRooms);
+				Logging.log(`[${apiPath}][${token._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
 			} else {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
 			}
