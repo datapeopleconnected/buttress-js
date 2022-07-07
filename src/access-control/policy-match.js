@@ -11,7 +11,7 @@ class PolicyMatch {
 			const match = this.__checkPolicySelection(p, appId, user);
 			if (!match) return arr;
 
-			arr = arr.concat(p.attributes);
+			arr = arr.concat(p);
 			return arr;
 		}, []);
 	}

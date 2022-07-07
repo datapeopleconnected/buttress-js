@@ -1,5 +1,3 @@
-const Projection = require('./projection');
-
 /**
  * @class Filter
  */
@@ -13,20 +11,18 @@ class Filter {
 		];
 	}
 
-	async addAccessControlPolicyQuery(req, userSchemaAttributes, schema) {
-		let allowedUpdates = false;
-
-		return userSchemaAttributes.reduce((prev, attr) => {
-			return prev.then(() => {
-				return this.addAccessControlPolicyAttributeQuery(req, attr.query)
-					.then(() => allowedUpdates = Projection.addAccessControlPolicyQueryProjection(req, attr.properties, schema));
-			});
-		}, Promise.resolve())
-			.then(() => allowedUpdates);
+	async addAccessControlPolicyQuery(req, userPolicies) {
+		await Object.keys(userPolicies).reduce(async (prev, key) => {
+			await prev;
+			await userPolicies[key].query.reduce(async (prev, q) => {
+				await prev;
+				await this.addAccessControlPolicyRuleQuery(req, q);
+			}, Promise.resolve());
+		}, Promise.resolve());
 	}
 
-	async addAccessControlPolicyAttributeQuery(req, attributeQuery, str = 'accessControlQuery') {
-		const translatedQuery = await this.__convertPrefixToQueryPrefix(attributeQuery);
+	async addAccessControlPolicyRuleQuery(req, policyQuery, str = 'accessControlQuery') {
+		const translatedQuery = await this.__convertPrefixToQueryPrefix(policyQuery);
 		if (!req[str]) {
 			req[str] = {};
 		}
@@ -57,9 +53,7 @@ class Filter {
 	}
 
 	async applyAccessControlPolicyQuery(req) {
-		const accessControlPrompt = req.authApp.accessControlPrompt;
 		const accessControlQuery = req.accessControlQuery;
-		let queryModified = false;
 
 		if (!accessControlQuery) return;
 
@@ -74,7 +68,7 @@ class Filter {
 
 		Object.keys(accessControlQuery).forEach((key) => {
 			if (Array.isArray(accessControlQuery[key]) && this.logicalOperator.includes(key)) {
-				queryModified = this.__crossCheckAccessControlMatchLogicalOperation(reqQuery, accessControlQuery, key);
+				this.__crossCheckAccessControlMatchLogicalOperation(reqQuery, accessControlQuery, key);
 				return;
 			}
 
@@ -83,13 +77,8 @@ class Filter {
 				return;
 			}
 
-			queryModified = this.__addAccessControlQueryPropertyToOriginalQuery(reqQuery, accessControlQuery, key);
+			this.__addAccessControlQueryPropertyToOriginalQuery(reqQuery, accessControlQuery, key);
 		});
-
-		if (!accessControlPrompt && queryModified) {
-			// return zero results as the query is modified
-			reqQuery['zeroResults'] = true;
-		}
 	}
 
 	__crossCheckAccessControlMatchLogicalOperation(originalQuery, accessControlQuery, key) {

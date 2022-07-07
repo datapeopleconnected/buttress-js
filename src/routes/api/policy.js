@@ -120,8 +120,7 @@ class AddPolicy extends Route {
 
 			if (!app ||
 				!req.body.selection ||
-				!req.body.attributes ||
-				(req.body.attributes && req.body.attributes.length < 1)) {
+				!req.body.name) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.RequestError(400, `missing_field`));
 			}

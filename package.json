@@ -42,7 +42,8 @@
     "socket.io": "~4.4.1",
     "socket.io-client": "^4.4.1",
     "sugar": "~2.0.6",
-    "winston": "~3.6.0"
+    "winston": "~3.6.0",
+    "object-hash": "^3.0.0"
   },
   "devDependencies": {
     "eslint": "^8.3.0",
