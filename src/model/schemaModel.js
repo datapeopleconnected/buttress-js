@@ -76,7 +76,6 @@ class SchemaModel {
 
 		for (let property in query) {
 			if (!{}.hasOwnProperty.call(query, property)) continue;
-			console.log('property', property);
 			if (property === '__crPath') continue;
 			const command = query[property];
 
@@ -87,9 +86,7 @@ class SchemaModel {
 			} else {
 				for (let operator in command) {
 					if (!{}.hasOwnProperty.call(command, operator)) continue;
-					console.log('operator', operator);
 					let operand = command[operator];
-					console.log('operand', operand);
 					let operandOptions = null;
 					switch (operator) {
 					case '$not':
