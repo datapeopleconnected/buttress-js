@@ -182,8 +182,24 @@ class SchemaModel {
 			};
 		} else if (schemaFlat[property]) {
 			propSchema = schemaFlat[property];
-		} else if (Object.keys(schemaFlat) > 0) {
-			throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
+		} else {
+            const path = property.split('.');
+            let lastVal = schemaFlat;
+            path.forEach((p) => {
+                if (lastVal[p] && lastVal[p].__type === 'array' && lastVal[p].__schema) {
+                    lastVal = lastVal[p].__schema;
+                } else if (lastVal[p]) {
+                    lastVal = lastVal[p];
+                } else {
+                    lastVal = null;
+                }
+            });
+
+            if (lastVal) {
+                propSchema = lastVal;
+            } else (Object.keys(schemaFlat) > 0)  {
+                throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
+            }
 		}
 
 		if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
