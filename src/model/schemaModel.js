@@ -72,11 +72,6 @@ class SchemaModel {
 	}
 
 	static parseQuery(query, envFlat = {}, schemaFlat = {}) {
-		console.log('----');
-		console.log('query', query);
-		console.log('envFlat', envFlat);
-		console.log('schemaFlat', schemaFlat);
-
 		const output = {};
 
 		for (let property in query) {
