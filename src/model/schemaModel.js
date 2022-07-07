@@ -72,10 +72,16 @@ class SchemaModel {
 	}
 
 	static parseQuery(query, envFlat = {}, schemaFlat = {}) {
+		console.log('----');
+		console.log('query', query);
+		console.log('envFlat', envFlat);
+		console.log('schemaFlat', schemaFlat);
+
 		const output = {};
 
 		for (let property in query) {
 			if (!{}.hasOwnProperty.call(query, property)) continue;
+			console.log('property', property);
 			if (property === '__crPath') continue;
 			const command = query[property];
 
@@ -86,7 +92,9 @@ class SchemaModel {
 			} else {
 				for (let operator in command) {
 					if (!{}.hasOwnProperty.call(command, operator)) continue;
+					console.log('operator', operator);
 					let operand = command[operator];
+					console.log('operand', operand);
 					let operandOptions = null;
 					switch (operator) {
 					case '$not':
@@ -148,6 +156,19 @@ class SchemaModel {
 						propSchema = schemaFlat[property];
 					} else {
 						// TODO: Should maybe reject query
+						const path = property.split('.');
+						let lastVal = schemaFlat;
+						path.forEach((p) => {
+							if (lastVal[p] && lastVal[p].__type === 'array' && lastVal[p].__schema) {
+								lastVal = lastVal[p].__schema;
+							} else if (lastVal[p]) {
+								lastVal = lastVal[p];
+							} else {
+								lastVal = null;
+							}
+						});
+
+						if (lastVal) propSchema = lastVal;
 					}
 
 					if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
