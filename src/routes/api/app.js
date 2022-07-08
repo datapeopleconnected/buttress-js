@@ -395,7 +395,7 @@ class GetAppSchema extends Route {
 							delete s.remote;
 							const collectionIdx = collections.findIndex((s) => s.name === rs.name);
 							if (collectionIdx === -1) return;
-							collections[collectionIdx] = Object.assign(rs, s);
+							collections[collectionIdx] = Helpers.mergeDeep(rs, s);
 						});
 				});
 			}
