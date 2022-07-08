@@ -122,7 +122,7 @@ class AddPolicy extends Route {
 				!req.body.selection ||
 				!req.body.name) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
 			resolve(true);
@@ -162,6 +162,14 @@ class SyncPolicies extends Route {
 			throw new Helpers.Errors.RequestError(400, `invalid_field`);
 		}
 
+		for (const policy of req.body) {
+			if (!policy.selection ||
+				!policy.name) {
+				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+				throw new Helpers.Errors.RequestError(400, `missing_field`);
+			}
+		}
+
 		return true;
 	}
 
@@ -170,7 +178,7 @@ class SyncPolicies extends Route {
 			_appId: req.authApp._id,
 		});
 
-		for await (const policy of req.body ) {
+		for await (const policy of req.body) {
 			await Model.Policy.add({policy: policy, appId: req.authApp._id});
 		}
 
