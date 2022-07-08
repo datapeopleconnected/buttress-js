@@ -100,6 +100,7 @@ class Schema {
 				if (dependencyIdx === -1) throw new Error(`Schema dependency ${dependencyName} for ${schema.name} missing.`);
 				const dependency = Schema.extend(schemas, schemas[dependencyIdx]);
 				if (!dependency.properties) return; // Skip if dependency has no properties
+				if (!schema.properties) schema.properties = {};
 				schema.properties = Object.assign(schema.properties, dependency.properties);
 			});
 		}
