@@ -10,7 +10,7 @@ module.exports = class DeleteAll extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}`, `DELETE ALL ${schema.name}`);
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.ADMIN;
+		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.DELETE;
 
 		this.activityDescription = `DELETE ALL ${schema.name}`;
