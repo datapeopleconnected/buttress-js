@@ -45,6 +45,8 @@ class Model {
 		this.Constants = {};
 		this.app = false;
 		this.appMetadataChanged = false;
+
+		this.coreSchema = [];
 	}
 
 	async init() {
@@ -107,6 +109,8 @@ class Model {
 	async _initCoreModel(model) {
 		const name = Sugar.String.camelize(model);
 		const CoreSchemaModel = require(`./schema/${model.toLowerCase()}`);
+
+		this.coreSchema.push(name);
 
 		if (!this.models[name]) {
 			this.models[name] = new CoreSchemaModel();

@@ -8,6 +8,7 @@
  *
  */
 
+const Sugar = require('sugar');
 const hash = require('object-hash');
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
@@ -27,8 +28,8 @@ class AccessControl {
 		this._attributeCloseSocketEvents = [];
 		this._attributes = [];
 
-		this._schemas = null;
-		this._policies = null;
+		this._schemas = {};
+		this._policies = {};
 	}
 
 	/**
@@ -44,15 +45,13 @@ class AccessControl {
 		const user = req.authUser;
 		if (!user) return next();
 
-		if (!this._schemas) {
-			this._schemas = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
+		if (!this._schemas[req.authApp._id]) {
+			this._schemas[req.authApp._id] = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
 		}
 
-		if (!this._policies) {
-			this._policies = await this.__loadAppPolicies(req.authApp._id);
+		if (!this._policies[req.authApp._id]) {
+			this._policies[req.authApp._id] = await this.__loadAppPolicies(req.authApp._id);
 		}
-
-		const schemaNames = this._schemas.map((s) => s.name);
 
 		const userPolicies = await this.__getUserPolicies(user, req.authApp._id);
 		const policyOutcome = await this.__getPolicyOutcome(userPolicies, req);
@@ -61,8 +60,6 @@ class AccessControl {
 			res.status(policyOutcome.statusCode).send({message: policyOutcome.message});
 			return;
 		}
-		// await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
-		// await this._queueAttributeCloseSocketEvent(schemaBasePolicyConfig, schemaNames);
 
 		next();
 	}
@@ -78,17 +75,17 @@ class AccessControl {
 	async getUserRooms(user, req, appId, userSocketObj) {
 		req.body = {};
 
-		if (!this._policies) {
-			this._policies = await this.__loadAppPolicies(appId);
+		if (!this._policies[appId]) {
+			this._policies[appId] = await this.__loadAppPolicies(appId);
 		}
 
-		if (!this._schemas) {
+		if (!this._schemas[appId]) {
 			const app = await Model.App.findById(appId);
-			this._schemas = Schema.decode(app.__schema).filter((s) => s.type === 'collection');
+			this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type === 'collection');
 		}
 
 		const userPolicies = await this.__getUserPolicies(user, appId);
-		await this._schemas.reduce(async (prev, next) => {
+		await this._schemas[appId].reduce(async (prev, next) => {
 			await prev;
 			const outcome = await this.__getPolicyOutcome(userPolicies, req, next.name, appId);
 			const outcomeHash = hash(req.body);
@@ -145,10 +142,16 @@ class AccessControl {
 	async __getPolicyOutcome(userPolicies, req, schemaName = null, appId = null) {
 		const err = {};
 
+		let core = false;
+
+		appId = (!appId && req.authApp && req.authApp._id) ? req.authApp._id : appId;
+
 		// TODO: better way to figure out the requested schema
 		const requestVerb = req.method || req.originalMethod;
 		if (!schemaName) {
 			let requestedURL = req.originalUrl || req.url;
+			// Check URL to see if it's a core schema
+			if (!core) core = requestedURL.indexOf('/api') === 0;
 			requestedURL = requestedURL.split('?').shift();
 			const schemaPath = requestedURL.split('v1/').pop().split('/');
 			schemaName = schemaPath.shift();
@@ -238,7 +241,16 @@ class AccessControl {
 			return err;
 		}
 
-		const schema = this._schemas.find((s) => s.name === schemaName);
+		let schema = null;
+		if (core) {
+			const SchemaNameCamel = Sugar.String.camelize(schemaName);
+			if (Model.coreSchema.includes(SchemaNameCamel)) {
+				schema = Model[SchemaNameCamel].schemaData;
+			}
+		} else if (this._schemas[appId]) {
+			schema = this._schemas[appId].find((s) => s.name === schemaName);
+		}
+
 		if (!schema) {
 			err.statusCode = 401;
 			err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
@@ -246,7 +258,6 @@ class AccessControl {
 			return err;
 		}
 
-		appId = (req.authApp && req.authApp._id) ? req.authApp._id : appId;
 		AccessControlConditions.setAppShortId(appId);
 		await AccessControlConditions.applyPolicyConditions(req, schemaBasePolicyConfig);
 		if (Object.keys(schemaBasePolicyConfig).length < 1) {
@@ -331,7 +342,7 @@ class AccessControl {
 	}
 
 	async __getUserPolicies(user, appId) {
-		return await AccessControlPolicyMatch.__getUserPolicies(this._policies, appId, user);
+		return await AccessControlPolicyMatch.__getUserPolicies(this._policies[appId], appId, user);
 	}
 
 	async _checkAccessControlQueryBasedCondition(req, updatedSchema, path) {
