@@ -163,7 +163,7 @@ class AccessControl {
 		}
 
 		const policiesConfig = userPolicies.reduce((arr, policy) => {
-			const config = policy.config.find((c) => c.endpoints.includes(requestVerb));
+			const config = policy.config.slice().reverse().find((c) => c.endpoints.includes(requestVerb));
 			if (config) {
 				arr.push({
 					name: policy.name,
