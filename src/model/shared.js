@@ -54,6 +54,8 @@ const __inflateObject = (parent, path, value) => {
 	return parent;
 };
 
+// TODO: Need to handle flatterned array paths
+// TODO: Schema has simliar code, this may be a duplicate
 const __populateObject = (schema, values, body = null) => {
 	const res = {};
 	const objects = {};

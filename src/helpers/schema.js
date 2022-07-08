@@ -369,6 +369,8 @@ function __unflattenObject(data) {
 }
 module.exports.unflattenObject = __unflattenObject;
 
+// TODO: Need to handle flatterned array paths
+// TODO: Shared has simliar code, this may be a duplicate
 const __populateObject = (schema, values) => {
 	const res = {};
 	const objects = {};
