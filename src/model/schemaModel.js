@@ -32,12 +32,12 @@ const Sugar = require('sugar');
 class SchemaModel {
 	constructor(schemaData, app) {
 		this.schemaData = schemaData;
-		this.flatSchemaData = Helpers.getFlattenedSchema(this.schemaData);
+		this.flatSchemaData = (schemaData) ? Helpers.getFlattenedSchema(this.schemaData) : null;
 
 		this.app = app || null;
 
 		this.appShortId = (app) ? shortId(app._id) : null;
-		this.collectionName = `${schemaData.name}`;
+		this.collectionName = (schemaData) ? `${schemaData.name}` : null;
 
 		if (this.appShortId) {
 			this.collectionName = `${this.appShortId}-${this.collectionName}`;
