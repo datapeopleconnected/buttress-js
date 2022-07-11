@@ -349,15 +349,6 @@ class SchemaModel {
 	}
 
 	/**
-	 * @param {*} find
-	 * @param {*} update
-	 * @return {promise}
-	 */
-	update(find, update) {
-		return this.adapter.update(find, update);
-	}
-
-	/**
 	 * @param {object} body
 	 * @return {promise}
 	 */

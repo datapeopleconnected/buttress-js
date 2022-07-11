@@ -17,16 +17,16 @@
  */
 
 const Stream = require('stream');
-const JSONStream = require('JSONStream');
+// const JSONStream = require('JSONStream');
 const Config = require('node-env-obj')();
 const Logging = require('../logging');
 // const Schema = require('../schema');
 const Model = require('../model');
 const NRP = require('node-redis-pubsub');
 const Helpers = require('../helpers');
-const AccessControl = require('../access-control');
+// const AccessControl = require('../access-control');
 
-const SchemaModelRemote = require('../model/type/remote');
+// const SchemaModelRemote = require('../model/type/remote');
 
 const nrp = new NRP(Config.redis);
 

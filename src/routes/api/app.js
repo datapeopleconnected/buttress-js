@@ -21,7 +21,6 @@ const Buttress = require('@buttress/api');
 const Sugar = require('sugar');
 
 const Route = require('../route');
-const Datastore = require('../../datastore');
 const Model = require('../../model');
 const Logging = require('../../logging');
 const Helpers = require('../../helpers');

@@ -8,7 +8,6 @@
  *
  */
 
-const Sugar = require('sugar');
 const hash = require('object-hash');
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');

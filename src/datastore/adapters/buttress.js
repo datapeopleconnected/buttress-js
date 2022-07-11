@@ -21,7 +21,6 @@ const JSONStream = require('JSONStream');
 const ObjectId = require('mongodb').ObjectId;
 const ButtressAPI = require('@buttress/api');
 
-const Helpers = require('../../helpers');
 const Logging = require('../../logging');
 
 const AbstractAdapter = require('../abstract-adapter');
