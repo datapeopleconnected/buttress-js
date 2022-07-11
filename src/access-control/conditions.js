@@ -63,30 +63,6 @@ class Conditions {
 		this.appShortId = Helpers.shortId(app);
 	}
 
-	async isPolicyDateTimeBased(conditions, pass = false) {
-		return await Object.keys(conditions).reduce(async (res, key) => {
-			if (Array.isArray(conditions[key])) {
-				if (this. logicalOperator.includes(conditions[key])) {
-					return await this.isPolicyDateTimeBased(conditions[key], pass);
-				} else {
-					// TODO throw an error
-				}
-			}
-
-			if (((key === 'date' || pass) || (key === 'time' || pass)) && typeof conditions[key] === 'object') {
-				const isDateTimeCondition = Object.keys(conditions[key]).some((cKey) => this.conditionEndRange.includes(cKey));
-				if (isDateTimeCondition) {
-					res = key.replace(`@${this.envStr}`, '');
-					return res;
-				}
-
-				return await this.isPolicyDateTimeBased(conditions[key], true);
-			}
-
-			return res;
-		}, false);
-	}
-
 	async isPolicyQueryBasedCondition(conditions, schemaNames, pass = false) {
 		return await Object.keys(conditions).reduce(async (res, key) => {
 			if (Array.isArray(conditions[key])) {
@@ -270,7 +246,7 @@ class Conditions {
 			return evaluationRes;
 		}
 
-		evaluationRes = this.__evaluateOperation(lhs, rhs, operator);
+		evaluationRes = this.evaluateOperation(lhs, rhs, operator);
 
 		return evaluationRes;
 	}
@@ -378,68 +354,83 @@ class Conditions {
 		});
 	}
 
-	__evaluateOperation(lhs, rhs, operator) {
+	evaluateOperation(lhs, rhs, operator) {
 		let passed = false;
 
 		switch (operator) {
+		case '$eq':
 		case '@eq': {
 			passed = lhs === rhs;
 		}
 			break;
+		case '$not':
 		case '@not': {
 			passed = lhs !== rhs;
 		}
 			break;
+		case '$gt':
 		case '@gt': {
 			passed = lhs > rhs;
 		}
 			break;
+		case '$lt':
 		case '@lt': {
 			passed = lhs < rhs;
 		}
 			break;
+		case '$gte':
 		case '@gte': {
 			passed = lhs >= rhs;
 		}
 			break;
+		case '$lte':
 		case '@lte': {
 			passed = lhs <= rhs;
 		}
 			break;
+		case '$gtDate':
 		case '@gtDate': {
 			passed = Sugar.Date.isAfter(rhs, lhs);
 		}
 			break;
+		case '$gteDate':
 		case '@gteDate': {
 			passed = Sugar.Date.isAfter(rhs, lhs) || Sugar.Date.is(rhs, lhs);
 		}
 			break;
+		case '$ltDate':
 		case '@ltDate': {
 			passed = Sugar.Date.isBefore(rhs, lhs);
 		}
 			break;
+		case '$lteDate':
 		case '@lteDate': {
 			passed = Sugar.Date.isBefore(rhs, lhs) || Sugar.Date.is(rhs, lhs);
 		}
 			break;
+		case '$rex':
 		case '@rex': {
 			const regex = new RegExp(rhs);
 			passed = regex.test(lhs);
 		}
 			break;
+		case '$rexi':
 		case '@rexi': {
 			const regex = new RegExp(rhs, 'i');
 			passed = regex.test(lhs);
 		}
 			break;
+		case '$in':
 		case '@in': {
 			passed = lhs.some((i) => i === rhs);
 		}
 			break;
+		case '$nin':
 		case '@nin': {
 			passed = lhs.every((i) => i !== lhs);
 		}
 			break;
+		case '$exists':
 		case '@exists': {
 			passed = lhs.includes(rhs);
 		}
@@ -476,6 +467,33 @@ class Conditions {
 		}
 
 		return value;
+	}
+
+	async isPolicyDateTimeBased(conditions, pass = false) {
+		let res = false;
+		for await (const key of Object.keys(conditions)) {
+			if (Array.isArray(conditions[key])) {
+				if (this.logicalOperator.includes(key)) {
+					for await (const item of conditions[key]) {
+						return await this.isPolicyDateTimeBased(item, pass);
+					}
+				} else {
+					// TODO throw an error
+				}
+			}
+
+			if (((key === 'date' || pass) || (key === 'time' || pass)) && typeof conditions[key] === 'object') {
+				const isDateTimeCondition = Object.keys(conditions[key]).some((cKey) => this.conditionEndRange.includes(cKey));
+				if (isDateTimeCondition) {
+					res = key.replace(`@${this.envStr}`, '');
+					return res;
+				}
+
+				return await this.isPolicyDateTimeBased(conditions[key], true);
+			}
+
+			return res;
+		}
 	}
 }
 module.exports = new Conditions();

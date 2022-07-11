@@ -156,13 +156,13 @@ class Route {
 
 			await this._logActivity(req, res);
 
-			await this._boardcastByAppRole(req, res, broadcastStream);
+			await this._boardcastData(req, res, broadcastStream);
 		} else {
 			await this._respond(req, res, result);
 
 			await this._logActivity(req, res);
 
-			await this._boardcastByAppRole(req, res, result);
+			await this._boardcastData(req, res, result);
 		}
 
 		Logging.logTimer(`Route:exec:end`, this._timer, Logging.Constants.LogLevel.DEBUG, req.id);
@@ -312,23 +312,17 @@ class Route {
 	}
 
 	/**
-	 * Handle broadcasting the result by app role
+	 * Handle broadcasting the result by app policies
 	 * @param {Object} req
 	 * @param {Object} res
 	 * @param {*} result
 	 */
-	async _boardcastByAppRole(req, res, result) {
-		req.timings.boardcastByAppRole = req.timer.interval;
-		Logging.logTimer('_boardcastByAppRole:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+	async _boardcastData(req, res, result) {
+		req.timings._boardcastData = req.timer.interval;
+		Logging.logTimer('_boardcastData:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		if (this.verb === Constants.Verbs.GET || this.verb === Constants.Verbs.SEARCH) {
-			Logging.logTimer('_boardcastByAppRole:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			Logging.logTimer('_boardcastData:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
-		}
-
-		// appAttributes
-		let attributeChannels = null;
-		if (req.authApp) {
-			attributeChannels = await AccessControl.getAttributeChannels(req.authApp._id);
 		}
 
 		let path = req.path.split('/');
@@ -339,67 +333,30 @@ class Route {
 		// Replace API version prefix
 		path = `/${path.join('/')}`.replace(Config.app.apiPrefix, '');
 
-		this._broadcast(req, res, result, null, path, true);
+		this._broadcast(req, res, result, false, path, true);
 
-		if (!attributeChannels) {
-			this._broadcast(req, res, result, null, path);
-		} else {
-			attributeChannels.forEach((channel) => this._broadcast(req, res, result, channel, path));
+		if (req.authApp && req.authUser) {
+			this._broadcast(req, res, result, true, path);
+		} else if (req.authApp) {
+			this._broadcast(req, res, result, false, path);
 		}
 
-		Logging.logTimer('_boardcastByAppRole:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		Logging.logTimer('_boardcastData:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
 
 	/**
-	 * Handle result based on user's attributes and broadcast
+	 * Handle result based on the collection and broadcast
 	 * @param {*} req
 	 * @param {*} res
 	 * @param {*} result
-	 * @param {*} attribute
+	 * @param {*} isUser
 	 * @param {*} path
 	 * @param {boolean} isSuper
 	 */
-	_broadcast(req, res, result, attribute, path, isSuper = false) {
+	_broadcast(req, res, result, isUser, path, isSuper = false) {
 		Logging.logTimer('_broadcast:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		const isReadStream = (result instanceof Stream && result.readable);
-
-		// broadcasting based on old role-access-control
-		// let filter = null;
-		// let permissions = {};
-		// const dataDisposition = {
-		// 	READ: 'deny',
-		// };
-
-		// if (role) {
-		// 	if (role.dataDisposition && role.dataDisposition === 'allowAll') {
-		// 		dataDisposition.READ = 'allow';
-		// 	}
-
-		// 	if (this.schema && this.schema.data && this.schema.data.roles) {
-		// 		const schemaRole = this.schema.data.roles.find((r) => r.name === role.name);
-		// 		if (schemaRole && schemaRole.dataDisposition) {
-		// 			if (schemaRole.dataDisposition.READ) dataDisposition.READ = schemaRole.dataDisposition.READ;
-		// 		}
-
-		// 		if (schemaRole && schemaRole.filter) {
-		// 			filter = schemaRole.filter;
-		// 		}
-		// 	}
-
-		// 	const permissionProperties = (this.schema) ? this.schema.getFlatPermissionProperties() : {};
-		// 	permissions = Object.keys(permissionProperties).reduce((properties, property) => {
-		// 		const permission = permissionProperties[property].find((p) => p.role === role.name);
-		// 		if (!permission) return properties;
-
-		// 		properties[property] = permission;
-		// 		return properties;
-		// 	}, {});
-		// }
-
-		// if (isSuper) {
-		// 	dataDisposition.READ = 'allow';
-		// }
 
 		const emit = (_result) => {
 			if (this.activityBroadcast === true) {
@@ -408,7 +365,7 @@ class Route {
 					description: this.activityDescription,
 					visibility: this.activityVisibility,
 					broadcast: this.activityBroadcast,
-					attribute: (attribute) ? attribute : null,
+					isUser: isUser,
 					path: path,
 					pathSpec: this.path,
 					verb: this.verb,

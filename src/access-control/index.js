@@ -25,11 +25,8 @@ const nrp = new NRP(Config.redis);
 
 class AccessControl {
 	constructor() {
-		this._attributeCloseSocketEvents = [];
-		this._attributes = [];
-
-		this._schemas = {};
-		this._policies = {};
+		this._schemas = null;
+		this._policies = null;
 	}
 
 	/**
@@ -42,24 +39,27 @@ class AccessControl {
 	 */
 	async accessControlPolicy(req, res, next) {
 		// TODO need to take into consideration appDataSharingId
+		const appId = req.authApp._id;
 		const user = req.authUser;
 		if (!user) return next();
 
-		if (!this._schemas[req.authApp._id]) {
-			this._schemas[req.authApp._id] = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
+		if (!this._schemas) {
+			this._schemas = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
 		}
 
-		if (!this._policies[req.authApp._id]) {
-			this._policies[req.authApp._id] = await this.__loadAppPolicies(req.authApp._id);
+		if (!this._policies) {
+			this._policies = await this.__loadAppPolicies(appId);
 		}
 
-		const userPolicies = await this.__getUserPolicies(user, req.authApp._id);
+		const userPolicies = await this.__getUserPolicies(user, appId);
 		const policyOutcome = await this.__getPolicyOutcome(userPolicies, req);
-		if (policyOutcome.statusCode && policyOutcome.message) {
-			Logging.logTimer(policyOutcome.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(policyOutcome.statusCode).send({message: policyOutcome.message});
+		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
+			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			res.status(policyOutcome.err.statusCode).send({message: policyOutcome.err.message});
 			return;
 		}
+		// await this._checkAccessControlQueryBasedCondition(req);
+		await this._queuePolicyRoomCloseSocketEvent(policyOutcome.res, appId);
 
 		next();
 	}
@@ -75,22 +75,22 @@ class AccessControl {
 	async getUserRooms(user, req, appId, userSocketObj) {
 		req.body = {};
 
-		if (!this._policies[appId]) {
-			this._policies[appId] = await this.__loadAppPolicies(appId);
+		if (!this._policies) {
+			this._policies = await this.__loadAppPolicies(appId);
 		}
 
-		if (!this._schemas[appId]) {
+		if (!this._schemas) {
 			const app = await Model.App.findById(appId);
-			this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type === 'collection');
+			this._schemas = Schema.decode(app.__schema).filter((s) => s.type === 'collection');
 		}
 
 		const userPolicies = await this.__getUserPolicies(user, appId);
-		await this._schemas[appId].reduce(async (prev, next) => {
+		await this._schemas.reduce(async (prev, next) => {
 			await prev;
 			const outcome = await this.__getPolicyOutcome(userPolicies, req, next.name, appId);
-			const outcomeHash = hash(req.body);
+			const outcomeHash = hash(outcome.res);
 
-			if (!outcome.statusCode && !outcome.message) {
+			if (!outcome.err.statusCode && !outcome.err.message) {
 				if (!userSocketObj[next.name]) {
 					userSocketObj[next.name] = {};
 				}
@@ -107,9 +107,7 @@ class AccessControl {
 				userSocketObj[next.name][outcomeHash].access.query = (req.body.query)? req.body.query : {};
 
 				if (projectionKeys.length > 0) {
-					userSocketObj[next.name][outcomeHash].access = {
-						projection: [],
-					};
+					userSocketObj[next.name][outcomeHash].access.projection = [];
 					projectionKeys.forEach((key) => {
 						userSocketObj[next.name][outcomeHash].access.projection.push(key);
 					});
@@ -140,18 +138,15 @@ class AccessControl {
 	 * @return {Object}
 	 */
 	async __getPolicyOutcome(userPolicies, req, schemaName = null, appId = null) {
-		const err = {};
-
-		let core = false;
-
-		appId = (!appId && req.authApp && req.authApp._id) ? req.authApp._id : appId;
+		const outcome = {
+			res: {},
+			err: {},
+		};
 
 		// TODO: better way to figure out the requested schema
 		const requestVerb = req.method || req.originalMethod;
 		if (!schemaName) {
 			let requestedURL = req.originalUrl || req.url;
-			// Check URL to see if it's a core schema
-			if (!core) core = requestedURL.indexOf('/api') === 0;
 			requestedURL = requestedURL.split('?').shift();
 			const schemaPath = requestedURL.split('v1/').pop().split('/');
 			schemaName = schemaPath.shift();
@@ -159,10 +154,10 @@ class AccessControl {
 
 		userPolicies = userPolicies.sort((a, b) => a.priority - b.priority);
 		if (userPolicies.length < 1) {
-			err.statusCode = 401;
-			err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			err.message = 'Request does not have any policy associated to it';
-			return err;
+			outcome.err.statusCode = 401;
+			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
+			outcome.err.message = 'Request does not have any policy associated to it';
+			return outcome;
 		}
 
 		const policiesConfig = userPolicies.reduce((arr, policy) => {
@@ -178,10 +173,10 @@ class AccessControl {
 		}, []);
 
 		if (policiesConfig.length < 1) {
-			err.statusCode = 401;
-			err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			err.message = 'Request does not have any policy rules matching the request verb';
-			return err;
+			outcome.err.statusCode = 401;
+			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
+			outcome.err.message = 'Request does not have any policy rules matching the request verb';
+			return outcome;
 		}
 
 		const schemaBasePolicyConfig = policiesConfig.reduce((arr, policy) => {
@@ -235,98 +230,50 @@ class AccessControl {
 		}, false);
 
 		if (!schemaBasePolicyConfig) {
-			err.statusCode = 401;
-			err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			err.message = 'Request policy does have access to the requested schema';
-			return err;
+			outcome.err.statusCode = 401;
+			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
+			outcome.err.message = 'Request policy does have access to the requested schema';
+			return outcome;
 		}
 
-		let schema = null;
-		if (core) {
-			const SchemaNameCamel = Sugar.String.camelize(schemaName);
-			if (Model.coreSchema.includes(SchemaNameCamel)) {
-				schema = Model[SchemaNameCamel].schemaData;
-			}
-		} else if (this._schemas[appId]) {
-			schema = this._schemas[appId].find((s) => s.name === schemaName);
-		}
-
+		const schema = this._schemas.find((s) => s.name === schemaName);
 		if (!schema) {
-			err.statusCode = 401;
-			err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			err.message = 'Request schema does not exist in the app';
-			return err;
+			outcome.err.statusCode = 401;
+			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
+			outcome.err.message = 'Request schema does not exist in the app';
+			return outcome;
 		}
 
+		appId = (req.authApp && req.authApp._id) ? req.authApp._id : appId;
 		AccessControlConditions.setAppShortId(appId);
 		await AccessControlConditions.applyPolicyConditions(req, schemaBasePolicyConfig);
+		console.log('schemaBasePolicyConfig', Object.keys(schemaBasePolicyConfig).length);
 		if (Object.keys(schemaBasePolicyConfig).length < 1) {
-			err.statusCode = 401;
-			err.logTimerMsg = `_accessControlPolicy:conditions-not-fulfilled`;
-			err.message = 'Access control policy conditions are not fulfilled';
-			return err;
+			outcome.err.statusCode = 401;
+			outcome.err.logTimerMsg = `_accessControlPolicy:conditions-not-fulfilled`;
+			outcome.err.message = 'Access control policy conditions are not fulfilled';
+			return outcome;
 		}
 
 		await AccessControlFilter.addAccessControlPolicyQuery(req, schemaBasePolicyConfig);
 		const policyProjection = await AccessControlProjection.addAccessControlPolicyQueryProjection(req, schemaBasePolicyConfig, schema);
 		if (!policyProjection) {
-			err.statusCode = 401;
-			err.logTimerMsg = `_accessControlPolicy:access-control-properties-permission-error`;
-			err.message = 'Can not access/edit properties without privileged access';
-			return err;
+			outcome.err.statusCode = 401;
+			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-properties-permission-error`;
+			outcome.err.message = 'Can not access/edit properties without privileged access';
+			return outcome;
 		}
 		await AccessControlFilter.applyAccessControlPolicyQuery(req);
 
-		return err;
+		outcome.res = schemaBasePolicyConfig;
+		return outcome;
 	}
 
-	/**
-	 * lookup attributes and fetch token attributes chain
-	 * @param {Array} attributeNames
-	 * @param {Array} attributes
-	 * @return {Array} attributes
-	 */
-	_getAttributesChain(attributeNames, attributes = []) {
-		const attrs = this._attributes.filter((attr) => attributeNames.includes(attr.name));
-		attributes = attrs.concat(attributes);
-
-		const extendedAttributes = attrs.reduce((arr, attr) => {
-			attr.extends.forEach((a) => {
-				if (arr.includes(a)) return;
-
-				arr.push(a);
-			});
-
-			return arr;
-		}, []);
-
-		if (extendedAttributes.length > 0) {
-			return this._getAttributesChain(extendedAttributes, attributes);
-		}
-
-		return attributes;
-	}
-
-	async _queueAttributeCloseSocketEvent(attributes, schemaNames) {
-		nrp.emit('queueAttributeCloseSocketEvent', {
-			attributes,
-			schemaNames,
+	async _queuePolicyRoomCloseSocketEvent(policies, appId) {
+		nrp.emit('queuePolicyRoomCloseSocketEvent', {
+			policies,
+			appId,
 		});
-	}
-
-	async getAttributeChannels(appId) {
-		const channels = [];
-
-		await this._attributes.reduce(async (prev, attribute) => {
-			await prev;
-			channels.push(attribute.name);
-		}, Promise.resolve());
-
-		return channels;
-	}
-
-	async getAttributesChainForToken(tokenAttribute) {
-		return await this._getAttributesChain(tokenAttribute);
 	}
 
 	async __loadAppPolicies(appId) {
@@ -342,7 +289,7 @@ class AccessControl {
 	}
 
 	async __getUserPolicies(user, appId) {
-		return await AccessControlPolicyMatch.__getUserPolicies(this._policies[appId], appId, user);
+		return await AccessControlPolicyMatch.__getUserPolicies(this._policies, appId, user);
 	}
 
 	async _checkAccessControlQueryBasedCondition(req, updatedSchema, path) {
