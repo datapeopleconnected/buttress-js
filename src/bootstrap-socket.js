@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+const hash = require('object-hash');
 const Sugar = require('sugar');
 const os = require('os');
 const cluster = require('cluster');
@@ -31,6 +32,8 @@ const NRP = require('node-redis-pubsub');
 
 const Config = require('node-env-obj')();
 
+const ObjectId = require('mongodb').ObjectId;
+const shortId = require('./helpers').shortId;
 const Model = require('./model');
 const Logging = require('./logging');
 const AccessControl = require('./access-control');
@@ -43,7 +46,6 @@ class BootstrapSocket {
 		Logging.setLogLevel(Logging.Constants.LogLevel.INFO);
 
 		this.processes = os.cpus().length;
-		this.processes = 1;
 		this.workers = [];
 
 		this.__apps = [];
@@ -53,7 +55,7 @@ class BootstrapSocket {
 
 		this.__superApps = [];
 
-		this._attributeCloseSocketEvents = [];
+		this._policyCloseSocketEvents = [];
 
 		this._oneWeekMilliseconds = Sugar.Number.day(7);
 
@@ -62,6 +64,8 @@ class BootstrapSocket {
 		this.emitter = null;
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
+
+		this._policyRooms = {};
 
 		// let socketInitTask = null;
 		// if (cluster.isMaster) {
@@ -113,16 +117,25 @@ class BootstrapSocket {
 				});
 			});
 
-			nrp.on('queueAttributeCloseSocketEvent', async (data) => {
-				await this._queueAttributeCloseSocketEvent(nrp, data.attributes, data.schemaNames);
+			nrp.on('queuePolicyRoomCloseSocketEvent', async (data) => {
+				await this._queuePolicyRoomCloseSocketEvent(nrp, data.policies, data.appId);
 			});
 
 			nrp.on('queueBasedConditionQuery', async (data) => {
-				this._attributeCloseSocketEvents.push(data);
+				this._policyCloseSocketEvents.push(data);
 			});
 
 			nrp.on('accessControlPolicy:disconnectQueryBasedSocket', async (data) => {
 				await this._disconnectQueryBasedSocket(nrp, data.updatedSchema, data.id);
+			});
+
+			nrp.on('setMainPolicyRooms', async (data) => {
+				this._policyRooms = data;
+				nrp.emit('finishedSettingMainPolicyRooms', true);
+			});
+
+			nrp.on('getPolicyRooms', async () => {
+				nrp.emit('sendPolicyRooms', this._policyRooms);
 			});
 		}
 
@@ -242,10 +255,29 @@ class BootstrapSocket {
 					return next('invalid-token-user-ID');
 				}
 
-				const userAttributes = await AccessControl.__getPolicyAttributes(user, app._id);
-				const roomName = (await AccessControl.getAttributesChainForToken(userAttributes)).map((attr) => attr.name).join(',');
-				socket.join(roomName);
-				Logging.log(`[${apiPath}][${token._id}] Connected ${socket.id} to room ${roomName}`);
+				const policyRooms = await new Promise((resolve) => {
+					nrp.emit('getPolicyRooms', {});
+					nrp.on('sendPolicyRooms', (data) => resolve(data));
+				});
+
+				if (!policyRooms || (policyRooms && (Array.isArray(policyRooms) || typeof policyRooms !== 'object'))) {
+					Logging.logWarn(`policyRooms is returning an invalid value, closing connection: ${socket.id}`);
+					return next('invalid-policy-rooms');
+				}
+
+				if (!policyRooms[app._id]) {
+					policyRooms[app._id] = {};
+				}
+
+				const userRooms = await AccessControl.getUserRooms(user, socket.request, app._id, policyRooms[app._id]);
+
+				await new Promise((resolve) => {
+					nrp.emit('setMainPolicyRooms', policyRooms);
+					nrp.on('finishedSettingMainPolicyRooms', () => resolve());
+				});
+
+				socket.join(userRooms);
+				Logging.log(`[${apiPath}][${token._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
 			} else {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
 			}
@@ -255,21 +287,12 @@ class BootstrapSocket {
 			});
 
 			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
-				const rooms = socket.adapter.rooms;
-				const regex = new RegExp(data.room, 'g');
-				const attributeRooms = [];
-				rooms.forEach((value, key) => {
-					if (key.match(regex)) {
-						attributeRooms.push(key);
-					}
-				});
-
 				socket.leave(data.room);
 
 				nrp.emit('dbClientLeaveRoom', {
 					apiPath,
-					type: data.type,
-					rooms: attributeRooms,
+					collections: data.collections,
+					rooms: data.room,
 				});
 			});
 
@@ -289,7 +312,7 @@ class BootstrapSocket {
 		process.send('workerInitiated');
 	}
 
-	__onActivity(data) {
+	async __onActivity(data) {
 		const apiPath = data.appAPIPath;
 
 		if (!this.emitter) {
@@ -298,7 +321,7 @@ class BootstrapSocket {
 
 		this.__namespace['stats'].emitter.emit('activity', 1);
 
-		Logging.logSilly(`[${apiPath}][${data.attribute}][${data.verb}] activity in on ${data.path}`);
+		Logging.logSilly(`[${apiPath}][${data.verb}] activity in on ${data.path}`);
 
 		// Super apps?
 		if (data.isSuper) {
@@ -315,7 +338,7 @@ class BootstrapSocket {
 
 		// Disable broadcasting to public space
 		if (data.broadcast === false) {
-			Logging.logDebug(`[${apiPath}][${data.attribute}][${data.verb}] ${data.path} - Early out as it isn't public.`);
+			Logging.logDebug(`[${apiPath}][${data.verb}] ${data.path} - Early out as it isn't public.`);
 			return;
 		}
 
@@ -336,16 +359,8 @@ class BootstrapSocket {
 			};
 		}
 
-		if (data.attribute) {
-			if (!this.__namespace[apiPath].sequence[data.attribute]) {
-				this.__namespace[apiPath].sequence[data.attribute] = 0;
-			}
-			Logging.logDebug(`[${apiPath}][${data.attribute}][${data.verb}] ${data.path}`);
-			this.__namespace[apiPath].sequence[data.attribute]++;
-			this.__namespace[apiPath].emitter.in(data.attribute).emit('db-activity', {
-				data: data,
-				sequence: this.__namespace[apiPath].sequence[data.attribute],
-			});
+		if (data.isUser) {
+			await this.__broadcastToUsers(data);
 		} else {
 			Logging.logDebug(`[${apiPath}][global]: [${data.verb}] ${data.path}`);
 			this.__namespace[apiPath].sequence.global++;
@@ -354,6 +369,73 @@ class BootstrapSocket {
 				sequence: this.__namespace[apiPath].sequence.global,
 			});
 		}
+	}
+
+	async __broadcastToUsers(data) {
+		const appId = data.appId;
+		const verb = data.verb;
+		const collection = data.path.match(/(?<=)[aA-zZ]*(?=)/g).filter((v) => v).shift();
+		const broadcastRooms = this._policyRooms[appId][collection];
+
+		for await (const roomKey of Object.keys(broadcastRooms)) {
+			const room = broadcastRooms[roomKey];
+			const roomQueryKeys = Object.keys(room.access.query);
+			const roomProjectionKeys = (room.access.projection) ? room.access.projection : [];
+			if (roomQueryKeys.length < 1 && roomProjectionKeys.length < 1) {
+				this.__broadcastData(data, roomKey);
+				continue;
+			}
+
+			let broadcast = true;
+			roomQueryKeys.forEach((key) => {
+				const operator = Object.keys(room.access.query[key]).pop();
+				const rhs = room.access.query[key][operator];
+				let lhs = (!Array.isArray(data.response)) ? data.response[key] : data.response.find((item) => item.path === key);
+				lhs = (typeof lhs === 'object') ? lhs.value : lhs;
+				const match = AccessControlConditions.evaluateOperation(lhs, rhs, operator);
+				if (!match) broadcast = false;
+			});
+
+			if (!broadcast) {
+				data.verb = 'delete';
+				this.__broadcastData(data, roomKey);
+				continue;
+			}
+
+			if (verb === 'put') {
+				const appShortId = shortId(appId);
+				data.response = await Model[`${appShortId}-${collection}`].findOne({_id: new ObjectId(data.params.id)});
+				data.verb = 'post';
+			}
+
+			const projectedData = roomProjectionKeys.reduce((obj, key) => {
+				if (data.response[key]) {
+					obj[key] = data.response[key];
+				}
+
+				return obj;
+			}, {});
+
+			if (Object.keys(projectedData).length > 0) {
+				data.response = projectedData;
+			}
+
+			this.__broadcastData(data, roomKey);
+		}
+	}
+
+	__broadcastData(data, room) {
+		const apiPath = data.appAPIPath;
+		if (!this.__namespace[apiPath].sequence[room]) {
+			this.__namespace[apiPath].sequence[room] = 0;
+		}
+
+		Logging.logDebug(`[${apiPath}][${room}][${data.verb}] ${data.path}`);
+		this.__namespace[apiPath].sequence[room]++;
+		this.__namespace[apiPath].emitter.in(room).emit('db-activity', {
+			data: data,
+			sequence: this.__namespace[apiPath].sequence[room],
+		});
 	}
 
 	__clearUserLocalData(data) {
@@ -443,55 +525,62 @@ class BootstrapSocket {
 		});
 	}
 
-	async _queueAttributeCloseSocketEvent(nrp, attributes, schemaNames) {
-		const prioritisedConditions = await AccessControlConditions.__prioritiseConditionOrder(attributes);
-		await prioritisedConditions.reduce(async (prev, attribute) => {
-			await prev;
-
-			const name = attribute.name;
-			const conditionStr = JSON.stringify(attribute.condition);
-			let attributeIdx = this._attributeCloseSocketEvents.findIndex((event) => event.name === name);
-			if (attributeIdx === -1) {
-				attributeIdx = this._attributeCloseSocketEvents.push({
+	async _queuePolicyRoomCloseSocketEvent(nrp, policies, appId) {
+		const room = hash(policies);
+		for await (const key of Object.keys(policies)) {
+			const policy = policies[key];
+			const name = policy.name;
+			const conditionStr = policy.conditions.reduce((str, condition) => str = str + JSON.stringify(condition), '');
+			let policyIdx = this._policyCloseSocketEvents.findIndex((event) => event.name === name);
+			if (policyIdx === -1) {
+				policyIdx = this._policyCloseSocketEvents.push({
 					name,
 					conditions: [
 						conditionStr,
 					],
 				});
 			} else {
-				const attributeConditionExist = this._attributeCloseSocketEvents[attributeIdx].conditions.some((c) => c === conditionStr);
-				if (attributeConditionExist) return;
+				const policyConditionExist = this._policyCloseSocketEvents[policyIdx].conditions.some((c) => c === conditionStr);
+				if (policyConditionExist) return;
 
-				this._attributeCloseSocketEvents[attributeIdx].conditions.push(conditionStr);
+				this._policyCloseSocketEvents[policyIdx].conditions.push(conditionStr);
 			}
 
-			await this._queueEvent(nrp, attribute, schemaNames, attributeIdx);
+			await this._queueEvent(nrp, room, policy, appId, policyIdx);
+		}
+	}
+
+	async _queueEvent(nrp, room, policy, appId, idx) {
+		const conditions = policy.conditions;
+		conditions.reduce(async (prev, condition) => {
+			await prev;
+			const dateTimeBasedCondition = await AccessControlConditions.isPolicyDateTimeBased(condition);
+			if (dateTimeBasedCondition) {
+				await this._queueDateTimeEvent(nrp, room, policy, appId, dateTimeBasedCondition, idx);
+				return;
+			}
+
+			// const queryBasedCondition = await AccessControlConditions.isAttributeQueryBasedCondition(conditions, schemaNames);
+			// if (queryBasedCondition) {
+			// 	nrp.emit('queueBasedConditionQuery', {
+			// 		name: policy.name,
+			// 		collection: queryBasedCondition.name,
+			// 		entityId: queryBasedCondition.entityId,
+			// 	});
+			// }
 		}, Promise.resolve());
-
-		return;
 	}
 
-	async _queueEvent(nrp, attribute, schemaNames, idx) {
-		const conditions = attribute.condition;
-		const dateTimeBasedCondition = await AccessControlConditions.isAttributeDateTimeBased(conditions);
-		if (dateTimeBasedCondition) {
-			await this._queueDateTimeEvent(nrp, attribute, dateTimeBasedCondition, idx);
-			return;
-		}
+	async _queueDateTimeEvent(nrp, room, policy, appId, dateTimeBasedCondition, idx) {
+		const envVars = policy.env;
+		const collections = Object.keys(this._policyRooms[appId]).reduce((arr, key) => {
+			if (Object.keys(this._policyRooms[appId][key]).includes(room)) {
+				arr.push(key);
+			}
 
-		const queryBasedCondition = await AccessControlConditions.isAttributeQueryBasedCondition(conditions, schemaNames);
-		if (queryBasedCondition) {
-			nrp.emit('queueBasedConditionQuery', {
-				name: attribute.name,
-				collection: queryBasedCondition.name,
-				entityId: queryBasedCondition.entityId,
-				attribute,
-			});
-		}
-	}
+			return arr;
+		}, []);
 
-	async _queueDateTimeEvent(nrp, attribute, dateTimeBasedCondition, idx) {
-		const envVars = attribute.environmentVar;
 		if (dateTimeBasedCondition === 'time') {
 			const conditionEndTime = AccessControlConditions.getEnvironmentVar(envVars, 'env.endTime');
 			if (!conditionEndTime) return;
@@ -499,10 +588,10 @@ class BootstrapSocket {
 			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
 			setTimeout(() => {
 				nrp.emit('accessControlPolicy:disconnectSocket', {
-					id: attribute.name,
-					type: 'generic',
+					id: room,
+					collections: collections,
 				});
-				this._attributeCloseSocketEvents.splice(idx - 1, 1);
+				this._policyCloseSocketEvents.splice(idx - 1, 1);
 			}, timeout);
 		}
 
@@ -514,22 +603,22 @@ class BootstrapSocket {
 			if (this._oneWeekMilliseconds > nearlyExpired) {
 				setTimeout(() => {
 					nrp.emit('accessControlPolicy:disconnectSocket', {
-						id: attribute.name,
-						type: 'generic',
+						id: room,
+						collections: collections,
 					});
-					this._attributeCloseSocketEvents.splice(idx - 1, 1);
+					this._policyCloseSocketEvents.splice(idx - 1, 1);
 				}, nearlyExpired);
 			}
 		}
 	}
 
 	async _disconnectQueryBasedSocket(nrp, updatedSchema, id) {
-		const schemaBasedConditionIdx = this._attributeCloseSocketEvents.findIndex((c) => {
+		const schemaBasedConditionIdx = this._policyCloseSocketEvents.findIndex((c) => {
 			return c.collection === updatedSchema && c.entityId === id;
 		});
 		if (schemaBasedConditionIdx === -1) return;
 
-		const attribute = this._attributeCloseSocketEvents[schemaBasedConditionIdx].attribute;
+		const attribute = this._policyCloseSocketEvents[schemaBasedConditionIdx].attribute;
 		const attributeName = attribute.name;
 
 		nrp.emit('accessControlPolicy:disconnectSocket', {
@@ -537,12 +626,12 @@ class BootstrapSocket {
 			type: (attribute.targetedSchema.length > 0)? attribute.targetedSchema : 'generic',
 		});
 
-		this._attributeCloseSocketEvents.splice(schemaBasedConditionIdx, 1);
+		this._policyCloseSocketEvents.splice(schemaBasedConditionIdx, 1);
 
-		this._attributeCloseSocketEvents.forEach((obj, idx) => {
+		this._policyCloseSocketEvents.forEach((obj, idx) => {
 			if (obj.name === attributeName) {
 				const conditionIdx = obj.conditions.findIndex((c) => c === JSON.stringify(attribute.condition));
-				this._attributeCloseSocketEvents[idx].conditions.splice(conditionIdx, 1);
+				this._policyCloseSocketEvents[idx].conditions.splice(conditionIdx, 1);
 			}
 		});
 	}
