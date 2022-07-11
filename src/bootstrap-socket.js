@@ -329,7 +329,7 @@ class BootstrapSocket {
 
 		this.__namespace['stats'].emitter.emit('activity', 1);
 
-		Logging.logSilly(`[${apiPath}][${data.attribute}][${data.verb}] activity in on ${data.path}`);
+		Logging.logSilly(`[${apiPath}][${data.verb}] activity in on ${data.path}`);
 
 		// Super apps?
 		if (data.isSuper) {
@@ -346,7 +346,7 @@ class BootstrapSocket {
 
 		// Disable broadcasting to public space
 		if (data.broadcast === false) {
-			Logging.logDebug(`[${apiPath}][${data.attribute}][${data.verb}] ${data.path} - Early out as it isn't public.`);
+			Logging.logDebug(`[${apiPath}][${data.verb}] ${data.path} - Early out as it isn't public.`);
 			return;
 		}
 

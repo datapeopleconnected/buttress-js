@@ -345,7 +345,7 @@ class Route {
 	}
 
 	/**
-	 * Handle result based on user's attributes and broadcast
+	 * Handle result based on the collection and broadcast
 	 * @param {*} req
 	 * @param {*} res
 	 * @param {*} result
