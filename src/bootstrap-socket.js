@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+const hash = require('object-hash');
 const Sugar = require('sugar');
 const os = require('os');
 const cluster = require('cluster');
@@ -117,7 +118,7 @@ class BootstrapSocket {
 			});
 
 			nrp.on('queuePolicyRoomCloseSocketEvent', async (data) => {
-				await this._queuePolicyRoomCloseSocketEvent(nrp, data.policies, data.schemaNames);
+				await this._queuePolicyRoomCloseSocketEvent(nrp, data.policies, data.appId);
 			});
 
 			nrp.on('queueBasedConditionQuery', async (data) => {
@@ -286,21 +287,12 @@ class BootstrapSocket {
 			});
 
 			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
-				const rooms = socket.adapter.rooms;
-				const regex = new RegExp(data.room, 'g');
-				const attributeRooms = [];
-				rooms.forEach((value, key) => {
-					if (key.match(regex)) {
-						attributeRooms.push(key);
-					}
-				});
-
 				socket.leave(data.room);
 
 				nrp.emit('dbClientLeaveRoom', {
 					apiPath,
-					type: data.type,
-					rooms: attributeRooms,
+					collections: data.collections,
+					rooms: data.room,
 				});
 			});
 
@@ -533,10 +525,9 @@ class BootstrapSocket {
 		});
 	}
 
-	async _queuePolicyRoomCloseSocketEvent(nrp, policies, schemaNames) {
-		await Object.keys(policies).reduce(async (prev, key) => {
-			await prev;
-
+	async _queuePolicyRoomCloseSocketEvent(nrp, policies, appId) {
+		const room = hash(policies);
+		for await (const key of Object.keys(policies)) {
 			const policy = policies[key];
 			const name = policy.name;
 			const conditionStr = policy.conditions.reduce((str, condition) => str = str + JSON.stringify(condition), '');
@@ -555,18 +546,18 @@ class BootstrapSocket {
 				this._policyCloseSocketEvents[policyIdx].conditions.push(conditionStr);
 			}
 
-			await this._queueEvent(nrp, policy, schemaNames, policyIdx);
-		}, Promise.resolve());
+			await this._queueEvent(nrp, room, policy, appId, policyIdx);
+		}
 	}
 
-	async _queueEvent(nrp, policy, schemaNames, idx) {
+	async _queueEvent(nrp, room, policy, appId, idx) {
 		const conditions = policy.conditions;
 		conditions.reduce(async (prev, condition) => {
 			await prev;
 			const dateTimeBasedCondition = await AccessControlConditions.isPolicyDateTimeBased(condition);
 			if (dateTimeBasedCondition) {
-				// await this._queueDateTimeEvent(nrp, policy, dateTimeBasedCondition, idx);
-				// return;
+				await this._queueDateTimeEvent(nrp, room, policy, appId, dateTimeBasedCondition, idx);
+				return;
 			}
 
 			// const queryBasedCondition = await AccessControlConditions.isAttributeQueryBasedCondition(conditions, schemaNames);
@@ -580,8 +571,16 @@ class BootstrapSocket {
 		}, Promise.resolve());
 	}
 
-	async _queueDateTimeEvent(nrp, attribute, dateTimeBasedCondition, idx) {
-		const envVars = attribute.environmentVar;
+	async _queueDateTimeEvent(nrp, room, policy, appId, dateTimeBasedCondition, idx) {
+		const envVars = policy.env;
+		const collections = Object.keys(this._policyRooms[appId]).reduce((arr, key) => {
+			if (Object.keys(this._policyRooms[appId][key]).includes(room)) {
+				arr.push(key);
+			}
+
+			return arr;
+		}, []);
+
 		if (dateTimeBasedCondition === 'time') {
 			const conditionEndTime = AccessControlConditions.getEnvironmentVar(envVars, 'env.endTime');
 			if (!conditionEndTime) return;
@@ -589,8 +588,8 @@ class BootstrapSocket {
 			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
 			setTimeout(() => {
 				nrp.emit('accessControlPolicy:disconnectSocket', {
-					id: attribute.name,
-					type: 'generic',
+					id: room,
+					collections: collections,
 				});
 				this._policyCloseSocketEvents.splice(idx - 1, 1);
 			}, timeout);
@@ -604,8 +603,8 @@ class BootstrapSocket {
 			if (this._oneWeekMilliseconds > nearlyExpired) {
 				setTimeout(() => {
 					nrp.emit('accessControlPolicy:disconnectSocket', {
-						id: attribute.name,
-						type: 'generic',
+						id: room,
+						collections: collections,
 					});
 					this._policyCloseSocketEvents.splice(idx - 1, 1);
 				}, nearlyExpired);

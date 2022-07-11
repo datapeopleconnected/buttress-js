@@ -38,8 +38,8 @@ class AccessControl {
 	 */
 	async accessControlPolicy(req, res, next) {
 		// TODO need to take into consideration appDataSharingId
+		const appId = req.authApp._id;
 		const user = req.authUser;
-
 		if (!user) return next();
 
 		if (!this._schemas) {
@@ -47,20 +47,18 @@ class AccessControl {
 		}
 
 		if (!this._policies) {
-			this._policies = await this.__loadAppPolicies(req.authApp._id);
+			this._policies = await this.__loadAppPolicies(appId);
 		}
 
-		const schemaNames = this._schemas.map((s) => s.name);
-
-		const userPolicies = await this.__getUserPolicies(user, req.authApp._id);
+		const userPolicies = await this.__getUserPolicies(user, appId);
 		const policyOutcome = await this.__getPolicyOutcome(userPolicies, req);
 		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
-			Logging.logTimer(policyOutcome.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(policyOutcome.statusCode).send({message: policyOutcome.message});
+			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			res.status(policyOutcome.err.statusCode).send({message: policyOutcome.err.message});
 			return;
 		}
-		// await this._checkAccessControlQueryBasedCondition(req, schemaName, schemaPath);
-		await this._queuePolicyRoomCloseSocketEvent(policyOutcome.res, schemaNames);
+		// await this._checkAccessControlQueryBasedCondition(req);
+		await this._queuePolicyRoomCloseSocketEvent(policyOutcome.res, appId);
 
 		next();
 	}
@@ -89,7 +87,7 @@ class AccessControl {
 		await this._schemas.reduce(async (prev, next) => {
 			await prev;
 			const outcome = await this.__getPolicyOutcome(userPolicies, req, next.name, appId);
-			const outcomeHash = hash(req.body);
+			const outcomeHash = hash(outcome.res);
 
 			if (!outcome.err.statusCode && !outcome.err.message) {
 				if (!userSocketObj[next.name]) {
@@ -248,10 +246,11 @@ class AccessControl {
 		appId = (req.authApp && req.authApp._id) ? req.authApp._id : appId;
 		AccessControlConditions.setAppShortId(appId);
 		await AccessControlConditions.applyPolicyConditions(req, schemaBasePolicyConfig);
+		console.log('schemaBasePolicyConfig', Object.keys(schemaBasePolicyConfig).length);
 		if (Object.keys(schemaBasePolicyConfig).length < 1) {
-			outcome.statusCode = 401;
-			outcome.logTimerMsg = `_accessControlPolicy:conditions-not-fulfilled`;
-			outcome.message = 'Access control policy conditions are not fulfilled';
+			outcome.err.statusCode = 401;
+			outcome.err.logTimerMsg = `_accessControlPolicy:conditions-not-fulfilled`;
+			outcome.err.message = 'Access control policy conditions are not fulfilled';
 			return outcome;
 		}
 
@@ -269,10 +268,10 @@ class AccessControl {
 		return outcome;
 	}
 
-	async _queuePolicyRoomCloseSocketEvent(policies, schemaNames) {
+	async _queuePolicyRoomCloseSocketEvent(policies, appId) {
 		nrp.emit('queuePolicyRoomCloseSocketEvent', {
 			policies,
-			schemaNames,
+			appId,
 		});
 	}
 

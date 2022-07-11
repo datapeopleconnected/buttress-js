@@ -471,11 +471,12 @@ class Conditions {
 
 	async isPolicyDateTimeBased(conditions, pass = false) {
 		let res = false;
-
 		for await (const key of Object.keys(conditions)) {
 			if (Array.isArray(conditions[key])) {
 				if (this.logicalOperator.includes(key)) {
-					return await this.isPolicyDateTimeBased(conditions[key], pass);
+					for await (const item of conditions[key]) {
+						return await this.isPolicyDateTimeBased(item, pass);
+					}
 				} else {
 					// TODO throw an error
 				}
