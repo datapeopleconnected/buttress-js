@@ -15,6 +15,7 @@
  */
 
 require('node-env-obj')({
+	basePath: __dirname,
 	envFile: `.test.env`,
 	envPath: '../',
 	configPath: '../src',

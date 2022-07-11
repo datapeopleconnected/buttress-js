@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+const {describe, it} = require('mocha');
 const assert = require('assert');
 
 describe('intergration:first', () => {

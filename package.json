@@ -11,7 +11,7 @@
   },
   "main": "deploy/app.js",
   "scripts": {
-    "test": "mocha test/units test/intergration",
+    "test": "mocha test/units/* test/intergration/*",
     "lint": "eslint 'src/**/*.js'",
     "coverage": "npx nyc --reporter cobertura mocha",
     "start": "bin/buttress.sh",
