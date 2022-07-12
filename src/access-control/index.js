@@ -246,7 +246,7 @@ class AccessControl {
 		appId = (req.authApp && req.authApp._id) ? req.authApp._id : appId;
 		AccessControlConditions.setAppShortId(appId);
 		await AccessControlConditions.applyPolicyConditions(req, schemaBasePolicyConfig);
-		console.log('schemaBasePolicyConfig', Object.keys(schemaBasePolicyConfig).length);
+
 		if (Object.keys(schemaBasePolicyConfig).length < 1) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:conditions-not-fulfilled`;

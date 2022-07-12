@@ -409,6 +409,13 @@ const __populateObject = (schemaFlat, values, body = null) => {
 		let propVal = values.find((v) => v.path === property);
 		const config = schemaFlat[property];
 
+		const path = property.split('.');
+		const root = path.shift();
+		if (path.length > 0) {
+			const isSubPropOfArray = schemaFlat[root] && schemaFlat[root].__type === 'array';
+			if (isSubPropOfArray) continue;
+		}
+
 		if (body && propVal === undefined && schemaFlat && schemaFlat[property] && schemaFlat[property].__type === 'object') {
 			const definedObjectKeys = Object.keys(schemaFlat).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
 			let blankObjectValues = null;
@@ -437,15 +444,10 @@ const __populateObject = (schemaFlat, values, body = null) => {
 		if (propVal === undefined) continue;
 		__validateProp(propVal, config);
 
-		const path = propVal.path.split('.');
-		const root = path.shift();
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
 			value = value.map((v) => __populateObject(config.__schema, __getFlattenedBody(v), body[property]));
 		} else if (root && path.length > 0 || schemaFlat[property].__type === 'object') {
-			const isSubPropOfArray = schemaFlat[root] && schemaFlat[root].__type === 'array';
-			if (isSubPropOfArray) continue;
-
 			if (!objects[root]) {
 				objects[root] = {};
 			}
