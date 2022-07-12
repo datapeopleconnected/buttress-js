@@ -394,17 +394,23 @@ const __getBlankObjectValues = (item, keys, body, property) => {
 
 // TODO: Need to handle flatterned array paths
 // TODO: Shared has simliar code, this may be a duplicate
-const __populateObject = (schema, values, body = null) => {
+/**
+ * @param {Object} schemaFlat - a flatterned schema
+ * @param {Array} values - Array of values, path/value
+ * @param {Object} body
+ * @return {Object} - A fully populated object using schema defaults and values provided.
+ */
+const __populateObject = (schemaFlat, values, body = null) => {
 	const res = {};
 	const objects = {};
 
-	for (const property in schema) {
-		if (!{}.hasOwnProperty.call(schema, property)) continue;
+	for (const property in schemaFlat) {
+		if (!{}.hasOwnProperty.call(schemaFlat, property)) continue;
 		let propVal = values.find((v) => v.path === property);
-		const config = schema[property];
+		const config = schemaFlat[property];
 
-		if (body && propVal === undefined && schema && schema[property] && schema[property].__type === 'object') {
-			const definedObjectKeys = Object.keys(schema).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
+		if (body && propVal === undefined && schemaFlat && schemaFlat[property] && schemaFlat[property].__type === 'object') {
+			const definedObjectKeys = Object.keys(schemaFlat).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
 			let blankObjectValues = null;
 			if (Array.isArray(body)) {
 				body.forEach((item) => {
@@ -438,7 +444,7 @@ const __populateObject = (schema, values, body = null) => {
 			value = value.map((v) => __populateObject(config.__schema, __getFlattenedBody(v), body[property]));
 		}
 
-		if (path.length > 0 || schema[property].__type === 'object') {
+		if (path.length > 0 || schemaFlat[property].__type === 'object') {
 			if (!objects[root]) {
 				objects[root] = {};
 			}
