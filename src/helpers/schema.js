@@ -344,17 +344,22 @@ const __prepareSchemaResult = (result, token = false) => {
 module.exports.prepareSchemaResult = __prepareSchemaResult;
 
 const __inflateObject = (parent, path, value) => {
+	if (path.length === 0) {
+		parent = value;
+		return parent;
+	}
+
 	if (path.length > 1) {
 		const parentKey = path.shift();
 		if (!parent[parentKey]) {
 			parent[parentKey] = {};
 		}
 		__inflateObject(parent[parentKey], path, value);
-		return;
+		return parent;
 	}
 
 	parent[path.shift()] = value;
-	return;
+	return parent;
 };
 
 function __unflattenObject(data) {
@@ -369,9 +374,27 @@ function __unflattenObject(data) {
 }
 module.exports.unflattenObject = __unflattenObject;
 
+/**
+ * @param {Object} item - item object
+ * @param {Array} keys - array of blank object keys
+ * @param {Object} body - blank object body
+ * @param {String} property - object property key
+ * @return {Object}
+ */
+
+const __getBlankObjectValues = (item, keys, body, property) => {
+	return Object.keys(item).reduce((arr, key) => {
+		if (!keys.includes(key) || property !== key) {
+			arr[key] = (body[property])? body[property][key] : body[key];
+		}
+
+		return arr;
+	}, {});
+};
+
 // TODO: Need to handle flatterned array paths
 // TODO: Shared has simliar code, this may be a duplicate
-const __populateObject = (schema, values) => {
+const __populateObject = (schema, values, body = null) => {
 	const res = {};
 	const objects = {};
 
@@ -379,6 +402,24 @@ const __populateObject = (schema, values) => {
 		if (!{}.hasOwnProperty.call(schema, property)) continue;
 		let propVal = values.find((v) => v.path === property);
 		const config = schema[property];
+
+		if (body && propVal === undefined && schema && schema[property] && schema[property].__type === 'object') {
+			const definedObjectKeys = Object.keys(schema).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
+			let blankObjectValues = null;
+			if (Array.isArray(body)) {
+				body.forEach((item) => {
+					blankObjectValues = __getBlankObjectValues(item[property], definedObjectKeys, item[property], property);
+				});
+			} else {
+				blankObjectValues = __getBlankObjectValues(body[property], definedObjectKeys, body, property);
+			}
+
+			if (blankObjectValues) {
+				propVal = {};
+				propVal.path = property;
+				propVal.value = blankObjectValues;
+			}
+		}
 
 		if (propVal === undefined) {
 			propVal = {
@@ -394,14 +435,14 @@ const __populateObject = (schema, values) => {
 		const root = path.shift();
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
-			value = value.map((v) => __populateObject(config.__schema, __getFlattenedBody(v)));
+			value = value.map((v) => __populateObject(config.__schema, __getFlattenedBody(v), body[property]));
 		}
 
-		if (path.length > 0) {
+		if (path.length > 0 || schema[property].__type === 'object') {
 			if (!objects[root]) {
 				objects[root] = {};
 			}
-			__inflateObject(objects[root], path, value);
+			objects[root] = __inflateObject(objects[root], path, value);
 			value = objects[root];
 		}
 
