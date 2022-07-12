@@ -434,9 +434,10 @@ const __populateObject = (schema, values) => {
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
 			value = value.map((v) => __populateObject(config.__schema, __getFlattenedBody(v)));
-		}
+		} else if (root && path.length > 0) {
+			const isSubPropOfArray = schema[root] && schema[root].__type === 'array';
+			if (isSubPropOfArray) continue;
 
-		if (path.length > 0) {
 			if (!objects[root]) {
 				objects[root] = {};
 			}

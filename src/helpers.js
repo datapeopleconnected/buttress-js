@@ -225,28 +225,26 @@ const __getFlattenedSchema = (schema) => {
 	const __buildFlattenedSchema = (property, parent, path, flattened) => {
 		path.push(property);
 
-		let isRoot = true;
-		for (const childProp in parent[property]) {
-			if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;
-			if (/^__/.test(childProp)) {
-				if (childProp === '__schema') {
-					parent[property].__schema = __getFlattenedSchema({properties: parent[property].__schema});
-				}
-				continue;
+		if (parent[property].__type === 'array' && parent[property].__schema) {
+			// Handle Array
+			for (const childProp in parent[property].__schema) {
+				if (!{}.hasOwnProperty.call(parent[property].__schema, childProp)) continue;
+				__buildFlattenedSchema(childProp, parent[property].__schema, path, flattened);
 			}
 
-			isRoot = false;
-			__buildFlattenedSchema(childProp, parent[property], path, flattened);
-		}
-
-		if (isRoot === true) {
+			parent[property].__schema = __getFlattenedSchema({properties: parent[property].__schema});
 			flattened[path.join('.')] = parent[property];
-			path.pop();
-			return;
+		} else if (!parent[property].__type) {
+			// Handle Object
+			for (const childProp in parent[property]) {
+				if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;
+				__buildFlattenedSchema(childProp, parent[property], path, flattened);
+			}
+		} else {
+			flattened[path.join('.')] = parent[property];
 		}
 
 		path.pop();
-		return;
 	};
 
 	const flattened = {};

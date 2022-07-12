@@ -142,19 +142,6 @@ class SchemaModel {
 						propSchema = schemaFlat[property];
 					} else {
 						// TODO: Should maybe reject query
-						const path = property.split('.');
-						let lastVal = schemaFlat;
-						path.forEach((p) => {
-							if (lastVal[p] && lastVal[p].__type === 'array' && lastVal[p].__schema) {
-								lastVal = lastVal[p].__schema;
-							} else if (lastVal[p]) {
-								lastVal = lastVal[p];
-							} else {
-								lastVal = null;
-							}
-						});
-
-						if (lastVal) propSchema = lastVal;
 					}
 
 					if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
