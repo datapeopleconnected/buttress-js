@@ -333,15 +333,6 @@ class GetAppSchema extends Route {
 			schema = schema.filter((s) => only.includes(s.name));
 		}
 
-		const denyAll = (req.roles.app && req.roles.app.endpointDisposition === 'denyAll');
-		schema = schema.filter((s) => {
-			if (!s.roles || !req.roles.app) return !denyAll;
-			const role = s.roles.find((r) => r.name === req.roles.app.name);
-			if (role && role.endpointDisposition && role.endpointDisposition.GET === 'allow') return true;
-
-			return !denyAll;
-		});
-
 		return schema;
 	}
 
@@ -497,34 +488,6 @@ class UpdateAppSchema extends Route {
 routes.push(UpdateAppSchema);
 
 /**
- * @class UpdateAppRoles
- */
-class UpdateAppRoles extends Route {
-	constructor() {
-		super('app/roles', 'UPDATE APP ROLES');
-		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
-
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.authApp) {
-				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
-			}
-
-			resolve(true);
-		});
-	}
-
-	_exec(req, res, validate) {
-		return Model.App.updateRoles(req.authApp._id, req.body).then((res) => true);
-	}
-}
-routes.push(UpdateAppRoles);
-
-/**
 * @class AddDataSharing
 */
 class AddDataSharing extends Route {
@@ -646,43 +609,36 @@ class GetDataSharing extends Route {
 
 	_validate(req, res, token) {
 		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-		let generateQuery = Promise.resolve({});
-		if (token.authLevel < 3) {
-			generateQuery = this.model.generateRoleFilterQuery(token, req.roles, Model);
-		}
 
 		const result = {
 			query: {},
 			project: (req.body && req.body.project)? req.body.project : false,
 		};
 
-		return generateQuery
-			.then((query) => {
-				if (!query.$and) {
-					query.$and = [];
-				}
+		let query = {};
 
-				// access control query
-				if (req.body && req.body.query) {
-					query.$and.push(req.body.query);
-				}
+		if (!query.$and) {
+			query.$and = [];
+		}
 
-				if (req.body && req.body.query && req.body.query.zeroResults) {
-					return false;
-				}
+		// access control query
+		if (req.body && req.body.query) {
+			query.$and.push(req.body.query);
+		}
 
-				Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-				return this.model.parseQuery(query, {}, this.model.flatSchemaData);
-			})
-			.then((query) => {
-				result.query = query;
+		if (req.body && req.body.query && req.body.query.zeroResults) {
+			return false;
+		}
 
-				if (token.authLevel < 3) {
-					result.query['_appId'] = req.authApp._id;
-				}
+		Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		result.query = query;
 
-				return result;
-			});
+		if (token.authLevel < 3) {
+			result.query['_appId'] = req.authApp._id;
+		}
+
+		return result;
 	}
 
 	_exec(req, res, validateResult) {

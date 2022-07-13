@@ -31,11 +31,6 @@ module.exports = class SearchList extends Route {
 	}
 
 	_validate(req, res, token) {
-		let generateQuery = Promise.resolve({});
-		if (token.authLevel < 3) {
-			generateQuery = this.model.generateRoleFilterQuery(token, req.roles, Model);
-		}
-
 		const result = {
 			query: {},
 			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
@@ -47,23 +42,21 @@ module.exports = class SearchList extends Route {
 		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
 		if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
 
-		return generateQuery
-			.then((query) => {
-				if (!query.$and) {
-					query.$and = [];
-				}
+		let query = {};
 
-				// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-				if (req.body && req.body.query) {
-					query.$and.push(req.body.query);
-				}
+		if (!query.$and) {
+			query.$and = [];
+		}
 
-				return this.model.parseQuery(query, {}, this.model.flatSchemaData);
-			})
-			.then((query) => {
-				result.query = query;
-				return result;
-			});
+		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+		if (req.body && req.body.query) {
+			query.$and.push(req.body.query);
+		}
+
+		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+
+		result.query = query;
+		return result;
 	}
 
 	_exec(req, res, validateResult) {

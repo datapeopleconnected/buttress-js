@@ -31,34 +31,26 @@ module.exports = class SearchCount extends Route {
 	}
 
 	_validate(req, res, token) {
-		let generateQuery = Promise.resolve({});
-		if (token.authLevel < 3) {
-			generateQuery = this.model.generateRoleFilterQuery(token, req.roles, Model);
-		}
-
 		const result = {
 			query: {},
 		};
 
-		return generateQuery
-			.then((query) => {
-				if (!query.$and) {
-					query.$and = [];
-				}
+		let query = {};
 
-				// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-				if (req.body && req.body.query) {
-					query.$and.push(req.body.query);
-				} else if (req.body && !req.body.query) {
-					query.$and.push(req.body);
-				}
+		if (!query.$and) {
+			query.$and = [];
+		}
 
-				return this.model.parseQuery(query, {}, this.model.flatSchemaData);
-			})
-			.then((query) => {
-				result.query = query;
-				return result;
-			});
+		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+		if (req.body && req.body.query) {
+			query.$and.push(req.body.query);
+		} else if (req.body && !req.body.query) {
+			query.$and.push(req.body);
+		}
+
+		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		result.query = query;
+		return result;
 	}
 
 	_exec(req, res, validateResult) {

@@ -53,49 +53,6 @@ class GetTokenList extends Route {
 routes.push(GetTokenList);
 
 /**
- * @class UpdateTokenRoles
- */
-class UpdateTokenRoles extends Route {
-	constructor() {
-		super('token/roles', 'UPDATE TOKEN ROLES');
-		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.WRITE;
-
-		// Fetch model
-		this.model = Model['token'];
-
-		this.redactResults = false;
-	}
-
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.body) {
-				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
-			if (!req.body.token) {
-				this.log('ERROR: token is missing', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_token`));
-			}
-			if (!req.body.role) {
-				this.log('ERROR: role is a required field', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_role`));
-			}
-
-			// TODO: Fetch the app roles and vaildate that its a valid app role
-			resolve(true);
-		});
-	}
-
-	_exec(req, res, validate) {
-		return Model.Token.updateRole(this.model.createId(req.body.token), req.body.role)
-			.then((res) => true);
-	}
-}
-routes.push(UpdateTokenRoles);
-
-/**
  * @class DeleteAllTokens
  */
 class DeleteAllTokens extends Route {

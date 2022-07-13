@@ -217,6 +217,12 @@ const __validate = (schema, values, parentProperty, body = null) => {
 		if (!{}.hasOwnProperty.call(schema, property)) continue;
 		let propVal = values.find((v) => v.path === property);
 		const config = schema[property];
+
+		const path = property.split('.');
+		const root = path.shift();
+		const isSubPropOfArray = schema[root] && schema[root].__type === 'array';
+		if (path.length > 0 && isSubPropOfArray) continue;
+
 		if (propVal === undefined) {
 			// NOTE: This feels wrong
 			if (body && schema && schema[property] && schema[property].__type === 'object') {

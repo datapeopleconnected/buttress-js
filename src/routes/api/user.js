@@ -84,7 +84,6 @@ class GetUser extends Route {
 						rxTokens.on('data', (token) => {
 							output.tokens.push({
 								value: token.value,
-								role: token.role,
 							});
 						});
 						rxTokens.once('end', () => resolve(output));
@@ -135,7 +134,6 @@ class FindUser extends Route {
 						rxTokens.on('data', (token) => {
 							output.tokens.push({
 								value: token.value,
-								role: token.role,
 							});
 						});
 						rxTokens.once('end', () => resolve(output));
@@ -170,8 +168,7 @@ class CreateUserAuthToken extends Route {
 			if (!req.body ||
 				!req.body.authLevel ||
 				!req.body.permissions ||
-				!req.body.domains ||
-				!req.body.role) {
+				!req.body.domains) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
@@ -205,7 +202,6 @@ class CreateUserAuthToken extends Route {
 
 		return {
 			value: token.value,
-			role: token.role,
 		};
 	}
 }
@@ -223,12 +219,6 @@ class AddUser extends Route {
 	}
 
 	_validate(req, res, token) {
-		let appRoles = null;
-		if (req.authApp && req.authApp.__roles) {
-			// This needs to be cached on startup
-			appRoles = Helpers.flattenRoles(req.authApp.__roles);
-		}
-
 		return new Promise((resolve, reject) => {
 			Logging.log(req.body.user, Logging.Constants.LogLevel.DEBUG);
 			const app = req.body.user.app ? req.body.user.app : req.params.app;
@@ -252,19 +242,6 @@ class AddUser extends Route {
 				}
 				req.body.auth.type = Model.Token.Constants.Type.USER;
 				req.body.auth.app = req.authApp._id;
-
-				let role = false;
-				if (req.body.auth.role && appRoles) {
-					const matchedRole = appRoles.find((r) => r.name === req.body.auth.role);
-					if (matchedRole) {
-						role = matchedRole.name;
-					}
-				}
-				if (!role) {
-					role = req.authApp.__defaultRole;
-				}
-
-				req.body.auth.role = role;
 			} else {
 				this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_auth`));

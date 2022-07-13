@@ -27,6 +27,7 @@ class AccessControl {
 	constructor() {
 		this._schemas = {};
 		this._policies = {};
+		this._schemaNames = {};
 	}
 
 	/**
@@ -43,8 +44,17 @@ class AccessControl {
 		const user = req.authUser;
 		if (!user) return next();
 
+		let core = false;
+		let requestedURL = req.originalUrl || req.url;
+		// Check URL to see if it's a core schema
+		if (!core) core = requestedURL.indexOf('/api') === 0;
+		requestedURL = requestedURL.split('?').shift();
+		const schemaPath = requestedURL.split('v1/').pop().split('/');
+		const schemaName = schemaPath.shift();
+
 		if (!this._schemas[appId]) {
 			this._schemas[appId] = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
+			this._schemaNames[appId] = this._schemas[appId].map((s) => s.name);
 		}
 
 		if (!this._policies[appId]) {
@@ -52,13 +62,14 @@ class AccessControl {
 		}
 
 		const userPolicies = await this.__getUserPolicies(user, appId);
-		const policyOutcome = await this.__getPolicyOutcome(userPolicies, req);
+		const policyOutcome = await this.__getPolicyOutcome(userPolicies, req, schemaName, appId, core);
 		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
 			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			res.status(policyOutcome.err.statusCode).send({message: policyOutcome.err.message});
 			return;
 		}
-		// await this._checkAccessControlQueryBasedCondition(req);
+
+		await this._checkAccessControlQueryBasedCondition(req, appId, schemaName, requestedURL);
 		await this._queuePolicyRoomCloseSocketEvent(policyOutcome.res, appId);
 
 		next();
@@ -118,6 +129,8 @@ class AccessControl {
 		return Object.keys(userSocketObj).reduce((arr, key) => {
 			const schema = userSocketObj[key];
 			Object.keys(schema).forEach((key) => {
+				if (!schema[key].userIds) return;
+
 				const userIdx = schema[key].userIds.findIndex((id) => id.toString() === user._id.toString());
 				if (userIdx !== -1) {
 					arr.push(key);
@@ -135,28 +148,19 @@ class AccessControl {
 	 * @param {Object} req
 	 * @param {String} schemaName
 	 * @param {String} appId
+	 * @param {Boolean} core
 	 * @return {Object}
 	 */
-	async __getPolicyOutcome(userPolicies, req, schemaName = null, appId = null) {
+	async __getPolicyOutcome(userPolicies, req, schemaName, appId = null, core = false) {
 		const outcome = {
 			res: {},
 			err: {},
 		};
 
-		let core = false;
-
 		appId = (!appId && req.authApp && req.authApp._id) ? req.authApp._id : appId;
 
 		// TODO: better way to figure out the requested schema
 		const requestVerb = req.method || req.originalMethod;
-		if (!schemaName) {
-			let requestedURL = req.originalUrl || req.url;
-			// Check URL to see if it's a core schema
-			if (!core) core = requestedURL.indexOf('/api') === 0;
-			requestedURL = requestedURL.split('?').shift();
-			const schemaPath = requestedURL.split('v1/').pop().split('/');
-			schemaName = schemaPath.shift();
-		}
 
 		userPolicies = userPolicies.sort((a, b) => a.priority - b.priority);
 		if (userPolicies.length < 1) {
@@ -287,6 +291,7 @@ class AccessControl {
 		nrp.emit('queuePolicyRoomCloseSocketEvent', {
 			policies,
 			appId,
+			schemaNames: this._schemaNames[appId],
 		});
 	}
 
@@ -306,13 +311,13 @@ class AccessControl {
 		return await AccessControlPolicyMatch.__getUserPolicies(this._policies[appId], appId, user);
 	}
 
-	async _checkAccessControlQueryBasedCondition(req, updatedSchema, path) {
+	async _checkAccessControlQueryBasedCondition(req, appId, updatedSchema, path) {
 		const requestMethod = req.method;
 		if (requestMethod !== 'PUT') return;
 
-		const id = path.pop();
-
+		const id = path.split('/').pop();
 		nrp.emit('accessControlPolicy:disconnectQueryBasedSocket', {
+			appId,
 			updatedSchema,
 			id,
 		});

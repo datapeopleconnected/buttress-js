@@ -108,17 +108,9 @@ class BootstrapSocket {
 				await this.__createDataShareConnection(dataShare);
 			});
 
-			nrp.on('dbClientLeaveRoom', async (data) => {
-				data.rooms.forEach((room) => {
-					this.__namespace[data.apiPath].emitter.in(room).emit('db-disconnect-room', {
-						target: data.type,
-						sequence: this.__namespace[data.apiPath].sequence[room],
-					});
-				});
-			});
-
 			nrp.on('queuePolicyRoomCloseSocketEvent', async (data) => {
-				await this._queuePolicyRoomCloseSocketEvent(nrp, data.policies, data.appId);
+				if (!this._policyRooms[data.appId]) return;
+				await this._queuePolicyRoomCloseSocketEvent(nrp, data.policies, data.schemaNames, data.appId);
 			});
 
 			nrp.on('queueBasedConditionQuery', async (data) => {
@@ -126,7 +118,7 @@ class BootstrapSocket {
 			});
 
 			nrp.on('accessControlPolicy:disconnectQueryBasedSocket', async (data) => {
-				await this._disconnectQueryBasedSocket(nrp, data.updatedSchema, data.id);
+				await this._disconnectQueryBasedSocket(nrp, data.appId, data.updatedSchema, data.id);
 			});
 
 			nrp.on('setMainPolicyRooms', async (data) => {
@@ -136,6 +128,26 @@ class BootstrapSocket {
 
 			nrp.on('getPolicyRooms', async () => {
 				nrp.emit('sendPolicyRooms', this._policyRooms);
+			});
+
+			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
+				const appId = data.appId;
+				const room = data.room;
+				const apiPath = this._policyRooms[appId].apiPath;
+				const collections = Object.keys(this._policyRooms[appId]).reduce((arr, key) => {
+					if (Object.keys(this._policyRooms[appId][key]).includes(room)) {
+						arr.push(key);
+					}
+
+					return arr;
+				}, []);
+
+				this.__namespace[apiPath].emitter.in(room).emit('db-disconnect-room', {
+					target: collections,
+					sequence: this.__namespace[apiPath].sequence[room],
+				});
+
+				nrp.emit('leaveSocketRoom', {room: data.room});
 			});
 		}
 
@@ -266,10 +278,16 @@ class BootstrapSocket {
 				}
 
 				if (!policyRooms[app._id]) {
-					policyRooms[app._id] = {};
+					policyRooms[app._id] = {
+						apiPath,
+					};
 				}
 
 				const userRooms = await AccessControl.getUserRooms(user, socket.request, app._id, policyRooms[app._id]);
+				if (userRooms.length < 1) {
+					Logging.logWarn(`User has no policies, closing connection: ${socket.id}`);
+					return next('user-no-policies');
+				}
 
 				await new Promise((resolve) => {
 					nrp.emit('setMainPolicyRooms', policyRooms);
@@ -286,14 +304,8 @@ class BootstrapSocket {
 				Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
 			});
 
-			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
+			nrp.on('leaveSocketRoom', async (data) => {
 				socket.leave(data.room);
-
-				nrp.emit('dbClientLeaveRoom', {
-					apiPath,
-					collections: data.collections,
-					rooms: data.room,
-				});
 			});
 
 			next();
@@ -375,7 +387,10 @@ class BootstrapSocket {
 		const appId = data.appId;
 		const verb = data.verb;
 		const collection = data.path.match(/(?<=)[aA-zZ]*(?=)/g).filter((v) => v).shift();
+		if (!this._policyRooms[appId]) return;
+
 		const broadcastRooms = this._policyRooms[appId][collection];
+		if (!broadcastRooms) return;
 
 		for await (const roomKey of Object.keys(broadcastRooms)) {
 			const room = broadcastRooms[roomKey];
@@ -525,7 +540,7 @@ class BootstrapSocket {
 		});
 	}
 
-	async _queuePolicyRoomCloseSocketEvent(nrp, policies, appId) {
+	async _queuePolicyRoomCloseSocketEvent(nrp, policies, schemaNames, appId) {
 		const room = hash(policies);
 		for await (const key of Object.keys(policies)) {
 			const policy = policies[key];
@@ -546,11 +561,11 @@ class BootstrapSocket {
 				this._policyCloseSocketEvents[policyIdx].conditions.push(conditionStr);
 			}
 
-			await this._queueEvent(nrp, room, policy, appId, policyIdx);
+			await this._queueEvent(nrp, room, policy, schemaNames, appId, policyIdx);
 		}
 	}
 
-	async _queueEvent(nrp, room, policy, appId, idx) {
+	async _queueEvent(nrp, room, policy, schemaNames, appId, idx) {
 		const conditions = policy.conditions;
 		conditions.reduce(async (prev, condition) => {
 			await prev;
@@ -560,26 +575,19 @@ class BootstrapSocket {
 				return;
 			}
 
-			// const queryBasedCondition = await AccessControlConditions.isAttributeQueryBasedCondition(conditions, schemaNames);
-			// if (queryBasedCondition) {
-			// 	nrp.emit('queueBasedConditionQuery', {
-			// 		name: policy.name,
-			// 		collection: queryBasedCondition.name,
-			// 		entityId: queryBasedCondition.entityId,
-			// 	});
-			// }
+			const queryBasedCondition = await AccessControlConditions.isPolicyQueryBasedCondition(condition, schemaNames);
+			if (queryBasedCondition) {
+				nrp.emit('queueBasedConditionQuery', {
+					room: room,
+					collection: queryBasedCondition.name,
+					entityId: queryBasedCondition.entityId,
+				});
+			}
 		}, Promise.resolve());
 	}
 
 	async _queueDateTimeEvent(nrp, room, policy, appId, dateTimeBasedCondition, idx) {
 		const envVars = policy.env;
-		const collections = Object.keys(this._policyRooms[appId]).reduce((arr, key) => {
-			if (Object.keys(this._policyRooms[appId][key]).includes(room)) {
-				arr.push(key);
-			}
-
-			return arr;
-		}, []);
 
 		if (dateTimeBasedCondition === 'time') {
 			const conditionEndTime = AccessControlConditions.getEnvironmentVar(envVars, 'env.endTime');
@@ -588,8 +596,8 @@ class BootstrapSocket {
 			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
 			setTimeout(() => {
 				nrp.emit('accessControlPolicy:disconnectSocket', {
-					id: room,
-					collections: collections,
+					appId,
+					room,
 				});
 				this._policyCloseSocketEvents.splice(idx - 1, 1);
 			}, timeout);
@@ -603,8 +611,8 @@ class BootstrapSocket {
 			if (this._oneWeekMilliseconds > nearlyExpired) {
 				setTimeout(() => {
 					nrp.emit('accessControlPolicy:disconnectSocket', {
-						id: room,
-						collections: collections,
+						appId,
+						room,
 					});
 					this._policyCloseSocketEvents.splice(idx - 1, 1);
 				}, nearlyExpired);
@@ -612,28 +620,19 @@ class BootstrapSocket {
 		}
 	}
 
-	async _disconnectQueryBasedSocket(nrp, updatedSchema, id) {
+	async _disconnectQueryBasedSocket(nrp, appId, updatedSchema, id) {
 		const schemaBasedConditionIdx = this._policyCloseSocketEvents.findIndex((c) => {
 			return c.collection === updatedSchema && c.entityId === id;
 		});
 		if (schemaBasedConditionIdx === -1) return;
 
-		const attribute = this._policyCloseSocketEvents[schemaBasedConditionIdx].attribute;
-		const attributeName = attribute.name;
-
+		const room = this._policyCloseSocketEvents[schemaBasedConditionIdx].room;
 		nrp.emit('accessControlPolicy:disconnectSocket', {
-			id: attribute.name,
-			type: (attribute.targetedSchema.length > 0)? attribute.targetedSchema : 'generic',
+			appId,
+			room,
 		});
 
 		this._policyCloseSocketEvents.splice(schemaBasedConditionIdx, 1);
-
-		this._policyCloseSocketEvents.forEach((obj, idx) => {
-			if (obj.name === attributeName) {
-				const conditionIdx = obj.conditions.findIndex((c) => c === JSON.stringify(attribute.condition));
-				this._policyCloseSocketEvents[idx].conditions.splice(conditionIdx, 1);
-			}
-		});
 	}
 }
 

@@ -297,7 +297,7 @@ class Routes {
 			exec: null,
 			respond: null,
 			logActivity: null,
-			boardcastByAppRole: null,
+			boardcastData: null,
 			close: null,
 			stream: [],
 		};

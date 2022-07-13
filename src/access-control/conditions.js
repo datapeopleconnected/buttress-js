@@ -64,28 +64,6 @@ class Conditions {
 		this.appShortId = Helpers.shortId(app);
 	}
 
-	async isPolicyQueryBasedCondition(conditions, schemaNames, pass = false) {
-		return await Object.keys(conditions).reduce(async (res, key) => {
-			if (Array.isArray(conditions[key])) {
-				if (this. logicalOperator.includes(conditions[key])) {
-					return await this.isPolicyQueryBasedCondition(conditions[key], schemaNames, pass);
-				} else {
-					// TODO throw an error
-				}
-			}
-
-			const queryBasedCondition = schemaNames.find((n) => key.includes(n));
-			if (queryBasedCondition) {
-				return {
-					name: queryBasedCondition,
-					entityId: Object.values(conditions[key][`${queryBasedCondition}.id`]).pop(),
-				};
-			}
-
-			return res;
-		}, false);
-	}
-
 	async applyPolicyConditions(req, userPolicies) {
 		return await Object.keys(userPolicies).reduce(async (prev, policyKey) => {
 			await prev;
@@ -494,6 +472,28 @@ class Conditions {
 			}
 
 			return res;
+		}
+	}
+
+	async isPolicyQueryBasedCondition(condition, schemaNames) {
+		for await (const key of Object.keys(condition)) {
+			if (Array.isArray(condition[key])) {
+				if (this.logicalOperator.includes(key)) {
+					for await (const item of condition[key]) {
+						return await this.isPolicyQueryBasedCondition(item, schemaNames);
+					}
+				} else {
+					// TODO throw an error
+				}
+			}
+
+			const schemaQuery = schemaNames.find((n) => key.includes(n));
+			if (schemaQuery) {
+				return {
+					name: schemaQuery,
+					entityId: Object.values(condition[key][`${schemaQuery}.id`]).pop(),
+				};
+			}
 		}
 	}
 }

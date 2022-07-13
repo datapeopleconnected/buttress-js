@@ -203,7 +203,6 @@ class UserSchemaModel extends SchemaModel {
 		if (token) {
 			user.tokens.push({
 				value: token.value,
-				role: token.role,
 			});
 		}
 

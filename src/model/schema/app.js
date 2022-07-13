@@ -86,39 +86,12 @@ class AppSchemaModel extends SchemaModel {
 					__default: '[]',
 					__allowUpdate: true,
 				},
-				__defaultRole: {
-					__type: 'string',
-					__default: null,
-					__allowUpdate: true,
-				},
 				datastore: {
 					connectionString: {
 						__type: 'string',
 						__default: null,
 						__allowUpdate: true,
 					},
-				},
-				__roles: {
-					__type: 'array',
-					__required: false,
-					__schema: {
-						name: {
-							__type: 'string',
-							__required: true,
-							__allowUpdate: true,
-						},
-						endpointDisposition: {
-							__type: 'string',
-							__required: true,
-							__allowUpdate: true,
-						},
-						dataDisposition: {
-							__type: 'string',
-							__required: true,
-							__allowUpdate: true,
-						},
-					},
-					__allowUpdate: true,
 				},
 			},
 		};
@@ -183,20 +156,6 @@ class AppSchemaModel extends SchemaModel {
 
 	setLocalSchema(schema) {
 		this._localSchema = schema;
-	}
-
-	/**
-	 * @param {ObjectId} appId - app id which needs to be updated
-	 * @param {object} roles - roles object
-	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
-	 */
-	updateRoles(appId, roles) {
-		// nrp.emit('app-metadata:changed', {appId: appId});
-
-		return super.updateById(appId, {$set: {
-			__defaultRole: roles.default,
-			__roles: Helpers.flattenRoles(roles.roles),
-		}});
 	}
 
 	/**

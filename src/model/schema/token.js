@@ -75,12 +75,6 @@ class TokenSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
-				role: {
-					__type: 'string',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
 				domains: {
 					__type: 'array',
 					__required: true,
@@ -192,15 +186,6 @@ class TokenSchemaModel extends SchemaModel {
 			_app: this.createId(appId),
 			_user: this.createId(userId),
 		});
-	}
-
-	/**
-	 * @param {ObjectId} tokenId - token ID which will be updated
-	 * @param {string} role - the role value
-	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
-	 */
-	updateRole(tokenId, role) {
-		return this.updateById(tokenId, {$set: {role: role}});
 	}
 }
 

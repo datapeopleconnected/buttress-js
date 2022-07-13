@@ -183,49 +183,6 @@ class Route {
 		Logging.logTimer(`_respond:start isReadStream:${isReadStream} redactResults:${this.redactResults}`,
 			req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
 
-		// respond based on old role-access-control
-		// // Fetch app roles if they exist
-		// let appRoles = null;
-		// if (req.authApp && req.authApp.__roles && req.authApp.__roles.roles) {
-		// 	// This needs to be cached on startup
-		// 	appRoles = Helpers.flattenRoles(req.authApp.__roles);
-		// }
-
-		// let filter = null;
-		// const tokenRole = (req.token.role) ? req.token.role : '';
-		// const dataDisposition = {
-		// 	READ: 'deny',
-		// };
-
-		// if (appRoles) {
-		// 	const role = appRoles.find((r) => r.name === tokenRole);
-		// 	if (role && role.dataDisposition) {
-		// 		if (role.dataDisposition === 'allowAll') {
-		// 			dataDisposition.READ = 'allow';
-		// 		}
-		// 	}
-		// }
-
-		// if (tokenRole && this.schema && this.schema.data.roles) {
-		// 	const schemaRole = this.schema.data.roles.find((r) => r.name === tokenRole);
-		// 	if (schemaRole && schemaRole.dataDisposition) {
-		// 		if (schemaRole.dataDisposition.READ) dataDisposition.READ = schemaRole.dataDisposition.READ;
-		// 	}
-
-		// 	if (schemaRole && schemaRole.filter) {
-		// 		filter = schemaRole.filter;
-		// 	}
-		// }
-
-		// const permissionProperties = (this.schema) ? this.schema.getFlatPermissionProperties() : {};
-		// const permissions = Object.keys(permissionProperties).reduce((properties, property) => {
-		// 	const permission = permissionProperties[property].find((p) => p.role === tokenRole);
-		// 	if (!permission) return properties;
-
-		// 	properties[property] = permission;
-		// 	return properties;
-		// }, {});
-
 		if (isReadStream) {
 			let chunkCount = 0;
 			const stringifyStream = new Helpers.JSONStringifyStream({}, (chunk) => {
@@ -422,11 +379,6 @@ class Route {
 				return reject(new Helpers.Errors.RequestError(401, 'insufficient_authority'));
 			}
 
-			req.roles = {
-				app: null,
-				schema: null,
-			};
-
 			/**
 			 * @description Route:
 			 *  '*' - all routes (SUPER)
@@ -436,7 +388,7 @@ class Route {
 			 * @TODO Improve the pattern matching granularity ie like Glob
 			 * @TODO Support Regex in specific ie match routes like app/:id/permission
 			 */
-			Logging.logTimer(`_authenticate:start-app-routes ${req.token.role}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			Logging.logTimer(`_authenticate:start-app-routes`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			let authorised = false;
 			const token = req.token;
@@ -469,79 +421,7 @@ class Route {
 				return;
 			}
 
-			// Default endpoint disposition
-			const disposition = {
-				GET: 'deny',
-				PUT: 'deny',
-				POST: 'deny',
-				DELETE: 'deny',
-				SEARCH: 'deny',
-			};
-
-			// Fetch app roles if they exist
-			let appRoles = null;
-			if (req.authApp && req.authApp.__roles) {
-				// This needs to be cached on startup
-				appRoles = Helpers.flattenRoles(req.authApp.__roles);
-			}
-
-			// Check endpointDisposition against app roles it exists
-			if (appRoles && req.token.role) {
-				const role = appRoles.find((r) => r.name === req.token.role);
-
-				// Set schema role on the req object for use by route/schema
-				req.roles.app = role;
-
-				if (role && role.endpointDisposition) {
-					if (role.endpointDisposition === 'allowAll') {
-						disposition.GET = 'allow';
-						disposition.PUT = 'allow';
-						disposition.POST = 'allow';
-						disposition.DELETE = 'allow';
-						disposition.SEARCH = 'allow';
-					}
-				}
-			}
-
-			Logging.logTimer(`_authenticate:end-app-routes ${req.token.role}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
-			/*
-			 * Start of Route schema permissions
-			 */
-			if (this.schema) {
-				Logging.logTimer(`_authenticate:start-schema-role ${req.token.role}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				authorised = false;
-
-				// If schema has endpointDisposition roles set for the role then
-				// user the defined settings instead.
-				if (this.schema.data.roles) {
-					const role = this.schema.data.roles.find((r) => r.name === req.token.role);
-
-					// Set schema role on the req object for use by route/schema
-					req.roles.schema = role;
-
-					if (role && role.endpointDisposition) {
-						if (role.endpointDisposition.GET) disposition.GET = role.endpointDisposition.GET;
-						if (role.endpointDisposition.PUT) disposition.PUT = role.endpointDisposition.PUT;
-						if (role.endpointDisposition.POST) disposition.POST = role.endpointDisposition.POST;
-						if (role.endpointDisposition.DELETE) disposition.DELETE = role.endpointDisposition.DELETE;
-						if (role.endpointDisposition.SEARCH) disposition.SEARCH = role.endpointDisposition.SEARCH;
-					}
-				}
-
-				// Check the role has permission on this endpoint
-				if (disposition[this.verb.toUpperCase()] && disposition[this.verb.toUpperCase()] === 'allow') {
-					authorised = true;
-				}
-
-				if (authorised === false) {
-					this.log(`SAUTH: NO PERMISSION FOR ROUTE - ${this.path}`, Logging.Constants.LogLevel.ERR);
-					Logging.logTimer('_authenticate:end-no-permission-schema', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-					return reject(new Helpers.Errors.RequestError(403, 'no_permission_for_route'));
-				}
-
-				Logging.logTimer(`_authenticate:end-schema-role`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			}
+			Logging.logTimer(`_authenticate:end-app-routes`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			resolve(req.token);
 		});
