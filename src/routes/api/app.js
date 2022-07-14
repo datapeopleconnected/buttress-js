@@ -404,51 +404,6 @@ class GetAppSchema extends Route {
 routes.push(GetAppSchema);
 
 /**
- * @class GetCoreSchema
- */
-class GetCoreSchema extends Route {
-	constructor() {
-		super('app/schema/:schema?', 'GET CORE SCHEMA');
-		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.READ;
-
-		this.redactResults = false;
-	}
-
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			let schema = req.params.schema;
-			if (!schema) {
-				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
-
-			schema = schema.split('+').reduce((arr, item) => {
-				arr.push(Model[Sugar.String.capitalize(item)].schemaData);
-				return arr;
-			}, []);
-
-			const denyAll = (req.roles.app && req.roles.app.endpointDisposition === 'denyAll');
-			schema = schema.filter((s) => {
-				if (!s.roles || !req.roles.app) return !denyAll;
-				const role = s.roles.find((r) => r.name === req.roles.app.name);
-				if (role && role.endpointDisposition && role.endpointDisposition.GET === 'allow') return true;
-
-				return !denyAll;
-			});
-
-			resolve(schema);
-		});
-	}
-
-	_exec(req, res, schema) {
-		return schema;
-	}
-}
-routes.push(GetCoreSchema);
-
-/**
  * @class UpdateAppSchema
  */
 class UpdateAppSchema extends Route {
