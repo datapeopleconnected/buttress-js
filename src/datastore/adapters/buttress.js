@@ -21,6 +21,7 @@ const JSONStream = require('JSONStream');
 const ObjectId = require('mongodb').ObjectId;
 const ButtressAPI = require('@buttress/api');
 
+const {Errors} = require('../../helpers');
 const Logging = require('../../logging');
 
 const AbstractAdapter = require('../abstract-adapter');
@@ -96,7 +97,12 @@ module.exports = class Buttress extends AbstractAdapter {
 	}
 
 	async setCollection(collectionName) {
-		this.collection = this.connection.getCollection(collectionName);
+		try {
+			this.collection = this.connection.getCollection(collectionName);
+		} catch (err) {
+			if (err instanceof ButtressAPI.Errors.SchemaNotFound) throw new Errors.SchemaNotFound(err.message);
+			else throw err;
+		}
 	}
 
 	get ID() {

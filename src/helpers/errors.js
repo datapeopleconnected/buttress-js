@@ -22,6 +22,13 @@ module.exports.RequestError = class RequestError extends Error {
 	}
 };
 
+module.exports.SchemaNotFound = class SchemaNotFound extends Error {
+	constructor(message) {
+		super(message);
+		this.name = 'SchemaNotFound';
+	}
+};
+
 module.exports.RouteMissingModel = class RouteMissingModel extends Error {
 	constructor(message) {
 		super(message);

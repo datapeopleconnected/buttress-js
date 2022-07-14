@@ -174,7 +174,14 @@ class Model {
 					new SchemaModel(schemaData, app),
 					new SchemaModel(schemaData, app),
 				);
-				await this.models[name].initAdapter(datastore, remoteDatastore);
+
+				try {
+					await this.models[name].initAdapter(datastore, remoteDatastore);
+				} catch (err) {
+					// Skip defining this model, the error will get picked up later when route is defined ore accessed
+					if (err instanceof Errors.SchemaNotFound) return;
+					else throw err;
+				}
 
 				this.__defineGetter__(name, () => this.models[name]);
 				return this.models[name];
