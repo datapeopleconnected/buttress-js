@@ -37,6 +37,12 @@ class PolicySchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
+				merge: {
+					__type: 'boolean',
+					__default: false,
+					__required: true,
+					__allowUpdate: true,
+				},
 				priority: {
 					__type: 'number',
 					__default: 0,
@@ -85,12 +91,6 @@ class PolicySchemaModel extends SchemaModel {
 						},
 					},
 				},
-				override: {
-					__type: 'boolean',
-					__required: false,
-					__default: false,
-					__allowUpdate: true,
-				},
 				limit: {
 					__type: 'date',
 					__default: null,
@@ -128,10 +128,10 @@ class PolicySchemaModel extends SchemaModel {
 		const policyBody = {
 			id: (body.policy.id) ? this.createId(body.policy.id) : this.createId(),
 			name: (body.policy.name) ? body.policy.name : null,
+			merge: (body.policy.merge) ? body.policy.merge : false,
 			priority: (body.policy.priority) ? body.policy.priority : 0,
 			selection: (body.policy.selection) ? body.policy.selection : [],
 			config: policyConfig,
-			override: (body.policy.override) ? body.policy.override : false,
 			limit: (body.policy.limit) ? body.policy.limit : null,
 		};
 

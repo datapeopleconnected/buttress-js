@@ -67,6 +67,11 @@ class BootstrapSocket {
 
 		this._policyRooms = {};
 
+		this.logicalOperator = [
+			'$or',
+			'$and',
+		];
+
 		// let socketInitTask = null;
 		// if (cluster.isMaster) {
 		// 	socketInitTask = (db) => this.__initMaster(db);
@@ -267,41 +272,30 @@ class BootstrapSocket {
 					return next('invalid-token-user-ID');
 				}
 
-				const policyRooms = await new Promise((resolve) => {
-					nrp.emit('getPolicyRooms', {});
-					nrp.on('sendPolicyRooms', (data) => resolve(data));
-				});
-
-				if (!policyRooms || (policyRooms && (Array.isArray(policyRooms) || typeof policyRooms !== 'object'))) {
-					Logging.logWarn(`policyRooms is returning an invalid value, closing connection: ${socket.id}`);
-					return next('invalid-policy-rooms');
-				}
-
-				if (!policyRooms[app._id]) {
-					policyRooms[app._id] = {
-						apiPath,
-					};
-				}
-
-				const userRooms = await AccessControl.getUserRooms(user, socket.request, app._id, policyRooms[app._id]);
-				if (userRooms.length < 1) {
-					Logging.logWarn(`User has no policies, closing connection: ${socket.id}`);
-					return next('user-no-policies');
-				}
-
-				await new Promise((resolve) => {
-					nrp.emit('setMainPolicyRooms', policyRooms);
-					nrp.on('finishedSettingMainPolicyRooms', () => resolve());
-				});
-
-				socket.join(userRooms);
-				Logging.log(`[${apiPath}][${token._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
+				// await this.__disconnectUserRooms(nrp, user._id, app, socket);
+				await this.__joinUserRooms(nrp, user, app, socket);
 			} else {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
 			}
 
 			socket.on('disconnect', () => {
 				Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
+			});
+
+			nrp.on('updateUserSocketRooms', async (data) => {
+				let userToken = null;
+				const rxsUserToken = await Model.Token.findUserAuthTokens(data.userId, data.appId);
+				for await (const t of rxsUserToken) {
+					userToken = t;
+				}
+				if (userToken.value !== token.value) return;
+
+				const user = await Model.User.findById(data.userId);
+				await this.__joinUserRooms(nrp, user, app, socket);
+			});
+
+			nrp.on('disconnectUserSocketRooms', async (data) => {
+				await this.__disconnectUserRooms(nrp, data.userId, app, socket);
 			});
 
 			nrp.on('leaveSocketRoom', async (data) => {
@@ -322,6 +316,59 @@ class BootstrapSocket {
 
 		Logging.logSilly(`Worker ready`);
 		process.send('workerInitiated');
+	}
+
+	async __joinUserRooms(nrp, user, app, socket) {
+		const policyRooms = await new Promise((resolve) => {
+			nrp.emit('getPolicyRooms', {});
+			nrp.on('sendPolicyRooms', (data) => resolve(data));
+		});
+
+		if (!policyRooms || (policyRooms && (Array.isArray(policyRooms) || typeof policyRooms !== 'object'))) return;
+
+		if (!policyRooms[app._id]) {
+			policyRooms[app._id] = {};
+		}
+
+		await this.__disconnectUserRooms(nrp, user._id, app, socket);
+
+		const userRooms = await AccessControl.getUserRooms(user, socket.request, app._id, policyRooms[app._id]);
+		if (userRooms.length < 1) return;
+
+		await new Promise((resolve) => {
+			nrp.emit('setMainPolicyRooms', policyRooms);
+			nrp.on('finishedSettingMainPolicyRooms', () => resolve());
+		});
+
+		socket.join(userRooms);
+		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}, ${user.auth[0].username}`);
+	}
+
+	async __disconnectUserRooms(nrp, userId, app, socket) {
+		const policyRooms = await new Promise((resolve) => {
+			nrp.emit('getPolicyRooms', {});
+			nrp.on('sendPolicyRooms', (data) => resolve(data));
+		});
+
+		if (!policyRooms || !policyRooms[app._id]) return;
+
+		const appPolicyRooms = policyRooms[app._id];
+		Object.keys(appPolicyRooms).forEach((key) => {
+			const room = appPolicyRooms[key];
+			Object.keys(room).forEach((roomKey) => {
+				const userIdx = room[roomKey].userIds.findIndex((id) => id === userId.toString());
+				if (userIdx !== -1) {
+					Logging.log(`[${app.apiPath}][${userId}] disconnected ${socket.id} from ${roomKey} room to collection ${key}`);
+					socket.leave(roomKey);
+					room[roomKey].userIds.splice(userId, 1);
+				}
+			});
+		});
+
+		await new Promise((resolve) => {
+			nrp.emit('setMainPolicyRooms', policyRooms);
+			nrp.on('finishedSettingMainPolicyRooms', () => resolve());
+		});
 	}
 
 	async __onActivity(data) {
@@ -386,7 +433,7 @@ class BootstrapSocket {
 	async __broadcastToUsers(data) {
 		const appId = data.appId;
 		const verb = data.verb;
-		const collection = data.path.match(/(?<=)[aA-zZ]*(?=)/g).filter((v) => v).shift();
+		const collection = data.path.split('/').filter((v) => v).shift().replace('/', '');
 		if (!this._policyRooms[appId]) return;
 
 		const broadcastRooms = this._policyRooms[appId][collection];
@@ -401,16 +448,7 @@ class BootstrapSocket {
 				continue;
 			}
 
-			let broadcast = true;
-			roomQueryKeys.forEach((key) => {
-				const operator = Object.keys(room.access.query[key]).pop();
-				const rhs = room.access.query[key][operator];
-				let lhs = (!Array.isArray(data.response)) ? data.response[key] : data.response.find((item) => item.path === key);
-				lhs = (typeof lhs === 'object') ? lhs.value : lhs;
-				const match = AccessControlConditions.evaluateOperation(lhs, rhs, operator);
-				if (!match) broadcast = false;
-			});
-
+			const broadcast = await this.__evaluateRoomQueryOperation(room.access.query, data);
 			if (!broadcast) {
 				data.verb = 'delete';
 				this.__broadcastData(data, roomKey);
@@ -437,6 +475,39 @@ class BootstrapSocket {
 
 			this.__broadcastData(data, roomKey);
 		}
+	}
+
+	async __evaluateRoomQueryOperation(roomQuery, data, broadcast, partialPass = null, fullPass = null, skip = false) {
+		await Object.keys(roomQuery).reduce(async (prev, operator) => {
+			await prev;
+			partialPass = (partialPass === null)? (operator === '@or') ? true : false : partialPass;
+			fullPass = (fullPass === null)? (!partialPass) ? true : false : fullPass;
+
+			if (this.logicalOperator.includes(operator)) {
+				const arr = roomQuery[operator];
+				await arr.reduce(async (prev, conditionObj) => {
+					await prev;
+					await this.__evaluateRoomQueryOperation(conditionObj, data, broadcast, partialPass, fullPass, true);
+				}, Promise.resolve());
+			} else {
+				const [queryOperator] = Object.keys(roomQuery[operator]);
+				const rhs = roomQuery[operator][queryOperator];
+				let lhs = (!Array.isArray(data.response)) ? data.response[operator] : data.response.find((item) => item.path === operator);
+				lhs = (typeof lhs === 'object') ? lhs.value : lhs;
+				const passed = await AccessControlConditions.evaluateOperation(lhs, rhs, queryOperator);
+				if (partialPass && passed) {
+					partialPass = true;
+				}
+
+				if (!passed) {
+					fullPass = false;
+				}
+			}
+		}, Promise.resolve());
+
+		if (skip) return;
+
+		return (partialPass)? partialPass : fullPass;
 	}
 
 	__broadcastData(data, room) {

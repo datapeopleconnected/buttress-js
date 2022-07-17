@@ -343,6 +343,12 @@ class SetUserPolicyProperties extends Route {
 
 	async _exec(req, res, validate) {
 		await Model.User.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body);
+
+		nrp.emit('updateUserSocketRooms', {
+			userId: req.params.id,
+			appId: req.authApp._id,
+		});
+
 		return true;
 	}
 }
@@ -388,8 +394,15 @@ class UpdateUserPolicyProperties extends Route {
 		});
 	}
 
-	_exec(req, res, validate) {
-		return Model.User.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body, validate.user);
+	async _exec(req, res, validate) {
+		await Model.User.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body, validate.user);
+
+		nrp.emit('updateUserSocketRooms', {
+			userId: req.params.id,
+			appId: req.authApp._id,
+		});
+
+		return true;
 	}
 }
 routes.push(UpdateUserPolicyProperties);
@@ -429,8 +442,14 @@ class ClearUserPolicyProperties extends Route {
 		});
 	}
 
-	_exec(req, res, validate) {
-		return Model.User.clearPolicyPropertiesById(req.params.id, req.authApp._id, validate.user);
+	async _exec(req, res, validate) {
+		await Model.User.clearPolicyPropertiesById(req.params.id, req.authApp._id, validate.user);
+
+		nrp.emit('disconnectUserSocketRooms', {
+			userId: req.params.id,
+		});
+
+		return true;
 	}
 }
 routes.push(ClearUserPolicyProperties);

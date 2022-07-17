@@ -84,8 +84,6 @@ class AccessControl {
 	 * @return {Object}
 	 */
 	async getUserRooms(user, req, appId, userSocketObj) {
-		req.body = {};
-
 		if (!this._policies[appId]) {
 			this._policies[appId] = await this.__loadAppPolicies(appId);
 		}
@@ -98,6 +96,8 @@ class AccessControl {
 		const userPolicies = await this.__getUserPolicies(user, appId);
 		await this._schemas[appId].reduce(async (prev, next) => {
 			await prev;
+			req.body = {};
+			req.accessControlQuery = {};
 			const outcome = await this.__getPolicyOutcome(userPolicies, req, next.name, appId);
 			const outcomeHash = hash(outcome.res);
 
@@ -149,9 +149,10 @@ class AccessControl {
 	 * @param {String} schemaName
 	 * @param {String} appId
 	 * @param {Boolean} core
+	 * @param {String} userName
 	 * @return {Object}
 	 */
-	async __getPolicyOutcome(userPolicies, req, schemaName, appId = null, core = false) {
+	async __getPolicyOutcome(userPolicies, req, schemaName, appId = null, core = false, userName = null) {
 		const outcome = {
 			res: {},
 			err: {},
@@ -171,10 +172,11 @@ class AccessControl {
 		}
 
 		const policiesConfig = userPolicies.reduce((arr, policy) => {
-			const config = policy.config.slice().reverse().find((c) => c.endpoints.includes(requestVerb));
+			const config = policy.config.slice().reverse().find((c) => c.endpoints.includes(requestVerb) || c.endpoints.includes('ALL'));
 			if (config) {
 				arr.push({
 					name: policy.name,
+					merge: policy.merge,
 					config,
 				});
 			}
@@ -189,7 +191,7 @@ class AccessControl {
 			return outcome;
 		}
 
-		const schemaBasePolicyConfig = policiesConfig.reduce((arr, policy) => {
+		let schemaBasePolicyConfig = policiesConfig.reduce((obj, policy) => {
 			const conditionSchemaIdx = policy.config.conditions.findIndex((cond) => {
 				return cond.schema.includes(schemaName) || cond.schema.includes('ALL');
 			});
@@ -205,38 +207,39 @@ class AccessControl {
 				const projection = this.__getInnerObjectValue(policy.config.projection[projectionSchemaIdx]);
 				let query = this.__getInnerObjectValue(policy.config.query[querySchemaIdx]);
 
-				if (!arr) {
-					arr = {};
+				if (!obj) {
+					obj = {};
 				}
 
-				if (!arr[policy.name]) {
-					arr[policy.name] = {
+				if (!obj[policy.name]) {
+					obj[policy.name] = {
 						env: {},
 						conditions: [],
 						query: [],
 						projection: [],
+						merge: policy.merge,
 					};
 				}
 
 				if (condition) {
-					arr[policy.name].conditions.push(condition);
+					obj[policy.name].conditions.push(condition);
 				}
 				if (query && query.access && query.access === 'FULL_ACCESS') {
 					query = {};
 				}
 				if (query) {
-					arr[policy.name].query.push(query);
+					obj[policy.name].query.push(query);
 				}
 				if (projection) {
-					arr[policy.name].projection.push(projection);
+					obj[policy.name].projection.push(projection);
 				}
-				arr[policy.name].env = {
-					...arr.env,
+				obj[policy.name].env = {
+					...obj.env,
 					...policy.config.env,
 				};
 			}
 
-			return arr;
+			return obj;
 		}, false);
 
 		if (!schemaBasePolicyConfig) {
@@ -244,6 +247,31 @@ class AccessControl {
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
 			outcome.err.message = 'Request policy does have access to the requested schema';
 			return outcome;
+		}
+
+		const mergedPolicyConfig = Object.keys(schemaBasePolicyConfig).reduce((obj, configKey) => {
+			if (schemaBasePolicyConfig[configKey].merge) {
+				obj[configKey] = schemaBasePolicyConfig[configKey];
+			}
+
+			return obj;
+		}, {});
+
+		if (Object.keys(schemaBasePolicyConfig).length !== Object.keys(mergedPolicyConfig).length) {
+			const highestPriorityKey = Object.keys(schemaBasePolicyConfig).pop();
+			const highestPolicyPriorityConfig = Object.keys(schemaBasePolicyConfig).reduce((obj, configKey) => {
+				if (highestPriorityKey !== configKey) return obj;
+
+				obj[configKey] = schemaBasePolicyConfig[configKey];
+				return obj;
+			}, {});
+
+			await AccessControlConditions.applyPolicyConditions(req, highestPolicyPriorityConfig);
+			if (Object.keys(highestPolicyPriorityConfig).length < 1) {
+				delete schemaBasePolicyConfig[highestPriorityKey];
+			} else {
+				schemaBasePolicyConfig = highestPolicyPriorityConfig;
+			}
 		}
 
 		let schema = null;
@@ -314,6 +342,11 @@ class AccessControl {
 	async _checkAccessControlQueryBasedCondition(req, appId, updatedSchema, path) {
 		const requestMethod = req.method;
 		if (requestMethod !== 'PUT') return;
+
+		nrp.emit('updateUserSocketRooms', {
+			userId: req.authUser._id,
+			appId,
+		});
 
 		const id = path.split('/').pop();
 		nrp.emit('accessControlPolicy:disconnectQueryBasedSocket', {
