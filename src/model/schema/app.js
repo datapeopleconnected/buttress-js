@@ -132,19 +132,8 @@ class AppSchemaModel extends SchemaModel {
 	 */
 	updateSchema(appId, appSchema) {
 		Logging.logSilly(`Update Schema ${appId}`);
-		this._localSchema.forEach((cS) => {
-			const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);
-			const schema = appSchema[appSchemaIdx];
-			if (!schema) {
-				return appSchema.push(cS);
-			}
-			schema.properties = Object.assign(schema.properties, cS.properties);
-			appSchema[appSchemaIdx] = schema;
-		});
 
-		// Merge in local schema
 		appSchema = Schema.encode(appSchema);
-		// this.__schema = appSchema;
 
 		return super.updateById(appId, {$set: {__schema: appSchema}})
 			.then((res) => {
@@ -156,6 +145,10 @@ class AppSchemaModel extends SchemaModel {
 
 	setLocalSchema(schema) {
 		this._localSchema = schema;
+	}
+
+	get localSchema() {
+		return this._localSchema;
 	}
 
 	/**

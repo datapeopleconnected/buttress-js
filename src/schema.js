@@ -86,11 +86,26 @@ class Schema {
 	}
 
 	static buildCollections(schemas) {
-		return Schema.build(schemas).filter((s) => s.type === 'collection');
+		return Schema.build(schemas)
+			.filter((s) => s.type === 'collection');
 	}
 
 	static build(schemas) {
 		return schemas.map((schema) => Schema.extend(schemas, schema));
+	}
+
+	static merge(schemasA, schemasB) {
+		schemasB.forEach((cS) => {
+			const appSchemaIdx = schemasA.findIndex((s) => s.name === cS.name);
+			const schema = schemasA[appSchemaIdx];
+			if (!schema) {
+				return schemasA.push(cS);
+			}
+			schema.properties = Object.assign(schema.properties, cS.properties);
+			schemasA[appSchemaIdx] = schema;
+		});
+
+		return schemasA;
 	}
 
 	static extend(schemas, schema) {

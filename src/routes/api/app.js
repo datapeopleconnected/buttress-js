@@ -435,10 +435,16 @@ class UpdateAppSchema extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
 			}
 
-			// Parse the schema,
+			// Sort templates
+			req.body = req.body.sort((a, b) => (a.type === 'collection') ? 1 : (b.type === 'collection') ? -1 : 0);
+
+			// Resolve the local schema
+			req.body = Schema.merge(req.body, Model.App.localSchema);
+
 			try {
 				Schema.buildCollections(req.body);
 			} catch (err) {
+				console.log(err);
 				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
 			}
 
