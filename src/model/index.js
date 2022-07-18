@@ -90,10 +90,17 @@ class Model {
 				datastore = Datastore.getInstance('core');
 			}
 
-			await Schema.buildCollections(Schema.decode(app.__schema)).reduce(async (prev, schema) => {
-				await prev;
+			let builtSchemas = null;
+			try {
+				builtSchemas = Schema.buildCollections(Schema.decode(app.__schema));
+			} catch (err) {
+				if (err instanceof Errors.SchemaInvalid) continue;
+				else throw err;
+			}
+
+			for await (const schema of builtSchemas) {
 				await this._initSchemaModel(app, schema, datastore);
-			}, Promise.resolve());
+			}
 		}
 	}
 

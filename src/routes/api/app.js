@@ -313,9 +313,13 @@ class GetAppSchema extends Route {
 			throw new Helpers.Errors.RequestError(400, `no_authenticated_schema`);
 		}
 
-		let schema = [
-			...Schema.buildCollections(Schema.decode(req.authApp.__schema)),
-		];
+		let schema;
+		try {
+			schema = Schema.buildCollections(Schema.decode(req.authApp.__schema));
+		} catch (err) {
+			if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
+			else throw err;
+		}
 
 		if (req.query.core) {
 			const cores = req.query.core.split(',');
@@ -428,6 +432,13 @@ class UpdateAppSchema extends Route {
 
 			if (!Array.isArray(req.body)) {
 				this.log('ERROR: Expected body to be an array', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
+			}
+
+			// Parse the schema,
+			try {
+				Schema.buildCollections(req.body);
+			} catch (err) {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
 			}
 

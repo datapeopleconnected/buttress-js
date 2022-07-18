@@ -97,7 +97,8 @@ class Schema {
 		if (schema.extends) {
 			schema.extends.forEach((dependencyName) => {
 				const dependencyIdx = schemas.findIndex((s) => s.name === dependencyName);
-				if (dependencyIdx === -1) throw new Error(`Schema dependency ${dependencyName} for ${schema.name} missing.`);
+				// This should be thrown when the user adds or updates the schema.
+				if (dependencyIdx === -1) throw new Helpers.Errors.SchemaInvalid(`Schema dependency ${dependencyName} for ${schema.name} missing.`);
 				const dependency = Schema.extend(schemas, schemas[dependencyIdx]);
 				if (!dependency.properties) return; // Skip if dependency has no properties
 				if (!schema.properties) schema.properties = {};

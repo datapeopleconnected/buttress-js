@@ -29,6 +29,13 @@ module.exports.SchemaNotFound = class SchemaNotFound extends Error {
 	}
 };
 
+module.exports.SchemaInvalid = class SchemaInvalid extends Error {
+	constructor(message) {
+		super(message);
+		this.name = 'SchemaInvalid';
+	}
+};
+
 module.exports.RouteMissingModel = class RouteMissingModel extends Error {
 	constructor(message) {
 		super(message);
