@@ -15,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+const Sugar = require('sugar');
 
 const SchemaModel = require('../schemaModel');
 const Helpers = require('../../helpers');
@@ -132,7 +133,7 @@ class PolicySchemaModel extends SchemaModel {
 			priority: (body.policy.priority) ? body.policy.priority : 0,
 			selection: (body.policy.selection) ? body.policy.selection : [],
 			config: policyConfig,
-			limit: (body.policy.limit) ? body.policy.limit : null,
+			limit: (body.policy.limit) ? Sugar.Date.create(body.policy.limit) : null,
 		};
 
 		const rxsPolicy = await super.add(policyBody, {

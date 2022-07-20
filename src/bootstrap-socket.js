@@ -116,7 +116,7 @@ class BootstrapSocket {
 
 			nrp.on('queuePolicyRoomCloseSocketEvent', async (data) => {
 				if (!this._policyRooms[data.appId]) return;
-				await this._queuePolicyRoomCloseSocketEvent(nrp, data.policies, data.schemaNames, data.appId);
+				await this._queuePolicyRoomCloseSocketEvent(nrp, data);
 			});
 
 			nrp.on('queueBasedConditionQuery', async (data) => {
@@ -124,7 +124,7 @@ class BootstrapSocket {
 			});
 
 			nrp.on('accessControlPolicy:disconnectQueryBasedSocket', async (data) => {
-				await this._disconnectQueryBasedSocket(nrp, data.appId, data.updatedSchema, data.id);
+				await this._disconnectQueryBasedSocket(nrp, data);
 			});
 
 			nrp.on('setMainPolicyRooms', async (data) => {
@@ -137,23 +137,16 @@ class BootstrapSocket {
 			});
 
 			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
-				const appId = data.appId;
+				const apiPath = data.apiPath;
 				const room = data.room;
-				const apiPath = this._policyRooms[appId].apiPath;
-				const collections = Object.keys(this._policyRooms[appId]).reduce((arr, key) => {
-					if (Object.keys(this._policyRooms[appId][key]).includes(room)) {
-						arr.push(key);
-					}
 
-					return arr;
-				}, []);
-
-				this.__namespace[apiPath].emitter.in(room).emit('db-disconnect-room', {
-					target: collections,
-					sequence: this.__namespace[apiPath].sequence[room],
-				});
-
-				nrp.emit('leaveSocketRoom', {room: data.room});
+				if (data.clear) {
+					this.__namespace[apiPath].emitter.in(room).emit('db-disconnect-room', {
+						collections: data.collections,
+						userId: data.userId,
+						room,
+					});
+				}
 			});
 		}
 
@@ -273,7 +266,7 @@ class BootstrapSocket {
 					return next('invalid-token-user-ID');
 				}
 
-				// await this.__disconnectUserRooms(nrp, user._id, app, socket);
+				// await this.__disconnectUserRooms(nrp, user._id, app);
 				await this.__joinUserRooms(nrp, user, app, socket);
 			} else {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
@@ -292,15 +285,29 @@ class BootstrapSocket {
 				if (userToken.value !== token.value) return;
 
 				const user = await Model.User.findById(data.userId);
-				await this.__joinUserRooms(nrp, user, app, socket);
+				await this.__joinUserRooms(nrp, user, app, socket, true);
+
+				nrp.emit('updatedUserSocketRooms', {});
 			});
 
 			nrp.on('disconnectUserSocketRooms', async (data) => {
-				await this.__disconnectUserRooms(nrp, data.userId, app, socket);
+				let userToken = null;
+				const rxsUserToken = await Model.Token.findUserAuthTokens(data.userId, data.appId);
+				for await (const t of rxsUserToken) {
+					userToken = t;
+				}
+				if (userToken.value !== token.value) return;
+
+				await this.__disconnectUserRooms(nrp, data.userId, app, socket, true);
 			});
 
-			nrp.on('leaveSocketRoom', async (data) => {
+			socket.on('clear-socket-room', (data) => {
 				socket.leave(data.room);
+
+				nrp.emit('socketLeftRoom', {
+					userId: data.userId,
+					room: data.room,
+				});
 			});
 
 			next();
@@ -319,7 +326,9 @@ class BootstrapSocket {
 		process.send('workerInitiated');
 	}
 
-	async __joinUserRooms(nrp, user, app, socket) {
+	async __joinUserRooms(nrp, user, app, socket, clear = false) {
+		await this.__disconnectUserRooms(nrp, user._id, app, socket, clear);
+
 		const policyRooms = await new Promise((resolve) => {
 			nrp.emit('getPolicyRooms', {});
 			nrp.on('sendPolicyRooms', (data) => resolve(data));
@@ -330,8 +339,6 @@ class BootstrapSocket {
 		if (!policyRooms[app._id]) {
 			policyRooms[app._id] = {};
 		}
-
-		await this.__disconnectUserRooms(nrp, user._id, app, socket);
 
 		const userRooms = await AccessControl.getUserRooms(user, socket.request, app._id, policyRooms[app._id]);
 		if (userRooms.length < 1) return;
@@ -345,7 +352,12 @@ class BootstrapSocket {
 		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}, ${user.auth[0].username}`);
 	}
 
-	async __disconnectUserRooms(nrp, userId, app, socket) {
+	async __disconnectUserRooms(nrp, userId, app, socket, clear = false) {
+		const prevSocketRooms = Array.from(socket.rooms).filter((v) => v !== socket.id).join(', ');
+		if (prevSocketRooms) {
+			Logging.log(`[${app.apiPath}][${userId}] Disconnecting ${socket.id} from room ${prevSocketRooms}`);
+		}
+
 		const policyRooms = await new Promise((resolve) => {
 			nrp.emit('getPolicyRooms', {});
 			nrp.on('sendPolicyRooms', (data) => resolve(data));
@@ -354,17 +366,36 @@ class BootstrapSocket {
 		if (!policyRooms || !policyRooms[app._id]) return;
 
 		const appPolicyRooms = policyRooms[app._id];
-		Object.keys(appPolicyRooms).forEach((key) => {
+		const policyRoomsKeys = Object.keys(appPolicyRooms);
+		for await (const key of policyRoomsKeys) {
 			const room = appPolicyRooms[key];
-			Object.keys(room).forEach((roomKey) => {
-				const userIdx = room[roomKey].userIds.findIndex((id) => id === userId.toString());
+			for await (const roomKey of Object.keys(room)) {
+				const apiPath = app.apiPath;
+				const roomUserIds = room[roomKey].userIds;
+				const userIdx = roomUserIds.findIndex((id) => id === userId.toString());
+				const sharedCollections = this.__getRoomSharedCollections(appPolicyRooms, policyRoomsKeys, roomKey);
 				if (userIdx !== -1) {
-					Logging.log(`[${app.apiPath}][${userId}] disconnected ${socket.id} from ${roomKey} room to collection ${key}`);
-					socket.leave(roomKey);
-					room[roomKey].userIds.splice(userId, 1);
+					nrp.emit('accessControlPolicy:disconnectSocket', {
+						collections: sharedCollections,
+						apiPath,
+						userId,
+						room: roomKey,
+						clear,
+					});
+
+					roomUserIds.splice(userIdx, 1);
+
+					if (!socket.rooms.has(roomKey)) continue;
+
+					await new Promise((resolve) => {
+						nrp.on('socketLeftRoom', (data) => {
+							if (data.userId !== userId && data.room !== roomKey) return;
+							resolve();
+						});
+					});
 				}
-			});
-		});
+			}
+		}
 
 		await new Promise((resolve) => {
 			nrp.emit('setMainPolicyRooms', policyRooms);
@@ -442,6 +473,8 @@ class BootstrapSocket {
 
 		for await (const roomKey of Object.keys(broadcastRooms)) {
 			const room = broadcastRooms[roomKey];
+			if (room.userIds.length < 1) continue;
+
 			const roomQueryKeys = Object.keys(room.access.query);
 			const roomProjectionKeys = (room.access.projection) ? room.access.projection : [];
 			if (roomQueryKeys.length < 1 && roomProjectionKeys.length < 1) {
@@ -458,7 +491,13 @@ class BootstrapSocket {
 
 			if (verb === 'put') {
 				const appShortId = shortId(appId);
-				data.response = await Model[`${appShortId}-${collection}`].findOne({_id: new ObjectId(data.params.id)});
+				const entity = await Model[`${appShortId}-${collection}`].findOne({_id: new ObjectId(data.params.id)});
+				if (entity._id) {
+					entity.id = entity._id;
+					delete entity._id;
+				}
+
+				data.response = entity;
 				data.verb = 'post';
 			}
 
@@ -522,15 +561,16 @@ class BootstrapSocket {
 		this.__namespace[apiPath].emitter.in(room).emit('db-activity', {
 			data: data,
 			sequence: this.__namespace[apiPath].sequence[room],
+			room,
 		});
 	}
 
 	__clearUserLocalData(data) {
-		const apiPath = data.appAPIPath;
+		// const apiPath = data.appAPIPath;
 
-		this.__namespace[apiPath].emitter.emit('clear-local-db', {
-			data: data,
-		});
+		// this.__namespace[apiPath].emitter.emit('clear-local-db', {
+		// 	data: data,
+		// });
 	}
 
 	__spawnWorkers() {
@@ -612,42 +652,44 @@ class BootstrapSocket {
 		});
 	}
 
-	async _queuePolicyRoomCloseSocketEvent(nrp, policies, schemaNames, appId) {
+	async _queuePolicyRoomCloseSocketEvent(nrp, data) {
+		const policies = data.policies;
 		const room = hash(policies);
 		for await (const key of Object.keys(policies)) {
 			const policy = policies[key];
-			const name = policy.name;
 			const conditionStr = policy.conditions.reduce((str, condition) => str = str + JSON.stringify(condition), '');
-			let policyIdx = this._policyCloseSocketEvents.findIndex((event) => event.name === name);
-			if (policyIdx === -1) {
-				policyIdx = this._policyCloseSocketEvents.push({
-					name,
-					conditions: [
-						conditionStr,
-					],
-				});
-			} else {
-				const policyConditionExist = this._policyCloseSocketEvents[policyIdx].conditions.some((c) => c === conditionStr);
-				if (policyConditionExist) return;
+			if (!conditionStr) continue;
 
-				this._policyCloseSocketEvents[policyIdx].conditions.push(conditionStr);
-			}
-
-			await this._queueEvent(nrp, room, policy, schemaNames, appId, policyIdx);
+			await this._queueEvent(nrp, data, room, policy, key, conditionStr);
 		}
 	}
 
-	async _queueEvent(nrp, room, policy, schemaNames, appId, idx) {
+	async _queueEvent(nrp, data, room, policy, roomKey, conditionStr) {
 		const conditions = policy.conditions;
 		conditions.reduce(async (prev, condition) => {
 			await prev;
 			const dateTimeBasedCondition = await AccessControlConditions.isPolicyDateTimeBased(condition);
 			if (dateTimeBasedCondition) {
-				await this._queueDateTimeEvent(nrp, room, policy, appId, dateTimeBasedCondition, idx);
+				let policyIdx = this._policyCloseSocketEvents.findIndex((event) => event.name === roomKey);
+				if (policyIdx === -1) {
+					policyIdx = this._policyCloseSocketEvents.push({
+						name: roomKey,
+						conditions: [
+							conditionStr,
+						],
+					});
+				} else {
+					const policyConditionExist = this._policyCloseSocketEvents[policyIdx].conditions.some((c) => c === conditionStr);
+					if (policyConditionExist) return;
+
+					this._policyCloseSocketEvents[policyIdx].conditions.push(conditionStr);
+				}
+
+				await this._queueDateTimeEvent(nrp, data, policy, dateTimeBasedCondition, policyIdx);
 				return;
 			}
 
-			const queryBasedCondition = await AccessControlConditions.isPolicyQueryBasedCondition(condition, schemaNames);
+			const queryBasedCondition = await AccessControlConditions.isPolicyQueryBasedCondition(condition, data.schemaNames);
 			if (queryBasedCondition) {
 				nrp.emit('queueBasedConditionQuery', {
 					room: room,
@@ -658,7 +700,7 @@ class BootstrapSocket {
 		}, Promise.resolve());
 	}
 
-	async _queueDateTimeEvent(nrp, room, policy, appId, dateTimeBasedCondition, idx) {
+	async _queueDateTimeEvent(nrp, data, policy, dateTimeBasedCondition, idx) {
 		const envVars = policy.env;
 
 		if (dateTimeBasedCondition === 'time') {
@@ -667,9 +709,9 @@ class BootstrapSocket {
 
 			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
 			setTimeout(() => {
-				nrp.emit('accessControlPolicy:disconnectSocket', {
-					appId,
-					room,
+				nrp.emit('updateUserSocketRooms', {
+					userId: data.userId,
+					appId: data.appId,
 				});
 				this._policyCloseSocketEvents.splice(idx - 1, 1);
 			}, timeout);
@@ -682,9 +724,9 @@ class BootstrapSocket {
 			const nearlyExpired = Sugar.Number.day(Sugar.Date.create(conditionEndDate));
 			if (this._oneWeekMilliseconds > nearlyExpired) {
 				setTimeout(() => {
-					nrp.emit('accessControlPolicy:disconnectSocket', {
-						appId,
-						room,
+					nrp.emit('updateUserSocketRooms', {
+						userId: data.userId,
+						appId: data.appId,
 					});
 					this._policyCloseSocketEvents.splice(idx - 1, 1);
 				}, nearlyExpired);
@@ -692,19 +734,29 @@ class BootstrapSocket {
 		}
 	}
 
-	async _disconnectQueryBasedSocket(nrp, appId, updatedSchema, id) {
+	async _disconnectQueryBasedSocket(nrp, data) {
 		const schemaBasedConditionIdx = this._policyCloseSocketEvents.findIndex((c) => {
-			return c.collection === updatedSchema && c.entityId === id;
+			return c.collection === data.updatedSchema && c.entityId === data.id;
 		});
+
 		if (schemaBasedConditionIdx === -1) return;
 
-		const room = this._policyCloseSocketEvents[schemaBasedConditionIdx].room;
-		nrp.emit('accessControlPolicy:disconnectSocket', {
-			appId,
-			room,
+		nrp.emit('updateUserSocketRooms', {
+			userId: data.userId,
+			appId: data.appId,
 		});
 
 		this._policyCloseSocketEvents.splice(schemaBasedConditionIdx, 1);
+	}
+
+	__getRoomSharedCollections(appPolicyRooms, policyRoomsKeys, roomKey) {
+		return policyRoomsKeys.reduce((arr, key) => {
+			if (Object.keys(appPolicyRooms[key]).some((i) => i === roomKey)) {
+				arr.push(key);
+			}
+
+			return arr;
+		}, []);
 	}
 }
 

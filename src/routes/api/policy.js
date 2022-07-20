@@ -15,6 +15,9 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+const Config = require('node-env-obj')();
+const NRP = require('node-redis-pubsub');
+const nrp = new NRP(Config.redis);
 
 const Route = require('../route');
 const Model = require('../../model');
@@ -132,6 +135,9 @@ class AddPolicy extends Route {
 	_exec(req, res, validate) {
 		return Model.Policy.add({policy: req.body, appId: req.authApp._id})
 			.then((policy) => {
+				nrp.emit('app-policy:bust-cache', {
+					appId: req.authApp._id,
+				});
 				return policy;
 			});
 	}

@@ -333,6 +333,10 @@ class UserSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves to an array of Apps
 	 */
 	async setPolicyPropertiesById(userId, appId, policyProperties) {
+		if (policyProperties.query) {
+			delete policyProperties.query;
+		}
+
 		const user = await this.findById(userId);
 		let metaDataExists = false;
 		if (user._appMetadata) {
@@ -359,6 +363,10 @@ class UserSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves to an array of Apps
 	 */
 	updatePolicyPropertiesById(userId, appId, policyProperties, user) {
+		if (policyProperties.query) {
+			delete policyProperties.query;
+		}
+
 		const userPolicy = user._appMetadata.find((m) => m.appId.toString() === appId.toString()).policyProperties;
 		const policy = Object.keys(policyProperties).reduce((obj, key) => {
 			obj[key] = policyProperties[key];

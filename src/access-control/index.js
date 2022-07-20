@@ -12,6 +12,7 @@ const Sugar = require('sugar');
 const hash = require('object-hash');
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
+const ObjectId = require('mongodb').ObjectId;
 
 const Model = require('../model');
 const Logging = require('../logging');
@@ -28,6 +29,17 @@ class AccessControl {
 		this._schemas = {};
 		this._policies = {};
 		this._schemaNames = {};
+		this._queuedLimitedPolicy = [];
+
+		this._oneWeekMilliseconds = Sugar.Number.day(7);
+
+		this.handlePolicyCaching();
+	}
+
+	handlePolicyCaching() {
+		nrp.on('app-policy:bust-cache', async (data) => {
+			this._policies[data.appId] = await this.__loadAppPolicies(data.appId);
+		});
 	}
 
 	/**
@@ -69,8 +81,19 @@ class AccessControl {
 			return;
 		}
 
-		await this._checkAccessControlQueryBasedCondition(req, appId, schemaName, requestedURL);
-		await this._queuePolicyRoomCloseSocketEvent(policyOutcome.res, appId);
+		const params = {
+			policies: policyOutcome.res,
+			appId: appId,
+			apiPath: req.authApp.apiPath,
+			userId: user._id,
+			schemaNames: this._schemaNames[appId],
+			schemaName: schemaName,
+			path: requestedURL,
+		};
+
+		await this._queuePolicyLimitDeleteEvent(userPolicies, user, appId);
+		await this._checkAccessControlDBBasedQueryCondition(req, params);
+		nrp.emit('queuePolicyRoomCloseSocketEvent', params);
 
 		next();
 	}
@@ -245,7 +268,7 @@ class AccessControl {
 		if (!schemaBasePolicyConfig) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			outcome.err.message = 'Request policy does have access to the requested schema';
+			outcome.err.message = 'Request policy does not have access to the requested schema';
 			return outcome;
 		}
 
@@ -315,18 +338,10 @@ class AccessControl {
 		return outcome;
 	}
 
-	async _queuePolicyRoomCloseSocketEvent(policies, appId) {
-		nrp.emit('queuePolicyRoomCloseSocketEvent', {
-			policies,
-			appId,
-			schemaNames: this._schemaNames[appId],
-		});
-	}
-
 	async __loadAppPolicies(appId) {
 		const policies = [];
 		const rxsPolicies = Model.Policy.find({
-			_appId: appId,
+			_appId: new ObjectId(appId),
 		});
 		for await (const policy of rxsPolicies) {
 			policies.push(policy);
@@ -339,21 +354,59 @@ class AccessControl {
 		return await AccessControlPolicyMatch.__getUserPolicies(this._policies[appId], appId, user);
 	}
 
-	async _checkAccessControlQueryBasedCondition(req, appId, updatedSchema, path) {
+	async _checkAccessControlDBBasedQueryCondition(req, params) {
 		const requestMethod = req.method;
 		if (requestMethod !== 'PUT') return;
 
-		nrp.emit('updateUserSocketRooms', {
-			userId: req.authUser._id,
-			appId,
+		const id = params.path.split('/').pop();
+		nrp.emit('accessControlPolicy:disconnectQueryBasedSocket', {
+			appId: params.appId,
+			apiPath: params.apiPath,
+			userId: params.userId,
+			id: id,
+			updatedSchema: params.schemaName,
+		});
+	}
+
+	_queuePolicyLimitDeleteEvent(policies, user, appId) {
+		const limitedPolicies = policies.filter((p) => p.limit && Sugar.Date.isValid(p.limit));
+		if (limitedPolicies.length < 1) return;
+
+		limitedPolicies.forEach((p) => {
+			const nearlyExpired = Sugar.Date.create(p.limit) - Sugar.Date.create();
+			if (this._oneWeekMilliseconds < nearlyExpired) return;
+			if (this._queuedLimitedPolicy.includes(p.name)) return;
+
+			const policyIdx = this._queuedLimitedPolicy.push(p.name);
+			setTimeout(async () => {
+				await this.__removeUserPropertiesPolicySelection(user, p, appId);
+				await Model.Policy.rm(p);
+
+				nrp.emit('app-policy:bust-cache', {
+					appId,
+				});
+
+				nrp.emit('updateUserSocketRooms', {
+					userId: user._id,
+					appId,
+				});
+
+				this._queuedLimitedPolicy.splice(policyIdx, 1);
+			}, nearlyExpired);
+		});
+	}
+
+	async __removeUserPropertiesPolicySelection(user, policy, appId) {
+		const userAppMetadata = user._appMetadata.find((m) => m.appId.toString() === appId.toString());
+		if (!userAppMetadata) return;
+
+		const limitedPolicySelectionKeys = Object.keys(policy.selection);
+		const userPolicyProps = userAppMetadata.policyProperties;
+		limitedPolicySelectionKeys.forEach((key) => {
+			delete userPolicyProps[key];
 		});
 
-		const id = path.split('/').pop();
-		nrp.emit('accessControlPolicy:disconnectQueryBasedSocket', {
-			appId,
-			updatedSchema,
-			id,
-		});
+		await Model.User.setPolicyPropertiesById(user._id, appId, userPolicyProps);
 	}
 
 	__getInnerObjectValue(originalObj) {
