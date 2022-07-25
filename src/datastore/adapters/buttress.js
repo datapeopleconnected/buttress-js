@@ -145,7 +145,13 @@ module.exports = class Buttress extends AbstractAdapter {
 	add(body) {
 		body = this.convertBSONObjects(body);
 		return this.resolveAfterInit()
-			.then(() => this.collection.save(body));
+			.then(() => {
+				if (Array.isArray(body)) {
+					return this.collection.bulkSave(body);
+				}
+
+				return this.collection.save(body);
+			});
 	}
 
 	/**
