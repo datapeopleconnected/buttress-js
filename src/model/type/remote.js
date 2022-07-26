@@ -16,6 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+const Helpers = require('../../helpers');
 const SchemaModel = require('../schemaModel');
 
 /**
@@ -40,6 +41,15 @@ class SchemaModelRemote extends SchemaModel {
 			this.remote.adapter = remoteDatastore.adapter.cloneAdapterConnection();
 			await this.remote.adapter.connect();
 			await this.remote.adapter.setCollection(`${this.schemaData.name}`);
+		}
+
+		// Compile remote schema
+		if (this.remote.adapter.getSchema) {
+			const remoteSchemas = await this.remote.adapter.getSchema([this.schemaData.name]);
+			if (remoteSchemas && remoteSchemas.length > 0) {
+				delete this.schemaData.remote;
+				this.schemaData = Helpers.mergeDeep(this.schemaData, remoteSchemas.pop());
+			}
 		}
 	}
 
@@ -66,6 +76,15 @@ class SchemaModelRemote extends SchemaModel {
 		// Seperate local updates from remote
 
 		return this.remote.updateById(id, details);
+	}
+
+	/**
+	 * @param {object} body
+	 * @param {string} id
+	 * @return {promise}
+	 */
+	updateByPath(body, id) {
+		return this.remote.updateByPath(body, id);
 	}
 
 	/**

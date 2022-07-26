@@ -351,6 +351,8 @@ class GetAppSchema extends Route {
 			return map;
 		}, {});
 
+		// TODO: fetch app models & use schema data instead of doing the work here
+
 		// Load DSA for curent app
 		const requiredDSAs = Object.keys(dataSharingSchema);
 		if (requiredDSAs.length > 0) {

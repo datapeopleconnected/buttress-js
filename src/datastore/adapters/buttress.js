@@ -105,6 +105,15 @@ module.exports = class Buttress extends AbstractAdapter {
 		}
 	}
 
+	async getSchema(only = []) {
+		await this.resolveAfterInit();
+		return await this.connection.App.getSchema({
+			params: {
+				only: only.join(','),
+			},
+		});
+	}
+
 	get ID() {
 		return AdapterId;
 	}
@@ -136,6 +145,11 @@ module.exports = class Buttress extends AbstractAdapter {
 		}
 
 		return result;
+	}
+
+	async batchUpdateProcess(id, body) {
+		await this.resolveAfterInit();
+		return await this.collection.update(id, body);
 	}
 
 	/**

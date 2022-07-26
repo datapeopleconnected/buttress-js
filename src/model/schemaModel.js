@@ -379,6 +379,7 @@ class SchemaModel {
 		const flattenedSchema = this.schemaData ? Helpers.getFlattenedSchema(this.schemaData) : false;
 		const extendedPathContext = Shared.extendPathContext({}, flattenedSchema, '');
 
+		// TODO: This isn't processing updates in a batch
 		return await body.reduce(async (prev, update) => {
 			const arr = await prev;
 			const config = flattenedSchema === false ? false : flattenedSchema[update.path];
