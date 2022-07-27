@@ -193,6 +193,33 @@ class SyncPolicies extends Route {
 }
 routes.push(SyncPolicies);
 
+
+/**
+ * @class DeletePolicyByName
+ */
+class DeletePolicyByName extends Route {
+	constructor() {
+		super('policy/:name', 'DELETE POLICY BY NAME');
+		this.verb = Route.Constants.Verbs.DEL;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.LIST;
+	}
+
+	async _validate(req, res, token) {
+		const name = req.body.name;
+		return Model.Policy.find({name: name});
+	}
+
+	async _exec(req, res, validate) {
+		await Model.Policy.rm(validate);
+
+		nrp.emit('app-policy:bust-cache', {
+			appId: req.authApp._id,
+		});
+	}
+}
+routes.push(DeletePolicyByName);
+
 /**
  * @class DeletePolicy
  */
@@ -200,7 +227,7 @@ class DeletePolicy extends Route {
 	constructor() {
 		super('policy/:id', 'DELETE POLICY');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.SUPER;
+		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 		this._policy = false;
 	}
@@ -229,6 +256,35 @@ class DeletePolicy extends Route {
 	}
 }
 routes.push(DeletePolicy);
+
+/**
+ * @class DeleteAppPolicies
+ */
+class DeleteAppPolicies extends Route {
+	constructor() {
+		super('policy', 'DELETE ALL APP POLICIES');
+		this.verb = Route.Constants.Verbs.DEL;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	async _validate(req) {
+		const rxsPolicies = await Model.Policy.findAll(req.authApp._id, req.token.authLevel);
+		const policies = [];
+		for await (const policy of rxsPolicies) {
+			policies.push(policy);
+		}
+
+		return policies.map((p) => p.id);
+	}
+
+	_exec(req, res, validate) {
+		return new Promise((resolve, reject) => {
+			Model.Policy.rmBulk(validate).then(() => true).then(resolve, reject);
+		});
+	}
+}
+routes.push(DeleteAppPolicies);
 
 /**
  * @type {*[]}

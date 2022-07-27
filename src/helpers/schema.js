@@ -396,7 +396,9 @@ module.exports.unflattenObject = __unflattenObject;
  * @return {Object}
  */
 
-const __getBlankObjectValues = (item, keys, body, property) => {
+const __getBlankObjectValues = (item, keys, body, property, values) => {
+	if (!item) return values;
+
 	return Object.keys(item).reduce((arr, key) => {
 		if (!keys.includes(key) || property !== key) {
 			arr[key] = (body[property])? body[property][key] : body[key];
@@ -447,12 +449,12 @@ const __populateObject = (schemaFlat, values, body = null) => {
 			if (Array.isArray(body)) {
 				if (definedObjectKeys.length > 0) {
 					body.forEach((item) => {
-						console.log(property, item[property], definedObjectKeys, property);
-						blankObjectValues = __getBlankObjectValues(item[property], definedObjectKeys, item[property], property);
+						blankObjectValues = __getBlankObjectValues(item[property], definedObjectKeys, item[property], property, blankObjectValues);
 					});
 				}
-			} else {
-				blankObjectValues = __getBlankObjectValues(body[property], definedObjectKeys, body, property);
+				body.forEach((item) => {
+					blankObjectValues = __getBlankObjectValues(item[property], definedObjectKeys, item[property], property, blankObjectValues);
+				});
 			}
 
 			if (blankObjectValues) {

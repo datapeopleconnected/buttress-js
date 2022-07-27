@@ -1,3 +1,6 @@
+const shortId = require('../helpers').shortId;
+const Model = require('../model');
+
 /**
  * @class Filter
  */
@@ -9,19 +12,26 @@ class Filter {
 			'$and',
 			'$or',
 		];
+
+		this._globalQueryEnv = {
+			authUserId: null,
+			personId: null,
+		};
 	}
 
 	async addAccessControlPolicyQuery(req, userPolicies) {
+		this._globalQueryEnv.authUserId = req.authUser?._id;
+
 		await Object.keys(userPolicies).reduce(async (prev, key) => {
 			await prev;
 			await userPolicies[key].query.reduce(async (prev, q) => {
 				await prev;
-				await this.addAccessControlPolicyRuleQuery(req, q);
+				await this.addAccessControlPolicyRuleQuery(req, q, 'accessControlQuery', userPolicies[key].env);
 			}, Promise.resolve());
 		}, Promise.resolve());
 	}
 
-	async addAccessControlPolicyRuleQuery(req, policyQuery, str = 'accessControlQuery') {
+	async addAccessControlPolicyRuleQuery(req, policyQuery, str, env = null) {
 		const translatedQuery = await this.__convertPrefixToQueryPrefix(policyQuery);
 		if (!req[str]) {
 			req[str] = {};
@@ -48,8 +58,33 @@ class Filter {
 				return;
 			}
 
+			if (req.authApp && req.authApp._id) {
+				await this.__substituteEnvVariables(translatedQuery[key], env, req.authApp._id);
+			}
+
 			req[str][key] = translatedQuery[key];
 		}, Promise.resolve());
+	}
+
+	async __substituteEnvVariables(obj, env, appId) {
+		for await (const key of Object.keys(obj)) {
+			obj[key] = await this.getQueryEnvironmentVar(obj[key], env, appId);
+		}
+	}
+
+	async getQueryEnvironmentVar(environmentKey, envVars, appId) {
+		if (!environmentKey.includes('env')) return environmentKey;
+
+		const path = environmentKey.replace('env', '').split('.').filter((v) => v);
+		const queryValue = path.reduce((obj, str) => obj?.[str], envVars);
+
+		if (queryValue === 'personId') {
+			const appShortId = shortId(appId);
+			const person = await Model[`${appShortId}-people`].findOne({authId: this._globalQueryEnv.authUserId});
+			this._globalQueryEnv.personId = person._id;
+		}
+
+		return this._globalQueryEnv?.[queryValue];
 	}
 
 	async applyAccessControlPolicyQuery(req) {
@@ -216,28 +251,29 @@ class Filter {
 		return modifiedQuery;
 	}
 
-	__convertPrefixToQueryPrefix(obj, baseKey = null, newObj = {}) {
+	async __convertPrefixToQueryPrefix(obj, baseKey = null, newObj = {}) {
 		if (obj === null) return null;
 
-		return Object.keys(obj).reduce((prev, key) => {
-			return prev.then(() => {
-				if (typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
-					return this.__convertPrefixToQueryPrefix(obj[key], key, newObj);
-				}
+		for await (const key of Object.keys(obj)) {
+			if (typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
+				await this.__convertPrefixToQueryPrefix(obj[key], key, newObj);
+				continue;
+			}
 
-				if (Array.isArray(obj[key])) {
-					return this.__convertPrefixQueryArray(obj[key], key, newObj);
-				}
+			if (Array.isArray(obj[key]) && this.logicalOperator.includes(key)) {
+				await this.__convertPrefixQueryArray(obj[key], key, newObj);
+				continue;
+			}
 
-				if (!newObj[baseKey]) {
-					newObj[baseKey] = {};
-				}
+			if (!newObj[baseKey]) {
+				newObj[baseKey] = {};
+			}
 
-				const newKey = this.__replacePrefix(key);
-				newObj[baseKey][newKey] = obj[key];
-			});
-		}, Promise.resolve())
-			.then(() => newObj);
+			const newKey = this.__replacePrefix(key);
+			newObj[baseKey][newKey] = obj[key];
+		}
+
+		return newObj;
 	}
 
 	__convertPrefixQueryArray(arr, key, newObj) {

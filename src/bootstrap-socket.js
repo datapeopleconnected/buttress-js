@@ -36,6 +36,7 @@ const Config = require('node-env-obj')();
 const ObjectId = require('mongodb').ObjectId;
 const shortId = require('./helpers').shortId;
 const Model = require('./model');
+const Helpers = require('./helpers');
 const Logging = require('./logging');
 const AccessControl = require('./access-control');
 const AccessControlConditions = require('./access-control/conditions');
@@ -216,6 +217,15 @@ class BootstrapSocket {
 			});
 		});
 
+		nrp.on('updateSocketRooms', async (data) => {
+			if (!io[data.apiPath]) {
+				nrp.emit('updatedUserSocketRooms', {});
+				return;
+			}
+
+			nrp.emit('updateUserSocketRooms', data);
+		});
+
 		Logging.logSilly(`Listening on app namespaces`);
 		io.of(/^\/[a-z\d-]+$/i).use(async (socket, next) => {
 			const apiPath = socket.nsp.name.substring(1);
@@ -349,7 +359,7 @@ class BootstrapSocket {
 		});
 
 		socket.join(userRooms);
-		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}, ${user.auth[0].username}`);
+		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
 	}
 
 	async __disconnectUserRooms(nrp, userId, app, socket, clear = false) {
@@ -450,16 +460,7 @@ class BootstrapSocket {
 			};
 		}
 
-		if (data.isUser) {
-			await this.__broadcastToUsers(data);
-		} else {
-			Logging.logDebug(`[${apiPath}][global]: [${data.verb}] ${data.path}`);
-			this.__namespace[apiPath].sequence.global++;
-			this.__namespace[apiPath].emitter.emit('db-activity', {
-				data: data,
-				sequence: this.__namespace[apiPath].sequence.global,
-			});
-		}
+		await this.__broadcastToUsers(data);
 	}
 
 	async __broadcastToUsers(data) {
@@ -482,23 +483,17 @@ class BootstrapSocket {
 				continue;
 			}
 
-			const broadcast = await this.__evaluateRoomQueryOperation(room.access.query, data);
+			const appShortId = shortId(appId);
+			const rxsEntity = await Model[`${appShortId}-${collection}`].find({_id: new ObjectId(data.params.id)});
+			const entity = await Helpers.streamFirst(rxsEntity);
+
+			const broadcast = await this.__evaluateRoomQueryOperation(room.access.query, entity);
+			if (!broadcast && verb === 'post') continue;
+
 			if (!broadcast) {
 				data.verb = 'delete';
 				this.__broadcastData(data, roomKey);
 				continue;
-			}
-
-			if (verb === 'put') {
-				const appShortId = shortId(appId);
-				const entity = await Model[`${appShortId}-${collection}`].findOne({_id: new ObjectId(data.params.id)});
-				if (entity._id) {
-					entity.id = entity._id;
-					delete entity._id;
-				}
-
-				data.response = entity;
-				data.verb = 'post';
 			}
 
 			const projectedData = roomProjectionKeys.reduce((obj, key) => {
@@ -517,7 +512,9 @@ class BootstrapSocket {
 		}
 	}
 
-	async __evaluateRoomQueryOperation(roomQuery, data, broadcast, partialPass = null, fullPass = null, skip = false) {
+	async __evaluateRoomQueryOperation(roomQuery, entity, partialPass = null, fullPass = null, skip = false) {
+		if (!entity) return false;
+
 		await Object.keys(roomQuery).reduce(async (prev, operator) => {
 			await prev;
 			partialPass = (partialPass === null)? (operator === '@or') ? true : false : partialPass;
@@ -527,13 +524,12 @@ class BootstrapSocket {
 				const arr = roomQuery[operator];
 				await arr.reduce(async (prev, conditionObj) => {
 					await prev;
-					await this.__evaluateRoomQueryOperation(conditionObj, data, broadcast, partialPass, fullPass, true);
+					await this.__evaluateRoomQueryOperation(conditionObj, entity, partialPass, fullPass, true);
 				}, Promise.resolve());
 			} else {
 				const [queryOperator] = Object.keys(roomQuery[operator]);
 				const rhs = roomQuery[operator][queryOperator];
-				let lhs = (!Array.isArray(data.response)) ? data.response[operator] : data.response.find((item) => item.path === operator);
-				lhs = (typeof lhs === 'object') ? lhs.value : lhs;
+				const lhs = (ObjectId.isValid(entity[operator])) ? entity[operator].toString() : entity[operator];
 				const passed = await AccessControlConditions.evaluateOperation(lhs, rhs, queryOperator);
 				if (partialPass && passed) {
 					partialPass = true;

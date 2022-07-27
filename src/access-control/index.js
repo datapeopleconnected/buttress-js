@@ -116,6 +116,17 @@ class AccessControl {
 			this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type === 'collection');
 		}
 
+		if (!req.authApp) {
+			req.authApp = {
+				_id: appId,
+			};
+		}
+		if (!req.authUser) {
+			req.authUser = {
+				_id: user._id,
+			};
+		}
+
 		const userPolicies = await this.__getUserPolicies(user, appId);
 		await this._schemas[appId].reduce(async (prev, next) => {
 			await prev;
@@ -172,10 +183,9 @@ class AccessControl {
 	 * @param {String} schemaName
 	 * @param {String} appId
 	 * @param {Boolean} core
-	 * @param {String} userName
 	 * @return {Object}
 	 */
-	async __getPolicyOutcome(userPolicies, req, schemaName, appId = null, core = false, userName = null) {
+	async __getPolicyOutcome(userPolicies, req, schemaName, appId = null, core = false) {
 		const outcome = {
 			res: {},
 			err: {},
