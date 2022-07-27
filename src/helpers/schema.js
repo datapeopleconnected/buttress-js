@@ -439,12 +439,18 @@ const __populateObject = (schemaFlat, values, body = null) => {
 		const root = path.shift();
 
 		if (body && propVal === undefined && schemaFlat && schemaFlat[property] && schemaFlat[property].__type === 'object') {
-			const definedObjectKeys = Object.keys(schemaFlat).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
+			const definedObjectKeys = Object.keys(schemaFlat)
+				.filter((key) => key !== property && property.indexOf(`${property}.`) === 0)
+				.map((v) => v.replace(`${property}.`, ''));
 			let blankObjectValues = null;
+
 			if (Array.isArray(body)) {
-				body.forEach((item) => {
-					blankObjectValues = __getBlankObjectValues(item[property], definedObjectKeys, item[property], property);
-				});
+				if (definedObjectKeys.length > 0) {
+					body.forEach((item) => {
+						console.log(property, item[property], definedObjectKeys, property);
+						blankObjectValues = __getBlankObjectValues(item[property], definedObjectKeys, item[property], property);
+					});
+				}
 			} else {
 				blankObjectValues = __getBlankObjectValues(body[property], definedObjectKeys, body, property);
 			}

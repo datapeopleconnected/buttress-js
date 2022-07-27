@@ -51,6 +51,14 @@ describe('helpers.schema:populateObject', () => {
 					},
 				},
 			},
+			specification: {
+				env: {
+					__type: 'object',
+					__default: null,
+					__required: true,
+					__allowUpdate: true,
+				},
+			},
 		},
 	};
 
@@ -72,5 +80,9 @@ describe('helpers.schema:populateObject', () => {
 
 	it('result should have default value on sub property of object', async () => {
 		assert(result['test']['name'] === 'default name');
+	});
+
+	it('result should have default value for sub property of object that is object type', async () => {
+		assert(result['specification']['env'] === null);
 	});
 });
