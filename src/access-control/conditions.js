@@ -401,7 +401,7 @@ class Conditions {
 			break;
 		case '$in':
 		case '@in': {
-			passed = lhs.some((i) => i === rhs);
+			passed = rhs.some((i) => i === lhs);
 		}
 			break;
 		case '$nin':

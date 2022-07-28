@@ -255,7 +255,18 @@ class AddUser extends Route {
 		return Model.User.add(req.body.user, req.body.auth)
 			.then((user) => {
 				// TODO: Strip back return data, should match find user
-				return user;
+				let policyProperties = null;
+				if (user._appMetadata) {
+					const _appMetadata = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
+					policyProperties = (_appMetadata) ? _appMetadata.policyProperties : null;
+				}
+
+				return {
+					id: user._id,
+					auth: user.auth,
+					tokens: [],
+					policyProperties,
+				};
 			});
 	}
 }
@@ -345,7 +356,7 @@ class SetUserPolicyProperties extends Route {
 		await Model.User.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body);
 
 		await new Promise((resolve) => {
-			nrp.emit('updateUserSocketRooms', {
+			nrp.emit('updateSocketRooms', {
 				userId: req.params.id,
 				appId: req.authApp._id,
 			});
@@ -404,9 +415,10 @@ class UpdateUserPolicyProperties extends Route {
 		await Model.User.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body, validate.user);
 
 		await new Promise((resolve) => {
-			nrp.emit('updateUserSocketRooms', {
+			nrp.emit('updateSocketRooms', {
 				userId: req.params.id,
 				appId: req.authApp._id,
+				apiPath: req.authApp.apiPath,
 			});
 
 			nrp.on('updatedUserSocketRooms', () => {

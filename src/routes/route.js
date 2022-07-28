@@ -290,13 +290,9 @@ class Route {
 		// Replace API version prefix
 		path = `/${path.join('/')}`.replace(Config.app.apiPrefix, '');
 
-		this._broadcast(req, res, result, false, path, true);
+		this._broadcast(req, res, result, path, true);
 
-		if (req.authApp && req.authUser) {
-			this._broadcast(req, res, result, true, path);
-		} else if (req.authApp) {
-			this._broadcast(req, res, result, false, path);
-		}
+		this._broadcast(req, res, result, path);
 
 		Logging.logTimer('_boardcastData:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
@@ -306,11 +302,10 @@ class Route {
 	 * @param {*} req
 	 * @param {*} res
 	 * @param {*} result
-	 * @param {*} isUser
 	 * @param {*} path
 	 * @param {boolean} isSuper
 	 */
-	_broadcast(req, res, result, isUser, path, isSuper = false) {
+	_broadcast(req, res, result, path, isSuper = false) {
 		Logging.logTimer('_broadcast:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		const isReadStream = (result instanceof Stream && result.readable);
@@ -322,7 +317,6 @@ class Route {
 					description: this.activityDescription,
 					visibility: this.activityVisibility,
 					broadcast: this.activityBroadcast,
-					isUser: isUser,
 					path: path,
 					pathSpec: this.path,
 					verb: this.verb,

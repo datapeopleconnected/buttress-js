@@ -56,10 +56,11 @@ class AccessControl {
 		const user = req.authUser;
 		if (!user) return next();
 
-		let core = false;
 		let requestedURL = req.originalUrl || req.url;
 		// Check URL to see if it's a core schema
-		if (!core) core = requestedURL.indexOf('/api') === 0;
+		const core = requestedURL.indexOf('/api') === 0;
+		if (core) return next();
+
 		requestedURL = requestedURL.split('?').shift();
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
@@ -114,6 +115,17 @@ class AccessControl {
 		if (!this._schemas[appId]) {
 			const app = await Model.App.findById(appId);
 			this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type === 'collection');
+		}
+
+		if (!req.authApp) {
+			req.authApp = {
+				_id: appId,
+			};
+		}
+		if (!req.authUser) {
+			req.authUser = {
+				_id: user._id,
+			};
 		}
 
 		const userPolicies = await this.__getUserPolicies(user, appId);
@@ -172,10 +184,9 @@ class AccessControl {
 	 * @param {String} schemaName
 	 * @param {String} appId
 	 * @param {Boolean} core
-	 * @param {String} userName
 	 * @return {Object}
 	 */
-	async __getPolicyOutcome(userPolicies, req, schemaName, appId = null, core = false, userName = null) {
+	async __getPolicyOutcome(userPolicies, req, schemaName, appId = null, core = false) {
 		const outcome = {
 			res: {},
 			err: {},
@@ -297,15 +308,7 @@ class AccessControl {
 			}
 		}
 
-		let schema = null;
-		if (core) {
-			const SchemaNameCamel = Sugar.String.camelize(schemaName);
-			if (Model.coreSchema.includes(SchemaNameCamel)) {
-				schema = Model[SchemaNameCamel].schemaData;
-			}
-		} else if (this._schemas[appId]) {
-			schema = this._schemas[appId].find((s) => s.name === schemaName);
-		}
+		const schema = this._schemas[appId].find((s) => s.name === schemaName);
 
 		if (!schema) {
 			outcome.err.statusCode = 401;

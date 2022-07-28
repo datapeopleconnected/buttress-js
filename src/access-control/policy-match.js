@@ -8,6 +8,8 @@ class PolicyMatch {
 
 	__getUserPolicies(policies, appId, user) {
 		return policies.reduce((arr, p) => {
+			if (!p.selection) return arr;
+
 			const match = this.__checkPolicySelection(p, appId, user);
 			if (!match) return arr;
 
