@@ -388,38 +388,18 @@ function __unflattenObject(data) {
 }
 module.exports.unflattenObject = __unflattenObject;
 
-/**
- * @param {Object} item - item object
- * @param {Array} keys - array of blank object keys
- * @param {Object} body - blank object body
- * @param {String} property - object property key
- * @return {Object}
- */
-
-const __getBlankObjectValues = (item, keys, body, property, values) => {
-	if (!item) return values;
-
-	return Object.keys(item).reduce((arr, key) => {
-		if (!keys.includes(key) || property !== key) {
-			arr[key] = (body[property])? body[property][key] : body[key];
-		}
-
-		return arr;
-	}, {});
-};
-
 // TODO: Need to handle flatterned array paths
 // TODO: Shared has simliar code, this may be a duplicate
 /**
  * @param {Object} schemaFlat - a flatterned schema
  * @param {Array} values - Array of values, path/value
  * @param {Object} body
+ * @param {Integer} bodyIdx
  * @return {Object} - A fully populated object using schema defaults and values provided.
  */
-const __populateObject = (schemaFlat, values, body = null) => {
+const __populateObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 	const res = {};
 	const objects = {};
-
 	for (const property in schemaFlat) {
 		if (!{}.hasOwnProperty.call(schemaFlat, property)) continue;
 		let propVal = values.find((v) => v.path === property);
@@ -440,27 +420,15 @@ const __populateObject = (schemaFlat, values, body = null) => {
 
 		const root = path.shift();
 
-		if (body && propVal === undefined && schemaFlat && schemaFlat[property] && schemaFlat[property].__type === 'object') {
-			const definedObjectKeys = Object.keys(schemaFlat)
-				.filter((key) => key !== property && property.indexOf(`${property}.`) === 0)
-				.map((v) => v.replace(`${property}.`, ''));
-			let blankObjectValues = null;
-
+		if (body && propVal === undefined && schemaFlat[property].__type === 'object') {
+			const value = property.split('.').reduce((obj, str) => obj?.[str], body);
+			propVal = {};
+			propVal.path = property.split('.').slice().pop();
+			propVal.value = (value) ? value : __getPropDefault(config);
 			if (Array.isArray(body)) {
-				if (definedObjectKeys.length > 0) {
-					body.forEach((item) => {
-						blankObjectValues = __getBlankObjectValues(item[property], definedObjectKeys, item[property], property, blankObjectValues);
-					});
-				}
-				body.forEach((item) => {
-					blankObjectValues = __getBlankObjectValues(item[property], definedObjectKeys, item[property], property, blankObjectValues);
-				});
-			}
-
-			if (blankObjectValues) {
-				propVal = {};
+				const isSubProperty = property.split('.');
 				propVal.path = property;
-				propVal.value = blankObjectValues;
+				propVal.value = (isSubProperty.length > 1) ? isSubProperty.reduce((obj, str) => obj?.[str], body[bodyIdx]) : body[bodyIdx][property];
 			}
 		}
 
@@ -476,7 +444,7 @@ const __populateObject = (schemaFlat, values, body = null) => {
 
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
-			value = value.map((v) => __populateObject(config.__schema, __getFlattenedBody(v), body[property]));
+			value = value.map((v, idx) => __populateObject(config.__schema, __getFlattenedBody(v), body[property], idx));
 		} else if (root && path.length > 0 || schemaFlat[property].__type === 'object') {
 			if (!objects[root]) {
 				objects[root] = {};
