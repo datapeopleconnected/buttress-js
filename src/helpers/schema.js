@@ -423,7 +423,7 @@ const __populateObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 		if (body && propVal === undefined && schemaFlat[property].__type === 'object') {
 			const value = property.split('.').reduce((obj, str) => obj?.[str], body);
 			propVal = {};
-			propVal.path = property.split('.').slice().pop();
+			propVal.path = property.split('.').pop();
 			propVal.value = (value) ? value : __getPropDefault(config);
 			if (Array.isArray(body)) {
 				const isSubProperty = property.split('.');
