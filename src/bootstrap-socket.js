@@ -690,7 +690,7 @@ class BootstrapSocket {
 				nrp.emit('queueBasedConditionQuery', {
 					room: room,
 					collection: queryBasedCondition.name,
-					entityId: queryBasedCondition.entityId,
+					identifier: queryBasedCondition.entityId,
 				});
 			}
 		}, Promise.resolve());
@@ -732,7 +732,7 @@ class BootstrapSocket {
 
 	async _disconnectQueryBasedSocket(nrp, data) {
 		const schemaBasedConditionIdx = this._policyCloseSocketEvents.findIndex((c) => {
-			return c.collection === data.updatedSchema && c.entityId === data.id;
+			return c.collection === data.updatedSchema && c.identifier === data.identifier;
 		});
 
 		if (schemaBasedConditionIdx === -1) return;

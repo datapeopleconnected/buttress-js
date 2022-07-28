@@ -317,7 +317,6 @@ class AccessControl {
 			return outcome;
 		}
 
-		AccessControlConditions.setAppShortId(appId);
 		await AccessControlConditions.applyPolicyConditions(req, schemaBasePolicyConfig);
 
 		if (Object.keys(schemaBasePolicyConfig).length < 1) {

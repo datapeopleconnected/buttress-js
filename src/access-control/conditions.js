@@ -60,11 +60,10 @@ class Conditions {
 		};
 	}
 
-	setAppShortId(app) {
-		this.appShortId = Helpers.shortId(app);
-	}
-
 	async applyPolicyConditions(req, userPolicies) {
+		if (!this.appShortId) {
+			this.appShortId = Helpers.shortId(req.authApp._id);
+		}
 		return await Object.keys(userPolicies).reduce(async (prev, policyKey) => {
 			await prev;
 			await this.__checkPolicyConditions(req, userPolicies, policyKey);
@@ -488,10 +487,12 @@ class Conditions {
 			}
 
 			const schemaQuery = schemaNames.find((n) => key.includes(n));
+
 			if (schemaQuery) {
+				const [identifier] = Object.keys(condition[key]['@identifier']);
 				return {
 					name: schemaQuery,
-					entityId: Object.values(condition[key][`${schemaQuery}.id`]).pop(),
+					[identifier]: Object.values(condition[key]['@identifier'][identifier]).pop(),
 				};
 			}
 		}
