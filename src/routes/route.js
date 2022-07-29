@@ -328,6 +328,7 @@ class Route {
 					appAPIPath: req.authApp ? req.authApp.apiPath : '',
 					appId: req.authApp ? req.authApp._id : '',
 					isSuper: isSuper,
+					schema: (this.schema.data) ? this.schema.data : null,
 				});
 			} else {
 				// Trigger the emit activity so we can update the stats namespace

@@ -259,6 +259,8 @@ class BootstrapSocket {
 				// Emit this activity to our instance.
 				socket.on('share', (data) => {
 					// Map the app data to our path
+					if (!data.schema.remote) return;
+
 					data.appId = app._id;
 					data.appAPIPath = app.apiPath;
 
