@@ -271,8 +271,6 @@ class BootstrapSocket {
 						return;
 					}
 
-					console.log(app.apiPath, data);
-
 					data.appId = app._id;
 					data.appAPIPath = app.apiPath;
 
