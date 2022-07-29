@@ -26,7 +26,7 @@ const NRP = require('node-redis-pubsub');
 const Helpers = require('../helpers');
 // const AccessControl = require('../access-control');
 
-// const SchemaModelRemote = require('../model/type/remote');
+const SchemaModelRemote = require('../model/type/remote');
 
 const nrp = new NRP(Config.redis);
 
@@ -277,6 +277,12 @@ class Route {
 	async _boardcastData(req, res, result) {
 		req.timings._boardcastData = req.timer.interval;
 		Logging.logTimer('_boardcastData:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+		if (this.model && this.model instanceof SchemaModelRemote) {
+			Logging.logTimer('_boardcastData:end-is-dsa', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			return;
+		}
+
 		if (this.verb === Constants.Verbs.GET || this.verb === Constants.Verbs.SEARCH) {
 			Logging.logTimer('_boardcastData:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
@@ -328,7 +334,7 @@ class Route {
 					appAPIPath: req.authApp ? req.authApp.apiPath : '',
 					appId: req.authApp ? req.authApp._id : '',
 					isSuper: isSuper,
-					schema: (this.schema.data) ? this.schema.data : null,
+					schemaName: this.schema?.name,
 				});
 			} else {
 				// Trigger the emit activity so we can update the stats namespace

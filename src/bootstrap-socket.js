@@ -41,6 +41,8 @@ const Logging = require('./logging');
 const AccessControl = require('./access-control');
 const AccessControlConditions = require('./access-control/conditions');
 
+const Schema = require('./schema');
+
 const Datastore = require('./datastore');
 
 class BootstrapSocket {
@@ -245,6 +247,12 @@ class BootstrapSocket {
 				return next('invalid-app');
 			}
 
+			const remoteSchemas = Schema.decode(app.__schema).reduce((obj, item) => {
+				if (!item.remote) return obj;
+				obj[item.remote] = item;
+				return obj;
+			}, {});
+
 			if (token.type === 'dataSharing') {
 				Logging.logDebug(`Fetching data share with tokenId: ${token._id}`);
 				const dataShare = await Model.AppDataSharing.findOne({
@@ -258,8 +266,12 @@ class BootstrapSocket {
 
 				// Emit this activity to our instance.
 				socket.on('share', (data) => {
-					// Map the app data to our path
-					if (!data.schema.remote) return;
+					if (!data.schemaName || !remoteSchemas[`${dataShare.name}.${data.schemaName}`]) {
+						Logging.log(`Skipping data sharing app doesn't use schema ${app.apiPath} ${dataShare.name}.${data.schemaName}, ${socket.id}`);
+						return;
+					}
+
+					console.log(app.apiPath, data);
 
 					data.appId = app._id;
 					data.appAPIPath = app.apiPath;
