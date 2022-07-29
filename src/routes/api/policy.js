@@ -195,19 +195,23 @@ routes.push(SyncPolicies);
 
 
 /**
- * @class DeletePolicyByName
+ * @class DeleteTransientPolicy
  */
-class DeletePolicyByName extends Route {
+class DeleteTransientPolicy extends Route {
 	constructor() {
-		super('policy/:name', 'DELETE POLICY BY NAME');
-		this.verb = Route.Constants.Verbs.DEL;
+		super('policy/deleteTransientPolicy', 'DELETE POLICY BY NAME');
+		this.verb = Route.Constants.Verbs.POST;
 		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
 	async _validate(req, res, token) {
-		const name = req.body.name;
-		return Model.Policy.find({name: name});
+		if (!req.body || !req.body.name) {
+			this.log(`[${this.name}] Missing required policy transient name field`, Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `missing_field`);
+		}
+
+		return await Helpers.streamFirst(await Model.Policy.find({name: req.body.name}));
 	}
 
 	async _exec(req, res, validate) {
@@ -216,9 +220,11 @@ class DeletePolicyByName extends Route {
 		nrp.emit('app-policy:bust-cache', {
 			appId: req.authApp._id,
 		});
+
+		return true;
 	}
 }
-routes.push(DeletePolicyByName);
+routes.push(DeleteTransientPolicy);
 
 /**
  * @class DeletePolicy
