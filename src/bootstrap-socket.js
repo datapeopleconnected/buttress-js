@@ -529,6 +529,8 @@ class BootstrapSocket {
 
 		await Object.keys(roomQuery).reduce(async (prev, operator) => {
 			await prev;
+			if (partialPass) return;
+
 			partialPass = (partialPass === null)? (operator === '@or') ? true : false : partialPass;
 			fullPass = (fullPass === null)? (!partialPass) ? true : false : fullPass;
 
