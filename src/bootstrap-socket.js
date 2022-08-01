@@ -426,6 +426,14 @@ class BootstrapSocket {
 	}
 
 	async __onActivity(data) {
+		const container = {
+			id: Datastore.getInstance('core').ID.new(),
+			timer: new Helpers.Timer(),
+		};
+		container.timer.start();
+		Logging.logTimer(`[${data.appAPIPath}][${data.verb}] activity in on ${data.path}`,
+			container.timer, Logging.Constants.LogLevel.SILLY, container.id);
+
 		const apiPath = data.appAPIPath;
 
 		if (!this.emitter) {
@@ -434,7 +442,7 @@ class BootstrapSocket {
 
 		this.__namespace['stats'].emitter.emit('activity', 1);
 
-		Logging.logSilly(`[${apiPath}][${data.verb}] activity in on ${data.path}`);
+		Logging.logTimer(`emitted stats activity`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 
 		// Super apps?
 		if (data.isSuper) {
@@ -472,10 +480,12 @@ class BootstrapSocket {
 			};
 		}
 
-		await this.__broadcastToUsers(data);
+		await this.__broadcastToUsers(data, container);
 	}
 
-	async __broadcastToUsers(data) {
+	async __broadcastToUsers(data, container) {
+		Logging.logTimer(`__broadcastToUsers::end`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
+
 		const appId = data.appId;
 		const verb = data.verb;
 		const collection = data.path.split('/').filter((v) => v).shift().replace('/', '');
@@ -529,6 +539,8 @@ class BootstrapSocket {
 
 			this.__broadcastData(data, roomKey);
 		}
+
+		Logging.logTimer(`__broadcastToUsers::end`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 	}
 
 	async __evaluateRoomQueryOperation(roomQuery, entity, partialPass = null, fullPass = null, skip = false) {
