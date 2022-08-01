@@ -271,10 +271,9 @@ class BootstrapSocket {
 						return;
 					}
 
+					data.isSameApp = app.apiPath === data.appAPIPath;
 					data.appId = app._id;
 					data.appAPIPath = app.apiPath;
-
-					data.fromDataShare = dataShare._id;
 
 					nrp.emit('activity', data);
 				});
@@ -463,7 +462,7 @@ class BootstrapSocket {
 			return;
 		}
 
-		if (data.appId && this._dataShareSockets[data.appId] && !data.fromDataShare) {
+		if (data.appId && this._dataShareSockets[data.appId] && data.isSameApp === undefined) {
 			this._dataShareSockets[data.appId].forEach((sock) => sock.emit('share', data));
 		}
 
@@ -584,10 +583,21 @@ class BootstrapSocket {
 			this.__namespace[apiPath].sequence[room] = 0;
 		}
 
+		const broadcastedData = {
+			response: data.response,
+			path: data.path,
+			pathSpec: data.pathSpec,
+			user: data.user,
+			verb: data.verb,
+			params: data.params,
+			isSameApp: data.isSameApp,
+			isBulkDelete: Object.keys(data.params).length < 1 && data.verb === 'delete',
+		};
+
 		Logging.logDebug(`[${apiPath}][${room}][${data.verb}] ${data.path}`);
 		this.__namespace[apiPath].sequence[room]++;
 		this.__namespace[apiPath].emitter.in(room).emit('db-activity', {
-			data: data,
+			data: broadcastedData,
 			sequence: this.__namespace[apiPath].sequence[room],
 			room,
 		});
