@@ -496,7 +496,14 @@ class BootstrapSocket {
 			}
 
 			const appShortId = shortId(appId);
-			const rxsEntity = await Model[`${appShortId}-${collection}`].find({_id: new ObjectId(data.params.id)});
+			const entityId = (data.params.id) ? data.params.id : data.response.id;
+			if (!entityId) {
+				Logging.logWarn('Unable to broadcast entity, data is missing a id');
+				continue;
+			}
+
+			// TODO: Should be using ID fromt datastore not direct ObjectID
+			const rxsEntity = await Model[`${appShortId}-${collection}`].find({_id: new ObjectId(entityId)});
 			const entity = await Helpers.streamFirst(rxsEntity);
 
 			const broadcast = await this.__evaluateRoomQueryOperation(room.access.query, entity);
