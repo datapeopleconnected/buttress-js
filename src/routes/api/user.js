@@ -76,7 +76,7 @@ class GetUser extends Route {
 							id: _user._id,
 							auth: _user.auth,
 							tokens: [],
-							policyProperties: _user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString()),
+							policyProperties: _user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
 						};
 
 						// TODO: This should really only be a single token now
