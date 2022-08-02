@@ -198,6 +198,11 @@ class CreateUserAuthToken extends Route {
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 
+		// We'll make sure to add the user to the app
+		if (!user._apps.includes(req.authApp._id.toString())) {
+			await Model.User.updateApps(user, req.authApp._id);
+		}
+
 		nrp.emit('app-routes:bust-cache', {});
 
 		return {

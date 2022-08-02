@@ -263,21 +263,20 @@ class UserSchemaModel extends SchemaModel {
 		return super.updateById(user._id, update).then(() => true);
 	}
 
-	updateApps(user, app) {
-		Logging.log(`updateApps: ${Model.authApp._id}`, Logging.Constants.LogLevel.INFO);
+	updateApps(user, appId) {
+		Logging.logSilly(`updateApps: ${appId}`);
 		if (!user._apps) {
 			user._apps = [];
 		}
-		const matches = user._apps.filter(function(a) {
-			return a._id === app._id;
-		});
-		if (matches.length > 0) {
-			Logging.log(`present: ${Model.authApp._id}`, Logging.Constants.LogLevel.DEBUG);
+
+		const match = user._apps.find((id) => id.toString() === appId.toString());
+		if (match) {
+			Logging.logSilly(`present: ${appId}`);
 			return Promise.resolve();
 		}
 
-		Logging.log(`not present: ${Model.authApp._id}`, Logging.Constants.LogLevel.DEBUG);
-		user._apps.push(app._id);
+		Logging.logSilly(`not present: ${appId}`);
+		user._apps.push(appId);
 
 		return super.updateById(user._id, {$set: {_apps: user._apps}});
 	}
