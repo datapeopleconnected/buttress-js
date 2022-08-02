@@ -35,7 +35,7 @@ class GetAppList extends Route {
 	constructor() {
 		super('app', 'GET APP LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.SUPER;
+		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -44,6 +44,10 @@ class GetAppList extends Route {
 	}
 
 	_exec(req, res, validate) {
+		if (req.token.authLevel < Route.Constants.Auth.SUPER) {
+			return Model.App.find({_id: req.authApp._id});
+		}
+
 		return Model.App.findAll();
 	}
 }
