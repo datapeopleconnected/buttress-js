@@ -312,7 +312,7 @@ const __validate = (schema, values, parentProperty, body = null) => {
 };
 module.exports.validate = __validate;
 
-const __prepareSchemaResult = (result, token = false) => {
+const __prepareSchemaResult = (result, token = false, projection = false) => {
 	const _prepare = (chunk, path) => {
 		if (!chunk) return chunk;
 
@@ -343,6 +343,10 @@ const __prepareSchemaResult = (result, token = false) => {
 			// NOT GOOD
 			if (token && token.type === 'dataSharing') {
 				return chunk;
+			}
+
+			if (projection) {
+				// TODO: Make a pass on the projections
 			}
 
 			Object.keys(chunk).forEach((key) => {
