@@ -39,6 +39,7 @@ const Model = require('./model');
 const Helpers = require('./helpers');
 const Logging = require('./logging');
 const AccessControl = require('./access-control');
+const AccessControlHelpers = require('./access-control/helpers');
 const AccessControlConditions = require('./access-control/conditions');
 
 const Schema = require('./schema');
@@ -220,11 +221,6 @@ class BootstrapSocket {
 		});
 
 		nrp.on('updateSocketRooms', async (data) => {
-			if (!io[data.apiPath]) {
-				nrp.emit('updatedUserSocketRooms', {});
-				return;
-			}
-
 			nrp.emit('updateUserSocketRooms', data);
 		});
 
@@ -561,7 +557,7 @@ class BootstrapSocket {
 				const [queryOperator] = Object.keys(roomQuery[operator]);
 				const rhs = roomQuery[operator][queryOperator];
 				const lhs = (ObjectId.isValid(entity[operator])) ? entity[operator].toString() : entity[operator];
-				const passed = await AccessControlConditions.evaluateOperation(lhs, rhs, queryOperator);
+				const passed = await AccessControlHelpers.evaluateOperation(lhs, rhs, queryOperator);
 				if (partialPass && passed) {
 					partialPass = true;
 				}

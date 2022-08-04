@@ -1,5 +1,6 @@
 const Sugar = require('sugar');
 
+const accessControlHelpers = require('./helpers');
 const Filter = require('./filter');
 const Helpers = require('../helpers');
 const Model = require('../model');
@@ -224,7 +225,7 @@ class Conditions {
 			return evaluationRes;
 		}
 
-		evaluationRes = this.evaluateOperation(lhs, rhs, operator);
+		evaluationRes = accessControlHelpers.evaluateOperation(lhs, rhs, operator);
 
 		return evaluationRes;
 	}
@@ -330,93 +331,6 @@ class Conditions {
 		return forwardedIPs.find((ip) => {
 			return ip.match(this.IPv4Regex) || ip.match(this.IPv6Regex);
 		});
-	}
-
-	evaluateOperation(lhs, rhs, operator) {
-		let passed = false;
-
-		switch (operator) {
-		case '$eq':
-		case '@eq': {
-			passed = lhs === rhs;
-		}
-			break;
-		case '$not':
-		case '@not': {
-			passed = lhs !== rhs;
-		}
-			break;
-		case '$gt':
-		case '@gt': {
-			passed = lhs > rhs;
-		}
-			break;
-		case '$lt':
-		case '@lt': {
-			passed = lhs < rhs;
-		}
-			break;
-		case '$gte':
-		case '@gte': {
-			passed = lhs >= rhs;
-		}
-			break;
-		case '$lte':
-		case '@lte': {
-			passed = lhs <= rhs;
-		}
-			break;
-		case '$gtDate':
-		case '@gtDate': {
-			passed = Sugar.Date.isAfter(rhs, lhs);
-		}
-			break;
-		case '$gteDate':
-		case '@gteDate': {
-			passed = Sugar.Date.isAfter(rhs, lhs) || Sugar.Date.is(rhs, lhs);
-		}
-			break;
-		case '$ltDate':
-		case '@ltDate': {
-			passed = Sugar.Date.isBefore(rhs, lhs);
-		}
-			break;
-		case '$lteDate':
-		case '@lteDate': {
-			passed = Sugar.Date.isBefore(rhs, lhs) || Sugar.Date.is(rhs, lhs);
-		}
-			break;
-		case '$rex':
-		case '@rex': {
-			const regex = new RegExp(rhs);
-			passed = regex.test(lhs);
-		}
-			break;
-		case '$rexi':
-		case '@rexi': {
-			const regex = new RegExp(rhs, 'i');
-			passed = regex.test(lhs);
-		}
-			break;
-		case '$in':
-		case '@in': {
-			passed = rhs.some((i) => i === lhs);
-		}
-			break;
-		case '$nin':
-		case '@nin': {
-			passed = lhs.every((i) => i !== lhs);
-		}
-			break;
-		case '$exists':
-		case '@exists': {
-			passed = lhs.includes(rhs);
-		}
-			break;
-		default:
-		}
-
-		return passed;
 	}
 
 	getEnvironmentVar(envVars, environmentVar) {

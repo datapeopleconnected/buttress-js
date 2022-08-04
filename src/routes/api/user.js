@@ -358,6 +358,7 @@ class SetUserPolicyProperties extends Route {
 			nrp.emit('updateSocketRooms', {
 				userId: req.params.id,
 				appId: req.authApp._id,
+				apiPath: req.authApp.apiPath,
 			});
 
 			nrp.on('updatedUserSocketRooms', () => {

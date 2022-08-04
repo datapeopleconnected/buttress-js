@@ -334,7 +334,14 @@ class AccessControl {
 			outcome.err.message = 'Can not access/edit properties without privileged access';
 			return outcome;
 		}
-		await AccessControlFilter.applyAccessControlPolicyQuery(req);
+
+		const policyQuery = await AccessControlFilter.applyAccessControlPolicyQuery(req);
+		if (!policyQuery) {
+			outcome.err.statusCode = 401;
+			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-query-permission-error`;
+			outcome.err.message = 'Can not access the queried data as it is not part of the policy filter';
+			return outcome;
+		}
 
 		outcome.res = schemaBasePolicyConfig;
 		return outcome;

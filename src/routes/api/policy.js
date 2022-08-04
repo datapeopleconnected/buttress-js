@@ -215,6 +215,8 @@ class DeleteTransientPolicy extends Route {
 	}
 
 	async _exec(req, res, validate) {
+		if (!validate) return true;
+
 		await Model.Policy.rm(validate);
 
 		nrp.emit('app-policy:bust-cache', {

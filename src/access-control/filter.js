@@ -1,3 +1,4 @@
+const accessControlHelpers = require('./helpers');
 const shortId = require('../helpers').shortId;
 const Model = require('../model');
 
@@ -73,7 +74,7 @@ class Filter {
 	}
 
 	async getQueryEnvironmentVar(environmentKey, envVars, appId) {
-		if (!environmentKey.includes('env')) return environmentKey;
+		if (!environmentKey || !environmentKey.includes('env')) return environmentKey;
 
 		const path = environmentKey.replace('env', '').split('.').filter((v) => v);
 		const queryValue = path.reduce((obj, str) => obj?.[str], envVars);
@@ -88,32 +89,43 @@ class Filter {
 	}
 
 	async applyAccessControlPolicyQuery(req) {
+		let passed = true;
 		const accessControlQuery = req.accessControlQuery;
 
-		if (!accessControlQuery) return;
+		if (!accessControlQuery || Object.keys(accessControlQuery).length < 1) return passed;
 
 		const reqQuery = (req.body.query)? req.body.query : null;
 
-		if (!reqQuery) {
+		const isOriginalQueryEmpty = await this._checkOriginalQueryIsEmpty(reqQuery);
+		if (isOriginalQueryEmpty) {
 			req.body.query = accessControlQuery;
-			return;
+			return passed;
 		}
 
-		if (reqQuery === accessControlQuery) return;
+		if (reqQuery === accessControlQuery) return passed;
 
-		Object.keys(accessControlQuery).forEach((key) => {
+		let deepQueryObj = {};
+		deepQueryObj = await this._getDeepQueryObj(reqQuery, deepQueryObj);
+
+		for await (const key of Object.keys(accessControlQuery)) {
+			if (!passed) continue;
+
 			if (Array.isArray(accessControlQuery[key]) && this.logicalOperator.includes(key)) {
-				this.__crossCheckAccessControlMatchLogicalOperation(reqQuery, accessControlQuery, key);
-				return;
+				passed = this.__crossCheckAccessControlMatchLogicalOperation(reqQuery, accessControlQuery, key);
+				continue;
 			}
 
 			if (Array.isArray(accessControlQuery[key]) && !this.logicalOperator.includes(key)) {
 				// TODO throw an error for invalid logical operation
-				return;
+				passed = false;
+				continue;
 			}
 
-			this.__addAccessControlQueryPropertyToOriginalQuery(reqQuery, accessControlQuery, key);
-		});
+			passed = this.__addAccessControlQueryPropertyToOriginalQuery(deepQueryObj, accessControlQuery, key);
+			req.body.query = deepQueryObj;
+		}
+
+		return passed;
 	}
 
 	__crossCheckAccessControlMatchLogicalOperation(originalQuery, accessControlQuery, key) {
@@ -189,6 +201,11 @@ class Filter {
 		const accessControlQueryObj = accessControlQuery[key];
 		let operandKey = null;
 
+		if (!originalQueryObj) {
+			originalQuery[key] = accessControlQueryObj;
+			return true;
+		}
+
 		this.logicalOperator.forEach((operator) => {
 			if (!originalQuery[operator]) return;
 
@@ -219,9 +236,12 @@ class Filter {
 			return false;
 		}
 
-		if (originalQueryObj && JSON.stringify(originalQueryObj) !== JSON.stringify(accessControlQueryObj)) {
-			return true;
-		}
+
+		const [accessControlOperator] = Object.keys(accessControlQueryObj);
+		const [lhs] = Object.values(originalQueryObj);
+		const rhs = accessControlQueryObj[accessControlOperator];
+		const evaluation = accessControlHelpers.evaluateOperation(lhs, rhs, accessControlOperator);
+		return evaluation;
 	}
 
 	__prioritiseAccessControlQuery(accessControlLogicalArr, originalQuery) {
@@ -320,6 +340,40 @@ class Filter {
 
 	__replacePrefix(str) {
 		return str.replace('@', '$');
+	}
+
+	async _getDeepQueryObj(queryObj, newObj = {}) {
+		for await (const key of Object.keys(queryObj)) {
+			if ((Array.isArray(queryObj[key]) && queryObj[key].length < 1) || key.includes('crPath')) continue;
+
+			if (Array.isArray(queryObj[key]) && queryObj[key].length > 0) {
+				for await (const item of queryObj[key]) {
+					newObj = await this._getDeepQueryObj(item, newObj);
+				}
+				continue;
+			}
+
+			newObj[key] = queryObj[key];
+		}
+
+		return newObj;
+	}
+
+	async _checkOriginalQueryIsEmpty(query) {
+		let isEmpty = true;
+		if (!query) return isEmpty;
+
+		for await (const key of Object.keys(query)) {
+			if (Array.isArray(query[key]) && query[key].length > 0) {
+				isEmpty = await this._checkOriginalQueryIsEmpty(query[key]);
+			}
+
+			if (!Array.isArray(query[key]) && query[key]) {
+				isEmpty = false;
+			}
+		}
+
+		return isEmpty;
 	}
 }
 module.exports = new Filter();
