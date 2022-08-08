@@ -299,7 +299,10 @@ class BootstrapSocket {
 				for await (const t of rxsUserToken) {
 					userToken = t;
 				}
-				if (userToken.value !== token.value) return;
+				if (userToken.value !== token.value) {
+					nrp.emit('updatedUserSocketRooms', {});
+					return;
+				}
 
 				const user = await Model.User.findById(data.userId);
 				await this.__joinUserRooms(nrp, user, app, socket, true);
