@@ -84,7 +84,7 @@ module.exports = class Buttress extends AbstractAdapter {
 			apiPath: this.uri.pathname,
 			allowUnauthorized: true, // WUT!?
 		});
-		Logging.logInfo(`connected to: ${this.uri.host}`);
+		Logging.logDebug(`connected to: ${this.uri.host}`);
 
 		// this.collection = this.buttress.getCollection(collection);
 		// this.setCollection(this.uri.pathname.replace(/\//g, ''));
