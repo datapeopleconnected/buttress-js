@@ -56,8 +56,8 @@ module.exports = class Buttress extends AbstractAdapter {
 		// // Hack - Give a little time for another instance to get up to speed
 		// // before trying to init
 
-		// this.init = false;
-		// this.initPendingResolve = [];
+		this.init = false;
+		this.initPendingResolve = [];
 
 		// // TOOD: Handle the case we're another instance isn't available
 		// setTimeout(() => {
@@ -78,18 +78,18 @@ module.exports = class Buttress extends AbstractAdapter {
 	async connect() {
 		if (this.init) return this.connection;
 
-		Logging.logSilly(`Attempting to connect to: ${this.uri.host}`);
 		await this.connection.init({
 			buttressUrl: `https://${this.uri.host}`,
 			appToken: this.uri.searchParams.get('token'),
 			apiPath: this.uri.pathname,
 			allowUnauthorized: true, // WUT!?
 		});
+		Logging.logInfo(`connected to: ${this.uri.host}`);
 
 		// this.collection = this.buttress.getCollection(collection);
 		// this.setCollection(this.uri.pathname.replace(/\//g, ''));
 		this.init = true;
-		// this.initPendingResolve.forEach((r) => r());
+		this.initPendingResolve.forEach((r) => r());
 	}
 
 	cloneAdapterConnection() {
