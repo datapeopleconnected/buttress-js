@@ -140,6 +140,10 @@ class BootstrapSocket {
 				nrp.emit('sendPolicyRooms', this._policyRooms);
 			});
 
+			nrp.on('updateRoomSequence', async (data) => {
+				this.__namespace[data.apiPath].sequence[data.room]++;
+			});
+
 			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
 				const apiPath = data.apiPath;
 				const room = data.room;
@@ -330,6 +334,13 @@ class BootstrapSocket {
 				});
 			});
 
+			socket.on('update-room-sequence', (data) => {
+				nrp.emit('updateRoomSequence', {
+					apiPath: data.apiPath,
+					room: data.room,
+				});
+			});
+
 			next();
 		});
 
@@ -505,6 +516,11 @@ class BootstrapSocket {
 
 			const appShortId = shortId(appId);
 			const entityId = (data.params.id) ? data.params.id : data.response.id;
+			if (!entityId && data.verb === 'delete') {
+				this.__broadcastData(data, roomKey);
+				continue;
+			}
+
 			if (!entityId) {
 				Logging.logWarn('Unable to broadcast entity, data is missing a id');
 				continue;
@@ -579,7 +595,7 @@ class BootstrapSocket {
 	__broadcastData(data, room) {
 		const apiPath = data.appAPIPath;
 		if (!this.__namespace[apiPath].sequence[room]) {
-			this.__namespace[apiPath].sequence[room] = 0;
+			this.__namespace[apiPath].sequence[room] = 1;
 		}
 
 		const broadcastedData = {
@@ -594,7 +610,6 @@ class BootstrapSocket {
 		};
 
 		Logging.logDebug(`[${apiPath}][${room}][${data.verb}] ${data.path}`);
-		this.__namespace[apiPath].sequence[room]++;
 		this.__namespace[apiPath].emitter.in(room).emit('db-activity', {
 			data: broadcastedData,
 			sequence: this.__namespace[apiPath].sequence[room],
