@@ -140,8 +140,8 @@ class BootstrapSocket {
 				nrp.emit('sendPolicyRooms', this._policyRooms);
 			});
 
-			nrp.on('updateRoomSequence', async (data) => {
-				this.__namespace[data.apiPath].sequence[data.room]++;
+			nrp.on('clearRoomSequence', async (data) => {
+				this.__namespace[data.apiPath].sequence[data.room] = 0;
 			});
 
 			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
@@ -334,13 +334,6 @@ class BootstrapSocket {
 				});
 			});
 
-			socket.on('update-room-sequence', (data) => {
-				nrp.emit('updateRoomSequence', {
-					apiPath: data.apiPath,
-					room: data.room,
-				});
-			});
-
 			next();
 		});
 
@@ -381,6 +374,13 @@ class BootstrapSocket {
 
 		socket.join(userRooms);
 		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
+
+		userRooms.forEach((room) => {
+			nrp.emit('clearRoomSequence', {
+				apiPath: app.apiPath,
+				room,
+			});
+		});
 	}
 
 	async __disconnectUserRooms(nrp, userId, app, socket, clear = false) {
@@ -595,7 +595,7 @@ class BootstrapSocket {
 	__broadcastData(data, room) {
 		const apiPath = data.appAPIPath;
 		if (!this.__namespace[apiPath].sequence[room]) {
-			this.__namespace[apiPath].sequence[room] = 1;
+			this.__namespace[apiPath].sequence[room] = 0;
 		}
 
 		const broadcastedData = {
@@ -610,6 +610,7 @@ class BootstrapSocket {
 		};
 
 		Logging.logDebug(`[${apiPath}][${room}][${data.verb}] ${data.path}`);
+		this.__namespace[apiPath].sequence[room]++;
 		this.__namespace[apiPath].emitter.in(room).emit('db-activity', {
 			data: broadcastedData,
 			sequence: this.__namespace[apiPath].sequence[room],
