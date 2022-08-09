@@ -188,6 +188,10 @@ class SyncPolicies extends Route {
 			await Model.Policy.add({policy: policy, appId: req.authApp._id});
 		}
 
+		nrp.emit('app-policy:bust-cache', {
+			appId: req.authApp._id,
+		});
+
 		return true;
 	}
 }
