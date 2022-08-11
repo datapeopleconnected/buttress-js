@@ -140,14 +140,9 @@ class BootstrapSocket {
 				nrp.emit('sendPolicyRooms', this._policyRooms);
 			});
 
-			nrp.on('clearRoomSequence', async (data) => {
-				this.__namespace[data.apiPath].sequence[data.room] = 0;
-			});
-
 			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
 				const apiPath = data.apiPath;
 				const room = data.room;
-
 				if (data.clear) {
 					this.__namespace[apiPath].emitter.in(room).emit('db-disconnect-room', {
 						collections: data.collections,
@@ -374,13 +369,6 @@ class BootstrapSocket {
 
 		socket.join(userRooms);
 		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
-
-		userRooms.forEach((room) => {
-			nrp.emit('clearRoomSequence', {
-				apiPath: app.apiPath,
-				room,
-			});
-		});
 	}
 
 	async __disconnectUserRooms(nrp, userId, app, socket, clear = false) {
