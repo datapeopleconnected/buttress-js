@@ -60,6 +60,10 @@ class GetPolicyList extends Route {
 			return Model.Policy.findByIds(ids);
 		}
 
+		if (req.token.authLevel < Route.Constants.Auth.SUPER) {
+			return Model.Policy.find({_appId: req.authApp._id});
+		}
+
 		return Model.Policy.findAll(req.authApp._id, req.token.authLevel);
 	}
 }
