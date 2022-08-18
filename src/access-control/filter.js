@@ -14,6 +14,13 @@ class Filter {
 			'$or',
 		];
 
+		this.arrayOperators = [
+			'@in',
+			'@nin',
+			'$in',
+			'$nin',
+		];
+
 		this._globalQueryEnv = {
 			authUserId: null,
 			personId: null,
@@ -55,6 +62,16 @@ class Filter {
 					if (elementExist !== -1) return;
 					req[str][key].push(elem);
 				}, Promise.resolve());
+
+				return;
+			}
+
+			if (req[str][key] && !Array.isArray(req[str][key]) && !Array.isArray(translatedQuery[key])) {
+				Object.keys(req[str][key]).forEach((k) => {
+					if (!this.arrayOperators.includes(k)) return;
+
+					req[str][key][k] = req[str][key][k].concat(translatedQuery[key][k]).filter((v, idx, arr) => arr.indexOf(v) === idx);
+				});
 
 				return;
 			}
