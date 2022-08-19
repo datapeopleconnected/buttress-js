@@ -395,7 +395,7 @@ class AccessControl {
 					appId,
 				});
 
-				nrp.emit('updateUserSocketRooms', {
+				nrp.emit('updateSocketRooms', {
 					userId: user._id,
 					appId,
 				});

@@ -151,6 +151,17 @@ class BootstrapSocket {
 					});
 				}
 			});
+
+			nrp.on('updateSocketRooms', async (data) => {
+				if (!data.userToken) {
+					const rxsUserToken = await Model.Token.findUserAuthTokens(data.userId, data.appId);
+					for await (const t of rxsUserToken) {
+						data.userToken = t;
+					}
+				}
+
+				nrp.emit('updateUserSocketRooms', data);
+			});
 		}
 
 		const rxsApps = await Model.App.findAll();
@@ -217,10 +228,6 @@ class BootstrapSocket {
 			socket.on('disconnect', () => {
 				Logging.logSilly(`${socket.id} Disconnect on /stats`);
 			});
-		});
-
-		nrp.on('updateSocketRooms', async (data) => {
-			nrp.emit('updateUserSocketRooms', data);
 		});
 
 		Logging.logSilly(`Listening on app namespaces`);
@@ -293,12 +300,7 @@ class BootstrapSocket {
 			});
 
 			nrp.on('updateUserSocketRooms', async (data) => {
-				let userToken = null;
-				const rxsUserToken = await Model.Token.findUserAuthTokens(data.userId, data.appId);
-				for await (const t of rxsUserToken) {
-					userToken = t;
-				}
-				if (userToken.value !== token.value) {
+				if (data.userToken.value !== token.value) {
 					nrp.emit('updatedUserSocketRooms', {});
 					return;
 				}
@@ -346,8 +348,6 @@ class BootstrapSocket {
 	}
 
 	async __joinUserRooms(nrp, user, app, socket, clear = false) {
-		await this.__disconnectUserRooms(nrp, user._id, app, socket, clear);
-
 		const policyRooms = await new Promise((resolve) => {
 			nrp.emit('getPolicyRooms', {});
 			nrp.on('sendPolicyRooms', (data) => resolve(data));
@@ -367,12 +367,13 @@ class BootstrapSocket {
 			nrp.on('finishedSettingMainPolicyRooms', () => resolve());
 		});
 
+		await this.__disconnectUserRooms(nrp, user._id, app, socket, userRooms, clear);
 		socket.join(userRooms);
 		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
 	}
 
-	async __disconnectUserRooms(nrp, userId, app, socket, clear = false) {
-		const prevSocketRooms = Array.from(socket.rooms).filter((v) => v !== socket.id).join(', ');
+	async __disconnectUserRooms(nrp, userId, app, socket, newRooms = [], clear = false) {
+		const prevSocketRooms = Array.from(socket.rooms).filter((v) => v !== socket.id && !newRooms.includes(v)).join(', ');
 		if (prevSocketRooms) {
 			Logging.log(`[${app.apiPath}][${userId}] Disconnecting ${socket.id} from room ${prevSocketRooms}`);
 		}
@@ -387,6 +388,7 @@ class BootstrapSocket {
 		const appPolicyRooms = policyRooms[app._id];
 		const policyRoomsKeys = Object.keys(appPolicyRooms);
 		for await (const key of policyRoomsKeys) {
+			if (newRooms.includes(key)) continue;
 			const room = appPolicyRooms[key];
 			for await (const roomKey of Object.keys(room)) {
 				const apiPath = app.apiPath;
@@ -750,7 +752,7 @@ class BootstrapSocket {
 
 			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
 			setTimeout(() => {
-				nrp.emit('updateUserSocketRooms', {
+				nrp.emit('updateSocketRooms', {
 					userId: data.userId,
 					appId: data.appId,
 				});
@@ -765,7 +767,7 @@ class BootstrapSocket {
 			const nearlyExpired = Sugar.Number.day(Sugar.Date.create(conditionEndDate));
 			if (this._oneWeekMilliseconds > nearlyExpired) {
 				setTimeout(() => {
-					nrp.emit('updateUserSocketRooms', {
+					nrp.emit('updateSocketRooms', {
 						userId: data.userId,
 						appId: data.appId,
 					});
@@ -782,7 +784,7 @@ class BootstrapSocket {
 
 		if (schemaBasedConditionIdx === -1) return;
 
-		nrp.emit('updateUserSocketRooms', {
+		nrp.emit('updateSocketRooms', {
 			userId: data.userId,
 			appId: data.appId,
 		});
