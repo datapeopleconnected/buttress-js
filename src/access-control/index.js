@@ -99,15 +99,35 @@ class AccessControl {
 		next();
 	}
 
-	/**
-	 * lookup policies and compute user rooms
-	 * @param {Object} user
-	 * @param {Object} req
-	 * @param {String} appId
-	 * @param {Object} userSocketObj
-	 * @return {Object}
-	 */
-	async getUserRooms(user, req, appId, userSocketObj) {
+	async _getSchemaRoomStructure(userPolicies, req, schemaName, appId) {
+		const outcome = await this.__getPolicyOutcome(userPolicies, req, schemaName, appId);
+
+		if (outcome.err.statusCode || outcome.err.message) {
+			Logging.logError(`getRoomStructure statusCode:${outcome.err.statusCode} message:${outcome.err.message}`)
+			return {};
+		}
+
+		const structure = {
+			schema: {},
+		};
+		structure.schema[schemaName] = {
+			access: {},
+		};
+
+		const projectionKeys = (req.body && req.body.project) ? Object.keys(req.body.project) : [];
+		structure.schema[schemaName].access.query = (req.body.query)? req.body.query : {};
+
+		if (projectionKeys.length > 0) {
+			structure.schema[schemaName].access.projection = [];
+			projectionKeys.forEach((key) => {
+				structure.schema[schemaName].access.projection.push(key);
+			});
+		}
+
+		return {roomId: hash(outcome.res), structure};
+	}
+
+	async getUserRoomStructures(user, appId, req = {}) {
 		if (!this._policies[appId]) {
 			this._policies[appId] = await this.__loadAppPolicies(appId);
 		}
@@ -128,53 +148,48 @@ class AccessControl {
 			};
 		}
 
+		const rooms = {};
 		const userPolicies = await this.__getUserPolicies(user, appId);
-		await this._schemas[appId].reduce(async (prev, next) => {
-			await prev;
+		for await (const schema of this._schemas[appId]) {
 			req.body = {};
 			req.accessControlQuery = {};
-			const outcome = await this.__getPolicyOutcome(userPolicies, req, next.name, appId);
-			const outcomeHash = hash(outcome.res);
+			const {roomId, structure} = await this._getSchemaRoomStructure(userPolicies, req, schema.name, appId);
+			if (!roomId) continue;
 
-			if (!outcome.err.statusCode && !outcome.err.message) {
-				if (!userSocketObj[next.name]) {
-					userSocketObj[next.name] = {};
-				}
-				if (!userSocketObj[next.name][outcomeHash]) {
-					userSocketObj[next.name][outcomeHash] = {
-						userIds: [],
-						access: {},
-					};
-				}
-
-				userSocketObj[next.name][outcomeHash].userIds.push(user._id);
-
-				const projectionKeys = (req.body && req.body.project) ? Object.keys(req.body.project) : [];
-				userSocketObj[next.name][outcomeHash].access.query = (req.body.query)? req.body.query : {};
-
-				if (projectionKeys.length > 0) {
-					userSocketObj[next.name][outcomeHash].access.projection = [];
-					projectionKeys.forEach((key) => {
-						userSocketObj[next.name][outcomeHash].access.projection.push(key);
-					});
-				}
+			if (!rooms[roomId]) {
+				rooms[roomId] = structure;
+			} else {
+				rooms[roomId].schema[schema.name] = structure.schema[schema.name];
 			}
-		}, Promise.resolve());
+		}
 
-		return Object.keys(userSocketObj).reduce((arr, key) => {
-			const schema = userSocketObj[key];
-			Object.keys(schema).forEach((key) => {
-				if (!schema[key].userIds) return;
+		return rooms;
+	}
 
-				const userIdx = schema[key].userIds.findIndex((id) => id.toString() === user._id.toString());
-				if (userIdx !== -1) {
-					arr.push(key);
-				}
-			});
+	/**
+	 * lookup policies and compute user rooms
+	 * @param {Object} user
+	 * @param {String} appId
+	 * @param {Object} req
+	 * @return {Object}
+	 */
+	async getUserRooms(user, appId, req) {
+		const rooms = await this.getUserRoomStructures(user, appId, req);
+		return Object.keys(rooms);
+		// return Object.keys(rooms).reduce((arr, key) => {
+		// 	const schema = appPolicyRooms[key];
+		// 	Object.keys(schema).forEach((key) => {
+		// 		if (!schema[key].userIds) return;
 
-			return arr;
-		}, [])
-			.filter((v, idx, arr) => arr.indexOf(v) === idx);
+		// 		const userIdx = schema[key].userIds.findIndex((id) => id.toString() === user._id.toString());
+		// 		if (userIdx !== -1) {
+		// 			arr.push(key);
+		// 		}
+		// 	});
+
+		// 	return arr;
+		// }, [])
+		// 	.filter((v, idx, arr) => arr.indexOf(v) === idx);
 	}
 
 	/**

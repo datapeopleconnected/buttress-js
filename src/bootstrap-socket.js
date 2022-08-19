@@ -70,23 +70,17 @@ class BootstrapSocket {
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
+		// Policy rooms should just be a map of roomId -> {collections,projections}
+		// We dont't need to track what users are in which room as this is already
+		// done for us.
+		// Only the Primary will hold this structure, it can then pass it down to
+		// the appropriate workers
 		this._policyRooms = {};
 
 		this.logicalOperator = [
 			'$or',
 			'$and',
 		];
-
-		// let socketInitTask = null;
-		// if (cluster.isMaster) {
-		// 	socketInitTask = (db) => this.__initMaster(db);
-		// } else {
-		// 	socketInitTask = (db) => this.__initWorker(db);
-		// }
-
-		// return this.__nativeMongoConnect()
-		// 	.then(socketInitTask)
-		// 	.then(() => cluster.isMaster);
 	}
 
 	async init() {
@@ -111,48 +105,42 @@ class BootstrapSocket {
 
 		if (this.isPrimary) {
 			Logging.logDebug(`Primary Master`);
-			nrp.on('activity', (data) => this.__onActivity(data));
-			nrp.on('clearUserLocalData', (data) => this.__clearUserLocalData(data));
+			nrp.on('activity', (data) => this.__primaryOnActivity(data));
+			nrp.on('clearUserLocalData', (data) => this.__primaryClearUserLocalData(data));
 			nrp.on('dataShare:activated', async (data) => {
 				const dataShare = await Model.AppDataSharing.findById(data.appDataSharingId);
-				await this.__createDataShareConnection(dataShare);
+				await this.__primaryCreateDataShareConnection(dataShare);
 			});
 
 			nrp.on('queuePolicyRoomCloseSocketEvent', async (data) => {
 				if (!this._policyRooms[data.appId]) return;
-				await this._queuePolicyRoomCloseSocketEvent(nrp, data);
+				Logging.logSilly(`queuePolicyRoomCloseSocketEvent ${data.appId}`);
+				await this._primaryQueuePolicyRoomCloseSocketEvent(nrp, data);
 			});
 
 			nrp.on('queueBasedConditionQuery', async (data) => {
+				Logging.logSilly(`queueBasedConditionQuery`);
 				this._policyCloseSocketEvents.push(data);
 			});
 
 			nrp.on('accessControlPolicy:disconnectQueryBasedSocket', async (data) => {
-				await this._disconnectQueryBasedSocket(nrp, data);
+				Logging.logSilly(`accessControlPolicy:disconnectQueryBasedSocket`);
+				await this._primaryDisconnectQueryBasedSocket(nrp, data);
 			});
 
-			nrp.on('setMainPolicyRooms', async (data) => {
-				this._policyRooms = data;
-				nrp.emit('finishedSettingMainPolicyRooms', true);
-			});
+			// nrp.on('setMainPolicyRooms', async (data) => {
+			// 	Logging.logSilly(`setMainPolicyRooms`);
+			// 	// this._policyRooms = data;
+			// 	nrp.emit('finishedSettingMainPolicyRooms', true);
+			// });
 
-			nrp.on('getPolicyRooms', async () => {
-				nrp.emit('sendPolicyRooms', this._policyRooms);
-			});
-
-			nrp.on('accessControlPolicy:disconnectSocket', async (data) => {
-				const apiPath = data.apiPath;
-				const room = data.room;
-				if (data.clear) {
-					this.__namespace[apiPath].emitter.in(room).emit('db-disconnect-room', {
-						collections: data.collections,
-						userId: data.userId,
-						room,
-					});
-				}
-			});
+			// nrp.on('getPolicyRooms', async () => {
+			// 	Logging.logSilly(`getPolicyRooms`);
+			// 	nrp.emit('sendPolicyRooms', this._policyRooms);
+			// });
 
 			nrp.on('updateSocketRooms', async (data) => {
+				Logging.logSilly(`updateSocketRooms userToken:${data.userToken}`);
 				if (!data.userToken) {
 					const rxsUserToken = await Model.Token.findUserAuthTokens(data.userId, data.appId);
 					for await (const t of rxsUserToken) {
@@ -192,7 +180,7 @@ class BootstrapSocket {
 			});
 
 			for await (const dataShare of rxsDataShare) {
-				await this.__createDataShareConnection(dataShare);
+				await this.__primaryCreateDataShareConnection(dataShare);
 			}
 		}
 
@@ -289,8 +277,7 @@ class BootstrapSocket {
 					return next('invalid-token-user-ID');
 				}
 
-				// await this.__disconnectUserRooms(nrp, user._id, app);
-				await this.__joinUserRooms(nrp, user, app, socket);
+				await this.__workerUserJoinRooms(user, app, socket);
 			} else {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
 			}
@@ -305,21 +292,23 @@ class BootstrapSocket {
 					return;
 				}
 
+				Logging.logSilly(`updateUserSocketRooms token:${token.value} ${socket.id}`);
+
 				const user = await Model.User.findById(data.userId);
-				await this.__joinUserRooms(nrp, user, app, socket, true);
+				await this.__workerUserJoinRooms(user, app, socket, true);
 
 				nrp.emit('updatedUserSocketRooms', {});
 			});
 
 			nrp.on('disconnectUserSocketRooms', async (data) => {
-				let userToken = null;
-				const rxsUserToken = await Model.Token.findUserAuthTokens(data.userId, data.appId);
-				for await (const t of rxsUserToken) {
-					userToken = t;
+				Logging.logSilly(`disconnectUserSocketRooms userId:${data.userId} ${data.appId} ${socket.id}`);
+				const userToken = await Helpers.streamFirst(await Model.Token.findUserAuthTokens(data.userId, data.appId));
+				if (userToken.value !== token.value) {
+					return;
 				}
-				if (userToken.value !== token.value) return;
 
-				await this.__disconnectUserRooms(nrp, data.userId, app, socket, true);
+				const user = await Model.User.findById(data.userId);
+				await this.__workerUserLeaveRooms(user, app, socket, true);
 			});
 
 			socket.on('clear-socket-room', (data) => {
@@ -347,84 +336,135 @@ class BootstrapSocket {
 		process.send('workerInitiated');
 	}
 
-	async __joinUserRooms(nrp, user, app, socket, clear = false) {
-		const policyRooms = await new Promise((resolve) => {
-			nrp.emit('getPolicyRooms', {});
-			nrp.on('sendPolicyRooms', (data) => resolve(data));
-		});
+	async __workerUserJoinRooms(user, app, socket, clear = false) {
+		Logging.logSilly(`__workerUserJoinRooms::start userId:${user._id} socketId:${socket.id}`);
+		// const policyRooms = await new Promise((resolve) => {
+		// 	nrp.emit('getPolicyRooms', {});
+		// 	nrp.on('sendPolicyRooms', (data) => resolve(data));
+		// });
 
-		if (!policyRooms || (policyRooms && (Array.isArray(policyRooms) || typeof policyRooms !== 'object'))) return;
+		// if (!policyRooms || (policyRooms && (Array.isArray(policyRooms) || typeof policyRooms !== 'object'))) {
+		// 	Logging.logSilly(`__workerUserJoinRooms::end-policy-rooms-not-exist socketId:${socket.id}`);
+		// 	return;
+		// }
 
-		if (!policyRooms[app._id]) {
-			policyRooms[app._id] = {};
+		// if (!policyRooms[app._id]) {
+		// 	policyRooms[app._id] = {};
+		// }
+
+		// const userRooms = await AccessControl.getUserRooms(user, socket.request, app._id, policyRooms[app._id]);
+		const userRooms = await AccessControl.getUserRooms(user, app._id, socket.request);
+
+		// Get the room structures
+
+		// console.log(JSON.stringify(policyRooms[app._id]));
+		console.log(userRooms);
+		if (userRooms.length < 1) {
+			Logging.logSilly(`__workerUserJoinRooms::end-no-user-rooms socketId:${socket.id}`);
+			return;
 		}
 
-		const userRooms = await AccessControl.getUserRooms(user, socket.request, app._id, policyRooms[app._id]);
-		if (userRooms.length < 1) return;
+		// await new Promise((resolve) => {
+		// 	nrp.emit('setMainPolicyRooms', policyRooms);
+		// 	nrp.on('finishedSettingMainPolicyRooms', () => resolve());
+		// });
+		await this.__workerUserLeaveRooms(user, app, socket, userRooms, clear);
 
-		await new Promise((resolve) => {
-			nrp.emit('setMainPolicyRooms', policyRooms);
-			nrp.on('finishedSettingMainPolicyRooms', () => resolve());
-		});
-
-		await this.__disconnectUserRooms(nrp, user._id, app, socket, userRooms, clear);
 		socket.join(userRooms);
+
 		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
+		Logging.logSilly(`__workerUserJoinRooms::end socketId:${socket.id}`);
 	}
 
-	async __disconnectUserRooms(nrp, userId, app, socket, newRooms = [], clear = false) {
-		const prevSocketRooms = Array.from(socket.rooms).filter((v) => v !== socket.id && !newRooms.includes(v)).join(', ');
-		if (prevSocketRooms) {
-			Logging.log(`[${app.apiPath}][${userId}] Disconnecting ${socket.id} from room ${prevSocketRooms}`);
+	async __workerUserLeaveRooms(user, app, socket, currentRooms = null, clear = false) {
+		Logging.logSilly(`__workerUserLeaveRooms::start userId:${user._id} socketId:${socket.id}`);
+		// If the users current rooms haven't been passed through we'll work it out ourselves
+		if (!currentRooms) {
+			currentRooms = await AccessControl.getUserRooms(user, app._id, socket.request);
 		}
 
-		const policyRooms = await new Promise((resolve) => {
-			nrp.emit('getPolicyRooms', {});
-			nrp.on('sendPolicyRooms', (data) => resolve(data));
-		});
+		// No we have the current rooms, we'll work out which rooms we need to leave
+		const roomsToLeave = [];
+		for (const roomId of socket.rooms.values()) {
+			if (!currentRooms.includes(roomId)) roomsToLeave.push(roomId);
+		}
 
-		if (!policyRooms || !policyRooms[app._id]) return;
+		if (roomsToLeave.length < 1) {
+			// We've got no rooms to leave, early out.
+			Logging.logSilly(`__workerUserLeaveRooms::end-no-reams-to-leave userId:${user._id} socketId:${socket.id}`);
+			return;
+		}
 
-		const appPolicyRooms = policyRooms[app._id];
-		const policyRoomsKeys = Object.keys(appPolicyRooms);
-		for await (const key of policyRoomsKeys) {
-			if (newRooms.includes(key)) continue;
-			const room = appPolicyRooms[key];
-			for await (const roomKey of Object.keys(room)) {
-				const apiPath = app.apiPath;
-				const roomUserIds = room[roomKey].userIds;
-				const userIdx = roomUserIds.findIndex((id) => id === userId.toString());
-				const sharedCollections = this.__getRoomSharedCollections(appPolicyRooms, policyRoomsKeys, roomKey);
-				if (userIdx !== -1) {
-					nrp.emit('accessControlPolicy:disconnectSocket', {
-						collections: sharedCollections,
-						apiPath,
-						userId,
-						room: roomKey,
-						clear,
-					});
+		// Instead of broadcasting to everyone that a user needs to clear their data, we'll just ask the user POLITELY
+		// to clear their data... don't hold your breath, they may say no.
+		for (const roomId of roomsToLeave) {
+			if (clear) {
+				// TODO: Need to try and get the room structure and a list of it's expected collections
 
-					roomUserIds.splice(userIdx, 1);
-
-					if (!socket.rooms.has(roomKey)) continue;
-
-					await new Promise((resolve) => {
-						nrp.on('socketLeftRoom', (data) => {
-							if (data.userId !== userId && data.room !== roomKey) return;
-							resolve();
-						});
-					});
-				}
+				socket.emit('db-disconnect-room', {
+					collections: sharedCollections,
+					userId: user._id,
+					room: roomId,
+				});
+				// We'll leave this function now, it will get picked up when the user has confirmed they've cleared their data.
+				return;
 			}
+
+			// I'm not sure there is a need to wait for the user to respond that they've left the room, we'll just revoke their
+			// access now and it's up to them to have honored clearing the data
+			socket.leave(roomId);
 		}
 
-		await new Promise((resolve) => {
-			nrp.emit('setMainPolicyRooms', policyRooms);
-			nrp.on('finishedSettingMainPolicyRooms', () => resolve());
-		});
+		Logging.log(`[${app.apiPath}][${user._id}] Remove ${socket.id} from rooms ${roomsToLeave.join(',')}`);
+
+		// const policyRooms = await new Promise((resolve) => {
+		// 	nrp.emit('getPolicyRooms', {});
+		// 	nrp.on('sendPolicyRooms', (data) => resolve(data));
+		// });
+
+		// if (!policyRooms || !policyRooms[app._id]) return;
+
+		// const appPolicyRooms = policyRooms[app._id];
+		// const policyRoomsKeys = Object.keys(appPolicyRooms);
+		// for await (const key of policyRoomsKeys) {
+		// 	if (newRooms.includes(key)) continue;
+		// 	const room = appPolicyRooms[key];
+		// 	for await (const roomKey of Object.keys(room)) {
+		// 		const apiPath = app.apiPath;
+		// 		const roomUserIds = room[roomKey].userIds;
+		// 		const userIdx = roomUserIds.findIndex((id) => id === userId.toString());
+		// 		const sharedCollections = this.__getRoomSharedCollections(appPolicyRooms, policyRoomsKeys, roomKey);
+		// 		if (userIdx !== -1) {
+		// 			nrp.emit('accessControlPolicy:disconnectSocket', {
+		// 				collections: sharedCollections,
+		// 				apiPath,
+		// 				userId,
+		// 				room: roomKey,
+		// 				clear,
+		// 			});
+
+		// 			roomUserIds.splice(userIdx, 1);
+
+		// 			if (!socket.rooms.has(roomKey)) continue;
+
+		// 			await new Promise((resolve) => {
+		// 				nrp.on('socketLeftRoom', (data) => {
+		// 					if (data.userId !== userId && data.room !== roomKey) return;
+		// 					resolve();
+		// 				});
+		// 			});
+		// 		}
+		// 	}
+		// }
+
+		// await new Promise((resolve) => {
+		// 	nrp.emit('setMainPolicyRooms', policyRooms);
+		// 	nrp.on('finishedSettingMainPolicyRooms', () => resolve());
+		// });
+		Logging.logSilly(`__workerUserLeaveRooms::end userId:${user._id} socketId:${socket.id}`);
 	}
 
-	async __onActivity(data) {
+	async __primaryOnActivity(data) {
 		const container = {
 			id: Datastore.getInstance('core').ID.new(),
 			timer: new Helpers.Timer(),
@@ -463,6 +503,8 @@ class BootstrapSocket {
 		}
 
 		if (data.appId && this._dataShareSockets[data.appId] && data.isSameApp === undefined) {
+			Logging.logTimer(`[${data.appAPIPath}][${data.verb}] notifying data sharing`,
+				container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 			this._dataShareSockets[data.appId].forEach((sock) => sock.emit('share', data));
 		}
 
@@ -470,6 +512,8 @@ class BootstrapSocket {
 		if (!this.__namespace[apiPath]) {
 			// Init the namespace
 			// throw new Error('Trying to access namespace that doesn\'t exist');
+			Logging.logTimer(`[${data.appAPIPath}][${data.verb}] creating emitter for namespace /${apiPath}`,
+				container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 			this.__namespace[apiPath] = {
 				emitter: this.emitter.of(`/${apiPath}`),
 				sequence: {
@@ -479,28 +523,43 @@ class BootstrapSocket {
 			};
 		}
 
-		await this.__broadcastToUsers(data, container);
+		await this.__masterBroadcastToUsers(data, container);
 	}
 
-	async __broadcastToUsers(data, container) {
-		Logging.logTimer(`__broadcastToUsers::end`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
+	async __masterBroadcastToUsers(data, container) {
+		Logging.logTimer(`__masterBroadcastToUsers::start`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 
 		const appId = data.appId;
 		const verb = data.verb;
 		const collection = data.path.split('/').filter((v) => v).shift().replace('/', '');
-		if (!this._policyRooms[appId]) return;
+		if (!this._policyRooms[appId]) {
+			Logging.logTimer(`__masterBroadcastToUsers::end-no-policy-room`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
+			return;
+		}
 
 		const broadcastRooms = this._policyRooms[appId][collection];
-		if (!broadcastRooms) return;
+		if (!broadcastRooms) {
+			Logging.logTimer(`__masterBroadcastToUsers::end-no-broadcast-rooms`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
+			return;
+		}
 
 		for await (const roomKey of Object.keys(broadcastRooms)) {
 			const room = broadcastRooms[roomKey];
-			if (room.userIds.length < 1) continue;
+			Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::start`, container.timer,
+				Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
+
+			if (room.userIds.length < 1) {
+				Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end-no-users`, container.timer,
+					Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
+				continue;
+			}
 
 			const roomQueryKeys = Object.keys(room.access.query);
 			const roomProjectionKeys = (room.access.projection) ? room.access.projection : [];
 			if (roomQueryKeys.length < 1 && roomProjectionKeys.length < 1) {
 				this.__broadcastData(data, roomKey);
+				Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end-no-query-no-projection`, container.timer,
+					Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
 				continue;
 			}
 
@@ -508,6 +567,8 @@ class BootstrapSocket {
 			const entityId = (data.params.id) ? data.params.id : data.response.id;
 			if (!entityId && data.verb === 'delete') {
 				this.__broadcastData(data, roomKey);
+				Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end-no-entity-deletion`, container.timer,
+					Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
 				continue;
 			}
 
@@ -521,14 +582,21 @@ class BootstrapSocket {
 			const entity = await Helpers.streamFirst(rxsEntity);
 
 			const broadcast = await this.__evaluateRoomQueryOperation(room.access.query, entity);
-			if (!broadcast && verb === 'post') continue;
+			if (!broadcast && verb === 'post') {
+				Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end-falsy-evaluateRoomQueryOperation-post`, container.timer,
+					Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
+				continue;
+			}
 
 			if (!broadcast) {
 				data.verb = 'delete';
 				this.__broadcastData(data, roomKey);
+				Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end-falsy-evaluateRoomQueryOperation-delete`, container.timer,
+					Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
 				continue;
 			}
 
+			// TODO: Is this a flatterned object at this point?
 			const projectedData = roomProjectionKeys.reduce((obj, key) => {
 				if (data.response[key]) {
 					obj[key] = data.response[key];
@@ -542,9 +610,11 @@ class BootstrapSocket {
 			}
 
 			this.__broadcastData(data, roomKey);
+			Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end`, container.timer,
+				Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
 		}
 
-		Logging.logTimer(`__broadcastToUsers::end`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
+		Logging.logTimer(`__masterBroadcastToUsers::end`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 	}
 
 	async __evaluateRoomQueryOperation(roomQuery, entity, partialPass = null, fullPass = null, skip = false) {
@@ -608,7 +678,8 @@ class BootstrapSocket {
 		});
 	}
 
-	__clearUserLocalData(data) {
+	__primaryClearUserLocalData(data) {
+		throw new Error('DEPRECATED: call made to __primaryClearUserLocalData');
 		// const apiPath = data.appAPIPath;
 
 		// this.__namespace[apiPath].emitter.emit('clear-local-db', {
@@ -670,7 +741,7 @@ class BootstrapSocket {
 		Logging.log(`${(isSuper) ? 'SUPER' : 'APP'} Name: ${app.name}, App ID: ${app._id}, Path: /${app.apiPath}`);
 	}
 
-	async __createDataShareConnection(dataShare) {
+	async __primaryCreateDataShareConnection(dataShare) {
 		const url = `${dataShare.remoteApp.endpoint}/${dataShare.remoteApp.apiPath}`;
 		Logging.logSilly(`Attempting to connect to ${url}`);
 		if (!this._dataShareSockets[dataShare._appId]) {
@@ -695,7 +766,7 @@ class BootstrapSocket {
 		});
 	}
 
-	async _queuePolicyRoomCloseSocketEvent(nrp, data) {
+	async _primaryQueuePolicyRoomCloseSocketEvent(nrp, data) {
 		const policies = data.policies;
 		const room = hash(policies);
 		for await (const key of Object.keys(policies)) {
@@ -777,7 +848,7 @@ class BootstrapSocket {
 		}
 	}
 
-	async _disconnectQueryBasedSocket(nrp, data) {
+	async _primaryDisconnectQueryBasedSocket(nrp, data) {
 		const schemaBasedConditionIdx = this._policyCloseSocketEvents.findIndex((c) => {
 			return c.collection === data.updatedSchema && c.identifier === data.identifier;
 		});
