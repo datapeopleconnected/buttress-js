@@ -103,7 +103,7 @@ class AccessControl {
 		const outcome = await this.__getPolicyOutcome(userPolicies, req, schemaName, appId);
 
 		if (outcome.err.statusCode || outcome.err.message) {
-			Logging.logError(`getRoomStructure statusCode:${outcome.err.statusCode} message:${outcome.err.message}`)
+			Logging.logError(`getRoomStructure statusCode:${outcome.err.statusCode} message:${outcome.err.message}`);
 			return {};
 		}
 

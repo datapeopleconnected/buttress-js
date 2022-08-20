@@ -23,7 +23,7 @@ const cluster = require('cluster');
 const net = require('net');
 const Express = require('express');
 const {createClient} = require('redis');
-const { v4: uuidv4 } = require('uuid');
+const {v4: uuidv4} = require('uuid');
 
 const sio = require('socket.io');
 const sioClient = require('socket.io-client');
