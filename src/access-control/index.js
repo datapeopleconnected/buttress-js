@@ -108,6 +108,7 @@ class AccessControl {
 		}
 
 		const structure = {
+			appId: appId,
 			schema: {},
 		};
 		structure.schema[schemaName] = {
