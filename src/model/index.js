@@ -157,12 +157,12 @@ class Model {
 				});
 
 				if (!dataSharing) {
-					Logging.logError(`Unable to find data sharing (${dataSharingName}.${collection}) ${app}`);
+					Logging.logError(`Unable to find data sharing (${dataSharingName}.${collection}) for ${app.name}`);
 					return;
 				}
 
 				if (!dataSharing.active) {
-					Logging.logDebug(`Data sharing not active yet, skipping (${dataSharingName}.${collection}) ${app}`);
+					Logging.logDebug(`Data sharing not active yet, skipping (${dataSharingName}.${collection}) for ${app.name}`);
 					return;
 				}
 

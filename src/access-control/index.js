@@ -295,7 +295,7 @@ class AccessControl {
 		if (!schemaBasePolicyConfig) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			outcome.err.message = 'Request policy does not have access to the requested schema';
+			outcome.err.message = `Request policy does not have access to the requested schema: ${schemaName}`;
 			return outcome;
 		}
 
