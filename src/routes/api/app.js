@@ -721,30 +721,40 @@ class UpdateAppDataSharingToken extends Route {
 			throw new Helpers.Errors.RequestError(400, `unknown_data_sharing`);
 		}
 
-		return entity;
+		const api = Buttress.new();
+		try {
+			await api.init({
+				buttressUrl: entity.remoteApp.endpoint,
+				apiPath: entity.remoteApp.apiPath,
+				appToken: req.body.token,
+				allowUnauthorized: true, // Move along, nothing to see here...
+			});
+		} catch (err) {
+			if (err instanceof Buttress.Errors.ResponseError) {
+				throw new Helpers.Errors.RequestError(err.code, err.message);
+			}
+			throw err;
+		}
+
+		return {entity, api};
 	}
 
-	async _exec(req, res, entity) {
+	async _exec(req, res, validate) {
 		await this.model.updateActivationToken(req.params.dataSharingId, req.body.token);
 
-		const api = Buttress.new();
-		await api.init({
-			buttressUrl: entity.remoteApp.endpoint,
-			apiPath: entity.remoteApp.apiPath,
-			appToken: entity.remoteApp.token,
-			allowUnauthorized: true, // Move along, nothing to see here...
-		});
 
-		const token = await Model.Token.findById(entity._tokenId);
+		const token = await Model.Token.findById(validate.entity._tokenId);
 
 		// Our token
-		const remoteActivation = await api.App.activateAppDataSharing({
+		const remoteActivation = await validate.api.App.activateAppDataSharing({
 			token: token.value,
 		});
 
 		if (!remoteActivation) return false;
 
-		await this.model.activate(entity._id);
+		await this.model.activate(validate.entity._id);
+
+		delete validate.api;
 
 		return true;
 	}

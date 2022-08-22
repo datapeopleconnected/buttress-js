@@ -38,12 +38,13 @@
     "mysql2": "^2.3.3",
     "node-env-obj": "~0.2.5",
     "node-redis-pubsub": "~5.0.0",
+    "object-hash": "^3.0.0",
     "redis": "~3.1.2",
     "socket.io": "~4.4.1",
     "socket.io-client": "^4.4.1",
     "sugar": "~2.0.6",
-    "winston": "~3.6.0",
-    "object-hash": "^3.0.0"
+    "uuid": "^8.3.2",
+    "winston": "~3.6.0"
   },
   "devDependencies": {
     "eslint": "^8.3.0",
