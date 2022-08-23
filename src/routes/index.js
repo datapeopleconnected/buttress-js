@@ -139,7 +139,7 @@ class Routes {
 
 		apiRouter.use((...args) => this._timeRequest(...args));
 		apiRouter.use((...args) => this._authenticateToken(...args));
-		apiRouter.use((...args) => AccessControl.accessControlPolicy(...args));
+		apiRouter.use((...args) => AccessControl.accessControlPolicyMiddleware(...args));
 		apiRouter.use((...args) => this._configCrossDomain(...args));
 
 		return apiRouter;

@@ -50,7 +50,8 @@ class AccessControl {
 	 * @return {Void}
 	 * @private
 	 */
-	async accessControlPolicy(req, res, next) {
+	async accessControlPolicyMiddleware(req, res, next) {
+		Logging.logTimer(`accessControlPolicyMiddleware::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		// TODO need to take into consideration appDataSharingId
 		const appId = req.authApp._id;
 		const user = req.authUser;
@@ -96,10 +97,12 @@ class AccessControl {
 		await this._checkAccessControlDBBasedQueryCondition(req, params);
 		nrp.emit('queuePolicyRoomCloseSocketEvent', params);
 
+		Logging.logTimer(`accessControlPolicyMiddleware::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		next();
 	}
 
 	async _getSchemaRoomStructure(userPolicies, req, schemaName, appId) {
+		Logging.logTimer(`_getSchemaRoomStructure::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		const outcome = await this.__getPolicyOutcome(userPolicies, req, schemaName, appId);
 
 		if (outcome.err.statusCode || outcome.err.message) {
@@ -125,6 +128,7 @@ class AccessControl {
 			});
 		}
 
+		Logging.logTimer(`_getSchemaRoomStructure::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		return {roomId: hash(outcome.res), structure};
 	}
 
@@ -203,6 +207,7 @@ class AccessControl {
 	 * @return {Object}
 	 */
 	async __getPolicyOutcome(userPolicies, req, schemaName, appId = null, core = false) {
+		Logging.logTimer(`__getPolicyOutcome::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		const outcome = {
 			res: {},
 			err: {},
@@ -360,6 +365,7 @@ class AccessControl {
 		}
 
 		outcome.res = schemaBasePolicyConfig;
+		Logging.logTimer(`__getPolicyOutcome::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		return outcome;
 	}
 
