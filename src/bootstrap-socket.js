@@ -415,6 +415,7 @@ class BootstrapSocket {
 		// No we have the current rooms, we'll work out which rooms we need to leave
 		const roomsToLeave = [];
 		for (const roomId of socket.rooms.values()) {
+			if (roomId === socket.id) continue;
 			if (!currentRooms.includes(roomId)) roomsToLeave.push(roomId);
 		}
 
@@ -425,7 +426,7 @@ class BootstrapSocket {
 		}
 
 		// Fetch the room structs if we're clearing the data, if not we don't need it.
-		const roomStructsToClear = (clear) ? await this._messagePrimary('getPolicyRoomsByIds', {rooms: currentRooms}) : null;
+		const roomStructsToClear = (clear) ? await this._messagePrimary('getPolicyRoomsByIds', {rooms: roomsToLeave}) : null;
 
 		for (const roomId of roomsToLeave) {
 			if (clear) {
