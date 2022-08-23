@@ -257,6 +257,10 @@ module.exports.logError = (err, id=null) => {
  */
 module.exports.logTimer = (log, timer, level, id=null) => {
 	level = level || LogLevel.INFO;
+	if (!timer) {
+		_log(log, level, id);
+		return;
+	}
 	_log(`[${timer.interval.toFixed(6)}s][${timer.lapTime.toFixed(6)}s] ${log}`, level, id);
 };
 
