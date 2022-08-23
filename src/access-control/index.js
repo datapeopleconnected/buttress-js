@@ -133,6 +133,7 @@ class AccessControl {
 	}
 
 	async getUserRoomStructures(user, appId, req = {}) {
+		Logging.logTimer(`getUserRoomStructures::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		if (!this._policies[appId]) {
 			this._policies[appId] = await this.__loadAppPolicies(appId);
 		}
@@ -168,6 +169,7 @@ class AccessControl {
 			}
 		}
 
+		Logging.logTimer(`getUserRoomStructures::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		return rooms;
 	}
 
