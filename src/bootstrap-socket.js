@@ -68,10 +68,12 @@ class BootstrapSocket {
 
 		this.isPrimary = Config.sio.app === 'primary';
 
+		this.io = null;
+
 		this.emitter = null;
 
 		this._nrp = null;
-		this._primaryResQueue = {};
+		this._processResQueue = {};
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
@@ -113,7 +115,7 @@ class BootstrapSocket {
 		// Notify the primary with our payload
 		this._nrp.emit(`primary:${channel}`, {id, message, date: new Date()});
 		// Await a response from the primary
-		return await new Promise((resolve, reject) => this._primaryResQueue[id] = {resolve, reject});
+		return await new Promise((resolve, reject) => this._processResQueue[id] = {resolve, reject});
 	}
 
 	async __initMaster() {
@@ -122,82 +124,7 @@ class BootstrapSocket {
 		const redisClient = createClient(Config.redis);
 		this.emitter = new Emitter(redisClient);
 
-		if (this.isPrimary) {
-			Logging.logDebug(`Primary Master`);
-			this._nrp.on('activity', (data) => this.__primaryOnActivity(data));
-			this._nrp.on('clearUserLocalData', (data) => this.__primaryClearUserLocalData(data));
-			this._nrp.on('dataShare:activated', async (data) => {
-				const dataShare = await Model.AppDataSharing.findById(data.appDataSharingId);
-				await this.__primaryCreateDataShareConnection(dataShare);
-			});
-
-			this._nrp.on('queuePolicyRoomCloseSocketEvent', async (data) => {
-				if (!this._policyRooms[data.appId]) return;
-				Logging.logSilly(`queuePolicyRoomCloseSocketEvent ${data.appId}`);
-				await this._primaryQueuePolicyRoomCloseSocketEvent(data);
-			});
-
-			this._nrp.on('queueBasedConditionQuery', async (data) => {
-				Logging.logSilly(`queueBasedConditionQuery`);
-				this._policyCloseSocketEvents.push(data);
-			});
-
-			this._nrp.on('accessControlPolicy:disconnectQueryBasedSocket', async (data) => {
-				Logging.logSilly(`accessControlPolicy:disconnectQueryBasedSocket`);
-				await this._primaryDisconnectQueryBasedSocket(data);
-			});
-
-			// Take updates from the workers on room structs and update our copy
-			this._nrp.on('primary:updatePolicyRooms', async (data) => {
-				Logging.logSilly(`primary:updatePolicyRooms ${data.id}`);
-
-				for (const roomId of Object.keys(data.message)) {
-					this._policyRooms[roomId] = data.message[roomId];
-				}
-
-				this._nrp.emit(`process:primaryResponse`, {id: data.id, response: true});
-			});
-
-			// Serve up a copy of the policy rooms to the requester
-			this._nrp.on('primary:getPolicyRoomsByIds', async (data) => {
-				Logging.logSilly(`primary:getPolicyRoomsByIds ${data.id}`);
-
-				const roomStructs = data.message.rooms
-					.reduce((map, roomId) => {
-						if (this._policyRooms[roomId]) map[roomId] = this._policyRooms[roomId];
-						return map;
-					}, {});
-
-				this._nrp.emit(`process:primaryResponse`, {id: data.id, response: roomStructs});
-			});
-
-			this._nrp.on('primary:getPolicyRoomsByAppId', async (data) => {
-				Logging.logSilly(`primary:getPolicyRoomsByAppId ${data.id}`);
-
-				const roomStructs = Object.keys(this._policyRooms)
-					.filter((roomId) => this._policyRooms[roomId].appId === data.message.appId)
-					.reduce((map, roomId) => {
-						map[roomId] = this._policyRooms[roomId];
-						return map;
-					}, {});
-
-				this._nrp.emit(`process:primaryResponse`, {id: data.id, response: roomStructs});
-			});
-
-			this._nrp.on('updateSocketRooms', async (data) => {
-				Logging.logSilly(`updateSocketRooms userToken:${data.userToken}`);
-				if (!data.userToken) {
-					const rxsUserToken = await Model.Token.findUserAuthTokens(data.userId, data.appId);
-					for await (const t of rxsUserToken) {
-						data.userToken = t;
-					}
-				}
-
-				this._nrp.emit('updateUserSocketRooms', data);
-			});
-		}
-
-		const rxsApps = await Model.App.findAll();
+		if (this.isPrimary) await this.__registerNRPPrimaryListeners();
 
 		this.__namespace['stats'] = {
 			emitter: this.emitter.of(`/stats`),
@@ -206,8 +133,16 @@ class BootstrapSocket {
 				global: 0,
 			},
 		};
+		this.__namespace['debug'] = {
+			emitter: this.emitter.of(`/debug`),
+			sequence: {
+				super: 0,
+				global: 0,
+			},
+		};
 
-		// Spawn worker processes, pass through build app objects
+		// create app namespaces
+		const rxsApps = await Model.App.findAll();
 		for await (const app of rxsApps) {
 			if (!app._token) {
 				Logging.logWarn(`App with no token`);
@@ -229,11 +164,8 @@ class BootstrapSocket {
 			}
 		}
 
-		this._nrp.on('process:primaryResponse', (data) => {
-			if (!this._primaryResQueue[data.id]) return;
-			Logging.logSilly(`process:primaryResponse ${data.id}`);
-			this._primaryResQueue[data.id].resolve(data.response);
-		});
+		await this.__registerNRPMasterListeners();
+		await this.__registerNRPProcessListeners();
 
 		this.__spawnWorkers({
 			apps: this.__apps,
@@ -245,7 +177,7 @@ class BootstrapSocket {
 
 		const app = new Express();
 		const server = app.listen(0, 'localhost');
-		const io = sio(server, {
+		this.io = sio(server, {
 			// Allow connections from sio 2 clients
 			// https://socket.io/docs/v3/migrating-from-2-x-to-3-0/#How-to-upgrade-an-existing-production-deployment
 			allowEIO3: true,
@@ -259,9 +191,9 @@ class BootstrapSocket {
 
 		// As of v7, the library will no longer create Redis clients on behalf of the user.
 		const redisClient = createClient(Config.redis);
-		io.adapter(redisAdapter(redisClient, redisClient.duplicate()));
+		this.io.adapter(redisAdapter(redisClient, redisClient.duplicate()));
 
-		const stats = io.of(`/stats`);
+		const stats = this.io.of(`/stats`);
 		stats.on('connect', (socket) => {
 			Logging.logSilly(`${socket.id} Connected on /stats`);
 			socket.on('disconnect', () => {
@@ -269,8 +201,50 @@ class BootstrapSocket {
 			});
 		});
 
+		this.io.of(`/debug`).use(async (socket, next) => {
+			const apiPath = 'debug';
+			const rawToken = socket.handshake.query.token;
+			if (!rawToken) return next('invalid-token');
+
+			Logging.logWarn(`[${apiPath}] Connected ${socket.id}`);
+
+			Logging.logDebug(`Fetching token with value: ${rawToken}`);
+			const token = await Model.Token.findOne({value: rawToken});
+			if (!token) {
+				Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
+				return next('invalid-token');
+			}
+
+			const debugDump = async () => {
+				const rooms = await this._messagePrimary('getPolicyRooms');
+				const rollcall = await this._messagePrimary('debugRollcall');
+
+				return {
+					Config,
+					rooms,
+					rollcall,
+				};
+			};
+
+			socket.on('request', async () => socket.emit('dump', await debugDump()));
+
+			this._nrp.on('debug:dump', async () => socket.emit('dump', await debugDump()));
+
+			socket.on('disconnect', () => {
+				Logging.log(`[${apiPath}] Disconnect ${socket.id}`);
+			});
+
+			next();
+		});
+		// debug.on('connect', (socket) => {
+		// 	Logging.logSilly(`${socket.id} Connected on /debug`);
+		// 	socket.on('disconnect', () => {
+		// 		Logging.logSilly(`${socket.id} Disconnect on /debug`);
+		// 	});
+		// });
+
 		Logging.logSilly(`Listening on app namespaces`);
-		io.of(/^\/[a-z\d-]+$/i).use(async (socket, next) => {
+		this.io.of(/^\/[a-z\d-]+$/i).use(async (socket, next) => {
 			const apiPath = socket.nsp.name.substring(1);
 			const rawToken = socket.handshake.query.token;
 
@@ -280,6 +254,9 @@ class BootstrapSocket {
 				Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
 				return next('invalid-token');
 			}
+
+			socket.data.type = token.type;
+			socket.data.tokenId = token._id;
 
 			Logging.logDebug(`Fetching app with apiPath: ${apiPath}`);
 			const app = await Model.App.findOne({apiPath: apiPath});
@@ -305,6 +282,8 @@ class BootstrapSocket {
 					return next('invalid-data-share');
 				}
 
+				socket.data.dataShareId = dataShare._id;
+
 				// Emit this activity to our instance.
 				// This would result in the event being mutiplied
 				socket.on('share', (data) => {
@@ -329,6 +308,9 @@ class BootstrapSocket {
 					return next('invalid-token-user-ID');
 				}
 
+				socket.data.userId = user._id;
+				socket.data.userRef = user.auth[0].email ?? user.auth[0].appId;
+
 				await this.__workerUserJoinRooms(user, app, socket);
 			} else {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
@@ -338,17 +320,19 @@ class BootstrapSocket {
 				Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
 			});
 
-			this._nrp.on('updateUserSocketRooms', async (data) => {
-				if (data.userToken.value !== token.value) {
-					this._nrp.emit('updatedUserSocketRooms', {});
+			this._nrp.on('worker:socket:updateUserSocketRooms', async (data) => {
+				if (!socket.data.userId || socket.data.userId !== data.userId) {
+					// TODO: Use the process message queue instead
+					// this._nrp.emit('updatedUserSocketRooms', {});
 					return;
 				}
 
-				Logging.logSilly(`updateUserSocketRooms token:${token.value} ${socket.id}`);
+				Logging.logSilly(`worker:socket:updateUserSocketRooms token:${data.userId} ${socket.id}`);
 
 				const user = await Model.User.findById(data.userId);
 				await this.__workerUserJoinRooms(user, app, socket, true);
 
+				// TODO: Use the process message queue instead
 				this._nrp.emit('updatedUserSocketRooms', {});
 			});
 
@@ -366,11 +350,8 @@ class BootstrapSocket {
 			next();
 		});
 
-		this._nrp.on('process:primaryResponse', (data) => {
-			if (!this._primaryResQueue[data.id]) return;
-			Logging.logSilly(`process:primaryResponse ${data.id}`);
-			this._primaryResQueue[data.id].resolve(data.response);
-		});
+		await this.__registerNRPWorkerListeners();
+		await this.__registerNRPProcessListeners();
 
 		process.on('message', (message, input) => {
 			if (message === 'buttress:connection') {
@@ -383,6 +364,146 @@ class BootstrapSocket {
 
 		Logging.logSilly(`Worker ready`);
 		process.send('workerInitiated');
+	}
+
+	async __registerNRPPrimaryListeners() {
+		Logging.logDebug(`Primary Master`);
+		this._nrp.on('activity', (data) => this.__primaryOnActivity(data));
+		this._nrp.on('clearUserLocalData', (data) => this.__primaryClearUserLocalData(data));
+		this._nrp.on('dataShare:activated', async (data) => {
+			const dataShare = await Model.AppDataSharing.findById(data.appDataSharingId);
+			await this.__primaryCreateDataShareConnection(dataShare);
+		});
+
+		this._nrp.on('queuePolicyRoomCloseSocketEvent', async (data) => {
+			if (!this._policyRooms[data.appId]) return;
+			Logging.logSilly(`queuePolicyRoomCloseSocketEvent ${data.appId}`);
+			await this._primaryQueuePolicyRoomCloseSocketEvent(data);
+		});
+
+		this._nrp.on('queueBasedConditionQuery', async (data) => {
+			Logging.logSilly(`queueBasedConditionQuery`);
+			this._policyCloseSocketEvents.push(data);
+		});
+
+		this._nrp.on('accessControlPolicy:disconnectQueryBasedSocket', async (data) => {
+			Logging.logSilly(`accessControlPolicy:disconnectQueryBasedSocket`);
+			await this._primaryDisconnectQueryBasedSocket(data);
+		});
+
+		this._nrp.on('primary:debugRollcall', async (data) => {
+			Logging.logSilly(`primary:debugRollcall ${data.id}`);
+
+			const id = uuidv4();
+
+			// Broadcast to all and see whos listening
+			this._nrp.emit(`worker:debugRollcall`, {id});
+
+			// Generate an identifier for message
+			// Await a response from the primary
+			const result = await new Promise((resolve, reject) => {
+				let _result = {};
+				let _timeout = setTimeout(() => resolve(_result), 50);
+				const handleResponce = (data) => {
+					clearTimeout(_timeout);
+					_result = {..._result, ...data};
+					_timeout = setTimeout(() => resolve(_result), 50);
+				};
+				// Debounce based on the callback
+				// await responces
+				// We'll just push in a callback and we'll handle the clean up
+				this._processResQueue[id] = {callback: handleResponce};
+			});
+
+			this._nrp.emit(`process:messageQueueResponse`, {id: data.id, response: result});
+		});
+		this._nrp.on('primary:debugRollcallResponce', async (data) => {
+			if (!this._processResQueue[data.id]) return;
+			this._processResQueue[data.id].callback(data.responce);
+		});
+
+		// Take updates from the workers on room structs and update our copy
+		this._nrp.on('primary:updatePolicyRooms', async (data) => {
+			Logging.logSilly(`primary:updatePolicyRooms ${data.id}`);
+
+			for (const roomId of Object.keys(data.message)) {
+				this._policyRooms[roomId] = data.message[roomId];
+			}
+
+			this._nrp.emit(`process:messageQueueResponse`, {id: data.id, response: true});
+		});
+
+		this._nrp.on('primary:getPolicyRooms', async (data) => {
+			Logging.logSilly(`primary:getPolicyRooms ${data.id}`);
+			this._nrp.emit(`process:messageQueueResponse`, {id: data.id, response: this._policyRooms});
+		});
+
+		// Serve up a copy of the policy rooms to the requester
+		this._nrp.on('primary:getPolicyRoomsByIds', async (data) => {
+			Logging.logSilly(`primary:getPolicyRoomsByIds ${data.id}`);
+
+			const roomStructs = data.message.rooms
+				.reduce((map, roomId) => {
+					if (this._policyRooms[roomId]) map[roomId] = this._policyRooms[roomId];
+					return map;
+				}, {});
+
+			this._nrp.emit(`process:messageQueueResponse`, {id: data.id, response: roomStructs});
+		});
+
+		this._nrp.on('primary:getPolicyRoomsByAppId', async (data) => {
+			Logging.logSilly(`primary:getPolicyRoomsByAppId ${data.id}`);
+
+			const roomStructs = Object.keys(this._policyRooms)
+				.filter((roomId) => this._policyRooms[roomId].appId === data.message.appId)
+				.reduce((map, roomId) => {
+					map[roomId] = this._policyRooms[roomId];
+					return map;
+				}, {});
+
+			this._nrp.emit(`process:messageQueueResponse`, {id: data.id, response: roomStructs});
+		});
+
+		this._nrp.on('primary:policy-updated', async (data) => {
+			// Policy has been updated
+			// - Trigger workers to revaluate what rooms users are connected to.
+
+			// TODO: Handle outdated rooms and clean up this._policyRooms
+		});
+	}
+
+	async __registerNRPMasterListeners() {
+	}
+
+	async __registerNRPWorkerListeners() {
+		this._nrp.on('worker:debugRollcall', async (data) => {
+			Logging.logSilly(`worker:debugRollcall ${data.id}`);
+
+			const nspSids = {};
+			for (const nsp of this.io._nsps.keys()) {
+				// Ignore some namespaces
+				if (['/', '/stats', '/debug'].includes(nsp)) continue;
+				if (!nspSids[nsp]) nspSids[nsp] = {};
+				for (const [sid, rooms] of this.io.of(nsp).adapter.sids.entries()) {
+					if (!nspSids[nsp][sid]) {
+						nspSids[nsp][sid] = {
+							socketData: this.io.of(nsp).sockets.get(sid)?.data,
+							rooms: Array.from(rooms.values()),
+						};
+					}
+				}
+			}
+
+			this._nrp.emit('primary:debugRollcallResponce', {id: data.id, responce: nspSids});
+		});
+	}
+
+	async __registerNRPProcessListeners() {
+		this._nrp.on('process:messageQueueResponse', (data) => {
+			if (!this._processResQueue[data.id]) return;
+			Logging.logSilly(`process:messageQueueResponse ${data.id}`);
+			this._processResQueue[data.id].resolve(data.response);
+		});
 	}
 
 	async __workerUserJoinRooms(user, app, socket, clear = false) {
@@ -400,6 +521,9 @@ class BootstrapSocket {
 		await this.__workerUserLeaveRooms(user, app, socket, userRooms, clear);
 
 		socket.join(userRooms);
+
+		// DEBUG - Rooms have changed lets notify
+		this._nrp.emit('debug:dump', {});
 
 		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
 		Logging.logSilly(`__workerUserJoinRooms::end socketId:${socket.id}`);
@@ -816,7 +940,7 @@ class BootstrapSocket {
 
 			const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
 			setTimeout(() => {
-				this._nrp.emit('updateSocketRooms', {
+				this._nrp.emit('worker:socket:updateUserSocketRooms', {
 					userId: data.userId,
 					appId: data.appId,
 				});
@@ -831,7 +955,7 @@ class BootstrapSocket {
 			const nearlyExpired = Sugar.Number.day(Sugar.Date.create(conditionEndDate));
 			if (this._oneWeekMilliseconds > nearlyExpired) {
 				setTimeout(() => {
-					this._nrp.emit('updateSocketRooms', {
+					this._nrp.emit('worker:socket:updateUserSocketRooms', {
 						userId: data.userId,
 						appId: data.appId,
 					});
@@ -848,22 +972,12 @@ class BootstrapSocket {
 
 		if (schemaBasedConditionIdx === -1) return;
 
-		this._nrp.emit('updateSocketRooms', {
+		this._nrp.emit('worker:socket:updateUserSocketRooms', {
 			userId: data.userId,
 			appId: data.appId,
 		});
 
 		this._policyCloseSocketEvents.splice(schemaBasedConditionIdx, 1);
-	}
-
-	__getRoomSharedCollections(appPolicyRooms, policyRoomsKeys, roomKey) {
-		return policyRoomsKeys.reduce((arr, key) => {
-			if (Object.keys(appPolicyRooms[key]).some((i) => i === roomKey)) {
-				arr.push(key);
-			}
-
-			return arr;
-		}, []);
 	}
 }
 

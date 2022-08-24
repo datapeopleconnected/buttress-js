@@ -353,17 +353,11 @@ class SetUserPolicyProperties extends Route {
 
 	async _exec(req, res, validate) {
 		await Model.User.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body);
-		let userToken = null;
-		const rxsUserToken = await Model.Token.findUserAuthTokens(req.params.id, req.authApp._id);
-		for await (const t of rxsUserToken) {
-			userToken = t;
-		}
 
 		await new Promise((resolve) => {
-			nrp.emit('updateSocketRooms', {
+			nrp.emit('worker:socket:updateUserSocketRooms', {
 				userId: req.params.id,
 				appId: req.authApp._id,
-				userToken,
 			});
 
 			nrp.on('updatedUserSocketRooms', () => {
@@ -418,17 +412,11 @@ class UpdateUserPolicyProperties extends Route {
 
 	async _exec(req, res, validate) {
 		await Model.User.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body, validate.user);
-		let userToken = null;
-		const rxsUserToken = await Model.Token.findUserAuthTokens(req.params.id, req.authApp._id);
-		for await (const t of rxsUserToken) {
-			userToken = t;
-		}
 
 		await new Promise((resolve) => {
-			nrp.emit('updateSocketRooms', {
+			nrp.emit('worker:socket:updateUserSocketRooms', {
 				userId: req.params.id,
 				appId: req.authApp._id,
-				userToken,
 			});
 
 			nrp.on('updatedUserSocketRooms', () => {

@@ -113,6 +113,7 @@ class AccessControl {
 		const structure = {
 			appId: appId,
 			schema: {},
+			appliedPolicy: Object.keys(outcome.res),
 		};
 		structure.schema[schemaName] = {
 			access: {},
@@ -419,7 +420,7 @@ class AccessControl {
 					appId,
 				});
 
-				nrp.emit('updateSocketRooms', {
+				nrp.emit('worker:socket:updateUserSocketRooms', {
 					userId: user._id,
 					appId,
 				});
