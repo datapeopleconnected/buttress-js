@@ -564,8 +564,6 @@ class BootstrapSocket {
 					userId: user._id,
 					room: roomId,
 				});
-				// We'll leave this function now, it will get picked up when the user has confirmed they've cleared their data.
-				return;
 			}
 
 			// I'm not sure there is a need to wait for the user to respond that they've left the room, we'll just revoke their
