@@ -256,7 +256,7 @@ class BootstrapSocket {
 			}
 
 			socket.data.type = token.type;
-			socket.data.tokenId = token._id;
+			socket.data.tokenId = token._id.toString();
 
 			Logging.logDebug(`Fetching app with apiPath: ${apiPath}`);
 			const app = await Model.App.findOne({apiPath: apiPath});
@@ -282,7 +282,7 @@ class BootstrapSocket {
 					return next('invalid-data-share');
 				}
 
-				socket.data.dataShareId = dataShare._id;
+				socket.data.dataShareId = dataShare._id.toString();
 
 				// Emit this activity to our instance.
 				// This would result in the event being mutiplied
@@ -308,10 +308,10 @@ class BootstrapSocket {
 					return next('invalid-token-user-ID');
 				}
 
-				socket.data.userId = user._id;
+				socket.data.userId = user._id.toString();
 				socket.data.userRef = user.auth[0].email ?? user.auth[0].appId;
 
-				await this.__workerUserJoinRooms(user, app, socket);
+				await this.__workerEvaluateUserRooms(user, app, socket);
 			} else {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
 			}
@@ -320,31 +320,32 @@ class BootstrapSocket {
 				Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
 			});
 
-			this._nrp.on('worker:socket:updateUserSocketRooms', async (data) => {
-				if (!socket.data.userId || socket.data.userId !== data.userId) {
-					// TODO: Use the process message queue instead
-					// this._nrp.emit('updatedUserSocketRooms', {});
-					return;
-				}
+			/**
+			  * Take in an appId or userId an re-evalute the users rooms
+			 	* @param {Object} data
+				* @param {string} data.appId
+				* @param {string} data.userId - Optional
+			 */
+			const debounceMap = {};
+			this._nrp.on('worker:socket:evaluateUserRooms', async (data) => {
+				// Early out if userId isn't set, we must not have a user token
+				if (!socket.data.userId) return;
+				// Check that the request is for the correct app
+				if (!data.appId || app._id.toString() !== data.appId) return;
+				// Optional - If they've provided a userId then we only want to evaluate the single users room.
+				if (data.userId && socket.data.userId !== data.userId) return;
 
-				Logging.logSilly(`worker:socket:updateUserSocketRooms token:${data.userId} ${socket.id}`);
+				// TODO: Could do with being debounced
+				const debounceKey = `worker:socket:evaluateUserRooms-${socket.data.userId}`;
+				if (debounceMap[debounceKey]) clearTimeout(debounceMap[debounceKey]);
+				debounceMap[debounceKey] = setTimeout(async () => {
+					debounceMap[debounceKey] = null;
+					Logging.logSilly(`worker:socket:evaluateUserRooms data.appId:${data.appId}` +
+						`data.userId:${data.userId} userId:${socket.data.userId} ${socket.id}`);
 
-				const user = await Model.User.findById(data.userId);
-				await this.__workerUserJoinRooms(user, app, socket, true);
-
-				// TODO: Use the process message queue instead
-				this._nrp.emit('updatedUserSocketRooms', {});
-			});
-
-			this._nrp.on('disconnectUserSocketRooms', async (data) => {
-				Logging.logSilly(`disconnectUserSocketRooms userId:${data.userId} ${data.appId} ${socket.id}`);
-				const userToken = await Helpers.streamFirst(await Model.Token.findUserAuthTokens(data.userId, data.appId));
-				if (userToken.value !== token.value) {
-					return;
-				}
-
-				const user = await Model.User.findById(data.userId);
-				await this.__workerUserLeaveRooms(user, app, socket, true);
+					const user = await Model.User.findById(socket.data.userId);
+					await this.__workerEvaluateUserRooms(user, app, socket, true);
+				}, 100);
 			});
 
 			next();
@@ -506,13 +507,13 @@ class BootstrapSocket {
 		});
 	}
 
-	async __workerUserJoinRooms(user, app, socket, clear = false) {
-		Logging.logSilly(`__workerUserJoinRooms::start userId:${user._id} socketId:${socket.id}`);
+	async __workerEvaluateUserRooms(user, app, socket, clear = false) {
+		Logging.logSilly(`__workerEvaluateUserRooms::start userId:${user._id} socketId:${socket.id}`);
 		const userRoomsStruct = await AccessControl.getUserRoomStructures(user, app._id, socket.request);
 		const userRooms = Object.keys(userRoomsStruct);
 
 		if (userRooms.length < 1) {
-			Logging.logSilly(`__workerUserJoinRooms::end-no-user-rooms socketId:${socket.id}`);
+			Logging.logSilly(`__workerEvaluateUserRooms::end-no-user-rooms socketId:${socket.id}`);
 			return;
 		}
 
@@ -526,7 +527,7 @@ class BootstrapSocket {
 		this._nrp.emit('debug:dump', {});
 
 		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
-		Logging.logSilly(`__workerUserJoinRooms::end socketId:${socket.id}`);
+		Logging.logSilly(`__workerEvaluateUserRooms::end socketId:${socket.id}`);
 	}
 
 	async __workerUserLeaveRooms(user, app, socket, currentRooms = null, clear = false) {
