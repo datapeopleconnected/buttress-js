@@ -231,6 +231,11 @@ class DeleteTransientPolicy extends Route {
 			appId: req.authApp._id,
 		});
 
+		// Trigger socket process to re-evaluate rooms
+		nrp.emit('worker:socket:evaluateUserRooms', {
+			appId: req.authApp._id,
+		});
+
 		return true;
 	}
 }

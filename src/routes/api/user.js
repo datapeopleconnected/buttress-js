@@ -354,16 +354,28 @@ class SetUserPolicyProperties extends Route {
 	async _exec(req, res, validate) {
 		await Model.User.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body);
 
-		await new Promise((resolve) => {
-			nrp.emit('worker:socket:updateUserSocketRooms', {
-				userId: req.params.id,
-				appId: req.authApp._id,
-			});
-
-			nrp.on('updatedUserSocketRooms', () => {
-				resolve();
-			});
+		nrp.emit('worker:socket:evaluateUserRooms', {
+			userId: req.params.id,
+			appId: req.authApp._id,
 		});
+
+		// TODO: Do we really need to wait for the socket to respond?
+		// await new Promise((resolve) => {
+		// 	const id = uuidv4();
+
+		// 	nrp.emit('worker:socket:evaluateUserRooms', {
+		// 		id,
+		// 		userId: req.params.id,
+		// 		appId: req.authApp._id,
+		// 	});
+
+		// 	let unsubscribe = null;
+		// 	unsubscribe = nrp.on('updatedUserSocketRooms', (res) => {
+		// 		if (res.id !== id) return;
+		// 		unsubscribe();
+		// 		resolve();
+		// 	});
+		// });
 
 		return true;
 	}
@@ -413,16 +425,28 @@ class UpdateUserPolicyProperties extends Route {
 	async _exec(req, res, validate) {
 		await Model.User.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body, validate.user);
 
-		await new Promise((resolve) => {
-			nrp.emit('worker:socket:updateUserSocketRooms', {
-				userId: req.params.id,
-				appId: req.authApp._id,
-			});
-
-			nrp.on('updatedUserSocketRooms', () => {
-				resolve();
-			});
+		nrp.emit('worker:socket:evaluateUserRooms', {
+			userId: req.params.id,
+			appId: req.authApp._id,
 		});
+
+		// TODO: Do we really need to wait for the socket to respond?
+		// await new Promise((resolve) => {
+		// 	const id = uuidv4();
+
+		// 	nrp.emit('worker:socket:evaluateUserRooms', {
+		// 		id,
+		// 		userId: req.params.id,
+		// 		appId: req.authApp._id,
+		// 	});
+
+		// 	let unsubscribe = null;
+		// 	unsubscribe = nrp.on('updatedUserSocketRooms', (res) => {
+		// 		if (res.id !== id) return;
+		// 		unsubscribe();
+		// 		resolve();
+		// 	});
+		// });
 
 		return true;
 	}
@@ -467,7 +491,7 @@ class ClearUserPolicyProperties extends Route {
 	async _exec(req, res, validate) {
 		await Model.User.clearPolicyPropertiesById(req.params.id, req.authApp._id, validate.user);
 
-		nrp.emit('disconnectUserSocketRooms', {
+		nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
 			appId: req.authApp._id,
 		});
