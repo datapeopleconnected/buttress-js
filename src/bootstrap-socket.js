@@ -544,7 +544,7 @@ class BootstrapSocket {
 			socket.join(roomsToJoin);
 
 			// Emit event to users
-			for (const roomId of roomsToLeave) {
+			for (const roomId of roomsToJoin) {
 				const collections = Object.keys(userRoomsStruct[roomId].schema);
 
 				// Instead of broadcasting to everyone that a user needs to clear their data, we'll just ask the user POLITELY
