@@ -272,6 +272,7 @@ class AccessControl {
 
 				if (!obj[policy.name]) {
 					obj[policy.name] = {
+						appId: appId.toString(),
 						env: {},
 						conditions: [],
 						query: [],
