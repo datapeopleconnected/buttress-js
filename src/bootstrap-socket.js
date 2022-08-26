@@ -534,30 +534,40 @@ class BootstrapSocket {
 
 		this._messagePrimary('updatePolicyRooms', userRoomsStruct);
 
-		await this.__workerUserLeaveRooms(user, app, socket, userRooms, clear);
+		const currentRooms = Array.from(socket.rooms.values());
+		const roomsToLeave = currentRooms.filter((roomId) => roomId !== socket.id && !userRooms.includes(roomId));
+		const roomsToJoin = userRooms.filter((roomId) => !currentRooms.includes(roomId));
 
-		socket.join(userRooms);
+		await this.__workerUserLeaveRooms(user, app, socket, roomsToLeave, clear);
+
+		if (roomsToJoin.length > 0) {
+			socket.join(roomsToJoin);
+
+			// Emit event to users
+			for (const roomId of roomsToLeave) {
+				const collections = Object.keys(userRoomsStruct[roomId].schema);
+
+				// Instead of broadcasting to everyone that a user needs to clear their data, we'll just ask the user POLITELY
+				// to clear their data... don't hold your breath, they may say no.
+				socket.emit('db-connect-room', {
+					collections: collections,
+					userId: user._id,
+					room: roomId,
+				});
+			}
+
+			Logging.log(`[${app.apiPath}][${user._id}] Joining ${socket.id} to rooms ${roomsToJoin.join(', ')}`);
+		}
 
 		// DEBUG - Rooms have changed lets notify
 		this._nrp.emit('debug:dump', {});
 
-		Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
+		// Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
 		Logging.logSilly(`__workerEvaluateUserRooms::end socketId:${socket.id}`);
 	}
 
-	async __workerUserLeaveRooms(user, app, socket, currentRooms = null, clear = false) {
+	async __workerUserLeaveRooms(user, app, socket, roomsToLeave = null, clear = false) {
 		Logging.logSilly(`__workerUserLeaveRooms::start userId:${user._id} socketId:${socket.id}`);
-		// If the users current rooms haven't been passed through we'll work it out ourselves
-		if (!currentRooms) {
-			currentRooms = await AccessControl.getUserRooms(user, app._id, socket.request);
-		}
-
-		// No we have the current rooms, we'll work out which rooms we need to leave
-		const roomsToLeave = [];
-		for (const roomId of socket.rooms.values()) {
-			if (roomId === socket.id) continue;
-			if (!currentRooms.includes(roomId)) roomsToLeave.push(roomId);
-		}
 
 		if (roomsToLeave.length < 1) {
 			// We've got no rooms to leave, early out.
