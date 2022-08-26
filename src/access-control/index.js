@@ -130,6 +130,7 @@ class AccessControl {
 		}
 
 		Logging.logTimer(`_getSchemaRoomStructure::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		// TODO: Add app id to hash
 		return {roomId: hash(outcome.res), structure};
 	}
 

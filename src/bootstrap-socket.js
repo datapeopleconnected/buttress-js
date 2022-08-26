@@ -82,7 +82,22 @@ class BootstrapSocket {
 		// done for us.
 		// Only the Primary will hold this structure, it can then pass it down to
 		// the appropriate workers
-		this._policyRooms = {};
+		this._policyRooms = {
+			/*
+			roomId: {
+				appId:
+				schema: {
+					car: {
+						access
+					},
+					car: {
+						access
+					}
+				}
+				appliedPolicy: []
+			}
+			*/
+		};
 
 		this.logicalOperator = [
 			'$or',
@@ -210,7 +225,7 @@ class BootstrapSocket {
 
 			Logging.logDebug(`Fetching token with value: ${rawToken}`);
 			const token = await Model.Token.findOne({value: rawToken});
-			if (!token) {
+			if (!token || token.authLevel < 3) {
 				Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
 				return next('invalid-token');
 			}
@@ -517,7 +532,7 @@ class BootstrapSocket {
 			return;
 		}
 
-		await this._messagePrimary('updatePolicyRooms', userRoomsStruct);
+		this._messagePrimary('updatePolicyRooms', userRoomsStruct);
 
 		await this.__workerUserLeaveRooms(user, app, socket, userRooms, clear);
 
@@ -884,6 +899,7 @@ class BootstrapSocket {
 
 	async _primaryQueuePolicyRoomCloseSocketEvent(data) {
 		const policies = data.policies;
+		// TODO: Add app id to hash
 		const room = hash(policies);
 		for await (const key of Object.keys(policies)) {
 			const policy = policies[key];
