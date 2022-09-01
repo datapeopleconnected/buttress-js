@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 'use strict';
 
 /**
@@ -16,6 +17,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+const Buttress = require('@buttress/api');
+const Sugar = require('sugar');
+
 const Route = require('../route');
 const Model = require('../../model');
 const Logging = require('../../logging');
@@ -31,7 +35,7 @@ class GetAppList extends Route {
 	constructor() {
 		super('app', 'GET APP LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.SUPER;
+		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -40,6 +44,10 @@ class GetAppList extends Route {
 	}
 
 	_exec(req, res, validate) {
+		if (req.token.authLevel < Route.Constants.Auth.SUPER) {
+			return Model.App.find({_id: req.authApp._id});
+		}
+
 		return Model.App.findAll();
 	}
 }
@@ -62,12 +70,12 @@ class GetApp extends Route {
 		return new Promise((resolve, reject) => {
 			if (!req.params.id) {
 				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_fields`));
+				return reject(new Helpers.Errors.RequestError(400, `missing_fields`));
 			}
 			Model.App.findById(req.params.id).populate('_token').then((app) => {
 				if (!app) {
 					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_id`));
+					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 				}
 				// this.log(app._token, Route.LogLevel.DEBUG);
 				this._app = app;
@@ -93,17 +101,27 @@ class AddApp extends Route {
 		this.verb = Route.Constants.Verbs.POST;
 		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.ADD;
+
+		// Fetch model
+		this.schema = new Schema(Model.App.schemaData);
+		this.model = Model.App;
 	}
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			if (!req.body.name || !req.body.type || !req.body.authLevel) {
-				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
-			}
-			if (req.body.type === Model.App.Constants.Type.Browser && !req.body.domain) {
-				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
+			const validation = this.model.validate(req.body);
+			if (!validation.isValid) {
+				if (validation.missing.length > 0) {
+					this.log(`${this.schema.name}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
+					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Missing field: ${validation.missing[0]}`));
+				}
+				if (validation.invalid.length > 0) {
+					this.log(`${this.schema.name}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
+					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Invalid value: ${validation.invalid[0]}`));
+				}
+
+				this.log(`${this.schema.name}: Unhandled Error`, Route.LogLevel.ERR, req.id);
+				return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Unhandled error.`));
 			}
 
 			if (!req.body.permissions || req.body.permissions.length === 0) {
@@ -131,10 +149,17 @@ class AddApp extends Route {
 				req.body.permissions = JSON.parse(req.body.permissions);
 			} catch (e) {
 				this.log('ERROR: Badly formed JSON in permissions', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `invalid_json`));
+				return reject(new Helpers.Errors.RequestError(400, `invalid_json`));
 			}
 
-			resolve(true);
+			this.model.isDuplicate(req.body)
+				.then((res) => {
+					if (res === true) {
+						this.log(`${this.schema.name}: Duplicate entity`, Route.LogLevel.ERR, req.id);
+						return reject(new Helpers.Errors.RequestError(400, `duplicate`));
+					}
+					resolve(true);
+				});
 		});
 	}
 
@@ -165,12 +190,12 @@ class DeleteApp extends Route {
 		return new Promise((resolve, reject) => {
 			if (!req.params.id) {
 				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 			Model.App.findById(req.params.id).then((app) => {
 				if (!app) {
 					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_id`));
+					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 				}
 				this._app = app;
 				resolve(true);
@@ -203,12 +228,12 @@ class GetAppPermissionList extends Route {
 		return new Promise((resolve, reject) => {
 			if (!req.params.id) {
 				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 			Model.App.findById(req.params.id).then((app) => {
 				if (!app) {
 					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_id`));
+					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 				}
 				this._app = app;
 				resolve(true);
@@ -247,12 +272,12 @@ class AddAppPermission extends Route {
 			Model.App.findById(req.params.id).then((app) => {
 				if (!app) {
 					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_id`));
+					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 				}
 
 				if (!req.body.route || !req.body.permission) {
 					this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `missing_field`));
+					return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 				}
 
 				this._app = app;
@@ -281,35 +306,109 @@ class GetAppSchema extends Route {
 		this.redactResults = false;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.authApp) {
-				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `no_authenticated_app`));
-			}
-			if (!req.authApp.__schema) {
-				this.log('ERROR: No app schema defined', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `no_authenticated_schema`));
-			}
+	async _validate(req, res, token) {
+		if (!req.authApp) {
+			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `no_authenticated_app`);
+		}
 
-			// Filter the returned schema based token role
-			let schema = Schema.buildCollections(Schema.decode(req.authApp.__schema));
+		if (!req.authApp.__schema) {
+			this.log('ERROR: No app schema defined', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `no_authenticated_schema`);
+		}
 
-			const denyAll = (req.roles.app && req.roles.app.endpointDisposition === 'denyAll');
-			schema = schema.filter((s) => {
-				if (!s.roles || !req.roles.app) return !denyAll;
-				const role = s.roles.find((r) => r.name === req.roles.app.name);
-				if (role && role.endpointDisposition && role.endpointDisposition.GET === 'allow') return true;
+		let schema;
+		try {
+			schema = Schema.buildCollections(Schema.decode(req.authApp.__schema));
+		} catch (err) {
+			if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
+			else throw err;
+		}
 
-				return !denyAll;
+		if (req.query.core) {
+			const cores = req.query.core.split(',');
+
+			cores.forEach((core) => {
+				const coreModel = Model[Sugar.String.capitalize(core)];
+				if (coreModel && coreModel.appShortId === null) {
+					schema.push(coreModel.schemaData);
+				}
 			});
+		}
 
-			resolve(schema);
-		});
+		if (req.query.only) {
+			const only = req.query.only.split(',');
+			schema = schema.filter((s) => only.includes(s.name));
+		}
+
+		return schema;
 	}
 
-	_exec(req, res, schema) {
-		return schema;
+	async _exec(req, res, collections) {
+		const schemaWithRemoteRef = collections.filter((s) => s.remote);
+
+		// TODO: Check params for any core scheam thats been requested.
+		const dataSharingSchema = schemaWithRemoteRef.reduce((map, collection) => {
+			const [DSA, ...schema] = collection.remote.split('.');
+			if (!map[DSA]) map[DSA] = [];
+			map[DSA].push(schema);
+			return map;
+		}, {});
+
+		// TODO: fetch app models & use schema data instead of doing the work here
+
+		// Load DSA for curent app
+		const requiredDSAs = Object.keys(dataSharingSchema);
+		if (requiredDSAs.length > 0) {
+			const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
+				'_appId': req.authApp._id,
+				'name': {
+					$in: requiredDSAs,
+				},
+				'active': true,
+			}));
+
+			for await (const DSAName of Object.keys(dataSharingSchema)) {
+				const DSA = appDSAs.find((dsa) => dsa.name === DSAName);
+				if (!DSA) continue;
+				// Load DSA
+
+				const api = Buttress.new();
+				await api.init({
+					buttressUrl: DSA.remoteApp.endpoint,
+					apiPath: DSA.remoteApp.apiPath,
+					appToken: DSA.remoteApp.token,
+					allowUnauthorized: true, // Move along, nothing to see here...
+				});
+
+				const remoteSchema = await api.App.getSchema({
+					params: {
+						only: dataSharingSchema[DSAName].join(','),
+					},
+				});
+
+				remoteSchema.forEach((rs) => {
+					schemaWithRemoteRef
+						.filter((s) => s.remote === `${DSAName}.${rs.name}`)
+						.forEach((s) => {
+							// Merge RS into schema
+							delete s.remote;
+							const collectionIdx = collections.findIndex((s) => s.name === rs.name);
+							if (collectionIdx === -1) return;
+							collections[collectionIdx] = Helpers.mergeDeep(rs, s);
+						});
+				});
+			}
+		}
+
+		// Quicky, remove extends as nobody needs it outside of buttress
+		collections.forEach((s) => delete s.extends);
+
+		// TODO: Policy should be used to dictate what schema the user can access.
+
+		// Filter the returned schema based token role
+
+		return collections;
 	}
 }
 routes.push(GetAppSchema);
@@ -329,7 +428,30 @@ class UpdateAppSchema extends Route {
 		return new Promise((resolve, reject) => {
 			if (!req.authApp) {
 				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `no_authenticated_app`));
+				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
+			}
+
+			if (!req.body) {
+				this.log('ERROR: Missing body', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `no_body`));
+			}
+
+			if (!Array.isArray(req.body)) {
+				this.log('ERROR: Expected body to be an array', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
+			}
+
+			// Sort templates
+			req.body = req.body.sort((a, b) => (a.type === 'collection') ? 1 : (b.type === 'collection') ? -1 : 0);
+
+			// Resolve the local schema
+			req.body = Schema.merge(req.body, Model.App.localSchema);
+
+			try {
+				Schema.buildCollections(req.body);
+			} catch (err) {
+				console.log(err);
+				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
 			}
 
 			resolve(true);
@@ -344,154 +466,353 @@ class UpdateAppSchema extends Route {
 routes.push(UpdateAppSchema);
 
 /**
- * @class UpdateAppRoles
- */
-class UpdateAppRoles extends Route {
+* @class AddDataSharing
+*/
+class AddDataSharing extends Route {
 	constructor() {
-		super('app/roles', 'UPDATE APP ROLES');
+		super('app/dataSharing', 'ADD Data Sharing');
+		this.verb = Route.Constants.Verbs.POST;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.ADD;
+
+		// Fetch model
+		this.schema = new Schema(Model.AppDataSharing.schemaData);
+		this.model = Model.AppDataSharing;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			const validation = this.model.validate(req.body);
+			if (!validation.isValid) {
+				if (validation.missing.length > 0) {
+					this.log(`${this.schema.name}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
+					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Missing field: ${validation.missing[0]}`));
+				}
+				if (validation.invalid.length > 0) {
+					this.log(`${this.schema.name}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
+					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Invalid value: ${validation.invalid[0]}`));
+				}
+
+				this.log(`${this.schema.name}: Unhandled Error`, Route.LogLevel.ERR, req.id);
+				return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Unhandled error.`));
+			}
+
+			// If we're not super then set the appId to be the current appId
+			if (!req.body._appId || token.authLevel < 3) {
+				req.body._appId = token._app;
+			}
+
+			this.model.isDuplicate(req.body)
+				.then((res) => {
+					if (res === true) {
+						this.log(`${this.schema.name}: Duplicate entity`, Route.LogLevel.ERR, req.id);
+						return reject(new Helpers.Errors.RequestError(400, `duplicate`));
+					}
+					resolve(true);
+				});
+		});
+	}
+
+	_exec(req, res, validate) {
+		return new Promise((resolve, reject) => {
+			let _dataSharing = null;
+			this.model.add(req.body)
+				.then((res) => {
+					const dataSharing = (res.dataSharing) ? res.dataSharing : res;
+					this.log(`Added App Data Sharing ${dataSharing._id}`);
+
+					// TODO: Token shouldn't be released, an exchange should be done between buttress
+					// instances so that this isn't exposed.
+					if (res.token) {
+						return Object.assign(dataSharing, {
+							remoteAppToken: res.token.value,
+						});
+					}
+
+					return dataSharing;
+				})
+				.then((dataSharing) => {
+					_dataSharing = dataSharing;
+
+					if (dataSharing.remoteApp.token === null) return dataSharing;
+
+					// If the data sharing was setup with a token we'll try to call the remote app
+					// with the token to notify it off it's token.
+					const api = Buttress.new();
+					return api.init({
+						buttressUrl: dataSharing.remoteApp.endpoint,
+						apiPath: dataSharing.remoteApp.apiPath,
+						appToken: dataSharing.remoteApp.token,
+						allowUnauthorized: true, // Move along, nothing to see here...
+					})
+						.then(() => api.App.activateAppDataSharing({
+							token: dataSharing.remoteAppToken,
+						}))
+						.then((res) => {
+							if (!res) return;
+
+							// If we got the thumbs up from the other instance we can go ahead and activate
+							// the data sharing for this app.
+							return this.model.activate(dataSharing._id);
+						})
+						.then(() => _dataSharing.active = true)
+						.catch(reject);
+				})
+				.then(() => _dataSharing)
+				.then(resolve, reject);
+		});
+	}
+}
+routes.push(AddDataSharing);
+
+/**
+* @class GetDataSharing
+*/
+class GetDataSharing extends Route {
+	constructor() {
+		super('app/dataSharing', 'GET Data Sharing');
+		this.verb = Route.Constants.Verbs.GET;
+		this.auth = Route.Constants.Auth.USER;
+		this.permissions = Route.Constants.Permissions.LIST;
+
+		this.activityBroadcast = false;
+		this.slowLogging = false;
+
+		// Fetch model
+		this.schema = new Schema(Model.AppDataSharing.schemaData);
+		this.model = Model.AppDataSharing;
+
+		Logging.logSilly(`Created route: ${this.name} for Data Sharing`);
+	}
+
+	_validate(req, res, token) {
+		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+
+		const result = {
+			query: {},
+			project: (req.body && req.body.project)? req.body.project : false,
+		};
+
+		let query = {};
+
+		if (!query.$and) {
+			query.$and = [];
+		}
+
+		// access control query
+		if (req.body && req.body.query) {
+			query.$and.push(req.body.query);
+		}
+
+		if (req.body && req.body.query && req.body.query.zeroResults) {
+			return false;
+		}
+
+		Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		result.query = query;
+
+		if (token.authLevel < 3) {
+			result.query['_appId'] = req.authApp._id;
+		}
+
+		return result;
+	}
+
+	_exec(req, res, validateResult) {
+		if (validateResult.query === false) {
+			return [];
+		}
+
+		Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
+	}
+}
+routes.push(GetDataSharing);
+
+/**
+ * @class UpdateAppDataSharingPolicy
+ */
+class UpdateAppDataSharingPolicy extends Route {
+	constructor() {
+		super('app/dataSharing/:dataSharingId/policy', 'UPDATE App Data Sharing Policy');
 		this.verb = Route.Constants.Verbs.PUT;
 		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
+
+		// Fetch model
+		this.schema = new Schema(Model.AppDataSharing.schemaData);
+		this.model = Model.AppDataSharing;
 	}
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
 			if (!req.authApp) {
 				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `no_authenticated_app`));
+				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
 			}
 
-			resolve(true);
+			if (!req.params.dataSharingId) {
+				this.log('ERROR: No Data Sharing Id', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_data_sharing_id`));
+			}
+
+			// Lookup
+			this.model.exists(req.params.dataSharingId, {
+				'_appId': req.authApp._id,
+			})
+				.then((res) => {
+					if (res !== true) {
+						this.log(`${this.schema.name}: unknown data sharing`, Route.LogLevel.ERR, req.id);
+						return reject(new Helpers.Errors.RequestError(400, `unknown_data_sharing`));
+					}
+
+					resolve(true);
+				});
 		});
 	}
 
 	_exec(req, res, validate) {
-		return Model.App.updateRoles(req.authApp._id, req.body).then((res) => true);
+		return this.model.updatePolicy(req.authApp._id, req.params.dataSharingId, req.body)
+			.then(() => true);
 	}
 }
-routes.push(UpdateAppRoles);
+routes.push(UpdateAppDataSharingPolicy);
 
 /**
- * @class AddAppMetadata
+ * @class UpdateAppDataSharingToken
  */
-class AddAppMetadata extends Route {
+class UpdateAppDataSharingToken extends Route {
 	constructor() {
-		super('app/metadata/:key', 'ADD APP METADATA');
-		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.ADD;
-
-		this._app = false;
-	}
-
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			Model.App.findById(req.appDetails._id).then((app) => {
-				if (!app) {
-					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_id`));
-				}
-				try {
-					JSON.parse(req.body.value);
-				} catch (e) {
-					this.log(`ERROR: ${e.message}`, Route.LogLevel.ERR);
-					this.log(req.body.value, Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_json`));
-				}
-
-				this._app = app;
-				resolve(true);
-			});
-		});
-	}
-
-	_exec(req, res, validate) {
-		return this._app.addOrUpdateMetadata(req.params.key, req.body.value)
-			.then((a) => a.details);
-	}
-}
-routes.push(AddAppMetadata);
-
-/**
- * @class UpdateAppMetadata
- */
-class UpdateAppMetadata extends Route {
-	constructor() {
-		super('app/metadata/:key', 'UPDATE APP METADATA');
+		super('app/dataSharing/:dataSharingId/token', 'UPDATE App Data Sharing Token');
 		this.verb = Route.Constants.Verbs.PUT;
 		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.ADD;
+		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this._app = false;
+		// Fetch model
+		this.schema = new Schema(Model.AppDataSharing.schemaData);
+		this.model = Model.AppDataSharing;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			Model.App.findById(req.appDetails._id).then((app) => {
-				if (!app) {
-					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_id`));
-				}
-				if (app.findMetadata(req.params.key) === false) {
-					this.log('ERROR: Metadata does not exist', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `missing_metadata`));
-				}
-				try {
-					JSON.parse(req.body.value);
-				} catch (e) {
-					this.log(`ERROR: ${e.message}`, Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_json`));
-				}
+	async _validate(req, res, token) {
+		if (!req.authApp) {
+			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `no_authenticated_app`);
+		}
 
-				this._app = app;
-				resolve(true);
+		if (!req.body.token) {
+			this.log('ERROR: missing data sharing activation token', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `missing_data_token`);
+		}
+
+		if (!req.params.dataSharingId) {
+			this.log('ERROR: No Data Sharing Id', Route.LogLevel.ERR);
+			return new Helpers.Errors.RequestError(400, `missing_data_sharing_id`);
+		}
+
+		// Lookup
+		const entity = await Helpers.streamFirst(await this.model.find({
+			_id: this.model.createId(req.params.dataSharingId),
+			_appId: req.authApp._id,
+		}));
+
+		if (!entity) {
+			this.log(`${this.schema.name}: unknown data sharing`, Route.LogLevel.ERR, req.id);
+			throw new Helpers.Errors.RequestError(400, `unknown_data_sharing`);
+		}
+
+		const api = Buttress.new();
+		try {
+			await api.init({
+				buttressUrl: entity.remoteApp.endpoint,
+				apiPath: entity.remoteApp.apiPath,
+				appToken: req.body.token,
+				allowUnauthorized: true, // Move along, nothing to see here...
 			});
-		});
+		} catch (err) {
+			if (err instanceof Buttress.Errors.ResponseError) {
+				throw new Helpers.Errors.RequestError(err.code, err.message);
+			}
+			throw err;
+		}
+
+		return {entity, api};
 	}
 
-	_exec(req, res, validate) {
-		return this._app.addOrUpdateMetadata(req.params.key, req.body.value);
+	async _exec(req, res, validate) {
+		await this.model.updateActivationToken(req.params.dataSharingId, req.body.token);
+
+
+		const token = await Model.Token.findById(validate.entity._tokenId);
+
+		// Our token
+		const remoteActivation = await validate.api.App.activateAppDataSharing({
+			token: token.value,
+		});
+
+		if (!remoteActivation) return false;
+
+		await this.model.activate(validate.entity._id);
+
+		delete validate.api;
+
+		return true;
 	}
 }
-routes.push(UpdateAppMetadata);
+routes.push(UpdateAppDataSharingToken);
 
 /**
- * @class GetAppMetadata
+ * @class ActivateAppDataSharing
  */
-class GetAppMetadata extends Route {
+class ActivateAppDataSharing extends Route {
 	constructor() {
-		super('app/metadata/:key', 'GET APP METADATA');
-		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.GET;
+		super('app/dataSharing/activate', 'UPDATE Activate App Data Sharing');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.USER;
+		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this._metadata = null;
+		// Fetch model
+		this.schema = new Schema(Model.AppDataSharing.schemaData);
+		this.model = Model.AppDataSharing;
 	}
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			Logging.log(`AppID: ${req.appDetails._id}`, Route.LogLevel.DEBUG);
-			Model.App.findById(req.appDetails._id).then((app) => {
-				if (!app) {
-					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_id`));
-				}
-				this._metadata = app.findMetadata(req.params.key);
-				if (this._metadata === false) {
-					this.log('WARN: App Metadata Not Found', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `missing_metadata`));
-				}
+			if (!req.authApp) {
+				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+			}
 
-				resolve(true);
-			});
+			if (token.type !== Model.Token.Constants.Type.DATA_SHARING) {
+				this.log('ERROR: invalid token type', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(401, `invalid_token_type`));
+			}
+
+			if (!req.body.token) {
+				this.log('ERROR: missing data sharing token', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_data_token`));
+			}
+
+			this.model.findOne({
+				_tokenId: token._id,
+			})
+				.then((dataSharing) => {
+					if (!dataSharing) {
+						this.log(`ERROR: Unable to find dataSharing with token ${token._id}`, Route.LogLevel.ERR, req.id);
+						return reject(new Helpers.Errors.RequestError(500, `no_datasharing`));
+					}
+
+					resolve(dataSharing);
+				});
 		});
 	}
 
-	_exec(req, res, validate) {
-		return this._metadata.value;
+	_exec(req, res, dataSharing) {
+		return this.model.activate(dataSharing._id, req.body.token)
+			.then(() => true);
 	}
 }
-routes.push(GetAppMetadata);
+routes.push(ActivateAppDataSharing);
 
 /**
  * @type {*[]}

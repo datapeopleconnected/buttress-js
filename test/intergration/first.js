@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
  * Copyright (C) 2016-2022 Data Performance Consultancy LTD.
@@ -16,15 +14,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const BootstrapRest = require('./bootstrap-rest');
-const BootstrapSocket = require('./bootstrap-socket');
+const {describe, it} = require('mocha');
+const assert = require('assert');
 
-/* ********************************************************************************
- *
- * EXPORTS
- *
- **********************************************************************************/
-module.exports = {
-	rest: () => new BootstrapRest(),
-	socket: () => new BootstrapSocket(),
-};
+describe('intergration:first', () => {
+	it('should do somthing', async () => {
+		assert.equal(true, true);
+	});
+});

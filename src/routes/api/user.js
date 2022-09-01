@@ -20,10 +20,11 @@ const Route = require('../route');
 const Model = require('../../model');
 const Logging = require('../../logging');
 const Helpers = require('../../helpers');
-const ObjectId = require('mongodb').ObjectId;
-const Config = require('node-env-obj')('../');
+const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
+
+const Datastore = require('../../datastore');
 
 const routes = [];
 
@@ -63,27 +64,29 @@ class GetUser extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			if (!req.params.id || !ObjectId.isValid(req.params.id)) {
+			if (!req.params.id) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
 			Model.User.findById(req.params.id)
 				.then((_user) => {
 					if (_user) {
-						Model.Token.findUserAuthTokens(_user._id, req.authApp._id)
-							.then((tokens) => {
-								resolve({
-									id: _user._id,
-									auth: _user.auth,
-									tokens: tokens.map((t) => {
-										return {
-											value: t.value,
-											role: t.role,
-										};
-									}),
-								});
+						const output = {
+							id: _user._id,
+							auth: _user.auth,
+							tokens: [],
+							policyProperties: _user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
+						};
+
+						// TODO: This should really only be a single token now
+						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
+						rxTokens.on('data', (token) => {
+							output.tokens.push({
+								value: token.value,
 							});
+						});
+						rxTokens.once('end', () => resolve(output));
 					} else {
 						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 						resolve({statusCode: 400});
@@ -114,19 +117,20 @@ class FindUser extends Route {
 			Model.User.getByAppId(req.params.app, req.params.id)
 				.then((_user) => {
 					if (_user) {
-						Model.Token.findUserAuthTokens(_user._id, req.authApp._id)
-							.then((tokens) => {
-								resolve({
-									id: _user._id,
-									auth: _user.auth,
-									tokens: tokens.map((t) => {
-										return {
-											value: t.value,
-											role: t.role,
-										};
-									}),
-								});
+						const output = {
+							id: _user._id,
+							auth: _user.auth,
+							tokens: [],
+							policyProperties: _user._appMetadata?.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
+						};
+
+						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
+						rxTokens.on('data', (token) => {
+							output.tokens.push({
+								value: token.value,
 							});
+						});
+						rxTokens.once('end', () => resolve(output));
 					} else {
 						resolve(false);
 					}
@@ -158,17 +162,16 @@ class CreateUserAuthToken extends Route {
 			if (!req.body ||
 				!req.body.authLevel ||
 				!req.body.permissions ||
-				!req.body.domains ||
-				!req.body.role) {
+				!req.body.domains) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
 			req.body.type = Model.Token.Constants.Type.USER;
 
-			if (!req.params.id || !ObjectId.isValid(req.params.id)) {
+			if (!req.params.id) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
 			Model.User.findById(req.params.id)
@@ -177,25 +180,28 @@ class CreateUserAuthToken extends Route {
 						return resolve(user);
 					}
 
-					return reject(new Helpers.RequestError(400, `invalid_id`));
+					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 				});
 		});
 	}
 
-	_exec(req, res, user) {
-		return Model.Token.add(req.body, {
-			_app: new ObjectId(req.authApp._id),
-			_user: new ObjectId(user._id),
-		})
-			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))
-			.then((t) => {
-				nrp.emit('app-routes:bust-cache', {});
+	async _exec(req, res, user) {
+		const rxsToken = await Model.Token.add(req.body, {
+			_app: Datastore.getInstance('core').ID.new(req.authApp._id),
+			_user: Datastore.getInstance('core').ID.new(user._id),
+		});
+		const token = await Helpers.streamFirst(rxsToken);
 
-				return {
-					value: t.value,
-					role: t.role,
-				};
-			});
+		// We'll make sure to add the user to the app
+		if (!user._apps.includes(req.authApp._id.toString())) {
+			await Model.User.updateApps(user, req.authApp._id);
+		}
+
+		nrp.emit('app-routes:bust-cache', {});
+
+		return {
+			value: token.value,
+		};
 	}
 }
 routes.push(CreateUserAuthToken);
@@ -212,12 +218,6 @@ class AddUser extends Route {
 	}
 
 	_validate(req, res, token) {
-		let appRoles = null;
-		if (req.authApp && req.authApp.__roles && req.authApp.__roles.roles) {
-			// This needs to be cached on startup
-			appRoles = Helpers.flattenRoles(req.authApp.__roles);
-		}
-
 		return new Promise((resolve, reject) => {
 			Logging.log(req.body.user, Logging.Constants.LogLevel.DEBUG);
 			const app = req.body.user.app ? req.body.user.app : req.params.app;
@@ -225,9 +225,9 @@ class AddUser extends Route {
 			if (!app ||
 					!req.body.user.id ||
 					!req.body.user.token ||
-					!req.body.user.profileImgUrl) {
+					req.body.user.policyProperties === undefined) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
 			if (req.body.auth) {
@@ -237,26 +237,13 @@ class AddUser extends Route {
 						!req.body.auth.permissions ||
 						!req.body.auth.domains) {
 					this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `missing_field`));
+					return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 				}
 				req.body.auth.type = Model.Token.Constants.Type.USER;
-				req.body.auth.app = req.authApp.id;
-
-				let role = false;
-				if (req.body.auth.role) {
-					const matchedRole = appRoles.find((r) => r.name === req.body.auth.role);
-					if (matchedRole) {
-						role = matchedRole.name;
-					}
-				}
-				if (!role) {
-					role = req.authApp.__roles.default;
-				}
-
-				req.body.auth.role = role;
+				req.body.auth.app = req.authApp._id;
 			} else {
 				this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_auth`));
+				return reject(new Helpers.Errors.RequestError(400, `missing_auth`));
 			}
 
 			resolve(true);
@@ -266,7 +253,19 @@ class AddUser extends Route {
 	_exec(req, res, validate) {
 		return Model.User.add(req.body.user, req.body.auth)
 			.then((user) => {
-				return user;
+				// TODO: Strip back return data, should match find user
+				let policyProperties = null;
+				if (user._appMetadata) {
+					const _appMetadata = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
+					policyProperties = (_appMetadata) ? _appMetadata.policyProperties : null;
+				}
+
+				return {
+					id: user._id,
+					auth: user.auth,
+					tokens: [],
+					policyProperties,
+				};
 			});
 	}
 }
@@ -292,11 +291,11 @@ class UpdateUser extends Route {
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `USER: Update path is invalid: ${validation.invalidPath}`));
+					return reject(new Helpers.Errors.RequestError(400, `USER: Update path is invalid: ${validation.invalidPath}`));
 				}
 				if (validation.isValueValid === false) {
 					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `USER: Update value is invalid: ${validation.invalidValue}`));
+					return reject(new Helpers.Errors.RequestError(400, `USER: Update value is invalid: ${validation.invalidValue}`));
 				}
 			}
 
@@ -304,7 +303,7 @@ class UpdateUser extends Route {
 				.then((exists) => {
 					if (!exists) {
 						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-						return reject(new Helpers.RequestError(400, `invalid_id`));
+						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 					}
 					resolve(true);
 				});
@@ -316,6 +315,191 @@ class UpdateUser extends Route {
 	}
 }
 routes.push(UpdateUser);
+
+/**
+ * @class SetUserPolicyProperties
+ */
+class SetUserPolicyProperties extends Route {
+	constructor() {
+		super('user/:id/policyProperty', 'SET USER POLICY PROPERTY');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			if (!req.body) {
+				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+
+			Model.User.exists(req.params.id)
+				.then((exists) => {
+					if (!exists) {
+						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+					}
+					resolve(true);
+				});
+
+			// TODO: Fetch the app roles and vaildate that its a valid app role
+			resolve(true);
+		});
+	}
+
+	async _exec(req, res, validate) {
+		await Model.User.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body);
+
+		nrp.emit('worker:socket:evaluateUserRooms', {
+			userId: req.params.id,
+			appId: req.authApp._id,
+		});
+
+		// TODO: Do we really need to wait for the socket to respond?
+		// await new Promise((resolve) => {
+		// 	const id = uuidv4();
+
+		// 	nrp.emit('worker:socket:evaluateUserRooms', {
+		// 		id,
+		// 		userId: req.params.id,
+		// 		appId: req.authApp._id,
+		// 	});
+
+		// 	let unsubscribe = null;
+		// 	unsubscribe = nrp.on('updatedUserSocketRooms', (res) => {
+		// 		if (res.id !== id) return;
+		// 		unsubscribe();
+		// 		resolve();
+		// 	});
+		// });
+
+		return true;
+	}
+}
+routes.push(SetUserPolicyProperties);
+
+/**
+ * @class UpdateUserPolicyProperties
+ */
+class UpdateUserPolicyProperties extends Route {
+	constructor() {
+		super('user/:id/updatePolicyProperty', 'UPDATE USER POLICY PROPERTY');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			if (!req.body) {
+				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+
+			Model.User.findById(req.params.id)
+				.then((user) => {
+					if (!user) {
+						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+					}
+					const appMetadataExists = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
+					if (!appMetadataExists) {
+						this.log('ERROR: Invalid User app metadata', Route.LogLevel.ERR);
+						return reject(new Helpers.Errors.RequestError(400, `invalid_app_metadata`));
+					}
+
+					resolve({
+						user,
+					});
+				});
+		});
+	}
+
+	async _exec(req, res, validate) {
+		await Model.User.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body, validate.user);
+
+		nrp.emit('worker:socket:evaluateUserRooms', {
+			userId: req.params.id,
+			appId: req.authApp._id,
+		});
+
+		// TODO: Do we really need to wait for the socket to respond?
+		// await new Promise((resolve) => {
+		// 	const id = uuidv4();
+
+		// 	nrp.emit('worker:socket:evaluateUserRooms', {
+		// 		id,
+		// 		userId: req.params.id,
+		// 		appId: req.authApp._id,
+		// 	});
+
+		// 	let unsubscribe = null;
+		// 	unsubscribe = nrp.on('updatedUserSocketRooms', (res) => {
+		// 		if (res.id !== id) return;
+		// 		unsubscribe();
+		// 		resolve();
+		// 	});
+		// });
+
+		return true;
+	}
+}
+routes.push(UpdateUserPolicyProperties);
+
+/**
+ * @class ClearUserPolicyProperties
+ */
+class ClearUserPolicyProperties extends Route {
+	constructor() {
+		super('user/:id/clearPolicyProperty', 'REMOVE USER POLICY PROPERTY');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			if (!req.body) {
+				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+
+			Model.User.findById(req.params.id)
+				.then((user) => {
+					if (!user) {
+						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+					}
+
+					resolve({
+						user,
+					});
+				});
+		});
+	}
+
+	async _exec(req, res, validate) {
+		await Model.User.clearPolicyPropertiesById(req.params.id, req.authApp._id, validate.user);
+
+		nrp.emit('worker:socket:evaluateUserRooms', {
+			userId: req.params.id,
+			appId: req.authApp._id,
+		});
+
+		return true;
+	}
+}
+routes.push(ClearUserPolicyProperties);
 
 /**
  * @class DeleteAllUsers
@@ -352,9 +536,9 @@ class DeleteUser extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			if (!req.params.id || !ObjectId.isValid(req.params.id)) {
+			if (!req.params.id) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
 			Model.User.findById(req.params.id)
@@ -364,7 +548,7 @@ class DeleteUser extends Route {
 					}
 
 					this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_id`));
+					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 				});
 		});
 	}
@@ -375,6 +559,48 @@ class DeleteUser extends Route {
 	}
 }
 routes.push(DeleteUser);
+
+/**
+ * @class clearUserLocalData
+ */
+class clearUserLocalData extends Route {
+	constructor() {
+		super('user/:id/clearLocalData', 'CLEAR USER LOCAL DATA');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.USER;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this._user = false;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			if (!req.params.id) {
+				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+
+			Model.User.findById(req.params.id)
+				.then((user) => {
+					if (user) {
+						return resolve(user);
+					}
+
+					this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+				});
+		});
+	}
+
+	_exec(req, res, user) {
+		nrp.emit('clearUserLocalData', {
+			appAPIPath: req.authApp ? req.authApp.apiPath : '',
+			userId: user._id,
+			collections: (req.body.collections)? req.body.collections : false,
+		});
+	}
+}
+routes.push(clearUserLocalData);
 
 /**
  * @type {*[]}

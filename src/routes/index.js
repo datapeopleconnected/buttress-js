@@ -23,11 +23,13 @@ const express = require('express');
 const Logging = require('../logging');
 const Schema = require('../schema');
 const Helpers = require('../helpers');
+const AccessControl = require('../access-control');
 const Model = require('../model');
-const Mongo = require('mongodb');
-const Config = require('node-env-obj')('../');
+const Config = require('node-env-obj')();
 
-const SchemaRoutes = require('./schemaRoutes');
+const SchemaRoutes = require('./schema-routes');
+
+const Datastore = require('../datastore');
 
 class Routes {
 	/**
@@ -44,7 +46,7 @@ class Routes {
 	 * Init core routes & app schema
 	 * @return {promise}
 	 */
-	initRoutes() {
+	async initRoutes() {
 		this.app.get('/favicon.ico', (req, res, next) => res.sendStatus(404));
 		this.app.get(['/', '/index.html'], (req, res, next) => res.sendFile(path.join(__dirname, '../static/index.html')));
 
@@ -117,11 +119,16 @@ class Routes {
 
 		this._registerRouter('core', coreRouter);
 
-		return Model.App.findAll().toArray()
-			.then((apps) => apps.forEach((app) => this._generateAppRoutes(app)))
-			.then(() => this.loadTokens())
-			.then(() => this.app.use((err, req, res, next) => this.logErrors(err, req, res, next)))
-			.then(() => Logging.logSilly(`init:registered-routes`));
+		await this.loadTokens();
+
+		Logging.logSilly(`init:registered-routes`);
+	}
+
+	async initAppRoutes() {
+		const rxsApps = await Model.App.findAll();
+		for await (const app of rxsApps) {
+			await this._generateAppRoutes(app);
+		}
 	}
 
 	/**
@@ -132,9 +139,30 @@ class Routes {
 
 		apiRouter.use((...args) => this._timeRequest(...args));
 		apiRouter.use((...args) => this._authenticateToken(...args));
+		apiRouter.use((...args) => AccessControl.accessControlPolicyMiddleware(...args));
 		apiRouter.use((...args) => this._configCrossDomain(...args));
 
 		return apiRouter;
+	}
+
+	/**
+	 * Make sure the error handler catch is at the bottom of the stack.
+	 */
+	_repositionErrorHandler() {
+		const logErrors = (err, req, res, next) => this.logErrors(err, req, res, next);
+
+		let stackIndex = this.app._router.stack.findIndex((s) => s.name === 'logErrors');
+
+		// Remove middleware from stack if it's within
+		if (stackIndex !== -1 && stackIndex !== this.app._router.stack - 1) {
+			this.app._router.stack.splice(stackIndex, 1);
+			stackIndex = -1;
+		}
+
+		if (stackIndex === -1) {
+			Logging.logSilly(`Repositioned error handler on express stack`);
+			this.app.use(logErrors);
+		}
 	}
 
 	/**
@@ -152,6 +180,8 @@ class Routes {
 		Logging.logSilly(`Routes:_registerRouter Register ${key}`);
 		this._routerMap[key] = router;
 		this.app.use('', (...args) => this._getRouter(key)(...args));
+
+		this._repositionErrorHandler();
 	}
 
 	/**
@@ -178,19 +208,34 @@ class Routes {
 	 * Genereate app routes & register for given app
 	 * @param {object} app - Buttress app object
 	 */
-	_generateAppRoutes(app) {
+	async _generateAppRoutes(app) {
+		if (!app) throw new Error(`Expected app object to be passed through to _generateAppRoutes, got ${app}`);
 		if (!app.__schema) return;
+
+		// Get DS agreements
+		const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
+			'_appId': app._id,
+		}));
 
 		const appRouter = this._createRouter();
 
 		Schema.decode(app.__schema)
-			.filter((s) => s.type === 'collection')
+			.filter((schema) => schema.type === 'collection')
+			.filter((schema) => {
+				if (!schema.remote) return true;
+				const [dsaName] = schema.remote.split('.');
+
+				if (appDSAs.find((dsa) => dsa.active && dsa.name === dsaName)) return true;
+
+				Logging.logWarn(`Routes:_generateAppRoutes ${app._id} skipping route /${app.apiPath} for ${schema.name}, DSA not active`);
+				return false;
+			})
 			.forEach((schema) => {
-				Logging.logSilly(`Routes:_generateAppRoutes ${app._id} init routes for ${schema.collection}`);
+				Logging.logSilly(`Routes:_generateAppRoutes ${app._id} init routes /${app.apiPath} for ${schema.name}`);
 				return this._initSchemaRoutes(appRouter, app, schema);
 			});
 
-		this._registerRouter(app._id, appRouter);
+		this._registerRouter(app.apiPath, appRouter);
 	}
 
 	/**
@@ -215,8 +260,18 @@ class Routes {
 	 */
 	_initSchemaRoutes(express, app, schemaData) {
 		SchemaRoutes.forEach((Route) => {
+			let route = null;
+
 			const appShortId = Helpers.shortId(app._id);
-			const route = new Route(schemaData, appShortId);
+
+			try {
+				route = new Route(schemaData, appShortId);
+			} catch (err) {
+				if (err instanceof Helpers.Errors.RouteMissingModel) return Logging.logWarn(`${err.message} for ${app.name}`);
+
+				throw err;
+			}
+
 			let routePath = path.join(...[
 				(app.apiPath) ? app.apiPath : appShortId,
 				Config.app.apiPrefix,
@@ -230,7 +285,7 @@ class Routes {
 
 	_timeRequest(req, res, next) {
 		// Just assign a arbitrary id to the request to help identify it in the logs
-		req.id = new Mongo.ObjectID();
+		req.id = Datastore.getInstance('core').ID.new();
 		req.timer = new Helpers.Timer();
 		req.timer.start();
 
@@ -242,7 +297,7 @@ class Routes {
 			exec: null,
 			respond: null,
 			logActivity: null,
-			boardcastByAppRole: null,
+			boardcastData: null,
 			close: null,
 			stream: [],
 		};
@@ -272,12 +327,17 @@ class Routes {
 			.then((token) => {
 				return new Promise((resolve, reject) => {
 					if (token === null) {
-						Logging.logTimer(`_authenticateToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-						reject(new Helpers.RequestError(401, 'invalid_token'));
+						Logging.logTimer(`_authenticateToken:end-cant-find-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+						reject(new Helpers.Errors.RequestError(401, 'invalid_token'));
 						return;
 					}
 
 					req.token = token;
+
+					Logging.logTimer(`_authenticateToken:got-token ${(req.token) ? req.token._id : token}`,
+						req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+					Logging.logTimer(`_authenticateToken:got-token type ${(req.token) ? req.token.type : token}`,
+						req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 					resolve(token);
 				});
@@ -285,10 +345,21 @@ class Routes {
 			.then(() => (req.token._app) ? Model.App.findById(req.token._app) : null)
 			.then((app) => {
 				Model.authApp = req.authApp = app;
+
+				Logging.logTimer(`_authenticateToken:got-app ${(req.authApp) ? req.authApp._id : app}`,
+					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+				if (req.authApp) {
+					Logging.logTimer(`_authenticateToken:got-app shortId: ${Helpers.shortId(app._id)}`,
+						req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+				}
 			})
 			.then(() => (req.token._user) ? Model.User.findById(req.token._user) : null)
 			.then((user) => {
 				req.authUser = user;
+
+				Logging.logTimer(`_authenticateToken:got-user ${(req.authUser) ? req.authUser._id : user}`,
+					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			})
 			.then(Logging.Promise.logTimer('_authenticateToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id))
 			.then(next)
@@ -299,7 +370,7 @@ class Routes {
 	 * @param  {String} req - request object
 	 * @return {Promise} - resolves with the matching token if any
 	 */
-	_getToken(req) {
+	async _getToken(req) {
 		Logging.logTimer('_getToken:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		let token = null;
 
@@ -307,20 +378,16 @@ class Routes {
 			token = this._lookupToken(this._tokens, req.query.token);
 			if (token) {
 				Logging.logTimer('_getToken:end-cache', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				return Promise.resolve(token);
+				return token;
 			}
 		}
 
-		return new Promise((resolve) => {
-			Model.Token.findAll().toArray()
-				.then((tokens) => {
-					this._tokens = tokens;
-					Model.appMetadataChanged = false;
-					token = this._lookupToken(this._tokens, req.query.token);
-					Logging.logTimer('_getToken:end-lookup', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-					return resolve(token);
-				});
-		});
+		await this.loadTokens();
+
+		Model.appMetadataChanged = false;
+		token = this._lookupToken(this._tokens, req.query.token);
+		Logging.logTimer('_getToken:end-lookup', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		return token;
 	}
 
 	/**
@@ -338,11 +405,15 @@ class Routes {
 	 * @return {Promise} - resolves with tokens
 	 * @private
 	 */
-	loadTokens() {
-		return Model.Token.findAll().toArray()
-			.then((tokens) => {
-				this._tokens = tokens;
-			});
+	async loadTokens() {
+		const tokens = [];
+		const rxsToken = await Model.Token.findAll();
+
+		for await (const token of rxsToken) {
+			tokens.push(token);
+		}
+
+		this._tokens = tokens;
 	}
 
 	/**
@@ -418,7 +489,8 @@ class Routes {
 	}
 
 	logErrors(err, req, res, next) {
-		if (err instanceof Helpers.RequestError) {
+		Logging.logSilly(`logErrors ${err}`);
+		if (err instanceof Helpers.Errors.RequestError) {
 			res.status(err.code).json({statusMessage: err.message, message: err.message});
 		} else {
 			if (err) {

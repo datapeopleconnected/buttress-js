@@ -1,12 +1,16 @@
-include constants
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>ButtressJS</title>
+    <link rel="stylesheet", href="https://fonts.googleapis.com/css?family=Fira+Sans"/>
+    <style>
+			:root {
+				--colorPrimary: #3c415e;
+				--colorSecondary: #738598;
+				--colorBackground: #dfe2e2;
+				--colorAccent: #1cb3c8;
+			}
 
-doctype html
-html(lang='en')
-  head
-    title ButtressJS
-
-    link(rel="stylesheet", href="https://fonts.googleapis.com/css?family=Fira+Sans")
-    style.
       html {
         width: 100%;
         height: 100%;
@@ -18,14 +22,14 @@ html(lang='en')
         margin: 0;
         padding: 0;
 
-        background: #{colorBackground};
-        color: #{colorSecondary};
+        background: var(--colorBackground);
+        color: var(--colorSecondary);
       }
 
       a,
       a:hover,
       a:visited {
-        color: #{colorAccent};
+        color: var(--colorAccent);
       }
 
       .text {
@@ -46,12 +50,12 @@ html(lang='en')
       .title {
         font-size: 4rem;
         margin: 0.4rem 0;
-        color: #{colorPrimary};
+        color: var(--colorPrimary);
       }
       .title sub {
         vertical-align: super;
         font-size: 40px;
-        color: #{colorAccent};
+        color: var(--colorAccent);
       }
 
       #canvas {
@@ -60,21 +64,25 @@ html(lang='en')
         top: 0;
         left: 0;
       }
+		</style>
+	</head>
 
-  body
-    .text
-      header
-        h1.title Buttress
-          sub JS
-      section
-        div The federated real-time open data platform.
-      footer
-        div Proudly open source ❤️ Available on 
-          a(href="https://github.com/wearelighten/buttress-js" target="_BLANK") Github
+  <body>
+    <div class="text">
+      <header>
+        <h1 class="title">Buttress<sub>JS</sub></h1>
+			</header>
+			<section>
+				<div>The federated real-time open data platform</div>
+			</section>
+      <footer>
+				<div>Proudly open source ❤️ Available on <a href="https://github.com/wearelighten/buttress-js" target="_BLANK">Github</a></div>
+			</footer>
+		</div>
 
-    canvas#canvas
-    script(src="/socket.io/socket.io.js")
-    script.
+    <canvas id="canvas"></canvas>
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="text/javascript">
       class Stats {
         constructor(id) {
           this.canvas = document.getElementById(id),
@@ -214,3 +222,6 @@ html(lang='en')
 
       const stats = new Stats('canvas');
       io('/stats').on('activity', () => stats.addParticle());
+		</script>
+	</body>
+</html>

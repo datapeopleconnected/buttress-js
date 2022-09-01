@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 'use strict';
 
 /**
@@ -16,18 +17,27 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Config = require('node-env-obj')('../');
-const Logging = require('./logging');
-const Bootstrap = require('./bootstrap');
+const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
 
-/**
- *
- */
+const Config = require('node-env-obj')({
+	envFile: `.${env}.env`,
+	envPath: '../',
+	configPath: '../src',
+});
+const cluster = require('cluster');
+const Sugar = require('sugar');
 
-Logging.init('socket');
+Sugar.Date.setLocale('en-GB');
 
-Bootstrap
-	.socket()
+const Logging = require('../src/logging');
+const BootstrapSocket = require('../src/bootstrap-socket');
+
+if (cluster.isMaster) Logging.startupMessage();
+
+Logging.init('SOCK');
+
+const app = new BootstrapSocket();
+app.init()
 	.then((isMaster) => {
 		if (isMaster) {
 			Logging.log(`${Config.app.title} Socket Master v${Config.app.version} listening on port ` +

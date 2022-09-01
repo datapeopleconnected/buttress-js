@@ -16,18 +16,17 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+const Errors = require('./helpers/errors');
+
 const stream = require('stream');
 const Transform = stream.Transform;
-const ObjectId = require('mongodb').ObjectId;
 
-class RequestError extends Error {
-	constructor(code, message) {
-		super(message);
-		this.code = code;
-		this.name = 'RequestError';
-	}
-}
-module.exports.RequestError = RequestError;
+const Datastore = require('./datastore');
+
+module.exports.Errors = Errors;
+
+module.exports.Schema = require('./helpers/schema');
+module.exports.Stream = require('./helpers/stream');
 
 class Timer {
 	constructor() {
@@ -130,7 +129,8 @@ class JSONStringifyStream extends Transform {
 
 		if (this._first) {
 			this._first = false;
-			this.push(`[${str}`);
+			this.push(`[`);
+			this.push(`${str}`);
 		} else {
 			this.push(`,${str}`);
 		}
@@ -180,6 +180,10 @@ module.exports.shortId = (id) => {
 	};
 
 	let output = '';
+	if (!id) return output;
+
+	// HACK: need to make sure the id is in the correct format to extract the timestamp
+	id = Datastore.getInstance('core').ID.new(id);
 
 	const date = id.getTimestamp();
 	let time = date.getTime();
@@ -197,10 +201,10 @@ module.exports.shortId = (id) => {
 const __flattenRoles = (data, path) => {
 	if (!path) path = [];
 
-	return data.roles.reduce((_roles, role) => {
+	return data.reduce((_roles, role) => {
 		const _path = path.concat(`${role.name}`);
 		if (role.roles && role.roles.length > 0) {
-			return _roles.concat(__flattenRoles(role, _path));
+			return _roles.concat(__flattenRoles(role.roles, _path));
 		}
 
 		const flatRole = Object.assign({}, role);
@@ -217,9 +221,9 @@ const __flatternObject = (obj, output, paths) => {
 
 	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
 		paths.push(key);
-		if (typeof obj[key] === 'object' && ObjectId.isValid(obj[key])) {
+		if (typeof obj[key] === 'object' && Datastore.getInstance('core').ID.isValid(obj[key])) {
 			out[paths.join('.')] = obj[key];
-		} else if (typeof obj[key] === 'object') {
+		} else if (typeof obj[key] === 'object' && obj[key] !== null) {
 			__flatternObject(obj[key], out, paths);
 		} else {
 			out[paths.join('.')] = obj[key];
@@ -230,41 +234,106 @@ const __flatternObject = (obj, output, paths) => {
 };
 module.exports.flatternObject = __flatternObject;
 
+module.exports.mergeDeep = (...objects) => {
+	const isObject = (obj) => obj && typeof obj === 'object';
+
+	return objects.reduce((prev, obj) => {
+		Object.keys(obj).forEach((key) => {
+			const pVal = prev[key];
+			const oVal = obj[key];
+
+			if (Array.isArray(pVal) && Array.isArray(oVal)) {
+				prev[key] = pVal.concat(...oVal);
+			} else if (isObject(pVal) && isObject(oVal)) {
+				prev[key] = module.exports.mergeDeep(pVal, oVal);
+			} else {
+				prev[key] = oVal;
+			}
+		});
+
+		return prev;
+	}, {});
+};
+
 const __getFlattenedSchema = (schema) => {
 	const __buildFlattenedSchema = (property, parent, path, flattened) => {
 		path.push(property);
 
-		let isRoot = true;
-		for (const childProp in parent[property]) {
-			if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;
-			if (/^__/.test(childProp)) {
-				if (childProp === '__schema') {
-					parent[property].__schema = __getFlattenedSchema({properties: parent[property].__schema});
-				}
-				continue;
+		if (parent[property].__type === 'array' && parent[property].__schema) {
+			// Handle Array
+			for (const childProp in parent[property].__schema) {
+				if (!{}.hasOwnProperty.call(parent[property].__schema, childProp)) continue;
+				__buildFlattenedSchema(childProp, parent[property].__schema, path, flattened);
 			}
 
-			isRoot = false;
-			__buildFlattenedSchema(childProp, parent[property], path, flattened);
-		}
-
-		if (isRoot === true) {
+			parent[property].__schema = __getFlattenedSchema({properties: parent[property].__schema});
 			flattened[path.join('.')] = parent[property];
-			path.pop();
-			return;
+		} else if (!parent[property].__type) {
+			// Handle Object
+			for (const childProp in parent[property]) {
+				if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;
+				__buildFlattenedSchema(childProp, parent[property], path, flattened);
+			}
+		} else {
+			flattened[path.join('.')] = parent[property];
 		}
 
 		path.pop();
-		return;
 	};
 
 	const flattened = {};
 	const path = [];
-	for (const property in schema.properties) {
-		if (!{}.hasOwnProperty.call(schema.properties, property)) continue;
-		__buildFlattenedSchema(property, schema.properties, path, flattened);
+
+	if (schema.properties) {
+		for (const property in schema.properties) {
+			if (!{}.hasOwnProperty.call(schema.properties, property)) continue;
+			__buildFlattenedSchema(property, schema.properties, path, flattened);
+		}
 	}
 
 	return flattened;
 };
 module.exports.getFlattenedSchema = __getFlattenedSchema;
+
+module.exports.streamFirst = (stream) => {
+	// TODO: Handle none stream being passed through
+
+	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
+		throw new Error(`Expected Stream but got '${stream}'`);
+	}
+
+	return new Promise((resolve, reject) => {
+		stream.on('error', (err) => reject(err));
+		stream.on('end', () => resolve(undefined));
+		stream.on('data', (item) => {
+			stream.destroy();
+			resolve(item);
+		});
+	});
+};
+module.exports.streamAll = (stream) => {
+	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
+		throw new Error(`Expected Stream but got '${stream}'`);
+	}
+
+	return new Promise((resolve, reject) => {
+		const arr = [];
+		stream.on('error', (err) => reject(err));
+		stream.on('end', () => resolve(arr));
+		stream.on('data', (item) => {
+			arr.push(item);
+		});
+	});
+};
+
+module.exports.trimSlashes = (str) => {
+	return (str) ? str.replace(/^\/+|\/+$/g, '') : str;
+};
+
+module.exports.awaitAll = async (arr, handler) => await Promise.all(arr.map(async (item) => await handler(item)));
+module.exports.awaitForEach = async (arr, handler) => {
+	await arr.reduce(async (prev, item) => {
+		await prev;
+		await handler(item);
+	}, Promise.resolve());
+};

@@ -21,8 +21,14 @@ const fs = require('fs');
 const Logging = require('../logging');
 const Sugar = require('sugar');
 const Schema = require('../schema');
-const SchemaModel = require('./schemaModel');
 const shortId = require('../helpers').shortId;
+
+const {Errors} = require('../helpers');
+
+const Datastore = require('../datastore');
+
+const SchemaModel = require('./schemaModel');
+const SchemaModelRemote = require('./type/remote');
 
 /**
  * @param {string} model - name of the model to load
@@ -37,45 +43,65 @@ class Model {
 		this.models = {};
 		this.Schema = {};
 		this.Constants = {};
-		this.mongoDb = null;
 		this.app = false;
 		this.appMetadataChanged = false;
+
+		this.coreSchema = [];
 	}
 
-	init(db) {
-		this.mongoDb = db;
-
+	async init() {
 		// Core Models
-		return this.initCoreModels()
-			.then(() => this.initSchema());
+		await this.initCoreModels();
+
+		await this.initSchema();
 	}
 
-	initCoreModels(db) {
-		return new Promise((resolve) => {
-			if (db) this.mongoDb = db;
-			// Core Models
-			const models = _getModels();
-			Logging.log(models, Logging.Constants.LogLevel.SILLY);
-			for (let x = 0; x < models.length; x++) {
-				this._initModel(models[x]);
-			}
-			resolve();
-		});
+	async initCoreModels() {
+		// Core Models
+		const models = _getModels();
+		Logging.log(models, Logging.Constants.LogLevel.SILLY);
+
+		for (let x = 0; x < models.length; x++) {
+			await this._initCoreModel(models[x]);
+		}
 	}
 
-	initSchema(db) {
-		if (db) this.mongoDb = db;
+	async initSchema() {
+		const rxsApps = await this.models.App.findAll();
 
-		return this.models.App.findAll().toArray()
-			.then((apps) => {
-				apps.forEach((app) => {
-					if (app.__schema) {
-						Schema.buildCollections(Schema.decode(app.__schema)).forEach((schemaData) => {
-							this._initSchemaModel(app, schemaData);
-						});
+		for await (const app of rxsApps) {
+			if (!app || !app.__schema) return;
+
+			// Check for connection
+			let datastore = null;
+			if (app.datastore && app.datastore.connectionString) {
+				try {
+					datastore = Datastore.createInstance(app.datastore);
+					await datastore.connect();
+				} catch (err) {
+					if (err instanceof Errors.UnsupportedDatastore) {
+						Logging.logWarn(`${err} for ${app._id}`);
+						return;
 					}
-				});
-			});
+
+					throw err;
+				}
+			} else {
+				datastore = Datastore.getInstance('core');
+			}
+
+			let builtSchemas = null;
+			try {
+				builtSchemas = Schema.buildCollections(Schema.decode(app.__schema));
+			} catch (err) {
+				if (err instanceof Errors.SchemaInvalid) continue;
+				else throw err;
+			}
+
+			for await (const schema of builtSchemas) {
+				await this._initSchemaModel(app, schema, datastore);
+			}
+		}
 	}
 
 	initModel(modelName) {
@@ -87,33 +113,89 @@ class Model {
 	 * @return {object} SchemaModel - initiated schema model built from passed schema object
 	 * @private
 	 */
-	_initModel(model) {
+	async _initCoreModel(model) {
+		const name = Sugar.String.camelize(model);
 		const CoreSchemaModel = require(`./schema/${model.toLowerCase()}`);
 
-		if (!this.models[model]) {
-			this.models[model] = new CoreSchemaModel(this.mongoDb);
+		this.coreSchema.push(name);
+
+		if (!this.models[name]) {
+			this.models[name] = new CoreSchemaModel();
+			await this.models[name].initAdapter(Datastore.getInstance('core'));
 		}
 
-		this.__defineGetter__(model, () => this.models[model]);
-		return this.models[model];
+		this.__defineGetter__(name, () => this.models[name]);
+		return this.models[name];
 	}
 
 	/**
 	 * @param {object} app - application container
 	 * @param {object} schemaData - schema data object
+	 * @param {object} datastore - datastore object to be used
 	 * @return {object} SchemaModel - initiated schema model built from passed schema object
 	 * @private
 	 */
-	_initSchemaModel(app, schemaData) {
-		let name = `${schemaData.collection}`;
+	async _initSchemaModel(app, schemaData, datastore) {
+		let name = `${schemaData.name}`;
 		const appShortId = (app) ? shortId(app._id) : null;
 
-		if (appShortId) {
-			name = `${appShortId}-${schemaData.collection}`;
-		}
+		name = (appShortId) ? `${appShortId}-${schemaData.name}` : name;
 
+		// Is data sharing
 		if (!this.models[name]) {
-			this.models[name] = new SchemaModel(this.mongoDb, schemaData, app);
+			if (schemaData.remote) {
+				const [dataSharingName, collection] = schemaData.remote.split('.');
+
+				if (!dataSharingName || !collection) {
+					Logging.logWarn(`Invalid Schema remote descriptor (${dataSharingName}.${collection})`);
+					return;
+				}
+
+				const dataSharing = await this.AppDataSharing.findOne({
+					'name': dataSharingName,
+					'_appId': app._id,
+				});
+
+				if (!dataSharing) {
+					Logging.logError(`Unable to find data sharing (${dataSharingName}.${collection}) for ${app.name}`);
+					return;
+				}
+
+				if (!dataSharing.active) {
+					Logging.logDebug(`Data sharing not active yet, skipping (${dataSharingName}.${collection}) for ${app.name}`);
+					return;
+				}
+
+				let {endpoint, apiPath, token} = dataSharing.remoteApp;
+
+				if (endpoint) endpoint = endpoint.replace(/(https|http):\/\//ig, '');
+
+				// Create a remote datastore
+				const remoteDatastore = new Datastore.Class({
+					connectionString: `buttress://${endpoint}/${apiPath}?token=${token}`,
+					options: '',
+				});
+
+				this.models[name] = new SchemaModelRemote(
+					schemaData, app,
+					new SchemaModel(schemaData, app),
+					new SchemaModel(schemaData, app),
+				);
+
+				try {
+					await this.models[name].initAdapter(datastore, remoteDatastore);
+				} catch (err) {
+					// Skip defining this model, the error will get picked up later when route is defined ore accessed
+					if (err instanceof Errors.SchemaNotFound) return;
+					else throw err;
+				}
+
+				this.__defineGetter__(name, () => this.models[name]);
+				return this.models[name];
+			} else {
+				this.models[name] = new SchemaModel(schemaData, app, datastore);
+				await this.models[name].initAdapter(datastore);
+			}
 		}
 
 		this.__defineGetter__(name, () => this.models[name]);
@@ -132,7 +214,7 @@ function _getModels() {
 	for (let x = 0; x < filenames.length; x++) {
 		const file = filenames[x];
 		if (path.extname(file) === '.js') {
-			files.push(Sugar.String.capitalize(path.basename(file, '.js')));
+			files.push(path.basename(file, '.js'));
 		}
 	}
 	return files;

@@ -1,3 +1,6 @@
+#!/usr/bin/env node
+'use strict';
+
 /**
  * Buttress - The federated real-time open data platform
  * Copyright (C) 2016-2022 Data Performance Consultancy LTD.
@@ -14,18 +17,30 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-'use strict';
+const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
 
-const Bootstrap = require('./bootstrap');
-const Config = require('node-env-obj')('../');
-const Logging = require('./logging');
+const Config = require('node-env-obj')({
+	envFile: `.${env}.env`,
+	envPath: '../',
+	configPath: '../src',
+});
+const cluster = require('cluster');
+const Sugar = require('sugar');
+
+Sugar.Date.setLocale('en-GB');
+
+const BootstrapRest = require('../src/bootstrap-rest');
+const Logging = require('../src/logging');
+
+if (cluster.isMaster) Logging.startupMessage();
 
 /**
  *
  */
 Logging.init('REST');
 
-Bootstrap.rest()
+const app = new BootstrapRest();
+app.init()
 	.then((isMaster) => {
 		if (isMaster) {
 			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Master v${Config.app.version} listening on port ` +

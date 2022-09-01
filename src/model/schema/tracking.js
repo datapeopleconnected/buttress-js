@@ -16,12 +16,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const SchemaModel = require('../schemaModel');
-const ObjectId = require('mongodb').ObjectId;
 const Model = require('../');
 const Logging = require('../../logging');
 // const Shared = require('../shared');
 // const Sugar = require('sugar');
+
+const SchemaModel = require('../schemaModel');
 
 /**
  * Constants
@@ -34,9 +34,9 @@ const Type = {
 };
 
 class TrackingSchemaModel extends SchemaModel {
-	constructor(MongoDb) {
+	constructor(datastore) {
 		const schema = TrackingSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 	}
 
 	static get Constants() {
@@ -199,10 +199,10 @@ class TrackingSchemaModel extends SchemaModel {
 		Logging.log(`findAll: ${appId}`, Logging.Constants.LogLevel.DEBUG);
 
 		if (tokenAuthLevel === Model.Token.Constants.AuthLevel.SUPER) {
-			return this.collection.find({});
+			return this.find({});
 		}
 
-		return this.collection.find({_app: new ObjectId(appId)});
+		return this.find({_app: this.adapter.ID.new(appId)});
 	}
 }
 

@@ -16,12 +16,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const ObjectId = require('mongodb').ObjectId;
-// const Logging = require('../logging');
+const Logging = require('../logging');
 const Shared = require('./shared');
-const Sugar = require('sugar');
 const Helpers = require('../helpers');
 const shortId = require('../helpers').shortId;
+
+const Sugar = require('sugar');
 
 /* ********************************************************************************
  *
@@ -30,20 +30,32 @@ const shortId = require('../helpers').shortId;
  **********************************************************************************/
 
 class SchemaModel {
-	constructor(MongoDb, schemaData, app) {
+	constructor(schemaData, app) {
 		this.schemaData = schemaData;
-		this.flatSchemaData = Helpers.getFlattenedSchema(this.schemaData);
+		this.flatSchemaData = (schemaData) ? Helpers.getFlattenedSchema(this.schemaData) : null;
 
 		this.app = app || null;
 
 		this.appShortId = (app) ? shortId(app._id) : null;
-		this.collectionName = `${schemaData.collection}`;
+		this.collectionName = (schemaData) ? `${schemaData.name}` : null;
 
 		if (this.appShortId) {
 			this.collectionName = `${this.appShortId}-${this.collectionName}`;
 		}
+	}
 
-		this.collection = MongoDb.collection(this.collectionName);
+	async initAdapter(datastore) {
+		if (datastore) {
+			Logging.logSilly(`initAdapter ${this.schemaData.name}`);
+			this.adapter = datastore.adapter.cloneAdapterConnection();
+			await this.adapter.connect();
+			await this.adapter.setCollection(this.collectionName);
+			await this.adapter.updateSchema(this.schemaData);
+		}
+	}
+
+	createId(id) {
+		return this.adapter.ID.new(id);
 	}
 
 	__doValidation(body) {
@@ -71,23 +83,34 @@ class SchemaModel {
 		return validation.length >= 1 ? validation[0] : {isValid: true};
 	}
 
-	static parseQuery(query, envFlat = {}, schemaFlat = {}) {
-		const output = {};
+	/**
+	 * @param {object} query
+	 * @param {object} [envFlat={}]
+	 * @param {object} [schemaFlat={}]
+	 * @return {object} query
+	 */
+	parseQuery(query, envFlat = {}, schemaFlat = {}) {
+		let output = {};
 
-		for (let property in query) {
+		for (const property in query) {
 			if (!{}.hasOwnProperty.call(query, property)) continue;
 			if (property === '__crPath') continue;
 			const command = query[property];
 
-			if (property === '$or' && Array.isArray(command) && command.length > 0) {
-				output['$or'] = command.map((q) => SchemaModel.parseQuery(q, envFlat, schemaFlat));
-			} else if (property === '$and' && Array.isArray(command) && command.length > 0) {
-				output['$and'] = command.map((q) => SchemaModel.parseQuery(q, envFlat, schemaFlat));
-			} else {
+			if (property === '$or' && Array.isArray(command)) {
+				if (command.length > 0) {
+					output['$or'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
+				}
+			} else if (property === '$and' && Array.isArray(command)) {
+				if (command.length > 0) {
+					output['$and'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
+				}
+			} else if (typeof command === 'object') {
 				for (let operator in command) {
 					if (!{}.hasOwnProperty.call(command, operator)) continue;
-					let operand = command[operator];
+					const operand = command[operator];
 					let operandOptions = null;
+
 					switch (operator) {
 					case '$not':
 						operator = '$ne';
@@ -122,92 +145,95 @@ class SchemaModel {
 						// TODO: Throw an error if operator isn't supported
 					}
 
-					// Check to see if operand is a path and fetch value
-					if (operand && operand.indexOf && operand.indexOf('.') !== -1) {
-						let path = operand.split('.');
-						const key = path.shift();
-
-						path = path.join('.');
-
-						if (key === 'env' && envFlat[path]) {
-							operand = envFlat[path];
-						} else {
-							// throw new Error(`Unable to find ${path} in schema.authFilter.env`);
-						}
-					}
-
-					// Convert id
-					let propSchema = null;
-					if (!schemaFlat[property] && property === 'id') {
-						// Convert id -> _id to handle querying of document root index without having to pass _id
-						property = '_id';
-						propSchema = {
-							__type: 'id',
-						};
-					} else if (schemaFlat[property]) {
-						propSchema = schemaFlat[property];
-					} else {
-						// TODO: Should maybe reject query
-						const path = property.split('.');
-						let lastVal = schemaFlat;
-						path.forEach((p) => {
-							if (lastVal[p] && lastVal[p].__type === 'array' && lastVal[p].__schema) {
-								lastVal = lastVal[p].__schema;
-							} else if (lastVal[p]) {
-								lastVal = lastVal[p];
-							} else {
-								lastVal = null;
-							}
-						});
-
-						if (lastVal) propSchema = lastVal;
-					}
-
-					if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
-						operand = SchemaModel.parseQuery(operand, envFlat, propSchema.__schema);
-					} else if (propSchema) {
-						if (propSchema.__type === 'array' && propSchema.__schema) {
-							Object.keys(operand).forEach((op) => {
-								if (propSchema.__schema[op].__type === 'id') {
-									Object.keys(operand[op]).forEach((key) => {
-										operand[op][key] = new ObjectId(operand[op][key]);
-									});
-								}
-							});
-						}
-
-						if (propSchema.__type === 'date' && typeof operand === 'string') {
-							operand = new Date(operand);
-						}
-
-						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {
-							operand = new ObjectId(operand);
-						}
-						if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
-							operand = operand.map((o) => new ObjectId(o));
-						}
-					}
-
-					if (!output[property]) {
-						output[property] = {};
-					}
-
-					if (operandOptions) {
-						output[property][`$options`] = operandOptions;
-					}
-
-					if (operator.indexOf('$') !== 0) {
-						output[property][`$${operator}`] = operand;
-					} else {
-						output[property][`${operator}`] = operand;
-					}
+					output = this.parseQueryProperty(property, operator, operand, operandOptions, output, envFlat, schemaFlat);
 				}
+			} else {
+				// Direct compare
+				output = this.parseQueryProperty(property, '$eq', command, null, output, envFlat, schemaFlat);
 			}
 		}
 
 		return output;
 	}
 
+	parseQueryProperty(property, operator, operand, operandOptions = null, output = {}, envFlat = {}, schemaFlat = {}) {
+		// Check to see if operand is a path and fetch value
+		if (operand && operand.indexOf && operand.indexOf('.') !== -1) {
+			let path = operand.split('.');
+			const key = path.shift();
+
+			path = path.join('.');
+
+			if (key === 'env' && envFlat[path]) {
+				operand = envFlat[path];
+			} else {
+				// throw new Error(`Unable to find ${path} in schema.authFilter.env`);
+			}
+		}
+
+		// Convert id
+		let propSchema = null;
+		if (!schemaFlat[property] && (property === 'id' || property === '_id')) {
+		// if (!schemaFlat[property] && (property === 'id' || property === 'id')) {
+			// Convert id -> _id to handle querying of document root index without having to pass _id
+			property = '_id';
+			propSchema = {
+				__type: 'id',
+			};
+		} else if (schemaFlat[property]) {
+			propSchema = schemaFlat[property];
+		} else if (Object.keys(schemaFlat) > 0) {
+			throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
+		}
+
+		if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
+			operand = this.parseQuery(operand, envFlat, propSchema.__schema);
+		} else if (propSchema) {
+			if (propSchema.__type === 'array' && propSchema.__schema) {
+				Object.keys(operand).forEach((op) => {
+					if (propSchema.__schema[op].__type === 'id') {
+						Object.keys(operand[op]).forEach((key) => {
+							operand[op][key] = this.createId(operand[op][key]);
+						});
+					}
+				});
+			}
+
+			if (propSchema.__type === 'date' && typeof operand === 'string') {
+				operand = new Date(operand);
+			}
+
+			if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {
+				operand = this.createId(operand);
+			}
+			if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
+				operand = operand.map((o) => this.createId(o));
+			}
+		}
+
+		if (!output[property]) {
+			output[property] = {};
+		}
+
+		if (operandOptions) {
+			output[property][`$options`] = operandOptions;
+		}
+
+		if (operator.indexOf('$') !== 0) {
+			output[property][`$${operator}`] = operand;
+		} else {
+			output[property][`${operator}`] = operand;
+		}
+
+		return output;
+	}
+
+	/**
+	 * @param {stirng} token
+	 * @param {*} roles
+	 * @param {*} Model
+	 * @return {Promise}
+	 */
 	generateRoleFilterQuery(token, roles, Model) {
 		if (!roles.schema || !roles.schema.authFilter) {
 			return Promise.resolve({});
@@ -246,19 +272,25 @@ class SchemaModel {
 
 						let propertyQuery = {};
 						propertyQuery[propertyPath] = query[command];
-						propertyQuery = SchemaModel.parseQuery(propertyQuery, env);
+						propertyQuery = this.parseQuery(propertyQuery, env);
 
 						const fields = {};
 						fields[propertyPath] = true;
 
-						tasks.push(() => {
-							return collection.find(propertyQuery, fields)
-								.then((res) => {
+						tasks.push(async () => {
+							const rxsResult = await collection.find(propertyQuery, fields);
+
+							return new Promise((resolve) => {
+								if (!env[property]) env[property] = [];
+
+								rxsResult.on('data', (res) => {
 									// Map fetched properties into a array.
-									env[property] = res.map((i) => i[propertyMap]);
+									env[property].push(res[propertyMap]);
 									// Hack - Flattern any sub arrays down to the single level.
 									env[property] = [].concat(...env[property]);
 								});
+								rxsResult.once('end', () => resolve());
+							});
 						});
 					} else {
 						// Unknown operation
@@ -269,55 +301,68 @@ class SchemaModel {
 
 		// Engage.
 		return tasks.reduce((prev, task) => prev.then(() => task()), Promise.resolve())
-			.then(() => SchemaModel.parseQuery(roles.schema.authFilter.query, env, this.flatSchemaData));
+			.then(() => this.parseQuery(roles.schema.authFilter.query, env, this.flatSchemaData));
 	}
 
 	/*
 	* @param {Object} body - body passed through from a POST request
 	* @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	*/
-	__add(body, internals) {
-		return (prev) => {
-			const entity = Object.assign({}, internals);
+	__parseAddBody(body, internals) {
+		const entity = Object.assign({}, internals);
 
-			if (body.id) {
-				entity._id = new ObjectId(body.id);
-			}
+		if (body.id) {
+			entity._id = this.adapter.ID.new(body.id);
+		} else {
+			entity._id = this.adapter.ID.new();
+		}
 
-			if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {
-				entity.createdAt = Sugar.Date.create();
-				entity.updatedAt = (body.updatedAt) ? Sugar.Date.create(body.updatedAt) : null;
-			}
+		if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {
+			entity.createdAt = Sugar.Date.create();
+			entity.updatedAt = (body.updatedAt) ? Sugar.Date.create(body.updatedAt) : null;
+		}
 
-			const validated = Shared.applyAppProperties(this.schemaData, body);
-			return prev.concat([Object.assign(validated, entity)]);
-		};
+		const validated = Shared.applyAppProperties(this.schemaData, body);
+
+		return Object.assign(validated, entity);
 	}
 	add(body, internals) {
-		const sharedAddFn = Shared.add(this.collection, (item) => this.__add(item, internals));
-		return sharedAddFn(body);
+		return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
 	}
 
-	update(query, id) {
-		// Logging.logSilly(`update: ${this.collectionName} ${id} ${query}`);
-
-		return new Promise((resolve, reject) => {
-			this.collection.updateOne({_id: id}, {
-				$set: query,
-			}, (err, object) => {
-				if (err) throw new Error(err);
-
-				resolve(object);
-			});
-		});
+	/**
+	 * @param {*} select
+	 * @param {*} update
+	 * @return {promise}
+	 */
+	update(select, update) {
+		return this.adapter.update(select, update);
 	}
+
+	/**
+	 * @param {*} id
+	 * @param {*} query
+	 * @return {promise}
+	 */
+	updateById(id, query) {
+		return this.adapter.updateById(id, query);
+	}
+
+	/**
+	 * @param {object} body
+	 * @return {promise}
+	 */
 	validateUpdate(body) {
 		const sharedFn = Shared.validateUpdate({}, this.schemaData);
 		return sharedFn(body);
 	}
-	updateByPath(body, id) {
-		const sharedFn = Shared.updateByPath({}, this.schemaData, this.collection);
 
+	/**
+	 * @param {object} body
+	 * @param {string} id
+	 * @return {promise}
+	 */
+	async updateByPath(body, id) {
 		if (body instanceof Array === false) {
 			body = [body];
 		}
@@ -330,37 +375,42 @@ class SchemaModel {
 			});
 		}
 
-		return sharedFn(body, id);
-	}
+		// const schema = __getCollectionSchema(collectionName);
+		const flattenedSchema = this.schemaData ? Helpers.getFlattenedSchema(this.schemaData) : false;
+		const extendedPathContext = Shared.extendPathContext({}, flattenedSchema, '');
 
-	exists(id) {
-		// Logging.logSilly(`exists: ${this.collectionName} ${id}`);
-
-		return this.collection.find({_id: new ObjectId(id)})
-			.limit(1)
-			.count()
-			.then((count) => count > 0);
-	}
-
-	/*
-	* @return {Promise} - returns a promise that is fulfilled when the database request is completed
-	*/
-	isDuplicate(details) {
-		return Promise.resolve(false);
+		// TODO: This isn't processing updates in a batch
+		return await body.reduce(async (prev, update) => {
+			const arr = await prev;
+			const config = flattenedSchema === false ? false : flattenedSchema[update.path];
+			return arr.concat([
+				await this.adapter.batchUpdateProcess(id, update, extendedPathContext[update.contextPath], config),
+			]);
+		}, Promise.resolve([]));
 	}
 
 	/**
-	 * @param {App} entity - entity object to be deleted
+	 * @param {*} id
+	 * @param {*} extra
+	 * @return {Promise}
+	 */
+	exists(id, extra = {}) {
+		return this.adapter.exists(id, extra);
+	}
+
+	/**
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rm(entity) {
-		// Logging.log(`DELETING: ${entity._id}`, Logging.Constants.LogLevel.DEBUG);
-		return new Promise((resolve) => {
-			this.collection.deleteOne({_id: new ObjectId(entity._id)}, (err, cursor) => {
-				if (err) throw err;
-				resolve(cursor);
-			});
-		});
+	isDuplicate() {
+		return this.adapter.isDuplicate();
+	}
+
+	/**
+	 * @param {string} id - id to be deleted
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+	 */
+	rm(id) {
+		return this.adapter.rm(id);
 	}
 
 	/**
@@ -368,24 +418,15 @@ class SchemaModel {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	rmBulk(ids) {
-		// Logging.log(`rmBulk: ${this.collectionName} ${ids}`, Logging.Constants.LogLevel.SILLY);
-		return this.rmAll({_id: {$in: ids}});
+		return this.adapter.rmBulk(ids);
 	}
 
-	/*
+	/**
 	 * @param {Object} query - mongoDB query
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	rmAll(query) {
-		if (!query) query = {};
-		// Logging.logSilly(`rmAll: ${this.collectionName} ${query}`);
-
-		return new Promise((resolve) => {
-			this.collection.deleteMany(query, (err, doc) => {
-				if (err) throw err;
-				resolve(doc);
-			});
-		});
+		return this.adapter.rmAll(query);
 	}
 
 	/**
@@ -393,52 +434,20 @@ class SchemaModel {
 	 * @return {Promise} - resolves to an array of Companies
 	 */
 	findById(id) {
-		// Logging.logSilly(`Schema:findById: ${this.collectionName} ${id}`);
-
-		if (id instanceof ObjectId === false) {
-			id = new ObjectId(id);
-		}
-
-		return new Promise((resolve) => {
-			this.collection.findOne({_id: id}, {}, (err, doc) => {
-				if (err) throw err;
-				resolve(doc);
-			});
-		});
+		return this.adapter.findById(id);
 	}
 
 	/**
 	 * @param {Object} query - mongoDB query
 	 * @param {Object} excludes - mongoDB query excludes
-	 * @param {Boolean} stream - should return a stream
 	 * @param {Int} limit - should return a stream
 	 * @param {Int} skip - should return a stream
 	 * @param {Object} sort - mongoDB sort object
 	 * @param {Boolean} project - mongoDB project ids
-	 * @return {Promise} - resolves to an array of docs
+	 * @return {ReadableStream} - stream
 	 */
-	find(query, excludes = {}, stream = false, limit = 0, skip = 0, sort, project = null) {
-		// Logging.logSilly(`find: ${this.collectionName} ${query}`);
-		if (stream) {
-			let results = this.collection.find(query, excludes).skip(skip).limit(limit).sort(sort);
-
-			if (project) {
-				results = results.project(project);
-			}
-
-			return results;
-		}
-
-		return new Promise((resolve) => {
-			this.collection.find(query, excludes)
-				.skip(skip)
-				.limit(limit)
-				.sort(sort)
-				.toArray((err, doc) => {
-					if (err) throw err;
-					resolve(doc);
-				});
-		});
+	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+		return this.adapter.find(query, excludes, limit, skip, sort, project);
 	}
 
 	/**
@@ -447,33 +456,22 @@ class SchemaModel {
 	 * @return {Promise} - resolves to an array of docs
 	 */
 	findOne(query, excludes = {}) {
-		// Logging.logSilly(`findOne: ${this.collectionName} ${query}`);
-
-		return new Promise((resolve) => {
-			this.collection.find(query, excludes).toArray((err, doc) => {
-				if (err) throw err;
-				resolve(doc[0]);
-			});
-		});
+		return this.adapter.findOne(query, excludes);
 	}
 
 	/**
 	 * @return {Promise} - resolves to an array of Companies
 	 */
 	findAll() {
-		// Logging.logSilly(`findAll: ${this.collectionName}`);
-
-		return this.collection.find({});
+		return this.adapter.findAll();
 	}
 
 	/**
 	 * @param {Array} ids - Array of entities ids to get
 	 * @return {Promise} - resolves to an array of Companies
 	 */
-	findAllById(ids) {
-		// Logging.logSilly(`update: ${this.collectionName} ${ids}`);
-
-		return this.collection.find({_id: {$in: ids.map((id) => new ObjectId(id))}}, {});
+	findByIds(ids) {
+		return this.adapter.findAllById(ids);
 	}
 
 	/**
@@ -481,7 +479,14 @@ class SchemaModel {
 	 * @return {Promise} - resolves to an array of Companies
 	 */
 	count(query) {
-		return this.collection.countDocuments(query);
+		return this.adapter.count(query);
+	}
+
+	/**
+	 * @return {Promise}
+	 */
+	drop() {
+		return this.adapter.drop();
 	}
 }
 

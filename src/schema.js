@@ -86,20 +86,37 @@ class Schema {
 	}
 
 	static buildCollections(schemas) {
-		return Schema.build(schemas).filter((s) => s.type === 'collection');
+		return Schema.build(schemas)
+			.filter((s) => s.type === 'collection');
 	}
 
 	static build(schemas) {
 		return schemas.map((schema) => Schema.extend(schemas, schema));
 	}
 
+	static merge(schemasA, schemasB) {
+		schemasB.forEach((cS) => {
+			const appSchemaIdx = schemasA.findIndex((s) => s.name === cS.name);
+			const schema = schemasA[appSchemaIdx];
+			if (!schema) {
+				return schemasA.push(cS);
+			}
+			schema.properties = Object.assign(schema.properties, cS.properties);
+			schemasA[appSchemaIdx] = schema;
+		});
+
+		return schemasA;
+	}
+
 	static extend(schemas, schema) {
 		if (schema.extends) {
 			schema.extends.forEach((dependencyName) => {
 				const dependencyIdx = schemas.findIndex((s) => s.name === dependencyName);
-				if (dependencyIdx === -1) throw new Error(`Schema dependency ${dependencyName} for ${schema.name} missing.`);
+				// This should be thrown when the user adds or updates the schema.
+				if (dependencyIdx === -1) throw new Helpers.Errors.SchemaInvalid(`Schema dependency ${dependencyName} for ${schema.name} missing.`);
 				const dependency = Schema.extend(schemas, schemas[dependencyIdx]);
 				if (!dependency.properties) return; // Skip if dependency has no properties
+				if (!schema.properties) schema.properties = {};
 				schema.properties = Object.assign(schema.properties, dependency.properties);
 			});
 		}

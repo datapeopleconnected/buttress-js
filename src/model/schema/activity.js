@@ -15,9 +15,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
-const SchemaModel = require('../schemaModel');
-const ObjectId = require('mongodb').ObjectId;
 const Model = require('../');
 const Logging = require('../../logging');
 const Schema = require('../../schema');
@@ -25,6 +22,8 @@ const Schema = require('../../schema');
 const Shared = require('../shared');
 // const Helpers = require('../../helpers');
 // const Config = require('node-env-obj')('../../');
+
+const SchemaModel = require('../schemaModel');
 
 /**
  * Constants
@@ -36,9 +35,9 @@ const Visibility = {
 };
 
 class ActivitySchemaModel extends SchemaModel {
-	constructor(MongoDb) {
+	constructor(datastore) {
 		const schema = ActivitySchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 	}
 
 	static get Constants() {
@@ -68,7 +67,7 @@ class ActivitySchemaModel extends SchemaModel {
 					__allowUpdate: false,
 				},
 				description: {
-					__type: 'string',
+					__type: 'text',
 					__default: '',
 					__allowUpdate: false,
 				},
@@ -98,10 +97,18 @@ class ActivitySchemaModel extends SchemaModel {
 					__default: '',
 					__allowUpdate: false,
 				},
-				params: { },
-				query: { },
-				body: { },
-				response: { },
+				params: {
+					id: {
+						__type: 'id',
+						__default: null,
+						__allowUpdate: false,
+					},
+				},
+				body: {
+					__type: 'text',
+					__default: '',
+					__allowUpdate: false,
+				},
 				_token: {
 					__type: 'id',
 					__required: true,
@@ -125,60 +132,61 @@ class ActivitySchemaModel extends SchemaModel {
 	 * @param {Object} body - body passed through from a POST request
 	 * @return {Promise} - fulfilled with App Object when the database request is completed
 	 */
-	__add(body) {
-		return (prev) => {
-			const user = body.req.authUser;
-			const userName = user ? `${user._id}` : 'System';
+	__parseAddBody(body) {
+		const user = body.req.authUser;
+		const userName = user ? `${user._id}` : 'System';
 
-			body.activityTitle = body.activityTitle.replace('%USER_NAME%', userName);
-			body.activityDescription = body.activityDescription.replace('%USER_NAME%', userName);
+		body.activityTitle = body.activityTitle.replace('%USER_NAME%', userName);
+		body.activityDescription = body.activityDescription.replace('%USER_NAME%', userName);
 
-			const q = Object.assign({}, body.req.query);
-			delete q.token;
-			delete q.urq;
+		const q = Object.assign({}, body.req.query);
+		delete q.token;
+		delete q.urq;
 
-			const md = {
-				title: body.activityTitle,
-				description: body.activityDescription,
-				visibility: body.activityVisibility,
-				path: body.path,
-				verb: body.verb,
-				permissions: body.permissions,
-				authLevel: body.auth,
-				params: body.req.params,
-				query: q,
-				body: Schema.encode(body.req.body), // HACK - Due to schema update results.
-				timestamp: new Date(),
-				_token: body.req.token._id,
-				_user: (body.req.authUser) ? body.req.authUser._id : null,
-				_app: body.req.authApp._id,
-			};
-
-			if (body.id) {
-				md._id = new ObjectId(body.id);
-			}
-
-			const validated = Shared.applyAppProperties(false, body);
-			return prev.concat([Object.assign(md, validated)]);
+		const md = {
+			title: body.activityTitle,
+			description: body.activityDescription,
+			visibility: body.activityVisibility,
+			path: body.path,
+			verb: body.verb,
+			permissions: body.permissions,
+			authLevel: body.auth,
+			params: body.req.params,
+			query: q,
+			body: Schema.encode(body.req.body), // HACK - Due to schema update results.
+			timestamp: new Date(),
+			_token: body.req.token._id,
+			_user: (body.req.authUser) ? body.req.authUser._id : null,
+			_app: body.req.authApp._id,
 		};
+
+		if (body.id) {
+			md._id = this.adapter.ID.new(body.id);
+		}
+
+		delete body.req;
+		delete body.res;
+
+		const validated = Shared.applyAppProperties(ActivitySchemaModel.Schema, body);
+
+		return validated;
 	}
 
 	add(body, internals) {
 		body.req.body = Schema.encode(body.req.body);
 
-		const sharedAddFn = Shared.add(this.collection, (item) => this.__add(item, internals));
-		return sharedAddFn(body);
+		return super.add(body);
 	}
 
 	findAll(appId, tokenAuthLevel) {
 		Logging.log(`getAll: ${appId}`, Logging.Constants.LogLevel.DEBUG);
 
 		if (tokenAuthLevel && tokenAuthLevel === Model.Token.Constants.AuthLevel.SUPER) {
-			return this.collection.find({});
+			return super.findAll({});
 		}
 
-		return this.collection.find({
-			_app: new ObjectId(appId),
+		return super.find({
+			_app: this.createId(appId),
 			visibility: ActivitySchemaModel.Constants.Visibility.PUBLIC,
 		});
 	}

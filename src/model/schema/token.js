@@ -17,18 +17,19 @@
  */
 
 const Crypto = require('crypto');
-const SchemaModel = require('../schemaModel');
-const ObjectId = require('mongodb').ObjectId;
 // const Shared = require('../shared');
 const Logging = require('../../logging');
+
+const SchemaModel = require('../schemaModel');
 
 /**
  * Constants
 */
-const type = ['app', 'user'];
+const type = ['app', 'user', 'dataSharing'];
 const Type = {
 	APP: type[0],
 	USER: type[1],
+	DATA_SHARING: type[2],
 };
 
 const authLevel = [0, 1, 2, 3];
@@ -40,9 +41,9 @@ const AuthLevel = {
 };
 
 class TokenSchemaModel extends SchemaModel {
-	constructor(MongoDb) {
+	constructor(datastore) {
 		const schema = TokenSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 	}
 
 	static get Constants() {
@@ -69,12 +70,6 @@ class TokenSchemaModel extends SchemaModel {
 					__allowUpdate: true,
 				},
 				value: {
-					__type: 'string',
-					__default: '',
-					__required: true,
-					__allowUpdate: true,
-				},
-				role: {
 					__type: 'string',
 					__default: null,
 					__required: true,
@@ -115,11 +110,19 @@ class TokenSchemaModel extends SchemaModel {
 				},
 				_app: {
 					__type: 'id',
+					__default: null,
 					__required: true,
 					__allowUpdate: false,
 				},
 				_user: {
 					__type: 'id',
+					__default: null,
+					__required: true,
+					__allowUpdate: false,
+				},
+				_appDataSharingId: {
+					__type: 'id',
+					__default: null,
 					__required: true,
 					__allowUpdate: false,
 				},
@@ -179,29 +182,9 @@ class TokenSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves to an array of Tokens
 	 */
 	findUserAuthTokens(userId, appId) {
-		return new Promise((resolve) => {
-			this.collection.find({
-				_app: new ObjectId(appId),
-				_user: new ObjectId(userId),
-			}).toArray((err, doc) => {
-				if (err) throw err;
-				resolve(doc);
-			});
-		});
-	}
-
-	/**
-	 * @param {ObjectId} tokenId - token ID which will be updated
-	 * @param {string} role - the role value
-	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
-	 */
-	updateRole(tokenId, role) {
-		return new Promise((resolve, reject) => {
-			this.collection.updateOne({_id: tokenId}, {$set: {role: role}}, {}, (err, object) => {
-				if (err) throw new Error(err);
-
-				resolve(object);
-			});
+		return this.find({
+			_app: this.createId(appId),
+			_user: this.createId(userId),
 		});
 	}
 }

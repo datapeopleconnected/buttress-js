@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  buttress:
+    extends:
+      file: docker-compose.yml
+      service: buttress
+  mongodb:
+    image: mongo:4.4
+  redis:
+    image: "redis:alpine"

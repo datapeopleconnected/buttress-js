@@ -1,0 +1,24 @@
+version: "3.9"
+services:
+  buttress:
+    build: ../
+    ports:
+      - ${REST_LISTEN_PORT:-8080}:8080
+      - ${SOCK_LISTEN_PORT:-8081}:8081
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      BUTTRESS_APP_TITLE: ${APP_TITLE:-ButtressJS}
+      BUTTRESS_APP_CODE: ${APP_CODE:-buttress}
+      BUTTRESS_APP_PROTOCOL: ${APP_PROTOCOL:-https}
+      BUTTRESS_APP_PATH: ${APP_PATH:-/code}
+      BUTTRESS_HOST_URL: "https://localhost:6000"
+      BUTTRESS_REST_LISTEN_PORT: 8080
+      BUTTRESS_SOCK_LISTEN_PORT: 8081
+      BUTTRESS_MONGO_URL: ${APP_PATH:-mongodb://mongodb:27017}
+      BUTTRESS_REDIS_PORT: ${REDIS_PORT:-6379}
+      BUTTRESS_REDIS_HOST: ${REDIS_HOST:-redis}
+      BUTTRESS_REST_APP: ${REST_APP:-primary}
+      BUTTRESS_SOCKET_APP: ${SOCKET_APP:-primary}
+      BUTTRESS_LOGGING_LEVEL: ${LOGGING_LEVEL:-info}
+      BUTTRESS_LOGGING_SLOW: ${LOGGING_SLOW:-TRUE}
+      BUTTRESS_LOGGING_SLOW_TIME: ${LOGGING_SLOW_TIME:-2}

@@ -1,0 +1,28 @@
+image: node:14
+
+# This folder is cached between builds
+# https://docs.gitlab.com/ee/ci/yaml/index.html#cache
+cache:
+  key:
+    files:
+      - package-lock.json
+  paths:
+    - .npm/
+
+before_script:
+  - npm config set @buttress:registry https://git.wearelighten.co.uk/api/v4/projects/318/packages/npm/
+  - npm config set -- '//git.wearelighten.co.uk/api/v4/projects/318/packages/npm/:_authToken' "$CI_BUTTRESS_REG_TOKEN"
+  - npm ci --include=dev --cache .npm --prefer-offline
+
+stages:          # List of stages for jobs, and their order of execution
+  - test
+
+unit-test-job:   # This job runs in the test stage.
+  stage: test    # It only starts when the job in the build stage completes successfully.
+  script:
+    - npm run test
+
+lint-test-job:   # This job also runs in the test stage.
+  stage: test    # It can run at the same time as unit-test-job (in parallel).
+  script:
+    - npm run lint

@@ -16,17 +16,15 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const SchemaModel = require('../schemaModel');
 const Model = require('../');
 const Logging = require('../../logging');
 // const Shared = require('../shared');
-const ObjectId = require('mongodb').ObjectId;
-const Config = require('node-env-obj')('../');
+const Helpers = require('../../helpers');
+const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 
-const collectionName = 'users';
-const collection = Model.mongoDb.collection(collectionName);
+const SchemaModel = require('../schemaModel');
 
 /**
  * Constants
@@ -40,9 +38,9 @@ const App = {
 };
 
 class UserSchemaModel extends SchemaModel {
-	constructor(MongoDb) {
+	constructor(datastore) {
 		const schema = UserSchemaModel.Schema;
-		super(MongoDb, schema);
+		super(schema, null, datastore);
 	}
 
 	static get Constants() {
@@ -135,6 +133,24 @@ class UserSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
+				_appMetadata: {
+					__type: 'array',
+					__required: true,
+					__allowUpdate: true,
+					__schema: {
+						appId: {
+							__type: 'array',
+							__required: true,
+							__allowUpdate: true,
+						},
+						policyProperties: {
+							__type: 'object',
+							__default: null,
+							__required: true,
+							__allowUpdate: true,
+						},
+					},
+				},
 			},
 		};
 	}
@@ -144,8 +160,8 @@ class UserSchemaModel extends SchemaModel {
 	 * @param {Object} auth - OPTIONAL authentication details for a user token
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	add(body, auth) {
-		const user = {
+	async add(body, auth) {
+		const userBody = {
 			auth: [{
 				app: body.app,
 				appId: body.id,
@@ -161,37 +177,36 @@ class UserSchemaModel extends SchemaModel {
 			}],
 		};
 
-		let _user = null;
-		return super.add(user, {
+		const rxsUser = await super.add(userBody, {
 			_apps: [Model.authApp._id],
-		})
-			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))
-			.then((user) => {
-				_user = user;
-				if (!auth) {
-					return false;
-				}
+			_appMetadata: [{
+				appId: Model.authApp._id,
+				policyProperties: (body.policyProperties) ? body.policyProperties : null,
+			}],
+		});
+		const user = await Helpers.streamFirst(rxsUser);
 
-				return Model.Token.add(auth, {
-					_app: Model.authApp._id,
-					_user: _user._id,
-				});
-			})
-			.then((cursor) => cursor.toArray().then((data) => data.slice(0, 1).shift()))
-			.then((token) => {
-				_user.tokens = [];
+		user.tokens = [];
 
-				nrp.emit('app-routes:bust-cache', {});
+		if (!auth) {
+			return user;
+		}
 
-				if (token) {
-					_user.tokens.push({
-						value: token.value,
-						role: token.role,
-					});
-				}
+		const rxsToken = await Model.Token.add(auth, {
+			_app: Model.authApp._id,
+			_user: user._id,
+		});
+		const token = await Helpers.streamFirst(rxsToken);
 
-				return _user;
+		nrp.emit('app-routes:bust-cache', {});
+
+		if (token) {
+			user.tokens.push({
+				value: token.value,
 			});
+		}
+
+		return user;
 	}
 
 	addAuth(auth) {
@@ -245,35 +260,25 @@ class UserSchemaModel extends SchemaModel {
 
 		const update = {};
 		update[`auth.${authIdx}`] = auth;
-		return super.update(update, user._id).then(() => true);
+		return super.updateById(user._id, update).then(() => true);
 	}
 
-	updateApps(user, app) {
-		Logging.log(`updateApps: ${Model.authApp._id}`, Logging.Constants.LogLevel.INFO);
+	updateApps(user, appId) {
+		Logging.logSilly(`updateApps: ${appId}`);
 		if (!user._apps) {
 			user._apps = [];
 		}
-		const matches = user._apps.filter(function(a) {
-			return a._id === app._id;
-		});
-		if (matches.length > 0) {
-			Logging.log(`present: ${Model.authApp._id}`, Logging.Constants.LogLevel.DEBUG);
+
+		const match = user._apps.find((id) => id.toString() === appId.toString());
+		if (match) {
+			Logging.logSilly(`present: ${appId}`);
 			return Promise.resolve();
 		}
 
-		Logging.log(`not present: ${Model.authApp._id}`, Logging.Constants.LogLevel.DEBUG);
-		user._apps.push(app._id);
+		Logging.logSilly(`not present: ${appId}`);
+		user._apps.push(appId);
 
-		return super.update({
-			_apps: user._apps,
-		}, user._id);
-	}
-
-	exists(id) {
-		return collection.find({_id: new ObjectId(id)})
-			.limit(1)
-			.count()
-			.then((count) => count > 0);
+		return super.updateById(user._id, {$set: {_apps: user._apps}});
 	}
 
 	/**
@@ -282,34 +287,11 @@ class UserSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves to an array of Apps
 	 */
 	findAll(appId, tokenAuthLevel) {
-		// Logging.logSilly(`findAll: ${appId}`);
+		if (tokenAuthLevel && tokenAuthLevel === Model.Token.Constants.AuthLevel.SUPER) {
+			return super.find({});
+		}
 
-		return new Promise((resolve) => {
-			let findTask = () => super.find({_apps: appId});
-			if (tokenAuthLevel && tokenAuthLevel === Model.Token.Constants.AuthLevel.SUPER) {
-				findTask = () => super.find({});
-			}
-
-			return Promise.all([
-				findTask(),
-				Model.Token.find({
-					type: 'user',
-					_app: new ObjectId(appId),
-				}),
-			])
-				.then((data) => {
-					resolve(data[0].map((user) => {
-						const tokens = data[1].filter((t) => user._id.equals(t._user));
-						user.tokens = [];
-
-						if (tokens) {
-							user.tokens = tokens;
-						}
-
-						return user;
-					}));
-				});
-		});
+		return super.find({_apps: appId});
 	}
 
 	/**
@@ -341,6 +323,82 @@ class UserSchemaModel extends SchemaModel {
 			'auth.app': appName,
 			'auth.appId': appUserId,
 		}, {});
+	}
+
+	/**
+	 * @param {String} userId - id of the user
+	 * @param {String} appId - id of the app
+	 * @param {Object} policyProperties - Policy properties
+	 * @return {Promise} - resolves to an array of Apps
+	 */
+	async setPolicyPropertiesById(userId, appId, policyProperties) {
+		if (policyProperties.query) {
+			delete policyProperties.query;
+		}
+
+		const user = await this.findById(userId);
+		let metaDataExists = false;
+		if (user._appMetadata) {
+			metaDataExists = user._appMetadata.find((md) => md.appId.toString() === appId.toString());
+		}
+
+		if (metaDataExists) {
+			return super.update({
+				'_id': this.createId(userId),
+				'_appMetadata.appId': this.createId(appId),
+			}, {$set: {'_appMetadata.$.policyProperties': policyProperties}});
+		} else {
+			return super.update({
+				'_id': this.createId(userId),
+			}, {$push: {'_appMetadata': {appId: this.createId(appId), policyProperties}}});
+		}
+	}
+
+	/**
+	 * @param {String} userId - AppId of the user
+	 * @param {String} appId - id of the app
+	 * @param {Object} policyProperties - Policy properties
+	 * @param {Object} user - Policy properties
+	 * @return {Promise} - resolves to an array of Apps
+	 */
+	updatePolicyPropertiesById(userId, appId, policyProperties, user) {
+		if (policyProperties.query) {
+			delete policyProperties.query;
+		}
+
+		const userPolicy = user._appMetadata.find((m) => m.appId.toString() === appId.toString()).policyProperties;
+		const policy = Object.keys(policyProperties).reduce((obj, key) => {
+			obj[key] = policyProperties[key];
+			return obj;
+		}, []);
+
+		return super.update({
+			'_id': this.createId(userId),
+			'_appMetadata.appId': this.createId(appId),
+		}, {
+			$set: {
+				'_appMetadata.$.policyProperties': {
+					...userPolicy,
+					...policy,
+				},
+			},
+		});
+	}
+
+	/**
+	 * @param {String} userId - AppId of the user
+	 * @param {String} appId - id of the app
+	 * @return {Promise}
+	 */
+	clearPolicyPropertiesById(userId, appId) {
+		return super.update({
+			'_id': this.createId(userId),
+			'_appMetadata.appId': this.createId(appId),
+		}, {
+			$set: {
+				'_appMetadata.$.policyProperties': {},
+			},
+		});
 	}
 }
 

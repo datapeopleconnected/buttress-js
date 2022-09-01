@@ -18,7 +18,7 @@
 
 const cluster = require('cluster');
 const winston = require('winston');
-const Config = require('node-env-obj')('../');
+const Config = require('node-env-obj')();
 
 /**
  *
@@ -48,6 +48,9 @@ const setLogApp = (app) => {
 };
 module.exports.setLogApp = setLogApp;
 
+let _captureOutput = false;
+let _captureOutputBuffer = [];
+
 /**
  * @param {String} logApp - Log applcation label (rest / socket)
  */
@@ -63,10 +66,10 @@ module.exports.init = (logApp) => {
 			winston.format.errors({stack: true}),
 			winston.format.printf((info) => {
 				if (info.stack) {
-					return `${info.timestamp} [${_logProcess}] ${info.level}: ${info.message}\n${info.stack}`;
+					return `${info.timestamp} [${logApp}][${_logProcess}] ${info.level}: ${info.message}\n${info.stack}`;
 				}
 
-				return `${info.timestamp} [${_logProcess}] ${info.level}: ${info.message}`;
+				return `${info.timestamp} [${logApp}][${_logProcess}] ${info.level}: ${info.message}`;
 			}),
 		),
 	}));
@@ -128,6 +131,40 @@ module.exports.init = (logApp) => {
 	// });
 };
 
+module.exports.captureOutput = (mode = false) => {
+	if (mode) {
+		// Setup structure
+		module.exports.clean();
+	}
+
+	_captureOutput = mode;
+};
+module.exports.flush = () => {
+	_captureOutputBuffer.forEach((line) => {
+		winston.log(line);
+	});
+};
+module.exports.clean = () => {
+	_captureOutputBuffer = [];
+};
+
+module.exports.startupMessage = () => {
+	console.log(`***`);
+	console.log(` * Buttress - The federated real-time open data platform`);
+	console.log(` * Copyright (C) 2016-2022 Data Performance Consultancy LTD.`);
+	console.log(` * <https://dataperformanceconsultancy.com/>`);
+	console.log(` *`);
+	console.log(` * Buttress is free software: you can redistribute it and/or modify it under the`);
+	console.log(` * terms of the GNU Affero General Public Licence as published by the Free Software`);
+	console.log(` * Foundation, either version 3 of the Licence, or (at your option) any later version.`);
+	console.log(` * Buttress is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;`);
+	console.log(` * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.`);
+	console.log(` * See the GNU Affero General Public Licence for more details.`);
+	console.log(` * You should have received a copy of the GNU Affero General Public Licence along with`);
+	console.log(` * this program. If not, see <http://www.gnu.org/licenses/>.`);
+	console.log(`***`);
+};
+
 /**
  *
  * @param {string} log - log entry
@@ -136,10 +173,17 @@ module.exports.init = (logApp) => {
  * @private
  */
 function _log(log, level, id) {
-	winston.log({
+	const line = {
 		level: level,
 		message: (id) ? `[${id}] ${log}` : log,
-	});
+	};
+
+	if (_captureOutput) {
+		_captureOutputBuffer.push(line);
+		return;
+	}
+
+	winston.log(line);
 }
 
 /**
@@ -213,6 +257,10 @@ module.exports.logError = (err, id=null) => {
  */
 module.exports.logTimer = (log, timer, level, id=null) => {
 	level = level || LogLevel.INFO;
+	if (!timer) {
+		_log(log, level, id);
+		return;
+	}
 	_log(`[${timer.interval.toFixed(6)}s][${timer.lapTime.toFixed(6)}s] ${log}`, level, id);
 };
 
