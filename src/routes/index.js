@@ -328,7 +328,6 @@ class Routes {
 
 		try {
 			const token = await this._getToken(req);
-			console.log(token);
 			if (token === null) {
 				Logging.logTimer(`_authenticateToken:end-cant-find-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 				throw new Helpers.Errors.RequestError(401, 'invalid_token');
