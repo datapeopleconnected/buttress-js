@@ -312,58 +312,54 @@ class Routes {
 	 * @param {Function} next - next handler function
 	 * @private
 	 */
-	_authenticateToken(req, res, next) {
+	async _authenticateToken(req, res, next) {
 		req.timings.authenticateToken = req.timer.interval;
-		Logging.logTimer(`_authenticateToken:start ${req.query.token}`,
+
+		// TODO: Accept the token via the requset header instead of query string
+		req.token = req.query.token;
+
+		Logging.logTimer(`_authenticateToken:start ${req.token}`,
 			req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-		if (!req.query.token) {
+		if (!req.token) {
 			Logging.logTimer(`_authenticateToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			res.status(400).json({message: 'missing_token'});
-			return;
+			throw new Helpers.Errors.RequestError(400, 'missing_token');
 		}
 
-		this._getToken(req)
-			.then((token) => {
-				return new Promise((resolve, reject) => {
-					if (token === null) {
-						Logging.logTimer(`_authenticateToken:end-cant-find-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-						reject(new Helpers.Errors.RequestError(401, 'invalid_token'));
-						return;
-					}
+		try {
+			const token = await this._getToken(req);
+			if (token === null) {
+				Logging.logTimer(`_authenticateToken:end-cant-find-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+				throw new Helpers.Errors.RequestError(401, 'invalid_token');
+			}
 
-					req.token = token;
+			req.token = token;
 
-					Logging.logTimer(`_authenticateToken:got-token ${(req.token) ? req.token._id : token}`,
-						req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-					Logging.logTimer(`_authenticateToken:got-token type ${(req.token) ? req.token.type : token}`,
-						req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			Logging.logTimer(`_authenticateToken:got-token ${(req.token) ? req.token._id : token}`,
+				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			Logging.logTimer(`_authenticateToken:got-token type ${(req.token) ? req.token.type : token}`,
+				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-					resolve(token);
-				});
-			})
-			.then(() => (req.token._app) ? Model.App.findById(req.token._app) : null)
-			.then((app) => {
-				Model.authApp = req.authApp = app;
+			const app = (req.token._app) ? await Model.App.findById(req.token._app) : null;
+			Model.authApp = req.authApp = app;
+			Logging.logTimer(`_authenticateToken:got-app ${(req.authApp) ? req.authApp._id : app}`,
+				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-				Logging.logTimer(`_authenticateToken:got-app ${(req.authApp) ? req.authApp._id : app}`,
+			if (req.authApp) {
+				Logging.logTimer(`_authenticateToken:got-app shortId: ${Helpers.shortId(app._id)}`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			}
 
-				if (req.authApp) {
-					Logging.logTimer(`_authenticateToken:got-app shortId: ${Helpers.shortId(app._id)}`,
-						req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				}
-			})
-			.then(() => (req.token._user) ? Model.User.findById(req.token._user) : null)
-			.then((user) => {
-				req.authUser = user;
+			const user = (req.token._user) ? await Model.User.findById(req.token._user) : null;
+			req.authUser = user;
+			Logging.logTimer(`_authenticateToken:got-user ${(req.authUser) ? req.authUser._id : user}`,
+				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-				Logging.logTimer(`_authenticateToken:got-user ${(req.authUser) ? req.authUser._id : user}`,
-					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			})
-			.then(Logging.Promise.logTimer('_authenticateToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id))
-			.then(next)
-			.catch(next);
+			Logging.logTimer('_authenticateToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			next();
+		} catch (err) {
+			next(err);
+		}
 	}
 
 	/**
@@ -375,17 +371,18 @@ class Routes {
 		let token = null;
 
 		if (this._tokens.length > 0 && !Model.appMetadataChanged) {
-			token = this._lookupToken(this._tokens, req.query.token);
+			token = this._lookupToken(this._tokens, req.token);
 			if (token) {
 				Logging.logTimer('_getToken:end-cache', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 				return token;
 			}
 		}
 
+		// TODO: This needs to be smarter
 		await this.loadTokens();
 
 		Model.appMetadataChanged = false;
-		token = this._lookupToken(this._tokens, req.query.token);
+		token = this._lookupToken(this._tokens, req.token);
 		Logging.logTimer('_getToken:end-lookup', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		return token;
 	}

@@ -70,6 +70,11 @@ class AppSchemaModel extends SchemaModel {
 					__default: null,
 					__allowUpdate: true,
 				},
+				version: {
+					__type: 'string',
+					__default: null,
+					__allowUpdate: true,
+				},
 				apiPath: {
 					__type: 'string',
 					__default: null,
