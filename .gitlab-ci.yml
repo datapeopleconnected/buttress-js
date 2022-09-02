@@ -17,10 +17,15 @@ before_script:
 stages:          # List of stages for jobs, and their order of execution
   - test
 
-unit-test-job:   # This job runs in the test stage.
+test-job:   # This job runs in the test stage.
   stage: test    # It only starts when the job in the build stage completes successfully.
   script:
-    - npm run test
+    - npm run coverage
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage/cobertura-coverage.xml
 
 lint-test-job:   # This job also runs in the test stage.
   stage: test    # It can run at the same time as unit-test-job (in parallel).
