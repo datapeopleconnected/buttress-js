@@ -13,7 +13,7 @@
   "scripts": {
     "test": "mocha test/units/**/* test/intergration/**/*",
     "lint": "eslint 'src/**/*.js'",
-    "coverage": "npx nyc --reporter cobertura mocha",
+    "coverage": "npx nyc --reporter cobertura npm run test",
     "start": "bin/buttress.sh",
     "docker:build": "docker build -t buttress .",
     "docker:run": "docker-compose -f .docker/docker-compose.yml up"
