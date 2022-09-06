@@ -29,12 +29,13 @@ const SchemaModel = require('../schemaModel');
 /**
  * Constants
 */
-const apps = ['google', 'facebook', 'twitter', 'linkedin'];
+const apps = ['google', 'facebook', 'twitter', 'linkedin', 'microsoft'];
 const App = {
 	GOOGLE: apps[0],
 	FACEBOOK: apps[1],
 	TWITTER: apps[2],
 	LINKEDIN: apps[3],
+	MICROSOFT: apps[4],
 };
 
 class UserSchemaModel extends SchemaModel {
