@@ -16,7 +16,9 @@
     "coverage": "npx nyc --reporter cobertura npm run test",
     "start": "bin/buttress.sh",
     "docker:build": "docker build -t buttress .",
-    "docker:run": "docker-compose -f .docker/docker-compose.yml up"
+    "docker:build-token": "npm run docker:build -- --build-arg NPM_TOKEN=${NPM_TOKEN}",
+    "docker:run": "docker-compose -f .docker/docker-compose.yml up",
+    "docker:run-full": "docker-compose -f .docker/docker-compose.full.yml up"
   },
   "repository": {
     "type": "git",

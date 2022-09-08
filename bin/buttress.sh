@@ -2,11 +2,26 @@
 
 readonly BASE_DIR="$(dirname "$(realpath -s "$0")")"
 
-# Start the first process
-$BASE_DIR/app.js 2>&1 &
+# Take in first param as APP_TYPE
+APP_TYPE="${APP_TYPE:-ALL}"
+# Convert string to uppercase
+APP_TYPE=${APP_TYPE^^}
 
-# Start the second process
-$BASE_DIR/app-socket.js 2>&1 &
+echo "Launching APP_TYPE: ${APP_TYPE}"
+
+if [ "$APP_TYPE" == "REST" ]
+then
+  $BASE_DIR/app.js 2>&1 &
+elif [ "$APP_TYPE" == "SOCK" ]
+then
+  $BASE_DIR/app-socket.js 2>&1 &
+else
+  # Start the first process
+  $BASE_DIR/app.js 2>&1 &
+
+  # Start the second process
+  $BASE_DIR/app-socket.js 2>&1 &
+fi
 
 # Wait for any process to exit
 wait -n
