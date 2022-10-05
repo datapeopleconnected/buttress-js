@@ -94,7 +94,10 @@ class AccessControl {
 		};
 
 		await this._queuePolicyLimitDeleteEvent(userPolicies, user, appId);
-		await this._checkAccessControlDBBasedQueryCondition(req, params);
+
+		// TODO: This doesn't need to happen here, move to sock
+		// await this._checkAccessControlDBBasedQueryCondition(req, params);
+
 		nrp.emit('queuePolicyRoomCloseSocketEvent', params);
 
 		Logging.logTimer(`accessControlPolicyMiddleware::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
