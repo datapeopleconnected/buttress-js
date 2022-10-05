@@ -137,6 +137,10 @@ class BootstrapSocket {
 		this._nrp = new NRP(Config.redis);
 
 		const redisClient = createClient(Config.redis);
+
+		// TODO: Handle failed connection
+		await redisClient.connect();
+
 		this.emitter = new Emitter(redisClient);
 
 		if (this.isPrimary) await this.__registerNRPPrimaryListeners();
