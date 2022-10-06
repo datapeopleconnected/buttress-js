@@ -41,7 +41,7 @@
     "node-env-obj": "~0.2.5",
     "node-redis-pubsub": "~5.0.0",
     "object-hash": "^3.0.0",
-    "redis": "~4.3.0",
+    "redis": "~3.1.2",
     "socket.io": "~4.5.1",
     "socket.io-client": "^4.5.1",
     "sugar": "~2.0.6",

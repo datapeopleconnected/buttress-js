@@ -139,7 +139,7 @@ class BootstrapSocket {
 		const redisClient = createClient(Config.redis);
 
 		// TODO: Handle failed connection
-		await redisClient.connect();
+		// await redisClient.connect();
 
 		this.emitter = new Emitter(redisClient);
 
