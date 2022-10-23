@@ -575,7 +575,7 @@ class BootstrapSocket {
 
 		if (roomsToLeave.length < 1) {
 			// We've got no rooms to leave, early out.
-			Logging.logSilly(`__workerUserLeaveRooms::end-no-reams-to-leave userId:${user._id} socketId:${socket.id}`);
+			Logging.logSilly(`__workerUserLeaveRooms::end-no-rooms-to-leave userId:${user._id} socketId:${socket.id}`);
 			return;
 		}
 
