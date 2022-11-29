@@ -70,23 +70,21 @@ class GetUser extends Route {
 			}
 
 			Model.User.findById(req.params.id)
-				.then((_user) => {
+				.then(async (_user) => {
 					if (_user) {
 						const output = {
 							id: _user._id,
 							auth: _user.auth,
-							tokens: [],
+							token: null,
 							policyProperties: _user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
 						};
 
-						// TODO: This should really only be a single token now
 						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
-						rxTokens.on('data', (token) => {
-							output.tokens.push({
-								value: token.value,
-							});
-						});
-						rxTokens.once('end', () => resolve(output));
+						const token = await Helpers.streamFirst(rxTokens);
+						if (token) {
+							output.token = token;
+						}
+						resolve(output);
 					} else {
 						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 						resolve({statusCode: 400});
@@ -115,22 +113,21 @@ class FindUser extends Route {
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
 			Model.User.getByAppId(req.params.app, req.params.id)
-				.then((_user) => {
+				.then(async (_user) => {
 					if (_user) {
 						const output = {
 							id: _user._id,
 							auth: _user.auth,
-							tokens: [],
+							token: null,
 							policyProperties: _user._appMetadata?.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
 						};
 
 						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
-						rxTokens.on('data', (token) => {
-							output.tokens.push({
-								value: token.value,
-							});
-						});
-						rxTokens.once('end', () => resolve(output));
+						const token = await Helpers.streamFirst(rxTokens);
+						if (token) {
+							output.token = token;
+						}
+						resolve(output);
 					} else {
 						resolve(false);
 					}
@@ -263,7 +260,7 @@ class AddUser extends Route {
 				return {
 					id: user._id,
 					auth: user.auth,
-					tokens: [],
+					token: null,
 					policyProperties,
 				};
 			});
