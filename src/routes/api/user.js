@@ -82,7 +82,7 @@ class GetUser extends Route {
 						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
 						const token = await Helpers.streamFirst(rxTokens);
 						if (token) {
-							output.token = token;
+							output.token = token.value;
 						}
 						resolve(output);
 					} else {
@@ -125,7 +125,7 @@ class FindUser extends Route {
 						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
 						const token = await Helpers.streamFirst(rxTokens);
 						if (token) {
-							output.token = token;
+							output.token = token.value;
 						}
 						resolve(output);
 					} else {
