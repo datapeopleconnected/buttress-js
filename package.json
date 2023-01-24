@@ -11,6 +11,7 @@
   },
   "main": "deploy/app.js",
   "scripts": {
+    "docs": "npx docsify serve ./docs",
     "test": "mocha test/units/**/* test/intergration/**/*",
     "lint": "eslint 'src/**/*.js'",
     "coverage": "npx nyc --reporter cobertura npm run test",

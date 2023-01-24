@@ -8,6 +8,7 @@ cache:
       - package-lock.json
   paths:
     - .npm/
+    - public
 
 before_script:
   - npm config set @buttress:registry https://git.wearelighten.co.uk/api/v4/projects/318/packages/npm/
@@ -36,9 +37,12 @@ lint-test-job:   # This job also runs in the test stage.
 pages:
   stage: deploy
   script:
-  - mkdir .public
-  - cp -r docs/. public
-  - mv .public public
+  - mkdir .public/$CI_PIPELINE_ID
+  - cp -r docs/. .public/$CI_PIPELINE_ID/
+  - mv .public/$CI_PIPELINE_ID/ public/$CI_PIPELINE_ID/
   artifacts:
+    name: "$CI_PIPELINE_ID"
     paths:
-    - public
+      - public
+    expire_in: 3 days
+  when: always
