@@ -38,6 +38,7 @@ pages:
   stage: deploy
   script:
   - mkdir -p .public/$CI_PIPELINE_ID
+  - mkdir -p public/$CI_PIPELINE_ID
   - cp -r docs/. .public/$CI_PIPELINE_ID/
   - mv .public/$CI_PIPELINE_ID/ public/$CI_PIPELINE_ID/
   artifacts:
