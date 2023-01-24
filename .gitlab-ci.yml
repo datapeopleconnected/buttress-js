@@ -33,17 +33,3 @@ lint-test-job:   # This job also runs in the test stage.
   stage: test    # It can run at the same time as unit-test-job (in parallel).
   script:
     - npm run lint
-
-pages:
-  stage: deploy
-  script:
-  - mkdir -p .public/$CI_PIPELINE_ID
-  - mkdir -p public/$CI_PIPELINE_ID
-  - cp -r docs/. .public/$CI_PIPELINE_ID/
-  - mv .public/$CI_PIPELINE_ID/ public/$CI_PIPELINE_ID/
-  artifacts:
-    name: "$CI_PIPELINE_ID"
-    paths:
-      - public
-    expire_in: 3 days
-  when: always
