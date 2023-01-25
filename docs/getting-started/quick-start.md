@@ -53,14 +53,14 @@ datastore://[username:password@]host1[:port1]
 ## Running
 ButtressJS is made up of two process types (`Rest` / `Sock`) which allow the Buttress process to scale. To run the `Rest` process run the following line in a terminal:
 ```bash
-./bin/app.js
+NODE_ENV=development ./bin/app.js
 ```
 
 You'll now be able to 
 
 To run the `Sock` process in a separate terminal run 
 ```bash
-./bin/app-socket.js
+NODE_ENV=development ./bin/app-socket.js
 ```
 
 The combination of both processes make up ButtressJS, the don't nessesarly need to be run on the same system.
