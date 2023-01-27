@@ -9,6 +9,7 @@
  */
 
 const Sugar = require('sugar');
+require('sugar-inflections');
 const hash = require('object-hash');
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
@@ -55,19 +56,24 @@ class AccessControl {
 		// TODO need to take into consideration appDataSharingId
 		const appId = req.authApp._id;
 		const user = req.authUser;
-		if (!user) return next();
+		const lambda = req.authLambda;
+
+		if (!user && !lambda) return next();
 
 		let requestedURL = req.originalUrl || req.url;
-		// Check URL to see if it's a core schema
-		const core = requestedURL.indexOf('/api') === 0;
-		if (core) return next();
-
 		requestedURL = requestedURL.split('?').shift();
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
 		if (!this._schemas[appId]) {
-			this._schemas[appId] = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
+			const coreModels = Model._getModels();
+			const coreSchema = coreModels.reduce((arr, name) => {
+				name = Sugar.String.camelize(name);
+				arr.push(Model[name].schemaData);
+				return arr;
+			}, []);
+			const appSchema = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
+			this._schemas[appId] = appSchema.concat(coreSchema);
 			this._schemaNames[appId] = this._schemas[appId].map((s) => s.name);
 		}
 
@@ -75,30 +81,33 @@ class AccessControl {
 			this._policies[appId] = await this.__loadAppPolicies(appId);
 		}
 
-		const userPolicies = await this.__getUserPolicies(user, appId);
-		const policyOutcome = await this.__getPolicyOutcome(userPolicies, req, schemaName, appId, core);
+		const entity = user || lambda;
+		const entityPolicies = await this.__getEntityPolicies(entity, appId);
+		const policyOutcome = await this.__getPolicyOutcome(entityPolicies, req, schemaName, appId);
 		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
 			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			res.status(policyOutcome.err.statusCode).send({message: policyOutcome.err.message});
 			return;
 		}
 
-		const params = {
-			policies: policyOutcome.res,
-			appId: appId,
-			apiPath: req.authApp.apiPath,
-			userId: user._id,
-			schemaNames: this._schemaNames[appId],
-			schemaName: schemaName,
-			path: requestedURL,
-		};
-
-		await this._queuePolicyLimitDeleteEvent(userPolicies, user, appId);
+		if (user) {
+			const params = {
+				policies: policyOutcome.res,
+				appId: appId,
+				apiPath: req.authApp.apiPath,
+				userId: user._id,
+				schemaNames: this._schemaNames[appId],
+				schemaName: schemaName,
+				path: requestedURL,
+			};
+			await this._queuePolicyLimitDeleteEvent(entityPolicies, user, appId);
+			// TODO: This doesn't need to happen here, move to sock
+			// await this._checkAccessControlDBBasedQueryCondition(req, params);
+			nrp.emit('queuePolicyRoomCloseSocketEvent', params);
+		}
 
 		// TODO: This doesn't need to happen here, move to sock
 		// await this._checkAccessControlDBBasedQueryCondition(req, params);
-
-		nrp.emit('queuePolicyRoomCloseSocketEvent', params);
 
 		Logging.logTimer(`accessControlPolicyMiddleware::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		next();
@@ -160,7 +169,7 @@ class AccessControl {
 		}
 
 		const rooms = {};
-		const userPolicies = await this.__getUserPolicies(user, appId);
+		const userPolicies = await this.__getEntityPolicies(user, appId);
 		for await (const schema of this._schemas[appId]) {
 			req.body = {};
 			req.accessControlQuery = {};
@@ -206,14 +215,13 @@ class AccessControl {
 
 	/**
 	 * compute policies outcome
-	 * @param {Array} userPolicies
+	 * @param {Array} entityPolicies
 	 * @param {Object} req
 	 * @param {String} schemaName
 	 * @param {String} appId
-	 * @param {Boolean} core
 	 * @return {Object}
 	 */
-	async __getPolicyOutcome(userPolicies, req, schemaName, appId = null, core = false) {
+	async __getPolicyOutcome(entityPolicies, req, schemaName, appId = null) {
 		Logging.logTimer(`__getPolicyOutcome::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		const outcome = {
 			res: {},
@@ -225,15 +233,15 @@ class AccessControl {
 		// TODO: better way to figure out the requested schema
 		const requestVerb = req.method || req.originalMethod;
 
-		userPolicies = userPolicies.sort((a, b) => a.priority - b.priority);
-		if (userPolicies.length < 1) {
+		entityPolicies = entityPolicies.sort((a, b) => a.priority - b.priority);
+		if (entityPolicies.length < 1) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
 			outcome.err.message = 'Request does not have any policy associated to it';
 			return outcome;
 		}
 
-		const policiesConfig = userPolicies.reduce((arr, policy) => {
+		const policiesConfig = entityPolicies.reduce((arr, policy) => {
 			const config = policy.config.slice().reverse().find((c) => c.endpoints.includes(requestVerb) || c.endpoints.includes('ALL'));
 			if (config) {
 				arr.push({
@@ -337,7 +345,7 @@ class AccessControl {
 			}
 		}
 
-		const schema = this._schemas[appId].find((s) => s.name === schemaName);
+		const schema = this._schemas[appId].find((s) => s.name === schemaName || Sugar.String.singularize(s.name) === schemaName);
 
 		if (!schema) {
 			outcome.err.statusCode = 401;
@@ -368,7 +376,7 @@ class AccessControl {
 		if (!policyQuery) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-query-permission-error`;
-			outcome.err.message = 'Can not access the queried data as it is not part of the policy filter';
+			outcome.err.message = 'Policy filter Can not access the queried data';
 			return outcome;
 		}
 
@@ -389,8 +397,8 @@ class AccessControl {
 		return policies;
 	}
 
-	async __getUserPolicies(user, appId) {
-		return await AccessControlPolicyMatch.__getUserPolicies(this._policies[appId], appId, user);
+	async __getEntityPolicies(entity, appId) {
+		return await AccessControlPolicyMatch.__getEntityPolicies(this._policies[appId], appId, entity);
 	}
 
 	async _checkAccessControlDBBasedQueryCondition(req, params) {

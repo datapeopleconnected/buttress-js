@@ -89,6 +89,10 @@ const Constants = {
 		DEL: 'delete',
 		SEARCH: 'search',
 	},
+	BulkRequests: {
+		BULK_PUT: '/bulk/update',
+		BULK_DEL: '/bulk/delete',
+	},
 };
 
 class Route {
@@ -311,10 +315,11 @@ class Route {
 	 * @param {*} path
 	 * @param {boolean} isSuper
 	 */
-	_broadcast(req, res, result, path, isSuper = false) {
+	async _broadcast(req, res, result, path, isSuper = false) {
 		Logging.logTimer('_broadcast:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		const isReadStream = (result instanceof Stream && result.readable);
+		await this._checkBasedPathLambda(req);
 
 		const emit = (_result) => {
 			if (this.activityBroadcast === true) {
@@ -351,6 +356,63 @@ class Route {
 
 		emit(Helpers.Schema.prepareSchemaResult(result));
 		Logging.logTimer('_broadcast:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+	}
+
+	/**
+	 * Triggers path based lambdas
+	 * @param {Object} req
+	 */
+	_checkBasedPathLambda(req) {
+		// core schema
+		if (!this.schema) return;
+
+		const isLambdaChange = req.token.type === Model.Token.Constants.Type.LAMBDA;
+		if (isLambdaChange) return;
+
+		let paths = [];
+		const values = [];
+		const body = JSON.parse(req.body);
+		const id = req.params.id;
+
+		if (this.verb === Constants.Verbs.POST) {
+			if (this.path.includes(Constants.BulkRequests.BULK_PUT)) {
+				body.forEach((item) => item.body.forEach((obj) => {
+					paths.push(`${this.schema?.name}.${item.id}.${obj.path}`);
+					item.body.forEach((i) => values.push(i.value));
+				}));
+			} else if (this.path.includes(Constants.BulkRequests.BULK_DEL)) {
+				body.forEach((id) => paths.push(`${this.schema?.name}.${id}`));
+			} else {
+				paths.push(this.schema?.name);
+				values.push(body);
+			}
+		}
+
+		if (this.verb === Constants.Verbs.DEL) {
+			if (id) {
+				paths.push(`${this.schema?.name}.${id}`);
+			} else if (Array.isArray(body)) {
+				body.forEach((item) => paths.push(`${this.schema?.name}.${item.path}`));
+			} else {
+				paths.push(this.schema?.name);
+			}
+		}
+		if (this.verb === Constants.Verbs.PUT) {
+			body.forEach((item) => {
+				if (!item.path) return;
+				paths.push(`${this.schema?.name}.${id}.${item.path}`);
+				values.push(item.value);
+			});
+		}
+
+		paths = paths.filter((v, idx, arr) => arr.indexOf(v) === idx);
+		if (paths.length > 0) {
+			nrp.emit('notifyLambdaPathChange', {
+				paths,
+				values,
+				collection: this.schema?.name,
+			});
+		}
 	}
 
 	/**

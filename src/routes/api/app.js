@@ -54,6 +54,37 @@ class GetAppList extends Route {
 routes.push(GetAppList);
 
 /**
+ * @class SearchAppList
+ */
+class SearchAppList extends Route {
+	constructor() {
+		super('app', 'GET APP LIST');
+		this.verb = Route.Constants.Verbs.SEARCH;
+		this.auth = Route.Constants.Auth.SUPER;
+		this.permissions = Route.Constants.Permissions.SEARCH;
+	}
+
+	_validate(req, res, token) {
+		const result = {
+			query: {
+				$and: [],
+			},
+		};
+		if (req.body && req.body.query) {
+			result.query.$and.push(req.body.query);
+		}
+
+		result.query = Model.App.parseQuery(result.query, {}, Model.App.flatSchemaData);
+		return result;
+	}
+
+	_exec(req, res, validate) {
+		return Model.App.find(validate.query);
+	}
+}
+routes.push(SearchAppList);
+
+/**
  * @class GetApp
  */
 class GetApp extends Route {
@@ -150,6 +181,14 @@ class AddApp extends Route {
 			} catch (e) {
 				this.log('ERROR: Badly formed JSON in permissions', Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `invalid_json`));
+			}
+
+			if (req.body.policyPropertiesList) {
+				const validPolicyPropertiesList = Object.values(req.body.policyPropertiesList).every((i) => Array.isArray(i));
+				if (!validPolicyPropertiesList) {
+					this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
+					return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+				}
 			}
 
 			this.model.isDuplicate(req.body)
@@ -319,7 +358,7 @@ class GetAppSchema extends Route {
 
 		let schema;
 		try {
-			schema = Schema.buildCollections(Schema.decode(req.authApp.__schema));
+			schema = (req.query.rawSchema) ? Schema.decode(req.authApp.__rawSchema) : Schema.buildCollections(Schema.decode(req.authApp.__schema));
 		} catch (err) {
 			if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
 			else throw err;
@@ -329,7 +368,7 @@ class GetAppSchema extends Route {
 			const cores = req.query.core.split(',');
 
 			cores.forEach((core) => {
-				const coreModel = Model[Sugar.String.capitalize(core)];
+				const coreModel = Model[Sugar.String.camelize(core)];
 				if (coreModel && coreModel.appShortId === null) {
 					schema.push(coreModel.schemaData);
 				}
@@ -345,70 +384,16 @@ class GetAppSchema extends Route {
 	}
 
 	async _exec(req, res, collections) {
-		const schemaWithRemoteRef = collections.filter((s) => s.remote);
-
-		// TODO: Check params for any core scheam thats been requested.
-		const dataSharingSchema = schemaWithRemoteRef.reduce((map, collection) => {
-			const [DSA, ...schema] = collection.remote.split('.');
-			if (!map[DSA]) map[DSA] = [];
-			map[DSA].push(schema);
-			return map;
-		}, {});
-
-		// TODO: fetch app models & use schema data instead of doing the work here
-
-		// Load DSA for curent app
-		const requiredDSAs = Object.keys(dataSharingSchema);
-		if (requiredDSAs.length > 0) {
-			const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
-				'_appId': req.authApp._id,
-				'name': {
-					$in: requiredDSAs,
-				},
-				'active': true,
-			}));
-
-			for await (const DSAName of Object.keys(dataSharingSchema)) {
-				const DSA = appDSAs.find((dsa) => dsa.name === DSAName);
-				if (!DSA) continue;
-				// Load DSA
-
-				const api = Buttress.new();
-				await api.init({
-					buttressUrl: DSA.remoteApp.endpoint,
-					apiPath: DSA.remoteApp.apiPath,
-					appToken: DSA.remoteApp.token,
-					allowUnauthorized: true, // Move along, nothing to see here...
-				});
-
-				const remoteSchema = await api.App.getSchema({
-					params: {
-						only: dataSharingSchema[DSAName].join(','),
-					},
-				});
-
-				remoteSchema.forEach((rs) => {
-					schemaWithRemoteRef
-						.filter((s) => s.remote === `${DSAName}.${rs.name}`)
-						.forEach((s) => {
-							// Merge RS into schema
-							delete s.remote;
-							const collectionIdx = collections.findIndex((s) => s.name === rs.name);
-							if (collectionIdx === -1) return;
-							collections[collectionIdx] = Helpers.mergeDeep(rs, s);
-						});
-				});
-			}
-		}
+		const mergedSchema = (req.query.rawSchema) ? collections : await Model.App.mergeRemoteSchema(req, collections);
 
 		// Quicky, remove extends as nobody needs it outside of buttress
-		collections.forEach((s) => delete s.extends);
+		mergedSchema.forEach((s) => delete s.extends);
 
 		// TODO: Policy should be used to dictate what schema the user can access.
 
 		// Filter the returned schema based token role
 
-		return collections;
+		return mergedSchema;
 	}
 }
 routes.push(GetAppSchema);
@@ -445,6 +430,7 @@ class UpdateAppSchema extends Route {
 			req.body = req.body.sort((a, b) => (a.type === 'collection') ? 1 : (b.type === 'collection') ? -1 : 0);
 
 			// Resolve the local schema
+			const rawSchema = JSON.stringify(req.body);
 			req.body = Schema.merge(req.body, Model.App.localSchema);
 
 			try {
@@ -454,16 +440,117 @@ class UpdateAppSchema extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
 			}
 
+			resolve(rawSchema);
+		});
+	}
+
+	async _exec(req, res, rawSchema) {
+		const updatedSchema = await Model.App.updateSchema(req.authApp._id, req.body, rawSchema);
+		let schema = '';
+		try {
+			schema = Schema.decode(updatedSchema);
+		} catch (err) {
+			if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
+			else throw err;
+		}
+
+		// Quicky, remove extends as nobody needs it outside of buttress
+		schema.forEach((s) => delete s.extends);
+
+		return schema;
+	}
+}
+routes.push(UpdateAppSchema);
+
+/**
+ * @class SetAppPolicyPropertyList
+ */
+class SetAppPolicyPropertyList extends Route {
+	constructor() {
+		super('app/policyPropertyList', 'SET APP POLICY PROPERTY LIST');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			if (!req.authApp) {
+				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
+			}
+
+			if (!req.body) {
+				this.log('ERROR: Missing body', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `no_body`));
+			}
+
+			if (typeof req.body !== 'object' || (typeof req.body === 'object' && Array.isArray(req.body))) {
+				this.log('ERROR: Policy property list is invalid type', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `invalid_type`));
+			}
+
+			const validPolicyPropertiesList = Object.values(req.body).every((i) => Array.isArray(i));
+			if (!validPolicyPropertiesList) {
+				this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+			}
+
 			resolve(true);
 		});
 	}
 
 	_exec(req, res, validate) {
-		return Model.App.updateSchema(req.authApp._id, req.body)
+		return Model.App.setPolicyPropertiesList(req.authApp._id, req.body)
 			.then(() => true);
 	}
 }
-routes.push(UpdateAppSchema);
+routes.push(SetAppPolicyPropertyList);
+
+/**
+ * @class UpdateAppPolicyPropertyList
+ */
+class UpdateAppPolicyPropertyList extends Route {
+	constructor() {
+		super('app/updatePolicyPropertyList', 'UPDATE APP POLICY PROPERTY LIST');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			if (!req.authApp) {
+				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
+			}
+
+			if (!req.body) {
+				this.log('ERROR: Missing body', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `no_body`));
+			}
+
+			if (typeof req.body !== 'object' || ( typeof req.body === 'object' && Array.isArray(req.body))) {
+				this.log('ERROR: Policy property list is invalid type', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `invalid_type`));
+			}
+
+			const validPolicyPropertiesList = Object.values(req.body).every((i) => Array.isArray(i));
+			if (!validPolicyPropertiesList) {
+				this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+			}
+
+			resolve(true);
+		});
+	}
+
+	_exec(req, res, validate) {
+		return Model.App.updatePolicyPropertiesList(req.authApp._id, req.body)
+			.then(() => true);
+	}
+}
+routes.push(UpdateAppPolicyPropertyList);
 
 /**
 * @class AddDataSharing
@@ -742,7 +829,6 @@ class UpdateAppDataSharingToken extends Route {
 	async _exec(req, res, validate) {
 		await this.model.updateActivationToken(req.params.dataSharingId, req.body.token);
 
-
 		const token = await Model.Token.findById(validate.entity._tokenId);
 
 		// Our token
@@ -813,6 +899,89 @@ class ActivateAppDataSharing extends Route {
 	}
 }
 routes.push(ActivateAppDataSharing);
+
+/**
+ * @class AppCount
+ */
+class AppCount extends Route {
+	constructor() {
+		super(`app/count`, `COUNT APPS`);
+		this.verb = Route.Constants.Verbs.SEARCH;
+		this.auth = Route.Constants.Auth.SUPER;
+		this.permissions = Route.Constants.Permissions.SEARCH;
+
+		this.activityDescription = `COUNT APPS`;
+		this.activityBroadcast = false;
+
+		this.model = Model.App;
+	}
+
+	_validate(req, res, token) {
+		const result = {
+			query: {},
+		};
+
+		let query = {};
+
+		if (!query.$and) {
+			query.$and = [];
+		}
+
+		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+		if (req.body && req.body.query) {
+			query.$and.push(req.body.query);
+		} else if (req.body && !req.body.query) {
+			query.$and.push(req.body);
+		}
+
+		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		result.query = query;
+		return result;
+	}
+
+	_exec(req, res, validateResult) {
+		return Model.App.count(validateResult.query);
+	}
+}
+routes.push(AppCount);
+
+/**
+ * @class AppUpdateOAuth
+ */
+class AppUpdateOAuth extends Route {
+	constructor() {
+		super(`app/:id`, `UPDATE APPS OAUTH`);
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.SUPER;
+		this.permissions = Route.Constants.Permissions.PUT;
+
+		this.activityDescription = `UPDATE APPS OAUTH`;
+		this.activityBroadcast = false;
+
+		this.model = Model.App;
+	}
+
+	async _validate(req, res, token) {
+		if (!req.body) {
+			this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
+
+		const app = await Model.App.findById(req.params.id);
+		if (!app) {
+			this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+		}
+		return Promise.resolve(true);
+	}
+
+	async _exec(req, res, validate) {
+		const oAuth = (Array.isArray(req.body.value)) ? req.body.value : [req.body.value];
+		await Model.App.updateOAuth(req.params.id, oAuth);
+		return true;
+	}
+}
+routes.push(AppUpdateOAuth);
 
 /**
  * @type {*[]}

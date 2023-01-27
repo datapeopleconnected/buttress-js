@@ -19,6 +19,7 @@
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const {v4: uuidv4} = require('uuid');
 // const Route = require('./route');
 const Logging = require('../logging');
 const Schema = require('../schema');
@@ -26,10 +27,15 @@ const Helpers = require('../helpers');
 const AccessControl = require('../access-control');
 const Model = require('../model');
 const Config = require('node-env-obj')();
+const ObjectId = require('mongodb').ObjectId;
+
+const NRP = require('node-redis-pubsub');
+const nrp = new NRP(Config.redis);
 
 const SchemaRoutes = require('./schema-routes');
 
 const Datastore = require('../datastore');
+const AdminRoutes = require('./admin-routes');
 
 class Routes {
 	/**
@@ -37,6 +43,7 @@ class Routes {
 	 */
 	constructor(app) {
 		this.app = app;
+		this.id = uuidv4();
 
 		this._tokens = [];
 		this._routerMap = {};
@@ -121,6 +128,9 @@ class Routes {
 
 		await this.loadTokens();
 
+		await this._setupLambdaEndpoints();
+
+		await AdminRoutes.initAdminRoutes(this.app);
 		Logging.logSilly(`init:registered-routes`);
 	}
 
@@ -315,18 +325,76 @@ class Routes {
 	async _authenticateToken(req, res, next) {
 		req.timings.authenticateToken = req.timer.interval;
 
+		// Admin route call
+		const adminRoutecall = await AdminRoutes.checkAdminCall(req);
+		if (adminRoutecall.adminToken && adminRoutecall.adminApp) {
+			req.token = adminRoutecall.adminToken.value;
+			Logging.logTimer(`_authenticateAdminToken:got-admin-token`,
+				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+			Model.authApp = req.authApp = adminRoutecall.adminApp;
+			Logging.logTimer(`_authenticateAdminApp:got-admin-app`,
+				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+			Logging.logTimer('_authenticateAdminCall:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			return next();
+		}
+
+		// lambdaAPI call
+		const isLambdaAPICall = req.url.includes('/api/v1/lambda/');
+		let apiLambda = null;
+		let apiLambdaApp = null;
+		let apiPath = null;
+		if (isLambdaAPICall) {
+			[apiPath] = req.url.split('/api/v1/lambda/').join('').split('/');
+			apiLambdaApp = await Model.App.findOne({
+				apiPath: {
+					$eq: apiPath,
+				},
+			});
+		}
+
+		if (apiLambdaApp) {
+			const [endpoint] = req.url.split(`/api/v1/lambda/${apiPath}/`).join('').split('?');
+			apiLambda = await Model.Lambda.findOne({
+				'trigger.apiEndpoint.url': {
+					$eq: endpoint,
+				},
+				'_appId': {
+					$eq: apiLambdaApp._id,
+				},
+			});
+		}
+
+		if (apiLambda && apiLambda.type === 'PUBLIC') {
+			const token = await Model.Token.findOne({
+				_lambda: apiLambda._id,
+			});
+			req.token = token.value;
+			Model.authApp = req.authApp = apiLambdaApp;
+			Logging.logTimer(`_authenticateAPILambdaToken:got-app ${req.authApp._id}`,
+				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+			req.authLambda = apiLambda;
+			Logging.logTimer(`_authenticateAPILambdaToken:got-lambda ${req.authLambda._id}`,
+				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+			Logging.logTimer('_authenticateAPILambdaToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			return next();
+		}
+
 		// TODO: Accept the token via the requset header instead of query string
 		req.token = req.query.token;
 
 		Logging.logTimer(`_authenticateToken:start ${req.token}`,
 			req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-		if (!req.token) {
-			Logging.logTimer(`_authenticateToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			throw new Helpers.Errors.RequestError(400, 'missing_token');
-		}
-
 		try {
+			if (!req.token) {
+				Logging.logTimer(`_authenticateToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+				throw new Helpers.Errors.RequestError(400, 'missing_token');
+			}
+
 			const token = await this._getToken(req);
 			if (token === null) {
 				Logging.logTimer(`_authenticateToken:end-cant-find-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -349,6 +417,11 @@ class Routes {
 				Logging.logTimer(`_authenticateToken:got-app shortId: ${Helpers.shortId(app._id)}`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
+
+			const lambda = (req.token._lambda) ? await Model.Lambda.findById(req.token._lambda) : null;
+			req.authLambda = lambda;
+			Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda._id : lambda}`,
+				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			const user = (req.token._user) ? await Model.User.findById(req.token._user) : null;
 			req.authUser = user;
@@ -515,6 +588,184 @@ class Routes {
 			}
 		}
 		return files;
+	}
+
+	async _setupLambdaEndpoints() {
+		const appsToken = await Helpers.streamAll(await Model.Token.find({
+			type: 'app',
+		}));
+		const tokenIds = appsToken.map((t) => t._id);
+		const apps = await Helpers.streamAll(await Model.App.find({
+			_token: {
+				$in: tokenIds,
+			},
+		}));
+		const appApiPaths = apps.map((app) => app.apiPath);
+
+		appApiPaths.forEach((apiPath) => {
+			this.app.get(`/api/v1/lambda/${apiPath}/*`, async (req, res) => {
+				const [endpoint] = Object.values(req.params);
+				const result = await this._validateLambdaAPIExecution(endpoint, 'GET', req.query);
+				if (result.errCode && result.errMessage) {
+					res.status(result.errCode).send({message: result.errMessage});
+					return;
+				}
+
+				if (result.triggerAPIType === 'SYNC') {
+					result.lambdaOutput = await new Promise((resolve) => {
+						nrp.on('lambda-execution-finish', (exec) => {
+							if (exec.restWorkerId === this.id) {
+								resolve(exec);
+							}
+						});
+					});
+				}
+
+				if (result.lambdaOutput && result.lambdaOutput.res.redirect) {
+					const url = result.lambdaOutput.res.url;
+					const queryObj = result.lambdaOutput.res.query;
+					let query = '';
+					if (queryObj) {
+						query = Object.keys(queryObj).reduce((output, key) => {
+							if (!output) {
+								output = `${key}=${queryObj[key]}`;
+							} else {
+								output = `${output}&${key}=${queryObj[key]}`;
+							}
+							return output;
+						}, null);
+					}
+					const redirectURL = (query) ? `${url}?${query}` : url;
+					res.redirect(redirectURL);
+				} else if (result.lambdaOutput) {
+					res.status(result.lambdaOutput.code).send({
+						res: result.lambdaOutput.res,
+						executionId: result.lambdaExecution._id,
+					});
+				} else {
+					res.status(200).send({
+						executionId: result.lambdaExecution._id,
+					});
+				}
+			});
+
+			this.app.post(`/api/v1/lambda/${apiPath}/*`, async (req, res) => {
+				const [endpoint] = Object.values(req.params);
+				if (!req.body || Object.values(req.body).length < 1) {
+					res.status(400).send({message: 'missing_request_body'});
+					return;
+				}
+
+				const result = await this._validateLambdaAPIExecution(endpoint, 'POST', null, req.body);
+				if (result.errCode && result.errMessage) {
+					res.status(result.errCode).send({message: result.errMessage});
+					return;
+				}
+
+				if (result.triggerAPIType === 'SYNC') {
+					result.lambdaOutput = await new Promise((resolve) => {
+						nrp.on('lambda-execution-finish', (exec) => {
+							if (exec.restWorkerId === this.id) {
+								resolve(exec);
+							}
+						});
+					});
+				}
+
+				if (result.lambdaOutput) {
+					res.status(result.lambdaOutput.code).send({
+						res: result.lambdaOutput.res,
+						executionId: result.lambdaExecution._id,
+					});
+				} else {
+					res.status(200).send({
+						executionId: result.lambdaExecution._id,
+					});
+				}
+			});
+
+			// retrieve the status of a lambda execution
+			this.app.get(`/api/v1/lambda/status/${apiPath}/:executionId`, async (req, res) => {
+				const executionId = req.params.executionId;
+				const isValidId = ObjectId.isValid(executionId);
+				if (!isValidId) {
+					res.status(400).send({message: 'invalid_input'});
+					return;
+				}
+
+				const lambdaExecution = await Model.LambdaExecution.findById(executionId);
+				if (!lambdaExecution) {
+					res.status(404).send({message: 'not_found'});
+					return;
+				}
+
+				res.status(200).send({status: lambdaExecution.status});
+			});
+		});
+	}
+
+	async _validateLambdaAPIExecution(endpoint, method, query = null, body = null) {
+		const res = {};
+		let lambda = null;
+
+		const isEndPointId = ObjectId.isValid(endpoint);
+		if (isEndPointId) {
+			lambda = await Model.Lambda.findById(endpoint);
+		} else {
+			lambda = await Model.Lambda.findOne({
+				'trigger.apiEndpoint.url': {
+					$eq: endpoint,
+				},
+			});
+		}
+
+		if (!lambda) {
+			res.errCode = 404;
+			res.errMessage = 'lambda_not_found';
+			return res;
+		}
+
+		const triggerAPI = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
+		if (!triggerAPI || triggerAPI.apiEndpoint.method !== method) {
+			res.errCode = 404;
+			res.errMessage = 'api_method_not_found';
+			return res;
+		}
+
+		const deployment = await Model.Deployment.findOne({
+			lambdaId: Model.Lambda.createId(lambda._id),
+			hash: lambda.git.currentDeployment,
+		});
+		if (!deployment) {
+			res.errCode = 404;
+			res.errMessage = 'deployment_not_found';
+			return res;
+		}
+
+		const lambdaExecution = await Model.LambdaExecution.add({
+			lambdaId: Model.Lambda.createId(lambda._id),
+			deploymentId: Model.Deployment.createId(deployment._id),
+		});
+
+		res.lambdaExecution = lambdaExecution;
+		res.triggerAPIType = triggerAPI.apiEndpoint.type;
+
+		const data = {
+			restWorkerId: this.id,
+			lambdaId: lambda._id,
+		};
+		if (body) {
+			data.body = body;
+		}
+		if (query) {
+			data.query = query;
+		}
+
+		if (!res.errCode && !res.errMessage) {
+			nrp.emit('executeLambdaAPI', data);
+		}
+
+		return res;
 	}
 }
 

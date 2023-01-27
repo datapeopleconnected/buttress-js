@@ -17,13 +17,14 @@
  */
 const Sugar = require('sugar');
 
+const Model = require('../');
 const SchemaModel = require('../schemaModel');
 const Helpers = require('../../helpers');
 
 class PolicySchemaModel extends SchemaModel {
-	constructor(datastore) {
+	constructor() {
 		const schema = PolicySchemaModel.Schema;
-		super(schema, null, datastore);
+		super(schema, null);
 	}
 
 	static get Schema() {
@@ -109,10 +110,11 @@ class PolicySchemaModel extends SchemaModel {
 
 
 	/**
+	 * @param {Object} req - request object
 	 * @param {Object} body - body passed through from a POST request
 	 * @return {Promise} - fulfilled with policy Object when the database request is completed
 	 */
-	async add(body) {
+	async add(req, body) {
 		const policyConfig = [];
 		if (body.policy.config) {
 			body.policy.config.forEach((item) => {
@@ -136,8 +138,23 @@ class PolicySchemaModel extends SchemaModel {
 			limit: (body.policy.limit) ? Sugar.Date.create(body.policy.limit) : null,
 		};
 
+		let appId = Model?.authApp?._id;
+		if (!appId) {
+			const token = await this._getToken(req);
+			if (token && token._app) {
+				appId = token._app;
+			}
+			if (token && token._lambda) {
+				const lambda = await Model.Lambda.findById(token._lambda);
+				appId = lambda._appId;
+			}
+			if (token && token._user) {
+				const user = await Model.Lambda.findById(token._lambda);
+				[appId] = user.apps;
+			}
+		}
 		const rxsPolicy = await super.add(policyBody, {
-			_appId: body.appId,
+			_appId: appId,
 		});
 		const policy = await Helpers.streamFirst(rxsPolicy);
 

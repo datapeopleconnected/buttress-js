@@ -6,11 +6,11 @@ const AccessControlHelpers = require('./helpers');
 class PolicyMatch {
 	constructor() {}
 
-	__getUserPolicies(policies, appId, user) {
+	__getEntityPolicies(policies, appId, entity) {
 		return policies.reduce((arr, p) => {
 			if (!p.selection) return arr;
 
-			const match = this.__checkPolicySelection(p, appId, user);
+			const match = this.__checkPolicySelection(p, appId, entity);
 			if (!match) return arr;
 
 			arr = arr.concat(p);
@@ -18,21 +18,22 @@ class PolicyMatch {
 		}, []);
 	}
 
-	__checkPolicySelection(p, appId, user) {
+	__checkPolicySelection(p, appId, entity) {
 		let match = false;
 		const selection = p.selection;
 
-		const userAppMetaData = user._appMetadata.find((md) => md.appId.toString() === appId.toString());
-		if (!userAppMetaData || !userAppMetaData.policyProperties) return;
+		const userAppMetaData = (entity._appMetadata) ? entity._appMetadata?.find((md) => md.appId.toString() === appId.toString()) : entity;
+		const entityPolicies = entity.policyProperties;
+		if ((!userAppMetaData || !userAppMetaData.policyProperties) && !entityPolicies) return;
 
-		const policyProperties = userAppMetaData.policyProperties;
+		const policyProperties = (userAppMetaData) ? userAppMetaData.policyProperties : entityPolicies;
 
 		const matches = Object.keys(selection).reduce((arr, key) => {
 			if (!(key in policyProperties)) return arr;
 			const [selectionCriterionKey] = Object.keys(selection[key]);
-			const [selectionCriterionValue] = Object.values(selection[key]);
-
-			match = AccessControlHelpers.evaluateOperation(policyProperties[key], selectionCriterionValue, selectionCriterionKey);
+			const [rhs] = Object.values(selection[key]);
+			const lhs = policyProperties[key][selectionCriterionKey];
+			match = AccessControlHelpers.evaluateOperation(lhs, rhs, selectionCriterionKey);
 			arr.push(match);
 
 			return arr;

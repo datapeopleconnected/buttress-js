@@ -16,6 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+const Buttress = require('@buttress/api');
 const Config = require('node-env-obj')();
 
 const NRP = require('node-redis-pubsub');
@@ -80,12 +81,40 @@ class AppSchemaModel extends SchemaModel {
 					__default: null,
 					__allowUpdate: true,
 				},
+				policyPropertiesList: {
+					__type: 'object',
+					__default: null,
+					__required: false,
+					__allowUpdate: true,
+				},
+				adminActive: {
+					__type: 'boolean',
+					__default: false,
+					__required: false,
+					__allowUpdate: false,
+				},
+				oAuth: {
+					__type: 'array',
+					__itemtype: 'string',
+					__allowUpdate: true,
+					__enum: [
+						'GOOGLE',
+						'MICROSOFT',
+						'LOCAL_STRATEGY',
+					],
+				},
 				_token: {
 					__type: 'id',
 					__required: false,
 					__allowUpdate: false,
 				},
 				__schema: {
+					__type: 'text',
+					__required: false,
+					__default: '[]',
+					__allowUpdate: true,
+				},
+				__rawSchema: {
 					__type: 'text',
 					__required: false,
 					__default: '[]',
@@ -133,19 +162,88 @@ class AppSchemaModel extends SchemaModel {
 	/**
 	 * @param {ObjectId} appId - app id which needs to be updated
 	 * @param {object} appSchema - schema object for the app
+	 * @param {object} rawSchema - encoded raw app schema
 	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
 	 */
-	updateSchema(appId, appSchema) {
+	async updateSchema(appId, appSchema, rawSchema) {
 		Logging.logSilly(`Update Schema ${appId}`);
 
 		appSchema = Schema.encode(appSchema);
 
-		return super.updateById(appId, {$set: {__schema: appSchema}})
-			.then((res) => {
-				Logging.logSilly(`Emitting app-schema:updated ${appId}`);
-				nrp.emit('app-schema:updated', {appId: appId});
-				return res;
-			});
+		await super.updateById(appId, {$set: {__schema: appSchema}});
+
+		if (rawSchema) {
+			await super.updateById(appId, {$set: {__rawSchema: rawSchema}});
+		}
+
+		Logging.logSilly(`Emitting app-schema:updated ${appId}`);
+		nrp.emit('app-schema:updated', {appId: appId});
+		nrp.emit('app:update-schema', {
+			appId: appId,
+			schemas: Schema.decode(appSchema),
+		});
+		const updatedSchema = (await super.findById(appId))?.__rawSchema;
+		return updatedSchema;
+	}
+
+	async mergeRemoteSchema(req, collections) {
+		const schemaWithRemoteRef = collections.filter((s) => s.remote);
+
+		// TODO: Check params for any core scheam thats been requested.
+		const dataSharingSchema = schemaWithRemoteRef.reduce((map, collection) => {
+			const [DSA, ...schema] = collection.remote.split('.');
+			if (!map[DSA]) map[DSA] = [];
+			map[DSA].push(schema);
+			return map;
+		}, {});
+
+		// TODO: fetch app models & use schema data instead of doing the work here
+
+		// Load DSA for curent app
+		const requiredDSAs = Object.keys(dataSharingSchema);
+		if (requiredDSAs.length > 0) {
+			const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
+				'_appId': req.authApp._id,
+				'name': {
+					$in: requiredDSAs,
+				},
+				'active': true,
+			}));
+
+			for await (const DSAName of Object.keys(dataSharingSchema)) {
+				const DSA = appDSAs.find((dsa) => dsa.name === DSAName);
+				if (!DSA) continue;
+				// Load DSA
+
+				const api = Buttress.new();
+				await api.init({
+					buttressUrl: DSA.remoteApp.endpoint,
+					apiPath: DSA.remoteApp.apiPath,
+					appToken: DSA.remoteApp.token,
+					allowUnauthorized: true, // Move along, nothing to see here...
+				});
+
+				const remoteSchema = await api.App.getSchema({
+					params: {
+						only: dataSharingSchema[DSAName].join(','),
+					},
+				});
+
+				remoteSchema.forEach((rs) => {
+					schemaWithRemoteRef
+						.filter((s) => s.remote === `${DSAName}.${rs.name}`)
+						.forEach((s) => {
+							// Merge RS into schema
+							delete s.remote;
+							const collectionIdx = collections.findIndex((s) => s.name === rs.name);
+							if (collectionIdx === -1) return;
+							collections[collectionIdx] = Helpers.mergeDeep(rs, s);
+						});
+				});
+			}
+		}
+
+		return collections;
 	}
 
 	setLocalSchema(schema) {
@@ -154,6 +252,28 @@ class AppSchemaModel extends SchemaModel {
 
 	get localSchema() {
 		return this._localSchema;
+	}
+
+	/**
+	 * @param {ObjectId} appId - app id which needs to be updated
+	 * @param {Object} appPolicyPropertiesList - App policy property list
+	 * @return {Promise} - resolves when save operation is completed
+	 */
+	async setPolicyPropertiesList(appId, appPolicyPropertiesList) {
+		Logging.logSilly(`Add App Policy Property List ${appId}`);
+		return super.updateById(appId, {$set: {policyPropertiesList: appPolicyPropertiesList}});
+	}
+
+	/**
+	 * @param {ObjectId} appId - app id which needs to be updated
+	 * @param {object} appPolicyPropertiesList - App package allow list
+	 * @return {Promise} - resolves when save operation is completed
+	 */
+	async updatePolicyPropertiesList(appId, appPolicyPropertiesList) {
+		Logging.logSilly(`Add App Allow List ${appId}`);
+		for await (const item of appPolicyPropertiesList) {
+			await super.updateById(appId, {$push: {policyPropertiesList: item}});
+		}
 	}
 
 	/**
@@ -202,6 +322,24 @@ class AppSchemaModel extends SchemaModel {
 		}
 
 		return super.rm(entity);
+	}
+
+	/**
+	 * @param {string} appId - app entity object to be updated
+	 * @param {array} oAuth - oAuth options for the app
+	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+	 */
+	async updateOAuth(appId, oAuth) {
+		const app = await this.findById(appId);
+
+		for await (const oAuthOption of oAuth) {
+			const oAuthExists = app.oAuth.find((option) => option === oAuthOption);
+			if (oAuthExists) continue;
+
+			return super.update({
+				'_id': this.createId(appId),
+			}, {$push: {'oAuth': oAuthOption}});
+		}
 	}
 }
 

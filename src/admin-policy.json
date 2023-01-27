@@ -1,0 +1,32 @@
+[
+	{
+		"name": "admin-user",
+		"selection": {
+			"role": {
+				"@eq": "ADMIN"
+			}
+		},
+		"config": [{
+			"endpoints": ["ALL"],
+			"query": [{
+				"schema": ["ALL"],
+				"access": "FULL_ACCESS"
+			}]
+		}]
+	},
+	{
+		"name": "admin-lambda-access",
+		"selection": {
+			"role": {
+				"@eq": "ADMIN_LAMBDA"
+			}
+		},
+		"config": [{
+			"endpoints": ["ALL"],
+			"query": [{
+				"schema": ["ALL"],
+				"access": "FULL_ACCESS"
+			}]
+		}]
+	}
+]

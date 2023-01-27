@@ -233,7 +233,7 @@ const __validate = (schema, values, parentProperty, body = null) => {
 
 		if (propVal === undefined) {
 			// NOTE: This feels wrong
-			if (body && schema && schema[property] && schema[property].__type === 'object') {
+			if (body && body[property] && schema && schema[property] && schema[property].__type === 'object') {
 				const definedObjectKeys = Object.keys(schema).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
 				const blankObjectValues = Object.keys(body[property]).reduce((arr, key) => {
 					if (!definedObjectKeys.includes(key) || property !== key) {

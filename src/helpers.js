@@ -337,3 +337,38 @@ module.exports.awaitForEach = async (arr, handler) => {
 		await handler(item);
 	}, Promise.resolve());
 };
+
+module.exports.checkAppPolicyProperty = async (appPolicyList, policyProperties) => {
+	const res = {
+		passed: true,
+		errMessage: '',
+	};
+
+	if (!appPolicyList) {
+		res.passed = false;
+		res.errMessage = 'The app does not include a policy property list';
+		return res;
+	}
+
+	const appPolicyPropertiesKeys = Object.keys(appPolicyList);
+	for await (const key of Object.keys(policyProperties)) {
+		if (!appPolicyPropertiesKeys.includes(key)) {
+			res.passed = false;
+			res.errMessage = 'Policy property key not listed';
+			continue;
+		}
+
+		const appPolicyPropertiesValues = appPolicyList[key];
+		const equalValue = policyProperties[key]['@eq'];
+		if (!equalValue) {
+			res.passed = false;
+			res.errMessage = 'Policy property value not listed';
+		}
+		if (equalValue !== undefined && appPolicyPropertiesValues.every((val) => val.toUpperCase() !== equalValue.toUpperCase())) {
+			res.passed = false;
+			res.errMessage = 'Policy property value not listed';
+		}
+	}
+
+	return res;
+};

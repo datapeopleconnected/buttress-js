@@ -51,3 +51,9 @@ nginx/*
 
 # App Data
 app_data/*
+
+# Lambda
+lambda
+
+# Bundles
+bundles

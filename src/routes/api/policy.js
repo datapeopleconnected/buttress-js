@@ -121,23 +121,28 @@ class AddPolicy extends Route {
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			const app = req.authApp;
+	async _validate(req, res, token) {
+		const app = req.authApp;
+		if (!app ||
+			!req.body.selection ||
+			!req.body.name ||
+			!req.body.config ||
+			req.body.config.length < 1) {
+			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
 
-			if (!app ||
-				!req.body.selection ||
-				!req.body.name) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
+		const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body.selection);
+		if (!policyCheck.passed) {
+			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+		}
 
-			resolve(true);
-		});
+		return Promise.resolve(true);
 	}
 
 	_exec(req, res, validate) {
-		return Model.Policy.add({policy: req.body, appId: req.authApp._id})
+		return Model.Policy.add(req, {policy: req.body})
 			.then((policy) => {
 				nrp.emit('app-policy:bust-cache', {
 					appId: req.authApp._id,
@@ -189,7 +194,7 @@ class SyncPolicies extends Route {
 		});
 
 		for await (const policy of req.body) {
-			await Model.Policy.add({policy: policy, appId: req.authApp._id});
+			await Model.Policy.add(req, {policy: policy});
 		}
 
 		nrp.emit('app-policy:bust-cache', {
@@ -199,6 +204,52 @@ class SyncPolicies extends Route {
 		return true;
 	}
 }
+
+/**
+ * @class PolicyCount
+ */
+class PolicyCount extends Route {
+	constructor() {
+		super(`policy/count`, `COUNT POLICIES`);
+		this.verb = Route.Constants.Verbs.SEARCH;
+		this.auth = Route.Constants.Auth.SUPER;
+		this.permissions = Route.Constants.Permissions.SEARCH;
+
+		this.activityDescription = `COUNT POLICIES`;
+		this.activityBroadcast = false;
+
+		this.model = Model.Policy;
+	}
+
+	_validate(req, res, token) {
+		const result = {
+			query: {},
+		};
+
+		let query = {};
+
+		if (!query.$and) {
+			query.$and = [];
+		}
+
+		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+		if (req.body && req.body.query) {
+			query.$and.push(req.body.query);
+		} else if (req.body && !req.body.query) {
+			query.$and.push(req.body);
+		}
+
+		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		result.query = query;
+		return result;
+	}
+
+	_exec(req, res, validateResult) {
+		return Model.Policy.count(validateResult.query);
+	}
+}
+routes.push(PolicyCount);
+
 routes.push(SyncPolicies);
 
 

@@ -23,8 +23,9 @@ const Route = require('../route');
 const Model = require('../../model');
 const Logging = require('../../logging');
 const Helpers = require('../../helpers');
-const Datastore = require('../../datastore');
-
+const ObjectId = require('mongodb').ObjectId;
+const Config = require('node-env-obj')();
+const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 
 const routes = [];
@@ -55,7 +56,7 @@ routes.push(GetUserList);
  */
 class GetUser extends Route {
 	constructor() {
-		super('user/:id', 'GET USER');
+		super('user/:parameter', 'GET USER');
 		this.verb = Route.Constants.Verbs.GET;
 		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -63,35 +64,51 @@ class GetUser extends Route {
 		this._user = false;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.params.id) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+	async _validate(req, res, token) {
+		const parameter = req.params.parameter;
+		if (!parameter) {
+			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
+
+		try {
+			const isQueryId = ObjectId.isValid(req.params.parameter);
+			let user = null;
+			let userToken = null;
+			if (isQueryId) {
+				user = await Model.User.findById(parameter);
+				if (!user) {
+					this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+					return Promise.resolve({statusCode: 400});
+				}
+				// TODO: This should really only be a single token now
+				userToken = await Helpers.streamFirst(await Model.Token.findUserAuthTokens(user._id, req.authApp._id));
+			} else {
+				userToken = await Model.Token.findOne({
+					value: {
+						$eq: parameter,
+					},
+				});
+				if (!userToken) {
+					this.log('ERROR: Invalid User Token', Route.LogLevel.ERR);
+					return Promise.resolve({statusCode: 400});
+				}
+				user = await Model.User.findById(userToken._user);
 			}
 
-			Model.User.findById(req.params.id)
-				.then(async (_user) => {
-					if (_user) {
-						const output = {
-							id: _user._id,
-							auth: _user.auth,
-							token: null,
-							policyProperties: _user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
-						};
+			const output = {
+				id: user._id,
+				auth: user.auth,
+				tokens: [{
+					value: userToken.value,
+				}],
+				policyProperties: user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
+			};
 
-						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
-						const token = await Helpers.streamFirst(rxTokens);
-						if (token) {
-							output.token = token.value;
-						}
-						resolve(output);
-					} else {
-						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-						resolve({statusCode: 400});
-					}
-				});
-		});
+			return output;
+		} catch (err) {
+			return Promise.reject(err);
+		}
 	}
 
 	_exec(req, res, user) {
@@ -261,56 +278,59 @@ class AddUser extends Route {
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			Logging.log(req.body.user, Logging.Constants.LogLevel.DEBUG);
-			const app = req.body.user.app ? req.body.user.app : req.params.app;
+	async _validate(req, res, token) {
+		Logging.log(req.body.user, Logging.Constants.LogLevel.DEBUG);
+		const app = req.body.user.app ? req.body.user.app : req.params.app;
 
-			if (!app ||
-					!req.body.user.id ||
-					!req.body.user.token ||
-					req.body.user.policyProperties === undefined) {
+		if (!app ||
+				!req.body.user.id ||
+				!req.body.user.token ||
+				req.body.user.policyProperties === undefined) {
+			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
+
+		if (req.body.auth) {
+			this.log(req.body.auth);
+			this.log('User Auth Token Reqested');
+			if (!req.body.auth.authLevel ||
+					!req.body.auth.permissions ||
+					!req.body.auth.domains) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
-			if (req.body.auth) {
-				this.log(req.body.auth);
-				this.log('User Auth Token Reqested');
-				if (!req.body.auth.authLevel ||
-						!req.body.auth.permissions ||
-						!req.body.auth.domains) {
-					this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-				}
-				req.body.auth.type = Model.Token.Constants.Type.USER;
-				req.body.auth.app = req.authApp._id;
-			} else {
-				this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_auth`));
-			}
+			req.body.auth.type = Model.Token.Constants.Type.USER;
+			req.body.auth.app = req.authApp._id;
+		} else {
+			this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
+		}
 
-			resolve(true);
-		});
+		const policyCheck = await Helpers.checkAppPolicyProperty(req?.authApp?.policyPropertiesList, req.body.user.policyProperties);
+		if (!policyCheck.passed) {
+			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+		}
+
+		return Promise.resolve(true);
 	}
 
-	_exec(req, res, validate) {
-		return Model.User.add(req.body.user, req.body.auth)
-			.then((user) => {
-				// TODO: Strip back return data, should match find user
-				let policyProperties = null;
-				if (user._appMetadata) {
-					const _appMetadata = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
-					policyProperties = (_appMetadata) ? _appMetadata.policyProperties : null;
-				}
+	async _exec(req, res, validate) {
+		const user = await Model.User.add(req.body.user, req.body.auth);
+		// TODO: Strip back return data, should match find user
+		let policyProperties = null;
+		if (user._appMetadata) {
+			const _appMetadata = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
+			policyProperties = (_appMetadata) ? _appMetadata.policyProperties : null;
+		}
 
-				return {
-					id: user._id,
-					auth: user.auth,
-					token: null,
-					policyProperties,
-				};
-			});
+		return {
+			id: user._id,
+			auth: user.auth,
+			tokens: user.tokens,
+			policyProperties,
+		};
 	}
 }
 routes.push(AddUser);
@@ -374,25 +394,31 @@ class SetUserPolicyProperties extends Route {
 		this.activityBroadcast = true;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.body) {
-				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
+	async _validate(req, res, token) {
+		const app = req.authApp;
+		if (!app) {
+			this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
 
-			Model.User.exists(req.params.id)
-				.then((exists) => {
-					if (!exists) {
-						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-					}
-					resolve(true);
-				});
+		if (!req.body) {
+			this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
 
-			// TODO: Fetch the app roles and vaildate that its a valid app role
-			resolve(true);
-		});
+		const exists = await Model.User.exists(req.params.id);
+		if (!exists) {
+			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+		}
+
+		const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
+		if (!policyCheck.passed) {
+			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+		}
+
+		return Promise.resolve(true);
 	}
 
 	async _exec(req, res, validate) {
@@ -645,6 +671,88 @@ class clearUserLocalData extends Route {
 	}
 }
 routes.push(clearUserLocalData);
+
+/**
+ * @class SearchUserList
+ */
+class SearchUserList extends Route {
+	constructor() {
+		super('user', 'SEARCH USER LIST');
+		this.verb = Route.Constants.Verbs.SEARCH;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.LIST;
+	}
+
+	_validate(req, res, token) {
+		const result = {
+			query: {
+				$and: [
+					{
+						_appId: req.authApp._id,
+					},
+				],
+			},
+		};
+
+		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+		if (req.body && req.body.query) {
+			result.query.$and.push(req.body.query);
+		}
+
+		result.query = Model.User.parseQuery(result.query, {}, Model.User.flatSchemaData);
+		return result;
+	}
+
+	_exec(req, res, validate) {
+		return Model.User.find(validate.query);
+	}
+}
+routes.push(SearchUserList);
+
+/**
+ * @class UserCount
+ */
+class UserCount extends Route {
+	constructor() {
+		super(`user/count`, `COUNT USERS`);
+		this.verb = Route.Constants.Verbs.SEARCH;
+		this.auth = Route.Constants.Auth.SUPER;
+		this.permissions = Route.Constants.Permissions.SEARCH;
+
+		this.activityDescription = `COUNT USERS`;
+		this.activityBroadcast = false;
+
+		this.model = Model.User;
+	}
+
+	_validate(req, res, token) {
+		const result = {
+			query: {},
+		};
+
+		let query = {};
+
+		if (!query.$and) {
+			query.$and = [];
+		}
+
+		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+		if (req.body && req.body.query) {
+			query.$and.push(req.body.query);
+		} else if (req.body && !req.body.query) {
+			query.$and.push(req.body);
+		}
+
+		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		result.query = query;
+		return result;
+	}
+
+	_exec(req, res, validateResult) {
+		return Model.User.count(validateResult.query);
+	}
+}
+routes.push(UserCount);
 
 /**
  * @type {*[]}

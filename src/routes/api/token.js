@@ -78,6 +78,41 @@ class DeleteAllTokens extends Route {
 routes.push(DeleteAllTokens);
 
 /**
+ * @class SearchUserToken
+ */
+class SearchUserToken extends Route {
+	constructor() {
+		super('token', 'SEARCH USER TOKEN');
+		this.verb = Route.Constants.Verbs.SEARCH;
+		this.auth = Route.Constants.Auth.SUPER;
+		this.permissions = Route.Constants.Permissions.SEARCH;
+
+		this.redactResults = false;
+	}
+
+	_validate(req, res, token) {
+		const result = {
+			query: {
+				$and: [],
+			},
+		};
+
+		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+		if (req.body && req.body.query) {
+			result.query.$and.push(req.body.query);
+		}
+
+		result.query = Model.Token.parseQuery(result.query, {}, Model.Token.flatSchemaData);
+		return result;
+	}
+
+	_exec(req, res, validate) {
+		return Model.Token.find(validate.query);
+	}
+}
+routes.push(SearchUserToken);
+
+/**
  * @type {*[]}
  */
 module.exports = routes;

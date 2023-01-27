@@ -1,0 +1,192 @@
+'use strict';
+
+/**
+ * Buttress - The federated real-time open data platform
+ * Copyright (C) 2016-2022 Data Performance Consultancy LTD.
+ * <https://dataperformanceconsultancy.com/>
+ *
+ * This file is part of Buttress.
+ * Buttress is free software: you can redistribute it and/or modify it under the
+ * terms of the GNU Affero General Public Licence as published by the Free Software
+ * Foundation, either version 3 of the Licence, or (at your option) any later version.
+ * Buttress is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU Affero General Public Licence for more details.
+ * You should have received a copy of the GNU Affero General Public Licence along with
+ * this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+const Route = require('../route');
+const Model = require('../../model');
+const Helpers = require('../../helpers');
+// const Logging = require('../../logging');
+
+const routes = [];
+
+/**
+ * @class AddSecureStore
+ */
+class AddSecureStore extends Route {
+	constructor() {
+		super('secureStore', 'ADD SECURE STORE');
+		this.verb = Route.Constants.Verbs.POST;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.ADD;
+	}
+
+	async _validate(req, res, token) {
+		const app = req.authApp;
+
+		if (!app || !req.body.name) {
+			this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
+
+		const secureStoreExist = await Model.SecureStore.findOne({name: req.body.name});
+		if (secureStoreExist) {
+			this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
+		}
+
+		return Promise.resolve(true);
+	}
+
+	_exec(req, res, validate) {
+		return Model.SecureStore.add(req, req.body);
+	}
+}
+routes.push(AddSecureStore);
+
+/**
+ * @class AddManySecureStore
+ */
+class AddManySecureStore extends Route {
+	constructor() {
+		super('secureStore/bulk/add', 'ADD SECURE STORE');
+		this.verb = Route.Constants.Verbs.POST;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.ADD;
+	}
+
+	async _validate(req, res, token) {
+		const app = req.authApp;
+
+		if (!app) {
+			this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
+
+		if (!Array.isArray(req.body)) {
+			this.log(`[${this.name}] Invalid request body`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body`));
+		}
+
+		const missingField = req.body.find((ss) => !ss.name);
+		if (missingField) {
+			this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
+
+		for await (const secureStore of req.body) {
+			const secureStoreExist = await Model.SecureStore.findOne({name: secureStore.name});
+			if (secureStoreExist) {
+				this.log(`ERROR: Secure Store with this name ${secureStore.name} already exists`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
+			}
+		}
+
+		return Promise.resolve(true);
+	}
+
+	async _exec(req, res, validate) {
+		for await (const secureStore of req.body) {
+			await Model.SecureStore.add(req, secureStore);
+		}
+
+		return true;
+	}
+}
+routes.push(AddManySecureStore);
+
+/**
+ * @class FindSecureStore
+ */
+class FindSecureStore extends Route {
+	constructor() {
+		super('secureStore/:name', 'ADD SECURE STORE');
+		this.verb = Route.Constants.Verbs.GET;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.ADD;
+	}
+
+	async _validate(req, res, token) {
+		const name = req.params.name;
+		if (!name) {
+			this.log(`[${this.name}] Missing request parameter`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
+
+		const secureStore = await Model.SecureStore.findOne({
+			name: {
+				$eq: name,
+			},
+		});
+
+		return Promise.resolve(secureStore);
+	}
+
+	_exec(req, res, validate) {
+		return validate;
+	}
+}
+routes.push(FindSecureStore);
+
+/**
+ * @class SecureStoreCount
+ */
+class SecureStoreCount extends Route {
+	constructor() {
+		super(`secureStore/count`, `COUNT SECURE STORES`);
+		this.verb = Route.Constants.Verbs.SEARCH;
+		this.auth = Route.Constants.Auth.SUPER;
+		this.permissions = Route.Constants.Permissions.SEARCH;
+
+		this.activityDescription = `COUNT SECURE STORES`;
+		this.activityBroadcast = false;
+
+		this.model = Model.SecureStore;
+	}
+
+	_validate(req, res, token) {
+		const result = {
+			query: {},
+		};
+
+		let query = {};
+
+		if (!query.$and) {
+			query.$and = [];
+		}
+
+		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+		if (req.body && req.body.query) {
+			query.$and.push(req.body.query);
+		} else if (req.body && !req.body.query) {
+			query.$and.push(req.body);
+		}
+
+		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		result.query = query;
+		return result;
+	}
+
+	_exec(req, res, validateResult) {
+		return Model.SecureStore.count(validateResult.query);
+	}
+}
+routes.push(SecureStoreCount);
+
+/**
+ * @type {*[]}
+ */
+module.exports = routes;

@@ -25,11 +25,12 @@ const SchemaModel = require('../schemaModel');
 /**
  * Constants
 */
-const type = ['app', 'user', 'dataSharing'];
+const type = ['app', 'user', 'dataSharing', 'lambda'];
 const Type = {
 	APP: type[0],
 	USER: type[1],
 	DATA_SHARING: type[2],
+	LAMBDA: type[3],
 };
 
 const authLevel = [0, 1, 2, 3];
@@ -109,6 +110,12 @@ class TokenSchemaModel extends SchemaModel {
 					__allowUpdate: true,
 				},
 				_app: {
+					__type: 'id',
+					__default: null,
+					__required: true,
+					__allowUpdate: false,
+				},
+				_lambda: {
 					__type: 'id',
 					__default: null,
 					__required: true,

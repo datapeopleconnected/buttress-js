@@ -15,6 +15,9 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+const Config = require('node-env-obj')();
+const NRP = require('node-redis-pubsub');
+const nrp = new NRP(Config.redis);
 
 const Logging = require('../logging');
 const Shared = require('./shared');
@@ -42,6 +45,16 @@ class SchemaModel {
 		if (this.appShortId) {
 			this.collectionName = `${this.appShortId}-${this.collectionName}`;
 		}
+
+		nrp.on('app:update-schema', (data) => {
+			if (!app || (app._id.toString() !== data.appId)) return;
+
+			data.schemas.forEach((schema) => {
+				if (schema.name !== this.schemaData.name) return;
+
+				this.schemaData = schema;
+			});
+		});
 	}
 
 	async initAdapter(datastore) {

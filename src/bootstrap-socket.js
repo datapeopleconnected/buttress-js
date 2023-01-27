@@ -17,13 +17,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 const hash = require('object-hash');
-const Sugar = require('sugar');
 const os = require('os');
 const cluster = require('cluster');
 const net = require('net');
 const Express = require('express');
 const {createClient} = require('redis');
 const {v4: uuidv4} = require('uuid');
+const Sugar = require('sugar');
+require('sugar-inflections');
 
 const sio = require('socket.io');
 const sioClient = require('socket.io-client');

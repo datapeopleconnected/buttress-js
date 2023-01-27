@@ -80,6 +80,11 @@ class UserSchemaModel extends SchemaModel {
 							__default: '',
 							__allowUpdate: true,
 						},
+						password: {
+							__type: 'string',
+							__default: '',
+							__allowUpdate: true,
+						},
 						profileUrl: {
 							__type: 'string',
 							__default: '',
@@ -167,6 +172,7 @@ class UserSchemaModel extends SchemaModel {
 				app: body.app,
 				appId: body.id,
 				username: body.username,
+				password: body.password,
 				profileUrl: body.profileUrl,
 				images: {
 					profile: body.profileImgUrl,
@@ -175,6 +181,7 @@ class UserSchemaModel extends SchemaModel {
 				email: body.email,
 				token: body.token,
 				tokenSecret: body.tokenSecret,
+				refreshToken: body.refreshToken,
 			}],
 		};
 

@@ -58,7 +58,7 @@ class Model {
 
 	async initCoreModels() {
 		// Core Models
-		const models = _getModels();
+		const models = this._getModels();
 		Logging.log(models, Logging.Constants.LogLevel.SILLY);
 
 		for (let x = 0; x < models.length; x++) {
@@ -201,23 +201,23 @@ class Model {
 		this.__defineGetter__(name, () => this.models[name]);
 		return this.models[name];
 	}
-}
 
-/**
+	/**
  * @private
  * @return {array} - list of files containing schemas
  */
-function _getModels() {
-	const filenames = fs.readdirSync(`${__dirname}/schema`);
+	_getModels() {
+		const filenames = fs.readdirSync(`${__dirname}/schema`);
 
-	const files = [];
-	for (let x = 0; x < filenames.length; x++) {
-		const file = filenames[x];
-		if (path.extname(file) === '.js') {
-			files.push(path.basename(file, '.js'));
+		const files = [];
+		for (let x = 0; x < filenames.length; x++) {
+			const file = filenames[x];
+			if (path.extname(file) === '.js') {
+				files.push(path.basename(file, '.js'));
+			}
 		}
+		return files;
 	}
-	return files;
 }
 
 module.exports = new Model();

@@ -9,6 +9,7 @@
 		"BUTTRESS_HOST_URL": "",
 		"BUTTRESS_REST_LISTEN_PORT": "6000",
 		"BUTTRESS_SOCK_LISTEN_PORT": "6010",
+		"BUTTRESS_LAMB_LISTEN_PORT": "6020",
 
 		"BUTTRESS_DATASTORE_CONNECTION_STRING": "",
 		"BUTTRESS_DATASTORE_OPTIONS": "appName=%BUTTRESS_APP_CODE%&maxPoolSize=100",
@@ -19,7 +20,10 @@
 		"BUTTRESS_SOCKET_APP": "primary",
 		"BUTTRESS_LOGGING_LEVEL": "info",
 		"BUTTRESS_LOGGING_SLOW": "TRUE",
-		"BUTTRESS_LOGGING_SLOW_TIME": 2
+		"BUTTRESS_LOGGING_SLOW_TIME": 2,
+
+		"BUTTRESS_TIMEOUT_LAMBDA": 5,
+		"BUTTRESS_TIMEOUT_LAMBDAS_RUNNER": 10
 	},
 	"global": {
 		"env": "%NODE_ENV%",
@@ -28,7 +32,7 @@
 			"description": "The federated real-time open data platform",
 			"code": "%BUTTRESS_APP_CODE%",
 			"version": "2.4.0",
-			"protocol": "http",
+			"protocol": "%BUTTRESS_APP_PROTOCOL%",
 			"host": "%BUTTRESS_HOST_URL%",
 			"apiPrefix": "/api/v1",
 			"workers": "%BUTTRESS_APP_WORKERS%"
@@ -40,11 +44,16 @@
 		},
 		"listenPorts": {
 			"rest": "%BUTTRESS_REST_LISTEN_PORT%",
-			"sock": "%BUTTRESS_SOCK_LISTEN_PORT%"
+			"sock": "%BUTTRESS_SOCK_LISTEN_PORT%",
+			"lamb": "%BUTTRESS_LAMB_LISTEN_PORT%"
 		},
 		"datastore": {
 			"connectionString": "%BUTTRESS_DATASTORE_CONNECTION_STRING%",
 			"options": "%BUTTRESS_DATASTORE_OPTIONS%"
+		},
+		"timeout": {
+			"lambda": "%BUTTRESS_TIMEOUT_LAMBDA%",
+			"lambdasRunner": "%BUTTRESS_TIMEOUT_LAMBDAS_RUNNER%"
 		},
 		"redis": {
 			"port": "%BUTTRESS_REDIS_PORT%",
