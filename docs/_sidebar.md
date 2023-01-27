@@ -18,8 +18,9 @@
 * Applications
   * [Introduction](applications/)
   * [Schema](todo.md)
-  * [Policy](todo.md)
-  * [Lambda](todo.md)
+  * [Policy](applications/policy.md)
+  * [Lambda](applications/lambda.md)
+  * [Secure Store](todo.md)
 
 * Federation
   * [Introduction](federation/)
