@@ -364,7 +364,16 @@ module.exports.checkAppPolicyProperty = async (appPolicyList, policyProperties) 
 			res.passed = false;
 			res.errMessage = 'Policy property value not listed';
 		}
-		if (equalValue !== undefined && appPolicyPropertiesValues.every((val) => val.toUpperCase() !== equalValue.toUpperCase())) {
+
+		const appContainsProp = appPolicyPropertiesValues.every((val) => {
+			if (typeof val === 'string') {
+				val.toUpperCase() !== equalValue.toUpperCase();
+			}
+			if (typeof val === 'boolean') {
+				val !== equalValue;
+			}
+		});
+		if (equalValue !== undefined && appContainsProp) {
 			res.passed = false;
 			res.errMessage = 'Policy property value not listed';
 		}
