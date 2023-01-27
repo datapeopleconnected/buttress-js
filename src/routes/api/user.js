@@ -24,8 +24,6 @@ const Model = require('../../model');
 const Logging = require('../../logging');
 const Helpers = require('../../helpers');
 const ObjectId = require('mongodb').ObjectId;
-const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 
 const routes = [];
