@@ -20,7 +20,7 @@
   * [Schema](todo.md)
   * [Policy](applications/policy.md)
   * [Lambda](applications/lambda.md)
-  * [Secure Store](todo.md)
+  * [Secure Store](applications/secure-store.md)
 
 * Federation
   * [Introduction](federation/)
