@@ -734,7 +734,7 @@ class Routes {
 
 		const deployment = await Model.Deployment.findOne({
 			lambdaId: Model.Lambda.createId(lambda._id),
-			hash: lambda.git.currentDeployment,
+			hash: lambda.git.hash,
 		});
 		if (!deployment) {
 			res.errCode = 404;

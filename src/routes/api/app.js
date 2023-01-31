@@ -541,12 +541,20 @@ class UpdateAppPolicyPropertyList extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 			}
 
+			const currentAppListKeys = Object.keys(req.authApp.policyPropertiesList);
+			Object.keys(req.body).forEach((key) => {
+				if (currentAppListKeys.includes(key)) {
+					req.body[key] = req.body[key].concat(req.authApp.policyPropertiesList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
+				}
+			});
+			req.body = {...req.authApp.policyPropertiesList, ...req.body};
+
 			resolve(true);
 		});
 	}
 
 	_exec(req, res, validate) {
-		return Model.App.updatePolicyPropertiesList(req.authApp._id, req.body)
+		return Model.App.setPolicyPropertiesList(req.authApp._id, req.body)
 			.then(() => true);
 	}
 }

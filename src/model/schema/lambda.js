@@ -89,7 +89,7 @@ class LambdaSchemaModel extends SchemaModel {
 						__required: true,
 						__allowUpdate: true,
 					},
-					currentDeployment: {
+					hash: {
 						__type: 'string',
 						__default: null,
 						__required: true,
@@ -248,7 +248,7 @@ class LambdaSchemaModel extends SchemaModel {
 		}
 
 		deployments.push({
-			hash: (body.git.currentDeployment) ? body.git.currentDeployment : null,
+			hash: (body.git.hash) ? body.git.hash : null,
 			deployedAt: Sugar.Date.create('now'),
 		});
 
@@ -259,7 +259,7 @@ class LambdaSchemaModel extends SchemaModel {
 
 			git: {
 				url: (body.git.url) ? body.git.url : null,
-				currentDeployment: (body.git.currentDeployment) ? body.git.currentDeployment : null,
+				hash: (body.git.hash) ? body.git.hash : null,
 				branch: (body.git.branch) ? body.git.branch : null,
 				entryFile: (body.git.entryFile) ? body.git.entryFile : null,
 				entryPoint: (body.git.entryPoint) ? body.git.entryPoint : null,
@@ -277,7 +277,7 @@ class LambdaSchemaModel extends SchemaModel {
 
 		const deployment = {
 			lambdaId: lambda._id,
-			hash: lambda.git.currentDeployment,
+			hash: lambda.git.hash,
 			branch: lambda.git.branch,
 			deployedAt: Sugar.Date.create('now'),
 		};

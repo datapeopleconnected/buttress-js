@@ -265,18 +265,6 @@ class AppSchemaModel extends SchemaModel {
 	}
 
 	/**
-	 * @param {ObjectId} appId - app id which needs to be updated
-	 * @param {object} appPolicyPropertiesList - App package allow list
-	 * @return {Promise} - resolves when save operation is completed
-	 */
-	async updatePolicyPropertiesList(appId, appPolicyPropertiesList) {
-		Logging.logSilly(`Add App Allow List ${appId}`);
-		for await (const item of appPolicyPropertiesList) {
-			await super.updateById(appId, {$push: {policyPropertiesList: item}});
-		}
-	}
-
-	/**
 	 * @param {string} route - route for the permission
 	 * @param {*} permission - permission to apply to the route
 	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists

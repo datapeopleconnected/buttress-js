@@ -47,6 +47,28 @@ Program complete, exiting...
 
 Make note of the app path you selected and the new application token created. You'll be able to use this to create schema & policy under the apps namespace.
 
+#### Setting and updating apps policy property list using the CLI
+To set policy property list for an app using the CLI run the following command:
+
+```bash
+bjs app set-policy-list --list=role:developer,team:rnd,level:junior-intermediate-senior
+```
+The above command creates a list for an app and the list is an object of arrays. The required list option is a colon separated string such that the lhs of the colon is the key and thr rhs of the colon is the value (key:value), multiple values can be added by separating it by a hyphen (-)
+
+Similarly to update a policy property list for an app using the CLI run the following command:
+```bash
+bjs app update-policy-list --list=role:staff-manager
+```
+Note that running the above command after running the first command, the app will concatenate the values of role that already exist on the app policy list to the list of the command and the final app list will be:
+```
+{
+  role: ['developer', 'staff', 'manager'],
+  team: ['rnd'],
+  level: ['junior', 'intermediate', 'senior']
+}
+```
+
+
 ## Schema
 The application schema is used to describe what data the application is going to use and has other features. Using the schemas you provide Buttress will use these to create API's ready for your application to call.
 
@@ -80,7 +102,7 @@ App policy is used to restrict and control what actions are performed against Bu
 
 Policy is then applied to tokens within the system via the policy properties.
 
-More detail on the properties of polices can be [found here](/todo.md)
+More detail on the properties of polices can be [found here](./applications/policy.md)
 
 ```json
 {

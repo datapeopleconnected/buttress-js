@@ -263,7 +263,7 @@ class LambdasRunner {
 	async _createLambdaExecution(lambda) {
 		const deployment = await Model.Deployment.findOne({
 			lambdaId: Model.Lambda.createId(lambda._id),
-			hash: lambda.git.currentDeployment,
+			hash: lambda.git.hash,
 		});
 
 		// TODO add a meaningful error message
