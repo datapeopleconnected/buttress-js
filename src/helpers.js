@@ -359,7 +359,8 @@ module.exports.checkAppPolicyProperty = async (appPolicyList, policyProperties) 
 		}
 
 		const appPolicyPropertiesValues = appPolicyList[key];
-		const equalValue = policyProperties[key]['@eq'];
+		const [operator] = Object.keys(policyProperties[key]);
+		const equalValue = policyProperties[key][operator];
 		if (!equalValue) {
 			res.passed = false;
 			res.errMessage = 'Policy property value not listed';
@@ -367,10 +368,13 @@ module.exports.checkAppPolicyProperty = async (appPolicyList, policyProperties) 
 
 		const appContainsProp = appPolicyPropertiesValues.every((val) => {
 			if (typeof val === 'string') {
-				val.toUpperCase() !== equalValue.toUpperCase();
+				return val.toUpperCase() !== equalValue.toUpperCase();
 			}
 			if (typeof val === 'boolean') {
-				val !== equalValue;
+				return val !== equalValue;
+			}
+			if (typeof val === 'number') {
+				return val < equalValue;
 			}
 		});
 		if (equalValue !== undefined && appContainsProp) {
