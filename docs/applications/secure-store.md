@@ -28,59 +28,55 @@ bjs secure-store list-property
 [{
   "name": "google-credentials",
   "storeData": [{
-    "data": {
-      "client_id": "CLIENT_ID",
-      "client_secret": "CLIENT_SECRET",
-      "redirect_uri": "REDIRECT_URI",
-      "scope": "SCOPE"
-    }
+    "client_id": "CLIENT_ID",
+    "client_secret": "CLIENT_SECRET",
+    "redirect_uri": "REDIRECT_URI",
+    "scope": "SCOPE"
   }]
 }, {
   "name": "allowed-members",
   "storeData": [{
-    "data": {
-      "email": "tomc@wearelighten.co.uk",
+    "identifierEmail": "tomc@wearelighten.co.uk",
+    "policySelectors": {
       "role": "developer"
     }
   }, {
-    "data": {
-      "email": "mahmoud@wearelighten.co.uk",
+    "identifierEmail": "mahmoud@wearelighten.co.uk",
+    "policySelectors": {
       "role": "developer"
     }
   }, {
-    "data": {
-      "email": "spencer@wearelighten.co.uk",
+    "identifierEmail": "spencer@wearelighten.co.uk",
+    "policySelectors": {
       "role": "developer"
     }
   }, {
-    "data": {
-      "email": "chris@evansfinch.co.uk",
+    "identifierEmail": "chris@evansfinch.co.uk",
+    "policySelectors": {
       "role": "developer"
     }
   }, {
-    "data": {
-      "email": "brian.bishop@dpc-ltd.com",
+    "identifierEmail": "brian.bishop@dpc-ltd.com",
+    "policySelectors": {
       "role": "developer"
     }
   }, {
-    "data": {
-      "email": "admin.user@holisticdemo.app",
+    "identifierEmail": "admin.user@holisticdemo.app",
+    "policySelectors": {
       "role": "developer"
     }
   }, {
-    "data": {
-      "email": "engineer.user@holisticdemo.app",
-      "role": "engineer"
+    "identifierEmail": "engineer.user@holisticdemo.app",
+    "policySelectors": {
+      "role": "developer"
     }
   }]
 }, {
   "name": "google-service-account",
   "storeData": [{
-    "data": {
-      "iss": "ISS",
-      "sub": "SUB",
-      "private_key": "PRIVATE_KEY"
-    }
+    "iss": "ISS",
+    "sub": "SUB",
+    "private_key": "PRIVATE_KEY"
   }]
 }]
 ```
