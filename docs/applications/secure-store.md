@@ -78,5 +78,11 @@ bjs secure-store list-property
     "sub": "SUB",
     "private_key": "PRIVATE_KEY"
   }]
+}, {
+  "name": "domains",
+  "storeData": [{
+    appURL: '%APP_URL%',
+    buttressURL: '%BUTTRESS_URL_INSTANCE%'
+  }]
 }]
 ```
