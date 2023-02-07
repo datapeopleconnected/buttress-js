@@ -22,17 +22,17 @@ class PolicyMatch {
 		let match = false;
 		const selection = p.selection;
 
-		const userAppMetaData = (entity._appMetadata) ? entity._appMetadata?.find((md) => md.appId.toString() === appId.toString()) : entity;
-		const entityPolicies = entity.policyProperties;
-		if ((!userAppMetaData || !userAppMetaData.policyProperties) && !entityPolicies) return;
+		const entityMetadata = (entity._appMetadata) ? entity._appMetadata?.find((md) => md.appId.toString() === appId.toString()) : entity;
+		const entityPolicySelectors = entity.policyProperties;
+		if ((!entityMetadata || !entityMetadata.policyProperties) && !entityPolicySelectors) return;
 
-		const policyProperties = (userAppMetaData) ? userAppMetaData.policyProperties : entityPolicies;
+		const policyProperties = (entityMetadata) ? entityMetadata.policyProperties : entityPolicySelectors;
 
 		const matches = Object.keys(selection).reduce((arr, key) => {
 			if (!(key in policyProperties)) return arr;
 			const [selectionCriterionKey] = Object.keys(selection[key]);
 			const [rhs] = Object.values(selection[key]);
-			const lhs = policyProperties[key][selectionCriterionKey];
+			const lhs = policyProperties[key];
 			match = AccessControlHelpers.evaluateOperation(lhs, rhs, selectionCriterionKey);
 			arr.push(match);
 

@@ -20,9 +20,7 @@
 				}
 			}],
 			"policyProperties": {
-				"role": {
-					"@eq": "ADMIN_LAMBDA"
-				}
+				"role": "ADMIN_LAMBDA"
 			}
 		}, {
 			"name": "google-callback-auth",
@@ -30,7 +28,7 @@
 			"git": {
 				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/bjs-google-auth-callback.git",
 				"branch": "main",
-				"hash": "7d95eefde8e4144aed36fbf598acb9a443376ae4",
+				"hash": "b69e621ff7ea8df932ba7278ff4ca94aeb61d737",
 				"entryFile": "index.js",
 				"entryPoint": "execute"
 			},
@@ -44,16 +42,14 @@
 				}
 			}],
 			"policyProperties": {
-				"role": {
-					"@eq": "ADMIN_LAMBDA"
-				}
+				"role": "ADMIN_LAMBDA"
 			}
 		}, {
 			"name": "get-auth-user",
 			"git": {
 				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/get-auth-user.git",
 				"branch": "main",
-				"hash": "5f49833a935f44bca4c9eacc4b49354d77f5dc5f",
+				"hash": "8a6eceb9d42bb7510849784d51d07f8a731a2715",
 				"entryFile": "index.js",
 				"entryPoint": "execute"
 			},
@@ -66,9 +62,7 @@
 				}
 			}],
 			"policyProperties": {
-				"role": {
-					"@eq": "ADMIN_LAMBDA"
-				}
+				"role": "ADMIN_LAMBDA"
 			}
 		}
 	],
@@ -92,9 +86,7 @@
 				}
 			}],
 			"policyProperties": {
-				"role": {
-					"@eq": "ADMIN_LAMBDA"
-				}
+				"role": "ADMIN_LAMBDA"
 			}
 		}, {
 			"name": "microsoft-callback-auth",
@@ -102,7 +94,7 @@
 			"git": {
 				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/bjs-microsoft-auth-callback.git",
 				"branch": "main",
-				"hash": "a5193274e177587a848bf3259f093f8dec16c8ee",
+				"hash": "8d528612ec962ecd0fca88863b8df4a4de293f30",
 				"entryFile": "index.js",
 				"entryPoint": "execute"
 			},
@@ -116,16 +108,14 @@
 				}
 			}],
 			"policyProperties": {
-				"role": {
-					"@eq": "ADMIN_LAMBDA"
-				}
+				"role": "ADMIN_LAMBDA"
 			}
 		}, {
 			"name": "get-auth-user",
 			"git": {
 				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/get-auth-user.git",
 				"branch": "main",
-				"hash": "5f49833a935f44bca4c9eacc4b49354d77f5dc5f",
+				"hash": "8a6eceb9d42bb7510849784d51d07f8a731a2715",
 				"entryFile": "index.js",
 				"entryPoint": "execute"
 			},
@@ -138,9 +128,7 @@
 				}
 			}],
 			"policyProperties": {
-				"role": {
-					"@eq": "ADMIN_LAMBDA"
-				}
+				"role": "ADMIN_LAMBDA"
 			}
 		}
 	],
@@ -163,9 +151,7 @@
 				}
 			}],
 			"policyProperties": {
-				"role": {
-					"@eq": "ADMIN_LAMBDA"
-				}
+				"role": "ADMIN_LAMBDA"
 			}
 		}
 	]

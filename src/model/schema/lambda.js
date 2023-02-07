@@ -131,7 +131,7 @@ class LambdaSchemaModel extends SchemaModel {
 						},
 						cron: {
 							executionTime: {
-								__type: 'date',
+								__type: 'string',
 								__default: null,
 								__required: false,
 								__allowUpdate: true,

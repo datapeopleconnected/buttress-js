@@ -85,7 +85,7 @@ class Helpers {
 		jail.setSync('_fetch', new ivm.Reference(async (data, callback, resolve, reject) => {
 			data.url = (typeof data.url === 'string') ? new URL(data.url) : data.url;
 			try {
-				if (data.options && data.options.headers && data.options.headers['Content-Type'] === 'application/x-www-form-urlencoded') {
+				if (data?.options?.body && data.options.headers && data.options.headers['Content-Type'] === 'application/x-www-form-urlencoded') {
 					data.options.body = this._encodeReqBody(data.options.body);
 				}
 				const response = await fetch(data.url, data.options);

@@ -60,6 +60,7 @@ class SecureStoreSchemaModel extends SchemaModel {
 	 */
 	async add(req, body) {
 		const data = {
+			id: (body.id) ? body.id : null,
 			name: (body.name) ? body.name : null,
 			storeData: (body.storeData) ? body.storeData : [],
 		};
