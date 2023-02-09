@@ -25,6 +25,7 @@ const Logging = require('../../logging');
 const Helpers = require('../../helpers');
 const ObjectId = require('mongodb').ObjectId;
 const nrp = new NRP(Config.redis);
+const Datastore = require('../../datastore');
 
 const routes = [];
 
@@ -70,38 +71,51 @@ class GetUser extends Route {
 		}
 
 		try {
-			const isQueryId = ObjectId.isValid(req.params.parameter);
 			let user = null;
 			let userToken = null;
-			if (isQueryId) {
-				user = await Model.User.findById(parameter);
-				if (!user) {
-					this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-					return Promise.resolve({statusCode: 400});
-				}
-				// TODO: This should really only be a single token now
-				userToken = await Helpers.streamFirst(await Model.Token.findUserAuthTokens(user._id, req.authApp._id));
-			} else {
+			const userId = (ObjectId.isValid(parameter)) ? Model.User.createId(parameter) : null;
+			user = await Model.User.findOne({
+				'$or': [{
+					'_id': {
+						$eq: userId,
+					},
+				}, {
+					'auth.email': {
+						$eq: parameter,
+					},
+				}],
+			});
+
+			if (!user) {
 				userToken = await Model.Token.findOne({
 					value: {
 						$eq: parameter,
 					},
 				});
-				if (!userToken) {
-					this.log('ERROR: Invalid User Token', Route.LogLevel.ERR);
-					return Promise.resolve({statusCode: 400});
-				}
+			}
+
+			if (!userToken && user) {
+				userToken = await Helpers.streamFirst(await Model.Token.findUserAuthTokens(user._id, req.authApp._id));
+			}
+			if (userToken && !user) {
 				user = await Model.User.findById(userToken._user);
+			}
+			if (!user) {
+				this.log(`[${this.name}] Could not fetch user data using ${parameter}`, Route.LogLevel.ERR);
+				return false;
 			}
 
 			const output = {
 				id: user._id,
 				auth: user.auth,
-				tokens: [{
-					value: userToken.value,
-				}],
+				tokens: [],
 				policyProperties: user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
 			};
+			if (userToken?.value) {
+				output.tokens.push({
+					value: userToken.value,
+				});
+			}
 
 			return output;
 		} catch (err) {
@@ -265,57 +279,114 @@ class CreateUserAuthToken extends Route {
 }
 routes.push(CreateUserAuthToken);
 
+// Pre-lambda user addition
+// /**
+//  * @class AddUser
+//  */
+// class AddUser extends Route {
+// 	constructor() {
+// 		super('user/:app?', 'ADD USER');
+// 		this.verb = Route.Constants.Verbs.POST;
+// 		this.auth = Route.Constants.Auth.ADMIN;
+// 		this.permissions = Route.Constants.Permissions.ADD;
+// 	}
+
+// 	async _validate(req, res, token) {
+// 		Logging.log(req.body.user, Logging.Constants.LogLevel.DEBUG);
+// 		const app = req.body.user.app ? req.body.user.app : req.params.app;
+
+// 		if (!app ||
+// 				!req.body.user.id ||
+// 				!req.body.user.token ||
+// 				req.body.user.policyProperties === undefined) {
+// 			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+// 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+// 		}
+
+// 		if (req.body.auth) {
+// 			this.log(req.body.auth);
+// 			this.log('User Auth Token Reqested');
+// 			if (!req.body.auth.authLevel ||
+// 					!req.body.auth.permissions ||
+// 					!req.body.auth.domains) {
+// 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+// 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+// 			}
+
+// 			req.body.auth.type = Model.Token.Constants.Type.USER;
+// 			req.body.auth.app = req.authApp._id;
+// 		} else {
+// 			this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
+// 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
+// 		}
+
+// 		const policyCheck = await Helpers.checkAppPolicyProperty(req?.authApp?.policyPropertiesList, req.body.user.policyProperties);
+// 		if (!policyCheck.passed) {
+// 			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+// 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+// 		}
+
+// 		return Promise.resolve(true);
+// 	}
+
+// 	async _exec(req, res, validate) {
+// 		const user = await Model.User.add(req.body.user, req.body.auth);
+// 		// TODO: Strip back return data, should match find user
+// 		let policyProperties = null;
+// 		if (user._appMetadata) {
+// 			const _appMetadata = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
+// 			policyProperties = (_appMetadata) ? _appMetadata.policyProperties : null;
+// 		}
+
+// 		return {
+// 			id: user._id,
+// 			auth: user.auth,
+// 			tokens: user.tokens,
+// 			policyProperties,
+// 		};
+// 	}
+// }
+// routes.push(AddUser);
+
 /**
  * @class AddUser
  */
 class AddUser extends Route {
 	constructor() {
-		super('user/:app?', 'ADD USER');
+		super('user', 'ADD USER');
 		this.verb = Route.Constants.Verbs.POST;
 		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
 	async _validate(req, res, token) {
-		Logging.log(req.body.user, Logging.Constants.LogLevel.DEBUG);
-		const app = req.body.user.app ? req.body.user.app : req.params.app;
+		Logging.log(req.body, Logging.Constants.LogLevel.DEBUG);
 
-		if (!app ||
-				!req.body.user.id ||
-				!req.body.user.token ||
-				req.body.user.policyProperties === undefined) {
-			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		if (!req.body.auth) {
+			this.log(`[${this.name}] Missing required user auth block`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_user_auth`));
 		}
 
-		if (req.body.auth) {
-			this.log(req.body.auth);
-			this.log('User Auth Token Reqested');
-			if (!req.body.auth.authLevel ||
-					!req.body.auth.permissions ||
-					!req.body.auth.domains) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
-
-			req.body.auth.type = Model.Token.Constants.Type.USER;
-			req.body.auth.app = req.authApp._id;
-		} else {
-			this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
+		if (!Array.isArray(req.body.auth) || (Array.isArray(req.body.auth) && req.body.auth.length < 1)) {
+			this.log(`[${this.name}] Invalid user auth block`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_user_auth`));
+		}
+		if (req.body.policyProperties === undefined) {
+			this.log(`[${this.name}] Missing user required policy properties`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_properties`));
 		}
 
-		const policyCheck = await Helpers.checkAppPolicyProperty(req?.authApp?.policyPropertiesList, req.body.user.policyProperties);
+		const policyCheck = await Helpers.checkAppPolicyProperty(req?.authApp?.policyPropertiesList, req.body.policyProperties);
 		if (!policyCheck.passed) {
 			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
 		}
 
 		return Promise.resolve(true);
 	}
 
 	async _exec(req, res, validate) {
-		const user = await Model.User.add(req.body.user, req.body.auth);
+		const user = await Model.User.add(req.body);
 		// TODO: Strip back return data, should match find user
 		let policyProperties = null;
 		if (user._appMetadata) {

@@ -161,29 +161,89 @@ class UserSchemaModel extends SchemaModel {
 		};
 	}
 
+	// Pre-lambda user addition
+	// /**
+	//  * @param {Object} body - body passed through from a POST request
+	//  * @param {Object} auth - OPTIONAL authentication details for a user token
+	//  * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+	//  */
+	// async add(body, auth) {
+	// 	const userBody = {
+	// 		auth: [{
+	// 			app: body.app,
+	// 			appId: body.id,
+	// 			username: body.username,
+	// 			password: body.password,
+	// 			profileUrl: body.profileUrl,
+	// 			images: {
+	// 				profile: body.profileImgUrl,
+	// 				banner: body.bannerImgUrl,
+	// 			},
+	// 			email: body.email,
+	// 			token: body.token,
+	// 			tokenSecret: body.tokenSecret,
+	// 			refreshToken: body.refreshToken,
+	// 		}],
+	// 	};
+
+	// 	const rxsUser = await super.add(userBody, {
+	// 		_apps: [Model.authApp._id],
+	// 		_appMetadata: [{
+	// 			appId: Model.authApp._id,
+	// 			policyProperties: (body.policyProperties) ? body.policyProperties : null,
+	// 		}],
+	// 	});
+	// 	const user = await Helpers.streamFirst(rxsUser);
+
+	// 	user.tokens = [];
+
+	// 	if (!auth) {
+	// 		return user;
+	// 	}
+
+	// 	const rxsToken = await Model.Token.add(auth, {
+	// 		_app: Model.authApp._id,
+	// 		_user: user._id,
+	// 	});
+	// 	const token = await Helpers.streamFirst(rxsToken);
+
+	// 	nrp.emit('app-routes:bust-cache', {});
+
+	// 	if (token) {
+	// 		user.tokens.push({
+	// 			value: token.value,
+	// 		});
+	// 	}
+
+	// 	return user;
+	// }
+
 	/**
 	 * @param {Object} body - body passed through from a POST request
-	 * @param {Object} auth - OPTIONAL authentication details for a user token
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	async add(body, auth) {
+	async add(body) {
 		const userBody = {
-			auth: [{
-				app: body.app,
-				appId: body.id,
-				username: body.username,
-				password: body.password,
-				profileUrl: body.profileUrl,
-				images: {
-					profile: body.profileImgUrl,
-					banner: body.bannerImgUrl,
-				},
-				email: body.email,
-				token: body.token,
-				tokenSecret: body.tokenSecret,
-				refreshToken: body.refreshToken,
-			}],
+			id: (body.id) ? this.createId(body.id) : this.createId(),
+			auth: [],
 		};
+		body.auth.forEach((item) => {
+			userBody.auth.push({
+				app: item.app,
+				appId: null,
+				username: item.username,
+				password: item.password,
+				profileUrl: item.profileUrl,
+				images: {
+					profile: item.profileImgUrl,
+					banner: item.bannerImgUrl,
+				},
+				email: item.email,
+				token: item.token,
+				tokenSecret: item.tokenSecret,
+				refreshToken: item.refreshToken,
+			});
+		});
 
 		const rxsUser = await super.add(userBody, {
 			_apps: [Model.authApp._id],
@@ -196,23 +256,7 @@ class UserSchemaModel extends SchemaModel {
 
 		user.tokens = [];
 
-		if (!auth) {
-			return user;
-		}
-
-		const rxsToken = await Model.Token.add(auth, {
-			_app: Model.authApp._id,
-			_user: user._id,
-		});
-		const token = await Helpers.streamFirst(rxsToken);
-
 		nrp.emit('app-routes:bust-cache', {});
-
-		if (token) {
-			user.tokens.push({
-				value: token.value,
-			});
-		}
 
 		return user;
 	}

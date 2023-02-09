@@ -351,7 +351,7 @@ class Helpers {
 			formBody.push(encodedKey + '=' + encodedValue);
 		});
 		return formBody.join('&');
-}
+	}
 }
 
 module.exports = new Helpers();

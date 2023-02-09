@@ -358,8 +358,12 @@ module.exports.checkAppPolicyProperty = async (appPolicyList, policyProperties) 
 			continue;
 		}
 
+		let operator = null;
+		if (typeof policyProperties[key] === 'object') {
+			[operator] = Object.keys(policyProperties[key]);
+		}
 		const appPolicyPropertiesValues = appPolicyList[key];
-		const equalValue = policyProperties[key];
+		const equalValue = (operator) ? policyProperties[key][operator] : policyProperties[key];
 		if (!equalValue) {
 			res.passed = false;
 			res.errMessage = 'Policy property value not listed';
