@@ -386,6 +386,10 @@ class LambdasRunner {
 
 	_getLambdaModulesName(lambda) {
 		const modules = [];
+		const entryDir = path.dirname(lambda.git.entryFile);
+		const entryFile = path.basename(lambda.git.entryFile);
+		const lambdaDir = `./lambda/lambda-${lambda._id}/./${entryDir}`; // Again ugly /./ because... indolence
+
 		modules.push({
 			packageName: '@buttress/api',
 			name: 'Buttress',
@@ -397,7 +401,7 @@ class LambdasRunner {
 			name: 'Sugar',
 		}, {
 			name: `lambda_${lambda._id}`,
-			import: `./lambda/lambda-${lambda._id}/${lambda.git.entryFile}`,
+			import: `${lambdaDir}/${entryFile}`,
 		});
 
 		return modules;

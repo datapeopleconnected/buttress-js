@@ -307,6 +307,7 @@ class LambdaSchemaModel extends SchemaModel {
 		const url = lambda?.git?.url;
 		const branch = lambda?.git?.branch;
 		const gitHash = lambda?.git?.hash;
+		const entryFile = lambda?.git?.entryFile;
 
 		try {
 			const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, lambda.policyProperties);
@@ -343,11 +344,14 @@ class LambdaSchemaModel extends SchemaModel {
 
 			await exec(`cd ./lambda/lambda-${name}; git checkout ${gitHash}`);
 
-			const files = fs.readdirSync(`./lambda/lambda-${name}`);
+			// TODO it should only clone the lambda file from the repo
+			const entryDir = path.dirname(entryFile);
+			const lambdaDir = `./lambda/lambda-${name}/./${entryDir}`; // Ugly `/./` because I am lazy
+			const files = fs.readdirSync(lambdaDir);
 			for await (const file of files) {
 				if (path.extname(file) !== '.js') continue;
 
-				const content = fs.readFileSync(`./lambda/lambda-${name}/${file}`, 'utf8');
+				const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
 				for await (const log of Object.keys(lambdaConsole)) {
 					if (content.includes(log)) {
 						await exec(`cd ./lambda; rm -rf lambda-${name}`);

@@ -109,12 +109,18 @@ class LambdaManager {
 			'trigger.cron.status': {
 				$eq: 'PENDING',
 			},
+			'trigger.cron.periodicExecution': {
+				$ne: null,
+			},
 		});
 		const lambdas = await Helpers.streamAll(rxsLambdas);
+		Logging.logSilly(`Got ${lambdas.length} pending cron lambdas`);
 
+
+		// TODO when creating a lambda exeuctionTime should be converted to a date!
 		return lambdas.filter((lambda) => {
 			const cronTrigger = lambda.trigger.find((t) => t.type === 'CRON');
-			return cronTrigger && Sugar.Date.isAfter(Sugar.Date.create(), Sugar.Date.create(cronTrigger.cron.executionTime));
+			return cronTrigger && (cronTrigger.cron.executionTime === 'now' || Sugar.Date.isAfter(Sugar.Date.create(), Sugar.Date.create(cronTrigger.cron.executionTime)));
 		});
 	}
 
