@@ -256,7 +256,23 @@ class UserSchemaModel extends SchemaModel {
 
 		user.tokens = [];
 
+		if (!body.token) {
+			return user;
+		}
+
+		const rxsToken = await Model.Token.add(body.token, {
+			_app: Model.authApp._id,
+			_user: user._id,
+		});
+		const token = await Helpers.streamFirst(rxsToken);
+
 		nrp.emit('app-routes:bust-cache', {});
+
+		if (token) {
+			user.tokens.push({
+				value: token.value,
+			});
+		}
 
 		return user;
 	}
