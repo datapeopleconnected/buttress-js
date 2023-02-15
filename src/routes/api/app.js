@@ -463,6 +463,48 @@ class UpdateAppSchema extends Route {
 routes.push(UpdateAppSchema);
 
 /**
+ * @class GetAppPolicyPropertyList
+ */
+class GetAppPolicyPropertyList extends Route {
+	constructor() {
+		super('app/policyPropertyList/:apiPath?', 'GET APP POLICY PROPERTY LIST');
+		this.verb = Route.Constants.Verbs.GET;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	async _validate(req, res, token) {
+		let app = req.authApp;
+		if (!app) {
+			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
+		}
+
+		const apiPath = req.params.apiPath;
+		const isSuper = token.authLevel > 2;
+		if (apiPath && apiPath !== app.apiPath && !isSuper) {
+			this.log('ERROR: Cannot fetch policy properties list for another app', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `cannot_fetch_list_for_another_app`));
+		}
+
+		if (apiPath) {
+			app = await Model.App.findOne({
+				apiPath: {
+					$eq: apiPath,
+				},
+			});
+		}
+
+		return app;
+	}
+
+	async _exec(req, res, app) {
+		return app.policyPropertiesList;
+	}
+}
+routes.push(GetAppPolicyPropertyList);
+
+/**
  * @class SetAppPolicyPropertyList
  */
 class SetAppPolicyPropertyList extends Route {
