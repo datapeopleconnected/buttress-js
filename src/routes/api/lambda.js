@@ -206,51 +206,68 @@ class EditLambdaDeployment extends Route {
 
 	async _validate(req, res, token) {
 		try {
+			const branch = (req.body?.branch) ? req.body.branch : null;
+			const hash = (req.body?.hash) ? req.body.hash : null;
 			if (!req.body) {
 				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+				return Promise.reject(new Helpers.Errors.RequestError(400, `no_data_posted`));
 			}
-
-			if (!req.body.hash || !req.body.branch) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			if (!branch) {
+				this.log(`[${this.name}] Missing required deployment branch`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_deployment_branch`));
+			}
+			if (!hash) {
+				this.log(`[${this.name}] Missing required deployment hash`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_deployment_hash`));
 			}
 
 			const lambda = await Model.Lambda.findById(req.params.id);
 			if (!lambda) {
 				this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
+			}
+			const entryFilePath = (req.body.entryFile) ? req.body.entryFile : lambda.git.entryFile;
+			const entryPoint = (req.body.entryPoint) ? req.body.entryPoint : lambda.git.entryPoint;
+
+			await exec(`cd ./lambda/lambda-${req.params.id}; git fetch`);
+			const checkoutRes = await exec(`cd ./lambda/lambda-${req.params.id}; git checkout ${branch}`);
+			if (!checkoutRes.stdout) {
+				this.log(`[${this.name}] Lambda ${branch} does not exist`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `branch_${branch}_does_not_exist_for_lambda`));
 			}
 
-			const results = await exec(`cd ./lambda/lambda-${req.params.id}; git branch ${req.body.branch} --contains ${req.body.hash}`);
+			await exec(`cd ./lambda/lambda-${req.params.id}; git pull`);
+			const results = await exec(`cd ./lambda/lambda-${req.params.id}; git branch ${branch} --contains ${hash}`);
 			if (!results.stdout) {
-				this.log(`[${this.name}] Lambda hash:${req.body.hash} does not exist on ${req.body.branch} branch`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `mismatched_field`));
+				this.log(`[${this.name}] Lambda hash:${hash} does not exist on ${branch} branch`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_${hash}_does_not_exist_on_branch_${branch}`));
 			}
-			await exec(`cd ./lambda/lambda-${req.params.id}; git checkout ${req.body.hash}`);
 
-			const files = fs.readdirSync(`./lambda/lambda-${req.params.id}`);
+			await exec(`cd ./lambda/lambda-${req.params.id}; git checkout ${hash}`);
 
-			const lambdaEntryFile = req.body.entryFile;
-			const lambdaEntryPoint = req.body.entryPoint;
-			if (lambdaEntryFile && !files.includes(lambdaEntryFile)) {
-				this.log(`[${this.name}] No such file ${lambdaEntryFile} - ${lambda.name} ${req.body.hash} ${req.body.branch}`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
+
+			const entryDir = path.dirname(entryFilePath);
+			const lambdaDir = `./lambda/lambda-${req.params.id}/./${entryDir}`; // Ugly `/./` because I am lazy
+			const files = fs.readdirSync(lambdaDir);
+			const entryFile = entryFilePath.split('/').pop();
+			if (entryFilePath && !files.includes(entryFile)) {
+				this.log(`[${this.name}] No such file ${entryFile} - ${lambda.name} ${hash} ${branch}`, Route.LogLevel.ERR);
+				throw new Helpers.Errors.RequestError(404, `entry_file_not_found`);
 			}
 
 			for await (const file of files) {
 				if (path.extname(file) !== '.js') continue;
 
-				const content = fs.readFileSync(`./lambda/lambda-${req.params.id}/${file}`, 'utf8');
+				const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
 				for await (const log of Object.keys(lambdaConsole)) {
-					if ((lambdaEntryFile === file || lambda.git.entryFile === file) && lambdaEntryPoint && !content.includes(req.body.entryPoint)) {
-						this.log(`[${this.name}] No such function ${lambdaEntryPoint} - ${lambda.name}`, Route.LogLevel.ERR);
-						return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
+					if (entryFile === file && entryPoint && !content.includes(entryPoint)) {
+						this.log(`[${this.name}] No such function ${entryPoint} - ${lambda.name}`, Route.LogLevel.ERR);
+						throw new Helpers.Errors.RequestError(404, `entry_point_not_found`);
 					}
 
 					if (content.includes(log)) {
 						await exec(`cd ./lambda/lambda-${req.params.id}; git checkout ${lambda.git.hash}`);
-						return Promise.reject(new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`));
+						throw new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`);
 					}
 				}
 			}
@@ -258,7 +275,7 @@ class EditLambdaDeployment extends Route {
 			return Promise.resolve(true);
 		} catch (err) {
 			this.log(`[${this.name}] ${err.message}`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `mismatched_field`));
+			return Promise.reject(new Helpers.Errors.RequestError(400, err.message));
 		}
 	}
 
@@ -273,7 +290,11 @@ class EditLambdaDeployment extends Route {
 		const deploymentIdx = deployments.findIndex((d) => d.hash === req.body.hash);
 		if (deploymentIdx !== -1) return true;
 
-		await Model.Lambda.setDeployment(req.params.id, req.body);
+		await Model.Lambda.setDeployment(req.params.id, {
+			'git.branch': req.body.branch,
+			'git.hash': req.body.hash,
+		});
+
 		await Model.Deployment.add({
 			lambdaId: req.params.id,
 			hash: req.body.hash,
@@ -420,6 +441,49 @@ class ClearLambdaPolicyProperties extends Route {
 	}
 }
 routes.push(ClearLambdaPolicyProperties);
+
+/**
+ * @class DeleteLambda
+ */
+class DeleteLambda extends Route {
+	constructor() {
+		super('lambda/:id', 'DELETE LAMBDA');
+		this.verb = Route.Constants.Verbs.DEL;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	async _validate(req) {
+		if (!req.params.id) {
+			this.log('ERROR: Missing required lambda ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
+		}
+
+		const lambda = await Model.Lambda.findById(req.params.id);
+		if (!lambda) {
+			this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
+		}
+
+		const lambdaToken = await Model.Token.findOne({_lambda: lambda._id});
+		if (!lambdaToken) {
+			this.log(`ERROR: Could not fetch lambda's token`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `could_fetch_lambda_token`));
+		}
+
+		return {
+			lambda,
+			token: lambdaToken,
+		};
+	}
+
+	async _exec(req, res, validate) {
+		await Model.Lambda.rm(validate.lambda);
+		await Model.Token.rm(validate.token);
+		return true;
+	}
+}
+routes.push(DeleteLambda);
 
 /**
  * @class LambdaCount

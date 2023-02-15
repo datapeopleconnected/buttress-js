@@ -142,6 +142,8 @@ class LambdasRunner {
 
 					const lambdaBundle = require(lambdaInfo.fileName);
 					const lambdaCode = new lambdaBundle();
+					lambda.req.body = lambdaData;
+					lambda.req.query = lambdaQuery;
 					await lambdaCode[lambdaInfo.entryPoint]();
 				})();
 			`);

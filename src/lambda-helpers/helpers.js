@@ -326,6 +326,10 @@ class Helpers {
 				getCodeChallenge: async (...args) => {
 					return getCodeChallenge(...args);
 				},
+				req: {
+					body: {},
+					query: {},
+				},
 			};
 		`).runSync(context);
 	}

@@ -34,7 +34,7 @@ class LambdaManager {
 		this._isPrimary = true;
 
 		this._loadLambdaPathsMutation();
-		this._createRequiredLambdaFolder();
+		this._manageLambdaFolders();
 		this._subscribeToLambdaWorkers();
 		this._handleLambdaAPIExecution();
 		this._handleLambdaPathMutationExecution();
@@ -374,11 +374,15 @@ class LambdaManager {
 	}
 
 	/**
-	 * Create a lambda folder
+	 * Manages lambda folders
 	 */
-	async _createRequiredLambdaFolder() {
+	async _manageLambdaFolders() {
 		if (!fs.existsSync(`./lambda`)) {
 			await exec(`mkdir lambda`);
+		}
+
+		if (fs.existsSync(`./bundles`) && Config.env.toUpperCase() === 'PROD') {
+			await exec(`rm -rf bundles`);
 		}
 	}
 }
