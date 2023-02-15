@@ -381,7 +381,7 @@ class LambdaManager {
 			await exec(`mkdir lambda`);
 		}
 
-		if (fs.existsSync(`./bundles`) && Config.env.toUpperCase() === 'PROD') {
+		if (fs.existsSync(`./bundles`)) {
 			await exec(`rm -rf bundles`);
 		}
 	}
