@@ -333,7 +333,8 @@ class LambdaSchemaModel extends SchemaModel {
 				throw new Helpers.Errors.RequestError(400, `duplicate_item`);
 			}
 
-			const result = await exec(`cd ./lambda; git clone ${url} lambda-${name}; cd lambda-${name}; git branch ${branch} --contains ${gitHash}`);
+			const result = await exec(`cd ./lambda; git clone --filter=blob:limit=1m ${url} lambda-${name};
+				cd lambda-${name}; git branch ${branch} --contains ${gitHash}`);
 			if (!result.stdout) {
 				if (fs.existsSync(`./lambda/lambda-${name}`)) {
 					await exec(`cd ./lambda; rm -rf lambda-${name}`);
@@ -375,7 +376,7 @@ class LambdaSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves when save operation is completed
 	 */
 	async setDeployment(lambdaId, data) {
-		return super.updateById(lambdaId, {
+		return super.updateById(this.createId(lambdaId), {
 			$set: data,
 		});
 	}

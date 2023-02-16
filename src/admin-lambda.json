@@ -28,7 +28,7 @@
 			"git": {
 				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/bjs-google-auth-callback.git",
 				"branch": "main",
-				"hash": "b69e621ff7ea8df932ba7278ff4ca94aeb61d737",
+				"hash": "c8db8fa60f64a581a028a5b5ba4fe17acd2669be",
 				"entryFile": "index.js",
 				"entryPoint": "execute"
 			},
@@ -94,7 +94,7 @@
 			"git": {
 				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/bjs-microsoft-auth-callback.git",
 				"branch": "main",
-				"hash": "8d528612ec962ecd0fca88863b8df4a4de293f30",
+				"hash": "59e1ffb0964957ca79ee841c6f01d8286fb79a00",
 				"entryFile": "index.js",
 				"entryPoint": "execute"
 			},
