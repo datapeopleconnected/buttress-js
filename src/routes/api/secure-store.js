@@ -142,6 +142,80 @@ class FindSecureStore extends Route {
 routes.push(FindSecureStore);
 
 /**
+ * @class SearchSecureStoreList
+ */
+class SearchSecureStoreList extends Route {
+	constructor() {
+		super('secureStore', 'SEARCH SECURE STORE LIST');
+		this.verb = Route.Constants.Verbs.SEARCH;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.LIST;
+	}
+
+	_validate(req, res, token) {
+		const result = {
+			query: {
+				$and: [],
+			},
+			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
+			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
+			sort: (req.body && req.body.sort) ? req.body.sort : {},
+			project: (req.body && req.body.project)? req.body.project : false,
+		};
+
+		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+		if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+
+		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+		if (req.body && req.body.query) {
+			result.query.$and.push(req.body.query);
+		}
+
+		result.query = Model.SecureStore.parseQuery(result.query, {}, Model.SecureStore.flatSchemaData);
+		return result;
+	}
+
+	_exec(req, res, validate) {
+		return Model.SecureStore.find(validate.query, {},
+			validate.limit, validate.skip, validate.sort, validate.project);
+	}
+}
+routes.push(SearchSecureStoreList);
+
+/**
+ * @class DeleteSecureStore
+ */
+class DeleteSecureStore extends Route {
+	constructor() {
+		super('secureStore/:id', 'DELETE SECURE STORE');
+		this.verb = Route.Constants.Verbs.DEL;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	async _validate(req) {
+		if (!req.params.id) {
+			this.log('ERROR: Missing required secure store ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
+		}
+
+		const secureStore = await Model.SecureStore.findById(req.params.id);
+		if (!secureStore) {
+			this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
+		}
+
+		return secureStore;
+	}
+
+	async _exec(req, res, secureStore) {
+		await Model.SecureStore.rm(secureStore);
+		return true;
+	}
+}
+routes.push(DeleteSecureStore);
+
+/**
  * @class SecureStoreCount
  */
 class SecureStoreCount extends Route {
