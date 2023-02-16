@@ -245,11 +245,12 @@ class UserSchemaModel extends SchemaModel {
 			});
 		});
 
+		const metadata = body._appMetadata.find((metadata) => metadata.appId.toString() === Model.authApp._id.toString());
 		const rxsUser = await super.add(userBody, {
 			_apps: [Model.authApp._id],
 			_appMetadata: [{
 				appId: Model.authApp._id,
-				policyProperties: (body.policyProperties) ? body.policyProperties : null,
+				policyProperties: (metadata && metadata.policyProperties) ? body.policyProperties : null,
 			}],
 		});
 		const user = await Helpers.streamFirst(rxsUser);

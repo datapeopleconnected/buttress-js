@@ -371,12 +371,14 @@ class AddUser extends Route {
 			this.log(`[${this.name}] Invalid user auth block`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_user_auth`));
 		}
-		if (req.body.policyProperties === undefined) {
+
+		const metadata = req.body._appMetadata.find((metadata) => metadata.appId.toString() === req.authApp._id.toString());
+		if (metadata && metadata.policyProperties === undefined) {
 			this.log(`[${this.name}] Missing user required policy properties`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_properties`));
 		}
 
-		const policyCheck = await Helpers.checkAppPolicyProperty(req?.authApp?.policyPropertiesList, req.body.policyProperties);
+		const policyCheck = await Helpers.checkAppPolicyProperty(req?.authApp?.policyPropertiesList, metadata.policyProperties);
 		if (!policyCheck.passed) {
 			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
@@ -673,28 +675,38 @@ class DeleteUser extends Route {
 		this._user = false;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.params.id) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
+	async _validate(req, res, token) {
+		if (!req.params.id) {
+			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
 
-			Model.User.findById(req.params.id)
-				.then((user) => {
-					if (user) {
-						return resolve(user);
-					}
+		const user = await Model.User.findById(req.params.id);
+		if (!user) {
+			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+		}
 
-					this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-				});
-		});
+		const userToken = await Model.Token.findOne({_user: user._id});
+		if (token.value === userToken?.value) {
+			this.log(`ERROR: A user could not delete itself`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `user_can_not_delete_itself`));
+		}
+
+		return {
+			user,
+			token: userToken,
+		};
 	}
 
-	_exec(req, res, user) {
-		return Model.User.rm(user)
-			.then(() => true);
+	async _exec(req, res, validate) {
+		await Model.User.rm(validate.user);
+
+		if (validate.token) {
+			await Model.Token.rm(validate.token);
+		}
+
+		return true;
 	}
 }
 routes.push(DeleteUser);
