@@ -372,7 +372,8 @@ class AddUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_user_auth`));
 		}
 
-		const metadata = req.body?._appMetadata.find((metadata) => metadata.appId.toString() === req.authApp._id.toString());
+		const reqAppMetadata = req.body?._appMetadata;
+		const metadata = (reqAppMetadata) ? reqAppMetadata.find((metadata) => metadata.appId.toString() === req.authApp._id.toString()) : null;
 		const policyProperties = req.body?.policyProperties;
 		if (!policyProperties && (metadata && metadata.policyProperties === undefined)) {
 			this.log(`[${this.name}] Missing user required policy properties`, Route.LogLevel.ERR);
