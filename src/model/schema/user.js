@@ -136,6 +136,7 @@ class UserSchemaModel extends SchemaModel {
 				},
 				_apps: {
 					__type: 'array',
+					__itemtype: 'id',
 					__required: true,
 					__allowUpdate: true,
 				},
@@ -245,7 +246,8 @@ class UserSchemaModel extends SchemaModel {
 			});
 		});
 
-		const metadata = body._appMetadata.find((metadata) => metadata.appId.toString() === Model.authApp._id.toString());
+		const bodyMetadata = body?._appMetadata;
+		const metadata = (bodyMetadata) ? bodyMetadata.find((metadata) => metadata.appId.toString() === Model.authApp._id.toString()) : body;
 		const rxsUser = await super.add(userBody, {
 			_apps: [Model.authApp._id],
 			_appMetadata: [{
