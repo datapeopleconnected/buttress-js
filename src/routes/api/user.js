@@ -373,9 +373,8 @@ class AddUser extends Route {
 		}
 
 		const reqAppMetadata = req.body?._appMetadata;
-		const metadata = (reqAppMetadata) ? reqAppMetadata.find((metadata) => metadata.appId.toString() === req.authApp._id.toString()) : null;
-		const policyProperties = req.body?.policyProperties;
-		if (!policyProperties && (metadata && metadata.policyProperties === undefined)) {
+		const metadata = (reqAppMetadata) ? reqAppMetadata.find((metadata) => metadata.appId.toString() === req.authApp._id.toString()) : req.body;
+		if (metadata && metadata.policyProperties === undefined) {
 			this.log(`[${this.name}] Missing user required policy properties`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_properties`));
 		}
