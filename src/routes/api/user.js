@@ -372,8 +372,9 @@ class AddUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_user_auth`));
 		}
 
-		const metadata = req.body._appMetadata.find((metadata) => metadata.appId.toString() === req.authApp._id.toString());
-		if (metadata && metadata.policyProperties === undefined) {
+		const metadata = req.body?._appMetadata.find((metadata) => metadata.appId.toString() === req.authApp._id.toString());
+		const policyProperties = req.body?.policyProperties;
+		if (!policyProperties && (metadata && metadata.policyProperties === undefined)) {
 			this.log(`[${this.name}] Missing user required policy properties`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_properties`));
 		}
@@ -767,13 +768,16 @@ class SearchUserList extends Route {
 	_validate(req, res, token) {
 		const result = {
 			query: {
-				$and: [
-					{
-						_appId: req.authApp._id,
-					},
-				],
+				$and: [],
 			},
+			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
+			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
+			sort: (req.body && req.body.sort) ? req.body.sort : {},
+			project: (req.body && req.body.project)? req.body.project : false,
 		};
+
+		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+		if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
 
 		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
 		if (req.body && req.body.query) {
@@ -785,7 +789,8 @@ class SearchUserList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.User.find(validate.query);
+		return Model.User.find(validate.query, {},
+			validate.limit, validate.skip, validate.sort, validate.project);
 	}
 }
 routes.push(SearchUserList);
