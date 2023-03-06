@@ -17,7 +17,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Buttress = require('@buttress/api');
 const Sugar = require('sugar');
 
 const Route = require('../route');
@@ -78,8 +77,22 @@ class SearchAppList extends Route {
 		return result;
 	}
 
-	_exec(req, res, validate) {
-		return Model.App.find(validate.query);
+	async _exec(req, res, validate) {
+		const appsDB = await Helpers.streamAll(await Model.App.find(validate.query));
+
+		const tokenIds = appsDB.map((app) => Model.Token.createId(app._token));
+		const appTokens = await Helpers.streamAll(await Model.Token.find({
+			_id: {
+				$in: tokenIds,
+			},
+		}));
+
+		return appsDB.reduce((arr, app) => {
+			const appToken = appTokens.find((t) => t._id.toString() === app._token.toString());
+			app.tokenValue = appToken.value;
+			arr.push(app);
+			return arr;
+		}, []);
 	}
 }
 routes.push(SearchAppList);
@@ -114,6 +127,9 @@ class GetApp extends Route {
 	}
 
 	_exec(req, res, validate) {
+		const appToken = Model.Token.findById(Model.Token.createId(validate._token));
+		validate.tokenValue = appToken.value;
+
 		return validate;
 	}
 }
@@ -199,6 +215,14 @@ class AddApp extends Route {
 	}
 
 	_exec(req, res, validate) {
+		if (!Number(req.body.authLevel)) {
+			const permissions = [
+				{route: '*', permission: '*'},
+			];
+
+			req.body.permissions = JSON.stringify(permissions);
+			req.body.authLevel = Model.Token.Constants.AuthLevel.SUPER;
+		}
 		return new Promise((resolve, reject) => {
 			Model.App.add(req.body)
 				.then((res) => Object.assign(res.app, {token: res.token.value}))
@@ -534,13 +558,13 @@ class SetAppPolicyPropertyList extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 			}
 
-			resolve(true);
+			resolve(req.body);
 		});
 	}
 
-	_exec(req, res, validate) {
-		return Model.App.setPolicyPropertiesList(req.authApp._id, req.body)
-			.then(() => true);
+	async _exec(req, res, validate) {
+		await Model.App.setPolicyPropertiesList(req.authApp._id, validate);
+		return validate;
 	}
 }
 routes.push(SetAppPolicyPropertyList);
@@ -680,6 +704,51 @@ class AppUpdateOAuth extends Route {
 	}
 }
 routes.push(AppUpdateOAuth);
+
+
+// TODO remove all the other endpoints and use this generic endpoint
+/**
+ * @class AppUpdate
+ */
+class AppUpdate extends Route {
+	constructor() {
+		super(`app/:id`, `UPDATE AN APP`);
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.SUPER;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+
+		this.model = Model.App;
+	}
+
+	async _validate(req, res, token) {
+		const validation = Model.App.validateUpdate(req.body);
+		if (!validation.isValid) {
+			if (validation.isPathValid === false) {
+				this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`));
+			}
+			if (validation.isValueValid === false) {
+				this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`));
+			}
+		}
+
+		const exists = await Model.App.exists(req.params.id);
+		if (!exists) {
+			this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+		}
+		return true;
+	}
+
+	_exec(req, res, validate) {
+		return Model.App.updateByPath(req.body, req.params.id, 'App');
+	}
+}
+routes.push(AppUpdate);
 
 /**
  * @type {*[]}
