@@ -103,6 +103,12 @@ class AppSchemaModel extends SchemaModel {
 						'LOCAL_STRATEGY',
 					],
 				},
+				suspend: {
+					__type: 'date',
+					__default: null,
+					__required: false,
+					__allowUpdate: true,
+				},
 				_token: {
 					__type: 'id',
 					__required: false,

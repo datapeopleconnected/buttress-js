@@ -118,7 +118,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 	 */
 	async add(body) {
 		const appDataSharingBody = {
-			id: this.createId(),
+			id: (body.id) ? body.id : this.createId(),
 			name: body.name,
 
 			active: false,
@@ -209,6 +209,23 @@ class AppDataSharingSchemaModel extends SchemaModel {
 		}
 
 		nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
+
+		return this.updateById(this.createId(appDataSharingId), update);
+	}
+
+	/**
+	 * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
+	 * @return {Promise} - resolves when save operation is completed
+	 */
+	deactivate(appDataSharingId) {
+		const update = {
+			$set: {
+				active: false,
+			},
+		};
+
+		// TODO implement socket deactivation
+		nrp.emit('dataShare:deactivated', {appDataSharingId: appDataSharingId});
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}

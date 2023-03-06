@@ -17,6 +17,7 @@
 const ObjectId = require('mongodb').ObjectId;
 const MongoClient = require('mongodb').MongoClient;
 
+const Model = require('../../model');
 const Helpers = require('../../helpers');
 const Logging = require('../../logging');
 
@@ -94,7 +95,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return this.find({_id: {$in: insertedIds}});
 	}
 
-	async batchUpdateProcess(id, body, context, schemaConfig) {
+	async batchUpdateProcess(id, body, context, schemaConfig, model) {
 		if (!context) {
 			throw new Error(`batchUpdateProcess called without context; ${id}`);
 		}
@@ -115,6 +116,34 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 				value = Helpers.Schema.populateObject(schemaConfig.__schema, fb);
 			} else {
 				value = body.value;
+			}
+
+			if (!schemaConfig) {
+				const entity = await Model[model].findById(id);
+				const objValue = {};
+				let updateValueExists = true;
+				let modifiedPath = '';
+				let basePath = body.path;
+				let obj = entity;
+
+				body.path.split('.').forEach((key) => {
+					modifiedPath = (modifiedPath) ? key : `${modifiedPath}.${key}`;
+					if (!obj[key]) {
+						basePath = basePath.replace(`.${key}`, '');
+						updateValueExists = false;
+						if (!Number(key) && Number(key) !== 0) {
+							objValue[key] = value;
+						}
+						return;
+					}
+
+					obj = obj[key];
+				}, entity);
+
+				if (!updateValueExists) {
+					body.path = basePath;
+					value = objValue;
+				}
 			}
 
 			ops.push({

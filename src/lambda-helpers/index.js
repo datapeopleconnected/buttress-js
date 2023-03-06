@@ -20,7 +20,7 @@ const getClassesList = (dirName) => {
 };
 
 const classes = getClassesList(__dirname);
-const lambdaAPI = classes.reduce((file, obj) => {
+const lambdaAPI = classes.reduce((obj, file) => {
 	if (Object.keys(file).length < 1) return obj;
 
 	const [className] = Object.keys(file);

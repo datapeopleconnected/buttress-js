@@ -462,3 +462,22 @@ const __populateObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 	return res;
 };
 module.exports.populateObject = __populateObject;
+
+const __getSchemaKeys = (obj) => {
+	return Object.keys(obj).reduce((arr, key) => {
+		if (obj[key].__type === 'object') {
+			arr.push(key);
+		}
+
+		if (obj[key].__type === 'array' && obj[key].__itemtype === 'object') {
+			arr.push(key);
+		}
+
+		if (obj[key].__type === 'array' && obj[key].__schema) {
+			arr = arr.concat(__getSchemaKeys(obj[key].__schema));
+		}
+
+		return arr;
+	}, []);
+};
+module.exports.getSchemaKeys = __getSchemaKeys;

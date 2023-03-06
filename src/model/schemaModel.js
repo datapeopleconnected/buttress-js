@@ -373,9 +373,10 @@ class SchemaModel {
 	/**
 	 * @param {object} body
 	 * @param {string} id
+	 * @param {string} model
 	 * @return {promise}
 	 */
-	async updateByPath(body, id) {
+	async updateByPath(body, id, model) {
 		if (body instanceof Array === false) {
 			body = [body];
 		}
@@ -397,7 +398,7 @@ class SchemaModel {
 			const arr = await prev;
 			const config = flattenedSchema === false ? false : flattenedSchema[update.path];
 			return arr.concat([
-				await this.adapter.batchUpdateProcess(id, update, extendedPathContext[update.contextPath], config),
+				await this.adapter.batchUpdateProcess(id, update, extendedPathContext[update.contextPath], config, model),
 			]);
 		}, Promise.resolve([]));
 	}

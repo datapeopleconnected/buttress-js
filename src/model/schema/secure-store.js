@@ -39,10 +39,10 @@ class SecureStoreSchemaModel extends SchemaModel {
 					__allowUpdate: true,
 				},
 				storeData: {
-					__type: 'array',
+					__type: 'object',
+					__default: null,
+					__required: false,
 					__allowUpdate: true,
-					__itemtype: 'object',
-					__required: true,
 				},
 			},
 			_appId: {
@@ -62,7 +62,7 @@ class SecureStoreSchemaModel extends SchemaModel {
 		const data = {
 			id: (body.id) ? body.id : null,
 			name: (body.name) ? body.name : null,
-			storeData: (body.storeData) ? body.storeData : [],
+			storeData: (body.storeData) ? body.storeData : {},
 		};
 
 		let appId = Model?.authApp?._id;
