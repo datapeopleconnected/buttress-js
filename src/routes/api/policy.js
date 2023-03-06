@@ -18,6 +18,7 @@
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
+const ObjectId = require('mongodb').ObjectId;
 
 const Route = require('../route');
 const Model = require('../../model');
@@ -26,6 +27,43 @@ const Helpers = require('../../helpers');
 const routes = [];
 
 const Datastore = require('../../datastore');
+
+/**
+ * @class GetPolicy
+ */
+class GetPolicy extends Route {
+	constructor() {
+		super('policy/:id', 'GET POLICY');
+		this.verb = Route.Constants.Verbs.GET;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.READ;
+	}
+
+	async _validate(req, res, token) {
+		const id = req.params.id;
+		if (!id) {
+			this.log(`[${this.name}] Missing required policy id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_id`));
+		}
+		if (!ObjectId.isValid(id)) {
+			this.log(`[${this.name}] Invalid policy id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_id`));
+		}
+
+		const policy = await Model.Policy.findById(id);
+		if (!policy) {
+			this.log(`[${this.name}] Cannot find a policy with id id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `policy_does_not_exist`));
+		}
+
+		return policy;
+	}
+
+	_exec(req, res, policy) {
+		return policy;
+	}
+}
+routes.push(GetPolicy);
 
 /**
  * @class GetPolicyList
@@ -152,6 +190,98 @@ class AddPolicy extends Route {
 	}
 }
 routes.push(AddPolicy);
+
+/**
+ * @class UpdatePolicy
+ */
+class UpdatePolicy extends Route {
+	constructor() {
+		super('policy/:id', 'UPDATE POLICY');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			const validation = Model.Policy.validateUpdate(req.body);
+			if (!validation.isValid) {
+				if (validation.isPathValid === false) {
+					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+					return reject(new Helpers.Errors.RequestError(400, `POLICY: Update path is invalid: ${validation.invalidPath}`));
+				}
+				if (validation.isValueValid === false) {
+					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+					return reject(new Helpers.Errors.RequestError(400, `POLICY: Update value is invalid: ${validation.invalidValue}`));
+				}
+			}
+
+			Model.Policy.exists(req.params.id)
+				.then((exists) => {
+					if (!exists) {
+						this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
+						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+					}
+					resolve(true);
+				});
+		});
+	}
+
+	_exec(req, res, validate) {
+		return Model.Policy.updateByPath(req.body, req.params.id, 'Policy');
+	}
+}
+routes.push(UpdatePolicy);
+
+/**
+ * @class BulkUpdatePolicy
+ */
+class BulkUpdatePolicy extends Route {
+	constructor() {
+		super('policy/bulk/:id', 'UPDATE POLICY');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	async _validate(req, res, token) {
+		for await (const item of req.body) {
+			const validation = Model.Policy.validateUpdate(item);
+			if (!validation.isValid) {
+				if (validation.isPathValid === false) {
+					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `POLICY: Update path is invalid: ${validation.invalidPath}`));
+				}
+				if (validation.isValueValid === false) {
+					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `POLICY: Update value is invalid: ${validation.invalidValue}`));
+				}
+			}
+
+			const exists = Model.Policy.exists(item.id);
+			if (!exists) {
+				this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+			}
+		}
+
+		return req.body;
+	}
+
+	async _exec(req, res, validate) {
+		for await (const item of validate) {
+			await Model.Policy.updateByPath(item.body, item.id, 'Policy');
+		}
+		return true;
+	}
+}
+routes.push(BulkUpdatePolicy);
 
 /**
  * @class SyncPolicies
