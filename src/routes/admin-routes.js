@@ -80,16 +80,10 @@ class AdminRoutes {
 			const superApp = await Model.App.findOne({
 				_token: Model.Token.createId(superToken._id),
 			});
-			if (!superApp) {
+			if (!superApp || superApp.apiPath !== 'bjs') {
 				Logging.logError('Buttress admin activate can not find super app');
 				return res.status(404).send({message: 'admin_app_not_found'});
 			}
-
-			await Model.App.updateById(Model.App.createId(superApp._id), {
-				$set: {
-					adminActive: true,
-				},
-			});
 
 			res.status(200).send({appId: superApp._id});
 		});
@@ -127,6 +121,12 @@ class AdminRoutes {
 						_token: Model.Token.createId(adminToken._id),
 					});
 					await this._refreshAdminAppToken(adminToken, adminApp);
+
+					await Model.App.updateById(Model.App.createId(adminToken._id), {
+						$set: {
+							adminActive: true,
+						},
+					});
 				}
 
 				res.status(200).send({message: 'done'});
