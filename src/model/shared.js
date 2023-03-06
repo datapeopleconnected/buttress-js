@@ -114,7 +114,25 @@ const _doValidateUpdate = function(pathContext, flattenedSchema) {
 				body.contextParams = matches;
 				break;
 			}
+
+			const blankObjectKeys = Helpers.Schema.getSchemaKeys(flattenedSchema);
+			const matchObject = blankObjectKeys.reduce((match, key) => {
+				const rexMatch = rex.exec(key);
+				if (!rexMatch) return match;
+
+				return rexMatch;
+			}, null);
+			if (!matchObject) continue;
+
+			const isRemoved = fullPath.includes('remove');
+			matchObject.splice(0, 1);
+			validPath = true;
+			body.contextPath = (isRemoved) ? fullPath : pathSpec;
+			body.contextParams = matchObject;
 		}
+		console.log('pathContext', pathContext);
+		console.log(pathContext[body.contextPath]);
+		console.log(body.contextPath);
 
 		if (validPath === false) {
 			res.invalidPath = `${fullPath} <> ${Object.getOwnPropertyNames(pathContext)}`;
