@@ -22,6 +22,7 @@ const exec = util.promisify(require('child_process').exec);
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
+const ObjectId = require('mongodb').ObjectId;
 
 const Route = require('../route');
 const Model = require('../../model');
@@ -39,6 +40,43 @@ const lambdaConsole = {
 	'console.error': 'lambda.logError',
 	'console.dir': '',
 };
+
+/**
+ * @class GetLambda
+ */
+class GetLambda extends Route {
+	constructor() {
+		super('lambda/:id', 'GET LAMBDA');
+		this.verb = Route.Constants.Verbs.GET;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.READ;
+	}
+
+	async _validate(req, res, token) {
+		const id = req.params.id;
+		if (!id) {
+			this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
+		}
+		if (!ObjectId.isValid(id)) {
+			this.log(`[${this.name}] Invalid lambda id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
+		}
+
+		const lambda = await Model.Lambda.findById(id);
+		if (!lambda) {
+			this.log(`[${this.name}] Cannot find a lambda with id id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_does_not_exist`));
+		}
+
+		return lambda;
+	}
+
+	_exec(req, res, lambda) {
+		return lambda;
+	}
+}
+routes.push(GetLambda);
 
 /**
  * @class GetLambdaList
@@ -192,6 +230,51 @@ class AddLambda extends Route {
 	}
 }
 routes.push(AddLambda);
+
+/**
+ * @class UpdateLambda
+ */
+class UpdateLambda extends Route {
+	constructor() {
+		super('lambda/:id', 'UPDATE LAMBDA');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	_validate(req, res, token) {
+		return new Promise((resolve, reject) => {
+			const validation = Model.Lambda.validateUpdate(req.body);
+			if (!validation.isValid) {
+				if (validation.isPathValid === false) {
+					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+					return reject(new Helpers.Errors.RequestError(400, `LAMBDA: Update path is invalid: ${validation.invalidPath}`));
+				}
+				if (validation.isValueValid === false) {
+					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+					return reject(new Helpers.Errors.RequestError(400, `LAMBDA: Update value is invalid: ${validation.invalidValue}`));
+				}
+			}
+
+			Model.Lambda.exists(req.params.id)
+				.then((exists) => {
+					if (!exists) {
+						this.log('ERROR: Invalid LAMBDA ID', Route.LogLevel.ERR);
+						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+					}
+					resolve(true);
+				});
+		});
+	}
+
+	_exec(req, res, validate) {
+		return Model.Lambda.updateByPath(req.body, req.params.id, 'Lambda');
+	}
+}
+routes.push(UpdateLambda);
 
 /**
  * @class EditLambdaDeployment
@@ -478,6 +561,8 @@ class DeleteLambda extends Route {
 	}
 
 	async _exec(req, res, validate) {
+		// TODO make sure that the git repo is not used by any other lambdas before deleteing it
+		await exec(`cd ./lambda; rm -rf lambda-${validate.lambda._id}`);
 		await Model.Lambda.rm(validate.lambda);
 		await Model.Token.rm(validate.token);
 		return true;
