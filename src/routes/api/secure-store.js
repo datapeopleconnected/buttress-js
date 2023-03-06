@@ -16,6 +16,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+const ObjectId = require('mongodb').ObjectId;
+
 const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
@@ -109,14 +111,51 @@ class AddManySecureStore extends Route {
 routes.push(AddManySecureStore);
 
 /**
+ * @class GetSecureStore
+ */
+class GetSecureStore extends Route {
+	constructor() {
+		super('secureStore/:id', 'GET SECURE STORE');
+		this.verb = Route.Constants.Verbs.GET;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.READ;
+	}
+
+	async _validate(req, res, token) {
+		const id = req.params.id;
+		if (!id) {
+			this.log(`[${this.name}] Missing required secure store id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
+		}
+		if (!ObjectId.isValid(id)) {
+			this.log(`[${this.name}] Invalid secure store id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
+		}
+
+		const secureStore = await Model.SecureStore.findById(id);
+		if (!secureStore) {
+			this.log(`[${this.name}] Cannot find a secure store with id ${id}`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `secure_store_does_not_exist`));
+		}
+
+		return secureStore;
+	}
+
+	_exec(req, res, validate) {
+		return validate;
+	}
+}
+routes.push(GetSecureStore);
+
+/**
  * @class FindSecureStore
  */
 class FindSecureStore extends Route {
 	constructor() {
-		super('secureStore/:name', 'ADD SECURE STORE');
+		super('secureStore/name/:name', 'FIND SECURE STORE BY NAME');
 		this.verb = Route.Constants.Verbs.GET;
 		this.auth = Route.Constants.Auth.ADMIN;
-		this.permissions = Route.Constants.Permissions.ADD;
+		this.permissions = Route.Constants.Permissions.READ;
 	}
 
 	async _validate(req, res, token) {
@@ -140,6 +179,91 @@ class FindSecureStore extends Route {
 	}
 }
 routes.push(FindSecureStore);
+
+/**
+ * @class UpdateSecureStore
+ */
+class UpdateSecureStore extends Route {
+	constructor() {
+		super('secureStore/:id', 'UPDATE SECURE STORE');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	async _validate(req, res, token) {
+		const validation = Model.SecureStore.validateUpdate(req.body);
+		if (!validation.isValid) {
+			if (validation.isPathValid === false) {
+				this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`));
+			}
+			if (validation.isValueValid === false) {
+				this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`));
+			}
+		}
+
+		const exists = await Model.SecureStore.exists(req.params.id);
+		if (!exists) {
+			this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+		}
+		return true;
+	}
+
+	_exec(req, res, validate) {
+		return Model.SecureStore.updateByPath(req.body, req.params.id, 'SecureStore');
+	}
+}
+routes.push(UpdateSecureStore);
+
+/**
+ * @class BulkUpdateSecureStore
+ */
+class BulkUpdateSecureStore extends Route {
+	constructor() {
+		super('secureStore/bulk/:id', 'BULK UPDATE SECURE STORE');
+		this.verb = Route.Constants.Verbs.POST;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	async _validate(req, res, token) {
+		for await (const item of req.body) {
+			const validation = Model.SecureStore.validateUpdate(item.body);
+			if (!validation.isValid) {
+				if (validation.isPathValid === false) {
+					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`));
+				}
+				if (validation.isValueValid === false) {
+					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`));
+				}
+			}
+
+			const exists = await Model.SecureStore.exists(item.id);
+			if (!exists) {
+				this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+			}
+		}
+
+		return req.body;
+	}
+
+	async _exec(req, res, validate) {
+		for await (const item of validate) {
+			await Model.SecureStore.updateByPath(item.body, item.id, 'SecureStore');
+		}
+		return true;
+	}
+}
+routes.push(BulkUpdateSecureStore);
 
 /**
  * @class SearchSecureStoreList
