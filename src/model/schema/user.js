@@ -252,7 +252,7 @@ class UserSchemaModel extends SchemaModel {
 			_apps: [Model.authApp._id],
 			_appMetadata: [{
 				appId: Model.authApp._id,
-				policyProperties: (metadata && metadata.policyProperties) ? body.policyProperties : null,
+				policyProperties: (metadata && metadata.policyProperties) ? metadata.policyProperties : null,
 			}],
 		});
 		const user = await Helpers.streamFirst(rxsUser);

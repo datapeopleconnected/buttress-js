@@ -85,6 +85,8 @@ class AdminRoutes {
 				return res.status(404).send({message: 'admin_app_not_found'});
 			}
 
+			await this._updateAppPolicySelectorList(superApp);
+
 			res.status(200).send({appId: superApp._id});
 		});
 
@@ -122,7 +124,7 @@ class AdminRoutes {
 					});
 					await this._refreshAdminAppToken(adminToken, adminApp);
 
-					await Model.App.updateById(Model.App.createId(adminToken._id), {
+					await Model.App.updateById(Model.App.createId(adminApp._id), {
 						$set: {
 							adminActive: true,
 						},
@@ -167,6 +169,29 @@ class AdminRoutes {
 			adminToken,
 			adminApp,
 		};
+	}
+
+	/**
+	 * Update admin app policy selectors list
+	 * @param {Object} app
+	 */
+	async _updateAppPolicySelectorList(app) {
+		const adminPolicyPropsList = {
+			role: [
+				'ADMIN',
+				'ADMIN_LAMBDA',
+			],
+		};
+		const policyPropsList = app.policyPropertiesList;
+		const currentAppListKeys = Object.keys(policyPropsList);
+		Object.keys(adminPolicyPropsList).forEach((key) => {
+			if (currentAppListKeys.includes(key)) {
+				adminPolicyPropsList[key] = adminPolicyPropsList[key].concat(policyPropsList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
+			}
+		});
+		const appPolicyList = {...policyPropsList, ...adminPolicyPropsList};
+
+		await Model.App.setPolicyPropertiesList(app._id, appPolicyList);
 	}
 
 	/**
