@@ -326,6 +326,12 @@ class AppSchemaModel extends SchemaModel {
 	async updateOAuth(appId, oAuth) {
 		const app = await this.findById(appId);
 
+		if (!app.oAuth) {
+			return super.update({
+				'_id': this.createId(appId),
+			}, {$set: {'oAuth': oAuth}});
+		}
+
 		for await (const oAuthOption of oAuth) {
 			const oAuthExists = app.oAuth.find((option) => option === oAuthOption);
 			if (oAuthExists) continue;
