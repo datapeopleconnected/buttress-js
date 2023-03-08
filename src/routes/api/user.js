@@ -372,6 +372,21 @@ class AddUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_user_auth`));
 		}
 
+		const userNames = req.body.auth.map((oauth) => oauth.username);
+		const userNameExists = await Helpers.streamAll(await Model.User.find({
+			'auth.username': {
+				$in: userNames,
+			},
+			'_apps': {
+				$eq: Model.App.createId(req.authApp._id),
+			},
+		}));
+
+		if (userNameExists.length > 0) {
+			this.log(`[${this.name}] Sorry, a user already exists with that name`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `user_already_exists_with_that_name`));
+		}
+
 		const reqAppMetadata = req.body?._appMetadata;
 		const metadata = (reqAppMetadata) ? reqAppMetadata.find((metadata) => metadata.appId.toString() === req.authApp._id.toString()) : req.body;
 		if (metadata && metadata.policyProperties === undefined) {
