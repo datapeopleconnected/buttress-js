@@ -130,9 +130,6 @@ const _doValidateUpdate = function(pathContext, flattenedSchema) {
 			body.contextPath = (isRemoved) ? fullPath : pathSpec;
 			body.contextParams = matchObject;
 		}
-		console.log('pathContext', pathContext);
-		console.log(pathContext[body.contextPath]);
-		console.log(body.contextPath);
 
 		if (validPath === false) {
 			res.invalidPath = `${fullPath} <> ${Object.getOwnPropertyNames(pathContext)}`;

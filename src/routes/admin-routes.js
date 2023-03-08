@@ -72,7 +72,12 @@ class AdminRoutes {
 				type: 'app',
 			});
 
-			if (!superToken || superToken.authLevel < 3) {
+			if (!superToken) {
+				Logging.logError('The used token does not exist');
+				return res.status(404).send({message: 'Please enter a valid admin token to activate your admin app'});
+			}
+
+			if (superToken.authLevel < 3) {
 				Logging.logError('Non-admin token used to activate buttress admin app');
 				return res.status(404).send({message: 'Please use the admin token to activate your admin app'});
 			}
@@ -113,15 +118,16 @@ class AdminRoutes {
 			}
 
 			try {
-				await this._createAdminPolicy(req);
+				const adminApp = await Model.App.findOne({
+					_token: Model.Token.createId(adminToken._id),
+				});
+
+				await this._createAdminPolicy(req, adminApp._id);
 				for await (const lambdaKey of lambdaToInstall) {
 					await this._createAdminLambda(adminLambda[lambdaKey]);
 				}
 
 				if (refreshAdminToken) {
-					const adminApp = await Model.App.findOne({
-						_token: Model.Token.createId(adminToken._id),
-					});
 					await this._refreshAdminAppToken(adminToken, adminApp);
 
 					await Model.App.updateById(Model.App.createId(adminApp._id), {
@@ -133,6 +139,7 @@ class AdminRoutes {
 
 				res.status(200).send({message: 'done'});
 			} catch (err) {
+				console.error(err);
 				res.status(404).send({message: err.message});
 			}
 		});
@@ -197,8 +204,9 @@ class AdminRoutes {
 	/**
 	 * Create Buttress pre-defined policy
 	 * @param {Object} req
+	 * @param {String} appId
 	 */
-	async _createAdminPolicy(req) {
+	async _createAdminPolicy(req, appId) {
 		for await (const policy of adminPolicy) {
 			const policyDB = await Model.Policy.findOne({
 				name: {
@@ -206,6 +214,24 @@ class AdminRoutes {
 				},
 			});
 			if (policyDB) continue;
+
+			const name = policy.name.replace(/[\s-]+/g, '_').toUpperCase();
+			const appConfigIdx = policy.config.findIndex((conf) => conf.endpoints.includes('GET'));
+			const configIdx = policy.config.findIndex((conf) => conf.endpoints.includes('SEARCH'));
+			if (name.toUpperCase() === 'ADMIN_LAMBDA_ACCESS' && configIdx !== -1 && appConfigIdx !== -1) {
+				const appQueryIdx = policy.config[appConfigIdx].query.findIndex((q) => q.schema.includes('app'));
+				const userQueryIdx = policy.config[configIdx].query.findIndex((q) => q.schema.includes('user'));
+				const tokenQueryIdx = policy.config[configIdx].query.findIndex((q) => q.schema.includes('token'));
+				policy.config[appConfigIdx].query[appQueryIdx]._app = {
+					'@eq': appId,
+				};
+				policy.config[configIdx].query[userQueryIdx]._apps = {
+					'@eq': appId,
+				};
+				policy.config[configIdx].query[tokenQueryIdx]._app = {
+					'@eq': appId,
+				};
+			}
 
 			await Model.Policy.add(req, {policy});
 		}

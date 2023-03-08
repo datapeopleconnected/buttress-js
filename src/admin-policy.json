@@ -22,10 +22,25 @@
 			}
 		},
 		"config": [{
-			"endpoints": ["ALL"],
+			"endpoints": ["GET"],
 			"query": [{
-				"schema": ["ALL"],
-				"access": "FULL_ACCESS"
+				"schema": ["app"],
+				"_app": {
+					"@eq": null
+				}
+			}]
+		}, {
+			"endpoints": ["SEARCH"],
+			"query": [{
+				"schema": ["token"],
+				"_app": {
+					"@eq": null
+				}
+			},{
+				"schema": ["user"],
+				"_apps": {
+					"@eq": null
+				}
 			}]
 		}]
 	}

@@ -234,7 +234,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const validation = Model.SecureStore.validateUpdate(item.body);
+			const validation = Model.SecureStore.validateUpdate(item);
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -258,7 +258,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.SecureStore.updateByPath(item.body, item.id, 'SecureStore');
+			await Model.SecureStore.updateByPath(item, item.id, 'SecureStore');
 		}
 		return true;
 	}

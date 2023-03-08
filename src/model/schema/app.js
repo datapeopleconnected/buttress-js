@@ -324,22 +324,9 @@ class AppSchemaModel extends SchemaModel {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	async updateOAuth(appId, oAuth) {
-		const app = await this.findById(appId);
-
-		if (!app.oAuth) {
-			return super.update({
-				'_id': this.createId(appId),
-			}, {$set: {'oAuth': oAuth}});
-		}
-
-		for await (const oAuthOption of oAuth) {
-			const oAuthExists = app.oAuth.find((option) => option === oAuthOption);
-			if (oAuthExists) continue;
-
-			return super.update({
-				'_id': this.createId(appId),
-			}, {$push: {'oAuth': oAuthOption}});
-		}
+		return super.update({
+			'_id': this.createId(appId),
+		}, {$set: {'oAuth': oAuth}});
 	}
 }
 

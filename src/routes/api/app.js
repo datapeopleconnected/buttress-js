@@ -221,7 +221,7 @@ class AddApp extends Route {
 			];
 
 			req.body.permissions = JSON.stringify(permissions);
-			req.body.authLevel = Model.Token.Constants.AuthLevel.SUPER;
+			req.body.authLevel = Model.Token.Constants.AuthLevel.ADMIN;
 		}
 		return new Promise((resolve, reject) => {
 			Model.App.add(req.body)

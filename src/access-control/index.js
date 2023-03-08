@@ -57,8 +57,13 @@ class AccessControl {
 		const appId = req.authApp._id;
 		const user = req.authUser;
 		const lambda = req.authLambda;
+		let lambdaAPICall = false;
 
 		if (!user && !lambda) return next();
+		if (lambda) {
+			lambdaAPICall = lambda.trigger.some((t) => req.originalUrl.includes(t.apiEndpoint.url));
+		}
+		if (lambdaAPICall) return next();
 
 		let requestedURL = req.originalUrl || req.url;
 		requestedURL = requestedURL.split('?').shift();
@@ -86,6 +91,7 @@ class AccessControl {
 		const policyOutcome = await this.__getPolicyOutcome(entityPolicies, req, schemaName, appId);
 		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
 			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			Logging.logError(policyOutcome.err.message);
 			res.status(policyOutcome.err.statusCode).send({message: policyOutcome.err.message});
 			return;
 		}
