@@ -1,7 +1,7 @@
 const ivm = require('isolated-vm');
 const fetch = require('cross-fetch');
 const crypto = require('crypto');
-const fs = require("fs");
+const fs = require('fs');
 const URL = require('url').URL;
 const randomstring = require('randomstring');
 const base64url = require('base64url');
@@ -44,7 +44,7 @@ class Helpers {
 			}
 
 			this.lambdaResult = res;
-		}));	
+		}));
 
 		jail.setSync('_lambdaAPI', new ivm.Reference(async (api, data, resolve) => {
 			const lambdaAPIs = {
@@ -325,7 +325,7 @@ class Helpers {
 							);
 						});
 					}
-				`
+				`;
 				jail.setSync(`_${pluginName}_${method}`, new ivm.Reference(async (args, resolve, reject) => {
 					Logging.logVerbose(`${pluginName}_${method}`);
 					// console.log(args);
@@ -334,7 +334,7 @@ class Helpers {
 					resolve.applyIgnored(undefined, [
 						new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto(),
 					]);
-				}));			
+				}));
 			}
 		}
 
@@ -408,30 +408,30 @@ class Helpers {
 			const items = fs.readdirSync(dirName, {withFileTypes: true});
 			for (const item of items) {
 				// console.log(item.name);
-		
+
 				if (item.isDirectory()) {
 					files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
 				} else {
 					files.push(require(`${dirName}/${item.name}`));
 				}
 			}
-		
+
 			return files;
 		};
-		
+
 		this._plugins = {};
 		const classes = getClassesList(Config.paths.lambdaPlugins);
-		const plugins = classes.filter(c => c.startUp);
-		const prot = ["constructor", "startUp"];
-		plugins.forEach(p => {
+		const plugins = classes.filter((c) => c.startUp);
+		const prot = ['constructor', 'startUp'];
+		plugins.forEach((p) => {
 			const className = p.constructor.name;
 
-			let methods = Object.getOwnPropertyNames(Object.getPrototypeOf(p)).filter(n => prot.indexOf(n) === -1 && /^_/.exec(n) === null)
+			const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(p)).filter((n) => prot.indexOf(n) === -1 && /^_/.exec(n) === null);
 			this._plugins[className] = {plugin: p, methods: methods};
 
 			Logging.logVerbose(`Plugin '${className}' Methods: ${methods.join(',')}`);
 			p.startUp();
-		})
+		});
 		Logging.log(`Registered: ${Object.keys(this._plugins).length} lambda plugins`);
 	}
 }
