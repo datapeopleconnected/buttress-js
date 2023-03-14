@@ -385,6 +385,7 @@ class Routes {
 
 		// TODO: Accept the token via the requset header instead of query string
 		req.token = req.query.token;
+		req.apiPath = req.query.apiPath;
 
 		Logging.logTimer(`_authenticateToken:start ${req.token}`,
 			req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -408,7 +409,13 @@ class Routes {
 			Logging.logTimer(`_authenticateToken:got-token type ${(req.token) ? req.token.type : token}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-			const app = (req.token._app) ? await Model.App.findById(req.token._app) : null;
+			let app = null;
+			if (req.apiPath) {
+				app = await Model.App.findOne({apiPath: req.apiPath});
+			} else if (req.token._app) {
+				app = await Model.App.findById(req.token._app);
+			}
+
 			Model.authApp = req.authApp = app;
 			Logging.logTimer(`_authenticateToken:got-app ${(req.authApp) ? req.authApp._id : app}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);

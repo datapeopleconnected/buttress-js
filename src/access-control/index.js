@@ -54,14 +54,18 @@ class AccessControl {
 	async accessControlPolicyMiddleware(req, res, next) {
 		Logging.logTimer(`accessControlPolicyMiddleware::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		// TODO need to take into consideration appDataSharingId
-		const appId = req.authApp._id;
 		const user = req.authUser;
 		const lambda = req.authLambda;
+		let appId = null;
 		let lambdaAPICall = false;
 
 		if (!user && !lambda) return next();
+		if (user) {
+			[appId] = user._apps;
+		}
 		if (lambda) {
 			lambdaAPICall = lambda.trigger.some((t) => req.originalUrl.includes(t.apiEndpoint.url));
+			appId = lambda._appId;
 		}
 		if (lambdaAPICall) return next();
 

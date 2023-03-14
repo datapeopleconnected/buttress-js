@@ -220,7 +220,7 @@ class AddApp extends Route {
 				{route: '*', permission: '*'},
 			];
 
-			req.body.permissions = JSON.stringify(permissions);
+			req.body.permissions = permissions;
 			req.body.authLevel = Model.Token.Constants.AuthLevel.ADMIN;
 		}
 		return new Promise((resolve, reject) => {
