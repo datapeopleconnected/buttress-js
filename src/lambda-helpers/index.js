@@ -9,6 +9,8 @@ const getClassesList = (dirName) => {
 	let files = [];
 	const items = fs.readdirSync(dirName, {withFileTypes: true});
 	for (const item of items) {
+		console.log(item.name);
+
 		if (item.isDirectory()) {
 			files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
 		} else {

@@ -1,6 +1,7 @@
 const ivm = require('isolated-vm');
 const fetch = require('cross-fetch');
 const crypto = require('crypto');
+const fs = require("fs");
 const URL = require('url').URL;
 const randomstring = require('randomstring');
 const base64url = require('base64url');
@@ -8,6 +9,10 @@ const base64url = require('base64url');
 const lambdaMail = require('./mail');
 const Model = require('../model');
 const Logging = require('../logging');
+// const { Object } = require('sugar');
+
+const Config = require('node-env-obj')();
+
 
 /**
  * Helpers
@@ -20,9 +25,13 @@ class Helpers {
 	constructor() {
 		this.lambdaExecution = null;
 		this.lambdaResult = null;
+		this._plugins = {};
+		this._pluginBootstrap = '';
 	}
 
 	async _createIsolateContext(isolate, context, jail) {
+		this.registerPlugins();
+
 		jail.setSync('global', jail.derefInto());
 		jail.setSync('_ivm', ivm);
 		jail.setSync('_setResult', new ivm.Reference((res) => {
@@ -35,7 +44,8 @@ class Helpers {
 			}
 
 			this.lambdaResult = res;
-		}));
+		}));	
+
 		jail.setSync('_lambdaAPI', new ivm.Reference(async (api, data, resolve) => {
 			const lambdaAPIs = {
 				getEmailTemplate: async () => {
@@ -153,6 +163,7 @@ class Helpers {
 			}
 		}));
 
+		this._setupPlugins(jail);
 		this._setupLambdaLogs(jail);
 		this._createHostIsolateBridge(isolate, context);
 		this._createLambdaNameSpace(isolate, context);
@@ -162,6 +173,8 @@ class Helpers {
 		const bootstrap = await isolate.compileScript(`new function() {
 			let ivm = _ivm;
 			delete _ivm;
+
+			${this._pluginBootstrap}
 
 			let log = _log;
 			delete _log;
@@ -296,6 +309,38 @@ class Helpers {
 		}));
 	}
 
+	async _setupPlugins(jail) {
+		this._pluginBootstrap = '';
+
+		for (const [pluginName, pluginMeta] of Object.entries(this._plugins)) {
+			for (const method of pluginMeta.methods) {
+				this._pluginBootstrap += `
+					let ${pluginName}_${method} = _${pluginName}_${method};
+					delete _${pluginName}_${method};
+					global.${pluginName}_${method} = (args) => {
+						return new Promise((resolve, reject) => {
+							${pluginName}_${method}.applyIgnored(
+								undefined,
+								[new ivm.ExternalCopy(args).copyInto(), new ivm.Reference(resolve), new ivm.Reference(reject)],
+							);
+						});
+					}
+				`
+				jail.setSync(`_${pluginName}_${method}`, new ivm.Reference(async (args, resolve, reject) => {
+					Logging.logVerbose(`${pluginName}_${method}`);
+					// console.log(args);
+					const outcome = await pluginMeta.plugin[method](args);
+					// console.log(outcome);
+					resolve.applyIgnored(undefined, [
+						new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto(),
+					]);
+				}));			
+			}
+		}
+
+		// console.log(this._pluginBootstrap);
+	}
+
 	_createLambdaNameSpace(isolate, context) {
 		isolate.compileScriptSync(`
 			const lambda = {
@@ -355,6 +400,39 @@ class Helpers {
 			formBody.push(encodedKey + '=' + encodedValue);
 		});
 		return formBody.join('&');
+	}
+
+	registerPlugins() {
+		const getClassesList = (dirName) => {
+			let files = [];
+			const items = fs.readdirSync(dirName, {withFileTypes: true});
+			for (const item of items) {
+				// console.log(item.name);
+		
+				if (item.isDirectory()) {
+					files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
+				} else {
+					files.push(require(`${dirName}/${item.name}`));
+				}
+			}
+		
+			return files;
+		};
+		
+		this._plugins = {};
+		const classes = getClassesList(Config.paths.lambdaPlugins);
+		const plugins = classes.filter(c => c.startUp);
+		const prot = ["constructor", "startUp"];
+		plugins.forEach(p => {
+			const className = p.constructor.name;
+
+			let methods = Object.getOwnPropertyNames(Object.getPrototypeOf(p)).filter(n => prot.indexOf(n) === -1 && /^_/.exec(n) === null)
+			this._plugins[className] = {plugin: p, methods: methods};
+
+			Logging.logVerbose(`Plugin '${className}' Methods: ${methods.join(',')}`);
+			p.startUp();
+		})
+		Logging.log(`Registered: ${Object.keys(this._plugins).length} lambda plugins`);
 	}
 }
 

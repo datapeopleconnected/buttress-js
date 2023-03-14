@@ -411,7 +411,6 @@ class LambdasRunner {
 
 	bundleLambdaModules(modules) {
 		const entry = {};
-
 		modules.forEach((m) => {
 			const moduleName = (m.packageName) ? m.packageName.replace('/', '_') : m.name;
 			if (m.packageName && fs.existsSync(`./bundles/${moduleName}.js`)) return;
