@@ -23,6 +23,7 @@ const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 const ObjectId = require('mongodb').ObjectId;
+const Sugar = require('sugar');
 
 const Route = require('../route');
 const Model = require('../../model');
@@ -277,6 +278,53 @@ class UpdateLambda extends Route {
 routes.push(UpdateLambda);
 
 /**
+ * @class BulkUpdateLambda
+ */
+class BulkUpdateLambda extends Route {
+	constructor() {
+		super('lambda/bulk/update', 'BULK UPDATE LAMBDA');
+		this.verb = Route.Constants.Verbs.POST;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	async _validate(req, res, token) {
+		for await (const item of req.body) {
+			const validation = Model.Lambda.validateUpdate(item.body);
+			if (!validation.isValid) {
+				if (validation.isPathValid === false) {
+					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `LAMBDA: Update path is invalid: ${validation.invalidPath}`));
+				}
+				if (validation.isValueValid === false) {
+					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `LAMBDA: Update value is invalid: ${validation.invalidValue}`));
+				}
+			}
+
+			const exists = Model.Lambda.exists(item.id);
+			if (!exists) {
+				this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+			}
+		}
+
+		return req.body;
+	}
+
+	async _exec(req, res, validate) {
+		for await (const item of validate) {
+			await Model.Lambda.updateByPath(item.body, item.id, 'Lambda');
+		}
+		return true;
+	}
+}
+routes.push(BulkUpdateLambda);
+
+/**
  * @class EditLambdaDeployment
  */
 class EditLambdaDeployment extends Route {
@@ -363,28 +411,29 @@ class EditLambdaDeployment extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const deployments = [];
-		const rxsDeployment = await Model.Deployment.find({lambdaId: Model.Lambda.createId(req.params.id)});
+		const deployment = await Model.Deployment.findOne({
+			lambdaId: Model.Lambda.createId(req.params.id),
+			hash: req.body.hash,
+		});
 
-		for await (const deployment of rxsDeployment) {
-			deployments.push(deployment);
-		}
-
-		const deploymentIdx = deployments.findIndex((d) => d.hash === req.body.hash);
-		if (deploymentIdx !== -1) return true;
-
-		await Model.Lambda.setDeployment(req.params.id, {
+		const lambdaLastDeployment = await Model.Lambda.setDeployment(req.params.id, {
 			'git.branch': req.body.branch,
 			'git.hash': req.body.hash,
 		});
 
-		await Model.Deployment.add({
-			lambdaId: req.params.id,
-			hash: req.body.hash,
-			branch: req.body.branch,
-		});
+		if (!deployment) {
+			await Model.Deployment.add({
+				lambdaId: req.params.id,
+				hash: req.body.hash,
+				branch: req.body.branch,
+			});
+		} else {
+			await Model.Deployment.update({
+				_id: Model.Deployment.createId(deployment._id),
+			}, {$set: {deployedAt: Sugar.Date.create('now')}});
+		}
 
-		return true;
+		return lambdaLastDeployment;
 	}
 }
 routes.push(EditLambdaDeployment);

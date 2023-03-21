@@ -44,7 +44,10 @@ class AddSecureStore extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const secureStoreExist = await Model.SecureStore.findOne({name: req.body.name});
+		const secureStoreExist = await Model.SecureStore.findOne({
+			name: req.body.name,
+			_appId: Model.App.createId(req.authApp._id),
+		});
 		if (secureStoreExist) {
 			this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
@@ -226,7 +229,7 @@ routes.push(UpdateSecureStore);
  */
 class BulkUpdateSecureStore extends Route {
 	constructor() {
-		super('secureStore/bulk/:id', 'BULK UPDATE SECURE STORE');
+		super('secureStore/bulk/update', 'BULK UPDATE SECURE STORE');
 		this.verb = Route.Constants.Verbs.POST;
 		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -234,7 +237,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const validation = Model.SecureStore.validateUpdate(item);
+			const validation = Model.SecureStore.validateUpdate(item.body);
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -258,7 +261,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.SecureStore.updateByPath(item, item.id, 'SecureStore');
+			await Model.SecureStore.updateByPath(item.body, item.id, 'SecureStore');
 		}
 		return true;
 	}

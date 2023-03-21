@@ -56,13 +56,13 @@ class AppDataSharingSchemaModel extends SchemaModel {
 				name: {
 					__type: 'string',
 					__required: true,
-					__allowUpdate: false,
+					__allowUpdate: true,
 				},
 				active: {
 					__type: 'boolean',
 					__default: false,
 					__required: false,
-					__allowUpdate: false,
+					__allowUpdate: true,
 				},
 				remoteApp: {
 					endpoint: {

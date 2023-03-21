@@ -44,11 +44,11 @@ class SecureStoreSchemaModel extends SchemaModel {
 					__required: false,
 					__allowUpdate: true,
 				},
-			},
-			_appId: {
-				__type: 'id',
-				__required: true,
-				__allowUpdate: false,
+				_appId: {
+					__type: 'id',
+					__required: true,
+					__allowUpdate: false,
+				},
 			},
 		};
 	}

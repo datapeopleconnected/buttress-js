@@ -147,7 +147,8 @@ const _doValidateUpdate = function(pathContext, flattenedSchema) {
 		const config = flattenedSchema[pathStrippedSuffix];
 		if (config) {
 			if (config.__type === 'array' && config.__schema) {
-				const validation = Helpers.Schema.validate(config.__schema, Helpers.Schema.getFlattenedBody(body.value), `${pathStrippedSuffix}.`);
+				const flattenedBody = Helpers.Schema.getFlattenedBody(body.value);
+				const validation = Helpers.Schema.validate(config.__schema, flattenedBody, `${pathStrippedSuffix}.`, body.value);
 				if (validation.isValid !== true) {
 					if (validation.missing.length) {
 						res.isMissingRequired = true;

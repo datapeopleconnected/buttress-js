@@ -376,9 +376,21 @@ class LambdaSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves when save operation is completed
 	 */
 	async setDeployment(lambdaId, data) {
-		return super.updateById(this.createId(lambdaId), {
+		const lambdaLastDeployment = {
+			hash: data['git.hash'],
+			deployedAt: Sugar.Date.create('now'),
+		};
+		await super.updateById(this.createId(lambdaId), {
 			$set: data,
 		});
+
+		await super.updateById(this.createId(lambdaId), {
+			$push: {
+				'deployments': lambdaLastDeployment,
+			},
+		});
+
+		return lambdaLastDeployment;
 	}
 
 	/**
