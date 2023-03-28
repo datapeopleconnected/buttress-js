@@ -93,6 +93,53 @@ class GetUser extends Route {
 routes.push(GetUser);
 
 /**
+ * @class GetUserByToken
+ */
+class GetUserByToken extends Route {
+	constructor() {
+		super('user/get-by-token', 'GET USER BY TOKEN');
+		this.verb = Route.Constants.Verbs.POST;
+		this.auth = Route.Constants.Auth.ADMIN;
+		this.permissions = Route.Constants.Permissions.READ;
+
+		this._user = false;
+	}
+
+	async _validate(req) {
+		const {token} = req.body;
+		if (!token) {
+			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `missing_field`);
+		}
+
+		const userToken = await Model.Token.findOne({
+			value: {
+				$eq: token,
+			},
+		});
+
+		if (!userToken) {
+			this.log('ERROR: Invalid User Token', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `invalid_token`);
+		}
+
+		const user = await Model.User.findById(userToken._user);
+
+		return {
+			id: user._id,
+			auth: user.auth,
+			token: userToken.value,
+			policyProperties: user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
+		};
+	}
+
+	_exec(req, res, user) {
+		return user;
+	}
+}
+routes.push(GetUserByToken);
+
+/**
  * @class FindUser
  */
 class FindUser extends Route {
