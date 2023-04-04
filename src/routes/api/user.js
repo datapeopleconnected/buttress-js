@@ -383,17 +383,17 @@ class AddUser extends Route {
 		}));
 
 		if (userNameExists.length > 0) {
-			this.log(`[${this.name}] Sorry, a user already exists with that name`, Route.LogLevel.ERR);
+			this.log(`[${this.name}] A user already exists with one of the auth username(s)`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_already_exists_with_that_name`));
 		}
 
-		const policyProperties = req.body?.policyProperties;
+		const policyProperties = req.body.user.policyProperties;
 		if (policyProperties === undefined) {
 			this.log(`[${this.name}] Missing user required property policyProperties`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_properties`));
 		}
 
-		const policyCheck = await Helpers.checkAppPolicyProperty(req?.authApp?.policyPropertiesList, metadata.policyProperties);
+		const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, policyProperties);
 		if (!policyCheck.passed) {
 			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
