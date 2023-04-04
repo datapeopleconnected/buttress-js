@@ -51,7 +51,9 @@ class Helpers {
 				getEmailTemplate: async () => {
 					Logging.logVerbose(`[${this.name}] Populating email body from template ${data.emailTemplate}`);
 
-					const render = lambdaMail.getEmailTemplate(`./lambda/lambda-${data.lambdaId}/${data.emailTemplate}.pug`, data.emailTemplate);
+					const render = lambdaMail.getEmailTemplate(
+						`${Config.paths.lambda.code}/lambda-${data.lambdaId}/${data.emailTemplate}.pug`, data.emailTemplate
+					);
 
 					return render(data.emailData);
 				},
@@ -420,7 +422,7 @@ class Helpers {
 		};
 
 		this._plugins = {};
-		const classes = getClassesList(Config.paths.lambdaPlugins);
+		const classes = getClassesList(Config.paths.lambda.plugins);
 		const plugins = classes.filter((c) => c.startUp);
 		const prot = ['constructor', 'startUp'];
 		plugins.forEach((p) => {

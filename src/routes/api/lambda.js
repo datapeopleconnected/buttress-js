@@ -360,25 +360,25 @@ class EditLambdaDeployment extends Route {
 			const entryFilePath = (req.body.entryFile) ? req.body.entryFile : lambda.git.entryFile;
 			const entryPoint = (req.body.entryPoint) ? req.body.entryPoint : lambda.git.entryPoint;
 
-			await exec(`cd ./lambda/lambda-${req.params.id}; git fetch`);
-			const checkoutRes = await exec(`cd ./lambda/lambda-${req.params.id}; git checkout ${branch}`);
+			await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git fetch`);
+			const checkoutRes = await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git checkout ${branch}`);
 			if (!checkoutRes.stdout) {
 				this.log(`[${this.name}] Lambda ${branch} does not exist`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `branch_${branch}_does_not_exist_for_lambda`));
 			}
 
-			await exec(`cd ./lambda/lambda-${req.params.id}; git pull`);
-			const results = await exec(`cd ./lambda/lambda-${req.params.id}; git branch ${branch} --contains ${hash}`);
+			await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git pull`);
+			const results = await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git branch ${branch} --contains ${hash}`);
 			if (!results.stdout) {
 				this.log(`[${this.name}] Lambda hash:${hash} does not exist on ${branch} branch`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_${hash}_does_not_exist_on_branch_${branch}`));
 			}
 
-			await exec(`cd ./lambda/lambda-${req.params.id}; git checkout ${hash}`);
+			await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git checkout ${hash}`);
 
 
 			const entryDir = path.dirname(entryFilePath);
-			const lambdaDir = `./lambda/lambda-${req.params.id}/./${entryDir}`; // Ugly `/./` because I am lazy
+			const lambdaDir = `${Config.paths.lambda.code}/lambda-${req.params.id}/./${entryDir}`; // Ugly `/./` because I am lazy
 			const files = fs.readdirSync(lambdaDir);
 			const entryFile = entryFilePath.split('/').pop();
 			if (entryFilePath && !files.includes(entryFile)) {
@@ -397,7 +397,7 @@ class EditLambdaDeployment extends Route {
 					}
 
 					if (content.includes(log)) {
-						await exec(`cd ./lambda/lambda-${req.params.id}; git checkout ${lambda.git.hash}`);
+						await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git checkout ${lambda.git.hash}`);
 						throw new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`);
 					}
 				}
@@ -611,7 +611,7 @@ class DeleteLambda extends Route {
 
 	async _exec(req, res, validate) {
 		// TODO make sure that the git repo is not used by any other lambdas before deleteing it
-		await exec(`cd ./lambda; rm -rf lambda-${validate.lambda._id}`);
+		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${validate.lambda._id}`);
 		await Model.Lambda.rm(validate.lambda);
 		await Model.Token.rm(validate.token);
 		return true;

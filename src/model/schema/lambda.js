@@ -20,6 +20,7 @@ const fs = require('fs');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
 
+const Config = require('node-env-obj')();
 const Sugar = require('sugar');
 const SchemaModel = require('../schemaModel');
 const Helpers = require('../../helpers');
@@ -289,7 +290,7 @@ class LambdaSchemaModel extends SchemaModel {
 			_lambda: lambda._id,
 		});
 
-		await exec(`cd ./lambda; mv lambda-${lambda.name} lambda-${lambda._id}`);
+		await exec(`cd ${Config.paths.lambda.code}; mv lambda-${lambda.name} lambda-${lambda._id}`);
 
 		return lambda;
 	}
@@ -333,21 +334,21 @@ class LambdaSchemaModel extends SchemaModel {
 				throw new Helpers.Errors.RequestError(400, `duplicate_item`);
 			}
 
-			const result = await exec(`cd ./lambda; git clone --filter=blob:limit=1m ${url} lambda-${name};
+			const result = await exec(`cd ${Config.paths.lambda.code}; git clone --filter=blob:limit=1m ${url} lambda-${name};
 				cd lambda-${name}; git branch ${branch} --contains ${gitHash}`);
 			if (!result.stdout) {
-				if (fs.existsSync(`./lambda/lambda-${name}`)) {
-					await exec(`cd ./lambda; rm -rf lambda-${name}`);
+				if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
+					await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
 				}
 				Logging.logError(`[${this.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
 				throw new Helpers.Errors.RequestError(400, `missing_field`);
 			}
 
-			await exec(`cd ./lambda/lambda-${name}; git checkout ${gitHash}`);
+			await exec(`cd ${Config.paths.lambda.code}/lambda-${name}; git checkout ${gitHash}`);
 
 			// TODO it should only clone the lambda file from the repo
 			const entryDir = path.dirname(entryFile);
-			const lambdaDir = `./lambda/lambda-${name}/./${entryDir}`; // Ugly `/./` because I am lazy
+			const lambdaDir = `${Config.paths.lambda.code}/lambda-${name}/./${entryDir}`; // Ugly `/./` because I am lazy
 			const files = fs.readdirSync(lambdaDir);
 			for await (const file of files) {
 				if (path.extname(file) !== '.js') continue;
@@ -355,14 +356,14 @@ class LambdaSchemaModel extends SchemaModel {
 				const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
 				for await (const log of Object.keys(lambdaConsole)) {
 					if (content.includes(log)) {
-						await exec(`cd ./lambda; rm -rf lambda-${name}`);
+						await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
 						throw new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`);
 					}
 				}
 			}
 		} catch (err) {
-			if (fs.existsSync(`./lambda/lambda-${name}`)) {
-				await exec(`cd ./lambda; rm -rf lambda-${name}`);
+			if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
+				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
 			}
 
 			Logging.logError(`[${this.name}] ${err.message}`);
