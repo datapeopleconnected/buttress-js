@@ -22,12 +22,9 @@ class PolicyMatch {
 		let match = false;
 		const selection = p.selection;
 
-		const entityMetadata = (entity._appMetadata) ? entity._appMetadata?.find((md) => md.appId.toString() === appId.toString()) : entity;
-		const entityPolicySelectors = entity.policyProperties;
-		if ((!entityMetadata || !entityMetadata.policyProperties) && !entityPolicySelectors) return;
+		if (!entity || !entity.policyProperties) return;
 
-		const policyProperties = (entityMetadata) ? entityMetadata.policyProperties : entityPolicySelectors;
-
+		const policyProperties = entity.policyProperties;
 		const matches = Object.keys(selection).reduce((arr, key) => {
 			if (!(key in policyProperties)) return arr;
 			const [selectionCriterionKey] = Object.keys(selection[key]);

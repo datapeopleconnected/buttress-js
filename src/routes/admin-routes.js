@@ -225,7 +225,7 @@ class AdminRoutes {
 				policy.config[appConfigIdx].query[appQueryIdx]._app = {
 					'@eq': appId,
 				};
-				policy.config[configIdx].query[userQueryIdx]._apps = {
+				policy.config[configIdx].query[userQueryIdx]._appId = {
 					'@eq': appId,
 				};
 				policy.config[configIdx].query[tokenQueryIdx]._app = {

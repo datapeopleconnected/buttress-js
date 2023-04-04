@@ -38,7 +38,7 @@
 				}
 			},{
 				"schema": ["user"],
-				"_apps": {
+				"_appId": {
 					"@eq": null
 				}
 			}]

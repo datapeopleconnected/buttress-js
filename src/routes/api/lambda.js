@@ -480,7 +480,7 @@ class SetLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Lambda.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body);
+		await Model.Lambda.setPolicyPropertiesById(req.params.id, req.body);
 		return true;
 	}
 }

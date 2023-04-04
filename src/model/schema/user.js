@@ -134,29 +134,16 @@ class UserSchemaModel extends SchemaModel {
 						},
 					},
 				},
-				_apps: {
-					__type: 'array',
-					__itemtype: 'id',
+				_appId: {
+					__type: 'id',
 					__required: true,
-					__allowUpdate: true,
+					__allowUpdate: false,
 				},
-				_appMetadata: {
-					__type: 'array',
+				policyProperties: {
+					__type: 'object',
+					__default: null,
 					__required: true,
 					__allowUpdate: true,
-					__schema: {
-						appId: {
-							__type: 'array',
-							__required: true,
-							__allowUpdate: true,
-						},
-						policyProperties: {
-							__type: 'object',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-					},
 				},
 			},
 		};
@@ -188,7 +175,7 @@ class UserSchemaModel extends SchemaModel {
 	// 	};
 
 	// 	const rxsUser = await super.add(userBody, {
-	// 		_apps: [Model.authApp._id],
+	// 		_appId: Model.authApp._id,
 	// 		_appMetadata: [{
 	// 			appId: Model.authApp._id,
 	// 			policyProperties: (body.policyProperties) ? body.policyProperties : null,
@@ -246,14 +233,9 @@ class UserSchemaModel extends SchemaModel {
 			});
 		});
 
-		const bodyMetadata = body?._appMetadata;
-		const metadata = (bodyMetadata) ? bodyMetadata.find((metadata) => metadata.appId.toString() === Model.authApp._id.toString()) : body;
 		const rxsUser = await super.add(userBody, {
-			_apps: [Model.authApp._id],
-			_appMetadata: [{
-				appId: Model.authApp._id,
-				policyProperties: (metadata && metadata.policyProperties) ? metadata.policyProperties : null,
-			}],
+			_appId: Model.authApp._id,
+			policyProperties: (body.policyProperties) ? body.policyProperties : null,
 		});
 		const user = await Helpers.streamFirst(rxsUser);
 
@@ -334,24 +316,6 @@ class UserSchemaModel extends SchemaModel {
 		return super.updateById(user._id, update).then(() => true);
 	}
 
-	updateApps(user, appId) {
-		Logging.logSilly(`updateApps: ${appId}`);
-		if (!user._apps) {
-			user._apps = [];
-		}
-
-		const match = user._apps.find((id) => id.toString() === appId.toString());
-		if (match) {
-			Logging.logSilly(`present: ${appId}`);
-			return Promise.resolve();
-		}
-
-		Logging.logSilly(`not present: ${appId}`);
-		user._apps.push(appId);
-
-		return super.updateById(user._id, {$set: {_apps: user._apps}});
-	}
-
 	/**
 	 * @param {ObjectId} appId - id of the App that owns the user
 	 * @param {int} tokenAuthLevel - level of the current token in use.
@@ -362,7 +326,7 @@ class UserSchemaModel extends SchemaModel {
 			return super.find({});
 		}
 
-		return super.find({_apps: appId});
+		return super.find({_appId: appId});
 	}
 
 	/**
@@ -398,31 +362,17 @@ class UserSchemaModel extends SchemaModel {
 
 	/**
 	 * @param {String} userId - id of the user
-	 * @param {String} appId - id of the app
 	 * @param {Object} policyProperties - Policy properties
 	 * @return {Promise} - resolves to an array of Apps
 	 */
-	async setPolicyPropertiesById(userId, appId, policyProperties) {
+	async setPolicyPropertiesById(userId, policyProperties) {
 		if (policyProperties.query) {
 			delete policyProperties.query;
 		}
 
-		const user = await this.findById(userId);
-		let metaDataExists = false;
-		if (user._appMetadata) {
-			metaDataExists = user._appMetadata.find((md) => md.appId.toString() === appId.toString());
-		}
-
-		if (metaDataExists) {
-			return super.update({
-				'_id': this.createId(userId),
-				'_appMetadata.appId': this.createId(appId),
-			}, {$set: {'_appMetadata.$.policyProperties': policyProperties}});
-		} else {
-			return super.update({
-				'_id': this.createId(userId),
-			}, {$push: {'_appMetadata': {appId: this.createId(appId), policyProperties}}});
-		}
+		return super.update({
+			'_id': this.createId(userId),
+		}, {$set: {'policyProperties': policyProperties}});
 	}
 
 	/**
@@ -437,7 +387,9 @@ class UserSchemaModel extends SchemaModel {
 			delete policyProperties.query;
 		}
 
-		const userPolicy = user._appMetadata.find((m) => m.appId.toString() === appId.toString()).policyProperties;
+		// TODO: Drop AppId from args
+
+		const userPolicy = (user.policyProperties || {});
 		const policy = Object.keys(policyProperties).reduce((obj, key) => {
 			obj[key] = policyProperties[key];
 			return obj;
@@ -445,10 +397,9 @@ class UserSchemaModel extends SchemaModel {
 
 		return super.update({
 			'_id': this.createId(userId),
-			'_appMetadata.appId': this.createId(appId),
 		}, {
 			$set: {
-				'_appMetadata.$.policyProperties': {
+				'policyProperties': {
 					...userPolicy,
 					...policy,
 				},
@@ -464,10 +415,9 @@ class UserSchemaModel extends SchemaModel {
 	clearPolicyPropertiesById(userId, appId) {
 		return super.update({
 			'_id': this.createId(userId),
-			'_appMetadata.appId': this.createId(appId),
 		}, {
 			$set: {
-				'_appMetadata.$.policyProperties': {},
+				'policyProperties': {},
 			},
 		});
 	}

@@ -395,11 +395,10 @@ class LambdaSchemaModel extends SchemaModel {
 
 	/**
 	 * @param {String} lambdaId - id of the lambda
-	 * @param {String} appId - id of the app
 	 * @param {Object} policyProperties - Policy properties
 	 * @return {Promise} - resolves to an array of Apps
 	 */
-	async setPolicyPropertiesById(lambdaId, appId, policyProperties) {
+	async setPolicyPropertiesById(lambdaId, policyProperties) {
 		if (policyProperties.query) {
 			delete policyProperties.query;
 		}
