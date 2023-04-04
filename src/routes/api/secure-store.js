@@ -174,6 +174,8 @@ class FindSecureStore extends Route {
 			},
 		});
 
+		if (!secureStore) return Promise.reject(new Helpers.Errors.RequestError(404, `Not Found`));
+
 		return Promise.resolve(secureStore);
 	}
 
