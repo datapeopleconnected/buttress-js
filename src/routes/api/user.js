@@ -367,17 +367,21 @@ class AddUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_user_auth`));
 		}
 
-		const userNames = req.body.auth.map((oauth) => oauth.username);
-		const userNameExists = await Helpers.streamAll(await Model.User.find({
-			'auth.username': {
-				$in: userNames,
-			},
-			'_appId': {
-				$eq: Model.App.createId(req.authApp._id),
-			},
-		}));
+		const existingUsers = [];
+		for await (const auth of req.body.auth) {
+			const user = await Model.User.findOne({
+				'auth.email': auth.email,
+				'auth.app': auth.app,
+				'_appId': Model.App.createId(req.authApp._id),
+			});
+			if (user) {
+				existingUsers.push(user);
+			}
+		}
 
-		if (userNameExists.length > 0) {
+		console.log(existingUsers);
+
+		if (existingUsers.length > 0) {
 			this.log(`[${this.name}] A user already exists with one of the auth username(s)`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_already_exists_with_that_name`));
 		}
