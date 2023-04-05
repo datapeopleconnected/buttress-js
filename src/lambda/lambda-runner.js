@@ -166,6 +166,8 @@ class LambdasRunner {
 				nrp.emit('lambda-execution-finish', {code: 400, res: err.message, restWorkerId: data.restWorkerId});
 			}
 
+			Logging.logDebug(err);
+
 			return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));
 		}
 	}
