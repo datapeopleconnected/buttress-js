@@ -108,14 +108,9 @@ class GetUser extends Route {
 			const output = {
 				id: user._id,
 				auth: user.auth,
-				tokens: [],
+				token: userToken?.value || null,
 				policyProperties: user.policyProperties || null,
 			};
-			if (userToken?.value) {
-				output.tokens.push({
-					value: userToken.value,
-				});
-			}
 
 			return output;
 		} catch (err) {
