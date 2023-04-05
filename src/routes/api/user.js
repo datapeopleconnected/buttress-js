@@ -400,10 +400,11 @@ class AddUser extends Route {
 	async _exec(req, res, validate) {
 		const user = await Model.User.add(req.body);
 
+		const [token] = user.token;
 		return {
 			id: user._id,
 			auth: user.auth,
-			tokens: user.tokens,
+			token: token?.value || null,
 			policyProperties: user.policyProperties || null,
 		};
 	}
