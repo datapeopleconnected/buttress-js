@@ -371,7 +371,7 @@ class Route {
 
 		let paths = [];
 		const values = [];
-		const body = JSON.parse(req.body);
+		let body = JSON.parse(req.body);
 		const id = req.params.id;
 
 		if (this.verb === Constants.Verbs.POST) {
@@ -398,6 +398,7 @@ class Route {
 			}
 		}
 		if (this.verb === Constants.Verbs.PUT) {
+			if (!Array.isArray(body)) body = [body];
 			body.forEach((item) => {
 				if (!item.path) return;
 				paths.push(`${this.schema?.name}.${id}.${item.path}`);
