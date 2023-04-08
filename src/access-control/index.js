@@ -54,14 +54,18 @@ class AccessControl {
 	async accessControlPolicyMiddleware(req, res, next) {
 		Logging.logTimer(`accessControlPolicyMiddleware::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		// TODO need to take into consideration appDataSharingId
-		const appId = req.authApp._id;
 		const user = req.authUser;
 		const lambda = req.authLambda;
+		let appId = null;
 		let lambdaAPICall = false;
 
 		if (!user && !lambda) return next();
+		if (user) {
+			appId = user._appId;
+		}
 		if (lambda) {
 			lambdaAPICall = lambda.trigger.some((t) => req.originalUrl.includes(t.apiEndpoint.url));
+			appId = lambda._appId;
 		}
 		if (lambdaAPICall) return next();
 
@@ -432,7 +436,7 @@ class AccessControl {
 
 			const policyIdx = this._queuedLimitedPolicy.push(p.name);
 			setTimeout(async () => {
-				await this.__removeUserPropertiesPolicySelection(user, p, appId);
+				await this.__removeUserPropertiesPolicySelection(user, p);
 				await Model.Policy.rm(p);
 
 				nrp.emit('app-policy:bust-cache', {
@@ -450,16 +454,13 @@ class AccessControl {
 	}
 
 	async __removeUserPropertiesPolicySelection(user, policy, appId) {
-		const userAppMetadata = user._appMetadata.find((m) => m.appId.toString() === appId.toString());
-		if (!userAppMetadata) return;
-
 		const limitedPolicySelectionKeys = Object.keys(policy.selection);
-		const userPolicyProps = userAppMetadata.policyProperties;
+		const userPolicyProps = user.policyProperties;
 		limitedPolicySelectionKeys.forEach((key) => {
 			delete userPolicyProps[key];
 		});
 
-		await Model.User.setPolicyPropertiesById(user._id, appId, userPolicyProps);
+		await Model.User.setPolicyPropertiesById(user._id, userPolicyProps);
 	}
 
 	__getInnerObjectValue(originalObj) {

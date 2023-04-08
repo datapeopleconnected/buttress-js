@@ -241,7 +241,7 @@ routes.push(UpdatePolicy);
  */
 class BulkUpdatePolicy extends Route {
 	constructor() {
-		super('policy/bulk/:id', 'UPDATE POLICY');
+		super('policy/bulk/update', 'UPDATE POLICY');
 		this.verb = Route.Constants.Verbs.POST;
 		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -252,7 +252,7 @@ class BulkUpdatePolicy extends Route {
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const validation = Model.Policy.validateUpdate(item);
+			const validation = Model.Policy.validateUpdate(item.body);
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -276,7 +276,7 @@ class BulkUpdatePolicy extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.Policy.updateByPath(item, item.id, 'Policy');
+			await Model.Policy.updateByPath(item.body, item.id, 'Policy');
 		}
 		return true;
 	}

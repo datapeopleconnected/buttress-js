@@ -377,12 +377,16 @@ class LambdaManager {
 	 * Manages lambda folders
 	 */
 	async _manageLambdaFolders() {
-		if (!fs.existsSync(`./lambda`)) {
-			await exec(`mkdir lambda`);
+		if (!fs.existsSync(Config.paths.lambda.code)) {
+			await exec(`mkdir -p ${Config.paths.lambda.code}`);
 		}
 
-		if (fs.existsSync(`./bundles`)) {
-			await exec(`rm -rf bundles`);
+		if (!fs.existsSync(Config.paths.lambda.plugins)) {
+			await exec(`mkdir -p ${Config.paths.lambda.plugins}`);
+		}
+
+		if (fs.existsSync(Config.paths.lambda.bundles)) {
+			await exec(`rm -rf ${Config.paths.lambda.bundles}`);
 		}
 	}
 }

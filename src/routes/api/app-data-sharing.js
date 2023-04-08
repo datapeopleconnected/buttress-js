@@ -157,7 +157,6 @@ class AddDataSharing extends Route {
 }
 routes.push(AddDataSharing);
 
-
 // I do not think we should have bulk data sharing addition
 // /**
 //  * @class AddManyDataSharingAgreement
@@ -410,6 +409,8 @@ class UpdateAppDataSharingToken extends Route {
 
 		const token = await Model.Token.findById(validate.entity._tokenId);
 
+		// TODO: Regenerate tokens
+
 		// Our token
 		const remoteActivation = await validate.api.AppDataSharing.activateAppDataSharing(token, [{
 			path: 'remoteApp.token',
@@ -526,6 +527,27 @@ class DeactivateAppDataSharing extends Route {
 	}
 }
 routes.push(DeactivateAppDataSharing);
+
+/**
+ * @class GetAllAppDataSharing
+ */
+class GetAllAppDataSharing extends Route {
+	constructor() {
+		super('appDataSharing', 'APP DATA SHARING AGREEMENT LIST');
+		this.verb = Route.Constants.Verbs.GET;
+		this.auth = Route.Constants.Auth.USER;
+		this.permissions = Route.Constants.Permissions.LIST;
+	}
+
+	_validate() {
+		return true;
+	}
+
+	_exec() {
+		return Model.AppDataSharing.findAll();
+	}
+}
+routes.push(GetAllAppDataSharing);
 
 /**
  * @class SearchAppDataSharingAgreement

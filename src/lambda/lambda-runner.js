@@ -166,6 +166,8 @@ class LambdasRunner {
 				nrp.emit('lambda-execution-finish', {code: 400, res: err.message, restWorkerId: data.restWorkerId});
 			}
 
+			Logging.logDebug(err);
+
 			return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));
 		}
 	}
@@ -344,11 +346,11 @@ class LambdasRunner {
 	}
 
 	async installLambdaPackages(lambda, packageAllowList) {
-		const packagePath = `./lambda/lambda-${lambda._id}/package.json`;
+		const packagePath = `${Config.paths.lambda.code}/lambda-${lambda._id}/package.json`;
 		const modules = [];
 		if (!fs.existsSync(packagePath)) return modules;
 
-		const packages = require(`../../lambda/lambda-${lambda._id}/package.json`);
+		const packages = require(`${Config.paths.lambda.code}/lambda-${lambda._id}/package.json`);
 		for await (const packageKey of Object.keys(packages.dependencies)) {
 			try {
 				await exec(`npm ls ${packageKey}`);
@@ -390,7 +392,7 @@ class LambdasRunner {
 		const modules = [];
 		const entryDir = path.dirname(lambda.git.entryFile);
 		const entryFile = path.basename(lambda.git.entryFile);
-		const lambdaDir = `./lambda/lambda-${lambda._id}/./${entryDir}`; // Again ugly /./ because... indolence
+		const lambdaDir = `${Config.paths.lambda.code}/lambda-${lambda._id}/./${entryDir}`; // Again ugly /./ because... indolence
 
 		modules.push({
 			packageName: '@buttress/api',
@@ -411,10 +413,9 @@ class LambdasRunner {
 
 	bundleLambdaModules(modules) {
 		const entry = {};
-
 		modules.forEach((m) => {
 			const moduleName = (m.packageName) ? m.packageName.replace('/', '_') : m.name;
-			if (m.packageName && fs.existsSync(`./bundles/${moduleName}.js`)) return;
+			if (m.packageName && fs.existsSync(`${Config.paths.lambda.bundles}/${moduleName}.js`)) return;
 
 			entry[moduleName] = {
 				import: (m.import)? m.import : m.packageName,
@@ -439,7 +440,7 @@ class LambdasRunner {
 					new NodePolyfillPlugin(),
 				],
 				output: {
-					path: path.resolve('./bundles'),
+					path: path.resolve(Config.paths.lambda.bundles),
 					chunkFormat: 'commonjs',
 				},
 			}, function(err, stats) {
@@ -478,7 +479,7 @@ class LambdasRunner {
 				file = mod.name;
 				this._registeredBundles.push(mod.name);
 			}
-			this._isolate.compileScriptSync(fs.readFileSync(`./bundles/${file}.js`, 'utf8')).runSync(this._context);
+			this._isolate.compileScriptSync(fs.readFileSync(`${Config.paths.lambda.bundles}/${file}.js`, 'utf8')).runSync(this._context);
 		}
 	}
 }

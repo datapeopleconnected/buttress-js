@@ -108,14 +108,9 @@ class GetUser extends Route {
 			const output = {
 				id: user._id,
 				auth: user.auth,
-				tokens: [],
-				policyProperties: user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
+				token: userToken?.value || null,
+				policyProperties: user.policyProperties || null,
 			};
-			if (userToken?.value) {
-				output.tokens.push({
-					value: userToken.value,
-				});
-			}
 
 			return output;
 		} catch (err) {
@@ -149,7 +144,7 @@ class FindUser extends Route {
 							id: _user._id,
 							auth: _user.auth,
 							token: null,
-							policyProperties: _user._appMetadata?.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
+							policyProperties: _user.policyProperties || null,
 						};
 
 						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
@@ -207,7 +202,7 @@ class GetUserByToken extends Route {
 			id: user._id,
 			auth: user.auth,
 			token: userToken.value,
-			policyProperties: user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
+			policyProperties: user.policyProperties || null,
 		};
 	}
 
@@ -266,9 +261,9 @@ class CreateUserAuthToken extends Route {
 		const token = await Helpers.streamFirst(rxsToken);
 
 		// We'll make sure to add the user to the app
-		if (!user._apps.includes(req.authApp._id.toString())) {
-			await Model.User.updateApps(user, req.authApp._id);
-		}
+		// if (user._appId !== req.authApp._id.toString()) {
+		// 	await Model.User.updateApps(user, req.authApp._id);
+		// }
 
 		nrp.emit('app-routes:bust-cache', {});
 
@@ -372,29 +367,32 @@ class AddUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_user_auth`));
 		}
 
-		const userNames = req.body.auth.map((oauth) => oauth.username);
-		const userNameExists = await Helpers.streamAll(await Model.User.find({
-			'auth.username': {
-				$in: userNames,
-			},
-			'_apps': {
-				$eq: Model.App.createId(req.authApp._id),
-			},
-		}));
+		const existingUsers = [];
+		for await (const auth of req.body.auth) {
+			const user = await Model.User.findOne({
+				'auth.email': auth.email,
+				'auth.app': auth.app,
+				'_appId': Model.App.createId(req.authApp._id),
+			});
+			if (user) {
+				existingUsers.push(user);
+			}
+		}
 
-		if (userNameExists.length > 0) {
-			this.log(`[${this.name}] Sorry, a user already exists with that name`, Route.LogLevel.ERR);
+		console.log(existingUsers);
+
+		if (existingUsers.length > 0) {
+			this.log(`[${this.name}] A user already exists with one of the auth username(s)`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_already_exists_with_that_name`));
 		}
 
-		const reqAppMetadata = req.body?._appMetadata;
-		const metadata = (reqAppMetadata) ? reqAppMetadata.find((metadata) => metadata.appId.toString() === req.authApp._id.toString()) : req.body;
-		if (metadata && metadata.policyProperties === undefined) {
-			this.log(`[${this.name}] Missing user required policy properties`, Route.LogLevel.ERR);
+		const policyProperties = req.body.policyProperties;
+		if (policyProperties === undefined) {
+			this.log(`[${this.name}] Missing user required property policyProperties`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_properties`));
 		}
 
-		const policyCheck = await Helpers.checkAppPolicyProperty(req?.authApp?.policyPropertiesList, metadata.policyProperties);
+		const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, policyProperties);
 		if (!policyCheck.passed) {
 			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
@@ -405,18 +403,13 @@ class AddUser extends Route {
 
 	async _exec(req, res, validate) {
 		const user = await Model.User.add(req.body);
-		// TODO: Strip back return data, should match find user
-		let policyProperties = null;
-		if (user._appMetadata) {
-			const _appMetadata = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
-			policyProperties = (_appMetadata) ? _appMetadata.policyProperties : null;
-		}
 
+		const [token] = user.token;
 		return {
 			id: user._id,
 			auth: user.auth,
-			tokens: user.tokens,
-			policyProperties,
+			token: token?.value || null,
+			policyProperties: user.policyProperties || null,
 		};
 	}
 }
@@ -509,7 +502,7 @@ class SetUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.User.setPolicyPropertiesById(req.params.id, req.authApp._id, req.body);
+		await Model.User.setPolicyPropertiesById(req.params.id, req.body);
 
 		nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
@@ -565,11 +558,6 @@ class UpdateUserPolicyProperties extends Route {
 					if (!user) {
 						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-					}
-					const appMetadataExists = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
-					if (!appMetadataExists) {
-						this.log('ERROR: Invalid User app metadata', Route.LogLevel.ERR);
-						return reject(new Helpers.Errors.RequestError(400, `invalid_app_metadata`));
 					}
 
 					resolve({

@@ -220,7 +220,7 @@ class AddApp extends Route {
 				{route: '*', permission: '*'},
 			];
 
-			req.body.permissions = JSON.stringify(permissions);
+			req.body.permissions = permissions;
 			req.body.authLevel = Model.Token.Constants.AuthLevel.ADMIN;
 		}
 		return new Promise((resolve, reject) => {
@@ -378,7 +378,8 @@ class GetAppSchema extends Route {
 
 		let schema;
 		try {
-			schema = (req.query.rawSchema) ? Schema.decode(req.authApp.__rawSchema) : Schema.buildCollections(Schema.decode(req.authApp.__schema));
+			schema = (req.query.rawSchema && req.authApp.__rawSchema) ?
+				Schema.decode(req.authApp.__rawSchema) : Schema.buildCollections(Schema.decode(req.authApp.__schema));
 		} catch (err) {
 			if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
 			else throw err;

@@ -44,11 +44,11 @@ class SecureStoreSchemaModel extends SchemaModel {
 					__required: false,
 					__allowUpdate: true,
 				},
-			},
-			_appId: {
-				__type: 'id',
-				__required: true,
-				__allowUpdate: false,
+				_appId: {
+					__type: 'id',
+					__required: true,
+					__allowUpdate: false,
+				},
 			},
 		};
 	}
@@ -65,6 +65,9 @@ class SecureStoreSchemaModel extends SchemaModel {
 			storeData: (body.storeData) ? body.storeData : {},
 		};
 
+		// TODO This logic should be moved out to the route, to keep req logic
+		// with the http handling. appId should just be passed through with the
+		// body.
 		let appId = Model?.authApp?._id;
 		if (!appId) {
 			const token = await this._getToken(req);
@@ -80,6 +83,7 @@ class SecureStoreSchemaModel extends SchemaModel {
 				[appId] = user.apps;
 			}
 		}
+
 		const rxsSecureStore = await super.add(data, {
 			_appId: appId,
 		});

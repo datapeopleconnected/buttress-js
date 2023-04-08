@@ -7,9 +7,9 @@
 		"BUTTRESS_APP_PATH": "",
 		"BUTTRESS_APP_WORKERS": "FALSE",
 		"BUTTRESS_HOST_URL": "",
-		"BUTTRESS_REST_LISTEN_PORT": "6000",
-		"BUTTRESS_SOCK_LISTEN_PORT": "6010",
-		"BUTTRESS_LAMB_LISTEN_PORT": "6020",
+		"BUTTRESS_REST_LISTEN_PORT": "8000",
+		"BUTTRESS_SOCK_LISTEN_PORT": "8010",
+		"BUTTRESS_LAMB_LISTEN_PORT": "8020",
 
 		"BUTTRESS_DATASTORE_CONNECTION_STRING": "",
 		"BUTTRESS_DATASTORE_OPTIONS": "appName=%BUTTRESS_APP_CODE%&maxPoolSize=100",
@@ -24,6 +24,7 @@
 
 		"BUTTRESS_TIMEOUT_LAMBDA": 5,
 		"BUTTRESS_TIMEOUT_LAMBDAS_RUNNER": 10
+
 	},
 	"global": {
 		"env": "%NODE_ENV%",
@@ -76,6 +77,11 @@
 				"dev": "%BUTTRESS_APP_PATH%/app_data",
 				"prod": "%BUTTRESS_APP_PATH%/app_data",
 				"test": "%BUTTRESS_APP_PATH%/app_data/test"
+			},
+			"lambda": {
+				"code": "%BUTTRESS_APP_PATH%/app_data/lambda/code",
+				"plugins": "%BUTTRESS_APP_PATH%/app_data/lambda/plugins",
+				"bundles": "%BUTTRESS_APP_PATH%/app_data/lambda/bundles"
 			}
 		}
 	}
