@@ -30,6 +30,7 @@ class LambdaExecutionSchemaModel extends SchemaModel {
 			name: 'lambdaExecution',
 			type: 'collection',
 			extends: [],
+			core: true,
 			properties: {
 				lambdaId: {
 					__type: 'id',

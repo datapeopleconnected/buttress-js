@@ -29,6 +29,7 @@ class DeploymentSchemaModel extends SchemaModel {
 			name: 'deployment',
 			type: 'collection',
 			extends: [],
+			core: true,
 			properties: {
 				lambdaId: {
 					__type: 'id',

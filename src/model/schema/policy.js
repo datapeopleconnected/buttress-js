@@ -32,6 +32,7 @@ class PolicySchemaModel extends SchemaModel {
 			name: 'policy',
 			type: 'collection',
 			extends: [],
+			core: true,
 			properties: {
 				name: {
 					__type: 'string',

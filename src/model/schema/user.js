@@ -57,8 +57,8 @@ class UserSchemaModel extends SchemaModel {
 		return {
 			name: 'users',
 			type: 'collection',
-			collection: 'users',
 			extends: [],
+			core: true,
 			properties: {
 				auth: {
 					__type: 'array',

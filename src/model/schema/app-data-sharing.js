@@ -50,8 +50,8 @@ class AppDataSharingSchemaModel extends SchemaModel {
 		return {
 			name: 'appDataSharing',
 			type: 'collection',
-			collection: 'appDataSharing',
 			extends: [],
+			core: true,
 			properties: {
 				name: {
 					__type: 'string',

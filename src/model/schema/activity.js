@@ -53,8 +53,8 @@ class ActivitySchemaModel extends SchemaModel {
 		return {
 			name: 'activities',
 			type: 'collection',
-			collection: 'activities',
 			extends: [],
+			core: true,
 			properties: {
 				timestamp: {
 					__type: 'date',

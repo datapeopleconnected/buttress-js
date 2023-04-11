@@ -48,6 +48,7 @@ class LambdaSchemaModel extends SchemaModel {
 			name: 'lambda',
 			type: 'collection',
 			extends: [],
+			core: true,
 			properties: {
 				name: {
 					__type: 'string',

@@ -31,6 +31,7 @@ class SecureStoreSchemaModel extends SchemaModel {
 			name: 'secureStore',
 			type: 'collection',
 			extends: [],
+			core: true,
 			properties: {
 				name: {
 					__type: 'string',
