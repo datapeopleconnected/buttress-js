@@ -15,12 +15,18 @@ then
 elif [ "$APP_TYPE" == "SOCK" ]
 then
   $BASE_DIR/app-socket.js 2>&1 &
+elif [ "$APP_TYPE" == "LAMB" ]
+then
+  $BASE_DIR/app-lambda.js 2>&1 &
 else
   # Start the first process
   $BASE_DIR/app.js 2>&1 &
 
   # Start the second process
   $BASE_DIR/app-socket.js 2>&1 &
+
+  # Start the third process
+  $BASE_DIR/app-lambda.js 2>&1 &
 fi
 
 # Wait for any process to exit
