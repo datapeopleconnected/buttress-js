@@ -29,26 +29,21 @@ const Sugar = require('sugar');
 
 Sugar.Date.setLocale('en-GB');
 
-const BootstrapRest = require('../src/bootstrap-rest');
 const Logging = require('../src/logging');
+const BootstrapSocket = require('../src/bootstrap-socket');
 
 if (cluster.isMaster) Logging.startupMessage();
 
-/**
- *
- */
-Logging.init('REST');
+Logging.init('SOCK');
 
-const app = new BootstrapRest();
+const app = new BootstrapSocket();
 app.init()
 	.then((isMaster) => {
 		if (isMaster) {
-			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Master v${Config.app.version} listening on port ` +
-				`${Config.listenPorts.rest} in ${Config.env} mode.`);
-			Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
+			Logging.log(`${Config.app.title} Socket Master v${Config.app.version} listening on port ` +
+				`${Config.listenPorts.sock} in ${Config.env} mode.`);
 		} else {
-			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Worker v${Config.app.version} ` +
-				`in ${Config.env} mode.`);
+			Logging.log(`${Config.app.title} Socket Worker v${Config.app.version} in ${Config.env} mode.`);
 		}
 	})
 	.catch(Logging.Promise.logError());
