@@ -10,7 +10,6 @@ module.exports = class DeleteMany extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}/bulk/delete`, `BULK DELETE ${schema.name}`);
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.DELETE;
 
 		this.activityDescription = `BULK DELETE ${schema.name}`;

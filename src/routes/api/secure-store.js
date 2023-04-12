@@ -32,7 +32,6 @@ class AddSecureStore extends Route {
 	constructor() {
 		super('secureStore', 'ADD SECURE STORE');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -69,7 +68,6 @@ class AddManySecureStore extends Route {
 	constructor() {
 		super('secureStore/bulk/add', 'ADD SECURE STORE');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -120,7 +118,6 @@ class GetSecureStore extends Route {
 	constructor() {
 		super('secureStore/:id', 'GET SECURE STORE');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -157,7 +154,6 @@ class FindSecureStore extends Route {
 	constructor() {
 		super('secureStore/name/:name', 'FIND SECURE STORE BY NAME');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -192,7 +188,6 @@ class UpdateSecureStore extends Route {
 	constructor() {
 		super('secureStore/:id', 'UPDATE SECURE STORE');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -233,7 +228,6 @@ class BulkUpdateSecureStore extends Route {
 	constructor() {
 		super('secureStore/bulk/update', 'BULK UPDATE SECURE STORE');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -277,7 +271,6 @@ class SearchSecureStoreList extends Route {
 	constructor() {
 		super('secureStore', 'SEARCH SECURE STORE LIST');
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -318,7 +311,6 @@ class DeleteSecureStore extends Route {
 	constructor() {
 		super('secureStore/:id', 'DELETE SECURE STORE');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -351,7 +343,6 @@ class SecureStoreCount extends Route {
 	constructor() {
 		super(`secureStore/count`, `COUNT SECURE STORES`);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT SECURE STORES`;

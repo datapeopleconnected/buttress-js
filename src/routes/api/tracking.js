@@ -29,7 +29,6 @@ class GetTrackingList extends Route {
 	constructor() {
 		super('tracking', 'GET TRACKING LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -50,7 +49,6 @@ class AddTracking extends Route {
 	constructor() {
 		super('tracking', 'ADD TRACKING');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.ADD;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -88,7 +86,6 @@ class UpdateTracking extends Route {
 	constructor() {
 		super('tracking/:id', 'UPDATE TRACKING');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -133,7 +130,6 @@ class DeleteTracking extends Route {
 	constructor() {
 		super('tracking/:id', 'DELETE TRACKING');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.DELETE;
 		this._tracking = false;
 	}
@@ -165,7 +161,6 @@ class DeleteAllTrackings extends Route {
 	constructor() {
 		super('tracking', 'DELETE ALL TRACKINGS');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
 

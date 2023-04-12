@@ -30,17 +30,6 @@ const SchemaModel = require('../schemaModel');
 
 const nrp = new NRP(Config.redis);
 
-/**
- * Constants
-*/
-const type = ['server', 'ios', 'android', 'browser'];
-const Type = {
-	SERVER: type[0],
-	IOS: type[1],
-	ANDROID: type[2],
-	BROWSER: type[3],
-};
-
 class AppSchemaModel extends SchemaModel {
 	constructor(datastore) {
 		const schema = AppSchemaModel.Schema;
@@ -51,7 +40,6 @@ class AppSchemaModel extends SchemaModel {
 
 	static get Constants() {
 		return {
-			Type: Type,
 			PUBLIC_DIR: true,
 		};
 	}
@@ -144,9 +132,20 @@ class AppSchemaModel extends SchemaModel {
 	async add(body) {
 		body.id = this.createId();
 
+		if (body?.type === Model.Token.Constants.Type.SYSTEM) {
+			const adminToken = await Model.Token.findOne({
+				type: {
+					$eq: 'system',
+				},
+			});
+
+			if (adminToken) {
+				return Promise.reject(new Helpers.Errors.RequestError(400, `This Buttress instance already have a system app`));
+			}
+		}
+
 		const rxsToken = await Model.Token.add({
-			type: Model.Token.Constants.Type.APP,
-			authLevel: body.authLevel,
+			type: (body.type) ? body.type : Model.Token.Constants.Type.APP,
 			permissions: body.permissions,
 		}, {
 			_app: body.id,

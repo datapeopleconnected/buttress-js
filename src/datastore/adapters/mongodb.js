@@ -95,7 +95,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return this.find({_id: {$in: insertedIds}});
 	}
 
-	async batchUpdateProcess(id, body, context, schemaConfig, model) {
+	async batchUpdateProcess(id, body, context, schemaConfig, model = '') {
 		if (!context) {
 			throw new Error(`batchUpdateProcess called without context; ${id}`);
 		}
@@ -118,7 +118,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 				value = body.value;
 			}
 
-			if (!schemaConfig) {
+			if (!schemaConfig && model) {
 				const entity = await Model[model].findById(id);
 				const objValue = {};
 				let updateValueExists = true;

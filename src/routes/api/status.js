@@ -29,7 +29,6 @@ class GetProcessStatus extends Route {
 	constructor() {
 		super('status', 'GET TRACKING LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 

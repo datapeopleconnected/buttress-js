@@ -10,7 +10,6 @@ module.exports = class GetMany extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}/bulk/load`, `BULK GET ${schema.name}`);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this.activityDescription = `BULK GET ${schema.name}`;

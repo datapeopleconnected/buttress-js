@@ -30,7 +30,7 @@ class GetTokenList extends Route {
 	constructor() {
 		super('token', 'GET TOKEN LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.SUPER;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
 
 		this.redactResults = false;
@@ -47,7 +47,7 @@ class GetTokenList extends Route {
 			tokens.push(token);
 		}
 
-		return tokens.filter((t) => t.authLevel < 3);
+		return tokens.filter((t) => t.type !== Model.Token.Constants.Type.SYSTEM);
 	}
 }
 routes.push(GetTokenList);
@@ -59,7 +59,7 @@ class DeleteAllTokens extends Route {
 	constructor() {
 		super('token/:type?', 'DELETE ALL TOKENS');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.SUPER;
+		this.authType = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.DELETE;
 
 		this.redactResults = false;
@@ -84,7 +84,7 @@ class SearchUserToken extends Route {
 	constructor() {
 		super('token', 'SEARCH USER TOKEN');
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.SUPER;
+		this.authType = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.redactResults = false;

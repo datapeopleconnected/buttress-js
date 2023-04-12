@@ -30,7 +30,6 @@ class GetActivityList extends Route {
 	constructor() {
 		super('activity', 'GET ACTIVITY LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -39,7 +38,7 @@ class GetActivityList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Activity.findAll(req.authApp._id, req.token.authlevel);
+		return Model.Activity.findAll(req.authApp._id, req.token);
 	}
 }
 routes.push(GetActivityList);
@@ -51,7 +50,6 @@ class GetActivity extends Route {
 	constructor() {
 		super('activity/:id', 'GET ACTIVITY');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this._activity = false;
@@ -87,7 +85,7 @@ class DeleteAllActivity extends Route {
 	constructor() {
 		super('activity', 'DELETE ALL ACTIVITY');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.SUPER;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
 
@@ -108,7 +106,6 @@ class AddActivityMetadata extends Route {
 	constructor() {
 		super('activity/:id/metadata/:key', 'ADD ACTIVITY METADATA');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.ADD;
 
 		this._activity = false;
@@ -148,7 +145,6 @@ class UpdateActivityMetadata extends Route {
 	constructor() {
 		super('activity/:id/metadata/:key', 'UPDATE ACTIVITY METADATA');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.ADD;
 
 		this._activity = false;
@@ -191,7 +187,6 @@ class GetActivityMetadata extends Route {
 	constructor() {
 		super('activity/:id/metadata/:key', 'GET ACTIVITY METADATA');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.GET;
 
 		this._metadata = false;
@@ -229,7 +224,6 @@ class DeleteActivityMetadata extends Route {
 	constructor() {
 		super('activity/:id/metadata/:key', 'DELETE ACTIVITY METADATA');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.DELETE;
 		this._activity = false;
 	}
