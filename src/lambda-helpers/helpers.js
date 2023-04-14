@@ -410,6 +410,7 @@ class Helpers {
 			const items = fs.readdirSync(dirName, {withFileTypes: true});
 			for (const item of items) {
 				// console.log(item.name);
+				if (item.name === '.git') continue;
 
 				if (item.isDirectory()) {
 					files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
