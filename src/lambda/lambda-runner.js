@@ -129,6 +129,7 @@ class LambdasRunner {
 		}).copyInto());
 		this._jail.setSync('lambdaData', new ivm.ExternalCopy(data.body).copyInto());
 		this._jail.setSync('lambdaQuery', new ivm.ExternalCopy(data.query).copyInto());
+		this._jail.setSync('lambdaRequestHeaders', new ivm.ExternalCopy(data.headers).copyInto());
 
 		try {
 			const hostile = this._isolate.compileScriptSync(`
@@ -144,6 +145,7 @@ class LambdasRunner {
 					const lambdaCode = new lambdaBundle();
 					lambda.req.body = lambdaData;
 					lambda.req.query = lambdaQuery;
+					lambda.req.headers = lambdaRequestHeaders;
 					await lambdaCode[lambdaInfo.entryPoint]();
 				})();
 			`);

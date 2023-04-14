@@ -612,7 +612,7 @@ class Routes {
 		appApiPaths.forEach((apiPath) => {
 			this.app.get(`/api/v1/lambda/${apiPath}/*`, async (req, res) => {
 				const [endpoint] = Object.values(req.params);
-				const result = await this._validateLambdaAPIExecution(endpoint, 'GET', req.query);
+				const result = await this._validateLambdaAPIExecution(endpoint, 'GET', req.headers, req.query);
 				if (result.errCode && result.errMessage) {
 					res.status(result.errCode).send({message: result.errMessage});
 					return;
@@ -663,7 +663,7 @@ class Routes {
 					return;
 				}
 
-				const result = await this._validateLambdaAPIExecution(endpoint, 'POST', null, req.body);
+				const result = await this._validateLambdaAPIExecution(endpoint, 'POST', req.headers, null, req.body);
 				if (result.errCode && result.errMessage) {
 					res.status(result.errCode).send({message: result.errMessage});
 					return;
@@ -711,7 +711,7 @@ class Routes {
 		});
 	}
 
-	async _validateLambdaAPIExecution(endpoint, method, query = null, body = null) {
+	async _validateLambdaAPIExecution(endpoint, method, headers, query = null, body = null) {
 		const res = {};
 		let lambda = null;
 
@@ -760,6 +760,7 @@ class Routes {
 		const data = {
 			restWorkerId: this.id,
 			lambdaId: lambda._id,
+			headers,
 		};
 		if (body) {
 			data.body = body;
