@@ -143,7 +143,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 			authLevel: Model.Token.Constants.AuthLevel.USER,
 			permissions: [{route: '*', permission: '*'}],
 		}, {
-			_app: this.createId(body._appId),
+			_appId: this.createId(body._appId),
 			_appDataSharingId: this.createId(appDataSharingBody.id),
 		});
 		const token = await Helpers.streamFirst(rxsToken);

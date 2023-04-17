@@ -98,7 +98,7 @@ class GetUser extends Route {
 				userToken = await Helpers.streamFirst(await Model.Token.findUserAuthTokens(user._id, req.authApp._id));
 			}
 			if (userToken && !user) {
-				user = await Model.User.findById(userToken._user);
+				user = await Model.User.findById(userToken._userId);
 			}
 			if (!user) {
 				this.log(`[${this.name}] Could not fetch user data using ${parameter}`, Route.LogLevel.ERR);
@@ -196,7 +196,7 @@ class GetUserByToken extends Route {
 			throw new Helpers.Errors.RequestError(400, `invalid_token`);
 		}
 
-		const user = await Model.User.findById(userToken._user);
+		const user = await Model.User.findById(userToken._userId);
 
 		return {
 			id: user._id,
@@ -255,8 +255,8 @@ class CreateUserAuthToken extends Route {
 
 	async _exec(req, res, user) {
 		const rxsToken = await Model.Token.add(req.body, {
-			_app: Datastore.getInstance('core').ID.new(req.authApp._id),
-			_user: Datastore.getInstance('core').ID.new(user._id),
+			_appId: Datastore.getInstance('core').ID.new(req.authApp._id),
+			_userId: Datastore.getInstance('core').ID.new(user._id),
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 
@@ -379,8 +379,6 @@ class AddUser extends Route {
 			}
 		}
 
-		console.log(existingUsers);
-
 		if (existingUsers.length > 0) {
 			this.log(`[${this.name}] A user already exists with one of the auth username(s)`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_already_exists_with_that_name`));
@@ -404,7 +402,7 @@ class AddUser extends Route {
 	async _exec(req, res, validate) {
 		const user = await Model.User.add(req.body);
 
-		const [token] = user.token;
+		const [token] = user.tokens;
 		return {
 			id: user._id,
 			auth: user.auth,
@@ -691,7 +689,7 @@ class DeleteUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.Token.findOne({_user: user._id});
+		const userToken = await Model.Token.findOne({_userId: user._id});
 		if (token.value === userToken?.value) {
 			this.log(`ERROR: A user could not delete itself`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_can_not_delete_itself`));

@@ -149,7 +149,7 @@ class TrackingSchemaModel extends SchemaModel {
 						__allowUpdate: true,
 					},
 				},
-				_app: {
+				_appId: {
 					__type: 'id',
 					__required: true,
 					__allowUpdate: false,
@@ -202,7 +202,7 @@ class TrackingSchemaModel extends SchemaModel {
 			return this.find({});
 		}
 
-		return this.find({_app: this.adapter.ID.new(appId)});
+		return this.find({_appId: this.adapter.ID.new(appId)});
 	}
 }
 

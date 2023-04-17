@@ -58,19 +58,21 @@ class AccessControl {
 		const lambda = req.authLambda;
 		let appId = null;
 		let lambdaAPICall = false;
+		let requestedURL = req.originalUrl || req.url;
+		requestedURL = requestedURL.split('?').shift();
 
 		if (!user && !lambda) return next();
 		if (user) {
 			appId = user._appId;
 		}
+		if (lambda && !user && requestedURL === '/api/v1/app/schema') return next();
+
 		if (lambda) {
 			lambdaAPICall = lambda.trigger.some((t) => req.originalUrl.includes(t.apiEndpoint.url));
 			appId = lambda._appId;
 		}
 		if (lambdaAPICall) return next();
 
-		let requestedURL = req.originalUrl || req.url;
-		requestedURL = requestedURL.split('?').shift();
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
@@ -408,7 +410,7 @@ class AccessControl {
 	}
 
 	async __getEntityPolicies(entity, appId) {
-		return await AccessControlPolicyMatch.__getEntityPolicies(this._policies[appId], appId, entity);
+		return await AccessControlPolicyMatch.__getEntityPolicies(this._policies[appId], entity);
 	}
 
 	async _checkAccessControlDBBasedQueryCondition(req, params) {

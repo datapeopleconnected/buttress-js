@@ -109,17 +109,17 @@ class ActivitySchemaModel extends SchemaModel {
 					__default: '',
 					__allowUpdate: false,
 				},
-				_token: {
+				_tokenId: {
 					__type: 'id',
 					__required: true,
 					__allowUpdate: false,
 				},
-				_app: {
+				_appId: {
 					__type: 'id',
 					__required: true,
 					__allowUpdate: false,
 				},
-				_user: {
+				_userId: {
 					__type: 'id',
 					__required: true,
 					__allowUpdate: false,
@@ -155,9 +155,9 @@ class ActivitySchemaModel extends SchemaModel {
 			query: q,
 			body: Schema.encode(body.req.body), // HACK - Due to schema update results.
 			timestamp: new Date(),
-			_token: body.req.token._id,
-			_user: (body.req.authUser) ? body.req.authUser._id : null,
-			_app: body.req.authApp._id,
+			_tokenId: body.req.token._id,
+			_userId: (body.req.authUser) ? body.req.authUser._id : null,
+			_appId: body.req.authApp._id,
 		};
 
 		if (body.id) {
@@ -186,7 +186,7 @@ class ActivitySchemaModel extends SchemaModel {
 		}
 
 		return super.find({
-			_app: this.createId(appId),
+			_appId: this.createId(appId),
 			visibility: ActivitySchemaModel.Constants.Visibility.PUBLIC,
 		});
 	}

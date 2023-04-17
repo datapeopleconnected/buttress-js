@@ -190,8 +190,8 @@ class UserSchemaModel extends SchemaModel {
 	// 	}
 
 	// 	const rxsToken = await Model.Token.add(auth, {
-	// 		_app: Model.authApp._id,
-	// 		_user: user._id,
+	// 		_appId: Model.authApp._id,
+	// 		_userId: user._id,
 	// 	});
 	// 	const token = await Helpers.streamFirst(rxsToken);
 
@@ -246,8 +246,8 @@ class UserSchemaModel extends SchemaModel {
 		}
 
 		const rxsToken = await Model.Token.add(body.token, {
-			_app: Model.authApp._id,
-			_user: user._id,
+			_appId: Model.authApp._id,
+			_userId: user._id,
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 

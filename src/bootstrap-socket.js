@@ -164,7 +164,7 @@ class BootstrapSocket {
 		// create app namespaces
 		const rxsApps = await Model.App.findAll();
 		for await (const app of rxsApps) {
-			if (!app._token) {
+			if (!app._tokenId) {
 				Logging.logWarn(`App with no token`);
 				continue;
 			}
@@ -321,8 +321,8 @@ class BootstrapSocket {
 
 				Logging.log(`[${apiPath}][DataShare] Connected ${socket.id} to room ${dataShare.name}`);
 			} else if (token.type === 'user') {
-				Logging.logDebug(`Fetching user with id: ${token._user}`);
-				const user = await Model.User.findById(token._user);
+				Logging.logDebug(`Fetching user with id: ${token._userId}`);
+				const user = await Model.User.findById(token._userId);
 				if (!user) {
 					Logging.logWarn(`Invalid token user ID, closing connection: ${socket.id}`);
 					return next('invalid-token-user-ID');
@@ -867,7 +867,7 @@ class BootstrapSocket {
 			return Logging.logDebug(`Namespace already created: ${app.name}`);
 		}
 
-		const token = await Model.Token.findOne({_id: app._token});
+		const token = await Model.Token.findOne({_id: app._tokenId});
 		if (!token) return Logging.logWarn(`No Token found for ${app.name}`);
 
 		const isSuper = token.authLevel > 2;

@@ -109,7 +109,7 @@ class AppSchemaModel extends SchemaModel {
 					__required: false,
 					__allowUpdate: true,
 				},
-				_token: {
+				_tokenId: {
 					__type: 'id',
 					__required: false,
 					__allowUpdate: false,
@@ -149,12 +149,12 @@ class AppSchemaModel extends SchemaModel {
 			authLevel: body.authLevel,
 			permissions: body.permissions,
 		}, {
-			_app: body.id,
+			_appId: body.id,
 		});
 
 		const token = await Helpers.streamFirst(rxsToken);
 
-		const rxsApp = await super.add(body, {_token: token._id});
+		const rxsApp = await super.add(body, {_tokenId: token._id});
 		const app = await Helpers.streamFirst(rxsApp);
 
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
@@ -175,7 +175,6 @@ class AppSchemaModel extends SchemaModel {
 		Logging.logSilly(`Update Schema ${appId}`);
 
 		appSchema = Schema.encode(appSchema);
-
 		await super.updateById(appId, {$set: {__schema: appSchema}});
 
 		if (rawSchema) {
@@ -293,7 +292,7 @@ class AppSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves to the token
 	 */
 	getToken() {
-		return Model.Token.findOne({_id: this._token});
+		return Model.Token.findOne({_id: this._tokenId});
 	}
 
 	/**

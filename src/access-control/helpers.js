@@ -12,12 +12,12 @@ class Helpers {
 		switch (operator) {
 		case '$eq':
 		case '@eq': {
-			passed = lhs?.toString() === rhs?.toString();
+			passed = lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
 		}
 			break;
 		case '$not':
 		case '@not': {
-			passed = lhs !== rhs;
+			passed = lhs.toString().toUpperCase() !== rhs.toString().toUpperCase();
 		}
 			break;
 		case '$gt':

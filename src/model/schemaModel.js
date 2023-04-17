@@ -253,7 +253,7 @@ class SchemaModel {
 		}
 
 		const env = {
-			authUserId: token._user,
+			authUserId: token._userId,
 		};
 
 		const tasks = [];

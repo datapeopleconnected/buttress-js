@@ -51,7 +51,7 @@ class AdminRoutes {
 			}
 
 			const superApp = await Model.App.findOne({
-				_token: Model.Token.createId(superToken._id),
+				_tokenId: Model.Token.createId(superToken._id),
 			});
 			if (!superApp) {
 				Logging.logError('Buttress admin check can not find super app');
@@ -83,7 +83,7 @@ class AdminRoutes {
 			}
 
 			const superApp = await Model.App.findOne({
-				_token: Model.Token.createId(superToken._id),
+				_tokenId: Model.Token.createId(superToken._id),
 			});
 			if (!superApp || superApp.apiPath !== 'bjs') {
 				Logging.logError('Buttress admin activate can not find super app');
@@ -119,7 +119,7 @@ class AdminRoutes {
 
 			try {
 				const adminApp = await Model.App.findOne({
-					_token: Model.Token.createId(adminToken._id),
+					_tokenId: Model.Token.createId(adminToken._id),
 				});
 
 				await this._createAdminPolicy(req, adminApp._id);
@@ -168,7 +168,7 @@ class AdminRoutes {
 		}
 		if (adminToken) {
 			adminApp = await Model.App.findOne({
-				_token: Model.Token.createId(adminToken._id),
+				_tokenId: Model.Token.createId(adminToken._id),
 			});
 		}
 
@@ -183,22 +183,25 @@ class AdminRoutes {
 	 * @param {Object} app
 	 */
 	async _updateAppPolicySelectorList(app) {
-		const adminPolicyPropsList = {
+		let adminPolicyPropsList = {
 			role: [
 				'ADMIN',
 				'ADMIN_LAMBDA',
 			],
 		};
 		const policyPropsList = app.policyPropertiesList;
-		const currentAppListKeys = Object.keys(policyPropsList);
-		Object.keys(adminPolicyPropsList).forEach((key) => {
-			if (currentAppListKeys.includes(key)) {
-				adminPolicyPropsList[key] = adminPolicyPropsList[key].concat(policyPropsList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
-			}
-		});
-		const appPolicyList = {...policyPropsList, ...adminPolicyPropsList};
+		if (policyPropsList) {
+			const currentAppListKeys = Object.keys(policyPropsList);
+			Object.keys(adminPolicyPropsList).forEach((key) => {
+				if (currentAppListKeys.includes(key)) {
+					adminPolicyPropsList[key] = adminPolicyPropsList[key].concat(policyPropsList[key])
+						.filter((v, idx, arr) => arr.indexOf(v) === idx);
+				}
+			});
+			adminPolicyPropsList = {...policyPropsList, ...adminPolicyPropsList};
+		}
 
-		await Model.App.setPolicyPropertiesList(app._id, appPolicyList);
+		await Model.App.setPolicyPropertiesList(app._id, adminPolicyPropsList);
 	}
 
 	/**
@@ -216,21 +219,21 @@ class AdminRoutes {
 			if (policyDB) continue;
 
 			const name = policy.name.replace(/[\s-]+/g, '_').toUpperCase();
-			const appConfigIdx = policy.config.findIndex((conf) => conf.endpoints.includes('GET'));
-			const configIdx = policy.config.findIndex((conf) => conf.endpoints.includes('SEARCH'));
-			if (name.toUpperCase() === 'ADMIN_LAMBDA_ACCESS' && configIdx !== -1 && appConfigIdx !== -1) {
-				const appQueryIdx = policy.config[appConfigIdx].query.findIndex((q) => q.schema.includes('app'));
-				const userQueryIdx = policy.config[configIdx].query.findIndex((q) => q.schema.includes('user'));
-				const tokenQueryIdx = policy.config[configIdx].query.findIndex((q) => q.schema.includes('token'));
-				policy.config[appConfigIdx].query[appQueryIdx]._app = {
-					'@eq': appId,
-				};
-				policy.config[configIdx].query[userQueryIdx]._appId = {
-					'@eq': appId,
-				};
-				policy.config[configIdx].query[tokenQueryIdx]._app = {
-					'@eq': appId,
-				};
+			if (name.toUpperCase() === 'ADMIN_LAMBDA_ACCESS') {
+				policy.config.forEach((conf, idx) => {
+					const appQueryIdx = policy.config[idx].query.findIndex((q) => q.schema.includes('app'));
+					const userQueryIdx = policy.config[idx].query.findIndex((q) => q.schema.includes('user'));
+					if (appQueryIdx) {
+						policy.config[idx].query[appQueryIdx]._id = {
+							'@eq': appId,
+						};
+					}
+					if (userQueryIdx) {
+						policy.config[idx].query[userQueryIdx]._appId = {
+							'@eq': appId,
+						};
+					}
+				});
 			}
 
 			await Model.Policy.add(req, {policy});
@@ -260,7 +263,7 @@ class AdminRoutes {
 				throw new Error('Cannot find an admin app token');
 			}
 
-			const adminApp = await Model.App.findOne({_token: Model.Token.createId(adminToken._id)});
+			const adminApp = await Model.App.findOne({_tokenId: Model.Token.createId(adminToken._id)});
 			if (!adminApp) {
 				throw new Error('Cannot find an admin app');
 			}
@@ -289,12 +292,12 @@ class AdminRoutes {
 			authLevel: token.authLevel,
 			permissions: token.permissions,
 		}, {
-			_app: app._id,
+			_appId: app._id,
 		});
 		const newToken = await Helpers.streamFirst(rxsNewToken);
 		await Model.App.updateById(Model.App.createId(app._id), {
 			$set: {
-				_token: Model.Token.createId(newToken._id),
+				_tokenId: Model.Token.createId(newToken._id),
 			},
 		});
 
