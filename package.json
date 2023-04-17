@@ -13,6 +13,8 @@
   "scripts": {
     "docs": "npx docsify serve ./docs",
     "test": "mocha test/units/**/* test/intergration/**/*",
+    "build": "rimraf dist/* && gulp build",
+    "watch": "npm run build && gulp watch",
     "lint": "eslint 'src/**/*.js'",
     "coverage": "npx nyc --reporter cobertura npm run test",
     "start": "bin/buttress.sh",
@@ -29,18 +31,18 @@
     "url": "https://github.com/wearelighten/buttress-js/issues"
   },
   "dependencies": {
-    "@buttress/snippets": "1.0.0-13",
     "@buttress/api": "^3.0.0-31",
+    "@buttress/snippets": "1.0.0-13",
     "@hashgraph/sdk": "^2.19.2",
     "@socket.io/redis-adapter": "~7.2.0",
     "@socket.io/redis-emitter": "~4.1.1",
-    "JSONStream": "^1.3.5",
     "base64url": "^3.0.1",
     "body-parser": "~1.20.0",
     "bson-objectid": "^2.0.2",
     "cross-fetch": "^3.1.5",
     "express": "~4.18.1",
     "isolated-vm": "^4.4.2",
+    "JSONStream": "^1.3.5",
     "method-override": "~3.0.0",
     "mongodb": "~4.9.1",
     "morgan": "~1.10.0",
@@ -51,10 +53,12 @@
     "pug": "^3.0.2",
     "randomstring": "^1.2.3",
     "redis": "~3.1.2",
+    "rimraf": "^5.0.0",
     "socket.io": "~4.5.1",
     "socket.io-client": "^4.5.1",
     "sugar": "~2.0.6",
     "sugar-inflections": "^2.0.6",
+    "typescript": "^5.0.4",
     "url-parse": "1.5.10",
     "uuid": "^8.3.2",
     "webpack": "5.77.0",
@@ -63,6 +67,8 @@
   "devDependencies": {
     "eslint": "^8.23.0",
     "eslint-config-google": "^0.14.0",
+    "gulp": "^4.0.2",
+    "gulp-typescript": "^6.0.0-alpha.1",
     "mocha": "^9.2.2"
   },
   "mocha": {

@@ -21,29 +21,34 @@ const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV
 
 const Config = require('node-env-obj')({
 	envFile: `.${env}.env`,
-	envPath: '../',
-	configPath: '../src',
+	envPath: '../../',
+	configPath: '../',
 });
 const cluster = require('cluster');
 const Sugar = require('sugar');
 
 Sugar.Date.setLocale('en-GB');
 
-const Logging = require('../src/logging');
-const BootstrapSocket = require('../src/bootstrap-socket');
+const BootstrapLambda = require('../bootstrap-lambda');
+const Logging = require('../logging');
 
 if (cluster.isMaster) Logging.startupMessage();
 
-Logging.init('SOCK');
+/**
+ *
+ */
+Logging.init('LAMBDA');
 
-const app = new BootstrapSocket();
+const app = new BootstrapLambda();
 app.init()
 	.then((isMaster) => {
 		if (isMaster) {
-			Logging.log(`${Config.app.title} Socket Master v${Config.app.version} listening on port ` +
-				`${Config.listenPorts.sock} in ${Config.env} mode.`);
+			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Master v${Config.app.version} listening on port ` +
+				`${Config.listenPorts.lamb} in ${Config.env} mode.`);
+			Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
 		} else {
-			Logging.log(`${Config.app.title} Socket Worker v${Config.app.version} in ${Config.env} mode.`);
+			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Worker v${Config.app.version} ` +
+				`in ${Config.env} mode.`);
 		}
 	})
 	.catch(Logging.Promise.logError());
