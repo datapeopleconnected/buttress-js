@@ -3,13 +3,13 @@ The federated real-time open data platform.
 
 ## Documentation
 Run the following to view the Documentation:
-```
+```bash
 npm run docs
 ```
 
 ## Prerequisites
 Then you'll need to grab the latest dependencies: 
-```
+```bash
 npm install
 ```
 ## Configuring ##
@@ -20,12 +20,29 @@ Then add to config.json.
 
 Create a `.production.env` or `.development.env` in the route folder with your environmental settings.
 
+## Building
+To build the source files simply run build, as seen below. If you're planning to make changes to the source you can also use watch to auto build when changes are made: 
+```bash
+npm run build
+// or
+npm run watch
+```
+
 ## Running
+To run the application use the following in a terminal:
+```bash
+./bin/buttress.sh
 ```
-./bin/app.js
+
+You can also run the individually using the following:
+```bash
+./bin/app.sh
 ```
+```bash
+./bin/app-socket.sh
 ```
-./bin/app-socket.js
+```bash
+./bin/app-lambda.sh
 ```
 ## Testing ##
 Tests are implemented in the ButtressJS API.

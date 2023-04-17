@@ -50,20 +50,38 @@ The connection string describes what type of datastore you want to use for your 
 datastore://[username:password@]host1[:port1]
 ```
 
-## Running
-ButtressJS is made up of two process types (`Rest` / `Sock`) which allow the Buttress process to scale. To run the `Rest` process run the following line in a terminal:
+## Building
+If you're running the program from source you'll need to build the application before being able to run it. To do this simply run the following:
 ```bash
-NODE_ENV=development ./bin/app.js
+npm run build
 ```
 
-You'll now be able to 
+!> If your editing the source you can use `npm run watch` instead to automatically build when changes are made.
+
+## Running
+ButtressJS is made up of three process types (`Rest` / `Sock` | `Lambda`) which allow the Buttress process to scale. To run the `All` processes run the following line in a terminal:
+```bash
+NODE_ENV=development ./bin/buttress.sh
+``` 
+
+You can also run the processes individually which gives you more control in deployment and visibility in development.
+
+To run the `Rest` process in a separate terminal run 
+```bash
+NODE_ENV=development ./bin/app.sh
+```
 
 To run the `Sock` process in a separate terminal run 
 ```bash
-NODE_ENV=development ./bin/app-socket.js
+NODE_ENV=development ./bin/app-socket.sh
 ```
 
-The combination of both processes make up ButtressJS, the don't nessesarly need to be run on the same system.
+To run the `Lambda` process in a separate terminal run 
+```bash
+NODE_ENV=development ./bin/app-lambda.sh
+```
+
+The combination of the processes make up ButtressJS, the don't nessesarly need to be run on the same system.
 
 ### First Run - Super Token
 On first run a super token will be generated, this can be found in `app_data/super.json`. The JSON object found within this file is a dump of the super application object but the most important property is `"token"`. Please copy this value or the file to a safe place for use later. Once you've made a copy delete the file.
