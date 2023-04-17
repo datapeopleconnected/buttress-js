@@ -25,19 +25,14 @@
 			"endpoints": ["GET"],
 			"query": [{
 				"schema": ["app"],
-				"_app": {
+				"_id": {
 					"@eq": null
 				}
 			}]
 		}, {
 			"endpoints": ["SEARCH"],
 			"query": [{
-				"schema": ["token"],
-				"_app": {
-					"@eq": null
-				}
-			},{
-				"schema": ["user"],
+				"schema": ["token", "user"],
 				"_appId": {
 					"@eq": null
 				}

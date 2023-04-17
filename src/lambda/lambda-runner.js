@@ -80,14 +80,14 @@ class LambdasRunner {
 			return Promise.reject(new Error(`Unable to find git repo for lambda ${lambda.name}`));
 		}
 
-		const appToken = await Model.Token.findById(app._token);
+		const appToken = await Model.Token.findById(app._tokenId);
 		if (!appToken) {
 			return Promise.reject(new Error(`Unable to find app token for app ${app.name}`));
 		}
 
 		const rxsLambdaToken = await Model.Token.find({
-			_app: Model.App.createId(app._id),
-			_lambda: Model.User.createId(lambda._id),
+			_appId: Model.App.createId(app._id),
+			_lambdaId: Model.User.createId(lambda._id),
 		});
 		const lambdaToken = await Helpers.streamFirst(rxsLambdaToken);
 		if (!lambdaToken) {

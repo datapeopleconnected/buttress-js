@@ -178,7 +178,6 @@ class AddLambda extends Route {
 		const gitHash = req.body?.lambda?.git?.hash;
 
 		if (!app ||
-				req.body.lambda.policyProperties === undefined ||
 				!req.body.lambda.trigger ||
 				!req.body.lambda.git ||
 				!req.body.lambda.git.entryFile ||
@@ -210,16 +209,16 @@ class AddLambda extends Route {
 		let appId = Model?.authApp?._id;
 		if (!appId) {
 			const token = await this._getToken(req);
-			if (token && token._app) {
-				appId = token._app;
+			if (token && token._appId) {
+				appId = token._appId;
 			}
-			if (token && token._lambda) {
-				const lambda = await Model.Lambda.findById(token._lambda);
+			if (token && token._lambdaId) {
+				const lambda = await Model.Lambda.findById(token._lambdaId);
 				appId = lambda._appId;
 			}
-			if (token && token._user) {
-				const user = await Model.Lambda.findById(token._lambda);
-				[appId] = user.apps;
+			if (token && token._userId) {
+				const user = await Model.User.findById(token._userId);
+				appId = user._appId;
 			}
 		}
 
@@ -597,7 +596,7 @@ class DeleteLambda extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
 		}
 
-		const lambdaToken = await Model.Token.findOne({_lambda: lambda._id});
+		const lambdaToken = await Model.Token.findOne({_lambdaId: lambda._id});
 		if (!lambdaToken) {
 			this.log(`ERROR: Could not fetch lambda's token`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `could_fetch_lambda_token`));

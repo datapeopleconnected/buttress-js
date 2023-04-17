@@ -80,7 +80,7 @@ class SearchAppList extends Route {
 	async _exec(req, res, validate) {
 		const appsDB = await Helpers.streamAll(await Model.App.find(validate.query));
 
-		const tokenIds = appsDB.map((app) => Model.Token.createId(app._token));
+		const tokenIds = appsDB.map((app) => Model.Token.createId(app._tokenId));
 		const appTokens = await Helpers.streamAll(await Model.Token.find({
 			_id: {
 				$in: tokenIds,
@@ -88,7 +88,7 @@ class SearchAppList extends Route {
 		}));
 
 		return appsDB.reduce((arr, app) => {
-			const appToken = appTokens.find((t) => t._id.toString() === app._token.toString());
+			const appToken = appTokens.find((t) => t._id.toString() === app._tokenId.toString());
 			app.tokenValue = appToken.value;
 			arr.push(app);
 			return arr;
@@ -127,7 +127,7 @@ class GetApp extends Route {
 	}
 
 	_exec(req, res, validate) {
-		const appToken = Model.Token.findById(Model.Token.createId(validate._token));
+		const appToken = Model.Token.findById(Model.Token.createId(validate._tokenId));
 		validate.tokenValue = appToken.value;
 
 		return validate;

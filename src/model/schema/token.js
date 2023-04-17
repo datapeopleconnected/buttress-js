@@ -109,19 +109,19 @@ class TokenSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
-				_app: {
+				_appId: {
 					__type: 'id',
 					__default: null,
 					__required: true,
 					__allowUpdate: false,
 				},
-				_lambda: {
+				_lambdaId: {
 					__type: 'id',
 					__default: null,
 					__required: true,
 					__allowUpdate: false,
 				},
-				_user: {
+				_userId: {
 					__type: 'id',
 					__default: null,
 					__required: true,
@@ -190,8 +190,8 @@ class TokenSchemaModel extends SchemaModel {
 	 */
 	findUserAuthTokens(userId, appId) {
 		return this.find({
-			_app: this.createId(appId),
-			_user: this.createId(userId),
+			_appId: this.createId(appId),
+			_userId: this.createId(userId),
 		});
 	}
 }

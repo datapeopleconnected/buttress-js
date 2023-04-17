@@ -368,7 +368,7 @@ class Routes {
 
 		if (apiLambda && apiLambda.type === 'PUBLIC') {
 			const token = await Model.Token.findOne({
-				_lambda: apiLambda._id,
+				_lambdaId: apiLambda._id,
 			});
 			req.token = token.value;
 			Model.authApp = req.authApp = apiLambdaApp;
@@ -412,8 +412,8 @@ class Routes {
 			let app = null;
 			if (req.apiPath) {
 				app = await Model.App.findOne({apiPath: req.apiPath});
-			} else if (req.token._app) {
-				app = await Model.App.findById(req.token._app);
+			} else if (req.token._appId) {
+				app = await Model.App.findById(req.token._appId);
 			}
 
 			Model.authApp = req.authApp = app;
@@ -425,12 +425,12 @@ class Routes {
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
 
-			const lambda = (req.token._lambda) ? await Model.Lambda.findById(req.token._lambda) : null;
+			const lambda = (req.token._lambdaId) ? await Model.Lambda.findById(req.token._lambdaId) : null;
 			req.authLambda = lambda;
 			Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda._id : lambda}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-			const user = (req.token._user) ? await Model.User.findById(req.token._user) : null;
+			const user = (req.token._userId) ? await Model.User.findById(req.token._userId) : null;
 			req.authUser = user;
 			Logging.logTimer(`_authenticateToken:got-user ${(req.authUser) ? req.authUser._id : user}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -603,7 +603,7 @@ class Routes {
 		}));
 		const tokenIds = appsToken.map((t) => t._id);
 		const apps = await Helpers.streamAll(await Model.App.find({
-			_token: {
+			_tokenId: {
 				$in: tokenIds,
 			},
 		}));

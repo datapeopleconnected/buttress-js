@@ -287,8 +287,8 @@ class LambdaSchemaModel extends SchemaModel {
 		await Model.Deployment.add(deployment);
 
 		await Model.Token.add(auth, {
-			_app: Model.authApp._id,
-			_lambda: lambda._id,
+			_appId: Model.authApp._id,
+			_lambdaId: lambda._id,
 		});
 
 		await exec(`cd ${Config.paths.lambda.code}; mv lambda-${lambda.name} lambda-${lambda._id}`);
@@ -312,10 +312,12 @@ class LambdaSchemaModel extends SchemaModel {
 		const entryFile = lambda?.git?.entryFile;
 
 		try {
-			const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, lambda.policyProperties);
-			if (!policyCheck.passed) {
-				Logging.logError(`[${this.name}] ${policyCheck.errMessage}`);
-				throw new Helpers.Errors.RequestError(400, `invalid_field`);
+			if (lambda.policyProperties) {
+				const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, lambda.policyProperties);
+				if (!policyCheck.passed) {
+					Logging.logError(`[${this.name}] ${policyCheck.errMessage}`);
+					throw new Helpers.Errors.RequestError(400, `invalid_field`);
+				}
 			}
 
 			auth.type = Model.Token.Constants.Type.LAMBDA;

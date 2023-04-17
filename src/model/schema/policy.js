@@ -142,16 +142,16 @@ class PolicySchemaModel extends SchemaModel {
 		let appId = Model?.authApp?._id;
 		if (!appId) {
 			const token = await this._getToken(req);
-			if (token && token._app) {
-				appId = token._app;
+			if (token && token._appId) {
+				appId = token._appId;
 			}
-			if (token && token._lambda) {
-				const lambda = await Model.Lambda.findById(token._lambda);
+			if (token && token._lambdaId) {
+				const lambda = await Model.Lambda.findById(token._lambdaId);
 				appId = lambda._appId;
 			}
-			if (token && token._user) {
-				const user = await Model.Lambda.findById(token._lambda);
-				[appId] = user.apps;
+			if (token && token._userId) {
+				const user = await Model.User.findById(token._userId);
+				appId = user._appId;
 			}
 		}
 		const rxsPolicy = await super.add(policyBody, {
