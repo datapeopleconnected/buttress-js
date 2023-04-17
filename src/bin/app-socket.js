@@ -21,16 +21,16 @@ const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV
 
 const Config = require('node-env-obj')({
 	envFile: `.${env}.env`,
-	envPath: '../',
-	configPath: '../src',
+	envPath: '../../',
+	configPath: '../',
 });
 const cluster = require('cluster');
 const Sugar = require('sugar');
 
 Sugar.Date.setLocale('en-GB');
 
-const Logging = require('../src/logging');
-const BootstrapSocket = require('../src/bootstrap-socket');
+const Logging = require('../logging');
+const BootstrapSocket = require('../bootstrap-socket');
 
 if (cluster.isMaster) Logging.startupMessage();
 

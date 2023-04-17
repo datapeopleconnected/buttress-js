@@ -14,44 +14,45 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-module.exports.RequestError = class RequestError extends Error {
-	constructor(code, message) {
+export class RequestError extends Error {
+	code: number;
+	constructor(code: number, message: string) {
 		super(message);
 		this.code = code;
 		this.name = 'RequestError';
 	}
 };
 
-module.exports.SchemaNotFound = class SchemaNotFound extends Error {
-	constructor(message) {
+export class SchemaNotFound extends Error {
+	constructor(message: string) {
 		super(message);
 		this.name = 'SchemaNotFound';
 	}
 };
 
-module.exports.SchemaInvalid = class SchemaInvalid extends Error {
-	constructor(message) {
+export class SchemaInvalid extends Error {
+	constructor(message: string) {
 		super(message);
 		this.name = 'SchemaInvalid';
 	}
 };
 
-module.exports.RouteMissingModel = class RouteMissingModel extends Error {
-	constructor(message) {
+export class RouteMissingModel extends Error {
+	constructor(message: string) {
 		super(message);
 		this.name = 'RouteMissingModel';
 	}
 };
 
-module.exports.UnsupportedDatastore = class UnsupportedDatastore extends Error {
-	constructor(message) {
+export class UnsupportedDatastore extends Error {
+	constructor(message: string) {
 		super(message);
 		this.name = 'UnsupportedDatastore';
 	}
 };
 
-module.exports.NotYetImplemented = class NotYetImplemented extends Error {
-	constructor(message) {
+export class NotYetImplemented extends Error {
+	constructor(message: string) {
 		super(message);
 		this.name = 'NotYetImplemented';
 	}

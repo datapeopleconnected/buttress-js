@@ -18,7 +18,7 @@ cd $( dirname -- "$0"; )
 
 FILE="../dist/bin/app.js"
 if [ ! -f "$FILE" ]; then
-	echo -e "😱😱 Oh no, unable to find built files! Please run '\033[1mnpm run build\033[0m' first!"
+	echo -e "😱😱 Oh no, unable to find built files for app! Please run '\033[1mnpm run build\033[0m' first!"
 	exit;
 fi
 

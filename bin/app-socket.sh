@@ -1,49 +1,25 @@
-#!/usr/bin/env node
-'use strict';
+#!/bin/bash
 
-/**
- * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2022 Data Performance Consultancy LTD.
- * <https://dataperformanceconsultancy.com/>
- *
- * This file is part of Buttress.
- * Buttress is free software: you can redistribute it and/or modify it under the
- * terms of the GNU Affero General Public Licence as published by the Free Software
- * Foundation, either version 3 of the Licence, or (at your option) any later version.
- * Buttress is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
- * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
- * See the GNU Affero General Public Licence for more details.
- * You should have received a copy of the GNU Affero General Public Licence along with
- * this program. If not, see <http://www.gnu.org/licenses/>.
- */
+# Buttress - The federated real-time open data platform
+# Copyright (C) 2016-2022 Data Performance Consultancy LTD.
+# <https://dataperformanceconsultancy.com/>
+# 
+# This file is part of Buttress.
+# Buttress is free software: you can redistribute it and/or modify it under the
+# terms of the GNU Affero General Public Licence as published by the Free Software
+# Foundation, either version 3 of the Licence, or (at your option) any later version.
+# Buttress is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+# without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU Affero General Public Licence for more details.
+# You should have received a copy of the GNU Affero General Public Licence along with
+# this program. If not, see <http://www.gnu.org/licenses/>.
 
-const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
+cd $( dirname -- "$0"; )
 
-const Config = require('node-env-obj')({
-	envFile: `.${env}.env`,
-	envPath: '../',
-	configPath: '../src',
-});
-const cluster = require('cluster');
-const Sugar = require('sugar');
+FILE="../dist/bin/app-socket.js"
+if [ ! -f "$FILE" ]; then
+	echo -e "😱😱 Oh no, unable to find built files for app-socket! Please run '\033[1mnpm run build\033[0m' first!"
+	exit;
+fi
 
-Sugar.Date.setLocale('en-GB');
-
-const Logging = require('../src/logging');
-const BootstrapSocket = require('../src/bootstrap-socket');
-
-if (cluster.isMaster) Logging.startupMessage();
-
-Logging.init('SOCK');
-
-const app = new BootstrapSocket();
-app.init()
-	.then((isMaster) => {
-		if (isMaster) {
-			Logging.log(`${Config.app.title} Socket Master v${Config.app.version} listening on port ` +
-				`${Config.listenPorts.sock} in ${Config.env} mode.`);
-		} else {
-			Logging.log(`${Config.app.title} Socket Worker v${Config.app.version} in ${Config.env} mode.`);
-		}
-	})
-	.catch(Logging.Promise.logError());
+node $FILE
