@@ -239,7 +239,7 @@ class UserSchemaModel extends SchemaModel {
 		});
 		const user = await Helpers.streamFirst(rxsUser);
 
-		user.tokens = [];
+		user.token = [];
 
 		if (!body.token) {
 			return user;
@@ -254,7 +254,7 @@ class UserSchemaModel extends SchemaModel {
 		nrp.emit('app-routes:bust-cache', {});
 
 		if (token) {
-			user.tokens.push({
+			user.token.push({
 				value: token.value,
 			});
 		}

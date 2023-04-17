@@ -183,22 +183,25 @@ class AdminRoutes {
 	 * @param {Object} app
 	 */
 	async _updateAppPolicySelectorList(app) {
-		const adminPolicyPropsList = {
+		let adminPolicyPropsList = {
 			role: [
 				'ADMIN',
 				'ADMIN_LAMBDA',
 			],
 		};
 		const policyPropsList = app.policyPropertiesList;
-		const currentAppListKeys = Object.keys(policyPropsList);
-		Object.keys(adminPolicyPropsList).forEach((key) => {
-			if (currentAppListKeys.includes(key)) {
-				adminPolicyPropsList[key] = adminPolicyPropsList[key].concat(policyPropsList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
-			}
-		});
-		const appPolicyList = {...policyPropsList, ...adminPolicyPropsList};
+		if (policyPropsList) {
+			const currentAppListKeys = Object.keys(policyPropsList);
+			Object.keys(adminPolicyPropsList).forEach((key) => {
+				if (currentAppListKeys.includes(key)) {
+					adminPolicyPropsList[key] = adminPolicyPropsList[key].concat(policyPropsList[key])
+						.filter((v, idx, arr) => arr.indexOf(v) === idx);
+				}
+			});
+			adminPolicyPropsList = {...policyPropsList, ...adminPolicyPropsList};
+		}
 
-		await Model.App.setPolicyPropertiesList(app._id, appPolicyList);
+		await Model.App.setPolicyPropertiesList(app._id, adminPolicyPropsList);
 	}
 
 	/**
