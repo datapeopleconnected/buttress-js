@@ -139,7 +139,11 @@ class LambdasRunner {
 						return global[moduleName];
 					}
 
-					await Buttress.init(buttressOptions, true);
+					if (!Buttress._initialised) {
+						await Buttress.init(buttressOptions, true);
+					} else {
+						Buttress.setAuthToken(buttressOptions.appToken);
+					}
 
 					const lambdaBundle = require(lambdaInfo.fileName);
 					const lambdaCode = new lambdaBundle();
@@ -150,6 +154,8 @@ class LambdasRunner {
 				})();
 			`);
 			await hostile.run(this._context, {promise: true});
+			// Maybe dispose isolate after executin the lambda?
+
 			await this._updateDBLambdaFinishExecution(lambda, execution, type, trigger);
 
 			if (type === 'API_ENDPOINT') {

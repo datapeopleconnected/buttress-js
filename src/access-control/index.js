@@ -56,6 +56,7 @@ class AccessControl {
 		// TODO need to take into consideration appDataSharingId
 		const user = req.authUser;
 		const lambda = req.authLambda;
+		const requestVerb = req.method || req.originalMethod;
 		let appId = null;
 		let lambdaAPICall = false;
 		let requestedURL = req.originalUrl || req.url;
@@ -65,7 +66,7 @@ class AccessControl {
 		if (user) {
 			appId = user._appId;
 		}
-		if (lambda && !user && requestedURL === '/api/v1/app/schema') return next();
+		if (lambda && !user && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
 
 		if (lambda) {
 			lambdaAPICall = lambda.trigger.some((t) => req.originalUrl.includes(t.apiEndpoint.url));
