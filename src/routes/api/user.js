@@ -102,7 +102,7 @@ class GetUser extends Route {
 			}
 			if (!user) {
 				this.log(`[${this.name}] Could not fetch user data using ${parameter}`, Route.LogLevel.ERR);
-				return false;
+				return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
 			}
 
 			const output = {
@@ -135,29 +135,25 @@ class FindUser extends Route {
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			Model.User.getByAppId(req.params.app, req.params.id)
-				.then(async (_user) => {
-					if (_user) {
-						const output = {
-							id: _user._id,
-							auth: _user.auth,
-							token: null,
-							policyProperties: _user.policyProperties || null,
-						};
+	async _validate(req, res, token) {
+		const _user = await Model.User.getByAppId(req.params.app, req.params.id);
+		if (!_user) {
+			return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
+		}
 
-						const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
-						const token = await Helpers.streamFirst(rxTokens);
-						if (token) {
-							output.token = token.value;
-						}
-						resolve(output);
-					} else {
-						resolve(false);
-					}
-				});
-		});
+		const output = {
+			id: _user._id,
+			auth: _user.auth,
+			token: null,
+			policyProperties: _user.policyProperties || null,
+		};
+
+		const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
+		const userToken = await Helpers.streamFirst(rxTokens);
+		if (userToken) {
+			output.token = userToken.value;
+		}
+		return Promise.resolve(output);
 	}
 
 	_exec(req, res, validate) {
