@@ -355,7 +355,7 @@ class GetAppSchema extends Route {
 		let schema;
 		try {
 			schema = (req.query.rawSchema && req.authApp.__rawSchema) ?
-				Schema.decode(req.authApp.__rawSchema) : Schema.buildCollections(Schema.decode(req.authApp.__schema));
+				Schema.decode(req.authApp.__rawSchema) : await Schema.buildCollections(Schema.decode(req.authApp.__schema));
 		} catch (err) {
 			if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
 			else throw err;
@@ -405,39 +405,37 @@ class UpdateAppSchema extends Route {
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.authApp) {
-				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
-			}
+	async _validate(req, res, token) {
+		if (!req.authApp) {
+			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `no_authenticated_app`);
+		}
 
-			if (!req.body) {
-				this.log('ERROR: Missing body', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_body`));
-			}
+		if (!req.body) {
+			this.log('ERROR: Missing body', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `no_body`);
+		}
 
-			if (!Array.isArray(req.body)) {
-				this.log('ERROR: Expected body to be an array', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
-			}
+		if (!Array.isArray(req.body)) {
+			this.log('ERROR: Expected body to be an array', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `invalid_body_type`);
+		}
 
-			// Sort templates
-			req.body = req.body.sort((a, b) => (a.type === 'collection') ? 1 : (b.type === 'collection') ? -1 : 0);
+		// Sort templates
+		req.body = req.body.sort((a, b) => (a.type.indexOf('collection') === 0) ? 1 : (b.type.indexOf('collection') === 0) ? -1 : 0);
 
-			// Resolve the local schema
-			const rawSchema = JSON.stringify(req.body);
-			req.body = Schema.merge(req.body, Model.App.localSchema);
+		// Resolve the local schema
+		const rawSchema = JSON.stringify(req.body);
+		req.body = Schema.merge(req.body, Model.App.localSchema);
 
-			try {
-				Schema.buildCollections(req.body);
-			} catch (err) {
-				console.log(err);
-				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
-			}
+		try {
+			await Schema.buildCollections(req.body);
+		} catch (err) {
+			console.log(err);
+			throw new Helpers.Errors.RequestError(400, `invalid_body_type`);
+		}
 
-			resolve(rawSchema);
-		});
+		return rawSchema;
 	}
 
 	async _exec(req, res, rawSchema) {

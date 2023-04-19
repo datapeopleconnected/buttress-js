@@ -34,467 +34,436 @@ const LogLevel = {
 	DEFAULT: 'info',
 };
 
-module.exports.Constants = {
+const Constants = {
 	LogLevel: LogLevel,
 };
-
-// let _logApp = 'app';
-let _logProcess = 'MASTER';
-const setLogApp = (app) => {
-	// _logApp = app;
-	if (cluster.isWorker) {
-		_logProcess = `${cluster.worker.id}`;
-	}
-};
-module.exports.setLogApp = setLogApp;
 
 let _captureOutput = false;
 let _captureOutputBuffer = [];
 
-/**
- * @param {String} logApp - Log applcation label (rest / socket)
- */
-module.exports.init = (logApp) => {
-	setLogApp(logApp);
-
-	// winston.remove(winston.transports.Console);
-	winston.add(new winston.transports.Console({
-		level: Config.logging.level,
-		format: winston.format.combine(
-			winston.format.colorize(),
-			winston.format.timestamp(),
-			winston.format.errors({stack: true}),
-			winston.format.printf((info) => {
-				if (info.stack) {
-					return `${info.timestamp} [${logApp}][${_logProcess}] ${info.level}: ${info.message}\n${info.stack}`;
-				}
-
-				return `${info.timestamp} [${logApp}][${_logProcess}] ${info.level}: ${info.message}`;
-			}),
-		),
-	}));
-
-	// winston.remove(winston.transports.Console);
-	// winston.add(winston.transports.Console, {
-	// 	name: 'console',
-	// 	colorize: 'all',
-	// 	timestamp: true,
-	// 	level: 'info',
-	// });
-
-	// winston.add(winston.transports.Rotate, {
-	// 	name: 'debug-file',
-	// 	json: false,
-	// 	file: `${Config.paths.logs}/log-${_logApp}-debug.log`,
-	// 	level: 'debug',
-	// 	size: '1m',
-	// 	keep: 2,
-	// 	colorize: 'all',
-	// 	timestamp: true,
-	// });
-	// winston.add(winston.transports.Rotate, {
-	// 	name: 'info-file',
-	// 	json: false,
-	// 	file: `${Config.paths.logs}/log-${_logApp}-info.log`,
-	// 	size: '1m',
-	// 	keep: 5,
-	// 	colorize: 'all',
-	// 	level: 'info',
-	// 	timestamp: true,
-	// });
-	// winston.add(winston.transports.Rotate, {
-	// 	name: 'error-file',
-	// 	json: false,
-	// 	file: `${Config.paths.logs}/log-${_logApp}-err.log`,
-	// 	size: '1m',
-	// 	keep: 10,
-	// 	level: 'error',
-	// 	colorize: 'none',
-	// 	timestamp: true,
-	// });
-	// winston.add(winston.transports.Rotate, {
-	// 	name: 'silly-file',
-	// 	json: false,
-	// 	file: `${Config.paths.logs}/log-${_logApp}-silly.log`,
-	// 	level: 'silly',
-	// 	size: '1m',
-	// 	keep: 1,
-	// 	colorize: 'all',
-	// 	timestamp: true,
-	// });
-	// winston.addColors({
-	// 	info: 'white',
-	// 	error: 'red',
-	// 	warn: 'yellow',
-	// 	verbose: 'white',
-	// 	debug: 'white',
-	// });
-};
-
-module.exports.captureOutput = (mode = false) => {
-	if (mode) {
-		// Setup structure
-		module.exports.clean();
+class Logging {
+	constructor() {
+		this._prefixes = {
+			app: 'APP',
+			parts: [],
+			string: '',
+		};
+		this.promises = new LoggingPromise(this);
 	}
 
-	_captureOutput = mode;
-};
-module.exports.flush = () => {
-	_captureOutputBuffer.forEach((line) => {
-		winston.log(line);
-	});
-};
-module.exports.clean = () => {
-	_captureOutputBuffer = [];
-};
-
-module.exports.startupMessage = () => {
-	console.log(`***`);
-	console.log(` * Buttress - The federated real-time open data platform`);
-	console.log(` * Copyright (C) 2016-2022 Data Performance Consultancy LTD.`);
-	console.log(` * <https://dataperformanceconsultancy.com/>`);
-	console.log(` *`);
-	console.log(` * Buttress is free software: you can redistribute it and/or modify it under the`);
-	console.log(` * terms of the GNU Affero General Public Licence as published by the Free Software`);
-	console.log(` * Foundation, either version 3 of the Licence, or (at your option) any later version.`);
-	console.log(` * Buttress is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;`);
-	console.log(` * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.`);
-	console.log(` * See the GNU Affero General Public Licence for more details.`);
-	console.log(` * You should have received a copy of the GNU Affero General Public Licence along with`);
-	console.log(` * this program. If not, see <http://www.gnu.org/licenses/>.`);
-	console.log(`***`);
-};
-
-/**
- *
- * @param {string} log - log entry
- * @param {string} level - level to log at
- * @param {string} id - id
- * @private
- */
-function _log(log, level, id) {
-	const line = {
-		level: level,
-		message: (id) ? `[${id}] ${log}` : log,
-	};
-
-	if (_captureOutput) {
-		_captureOutputBuffer.push(line);
-		return;
+	get Constants() {
+		return Constants;
 	}
 
-	winston.log(line);
+	get LogLevel() {
+		return LogLevel;
+	}
+
+	newInstance() {
+		return new Logging();
+	}
+
+	setLogApp(extra) {
+		this._prefixes.parts = [this._prefixes.app];
+		this._prefixes.parts.push((cluster.isWorker) ? `${cluster.worker.id}` : 'MAIN');
+
+		if (extra) this._prefixes.parts = this._prefixes.parts.concat((Array.isArray(extra)) ? extra : [extra]);
+
+		this._prefixes.string = this._prefixes.parts.join('][');
+	}
+
+	init(logApp) {
+		this._prefixes.app = logApp;
+		this.setLogApp();
+
+		// winston.remove(winston.transports.Console);
+		this.logger = winston.createLogger({
+			level: Config.logging.level,
+			format: winston.format.combine(
+				winston.format.colorize(),
+				winston.format.timestamp(),
+				winston.format.errors({stack: true}),
+				winston.format.printf((info) => {
+					if (info.stack) {
+						return `${info.timestamp} [${this._prefixes.string}] ${info.level}: ${info.message}\n${info.stack}`;
+					}
+
+					return `${info.timestamp} [${this._prefixes.string}] ${info.level}: ${info.message}`;
+				}),
+			),
+			transports: [
+				new winston.transports.Console(),
+			],
+		});
+	}
+
+	captureOutput(mode = false) {
+		if (mode) {
+			// Setup structure
+			this.clean();
+		}
+
+		_captureOutput = mode;
+	}
+	flush() {
+		_captureOutputBuffer.forEach((line) => {
+			this.logger.log(line);
+		});
+	}
+	clean() {
+		_captureOutputBuffer = [];
+	}
+
+	startupMessage() {
+		console.log(`***`);
+		console.log(` * Buttress - The federated real-time open data platform`);
+		console.log(` * Copyright (C) 2016-2022 Data Performance Consultancy LTD.`);
+		console.log(` * <https://dataperformanceconsultancy.com/>`);
+		console.log(` *`);
+		console.log(` * Buttress is free software: you can redistribute it and/or modify it under the`);
+		console.log(` * terms of the GNU Affero General Public Licence as published by the Free Software`);
+		console.log(` * Foundation, either version 3 of the Licence, or (at your option) any later version.`);
+		console.log(` * Buttress is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;`);
+		console.log(` * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.`);
+		console.log(` * See the GNU Affero General Public Licence for more details.`);
+		console.log(` * You should have received a copy of the GNU Affero General Public Licence along with`);
+		console.log(` * this program. If not, see <http://www.gnu.org/licenses/>.`);
+		console.log(`***`);
+	}
+
+	/**
+	 *
+	 * @param {string} log - log entry
+	 * @param {string} level - level to log at
+	 * @param {string} id - id
+	 * @private
+	 */
+	_log(log, level, id) {
+		const line = {
+			level: level,
+			message: (id) ? `[${id}] ${log}` : log,
+		};
+
+		if (_captureOutput) {
+			_captureOutputBuffer.push(line);
+			return;
+		}
+
+		this.logger.log(line);
+	}
+
+	setLogLevel(level) {
+		this.logger.level = level;
+		// _logLevel = level;
+	}
+
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} level - level to log at
+	 * @param {string} id - id
+	 */
+	log(log, level, id=null) {
+		level = level || LogLevel.DEFAULT;
+		this._log(log, level, id);
+	}
+
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} id - id
+	 */
+	logVerbose(log, id=null) {
+		this.log(log, LogLevel.VERBOSE, id);
+	}
+
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} id - id
+	 */
+	logDebug(log, id=null) {
+		this.log(log, LogLevel.DEBUG, id);
+	}
+
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} id - id
+	 */
+	logSilly(log, id=null) {
+		this.log(log, LogLevel.SILLY, id);
+	}
+
+	/**
+	 * @param {string} warn - warning to log
+	 * @param {string} id - id
+	 */
+	logWarn(warn, id=null) {
+		this._log(warn, LogLevel.WARN, id);
+	}
+	/**
+	 * @param {string} err - error object to log
+	 * @param {string} id - id
+	 */
+	logError(err, id=null) {
+		if (err && err.stack && err.message) {
+			this._log(err.message, LogLevel.ERR, id);
+			this._log(err.stack, LogLevel.ERR, id);
+		} else {
+			this._log(err, LogLevel.ERR, id);
+		}
+	}
+
+	/**
+	 * @param {string} log - Text to log
+	 * @param {Object} timer - Object with an 'interval' property
+	 * @param {string} level - level to log at
+	 * @param {string} id - id
+	 */
+	logTimer(log, timer, level, id=null) {
+		level = level || LogLevel.INFO;
+		if (!timer) {
+			this._log(log, level, id);
+			return;
+		}
+		this._log(`[${timer.interval.toFixed(6)}s][${timer.lapTime.toFixed(6)}s] ${log}`, level, id);
+	}
+
+	/**
+	 * @param {string} log - Text to log
+	 * @param {Object} timer - Object with an 'interval' property
+	 * @param {string} time - time above which to log the exception
+	 * @param {string} id - id
+	 */
+	logTimerException(log, timer, time, id=null) {
+		const level = LogLevel.ERR;
+		if (timer.interval > time) {
+			this._log(`[${timer.interval.toFixed(6)}s][${timer.lapTime.toFixed(6)}s] ${log} ${timer.interval.toFixed(3)}s > ${time}s`, level, id);
+		}
+	}
+
+	get Promise() {
+		return this.promises;
+	}
 }
 
-/**
- * STANDARD LOGGING
- */
-
-module.exports.setLogLevel = (level) => {
-	winston.level = level;
-	// _logLevel = level;
-};
-
-/**
- * @param {string} log - Text to log
- * @param {string} level - level to log at
- * @param {string} id - id
- */
-module.exports.log = (log, level, id=null) => {
-	level = level || LogLevel.DEFAULT;
-	_log(log, level, id);
-};
-
-/**
- * @param {string} log - Text to log
- * @param {string} id - id
- */
-module.exports.logVerbose = (log, id=null) => {
-	module.exports.log(log, LogLevel.VERBOSE, id);
-};
-
-/**
- * @param {string} log - Text to log
- * @param {string} id - id
- */
-module.exports.logDebug = (log, id=null) => {
-	module.exports.log(log, LogLevel.DEBUG, id);
-};
-
-/**
- * @param {string} log - Text to log
- * @param {string} id - id
- */
-module.exports.logSilly = (log, id=null) => {
-	module.exports.log(log, LogLevel.SILLY, id);
-};
-
-/**
- * @param {string} warn - warning to log
- * @param {string} id - id
- */
-module.exports.logWarn = (warn, id=null) => {
-	_log(warn, LogLevel.WARN, id);
-};
-/**
- * @param {string} err - error object to log
- * @param {string} id - id
- */
-module.exports.logError = (err, id=null) => {
-	if (err && err.stack && err.message) {
-		_log(err.message, LogLevel.ERR, id);
-		_log(err.stack, LogLevel.ERR, id);
-	} else {
-		_log(err, LogLevel.ERR, id);
+class LoggingPromise {
+	constructor(logging) {
+		this.logging = logging;
 	}
-};
 
-/**
- * @param {string} log - Text to log
- * @param {Object} timer - Object with an 'interval' property
- * @param {string} level - level to log at
- * @param {string} id - id
- */
-module.exports.logTimer = (log, timer, level, id=null) => {
-	level = level || LogLevel.INFO;
-	if (!timer) {
-		_log(log, level, id);
-		return;
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} level - level to log at
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 * @param {string} id - id
+	 */
+	log(log, level, id=null) {
+		level = level || LogLevel.DEFAULT;
+		return (res) => {
+			this.logging.log(`${log}: ${res}`, level, id);
+			return res;
+		};
 	}
-	_log(`[${timer.interval.toFixed(6)}s][${timer.lapTime.toFixed(6)}s] ${log}`, level, id);
-};
 
-/**
- * @param {string} log - Text to log
- * @param {Object} timer - Object with an 'interval' property
- * @param {string} time - time above which to log the exception
- * @param {string} id - id
- */
-module.exports.logTimerException = (log, timer, time, id=null) => {
-	const level = LogLevel.ERR;
-	if (timer.interval > time) {
-		_log(`[${timer.interval.toFixed(6)}s][${timer.lapTime.toFixed(6)}s] ${log} ${timer.interval.toFixed(3)}s > ${time}s`, level, id);
+	/**
+	 * @param {string} log - Text to log
+	 * @param {*} val - value to test `res` against
+	 * @param {string} level - level to log at
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 */
+	logIf(log, val, level) {
+		level = level || LogLevel.DEFAULT;
+		return (res) => {
+			if (val === res) {
+				this.logging.log(`${log}: ${res}`, level);
+			}
+			return res;
+		};
 	}
-};
 
-/**
- * PROMISE LOGGING
- */
+	/**
+	 * @param {string} log - Text to log
+	 * @param {*} val - value to test `res` against
+	 * @param {string} level - level to log at
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 */
+	logIfNot(log, val, level) {
+		level = level || LogLevel.DEFAULT;
+		return (res) => {
+			if (val !== res) {
+				this.logging.log(`${log}: ${res}`, level);
+			}
+			return res;
+		};
+	}
 
-module.exports.Promise = {};
+	/**
+	 * PROPERTY LOGGING
+	 */
 
-/**
- * @param {string} log - Text to log
- * @param {string} level - level to log at
- * @return {function(*)} - returns a function for chaining into a promise
- * @param {string} id - id
- */
-module.exports.Promise.log = (log, level, id=null) => {
-	level = level || LogLevel.DEFAULT;
-	return (res) => {
-		_log(`${log}: ${res}`, level, id);
-		return res;
-	};
-};
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} prop - Name of the `res` property to log
+	 * @param {string} level - level to log at
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 */
+	logProp(log, prop, level) {
+		level = level || LogLevel.DEFAULT;
+		return (res) => {
+			this.logging.log(`${log}: ${res[prop]}`, level);
+			return res;
+		};
+	}
 
-/**
- * @param {string} log - Text to log
- * @param {*} val - value to test `res` against
- * @param {string} level - level to log at
- * @return {function(*)} - returns a function for chaining into a promise
- */
-module.exports.Promise.logIf = (log, val, level) => {
-	level = level || LogLevel.DEFAULT;
-	return (res) => {
-		if (val === res) {
-			_log(`${log}: ${res}`, level);
-		}
-		return res;
-	};
-};
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} prop - Name of the `res` property to log
+	 * @param {*} val - value to test `res` against
+	 * @param {string} level - level to log at
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 */
+	logPropIf(log, prop, val, level) {
+		level = level || LogLevel.DEFAULT;
+		return (res) => {
+			if (val === res[prop]) {
+				this.logging.log(`${log}: ${res[prop]}`, level);
+			}
+			return res;
+		};
+	}
 
-/**
- * @param {string} log - Text to log
- * @param {*} val - value to test `res` against
- * @param {string} level - level to log at
- * @return {function(*)} - returns a function for chaining into a promise
- */
-module.exports.Promise.logIfNot = (log, val, level) => {
-	level = level || LogLevel.DEFAULT;
-	return (res) => {
-		if (val !== res) {
-			_log(`${log}: ${res}`, level);
-		}
-		return res;
-	};
-};
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} prop - Name of the `res` property to log
+	 * @param {*} val - value to test `res` against
+	 * @param {string} level - level to log at
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 */
+	logPropIfNot(log, prop, val, level) {
+		level = level || LogLevel.DEFAULT;
+		return (res) => {
+			if (val !== res[prop]) {
+				this.logging.log(`${log}: ${res[prop]}`, level);
+			}
+			return res;
+		};
+	}
 
-/**
- * PROPERTY LOGGING
- */
+	/**
+	 * ARRAY LOGGING
+	 */
 
-/**
- * @param {string} log - Text to log
- * @param {string} prop - Name of the `res` property to log
- * @param {string} level - level to log at
- * @return {function(*)} - returns a function for chaining into a promise
- */
-module.exports.Promise.logProp = (log, prop, level) => {
-	level = level || LogLevel.DEFAULT;
-	return (res) => {
-		_log(`${log}: ${res[prop]}`, level);
-		return res;
-	};
-};
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} level - level to log at
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 */
+	logArray(log, level) {
+		level = level || LogLevel.DEFAULT;
+		return (res) => {
+			this.logging.log(`${log}: ${res.length}`, level);
+			res.forEach((r) => {
+				this.logging.log(r, level);
+			});
+			return res;
+		};
+	}
 
-/**
- * @param {string} log - Text to log
- * @param {string} prop - Name of the `res` property to log
- * @param {*} val - value to test `res` against
- * @param {string} level - level to log at
- * @return {function(*)} - returns a function for chaining into a promise
- */
-module.exports.Promise.logPropIf = (log, prop, val, level) => {
-	level = level || LogLevel.DEFAULT;
-	return (res) => {
-		if (val === res[prop]) {
-			_log(`${log}: ${res[prop]}`, level);
-		}
-		return res;
-	};
-};
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} prop - Name of the `res[]` property to log
+	 * @param {string} level - level to log at
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 */
+	logArrayProp(log, prop, level) {
+		level = level || LogLevel.DEFAULT;
+		return (res) => {
+			this.logging.log(`${log}: ${res.length}`, level);
+			res.forEach((r) => {
+				this.logging.log(r[prop]);
+			});
+			return res;
+		};
+	}
 
-/**
- * @param {string} log - Text to log
- * @param {string} prop - Name of the `res` property to log
- * @param {*} val - value to test `res` against
- * @param {string} level - level to log at
- * @return {function(*)} - returns a function for chaining into a promise
- */
-module.exports.Promise.logPropIfNot = (log, prop, val, level) => {
-	level = level || LogLevel.DEFAULT;
-	return (res) => {
-		if (val !== res[prop]) {
-			_log(`${log}: ${res[prop]}`, level);
-		}
-		return res;
-	};
-};
+	/**
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 */
+	logError() {
+		const level = LogLevel.ERR;
+		return (err) => {
+			this.logging.log(err.message, level);
+			this.logging.log(err.stack, level);
+			return err;
+		};
+	}
 
-/**
- * ARRAY LOGGING
- */
+	/**
+	 * @param {string} log - Text to log
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 * @param {string} id - id
+	 */
+	logInfo(log, id=null) {
+		const level = LogLevel.INFO;
+		return log(log, level, id);
+	}
 
-/**
- * @param {string} log - Text to log
- * @param {string} level - level to log at
- * @return {function(*)} - returns a function for chaining into a promise
- */
-module.exports.Promise.logArray = (log, level) => {
-	level = level || LogLevel.DEFAULT;
-	return (res) => {
-		_log(`${log}: ${res.length}`, level);
-		res.forEach((r) => {
-			_log(r, level);
-		});
-		return res;
-	};
-};
+	/**
+	 * @param {string} log - Text to log
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 * @param {string} id - id
+	 */
+	logVerbose(log, id=null) {
+		const level = LogLevel.VERBOSE;
+		return log(log, level, id);
+	}
 
-/**
- * @param {string} log - Text to log
- * @param {string} prop - Name of the `res[]` property to log
- * @param {string} level - level to log at
- * @return {function(*)} - returns a function for chaining into a promise
- */
-module.exports.Promise.logArrayProp = (log, prop, level) => {
-	level = level || LogLevel.DEFAULT;
-	return (res) => {
-		_log(`${log}: ${res.length}`, level);
-		res.forEach((r) => {
-			_log(r[prop]);
-		});
-		return res;
-	};
-};
+	/**
+	 * @param {string} log - Text to log
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 * @param {string} id - id
+	 */
+	logDebug(log, id=null) {
+		const level = LogLevel.DEBUG;
+		return log(log, level, id);
+	}
 
-/**
- * @return {function(*)} - returns a function for chaining into a promise
- */
-module.exports.Promise.logError = () => {
-	const level = LogLevel.ERR;
-	return (err) => {
-		_log(err.message, level);
-		_log(err.stack, level);
-		return err;
-	};
-};
+	/**
+	 * @param {string} log - Text to log
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 * @param {string} id - id
+	 */
+	logSilly(log, id=null) {
+		const level = LogLevel.SILLY;
+		return log(log, level, id);
+	}
 
-/**
- * @param {string} log - Text to log
- * @return {function(*)} - returns a function for chaining into a promise
- * @param {string} id - id
- */
-module.exports.Promise.logInfo = (log, id=null) => {
-	const level = LogLevel.INFO;
-	return module.exports.Promise.log(log, level, id);
-};
+	/**
+	 * @param {string} log - Text to log
+	 * @param {Object} timer - Object with an 'interval' property
+	 * @param {string} level - level to log at
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 * @param {string} id - id
+	 */
+	logTimer(log, timer, level, id=null) {
+		return (res) => {
+			this.logging.logTimer(log, timer, level, id);
+			return res;
+		};
+	}
 
-/**
- * @param {string} log - Text to log
- * @return {function(*)} - returns a function for chaining into a promise
- * @param {string} id - id
- */
-module.exports.Promise.logVerbose = (log, id=null) => {
-	const level = LogLevel.VERBOSE;
-	return module.exports.Promise.log(log, level, id);
-};
+	/**
+	 * @param {string} log - Text to log
+	 * @param {Object} timer - Object with an 'interval' property
+	 * @param {string} time - time above which to log the exception
+	 * @return {function(*)} - returns a function for chaining into a promise
+	 * @param {string} id - id
+	 */
+	logTimerException(log, timer, time, id=null) {
+		return (res) => {
+			this.logging.logTimerException(log, timer, time, id);
 
-/**
- * @param {string} log - Text to log
- * @return {function(*)} - returns a function for chaining into a promise
- * @param {string} id - id
- */
-module.exports.Promise.logDebug = (log, id=null) => {
-	const level = LogLevel.DEBUG;
-	return module.exports.Promise.log(log, level, id);
-};
+			return res;
+		};
+	}
+}
 
-/**
- * @param {string} log - Text to log
- * @return {function(*)} - returns a function for chaining into a promise
- * @param {string} id - id
- */
-module.exports.Promise.logSilly = (log, id=null) => {
-	const level = LogLevel.SILLY;
-	return module.exports.Promise.log(log, level, id);
-};
-
-/**
- * @param {string} log - Text to log
- * @param {Object} timer - Object with an 'interval' property
- * @param {string} level - level to log at
- * @return {function(*)} - returns a function for chaining into a promise
- * @param {string} id - id
- */
-module.exports.Promise.logTimer = (log, timer, level, id=null) => {
-	return (res) => {
-		module.exports.logTimer(log, timer, level, id);
-		return res;
-	};
-};
-
-/**
- * @param {string} log - Text to log
- * @param {Object} timer - Object with an 'interval' property
- * @param {string} time - time above which to log the exception
- * @return {function(*)} - returns a function for chaining into a promise
- * @param {string} id - id
- */
-module.exports.Promise.logTimerException = (log, timer, time, id=null) => {
-	return (res) => {
-		module.exports.logTimerException(log, timer, time, id);
-
-		return res;
-	};
-};
+module.exports = new Logging();

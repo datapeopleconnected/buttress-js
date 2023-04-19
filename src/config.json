@@ -78,6 +78,7 @@
 				"prod": "%BUTTRESS_APP_PATH%/app_data",
 				"test": "%BUTTRESS_APP_PATH%/app_data/test"
 			},
+			"plugins": "%BUTTRESS_APP_PATH%/plugins",
 			"lambda": {
 				"code": "%BUTTRESS_APP_PATH%/app_data/lambda/code",
 				"plugins": "%BUTTRESS_APP_PATH%/app_data/lambda/plugins",

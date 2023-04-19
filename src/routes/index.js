@@ -230,7 +230,7 @@ class Routes {
 		const appRouter = this._createRouter();
 
 		Schema.decode(app.__schema)
-			.filter((schema) => schema.type === 'collection')
+			.filter((schema) => schema.type.indexOf('collection') === 0)
 			.filter((schema) => {
 				if (!schema.remote) return true;
 				const [dsaName] = schema.remote.split('.');

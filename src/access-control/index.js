@@ -104,7 +104,7 @@ class AccessControl {
 		}
 
 		if (!this._schemas[appId]) {
-			const appSchema = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
+			const appSchema = Schema.decode(req.authApp.__schema).filter((s) => s.type.indexOf('collection') === 0);
 			this._schemas[appId] = appSchema.concat(this._coreSchema);
 			this._schemaNames[appId] = this._schemas[appId].map((s) => s.name);
 		}
@@ -186,7 +186,7 @@ class AccessControl {
 
 		if (!this._schemas[appId]) {
 			const app = await Model.App.findById(appId);
-			this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type === 'collection');
+			this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type.indexOf('collection') === 0);
 		}
 
 		if (!req.authApp) {
