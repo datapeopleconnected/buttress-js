@@ -59,7 +59,7 @@ class DeleteAllTokens extends Route {
 	constructor() {
 		super('token/:type?', 'DELETE ALL TOKENS');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Auth.SUPER;
+		this.authType = Route.Constants.Type.SUPER;
 		this.permissions = Route.Constants.Permissions.DELETE;
 
 		this.redactResults = false;
@@ -84,7 +84,7 @@ class SearchUserToken extends Route {
 	constructor() {
 		super('token', 'SEARCH USER TOKEN');
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Auth.SUPER;
+		this.authType = Route.Constants.Type.SUPER;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.redactResults = false;

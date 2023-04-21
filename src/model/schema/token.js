@@ -95,6 +95,12 @@ class TokenSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
+				policyProperties: {
+					__type: 'object',
+					__default: null,
+					__required: true,
+					__allowUpdate: true,
+				},
 				_appId: {
 					__type: 'id',
 					__default: null,
@@ -178,6 +184,63 @@ class TokenSchemaModel extends SchemaModel {
 		return this.find({
 			_appId: this.createId(appId),
 			_userId: this.createId(userId),
+		});
+	}
+
+	/**
+	 * @param {String} tokenId - id of the token
+	 * @param {Object} policyProperties - Policy properties
+	 * @return {Promise} - resolves after updating token policy properties
+	 */
+	async setPolicyPropertiesById(tokenId, policyProperties) {
+		if (policyProperties.query) {
+			delete policyProperties.query; // What is this line for??
+		}
+
+		return super.update({
+			'_id': this.createId(tokenId),
+		}, {$set: {'policyProperties': policyProperties}});
+	}
+
+	/**
+	 * @param {String} token - token object
+	 * @param {Object} policyProperties - Policy properties
+	 * @return {Promise} - resolves to an array of Apps
+	 */
+	updatePolicyPropertiesById(token, policyProperties) {
+		if (policyProperties.query) {
+			delete policyProperties.query; // Again, what is this line for??
+		}
+
+		const tokenPolicy = (token.policyProperties || {});
+		const policy = Object.keys(policyProperties).reduce((obj, key) => {
+			obj[key] = policyProperties[key];
+			return obj;
+		}, []);
+
+		return super.update({
+			'_id': this.createId(token._id),
+		}, {
+			$set: {
+				'policyProperties': {
+					...tokenPolicy,
+					...policy,
+				},
+			},
+		});
+	}
+
+	/**
+	 * @param {String} tokenId - tokenId
+	 * @return {Promise}
+	 */
+	clearPolicyPropertiesById(tokenId) {
+		return super.update({
+			'_id': this.createId(tokenId),
+		}, {
+			$set: {
+				'policyProperties': {},
+			},
 		});
 	}
 }

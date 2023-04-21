@@ -102,13 +102,18 @@ class AddDataSharing extends Route {
 			req.body._appId = token._appId;
 		}
 
+		if (!req.body.auth) {
+			this.log(`[${this.name}] Auth properties are required when creating a data sharing agreement`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
+		}
+
 		const result = await this.model.isDuplicate(req.body);
 		if (result === true) {
 			this.log(`${this.schema.name}: Duplicate entity`, Route.LogLevel.ERR, req.id);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `duplicate`));
 		}
 
-		const policyCheck = await Helpers.checkAppPolicyProperty(req?.authApp?.policyPropertiesList, req.body.policyProperties);
+		const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.auth.policyProperties);
 		if (!policyCheck.passed) {
 			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
@@ -653,7 +658,6 @@ class SearchAppDataSharingAgreement extends Route {
 	}
 
 	_exec(req, res, validate) {
-		console.log('validate.query', validate.query.$and[0]._appId);
 		return Model.AppDataSharing.find(validate.query, {},
 			validate.limit, validate.skip, validate.sort, validate.project);
 	}

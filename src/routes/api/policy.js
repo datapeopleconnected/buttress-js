@@ -147,7 +147,7 @@ routes.push(SearchPolicyList);
  */
 class AddPolicy extends Route {
 	constructor() {
-		super('policy', 'ADD POLICY');
+		super('policy/:appId', 'ADD POLICY');
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -177,7 +177,7 @@ class AddPolicy extends Route {
 			const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body.selection);
 			if (!policyCheck.passed) {
 				this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_selection`));
 			}
 
 			return Promise.resolve(true);
@@ -187,7 +187,7 @@ class AddPolicy extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Policy.add(req, {policy: req.body})
+		return Model.Policy.add(req.body, req.authApp._id)
 			.then((policy) => {
 				nrp.emit('app-policy:bust-cache', {
 					appId: req.authApp._id,

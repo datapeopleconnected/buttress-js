@@ -6,11 +6,11 @@ const AccessControlHelpers = require('./helpers');
 class PolicyMatch {
 	constructor() {}
 
-	__getEntityPolicies(policies, entity) {
+	__getTokenPolicies(policies, token) {
 		return policies.reduce((arr, p) => {
 			if (!p.selection) return arr;
 
-			const match = this.__checkPolicySelection(p, entity);
+			const match = this.__checkPolicySelection(p, token);
 			if (!match) return arr;
 
 			arr = arr.concat(p);
@@ -18,13 +18,13 @@ class PolicyMatch {
 		}, []);
 	}
 
-	__checkPolicySelection(p, entity) {
+	__checkPolicySelection(p, token) {
 		let match = false;
 		const selection = p.selection;
 
-		if (!entity || !entity.policyProperties) return;
+		if (!token || !token.policyProperties) return;
 
-		const policyProperties = entity.policyProperties;
+		const policyProperties = token.policyProperties;
 		const matches = Object.keys(selection).reduce((arr, key) => {
 			if (!(key in policyProperties)) return arr;
 			const [selectionCriterionKey] = Object.keys(selection[key]);

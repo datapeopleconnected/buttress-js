@@ -139,12 +139,6 @@ class UserSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: false,
 				},
-				policyProperties: {
-					__type: 'object',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
 			},
 		};
 	}
@@ -235,11 +229,10 @@ class UserSchemaModel extends SchemaModel {
 
 		const rxsUser = await super.add(userBody, {
 			_appId: Model.authApp._id,
-			policyProperties: (body.policyProperties) ? body.policyProperties : null,
 		});
 		const user = await Helpers.streamFirst(rxsUser);
 
-		user.tokens = [];
+		user.token = [];
 
 		if (!body.token) {
 			return user;
@@ -254,8 +247,9 @@ class UserSchemaModel extends SchemaModel {
 		nrp.emit('app-routes:bust-cache', {});
 
 		if (token) {
-			user.tokens.push({
+			user.token.push({
 				value: token.value,
+				policyProperties: token.policyProperties,
 			});
 		}
 
@@ -358,68 +352,6 @@ class UserSchemaModel extends SchemaModel {
 			'auth.app': appName,
 			'auth.appId': appUserId,
 		}, {});
-	}
-
-	/**
-	 * @param {String} userId - id of the user
-	 * @param {Object} policyProperties - Policy properties
-	 * @return {Promise} - resolves to an array of Apps
-	 */
-	async setPolicyPropertiesById(userId, policyProperties) {
-		if (policyProperties.query) {
-			delete policyProperties.query;
-		}
-
-		return super.update({
-			'_id': this.createId(userId),
-		}, {$set: {'policyProperties': policyProperties}});
-	}
-
-	/**
-	 * @param {String} userId - AppId of the user
-	 * @param {String} appId - id of the app
-	 * @param {Object} policyProperties - Policy properties
-	 * @param {Object} user - Policy properties
-	 * @return {Promise} - resolves to an array of Apps
-	 */
-	updatePolicyPropertiesById(userId, appId, policyProperties, user) {
-		if (policyProperties.query) {
-			delete policyProperties.query;
-		}
-
-		// TODO: Drop AppId from args
-
-		const userPolicy = (user.policyProperties || {});
-		const policy = Object.keys(policyProperties).reduce((obj, key) => {
-			obj[key] = policyProperties[key];
-			return obj;
-		}, []);
-
-		return super.update({
-			'_id': this.createId(userId),
-		}, {
-			$set: {
-				'policyProperties': {
-					...userPolicy,
-					...policy,
-				},
-			},
-		});
-	}
-
-	/**
-	 * @param {String} userId - AppId of the user
-	 * @param {String} appId - id of the app
-	 * @return {Promise}
-	 */
-	clearPolicyPropertiesById(userId, appId) {
-		return super.update({
-			'_id': this.createId(userId),
-		}, {
-			$set: {
-				'policyProperties': {},
-			},
-		});
 	}
 }
 

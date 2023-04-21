@@ -426,19 +426,13 @@ class Route {
 	_authenticate(req, res) {
 		req.timings.authenticate = req.timer.interval;
 		return new Promise((resolve, reject) => {
-			if (this.auth === Constants.Auth.NONE) {
-				this.log(`WARN: OPEN API CALL`, Logging.Constants.LogLevel.WARN, req.id);
-				Logging.logTimer('_authenticate:end-open-api', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				return resolve(req.user);
-			}
-
 			if (!req.token) {
 				this.log('EAUTH: INVALID TOKEN', Logging.Constants.LogLevel.ERR, req.id);
 				Logging.logTimer('_authenticate:end-invalid-token', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 				return reject(new Helpers.Errors.RequestError(401, 'invalid_token'));
 			}
 
-			if (req.token.type !== this.authType) {
+			if (this.authType && req.token.type !== this.authType) {
 				this.log(`EAUTH: INSUFFICIENT AUTHORITY ${req.token.type} is not equal to ${this.authType}`, Logging.Constants.LogLevel.ERR, req.id);
 				Logging.logTimer('_authenticate:end-insufficient-authority', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 				return reject(new Helpers.Errors.RequestError(401, 'insufficient_authority'));

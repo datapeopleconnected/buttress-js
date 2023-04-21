@@ -111,14 +111,14 @@ class PolicySchemaModel extends SchemaModel {
 
 
 	/**
-	 * @param {Object} req - request object
-	 * @param {Object} body - body passed through from a POST request
+	 * @param {Object} body - policy object
+	 * @param {String} appId - app id
 	 * @return {Promise} - fulfilled with policy Object when the database request is completed
 	 */
-	async add(req, body) {
+	async add(body, appId) {
 		const policyConfig = [];
-		if (body.policy.config) {
-			body.policy.config.forEach((item) => {
+		if (body.config) {
+			body.config.forEach((item) => {
 				policyConfig.push({
 					endpoints: (item.endpoints) ? item.endpoints : [],
 					env: (item.env) ? item.env : null,
@@ -130,30 +130,15 @@ class PolicySchemaModel extends SchemaModel {
 		}
 
 		const policyBody = {
-			id: (body.policy.id) ? this.createId(body.policy.id) : this.createId(),
-			name: (body.policy.name) ? body.policy.name : null,
-			merge: (body.policy.merge) ? body.policy.merge : false,
-			priority: (body.policy.priority) ? body.policy.priority : 0,
-			selection: (body.policy.selection) ? body.policy.selection : [],
+			id: (body.id) ? this.createId(body.id) : this.createId(),
+			name: (body.name) ? body.name : null,
+			merge: (body.merge) ? body.merge : false,
+			priority: (body.priority) ? body.priority : 0,
+			selection: (body.selection) ? body.selection : [],
 			config: policyConfig,
-			limit: (body.policy.limit) ? Sugar.Date.create(body.policy.limit) : null,
+			limit: (body.limit) ? Sugar.Date.create(body.limit) : null,
 		};
 
-		let appId = req.authApp._id;
-		if (!appId) {
-			const token = await this._getToken(req);
-			if (token && token._appId) {
-				appId = token._appId;
-			}
-			if (token && token._lambdaId) {
-				const lambda = await Model.Lambda.findById(token._lambdaId);
-				appId = lambda._appId;
-			}
-			if (token && token._userId) {
-				const user = await Model.User.findById(token._userId);
-				appId = user._appId;
-			}
-		}
 		const rxsPolicy = await super.add(policyBody, {
 			_appId: appId,
 		});

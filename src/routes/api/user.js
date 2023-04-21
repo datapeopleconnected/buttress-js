@@ -98,16 +98,16 @@ class GetUser extends Route {
 			if (userToken && !user) {
 				user = await Model.User.findById(userToken._userId);
 			}
-			if (!user) {
+			if (!user || !userToken) {
 				this.log(`[${this.name}] Could not fetch user data using ${parameter}`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
+				return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
 			}
 
 			const output = {
 				id: user._id,
 				auth: user.auth,
 				token: userToken?.value || null,
-				policyProperties: user.policyProperties || null,
+				policyProperties: userToken.policyProperties || null,
 			};
 
 			return output;
@@ -135,21 +135,23 @@ class FindUser extends Route {
 	async _validate(req, res, token) {
 		const _user = await Model.User.getByAppId(req.params.app, req.params.id);
 		if (!_user) {
-			return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
+			this.log(`[${this.name}] Could not fetch user`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
 		}
 
 		const output = {
 			id: _user._id,
 			auth: _user.auth,
 			token: null,
-			policyProperties: _user.policyProperties || null,
 		};
 
 		const rxTokens = Model.Token.findUserAuthTokens(_user._id, req.authApp._id);
 		const userToken = await Helpers.streamFirst(rxTokens);
 		if (userToken) {
 			output.token = userToken.value;
+			output.policyProperties = userToken.policyProperties || null;
 		}
+
 		return Promise.resolve(output);
 	}
 
@@ -191,14 +193,14 @@ class GetUserByToken extends Route {
 		const user = await Model.User.findById(userToken._user);
 		if (!user) {
 			this.log('ERROR: Can not find a user with the provided token', Route.LogLevel.ERR);
-			throw new Helpers.Errors.RequestError(400, `can_not_find_user`);
+			throw new Helpers.Errors.RequestError(404, `user_not_find`);
 		}
 
 		return {
 			id: user._id,
 			auth: user.auth,
 			token: userToken.value,
-			policyProperties: user.policyProperties || null,
+			policyProperties: userToken.policyProperties || null,
 		};
 	}
 
@@ -220,31 +222,35 @@ class CreateUserAuthToken extends Route {
 		this.redactResults = false;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.body ||
-				!req.body.permissions ||
-				!req.body.domains) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
+	async _validate(req, res, token) {
+		if (!req.body ||
+			!req.body.policyProperties ||
+			!req.body.permissions ||
+			!req.body.domains) {
+			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
 
-			req.body.type = Model.Token.Constants.Type.USER;
+		req.body.type = Model.Token.Constants.Type.USER;
 
-			if (!req.params.id) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
+		if (!req.params.id) {
+			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
 
-			Model.User.findById(req.params.id)
-				.then((user) => {
-					if (user) {
-						return resolve(user);
-					}
+		const user = await Model.User.findById(req.params.id);
+		if (!user) {
+			this.log(`[${this.name}] User not found`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
+		}
 
-					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-				});
-		});
+		const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.policyProperties);
+		if (!policyCheck.passed) {
+			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
+		}
+
+		return Promise.resolve(user);
 	}
 
 	async _exec(req, res, user) {
@@ -377,14 +383,16 @@ class AddUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_already_exists_with_that_name`));
 		}
 
-		const policyProperties = req.body.policyProperties;
-		if (policyProperties === undefined) {
+		if (req.body.token && !req.body.token.policyProperties) {
 			this.log(`[${this.name}] Missing user required property policyProperties`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_properties`));
 		}
 
-		const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, policyProperties);
-		if (!policyCheck.passed) {
+		let policyCheck = false;
+		if (req.body.token && req.body.token.policyProperties) {
+			policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.token.policyProperties);
+		}
+		if (req.body.token && req.body.token.policyProperties && !policyCheck) {
 			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
 		}
@@ -399,8 +407,8 @@ class AddUser extends Route {
 		return {
 			id: user._id,
 			auth: user.auth,
-			token: token?.value || null,
-			policyProperties: user.policyProperties || null,
+			token: token?.value || [],
+			policyProperties: token?.policyProperties || null,
 		};
 	}
 }
@@ -464,6 +472,7 @@ class SetUserPolicyProperties extends Route {
 	}
 
 	async _validate(req, res, token) {
+		const userId = Model.User.createId(req.params.id);
 		const app = req.authApp;
 		if (!app) {
 			this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
@@ -475,10 +484,18 @@ class SetUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = await Model.User.exists(req.params.id);
+		const exists = await Model.User.exists(userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+		}
+
+		const userToken = await Model.Token.findOne({
+			_user: userId,
+		});
+		if (!userToken) {
+			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
 		}
 
 		const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
@@ -487,11 +504,11 @@ class SetUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 		}
 
-		return Promise.resolve(true);
+		return Promise.resolve(userToken);
 	}
 
 	async _exec(req, res, validate) {
-		await Model.User.setPolicyPropertiesById(req.params.id, req.body);
+		await Model.Token.setPolicyPropertiesById(validate._id, req.body);
 
 		nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
@@ -534,29 +551,31 @@ class UpdateUserPolicyProperties extends Route {
 		this.activityBroadcast = true;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.body) {
-				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
+	async _validate(req, res, token) {
+		if (!req.body) {
+			this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
 
-			Model.User.findById(req.params.id)
-				.then((user) => {
-					if (!user) {
-						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-					}
+		const exists = Model.User.exists(req.params.id);
+		if (!exists) {
+			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+		}
 
-					resolve({
-						user,
-					});
-				});
+		const userToken = await Model.Token.findOne({
+			_user: req.params.id,
 		});
+		if (!userToken) {
+			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
+		}
+
+		return Promise.resolve(userToken);
 	}
 
 	async _exec(req, res, validate) {
-		await Model.User.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body, validate.user);
+		await Model.Token.updatePolicyPropertiesById(validate, req.body);
 
 		nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
@@ -599,29 +618,31 @@ class ClearUserPolicyProperties extends Route {
 		this.activityBroadcast = true;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.body) {
-				this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
+	async _validate(req, res, token) {
+		if (!req.body) {
+			this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
 
-			Model.User.findById(req.params.id)
-				.then((user) => {
-					if (!user) {
-						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-					}
+		const exists = Model.User.exists(req.params.id);
+		if (!exists) {
+			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+		}
 
-					resolve({
-						user,
-					});
-				});
+		const userToken = await Model.Token.findOne({
+			_user: req.params.id,
 		});
+		if (!userToken) {
+			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
+		}
+
+		return Promise.resolve(userToken);
 	}
 
 	async _exec(req, res, validate) {
-		await Model.User.clearPolicyPropertiesById(req.params.id, req.authApp._id, validate.user);
+		await Model.Token.clearPolicyPropertiesById(validate._id);
 
 		nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,

@@ -7,10 +7,10 @@
 			}
 		},
 		"config": [{
-			"endpoints": ["ALL"],
+			"endpoints": ["%ALL%"],
 			"query": [{
-				"schema": ["ALL"],
-				"access": "FULL_ACCESS"
+				"schema": ["%ALL%"],
+				"access": "%FULL_ACCESS%"
 			}]
 		}]
 	},

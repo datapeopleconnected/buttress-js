@@ -132,10 +132,10 @@ class AppSchemaModel extends SchemaModel {
 	async add(body) {
 		body.id = this.createId();
 
-		if (body?.type === Model.Token.Constants.Type.SYSTEM) {
+		if (body.type === Model.Token.Constants.Type.SYSTEM) {
 			const adminToken = await Model.Token.findOne({
 				type: {
-					$eq: 'system',
+					$eq: Model.Token.Constants.Type.SYSTEM,
 				},
 			});
 
@@ -156,12 +156,74 @@ class AppSchemaModel extends SchemaModel {
 		const rxsApp = await super.add(body, {_tokenId: token._id});
 		const app = await Helpers.streamFirst(rxsApp);
 
+		await this.__handleAddingNonSystemApp(body, token);
+
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
 		nrp.emit('app-routes:bust-cache', {});
 		Logging.logSilly(`Emitting app-schema:updated ${app._id}`);
 		nrp.emit('app-schema:updated', {appId: app._id});
 
+		Logging.logSilly(`Emitting app-policy:bust-cache ${app._id}`);
+		nrp.emit('app-policy:bust-cache', {
+			appId: app._id,
+		});
+
 		return Promise.resolve({app: app, token: token});
+	}
+
+	async __handleAddingNonSystemApp(body, token) {
+		if (body.type === Model.Token.Constants.Type.SYSTEM) return;
+
+		let appPolicyPropertiesList = body.policyPropertiesList;
+		const list = {
+			role: ['APP'],
+		};
+		const currentAppListKeys = Object.keys(appPolicyPropertiesList);
+		Object.keys(list).forEach((key) => {
+			if (currentAppListKeys.includes(key)) {
+				list[key] = list[key].concat(appPolicyPropertiesList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
+			}
+		});
+		appPolicyPropertiesList = {...appPolicyPropertiesList, ...list};
+
+		await Model.Policy.add({
+			name: `${body.name} policy`,
+			selection: {
+				role: {
+					'@eq': 'APP',
+				},
+			},
+			config: [{
+				endpoints: ['%ALL%'],
+				query: [{
+					schema: ['%APP_SCHEMA%'],
+					access: '%FULL_ACCESS%',
+				}, {
+					schema: ['policy', 'user', 'lambda', 'appDataSharing', 'secureStore'],
+					query: {
+						_appId: {
+							'@eq': body.id,
+						},
+					},
+				}],
+			}, {
+				endpoints: ['GET', 'PUT'],
+				query: [{
+					schema: ['app'],
+					query: {
+						_id: {
+							'@eq': body.id,
+						},
+					},
+				}],
+			}],
+		}, body.id);
+
+		await Model.Token.setPolicyPropertiesById(token._id, {
+			role: 'APP',
+		});
+
+		await Model.App.setPolicyPropertiesList(body.id, appPolicyPropertiesList);
 	}
 
 	/**

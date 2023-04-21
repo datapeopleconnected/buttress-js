@@ -13,7 +13,6 @@ require('sugar-inflections');
 const hash = require('object-hash');
 const Config = require('node-env-obj')();
 const NRP = require('node-redis-pubsub');
-const ObjectId = require('mongodb').ObjectId;
 
 const Model = require('../model');
 const Logging = require('../logging');
@@ -34,6 +33,9 @@ class AccessControl {
 
 		this._oneWeekMilliseconds = Sugar.Number.day(7);
 
+		this._coreSchema = [];
+		this._coreSchemaNames = [];
+
 		this.handlePolicyCaching();
 	}
 
@@ -53,39 +55,57 @@ class AccessControl {
 	 */
 	async accessControlPolicyMiddleware(req, res, next) {
 		Logging.logTimer(`accessControlPolicyMiddleware::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		// TODO need to take into consideration appDataSharingId
+
+		const isSystemToken = req.token.type === Model.Token.Constants.Type.SYSTEM;
+		if (isSystemToken) return next();
+
+		const token = req.token;
+		if (!token) {
+			throw new Error(`Can not find a token for the requester`);
+		}
+
 		const user = req.authUser;
 		const lambda = req.authLambda;
+		const appId = token._app.toString();
 		const requestVerb = req.method || req.originalMethod;
-		let appId = null;
 		let lambdaAPICall = false;
 		let requestedURL = req.originalUrl || req.url;
 		requestedURL = requestedURL.split('?').shift();
 
 		if (!user && !lambda) return next();
-		if (user) {
-			appId = user._appId;
-		}
 		if (lambda && !user && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
 
 		if (lambda) {
 			lambdaAPICall = lambda.trigger.some((t) => req.originalUrl.includes(t.apiEndpoint.url));
-			appId = lambda._appId;
 		}
 		if (lambdaAPICall) return next();
 
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
-		if (!this._schemas[appId]) {
-			const coreModels = Model._getModels();
-			const coreSchema = coreModels.reduce((arr, name) => {
+		if (user && this._coreSchemaNames.some((n) => n === schemaName)) {
+			const userAppToken = Model.Token.findById({
+				_app: {
+					$eq: user._appId,
+				},
+			});
+			if (userAppToken.type !== Model.Token.Constants.Type.SYSTEM) {
+				throw new Error(`Non admin app user can not do any core schema requests`);
+			}
+		}
+
+		if (this._coreSchema.length < 1) {
+			this._coreSchema = Model._getModels().reduce((arr, name) => {
 				name = Sugar.String.camelize(name);
 				arr.push(Model[name].schemaData);
 				return arr;
 			}, []);
+			this._coreSchemaNames = this._coreSchema.map((c) => Sugar.String.singularize(c.name));
+		}
+
+		if (!this._schemas[appId]) {
 			const appSchema = Schema.decode(req.authApp.__schema).filter((s) => s.type === 'collection');
-			this._schemas[appId] = appSchema.concat(coreSchema);
+			this._schemas[appId] = appSchema.concat(this._coreSchema);
 			this._schemaNames[appId] = this._schemas[appId].map((s) => s.name);
 		}
 
@@ -93,9 +113,8 @@ class AccessControl {
 			this._policies[appId] = await this.__loadAppPolicies(appId);
 		}
 
-		const entity = user || lambda;
-		const entityPolicies = await this.__getEntityPolicies(entity, appId);
-		const policyOutcome = await this.__getPolicyOutcome(entityPolicies, req, schemaName, appId);
+		const tokenPolicies = await this.__getTokenPolicies(token, appId);
+		const policyOutcome = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
 		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
 			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			Logging.logError(policyOutcome.err.message);
@@ -113,7 +132,7 @@ class AccessControl {
 				schemaName: schemaName,
 				path: requestedURL,
 			};
-			await this._queuePolicyLimitDeleteEvent(entityPolicies, user, appId);
+			await this._queuePolicyLimitDeleteEvent(tokenPolicies, token, appId);
 			// TODO: This doesn't need to happen here, move to sock
 			// await this._checkAccessControlDBBasedQueryCondition(req, params);
 			nrp.emit('queuePolicyRoomCloseSocketEvent', params);
@@ -126,9 +145,9 @@ class AccessControl {
 		next();
 	}
 
-	async _getSchemaRoomStructure(userPolicies, req, schemaName, appId) {
+	async _getSchemaRoomStructure(tokenPolicies, req, schemaName, appId) {
 		Logging.logTimer(`_getSchemaRoomStructure::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		const outcome = await this.__getPolicyOutcome(userPolicies, req, schemaName, appId);
+		const outcome = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
 
 		if (outcome.err.statusCode || outcome.err.message) {
 			Logging.logError(`getRoomStructure statusCode:${outcome.err.statusCode} message:${outcome.err.message}`);
@@ -182,11 +201,11 @@ class AccessControl {
 		}
 
 		const rooms = {};
-		const userPolicies = await this.__getEntityPolicies(user, appId);
+		const tokenPolicies = await this.__getTokenPolicies(user, appId);
 		for await (const schema of this._schemas[appId]) {
 			req.body = {};
 			req.accessControlQuery = {};
-			const {roomId, structure} = await this._getSchemaRoomStructure(userPolicies, req, schema.name, appId);
+			const {roomId, structure} = await this._getSchemaRoomStructure(tokenPolicies, req, schema.name, appId);
 			if (!roomId) continue;
 
 			if (!rooms[roomId]) {
@@ -228,13 +247,13 @@ class AccessControl {
 
 	/**
 	 * compute policies outcome
-	 * @param {Array} entityPolicies
+	 * @param {Array} tokenPolicies
 	 * @param {Object} req
 	 * @param {String} schemaName
 	 * @param {String} appId
 	 * @return {Object}
 	 */
-	async __getPolicyOutcome(entityPolicies, req, schemaName, appId = null) {
+	async __getPolicyOutcome(tokenPolicies, req, schemaName, appId = null) {
 		Logging.logTimer(`__getPolicyOutcome::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		const outcome = {
 			res: {},
@@ -243,19 +262,29 @@ class AccessControl {
 
 		appId = (!appId && req.authApp && req.authApp._id) ? req.authApp._id : appId;
 
-		// TODO: better way to figure out the requested schema
+		// TODO: better way to figure out the request verb
 		const requestVerb = req.method || req.originalMethod;
+		const isCoreSchema = this._coreSchemaNames.some((n) => n === schemaName);
 
-		entityPolicies = entityPolicies.sort((a, b) => a.priority - b.priority);
-		if (entityPolicies.length < 1) {
+		tokenPolicies = tokenPolicies.sort((a, b) => a.priority - b.priority);
+		if (tokenPolicies.length < 1) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
 			outcome.err.message = 'Request does not have any policy associated to it';
 			return outcome;
 		}
 
-		const policiesConfig = entityPolicies.reduce((arr, policy) => {
-			const config = policy.config.slice().reverse().find((c) => c.endpoints.includes(requestVerb) || c.endpoints.includes('ALL'));
+		const policiesConfig = tokenPolicies.reduce((arr, policy) => {
+			const config = policy.config.slice().reverse().find((c) => {
+				return (c.endpoints.includes(requestVerb) || c.endpoints.includes('%ALL%')) &&
+					c.query.some((q) => {
+						if (isCoreSchema) {
+							return q.schema.includes(schemaName) || q.schema.includes('%ALL%') || q.schema.includes('%CORE_SCHEMA%');
+						}
+						return q.schema.includes(schemaName) || q.schema.includes('%ALL%') || q.schema.includes('%APP_SCHEMA%');
+					});
+			});
+
 			if (config) {
 				arr.push({
 					name: policy.name,
@@ -276,13 +305,34 @@ class AccessControl {
 
 		let schemaBasePolicyConfig = policiesConfig.reduce((obj, policy) => {
 			const conditionSchemaIdx = policy.config.conditions.findIndex((cond) => {
-				return cond.schema.includes(schemaName) || cond.schema.includes('ALL');
+				const cs = cond.schema;
+				if (isCoreSchema) {
+					if (cs.includes('%ALL%') || cs.includes('%CORE_SCHEMA%') || cs.includes(schemaName)) return true;
+				} else {
+					if (cs.includes('%ALL%') || cs.includes('%APP_SCHEMA%') || cs.includes(schemaName)) return true;
+				}
+
+				return false;
 			});
 			const querySchemaIdx = policy.config.query.findIndex((q) => {
-				return q.schema.includes(schemaName) || q.schema.includes('ALL');
+				const qs = q.schema;
+				if (isCoreSchema) {
+					if (qs.includes('%ALL%') || qs.includes('%CORE_SCHEMA%') || qs.includes(schemaName)) return true;
+				} else {
+					if (qs.includes('%ALL%') || qs.includes('%APP_SCHEMA%') || qs.includes(schemaName)) return true;
+				}
+
+				return false;
 			});
 			const projectionSchemaIdx = policy.config.projection.findIndex((project) => {
-				return project.schema.includes(schemaName) || project.schema.includes('ALL');
+				const ps = project.schema;
+				if (isCoreSchema) {
+					if (ps.includes('%ALL%') || ps.includes('%CORE_SCHEMA%') || ps.includes(schemaName)) return true;
+				} else {
+					if (ps.includes('%ALL%') || ps.includes('%APP_SCHEMA%') || ps.includes(schemaName)) return true;
+				}
+
+				return false;
 			});
 
 			if (conditionSchemaIdx !== -1 || querySchemaIdx !== -1 || projectionSchemaIdx !== -1) {
@@ -308,7 +358,7 @@ class AccessControl {
 				if (condition) {
 					obj[policy.name].conditions.push(condition);
 				}
-				if (query && query.access && query.access === 'FULL_ACCESS') {
+				if (query && query.access && query.access === '%FULL_ACCESS%') {
 					query = {};
 				}
 				if (query) {
@@ -389,7 +439,7 @@ class AccessControl {
 		if (!policyQuery) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-query-permission-error`;
-			outcome.err.message = 'Policy filter Can not access the queried data';
+			outcome.err.message = 'Policy query Can not access the queried data';
 			return outcome;
 		}
 
@@ -400,8 +450,8 @@ class AccessControl {
 
 	async __loadAppPolicies(appId) {
 		const policies = [];
-		const rxsPolicies = Model.Policy.find({
-			_appId: new ObjectId(appId),
+		const rxsPolicies = await Model.Policy.find({
+			_appId: Model.Policy.createId(appId),
 		});
 		for await (const policy of rxsPolicies) {
 			policies.push(policy);
@@ -410,8 +460,8 @@ class AccessControl {
 		return policies;
 	}
 
-	async __getEntityPolicies(entity, appId) {
-		return await AccessControlPolicyMatch.__getEntityPolicies(this._policies[appId], entity);
+	async __getTokenPolicies(token, appId) {
+		return await AccessControlPolicyMatch.__getTokenPolicies(this._policies[appId], token);
 	}
 
 	async _checkAccessControlDBBasedQueryCondition(req, params) {
@@ -428,7 +478,7 @@ class AccessControl {
 		});
 	}
 
-	_queuePolicyLimitDeleteEvent(policies, user, appId) {
+	_queuePolicyLimitDeleteEvent(policies, userToken, appId) {
 		const limitedPolicies = policies.filter((p) => p.limit && Sugar.Date.isValid(p.limit));
 		if (limitedPolicies.length < 1) return;
 
@@ -439,7 +489,7 @@ class AccessControl {
 
 			const policyIdx = this._queuedLimitedPolicy.push(p.name);
 			setTimeout(async () => {
-				await this.__removeUserPropertiesPolicySelection(user, p);
+				await this.__removeUserPropertiesPolicySelection(userToken, p);
 				await Model.Policy.rm(p);
 
 				nrp.emit('app-policy:bust-cache', {
@@ -447,7 +497,7 @@ class AccessControl {
 				});
 
 				nrp.emit('worker:socket:updateUserSocketRooms', {
-					userId: user._id,
+					userId: Model.User.create(userToken._user),
 					appId,
 				});
 
@@ -456,14 +506,14 @@ class AccessControl {
 		});
 	}
 
-	async __removeUserPropertiesPolicySelection(user, policy, appId) {
-		const limitedPolicySelectionKeys = Object.keys(policy.selection);
-		const userPolicyProps = user.policyProperties;
-		limitedPolicySelectionKeys.forEach((key) => {
-			delete userPolicyProps[key];
+	async __removeUserPropertiesPolicySelection(userToken, policy) {
+		const policySelectionKeys = Object.keys(policy.selection);
+		const tokenPolicyProps = userToken.policyProperties;
+		policySelectionKeys.forEach((key) => {
+			delete tokenPolicyProps[key];
 		});
 
-		await Model.User.setPolicyPropertiesById(user._id, userPolicyProps);
+		await Model.Token.setPolicyPropertiesById(userToken._id, tokenPolicyProps);
 	}
 
 	__getInnerObjectValue(originalObj) {

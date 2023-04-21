@@ -206,12 +206,6 @@ class LambdaSchemaModel extends SchemaModel {
 						},
 					},
 				},
-				policyProperties: {
-					__type: 'object',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
 				metadata: {
 					__type: 'array',
 					__allowUpdate: true,
@@ -273,7 +267,6 @@ class LambdaSchemaModel extends SchemaModel {
 			},
 
 			trigger: (body.trigger) ? body.trigger : [],
-			policyProperties: (body.policyProperties) ? body.policyProperties : null,
 			metadata: (body.metadata) ? body.metadata : [],
 		};
 
@@ -291,6 +284,7 @@ class LambdaSchemaModel extends SchemaModel {
 
 		await Model.Deployment.add(deployment);
 
+		auth.type = Model.Token.Constants.Type.LAMBDA;
 		await Model.Token.add(auth, {
 			_appId: Model.authApp._id,
 			_lambdaId: lambda._id,
@@ -317,15 +311,11 @@ class LambdaSchemaModel extends SchemaModel {
 		const entryFile = lambda?.git?.entryFile;
 
 		try {
-			if (lambda.policyProperties) {
-				const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, lambda.policyProperties);
-				if (!policyCheck.passed) {
-					Logging.logError(`[${this.name}] ${policyCheck.errMessage}`);
-					throw new Helpers.Errors.RequestError(400, `invalid_field`);
-				}
+			const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, auth.policyProperties);
+			if (!policyCheck.passed) {
+				Logging.logError(`[${this.name}] ${policyCheck.errMessage}`);
+				throw new Helpers.Errors.RequestError(400, `invalid_field`);
 			}
-
-			auth.type = Model.Token.Constants.Type.LAMBDA;
 
 			const apiTrigger = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
 			let lambdaExists = null;
@@ -401,67 +391,6 @@ class LambdaSchemaModel extends SchemaModel {
 
 		return lambdaLastDeployment;
 	}
-
-	/**
-	 * @param {String} lambdaId - id of the lambda
-	 * @param {Object} policyProperties - Policy properties
-	 * @return {Promise} - resolves to an array of Apps
-	 */
-	async setPolicyPropertiesById(lambdaId, policyProperties) {
-		if (policyProperties.query) {
-			delete policyProperties.query;
-		}
-
-		return super.update({
-			'_id': this.createId(lambdaId),
-		}, {$set: {'policyProperties': policyProperties}});
-	}
-
-	/**
-	 * @param {String} lambdaId - AppId of the lambda
-	 * @param {String} appId - id of the app
-	 * @param {Object} policyProperties - Policy properties
-	 * @param {Object} lambda - Policy properties
-	 * @return {Promise} - resolves to an array of Apps
-	 */
-	updatePolicyPropertiesById(lambdaId, appId, policyProperties, lambda) {
-		if (policyProperties.query) {
-			delete policyProperties.query;
-		}
-
-		const lambdaPolicy = lambda.policyProperties;
-		const policy = Object.keys(policyProperties).reduce((obj, key) => {
-			obj[key] = policyProperties[key];
-			return obj;
-		}, []);
-
-		return super.update({
-			'_id': this.createId(lambdaId),
-		}, {
-			$set: {
-				'policyProperties': {
-					...lambdaPolicy,
-					...policy,
-				},
-			},
-		});
-	}
-
-	/**
-	 * @param {String} lambdaId - AppId of the lambda
-	 * @param {String} appId - id of the app
-	 * @return {Promise}
-	 */
-	clearPolicyPropertiesById(lambdaId, appId) {
-		return super.update({
-			'_id': this.createId(lambdaId),
-		}, {
-			$set: {
-				'policyProperties': {},
-			},
-		});
-	}
-
 
 	/**
 	 * @param {ObjectId} appId - id of the App that owns the user

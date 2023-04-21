@@ -1,3 +1,4 @@
+const ObjectId = require('mongodb').ObjectId;
 const accessControlHelpers = require('./helpers');
 const shortId = require('../helpers').shortId;
 const Model = require('../model');
@@ -27,14 +28,14 @@ class Filter {
 		};
 	}
 
-	async addAccessControlPolicyQuery(req, userPolicies) {
+	async addAccessControlPolicyQuery(req, tokenPolicies) {
 		this._globalQueryEnv.authUserId = req.authUser?._id;
 
-		await Object.keys(userPolicies).reduce(async (prev, key) => {
+		await Object.keys(tokenPolicies).reduce(async (prev, key) => {
 			await prev;
-			await userPolicies[key].query.reduce(async (prev, q) => {
+			await tokenPolicies[key].query.reduce(async (prev, q) => {
 				await prev;
-				await this.addAccessControlPolicyRuleQuery(req, q, 'accessControlQuery', userPolicies[key].env);
+				await this.addAccessControlPolicyRuleQuery(req, q, 'accessControlQuery', tokenPolicies[key].env);
 			}, Promise.resolve());
 		}, Promise.resolve());
 	}
@@ -76,7 +77,7 @@ class Filter {
 				return;
 			}
 
-			if (req.authApp && req.authApp._id) {
+			if (req.authApp && req.authApp._id && Object.keys(env).length > 0) {
 				await this.__substituteEnvVariables(translatedQuery[key], env, req.authApp._id);
 			}
 
@@ -292,7 +293,7 @@ class Filter {
 		if (obj === null) return null;
 
 		for await (const key of Object.keys(obj)) {
-			if (typeof obj[key] === 'object' && !Array.isArray(obj[key])) {
+			if (typeof obj[key] === 'object' && !Array.isArray(obj[key]) && !ObjectId.isValid(obj[key])) {
 				await this.__convertPrefixToQueryPrefix(obj[key], key, newObj);
 				continue;
 			}

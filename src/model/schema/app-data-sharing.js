@@ -98,12 +98,6 @@ class AppDataSharingSchemaModel extends SchemaModel {
 						__allowUpdate: true,
 					},
 				},
-				policyProperties: {
-					__type: 'object',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
 				_appId: {
 					__type: 'id',
 					__required: false,
@@ -140,13 +134,12 @@ class AppDataSharingSchemaModel extends SchemaModel {
 				remoteApp: null,
 			},
 
-			policyProperties: (body.policyProperties) ? body.policyProperties : {},
-
 			_appId: null,
 			_tokenId: null,
 		};
 
 		const rxsToken = await Model.Token.add({
+			policyProperties: body.auth.policyProperties,
 			type: Model.Token.Constants.Type.DATA_SHARING,
 			permissions: [{route: '*', permission: '*'}],
 		}, {

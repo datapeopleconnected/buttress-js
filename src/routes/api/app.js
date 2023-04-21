@@ -163,25 +163,17 @@ class AddApp extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Unhandled error.`));
 			}
 
-			if (!req.body.permissions || req.body.permissions.length === 0) {
-				switch (req.body.type) {
-				default:
-					req.body.permissions = JSON.stringify([]);
-					break;
-				case Model.Token.Constants.Type.SYSTEM: {
-					const permissions = [
-						{route: '*', permission: '*'},
-					];
-					req.body.permissions = JSON.stringify(permissions);
-				} break;
-				case Model.Token.Constants.Type.APP: {
-					const permissions = [
-						{route: '*', permission: '*'},
-					];
+			const appType = req.body.type;
+			if (!req.body.policyPropertiesList && appType !== Model.Token.Constants.Type.SYSTEM) {
+				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
 
-					req.body.permissions = JSON.stringify(permissions);
-				} break;
-				}
+			if (!req.body.permissions || req.body.permissions.length === 0) {
+				const permissions = [
+					{route: '*', permission: '*'},
+				];
+				req.body.permissions = JSON.stringify(permissions);
 			}
 
 			try {

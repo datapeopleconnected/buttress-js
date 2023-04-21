@@ -185,7 +185,8 @@ class AddLambda extends Route {
 			}
 
 			if (!req.body.auth.permissions ||
-					!req.body.auth.domains) {
+					!req.body.auth.domains ||
+					!req.body.auth.policyProperties) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
@@ -462,11 +463,19 @@ class SetLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 		}
 
-		return Promise.resolve(true);
+		const lambdaToken = await Model.Token.findOne({
+			_lambda: Model.Lambda.createId(req.params.id),
+		});
+		if (!lambdaToken) {
+			this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `can_not_find_lambda_token`));
+		}
+
+		return Promise.resolve(lambdaToken);
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Lambda.setPolicyPropertiesById(req.params.id, req.body);
+		await Model.Token.setPolicyPropertiesById(validate._id, req.body);
 		return true;
 	}
 }
@@ -497,8 +506,8 @@ class UpdateLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const lambda = await Model.Lambda.findById(req.params.id);
-		if (!lambda) {
+		const exists = await Model.Lambda.exists(req.params.id);
+		if (!exists) {
 			this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
@@ -509,13 +518,21 @@ class UpdateLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 		}
 
+		const lambdaToken = await Model.Token.findOne({
+			_lambda: Model.Lambda.createId(req.params.id),
+		});
+		if (!lambdaToken) {
+			this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `can_not_find_lambda_token`));
+		}
+
 		return Promise.resolve({
-			lambda,
+			token: lambdaToken,
 		});
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Lambda.updatePolicyPropertiesById(req.params.id, req.authApp._id, req.body, validate.lambda);
+		await Model.Token.updatePolicyPropertiesById(validate.token, req.body);
 		return true;
 	}
 }
@@ -540,19 +557,27 @@ class ClearLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const lambda = await Model.Lambda.findById(req.params.id);
-		if (!lambda) {
+		const exists = await Model.Lambda.exists(req.params.id);
+		if (!exists) {
 			this.log('ERROR: Invalid lambda ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
+		const lambdaToken = await Model.Token.findOne({
+			_lambda: Model.Lambda.createId(req.params.id),
+		});
+		if (!lambdaToken) {
+			this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `can_not_find_lambda_token`));
+		}
+
 		return Promise.resolve({
-			lambda,
+			token: lambdaToken,
 		});
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Lambda.clearPolicyPropertiesById(req.params.id, req.authApp._id, validate.lambda);
+		await Model.Token.clearPolicyPropertiesById(validate.token);
 		return true;
 	}
 }
