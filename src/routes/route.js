@@ -157,12 +157,16 @@ class Route {
 				result.pipe(broadcastStream);
 			}
 
+			// await Plugins.do_action('route-add-many:_exec', this.schema, results);
+
 			await this._respond(req, res, resStream);
 
 			await this._logActivity(req, res);
 
 			await this._boardcastData(req, res, broadcastStream);
 		} else {
+			// await Plugins.do_action('route-add-many:_exec', this.schema, results);
+
 			await this._respond(req, res, result);
 
 			await this._logActivity(req, res);

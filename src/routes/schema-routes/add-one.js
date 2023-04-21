@@ -2,6 +2,7 @@ const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
+const Plugins = require('../../plugins');
 
 /**
  * @class AddOne
@@ -57,7 +58,8 @@ module.exports = class AddOne extends Route {
 		});
 	}
 
-	_exec(req, res, validate) {
-		return this.model.add(req.body);
+	async _exec(req, res, validate) {
+		const result = await this.model.add(req.body);
+		return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, this.schema.data);
 	}
 };
