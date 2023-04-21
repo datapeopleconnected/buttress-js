@@ -66,7 +66,7 @@ class AccessControl {
 
 		const user = req.authUser;
 		const lambda = req.authLambda;
-		const appId = token._app.toString();
+		const appId = token._appId.toString();
 		const requestVerb = req.method || req.originalMethod;
 		let lambdaAPICall = false;
 		let requestedURL = req.originalUrl || req.url;
