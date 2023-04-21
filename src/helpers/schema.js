@@ -320,14 +320,6 @@ const __prepareSchemaResult = (result, token = false, projection = false) => {
 			chunk.id = chunk._id;
 			delete chunk._id;
 		}
-		if (chunk._appId) {
-			chunk.appId = chunk._appId;
-			delete chunk._appId;
-		}
-		if (chunk._userId) {
-			chunk.userId = chunk._userId;
-			delete chunk._userId;
-		}
 
 		if (typeof chunk === 'object') {
 			if (Datastore.getInstance('core').ID.isValid(chunk)) {
