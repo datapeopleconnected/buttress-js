@@ -72,9 +72,7 @@ class AccessControl {
 		let requestedURL = req.originalUrl || req.url;
 		requestedURL = requestedURL.split('?').shift();
 
-		if (!user && !lambda) return next();
 		if (lambda && !user && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
-
 		if (lambda) {
 			lambdaAPICall = lambda.trigger.some((t) => req.originalUrl.includes(t.apiEndpoint.url));
 		}
