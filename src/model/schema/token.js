@@ -194,6 +194,12 @@ class TokenSchemaModel extends SchemaModel {
 		});
 	}
 
+	findByValue(value) {
+		return this.findOne({
+			value: value,
+		});
+	}
+
 	/**
 	 * @param {String} tokenId - id of the token
 	 * @param {Object} policyProperties - Policy properties
