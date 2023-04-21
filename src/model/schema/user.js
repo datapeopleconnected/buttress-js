@@ -218,7 +218,7 @@ class UserSchemaModel extends SchemaModel {
 		body.auth.forEach((item) => {
 			userBody.auth.push({
 				app: item.app,
-				appId: null,
+				appId: (item.appId) ? item.appId : null,
 				username: item.username,
 				password: item.password,
 				profileUrl: item.profileUrl,
@@ -318,11 +318,11 @@ class UserSchemaModel extends SchemaModel {
 
 	/**
 	 * @param {ObjectId} appId - id of the App that owns the user
-	 * @param {int} tokenAuthLevel - level of the current token in use.
+	 * @param {int} token - request token
 	 * @return {Promise} - resolves to an array of Apps
 	 */
-	findAll(appId, tokenAuthLevel) {
-		if (tokenAuthLevel && tokenAuthLevel === Model.Token.Constants.AuthLevel.SUPER) {
+	findAll(appId, token) {
+		if (token && token.type === Model.Token.Constants.Type.SYSTEM) {
 			return super.find({});
 		}
 

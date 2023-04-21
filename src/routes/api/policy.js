@@ -20,6 +20,7 @@ const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 const ObjectId = require('mongodb').ObjectId;
 
+const AccessControl = require('../../access-control');
 const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
@@ -35,7 +36,6 @@ class GetPolicy extends Route {
 	constructor() {
 		super('policy/:id', 'GET POLICY');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -72,7 +72,6 @@ class GetPolicyList extends Route {
 	constructor() {
 		super('policy', 'GET POLICY LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -98,11 +97,7 @@ class GetPolicyList extends Route {
 			return Model.Policy.findByIds(ids);
 		}
 
-		if (req.token.authLevel < Route.Constants.Auth.SUPER) {
-			return Model.Policy.find({_appId: req.authApp._id});
-		}
-
-		return Model.Policy.findAll(req.authApp._id, req.token.authLevel);
+		return Model.Policy.findAll(req.authApp._id, req.token);
 	}
 }
 routes.push(GetPolicyList);
@@ -114,7 +109,6 @@ class SearchPolicyList extends Route {
 	constructor() {
 		super('policy', 'SEARCH POLICY LIST');
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -155,28 +149,54 @@ class AddPolicy extends Route {
 	constructor() {
 		super('policy', 'ADD POLICY');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
 	async _validate(req, res, token) {
-		const app = req.authApp;
-		if (!app ||
-			!req.body.selection ||
-			!req.body.name ||
-			!req.body.config ||
-			req.body.config.length < 1) {
-			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
-		}
+		try {
+			const accessControlReq = {...req};
+			await new Promise((resolve, reject) => {
+				accessControlReq.method = 'GET',
+				accessControlReq.originalUrl = accessControlReq.originalUrl.replace('policy', 'app');
+				accessControlReq.body = {},
 
-		const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body.selection);
-		if (!policyCheck.passed) {
-			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
-		}
+				AccessControl.accessControlPolicyMiddleware(accessControlReq, res, resolve);
+			});
 
-		return Promise.resolve(true);
+			const app = await Model.App.findOne(accessControlReq.body.query);
+			if (!app || app._id.toString() !== req.authApp._id.toString()) {
+				return Promise.reject(new Helpers.Errors.RequestError(400, `Could not find an app with id ${req.authApp._id}`));
+			}
+
+			if (!req.body.selection ||
+				!req.body.name ||
+				!req.body.config ||
+				req.body.config.length < 1) {
+				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+
+			const policyExist = await Model.Policy.findOne({
+				name: {
+					$eq: req.body.name,
+				},
+				_appId: Model.App.createId(req.authApp._id),
+			});
+			if (policyExist) {
+				this.log(`[${this.name}] Policy with name ${req.body.name} already exists`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `policy_with_name_already_exists`));
+			}
+
+			const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body.selection);
+			if (!policyCheck.passed) {
+				this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+			}
+
+			return Promise.resolve(true);
+		} catch (err) {
+			return Promise.reject(err);
+		}
 	}
 
 	_exec(req, res, validate) {
@@ -198,7 +218,6 @@ class UpdatePolicy extends Route {
 	constructor() {
 		super('policy/:id', 'UPDATE POLICY');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -243,7 +262,6 @@ class BulkUpdatePolicy extends Route {
 	constructor() {
 		super('policy/bulk/update', 'UPDATE POLICY');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -290,7 +308,6 @@ class SyncPolicies extends Route {
 	constructor() {
 		super('policy/sync', 'SYNC POLICIES');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -342,7 +359,6 @@ class PolicyCount extends Route {
 	constructor() {
 		super(`policy/count`, `COUNT POLICIES`);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT POLICIES`;
@@ -390,7 +406,6 @@ class DeleteTransientPolicy extends Route {
 	constructor() {
 		super('policy/deleteTransientPolicy', 'DELETE POLICY BY NAME');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -429,7 +444,6 @@ class DeletePolicy extends Route {
 	constructor() {
 		super('policy/:id', 'DELETE POLICY');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 		this._policy = false;
 	}
@@ -466,12 +480,11 @@ class DeleteAppPolicies extends Route {
 	constructor() {
 		super('policy', 'DELETE ALL APP POLICIES');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
 	async _validate(req) {
-		const rxsPolicies = await Model.Policy.findAll(req.authApp._id, req.token.authLevel);
+		const rxsPolicies = await Model.Policy.findAll(req.authApp._id, req.token);
 		const policies = [];
 		for await (const policy of rxsPolicies) {
 			policies.push(policy);

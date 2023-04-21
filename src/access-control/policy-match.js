@@ -30,7 +30,7 @@ class PolicyMatch {
 			const [selectionCriterionKey] = Object.keys(selection[key]);
 			const [rhs] = Object.values(selection[key]);
 			const lhs = policyProperties[key];
-			match = AccessControlHelpers.evaluateOperation(lhs, rhs, selectionCriterionKey);
+			match = AccessControlHelpers.evaluateOperation(lhs.toUpperCase(), rhs.toUpperCase(), selectionCriterionKey);
 			arr.push(match);
 
 			return arr;

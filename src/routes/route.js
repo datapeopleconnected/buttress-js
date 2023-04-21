@@ -65,11 +65,12 @@ let _io = null;
 *          }}}
  */
 const Constants = {
-	Auth: {
-		NONE: 0,
-		USER: 1,
-		ADMIN: 2,
-		SUPER: 3,
+	Type: {
+		USER: 'user',
+		DATASHARING: 'dataSharing',
+		LAMBDA: 'lambda',
+		APP: 'app',
+		SYSTEM: 'system',
 	},
 	Permissions: {
 		NONE: '',
@@ -98,7 +99,7 @@ const Constants = {
 class Route {
 	constructor(path, name) {
 		this.verb = Constants.Verbs.GET;
-		this.auth = Constants.Auth.SUPER;
+		this.Type = Constants.Type.SYSTEM;
 		this.permissions = Constants.Permissions.READ;
 
 		this.activityBroadcast = false;
@@ -437,8 +438,8 @@ class Route {
 				return reject(new Helpers.Errors.RequestError(401, 'invalid_token'));
 			}
 
-			if (req.token.authLevel < this.auth) {
-				this.log(`EAUTH: INSUFFICIENT AUTHORITY ${req.token.authLevel} < ${this.auth}`, Logging.Constants.LogLevel.ERR, req.id);
+			if (req.token.type !== this.authType) {
+				this.log(`EAUTH: INSUFFICIENT AUTHORITY ${req.token.type} is not equal to ${this.authType}`, Logging.Constants.LogLevel.ERR, req.id);
 				Logging.logTimer('_authenticate:end-insufficient-authority', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 				return reject(new Helpers.Errors.RequestError(401, 'insufficient_authority'));
 			}
@@ -517,7 +518,8 @@ class Route {
 		const matches = routeSpec.match(wildcard);
 		if (matches) {
 			if (this.path.match(new RegExp(`^${matches[1]}`)) &&
-				req.token.authLevel >= Constants.Auth.ADMIN) {
+				// TODO probably need to change the last line in the if condition
+				(req.token.type === Constants.Type.APP ||req.token.type === Constants.Type.SYSTEM)) {
 				return true;
 			}
 		}

@@ -10,7 +10,6 @@ module.exports = class DeleteOne extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}/:id`, `DELETE ${schema.name}`);
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.DELETE;
 
 		this.activityDescription = `DELETE ${schema.name}`;

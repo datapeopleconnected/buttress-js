@@ -10,7 +10,6 @@ module.exports = class SearchCount extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}/count`, `COUNT ${schema.name}`);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.SERACH;
 
 		this.activityDescription = `COUNT ${schema.name}`;

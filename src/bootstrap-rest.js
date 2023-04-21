@@ -202,8 +202,7 @@ class BootstrapRest {
 
 		const res = await Model.App.add({
 			name: `${Config.app.title} TEST`,
-			type: Model.App.Constants.Type.SERVER,
-			authLevel: Model.Token.Constants.AuthLevel.SUPER,
+			type: Model.Token.Constants.Type.SYSTEM,
 			permissions: [{route: '*', permission: '*'}],
 			apiPath: 'bjs',
 			domain: '',

@@ -139,7 +139,7 @@ class PolicySchemaModel extends SchemaModel {
 			limit: (body.policy.limit) ? Sugar.Date.create(body.policy.limit) : null,
 		};
 
-		let appId = Model?.authApp?._id;
+		let appId = req.authApp._id;
 		if (!appId) {
 			const token = await this._getToken(req);
 			if (token && token._appId) {
@@ -160,6 +160,19 @@ class PolicySchemaModel extends SchemaModel {
 		const policy = await Helpers.streamFirst(rxsPolicy);
 
 		return policy;
+	}
+
+	/**
+	 * @param {ObjectId} appId - id of the App that owns the user
+	 * @param {int} token - request token
+	 * @return {Promise} - resolves to an array of Apps
+	 */
+	findAll(appId, token) {
+		if (token && token.type === Model.Token.Constants.Type.SYSTEM) {
+			return super.find({});
+		}
+
+		return super.find({_appId: appId});
 	}
 }
 

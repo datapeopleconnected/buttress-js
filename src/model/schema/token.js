@@ -25,20 +25,13 @@ const SchemaModel = require('../schemaModel');
 /**
  * Constants
 */
-const type = ['app', 'user', 'dataSharing', 'lambda'];
+const type = ['system', 'app', 'user', 'dataSharing', 'lambda'];
 const Type = {
-	APP: type[0],
-	USER: type[1],
-	DATA_SHARING: type[2],
-	LAMBDA: type[3],
-};
-
-const authLevel = [0, 1, 2, 3];
-const AuthLevel = {
-	NONE: 0,
-	USER: 1,
-	ADMIN: 2,
-	SUPER: 3,
+	SYSTEM: type[0],
+	APP: type[1],
+	USER: type[2],
+	DATA_SHARING: type[3],
+	LAMBDA: type[4],
 };
 
 class TokenSchemaModel extends SchemaModel {
@@ -50,7 +43,6 @@ class TokenSchemaModel extends SchemaModel {
 	static get Constants() {
 		return {
 			Type: Type,
-			AuthLevel: AuthLevel,
 		};
 	}
 	get Constants() {
@@ -79,12 +71,6 @@ class TokenSchemaModel extends SchemaModel {
 				domains: {
 					__type: 'array',
 					__required: true,
-					__allowUpdate: true,
-				},
-				authLevel: {
-					__type: 'number',
-					__default: 1,
-					__enum: authLevel,
 					__allowUpdate: true,
 				},
 				permissions: {

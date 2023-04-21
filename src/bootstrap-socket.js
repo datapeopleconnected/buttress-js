@@ -230,7 +230,7 @@ class BootstrapSocket {
 
 			Logging.logDebug(`Fetching token with value: ${rawToken}`);
 			const token = await Model.Token.findOne({value: rawToken});
-			if (!token || token.authLevel < 3) {
+			if (!token || token.type !== Model.Token.Constants.Type.SYSTEM) {
 				Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
 				return next('invalid-token');
 			}
@@ -870,7 +870,7 @@ class BootstrapSocket {
 		const token = await Model.Token.findOne({_id: app._tokenId});
 		if (!token) return Logging.logWarn(`No Token found for ${app.name}`);
 
-		const isSuper = token.authLevel > 2;
+		const isSuper = token.type === Model.Token.Constants.Type.SYSTEM;
 
 		this.__namespace[app.apiPath] = {
 			emitter: this.emitter.of(`/${app.apiPath}`),

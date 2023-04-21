@@ -10,7 +10,6 @@ module.exports = class SearchList extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}`, `SEARCH ${schema.name} LIST`);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.LIST;
 
 		this.activityDescription = `SEARCH ${schema.name} LIST`;

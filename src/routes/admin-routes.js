@@ -42,8 +42,7 @@ class AdminRoutes {
 	async initAdminRoutes(app) {
 		app.get('/api/v1/check/admin', async (req, res) => {
 			const superToken = await Model.Token.findOne({
-				authLevel: 3,
-				type: 'app',
+				type: Model.Token.Constants.Type.SYSTEM,
 			});
 			if (!superToken) {
 				Logging.logError('Buttress admin check can not find super token');
@@ -69,7 +68,7 @@ class AdminRoutes {
 			const tokenValue = req.params.superToken;
 			const superToken = await Model.Token.findOne({
 				value: tokenValue,
-				type: 'app',
+				type: 'system',
 			});
 
 			if (!superToken) {
@@ -77,18 +76,9 @@ class AdminRoutes {
 				return res.status(404).send({message: 'Please enter a valid admin token to activate your admin app'});
 			}
 
-			if (superToken.authLevel < 3) {
-				Logging.logError('Non-admin token used to activate buttress admin app');
-				return res.status(404).send({message: 'Please use the admin token to activate your admin app'});
-			}
-
 			const superApp = await Model.App.findOne({
 				_tokenId: Model.Token.createId(superToken._id),
 			});
-			if (!superApp || superApp.apiPath !== 'bjs') {
-				Logging.logError('Buttress admin activate can not find super app');
-				return res.status(404).send({message: 'admin_app_not_found'});
-			}
 
 			await this._updateAppPolicySelectorList(superApp);
 
@@ -105,7 +95,7 @@ class AdminRoutes {
 			if (!adminToken) {
 				return res.status(401).send({message: 'invalid_token'});
 			}
-			if (adminToken.authLevel < 3) {
+			if (adminToken.type === Model.Model.Constants.Type.SYSTEM) {
 				return res.status(401).send({message: 'unauthorised_token'});
 			}
 			if (!lambdaToInstall || !Array.isArray(lambdaToInstall)) {
@@ -162,8 +152,7 @@ class AdminRoutes {
 
 		if (isAdminRouteCall) {
 			adminToken = await Model.Token.findOne({
-				type: 'app',
-				authLevel: 3,
+				type: Model.Token.Constants.Type.SYSTEM,
 			});
 		}
 		if (adminToken) {
@@ -246,7 +235,6 @@ class AdminRoutes {
 	 */
 	async _createAdminLambda(lambdas) {
 		const adminLambdaAuth = {
-			authLevel: 3,
 			type: 'lambda',
 			domains: [Config.app.host],
 			permissions: [
@@ -256,8 +244,7 @@ class AdminRoutes {
 
 		try {
 			const adminToken = await Model.Token.findOne({
-				authLevel: 3,
-				type: 'app',
+				type: Model.Token.Constants.Type.SYSTEM,
 			});
 			if (!adminToken) {
 				throw new Error('Cannot find an admin app token');
@@ -288,8 +275,7 @@ class AdminRoutes {
 	 */
 	async _refreshAdminAppToken(token, app) {
 		const rxsNewToken = await Model.Token.add({
-			type: Model.Token.Constants.Type.APP,
-			authLevel: token.authLevel,
+			type: Model.Token.Constants.Type.SYSTEM,
 			permissions: token.permissions,
 		}, {
 			_appId: app._id,

@@ -87,9 +87,9 @@ class ActivitySchemaModel extends SchemaModel {
 					__default: '',
 					__allowUpdate: false,
 				},
-				authLevel: {
-					__type: 'number',
-					__default: 0,
+				authType: {
+					__type: 'string',
+					__default: '',
 					__allowUpdate: false,
 				},
 				permissions: {
@@ -134,7 +134,7 @@ class ActivitySchemaModel extends SchemaModel {
 	 */
 	__parseAddBody(body) {
 		const user = body.req.authUser;
-		const userName = user ? `${user._id}` : 'System';
+		const userName = user ? `${user._id}` : 'App';
 
 		body.activityTitle = body.activityTitle.replace('%USER_NAME%', userName);
 		body.activityDescription = body.activityDescription.replace('%USER_NAME%', userName);
@@ -150,7 +150,7 @@ class ActivitySchemaModel extends SchemaModel {
 			path: body.path,
 			verb: body.verb,
 			permissions: body.permissions,
-			authLevel: body.auth,
+			authType: body.auth,
 			params: body.req.params,
 			query: q,
 			body: Schema.encode(body.req.body), // HACK - Due to schema update results.
@@ -178,10 +178,10 @@ class ActivitySchemaModel extends SchemaModel {
 		return super.add(body);
 	}
 
-	findAll(appId, tokenAuthLevel) {
+	findAll(appId, token) {
 		Logging.log(`getAll: ${appId}`, Logging.Constants.LogLevel.DEBUG);
 
-		if (tokenAuthLevel && tokenAuthLevel === Model.Token.Constants.AuthLevel.SUPER) {
+		if (token && token.type === Model.Token.Constants.Type.SYSTEM) {
 			return super.findAll({});
 		}
 

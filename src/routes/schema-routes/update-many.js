@@ -10,7 +10,6 @@ module.exports = class UpdateMany extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}/bulk/update`, `BULK UPDATE ${schema.name}`);
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityDescription = `BULK UPDATE ${schema.name}`;

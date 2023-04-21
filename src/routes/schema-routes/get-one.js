@@ -10,7 +10,6 @@ module.exports = class GetOne extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}/:id`, `GET ${schema.name}`);
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this.activityDescription = `GET ${schema.name}`;

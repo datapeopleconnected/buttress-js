@@ -66,6 +66,12 @@ class LambdaSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: true,
 				},
+				executable: {
+					__type: 'boolean',
+					__default: true,
+					__required: false,
+					__allowUpdate: true,
+				},
 				deployments: {
 					__type: 'array',
 					__allowUpdate: true,
@@ -151,7 +157,6 @@ class LambdaSchemaModel extends SchemaModel {
 									'PENDING',
 									'RUNNING',
 									'ERROR',
-									'PAUSE',
 								],
 								__required: true,
 								__allowUpdate: true,
@@ -455,6 +460,20 @@ class LambdaSchemaModel extends SchemaModel {
 				'policyProperties': {},
 			},
 		});
+	}
+
+
+	/**
+	 * @param {ObjectId} appId - id of the App that owns the user
+	 * @param {int} token - request token
+	 * @return {Promise} - resolves to an array of Apps
+	 */
+	findAll(appId, token) {
+		if (token && token.type === Model.Token.Constants.Type.SYSTEM) {
+			return super.find({});
+		}
+
+		return super.find({_appId: appId});
 	}
 }
 

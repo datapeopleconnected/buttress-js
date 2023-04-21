@@ -10,7 +10,6 @@ module.exports = class UpdateOne extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}/:id`, `UPDATE ${schema.name}`);
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityDescription = `UPDATE ${schema.name}`;

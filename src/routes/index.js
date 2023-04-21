@@ -425,7 +425,14 @@ class Routes {
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
 
-			const lambda = (req.token._lambdaId) ? await Model.Lambda.findById(req.token._lambdaId) : null;
+			const appDataSharing = (req.token._appDataSharingId) ? await Model.AppDataSharing.findById(req.token._appDataSharingId) : null;
+			req.authAppDataSharing = appDataSharing;
+			Logging.logTimer(
+				`_authenticateToken:got-app-data-sharing-agreement ${(req.authAppDataSharing) ? req.authAppDataSharing._id : appDataSharing}`,
+				req.timer, Logging.Constants.LogLevel.SILLY, req.id,
+			);
+
+			const lambda = (req.token._lambda) ? await Model.Lambda.findById(req.token._lambda) : null;
 			req.authLambda = lambda;
 			Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda._id : lambda}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -720,6 +727,7 @@ class Routes {
 			lambda = await Model.Lambda.findById(endpoint);
 		} else {
 			lambda = await Model.Lambda.findOne({
+				
 				'trigger.apiEndpoint.url': {
 					$eq: endpoint,
 				},
@@ -729,6 +737,12 @@ class Routes {
 		if (!lambda) {
 			res.errCode = 404;
 			res.errMessage = 'lambda_not_found';
+			return res;
+		}
+
+		if (lambda.executable) {
+			res.errCode = 400;
+			res.errMessage = 'lambda_is_not_executable';
 			return res;
 		}
 

@@ -10,7 +10,6 @@ module.exports = class AddMany extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}/bulk/add`, `BULK ADD ${schema.name}`);
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.ADD;
 
 		this.activityDescription = `BULK ADD ${schema.name}`;

@@ -34,7 +34,6 @@ class GetAppList extends Route {
 	constructor() {
 		super('app', 'GET APP LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -43,7 +42,7 @@ class GetAppList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		if (req.token.authLevel < Route.Constants.Auth.SUPER) {
+		if (req.token.type !== Route.Constants.Type.SYSTEM) {
 			return Model.App.find({_id: req.authApp._id});
 		}
 
@@ -59,7 +58,6 @@ class SearchAppList extends Route {
 	constructor() {
 		super('app', 'GET APP LIST');
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 	}
 
@@ -105,7 +103,6 @@ class GetApp extends Route {
 		// Should change to app apiPath instead of ID
 		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this._app = false;
@@ -142,7 +139,6 @@ class AddApp extends Route {
 	constructor() {
 		super('app', 'APP ADD');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.ADD;
 
 		// Fetch model
@@ -168,17 +164,17 @@ class AddApp extends Route {
 			}
 
 			if (!req.body.permissions || req.body.permissions.length === 0) {
-				switch (Number(req.body.authLevel)) {
+				switch (req.body.type) {
 				default:
 					req.body.permissions = JSON.stringify([]);
 					break;
-				case Model.Token.Constants.AuthLevel.SUPER: {
+				case Model.Token.Constants.Type.SYSTEM: {
 					const permissions = [
 						{route: '*', permission: '*'},
 					];
 					req.body.permissions = JSON.stringify(permissions);
 				} break;
-				case Model.Token.Constants.AuthLevel.ADMIN: {
+				case Model.Token.Constants.Type.APP: {
 					const permissions = [
 						{route: '*', permission: '*'},
 					];
@@ -215,14 +211,6 @@ class AddApp extends Route {
 	}
 
 	_exec(req, res, validate) {
-		if (!Number(req.body.authLevel)) {
-			const permissions = [
-				{route: '*', permission: '*'},
-			];
-
-			req.body.permissions = permissions;
-			req.body.authLevel = Model.Token.Constants.AuthLevel.ADMIN;
-		}
 		return new Promise((resolve, reject) => {
 			Model.App.add(req.body)
 				.then((res) => Object.assign(res.app, {token: res.token.value}))
@@ -240,7 +228,6 @@ class DeleteApp extends Route {
 	constructor() {
 		super('app/:id', 'DELETE APP');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.WRITE;
 		this._app = false;
 	}
@@ -277,7 +264,6 @@ class GetAppPermissionList extends Route {
 	constructor() {
 		super('app/:id/permission', 'GET APP PERMISSION LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.LIST;
 
 		this._app = false;
@@ -320,7 +306,6 @@ class AddAppPermission extends Route {
 	constructor() {
 		super('app/:id/permission', 'ADD APP PERMISSION');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.ADD;
 
 		this._app = false;
@@ -359,7 +344,6 @@ class GetAppSchema extends Route {
 	constructor() {
 		super('app/schema', 'GET APP SCHEMA');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this.redactResults = false;
@@ -426,7 +410,6 @@ class UpdateAppSchema extends Route {
 	constructor() {
 		super('app/schema', 'UPDATE APP SCHEMA');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -490,7 +473,6 @@ class GetAppPolicyPropertyList extends Route {
 	constructor() {
 		super('app/policyPropertyList/:apiPath?', 'GET APP POLICY PROPERTY LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -502,7 +484,7 @@ class GetAppPolicyPropertyList extends Route {
 		}
 
 		const apiPath = req.params.apiPath;
-		const isSuper = token.authLevel > 2;
+		const isSuper = token.type === Model.Token.Constants.Type.SYSTEM;
 		if (apiPath && apiPath !== app.apiPath && !isSuper) {
 			this.log('ERROR: Cannot fetch policy properties list for another app', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `cannot_fetch_list_for_another_app`));
@@ -532,7 +514,6 @@ class SetAppPolicyPropertyList extends Route {
 	constructor() {
 		super('app/policyPropertyList', 'SET APP POLICY PROPERTY LIST');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -577,7 +558,6 @@ class UpdateAppPolicyPropertyList extends Route {
 	constructor() {
 		super('app/updatePolicyPropertyList', 'UPDATE APP POLICY PROPERTY LIST');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -630,7 +610,6 @@ class AppCount extends Route {
 	constructor() {
 		super(`app/count`, `COUNT APPS`);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT APPS`;
@@ -675,7 +654,6 @@ class AppUpdateOAuth extends Route {
 	constructor() {
 		super(`app/:id/oauth`, `UPDATE APPS OAUTH`);
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityDescription = `UPDATE APPS OAUTH`;
@@ -715,7 +693,6 @@ class AppUpdate extends Route {
 	constructor() {
 		super(`app/:id`, `UPDATE AN APP`);
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;

@@ -21,11 +21,11 @@ const Model = require('../../model');
 const routes = [];
 
 /**
- * @class SearchDeploymentList
+ * @class SearchExecutionList
  */
-class SearchDeploymentList extends Route {
+class SearchExecutionList extends Route {
 	constructor() {
-		super('deployment', 'SEARCH DEPLOYMENT LIST');
+		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST');
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -42,29 +42,29 @@ class SearchDeploymentList extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.Deployment.parseQuery(result.query, {}, Model.Deployment.flatSchemaData);
+		result.query = Model.LambdaExecution.parseQuery(result.query, {}, Model.LambdaExecution.flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return Model.Deployment.find(validate.query);
+		return Model.LambdaExecution.find(validate.query);
 	}
 }
-routes.push(SearchDeploymentList);
+routes.push(SearchExecutionList);
 
 /**
- * @class DeploymentCount
+ * @class LambdaExecutionCount
  */
-class DeploymentCount extends Route {
+class LambdaExecutionCount extends Route {
 	constructor() {
-		super(`deployment/count`, `COUNT DEPLOYMENTS`);
+		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
-		this.activityDescription = `COUNT DEPLOYMENTS`;
+		this.activityDescription = `COUNT LAMBDA EXECUTION`;
 		this.activityBroadcast = false;
 
-		this.model = Model.Deployment;
+		this.model = Model.LambdaExecution;
 	}
 
 	_validate(req, res, token) {
@@ -91,10 +91,10 @@ class DeploymentCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return Model.Deployment.count(validateResult.query);
+		return Model.LambdaExecution.count(validateResult.query);
 	}
 }
-routes.push(DeploymentCount);
+routes.push(LambdaExecutionCount);
 
 /**
  * @type {*[]}

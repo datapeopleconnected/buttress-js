@@ -36,7 +36,6 @@ class GetUserList extends Route {
 	constructor() {
 		super('user', 'GET USER LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -45,7 +44,7 @@ class GetUserList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.User.findAll(req.authApp._id, req.token.authLevel);
+		return Model.User.findAll(req.authApp._id, req.token);
 	}
 }
 routes.push(GetUserList);
@@ -57,7 +56,6 @@ class GetUser extends Route {
 	constructor() {
 		super('user/:parameter', 'GET USER');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this._user = false;
@@ -131,7 +129,6 @@ class FindUser extends Route {
 	constructor() {
 		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -169,7 +166,6 @@ class GetUserByToken extends Route {
 	constructor() {
 		super('user/get-by-token', 'GET USER BY TOKEN');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this._user = false;
@@ -192,7 +188,11 @@ class GetUserByToken extends Route {
 			throw new Helpers.Errors.RequestError(400, `invalid_token`);
 		}
 
-		const user = await Model.User.findById(userToken._userId);
+		const user = await Model.User.findById(userToken._user);
+		if (!user) {
+			this.log('ERROR: Can not find a user with the provided token', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `can_not_find_user`);
+		}
 
 		return {
 			id: user._id,
@@ -215,7 +215,6 @@ class CreateUserAuthToken extends Route {
 	constructor() {
 		super('user/:id/token', 'CREATE USER AUTH TOKEN');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.redactResults = false;
@@ -224,7 +223,6 @@ class CreateUserAuthToken extends Route {
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
 			if (!req.body ||
-				!req.body.authLevel ||
 				!req.body.permissions ||
 				!req.body.domains) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
@@ -346,7 +344,6 @@ class AddUser extends Route {
 	constructor() {
 		super('user', 'ADD USER');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -416,7 +413,6 @@ class UpdateUser extends Route {
 	constructor() {
 		super('user/:id', 'UPDATE USER');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -461,7 +457,6 @@ class SetUserPolicyProperties extends Route {
 	constructor() {
 		super('user/:id/policyProperty', 'SET USER POLICY PROPERTY');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -533,7 +528,6 @@ class UpdateUserPolicyProperties extends Route {
 	constructor() {
 		super('user/:id/updatePolicyProperty', 'UPDATE USER POLICY PROPERTY');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -599,7 +593,6 @@ class ClearUserPolicyProperties extends Route {
 	constructor() {
 		super('user/:id/clearPolicyProperty', 'REMOVE USER POLICY PROPERTY');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -647,7 +640,7 @@ class DeleteAllUsers extends Route {
 	constructor() {
 		super('user', 'DELETE ALL USERS');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.SUPER;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
 
@@ -668,7 +661,6 @@ class DeleteUser extends Route {
 	constructor() {
 		super('user/:id', 'DELETE USER');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.DELETE;
 		this._user = false;
 	}
@@ -716,7 +708,6 @@ class clearUserLocalData extends Route {
 	constructor() {
 		super('user/:id/clearLocalData', 'CLEAR USER LOCAL DATA');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this._user = false;
@@ -758,7 +749,6 @@ class SearchUserList extends Route {
 	constructor() {
 		super('user', 'SEARCH USER LIST');
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -799,7 +789,6 @@ class UserCount extends Route {
 	constructor() {
 		super(`user/count`, `COUNT USERS`);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT USERS`;

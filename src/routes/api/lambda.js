@@ -25,6 +25,7 @@ const nrp = new NRP(Config.redis);
 const ObjectId = require('mongodb').ObjectId;
 const Sugar = require('sugar');
 
+const AccessControl = require('../../access-control');
 const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
@@ -49,7 +50,6 @@ class GetLambda extends Route {
 	constructor() {
 		super('lambda/:id', 'GET LAMBDA');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -86,7 +86,6 @@ class GetLambdaList extends Route {
 	constructor() {
 		super('lambda', 'GET LAMBDA LIST');
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -112,11 +111,7 @@ class GetLambdaList extends Route {
 			return Model.Lambda.findByIds(ids);
 		}
 
-		if (req.token.authLevel < Route.Constants.Auth.SUPER) {
-			return Model.Lambda.find({_appId: req.authApp._id});
-		}
-
-		return Model.Lambda.findAll(req.authApp._id, req.token.authLevel);
+		return Model.Lambda.findAll(req.authApp._id, req.token);
 	}
 }
 routes.push(GetLambdaList);
@@ -128,18 +123,13 @@ class SearchLambdaList extends Route {
 	constructor() {
 		super('lambda', 'SEARCH LAMBDA LIST');
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
 	_validate(req, res, token) {
 		const result = {
 			query: {
-				$and: [
-					{
-						_appId: req.authApp._id,
-					},
-				],
+				$and: [],
 			},
 		};
 
@@ -163,50 +153,65 @@ routes.push(SearchLambdaList);
  */
 class AddLambda extends Route {
 	constructor() {
-		super('lambda', 'ADD LAMBDA');
+		super('lambda/:appId', 'ADD LAMBDA');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
 	async _validate(req, res, token) {
-		const app = req.authApp;
+		try {
+			const accessControlReq = {...req};
+			await new Promise((resolve, reject) => {
+				accessControlReq.method = 'GET',
+				accessControlReq.originalUrl = accessControlReq.originalUrl.replace('policy', 'app');
+				accessControlReq.body = {},
 
-		const name = req.body?.lambda?.name;
-		const url = req.body?.lambda?.git?.url;
-		const branch = req.body?.lambda?.git?.branch;
-		const gitHash = req.body?.lambda?.git?.hash;
+				AccessControl.accessControlPolicyMiddleware(accessControlReq, res, resolve);
+			});
 
-		if (!app ||
-				!req.body.lambda.trigger ||
-				!req.body.lambda.git ||
-				!req.body.lambda.git.entryFile ||
-				!req.body.lambda.git.entryPoint ||
-				!name ||
-				!url ||
-				!gitHash ||
-				!branch) {
-			this.log(`[${this.name}] Missing required lambda field`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			const app = await Model.App.findOne(accessControlReq.body.query);
+			if (!app || app._id.toString() !== req.authApp._id.toString()) {
+				return Promise.reject(new Helpers.Errors.RequestError(400, `Could not find an app with id ${req.authApp._id}`));
+			}
+
+			const name = req.body?.lambda?.name;
+			const url = req.body?.lambda?.git?.url;
+			const branch = req.body?.lambda?.git?.branch;
+			const gitHash = req.body?.lambda?.git?.hash;
+
+			if (!app ||
+					req.body.lambda.policyProperties === undefined ||
+					!req.body.lambda.trigger ||
+					!req.body.lambda.git ||
+					!req.body.lambda.git.entryFile ||
+					!req.body.lambda.git.entryPoint ||
+					!name ||
+					!url ||
+					!gitHash ||
+					!branch) {
+				this.log(`[${this.name}] Missing required lambda field`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+
+			if (!req.body.auth) {
+				this.log(`[${this.name}] Auth properties are required when creating a lambda`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
+			}
+
+			if (!req.body.auth.permissions ||
+					!req.body.auth.domains) {
+				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			}
+
+			return Promise.resolve(true);
+		} catch (err) {
+			return Promise.reject(err);
 		}
-
-		if (!req.body.auth) {
-			this.log(`[${this.name}] Auth properties are required when creating a lambda`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
-		}
-
-		if (!req.body.auth.authLevel ||
-				!req.body.auth.permissions ||
-				!req.body.auth.domains) {
-			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
-		}
-
-		return Promise.resolve(true);
 	}
 
 	async _exec(req, res, validate) {
-		let appId = Model?.authApp?._id;
+		let appId = req.authApp._id;
 		if (!appId) {
 			const token = await this._getToken(req);
 			if (token && token._appId) {
@@ -238,7 +243,6 @@ class UpdateLambda extends Route {
 	constructor() {
 		super('lambda/:id', 'UPDATE LAMBDA');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -283,7 +287,6 @@ class BulkUpdateLambda extends Route {
 	constructor() {
 		super('lambda/bulk/update', 'BULK UPDATE LAMBDA');
 		this.verb = Route.Constants.Verbs.POST;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -330,7 +333,6 @@ class EditLambdaDeployment extends Route {
 	constructor() {
 		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -444,7 +446,6 @@ class SetLambdaPolicyProperties extends Route {
 	constructor() {
 		super('lambda/:id/policyProperty', 'SET LAMBDA POLICY PROPERTY');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -492,7 +493,6 @@ class UpdateLambdaPolicyProperties extends Route {
 	constructor() {
 		super('lambda/:id/updatePolicyProperty', 'UPDATE LAMBDA POLICY PROPERTY');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -542,7 +542,6 @@ class ClearLambdaPolicyProperties extends Route {
 	constructor() {
 		super('lambda/:id/clearPolicyProperty', 'REMOVE LAMBDA POLICY PROPERTY');
 		this.verb = Route.Constants.Verbs.PUT;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
@@ -580,7 +579,6 @@ class DeleteLambda extends Route {
 	constructor() {
 		super('lambda/:id', 'DELETE LAMBDA');
 		this.verb = Route.Constants.Verbs.DEL;
-		this.auth = Route.Constants.Auth.ADMIN;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -625,7 +623,6 @@ class LambdaCount extends Route {
 	constructor() {
 		super(`lambda/count`, `COUNT LAMBDAS`);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.auth = Route.Constants.Auth.SUPER;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT LAMBDAS`;

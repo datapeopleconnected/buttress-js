@@ -12,7 +12,6 @@ module.exports = class GetList extends Route {
 	constructor(schema, appShort) {
 		super(`${schema.name}`, `GET ${schema.name} LIST`);
 		this.verb = Route.Constants.Verbs.GET;
-		this.auth = Route.Constants.Auth.USER;
 		this.permissions = Route.Constants.Permissions.LIST;
 
 		this.activityDescription = `GET ${schema.name} LIST`;

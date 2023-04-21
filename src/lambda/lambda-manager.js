@@ -106,6 +106,9 @@ class LambdaManager {
 		// TODO: Could just return the lambda id, instead of the whole lambda object
 		// TODO: Move the date filter to the query if possible?
 		const rxsLambdas = await Model.Lambda.find({
+			'executable': {
+				$eq: true,
+			},
 			'trigger.cron.status': {
 				$eq: 'PENDING',
 			},
@@ -119,8 +122,10 @@ class LambdaManager {
 
 		// TODO when creating a lambda exeuctionTime should be converted to a date!
 		return lambdas.filter((lambda) => {
+			const now = Sugar.Date.create();
 			const cronTrigger = lambda.trigger.find((t) => t.type === 'CRON');
-			return cronTrigger && (cronTrigger.cron.executionTime === 'now' || Sugar.Date.isAfter(Sugar.Date.create(), Sugar.Date.create(cronTrigger.cron.executionTime)));
+			const cronExecutionTime = Sugar.Date.create(cronTrigger.cron.executionTime);
+			return cronTrigger && (cronTrigger.cron.executionTime === 'now' || Sugar.Date.isAfter(now, cronExecutionTime));
 		});
 	}
 
@@ -130,6 +135,9 @@ class LambdaManager {
 	 */
 	async _loadLambdaPathsMutation() {
 		const rxsLambdas = await Model.Lambda.find({
+			'executable': {
+				$eq: true,
+			},
 			'trigger.type': {
 				$eq: 'PATH_MUTATION',
 			},
