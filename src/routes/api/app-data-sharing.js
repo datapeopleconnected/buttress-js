@@ -99,7 +99,7 @@ class AddDataSharing extends Route {
 
 		// If we're not super then set the appId to be the current appId
 		if (!req.body._appId || token.type !== Model.Token.Constants.Type.SYSTEM) {
-			req.body._appId = token._app;
+			req.body._appId = token._appId;
 		}
 
 		const result = await this.model.isDuplicate(req.body);

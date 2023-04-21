@@ -432,7 +432,7 @@ class Routes {
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id,
 			);
 
-			const lambda = (req.token._lambda) ? await Model.Lambda.findById(req.token._lambda) : null;
+			const lambda = (req.token._lambdaId) ? await Model.Lambda.findById(req.token._lambdaId) : null;
 			req.authLambda = lambda;
 			Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda._id : lambda}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);

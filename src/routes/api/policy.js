@@ -154,21 +154,8 @@ class AddPolicy extends Route {
 
 	async _validate(req, res, token) {
 		try {
-			const accessControlReq = {...req};
-			await new Promise((resolve, reject) => {
-				accessControlReq.method = 'GET',
-				accessControlReq.originalUrl = accessControlReq.originalUrl.replace('policy', 'app');
-				accessControlReq.body = {},
-
-				AccessControl.accessControlPolicyMiddleware(accessControlReq, res, resolve);
-			});
-
-			const app = await Model.App.findOne(accessControlReq.body.query);
-			if (!app || app._id.toString() !== req.authApp._id.toString()) {
-				return Promise.reject(new Helpers.Errors.RequestError(400, `Could not find an app with id ${req.authApp._id}`));
-			}
-
-			if (!req.body.selection ||
+			if (!req.authApp ||
+				!req.body.selection ||
 				!req.body.name ||
 				!req.body.config ||
 				req.body.config.length < 1) {

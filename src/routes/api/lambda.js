@@ -160,26 +160,12 @@ class AddLambda extends Route {
 
 	async _validate(req, res, token) {
 		try {
-			const accessControlReq = {...req};
-			await new Promise((resolve, reject) => {
-				accessControlReq.method = 'GET',
-				accessControlReq.originalUrl = accessControlReq.originalUrl.replace('policy', 'app');
-				accessControlReq.body = {},
-
-				AccessControl.accessControlPolicyMiddleware(accessControlReq, res, resolve);
-			});
-
-			const app = await Model.App.findOne(accessControlReq.body.query);
-			if (!app || app._id.toString() !== req.authApp._id.toString()) {
-				return Promise.reject(new Helpers.Errors.RequestError(400, `Could not find an app with id ${req.authApp._id}`));
-			}
-
 			const name = req.body?.lambda?.name;
 			const url = req.body?.lambda?.git?.url;
 			const branch = req.body?.lambda?.git?.branch;
 			const gitHash = req.body?.lambda?.git?.hash;
 
-			if (!app ||
+			if (!req.authApp ||
 					req.body.lambda.policyProperties === undefined ||
 					!req.body.lambda.trigger ||
 					!req.body.lambda.git ||
