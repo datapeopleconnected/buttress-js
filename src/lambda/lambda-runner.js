@@ -40,7 +40,7 @@ class LambdasRunner {
 		this._isolate = new ivm.Isolate({
 			inspector: false,
 			onCatastrophicError: () => {
-				console.log('v8 has lost all control over the isolate, and all resources in use are totally unrecoverable');
+				Logging.logError('v8 has lost all control over the isolate, and all resources in use are totally unrecoverable');
 				process.abort();
 			},
 		});
@@ -379,7 +379,7 @@ class LambdasRunner {
 							name: packageKey,
 						});
 					} catch (err) {
-						console.log(err);
+						Logging.logError(err);
 					}
 
 					continue;
