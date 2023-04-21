@@ -51,6 +51,14 @@ class Plugins extends EventEmitter {
 		plugin.on('request', (...args) => this.emit('request', ...args));
 	}
 
+	initRoutes(router) {
+		this.plugins.forEach((plugin) => {
+			if (plugin.routes) {
+				router.createPluginRoutes(plugin.code, plugin.routes);
+			}
+		});
+	}
+
 	async _scanPlugins() {
 		const pluginDirs = await this._findPluginEntryFiles(Config.paths.plugins);
 		for (const pluginDir of pluginDirs) {
