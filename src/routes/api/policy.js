@@ -147,14 +147,15 @@ routes.push(SearchPolicyList);
  */
 class AddPolicy extends Route {
 	constructor() {
-		super('policy/:appId', 'ADD POLICY');
+		super('policy', 'ADD POLICY');
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
 	async _validate(req, res, token) {
+		const app = req.authApp;
 		try {
-			if (!req.authApp ||
+			if (!app ||
 				!req.body.selection ||
 				!req.body.name ||
 				!req.body.config ||
@@ -167,7 +168,7 @@ class AddPolicy extends Route {
 				name: {
 					$eq: req.body.name,
 				},
-				_appId: Model.App.createId(req.authApp._id),
+				_appId: Model.App.createId(app._id),
 			});
 			if (policyExist) {
 				this.log(`[${this.name}] Policy with name ${req.body.name} already exists`, Route.LogLevel.ERR);

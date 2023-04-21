@@ -234,11 +234,14 @@ class UserSchemaModel extends SchemaModel {
 
 		user.token = [];
 
-		if (!body.token) {
-			return user;
-		}
+		const userToken = {
+			type: Model.Token.Constants.Type.USER,
+			permissions: [{route: '*', permission: '*'}],
+			domains: body.token.domains,
+			policyProperties: body.policyProperties,
+		};
 
-		const rxsToken = await Model.Token.add(body.token, {
+		const rxsToken = await Model.Token.add(userToken, {
 			_appId: Model.authApp._id,
 			_userId: user._id,
 		});

@@ -153,7 +153,7 @@ routes.push(SearchLambdaList);
  */
 class AddLambda extends Route {
 	constructor() {
-		super('lambda/:appId', 'ADD LAMBDA');
+		super('lambda', 'ADD LAMBDA');
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
