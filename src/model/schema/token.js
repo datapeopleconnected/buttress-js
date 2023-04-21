@@ -90,8 +90,9 @@ class TokenSchemaModel extends SchemaModel {
 						},
 					},
 				},
-				uses: {
+				tags: {
 					__type: 'array',
+					__itemtype: 'string',
 					__required: true,
 					__allowUpdate: true,
 				},
