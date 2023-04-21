@@ -119,6 +119,12 @@ class TokenSchemaModel extends SchemaModel {
 					__required: true,
 					__allowUpdate: false,
 				},
+				_entityId: {
+					__type: 'id',
+					__default: null,
+					__required: true,
+					__allowUpdate: false,
+				},
 				_appDataSharingId: {
 					__type: 'id',
 					__default: null,
