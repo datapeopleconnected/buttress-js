@@ -166,7 +166,6 @@ class AddLambda extends Route {
 			const gitHash = req.body?.lambda?.git?.hash;
 
 			if (!req.authApp ||
-					req.body.lambda.policyProperties === undefined ||
 					!req.body.lambda.trigger ||
 					!req.body.lambda.git ||
 					!req.body.lambda.git.entryFile ||
