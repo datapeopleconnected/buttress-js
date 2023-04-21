@@ -165,8 +165,7 @@ class AddApp extends Route {
 
 			const appType = req.body.type;
 			if (!req.body.policyPropertiesList && appType !== Model.Token.Constants.Type.SYSTEM) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+				req.body.policyPropertiesList = {};
 			}
 
 			if (!req.body.permissions || req.body.permissions.length === 0) {
@@ -431,7 +430,7 @@ class UpdateAppSchema extends Route {
 		try {
 			await Schema.buildCollections(req.body);
 		} catch (err) {
-			console.log(err);
+			Logging.logError(err);
 			throw new Helpers.Errors.RequestError(400, `invalid_body_type`);
 		}
 
