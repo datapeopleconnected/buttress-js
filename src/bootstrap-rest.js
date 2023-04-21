@@ -68,11 +68,11 @@ class BootstrapRest extends EventEmitter {
 			await this.__initWorker();
 		}
 
-		Plugins.initialise({
-			appType: Plugins.APP_TYPE.REST,
-			processRole: (cluster.isMaster) ? Plugins.PROCESS_ROLE.MAIN : Plugins.PROCESS_ROLE.WORKER,
-			infrastructureRole: (Config.rest.app === 'primary') ? Plugins.INFRASTRUCTURE_ROLE.PRIMARY : Plugins.INFRASTRUCTURE_ROLE.SECONDARY,
-		}, Logging);
+		Plugins.initialise(
+			Plugins.APP_TYPE.REST,
+			(cluster.isMaster) ? Plugins.PROCESS_ROLE.MAIN : Plugins.PROCESS_ROLE.WORKER,
+			(Config.rest.app === 'primary') ? Plugins.INFRASTRUCTURE_ROLE.PRIMARY : Plugins.INFRASTRUCTURE_ROLE.SECONDARY,
+		);
 
 		return cluster.isMaster;
 	}

@@ -19,6 +19,8 @@ const Sugar = require('sugar');
 
 const Datastore = require('../datastore');
 
+const uuid = require('uuid');
+
 /* ********************************************************************************
 *
 * SCHEMA HELPERS
@@ -102,6 +104,17 @@ const __getPropDefault = (config) => {
 			res = null;
 		}
 		break;
+	case 'uuid':
+		if (config.__default) {
+			if (config.__default === 'new') {
+				res = uuid.v4();
+			} else {
+				res = config.__default;
+			}
+		} else {
+			res = null;
+		}
+		break;
 	case 'date':
 		if (config.__default === null) {
 			res = null;
@@ -124,7 +137,6 @@ const __validateProp = (prop, config) => {
 	}
 
 	switch (config.__type) {
-	default:
 	case 'boolean':
 		if (type === 'string') {
 			const bool = prop.value === 'true' || prop.value === 'yes';
@@ -171,6 +183,17 @@ const __validateProp = (prop, config) => {
 			valid = false;
 		}
 		break;
+	case 'uuid':
+		if (type === 'string') {
+			try {
+				valid = uuid.parse(prop.value);
+			} catch (e) {
+				valid = false;
+			}
+		} else {
+			valid = false;
+		}
+		break;
 	case 'object':
 		valid = type === config.__type;
 		break;
@@ -200,6 +223,8 @@ const __validateProp = (prop, config) => {
 			}
 		}
 		break;
+	default:
+		valid = false;
 	}
 
 	return valid;
