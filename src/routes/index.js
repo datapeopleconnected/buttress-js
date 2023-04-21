@@ -606,7 +606,11 @@ class Routes {
 
 	async _setupLambdaEndpoints() {
 		const appsToken = await Helpers.streamAll(await Model.Token.find({
-			type: 'app',
+			$or: [{
+				type: Model.Token.Constants.Type.APP,
+			}, {
+				type: Model.Token.Constants.Type.SYSTEM,
+			}],
 		}));
 		const tokenIds = appsToken.map((t) => t._id);
 		const apps = await Helpers.streamAll(await Model.App.find({
@@ -740,7 +744,7 @@ class Routes {
 			return res;
 		}
 
-		if (lambda.executable) {
+		if (!lambda.executable) {
 			res.errCode = 400;
 			res.errMessage = 'lambda_is_not_executable';
 			return res;

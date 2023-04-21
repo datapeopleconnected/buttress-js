@@ -83,7 +83,7 @@ class AccessControl {
 
 		if (user && this._coreSchemaNames.some((n) => n === schemaName)) {
 			const userAppToken = Model.Token.findById({
-				_app: {
+				_appId: {
 					$eq: user._appId,
 				},
 			});

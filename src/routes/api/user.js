@@ -488,7 +488,7 @@ class SetUserPolicyProperties extends Route {
 		}
 
 		const userToken = await Model.Token.findOne({
-			_user: userId,
+			_userId: userId,
 		});
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
@@ -561,7 +561,7 @@ class UpdateUserPolicyProperties extends Route {
 		}
 
 		const userToken = await Model.Token.findOne({
-			_user: req.params.id,
+			_userId: req.params.id,
 		});
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
@@ -628,7 +628,7 @@ class ClearUserPolicyProperties extends Route {
 		}
 
 		const userToken = await Model.Token.findOne({
-			_user: req.params.id,
+			_userId: req.params.id,
 		});
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);

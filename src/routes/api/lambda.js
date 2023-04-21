@@ -463,7 +463,7 @@ class SetLambdaPolicyProperties extends Route {
 		}
 
 		const lambdaToken = await Model.Token.findOne({
-			_lambda: Model.Lambda.createId(req.params.id),
+			_lambdaId: Model.Lambda.createId(req.params.id),
 		});
 		if (!lambdaToken) {
 			this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
@@ -518,7 +518,7 @@ class UpdateLambdaPolicyProperties extends Route {
 		}
 
 		const lambdaToken = await Model.Token.findOne({
-			_lambda: Model.Lambda.createId(req.params.id),
+			_lambdaId: Model.Lambda.createId(req.params.id),
 		});
 		if (!lambdaToken) {
 			this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
@@ -563,7 +563,7 @@ class ClearLambdaPolicyProperties extends Route {
 		}
 
 		const lambdaToken = await Model.Token.findOne({
-			_lambda: Model.Lambda.createId(req.params.id),
+			_lambdaId: Model.Lambda.createId(req.params.id),
 		});
 		if (!lambdaToken) {
 			this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
