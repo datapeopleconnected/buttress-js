@@ -50,8 +50,6 @@ const Datastore = require('./datastore');
 
 class BootstrapSocket {
 	constructor() {
-		Logging.setLogLevel(Logging.Constants.LogLevel.INFO);
-
 		const ConfigWorkerCount = parseInt(Config.app.workers);
 		this.workerProcesses = (isNaN(ConfigWorkerCount)) ? os.cpus().length : ConfigWorkerCount;
 		this.workers = [];

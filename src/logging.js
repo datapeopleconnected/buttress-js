@@ -78,7 +78,7 @@ class Logging {
 
 		// winston.remove(winston.transports.Console);
 		this.logger = winston.createLogger({
-			level: Config.logging.level,
+			level: Config.logging.level || 'info',
 			format: winston.format.combine(
 				winston.format.colorize(),
 				winston.format.timestamp(),

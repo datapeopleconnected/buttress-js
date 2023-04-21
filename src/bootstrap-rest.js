@@ -45,7 +45,6 @@ Error.stackTraceLimit = Infinity;
 class BootstrapRest extends EventEmitter {
 	constructor() {
 		super();
-		Logging.setLogLevel(Logging.Constants.LogLevel.INFO);
 
 		const ConfigWorkerCount = parseInt(Config.app.workers);
 		this.workerProcesses = (isNaN(ConfigWorkerCount)) ? os.cpus().length : ConfigWorkerCount;
@@ -68,11 +67,15 @@ class BootstrapRest extends EventEmitter {
 			await this.__initWorker();
 		}
 
-		Plugins.initialise(
+		await Plugins.initialise(
 			Plugins.APP_TYPE.REST,
 			(cluster.isMaster) ? Plugins.PROCESS_ROLE.MAIN : Plugins.PROCESS_ROLE.WORKER,
 			(Config.rest.app === 'primary') ? Plugins.INFRASTRUCTURE_ROLE.PRIMARY : Plugins.INFRASTRUCTURE_ROLE.SECONDARY,
 		);
+
+		if (!cluster.isMaster) {
+			Plugins.initRoutes(this.routes);
+		}
 
 		return cluster.isMaster;
 	}
