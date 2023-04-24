@@ -377,10 +377,17 @@ class Route {
 
 		if (this.verb === Constants.Verbs.POST) {
 			if (this.path.includes(Constants.BulkRequests.BULK_PUT)) {
-				body.forEach((item) => item.body.forEach((obj) => {
-					paths.push(`${this.schema?.name}.${item.id}.${obj.path}`);
-					item.body.forEach((i) => values.push(i.value));
-				}));
+				body.forEach((item) => {
+					if (Array.isArray(item.body)) {
+						item.body.forEach((obj) => {
+							paths.push(`${this.schema?.name}.${item.id}.${obj.path}`);
+							item.body.forEach((i) => values.push(i.value));
+						});
+					} else {
+						paths.push(`${this.schema?.name}.${item.id}.${item.body.path}`);
+						values.push(item.body.value);
+					}
+				});
 			} else if (this.path.includes(Constants.BulkRequests.BULK_DEL)) {
 				body.forEach((id) => paths.push(`${this.schema?.name}.${id}`));
 			} else {
