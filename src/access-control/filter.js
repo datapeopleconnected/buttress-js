@@ -362,6 +362,8 @@ class Filter {
 	}
 
 	async _getDeepQueryObj(queryObj, newObj = {}) {
+		if (!queryObj) return newObj;
+
 		for await (const key of Object.keys(queryObj)) {
 			if ((Array.isArray(queryObj[key]) && queryObj[key].length < 1) || key.includes('crPath')) continue;
 
