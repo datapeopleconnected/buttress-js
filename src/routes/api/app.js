@@ -355,7 +355,7 @@ class GetAppSchema extends Route {
 		let schema;
 		try {
 			schema = (req.query.rawSchema && req.authApp.__rawSchema) ?
-				Schema.decode(req.authApp.__rawSchema) : Schema.buildCollections(Schema.decode(req.authApp.__schema));
+				Schema.decode(req.authApp.__rawSchema) : await Schema.buildCollections(Schema.decode(req.authApp.__schema));
 		} catch (err) {
 			if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
 			else throw err;
@@ -405,39 +405,39 @@ class UpdateAppSchema extends Route {
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.authApp) {
-				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
-			}
+	async _validate(req, res, token) {
+		if (!req.authApp) {
+			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
+		}
+		if (!req.body) {
+			this.log('ERROR: Missing body', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `no_body`));
+		}
+		if (!Array.isArray(req.body)) {
+			this.log('ERROR: Expected body to be an array', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
+		}
 
-			if (!req.body) {
-				this.log('ERROR: Missing body', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_body`));
-			}
+		// Sort templates
+		req.body = req.body.sort((a, b) => (a.type === 'collection') ? 1 : (b.type === 'collection') ? -1 : 0);
 
-			if (!Array.isArray(req.body)) {
-				this.log('ERROR: Expected body to be an array', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
-			}
-
-			// Sort templates
-			req.body = req.body.sort((a, b) => (a.type === 'collection') ? 1 : (b.type === 'collection') ? -1 : 0);
-
-			// Resolve the local schema
-			const rawSchema = JSON.stringify(req.body);
+		try {
+			// merging req schema to get the extends schemas
 			req.body = Schema.merge(req.body, Model.App.localSchema);
 
-			try {
-				Schema.buildCollections(req.body);
-			} catch (err) {
-				console.log(err);
-				return reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
-			}
+			// building the schema to check for any timeseries
+			const res = await Schema.buildCollections(req.body);
+			const rawSchema = JSON.stringify(res);
 
-			resolve(rawSchema);
-		});
+			// merging the built timeseries to get the extends schemas
+			req.body = Schema.merge(res, Model.App.localSchema);
+
+			return Promise.resolve(rawSchema);
+		} catch (err) {
+			console.log(err);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
+		}
 	}
 
 	async _exec(req, res, rawSchema) {
@@ -555,6 +555,9 @@ class UpdateAppPolicyPropertyList extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
+			// removing body query which we need to consider for policy vulnerabilities
+			delete req.body.query;
+
 			if (!req.authApp) {
 				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));

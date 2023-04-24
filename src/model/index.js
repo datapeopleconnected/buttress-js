@@ -92,7 +92,7 @@ class Model {
 
 			let builtSchemas = null;
 			try {
-				builtSchemas = Schema.buildCollections(Schema.decode(app.__schema));
+				builtSchemas = await Schema.buildCollections(Schema.decode(app.__schema));
 			} catch (err) {
 				if (err instanceof Errors.SchemaInvalid) continue;
 				else throw err;

@@ -85,13 +85,21 @@ class Schema {
 		return key.replace(/\\u002e/g, '.').replace(/\\u0024/g, '$').replace(/\\\\/g, '\\');
 	}
 
-	static buildCollections(schemas) {
-		return Schema.build(schemas)
-			.filter((s) => s.type === 'collection');
+	static async buildCollections(schemas) {
+		const builtSchemas = await Schema.build(schemas);
+		return builtSchemas.filter((s) => s.type === 'collection');
 	}
 
-	static build(schemas) {
-		return schemas.map((schema) => Schema.extend(schemas, schema));
+	static async build(schemas) {
+		schemas = schemas.map((schema) => Schema.extend(schemas, schema));
+		for await (const schema of schemas) {
+			const res = await this.createTimeSeriesSchema(schema.name, schema.properties);
+			if (!res) continue;
+			Object.keys(res).forEach((key) => {
+				schemas.push(res[key]);
+			});
+		}
+		return schemas;
 	}
 
 	static merge(schemasA, schemasB) {
@@ -122,6 +130,46 @@ class Schema {
 		}
 
 		return schema;
+	}
+
+	static async createTimeSeriesSchema(schemaName, schemaProps, timeSeries = {}) {
+		if (!schemaProps || Object.keys(schemaProps).length < 1) return false;
+
+		for await (const prop of Object.keys(schemaProps)) {
+			if (typeof schemaProps[prop] !== 'object') continue;
+			if (schemaProps[prop].__type && schemaProps[prop].__type === 'array') continue;
+
+			if (schemaProps[prop].__timeSeries) {
+				if (!timeSeries[schemaProps[prop].__timeSeries]) {
+					timeSeries[schemaProps[prop].__timeSeries] = {
+						name: `${schemaName}-${schemaProps[prop].__timeSeries}`,
+						type: 'collection',
+						extends: [
+							'timestamps',
+						],
+						properties: {
+							entityId: {
+								__type: 'string',
+								__default: null,
+								__required: true,
+								__allowUpdate: false,
+							},
+						},
+					};
+				}
+				const timesSeriesObj = Object.assign({}, schemaProps[prop]);
+				delete timesSeriesObj.__timeSeries;
+				timeSeries[schemaProps[prop].__timeSeries].properties[prop] = timesSeriesObj;
+				continue;
+			}
+
+			if (!schemaProps[prop].__type) {
+				await this.createTimeSeriesSchema(schemaName, schemaProps[prop], timeSeries);
+			}
+		}
+
+		if (Object.keys(timeSeries).length < 1) return false;
+		return timeSeries;
 	}
 }
 module.exports = Schema;
