@@ -68,13 +68,24 @@ class AccessControl {
 		const lambda = req.authLambda;
 		const appId = token._appId.toString();
 		const requestVerb = req.method || req.originalMethod;
+		const coreSchemaCall = req.params.core;
 		let lambdaAPICall = false;
 		let requestedURL = req.originalUrl || req.url;
 		requestedURL = requestedURL.split('?').shift();
+		const isLambdaCall = requestedURL.indexOf('/api/v1/lambda') === 0;
 
 		if (lambda && !user && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
-		if (lambda) {
-			lambdaAPICall = lambda.trigger.some((t) => req.originalUrl.includes(t.apiEndpoint.url));
+		if (user && !coreSchemaCall && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
+		if (isLambdaCall) {
+			const lambdaURL = requestedURL.replace(`/api/v1/lambda/${req.authApp.apiPath}/`, '');
+			lambdaAPICall = await Model.Lambda.findOne({
+				'trigger.apiEndpoint.url': {
+					$eq: lambdaURL,
+				},
+				'_appId': {
+					$eq: Model.Lambda.createId(appId),
+				},
+			});
 		}
 		if (lambdaAPICall) return next();
 
@@ -82,7 +93,7 @@ class AccessControl {
 		const schemaName = schemaPath.shift();
 
 		if (user && this._coreSchemaNames.some((n) => n === schemaName)) {
-			const userAppToken = Model.Token.findById({
+			const userAppToken = await Model.Token.findOne({
 				_appId: {
 					$eq: user._appId,
 				},
