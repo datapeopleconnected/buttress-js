@@ -435,7 +435,7 @@ class UpdateAppSchema extends Route {
 			return rawSchema;
 		} catch (err) {
 			Logging.logError(err);
-			throw new Helpers.Errors.RequestError(400, `invalid_body_type`));
+			throw new Helpers.Errors.RequestError(400, `invalid_body_type`);
 		}
 	}
 
