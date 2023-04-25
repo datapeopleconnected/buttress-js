@@ -52,7 +52,7 @@ class Helpers {
 					Logging.logVerbose(`[${this.name}] Populating email body from template ${data.emailTemplate}`);
 
 					const render = lambdaMail.getEmailTemplate(
-						`${Config.paths.lambda.code}/lambda-${data.lambdaId}/${data.emailTemplate}.pug`, data.emailTemplate
+						`${Config.paths.lambda.code}/lambda-${data.lambdaId}/${data.emailTemplate}.pug`, data.emailTemplate,
 					);
 
 					return render(data.emailData);
