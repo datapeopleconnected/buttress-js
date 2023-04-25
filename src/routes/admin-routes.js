@@ -212,12 +212,12 @@ class AdminRoutes {
 				policy.config.forEach((conf, idx) => {
 					const appQueryIdx = policy.config[idx].query.findIndex((q) => q.schema.includes('app'));
 					const userQueryIdx = policy.config[idx].query.findIndex((q) => q.schema.includes('user'));
-					if (appQueryIdx) {
+					if (appQueryIdx !== -1) {
 						policy.config[idx].query[appQueryIdx]._id = {
 							'@eq': appId,
 						};
 					}
-					if (userQueryIdx) {
+					if (userQueryIdx !== -1) {
 						policy.config[idx].query[userQueryIdx]._appId = {
 							'@eq': appId,
 						};
