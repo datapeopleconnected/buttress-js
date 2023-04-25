@@ -90,8 +90,9 @@ class TokenSchemaModel extends SchemaModel {
 						},
 					},
 				},
-				uses: {
+				tags: {
 					__type: 'array',
+					__itemtype: 'string',
 					__required: true,
 					__allowUpdate: true,
 				},
@@ -114,6 +115,12 @@ class TokenSchemaModel extends SchemaModel {
 					__allowUpdate: false,
 				},
 				_userId: {
+					__type: 'id',
+					__default: null,
+					__required: true,
+					__allowUpdate: false,
+				},
+				_entityId: {
 					__type: 'id',
 					__default: null,
 					__required: true,
@@ -184,6 +191,12 @@ class TokenSchemaModel extends SchemaModel {
 		return this.find({
 			_appId: this.createId(appId),
 			_userId: this.createId(userId),
+		});
+	}
+
+	findByValue(value) {
+		return this.findOne({
+			value: value,
 		});
 	}
 

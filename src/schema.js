@@ -19,6 +19,8 @@
 const crypto = require('crypto');
 const Helpers = require('./helpers');
 
+const Plugins = require('./plugins');
+
 class Schema {
 	constructor(data) {
 		this.data = data;
@@ -87,10 +89,11 @@ class Schema {
 
 	static async buildCollections(schemas) {
 		const builtSchemas = await Schema.build(schemas);
-		return builtSchemas.filter((s) => s.type === 'collection');
+		return builtSchemas.filter((s) => s.type.indexOf('collection') === 0);
 	}
 
 	static async build(schemas) {
+        schemas = await Plugins.apply_filters('before_schema_build', schemas);
 		schemas = schemas.map((schema) => Schema.extend(schemas, schema));
 		for await (const schema of schemas) {
 			const res = await this.createTimeSeriesSchema(schema.name, schema.properties);
@@ -99,6 +102,7 @@ class Schema {
 				schemas.push(res[key]);
 			});
 		}
+        schemas = await Plugins.apply_filters('after_schema_build', schemas);
 		return schemas;
 	}
 
@@ -118,15 +122,20 @@ class Schema {
 
 	static extend(schemas, schema) {
 		if (schema.extends) {
-			schema.extends.forEach((dependencyName) => {
-				const dependencyIdx = schemas.findIndex((s) => s.name === dependencyName);
-				// This should be thrown when the user adds or updates the schema.
-				if (dependencyIdx === -1) throw new Helpers.Errors.SchemaInvalid(`Schema dependency ${dependencyName} for ${schema.name} missing.`);
-				const dependency = Schema.extend(schemas, schemas[dependencyIdx]);
-				if (!dependency.properties) return; // Skip if dependency has no properties
-				if (!schema.properties) schema.properties = {};
-				schema.properties = Object.assign(schema.properties, dependency.properties);
-			});
+			schema.extends
+				// We'll filter out any schema that's prefix with a plugin name
+				.filter((dependencyName) => dependencyName.indexOf(':') === -1)
+				.forEach((dependencyName) => {
+					const dependencyIdx = schemas.findIndex((s) => s.name === dependencyName);
+					// This should be thrown when the user adds or updates the schema.
+					if (dependencyIdx === -1) {
+						throw new Helpers.Errors.SchemaInvalid(`Schema dependency ${dependencyName} for ${schema.name} missing.`);
+					}
+					const dependency = Schema.extend(schemas, schemas[dependencyIdx]);
+					if (!dependency.properties) return; // Skip if dependency has no properties
+					if (!schema.properties) schema.properties = {};
+					schema.properties = Object.assign(schema.properties, dependency.properties);
+				});
 		}
 
 		return schema;

@@ -230,7 +230,7 @@ class Routes {
 		const appRouter = this._createRouter();
 
 		Schema.decode(app.__schema)
-			.filter((schema) => schema.type === 'collection')
+			.filter((schema) => schema.type.indexOf('collection') === 0)
 			.filter((schema) => {
 				if (!schema.remote) return true;
 				const [dsaName] = schema.remote.split('.');
@@ -248,15 +248,31 @@ class Routes {
 		this._registerRouter(app.apiPath, appRouter);
 	}
 
+	createPluginRoutes(pluginName, routes) {
+		if (routes.length === 0) return;
+
+		Logging.logDebug(`Routes:createPluginRoutes ${pluginName} has ${routes.length} routes`);
+
+		const pluginRouter = this._createRouter();
+
+		for (let y = 0; y < routes.length; y++) {
+			const route = routes[y];
+			this._initRoute(pluginRouter, route, pluginName);
+		}
+
+		this._registerRouter(`plugin-${pluginName}`, pluginRouter);
+	}
+
 	/**
 	 * @param {Object} app - express app object
 	 * @param {Function} Route - route object
 	 * @private
 	 */
-	_initRoute(app, Route) {
+	_initRoute(app, Route, ...additional) {
 		const route = new Route();
 		const routePath = path.join(...[
 			Config.app.apiPrefix,
+			...additional,
 			route.path,
 		]);
 		Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);

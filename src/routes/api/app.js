@@ -165,8 +165,7 @@ class AddApp extends Route {
 
 			const appType = req.body.type;
 			if (!req.body.policyPropertiesList && appType !== Model.Token.Constants.Type.SYSTEM) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+				req.body.policyPropertiesList = {};
 			}
 
 			if (!req.body.permissions || req.body.permissions.length === 0) {
@@ -420,7 +419,7 @@ class UpdateAppSchema extends Route {
 		}
 
 		// Sort templates
-		req.body = req.body.sort((a, b) => (a.type === 'collection') ? 1 : (b.type === 'collection') ? -1 : 0);
+		req.body = req.body.sort((a, b) => (a.type.indexOf('collection') === 0) ? 1 : (b.type.indexOf('collection') === 0) ? -1 : 0);
 
 		try {
 			// merging req schema to get the extends schemas
@@ -433,10 +432,10 @@ class UpdateAppSchema extends Route {
 			// merging the built timeseries to get the extends schemas
 			req.body = Schema.merge(res, Model.App.localSchema);
 
-			return Promise.resolve(rawSchema);
+			return rawSchema;
 		} catch (err) {
-			console.log(err);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
+			Logging.logError(err);
+			throw new Helpers.Errors.RequestError(400, `invalid_body_type`));
 		}
 	}
 

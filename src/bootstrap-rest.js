@@ -19,6 +19,7 @@
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const EventEmitter = require('events');
 const cluster = require('cluster');
 const express = require('express');
 const cors = require('cors');
@@ -36,12 +37,14 @@ const shortId = require('./helpers').shortId;
 
 const Datastore = require('./datastore');
 
+const Plugins = require('./plugins');
+
 morgan.token('id', (req) => req.id);
 
 Error.stackTraceLimit = Infinity;
-class BootstrapRest {
+class BootstrapRest extends EventEmitter {
 	constructor() {
-		Logging.setLogLevel(Logging.Constants.LogLevel.INFO);
+		super();
 
 		const ConfigWorkerCount = parseInt(Config.app.workers);
 		this.workerProcesses = (isNaN(ConfigWorkerCount)) ? os.cpus().length : ConfigWorkerCount;
@@ -62,6 +65,16 @@ class BootstrapRest {
 			await this.__initMaster();
 		} else {
 			await this.__initWorker();
+		}
+
+		await Plugins.initialise(
+			Plugins.APP_TYPE.REST,
+			(cluster.isMaster) ? Plugins.PROCESS_ROLE.MAIN : Plugins.PROCESS_ROLE.WORKER,
+			(Config.rest.app === 'primary') ? Plugins.INFRASTRUCTURE_ROLE.PRIMARY : Plugins.INFRASTRUCTURE_ROLE.SECONDARY,
+		);
+
+		if (!cluster.isMaster) {
+			Plugins.initRoutes(this.routes);
 		}
 
 		return cluster.isMaster;
@@ -119,6 +132,12 @@ class BootstrapRest {
 			credentials: true,
 		}));
 		app.use(express.static(`${Config.paths.appData}/public`));
+
+		Plugins.on('request', (req, res) => {
+			app.handle((req, res), (err) => {
+				console.error(err);
+			});
+		});
 
 		process.on('unhandledRejection', (error) => {
 			Logging.logError(error);

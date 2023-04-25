@@ -268,7 +268,7 @@ const __getFlattenedSchema = (schema) => {
 
 			parent[property].__schema = __getFlattenedSchema({properties: parent[property].__schema});
 			flattened[path.join('.')] = parent[property];
-		} else if (!parent[property].__type) {
+		} else if (typeof parent[property] === 'object' && !parent[property].__type) {
 			// Handle Object
 			for (const childProp in parent[property]) {
 				if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;

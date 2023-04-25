@@ -30,8 +30,6 @@ const LambdaRunner = require('./lambda/lambda-runner');
 morgan.token('id', (req) => req.id);
 class BootstrapLambda {
 	constructor() {
-		Logging.setLogLevel(Logging.Constants.LogLevel.INFO);
-
 		const ConfigWorkerCount = parseInt(Config.app.workers);
 		this.workerProcesses = (isNaN(ConfigWorkerCount)) ? os.cpus().length : ConfigWorkerCount;
 
