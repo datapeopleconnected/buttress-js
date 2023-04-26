@@ -76,6 +76,7 @@ class AccessControl {
 
 		if (lambda && !user && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
 		if (user && !coreSchemaCall && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
+
 		if (isLambdaCall) {
 			const lambdaURL = requestedURL.replace(`/api/v1/lambda/${req.authApp.apiPath}/`, '');
 			lambdaAPICall = await Model.Lambda.findOne({
@@ -99,7 +100,7 @@ class AccessControl {
 				},
 			});
 			if (userAppToken.type !== Model.Token.Constants.Type.SYSTEM) {
-				throw new Error(`Non admin app user can not do any core schema requests`);
+				return res.status(401).send({message: `Non admin app user can not do any core schema requests`});
 			}
 		}
 
@@ -210,7 +211,12 @@ class AccessControl {
 		}
 
 		const rooms = {};
-		const tokenPolicies = await this.__getTokenPolicies(user, appId);
+		const token = await Model.Token.findOne({
+			_userId: {
+				$eq: Model.User.createId(user._id),
+			},
+		});
+		const tokenPolicies = await this.__getTokenPolicies(token, appId);
 		for await (const schema of this._schemas[appId]) {
 			req.body = {};
 			req.accessControlQuery = {};
