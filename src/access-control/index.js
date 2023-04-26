@@ -64,6 +64,9 @@ class AccessControl {
 			throw new Error(`Can not find a token for the requester`);
 		}
 
+		// Skip if we're hitting a plugin
+		if (req.isPluginPath) return next();
+
 		const user = req.authUser;
 		const lambda = req.authLambda;
 		const appId = token._appId.toString();
@@ -424,7 +427,6 @@ class AccessControl {
 		}
 
 		const schema = this._schemas[appId].find((s) => s.name === schemaName || Sugar.String.singularize(s.name) === schemaName);
-
 		if (!schema) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;

@@ -341,6 +341,11 @@ class Routes {
 	async _authenticateToken(req, res, next) {
 		req.timings.authenticateToken = req.timer.interval;
 
+		req.isPluginPath = Object.keys(this._routerMap)
+			.filter((key) => key.indexOf('plugin-') === 0)
+			.map((key) => key.replace('plugin-', ''))
+			.some((key) => req.path.indexOf(`${Config.app.apiPrefix}/${key}`) === 0);
+
 		// Admin route call
 		const adminRoutecall = await AdminRoutes.checkAdminCall(req);
 		if (adminRoutecall.adminToken && adminRoutecall.adminApp) {
