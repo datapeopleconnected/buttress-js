@@ -133,11 +133,7 @@ class BootstrapRest extends EventEmitter {
 		}));
 		app.use(express.static(`${Config.paths.appData}/public`));
 
-		Plugins.on('request', (req, res) => {
-			app.handle((req, res), (err) => {
-				console.error(err);
-			});
-		});
+		Plugins.on('request', (req, res) => app.handle(req, res));
 
 		process.on('unhandledRejection', (error) => {
 			Logging.logError(error);
