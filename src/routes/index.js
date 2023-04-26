@@ -349,7 +349,7 @@ class Routes {
 		// Admin route call
 		const adminRoutecall = await AdminRoutes.checkAdminCall(req);
 		if (adminRoutecall.adminToken && adminRoutecall.adminApp) {
-			req.token = adminRoutecall.adminToken.value;
+			req.token = adminRoutecall.adminToken;
 			Logging.logTimer(`_authenticateAdminToken:got-admin-token`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
@@ -391,7 +391,7 @@ class Routes {
 			const token = await Model.Token.findOne({
 				_lambdaId: apiLambda._id,
 			});
-			req.token = token.value;
+			req.token = token;
 			Model.authApp = req.authApp = apiLambdaApp;
 			Logging.logTimer(`_authenticateAPILambdaToken:got-app ${req.authApp._id}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
