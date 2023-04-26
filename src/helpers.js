@@ -264,6 +264,7 @@ const __getFlattenedSchema = (schema) => {
 			// Handle Object
 			for (const childProp in parent[property]) {
 				if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;
+				if (childProp.indexOf('__') === 0) continue;
 				__buildFlattenedSchema(childProp, parent[property], path, flattened);
 			}
 		} else {
