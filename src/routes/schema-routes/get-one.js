@@ -7,8 +7,8 @@ const Schema = require('../../schema');
  * @class GetOne
  */
 module.exports = class GetOne extends Route {
-	constructor(schema, appShort) {
-		super(`${schema.name}/:id`, `GET ${schema.name}`);
+	constructor(path, schema, appShort) {
+		super(`${path}/:id`, `GET ${schema.name}`);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 

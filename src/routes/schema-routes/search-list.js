@@ -7,8 +7,8 @@ const Schema = require('../../schema');
  * @class SearchList
  */
 module.exports = class SearchList extends Route {
-	constructor(schema, appShort) {
-		super(`${schema.name}`, `SEARCH ${schema.name} LIST`);
+	constructor(path, schema, appShort) {
+		super(`${path}`, `SEARCH ${schema.name} LIST`);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 

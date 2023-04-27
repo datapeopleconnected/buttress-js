@@ -290,8 +290,9 @@ class Routes {
 
 			const appShortId = Helpers.shortId(app._id);
 
+			const schemaPath = schemaData.name.replace('-', '/');
 			try {
-				route = new Route(schemaData, appShortId);
+				route = new Route(schemaPath, schemaData, appShortId);
 			} catch (err) {
 				if (err instanceof Helpers.Errors.RouteMissingModel) return Logging.logWarn(`${err.message} for ${app.name}`);
 
