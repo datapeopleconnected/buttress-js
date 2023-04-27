@@ -324,6 +324,9 @@ class LambdaSchemaModel extends SchemaModel {
 					'trigger.apiEndpoint.url': {
 						$eq: apiTrigger.apiEndpoint.url,
 					},
+					'_appId': {
+						$eq: app._id,
+					},
 				});
 			}
 
