@@ -9,8 +9,8 @@ const Schema = require('../../schema');
  * @class GetList
  */
 module.exports = class GetList extends Route {
-	constructor(path, schema, appShort) {
-		super(`${path}`, `GET ${schema.name} LIST`);
+	constructor(schema, appShort) {
+		super(`${schema.name}`, `GET ${schema.name} LIST`);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 
