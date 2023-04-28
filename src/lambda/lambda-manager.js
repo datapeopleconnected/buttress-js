@@ -272,6 +272,8 @@ class LambdaManager {
 			const paths = data.paths;
 			const schema = data.collection;
 
+			Logging.logDebug(`Manager is announcing path mutation lambda to be executed for ${schema} on paths ${paths}`);
+
 			const lambdas = this._lambdaPathsMutation.filter((item) => {
 				return item.paths.some((itemPath) => paths.some((path) => this._checkMatchingPaths(path, itemPath, schema)));
 			}).map((item) => item.lambdaId);
