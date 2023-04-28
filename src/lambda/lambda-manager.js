@@ -341,15 +341,15 @@ class LambdaManager {
 	 * @param {String} timeout
 	 */
 	async _debounceLambdaTriggers(lambdaIds, body, timeout) {
-		lambdaIds.forEach((id) => {
-			let debouncedLambdaIdx = -1;
-			this._lambdaExecDebouncer.forEach((item, idx) => {
-				if (item.lambdaId.toString() === id.toString()) {
-					debouncedLambdaIdx = idx;
-				}
-			});
+		// We'll make a hash of the body so we can use it to compare in the debouncer
+		const bodyHash = hash(body);
 
-			const retry = this._lambdaExecDebouncer[debouncedLambdaIdx]?.retry;
+		lambdaIds.forEach((id) => {
+			// Check to see if there is an path mutation for the same lambda & body
+			const debouncedLambdaIdx = this._lambdaExecDebouncer.findIndex(
+				(item) => (item.lambdaId.toString() === id.toString() && item.bodyHash === bodyHash));
+
+			const retry = this._lambdaExecDebouncer[debouncedLambdaIdx]?.retry || 0;
 
 			if (debouncedLambdaIdx === -1 || retry > this._maximumRetry) {
 				this._lambdaExecDebouncer.push({
@@ -362,6 +362,7 @@ class LambdaManager {
 					}, timeout),
 					lambdaId: id,
 					body,
+					bodyHash,
 					retry: 1,
 				});
 
