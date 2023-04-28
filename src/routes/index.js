@@ -59,20 +59,20 @@ class Routes {
 
 		this.app.use((req, res, next) => {
 			req.on('close', function() {
-				Logging.logDebug(`close`, req.id);
+				Logging.logSilly(`close`, req.id);
 			});
 			req.on('end', function() {
-				Logging.logDebug(`end`, req.id);
+				Logging.logSilly(`end`, req.id);
 			});
 			req.on('error', function(err) {
 				Logging.logError(`req onError`, req.id);
 				Logging.logError(err, req.id);
 			});
 			req.on('pause', function() {
-				Logging.logDebug(`pause`, req.id);
+				Logging.logSilly(`pause`, req.id);
 			});
 			req.on('resume', function() {
-				Logging.logDebug(`resume`, req.id);
+				Logging.logSilly(`resume`, req.id);
 			});
 
 			req.on('timeout', function() {
@@ -81,13 +81,13 @@ class Routes {
 
 			if (req.socket) {
 				req.socket.on('close', (hadError) => {
-					Logging.logDebug(`socket onClose had_error:${hadError}`, req.id);
+					Logging.logSilly(`socket onClose had_error:${hadError}`, req.id);
 				});
 				req.socket.on('connect', () => {
-					Logging.logDebug(`socket onConnect`, req.id);
+					Logging.logSilly(`socket onConnect`, req.id);
 				});
 				req.socket.on('end', () => {
-					Logging.logDebug(`socket onEnd`, req.id);
+					Logging.logSilly(`socket onEnd`, req.id);
 				});
 				req.socket.on('lookup', (err, address, family, host) => {
 					if (err) {
@@ -99,7 +99,7 @@ class Routes {
 					Logging.logDebug(`socket onLookup address:${address} family:${family} host:${host}}`, req.id);
 				});
 				req.socket.on('timeout', () => {
-					Logging.logDebug(`socket onTimeout`, req.id);
+					Logging.logError(`socket onTimeout`, req.id);
 				});
 				req.socket.on('error', (err) => {
 					Logging.logError(`socket onError`, req.id);

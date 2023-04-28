@@ -129,11 +129,11 @@ class Route {
 	async exec(req, res) {
 		const ip = req.ip || req._remoteAddress || (req.connection && req.connection.remoteAddress) || undefined;
 		Logging.logTimer(`${req.method} ${req.originalUrl || req.url} ${ip}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
-		Logging.logTimer('Route:exec:start', req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		Logging.logTimer('Route:exec:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		this._timer = req.timer;
 
 		if (!this._exec) {
-			Logging.logTimer('Route:exec:end-no-exec-defined', req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+			Logging.logTimer('Route:exec:end-no-exec-defined', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return Promise.reject(new Helpers.Errors.RequestError(500));
 		}
 
@@ -174,7 +174,7 @@ class Route {
 			await this._boardcastData(req, res, result);
 		}
 
-		Logging.logTimer(`Route:exec:end`, this._timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		Logging.logTimer(`Route:exec:end`, this._timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
 
 	/**
@@ -190,7 +190,7 @@ class Route {
 		const isReadStream = (result instanceof Stream && result.readable);
 
 		Logging.logTimer(`_respond:start isReadStream:${isReadStream} redactResults:${this.redactResults}`,
-			req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+			req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		if (isReadStream) {
 			let chunkCount = 0;
@@ -203,11 +203,11 @@ class Route {
 
 			res.set('Content-Type', 'application/json');
 
-			Logging.logTimer(`_respond:start-stream`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+			Logging.logTimer(`_respond:start-stream`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			result.once('end', () => {
 				// Logging.logTimerException(`PERF: STREAM DONE: ${this.path}`, req.timer, 0.05, req.id);
-				Logging.logTimer(`_respond:end-stream chunks:${chunkCount}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+				Logging.logTimer(`_respond:end-stream chunks:${chunkCount}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 				this._close(req);
 			});
 
@@ -224,7 +224,7 @@ class Route {
 
 		this._close(req);
 
-		Logging.logTimer(`_respond:end ${this.path}`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		Logging.logTimer(`_respond:end ${this.path}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		// Logging.logTimerException(`PERF: DONE: ${this.path}`, req.timer, 0.05, req.id);
 
 		return result;

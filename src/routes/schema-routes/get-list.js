@@ -36,7 +36,7 @@ module.exports = class GetList extends Route {
 	}
 
 	_validate(req, res, token) {
-		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		const result = {
 			query: {},
@@ -57,7 +57,7 @@ module.exports = class GetList extends Route {
 			return false;
 		}
 
-		Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
 
 		result.query = query;
@@ -69,7 +69,7 @@ module.exports = class GetList extends Route {
 			return [];
 		}
 
-		Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.DEBUG, req.id);
+		Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
 	}
 };
