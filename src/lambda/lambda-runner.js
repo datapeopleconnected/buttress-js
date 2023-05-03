@@ -231,6 +231,7 @@ class LambdasRunner {
 				type: 'ERROR',
 			});
 			nrp.emit('lambda-worker-errored', {
+				workerId: payload.workerId,
 				restWorkerId: payload.data.restWorkerId,
 				lambdaId: lambdaId,
 				lambdaType: triggerType,
