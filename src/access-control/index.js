@@ -105,7 +105,7 @@ class AccessControl {
 					$eq: Model.Token.Constants.Type.SYSTEM,
 				},
 			});
-			if (userAppToken) {
+			if (!userAppToken) {
 				return res.status(401).send({message: `Non admin app user can not do any core schema requests`});
 			}
 		}

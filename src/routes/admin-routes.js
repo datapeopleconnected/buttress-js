@@ -95,7 +95,7 @@ class AdminRoutes {
 			if (!adminToken) {
 				return res.status(401).send({message: 'invalid_token'});
 			}
-			if (adminToken.type === Model.Model.Constants.Type.SYSTEM) {
+			if (adminToken.type !== Model.Token.Constants.Type.SYSTEM) {
 				return res.status(401).send({message: 'unauthorised_token'});
 			}
 			if (!lambdaToInstall || !Array.isArray(lambdaToInstall)) {
@@ -234,14 +234,6 @@ class AdminRoutes {
 	 * @param {Array} lambdas
 	 */
 	async _createAdminLambda(lambdas) {
-		const adminLambdaAuth = {
-			type: 'lambda',
-			domains: [Config.app.host],
-			permissions: [
-				{route: '*', permission: '*'},
-			],
-		};
-
 		try {
 			const adminToken = await Model.Token.findOne({
 				type: Model.Token.Constants.Type.SYSTEM,
@@ -256,11 +248,24 @@ class AdminRoutes {
 			}
 
 			for await (const lambda of lambdas) {
-				const lambdaDB = await Model.Lambda.findOne({name: lambda.name});
+				const lambdaDB = await Model.Lambda.findOne({
+					name: lambda.name,
+					_appId: Model.App.createId(adminApp._id),
+				});
 				if (lambdaDB) continue;
+
+				const adminLambdaAuth = {
+					type: 'lambda',
+					domains: [Config.app.host],
+					permissions: [
+						{route: '*', permission: '*'},
+					],
+					policyProperties: lambda.policyProperties,
+				};
 
 				await Model.Lambda.add(lambda, adminLambdaAuth, adminApp);
 			}
+
 			delete Model.authApp;
 		} catch (err) {
 			Logging.logError(`Lambda Manager failed to clone required lambdas for installation due to ${err.message}`);
