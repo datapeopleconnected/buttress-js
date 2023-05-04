@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 'use strict';
 
 /**
@@ -752,7 +753,6 @@ class Routes {
 			lambda = await Model.Lambda.findById(endpoint);
 		} else {
 			lambda = await Model.Lambda.findOne({
-				
 				'trigger.apiEndpoint.url': {
 					$eq: endpoint,
 				},

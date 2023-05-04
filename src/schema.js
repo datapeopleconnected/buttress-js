@@ -93,7 +93,7 @@ class Schema {
 	}
 
 	static async build(schemas) {
-        schemas = await Plugins.apply_filters('before_schema_build', schemas);
+		schemas = await Plugins.apply_filters('before_schema_build', schemas);
 		schemas = schemas.map((schema) => Schema.extend(schemas, schema));
 		for await (const schema of schemas) {
 			const res = await this.createTimeSeriesSchema(schema.name, schema.properties);
@@ -102,7 +102,7 @@ class Schema {
 				schemas.push(res[key]);
 			});
 		}
-        schemas = await Plugins.apply_filters('after_schema_build', schemas);
+		schemas = await Plugins.apply_filters('after_schema_build', schemas);
 		return schemas;
 	}
 

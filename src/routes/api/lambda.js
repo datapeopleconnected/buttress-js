@@ -1,3 +1,4 @@
+/* eslint-disable max-lines */
 'use strict'; // eslint-disable-line max-lines
 
 /**
@@ -25,7 +26,7 @@ const nrp = new NRP(Config.redis);
 const ObjectId = require('mongodb').ObjectId;
 const Sugar = require('sugar');
 
-const AccessControl = require('../../access-control');
+// const AccessControl = require('../../access-control');
 const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');

@@ -20,7 +20,7 @@ const NRP = require('node-redis-pubsub');
 const nrp = new NRP(Config.redis);
 const ObjectId = require('mongodb').ObjectId;
 
-const AccessControl = require('../../access-control');
+// const AccessControl = require('../../access-control');
 const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
