@@ -21,7 +21,8 @@
     "docker:build": "docker build -t buttress .",
     "docker:build-token": "npm run docker:build -- --build-arg NPM_TOKEN=${NPM_TOKEN}",
     "docker:run": "docker-compose -f .docker/docker-compose.yml up",
-    "docker:run-full": "docker-compose -f .docker/docker-compose.full.yml up"
+    "docker:run-full": "docker-compose -f .docker/docker-compose.full.yml up",
+    "prepare": "husky install && ./.husky/nvm-fix"
   },
   "repository": {
     "type": "git",
@@ -71,10 +72,5 @@
     "gulp-typescript": "^6.0.0-alpha.1",
     "husky": "^8.0.3",
     "mocha": "^10.2.0"
-  },
-  "husky": {
-    "hooks": {
-      "pre-commit": "npm run lint && npm test"
-    }
   }
 }

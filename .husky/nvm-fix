@@ -1,0 +1,16 @@
+#!/usr/bin/env sh
+
+NVM="$HOME/.config/nvm"
+HUSKYRC="$HOME/.huskyrc"
+echo $NVM
+if [ -d "$NVM" ]; then
+  if [ ! -f "$HUSKYRC" ]; then
+    echo "Found .nvm folder but no huskyrc file. Creating one for you. 🤗"
+
+    cat <<EOA > $HUSKYRC
+export NVM_DIR="$HOME/.config/nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+[ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
+EOA
+  fi
+fi
