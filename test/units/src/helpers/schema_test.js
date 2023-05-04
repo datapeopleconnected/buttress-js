@@ -17,7 +17,7 @@
 const {describe, it} = require('mocha');
 const assert = require('assert');
 
-const Helpers = require('../../../../src/helpers');
+const Helpers = require('../../../../dist/helpers');
 
 describe('helpers.schema:populateObject', () => {
 	const schema = {
@@ -84,5 +84,10 @@ describe('helpers.schema:populateObject', () => {
 
 	it('result should have default value for sub property of object that is object type', async () => {
 		assert(result['specification']['env'] === null);
+	});
+
+	it('result should a cars property with an empty array', async () => {
+		assert(Array.isArray(result['cars']));
+		assert(result['cars'].length === 0);
 	});
 });

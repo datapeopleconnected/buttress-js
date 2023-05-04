@@ -21,7 +21,7 @@ require('node-env-obj')({
 	configPath: '../src',
 });
 
-const Logging = require('../src/logging');
+const Logging = require('../dist/logging');
 
 exports.mochaHooks = {
 	beforeAll() {

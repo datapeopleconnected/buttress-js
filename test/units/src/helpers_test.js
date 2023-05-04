@@ -17,7 +17,7 @@
 const {describe, it} = require('mocha');
 const assert = require('assert');
 
-const Helpers = require('../../../src/helpers');
+const Helpers = require('../../../dist/helpers');
 
 describe('helpers:getFlattenedSchema', () => {
 	const schema = {
