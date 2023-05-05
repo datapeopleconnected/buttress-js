@@ -28,9 +28,12 @@ class PolicyMatch {
 		const matches = Object.keys(selection).reduce((arr, key) => {
 			if (!(key in policyProperties)) return arr;
 			const [selectionCriterionKey] = Object.keys(selection[key]);
-			const [rhs] = Object.values(selection[key]);
-			const lhs = policyProperties[key];
-			match = AccessControlHelpers.evaluateOperation(lhs.toUpperCase(), rhs.toUpperCase(), selectionCriterionKey);
+			let [rhs] = Object.values(selection[key]);
+			let lhs = policyProperties[key];
+			if (!Number(rhs)) rhs = rhs.toUpperCase();
+			if (!Number(lhs)) lhs = lhs.toUpperCase();
+
+			match = AccessControlHelpers.evaluateOperation(lhs, rhs, selectionCriterionKey);
 			arr.push(match);
 
 			return arr;
