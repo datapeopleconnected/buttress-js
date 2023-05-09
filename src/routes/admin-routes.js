@@ -30,7 +30,6 @@ class AdminRoutes {
 			'/api/v1/check/admin',
 			'/api/v1/admin/activate/:superToken',
 			'/api/v1/admin/install-lambda',
-			'/api/v1/add/admin/user',
 		];
 	}
 
