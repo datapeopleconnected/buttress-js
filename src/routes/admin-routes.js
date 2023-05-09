@@ -51,6 +51,7 @@ class AdminRoutes {
 			const superApp = await Model.App.findOne({
 				_tokenId: Model.Token.createId(superToken._id),
 			});
+
 			if (!superApp) {
 				Logging.logError('Buttress admin check can not find super app');
 				return res.status(404).send({message: 'admin_app_not_found'});

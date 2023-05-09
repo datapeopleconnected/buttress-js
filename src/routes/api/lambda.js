@@ -179,14 +179,16 @@ class AddLambda extends Route {
 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
+			if (req.body.lambda && req.body.lambda.policyProperties) {
+				req.body.auth.policyProperties = req.body.lambda.policyProperties;
+			}
+
 			if (!req.body.auth) {
 				this.log(`[${this.name}] Auth properties are required when creating a lambda`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
 			}
 
-			if (!req.body.auth.permissions ||
-					!req.body.auth.domains ||
-					!req.body.auth.policyProperties) {
+			if (!req.body.auth.permissions || !req.body.auth.domains || !req.body.auth.policyProperties) {
 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
