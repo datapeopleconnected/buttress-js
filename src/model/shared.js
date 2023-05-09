@@ -122,7 +122,8 @@ const _doValidateUpdate = function(pathContext, flattenedSchema) {
 
 				return rexMatch;
 			}, null);
-			if (!matchObject) continue;
+
+			if (!matchObject || !fullPath.includes(matchObject.input)) continue;
 
 			const isRemoved = fullPath.includes('remove');
 			matchObject.splice(0, 1);
