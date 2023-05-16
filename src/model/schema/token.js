@@ -17,6 +17,9 @@
  */
 
 const Crypto = require('crypto');
+const Config = require('node-env-obj')();
+const NRP = require('node-redis-pubsub');
+const nrp = new NRP(Config.redis);
 // const Shared = require('../shared');
 const Logging = require('../../logging');
 
@@ -210,9 +213,11 @@ class TokenSchemaModel extends SchemaModel {
 			delete policyProperties.query; // What is this line for??
 		}
 
-		return super.update({
+		await super.update({
 			'_id': this.createId(tokenId),
 		}, {$set: {'policyProperties': policyProperties}});
+
+		nrp.emit('app-routes:bust-cache', {});
 	}
 
 	/**
@@ -220,7 +225,7 @@ class TokenSchemaModel extends SchemaModel {
 	 * @param {Object} policyProperties - Policy properties
 	 * @return {Promise} - resolves to an array of Apps
 	 */
-	updatePolicyPropertiesById(token, policyProperties) {
+	async updatePolicyPropertiesById(token, policyProperties) {
 		if (policyProperties.query) {
 			delete policyProperties.query; // Again, what is this line for??
 		}
@@ -231,7 +236,7 @@ class TokenSchemaModel extends SchemaModel {
 			return obj;
 		}, []);
 
-		return super.update({
+		await super.update({
 			'_id': this.createId(token._id),
 		}, {
 			$set: {
@@ -241,20 +246,24 @@ class TokenSchemaModel extends SchemaModel {
 				},
 			},
 		});
+
+		nrp.emit('app-routes:bust-cache', {});
 	}
 
 	/**
 	 * @param {String} tokenId - tokenId
 	 * @return {Promise}
 	 */
-	clearPolicyPropertiesById(tokenId) {
-		return super.update({
+	async clearPolicyPropertiesById(tokenId) {
+		await super.update({
 			'_id': this.createId(tokenId),
 		}, {
 			$set: {
 				'policyProperties': {},
 			},
 		});
+
+		nrp.emit('app-routes:bust-cache', {});
 	}
 }
 

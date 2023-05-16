@@ -453,10 +453,15 @@ class DeletePolicy extends Route {
 		});
 	}
 
-	_exec() {
-		return new Promise((resolve, reject) => {
-			Model.Policy.rm(this._policy).then(() => true).then(resolve, reject);
-		});
+	_exec(req) {
+		return Model.Policy.rm(this._policy)
+			.then(() => {
+				nrp.emit('app-policy:bust-cache', {
+					appId: req.authApp._id,
+				});
+
+				return true;
+			});
 	}
 }
 routes.push(DeletePolicy);

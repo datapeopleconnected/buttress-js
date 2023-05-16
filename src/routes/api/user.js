@@ -562,7 +562,7 @@ class UpdateUserPolicyProperties extends Route {
 		}
 
 		const userToken = await Model.Token.findOne({
-			_userId: req.params.id,
+			_userId: Model.User.createId(req.params.id),
 		});
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
@@ -604,11 +604,69 @@ class UpdateUserPolicyProperties extends Route {
 routes.push(UpdateUserPolicyProperties);
 
 /**
+ * @class RemoveUserPolicyProperties
+ */
+class RemoveUserPolicyProperties extends Route {
+	constructor() {
+		super('user/:id/removePolicyProperty', 'REMOVE USER POLICY PROPERTY');
+		this.verb = Route.Constants.Verbs.PUT;
+		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityBroadcast = true;
+	}
+
+	async _validate(req, res, token) {
+		if (!req.body || !req.body.policyProperties) {
+			this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
+
+		const exists = Model.User.exists(req.params.id);
+		if (!exists) {
+			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+		}
+
+		const userToken = await Model.Token.findOne({
+			_userId: Model.User.createId(req.params.id),
+		});
+
+
+		if (!userToken) {
+			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
+		}
+
+		return Promise.resolve(userToken);
+	}
+
+	async _exec(req, res, validate) {
+		const reqPolicyProps = req.body.policyProperties;
+		const policyProps = validate.policyProperties;
+		Object.keys(reqPolicyProps).forEach((key) => {
+			if (policyProps[key] && policyProps[key] === reqPolicyProps[key]) {
+				delete policyProps[key];
+			}
+		});
+		await Model.Token.updatePolicyPropertiesById(validate._id, policyProps);
+
+		nrp.emit('worker:socket:evaluateUserRooms', {
+			userId: req.params.id,
+			appId: req.authApp._id,
+		});
+
+		return true;
+	}
+}
+routes.push(RemoveUserPolicyProperties);
+
+/**
  * @class ClearUserPolicyProperties
  */
 class ClearUserPolicyProperties extends Route {
 	constructor() {
-		super('user/:id/clearPolicyProperty', 'REMOVE USER POLICY PROPERTY');
+		super('user/:id/clearPolicyProperty', 'CLEAR USER POLICY PROPERTY');
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -629,7 +687,7 @@ class ClearUserPolicyProperties extends Route {
 		}
 
 		const userToken = await Model.Token.findOne({
-			_userId: req.params.id,
+			_userId: Model.User.createId(req.params.id),
 		});
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);

@@ -296,7 +296,7 @@ class LambdaManager {
 	 */
 	_checkMatchingPaths(path, itemPath, schema) {
 		const isWildedCardRootPath = itemPath.split(`${schema}.*`).join('');
-		if ((!isWildedCardRootPath) || (isWildedCardRootPath !== itemPath && path === schema)) return true;
+		if (!isWildedCardRootPath || (isWildedCardRootPath !== itemPath && path === schema)) return true;
 
 		const lambdaPathId = itemPath.split(`${schema}.`).filter((v) => v).join('').split('.').shift();
 		const crPathId = path.split(`${schema}.`).filter((v) => v).join('').split('.').shift();
@@ -319,6 +319,7 @@ class LambdaManager {
 		if (lambdaPath.includes('*')) {
 			const wildCardedPath = lambdaPath.split('.*').shift();
 			if (!wildCardedPath) return true;
+			if (!crPath.includes(wildCardedPath)) return false;
 			const lambdaObservedPath = lambdaPath.split(`${wildCardedPath}.*`).pop();
 			const crObservedPath = crPath.split(`${wildCardedPath}`).pop();
 

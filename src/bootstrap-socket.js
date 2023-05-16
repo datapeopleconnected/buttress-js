@@ -556,6 +556,7 @@ class BootstrapSocket {
 					collections: collections,
 					userId: user._id,
 					room: roomId,
+					apiPath: app.apiPath,
 				});
 			}
 
@@ -591,6 +592,7 @@ class BootstrapSocket {
 					collections: collections,
 					userId: user._id,
 					room: roomId,
+					apiPath: app.apiPath,
 				});
 			}
 
