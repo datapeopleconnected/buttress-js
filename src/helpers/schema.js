@@ -187,7 +187,7 @@ const __validateProp = (prop, config) => {
 		if (type === 'string') {
 			try {
 				// TODO: FIX THIS!
-				// valid = uuid.parse(prop.value);
+				// valid = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(prop.value);
 				valid = true;
 			} catch (e) {
 				Logging.logDebug(e);
