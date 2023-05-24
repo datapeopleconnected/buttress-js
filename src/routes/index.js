@@ -799,6 +799,7 @@ class Routes {
 		const data = {
 			restWorkerId: this.id,
 			lambdaId: lambda._id,
+			lambdaExecBehavior: triggerAPI.apiEndpoint.type,
 			headers,
 		};
 		if (body) {

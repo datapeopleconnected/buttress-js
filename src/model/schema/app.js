@@ -223,7 +223,11 @@ class AppSchemaModel extends SchemaModel {
 			role: 'APP',
 		});
 
-		await Model.App.setPolicyPropertiesList(body.id, appPolicyPropertiesList);
+		await Model.App.setPolicyPropertiesList({
+			_id: {
+				$eq: body.id,
+			},
+		}, appPolicyPropertiesList);
 	}
 
 	/**
@@ -321,13 +325,12 @@ class AppSchemaModel extends SchemaModel {
 	}
 
 	/**
-	 * @param {ObjectId} appId - app id which needs to be updated
+	 * @param {Object} query - query of which decides the app to be updated
 	 * @param {Object} appPolicyPropertiesList - App policy property list
 	 * @return {Promise} - resolves when save operation is completed
 	 */
-	async setPolicyPropertiesList(appId, appPolicyPropertiesList) {
-		Logging.logSilly(`Add App Policy Property List ${appId}`);
-		return super.updateById(appId, {$set: {policyPropertiesList: appPolicyPropertiesList}});
+	async setPolicyPropertiesList(query, appPolicyPropertiesList) {
+		return super.updateOne(query, {$set: {policyPropertiesList: appPolicyPropertiesList}});
 	}
 
 	/**

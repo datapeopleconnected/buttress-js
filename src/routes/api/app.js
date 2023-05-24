@@ -182,8 +182,10 @@ class AddApp extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_json`));
 			}
 
-			if (req.body.policyPropertiesList) {
-				const validPolicyPropertiesList = Object.values(req.body.policyPropertiesList).every((i) => Array.isArray(i));
+			const postedPropsList = req.body.policyPropertiesList;
+			if (postedPropsList) {
+				const policyPropertiesList = Object.keys(postedPropsList).filter((key) => key !== 'query');
+				const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(postedPropsList[key]));
 				if (!validPolicyPropertiesList) {
 					this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
@@ -503,7 +505,7 @@ routes.push(GetAppPolicyPropertyList);
  */
 class SetAppPolicyPropertyList extends Route {
 	constructor() {
-		super('app/policyPropertyList', 'SET APP POLICY PROPERTY LIST');
+		super('app/policyPropertyList/:update/:appId?', 'SET APP POLICY PROPERTY LIST');
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -525,10 +527,32 @@ class SetAppPolicyPropertyList extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_type`));
 			}
 
-			const validPolicyPropertiesList = Object.values(req.body).every((i) => Array.isArray(i));
+			if (!req.params.appId && (!req.body.query || Object.keys(req.body.query).length < 1)) {
+				this.log('ERROR: Missing appId or a query to update a targetted app', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_app_query`));
+			}
+
+			const policyPropertiesList = Object.keys(req.body).filter((key) => key !== 'query');
+			const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(req.body[key]));
 			if (!validPolicyPropertiesList) {
 				this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+			}
+
+			if (req.params.update === 'true') {
+				const currentAppListKeys = Object.keys(req.authApp.policyPropertiesList);
+				Object.keys(req.body).forEach((key) => {
+					if (currentAppListKeys.includes(key)) {
+						req.body[key] = req.body[key].concat(req.authApp.policyPropertiesList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
+					}
+				});
+				const postedPropsList = Object.keys(req.body).reduce((obj, key) => {
+					if (key === 'query') return obj;
+
+					obj[key] = req.body[key];
+					return obj;
+				}, {});
+				req.body = {...req.authApp.policyPropertiesList, ...postedPropsList};
 			}
 
 			resolve(req.body);
@@ -536,66 +560,27 @@ class SetAppPolicyPropertyList extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.App.setPolicyPropertiesList(req.authApp._id, validate);
-		return validate;
+		const appId = req.params.appId;
+		const update = Object.assign({}, validate);
+		if (update.query) delete update.query;
+
+		let query = {};
+		if (appId) {
+			query = {
+				_id: {
+					$eq: appId,
+				},
+			};
+		}
+		if (validate.query && Object.keys(validate.query).length > 0) {
+			query = validate.query;
+		}
+
+		await Model.App.setPolicyPropertiesList(query, update);
+		return update;
 	}
 }
 routes.push(SetAppPolicyPropertyList);
-
-/**
- * @class UpdateAppPolicyPropertyList
- */
-class UpdateAppPolicyPropertyList extends Route {
-	constructor() {
-		super('app/updatePolicyPropertyList', 'UPDATE APP POLICY PROPERTY LIST');
-		this.verb = Route.Constants.Verbs.PUT;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
-
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			// removing body query which we need to consider for policy vulnerabilities
-			delete req.body.query;
-
-			if (!req.authApp) {
-				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
-			}
-
-			if (!req.body) {
-				this.log('ERROR: Missing body', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_body`));
-			}
-
-			if (typeof req.body !== 'object' || ( typeof req.body === 'object' && Array.isArray(req.body))) {
-				this.log('ERROR: Policy property list is invalid type', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `invalid_type`));
-			}
-
-			const validPolicyPropertiesList = Object.values(req.body).every((i) => Array.isArray(i));
-			if (!validPolicyPropertiesList) {
-				this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
-			}
-
-			const currentAppListKeys = Object.keys(req.authApp.policyPropertiesList);
-			Object.keys(req.body).forEach((key) => {
-				if (currentAppListKeys.includes(key)) {
-					req.body[key] = req.body[key].concat(req.authApp.policyPropertiesList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
-				}
-			});
-			req.body = {...req.authApp.policyPropertiesList, ...req.body};
-
-			resolve(true);
-		});
-	}
-
-	_exec(req, res, validate) {
-		return Model.App.setPolicyPropertiesList(req.authApp._id, req.body)
-			.then(() => true);
-	}
-}
-routes.push(UpdateAppPolicyPropertyList);
 
 /**
  * @class AppCount

@@ -170,10 +170,6 @@ class LambdasRunner {
 		} catch (err) {
 			await this._updateDBLambdaErrorExecution(lambda, execution, type);
 
-			if (type === 'API_ENDPOINT') {
-				nrp.emit('lambda-execution-finish', {code: 400, res: err.message, restWorkerId: data.restWorkerId});
-			}
-
 			Logging.logDebug(err);
 
 			return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));
@@ -222,7 +218,12 @@ class LambdasRunner {
 			await this.execute(lambda, execution, app, triggerType, payload.data);
 
 			this.working = false;
-			nrp.emit('lambda-worker-finished', {workerId: this.id, lambdaId: lambdaId});
+			nrp.emit('lambda-worker-finished', {
+				workerId: this.id,
+				lambdaId: lambdaId,
+				restWorkerId: payload.data.restWorkerId,
+				workerExecID: payload.data.workerExecID,
+			});
 		} catch (err) {
 			this.working = false;
 			Logging.logError(err.message);
@@ -232,6 +233,7 @@ class LambdasRunner {
 			});
 			nrp.emit('lambda-worker-errored', {
 				workerId: payload.workerId,
+				workerExecID: payload.data.workerExecID,
 				restWorkerId: payload.data.restWorkerId,
 				lambdaId: lambdaId,
 				lambdaType: triggerType,
@@ -266,8 +268,6 @@ class LambdasRunner {
 			}
 
 			this.working = true;
-
-			nrp.emit('lambda-api-executed', payload);
 
 			this.fetchExecuteLambda(payload);
 		});

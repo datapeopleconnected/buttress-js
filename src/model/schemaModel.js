@@ -353,6 +353,15 @@ class SchemaModel {
 	}
 
 	/**
+	 * @param {*} query
+	 * @param {*} update
+	 * @return {promise}
+	 */
+	updateOne(query, update) {
+		return this.adapter.updateOne(query, update);
+	}
+
+	/**
 	 * @param {*} id
 	 * @param {*} query
 	 * @return {promise}

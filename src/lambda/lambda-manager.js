@@ -1,6 +1,7 @@
 const fs = require('fs');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
+const uuid = require('uuid');
 const hash = require('object-hash');
 const Sugar = require('sugar');
 const Config = require('node-env-obj')();
@@ -173,12 +174,34 @@ class LambdaManager {
 			Logging.log(`[${this.name}]: Got ${lambdas.length} lambdas to announce`);
 		}
 
-		let lambdaIds = this._lambdaAPI;
-		lambdaIds = lambdaIds.concat(lambdas.map((lambda) => lambda._id));
+		const execLambdas = lambdas.map((lambda) => {
+			const output = {
+				lambdaId: (lambda.lambdaId) ? lambda.lambdaId : lambda._id,
+			};
 
-		return lambdaIds.reduce((prev, id) => {
-			// Call out to workers to see who can run this lamb
-			return prev.then(() => nrp.emit('lambda-manager-announce', {lambdaId: id}));
+			const isAPILambda = lambda.restWorkerId;
+			if (isAPILambda) {
+				output.restWorkerId = lambda.restWorkerId;
+				output.workerExecID = lambda.workerExecID;
+				output.query = lambda.query;
+				output.body = lambda.body;
+				output.headers = lambda.headers;
+			}
+
+			return output;
+		});
+
+		return execLambdas.reduce((prev, next) => {
+			// Call out to workers to see who can run this lambda
+			return prev.then(() => {
+				nrp.emit('lambda-manager-announce', next);
+
+				const isAPILambda = next.restWorkerId;
+				if (isAPILambda) {
+					const lambdaIdx = this._lambdaAPI.findIndex((lambda) => next.lambdaId === lambda.lambdaId);
+					this._lambdaAPI[lambdaIdx].announced = true;
+				}
+			});
 		}, Promise.resolve());
 	}
 
@@ -195,10 +218,15 @@ class LambdaManager {
 	 * Untrack a worker lambda
 	 * @param {string} workerId
 	 * @param {string} lambdaId
+	 * @param {string} workerExecID
 	 */
-	untrackWorkerLambda(workerId, lambdaId) {
+	untrackWorkerLambda(workerId, lambdaId, workerExecID = null) {
 		delete this._workerMap[workerId];
 		delete this._lambdaMap[lambdaId];
+
+		if (!workerExecID) return;
+		const apiLambdaIdx = this._lambdaAPI.findIndex((l) => l.lambdaId === lambdaId && l.workerExecID === workerExecID);
+		this._lambdaAPI.splice(apiLambdaIdx, 1);
 	}
 
 	/**
@@ -241,27 +269,36 @@ class LambdaManager {
 			if (payload.lambdaType === 'API_ENDPOINT') {
 				nrp.emit('lambda-execution-finish', {code: 400, res: payload.errMessage, restWorkerId: payload.restWorkerId});
 			}
-			this.untrackWorkerLambda(payload.workerId, payload.lambdaId);
+			this.untrackWorkerLambda(payload.workerId, payload.lambdaId, payload.workerExecID);
+			this._checkAPIQueue();
 		});
 
 		nrp.on('lambda-worker-finished', (payload) => {
 			Logging.logDebug(`[${this.name}] ${payload.lambdaId} was completed by ${payload.workerId}`);
-			this.untrackWorkerLambda(payload.workerId, payload.lambdaId);
+			this.untrackWorkerLambda(payload.workerId, payload.lambdaId, payload.workerExecID);
+			this._checkAPIQueue();
 		});
 	}
 
 	async _handleLambdaAPIExecution() {
 		nrp.on('executeLambdaAPI', async (data) => {
-			Logging.log(`Manager is announcing API lambda ${data.lambdaId} to be executed`);
-			this._lambdaAPI.push(data);
+			data.workerExecID = uuid.v4();
+			Logging.log(`Manager is queuing API lambda ${data.lambdaId} to be executed`);
+			let index = this._lambdaAPI.length;
+			if (data.lambdaExecBehavior === 'SYNC' && index > 0) {
+				const lambdaIdx = index = this._lambdaAPI.findIndex((item) => item.lambdaExecBehavior !== 'SYNC') - 1;
+				index = (lambdaIdx !== -1) ? lambdaIdx : index;
+			}
 
-			nrp.emit('lambda-manager-announce', data);
+			this._lambdaAPI.splice(index, 0, data);
+			this._announcePendingLambda(this._lambdaAPI);
 		});
+	}
 
-		nrp.on('lambda-api-executed', async (data) => {
-			const lambdaIdx = this._lambdaAPI.findIndex((id) => data.lambdaId === id);
-			this._lambdaAPI.splice(lambdaIdx, 1);
-		});
+	async _checkAPIQueue() {
+		if (this._lambdaAPI.length > 0) {
+			this._announcePendingLambda(this._lambdaAPI);
+		}
 	}
 
 	/**

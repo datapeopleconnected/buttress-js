@@ -113,10 +113,8 @@ class Filter {
 		if (!accessControlQuery || Object.keys(accessControlQuery).length < 1) return passed;
 
 		const reqQuery = (req.body.query)? req.body.query : null;
-
 		const isOriginalQueryEmpty = await this._checkOriginalQueryIsEmpty(reqQuery);
-		const requestVerb = req.method || req.originalMethod; // need to do this bit properly for policy vulnerability
-		if (isOriginalQueryEmpty && (requestVerb === 'GET' || requestVerb === 'SEARCH')) {
+		if (isOriginalQueryEmpty) {
 			req.body.query = accessControlQuery;
 			return passed;
 		}
