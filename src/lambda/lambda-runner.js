@@ -187,12 +187,6 @@ class LambdasRunner {
 	 * @return {promise}
 	 */
 	async fetchExecuteLambda(payload) {
-		await new Promise((resolve) => {
-			setTimeout(() => {
-				console.log('running the lambda', payload.data.body);
-				resolve();
-			}, 5000);
-		});
 		const lambdaId = payload.data.lambdaId;
 		const lambda = await Model.Lambda.findById(lambdaId);
 		// TODO add a meaningful error message
