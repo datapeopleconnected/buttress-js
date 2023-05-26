@@ -26,8 +26,9 @@ class LambdaManager {
 		this._lambdaMap = {};
 		this._lambdaAPI = [];
 		this._lambdaPathsMutation = [];
-		this._lambdaExecDebouncer = [];
+		this._lambdaPathsMutationExec = [];
 		this._maximumRetry = 500;
+		this._lambdaPathMutationTimeout = 5000;
 
 		Logging.logDebug(`[${this.name}] Created instance`);
 
@@ -81,7 +82,7 @@ class LambdaManager {
 			try {
 				const lambdas = await this._getPendingLambda();
 				// TODO: Handle pausing lambdas due to READ / WRITE access
-				await this._announcePendingLambda(lambdas);
+				await this._announceLambdas(lambdas);
 				this._setTimeoutCheck(true);
 			} catch (err) {
 				let message = err;
@@ -160,6 +161,7 @@ class LambdaManager {
 		Logging.logSilly(`Pushing a new path mutation lambda (${lambda.name}) into the path mutation cached array`);
 		this._lambdaPathsMutation.push({
 			lambdaId: lambda._id,
+			type: trigger.type,
 			paths: trigger.pathMutation.paths,
 		});
 	}
@@ -169,7 +171,7 @@ class LambdaManager {
 	 * @param {Array} lambdas
 	 * @return {Promise}
 	 */
-	_announcePendingLambda(lambdas) {
+	_announceLambdas(lambdas) {
 		if (lambdas.length > 0) {
 			Logging.log(`[${this.name}]: Got ${lambdas.length} lambdas to announce`);
 		}
@@ -177,14 +179,19 @@ class LambdaManager {
 		const execLambdas = lambdas.map((lambda) => {
 			const output = {
 				lambdaId: (lambda.lambdaId) ? lambda.lambdaId : lambda._id,
+				lambdaType: lambda.type,
 			};
 
 			const isAPILambda = lambda.restWorkerId;
+			const isPathMutation = lambda.pathMutation;
+			if (isAPILambda || isPathMutation) {
+				output.body = lambda.body;
+				output.workerExecID = lambda.workerExecID;
+			}
+
 			if (isAPILambda) {
 				output.restWorkerId = lambda.restWorkerId;
-				output.workerExecID = lambda.workerExecID;
 				output.query = lambda.query;
-				output.body = lambda.body;
 				output.headers = lambda.headers;
 			}
 
@@ -225,8 +232,21 @@ class LambdaManager {
 		delete this._lambdaMap[lambdaId];
 
 		if (!workerExecID) return;
-		const apiLambdaIdx = this._lambdaAPI.findIndex((l) => l.lambdaId === lambdaId && l.workerExecID === workerExecID);
-		this._lambdaAPI.splice(apiLambdaIdx, 1);
+
+		const apiLambdaIdx = this._lambdaAPI.findIndex((l) => l.lambdaId.toString() === lambdaId.toString() && l.workerExecID === workerExecID);
+		if (apiLambdaIdx !== -1) {
+			this._lambdaAPI.splice(apiLambdaIdx, 1);
+			return;
+		}
+
+		const pathMutationLambdaIdx = this._lambdaPathsMutationExec.findIndex((l) => {
+			return l.lambdaId.toString() === lambdaId.toString() && l.workerExecID === workerExecID;
+		});
+		if (pathMutationLambdaIdx === -1) {
+			throw new Error(`Lambda worker exec ID: ${workerExecID} is not found on api or path mutation queue`);
+		}
+
+		this._lambdaPathsMutationExec.splice(pathMutationLambdaIdx, 1);
 	}
 
 	/**
@@ -266,17 +286,14 @@ class LambdaManager {
 
 		nrp.on('lambda-worker-errored', (payload) => {
 			Logging.logError(`[${this.name}] ${payload.lambdaId} errored while running on ${payload.workerId}`);
-			if (payload.lambdaType === 'API_ENDPOINT') {
-				nrp.emit('lambda-execution-finish', {code: 400, res: payload.errMessage, restWorkerId: payload.restWorkerId});
-			}
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId, payload.workerExecID);
-			this._checkAPIQueue();
+			this._checkAPIAndPathMutationQueue();
 		});
 
 		nrp.on('lambda-worker-finished', (payload) => {
 			Logging.logDebug(`[${this.name}] ${payload.lambdaId} was completed by ${payload.workerId}`);
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId, payload.workerExecID);
-			this._checkAPIQueue();
+			this._checkAPIAndPathMutationQueue();
 		});
 	}
 
@@ -291,13 +308,14 @@ class LambdaManager {
 			}
 
 			this._lambdaAPI.splice(index, 0, data);
-			this._announcePendingLambda(this._lambdaAPI);
+			this._announceLambdas(this._lambdaAPI);
 		});
 	}
 
-	async _checkAPIQueue() {
-		if (this._lambdaAPI.length > 0) {
-			this._announcePendingLambda(this._lambdaAPI);
+	async _checkAPIAndPathMutationQueue() {
+		const arr = this._lambdaAPI.concat(this._lambdaPathsMutationExec);
+		if (arr.length > 0) {
+			this._announceLambdas(arr);
 		}
 	}
 
@@ -313,14 +331,19 @@ class LambdaManager {
 
 			const lambdas = this._lambdaPathsMutation.filter((item) => {
 				return item.paths.some((itemPath) => paths.some((path) => this._checkMatchingPaths(path, itemPath, schema)));
-			}).map((item) => item.lambdaId);
+			}).map((item) => {
+				return {
+					id: item.lambdaId,
+					type: item.type,
+				};
+			});
 
 			const cr = [{
 				paths,
 				values: data.values,
 			}];
 
-			this._debounceLambdaTriggers(lambdas, cr, 300);
+			this._debounceLambdaTriggers(lambdas, cr, this._lambdaPathMutationTimeout);
 		});
 	}
 
@@ -374,31 +397,31 @@ class LambdaManager {
 
 	/**
 	 * Debounces checks for based path lambdas
-	 * @param {Array} lambdaIds
+	 * @param {Array} lambdas
 	 * @param {Array} body
 	 * @param {String} timeout
 	 */
-	async _debounceLambdaTriggers(lambdaIds, body, timeout) {
+	async _debounceLambdaTriggers(lambdas, body, timeout) {
 		// We'll make a hash of the body so we can use it to compare in the debouncer
 		const bodyHash = hash(body);
 
-		lambdaIds.forEach((id) => {
+		lambdas.forEach((lambda) => {
 			// Check to see if there is an path mutation for the same lambda & body
-			const debouncedLambdaIdx = this._lambdaExecDebouncer.findIndex(
-				(item) => (item.lambdaId.toString() === id.toString() && item.bodyHash === bodyHash));
+			const debouncedLambdaIdx = this._lambdaPathsMutationExec.findIndex(
+				(item) => (item.lambdaId.toString() === lambda.id.toString() && item.bodyHash === bodyHash));
 
-			const retry = this._lambdaExecDebouncer[debouncedLambdaIdx]?.retry || 0;
+			const retry = this._lambdaPathsMutationExec[debouncedLambdaIdx]?.retry || 0;
 
 			if (debouncedLambdaIdx === -1 || retry > this._maximumRetry) {
-				this._lambdaExecDebouncer.push({
+				const execID = uuid.v4();
+				this._lambdaPathsMutationExec.push({
 					timer: setTimeout(() => {
-						nrp.emit('lambda-manager-announce', {
-							lambdaId: id,
-							body,
-						});
-						this._lambdaExecDebouncer.splice(debouncedLambdaIdx, 1);
+						this._announcePathMutationLambda(execID);
 					}, timeout),
-					lambdaId: id,
+					pathMutation: true,
+					type: lambda.type,
+					lambdaId: lambda.id,
+					workerExecID: execID,
 					body,
 					bodyHash,
 					retry: 1,
@@ -407,19 +430,30 @@ class LambdaManager {
 				return;
 			}
 
-			clearTimeout(this._lambdaExecDebouncer[debouncedLambdaIdx]?.timer);
-			this._lambdaExecDebouncer[debouncedLambdaIdx].timer = setTimeout(() => {
-				nrp.emit('lambda-manager-announce', {
-					lambdaId: id,
-					body,
-				});
-				this._lambdaExecDebouncer.splice(debouncedLambdaIdx, 1);
+			clearTimeout(this._lambdaPathsMutationExec[debouncedLambdaIdx]?.timer);
+			this._lambdaPathsMutationExec[debouncedLambdaIdx].timer = setTimeout(() => {
+				this._announcePathMutationLambda(lambda.id, bodyHash);
 			}, timeout);
-			this._lambdaExecDebouncer[debouncedLambdaIdx].body = this._lambdaExecDebouncer[debouncedLambdaIdx].body.concat(body);
-			this._lambdaExecDebouncer[debouncedLambdaIdx].retry = this._lambdaExecDebouncer[debouncedLambdaIdx].retry + 1;
+			this._lambdaPathsMutationExec[debouncedLambdaIdx].body = this._lambdaPathsMutationExec[debouncedLambdaIdx].body.concat(body);
+			this._lambdaPathsMutationExec[debouncedLambdaIdx].retry = this._lambdaPathsMutationExec[debouncedLambdaIdx].retry + 1;
 
 			return;
 		});
+	}
+
+	/**
+	 * announce path mutation lambda
+	 * @param {String} lambdaId
+	 * @param {String} bodyHash
+	 */
+	async _announcePathMutationLambda(lambdaId, bodyHash) {
+		const pathMutationLambdaIdx = this._lambdaPathsMutationExec.findIndex(
+			(item) => (item.lambdaId.toString() === lambdaId.toString() && item.bodyHash === bodyHash));
+
+		const pathMutationLambda = this._lambdaPathsMutationExec[pathMutationLambdaIdx];
+		delete this._lambdaPathsMutationExec[pathMutationLambdaIdx].timer;
+
+		this._announceLambdas([pathMutationLambda]);
 	}
 
 	/**

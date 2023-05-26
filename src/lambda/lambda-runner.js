@@ -24,11 +24,13 @@ const lambdaHelpers = require('../lambda-helpers/helpers');
  */
 class LambdasRunner {
 	/**
+	 * @param {String} type
 	 * Creates an instance of LambdasRunner.
 	 */
-	constructor() {
+	constructor(type) {
 		this.id = uuidv4();
 		this.name = `LAMBDAS RUNNER ${this.id}`;
+		this.lambdaType = type;
 
 		Logging.logDebug(`[${this.name}] Created instance`);
 
@@ -169,8 +171,11 @@ class LambdasRunner {
 			}
 		} catch (err) {
 			await this._updateDBLambdaErrorExecution(lambda, execution, type);
-
 			Logging.logDebug(err);
+
+			if (type === 'API_ENDPOINT') {
+				nrp.emit('lambda-execution-finish', {code: 400, res: err.errMessage, restWorkerId: data.restWorkerId});
+			}
 
 			return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));
 		}
@@ -182,6 +187,12 @@ class LambdasRunner {
 	 * @return {promise}
 	 */
 	async fetchExecuteLambda(payload) {
+		await new Promise((resolve) => {
+			setTimeout(() => {
+				console.log('running the lambda', payload.data.body);
+				resolve();
+			}, 5000);
+		});
 		const lambdaId = payload.data.lambdaId;
 		const lambda = await Model.Lambda.findById(lambdaId);
 		// TODO add a meaningful error message
@@ -248,6 +259,11 @@ class LambdasRunner {
 	_subscribeToLambdaManager() {
 		nrp.on('lambda-manager-announce', (payload) => {
 			if (this.working) return;
+
+			if (this.lambdaType && payload.lambdaType !== this.lambdaType) {
+				Logging.logSilly(`Can not run a ${payload.lambdaType} on ${this.lambdaType} worker`);
+				return;
+			}
 
 			Logging.logSilly(`[${this.name}] Manager called out ${payload.lambdaId}, attempting to acquire lambda`);
 			nrp.emit('lambda-worker-available', {

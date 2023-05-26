@@ -23,6 +23,8 @@ const Config = require('node-env-obj')();
 const Datastore = require('./datastore');
 const Logging = require('./logging');
 const Model = require('./model');
+const NRP = require('node-redis-pubsub');
+const nrp = new NRP(Config.redis);
 
 const LambdaManager = require('./lambda/lambda-manager');
 const LambdaRunner = require('./lambda/lambda-runner');
@@ -40,6 +42,10 @@ class BootstrapLambda {
 		this.id = (cluster.isMaster) ? 'MASTER' : cluster.worker.id;
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
+
+		this.__apiWorkers = 0;
+		this.__pathMutationWorkers = 0;
+		this.__cronWorkers = 0;
 	}
 
 	async init() {
@@ -56,11 +62,18 @@ class BootstrapLambda {
 	}
 
 	async __initMaster() {
+		// Lambda workers config
 		const isPrimary = Config.rest.app === 'primary';
 
 		if (isPrimary) {
 			Logging.logVerbose(`Primary Main LAMB`);
 			await Model.initCoreModels();
+
+			nrp.on('worker-initiated', (data) => {
+				const type = this.__getLambdaWorkerType();
+				nrp.emit('worker-type', type);
+			});
+
 			new LambdaManager();
 		} else {
 			Logging.logVerbose(`Secondary Main LAMB`);
@@ -75,8 +88,17 @@ class BootstrapLambda {
 	}
 
 	async __initWorker() {
+		let type = null;
 		await Model.initCoreModels();
-		new LambdaRunner();
+		await new Promise((resolve) => {
+			nrp.emit('worker-initiated', 'Just to get an assignment');
+			nrp.on('worker-type', (data) => {
+				type = data;
+				resolve();
+			});
+		});
+
+		new LambdaRunner(type);
 	}
 
 	__spawnWorkers() {
@@ -89,6 +111,26 @@ class BootstrapLambda {
 		for (let x = 0; x < this.workerProcesses; x++) {
 			__spawn(x);
 		}
+	}
+
+	__getLambdaWorkerType() {
+		const APIWorkers = Number(Config.lambda.apiWorkers);
+		const pathMutationWorkers = Number(Config.lambda.pathMutationWorkers);
+		const cronWorkers = Number(Config.lambda.cronWorkers);
+
+		let type = null;
+		if (this.__apiWorkers < APIWorkers) {
+			type = 'API_ENDPOINT';
+			this.__apiWorkers++;
+		} else if (this.__pathMutationWorkers < pathMutationWorkers) {
+			type = 'PATH_MUTATION';
+			this.__pathMutationWorkers++;
+		} else if (this.__cronWorkers < cronWorkers) {
+			type = 'CRON';
+			this.__cronWorkers++;
+		}
+
+		return type;
 	}
 }
 
