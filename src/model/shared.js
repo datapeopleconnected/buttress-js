@@ -231,9 +231,9 @@ module.exports.validateUpdate = function(pathContext, schema) {
 		if (body instanceof Array === false) {
 			body = [body];
 		}
-		console.log('before', body);
+
 		const validation = body.map(_doValidateUpdate(extendedPathContext, flattenedSchema)).filter((v) => v.isValid === false);
-		console.log('after', body);
+
 		return {
 			validation: validation.length >= 1 ? validation[0] : {isValid: true},
 			body: body,
