@@ -112,7 +112,7 @@ class AdminRoutes {
 					_tokenId: Model.Token.createId(adminToken._id),
 				});
 
-				await this._createAdminPolicy(req, adminApp._id);
+				await this._createAdminPolicy(adminApp._id);
 				for await (const lambdaKey of lambdaToInstall) {
 					await this._createAdminLambda(adminLambda[lambdaKey]);
 				}
@@ -190,15 +190,19 @@ class AdminRoutes {
 			adminPolicyPropsList = {...policyPropsList, ...adminPolicyPropsList};
 		}
 
-		await Model.App.setPolicyPropertiesList(app._id, adminPolicyPropsList);
+		const query = {
+			_id: {
+				$eq: app._id,
+			},
+		};
+		await Model.App.setPolicyPropertiesList(query, adminPolicyPropsList);
 	}
 
 	/**
 	 * Create Buttress pre-defined policy
-	 * @param {Object} req
 	 * @param {String} appId
 	 */
-	async _createAdminPolicy(req, appId) {
+	async _createAdminPolicy(appId) {
 		for await (const policy of adminPolicy) {
 			const policyDB = await Model.Policy.findOne({
 				name: {
@@ -225,7 +229,7 @@ class AdminRoutes {
 				});
 			}
 
-			await Model.Policy.add(req, {policy});
+			await Model.Policy.add(policy, appId);
 		}
 	}
 

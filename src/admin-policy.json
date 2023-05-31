@@ -28,6 +28,11 @@
 				"_id": {
 					"@eq": null
 				}
+			}, {
+				"schema": ["user"],
+				"_appId": {
+					"@eq": null
+				}
 			}]
 		}, {
 			"endpoints": ["SEARCH"],
