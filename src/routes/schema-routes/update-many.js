@@ -54,7 +54,8 @@ module.exports = class UpdateMany extends Route {
 
 		return data.reduce((prev, update) => {
 			return prev.then(() => {
-				const validation = this.model.validateUpdate(update.body);
+				const {validation, body} = this.model.validateUpdate(update.body);
+				update.body = body;
 				if (!validation.isValid) {
 					if (validation.isPathValid === false) {
 						this.log(`${this.schema.name}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);

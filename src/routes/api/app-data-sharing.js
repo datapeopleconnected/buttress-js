@@ -282,7 +282,8 @@ class UpdateAppDataSharing extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const validation = Model.AppDataSharing.validateUpdate(req.body);
+		const {validation, body} = Model.AppDataSharing.validateUpdate(req.body);
+		req.body = body;
 		if (!validation.isValid) {
 			if (validation.isPathValid === false) {
 				this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -324,7 +325,8 @@ class BulkUpdateAppDataSharing extends Route {
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 			}
 
-			const validation = Model.AppDataSharing.validateUpdate(item.body);
+			const {validation, body} = Model.AppDataSharing.validateUpdate(item.body);
+			item.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);

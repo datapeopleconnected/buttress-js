@@ -381,3 +381,24 @@ module.exports.checkAppPolicyProperty = async (appPolicyList, policyProperties) 
 
 	return res;
 };
+
+module.exports.updateCoreSchemaObject = (body, extendedPathContext) => {
+	const extendedPathContextKeys = Object.keys(extendedPathContext);
+	const pattern = /\.\d+/g;
+	const bodyPath = body.path.replace(pattern, '');
+	if (!Array.isArray(body) && body.value && typeof body.value === 'object' && !Array.isArray(body.value)) {
+		body = Object.keys(body.value).reduce((arr, key) => {
+			const extendedPath = `${bodyPath}.${key}`;
+			if (!extendedPathContextKeys.some((key) => key.includes(extendedPath))) return arr;
+
+			arr.push({
+				path: `${body.path}.${key}`,
+				value: body.value[key],
+			});
+
+			return arr;
+		}, []);
+	}
+
+	return body;
+};

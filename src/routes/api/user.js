@@ -427,7 +427,8 @@ class UpdateUser extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const validation = Model.User.validateUpdate(req.body);
+			const {validation, body} = Model.User.validateUpdate(req.body);
+			req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);

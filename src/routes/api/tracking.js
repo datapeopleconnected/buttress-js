@@ -94,7 +94,8 @@ class UpdateTracking extends Route {
 
 	_validate() {
 		return new Promise((resolve, reject) => {
-			const validation = Model.Tracking.validateUpdate(this.req.body);
+			const {validation, body} = Model.Tracking.validateUpdate(this.req.body);
+			this.req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);

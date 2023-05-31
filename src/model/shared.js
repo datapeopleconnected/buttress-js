@@ -220,16 +220,23 @@ module.exports.extendPathContext = __extendPathContext;
 module.exports.validateUpdate = function(pathContext, schema) {
 	return function(body) {
 		Logging.logDebug(body instanceof Array);
-		if (body instanceof Array === false) {
-			body = [body];
-		}
-
 		// const schema = __getCollectionSchema(collection);
 		const flattenedSchema = schema ? Helpers.getFlattenedSchema(schema) : false;
 		const extendedPathContext = __extendPathContext(pathContext, flattenedSchema, '');
 
-		const validation = body.map(_doValidateUpdate(extendedPathContext, flattenedSchema)).filter((v) => v.isValid === false);
+		if (schema.core) {
+			body = Helpers.updateCoreSchemaObject(body, extendedPathContext);
+		}
 
-		return validation.length >= 1 ? validation[0] : {isValid: true};
+		if (body instanceof Array === false) {
+			body = [body];
+		}
+		console.log('before', body);
+		const validation = body.map(_doValidateUpdate(extendedPathContext, flattenedSchema)).filter((v) => v.isValid === false);
+		console.log('after', body);
+		return {
+			validation: validation.length >= 1 ? validation[0] : {isValid: true},
+			body: body,
+		};
 	};
 };
