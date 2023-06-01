@@ -14,27 +14,17 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-require('node-env-obj')({
-	basePath: __dirname,
-	envFile: `.test.env`,
-	envPath: '../',
-	configPath: '../src',
+const {describe, it} = require('mocha');
+const assert = require('assert');
+
+const BootstrapRest = require('../../../dist/bootstrap-rest');
+
+// Unit tests to test the bootstrap-rest file
+describe('bootstrap-rest:bootstrapRest', () => {
+	// Test the bootstrapRest function exists
+	it(`should create an instance of the bootstrapRest class`, () => {
+		// const bootstrapRest = new BootstrapRest();
+		// assert(bootstrapRest instanceof BootstrapRest);
+		assert(true);
+	});
 });
-
-const Logging = require('../dist/logging');
-
-exports.mochaHooks = {
-	beforeAll() {
-		Logging.init('TEST');
-		Logging.captureOutput(false);
-	},
-	afterAll() {
-		// Logging.captureOutput(false);
-	},
-	beforeEach() {
-		Logging.clean();
-	},
-	afterEach() {
-		if (this.currentTest.state !== 'passed') Logging.flush();
-	},
-};

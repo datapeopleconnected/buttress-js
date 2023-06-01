@@ -52,6 +52,9 @@ class BootstrapLambda {
 		Logging.log(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
+		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
+		await Model.init();
+
 		if (cluster.isMaster) {
 			await this.__initMaster();
 		} else {

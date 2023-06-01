@@ -17,9 +17,6 @@
  */
 
 const Crypto = require('crypto');
-const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
 // const Shared = require('../shared');
 const Logging = require('../../logging');
 
@@ -38,9 +35,11 @@ const Type = {
 };
 
 class TokenSchemaModel extends SchemaModel {
-	constructor(datastore) {
+	constructor(nrp) {
 		const schema = TokenSchemaModel.Schema;
-		super(schema, null, datastore);
+		super(schema, null, nrp);
+
+		this._nrp = nrp;
 	}
 
 	static get Constants() {
@@ -217,7 +216,7 @@ class TokenSchemaModel extends SchemaModel {
 			'_id': this.createId(tokenId),
 		}, {$set: {'policyProperties': policyProperties}});
 
-		nrp.emit('app-routes:bust-cache', {});
+		this._nrp.emit('app-routes:bust-cache', {});
 	}
 
 	/**
@@ -247,7 +246,7 @@ class TokenSchemaModel extends SchemaModel {
 			},
 		});
 
-		nrp.emit('app-routes:bust-cache', {});
+		this._nrp.emit('app-routes:bust-cache', {});
 	}
 
 	/**
@@ -263,7 +262,7 @@ class TokenSchemaModel extends SchemaModel {
 			},
 		});
 
-		nrp.emit('app-routes:bust-cache', {});
+		this._nrp.emit('app-routes:bust-cache', {});
 	}
 }
 

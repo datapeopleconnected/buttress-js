@@ -26,17 +26,17 @@ const Model = require('..');
 
 const SchemaModel = require('../schemaModel');
 
-const nrp = new NRP(Config.redis);
-
 /**
  * @class AppDataSharingSchemaModel
  */
 class AppDataSharingSchemaModel extends SchemaModel {
-	constructor(datastore) {
+	constructor(nrp) {
 		const schema = AppDataSharingSchemaModel.Schema;
-		super(schema, null, datastore);
+		super(schema, null, nrp);
 
 		this._localSchema = null;
+
+		this._nrp = nrp;
 	}
 
 	static get Constants() {
@@ -208,7 +208,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 			update.$set['remoteApp.token'] = remoteAppToken;
 		}
 
-		nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
+		this._nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}
@@ -225,7 +225,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 		};
 
 		// TODO implement socket deactivation
-		nrp.emit('dataShare:deactivated', {appDataSharingId: appDataSharingId});
+		this._nrp.emit('dataShare:deactivated', {appDataSharingId: appDataSharingId});
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}

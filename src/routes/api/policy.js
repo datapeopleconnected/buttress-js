@@ -15,9 +15,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
 const ObjectId = require('mongodb').ObjectId;
 
 // const AccessControl = require('../../access-control');
@@ -33,8 +30,8 @@ const Datastore = require('../../datastore');
  * @class GetPolicy
  */
 class GetPolicy extends Route {
-	constructor() {
-		super('policy/:id', 'GET POLICY');
+	constructor(nrp) {
+		super('policy/:id', 'GET POLICY', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -69,8 +66,8 @@ routes.push(GetPolicy);
  * @class GetPolicyList
  */
 class GetPolicyList extends Route {
-	constructor() {
-		super('policy', 'GET POLICY LIST');
+	constructor(nrp) {
+		super('policy', 'GET POLICY LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -106,8 +103,8 @@ routes.push(GetPolicyList);
  * @class SearchPolicyList
  */
 class SearchPolicyList extends Route {
-	constructor() {
-		super('policy', 'SEARCH POLICY LIST');
+	constructor(nrp) {
+		super('policy', 'SEARCH POLICY LIST', nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -146,8 +143,8 @@ routes.push(SearchPolicyList);
  * @class AddPolicy
  */
 class AddPolicy extends Route {
-	constructor() {
-		super('policy', 'ADD POLICY');
+	constructor(nrp) {
+		super('policy', 'ADD POLICY', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -190,7 +187,7 @@ class AddPolicy extends Route {
 	_exec(req, res, validate) {
 		return Model.Policy.add(req.body, req.authApp._id)
 			.then((policy) => {
-				nrp.emit('app-policy:bust-cache', {
+				this._nrp.emit('app-policy:bust-cache', {
 					appId: req.authApp._id,
 				});
 				return policy;
@@ -203,8 +200,8 @@ routes.push(AddPolicy);
  * @class UpdatePolicy
  */
 class UpdatePolicy extends Route {
-	constructor() {
-		super('policy/:id', 'UPDATE POLICY');
+	constructor(nrp) {
+		super('policy/:id', 'UPDATE POLICY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -248,8 +245,8 @@ routes.push(UpdatePolicy);
  * @class BulkUpdatePolicy
  */
 class BulkUpdatePolicy extends Route {
-	constructor() {
-		super('policy/bulk/update', 'UPDATE POLICY');
+	constructor(nrp) {
+		super('policy/bulk/update', 'UPDATE POLICY', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -295,8 +292,8 @@ routes.push(BulkUpdatePolicy);
  * @class SyncPolicies
  */
 class SyncPolicies extends Route {
-	constructor() {
-		super('policy/sync', 'SYNC POLICIES');
+	constructor(nrp) {
+		super('policy/sync', 'SYNC POLICIES', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -334,7 +331,7 @@ class SyncPolicies extends Route {
 			await Model.Policy.add(policy, req.authApp._id);
 		}
 
-		nrp.emit('app-policy:bust-cache', {
+		this._nrp.emit('app-policy:bust-cache', {
 			appId: req.authApp._id,
 		});
 
@@ -346,8 +343,8 @@ class SyncPolicies extends Route {
  * @class PolicyCount
  */
 class PolicyCount extends Route {
-	constructor() {
-		super(`policy/count`, `COUNT POLICIES`);
+	constructor(nrp) {
+		super(`policy/count`, `COUNT POLICIES`, nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -393,8 +390,8 @@ routes.push(SyncPolicies);
  * @class DeleteTransientPolicy
  */
 class DeleteTransientPolicy extends Route {
-	constructor() {
-		super('policy/deleteTransientPolicy', 'DELETE POLICY BY NAME');
+	constructor(nrp) {
+		super('policy/deleteTransientPolicy', 'DELETE POLICY BY NAME', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -413,12 +410,12 @@ class DeleteTransientPolicy extends Route {
 
 		await Model.Policy.rm(validate);
 
-		nrp.emit('app-policy:bust-cache', {
+		this._nrp.emit('app-policy:bust-cache', {
 			appId: req.authApp._id,
 		});
 
 		// Trigger socket process to re-evaluate rooms
-		nrp.emit('worker:socket:evaluateUserRooms', {
+		this._nrp.emit('worker:socket:evaluateUserRooms', {
 			appId: req.authApp._id,
 		});
 
@@ -431,8 +428,8 @@ routes.push(DeleteTransientPolicy);
  * @class DeletePolicy
  */
 class DeletePolicy extends Route {
-	constructor() {
-		super('policy/:id', 'DELETE POLICY');
+	constructor(nrp) {
+		super('policy/:id', 'DELETE POLICY', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 		this._policy = false;
@@ -458,7 +455,7 @@ class DeletePolicy extends Route {
 	_exec(req) {
 		return Model.Policy.rm(this._policy)
 			.then(() => {
-				nrp.emit('app-policy:bust-cache', {
+				this._nrp.emit('app-policy:bust-cache', {
 					appId: req.authApp._id,
 				});
 
@@ -472,8 +469,8 @@ routes.push(DeletePolicy);
  * @class DeleteAppPolicies
  */
 class DeleteAppPolicies extends Route {
-	constructor() {
-		super('policy', 'DELETE ALL APP POLICIES');
+	constructor(nrp) {
+		super('policy', 'DELETE ALL APP POLICIES', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}

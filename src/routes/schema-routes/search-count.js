@@ -7,8 +7,8 @@ const Schema = require('../../schema');
  * @class Count
  */
 module.exports = class SearchCount extends Route {
-	constructor(schema, appShort) {
-		super(`${schema.name}/count`, `COUNT ${schema.name}`);
+	constructor(schema, appShort, nrp) {
+		super(`${schema.name}/count`, `COUNT ${schema.name}`, nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SERACH;
 

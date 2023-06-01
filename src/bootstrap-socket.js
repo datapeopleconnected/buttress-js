@@ -40,6 +40,7 @@ const shortId = require('./helpers').shortId;
 const Model = require('./model');
 const Helpers = require('./helpers');
 const Logging = require('./logging');
+
 const AccessControl = require('./access-control');
 const AccessControlHelpers = require('./access-control/helpers');
 const AccessControlConditions = require('./access-control/conditions');
@@ -107,7 +108,15 @@ class BootstrapSocket {
 	async init() {
 		await this.primaryDatastore.connect();
 
+		this._nrp = new NRP(Config.redis);
+
+		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
 		await Model.init();
+		await AccessControl.init();
+
+		// Init models
+		await Model.initCoreModels();
+		await Model.initSchema();
 
 		if (cluster.isMaster) {
 			await this.__initMaster();
@@ -133,8 +142,6 @@ class BootstrapSocket {
 	}
 
 	async __initMaster() {
-		this._nrp = new NRP(Config.redis);
-
 		const redisClient = createClient(Config.redis);
 
 		// TODO: Handle failed connection
@@ -191,8 +198,6 @@ class BootstrapSocket {
 	}
 
 	async __initWorker() {
-		this._nrp = new NRP(Config.redis);
-
 		const app = new Express();
 		const server = app.listen(0, 'localhost');
 		this.io = sio(server, {

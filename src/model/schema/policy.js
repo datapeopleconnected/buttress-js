@@ -22,9 +22,9 @@ const SchemaModel = require('../schemaModel');
 const Helpers = require('../../helpers');
 
 class PolicySchemaModel extends SchemaModel {
-	constructor() {
+	constructor(nrp) {
 		const schema = PolicySchemaModel.Schema;
-		super(schema, null);
+		super(schema, null, nrp);
 	}
 
 	static get Schema() {

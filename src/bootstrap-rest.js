@@ -26,18 +26,21 @@ const cors = require('cors');
 const methodOverride = require('method-override');
 const bodyParser = require('body-parser');
 const morgan = require('morgan');
+const NRP = require('node-redis-pubsub');
 
 const Config = require('node-env-obj')();
+
 const Model = require('./model');
 const Routes = require('./routes');
 const Logging = require('./logging');
 const Schema = require('./schema');
-const NRP = require('node-redis-pubsub');
 const shortId = require('./helpers').shortId;
 
 const Datastore = require('./datastore');
 
 const Plugins = require('./plugins');
+
+const AccessControl = require('./access-control');
 
 morgan.token('id', (req) => req.id);
 
@@ -61,6 +64,11 @@ class BootstrapRest extends EventEmitter {
 	async init() {
 		Logging.log(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
+
+		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
+		await Model.init();
+		await AccessControl.init();
+
 		if (cluster.isMaster) {
 			await this.__initMaster();
 		} else {
@@ -113,10 +121,6 @@ class BootstrapRest extends EventEmitter {
 		} else {
 			await this.__spawnWorkers();
 		}
-
-		if (isPrimary) {
-			// await Model.initSchema();
-		}
 	}
 
 	async __initWorker() {
@@ -148,6 +152,7 @@ class BootstrapRest extends EventEmitter {
 
 		this.routes = new Routes(app);
 
+		await this.routes.init();
 		await this.routes.initRoutes();
 
 		await app.listen(Config.listenPorts.rest);

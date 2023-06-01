@@ -35,9 +35,9 @@ const Visibility = {
 };
 
 class ActivitySchemaModel extends SchemaModel {
-	constructor(datastore) {
+	constructor(nrp) {
 		const schema = ActivitySchemaModel.Schema;
-		super(schema, null, datastore);
+		super(schema, null, nrp);
 	}
 
 	static get Constants() {

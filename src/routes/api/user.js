@@ -16,16 +16,11 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
-const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
-
 const Route = require('../route');
 const Model = require('../../model');
 const Logging = require('../../logging');
 const Helpers = require('../../helpers');
 const ObjectId = require('mongodb').ObjectId;
-const nrp = new NRP(Config.redis);
 const Datastore = require('../../datastore');
 
 const routes = [];
@@ -34,8 +29,8 @@ const routes = [];
  * @class GetUserList
  */
 class GetUserList extends Route {
-	constructor() {
-		super('user', 'GET USER LIST');
+	constructor(nrp) {
+		super('user', 'GET USER LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -106,8 +101,8 @@ routes.push(GetLocalAuthUser);
  * @class GetUser
  */
 class GetUser extends Route {
-	constructor() {
-		super('user/:parameter', 'GET USER');
+	constructor(nrp) {
+		super('user/:parameter', 'GET USER', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -179,8 +174,8 @@ routes.push(GetUser);
  * @class FindUser
  */
 class FindUser extends Route {
-	constructor() {
-		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER');
+	constructor(nrp) {
+		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -218,8 +213,8 @@ routes.push(FindUser);
  * @class GetUserByToken
  */
 class GetUserByToken extends Route {
-	constructor() {
-		super('user/get-by-token', 'GET USER BY TOKEN');
+	constructor(nrp) {
+		super('user/get-by-token', 'GET USER BY TOKEN', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -267,8 +262,8 @@ routes.push(GetUserByToken);
  * @class CreateUserAuthToken
  */
 class CreateUserAuthToken extends Route {
-	constructor() {
-		super('user/:id/token', 'CREATE USER AUTH TOKEN');
+	constructor(nrp) {
+		super('user/:id/token', 'CREATE USER AUTH TOKEN', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -318,7 +313,7 @@ class CreateUserAuthToken extends Route {
 		// 	await Model.User.updateApps(user, req.authApp._id);
 		// }
 
-		nrp.emit('app-routes:bust-cache', {});
+		this._nrp.emit('app-routes:bust-cache', {});
 
 		return {
 			value: token.value,
@@ -400,8 +395,8 @@ routes.push(CreateUserAuthToken);
  * @class AddUser
  */
 class AddUser extends Route {
-	constructor() {
-		super('user', 'ADD USER');
+	constructor(nrp) {
+		super('user', 'ADD USER', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -468,8 +463,8 @@ routes.push(AddUser);
  * @class UpdateUser
  */
 class UpdateUser extends Route {
-	constructor() {
-		super('user/:id', 'UPDATE USER');
+	constructor(nrp) {
+		super('user/:id', 'UPDATE USER', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -513,8 +508,8 @@ routes.push(UpdateUser);
  * @class SetUserPolicyProperties
  */
 class SetUserPolicyProperties extends Route {
-	constructor() {
-		super('user/:id/policyProperty', 'SET USER POLICY PROPERTY');
+	constructor(nrp) {
+		super('user/:id/policyProperty', 'SET USER POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -561,7 +556,7 @@ class SetUserPolicyProperties extends Route {
 	async _exec(req, res, validate) {
 		await Model.Token.setPolicyPropertiesById(validate._id, req.body);
 
-		nrp.emit('worker:socket:evaluateUserRooms', {
+		this._nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
 			appId: req.authApp._id,
 		});
@@ -570,14 +565,14 @@ class SetUserPolicyProperties extends Route {
 		// await new Promise((resolve) => {
 		// 	const id = uuidv4();
 
-		// 	nrp.emit('worker:socket:evaluateUserRooms', {
+		// 	this._nrp.emit('worker:socket:evaluateUserRooms', {
 		// 		id,
 		// 		userId: req.params.id,
 		// 		appId: req.authApp._id,
 		// 	});
 
 		// 	let unsubscribe = null;
-		// 	unsubscribe = nrp.on('updatedUserSocketRooms', (res) => {
+		// 	unsubscribe = this._nrp.on('updatedUserSocketRooms', (res) => {
 		// 		if (res.id !== id) return;
 		// 		unsubscribe();
 		// 		resolve();
@@ -593,8 +588,8 @@ routes.push(SetUserPolicyProperties);
  * @class UpdateUserPolicyProperties
  */
 class UpdateUserPolicyProperties extends Route {
-	constructor() {
-		super('user/:id/updatePolicyProperty', 'UPDATE USER POLICY PROPERTY');
+	constructor(nrp) {
+		super('user/:id/updatePolicyProperty', 'UPDATE USER POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -628,7 +623,7 @@ class UpdateUserPolicyProperties extends Route {
 	async _exec(req, res, validate) {
 		await Model.Token.updatePolicyPropertiesById(validate, req.body);
 
-		nrp.emit('worker:socket:evaluateUserRooms', {
+		this._nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
 			appId: req.authApp._id,
 		});
@@ -637,14 +632,14 @@ class UpdateUserPolicyProperties extends Route {
 		// await new Promise((resolve) => {
 		// 	const id = uuidv4();
 
-		// 	nrp.emit('worker:socket:evaluateUserRooms', {
+		// 	this._nrp.emit('worker:socket:evaluateUserRooms', {
 		// 		id,
 		// 		userId: req.params.id,
 		// 		appId: req.authApp._id,
 		// 	});
 
 		// 	let unsubscribe = null;
-		// 	unsubscribe = nrp.on('updatedUserSocketRooms', (res) => {
+		// 	unsubscribe = this._nrp.on('updatedUserSocketRooms', (res) => {
 		// 		if (res.id !== id) return;
 		// 		unsubscribe();
 		// 		resolve();
@@ -660,8 +655,8 @@ routes.push(UpdateUserPolicyProperties);
  * @class RemoveUserPolicyProperties
  */
 class RemoveUserPolicyProperties extends Route {
-	constructor() {
-		super('user/:id/removePolicyProperty', 'REMOVE USER POLICY PROPERTY');
+	constructor(nrp) {
+		super('user/:id/removePolicyProperty', 'REMOVE USER POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -704,7 +699,7 @@ class RemoveUserPolicyProperties extends Route {
 		});
 		await Model.Token.updatePolicyPropertiesById(validate._id, policyProps);
 
-		nrp.emit('worker:socket:evaluateUserRooms', {
+		this._nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
 			appId: req.authApp._id,
 		});
@@ -718,8 +713,8 @@ routes.push(RemoveUserPolicyProperties);
  * @class ClearUserPolicyProperties
  */
 class ClearUserPolicyProperties extends Route {
-	constructor() {
-		super('user/:id/clearPolicyProperty', 'CLEAR USER POLICY PROPERTY');
+	constructor(nrp) {
+		super('user/:id/clearPolicyProperty', 'CLEAR USER POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -753,7 +748,7 @@ class ClearUserPolicyProperties extends Route {
 	async _exec(req, res, validate) {
 		await Model.Token.clearPolicyPropertiesById(validate._id);
 
-		nrp.emit('worker:socket:evaluateUserRooms', {
+		this._nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
 			appId: req.authApp._id,
 		});
@@ -767,8 +762,8 @@ routes.push(ClearUserPolicyProperties);
  * @class DeleteAllUsers
  */
 class DeleteAllUsers extends Route {
-	constructor() {
-		super('user', 'DELETE ALL USERS');
+	constructor(nrp) {
+		super('user', 'DELETE ALL USERS', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -788,8 +783,8 @@ routes.push(DeleteAllUsers);
  * @class DeleteUser
  */
 class DeleteUser extends Route {
-	constructor() {
-		super('user/:id', 'DELETE USER');
+	constructor(nrp) {
+		super('user/:id', 'DELETE USER', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 		this._user = false;
@@ -835,8 +830,8 @@ routes.push(DeleteUser);
  * @class clearUserLocalData
  */
 class clearUserLocalData extends Route {
-	constructor() {
-		super('user/:id/clearLocalData', 'CLEAR USER LOCAL DATA');
+	constructor(nrp) {
+		super('user/:id/clearLocalData', 'CLEAR USER LOCAL DATA', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -863,7 +858,7 @@ class clearUserLocalData extends Route {
 	}
 
 	_exec(req, res, user) {
-		nrp.emit('clearUserLocalData', {
+		this._nrp.emit('clearUserLocalData', {
 			appAPIPath: req.authApp ? req.authApp.apiPath : '',
 			userId: user._id,
 			collections: (req.body.collections)? req.body.collections : false,
@@ -876,8 +871,8 @@ routes.push(clearUserLocalData);
  * @class SearchUserList
  */
 class SearchUserList extends Route {
-	constructor() {
-		super('user', 'SEARCH USER LIST');
+	constructor(nrp) {
+		super('user', 'SEARCH USER LIST', nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -916,8 +911,8 @@ routes.push(SearchUserList);
  * @class UserCount
  */
 class UserCount extends Route {
-	constructor() {
-		super(`user/count`, `COUNT USERS`);
+	constructor(nrp) {
+		super(`user/count`, `COUNT USERS`, nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 

@@ -21,8 +21,6 @@ const fs = require('fs');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
 const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
 const ObjectId = require('mongodb').ObjectId;
 const Sugar = require('sugar');
 
@@ -48,8 +46,8 @@ const lambdaConsole = {
  * @class GetLambda
  */
 class GetLambda extends Route {
-	constructor() {
-		super('lambda/:id', 'GET LAMBDA');
+	constructor(nrp) {
+		super('lambda/:id', 'GET LAMBDA', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -84,8 +82,8 @@ routes.push(GetLambda);
  * @class GetLambdaList
  */
 class GetLambdaList extends Route {
-	constructor() {
-		super('lambda', 'GET LAMBDA LIST');
+	constructor(nrp) {
+		super('lambda', 'GET LAMBDA LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -121,8 +119,8 @@ routes.push(GetLambdaList);
  * @class SearchLambdaList
  */
 class SearchLambdaList extends Route {
-	constructor() {
-		super('lambda', 'SEARCH LAMBDA LIST');
+	constructor(nrp) {
+		super('lambda', 'SEARCH LAMBDA LIST', nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -153,10 +151,12 @@ routes.push(SearchLambdaList);
  * @class AddLambda
  */
 class AddLambda extends Route {
-	constructor() {
-		super('lambda', 'ADD LAMBDA');
+	constructor(nrp) {
+		super('lambda', 'ADD LAMBDA', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
+
+		this._nrp = nrp;
 	}
 
 	async _validate(req, res, token) {
@@ -218,7 +218,7 @@ class AddLambda extends Route {
 
 		const app = await Model.App.findById(appId);
 		const lambda = await Model.Lambda.add(req.body.lambda, req.body.auth, app);
-		nrp.emit('app-lambda:path-mutation-bust-cache', lambda);
+		this._nrp.emit('app-lambda:path-mutation-bust-cache', lambda);
 
 		return lambda;
 	}

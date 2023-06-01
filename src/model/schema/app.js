@@ -17,9 +17,6 @@
  */
 
 const Buttress = require('@buttress/api');
-const Config = require('node-env-obj')();
-
-const NRP = require('node-redis-pubsub');
 
 const Model = require('../');
 const Schema = require('../../schema');
@@ -28,14 +25,15 @@ const Helpers = require('../../helpers');
 
 const SchemaModel = require('../schemaModel');
 
-const nrp = new NRP(Config.redis);
 
 class AppSchemaModel extends SchemaModel {
-	constructor(datastore) {
+	constructor(nrp) {
 		const schema = AppSchemaModel.Schema;
-		super(schema, null, datastore);
+		super(schema, null, nrp);
 
 		this._localSchema = null;
+
+		this._nrp = nrp;
 	}
 
 	static get Constants() {
@@ -159,12 +157,12 @@ class AppSchemaModel extends SchemaModel {
 		await this.__handleAddingNonSystemApp(body, token);
 
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
-		nrp.emit('app-routes:bust-cache', {});
+		this._nrp.emit('app-routes:bust-cache', {});
 		Logging.logSilly(`Emitting app-schema:updated ${app._id}`);
-		nrp.emit('app-schema:updated', {appId: app._id});
+		this._nrp.emit('app-schema:updated', {appId: app._id});
 
 		Logging.logSilly(`Emitting app-policy:bust-cache ${app._id}`);
-		nrp.emit('app-policy:bust-cache', {
+		this._nrp.emit('app-policy:bust-cache', {
 			appId: app._id,
 		});
 
@@ -247,8 +245,8 @@ class AppSchemaModel extends SchemaModel {
 		}
 
 		Logging.logSilly(`Emitting app-schema:updated ${appId}`);
-		nrp.emit('app-schema:updated', {appId: appId});
-		nrp.emit('app:update-schema', {
+		this._nrp.emit('app-schema:updated', {appId: appId});
+		this._nrp.emit('app:update-schema', {
 			appId: appId,
 			schemas: Schema.decode(appSchema),
 		});
