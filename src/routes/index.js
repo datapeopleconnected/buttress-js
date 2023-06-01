@@ -20,23 +20,23 @@
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const NRP = require('node-redis-pubsub');
 const {v4: uuidv4} = require('uuid');
+const ObjectId = require('mongodb').ObjectId;
+
+const Config = require('node-env-obj')();
+
 // const Route = require('./route');
 const Logging = require('../logging');
 const Schema = require('../schema');
 const Helpers = require('../helpers');
 const AccessControl = require('../access-control');
 const Model = require('../model');
-const Config = require('node-env-obj')();
-const ObjectId = require('mongodb').ObjectId;
 
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
-
+const AdminRoutes = require('./admin-routes');
 const SchemaRoutes = require('./schema-routes');
 
 const Datastore = require('../datastore');
-const AdminRoutes = require('./admin-routes');
 
 class Routes {
 	/**
@@ -48,6 +48,12 @@ class Routes {
 
 		this._tokens = [];
 		this._routerMap = {};
+
+		this._nrp = null;
+	}
+
+	async init() {
+		this._nrp = new NRP(Config.redis);
 	}
 
 	/**
@@ -270,7 +276,7 @@ class Routes {
 	 * @private
 	 */
 	_initRoute(app, Route, ...additional) {
-		const route = new Route();
+		const route = new Route(null, null, this._nrp);
 		const routePath = path.join(...[
 			Config.app.apiPrefix,
 			...additional,
@@ -292,7 +298,7 @@ class Routes {
 			const appShortId = Helpers.shortId(app._id);
 
 			try {
-				route = new Route(schemaData, appShortId);
+				route = new Route(schemaData, appShortId, this._nrp);
 			} catch (err) {
 				if (err instanceof Helpers.Errors.RouteMissingModel) return Logging.logWarn(`${err.message} for ${app.name}`);
 
@@ -653,7 +659,7 @@ class Routes {
 
 				if (result.triggerAPIType === 'SYNC') {
 					result.lambdaOutput = await new Promise((resolve) => {
-						nrp.on('lambda-execution-finish', (exec) => {
+						this._nrp.on('lambda-execution-finish', (exec) => {
 							if (exec.restWorkerId === this.id) {
 								resolve(exec);
 							}
@@ -704,7 +710,7 @@ class Routes {
 
 				if (result.triggerAPIType === 'SYNC') {
 					result.lambdaOutput = await new Promise((resolve) => {
-						nrp.on('lambda-execution-finish', (exec) => {
+						this._nrp.on('lambda-execution-finish', (exec) => {
 							if (exec.restWorkerId === this.id) {
 								resolve(exec);
 							}
@@ -809,7 +815,7 @@ class Routes {
 		}
 
 		if (!res.errCode && !res.errMessage) {
-			nrp.emit('executeLambdaAPI', data);
+			this._nrp.emit('executeLambdaAPI', data);
 		}
 
 		return res;

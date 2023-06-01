@@ -22,13 +22,10 @@ const Config = require('node-env-obj')();
 const Logging = require('../logging');
 // const Schema = require('../schema');
 const Model = require('../model');
-const NRP = require('node-redis-pubsub');
 const Helpers = require('../helpers');
 // const AccessControl = require('../access-control');
 
 const SchemaModelRemote = require('../model/type/remote');
-
-const nrp = new NRP(Config.redis);
 
 /**
  */
@@ -97,7 +94,7 @@ const Constants = {
 };
 
 class Route {
-	constructor(path, name) {
+	constructor(path, name, nrp = null) {
 		this.verb = Constants.Verbs.GET;
 		this.Type = Constants.Type.SYSTEM;
 		this.permissions = Constants.Permissions.READ;
@@ -119,6 +116,8 @@ class Route {
 
 		this.path = path;
 		this.name = name;
+
+		this._nrp = nrp;
 	}
 
 	/**
@@ -328,7 +327,7 @@ class Route {
 
 		const emit = (_result) => {
 			if (this.activityBroadcast === true) {
-				nrp.emit('activity', {
+				this._nrp.emit('activity', {
 					title: this.activityTitle,
 					description: this.activityDescription,
 					visibility: this.activityVisibility,
@@ -427,7 +426,7 @@ class Route {
 
 		paths = paths.filter((v, idx, arr) => arr.indexOf(v) === idx);
 		if (paths.length > 0) {
-			nrp.emit('notifyLambdaPathChange', {
+			this._nrp.emit('notifyLambdaPathChange', {
 				paths,
 				values,
 				collection: this.schema?.name,

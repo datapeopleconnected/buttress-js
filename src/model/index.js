@@ -18,8 +18,12 @@
 
 const path = require('path');
 const fs = require('fs');
-const Logging = require('../logging');
 const Sugar = require('sugar');
+const NRP = require('node-redis-pubsub');
+
+const Config = require('node-env-obj')();
+
+const Logging = require('../logging');
 const Schema = require('../schema');
 const shortId = require('../helpers').shortId;
 
@@ -47,9 +51,13 @@ class Model {
 		this.appMetadataChanged = false;
 
 		this.coreSchema = [];
+
+		this._nrp = null;
 	}
 
 	async init() {
+		this._nrp = new NRP(Config.redis);
+
 		// Core Models
 		await this.initCoreModels();
 
@@ -178,8 +186,8 @@ class Model {
 
 				this.models[name] = new SchemaModelRemote(
 					schemaData, app,
-					new SchemaModel(schemaData, app),
-					new SchemaModel(schemaData, app),
+					new SchemaModel(schemaData, app, this._nrp),
+					new SchemaModel(schemaData, app, this._nrp),
 				);
 
 				try {
@@ -193,7 +201,7 @@ class Model {
 				this.__defineGetter__(name, () => this.models[name]);
 				return this.models[name];
 			} else {
-				this.models[name] = new SchemaModel(schemaData, app, datastore);
+				this.models[name] = new SchemaModel(schemaData, app, datastore, this._nrp);
 				await this.models[name].initAdapter(datastore);
 			}
 		}
@@ -220,4 +228,5 @@ class Model {
 	}
 }
 
-module.exports = new Model();
+// module.exports = new Model();
+module.exports = Model;

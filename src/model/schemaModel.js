@@ -15,10 +15,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
-
 const Logging = require('../logging');
 const Shared = require('./shared');
 const Helpers = require('../helpers');
@@ -33,7 +29,7 @@ const Sugar = require('sugar');
  **********************************************************************************/
 
 class SchemaModel {
-	constructor(schemaData, app) {
+	constructor(schemaData, app, nrp=null) {
 		this.schemaData = schemaData;
 		this.flatSchemaData = (schemaData) ? Helpers.getFlattenedSchema(this.schemaData) : null;
 
@@ -46,15 +42,17 @@ class SchemaModel {
 			this.collectionName = `${this.appShortId}-${this.collectionName}`;
 		}
 
-		nrp.on('app:update-schema', (data) => {
-			if (!app || (app._id.toString() !== data.appId)) return;
+		if (nrp) {
+			nrp.on('app:update-schema', (data) => {
+				if (!app || (app._id.toString() !== data.appId)) return;
 
-			data.schemas.forEach((schema) => {
-				if (schema.name !== this.schemaData.name) return;
+				data.schemas.forEach((schema) => {
+					if (schema.name !== this.schemaData.name) return;
 
-				this.schemaData = schema;
+					this.schemaData = schema;
+				});
 			});
-		});
+		}
 	}
 
 	async initAdapter(datastore) {

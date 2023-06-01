@@ -40,6 +40,7 @@ const shortId = require('./helpers').shortId;
 const Model = require('./model');
 const Helpers = require('./helpers');
 const Logging = require('./logging');
+
 const AccessControl = require('./access-control');
 const AccessControlHelpers = require('./access-control/helpers');
 const AccessControlConditions = require('./access-control/conditions');
@@ -107,7 +108,9 @@ class BootstrapSocket {
 	async init() {
 		await this.primaryDatastore.connect();
 
+		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
 		await Model.init();
+		await AccessControl.init();
 
 		if (cluster.isMaster) {
 			await this.__initMaster();

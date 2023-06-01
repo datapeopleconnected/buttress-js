@@ -22,8 +22,6 @@ const AccessControlFilter = require('./filter');
 const AccessControlProjection = require('./projection');
 const AccessControlPolicyMatch = require('./policy-match');
 
-const nrp = new NRP(Config.redis);
-
 class AccessControl {
 	constructor() {
 		this._schemas = {};
@@ -35,12 +33,16 @@ class AccessControl {
 
 		this._coreSchema = [];
 		this._coreSchemaNames = [];
+	}
+
+	async init() {
+		this._nrp = new NRP(Config.redis);
 
 		this.handlePolicyCaching();
 	}
 
 	handlePolicyCaching() {
-		nrp.on('app-policy:bust-cache', async (data) => {
+		this._nrp.on('app-policy:bust-cache', async (data) => {
 			this._policies[data.appId] = await this.__loadAppPolicies(data.appId);
 		});
 	}
@@ -151,7 +153,7 @@ class AccessControl {
 			await this._queuePolicyLimitDeleteEvent(tokenPolicies, token, appId);
 			// TODO: This doesn't need to happen here, move to sock
 			// await this._checkAccessControlDBBasedQueryCondition(req, params);
-			nrp.emit('queuePolicyRoomCloseSocketEvent', params);
+			this._nrp.emit('queuePolicyRoomCloseSocketEvent', params);
 		}
 
 		// TODO: This doesn't need to happen here, move to sock
@@ -489,7 +491,7 @@ class AccessControl {
 		if (requestMethod !== 'PUT') return;
 
 		const id = params.path.split('/').pop();
-		nrp.emit('accessControlPolicy:disconnectQueryBasedSocket', {
+		this._nrp.emit('accessControlPolicy:disconnectQueryBasedSocket', {
 			appId: params.appId,
 			apiPath: params.apiPath,
 			userId: params.userId,
@@ -512,11 +514,11 @@ class AccessControl {
 				await this.__removeUserPropertiesPolicySelection(userToken, p);
 				await Model.Policy.rm(p);
 
-				nrp.emit('app-policy:bust-cache', {
+				this._nrp.emit('app-policy:bust-cache', {
 					appId,
 				});
 
-				nrp.emit('worker:socket:updateUserSocketRooms', {
+				this._nrp.emit('worker:socket:updateUserSocketRooms', {
 					userId: Model.User.create(userToken._user),
 					appId,
 				});

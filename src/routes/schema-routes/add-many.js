@@ -7,8 +7,8 @@ const Schema = require('../../schema');
  * @class AddMany
  */
 module.exports = class AddMany extends Route {
-	constructor(schema, appShort) {
-		super(`${schema.name}/bulk/add`, `BULK ADD ${schema.name}`);
+	constructor(schema, appShort, nrp) {
+		super(`${schema.name}/bulk/add`, `BULK ADD ${schema.name}`, nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
