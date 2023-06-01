@@ -36,6 +36,8 @@ class AdapterId {
 module.exports = class MongodbAdapter extends AbstractAdapter {
 	constructor(uri, options, connection = null) {
 		super(uri, options, connection);
+
+		this._client = null;
 	}
 
 	async connect() {
@@ -44,9 +46,14 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		// Remove the pathname as we'll selected the db using the client method
 		const connectionString = this.uri.href.replace(this.uri.pathname, '');
 
-		const client = await MongoClient.connect(connectionString, this.options);
+		this._client = await MongoClient.connect(connectionString, this.options);
 
-		return this.connection = client.db(this.uri.pathname.replace(/\//g, ''));
+		return this.connection = this._client.db(this.uri.pathname.replace(/\//g, ''));
+	}
+
+	async close() {
+		if (!this._client) return;
+		this._client.close();
 	}
 
 	cloneAdapterConnection() {

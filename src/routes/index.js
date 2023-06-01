@@ -52,8 +52,8 @@ class Routes {
 		this._nrp = null;
 	}
 
-	async init() {
-		this._nrp = new NRP(Config.redis);
+	async init(nrp) {
+		this._nrp = nrp;
 	}
 
 	/**

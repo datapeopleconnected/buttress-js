@@ -59,15 +59,20 @@ class BootstrapRest extends EventEmitter {
 		this.id = (cluster.isMaster) ? 'MASTER' : cluster.worker.id;
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
+
+		this._restServer = null;
+		this._nrp = null;
 	}
 
 	async init() {
 		Logging.log(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
+		this._nrp = new NRP(Config.redis);
+
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
-		await Model.init();
-		await AccessControl.init();
+		await Model.init(this._nrp);
+		await AccessControl.init(this._nrp);
 
 		if (cluster.isMaster) {
 			await this.__initMaster();
@@ -88,18 +93,48 @@ class BootstrapRest extends EventEmitter {
 		return cluster.isMaster;
 	}
 
+	async clean() {
+		Logging.logSilly('BootstrapRest:clean');
+		// Should close down all connections
+		// Kill worker processes
+		for (let x = 0; this.workers.length; x++) {
+			Logging.logSilly(`Killing worker ${x}`);
+			this.workers[x].kill();
+		}
+
+		// Destroy all routes
+		// this.routes.clean();
+
+		// Destory all models
+		// Model.clean();
+
+		if (this._restServer) {
+			Logging.logSilly('Closing express server');
+			this._restServer.close((err) => (err) ? process.exit(1) : Logging.logSilly(`Express server closed`));
+		}
+
+		// Close out the NRP connection
+		if (this._nrp) {
+			Logging.logSilly('Closing node redis pubsub connection');
+			this._nrp.quit();
+		}
+
+		// Close Datastore connections
+		Logging.logSilly('Closing down all datastore connections');
+		Datastore.clean();
+	}
+
 	async __initMaster() {
 		const isPrimary = Config.rest.app === 'primary';
 
-		const nrp = new NRP(Config.redis);
-		nrp.on('app-schema:updated', (data) => {
+		this._nrp.on('app-schema:updated', (data) => {
 			Logging.logDebug(`App Schema Updated: ${data.appId}`);
 			this.notifyWorkers({
 				type: 'app-schema:updated',
 				appId: data.appId,
 			});
 		});
-		nrp.on('app-routes:bust-cache', () => {
+		this._nrp.on('app-routes:bust-cache', () => {
 			Logging.logDebug(`App Routes: Bust token cache`);
 			this.notifyWorkers({
 				type: 'app-routes:bust-cache',
@@ -152,10 +187,10 @@ class BootstrapRest extends EventEmitter {
 
 		this.routes = new Routes(app);
 
-		await this.routes.init();
+		await this.routes.init(this._nrp);
 		await this.routes.initRoutes();
 
-		await app.listen(Config.listenPorts.rest);
+		this._restServer = await app.listen(Config.listenPorts.rest);
 
 		await Model.initSchema();
 		await this.routes.initAppRoutes();

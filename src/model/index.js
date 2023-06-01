@@ -55,9 +55,9 @@ class Model {
 		this._nrp = null;
 	}
 
-	async init() {
+	async init(nrp) {
 		Logging.logSilly('Model:init');
-		this._nrp = new NRP(Config.redis);
+		this._nrp = nrp;
 	}
 
 	async initCoreModels() {

@@ -111,8 +111,8 @@ class BootstrapSocket {
 		this._nrp = new NRP(Config.redis);
 
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
-		await Model.init();
-		await AccessControl.init();
+		await Model.init(this._nrp);
+		await AccessControl.init(this._nrp);
 
 		// Init models
 		await Model.initCoreModels();

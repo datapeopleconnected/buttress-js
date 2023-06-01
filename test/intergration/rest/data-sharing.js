@@ -14,11 +14,27 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it} = require('mocha');
+const {describe, it, before, after} = require('mocha');
 const assert = require('assert');
 
-describe('intergration:first', () => {
-	it('should do somthing', async () => {
-		assert.equal(true, true);
+const BootstrapRest = require('../../../dist/bootstrap-rest');
+
+const REST_PROCESS = new BootstrapRest();
+
+before(async () => {
+	await REST_PROCESS.init();
+});
+
+after(async () => {
+	// Shutdown
+	await REST_PROCESS.clean();
+});
+
+// This suite of tests will run against the REST API and will
+// test the cababiliy of data sharing between different apps.
+describe('Data Sharing', async () => {
+	it('should be able to create a new app', async () => {
+		assert(true);
 	});
 });
+

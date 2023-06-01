@@ -35,8 +35,8 @@ class AccessControl {
 		this._coreSchemaNames = [];
 	}
 
-	async init() {
-		this._nrp = new NRP(Config.redis);
+	async init(nrp) {
+		this._nrp = nrp;
 
 		this.handlePolicyCaching();
 	}

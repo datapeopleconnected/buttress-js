@@ -75,5 +75,11 @@ module.exports = {
 	getInstance(hash) {
 		return datastores[hash];
 	},
+	clean: async () => {
+		for await (const key of Object.keys(datastores)) {
+			if (datastores[key].adapter.close) datastores[key].adapter.close();
+			delete datastores[key];
+		}
+	},
 	datastores,
 };

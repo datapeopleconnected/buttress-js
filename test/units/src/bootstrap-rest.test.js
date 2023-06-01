@@ -19,12 +19,29 @@ const assert = require('assert');
 
 const BootstrapRest = require('../../../dist/bootstrap-rest');
 
-// Unit tests to test the bootstrap-rest file
-describe('bootstrap-rest:bootstrapRest', () => {
-	// Test the bootstrapRest function exists
+describe('bootstrap-rest:class', () => {
 	it(`should create an instance of the bootstrapRest class`, () => {
-		// const bootstrapRest = new BootstrapRest();
-		// assert(bootstrapRest instanceof BootstrapRest);
-		assert(true);
+		const bootstrapRest = new BootstrapRest();
+		assert(bootstrapRest instanceof BootstrapRest);
+	});
+
+	describe('bootstrapRest:init', () => {
+		it(`should have function, init`, () => {
+			const bootstrapRest = new BootstrapRest();
+			assert(typeof bootstrapRest.init === 'function');
+		});
+	});
+
+	describe('bootstrapRest:_getLocalSchemas', () => {
+		it(`should have function, _getLocalSchemas`, () => {
+			const bootstrapRest = new BootstrapRest();
+			assert(typeof bootstrapRest._getLocalSchemas === 'function');
+		});
+
+		it(`should return an array of schemas`, () => {
+			const bootstrapRest = new BootstrapRest();
+			const result = bootstrapRest._getLocalSchemas();
+			assert(Array.isArray(result));
+		});
 	});
 });
