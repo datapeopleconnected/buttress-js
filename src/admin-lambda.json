@@ -138,7 +138,7 @@
 			"git": {
 				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/local-auth.git",
 				"branch": "main",
-				"hash": "6775023b2d0a02db7c946184246211ade7bde357",
+				"hash": "3ca5d83c999a2d642eb32d8cdd94e66a83f5e109",
 				"entryFile": "index.js",
 				"entryPoint": "execute"
 			},
