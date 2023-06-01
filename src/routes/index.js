@@ -650,104 +650,112 @@ class Routes {
 		const appApiPaths = apps.map((app) => app.apiPath);
 
 		appApiPaths.forEach((apiPath) => {
-			this.app.get(`/api/v1/lambda/${apiPath}/*`, async (req, res) => {
-				const [endpoint] = Object.values(req.params);
-				const result = await this._validateLambdaAPIExecution(endpoint, 'GET', req.headers, req.query);
-				if (result.errCode && result.errMessage) {
-					res.status(result.errCode).send({message: result.errMessage});
-					return;
-				}
+			this.__configureAppLambdaEndpoints(apiPath);
+		});
 
-				if (result.triggerAPIType === 'SYNC') {
-					result.lambdaOutput = await new Promise((resolve) => {
-						this._nrp.on('lambda-execution-finish', (exec) => {
-							if (exec.restWorkerId === this.id) {
-								resolve(exec);
-							}
-						});
+		this._nrp.on('app:configure-lambda-endpoints', (apiPath) => {
+			this.__configureAppLambdaEndpoints(apiPath);
+		});
+	}
+
+	async __configureAppLambdaEndpoints(apiPath) {
+		this.app.get(`/api/v1/lambda/${apiPath}/*`, async (req, res) => {
+			const [endpoint] = Object.values(req.params);
+			const result = await this._validateLambdaAPIExecution(endpoint, 'GET', req.headers, req.query);
+			if (result.errCode && result.errMessage) {
+				res.status(result.errCode).send({message: result.errMessage});
+				return;
+			}
+
+			if (result.triggerAPIType === 'SYNC') {
+				result.lambdaOutput = await new Promise((resolve) => {
+					this._nrp.on('lambda-execution-finish', (exec) => {
+						if (exec.restWorkerId === this.id) {
+							resolve(exec);
+						}
 					});
-				}
+				});
+			}
 
-				if (result.lambdaOutput && result.lambdaOutput.res.redirect) {
-					const url = result.lambdaOutput.res.url;
-					const queryObj = result.lambdaOutput.res.query;
-					let query = '';
-					if (queryObj) {
-						query = Object.keys(queryObj).reduce((output, key) => {
-							if (!output) {
-								output = `${key}=${queryObj[key]}`;
-							} else {
-								output = `${output}&${key}=${queryObj[key]}`;
-							}
-							return output;
-						}, null);
-					}
-					const redirectURL = (query) ? `${url}?${query}` : url;
-					res.redirect(redirectURL);
-				} else if (result.lambdaOutput) {
-					res.status(result.lambdaOutput.code).send({
-						res: result.lambdaOutput.res,
-						executionId: result.lambdaExecution._id,
+			if (result.lambdaOutput && result.lambdaOutput.res.redirect) {
+				const url = result.lambdaOutput.res.url;
+				const queryObj = result.lambdaOutput.res.query;
+				let query = '';
+				if (queryObj) {
+					query = Object.keys(queryObj).reduce((output, key) => {
+						if (!output) {
+							output = `${key}=${queryObj[key]}`;
+						} else {
+							output = `${output}&${key}=${queryObj[key]}`;
+						}
+						return output;
+					}, null);
+				}
+				const redirectURL = (query) ? `${url}?${query}` : url;
+				res.redirect(redirectURL);
+			} else if (result.lambdaOutput) {
+				res.status(result.lambdaOutput.code).send({
+					res: result.lambdaOutput.res,
+					executionId: result.lambdaExecution._id,
+				});
+			} else {
+				res.status(200).send({
+					executionId: result.lambdaExecution._id,
+				});
+			}
+		});
+
+		this.app.post(`/api/v1/lambda/${apiPath}/*`, async (req, res) => {
+			const [endpoint] = Object.values(req.params);
+			if (!req.body || Object.values(req.body).length < 1) {
+				res.status(400).send({message: 'missing_request_body'});
+				return;
+			}
+
+			const result = await this._validateLambdaAPIExecution(endpoint, 'POST', req.headers, null, req.body);
+			if (result.errCode && result.errMessage) {
+				res.status(result.errCode).send({message: result.errMessage});
+				return;
+			}
+
+			if (result.triggerAPIType === 'SYNC') {
+				result.lambdaOutput = await new Promise((resolve) => {
+					this._nrp.on('lambda-execution-finish', (exec) => {
+						if (exec.restWorkerId === this.id) {
+							resolve(exec);
+						}
 					});
-				} else {
-					res.status(200).send({
-						executionId: result.lambdaExecution._id,
-					});
-				}
-			});
+				});
+			}
 
-			this.app.post(`/api/v1/lambda/${apiPath}/*`, async (req, res) => {
-				const [endpoint] = Object.values(req.params);
-				if (!req.body || Object.values(req.body).length < 1) {
-					res.status(400).send({message: 'missing_request_body'});
-					return;
-				}
+			if (result.lambdaOutput) {
+				res.status(result.lambdaOutput.code).send({
+					res: result.lambdaOutput.res,
+					executionId: result.lambdaExecution._id,
+				});
+			} else {
+				res.status(200).send({
+					executionId: result.lambdaExecution._id,
+				});
+			}
+		});
 
-				const result = await this._validateLambdaAPIExecution(endpoint, 'POST', req.headers, null, req.body);
-				if (result.errCode && result.errMessage) {
-					res.status(result.errCode).send({message: result.errMessage});
-					return;
-				}
+		// retrieve the status of a lambda execution
+		this.app.get(`/api/v1/lambda/status/${apiPath}/:executionId`, async (req, res) => {
+			const executionId = req.params.executionId;
+			const isValidId = ObjectId.isValid(executionId);
+			if (!isValidId) {
+				res.status(400).send({message: 'invalid_input'});
+				return;
+			}
 
-				if (result.triggerAPIType === 'SYNC') {
-					result.lambdaOutput = await new Promise((resolve) => {
-						this._nrp.on('lambda-execution-finish', (exec) => {
-							if (exec.restWorkerId === this.id) {
-								resolve(exec);
-							}
-						});
-					});
-				}
+			const lambdaExecution = await Model.LambdaExecution.findById(executionId);
+			if (!lambdaExecution) {
+				res.status(404).send({message: 'not_found'});
+				return;
+			}
 
-				if (result.lambdaOutput) {
-					res.status(result.lambdaOutput.code).send({
-						res: result.lambdaOutput.res,
-						executionId: result.lambdaExecution._id,
-					});
-				} else {
-					res.status(200).send({
-						executionId: result.lambdaExecution._id,
-					});
-				}
-			});
-
-			// retrieve the status of a lambda execution
-			this.app.get(`/api/v1/lambda/status/${apiPath}/:executionId`, async (req, res) => {
-				const executionId = req.params.executionId;
-				const isValidId = ObjectId.isValid(executionId);
-				if (!isValidId) {
-					res.status(400).send({message: 'invalid_input'});
-					return;
-				}
-
-				const lambdaExecution = await Model.LambdaExecution.findById(executionId);
-				if (!lambdaExecution) {
-					res.status(404).send({message: 'not_found'});
-					return;
-				}
-
-				res.status(200).send({status: lambdaExecution.status});
-			});
+			res.status(200).send({status: lambdaExecution.status});
 		});
 	}
 

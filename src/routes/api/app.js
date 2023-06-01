@@ -206,7 +206,12 @@ class AddApp extends Route {
 	_exec(req, res, validate) {
 		return new Promise((resolve, reject) => {
 			Model.App.add(req.body)
-				.then((res) => Object.assign(res.app, {token: res.token.value}))
+				.then((res) => {
+					console.log('this._nrp', this._nrp);
+					this._nrp.emit('app:configure-lambda-endpoints', res.app.apiPath);
+
+					return Object.assign(res.app, {token: res.token.value});
+				})
 				.then(Logging.Promise.logProp('Added App', 'name', Route.LogLevel.INFO))
 				.then(resolve, reject);
 		});
