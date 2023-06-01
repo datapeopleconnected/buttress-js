@@ -116,12 +116,12 @@ class BootstrapLambda {
 	async __initWorker() {
 		await Model.initCoreModels();
 
-		this._nrp.emit('worker-initiated', this.id);
-
 		const type = await new Promise((resolve) => {
 			this._nrp.on('worker-type', (data) => {
 				if (data.id !== this.id) return;
 				resolve(data.type);
+			}, () => {
+				this._nrp.emit('worker-initiated', this.id);
 			});
 		});
 
