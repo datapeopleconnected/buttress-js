@@ -24,7 +24,6 @@ const Config = require('node-env-obj')();
 const Datastore = require('./datastore');
 const Logging = require('./logging');
 const Model = require('./model');
-const nrp = new NRP(Config.redis);
 
 const LambdaManager = require('./lambda/lambda-manager');
 const LambdaRunner = require('./lambda/lambda-runner');
@@ -96,9 +95,9 @@ class BootstrapLambda {
 			Logging.logVerbose(`Primary Main LAMB`);
 			await Model.initCoreModels();
 
-			nrp.on('worker-initiated', (data) => {
+			this._nrp.on('worker-initiated', (data) => {
 				const type = this.__getLambdaWorkerType();
-				nrp.emit('worker-type', type);
+				this._nrp.emit('worker-type', type);
 			});
 
 			new LambdaManager();
@@ -118,8 +117,8 @@ class BootstrapLambda {
 		let type = null;
 		await Model.initCoreModels();
 		await new Promise((resolve) => {
-			nrp.emit('worker-initiated', 'Just to get an assignment');
-			nrp.on('worker-type', (data) => {
+			this._nrp.emit('worker-initiated', 'Just to get an assignment');
+			this._nrp.on('worker-type', (data) => {
 				type = data;
 				resolve();
 			});
