@@ -95,9 +95,9 @@ class BootstrapLambda {
 			Logging.logVerbose(`Primary Main LAMB`);
 			await Model.initCoreModels();
 
-			this._nrp.on('worker-initiated', (data) => {
+			this._nrp.on('worker-initiated', (id) => {
 				const type = this.__getLambdaWorkerType();
-				this._nrp.emit('worker-type', type);
+				this._nrp.emit('worker-type', {id, type});
 			});
 
 			new LambdaManager();
@@ -114,13 +114,14 @@ class BootstrapLambda {
 	}
 
 	async __initWorker() {
-		let type = null;
 		await Model.initCoreModels();
-		await new Promise((resolve) => {
-			this._nrp.emit('worker-initiated', 'Just to get an assignment');
+
+		this._nrp.emit('worker-initiated', this.id);
+
+		const type = await new Promise((resolve) => {
 			this._nrp.on('worker-type', (data) => {
-				type = data;
-				resolve();
+				if (data.id !== this.id) return;
+				resolve(data.type);
 			});
 		});
 
