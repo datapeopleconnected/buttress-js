@@ -127,6 +127,26 @@ class BootstrapSocket {
 		return cluster.isMaster;
 	}
 
+	async clean() {
+		Logging.logSilly('BootstrapSocket:clean');
+		// Should close down all connections
+		// Kill worker processes
+		for (let x = 0; this.workers.length; x++) {
+			Logging.logSilly(`Killing worker ${x}`);
+			this.workers[x].kill();
+		}
+
+		// Close out the NRP connection
+		if (this._nrp) {
+			Logging.logSilly('Closing node redis pubsub connection');
+			this._nrp.quit();
+		}
+
+		// Close Datastore connections
+		Logging.logSilly('Closing down all datastore connections');
+		Datastore.clean();
+	}
+
 	/**
 	 * message the primary and wait for a response
 	 * @param {*} channel
