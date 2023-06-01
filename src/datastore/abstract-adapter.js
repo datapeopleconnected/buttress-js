@@ -57,6 +57,10 @@ module.exports = class AbstractAdapter {
 		throw new Errors.NotYetImplemented('updateById');
 	}
 
+	updateOne(query, update) {
+		throw new Errors.NotYetImplemented('updateOne');
+	}
+
 	exists(id, extra = {}) {
 		throw new Errors.NotYetImplemented('exists');
 	}

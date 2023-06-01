@@ -29,8 +29,8 @@ const routes = [];
  * @class AddSecureStore
  */
 class AddSecureStore extends Route {
-	constructor() {
-		super('secureStore', 'ADD SECURE STORE');
+	constructor(nrp) {
+		super('secureStore', 'ADD SECURE STORE', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -65,8 +65,8 @@ routes.push(AddSecureStore);
  * @class AddManySecureStore
  */
 class AddManySecureStore extends Route {
-	constructor() {
-		super('secureStore/bulk/add', 'ADD SECURE STORE');
+	constructor(nrp) {
+		super('secureStore/bulk/add', 'ADD SECURE STORE', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -115,8 +115,8 @@ routes.push(AddManySecureStore);
  * @class GetSecureStore
  */
 class GetSecureStore extends Route {
-	constructor() {
-		super('secureStore/:id', 'GET SECURE STORE');
+	constructor(nrp) {
+		super('secureStore/:id', 'GET SECURE STORE', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -151,8 +151,8 @@ routes.push(GetSecureStore);
  * @class FindSecureStore
  */
 class FindSecureStore extends Route {
-	constructor() {
-		super('secureStore/name/:name', 'FIND SECURE STORE BY NAME');
+	constructor(nrp) {
+		super('secureStore/name/:name', 'FIND SECURE STORE BY NAME', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -185,8 +185,8 @@ routes.push(FindSecureStore);
  * @class UpdateSecureStore
  */
 class UpdateSecureStore extends Route {
-	constructor() {
-		super('secureStore/:id', 'UPDATE SECURE STORE');
+	constructor(nrp) {
+		super('secureStore/:id', 'UPDATE SECURE STORE', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -195,7 +195,8 @@ class UpdateSecureStore extends Route {
 	}
 
 	async _validate(req, res, token) {
-		const validation = Model.SecureStore.validateUpdate(req.body);
+		const {validation, body} = Model.SecureStore.validateUpdate(req.body);
+		req.body = body;
 		if (!validation.isValid) {
 			if (validation.isPathValid === false) {
 				this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -225,15 +226,16 @@ routes.push(UpdateSecureStore);
  * @class BulkUpdateSecureStore
  */
 class BulkUpdateSecureStore extends Route {
-	constructor() {
-		super('secureStore/bulk/update', 'BULK UPDATE SECURE STORE');
+	constructor(nrp) {
+		super('secureStore/bulk/update', 'BULK UPDATE SECURE STORE', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const validation = Model.SecureStore.validateUpdate(item.body);
+			const {validation, body} = Model.SecureStore.validateUpdate(item.body);
+			item.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -268,8 +270,8 @@ routes.push(BulkUpdateSecureStore);
  * @class SearchSecureStoreList
  */
 class SearchSecureStoreList extends Route {
-	constructor() {
-		super('secureStore', 'SEARCH SECURE STORE LIST');
+	constructor(nrp) {
+		super('secureStore', 'SEARCH SECURE STORE LIST', nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -308,8 +310,8 @@ routes.push(SearchSecureStoreList);
  * @class DeleteSecureStore
  */
 class DeleteSecureStore extends Route {
-	constructor() {
-		super('secureStore/:id', 'DELETE SECURE STORE');
+	constructor(nrp) {
+		super('secureStore/:id', 'DELETE SECURE STORE', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -340,8 +342,8 @@ routes.push(DeleteSecureStore);
  * @class SecureStoreCount
  */
 class SecureStoreCount extends Route {
-	constructor() {
-		super(`secureStore/count`, `COUNT SECURE STORES`);
+	constructor(nrp) {
+		super(`secureStore/count`, `COUNT SECURE STORES`, nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 

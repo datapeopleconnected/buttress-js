@@ -33,7 +33,8 @@ module.exports = class UpdateOne extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const validation = this.model.validateUpdate(req.body);
+			const {validation, body} = this.model.validateUpdate(req.body);
+			req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`${this.schema.name}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);

@@ -23,8 +23,11 @@
 		"BUTTRESS_LOGGING_SLOW_TIME": 2,
 
 		"BUTTRESS_TIMEOUT_LAMBDA": 5,
-		"BUTTRESS_TIMEOUT_LAMBDAS_RUNNER": 10
+		"BUTTRESS_TIMEOUT_LAMBDAS_RUNNER": 10,
 
+		"LAMBDA_API_WORKERS": "%LAMBDA_API_WORKERS%",
+		"LAMBDA_PATH_MUTATION_WORKERS": "%LAMBDA_PATH_MUTATION_WORKERS%",
+		"LAMBDA_CRON_WORKERS": "%LAMBDA_CRON_WORKERS%"
 	},
 	"global": {
 		"env": "%NODE_ENV%",
@@ -37,6 +40,11 @@
 			"host": "%BUTTRESS_HOST_URL%",
 			"apiPrefix": "/api/v1",
 			"workers": "%BUTTRESS_APP_WORKERS%"
+		},
+		"lambda": {
+			"apiWorkers": "%LAMBDA_API_WORKERS%",
+			"pathMutationWorkers": "%LAMBDA_PATH_MUTATION_WORKERS%",
+			"cronWorkers": "%LAMBDA_CRON_WORKERS%"
 		},
 		"logging": {
 			"level": "%BUTTRESS_LOGGING_LEVEL%",

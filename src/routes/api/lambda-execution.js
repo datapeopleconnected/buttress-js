@@ -24,8 +24,8 @@ const routes = [];
  * @class SearchExecutionList
  */
 class SearchExecutionList extends Route {
-	constructor() {
-		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST');
+	constructor(nrp) {
+		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -56,8 +56,8 @@ routes.push(SearchExecutionList);
  * @class LambdaExecutionCount
  */
 class LambdaExecutionCount extends Route {
-	constructor() {
-		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`);
+	constructor(nrp) {
+		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`, nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 

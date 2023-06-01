@@ -31,8 +31,8 @@ const routes = [];
  * @class GetAppList
  */
 class GetAppList extends Route {
-	constructor() {
-		super('app', 'GET APP LIST');
+	constructor(nrp) {
+		super('app', 'GET APP LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -55,8 +55,8 @@ routes.push(GetAppList);
  * @class SearchAppList
  */
 class SearchAppList extends Route {
-	constructor() {
-		super('app', 'GET APP LIST');
+	constructor(nrp) {
+		super('app', 'GET APP LIST', nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 	}
@@ -99,9 +99,9 @@ routes.push(SearchAppList);
  * @class GetApp
  */
 class GetApp extends Route {
-	constructor() {
+	constructor(nrp) {
 		// Should change to app apiPath instead of ID
-		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP');
+		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -136,8 +136,8 @@ routes.push(GetApp);
  * @class AddApp
  */
 class AddApp extends Route {
-	constructor() {
-		super('app', 'APP ADD');
+	constructor(nrp) {
+		super('app', 'APP ADD', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -182,8 +182,10 @@ class AddApp extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_json`));
 			}
 
-			if (req.body.policyPropertiesList) {
-				const validPolicyPropertiesList = Object.values(req.body.policyPropertiesList).every((i) => Array.isArray(i));
+			const postedPropsList = req.body.policyPropertiesList;
+			if (postedPropsList) {
+				const policyPropertiesList = Object.keys(postedPropsList).filter((key) => key !== 'query');
+				const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(postedPropsList[key]));
 				if (!validPolicyPropertiesList) {
 					this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
@@ -204,7 +206,12 @@ class AddApp extends Route {
 	_exec(req, res, validate) {
 		return new Promise((resolve, reject) => {
 			Model.App.add(req.body)
-				.then((res) => Object.assign(res.app, {token: res.token.value}))
+				.then((res) => {
+					console.log('this._nrp', this._nrp);
+					this._nrp.emit('app:configure-lambda-endpoints', res.app.apiPath);
+
+					return Object.assign(res.app, {token: res.token.value});
+				})
 				.then(Logging.Promise.logProp('Added App', 'name', Route.LogLevel.INFO))
 				.then(resolve, reject);
 		});
@@ -216,8 +223,8 @@ routes.push(AddApp);
  * @class DeleteApp
  */
 class DeleteApp extends Route {
-	constructor() {
-		super('app/:id', 'DELETE APP');
+	constructor(nrp) {
+		super('app/:id', 'DELETE APP', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 		this._app = false;
@@ -252,8 +259,8 @@ routes.push(DeleteApp);
  * @class GetAppPermissionList
  */
 class GetAppPermissionList extends Route {
-	constructor() {
-		super('app/:id/permission', 'GET APP PERMISSION LIST');
+	constructor(nrp) {
+		super('app/:id/permission', 'GET APP PERMISSION LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 
@@ -294,8 +301,8 @@ routes.push(GetAppPermissionList);
  * @class AddAppPermission
  */
 class AddAppPermission extends Route {
-	constructor() {
-		super('app/:id/permission', 'ADD APP PERMISSION');
+	constructor(nrp) {
+		super('app/:id/permission', 'ADD APP PERMISSION', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -332,8 +339,8 @@ routes.push(AddAppPermission);
  * @class GetAppSchema
  */
 class GetAppSchema extends Route {
-	constructor() {
-		super('app/schema', 'GET APP SCHEMA');
+	constructor(nrp) {
+		super('app/schema', 'GET APP SCHEMA', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -398,8 +405,8 @@ routes.push(GetAppSchema);
  * @class UpdateAppSchema
  */
 class UpdateAppSchema extends Route {
-	constructor() {
-		super('app/schema', 'UPDATE APP SCHEMA');
+	constructor(nrp) {
+		super('app/schema', 'UPDATE APP SCHEMA', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -461,8 +468,8 @@ routes.push(UpdateAppSchema);
  * @class GetAppPolicyPropertyList
  */
 class GetAppPolicyPropertyList extends Route {
-	constructor() {
-		super('app/policyPropertyList/:apiPath?', 'GET APP POLICY PROPERTY LIST');
+	constructor(nrp) {
+		super('app/policyPropertyList/:apiPath?', 'GET APP POLICY PROPERTY LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -502,8 +509,8 @@ routes.push(GetAppPolicyPropertyList);
  * @class SetAppPolicyPropertyList
  */
 class SetAppPolicyPropertyList extends Route {
-	constructor() {
-		super('app/policyPropertyList', 'SET APP POLICY PROPERTY LIST');
+	constructor(nrp) {
+		super('app/policyPropertyList/:update/:appId?', 'SET APP POLICY PROPERTY LIST', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -525,10 +532,32 @@ class SetAppPolicyPropertyList extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_type`));
 			}
 
-			const validPolicyPropertiesList = Object.values(req.body).every((i) => Array.isArray(i));
+			if (!req.params.appId && (!req.body.query || Object.keys(req.body.query).length < 1)) {
+				this.log('ERROR: Missing appId or a query to update a targetted app', Route.LogLevel.ERR);
+				return reject(new Helpers.Errors.RequestError(400, `missing_app_query`));
+			}
+
+			const policyPropertiesList = Object.keys(req.body).filter((key) => key !== 'query');
+			const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(req.body[key]));
 			if (!validPolicyPropertiesList) {
 				this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+			}
+
+			if (req.params.update === 'true') {
+				const currentAppListKeys = Object.keys(req.authApp.policyPropertiesList);
+				Object.keys(req.body).forEach((key) => {
+					if (currentAppListKeys.includes(key)) {
+						req.body[key] = req.body[key].concat(req.authApp.policyPropertiesList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
+					}
+				});
+				const postedPropsList = Object.keys(req.body).reduce((obj, key) => {
+					if (key === 'query') return obj;
+
+					obj[key] = req.body[key];
+					return obj;
+				}, {});
+				req.body = {...req.authApp.policyPropertiesList, ...postedPropsList};
 			}
 
 			resolve(req.body);
@@ -536,73 +565,34 @@ class SetAppPolicyPropertyList extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.App.setPolicyPropertiesList(req.authApp._id, validate);
-		return validate;
+		const appId = (req.params.appId) ? req.params.appId : req.authApp._id;
+		const update = Object.assign({}, validate);
+		if (update.query) delete update.query;
+
+		let query = {};
+		if (appId) {
+			query = {
+				_id: {
+					$eq: appId,
+				},
+			};
+		}
+		if (validate.query && Object.keys(validate.query).length > 0) {
+			query = validate.query;
+		}
+
+		await Model.App.setPolicyPropertiesList(query, update);
+		return update;
 	}
 }
 routes.push(SetAppPolicyPropertyList);
 
 /**
- * @class UpdateAppPolicyPropertyList
- */
-class UpdateAppPolicyPropertyList extends Route {
-	constructor() {
-		super('app/updatePolicyPropertyList', 'UPDATE APP POLICY PROPERTY LIST');
-		this.verb = Route.Constants.Verbs.PUT;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
-
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			// removing body query which we need to consider for policy vulnerabilities
-			delete req.body.query;
-
-			if (!req.authApp) {
-				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
-			}
-
-			if (!req.body) {
-				this.log('ERROR: Missing body', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_body`));
-			}
-
-			if (typeof req.body !== 'object' || ( typeof req.body === 'object' && Array.isArray(req.body))) {
-				this.log('ERROR: Policy property list is invalid type', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `invalid_type`));
-			}
-
-			const validPolicyPropertiesList = Object.values(req.body).every((i) => Array.isArray(i));
-			if (!validPolicyPropertiesList) {
-				this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
-			}
-
-			const currentAppListKeys = Object.keys(req.authApp.policyPropertiesList);
-			Object.keys(req.body).forEach((key) => {
-				if (currentAppListKeys.includes(key)) {
-					req.body[key] = req.body[key].concat(req.authApp.policyPropertiesList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
-				}
-			});
-			req.body = {...req.authApp.policyPropertiesList, ...req.body};
-
-			resolve(true);
-		});
-	}
-
-	_exec(req, res, validate) {
-		return Model.App.setPolicyPropertiesList(req.authApp._id, req.body)
-			.then(() => true);
-	}
-}
-routes.push(UpdateAppPolicyPropertyList);
-
-/**
  * @class AppCount
  */
 class AppCount extends Route {
-	constructor() {
-		super(`app/count`, `COUNT APPS`);
+	constructor(nrp) {
+		super(`app/count`, `COUNT APPS`, nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -645,8 +635,8 @@ routes.push(AppCount);
  * @class AppUpdateOAuth
  */
 class AppUpdateOAuth extends Route {
-	constructor() {
-		super(`app/:id/oauth`, `UPDATE APPS OAUTH`);
+	constructor(nrp) {
+		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -684,8 +674,8 @@ routes.push(AppUpdateOAuth);
  * @class AppUpdate
  */
 class AppUpdate extends Route {
-	constructor() {
-		super(`app/:id`, `UPDATE AN APP`);
+	constructor(nrp) {
+		super(`app/:id`, `UPDATE AN APP`, nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -696,7 +686,8 @@ class AppUpdate extends Route {
 	}
 
 	async _validate(req, res, token) {
-		const validation = Model.App.validateUpdate(req.body);
+		const {validation, body} = Model.App.validateUpdate(req.body);
+		req.body = body;
 		if (!validation.isValid) {
 			if (validation.isPathValid === false) {
 				this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);

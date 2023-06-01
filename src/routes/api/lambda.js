@@ -155,8 +155,6 @@ class AddLambda extends Route {
 		super('lambda', 'ADD LAMBDA', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
-
-		this._nrp = nrp;
 	}
 
 	async _validate(req, res, token) {
@@ -229,8 +227,8 @@ routes.push(AddLambda);
  * @class UpdateLambda
  */
 class UpdateLambda extends Route {
-	constructor() {
-		super('lambda/:id', 'UPDATE LAMBDA');
+	constructor(nrp) {
+		super('lambda/:id', 'UPDATE LAMBDA', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -240,7 +238,9 @@ class UpdateLambda extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const validation = Model.Lambda.validateUpdate(req.body);
+			const {validation, body} = Model.Lambda.validateUpdate(req.body);
+			req.body = body;
+
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -273,8 +273,8 @@ routes.push(UpdateLambda);
  * @class BulkUpdateLambda
  */
 class BulkUpdateLambda extends Route {
-	constructor() {
-		super('lambda/bulk/update', 'BULK UPDATE LAMBDA');
+	constructor(nrp) {
+		super('lambda/bulk/update', 'BULK UPDATE LAMBDA', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -284,7 +284,8 @@ class BulkUpdateLambda extends Route {
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const validation = Model.Lambda.validateUpdate(item.body);
+			const {validation, body} = Model.Lambda.validateUpdate(item.body);
+			item.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -319,8 +320,8 @@ routes.push(BulkUpdateLambda);
  * @class EditLambdaDeployment
  */
 class EditLambdaDeployment extends Route {
-	constructor() {
-		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT');
+	constructor(nrp) {
+		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -432,8 +433,8 @@ routes.push(EditLambdaDeployment);
  * @class SetLambdaPolicyProperties
  */
 class SetLambdaPolicyProperties extends Route {
-	constructor() {
-		super('lambda/:id/policyProperty', 'SET LAMBDA POLICY PROPERTY');
+	constructor(nrp) {
+		super('lambda/:id/policyProperty', 'SET LAMBDA POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -487,8 +488,8 @@ routes.push(SetLambdaPolicyProperties);
  * @class UpdateLambdaPolicyProperties
  */
 class UpdateLambdaPolicyProperties extends Route {
-	constructor() {
-		super('lambda/:id/updatePolicyProperty', 'UPDATE LAMBDA POLICY PROPERTY');
+	constructor(nrp) {
+		super('lambda/:id/updatePolicyProperty', 'UPDATE LAMBDA POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -544,8 +545,8 @@ routes.push(UpdateLambdaPolicyProperties);
  * @class ClearLambdaPolicyProperties
  */
 class ClearLambdaPolicyProperties extends Route {
-	constructor() {
-		super('lambda/:id/clearPolicyProperty', 'REMOVE LAMBDA POLICY PROPERTY');
+	constructor(nrp) {
+		super('lambda/:id/clearPolicyProperty', 'REMOVE LAMBDA POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -589,8 +590,8 @@ routes.push(ClearLambdaPolicyProperties);
  * @class DeleteLambda
  */
 class DeleteLambda extends Route {
-	constructor() {
-		super('lambda/:id', 'DELETE LAMBDA');
+	constructor(nrp) {
+		super('lambda/:id', 'DELETE LAMBDA', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -633,8 +634,8 @@ routes.push(DeleteLambda);
  * @class LambdaCount
  */
 class LambdaCount extends Route {
-	constructor() {
-		super(`lambda/count`, `COUNT LAMBDAS`);
+	constructor(nrp) {
+		super(`lambda/count`, `COUNT LAMBDAS`, nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 

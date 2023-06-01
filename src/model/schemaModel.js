@@ -351,6 +351,15 @@ class SchemaModel {
 	}
 
 	/**
+	 * @param {*} query
+	 * @param {*} update
+	 * @return {promise}
+	 */
+	updateOne(query, update) {
+		return this.adapter.updateOne(query, update);
+	}
+
+	/**
 	 * @param {*} id
 	 * @param {*} query
 	 * @return {promise}
@@ -394,7 +403,10 @@ class SchemaModel {
 		// TODO: This isn't processing updates in a batch
 		return await body.reduce(async (prev, update) => {
 			const arr = await prev;
-			const config = flattenedSchema === false ? false : flattenedSchema[update.path];
+			let config = flattenedSchema === false ? false : flattenedSchema[update.path];
+			if (!config && flattenedSchema) {
+				config = flattenedSchema[update.path.replace(/\.\d+/g, '')];
+			}
 			return arr.concat([
 				await this.adapter.batchUpdateProcess(id, update, extendedPathContext[update.contextPath], config, model),
 			]);

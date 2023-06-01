@@ -46,6 +46,58 @@ class GetUserList extends Route {
 routes.push(GetUserList);
 
 /**
+ * @class GetLocalAuthUser
+ */
+class GetLocalAuthUser extends Route {
+	constructor(nrp) {
+		super('user/localAuth/:username/:password', 'GET USER', nrp);
+		this.verb = Route.Constants.Verbs.GET;
+		this.permissions = Route.Constants.Permissions.READ;
+	}
+
+	async _validate(req, res, token) {
+		const username = req.params.username;
+		const password = req.params.password;
+
+		if (!username || !password) {
+			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
+
+		try {
+			const user = await Model.User.findOne({
+				'auth.username': username,
+				'auth.password': password,
+			});
+			if (!user) {
+				this.log(`[${this.name}] User not found`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
+			}
+
+			const userTokens = await Helpers.streamAll(await Model.Token.find({
+				_userId: Model.User.createId(user._id),
+			}));
+			if (!userTokens) {
+				this.log(`[${this.name}] User token are not found`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(404, `user_tokens_not_found`));
+			}
+
+			return {
+				user,
+				token: userTokens,
+			};
+		} catch (err) {
+			return Promise.reject(err);
+		}
+	}
+
+	_exec(req, res, validate) {
+		return validate;
+	}
+}
+routes.push(GetLocalAuthUser);
+
+/**
  * @class GetUser
  */
 class GetUser extends Route {
@@ -422,7 +474,8 @@ class UpdateUser extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const validation = Model.User.validateUpdate(req.body);
+			const {validation, body} = Model.User.validateUpdate(req.body);
+			req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);

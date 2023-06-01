@@ -211,7 +211,8 @@ class UpdatePolicy extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const validation = Model.Policy.validateUpdate(req.body);
+			const {validation, body} = Model.Policy.validateUpdate(req.body);
+			req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -255,7 +256,8 @@ class BulkUpdatePolicy extends Route {
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const validation = Model.Policy.validateUpdate(item.body);
+			const {validation, body} = Model.Policy.validateUpdate(item.body);
+			item.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -326,7 +328,7 @@ class SyncPolicies extends Route {
 		});
 
 		for await (const policy of req.body) {
-			await Model.Policy.add(req, {policy: policy});
+			await Model.Policy.add(policy, req.authApp._id);
 		}
 
 		this._nrp.emit('app-policy:bust-cache', {
