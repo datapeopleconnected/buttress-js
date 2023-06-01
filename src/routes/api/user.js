@@ -49,8 +49,8 @@ routes.push(GetUserList);
  * @class GetLocalAuthUser
  */
 class GetLocalAuthUser extends Route {
-	constructor() {
-		super('user/localAuth/:username/:password', 'GET USER');
+	constructor(nrp) {
+		super('user/localAuth/:username/:password', 'GET USER', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -84,7 +84,7 @@ class GetLocalAuthUser extends Route {
 
 			return {
 				user,
-				token: userTokens.pop(),
+				token: userTokens,
 			};
 		} catch (err) {
 			return Promise.reject(err);

@@ -27,8 +27,8 @@ const routes = [];
  * @class GetActivityList
  */
 class GetActivityList extends Route {
-	constructor() {
-		super('activity', 'GET ACTIVITY LIST');
+	constructor(nrp) {
+		super('activity', 'GET ACTIVITY LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -47,8 +47,8 @@ routes.push(GetActivityList);
  * @class GetActivity
  */
 class GetActivity extends Route {
-	constructor() {
-		super('activity/:id', 'GET ACTIVITY');
+	constructor(nrp) {
+		super('activity/:id', 'GET ACTIVITY', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -82,8 +82,8 @@ routes.push(GetActivity);
  * @class DeleteAllActivity
  */
 class DeleteAllActivity extends Route {
-	constructor() {
-		super('activity', 'DELETE ALL ACTIVITY');
+	constructor(nrp) {
+		super('activity', 'DELETE ALL ACTIVITY', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -103,8 +103,8 @@ routes.push(DeleteAllActivity);
  * @class AddActivityMetadata
  */
 class AddActivityMetadata extends Route {
-	constructor() {
-		super('activity/:id/metadata/:key', 'ADD ACTIVITY METADATA');
+	constructor(nrp) {
+		super('activity/:id/metadata/:key', 'ADD ACTIVITY METADATA', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -142,8 +142,8 @@ routes.push(AddActivityMetadata);
  * @class UpdateActivityMetadata
  */
 class UpdateActivityMetadata extends Route {
-	constructor() {
-		super('activity/:id/metadata/:key', 'UPDATE ACTIVITY METADATA');
+	constructor(nrp) {
+		super('activity/:id/metadata/:key', 'UPDATE ACTIVITY METADATA', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -184,8 +184,8 @@ routes.push(UpdateActivityMetadata);
  * @class GetActivityMetadata
  */
 class GetActivityMetadata extends Route {
-	constructor() {
-		super('activity/:id/metadata/:key', 'GET ACTIVITY METADATA');
+	constructor(nrp) {
+		super('activity/:id/metadata/:key', 'GET ACTIVITY METADATA', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.GET;
 
@@ -221,8 +221,8 @@ routes.push(GetActivityMetadata);
  * @class DeleteActivityMetadata
  */
 class DeleteActivityMetadata extends Route {
-	constructor() {
-		super('activity/:id/metadata/:key', 'DELETE ACTIVITY METADATA');
+	constructor(nrp) {
+		super('activity/:id/metadata/:key', 'DELETE ACTIVITY METADATA', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 		this._activity = false;

@@ -26,8 +26,8 @@ const routes = [];
  * @class GetTrackingList
  */
 class GetProcessStatus extends Route {
-	constructor() {
-		super('status', 'GET TRACKING LIST');
+	constructor(nrp) {
+		super('status', 'GET TRACKING LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}

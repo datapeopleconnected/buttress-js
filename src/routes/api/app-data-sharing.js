@@ -30,8 +30,8 @@ const routes = [];
  * @class GetAppDataSharing
  */
 class GetAppDataSharing extends Route {
-	constructor() {
-		super('appDataSharing/:id', 'GET APP DATA SHARING');
+	constructor(nrp) {
+		super('appDataSharing/:id', 'GET APP DATA SHARING', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -66,8 +66,8 @@ routes.push(GetAppDataSharing);
 * @class AddDataSharing
 */
 class AddDataSharing extends Route {
-	constructor() {
-		super('appDataSharing', 'ADD APP DATA SHARING');
+	constructor(nrp) {
+		super('appDataSharing', 'ADD APP DATA SHARING', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -266,8 +266,8 @@ routes.push(AddDataSharing);
  * @class UpdateAppDataSharing
  */
 class UpdateAppDataSharing extends Route {
-	constructor() {
-		super('appDataSharing/:dataSharingId', 'UPDATE APP DATA SHARING AGREEMENT');
+	constructor(nrp) {
+		super('appDataSharing/:dataSharingId', 'UPDATE APP DATA SHARING AGREEMENT', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -308,8 +308,8 @@ routes.push(UpdateAppDataSharing);
  * @class BulkUpdateAppDataSharing
  */
 class BulkUpdateAppDataSharing extends Route {
-	constructor() {
-		super('appDataSharing/bulk/update', 'BULK UPDATE APP DATA SHARING AGREEMENT');
+	constructor(nrp) {
+		super('appDataSharing/bulk/update', 'BULK UPDATE APP DATA SHARING AGREEMENT', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -356,8 +356,8 @@ routes.push(BulkUpdateAppDataSharing);
  * @class UpdateAppDataSharingPolicy
  */
 class UpdateAppDataSharingPolicy extends Route {
-	constructor() {
-		super('appDataSharing/:dataSharingId/policy', 'UPDATE APP DATA SHARING AGREEMENT POLICY');
+	constructor(nrp) {
+		super('appDataSharing/:dataSharingId/policy', 'UPDATE APP DATA SHARING AGREEMENT POLICY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -404,8 +404,8 @@ routes.push(UpdateAppDataSharingPolicy);
  * @class UpdateAppDataSharingToken
  */
 class UpdateAppDataSharingToken extends Route {
-	constructor() {
-		super('appDataSharing/:dataSharingId/token', 'UPDATE APP DATA SHARING AGREEMENT TOKEN');
+	constructor(nrp) {
+		super('appDataSharing/:dataSharingId/token', 'UPDATE APP DATA SHARING AGREEMENT TOKEN', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -490,8 +490,8 @@ routes.push(UpdateAppDataSharingToken);
  * @class ActivateAppDataSharing
  */
 class ActivateAppDataSharing extends Route {
-	constructor() {
-		super('appDataSharing/activate/:dataSharingId', 'UPDATE Activate App Data Sharing');
+	constructor(nrp) {
+		super('appDataSharing/activate/:dataSharingId', 'UPDATE Activate App Data Sharing', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -567,8 +567,8 @@ routes.push(ActivateAppDataSharing);
  * @class DeactivateAppDataSharing
  */
 class DeactivateAppDataSharing extends Route {
-	constructor() {
-		super('appDataSharing/deactivate/:dataSharingId', 'UPDATE Deactivate App Data Sharing');
+	constructor(nrp) {
+		super('appDataSharing/deactivate/:dataSharingId', 'UPDATE Deactivate App Data Sharing', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -610,8 +610,8 @@ routes.push(DeactivateAppDataSharing);
  * @class GetAllAppDataSharing
  */
 class GetAllAppDataSharing extends Route {
-	constructor() {
-		super('appDataSharing', 'APP DATA SHARING AGREEMENT LIST');
+	constructor(nrp) {
+		super('appDataSharing', 'APP DATA SHARING AGREEMENT LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -630,8 +630,8 @@ routes.push(GetAllAppDataSharing);
  * @class SearchAppDataSharingAgreement
  */
 class SearchAppDataSharingAgreement extends Route {
-	constructor() {
-		super('appDataSharing', 'SEARCH APP DATA SHARING AGREEMENT LIST');
+	constructor(nrp) {
+		super('appDataSharing', 'SEARCH APP DATA SHARING AGREEMENT LIST', nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -670,8 +670,8 @@ routes.push(SearchAppDataSharingAgreement);
  * @class AppDataSharingAgreementCount
  */
 class AppDataSharingAgreementCount extends Route {
-	constructor() {
-		super(`appDataSharing/count`, `COUNT APP DATA SHARING AGREEMENT`);
+	constructor(nrp) {
+		super(`appDataSharing/count`, `COUNT APP DATA SHARING AGREEMENT`, nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -712,8 +712,8 @@ routes.push(AppDataSharingAgreementCount);
  * @class DeleteAppDataSharingAgreement
  */
 class DeleteAppDataSharingAgreement extends Route {
-	constructor() {
-		super(`appDataSharing/:id`, `DELETE APP DATA SHARING AGREEMENT`);
+	constructor(nrp) {
+		super(`appDataSharing/:id`, `DELETE APP DATA SHARING AGREEMENT`, nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 

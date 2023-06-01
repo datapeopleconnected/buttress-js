@@ -26,8 +26,8 @@ const routes = [];
  * @class GetTrackingList
  */
 class GetTrackingList extends Route {
-	constructor() {
-		super('tracking', 'GET TRACKING LIST');
+	constructor(nrp) {
+		super('tracking', 'GET TRACKING LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -46,8 +46,8 @@ routes.push(GetTrackingList);
  * @class AddTracking
  */
 class AddTracking extends Route {
-	constructor() {
-		super('tracking', 'ADD TRACKING');
+	constructor(nrp) {
+		super('tracking', 'ADD TRACKING', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -83,8 +83,8 @@ class AddTracking extends Route {
 routes.push(AddTracking);
 
 class UpdateTracking extends Route {
-	constructor() {
-		super('tracking/:id', 'UPDATE TRACKING');
+	constructor(nrp) {
+		super('tracking/:id', 'UPDATE TRACKING', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -128,8 +128,8 @@ routes.push(UpdateTracking);
  * @class DeleteTracking
  */
 class DeleteTracking extends Route {
-	constructor() {
-		super('tracking/:id', 'DELETE TRACKING');
+	constructor(nrp) {
+		super('tracking/:id', 'DELETE TRACKING', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 		this._tracking = false;
@@ -159,8 +159,8 @@ routes.push(DeleteTracking);
  * @class DeleteAllTrackings
  */
 class DeleteAllTrackings extends Route {
-	constructor() {
-		super('tracking', 'DELETE ALL TRACKINGS');
+	constructor(nrp) {
+		super('tracking', 'DELETE ALL TRACKINGS', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}

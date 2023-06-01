@@ -31,8 +31,8 @@ const routes = [];
  * @class GetAppList
  */
 class GetAppList extends Route {
-	constructor() {
-		super('app', 'GET APP LIST');
+	constructor(nrp) {
+		super('app', 'GET APP LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -55,8 +55,8 @@ routes.push(GetAppList);
  * @class SearchAppList
  */
 class SearchAppList extends Route {
-	constructor() {
-		super('app', 'GET APP LIST');
+	constructor(nrp) {
+		super('app', 'GET APP LIST', nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 	}
@@ -99,9 +99,9 @@ routes.push(SearchAppList);
  * @class GetApp
  */
 class GetApp extends Route {
-	constructor() {
+	constructor(nrp) {
 		// Should change to app apiPath instead of ID
-		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP');
+		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -136,8 +136,8 @@ routes.push(GetApp);
  * @class AddApp
  */
 class AddApp extends Route {
-	constructor() {
-		super('app', 'APP ADD');
+	constructor(nrp) {
+		super('app', 'APP ADD', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -218,8 +218,8 @@ routes.push(AddApp);
  * @class DeleteApp
  */
 class DeleteApp extends Route {
-	constructor() {
-		super('app/:id', 'DELETE APP');
+	constructor(nrp) {
+		super('app/:id', 'DELETE APP', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 		this._app = false;
@@ -254,8 +254,8 @@ routes.push(DeleteApp);
  * @class GetAppPermissionList
  */
 class GetAppPermissionList extends Route {
-	constructor() {
-		super('app/:id/permission', 'GET APP PERMISSION LIST');
+	constructor(nrp) {
+		super('app/:id/permission', 'GET APP PERMISSION LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 
@@ -296,8 +296,8 @@ routes.push(GetAppPermissionList);
  * @class AddAppPermission
  */
 class AddAppPermission extends Route {
-	constructor() {
-		super('app/:id/permission', 'ADD APP PERMISSION');
+	constructor(nrp) {
+		super('app/:id/permission', 'ADD APP PERMISSION', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -334,8 +334,8 @@ routes.push(AddAppPermission);
  * @class GetAppSchema
  */
 class GetAppSchema extends Route {
-	constructor() {
-		super('app/schema', 'GET APP SCHEMA');
+	constructor(nrp) {
+		super('app/schema', 'GET APP SCHEMA', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -400,8 +400,8 @@ routes.push(GetAppSchema);
  * @class UpdateAppSchema
  */
 class UpdateAppSchema extends Route {
-	constructor() {
-		super('app/schema', 'UPDATE APP SCHEMA');
+	constructor(nrp) {
+		super('app/schema', 'UPDATE APP SCHEMA', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -463,8 +463,8 @@ routes.push(UpdateAppSchema);
  * @class GetAppPolicyPropertyList
  */
 class GetAppPolicyPropertyList extends Route {
-	constructor() {
-		super('app/policyPropertyList/:apiPath?', 'GET APP POLICY PROPERTY LIST');
+	constructor(nrp) {
+		super('app/policyPropertyList/:apiPath?', 'GET APP POLICY PROPERTY LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -504,8 +504,8 @@ routes.push(GetAppPolicyPropertyList);
  * @class SetAppPolicyPropertyList
  */
 class SetAppPolicyPropertyList extends Route {
-	constructor() {
-		super('app/policyPropertyList/:update/:appId?', 'SET APP POLICY PROPERTY LIST');
+	constructor(nrp) {
+		super('app/policyPropertyList/:update/:appId?', 'SET APP POLICY PROPERTY LIST', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -560,7 +560,7 @@ class SetAppPolicyPropertyList extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const appId = req.params.appId;
+		const appId = (req.params.appId) ? req.params.appId : req.authApp._id;
 		const update = Object.assign({}, validate);
 		if (update.query) delete update.query;
 
@@ -586,8 +586,8 @@ routes.push(SetAppPolicyPropertyList);
  * @class AppCount
  */
 class AppCount extends Route {
-	constructor() {
-		super(`app/count`, `COUNT APPS`);
+	constructor(nrp) {
+		super(`app/count`, `COUNT APPS`, nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -630,8 +630,8 @@ routes.push(AppCount);
  * @class AppUpdateOAuth
  */
 class AppUpdateOAuth extends Route {
-	constructor() {
-		super(`app/:id/oauth`, `UPDATE APPS OAUTH`);
+	constructor(nrp) {
+		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -669,8 +669,8 @@ routes.push(AppUpdateOAuth);
  * @class AppUpdate
  */
 class AppUpdate extends Route {
-	constructor() {
-		super(`app/:id`, `UPDATE AN APP`);
+	constructor(nrp) {
+		super(`app/:id`, `UPDATE AN APP`, nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 

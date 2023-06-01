@@ -24,8 +24,8 @@ const routes = [];
  * @class SearchDeploymentList
  */
 class SearchDeploymentList extends Route {
-	constructor() {
-		super('deployment', 'SEARCH DEPLOYMENT LIST');
+	constructor(nrp) {
+		super('deployment', 'SEARCH DEPLOYMENT LIST', nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -56,8 +56,8 @@ routes.push(SearchDeploymentList);
  * @class DeploymentCount
  */
 class DeploymentCount extends Route {
-	constructor() {
-		super(`deployment/count`, `COUNT DEPLOYMENTS`);
+	constructor(nrp) {
+		super(`deployment/count`, `COUNT DEPLOYMENTS`, nrp);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 

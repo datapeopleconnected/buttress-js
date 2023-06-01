@@ -127,7 +127,7 @@ class Routes {
 			const routes = providers[x];
 			for (let y = 0; y < routes.length; y++) {
 				const route = routes[y];
-				this._initRoute(coreRouter, route);
+				this._initRoute(coreRouter, route, true);
 			}
 		}
 
@@ -264,7 +264,7 @@ class Routes {
 
 		for (let y = 0; y < routes.length; y++) {
 			const route = routes[y];
-			this._initRoute(pluginRouter, route, pluginName);
+			this._initRoute(pluginRouter, route, false, pluginName);
 		}
 
 		this._registerRouter(`plugin-${pluginName}`, pluginRouter);
@@ -273,10 +273,11 @@ class Routes {
 	/**
 	 * @param {Object} app - express app object
 	 * @param {Function} Route - route object
+	 * @param {Boolean} core - core
 	 * @private
 	 */
-	_initRoute(app, Route, ...additional) {
-		const route = new Route(null, null, this._nrp);
+	_initRoute(app, Route, core, ...additional) {
+		const route = (core) ? new Route(this._nrp) : new Route(null, null, this._nrp);
 		const routePath = path.join(...[
 			Config.app.apiPrefix,
 			...additional,
