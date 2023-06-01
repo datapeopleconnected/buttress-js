@@ -26,7 +26,7 @@ const Logging = require('../dist/logging');
 exports.mochaHooks = {
 	beforeAll() {
 		Logging.init('TEST');
-		Logging.captureOutput(false);
+		Logging.captureOutput(true);
 	},
 	afterAll() {
 		// Logging.captureOutput(false);
