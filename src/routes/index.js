@@ -20,7 +20,6 @@
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
-const NRP = require('node-redis-pubsub');
 const {v4: uuidv4} = require('uuid');
 const ObjectId = require('mongodb').ObjectId;
 

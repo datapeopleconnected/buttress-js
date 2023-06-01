@@ -11,8 +11,6 @@
 const Sugar = require('sugar');
 require('sugar-inflections');
 const hash = require('object-hash');
-const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
 
 const Model = require('../model');
 const Logging = require('../logging');

@@ -15,11 +15,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
-const Config = require('node-env-obj')();
-
-const NRP = require('node-redis-pubsub');
-
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
 const Model = require('..');
