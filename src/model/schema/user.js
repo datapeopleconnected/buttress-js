@@ -233,27 +233,29 @@ class UserSchemaModel extends SchemaModel {
 
 		user.tokens = [];
 
-		const userToken = {
-			type: Model.Token.Constants.Type.USER,
-			permissions: [{route: '*', permission: '*'}],
-			domains: body.token.domains,
-			policyProperties: body.policyProperties,
-		};
+		if (body.token && body.token.domains) {
+			const userToken = {
+				type: Model.Token.Constants.Type.USER,
+				permissions: [{route: '*', permission: '*'}],
+				domains: body.token.domains,
+				policyProperties: body.policyProperties,
+			};
 
-		const rxsToken = await Model.Token.add(userToken, {
-			_appId: Model.authApp._id,
-			_userId: user._id,
-		});
-		const token = await Helpers.streamFirst(rxsToken);
+			const rxsToken = await Model.Token.add(userToken, {
+				_appId: Model.authApp._id,
+				_userId: user._id,
+			});
+			const token = await Helpers.streamFirst(rxsToken);
+
+			if (token) {
+				user.tokens.push({
+					value: token.value,
+					policyProperties: token.policyProperties,
+				});
+			}
+		}
 
 		this._nrp.emit('app-routes:bust-cache', {});
-
-		if (token) {
-			user.tokens.push({
-				value: token.value,
-				policyProperties: token.policyProperties,
-			});
-		}
 
 		return user;
 	}
