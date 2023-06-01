@@ -65,6 +65,8 @@ class BootstrapRest extends EventEmitter {
 		Logging.log(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
+		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
+		await Model.init();
 		await AccessControl.init();
 
 		if (cluster.isMaster) {
@@ -118,10 +120,6 @@ class BootstrapRest extends EventEmitter {
 			await this.__initWorker();
 		} else {
 			await this.__spawnWorkers();
-		}
-
-		if (isPrimary) {
-			// await Model.initSchema();
 		}
 	}
 

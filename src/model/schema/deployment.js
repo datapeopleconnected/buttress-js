@@ -19,9 +19,9 @@ const SchemaModel = require('../schemaModel');
 const Helpers = require('../../helpers');
 
 class DeploymentSchemaModel extends SchemaModel {
-	constructor(datastore) {
+	constructor(nrp) {
 		const schema = DeploymentSchemaModel.Schema;
-		super(schema, null, datastore);
+		super(schema, null, nrp);
 	}
 
 	static get Schema() {

@@ -20,9 +20,6 @@ const Model = require('../');
 const Logging = require('../../logging');
 // const Shared = require('../shared');
 const Helpers = require('../../helpers');
-const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
 
 const SchemaModel = require('../schemaModel');
 
@@ -39,9 +36,11 @@ const App = {
 };
 
 class UserSchemaModel extends SchemaModel {
-	constructor(datastore) {
+	constructor(nrp) {
 		const schema = UserSchemaModel.Schema;
-		super(schema, null, datastore);
+		super(schema, null, nrp);
+
+		this._nrp = nrp;
 	}
 
 	static get Constants() {
@@ -189,7 +188,7 @@ class UserSchemaModel extends SchemaModel {
 	// 	});
 	// 	const token = await Helpers.streamFirst(rxsToken);
 
-	// 	nrp.emit('app-routes:bust-cache', {});
+	// 	this._nrp.emit('app-routes:bust-cache', {});
 
 	// 	if (token) {
 	// 		user.tokens.push({
@@ -247,7 +246,7 @@ class UserSchemaModel extends SchemaModel {
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 
-		nrp.emit('app-routes:bust-cache', {});
+		this._nrp.emit('app-routes:bust-cache', {});
 
 		if (token) {
 			user.tokens.push({

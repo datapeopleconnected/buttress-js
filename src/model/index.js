@@ -56,15 +56,12 @@ class Model {
 	}
 
 	async init() {
+		Logging.logSilly('Model:init');
 		this._nrp = new NRP(Config.redis);
-
-		// Core Models
-		await this.initCoreModels();
-
-		await this.initSchema();
 	}
 
 	async initCoreModels() {
+		Logging.logSilly('Model:initCoreModels');
 		// Core Models
 		const models = this._getModels();
 		Logging.log(models, Logging.Constants.LogLevel.SILLY);
@@ -75,6 +72,7 @@ class Model {
 	}
 
 	async initSchema() {
+		Logging.logSilly('Model:initSchema');
 		const rxsApps = await this.models.App.findAll();
 
 		for await (const app of rxsApps) {
@@ -128,11 +126,13 @@ class Model {
 		this.coreSchema.push(name);
 
 		if (!this.models[name]) {
-			this.models[name] = new CoreSchemaModel();
+			Logging.logSilly(`Creating core model: ${name}`);
+			this.models[name] = new CoreSchemaModel(this._nrp);
 			await this.models[name].initAdapter(Datastore.getInstance('core'));
+
+			this.__defineGetter__(name, () => this.models[name]);
 		}
 
-		this.__defineGetter__(name, () => this.models[name]);
 		return this.models[name];
 	}
 
@@ -188,6 +188,7 @@ class Model {
 					schemaData, app,
 					new SchemaModel(schemaData, app, this._nrp),
 					new SchemaModel(schemaData, app, this._nrp),
+					this._nrp,
 				);
 
 				try {
@@ -201,7 +202,7 @@ class Model {
 				this.__defineGetter__(name, () => this.models[name]);
 				return this.models[name];
 			} else {
-				this.models[name] = new SchemaModel(schemaData, app, datastore, this._nrp);
+				this.models[name] = new SchemaModel(schemaData, app, this._nrp);
 				await this.models[name].initAdapter(datastore);
 			}
 		}

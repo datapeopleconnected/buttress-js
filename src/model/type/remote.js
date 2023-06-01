@@ -23,8 +23,8 @@ const SchemaModel = require('../schemaModel');
  * SchemaModelButtress
  */
 class SchemaModelRemote extends SchemaModel {
-	constructor(schemaData, app, local, remote) {
-		super(schemaData, app);
+	constructor(schemaData, app, local, remote, nrp) {
+		super(schemaData, app, nrp);
 
 		this.local = local;
 		this.remote = remote;
