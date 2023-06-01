@@ -179,7 +179,7 @@ class LambdaManager {
 		const execLambdas = lambdas.map((lambda) => {
 			const output = {
 				lambdaId: (lambda.lambdaId) ? lambda.lambdaId : lambda._id,
-				lambdaType: lambda.type,
+				lambdaType: (lambda.triggerType) ? lambda.triggerType : 'CRON',
 			};
 
 			const isAPILambda = lambda.restWorkerId;
@@ -419,7 +419,7 @@ class LambdaManager {
 						this._announcePathMutationLambda(execID);
 					}, timeout),
 					pathMutation: true,
-					type: lambda.type,
+					triggerType: lambda.type,
 					lambdaId: lambda.id,
 					workerExecID: execID,
 					body,

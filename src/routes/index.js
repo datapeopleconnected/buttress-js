@@ -806,7 +806,7 @@ class Routes {
 		const data = {
 			restWorkerId: this.id,
 			lambdaId: lambda._id,
-			type: lambda.type,
+			triggerType: triggerAPI.type,
 			lambdaExecBehavior: triggerAPI.apiEndpoint.type,
 			headers,
 		};
