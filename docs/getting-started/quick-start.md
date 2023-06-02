@@ -84,7 +84,7 @@ NODE_ENV=development ./bin/app-lambda.sh
 The combination of the processes make up ButtressJS, the don't nessesarly need to be run on the same system.
 
 ### First Run - Super Token
-On first run a super token will be generated, this can be found in `app_data/super.json`. The JSON object found within this file is a dump of the super application object but the most important property is `"token"`. Please copy this value or the file to a safe place for use later. Once you've made a copy delete the file.
+On first run a super token will be generated, this can be found in `app_data/${app_code}.json`. The default app_code is `buttressjs` The JSON object found within this file is a dump of the super application object but the most important property is `"token"`. Please copy this value or the file to a safe place for use later. Once you've made a copy delete the file.
 
 An example of the token is the following `hkcQ4Fx98VpFV0kIBtU8s0hsgglkgRFlc1Vk`. A token is required whenever a call is made to Buttress.
 

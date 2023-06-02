@@ -12,7 +12,7 @@
   "main": "deploy/app.js",
   "scripts": {
     "docs": "npx docsify serve ./docs",
-    "test": "npm run build && mocha --recursive test/units/**/* test/intergration/**/*",
+    "test": "npm run build && NODE_ENV=test mocha --recursive test/unit/**/* test/e2e/**/*",
     "build": "rimraf dist/* && gulp build",
     "watch": "npm run build && gulp watch",
     "lint": "eslint 'src/**/*.js'",

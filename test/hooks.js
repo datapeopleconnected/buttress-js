@@ -14,12 +14,26 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-require('node-env-obj')({
+const fs = require('fs');
+const Config = require('node-env-obj')({
 	basePath: __dirname,
 	envFile: `.test.env`,
 	envPath: '../',
 	configPath: '../src',
 });
+
+// Load the token from app_data/test/super.json and handle the case where it doesn't exist
+const tokenPath = `${Config.paths.appData}/super.json`;
+try {
+	Config.testToken = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+} catch (e) {
+	console.log('');
+	console.error(`!🚨! ERROR !🚨! - Unable to perform tests without app_data/test/super.json.`);
+	console.log('');
+	console.error(`Please DELETE the existing test datastore. This will force Buttress to reinstall and create a new token file.`);
+	console.log('');
+	process.exit(1);
+}
 
 const Logging = require('../dist/logging');
 
