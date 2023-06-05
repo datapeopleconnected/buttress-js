@@ -88,7 +88,7 @@ class JSONStringifyStream extends Transform {
 	}
 
 	_transform(chunk, encoding, cb) {
-		const nonReplacerKeys = [
+		const nonReplacerKeys = [ // TODO: This needs to be reviewed
 			'_id', '_app', '__v', '_user', '_token',
 		];
 

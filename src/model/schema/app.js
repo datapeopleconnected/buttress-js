@@ -185,7 +185,7 @@ class AppSchemaModel extends SchemaModel {
 		appPolicyPropertiesList = {...appPolicyPropertiesList, ...list};
 
 		await Model.Policy.add({
-			name: `${body.name} policy`,
+			name: `App Policy - ${body.name}`,
 			selection: {
 				role: {
 					'@eq': 'APP',

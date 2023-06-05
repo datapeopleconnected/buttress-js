@@ -130,6 +130,7 @@ class AccessControl {
 		}
 
 		const tokenPolicies = await this.__getTokenPolicies(token, appId);
+		console.log(tokenPolicies);
 		const policyOutcome = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
 		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
 			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);

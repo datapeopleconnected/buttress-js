@@ -7,6 +7,7 @@ class PolicyMatch {
 	constructor() {}
 
 	__getTokenPolicies(policies, token) {
+		console.log(policies);
 		return policies.reduce((arr, p) => {
 			if (!p.selection) return arr;
 
@@ -21,6 +22,10 @@ class PolicyMatch {
 	__checkPolicySelection(p, token) {
 		let match = false;
 		const selection = p.selection;
+
+		// if (token.type === 'dataSharing') {
+		// 	console.log(p);
+		// }
 
 		if (!token || !token.policyProperties) return;
 
@@ -39,7 +44,7 @@ class PolicyMatch {
 			return arr;
 		}, []);
 
-		return (matches.length > 0)? matches.every((v) => v) : match;
+		return (matches.length > 0) ? matches.every((v) => v) : match;
 	}
 }
 module.exports = new PolicyMatch();

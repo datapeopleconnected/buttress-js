@@ -102,9 +102,9 @@ class AddDataSharing extends Route {
 			req.body._appId = token._appId;
 		}
 
-		if (!req.body.auth) {
-			this.log(`[${this.name}] Auth properties are required when creating a data sharing agreement`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
+		if (!req.body.policy) {
+			this.log(`[${this.name}] Policy is required when creating a data sharing agreement`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_policy`));
 		}
 
 		const result = await this.model.isDuplicate(req.body);
@@ -113,11 +113,12 @@ class AddDataSharing extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `duplicate`));
 		}
 
-		const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.auth.policyProperties);
-		if (!policyCheck.passed) {
-			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
-		}
+		// TODO: Should check the policy config instead.
+		// const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.dataSharing.local);
+		// if (!policyCheck.passed) {
+		// 	this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+		// 	return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
+		// }
 
 		return true;
 	}
@@ -131,7 +132,7 @@ class AddDataSharing extends Route {
 		// instances so that this isn't exposed.
 		if (result.token) {
 			dataSharing = Object.assign(dataSharing, {
-				remoteAppToken: result.token.value,
+				registrationToken: result.token.value,
 			});
 		}
 		if (!dataSharing.remoteApp.token) return dataSharing;
@@ -299,6 +300,7 @@ class UpdateAppDataSharing extends Route {
 	}
 
 	async _exec(req, res, validate) {
+		// TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
 		return Model.AppDataSharing.updateByPath(req.body, req.params.dataSharingId, 'AppDataSharing');
 	}
 }
@@ -344,6 +346,7 @@ class BulkUpdateAppDataSharing extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of req.body) {
+			// TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
 			await Model.AppDataSharing.updateByPath(item.body, item.id, 'AppDataSharing');
 		}
 
@@ -394,6 +397,7 @@ class UpdateAppDataSharingPolicy extends Route {
 	}
 
 	_exec(req, res, validate) {
+		// TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
 		return this.model.updatePolicy(req.authApp._id, req.params.dataSharingId, req.body)
 			.then(() => true);
 	}

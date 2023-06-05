@@ -25,7 +25,8 @@ const Config = require('node-env-obj')({
 // Load the token from app_data/test/super.json and handle the case where it doesn't exist
 const tokenPath = `${Config.paths.appData}/super.json`;
 try {
-	Config.testToken = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+	const {token} = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+	Config.testToken = token;
 } catch (e) {
 	console.log('');
 	console.error(`!🚨! ERROR !🚨! - Unable to perform tests without app_data/test/super.json.`);
@@ -39,6 +40,7 @@ const Logging = require('../dist/logging');
 
 exports.mochaHooks = {
 	beforeAll() {
+		// TODO: Clear out the db so we can start clean.
 		Logging.init('TEST');
 		Logging.captureOutput(true);
 	},

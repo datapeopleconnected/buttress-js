@@ -18,6 +18,7 @@
 
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
+const Logging = require('../../logging');
 const Model = require('..');
 
 const SchemaModel = require('../schemaModel');
@@ -80,20 +81,6 @@ class AppDataSharingSchemaModel extends SchemaModel {
 						__allowUpdate: true,
 					},
 				},
-				dataSharing: {
-					localApp: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-					remoteApp: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-				},
 				_appId: {
 					__type: 'id',
 					__required: false,
@@ -114,7 +101,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 	 */
 	async add(body) {
 		const appDataSharingBody = {
-			id: (body.id) ? body.id : this.createId(),
+			id: (body.id) ? this.createId(body.id) : this.createId(),
 			name: body.name,
 
 			active: false,
@@ -125,32 +112,49 @@ class AppDataSharingSchemaModel extends SchemaModel {
 				token: body.remoteApp.token,
 			},
 
-			dataSharing: {
-				localApp: null,
-				remoteApp: null,
-			},
+			policy: [],
 
-			_appId: null,
+			_appId: this.createId(body._appId),
 			_tokenId: null,
 		};
 
 		const rxsToken = await Model.Token.add({
-			policyProperties: body.auth.policyProperties,
 			type: Model.Token.Constants.Type.DATA_SHARING,
-			permissions: [{route: '*', permission: '*'}],
 		}, {
-			_appId: this.createId(body._appId),
-			_appDataSharingId: this.createId(appDataSharingBody.id),
+			_appId: appDataSharingBody._appId,
+			_appDataSharingId: appDataSharingBody.id,
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 
+		await this.__createDataSharingPolicy(body, token._id);
+
+		Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
+		this._nrp.emit('app-policy:bust-cache', {
+			appId: appDataSharingBody._appId,
+		});
+
 		const rxsDataShare = await super.add(appDataSharingBody, {
-			_appId: this.createId(body._appId),
+			_appId: appDataSharingBody._appId,
 			_tokenId: token._id,
 		});
 		const dataSharing = await Helpers.streamFirst(rxsDataShare);
 
-		return {dataSharing: dataSharing, token: token};
+		return {dataSharing, token};
+	}
+
+	async __createDataSharingPolicy(body, tokenId) {
+		return await Model.Policy.add({
+			name: `Data Sharing Policy - ${body.name}`,
+			selection: {
+				role: {
+					'@eq': 'DATA_SHARING',
+				},
+				_id: {
+					'@eq': tokenId,
+				},
+			},
+			config: body.policy,
+		}, body.id);
 	}
 
 	/**

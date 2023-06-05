@@ -97,7 +97,7 @@ class BootstrapRest extends EventEmitter {
 		Logging.logSilly('BootstrapRest:clean');
 		// Should close down all connections
 		// Kill worker processes
-		for (let x = 0; this.workers.length; x++) {
+		for (let x = 0; x < this.workers.length; x++) {
 			Logging.logSilly(`Killing worker ${x}`);
 			this.workers[x].kill();
 		}

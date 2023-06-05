@@ -420,7 +420,7 @@ class UpdateAppSchema extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `no_body`));
 		}
 		if (!Array.isArray(req.body)) {
-			this.log('ERROR: Expected body to be an array', Route.LogLevel.ERR);
+			this.log(`ERROR: Expected body to be an array but got ${typeof req.body}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
 		}
 
