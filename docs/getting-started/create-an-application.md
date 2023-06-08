@@ -203,7 +203,7 @@ node sync.js
 
 The schema & policy for your application will have been updated inside of Buttress and there will now be cars api available for your application. You can test this by running the following. Make sure to replace `<APP TOKEN>` with your newly created app token and `<APP CODE>` with the app code used when creating the app.
 ```bash
-curl --location --request GET 'localhost:6000/api/v1/<APP CODE>/cars?token=<APP TOKEN>'
+curl --location --request GET 'localhost:6000/<APP CODE>/api/v1/cars?token=<APP TOKEN>'
 ```
 
 ## Next Steps
