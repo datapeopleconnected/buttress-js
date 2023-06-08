@@ -1,4 +1,7 @@
+const Logging = require('../logging');
+
 const AccessControlHelpers = require('./helpers');
+
 
 /**
  * @class PolicyMatch
@@ -7,7 +10,6 @@ class PolicyMatch {
 	constructor() {}
 
 	__getTokenPolicies(policies, token) {
-		console.log(policies);
 		return policies.reduce((arr, p) => {
 			if (!p.selection) return arr;
 
@@ -23,9 +25,10 @@ class PolicyMatch {
 		let match = false;
 		const selection = p.selection;
 
-		// if (token.type === 'dataSharing') {
-		// 	console.log(p);
-		// }
+		if (token.type === 'dataSharing') {
+			const eq = (part, value) => part && part['@eq'] && part['@eq'].toString() === value.toString();
+			return eq(selection['#tokenType'], 'DATA_SHARING') && eq(selection['_id'], token._id);
+		}
 
 		if (!token || !token.policyProperties) return;
 
