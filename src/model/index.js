@@ -24,7 +24,7 @@ const Logging = require('../logging');
 const Schema = require('../schema');
 const shortId = require('../helpers').shortId;
 
-const {Errors} = require('../helpers');
+const {Errors, DataSharing} = require('../helpers');
 
 const Datastore = require('../datastore');
 
@@ -136,11 +136,11 @@ class Model {
 	/**
 	 * @param {object} app - application container
 	 * @param {object} schemaData - schema data object
-	 * @param {object} datastore - datastore object to be used
+	 * @param {object} mainDatastore - datastore object to be used
 	 * @return {object} SchemaModel - initiated schema model built from passed schema object
 	 * @private
 	 */
-	async _initSchemaModel(app, schemaData, datastore) {
+	async _initSchemaModel(app, schemaData, mainDatastore) {
 		let name = `${schemaData.name}`;
 		const appShortId = (app) ? shortId(app._id) : null;
 
@@ -171,15 +171,8 @@ class Model {
 					return;
 				}
 
-				let {endpoint, apiPath, token} = dataSharing.remoteApp;
-
-				if (endpoint) endpoint = endpoint.replace(/(https|http):\/\//ig, '');
-
-				// Create a remote datastore
-				const remoteDatastore = new Datastore.Class({
-					connectionString: `buttress://${endpoint}/${apiPath}?token=${token}`,
-					options: '',
-				});
+				const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
+				const remoteDatastore = Datastore.createInstance({connectionString});
 
 				this.models[name] = new SchemaModelRemote(
 					schemaData, app,
@@ -189,7 +182,7 @@ class Model {
 				);
 
 				try {
-					await this.models[name].initAdapter(datastore, remoteDatastore);
+					await this.models[name].initAdapter(mainDatastore, remoteDatastore);
 				} catch (err) {
 					// Skip defining this model, the error will get picked up later when route is defined ore accessed
 					if (err instanceof Errors.SchemaNotFound) return;
@@ -200,7 +193,7 @@ class Model {
 				return this.models[name];
 			} else {
 				this.models[name] = new SchemaModel(schemaData, app, this._nrp);
-				await this.models[name].initAdapter(datastore);
+				await this.models[name].initAdapter(mainDatastore);
 			}
 		}
 

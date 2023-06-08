@@ -94,6 +94,7 @@ class BootstrapRest extends EventEmitter {
 	}
 
 	async clean() {
+		Logging.logDebug('Shutting down all connections');
 		Logging.logSilly('BootstrapRest:clean');
 		// Should close down all connections
 		// Kill worker processes

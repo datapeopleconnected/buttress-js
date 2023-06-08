@@ -31,7 +31,8 @@ module.exports = class Datastore {
 			switch (uri.protocol) {
 			case 'mongodb:':
 				return require('./adapters/mongodb.js');
-			case 'buttress:':
+			case 'butt:':
+			case 'butts:':
 				return require('./adapters/buttress.js');
 			default:
 				return null;

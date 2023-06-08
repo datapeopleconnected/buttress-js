@@ -112,7 +112,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 				token: body.remoteApp.token,
 			},
 
-			policy: [],
+			policy: (body.policy) ? body.policy : [],
 
 			_appId: this.createId(body._appId),
 			_tokenId: null,
@@ -126,7 +126,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 
-		await this.__createDataSharingPolicy(body, token._id);
+		await this.__createDataSharingPolicy(appDataSharingBody, token._id);
 
 		Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
 		this._nrp.emit('app-policy:bust-cache', {
@@ -146,15 +146,15 @@ class AppDataSharingSchemaModel extends SchemaModel {
 		return await Model.Policy.add({
 			name: `Data Sharing Policy - ${body.name}`,
 			selection: {
-				role: {
+				'#tokenType': {
 					'@eq': 'DATA_SHARING',
 				},
-				_id: {
+				'_id': {
 					'@eq': tokenId,
 				},
 			},
 			config: body.policy,
-		}, body.id);
+		}, body._appId);
 	}
 
 	/**
@@ -194,18 +194,18 @@ class AppDataSharingSchemaModel extends SchemaModel {
 
 	/**
 	 * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
-	 * @param {String} remoteAppToken - token for remote app
+	 * @param {String} newToken - The new token which will be used to talk to the remote app
 	 * @return {Promise} - resolves when save operation is completed
 	 */
-	activate(appDataSharingId, remoteAppToken = null) {
+	activate(appDataSharingId, newToken = null) {
 		const update = {
 			$set: {
 				active: true,
 			},
 		};
 
-		if (remoteAppToken) {
-			update.$set['remoteApp.token'] = remoteAppToken;
+		if (newToken) {
+			update.$set['remoteApp.token'] = newToken;
 		}
 
 		this._nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});

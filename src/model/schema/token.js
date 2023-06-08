@@ -140,9 +140,8 @@ class TokenSchemaModel extends SchemaModel {
 
 	/**
 	 * @return {string} - cryptographically secure token string
-	 * @private
 	 */
-	_createTokenString() {
+	createTokenString() {
 		const length = 36;
 		const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 		const mask = 0x3d;
@@ -162,7 +161,7 @@ class TokenSchemaModel extends SchemaModel {
 		* @return {Promise} - returns a promise that is fulfilled when the database request is completed
 		*/
 	add(body, internals) {
-		body.value = this._createTokenString();
+		body.value = this.createTokenString();
 		return super.add(body, internals);
 	}
 

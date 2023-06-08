@@ -466,22 +466,23 @@ class Route {
 			 */
 			Logging.logTimer(`_authenticate:start-app-routes`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-			let authorised = false;
-			const token = req.token;
+			// TODO: This should be replaced by the access control.
+			// let authorised = false;
+			// const token = req.token;
 
-			for (let x = 0; x < token.permissions.length; x++) {
-				const p = token.permissions[x];
-				if (this._matchRoute(req, p.route) && this._matchPermission(p.permission)) {
-					authorised = true;
-					break;
-				}
-			}
+			// for (let x = 0; x < token.permissions.length; x++) {
+			// 	const p = token.permissions[x];
+			// 	if (this._matchRoute(req, p.route) && this._matchPermission(p.permission)) {
+			// 		authorised = true;
+			// 		break;
+			// 	}
+			// }
 
-			if (authorised === false) {
-				this.log(`EAUTH: NO PERMISSION FOR ROUTE - ${this.path}`, Logging.Constants.LogLevel.ERR);
-				Logging.logTimer('_authenticate:end-no-permission-route', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				return reject(new Helpers.Errors.RequestError(403, 'no_permission_for_route'));
-			}
+			// if (authorised === false) {
+			// 	this.log(`EAUTH: NO PERMISSION FOR ROUTE - ${this.path}`, Logging.Constants.LogLevel.ERR);
+			// 	Logging.logTimer('_authenticate:end-no-permission-route', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			// 	return reject(new Helpers.Errors.RequestError(403, 'no_permission_for_route'));
+			// }
 
 			// BYPASS schema checks for app tokens
 			if (req.token.type === 'app') {
