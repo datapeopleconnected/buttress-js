@@ -1,5 +1,3 @@
-const Logging = require('../logging');
-
 const AccessControlHelpers = require('./helpers');
 
 

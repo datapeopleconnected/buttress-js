@@ -15,9 +15,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Buttress = require('@buttress/api');
-const ObjectId = require('mongodb').ObjectId;
-
 const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
@@ -111,7 +108,7 @@ class GetAppDataSharing extends Route {
 			this.log(`[${this.name}] Missing required app data sharing id`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_app_data_sharing_id`));
 		}
-		if (!ObjectId.isValid(id)) {
+		if (!Datastore.getInstance('core').ID.isValid(id)) {
 			this.log(`[${this.name}] Invalid app data sharing id`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_app_data_sharing_id`));
 		}
