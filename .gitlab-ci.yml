@@ -3,9 +3,7 @@ image: node:14
 # This folder is cached between builds
 # https://docs.gitlab.com/ee/ci/yaml/index.html#cache
 cache:
-  key:
-    files:
-      - package-lock.json
+  key: ${CI_COMMIT_REF_NAME}
   paths:
     - .npm/
     - public
@@ -17,7 +15,6 @@ before_script:
 
 stages:          # List of stages for jobs, and their order of execution
   - test
-  - deploy
 
 test-job:   # This job runs in the test stage.
   stage: test    # It only starts when the job in the build stage completes successfully.
