@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Logging = require('../logging');
-const Shared = require('./shared');
-const Helpers = require('../helpers');
-const shortId = require('../helpers').shortId;
+const Logging = require('../../logging');
+const Helpers = require('../../helpers');
+
+const Shared = require('../shared');
 
 const Sugar = require('sugar');
 
@@ -35,7 +35,7 @@ class StandardModel {
 
 		this.app = app || null;
 
-		this.appShortId = (app) ? shortId(app._id) : null;
+		this.appShortId = (app) ? Helpers.shortId(app._id) : null;
 		this.collectionName = (schemaData) ? `${schemaData.name}` : null;
 
 		if (this.appShortId) {
