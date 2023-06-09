@@ -63,7 +63,8 @@ class RemoteModel extends StandardModel {
 	 * @return {Promise}
 	 */
 	add(body) {
-		// Seperate property updates
+		// TODO: local schema additional properties and save them locally.
+		// - Changes which only involve properties form the local schema don't have to go out to the remote.
 
 		return this.remote.add(body);
 	}
@@ -74,7 +75,8 @@ class RemoteModel extends StandardModel {
 	 * @return {Promise}
 	 */
 	update(details, id) {
-		// Seperate local updates from remote
+		// TODO: local schema additional properties and save them locally.
+		// - Changes which only involve properties form the local schema don't have to go out to the remote.
 
 		return this.remote.updateById(id, details);
 	}
