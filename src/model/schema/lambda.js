@@ -22,7 +22,7 @@ const exec = util.promisify(require('child_process').exec);
 
 const Config = require('node-env-obj')();
 const Sugar = require('sugar');
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 const Model = require('../');
 const Logging = require('../../logging');
@@ -35,7 +35,7 @@ const lambdaConsole = {
 	'console.error': 'lambda.logError',
 	'console.dir': '',
 };
-class LambdaSchemaModel extends SchemaModel {
+class LambdaSchemaModel extends StandardModel {
 	constructor(nrp) {
 		const schema = LambdaSchemaModel.Schema;
 		super(schema, null, nrp);

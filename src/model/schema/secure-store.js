@@ -17,10 +17,10 @@
  */
 
 const Model = require('../');
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
-class SecureStoreSchemaModel extends SchemaModel {
+class SecureStoreSchemaModel extends StandardModel {
 	constructor(nrp) {
 		const schema = SecureStoreSchemaModel.Schema;
 		super(schema, null, nrp);

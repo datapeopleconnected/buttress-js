@@ -18,10 +18,10 @@
 const Sugar = require('sugar');
 
 const Model = require('../');
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
-class PolicySchemaModel extends SchemaModel {
+class PolicySchemaModel extends StandardModel {
 	constructor(nrp) {
 		const schema = PolicySchemaModel.Schema;
 		super(schema, null, nrp);

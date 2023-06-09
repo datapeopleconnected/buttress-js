@@ -20,7 +20,7 @@ const Crypto = require('crypto');
 // const Shared = require('../shared');
 const Logging = require('../../logging');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 /**
  * Constants
@@ -34,7 +34,7 @@ const Type = {
 	LAMBDA: type[4],
 };
 
-class TokenSchemaModel extends SchemaModel {
+class TokenSchemaModel extends StandardModel {
 	constructor(nrp) {
 		const schema = TokenSchemaModel.Schema;
 		super(schema, null, nrp);

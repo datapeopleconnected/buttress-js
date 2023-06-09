@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
-class DeploymentSchemaModel extends SchemaModel {
+class DeploymentSchemaModel extends StandardModel {
 	constructor(nrp) {
 		const schema = DeploymentSchemaModel.Schema;
 		super(schema, null, nrp);

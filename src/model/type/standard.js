@@ -28,7 +28,7 @@ const Sugar = require('sugar');
  *
  **********************************************************************************/
 
-class SchemaModel {
+class StandardModel {
 	constructor(schemaData, app, nrp=null) {
 		this.schemaData = schemaData;
 		this.flatSchemaData = (schemaData) ? Helpers.getFlattenedSchema(this.schemaData) : null;
@@ -514,4 +514,4 @@ class SchemaModel {
 	}
 }
 
-module.exports = SchemaModel;
+module.exports = StandardModel;

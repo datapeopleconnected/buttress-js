@@ -23,10 +23,10 @@ const Schema = require('../../schema');
 const Logging = require('../../logging');
 const Helpers = require('../../helpers');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 
-class AppSchemaModel extends SchemaModel {
+class AppSchemaModel extends StandardModel {
 	constructor(nrp) {
 		const schema = AppSchemaModel.Schema;
 		super(schema, null, nrp);

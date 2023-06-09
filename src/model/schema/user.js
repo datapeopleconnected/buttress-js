@@ -21,7 +21,7 @@ const Logging = require('../../logging');
 // const Shared = require('../shared');
 const Helpers = require('../../helpers');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 /**
  * Constants
@@ -35,7 +35,7 @@ const App = {
 	MICROSOFT: apps[4],
 };
 
-class UserSchemaModel extends SchemaModel {
+class UserSchemaModel extends StandardModel {
 	constructor(nrp) {
 		const schema = UserSchemaModel.Schema;
 		super(schema, null, nrp);

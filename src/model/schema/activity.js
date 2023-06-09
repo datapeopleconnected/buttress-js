@@ -23,7 +23,7 @@ const Shared = require('../shared');
 // const Helpers = require('../../helpers');
 // const Config = require('node-env-obj')('../../');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 /**
  * Constants
@@ -34,7 +34,7 @@ const Visibility = {
 	PRIVATE: visibility[1],
 };
 
-class ActivitySchemaModel extends SchemaModel {
+class ActivitySchemaModel extends StandardModel {
 	constructor(nrp) {
 		const schema = ActivitySchemaModel.Schema;
 		super(schema, null, nrp);

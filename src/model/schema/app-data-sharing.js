@@ -21,12 +21,12 @@ const Schema = require('../../schema');
 const Logging = require('../../logging');
 const Model = require('..');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 /**
  * @class AppDataSharingSchemaModel
  */
-class AppDataSharingSchemaModel extends SchemaModel {
+class AppDataSharingSchemaModel extends StandardModel {
 	constructor(nrp) {
 		const schema = AppDataSharingSchemaModel.Schema;
 		super(schema, null, nrp);

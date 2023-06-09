@@ -28,8 +28,8 @@ const {Errors, DataSharing} = require('../helpers');
 
 const Datastore = require('../datastore');
 
-const SchemaModel = require('./schemaModel');
-const SchemaModelRemote = require('./type/remote');
+const StandardModel = require('./type/standard');
+const RemoteModel = require('./type/remote');
 
 /**
  * @param {string} model - name of the model to load
@@ -174,10 +174,10 @@ class Model {
 				const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
 				const remoteDatastore = Datastore.createInstance({connectionString});
 
-				this.models[name] = new SchemaModelRemote(
+				this.models[name] = new RemoteModel(
 					schemaData, app,
-					new SchemaModel(schemaData, app, this._nrp),
-					new SchemaModel(schemaData, app, this._nrp),
+					new StandardModel(schemaData, app, this._nrp),
+					new StandardModel(schemaData, app, this._nrp),
 					this._nrp,
 				);
 
@@ -192,7 +192,7 @@ class Model {
 				this.__defineGetter__(name, () => this.models[name]);
 				return this.models[name];
 			} else {
-				this.models[name] = new SchemaModel(schemaData, app, this._nrp);
+				this.models[name] = new StandardModel(schemaData, app, this._nrp);
 				await this.models[name].initAdapter(mainDatastore);
 			}
 		}

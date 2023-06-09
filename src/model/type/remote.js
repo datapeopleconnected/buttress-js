@@ -17,12 +17,12 @@
  */
 
 const Helpers = require('../../helpers');
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('./standard');
 
 /**
- * SchemaModelButtress
+ * @class RemoteModel
  */
-class SchemaModelRemote extends SchemaModel {
+class RemoteModel extends StandardModel {
 	constructor(schemaData, app, local, remote, nrp) {
 		super(schemaData, app, nrp);
 
@@ -181,4 +181,4 @@ class SchemaModelRemote extends SchemaModel {
 	}
 }
 
-module.exports = SchemaModelRemote;
+module.exports = RemoteModel;
