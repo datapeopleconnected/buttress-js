@@ -118,7 +118,7 @@ class Model {
 	 */
 	async _initCoreModel(model) {
 		const name = Sugar.String.camelize(model);
-		const CoreSchemaModel = require(`./schema/${model.toLowerCase()}`);
+		const CoreSchemaModel = require(`./core/${model.toLowerCase()}`);
 
 		this.coreSchema.push(name);
 
@@ -206,7 +206,7 @@ class Model {
  * @return {array} - list of files containing schemas
  */
 	_getModels() {
-		const filenames = fs.readdirSync(`${__dirname}/schema`);
+		const filenames = fs.readdirSync(`${__dirname}/core`);
 
 		const files = [];
 		for (let x = 0; x < filenames.length; x++) {
