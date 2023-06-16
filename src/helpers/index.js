@@ -16,20 +16,20 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Errors = require('./helpers/errors');
-const DataSharingHelpers = require('./helpers/data-sharing');
+const Errors = require('./errors');
+const DataSharingHelpers = require('./data-sharing');
 
 const stream = require('stream');
 const Transform = stream.Transform;
 
-const Datastore = require('./datastore');
+const Datastore = require('../datastore');
 
 module.exports.DataSharing = DataSharingHelpers;
 
 module.exports.Errors = Errors;
 
-module.exports.Schema = require('./helpers/schema');
-module.exports.Stream = require('./helpers/stream');
+module.exports.Schema = require('./schema');
+module.exports.Stream = require('./stream');
 
 class Timer {
 	constructor() {
