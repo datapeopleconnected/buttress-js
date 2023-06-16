@@ -20,7 +20,7 @@ const path = require('path');
 const fs = require('fs');
 const Sugar = require('sugar');
 
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 const Schema = require('../schema');
 const shortId = require('../helpers').shortId;
 

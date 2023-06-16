@@ -13,7 +13,7 @@ require('sugar-inflections');
 const hash = require('object-hash');
 
 const Model = require('../model');
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 const Schema = require('../schema');
 const AccessControlConditions = require('./conditions');
 const AccessControlFilter = require('./filter');

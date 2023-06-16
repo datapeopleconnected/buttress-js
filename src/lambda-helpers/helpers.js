@@ -8,7 +8,7 @@ const base64url = require('base64url');
 
 const lambdaMail = require('./mail');
 const Model = require('../model');
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 // const { Object } = require('sugar');
 
 const Config = require('node-env-obj')();

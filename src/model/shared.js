@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 const Helpers = require('../helpers');
 // const Model = require('./index');
 

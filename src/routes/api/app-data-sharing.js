@@ -48,8 +48,6 @@ const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
 	const buttressAdapter = DatastoreFactory.create(connectionString);
 	await buttressAdapter.connect();
 
-	console.log('test');
-
 	// Send a request to the remote app to activate the data sharing agreement.
 	const activationResult = await buttressAdapter.activateDataSharing(dataSharing.remoteApp.token, newToken);
 	if (!activationResult || !activationResult.status) return dataSharing;

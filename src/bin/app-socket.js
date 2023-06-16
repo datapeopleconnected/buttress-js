@@ -29,7 +29,7 @@ const Sugar = require('sugar');
 
 Sugar.Date.setLocale('en-GB');
 
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 const BootstrapSocket = require('../bootstrap-socket');
 
 if (cluster.isMaster) Logging.startupMessage();

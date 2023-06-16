@@ -39,7 +39,7 @@ const ObjectId = require('mongodb').ObjectId;
 const shortId = require('./helpers').shortId;
 const Model = require('./model');
 const Helpers = require('./helpers');
-const Logging = require('./logging');
+const Logging = require('./helpers/logging');
 
 const AccessControl = require('./access-control');
 const AccessControlHelpers = require('./access-control/helpers');

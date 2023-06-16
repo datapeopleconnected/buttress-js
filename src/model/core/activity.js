@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 const Model = require('../');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Schema = require('../../schema');
 // const Sugar = require('sugar');
 const Shared = require('../shared');

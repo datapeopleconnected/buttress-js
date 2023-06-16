@@ -22,7 +22,7 @@ const NRP = require('node-redis-pubsub');
 
 const Config = require('node-env-obj')();
 const Datastore = require('./datastore');
-const Logging = require('./logging');
+const Logging = require('./helpers/logging');
 const Model = require('./model');
 
 const LambdaManager = require('./lambda/lambda-manager');

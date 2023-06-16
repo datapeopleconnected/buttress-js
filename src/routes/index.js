@@ -26,7 +26,7 @@ const ObjectId = require('mongodb').ObjectId;
 const Config = require('node-env-obj')();
 
 // const Route = require('./route');
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 const Schema = require('../schema');
 const Helpers = require('../helpers');
 const AccessControl = require('../access-control');

@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Logging = require('../logging');
+const Logging = require('./logging');
 const Sugar = require('sugar');
 
 const Datastore = require('../datastore');

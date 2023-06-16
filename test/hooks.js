@@ -36,7 +36,7 @@ try {
 	process.exit(1);
 }
 
-const Logging = require('../dist/logging');
+const Logging = require('../dist/helpers/logging');
 
 exports.mochaHooks = {
 	beforeAll() {

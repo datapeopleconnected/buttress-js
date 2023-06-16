@@ -19,7 +19,7 @@ const MongoClient = require('mongodb').MongoClient;
 
 const Model = require('../../model');
 const Helpers = require('../../helpers');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 
 const AbstractAdapter = require('../abstract-adapter');
 

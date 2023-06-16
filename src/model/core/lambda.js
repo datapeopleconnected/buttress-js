@@ -25,7 +25,7 @@ const Sugar = require('sugar');
 const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 const Model = require('../');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 
 const lambdaConsole = {
 	'console.log': 'lambda.log',

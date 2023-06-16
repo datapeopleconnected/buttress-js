@@ -19,7 +19,7 @@
 const Stream = require('stream');
 // const JSONStream = require('JSONStream');
 const Config = require('node-env-obj')();
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 // const Schema = require('../schema');
 const Model = require('../model');
 const Helpers = require('../helpers');

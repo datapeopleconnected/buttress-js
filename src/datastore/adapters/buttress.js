@@ -22,7 +22,7 @@ const ObjectId = require('mongodb').ObjectId;
 const ButtressAPI = require('@buttress/api');
 
 const {Errors} = require('../../helpers');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 
 const AbstractAdapter = require('../abstract-adapter');
 

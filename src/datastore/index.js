@@ -19,7 +19,7 @@ const hash = require('crypto').createHash;
 // const Config = require('node-env-obj')();
 const Factory = require('./adapter-factory');
 
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 
 const datastores = {
 	core: null,

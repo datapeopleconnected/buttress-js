@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Helpers = require('../../helpers');
 
 const Shared = require('../shared');

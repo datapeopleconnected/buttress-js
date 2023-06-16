@@ -18,7 +18,7 @@
 
 const Crypto = require('crypto');
 // const Shared = require('../shared');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 
 const StandardModel = require('../type/standard');
 

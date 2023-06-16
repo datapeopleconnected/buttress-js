@@ -32,7 +32,7 @@ const Config = require('node-env-obj')();
 
 const Model = require('./model');
 const Routes = require('./routes');
-const Logging = require('./logging');
+const Logging = require('./helpers/logging');
 const Schema = require('./schema');
 const shortId = require('./helpers').shortId;
 
@@ -161,7 +161,7 @@ class BootstrapRest extends EventEmitter {
 
 	async __initWorker() {
 		const app = express();
-		app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
+		// app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 		app.enable('trust proxy', 1);
 		app.use(bodyParser.json({limit: '20mb'}));
 		app.use(bodyParser.urlencoded({extended: true}));

@@ -12,7 +12,7 @@ const {v4: uuidv4} = require('uuid');
 const webpack = require('webpack');
 const NodePolyfillPlugin = require('node-polyfill-webpack-plugin');
 
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 const Model = require('../model');
 const Helpers = require('../helpers');
 const lambdaHelpers = require('../lambda-helpers/helpers');

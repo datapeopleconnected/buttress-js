@@ -20,7 +20,7 @@ const Buttress = require('@buttress/api');
 
 const Model = require('../');
 const Schema = require('../../schema');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Helpers = require('../../helpers');
 
 const StandardModel = require('../type/standard');

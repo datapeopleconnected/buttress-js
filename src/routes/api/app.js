@@ -21,7 +21,7 @@ const Sugar = require('sugar');
 
 const Route = require('../route');
 const Model = require('../../model');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
 

@@ -30,7 +30,7 @@ const Sugar = require('sugar');
 Sugar.Date.setLocale('en-GB');
 
 const BootstrapRest = require('../bootstrap-rest');
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 
 if (cluster.isMaster) Logging.startupMessage();
 

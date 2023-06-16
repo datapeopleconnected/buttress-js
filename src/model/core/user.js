@@ -17,7 +17,7 @@
  */
 
 const Model = require('../');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 // const Shared = require('../shared');
 const Helpers = require('../../helpers');
 

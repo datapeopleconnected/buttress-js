@@ -18,7 +18,7 @@
 
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Model = require('..');
 
 const StandardModel = require('../type/standard');
