@@ -42,7 +42,9 @@ class StandardModel {
 			this.collectionName = `${this.appShortId}-${this.collectionName}`;
 		}
 
-		if (nrp) {
+		this.__nrp = nrp || null;
+
+		if (this.__nrp) {
 			nrp.on('app:update-schema', (data) => {
 				if (!app || (app._id.toString() !== data.appId)) return;
 

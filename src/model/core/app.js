@@ -255,13 +255,15 @@ class AppSchemaModel extends StandardModel {
 	}
 
 	async mergeRemoteSchema(req, collections) {
-		const schemaWithRemoteRef = collections.filter((s) => s.remote);
+		const schemaWithRemoteRef = collections.filter((s) => s.remotes);
 
 		// TODO: Check params for any core scheam thats been requested.
+		// TODO: Handle mutiple remotes
 		const dataSharingSchema = schemaWithRemoteRef.reduce((map, collection) => {
-			const [DSA, ...schema] = collection.remote.split('.');
-			if (!map[DSA]) map[DSA] = [];
-			map[DSA].push(schema);
+			collection.remotes.forEach((remote) => {
+				if (!map[remote.name]) map[remote.name] = [];
+				map[remote.name].push(remote.schema);
+			});
 			return map;
 		}, {});
 
@@ -299,10 +301,10 @@ class AppSchemaModel extends StandardModel {
 
 				remoteSchema.forEach((rs) => {
 					schemaWithRemoteRef
-						.filter((s) => s.remote === `${DSAName}.${rs.name}`)
+						.filter((s) => s.remote.some((r) => r.name === DSAName && r.schema === rs.name))
 						.forEach((s) => {
 							// Merge RS into schema
-							delete s.remote;
+							delete s.remotes;
 							const collectionIdx = collections.findIndex((s) => s.name === rs.name);
 							if (collectionIdx === -1) return;
 							collections[collectionIdx] = Helpers.mergeDeep(rs, s);

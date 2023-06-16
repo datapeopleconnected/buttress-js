@@ -30,7 +30,7 @@ const ENDPOINT = `https://test.local.buttressjs.com`;
 const testEnv = {
 	apps: {},
 	agreements: {},
-	car: null,
+	cars: [],
 };
 
 const bjsReq = async (opts, token=Config.testToken) => {
@@ -61,14 +61,25 @@ const registerDataSharing = async (agreement, token) => bjsReq({
 	body: JSON.stringify(agreement),
 }, token);
 
+const createCar = async (app, name) => {
+	const [car] = await bjsReq({
+		url: `${ENDPOINT}/${app.apiPath}/api/v1/car`,
+		method: 'POST',
+		headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify({
+			name: name,
+		}),
+	}, app.token);
+	testEnv.cars.push(car);
+};
+
 before(async function() {
 	this.timeout(20000);
 
 	await REST_PROCESS.init();
 
-	// Create two new apps
-	testEnv.apps.app1 = await createApp('Test App 1', 'test-app-1');
-	testEnv.apps.app1.schema = await updateSchema([{
+	// Creating test data.
+	const carsSchema = {
 		name: 'car',
 		type: 'collection',
 		properties: {
@@ -79,9 +90,21 @@ before(async function() {
 				__allowUpdate: true,
 			},
 		},
-	}], testEnv.apps.app1.token);
+	};
 
+	testEnv.apps.app1 = await createApp('Test App 1', 'test-app-1');
+	testEnv.apps.app1.schema = await updateSchema([carsSchema], testEnv.apps.app1.token);
+
+	await createCar(testEnv.apps.app1, 'A red car');
+
+	// Test app 2 doesn't need a schema from the start, we'll add one later.
 	testEnv.apps.app2 = await createApp('Test App 2', 'test-app-2');
+
+	// Create a third app which will be used as a cars sources too.
+	testEnv.apps.app3 = await createApp('Test App 2', 'test-app-2');
+	testEnv.apps.app3.schema = await updateSchema([carsSchema], testEnv.apps.app3.token);
+
+	await createCar(testEnv.apps.app3, 'A green car');
 });
 
 after(async () => {
@@ -92,121 +115,260 @@ after(async () => {
 // This suite of tests will run against the REST API and will
 // test the cababiliy of data sharing between different apps.
 describe('Data Sharing', async () => {
-	it('Should register a data sharing agreement between app1 and app2', async () => {
-		const agreement = await registerDataSharing({
-			name: 'app1-to-app2',
+	describe('Creating a agreement', async () => {
+		it('Should register a data sharing agreement between app1 and app2', async () => {
+			const name = `app1-to-app2`;
+			const agreement = await registerDataSharing({
+				name,
 
-			remoteApp: {
-				endpoint: ENDPOINT,
-				apiPath: testEnv.apps.app2.apiPath,
-				token: null,
-			},
-
-			policy: [{
-				endpoints: ['%ALL%'],
-				query: [{
-					schema: ['%ALL%'],
-					access: '%FULL_ACCESS%',
-				}],
-			}],
-		}, testEnv.apps.app1.token);
-
-		assert.strictEqual(agreement.name, 'app1-to-app2');
-		assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT);
-		assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app2.apiPath);
-		assert.strictEqual(agreement.remoteApp.token, null);
-		assert.strictEqual(agreement.active, false);
-		assert(agreement.registrationToken !== null && agreement.registrationToken !== undefined);
-
-		testEnv.agreements.app1 = agreement;
-		testEnv.apps.app1.registrationToken = agreement.registrationToken;
-	});
-
-	it(`Should register a data sharing agreement between app2 and app1 & activate it`, async () => {
-		const agreement = await registerDataSharing({
-			name: 'app2-to-app1',
-
-			remoteApp: {
-				endpoint: ENDPOINT,
-				apiPath: testEnv.apps.app1.apiPath,
-				token: testEnv.apps.app1.registrationToken,
-			},
-
-			policy: [{
-				endpoints: ['%ALL%'],
-				query: [{
-					schema: ['%ALL%'],
-					access: '%FULL_ACCESS%',
-				}],
-			}],
-		}, testEnv.apps.app2.token);
-
-		assert.strictEqual(agreement.name, 'app2-to-app1');
-		assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT);
-		assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app1.apiPath);
-		assert.strictEqual(agreement.active, true);
-
-		testEnv.agreements.app2 = agreement;
-	});
-
-	it(`Should update app2 schema to reference cars collection from app1`, async () => {
-		testEnv.apps.app2.schema = await updateSchema([{
-			name: 'car',
-			type: 'collection',
-			remote: 'app2-to-app1.car',
-			properties: {
-				price: {
-					__type: 'number',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
+				remoteApp: {
+					endpoint: ENDPOINT,
+					apiPath: testEnv.apps.app2.apiPath,
+					token: null,
 				},
-			},
-		}], testEnv.apps.app2.token);
 
-		// Give Buttress time to create the routes.
-		await new Promise((r) => setTimeout(r, 500));
+				policy: [{
+					endpoints: ['%ALL%'],
+					query: [{
+						schema: ['%ALL%'],
+						access: '%FULL_ACCESS%',
+					}],
+				}],
+			}, testEnv.apps.app1.token);
+
+			assert.strictEqual(agreement.name, name);
+			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT);
+			assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app2.apiPath);
+			assert.strictEqual(agreement.remoteApp.token, null);
+			assert.strictEqual(agreement.active, false);
+			assert(agreement.registrationToken !== null && agreement.registrationToken !== undefined);
+
+			testEnv.agreements[name] = agreement;
+		});
+
+		it(`Should register a data sharing agreement between app2 and app1 & activate it`, async () => {
+			const name = `app2-to-app1`;
+			const agreement = await registerDataSharing({
+				name,
+
+				remoteApp: {
+					endpoint: ENDPOINT,
+					apiPath: testEnv.apps.app1.apiPath,
+					token: testEnv.agreements[`app1-to-app2`].registrationToken,
+				},
+
+				policy: [{
+					endpoints: ['%ALL%'],
+					query: [{
+						schema: ['%ALL%'],
+						access: '%FULL_ACCESS%',
+					}],
+				}],
+			}, testEnv.apps.app2.token);
+
+			assert.strictEqual(agreement.name, name);
+			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT);
+			assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app1.apiPath);
+			assert.strictEqual(agreement.active, true);
+
+			testEnv.agreements[name] = agreement;
+		});
+
+		it(`Should update app2 schema to reference cars collection from app1`, async () => {
+			testEnv.apps.app2.schema = await updateSchema([{
+				name: 'car',
+				type: 'collection',
+				remotes: [{
+					name: 'app2-to-app1',
+					schema: 'car',
+				}],
+				properties: {
+					price: {
+						__type: 'number',
+						__default: null,
+						__required: true,
+						__allowUpdate: true,
+					},
+				},
+			}], testEnv.apps.app2.token);
+
+			// Give Buttress time to create the routes.
+			await new Promise((r) => setTimeout(r, 500));
+		});
+
+		it('Should be able to GET cars from App2 which will use data sharing to retrive data from App1', async function() {
+			const cars = await bjsReq({
+				url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+				method: 'GET',
+			}, testEnv.apps.app2.token);
+
+			assert.strictEqual(cars.length, 1);
+			assert.strictEqual(cars[0].id, testEnv.cars[0].id);
+			assert.strictEqual(cars[0].name, testEnv.cars[0].name);
+		});
+
+		// it('Should be able to POST cars from App2 which will use data sharing to post the data to App1', async function() {
+		// 	const [result] = await bjsReq({
+		// 		url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+		// 		method: 'POST',
+		// 		headers: {'Content-Type': 'application/json'},
+		// 		body: JSON.stringify({
+		// 			name: 'A blue car',
+		// 			price: 2000.00,
+		// 		}),
+		// 	}, testEnv.apps.app2.token);
+		// 	testEnv.cars.push(result);
+
+		// 	assert(result.id !== null && result.id !== undefined);
+		// 	assert.strictEqual(result.name, 'A blue car');
+		// 	assert.strictEqual(result.price, 2000.00);
+		// });
+
+		// it('Should be able to GET cars direct from App1 without extra price property', async function() {
+		// 	const cars = await bjsReq({
+		// 		url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+		// 		method: 'GET',
+		// 	}, testEnv.apps.app1.token);
+
+		// 	assert.strictEqual(cars.length, 1);
+		// 	assert.strictEqual(cars[0].id, testEnv.cars[1].id);
+		// 	assert.strictEqual(cars[0].name, testEnv.cars[1].name);
+		// });
+
+		// it('Should be able to GET cars from App2 which will use data sharing to retrive data from App1', async function() {
+		// 	const cars = await bjsReq({
+		// 		url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+		// 		method: 'GET',
+		// 	}, testEnv.apps.app2.token);
+
+		// 	assert.strictEqual(cars.length, 2);
+
+		// 	assert.strictEqual(cars[0].id, testEnv.cars[0].id);
+		// 	assert.strictEqual(cars[0].name, testEnv.cars[0].name);
+
+		// 	assert.strictEqual(cars[1].id, testEnv.cars[1].id);
+		// 	assert.strictEqual(cars[1].name, testEnv.cars[1].name);
+		// 	assert.strictEqual(cars[1].price, testEnv.cars[1].price);
+		// });
 	});
 
-	it('Should be able to POST cars from App2 which will use data sharing to post the data to App1', async function() {
-		const result = await bjsReq({
-			url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
-			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({
-				name: 'Vaxhall Astra 1.7 CDTi ecoFLEX Exclusiv Euro 5 5dr',
-				price: 2000.00,
-			}),
-		}, testEnv.apps.app2.token);
-		testEnv.car = result;
+	describe('Handling mutiple agreement sources', async () => {
+		it('Should register a data sharing agreement between app3 and app2', async () => {
+			const name = `app3-to-app2`;
+			const agreement = await registerDataSharing({
+				name,
 
-		assert(result.id !== null && result.id !== undefined);
-		assert.strictEqual(result.name, 'Vaxhall Astra 1.7 CDTi ecoFLEX Exclusiv Euro 5 5dr');
-		// TODO: Uncomment when feature is complete
-		// assert.strictEqual(result.price, 2000.00);
-	});
+				remoteApp: {
+					endpoint: ENDPOINT,
+					apiPath: testEnv.apps.app2.apiPath,
+					token: null,
+				},
 
-	it('Should be able to GET cars direct from App1 without extra price property', async function() {
-		const cars = await bjsReq({
-			url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
-			method: 'GET',
-		}, testEnv.apps.app1.token);
+				policy: [{
+					endpoints: ['%ALL%'],
+					query: [{
+						schema: ['%ALL%'],
+						access: '%FULL_ACCESS%',
+					}],
+				}],
+			}, testEnv.apps.app3.token);
 
-		assert.strictEqual(cars.length, 1);
-		assert.strictEqual(cars[0].id, testEnv.car.id);
-		assert.strictEqual(cars[0].name, testEnv.car.name);
-	});
+			assert.strictEqual(agreement.name, name);
+			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT);
+			assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app2.apiPath);
+			assert.strictEqual(agreement.remoteApp.token, null);
+			assert.strictEqual(agreement.active, false);
+			assert(agreement.registrationToken !== null && agreement.registrationToken !== undefined);
 
-	it('Should be able to GET cars from App2 which will use data sharing to retrive data from App1', async function() {
-		const cars = await bjsReq({
-			url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
-			method: 'GET',
-		}, testEnv.apps.app2.token);
+			testEnv.agreements[name] = agreement;
+		});
 
-		assert.strictEqual(cars.length, 1);
-		assert.strictEqual(cars[0].id, testEnv.car.id);
-		assert.strictEqual(cars[0].name, testEnv.car.name);
-		// TODO: Uncomment when feature is complete
-		// assert.strictEqual(cars[0].price, testEnv.car.price);
+		it(`Should register a data sharing agreement between app2 and app1 & activate it`, async () => {
+			const name = `app2-to-app3`;
+			const agreement = await registerDataSharing({
+				name,
+
+				remoteApp: {
+					endpoint: ENDPOINT,
+					apiPath: testEnv.apps.app3.apiPath,
+					token: testEnv.agreements[`app3-to-app2`].registrationToken,
+				},
+
+				policy: [{
+					endpoints: ['%ALL%'],
+					query: [{
+						schema: ['%ALL%'],
+						access: '%FULL_ACCESS%',
+					}],
+				}],
+			}, testEnv.apps.app2.token);
+
+			assert.strictEqual(agreement.name, name);
+			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT);
+			assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app3.apiPath);
+			assert.strictEqual(agreement.active, true);
+
+			testEnv.agreements[name] = agreement;
+		});
+
+		it(`Should update app2 schema to reference cars collection from app1 & app2`, async () => {
+			testEnv.apps.app2.schema = await updateSchema([{
+				name: 'car',
+				type: 'collection',
+				remotes: [{
+					name: 'app2-to-app1',
+					schema: 'car',
+				}, {
+					name: 'app2-to-app3',
+					schema: 'car',
+				}],
+				properties: {
+					price: {
+						__type: 'number',
+						__default: null,
+						__required: true,
+						__allowUpdate: true,
+					},
+				},
+			}], testEnv.apps.app2.token);
+
+			// Give Buttress time to create the routes.
+			await new Promise((r) => setTimeout(r, 500));
+		});
+
+		it('Should be able to GET cars from App2 which will use data sharing to retrive data from App1 & App3 combined', async function() {
+			const cars = await bjsReq({
+				url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+				method: 'GET',
+				headers: {'mode': 'no-cors'},
+			}, testEnv.apps.app2.token);
+
+			assert.strictEqual(cars.length, 2);
+			assert.strictEqual(cars[0].id, testEnv.cars[0].id);
+			assert.strictEqual(cars[0].name, testEnv.cars[0].name);
+
+			assert.strictEqual(cars[1].id, testEnv.cars[1].id);
+			assert.strictEqual(cars[1].name, testEnv.cars[1].name);
+		});
+
+		// TODO: more here
+
+		// it('Should be able to POST cars from App2 which will use data sharing to post the data to App1', async function() {
+		// 	const result = await bjsReq({
+		// 		url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+		// 		method: 'POST',
+		// 		headers: {'Content-Type': 'application/json'},
+		// 		body: JSON.stringify({
+		// 			name: 'A blue car',
+		// 			price: 2000.00,
+		// 		}),
+		// 	}, testEnv.apps.app2.token);
+		// 	testEnv.car = result;
+
+		// 	assert(result.id !== null && result.id !== undefined);
+		// 	assert.strictEqual(result.name, 'A blue car');
+		// 	// TODO: Uncomment when feature is complete
+		// 	// assert.strictEqual(result.price, 2000.00);
+		// });
 	});
 });

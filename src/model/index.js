@@ -68,12 +68,14 @@ class Model {
 		}
 	}
 
-	async initSchema() {
+	// TODO: Might be wise to narrow it down to an app or schema thats changed.
+	async initSchema(appId = null) {
 		Logging.logSilly('Model:initSchema');
 		const rxsApps = await this.models.App.findAll();
 
 		for await (const app of rxsApps) {
 			if (!app || !app.__schema) return;
+			if (appId && app._id !== appId) continue;
 
 			// Check for connection
 			let datastore = null;
@@ -105,10 +107,17 @@ class Model {
 				await this._initSchemaModel(app, schema, datastore);
 			}
 		}
+
+		Logging.logSilly('Model:initSchema:end');
 	}
 
 	initModel(modelName) {
 		return this[modelName];
+	}
+
+	// TODO: We should replace this with an accessor
+	__addModelGetter(name) {
+		Object.defineProperty(this, name, {get: () => this.models[name], configurable: true});
 	}
 
 	/**
@@ -127,7 +136,7 @@ class Model {
 			this.models[name] = new CoreSchemaModel(this._nrp);
 			await this.models[name].initAdapter(Datastore.getInstance('core'));
 
-			this.__defineGetter__(name, () => this.models[name]);
+			this.__addModelGetter(name);
 		}
 
 		return this.models[name];
@@ -146,50 +155,59 @@ class Model {
 
 		name = (appShortId) ? `${appShortId}-${schemaData.name}` : name;
 
+		if (this.models[name]) {
+			this.__addModelGetter(name);
+			return this.models[name];
+		}
+
 		// Is data sharing
 		if (!this.models[name]) {
-			if (schemaData.remote) {
-				const [dataSharingName, collection] = schemaData.remote.split('.');
+			if (schemaData.remotes) {
+				const remotes = (Array.isArray(schemaData.remotes)) ? schemaData.remotes : [schemaData.remotes];
 
-				if (!dataSharingName || !collection) {
-					Logging.logWarn(`Invalid Schema remote descriptor (${dataSharingName}.${collection})`);
-					return;
+				const datastores = [];
+
+				for await (const remote of remotes) {
+					const [dataSharingName, collection] = remote.split('.');
+
+					if (!dataSharingName || !collection) {
+						Logging.logWarn(`Invalid Schema remote descriptor (${dataSharingName}.${collection})`);
+						return;
+					}
+
+					const dataSharing = await this.AppDataSharing.findOne({
+						'name': dataSharingName,
+						'_appId': app._id,
+					});
+
+					if (!dataSharing) {
+						Logging.logError(`Unable to find data sharing (${dataSharingName}.${collection}) for ${app.name}`);
+						return;
+					}
+
+					if (!dataSharing.active) {
+						Logging.logDebug(`Data sharing not active yet, skipping (${dataSharingName}.${collection}) for ${app.name}`);
+						return;
+					}
+
+					const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
+					const remoteDatastore = Datastore.createInstance({connectionString});
+
+					datastores.push(remoteDatastore);
 				}
 
-				const dataSharing = await this.AppDataSharing.findOne({
-					'name': dataSharingName,
-					'_appId': app._id,
-				});
-
-				if (!dataSharing) {
-					Logging.logError(`Unable to find data sharing (${dataSharingName}.${collection}) for ${app.name}`);
-					return;
-				}
-
-				if (!dataSharing.active) {
-					Logging.logDebug(`Data sharing not active yet, skipping (${dataSharingName}.${collection}) for ${app.name}`);
-					return;
-				}
-
-				const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
-				const remoteDatastore = Datastore.createInstance({connectionString});
-
-				this.models[name] = new RemoteModel(
-					schemaData, app,
-					new StandardModel(schemaData, app, this._nrp),
-					new StandardModel(schemaData, app, this._nrp),
-					this._nrp,
-				);
+				// mutiple remotes?
+				this.models[name] = new RemoteModel(schemaData, app, this._nrp);
 
 				try {
-					await this.models[name].initAdapter(mainDatastore, remoteDatastore);
+					await this.models[name].initAdapter(mainDatastore, datastores);
 				} catch (err) {
 					// Skip defining this model, the error will get picked up later when route is defined ore accessed
 					if (err instanceof Errors.SchemaNotFound) return;
 					else throw err;
 				}
 
-				this.__defineGetter__(name, () => this.models[name]);
+				this.__addModelGetter(name);
 				return this.models[name];
 			} else {
 				this.models[name] = new StandardModel(schemaData, app, this._nrp);
@@ -197,7 +215,7 @@ class Model {
 			}
 		}
 
-		this.__defineGetter__(name, () => this.models[name]);
+		this.__addModelGetter(name);
 		return this.models[name];
 	}
 

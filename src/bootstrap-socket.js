@@ -309,8 +309,10 @@ class BootstrapSocket {
 			}
 
 			const remoteSchemas = Schema.decode(app.__schema).reduce((obj, item) => {
-				if (!item.remote) return obj;
-				obj[item.remote] = item;
+				if (!item.remotes) return obj;
+				item.remotes.forEach((remote) => {
+					obj[`${remote.name}.${remote.schema}`] = item;
+				});
 				return obj;
 			}, {});
 

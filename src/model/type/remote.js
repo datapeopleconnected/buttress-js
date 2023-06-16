@@ -23,39 +23,50 @@ const StandardModel = require('./standard');
  * @class RemoteModel
  */
 class RemoteModel extends StandardModel {
-	constructor(schemaData, app, local, remote, nrp) {
+	constructor(schemaData, app, nrp) {
 		super(schemaData, app, nrp);
 
-		this.local = local;
-		this.remote = remote;
+		// This is reference to a copy of the model in our local datastore.
+		this.localModel = null;
+
+		this.remoteModels = [];
 	}
 
-	async initAdapter(localDataStore, remoteDatastore) {
+	async initAdapter(localDataStore, remoteDatastores) {
 		if (localDataStore) {
-			this.local.adapter = localDataStore.adapter.cloneAdapterConnection();
-			await this.local.adapter.connect();
-			await this.local.adapter.setCollection(`${this.schemaData.name}`);
-			await this.local.adapter.updateSchema(this.schemaData);
-		}
-		if (remoteDatastore) {
-			// TODO: The remote might be shared
-			this.remote.adapter = remoteDatastore.adapter.cloneAdapterConnection();
-			await this.remote.adapter.connect();
-			await this.remote.adapter.setCollection(`${this.schemaData.name}`);
+			this.localModel = new StandardModel(this.schemaData, this.app, this.__nrp);
+
+			this.localModel.adapter = localDataStore.adapter.cloneAdapterConnection();
+			await this.localModel.adapter.connect();
+			await this.localModel.adapter.setCollection(`${this.schemaData.name}`);
+			await this.localModel.adapter.updateSchema(this.schemaData);
 		}
 
-		// Compile remote schema
-		if (this.remote.adapter.getSchema) {
-			const remoteSchemas = await this.remote.adapter.getSchema([this.schemaData.name]);
-			if (remoteSchemas && remoteSchemas.length > 0) {
-				delete this.schemaData.remote;
-				this.schemaData = Helpers.mergeDeep(this.schemaData, remoteSchemas.pop());
+		for await (const remoteDatastore of remoteDatastores) {
+			const model = new StandardModel(this.schemaData, this.app, this.__nrp);
+
+			// TODO: handle a model which is unable to connect.
+			model.adapter = remoteDatastore.adapter.cloneAdapterConnection();
+			await model.adapter.connect();
+			await model.adapter.setCollection(`${this.schemaData.name}`);
+
+			// TODO: this shouldn't be nessasry when using a standard model.
+			if (model.adapter.getSchema) {
+				const remoteSchemas = await model.adapter.getSchema([this.schemaData.name]);
+				if (remoteSchemas && remoteSchemas.length > 0) {
+					delete this.schemaData.remotes;
+					this.schemaData = Helpers.mergeDeep(this.schemaData, remoteSchemas.pop());
+				}
 			}
+
+			this.remoteModels.push(model);
 		}
 	}
 
 	createId(id) {
-		return this.remote.adapter.ID.new(id);
+		// NOTE: This could be linked to the add problem, the Id will want to be created based
+		// on the remote.
+		return this.localModel.adapter.ID.new(id);
 	}
 
 	/**
@@ -66,7 +77,10 @@ class RemoteModel extends StandardModel {
 		// TODO: local schema additional properties and save them locally.
 		// - Changes which only involve properties form the local schema don't have to go out to the remote.
 
-		return this.remote.add(body);
+		// DISCISSION: How should we resolve the where a data entity should be pushed to?
+		// - maybe there will be a field in the schema that specifics this?
+
+		return this.localModel.add(body);
 	}
 
 	/**
@@ -102,8 +116,12 @@ class RemoteModel extends StandardModel {
 	 * @param {object} details
 	 * @return {Boolean}
 	 */
-	isDuplicate(details) {
-		return this.remote.isDuplicate(details);
+	async isDuplicate(details) {
+		// Make a call to each api, if any return true then return true.
+		const calls = this.remoteModels.map((remoteModel) => remoteModel.isDuplicate(details));
+		const results = await Promise.all(calls);
+
+		return results.some((result) => result);
 	}
 
 	/**
@@ -147,8 +165,19 @@ class RemoteModel extends StandardModel {
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {Promise} - resolves to an array of docs
 	 */
-	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
-		return this.remote.find(query, excludes, limit, skip, sort, project);
+	async find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+		// Make a call out to each of the remotes, and merge the streams into on single stream.
+		const sources = [];
+
+		console.log(`REMOTE MODELS: ${this.remoteModels.length}`);
+
+		for await (const remote of this.remoteModels) {
+			sources.push(await remote.find(query, excludes, limit, skip, sort, project));
+		}
+
+		console.log(`SOURCES: ${sources.length}`);
+
+		return new Helpers.Stream.SortedStreams(sources, (a, b) => a - b, limit);
 	}
 
 	/**
@@ -179,7 +208,7 @@ class RemoteModel extends StandardModel {
 	 * @return {Promise}
 	 */
 	drop() {
-		return this.local.drop();
+		return this.localModel.drop();
 	}
 }
 

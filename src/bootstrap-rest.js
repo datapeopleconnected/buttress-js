@@ -211,7 +211,7 @@ class BootstrapRest extends EventEmitter {
 		if (payload.type === 'app-schema:updated') {
 			if (!this.routes) return Logging.logDebug(`Skipping app schema update, router not created yet`);
 			Logging.logDebug(`App Schema Updated: ${payload.appId}`);
-			await Model.initSchema();
+			await Model.initSchema(payload.appId);
 			await this.routes.regenerateAppRoutes(payload.appId);
 			Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
 		} else if (payload.type === 'app-routes:bust-cache') {

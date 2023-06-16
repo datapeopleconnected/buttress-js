@@ -42,37 +42,8 @@ module.exports = class Buttress extends AbstractAdapter {
 
 		this.connection = ButtressAPI.new();
 
-		// console.log(uri, options, connection);
-
-		// eslint-disable-next-line no-unused-vars
-		// const [_, collection] = schemaData.remote.split('.');
-
-		// this.endpoint = dataSharing.remoteApp.endpoint;
-		// this.token = dataSharing.remoteApp.token;
-		// this.apiPath = dataSharing.remoteApp.apiPath;
-
-		// this.buttress = ButtressAPI.new();
-
-		// // Hack - Give a little time for another instance to get up to speed
-		// // before trying to init
-
 		this.init = false;
 		this.initPendingResolve = [];
-
-		// // TOOD: Handle the case we're another instance isn't available
-		// setTimeout(() => {
-		// 	this.buttress.init({
-		// 		buttressUrl: this.endpoint,
-		// 		appToken: this.token,
-		// 		apiPath: this.apiPath,
-		// 		allowUnauthorized: true, // WUT!?
-		// 	})
-		// 		.then(() => {
-		// 			this.collection = this.buttress.getCollection(collection);
-		// 			this.init = true;
-		// 			this.initPendingResolve.forEach((r) => r());
-		// 		});
-		// }, 500);
 	}
 
 	async connect() {

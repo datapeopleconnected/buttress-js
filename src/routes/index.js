@@ -238,13 +238,23 @@ class Routes {
 		Schema.decode(app.__schema)
 			.filter((schema) => schema.type.indexOf('collection') === 0)
 			.filter((schema) => {
-				if (!schema.remote) return true;
-				const [dsaName] = schema.remote.split('.');
+				if (!schema.remotes) return true;
+				const remotes = (Array.isArray(schema.remotes)) ? schema.remotes : [schema.remotes];
 
-				if (appDSAs.find((dsa) => dsa.active && dsa.name === dsaName)) return true;
+				const nonActiveDSA = remotes.reduce((arr, remoteRef) => {
+					// if the data sharing agreement is not active, we'll make note of the name for debugging.
+					if (appDSAs.find((dsa) => dsa.active && dsa.name === remoteRef.name) === undefined) {
+						arr.push(remoteRef.name);
+					}
+					return arr;
+				}, []);
 
-				Logging.logWarn(`Routes:_generateAppRoutes ${app._id} skipping route /${app.apiPath} for ${schema.name}, DSA not active`);
-				return false;
+				if (nonActiveDSA.length > 0) {
+					Logging.logWarn(`Routes:_generateAppRoutes ${app._id} skipping route /${app.apiPath} for ${schema.name}, DSA not active`);
+					return false;
+				}
+
+				return true;
 			})
 			.forEach((schema) => {
 				Logging.logSilly(`Routes:_generateAppRoutes ${app._id} init routes /${app.apiPath} for ${schema.name}`);
