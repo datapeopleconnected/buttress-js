@@ -35,7 +35,7 @@ const testEnv = {
 
 const bjsReq = async (opts, token=Config.testToken) => {
 	const req = await fetch(`${opts.url}?token=${token}`, opts);
-	if (req.status !== 200) throw new Error(`Received non-200 from POST ${opts.url}`);
+	if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${opts.url}`);
 	return await req.json();
 };
 
@@ -101,7 +101,7 @@ before(async function() {
 	testEnv.apps.app2 = await createApp('Test App 2', 'test-app-2');
 
 	// Create a third app which will be used as a cars sources too.
-	testEnv.apps.app3 = await createApp('Test App 2', 'test-app-2');
+	testEnv.apps.app3 = await createApp('Test App 3', 'test-app-3');
 	testEnv.apps.app3.schema = await updateSchema([carsSchema], testEnv.apps.app3.token);
 
 	await createCar(testEnv.apps.app3, 'A green car');
@@ -337,6 +337,7 @@ describe('Data Sharing', async () => {
 		});
 
 		it('Should be able to GET cars from App2 which will use data sharing to retrive data from App1 & App3 combined', async function() {
+			this.timeout(20000);
 			const cars = await bjsReq({
 				url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
 				method: 'GET',

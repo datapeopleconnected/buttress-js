@@ -52,6 +52,8 @@ export class SortedStreams extends Readable {
 		});
 		this._sourcesClosed = false;
 
+		console.log(`_sources: ${this._sources.length}`);
+
 		// A sorted queue of items which are ready to be sent down the wire.
 		this._queue = [];
 
@@ -68,6 +70,7 @@ export class SortedStreams extends Readable {
 
 	_setupListeners() {
 		this._sources.forEach((holder, idx) => {
+			console.log(holder.source._readableState);
 			holder.source.on('data', (chunk) => this._handleSourceChunk(chunk, idx));
 			holder.source.on('end', () => this._handleSourceEnd(holder));
 		});
@@ -97,7 +100,6 @@ export class SortedStreams extends Readable {
 		if (holder === null) {
 			// If the queue is empty and all sources are closed, then we're done.
 			if (this._queue.length === 0 && this._sourcesClosed) return this.push(null);
-
 			return;
 		}
 
@@ -110,6 +112,8 @@ export class SortedStreams extends Readable {
 
 		// const pos = (this._lastChunkSent === null) ? 0 : this._compareFn(holder.chunk, this._lastChunkSent);
 		// console.log(pos, holder.chunk.name || null, this._lastChunkSent || null);
+
+		console.log('push', holder.chunk);
 
 		// Try to send it down the wire, if we can't, pause the stream until next read.
 		if (!this.push(holder.chunk)) {
@@ -129,12 +133,14 @@ export class SortedStreams extends Readable {
 
 	// Source event handlers
 	_handleSourceChunk(chunk: any, sourceIdx: number) {
+		console.log('_handleSourceChunk', chunk);
 		this._enqueue({chunk, sourceIdx});
 		this._sources[sourceIdx].queued++;
 
 		this._tryToSendIt();
 	}
 	_handleSourceEnd(holder: SourceHolder) {
+		console.log('_handleSourceEnd');
 		holder.closed = true;
 		this._sourcesClosed = this._sources.every((holder) => holder.closed);
 

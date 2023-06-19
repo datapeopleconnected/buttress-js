@@ -75,7 +75,9 @@ class Model {
 
 		for await (const app of rxsApps) {
 			if (!app || !app.__schema) return;
-			if (appId && app._id !== appId) continue;
+			if (appId && app._id.toString() !== appId) continue;
+
+			Logging.logSilly(`Model:initSchema: ${app._id}`);
 
 			// Check for connection
 			let datastore = null;
@@ -111,11 +113,21 @@ class Model {
 		Logging.logSilly('Model:initSchema:end');
 	}
 
-	initModel(modelName) {
-		return this[modelName];
+	/**
+	 * Use to access a defined model, should be used in place of the
+	 * object property accessor.
+	 * @param {string} name
+	 * @return {object}
+	 */
+	getModel(name) {
+		return this[name];
 	}
 
-	// TODO: We should replace this with an accessor
+	/**
+	 * Used to define a object property accessor for a defined model.
+	 * @param {string} name
+	 * @deprecated
+	 */
 	__addModelGetter(name) {
 		Object.defineProperty(this, name, {get: () => this.models[name], configurable: true});
 	}
@@ -150,73 +162,68 @@ class Model {
 	 * @private
 	 */
 	async _initSchemaModel(app, schemaData, mainDatastore) {
-		let name = `${schemaData.name}`;
+		let modelName = `${schemaData.name}`;
 		const appShortId = (app) ? shortId(app._id) : null;
 
-		name = (appShortId) ? `${appShortId}-${schemaData.name}` : name;
+		modelName = (appShortId) ? `${appShortId}-${schemaData.name}` : modelName;
 
-		if (this.models[name]) {
-			this.__addModelGetter(name);
-			return this.models[name];
-		}
+		// if (this.models[modelName]) {
+		// 	this.__addModelGetter(modelName);
+		// 	return this.models[modelName];
+		// }
 
 		// Is data sharing
-		if (!this.models[name]) {
-			if (schemaData.remotes) {
-				const remotes = (Array.isArray(schemaData.remotes)) ? schemaData.remotes : [schemaData.remotes];
+		if (schemaData.remotes) {
+			const remotes = (Array.isArray(schemaData.remotes)) ? schemaData.remotes : [schemaData.remotes];
 
-				const datastores = [];
+			const datastores = [];
 
-				for await (const remote of remotes) {
-					const [dataSharingName, collection] = remote.split('.');
-
-					if (!dataSharingName || !collection) {
-						Logging.logWarn(`Invalid Schema remote descriptor (${dataSharingName}.${collection})`);
-						return;
-					}
-
-					const dataSharing = await this.AppDataSharing.findOne({
-						'name': dataSharingName,
-						'_appId': app._id,
-					});
-
-					if (!dataSharing) {
-						Logging.logError(`Unable to find data sharing (${dataSharingName}.${collection}) for ${app.name}`);
-						return;
-					}
-
-					if (!dataSharing.active) {
-						Logging.logDebug(`Data sharing not active yet, skipping (${dataSharingName}.${collection}) for ${app.name}`);
-						return;
-					}
-
-					const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
-					const remoteDatastore = Datastore.createInstance({connectionString});
-
-					datastores.push(remoteDatastore);
+			for await (const remote of remotes) {
+				if (!remote.name || !remote.schema) {
+					Logging.logWarn(`Invalid Schema remote descriptor (${remote.name}.${remote.schema})`);
+					return;
 				}
 
-				// mutiple remotes?
-				this.models[name] = new RemoteModel(schemaData, app, this._nrp);
+				const dataSharing = await this.AppDataSharing.findOne({
+					'name': remote.name,
+					'_appId': app._id,
+				});
 
-				try {
-					await this.models[name].initAdapter(mainDatastore, datastores);
-				} catch (err) {
-					// Skip defining this model, the error will get picked up later when route is defined ore accessed
-					if (err instanceof Errors.SchemaNotFound) return;
-					else throw err;
+				if (!dataSharing) {
+					Logging.logError(`Unable to find data sharing (${remote.name}.${remote.schema}) for ${app.name}`);
+					return;
 				}
 
-				this.__addModelGetter(name);
-				return this.models[name];
-			} else {
-				this.models[name] = new StandardModel(schemaData, app, this._nrp);
-				await this.models[name].initAdapter(mainDatastore);
+				if (!dataSharing.active) {
+					Logging.logDebug(`Data sharing not active yet, skipping (${remote.name}.${remote.schema}) for ${app.name}`);
+					return;
+				}
+
+				const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
+				const remoteDatastore = Datastore.createInstance({connectionString});
+
+				datastores.push(remoteDatastore);
 			}
+
+			this.models[modelName] = new RemoteModel(schemaData, app, this._nrp);
+
+			try {
+				await this.models[modelName].initAdapter(mainDatastore, datastores);
+			} catch (err) {
+				// Skip defining this model, the error will get picked up later when route is defined ore accessed
+				if (err instanceof Errors.SchemaNotFound) return;
+				else throw err;
+			}
+
+			this.__addModelGetter(modelName);
+			return this.models[modelName];
+		} else {
+			this.models[modelName] = new StandardModel(schemaData, app, this._nrp);
+			await this.models[modelName].initAdapter(mainDatastore);
 		}
 
-		this.__addModelGetter(name);
-		return this.models[name];
+		this.__addModelGetter(modelName);
+		return this.models[modelName];
 	}
 
 	/**

@@ -25,7 +25,7 @@ module.exports = class SearchCount extends Route {
 		this.model = Model[schemaCollection];
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`getCount Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 	}
 

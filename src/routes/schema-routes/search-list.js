@@ -25,7 +25,7 @@ module.exports = class SearchList extends Route {
 		this.model = Model[schemaCollection];
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`SearchList Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 	}
 

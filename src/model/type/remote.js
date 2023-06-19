@@ -33,6 +33,8 @@ class RemoteModel extends StandardModel {
 	}
 
 	async initAdapter(localDataStore, remoteDatastores) {
+		console.log('RemoteModel', 'initAdapter', this.schemaData.name, remoteDatastores.length);
+
 		if (localDataStore) {
 			this.localModel = new StandardModel(this.schemaData, this.app, this.__nrp);
 
@@ -176,6 +178,9 @@ class RemoteModel extends StandardModel {
 		}
 
 		console.log(`SOURCES: ${sources.length}`);
+
+		// TODO: investigate why only one stream is returning. Looks like we may have
+		// missed the bus.
 
 		return new Helpers.Stream.SortedStreams(sources, (a, b) => a - b, limit);
 	}

@@ -23,10 +23,10 @@ module.exports = class AddOne extends Route {
 
 		// Fetch model
 		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
+		this.model = Model.getModel(schemaCollection);
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`GetList Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 	}
 

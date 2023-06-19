@@ -285,7 +285,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	exists(id, extra = {}) {
-		Logging.logSilly(`exists: ${this.collectionName} ${id}`);
+		Logging.logSilly(`exists: ${this.collection.namespace} ${id}`);
 
 		return this.collection.countDocuments({
 			_id: new ObjectId(id),
@@ -320,7 +320,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	rmBulk(ids) {
-		// Logging.log(`rmBulk: ${this.collectionName} ${ids}`, Logging.Constants.LogLevel.SILLY);
+		// Logging.log(`rmBulk: ${this.collection.namespace} ${ids}`, Logging.Constants.LogLevel.SILLY);
 		return this.rmAll({_id: {$in: ids}});
 	}
 
@@ -330,7 +330,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 */
 	rmAll(query) {
 		if (!query) query = {};
-		// Logging.logSilly(`rmAll: ${this.collectionName} ${query}`);
+		// Logging.logSilly(`rmAll: ${this.collection.namespace} ${query}`);
 
 		return new Promise((resolve) => {
 			this.collection.deleteMany(query, (err, doc) => {
@@ -345,7 +345,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - resolves to an array of Companies
 	 */
 	findById(id) {
-		// Logging.logSilly(`Schema:findById: ${this.collectionName} ${id}`);
+		// Logging.logSilly(`Schema:findById: ${this.collection.namespace} ${id}`);
 
 		if (id instanceof ObjectId === false) {
 			id = new ObjectId(id);
@@ -364,7 +364,10 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {ReadableStream} - stream
 	 */
 	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
-		Logging.logSilly(`find: ${this.collectionName} ${query}`);
+		if (Logging.level === Logging.Constants.LogLevel.SILLY) {
+			Logging.logSilly(`find: ${this.collection.namespace} query: ${JSON.stringify(query)}, excludes: ${excludes}`+
+				`limit: ${limit}, skip: ${skip}, sort: ${JSON.stringify(sort)}`);
+		}
 
 		let results = this.collection.find(query, excludes)
 			.skip(skip)
@@ -384,7 +387,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - resolves to an array of docs
 	 */
 	findOne(query, excludes = {}) {
-		// Logging.logSilly(`findOne: ${this.collectionName} ${query}`);
+		// Logging.logSilly(`findOne: ${this.collection.namespace} ${query}`);
 
 		return new Promise((resolve) => {
 			this.collection.find(query, excludes).toArray((err, doc) => {
@@ -398,7 +401,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - resolves to an array of Companies
 	 */
 	findAll() {
-		// Logging.logSilly(`findAll: ${this.collectionName}`);
+		// Logging.logSilly(`findAll: ${this.collection.namespace}`);
 
 		return this.find({});
 	}
@@ -408,7 +411,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - resolves to an array of Companies
 	 */
 	findAllById(ids) {
-		// Logging.logSilly(`update: ${this.collectionName} ${ids}`);
+		// Logging.logSilly(`update: ${this.collection.namespace} ${ids}`);
 
 		return this.find({_id: {$in: ids.map((id) => new ObjectId(id))}}, {});
 	}

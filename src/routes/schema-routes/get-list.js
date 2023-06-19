@@ -31,7 +31,7 @@ module.exports = class GetList extends Route {
 		Logging.logSilly(`Created route: ${this.name} for ${schemaCollection}`);
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`GetList Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 	}
 
