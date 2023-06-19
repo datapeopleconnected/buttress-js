@@ -1,5 +1,6 @@
 const AccessControlHelpers = require('./helpers');
 
+
 /**
  * @class PolicyMatch
  */
@@ -22,6 +23,11 @@ class PolicyMatch {
 		let match = false;
 		const selection = p.selection;
 
+		if (token.type === 'dataSharing') {
+			const eq = (part, value) => part && part['@eq'] && part['@eq'].toString() === value.toString();
+			return eq(selection['#tokenType'], 'DATA_SHARING') && eq(selection['_id'], token._id);
+		}
+
 		if (!token || !token.policyProperties) return;
 
 		const policyProperties = token.policyProperties;
@@ -39,7 +45,7 @@ class PolicyMatch {
 			return arr;
 		}, []);
 
-		return (matches.length > 0)? matches.every((v) => v) : match;
+		return (matches.length > 0) ? matches.every((v) => v) : match;
 	}
 }
 module.exports = new PolicyMatch();

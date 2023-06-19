@@ -17,11 +17,14 @@
  */
 
 const Errors = require('./helpers/errors');
+const DataSharingHelpers = require('./helpers/data-sharing');
 
 const stream = require('stream');
 const Transform = stream.Transform;
 
 const Datastore = require('./datastore');
+
+module.exports.DataSharing = DataSharingHelpers;
 
 module.exports.Errors = Errors;
 
@@ -88,7 +91,7 @@ class JSONStringifyStream extends Transform {
 	}
 
 	_transform(chunk, encoding, cb) {
-		const nonReplacerKeys = [
+		const nonReplacerKeys = [ // TODO: This needs to be reviewed
 			'_id', '_app', '__v', '_user', '_token',
 		];
 

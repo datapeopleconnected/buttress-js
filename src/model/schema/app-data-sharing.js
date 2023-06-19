@@ -18,6 +18,7 @@
 
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
+const Logging = require('../../logging');
 const Model = require('..');
 
 const SchemaModel = require('../schemaModel');
@@ -80,20 +81,6 @@ class AppDataSharingSchemaModel extends SchemaModel {
 						__allowUpdate: true,
 					},
 				},
-				dataSharing: {
-					localApp: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-					remoteApp: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-				},
 				_appId: {
 					__type: 'id',
 					__required: false,
@@ -114,7 +101,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 	 */
 	async add(body) {
 		const appDataSharingBody = {
-			id: (body.id) ? body.id : this.createId(),
+			id: (body.id) ? this.createId(body.id) : this.createId(),
 			name: body.name,
 
 			active: false,
@@ -125,32 +112,49 @@ class AppDataSharingSchemaModel extends SchemaModel {
 				token: body.remoteApp.token,
 			},
 
-			dataSharing: {
-				localApp: null,
-				remoteApp: null,
-			},
+			policy: (body.policy) ? body.policy : [],
 
-			_appId: null,
+			_appId: this.createId(body._appId),
 			_tokenId: null,
 		};
 
 		const rxsToken = await Model.Token.add({
-			policyProperties: body.auth.policyProperties,
 			type: Model.Token.Constants.Type.DATA_SHARING,
-			permissions: [{route: '*', permission: '*'}],
 		}, {
-			_appId: this.createId(body._appId),
-			_appDataSharingId: this.createId(appDataSharingBody.id),
+			_appId: appDataSharingBody._appId,
+			_appDataSharingId: appDataSharingBody.id,
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 
+		await this.__createDataSharingPolicy(appDataSharingBody, token._id);
+
+		Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
+		this._nrp.emit('app-policy:bust-cache', {
+			appId: appDataSharingBody._appId,
+		});
+
 		const rxsDataShare = await super.add(appDataSharingBody, {
-			_appId: this.createId(body._appId),
+			_appId: appDataSharingBody._appId,
 			_tokenId: token._id,
 		});
 		const dataSharing = await Helpers.streamFirst(rxsDataShare);
 
-		return {dataSharing: dataSharing, token: token};
+		return {dataSharing, token};
+	}
+
+	async __createDataSharingPolicy(body, tokenId) {
+		return await Model.Policy.add({
+			name: `Data Sharing Policy - ${body.name}`,
+			selection: {
+				'#tokenType': {
+					'@eq': 'DATA_SHARING',
+				},
+				'_id': {
+					'@eq': tokenId,
+				},
+			},
+			config: body.policy,
+		}, body._appId);
 	}
 
 	/**
@@ -190,18 +194,18 @@ class AppDataSharingSchemaModel extends SchemaModel {
 
 	/**
 	 * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
-	 * @param {String} remoteAppToken - token for remote app
+	 * @param {String} newToken - The new token which will be used to talk to the remote app
 	 * @return {Promise} - resolves when save operation is completed
 	 */
-	activate(appDataSharingId, remoteAppToken = null) {
+	activate(appDataSharingId, newToken = null) {
 		const update = {
 			$set: {
 				active: true,
 			},
 		};
 
-		if (remoteAppToken) {
-			update.$set['remoteApp.token'] = remoteAppToken;
+		if (newToken) {
+			update.$set['remoteApp.token'] = newToken;
 		}
 
 		this._nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});

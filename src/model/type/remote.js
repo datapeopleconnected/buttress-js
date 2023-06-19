@@ -38,6 +38,7 @@ class SchemaModelRemote extends SchemaModel {
 			await this.local.adapter.updateSchema(this.schemaData);
 		}
 		if (remoteDatastore) {
+			// TODO: The remote might be shared
 			this.remote.adapter = remoteDatastore.adapter.cloneAdapterConnection();
 			await this.remote.adapter.connect();
 			await this.remote.adapter.setCollection(`${this.schemaData.name}`);

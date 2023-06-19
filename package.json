@@ -7,12 +7,14 @@
   "private": true,
   "engines": {
     "node": "^14.x.x",
-    "npm": "^8.x.x"
+    "npm": "^9.x.x"
   },
   "main": "deploy/app.js",
   "scripts": {
     "docs": "npx docsify serve ./docs",
-    "test": "npm run build && NODE_ENV=test mocha --recursive test/unit/**/* test/e2e/**/*",
+    "test": "npm run build && npm run test:unit && npm run test:e2e",
+    "test:unit": "NODE_ENV=test mocha --recursive --parallel test/unit/**/*",
+    "test:e2e": "NODE_ENV=test mocha --recursive --bail test/e2e/**/*",
     "build": "rimraf dist/* && gulp build",
     "watch": "npm run build && gulp watch",
     "lint": "eslint 'src/**/*.js'",
@@ -32,8 +34,8 @@
     "url": "https://github.com/wearelighten/buttress-js/issues"
   },
   "dependencies": {
-    "@buttress/api": "^3.0.0-36",
-    "@buttress/snippets": "1.0.0-14",
+    "@buttress/api": "~3.0.0-37",
+    "@buttress/snippets": "~1.0.0-14",
     "@hashgraph/sdk": "^2.19.2",
     "@socket.io/redis-adapter": "~7.2.0",
     "@socket.io/redis-emitter": "~4.1.1",

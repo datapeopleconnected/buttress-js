@@ -78,11 +78,12 @@ module.exports = class Buttress extends AbstractAdapter {
 	async connect() {
 		if (this.init) return this.connection;
 
+		const protocol = this.uri.protocol === 'butts:' ? 'https' : 'http';
+
 		await this.connection.init({
-			buttressUrl: `https://${this.uri.host}`,
+			buttressUrl: `${protocol}://${this.uri.host}`,
 			appToken: this.uri.searchParams.get('token'),
 			apiPath: this.uri.pathname,
-			allowUnauthorized: true, // WUT!?
 		});
 		Logging.logDebug(`connected to: ${this.uri.host}${this.uri.pathname}`);
 
@@ -94,6 +95,13 @@ module.exports = class Buttress extends AbstractAdapter {
 
 	cloneAdapterConnection() {
 		return new Buttress(this.uri, this.options, this.connection);
+	}
+
+	async close() {
+		// TODO: Handle closing down socket connections??
+		this.connection = null;
+		this.init = false;
+		this.initPendingResolve = [];
 	}
 
 	async setCollection(collectionName) {
@@ -112,6 +120,11 @@ module.exports = class Buttress extends AbstractAdapter {
 				only: only.join(','),
 			},
 		});
+	}
+
+	async activateDataSharing(registrationToken, newToken) {
+		await this.resolveAfterInit();
+		return await this.connection.AppDataSharing.activate(registrationToken, newToken);
 	}
 
 	get ID() {

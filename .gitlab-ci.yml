@@ -11,13 +11,13 @@ cache:
     - public
 
 before_script:
+  - npm install npm@latest -g
   - npm config set @buttress:registry https://git.wearelighten.co.uk/api/v4/projects/318/packages/npm/
   - npm config set -- '//git.wearelighten.co.uk/api/v4/projects/318/packages/npm/:_authToken' "$CI_BUTTRESS_REG_TOKEN"
   - npm ci --include=dev --cache .npm --prefer-offline
 
 stages:          # List of stages for jobs, and their order of execution
   - test
-  - deploy
 
 test-job:   # This job runs in the test stage.
   stage: test    # It only starts when the job in the build stage completes successfully.

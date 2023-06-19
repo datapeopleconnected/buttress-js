@@ -24,7 +24,6 @@ class AccessControl {
 	constructor() {
 		this._schemas = {};
 		this._policies = {};
-		this._schemaNames = {};
 		this._queuedLimitedPolicy = [];
 
 		this._oneWeekMilliseconds = Sugar.Number.day(7);
@@ -36,13 +35,12 @@ class AccessControl {
 	async init(nrp) {
 		this._nrp = nrp;
 
-		this.handlePolicyCaching();
+		this.handleCacheListeners();
 	}
 
-	handlePolicyCaching() {
-		this._nrp.on('app-policy:bust-cache', async (data) => {
-			this._policies[data.appId] = await this.__loadAppPolicies(data.appId);
-		});
+	handleCacheListeners() {
+		this._nrp.on('app-policy:bust-cache', async (data) => await this.__cacheAppPolicies(data.appId));
+		this._nrp.on('app-schema:updated', async (data) => await this.__cacheAppSchema(data.appId));
 	}
 
 	/**
@@ -96,6 +94,8 @@ class AccessControl {
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
+		if (this._coreSchema.length < 1) await this.__cacheCoreSchema();
+
 		if (user && this._coreSchemaNames.some((n) => n === schemaName)) {
 			const userAppToken = await Model.Token.findOne({
 				_appId: {
@@ -110,26 +110,12 @@ class AccessControl {
 			}
 		}
 
-		if (this._coreSchema.length < 1) {
-			this._coreSchema = Model._getModels().reduce((arr, name) => {
-				name = Sugar.String.camelize(name);
-				arr.push(Model[name].schemaData);
-				return arr;
-			}, []);
-			this._coreSchemaNames = this._coreSchema.map((c) => Sugar.String.singularize(c.name));
-		}
+		if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
+		if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
 
-		if (!this._schemas[appId]) {
-			const appSchema = Schema.decode(req.authApp.__schema).filter((s) => s.type.indexOf('collection') === 0);
-			this._schemas[appId] = appSchema.concat(this._coreSchema);
-			this._schemaNames[appId] = this._schemas[appId].map((s) => s.name);
-		}
+		const tokenPolicies = this.__getTokenPolicies(token, appId);
+		Logging.logSilly(`Got ${tokenPolicies.length} Matched policies for token ${token.type}:${token._id}`, req.id);
 
-		if (!this._policies[appId]) {
-			this._policies[appId] = await this.__loadAppPolicies(appId);
-		}
-
-		const tokenPolicies = await this.__getTokenPolicies(token, appId);
 		const policyOutcome = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
 		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
 			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -144,7 +130,7 @@ class AccessControl {
 				appId: appId,
 				apiPath: req.authApp.apiPath,
 				userId: user._id,
-				schemaNames: this._schemaNames[appId],
+				schemaNames: [...this._coreSchema, ...this._schemas[appId]].map((s) => s.name),
 				schemaName: schemaName,
 				path: requestedURL,
 			};
@@ -196,14 +182,9 @@ class AccessControl {
 
 	async getUserRoomStructures(user, appId, req = {}) {
 		Logging.logTimer(`getUserRoomStructures::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		if (!this._policies[appId]) {
-			this._policies[appId] = await this.__loadAppPolicies(appId);
-		}
 
-		if (!this._schemas[appId]) {
-			const app = await Model.App.findById(appId);
-			this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type.indexOf('collection') === 0);
-		}
+		if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
+		if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
 
 		if (!req.authApp) {
 			req.authApp = {
@@ -222,7 +203,7 @@ class AccessControl {
 				$eq: Model.User.createId(user._id),
 			},
 		});
-		const tokenPolicies = await this.__getTokenPolicies(token, appId);
+		const tokenPolicies = this.__getTokenPolicies(token, appId);
 		for await (const schema of this._schemas[appId]) {
 			req.body = {};
 			req.accessControlQuery = {};
@@ -429,7 +410,10 @@ class AccessControl {
 			}
 		}
 
-		const schema = this._schemas[appId].find((s) => s.name === schemaName || Sugar.String.singularize(s.name) === schemaName);
+		const a = [...this._coreSchema, ...this._schemas[appId]];
+		const schema = a
+			.find((s) => s.name === schemaName || Sugar.String.singularize(s.name) === schemaName);
+
 		if (!schema) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
@@ -468,7 +452,25 @@ class AccessControl {
 		return outcome;
 	}
 
-	async __loadAppPolicies(appId) {
+	async __cacheCoreSchema() {
+		this._coreSchema = Model._getModels().reduce((arr, name) => {
+			name = Sugar.String.camelize(name);
+			arr.push(Model[name].schemaData);
+			return arr;
+		}, []);
+		this._coreSchemaNames = this._coreSchema.map((c) => Sugar.String.singularize(c.name));
+
+		Logging.logSilly(`Refreshed core cache got ${this._coreSchema.length} schema`);
+	}
+
+	async __cacheAppSchema(appId) {
+		const app = await Model.App.findById(appId);
+		this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type.indexOf('collection') === 0);
+
+		Logging.logSilly(`Refreshed schema cache for app ${appId} got ${this._schemas[appId].length} schema`);
+	}
+
+	async __cacheAppPolicies(appId) {
 		const policies = [];
 		const rxsPolicies = await Model.Policy.find({
 			_appId: Model.Policy.createId(appId),
@@ -477,11 +479,13 @@ class AccessControl {
 			policies.push(policy);
 		}
 
-		return policies;
+		Logging.logSilly(`Refreshed policies for app ${appId} got ${policies.length} policies`);
+
+		this._policies[appId] = policies;
 	}
 
-	async __getTokenPolicies(token, appId) {
-		return await AccessControlPolicyMatch.__getTokenPolicies(this._policies[appId], token);
+	__getTokenPolicies(token, appId) {
+		return AccessControlPolicyMatch.__getTokenPolicies(this._policies[appId], token);
 	}
 
 	async _checkAccessControlDBBasedQueryCondition(req, params) {
