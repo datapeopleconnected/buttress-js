@@ -68,7 +68,7 @@ class Model {
 		}
 	}
 
-	// TODO: Might be wise to narrow it down to an app or schema thats changed.
+
 	async initSchema(appId = null) {
 		Logging.logSilly('Model:initSchema');
 		const rxsApps = await this.models.App.findAll();

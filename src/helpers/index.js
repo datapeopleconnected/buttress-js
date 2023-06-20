@@ -292,8 +292,6 @@ const __getFlattenedSchema = (schema) => {
 module.exports.getFlattenedSchema = __getFlattenedSchema;
 
 module.exports.streamFirst = (stream) => {
-	// TODO: Handle none stream being passed through
-
 	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
 		throw new Error(`Expected Stream but got '${stream}'`);
 	}

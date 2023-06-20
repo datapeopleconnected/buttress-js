@@ -70,9 +70,12 @@ export class SortedStreams extends Readable {
 
 	_setupListeners() {
 		this._sources.forEach((holder, idx) => {
-			console.log(holder.source._readableState);
 			holder.source.on('data', (chunk) => this._handleSourceChunk(chunk, idx));
 			holder.source.on('end', () => this._handleSourceEnd(holder));
+			
+			// Release the stream if it's paused.
+			console.log(holder.source);
+			if (holder.source.isPaused()) holder.source.resume();
 		});
 	}
 

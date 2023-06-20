@@ -49,6 +49,10 @@ class RemoteModel extends StandardModel {
 
 			// TODO: handle a model which is unable to connect.
 			model.adapter = remoteDatastore.adapter.cloneAdapterConnection();
+
+			// We want api call to return a stream directly without any tampering.
+			model.adapter.returnPausedStream = true;
+
 			await model.adapter.connect();
 			await model.adapter.setCollection(`${this.schemaData.name}`);
 

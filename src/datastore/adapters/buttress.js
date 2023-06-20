@@ -17,7 +17,7 @@
  */
 
 const Stream = require('stream');
-const JSONStream = require('JSONStream');
+const StreamArray = require('stream-json/streamers/StreamArray');
 const ObjectId = require('mongodb').ObjectId;
 const ButtressAPI = require('@buttress/api');
 
@@ -36,6 +36,14 @@ class AdapterId {
 	}
 }
 
+const StreamArrayValueTransform = new Stream.Transform({
+	objectMode: true,
+	transform(chunk, encoding, callback) {
+		this.push(chunk.value);
+		callback();
+	},
+});
+
 module.exports = class Buttress extends AbstractAdapter {
 	constructor(uri, options, connection = null) {
 		super(uri, options, connection);
@@ -44,6 +52,8 @@ module.exports = class Buttress extends AbstractAdapter {
 
 		this.init = false;
 		this.initPendingResolve = [];
+
+		this.returnPausedStream = this.options.returnPausedStream || false;
 	}
 
 	async connect() {
@@ -125,7 +135,9 @@ module.exports = class Buttress extends AbstractAdapter {
 
 	handleResult(result) {
 		if (result instanceof Stream && result.readable) {
-			return result.pipe(JSONStream.parse('.'));
+			if (this.returnPausedStream) return result.pipe(StreamArray.withParser()).pipe(StreamArrayValueTransform).pause();
+
+			return result.pipe(StreamArray.withParser()).pipe(StreamArrayValueTransform);
 		}
 
 		return result;
