@@ -13,7 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import {Readable} from 'stream';
+import {Readable, Transform, TransformOptions, TransformCallback} from 'stream';
 
 interface SourceHolder {
 	source: Readable;
@@ -52,8 +52,6 @@ export class SortedStreams extends Readable {
 		});
 		this._sourcesClosed = false;
 
-		console.log(`_sources: ${this._sources.length}`);
-
 		// A sorted queue of items which are ready to be sent down the wire.
 		this._queue = [];
 
@@ -74,7 +72,7 @@ export class SortedStreams extends Readable {
 			holder.source.on('end', () => this._handleSourceEnd(holder));
 			
 			// Release the stream if it's paused.
-			console.log(holder.source);
+			// console.log('isPaused', holder.source.isPaused(), holder.source);
 			if (holder.source.isPaused()) holder.source.resume();
 		});
 	}
@@ -116,8 +114,6 @@ export class SortedStreams extends Readable {
 		// const pos = (this._lastChunkSent === null) ? 0 : this._compareFn(holder.chunk, this._lastChunkSent);
 		// console.log(pos, holder.chunk.name || null, this._lastChunkSent || null);
 
-		console.log('push', holder.chunk);
-
 		// Try to send it down the wire, if we can't, pause the stream until next read.
 		if (!this.push(holder.chunk)) {
 			this._pauseUntilRead = true;
@@ -136,14 +132,12 @@ export class SortedStreams extends Readable {
 
 	// Source event handlers
 	_handleSourceChunk(chunk: any, sourceIdx: number) {
-		console.log('_handleSourceChunk', chunk);
 		this._enqueue({chunk, sourceIdx});
 		this._sources[sourceIdx].queued++;
 
 		this._tryToSendIt();
 	}
 	_handleSourceEnd(holder: SourceHolder) {
-		console.log('_handleSourceEnd');
 		holder.closed = true;
 		this._sourcesClosed = this._sources.every((holder) => holder.closed);
 
@@ -178,3 +172,29 @@ export class SortedStreams extends Readable {
 		}
 	}
 }
+
+export const parseJsonArrayStream = () => new Transform({
+	objectMode: true,
+	transform(chunk, encoding, callback) {
+		// Convert the chunk to a string and split it by newline characters
+		const lines = chunk.toString().split('\n');
+
+		// Parse each line as JSON and emit the parsed object
+		for (const line of lines) {
+			let trimmedLine = line.trim();
+			if (trimmedLine.startsWith('[')) trimmedLine = trimmedLine.slice(1);
+			if (trimmedLine.endsWith(']')) trimmedLine = trimmedLine.slice(0, -1);
+			if (trimmedLine !== '') {
+				// TODO: replace JSON.parse with a tokenizer
+				try {
+					const obj = JSON.parse(trimmedLine);
+					this.push(obj);
+				} catch (err) {
+					console.error(err);
+				}
+			}
+		}
+
+		callback();
+	}
+});

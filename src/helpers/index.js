@@ -414,3 +414,18 @@ module.exports.updateCoreSchemaObject = (update, extendedPathContext) => {
 
 	return update;
 };
+
+module.exports.compareByProps = (compareProperties, a, b) => {
+	for (const key of compareProperties.keys()) {
+		const sortOrder = compareProperties.get(key);
+
+		// TODO: path resolution.
+		const valueA = (a && a[key]) ? a[key] : null;
+		const valueB = (b && b[key]) ? b[key] : null;
+
+		if (valueA < valueB) return -1 * sortOrder;
+		if (valueA > valueB) return 1 * sortOrder;
+	}
+
+	return 0;
+};

@@ -33,8 +33,6 @@ class RemoteModel extends StandardModel {
 	}
 
 	async initAdapter(localDataStore, remoteDatastores) {
-		console.log('RemoteModel', 'initAdapter', this.schemaData.name, remoteDatastores.length);
-
 		if (localDataStore) {
 			this.localModel = new StandardModel(this.schemaData, this.app, this.__nrp);
 
@@ -171,22 +169,18 @@ class RemoteModel extends StandardModel {
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {Promise} - resolves to an array of docs
 	 */
-	async find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+	async find(query, excludes = {}, limit = 0, skip = 0, sort = {}, project = null) {
+		const sortMap = new Map(Object.entries(sort));
+		if (sortMap.size < 1) sortMap.set('id', 1);
+
 		// Make a call out to each of the remotes, and merge the streams into on single stream.
 		const sources = [];
-
-		console.log(`REMOTE MODELS: ${this.remoteModels.length}`);
 
 		for await (const remote of this.remoteModels) {
 			sources.push(await remote.find(query, excludes, limit, skip, sort, project));
 		}
 
-		console.log(`SOURCES: ${sources.length}`);
-
-		// TODO: investigate why only one stream is returning. Looks like we may have
-		// missed the bus.
-
-		return new Helpers.Stream.SortedStreams(sources, (a, b) => a - b, limit);
+		return new Helpers.Stream.SortedStreams(sources, (a, b) => Helpers.compareByProps(sortMap, a, b), limit);
 	}
 
 	/**
