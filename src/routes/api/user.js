@@ -77,6 +77,10 @@ class GetUser extends Route {
 					'auth.email': {
 						$eq: parameter,
 					},
+				}, {
+					'auth.username': {
+						$eq: parameter,
+					},
 				}],
 			});
 
@@ -186,10 +190,10 @@ class GetUserByToken extends Route {
 			throw new Helpers.Errors.RequestError(400, `invalid_token`);
 		}
 
-		const user = await Model.User.findById(userToken._user);
+		const user = await Model.User.findById(userToken._userId);
 		if (!user) {
 			this.log('ERROR: Can not find a user with the provided token', Route.LogLevel.ERR);
-			throw new Helpers.Errors.RequestError(404, `user_not_find`);
+			throw new Helpers.Errors.RequestError(404, `user_not_found`);
 		}
 
 		return {
