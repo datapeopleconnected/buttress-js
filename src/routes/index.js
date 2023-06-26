@@ -676,7 +676,7 @@ class Routes {
 				});
 			}
 
-			if (result.lambdaOutput && result.lambdaOutput.res.redirect) {
+			if (result.lambdaOutput && result.lambdaOutput.res && result.lambdaOutput.res.redirect) {
 				const url = result.lambdaOutput.res.url;
 				const queryObj = result.lambdaOutput.res.query;
 				let query = '';
