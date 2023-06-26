@@ -30,6 +30,12 @@ class AccessControl {
 
 		this._coreSchema = [];
 		this._coreSchemaNames = [];
+
+		this._queryAccess = [
+			'%FULL_ACCESS%',
+			'%APP_SCHEMA%',
+			'%CORE_SCHEMA%',
+		];
 	}
 
 	async init(nrp) {
@@ -360,7 +366,7 @@ class AccessControl {
 				if (condition) {
 					obj[policy.name].conditions.push(condition);
 				}
-				if (query && query.access && query.access === '%FULL_ACCESS%') {
+				if (query && query.access && this._queryAccess.includes(query.access)) {
 					query = {};
 				}
 				if (query) {
@@ -521,7 +527,7 @@ class AccessControl {
 				});
 
 				this._nrp.emit('worker:socket:updateUserSocketRooms', {
-					userId: Model.User.create(userToken._user),
+					userId: Model.User.create(userToken._userId),
 					appId,
 				});
 
