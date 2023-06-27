@@ -62,9 +62,13 @@ class BootstrapRest extends EventEmitter {
 
 		this._restServer = null;
 		this._nrp = null;
+
+		this._shutdown = false;
 	}
 
 	async init() {
+		this._shutdown = false;
+
 		Logging.log(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
@@ -96,18 +100,19 @@ class BootstrapRest extends EventEmitter {
 	async clean() {
 		Logging.logDebug('Shutting down all connections');
 		Logging.logSilly('BootstrapRest:clean');
-		// Should close down all connections
+
+		this._shutdown = true;
+
 		// Kill worker processes
 		for (let x = 0; x < this.workers.length; x++) {
 			Logging.logSilly(`Killing worker ${x}`);
 			this.workers[x].kill();
 		}
 
-		// Destroy all routes
 		// this.routes.clean();
 
 		// Destory all models
-		// Model.clean();
+		await Model.clean();
 
 		if (this._restServer) {
 			Logging.logSilly('Closing express server');
@@ -122,7 +127,7 @@ class BootstrapRest extends EventEmitter {
 
 		// Close Datastore connections
 		Logging.logSilly('Closing down all datastore connections');
-		Datastore.clean();
+		await Datastore.clean();
 	}
 
 	async __initMaster() {
@@ -236,43 +241,49 @@ class BootstrapRest extends EventEmitter {
 
 	async __systemInstall() {
 		Logging.log('Checking for existing apps.');
-
 		const pathName = path.join(Config.paths.appData, 'super.json');
 
-		const appCount = await Model.App.count();
+		let superApp = null;
 
-		if (appCount > 0) {
-			Logging.log('Existing apps found - Skipping install.');
+		try {
+			const appCount = await Model.App.count();
+			if (appCount > 0) {
+				Logging.log('Existing apps found - Skipping install.');
 
-			if (fs.existsSync(pathName)) {
-				Logging.logWarn(`--------------------------------------------------------`);
-				Logging.logWarn(' !!WARNING!!');
-				Logging.logWarn(' Super token file still exists on the file system.');
-				Logging.logWarn(' Please capture this token and remove delete the file:');
-				Logging.logWarn(` rm ${pathName}`);
-				Logging.logWarn(`--------------------------------------------------------`);
+				if (fs.existsSync(pathName)) {
+					Logging.logWarn(`--------------------------------------------------------`);
+					Logging.logWarn(' !!WARNING!!');
+					Logging.logWarn(' Super token file still exists on the file system.');
+					Logging.logWarn(' Please capture this token and remove delete the file:');
+					Logging.logWarn(` rm ${pathName}`);
+					Logging.logWarn(`--------------------------------------------------------`);
+				}
+
+				return;
 			}
 
-			return;
+			superApp = await Model.App.add({
+				name: `${Config.app.title} TEST`,
+				type: Model.Token.Constants.Type.SYSTEM,
+				permissions: [{route: '*', permission: '*'}],
+				apiPath: 'bjs',
+				domain: '',
+			});
+		} catch (err) {
+			Logging.logError(err);
+			Logging.logError('Failed to create super app.');
+			throw err;
 		}
 
-		const res = await Model.App.add({
-			name: `${Config.app.title} TEST`,
-			type: Model.Token.Constants.Type.SYSTEM,
-			permissions: [{route: '*', permission: '*'}],
-			apiPath: 'bjs',
-			domain: '',
-		});
-
 		await new Promise((resolve, reject) => {
-			const app = Object.assign(res.app, {token: res.token.value});
+			const app = Object.assign(superApp.app, {token: superApp.token.value});
 
 			if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, {recursive: true});
 
 			fs.writeFile(pathName, JSON.stringify(app), (err) => {
 				if (err) return reject(err);
 				Logging.log(`--------------------------------------------------------`);
-				Logging.log(` SUPER APP CREATED: ${res.app._id}`);
+				Logging.log(` SUPER APP CREATED: ${superApp.app._id}`);
 				Logging.log(``);
 				Logging.log(` Token can be found at the following path:`);
 				Logging.log(` ${pathName}`);

@@ -23,8 +23,7 @@ const Config = require('node-env-obj')();
 
 const BootstrapRest = require('../../../dist/bootstrap-rest');
 
-const REST_PROCESS = new BootstrapRest();
-
+let REST_PROCESS = null;
 const ENDPOINT = `https://test.local.buttressjs.com`;
 
 const testEnv = {
@@ -73,48 +72,50 @@ const createCar = async (app, name) => {
 	testEnv.cars.push(car);
 };
 
-before(async function() {
-	this.timeout(20000);
-
-	await REST_PROCESS.init();
-
-	// Creating test data.
-	const carsSchema = {
-		name: 'car',
-		type: 'collection',
-		properties: {
-			name: {
-				__type: 'string',
-				__default: null,
-				__required: true,
-				__allowUpdate: true,
-			},
-		},
-	};
-
-	testEnv.apps.app1 = await createApp('Test App 1', 'test-app-1');
-	testEnv.apps.app1.schema = await updateSchema([carsSchema], testEnv.apps.app1.token);
-
-	await createCar(testEnv.apps.app1, 'A red car');
-
-	// Test app 2 doesn't need a schema from the start, we'll add one later.
-	testEnv.apps.app2 = await createApp('Test App 2', 'test-app-2');
-
-	// Create a third app which will be used as a cars sources too.
-	testEnv.apps.app3 = await createApp('Test App 3', 'test-app-3');
-	testEnv.apps.app3.schema = await updateSchema([carsSchema], testEnv.apps.app3.token);
-
-	await createCar(testEnv.apps.app3, 'A green car');
-});
-
-after(async () => {
-	// Shutdown
-	await REST_PROCESS.clean();
-});
-
 // This suite of tests will run against the REST API and will
 // test the cababiliy of data sharing between different apps.
 describe('Data Sharing', async () => {
+	before(async function() {
+		// this.timeout(20000);
+
+		REST_PROCESS = new BootstrapRest();
+
+		await REST_PROCESS.init();
+
+		// Creating test data.
+		const carsSchema = {
+			name: 'car',
+			type: 'collection',
+			properties: {
+				name: {
+					__type: 'string',
+					__default: null,
+					__required: true,
+					__allowUpdate: true,
+				},
+			},
+		};
+
+		testEnv.apps.app1 = await createApp('Test App 1', 'test-app-1');
+		testEnv.apps.app1.schema = await updateSchema([carsSchema], testEnv.apps.app1.token);
+
+		await createCar(testEnv.apps.app1, 'A red car');
+
+		// Test app 2 doesn't need a schema from the start, we'll add one later.
+		testEnv.apps.app2 = await createApp('Test App 2', 'test-app-2');
+
+		// Create a third app which will be used as a cars sources too.
+		testEnv.apps.app3 = await createApp('Test App 3', 'test-app-3');
+		testEnv.apps.app3.schema = await updateSchema([carsSchema], testEnv.apps.app3.token);
+
+		await createCar(testEnv.apps.app3, 'A green car');
+	});
+
+	after(async function() {
+		// Shutdown
+		await REST_PROCESS.clean();
+	});
+
 	describe('Creating a agreement', async () => {
 		it('Should register a data sharing agreement between app1 and app2', async () => {
 			const name = `app1-to-app2`;

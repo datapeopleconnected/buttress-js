@@ -70,10 +70,15 @@ class BootstrapSocket {
 
 		this.io = null;
 
+		this._mainServer = null;
+
 		this.emitter = null;
 
 		this._nrp = null;
 		this._processResQueue = {};
+
+		// This client is used by the emitter
+		this._redisClient = null;
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
@@ -103,9 +108,13 @@ class BootstrapSocket {
 			'$or',
 			'$and',
 		];
+
+		this._shutdown = false;
 	}
 
 	async init() {
+		this._shutdown = false;
+
 		await this.primaryDatastore.connect();
 
 		this._nrp = new NRP(Config.redis);
@@ -129,22 +138,52 @@ class BootstrapSocket {
 
 	async clean() {
 		Logging.logSilly('BootstrapSocket:clean');
-		// Should close down all connections
+
+		this._shutdown = true;
+
 		// Kill worker processes
 		for (let x = 0; this.workers.length; x++) {
 			Logging.logSilly(`Killing worker ${x}`);
 			this.workers[x].kill();
 		}
 
-		// Close out the NRP connection
+		// Disconnect any redis clients
 		if (this._nrp) {
 			Logging.logSilly('Closing node redis pubsub connection');
 			this._nrp.quit();
 		}
+		if (this._redisClient) {
+			Logging.logSilly('Closing redis client');
+			this._redisClient.quit();
+			this._emitter = null;
+		}
+
+		// Close down all socket.io connections / handlers
+		if (this.io) {
+			Logging.logSilly('Closing socket.io');
+			this.io.close();
+			this.io = null;
+		}
+		if (this._mainServer) {
+			Logging.logSilly('Closing main server');
+			this._mainServer.close();
+			this._mainServer = null;
+		}
+		for await (const sockets of Object.values(this._dataShareSockets)) {
+			for await (const socket of sockets) {
+				Logging.logSilly('Closing data share socket');
+				socket.close();
+			}
+		}
+
+		// Destory all models
+		await Model.clean();
 
 		// Close Datastore connections
 		Logging.logSilly('Closing down all datastore connections');
-		Datastore.clean();
+		await Datastore.clean();
+
+		console.log('Shitdown complete');
 	}
 
 	/**
@@ -162,12 +201,9 @@ class BootstrapSocket {
 	}
 
 	async __initMaster() {
-		const redisClient = createClient(Config.redis);
+		this._redisClient = createClient(Config.redis);
 
-		// TODO: Handle failed connection
-		// await redisClient.connect();
-
-		this.emitter = new Emitter(redisClient);
+		this.emitter = new Emitter(this._redisClient);
 
 		if (this.isPrimary) await this.__registerNRPPrimaryListeners();
 
@@ -212,9 +248,12 @@ class BootstrapSocket {
 		await this.__registerNRPMasterListeners();
 		await this.__registerNRPProcessListeners();
 
-		this.__spawnWorkers({
-			apps: this.__apps,
-		});
+		if (this.workerProcesses === 0) {
+			Logging.logWarn(`Running in SINGLE Instance mode, BUTTRESS_APP_WORKERS has been set to 0`);
+			await this.__initWorker();
+		} else {
+			await this.__spawnWorkers();
+		}
 	}
 
 	async __initWorker() {
@@ -233,8 +272,8 @@ class BootstrapSocket {
 		});
 
 		// As of v7, the library will no longer create Redis clients on behalf of the user.
-		const redisClient = createClient(Config.redis);
-		this.io.adapter(redisAdapter(redisClient, redisClient.duplicate()));
+		this._redisClient = createClient(Config.redis);
+		this.io.adapter(redisAdapter(this._redisClient, this._redisClient.duplicate()));
 
 		const stats = this.io.of(`/stats`);
 		stats.on('connect', (socket) => {
@@ -409,7 +448,7 @@ class BootstrapSocket {
 		});
 
 		Logging.logSilly(`Worker ready`);
-		process.send('workerInitiated');
+		if (process.send) process.send('workerInitiated');
 	}
 
 	async __registerNRPPrimaryListeners() {
@@ -872,7 +911,9 @@ class BootstrapSocket {
 			});
 		}
 
-		net.createServer({pauseOnConnect: true}, (connection) => {
+		// Fielding request through to the worker processes. Do we even need this? It feels like
+		// express should be handling this like we do on the rest.
+		this._mainServer = net.createServer({pauseOnConnect: true}, (connection) => {
 			const worker = this.workers[this.__indexFromIP(connection.remoteAddress, this.workerProcesses)];
 			worker.send('buttress:connection', connection);
 		}).listen(Config.listenPorts.sock);

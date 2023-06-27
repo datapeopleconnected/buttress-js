@@ -41,27 +41,31 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	async connect() {
-		if (this.connection) return this.connection;
+		if (this.__connection) return this.__connection;
 
 		// Remove the pathname as we'll selected the db using the client method
 		const connectionString = this.uri.href.replace(this.uri.pathname, '');
 
 		this._client = await MongoClient.connect(connectionString, this.options);
 
-		return this.connection = this._client.db(this.uri.pathname.replace(/\//g, ''));
+		this.__connection = this._client.db(this.uri.pathname.replace(/\//g, ''));
+
+		return this.__connection;
 	}
 
 	async close() {
 		if (!this._client) return;
-		this._client.close();
+		await this._client.close();
+		this.__connection = null;
+		this._client = null;
 	}
 
 	cloneAdapterConnection() {
-		return new MongodbAdapter(this.uri, this.options, this.connection);
+		return new MongodbAdapter(this.uri, this.options, this.__connection);
 	}
 
 	async setCollection(collectionName) {
-		this.collection = this.connection.collection(collectionName);
+		this.collection = this.__connection.collection(collectionName);
 	}
 
 	get ID() {

@@ -77,7 +77,7 @@ module.exports = {
 	},
 	clean: async () => {
 		for await (const key of Object.keys(datastores)) {
-			if (datastores[key].adapter.close) datastores[key].adapter.close();
+			if (datastores[key].adapter.close) await datastores[key].adapter.close();
 			delete datastores[key];
 		}
 	},

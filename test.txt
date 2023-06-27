@@ -1,0 +1,61 @@
+
+> @buttress/buttress-js@3.0.0-1 test:e2e
+> NODE_ENV=test node test/before-e2e.js && NODE_ENV=test mocha --recursive --bail test/e2e/**/*
+
+node-env-obj: Loaded /home/tom/Projects/Lighten/buttress-js/.test.env into environment variables.
+🤝 Connected to the datastore: mongodb://bjs-main:langdale@127.0.0.1
+📖 Found 7 collections.
+✔️ Dropping all non-core collections
+✔️ Cleaning up apps collection
+✔️ Cleaning up tokens collection
+Datastore clean up complete! 🥳🥳
+
+node-env-obj: Loaded /home/tom/Projects/Lighten/buttress-js/.test.env into environment variables.
+
+
+  Data Sharing
+BEFORE2 START
+BEFORE2 END
+    Creating a agreement
+      ✔ Should register a data sharing agreement between app1 and app2
+      ✔ Should register a data sharing agreement between app2 and app1 & activate it (41ms)
+      ✔ Should update app2 schema to reference cars collection from app1 (510ms)
+      ✔ Should be able to GET cars from App2 which will use data sharing to retrive data from App1
+    Handling mutiple agreement sources
+      ✔ Should register a data sharing agreement between app3 and app2
+      ✔ Should register a data sharing agreement between app2 and app1 & activate it
+      ✔ Should update app2 schema to reference cars collection from app1 & app2 (510ms)
+      ✔ Should be able to GET cars from App2 which will use data sharing to retrive data from App1 & App3 combined (56ms)
+AFFTER2 START
+FUCK
+AFFTER2 END
+
+  Requests
+BEFORE START
+    1) "before all" hook in "Requests"
+AFTER START
+FUCK
+AFTER END
+
+
+  8 passing (2s)
+  1 failing
+
+  1) Requests
+       "before all" hook in "Requests":
+     MongoNotConnectedError: Client must be connected before running operations
+      at /home/tom/Projects/Lighten/buttress-js/node_modules/mongodb/lib/operations/execute_operation.js:20:33
+      at maybePromise (node_modules/mongodb/lib/utils.js:357:5)
+      at executeOperation (node_modules/mongodb/lib/operations/execute_operation.js:16:37)
+      at Collection.countDocuments (node_modules/mongodb/lib/collection.js:318:57)
+      at MongodbAdapter.count (dist/datastore/adapters/mongodb.js:425:26)
+      at AppSchemaModel.count (dist/model/type/standard.js:508:23)
+      at BootstrapRest.__systemInstall (dist/bootstrap-rest.js:265:36)
+      at BootstrapRest.__initMaster (dist/bootstrap-rest.js:171:15)
+      at runMicrotasks (<anonymous>)
+      at processTicksAndRejections (internal/process/task_queues.js:95:5)
+      at async BootstrapRest.init (dist/bootstrap-rest.js:80:4)
+      at async Context.<anonymous> (test/e2e/sock/requests.js:42:3)
+
+
+

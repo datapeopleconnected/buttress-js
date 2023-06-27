@@ -41,18 +41,18 @@ module.exports = class Buttress extends AbstractAdapter {
 	constructor(uri, options, connection = null) {
 		super(uri, options, connection);
 
-		this.connection = ButtressAPI.new();
+		this.__connection = ButtressAPI.new();
 
 		this.init = false;
 		this.initPendingResolve = [];
 	}
 
 	async connect() {
-		if (this.init) return this.connection;
+		if (this.init) return this.__connection;
 
 		const protocol = this.uri.protocol === 'butts:' ? 'https' : 'http';
 
-		await this.connection.init({
+		await this.__connection.init({
 			buttressUrl: `${protocol}://${this.uri.host}`,
 			appToken: this.uri.searchParams.get('token'),
 			apiPath: this.uri.pathname,
@@ -66,19 +66,19 @@ module.exports = class Buttress extends AbstractAdapter {
 	}
 
 	cloneAdapterConnection() {
-		return new Buttress(this.uri, this.options, this.connection);
+		return new Buttress(this.uri, this.options, this.__connection);
 	}
 
 	async close() {
 		// TODO: Handle closing down socket connections??
-		this.connection = null;
+		this.__connection = null;
 		this.init = false;
 		this.initPendingResolve = [];
 	}
 
 	async setCollection(collectionName) {
 		try {
-			this.collection = this.connection.getCollection(collectionName);
+			this.collection = this.__connection.getCollection(collectionName);
 		} catch (err) {
 			if (err instanceof ButtressAPI.Errors.SchemaNotFound) throw new Errors.SchemaNotFound(err.message);
 			else throw err;
@@ -87,7 +87,7 @@ module.exports = class Buttress extends AbstractAdapter {
 
 	async getSchema(only = []) {
 		await this.resolveAfterInit();
-		return await this.connection.App.getSchema({
+		return await this.__connection.App.getSchema({
 			params: {
 				only: only.join(','),
 			},
@@ -96,7 +96,7 @@ module.exports = class Buttress extends AbstractAdapter {
 
 	async activateDataSharing(registrationToken, newToken) {
 		await this.resolveAfterInit();
-		return await this.connection.AppDataSharing.activate(registrationToken, newToken);
+		return await this.__connection.AppDataSharing.activate(registrationToken, newToken);
 	}
 
 	get ID() {

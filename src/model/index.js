@@ -57,6 +57,17 @@ class Model {
 		this._nrp = nrp;
 	}
 
+	async clean() {
+		Logging.logSilly('Model:clean');
+		this.models = {};
+		this.Schema = {};
+		this.Constants = {};
+		this.app = false;
+		this.appMetadataChanged = false;
+
+		this.coreSchema = [];
+	}
+
 	async initCoreModels() {
 		Logging.logSilly('Model:initCoreModels');
 		// Core Models
