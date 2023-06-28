@@ -233,12 +233,13 @@ class UserSchemaModel extends SchemaModel {
 
 		user.tokens = [];
 
-		if (body.token && body.token.domains) {
+		const tokenBody = body.token;
+		if (tokenBody && tokenBody.domains && tokenBody.policyProperties) {
 			const userToken = {
 				type: Model.Token.Constants.Type.USER,
 				permissions: [{route: '*', permission: '*'}],
-				domains: body.token.domains,
-				policyProperties: body.policyProperties,
+				domains: tokenBody.domains,
+				policyProperties: tokenBody.policyProperties,
 			};
 
 			const rxsToken = await Model.Token.add(userToken, {
