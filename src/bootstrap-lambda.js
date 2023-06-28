@@ -15,12 +15,11 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const os = require('os');
-const cluster = require('cluster');
 const morgan = require('morgan');
-const NRP = require('node-redis-pubsub');
 
 const Config = require('node-env-obj')();
+
+const Bootstrap = require('./bootstrap');
 const Datastore = require('./datastore');
 const Logging = require('./helpers/logging');
 const Model = require('./model');
@@ -29,20 +28,13 @@ const LambdaManager = require('./lambda/lambda-manager');
 const LambdaRunner = require('./lambda/lambda-runner');
 
 morgan.token('id', (req) => req.id);
-class BootstrapLambda {
+class BootstrapLambda extends Bootstrap {
 	constructor() {
-		const ConfigWorkerCount = parseInt(Config.app.workers);
-		this.workerProcesses = (isNaN(ConfigWorkerCount)) ? os.cpus().length : ConfigWorkerCount;
-
-		this.workers = [];
+		super();
 
 		this.routes = null;
 
-		this.id = (cluster.isMaster) ? 'MASTER' : cluster.worker.id;
-
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
-
-		this._nrp = null;
 
 		this.__apiWorkers = 0;
 		this.__pathMutationWorkers = 0;
@@ -50,37 +42,21 @@ class BootstrapLambda {
 	}
 
 	async init() {
+		await super.init();
+
 		Logging.log(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
-		this._nrp = new NRP(Config.redis);
-
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
-		await Model.init(this._nrp);
+		await Model.init(this.__nrp);
 
-		if (cluster.isMaster) {
-			await this.__initMaster();
-		} else {
-			await this.__initWorker();
-		}
-
-		return cluster.isMaster;
+		return await this.__createCluster();
 	}
 
 	async clean() {
-		Logging.logSilly('BootstrapSocket:clean');
-		// Should close down all connections
-		// Kill worker processes
-		for (let x = 0; this.workers.length; x++) {
-			Logging.logSilly(`Killing worker ${x}`);
-			this.workers[x].kill();
-		}
+		await super.clean();
 
-		// Close out the NRP connection
-		if (this._nrp) {
-			Logging.logSilly('Closing node redis pubsub connection');
-			this._nrp.quit();
-		}
+		Logging.logSilly('BootstrapLambda:clean');
 
 		// Close Datastore connections
 		Logging.logSilly('Closing down all datastore connections');
@@ -95,9 +71,9 @@ class BootstrapLambda {
 			Logging.logVerbose(`Primary Main LAMB`);
 			await Model.initCoreModels();
 
-			this._nrp.on('worker-initiated', (id) => {
+			this.__nrp.on('worker-initiated', (id) => {
 				const type = this.__getLambdaWorkerType();
-				this._nrp.emit('worker-type', {id, type});
+				this.__nrp.emit('worker-type', {id, type});
 			});
 
 			new LambdaManager();
@@ -105,39 +81,22 @@ class BootstrapLambda {
 			Logging.logVerbose(`Secondary Main LAMB`);
 		}
 
-		if (this.workerProcesses === 0) {
-			Logging.logWarn(`Running in SINGLE Instance mode, BUTTRESS_APP_WORKERS has been set to 0`);
-			await this.__initWorker();
-		} else {
-			await this.__spawnWorkers();
-		}
+		await this.__spawnWorkers();
 	}
 
 	async __initWorker() {
 		await Model.initCoreModels();
 
 		const type = await new Promise((resolve) => {
-			this._nrp.on('worker-type', (data) => {
+			this.__nrp.on('worker-type', (data) => {
 				if (data.id !== this.id) return;
 				resolve(data.type);
 			}, () => {
-				this._nrp.emit('worker-initiated', this.id);
+				this.__nrp.emit('worker-initiated', this.id);
 			});
 		});
 
 		new LambdaRunner(type);
-	}
-
-	__spawnWorkers() {
-		Logging.logVerbose(`Spawning ${this.workerProcesses} LAMB Workers`);
-
-		const __spawn = (idx) => {
-			this.workers[idx] = cluster.fork();
-		};
-
-		for (let x = 0; x < this.workerProcesses; x++) {
-			__spawn(x);
-		}
 	}
 
 	__getLambdaWorkerType() {

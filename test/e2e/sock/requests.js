@@ -14,20 +14,16 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const fetch = require('cross-fetch');
-
+const { io } = require('socket.io-client');
 const {describe, it, before, after} = require('mocha');
-const assert = require('assert');
-
-const Config = require('node-env-obj')();
 
 const BootstrapRest = require('../../../dist/bootstrap-rest');
 const BootstrapSocket = require('../../../dist/bootstrap-socket');
 
+const ENDPOINT = `https://test.local.buttressjs.com`;
+
 let REST_PROCESS = null;
 let SOCK_PROCESS = null;
-
-const ENDPOINT = `https://test.local.buttressjs.com`;
 
 const testEnv = {
 
@@ -48,6 +44,25 @@ describe('Requests', async () => {
 	after(async function() {
 		await REST_PROCESS.clean();
 		await SOCK_PROCESS.clean();
+	});
+
+	describe('Connections', () => {
+		it('Should be able to connect to Buttress using socket.io', function(done) {
+			this.timeout(999999999);
+			// client-side
+			const socket = io(`ENDPOINT`);
+			console.log(socket.connected);
+
+			socket.on('connect', () => {
+				console.log('FOO');
+				console.log(socket.id); // x8WIv7-mJelg7on_ALbx
+				done();
+			});
+			socket.on('close', (reason) => {
+				console.log(reason);
+				// called when the underlying connection is closed
+			});
+		});
 	});
 
 	describe('Realtime data', async () => {

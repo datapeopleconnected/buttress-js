@@ -18,18 +18,16 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
-const EventEmitter = require('events');
 const cluster = require('cluster');
 const express = require('express');
 const cors = require('cors');
 const methodOverride = require('method-override');
 const bodyParser = require('body-parser');
 const morgan = require('morgan');
-const NRP = require('node-redis-pubsub');
 
 const Config = require('node-env-obj')();
 
+const Bootstrap = require('./bootstrap');
 const Model = require('./model');
 const Routes = require('./routes');
 const Logging = require('./helpers/logging');
@@ -45,44 +43,26 @@ const AccessControl = require('./access-control');
 morgan.token('id', (req) => req.id);
 
 Error.stackTraceLimit = Infinity;
-class BootstrapRest extends EventEmitter {
+class BootstrapRest extends Bootstrap {
 	constructor() {
 		super();
 
-		const ConfigWorkerCount = parseInt(Config.app.workers);
-		this.workerProcesses = (isNaN(ConfigWorkerCount)) ? os.cpus().length : ConfigWorkerCount;
-
-		this.workers = [];
-
 		this.routes = null;
-
-		this.id = (cluster.isMaster) ? 'MASTER' : cluster.worker.id;
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
 		this._restServer = null;
-		this._nrp = null;
-
-		this._shutdown = false;
 	}
 
 	async init() {
-		this._shutdown = false;
+		await super.init();
 
 		Logging.log(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
-		this._nrp = new NRP(Config.redis);
-
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
-		await Model.init(this._nrp);
-		await AccessControl.init(this._nrp);
-
-		if (cluster.isMaster) {
-			await this.__initMaster();
-		} else {
-			await this.__initWorker();
-		}
+		await Model.init(this.__nrp);
+		await AccessControl.init(this.__nrp);
 
 		await Plugins.initialise(
 			Plugins.APP_TYPE.REST,
@@ -90,24 +70,13 @@ class BootstrapRest extends EventEmitter {
 			(Config.rest.app === 'primary') ? Plugins.INFRASTRUCTURE_ROLE.PRIMARY : Plugins.INFRASTRUCTURE_ROLE.SECONDARY,
 		);
 
-		if (!cluster.isMaster) {
-			Plugins.initRoutes(this.routes);
-		}
-
-		return cluster.isMaster;
+		return await this.__createCluster();
 	}
 
 	async clean() {
+		await super.clean();
 		Logging.logDebug('Shutting down all connections');
 		Logging.logSilly('BootstrapRest:clean');
-
-		this._shutdown = true;
-
-		// Kill worker processes
-		for (let x = 0; x < this.workers.length; x++) {
-			Logging.logSilly(`Killing worker ${x}`);
-			this.workers[x].kill();
-		}
 
 		// this.routes.clean();
 
@@ -119,12 +88,6 @@ class BootstrapRest extends EventEmitter {
 			this._restServer.close((err) => (err) ? process.exit(1) : Logging.logSilly(`Express server closed`));
 		}
 
-		// Close out the NRP connection
-		if (this._nrp) {
-			Logging.logSilly('Closing node redis pubsub connection');
-			this._nrp.quit();
-		}
-
 		// Close Datastore connections
 		Logging.logSilly('Closing down all datastore connections');
 		await Datastore.clean();
@@ -133,14 +96,14 @@ class BootstrapRest extends EventEmitter {
 	async __initMaster() {
 		const isPrimary = Config.rest.app === 'primary';
 
-		this._nrp.on('app-schema:updated', (data) => {
+		this.__nrp.on('app-schema:updated', (data) => {
 			Logging.logDebug(`App Schema Updated: ${data.appId}`);
 			this.notifyWorkers({
 				type: 'app-schema:updated',
 				appId: data.appId,
 			});
 		});
-		this._nrp.on('app-routes:bust-cache', () => {
+		this.__nrp.on('app-routes:bust-cache', () => {
 			Logging.logDebug(`App Routes: Bust token cache`);
 			this.notifyWorkers({
 				type: 'app-routes:bust-cache',
@@ -156,15 +119,12 @@ class BootstrapRest extends EventEmitter {
 			Logging.logVerbose(`Secondary Master REST`);
 		}
 
-		if (this.workerProcesses === 0) {
-			Logging.logWarn(`Running in SINGLE Instance mode, BUTTRESS_APP_WORKERS has been set to 0`);
-			await this.__initWorker();
-		} else {
-			await this.__spawnWorkers();
-		}
+		await this.__spawnWorkers();
 	}
 
 	async __initWorker() {
+		Plugins.initRoutes(this.routes);
+
 		const app = express();
 		// app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 		app.enable('trust proxy', 1);
@@ -180,12 +140,6 @@ class BootstrapRest extends EventEmitter {
 
 		Plugins.on('request', (req, res) => app.handle(req, res));
 
-		process.on('unhandledRejection', (error) => {
-			Logging.logError(error);
-		});
-
-		process.on('message', (payload) => this.handleProcessMessage(payload));
-
 		await Model.initCoreModels();
 
 		const localSchema = this._getLocalSchemas();
@@ -193,7 +147,7 @@ class BootstrapRest extends EventEmitter {
 
 		this.routes = new Routes(app);
 
-		await this.routes.init(this._nrp);
+		await this.routes.init(this.__nrp);
 		await this.routes.initRoutes();
 
 		this._restServer = await app.listen(Config.listenPorts.rest);
@@ -202,17 +156,7 @@ class BootstrapRest extends EventEmitter {
 		await this.routes.initAppRoutes();
 	}
 
-	async notifyWorkers(payload) {
-		if (this.workerProcesses > 0) {
-			Logging.logDebug(`notifying ${this.workers.length} Workers`);
-			this.workers.forEach((w) => w.send(payload));
-		} else {
-			Logging.logSilly(`single instance mode notification`);
-			await this.handleProcessMessage(payload);
-		}
-	}
-
-	async handleProcessMessage(payload) {
+	async __handleMessageFromMain(payload) {
 		if (payload.type === 'app-schema:updated') {
 			if (!this.routes) return Logging.logDebug(`Skipping app schema update, router not created yet`);
 			Logging.logDebug(`App Schema Updated: ${payload.appId}`);
@@ -224,18 +168,6 @@ class BootstrapRest extends EventEmitter {
 			// TODO: Maybe do this better than
 			Logging.logDebug(`App Routes: cache bust`);
 			await this.routes.loadTokens();
-		}
-	}
-
-	__spawnWorkers() {
-		Logging.logVerbose(`Spawning ${this.workerProcesses} REST Workers`);
-
-		const __spawn = (idx) => {
-			this.workers[idx] = cluster.fork();
-		};
-
-		for (let x = 0; x < this.workerProcesses; x++) {
-			__spawn(x);
 		}
 	}
 
