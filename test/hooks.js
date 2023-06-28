@@ -42,13 +42,13 @@ exports.mochaHooks = {
 	beforeAll() {
 		// TODO: Clear out the db so we can start clean.
 		Logging.init('TEST');
-		// Logging.captureOutput(true);
+		Logging.captureOutput(true);
 	},
 	afterAll() {
 		// Logging.captureOutput(false);
 	},
 	beforeEach() {
-		// Logging.clean();
+		Logging.clean();
 	},
 	afterEach() {
 		if (this.currentTest.state !== 'passed') Logging.flush();

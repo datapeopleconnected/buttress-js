@@ -72,13 +72,15 @@ class BootstrapSocket {
 
 		this._mainServer = null;
 
+		this._redisClientEmitter = null;
 		this.emitter = null;
 
 		this._nrp = null;
 		this._processResQueue = {};
 
 		// This client is used by the emitter
-		this._redisClient = null;
+		this._redisClientIOPub = null;
+		this._redisClientIOSub = null;
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
@@ -145,34 +147,48 @@ class BootstrapSocket {
 		for (let x = 0; this.workers.length; x++) {
 			Logging.logSilly(`Killing worker ${x}`);
 			this.workers[x].kill();
+			this.workers[x] = null;
 		}
 
 		// Disconnect any redis clients
 		if (this._nrp) {
 			Logging.logSilly('Closing node redis pubsub connection');
-			this._nrp.quit();
+			await this._nrp.quit();
+			this._nrp = null;
 		}
-		if (this._redisClient) {
-			Logging.logSilly('Closing redis client');
-			this._redisClient.quit();
+		if (this._redisClientEmitter) {
+			Logging.logSilly('Closing redisClientEmitter');
+			await new Promise((resolve) => this._redisClientEmitter.quit(resolve));
+			this._redisClientEmitter = null;
 			this._emitter = null;
+		}
+		if (this._redisClientIOPub) {
+			Logging.logSilly('Closing redisClientIOPub');
+			await new Promise((resolve) => this._redisClientIOPub.quit(resolve));
+			this._redisClientIOPub = null;
+		}
+		if (this._redisClientIOSub) {
+			Logging.logSilly('Closing redisClientIOSub');
+			await new Promise((resolve) => this._redisClientIOSub.quit(resolve));
+			this._redisClientIOSub = null;
 		}
 
 		// Close down all socket.io connections / handlers
 		if (this.io) {
 			Logging.logSilly('Closing socket.io');
-			this.io.close();
+			await new Promise((resolve) => this.io.close(resolve));
 			this.io = null;
 		}
 		if (this._mainServer) {
 			Logging.logSilly('Closing main server');
-			this._mainServer.close();
+			this._mainServer.closeAllConnections();
+			await new Promise((resolve) => this._mainServer.close(resolve));
 			this._mainServer = null;
 		}
 		for await (const sockets of Object.values(this._dataShareSockets)) {
 			for await (const socket of sockets) {
 				Logging.logSilly('Closing data share socket');
-				socket.close();
+				socket.destroy();
 			}
 		}
 
@@ -182,8 +198,6 @@ class BootstrapSocket {
 		// Close Datastore connections
 		Logging.logSilly('Closing down all datastore connections');
 		await Datastore.clean();
-
-		console.log('Shitdown complete');
 	}
 
 	/**
@@ -201,9 +215,8 @@ class BootstrapSocket {
 	}
 
 	async __initMaster() {
-		this._redisClient = createClient(Config.redis);
-
-		this.emitter = new Emitter(this._redisClient);
+		this._redisClientEmitter = createClient(Config.redis);
+		this.emitter = new Emitter(this._redisClientEmitter);
 
 		if (this.isPrimary) await this.__registerNRPPrimaryListeners();
 
@@ -272,8 +285,9 @@ class BootstrapSocket {
 		});
 
 		// As of v7, the library will no longer create Redis clients on behalf of the user.
-		this._redisClient = createClient(Config.redis);
-		this.io.adapter(redisAdapter(this._redisClient, this._redisClient.duplicate()));
+		this._redisClientIOPub = createClient(Config.redis);
+		this._redisClientIOSub = this._redisClientIOPub.duplicate();
+		this.io.adapter(redisAdapter(this._redisClientIOPub, this._redisClientIOSub));
 
 		const stats = this.io.of(`/stats`);
 		stats.on('connect', (socket) => {
