@@ -153,10 +153,15 @@ describe('Realtime', async () => {
 
 	// This set of tests will test the functionality of tracking the state of a request.
 	describe('bjs-requests', async () => {
+		let requestId = null;
 		it('Should make a request to /cars, responce should contain a x-bjs-request-id header', async () => {
 			const req = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${Config.testToken}`);
 			if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${ENDPOINT}`);
-			assert(req.headers.get('x-bjs-request-id'));
+			requestId = req.headers.get('x-bjs-request-id');
+			assert(requestId);
+
+			// TEMP - Tests will fail because buttress trys to shutdown before request is closed.
+			await req.json();
 		});
 
 		// Request Made -> Request ID returned in Headers

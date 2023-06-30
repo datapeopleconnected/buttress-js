@@ -78,6 +78,8 @@ class BootstrapRest extends Bootstrap {
 		Logging.logDebug('Shutting down all connections');
 		Logging.logSilly('BootstrapRest:clean');
 
+		// TODO: Handle requests that are in flight and shut them down.
+
 		// this.routes.clean();
 
 		// Destory all models
