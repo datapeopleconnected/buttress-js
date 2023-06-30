@@ -158,6 +158,8 @@ class AppSchemaModel extends StandardModel {
 
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
 		this._nrp.emit('app-routes:bust-cache', {});
+		Logging.logSilly(`Emitting app:created ${app._id}`);
+		this._nrp.emit('app:created', {appId: app._id});
 		Logging.logSilly(`Emitting app-schema:updated ${app._id}`);
 		this._nrp.emit('app-schema:updated', {appId: app._id});
 

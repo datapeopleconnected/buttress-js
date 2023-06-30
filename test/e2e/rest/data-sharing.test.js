@@ -13,13 +13,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
-const fetch = require('cross-fetch');
-
 const {describe, it, before, after} = require('mocha');
 const assert = require('assert');
 
-const Config = require('node-env-obj')();
+const {createApp, updateSchema, bjsReq, registerDataSharing} = require('../../helpers');
 
 const BootstrapRest = require('../../../dist/bootstrap-rest');
 
@@ -31,34 +28,6 @@ const testEnv = {
 	agreements: {},
 	cars: [],
 };
-
-const bjsReq = async (opts, token=Config.testToken) => {
-	const req = await fetch(`${opts.url}?token=${token}`, opts);
-	if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${opts.url}`);
-	return await req.json();
-};
-
-const createApp = async (name, apiPath, token) => await bjsReq({
-	url: `${ENDPOINT}/api/v1/app`,
-	method: 'POST',
-	headers: {'Content-Type': 'application/json'},
-	body: JSON.stringify({
-		name,
-		apiPath,
-	}),
-}, token);
-const updateSchema = async (schema, token) => bjsReq({
-	url: `${ENDPOINT}/api/v1/app/schema`,
-	method: 'PUT',
-	headers: {'Content-Type': 'application/json'},
-	body: JSON.stringify(schema),
-}, token);
-const registerDataSharing = async (agreement, token) => bjsReq({
-	url: `${ENDPOINT}/api/v1/appDataSharing`,
-	method: 'POST',
-	headers: {'Content-Type': 'application/json'},
-	body: JSON.stringify(agreement),
-}, token);
 
 const createCar = async (app, name) => {
 	const [car] = await bjsReq({
@@ -96,17 +65,17 @@ describe('Data Sharing', async () => {
 			},
 		};
 
-		testEnv.apps.app1 = await createApp('Test App 1', 'test-app-1');
-		testEnv.apps.app1.schema = await updateSchema([carsSchema], testEnv.apps.app1.token);
+		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test App 1', 'test-app-1');
+		testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app1.token);
 
 		await createCar(testEnv.apps.app1, 'A red car');
 
 		// Test app 2 doesn't need a schema from the start, we'll add one later.
-		testEnv.apps.app2 = await createApp('Test App 2', 'test-app-2');
+		testEnv.apps.app2 = await createApp(ENDPOINT, 'Test App 2', 'test-app-2');
 
 		// Create a third app which will be used as a cars sources too.
-		testEnv.apps.app3 = await createApp('Test App 3', 'test-app-3');
-		testEnv.apps.app3.schema = await updateSchema([carsSchema], testEnv.apps.app3.token);
+		testEnv.apps.app3 = await createApp(ENDPOINT, 'Test App 3', 'test-app-3');
+		testEnv.apps.app3.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app3.token);
 
 		await createCar(testEnv.apps.app3, 'A green car');
 	});
@@ -119,7 +88,7 @@ describe('Data Sharing', async () => {
 	describe('Creating a agreement', async () => {
 		it('Should register a data sharing agreement between app1 and app2', async () => {
 			const name = `app1-to-app2`;
-			const agreement = await registerDataSharing({
+			const agreement = await registerDataSharing(ENDPOINT, {
 				name,
 
 				remoteApp: {
@@ -149,7 +118,7 @@ describe('Data Sharing', async () => {
 
 		it(`Should register a data sharing agreement between app2 and app1 & activate it`, async () => {
 			const name = `app2-to-app1`;
-			const agreement = await registerDataSharing({
+			const agreement = await registerDataSharing(ENDPOINT, {
 				name,
 
 				remoteApp: {
@@ -176,7 +145,7 @@ describe('Data Sharing', async () => {
 		});
 
 		it(`Should update app2 schema to reference cars collection from app1`, async () => {
-			testEnv.apps.app2.schema = await updateSchema([{
+			testEnv.apps.app2.schema = await updateSchema(ENDPOINT, [{
 				name: 'car',
 				type: 'collection',
 				remotes: [{
@@ -256,7 +225,7 @@ describe('Data Sharing', async () => {
 	describe('Handling mutiple agreement sources', async () => {
 		it('Should register a data sharing agreement between app3 and app2', async () => {
 			const name = `app3-to-app2`;
-			const agreement = await registerDataSharing({
+			const agreement = await registerDataSharing(ENDPOINT, {
 				name,
 
 				remoteApp: {
@@ -286,7 +255,7 @@ describe('Data Sharing', async () => {
 
 		it(`Should register a data sharing agreement between app2 and app1 & activate it`, async () => {
 			const name = `app2-to-app3`;
-			const agreement = await registerDataSharing({
+			const agreement = await registerDataSharing(ENDPOINT, {
 				name,
 
 				remoteApp: {
@@ -313,7 +282,7 @@ describe('Data Sharing', async () => {
 		});
 
 		it(`Should update app2 schema to reference cars collection from app1 & app2`, async () => {
-			testEnv.apps.app2.schema = await updateSchema([{
+			testEnv.apps.app2.schema = await updateSchema(ENDPOINT, [{
 				name: 'car',
 				type: 'collection',
 				remotes: [{

@@ -28,6 +28,8 @@ class Bootstrap extends EventEmitter {
 
 	protected __shutdown: boolean = false;
 
+	private _resolveWorkersInitialised?: Function;
+
 	constructor() {
 		super();
 
@@ -63,12 +65,13 @@ class Bootstrap extends EventEmitter {
 	}
 
 	protected async __createCluster() {
-		console.log('Call me maybe');
-		if (cluster.isPrimary) {
+		if (cluster.isMaster) {
+			Logging.log(`Init Main Process`);
 			await this.__initMaster();
 			process.on('message', (message: LocalProcessMessage) => this._handleMessageFromMain(message));
 			process.on('unhandledRejection', (error) => Logging.logError(error));
 		} else {
+			Logging.log(`Init Worker Process [${cluster.worker?.id}]`);
 			await this.__initWorker();
 			if(process.send) process.send({
 				type: 'worker:initiated',
@@ -76,7 +79,7 @@ class Bootstrap extends EventEmitter {
 			} as LocalProcessMessage);
 		}
 
-		return cluster.isPrimary;
+		return cluster.isMaster;
 	}
 
 	protected async __initMaster() {
@@ -94,21 +97,22 @@ class Bootstrap extends EventEmitter {
 	private async _handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
 		if (message.type === 'worker:initiated') {
 			this.workers[idx].initiated = true;
+			this._checkWorkersInitiated();
 		}
 
 		await this.__handleMessageFromWorker(idx, message);
 	}
 
 	protected async __handleMessageFromMain(message: LocalProcessMessage) {
-		Logging.logWarn(`Unhandled message from Main: ${JSON.stringify(message)}`);
+		Logging.logSilly(`Unhandled message from Main: ${JSON.stringify(message)}`);
 	}
 	protected async __handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
-		Logging.logWarn(`Unhandled message from Worker [${idx}]: ${JSON.stringify(message)}`);
+		Logging.logSilly(`Unhandled message from Worker [${idx}]: ${JSON.stringify(message)}`);
 	}
 
 	async notifyWorkers(payload: LocalProcessMessage) {
 		if (this.workerProcesses > 0) {
-			Logging.logDebug(`notifying ${this.workers.length} Workers`);
+			Logging.logDebug(`notifying ${this.workers.length} Workers of ${payload.type}`);
 			this.workers.forEach((w) => w.worker.send(payload));
 		} else {
 			Logging.logSilly(`single instance mode notification`);
@@ -119,18 +123,30 @@ class Bootstrap extends EventEmitter {
 	protected async __spawnWorkers() {
 		if (this.workerProcesses === 0) {
 			Logging.logWarn(`Running in SINGLE Instance mode, BUTTRESS_APP_WORKERS has been set to 0`);
-			await this.__initWorker();
-		} else {
-			Logging.logVerbose(`Spawning ${this.workerProcesses} Workers`);
-
-			for (let x = 0; x < this.workerProcesses; x++) {
-				this.workers[x] = {
-					initiated: false,
-					worker: cluster.fork(),
-				};
-				this.workers[x].worker.on('message', (message: LocalProcessMessage) => this._handleMessageFromWorker(x, message));
-			}
+			return await this.__initWorker();
 		}
+
+		Logging.logVerbose(`Spawning ${this.workerProcesses} Workers`);
+
+		for (let x = 0; x < this.workerProcesses; x++) {
+			this.workers[x] = {
+				initiated: false,
+				worker: cluster.fork(),
+			};
+			this.workers[x].worker.on('message', (message: LocalProcessMessage) => this._handleMessageFromWorker(x, message));
+		}
+
+		return new Promise((resolve) => {
+			// Hand off the resolve function to the _checkWorkersInitiated function
+			// this will be checked and called when all workers have sent the initiated message
+			this._resolveWorkersInitialised = resolve;
+		});
+	}
+
+	private _checkWorkersInitiated() {
+		if (!this._resolveWorkersInitialised || this.workers.some((worker) => !worker.initiated)) return;
+		this._resolveWorkersInitialised();
+		delete this._resolveWorkersInitialised;
 	}
 }
 

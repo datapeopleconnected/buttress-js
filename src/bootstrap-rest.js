@@ -57,13 +57,13 @@ class BootstrapRest extends Bootstrap {
 	async init() {
 		await super.init();
 
-		Logging.log(`Connecting to primary datastore...`);
+		Logging.logDebug(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
+		Logging.logDebug(`Init process libs...`);
 		await Model.init(this.__nrp);
 		await AccessControl.init(this.__nrp);
-
 		await Plugins.initialise(
 			Plugins.APP_TYPE.REST,
 			(cluster.isMaster) ? Plugins.PROCESS_ROLE.MAIN : Plugins.PROCESS_ROLE.WORKER,

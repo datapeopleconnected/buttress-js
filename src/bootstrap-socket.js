@@ -65,6 +65,7 @@ class BootstrapSocket extends Bootstrap {
 		this.isPrimary = Config.sio.app === 'primary';
 
 		this.io = null;
+		this._socketExpressServer = null;
 
 		this._mainServer = null;
 
@@ -148,8 +149,14 @@ class BootstrapSocket extends Bootstrap {
 		// Close down all socket.io connections / handlers
 		if (this.io) {
 			Logging.logSilly('Closing socket.io');
+			this.io.disconnectSockets(true);
 			await new Promise((resolve) => this.io.close(resolve));
 			this.io = null;
+		}
+		if (this._socketExpressServer) {
+			Logging.logSilly('Closing socket.io express proxy');
+			await new Promise((resolve) => this._socketExpressServer.close(resolve));
+			this._socketExpressServer = null;
 		}
 		if (this._mainServer) {
 			Logging.logSilly('Closing main server');
@@ -190,32 +197,34 @@ class BootstrapSocket extends Bootstrap {
 		this._redisClientEmitter = createClient(Config.redis);
 		this.emitter = new Emitter(this._redisClientEmitter);
 
-		if (this.isPrimary) await this.__registerNRPPrimaryListeners();
+		if (this.isPrimary) {
+			await this.__registerNRPPrimaryListeners();
 
-		this.__namespace['stats'] = {
-			emitter: this.emitter.of(`/stats`),
-			sequence: {
-				super: 0,
-				global: 0,
-			},
-		};
-		this.__namespace['debug'] = {
-			emitter: this.emitter.of(`/debug`),
-			sequence: {
-				super: 0,
-				global: 0,
-			},
-		};
+			this.__namespace['stats'] = {
+				emitter: this.emitter.of(`/stats`),
+				sequence: {
+					super: 0,
+					global: 0,
+				},
+			};
+			this.__namespace['debug'] = {
+				emitter: this.emitter.of(`/debug`),
+				sequence: {
+					super: 0,
+					global: 0,
+				},
+			};
 
-		// create app namespaces
-		const rxsApps = await Model.App.findAll();
-		for await (const app of rxsApps) {
-			if (!app._tokenId) {
-				Logging.logWarn(`App with no token`);
-				continue;
+			// create app namespaces
+			const rxsApps = await Model.App.findAll();
+			for await (const app of rxsApps) {
+				if (!app._tokenId) {
+					Logging.logWarn(`App with no token`);
+					continue;
+				}
+
+				await this.__createAppNamespace(app);
 			}
-
-			await this.__createAppNamespace(app);
 		}
 
 		// This should be distributed across instances
@@ -247,8 +256,9 @@ class BootstrapSocket extends Bootstrap {
 
 	async __initWorker() {
 		const app = new Express();
-		const server = app.listen(0, 'localhost');
-		this.io = sio(server, {
+		this._socketExpressServer = (this.workerProcesses > 0) ? app.listen(0, 'localhost') :
+			app.listen(Config.listenPorts.sock);
+		this.io = sio(this._socketExpressServer, {
 			// Allow connections from sio 2 clients
 			// https://socket.io/docs/v3/migrating-from-2-x-to-3-0/#How-to-upgrade-an-existing-production-deployment
 			allowEIO3: true,
@@ -431,7 +441,7 @@ class BootstrapSocket extends Bootstrap {
 		process.on('message', (message, input) => {
 			if (message === 'buttress:connection') {
 				const connection = input;
-				server.emit('connection', connection);
+				this._socketExpressServer.emit('connection', connection);
 				connection.resume();
 				return;
 			}
@@ -447,6 +457,11 @@ class BootstrapSocket extends Bootstrap {
 		this.__nrp.on('dataShare:activated', async (data) => {
 			const dataShare = await Model.AppDataSharing.findById(data.appDataSharingId);
 			await this.__primaryCreateDataShareConnection(dataShare);
+		});
+
+		this.__nrp.on('app:created', async (data) => {
+			const app = await Model.App.findById(data.appId);
+			await this.__createAppNamespace(app);
 		});
 
 		this.__nrp.on('queuePolicyRoomCloseSocketEvent', async (data) => {
@@ -681,6 +696,7 @@ class BootstrapSocket extends Bootstrap {
 
 		// Super apps?
 		if (data.isSuper) {
+			// Broadcast to any super apps
 			this.__superApps.forEach((superApiPath) => {
 				this.__namespace[superApiPath].sequence['super']++;
 				this.__namespace[superApiPath].emitter.emit('db-activity', {
@@ -689,6 +705,17 @@ class BootstrapSocket extends Bootstrap {
 				});
 				Logging.logDebug(`[${superApiPath}][super][${data.verb}] ${data.path}`);
 			});
+
+			// Broadcast to the app token
+			if (data.appAPIPath) {
+				this.__namespace[data.appAPIPath].sequence['global']++;
+				this.__namespace[data.appAPIPath].emitter.emit('db-activity', {
+					data: data,
+					sequence: this.__namespace[data.appAPIPath].sequence['global'],
+				});
+				Logging.logDebug(`[${data.appAPIPath}][app][${data.verb}] ${data.path}`);
+			}
+
 			return;
 		}
 
@@ -719,11 +746,11 @@ class BootstrapSocket extends Bootstrap {
 			};
 		}
 
-		await this.__masterBroadcastToUsers(data, container);
+		await this.__masterBroadcastToRooms(data, container);
 	}
 
-	async __masterBroadcastToUsers(data, container) {
-		Logging.logTimer(`__masterBroadcastToUsers::start`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
+	async __masterBroadcastToRooms(data, container) {
+		Logging.logTimer(`__masterBroadcastToRooms::start`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 
 		// TODO: Maybe cache this on the master, for now we'll just requst it from the primary
 		const _policyRooms = await this._messagePrimary('getPolicyRoomsByAppId', {appId: data.appId});
@@ -733,19 +760,19 @@ class BootstrapSocket extends Bootstrap {
 		const verb = data.verb;
 		const collection = data.path.split('/').filter((v) => v).shift().replace('/', '');
 		if (!roomIds || roomIds.length < 1) {
-			Logging.logTimer(`__masterBroadcastToUsers::end-no-policy-room`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
+			Logging.logTimer(`__masterBroadcastToRooms::end-no-policy-room`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 			return;
 		}
 
 		const broadcastRoomsIds = roomIds.filter((roomId) => _policyRooms[roomId].schema[collection]);
 		if (!broadcastRoomsIds || broadcastRoomsIds < 1) {
-			Logging.logTimer(`__masterBroadcastToUsers::end-no-broadcast-rooms`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
+			Logging.logTimer(`__masterBroadcastToRooms::end-no-broadcast-rooms`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 			return;
 		}
 
 		for await (const roomKey of broadcastRoomsIds) {
 			const room = _policyRooms[roomKey].schema[collection];
-			Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::start`, container.timer,
+			Logging.logTimer(`__masterBroadcastToRooms::roomBroadcast::start`, container.timer,
 				Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
 
 			// We don't care at this point if we have users in a room we'll try and broadcast to it anyway.
@@ -759,7 +786,7 @@ class BootstrapSocket extends Bootstrap {
 			const roomProjectionKeys = (room.access.projection) ? room.access.projection : [];
 			if (roomQueryKeys.length < 1 && roomProjectionKeys.length < 1) {
 				this.__broadcastData(data, roomKey);
-				Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end-no-query-no-projection`, container.timer,
+				Logging.logTimer(`__masterBroadcastToRooms::roomBroadcast::end-no-query-no-projection`, container.timer,
 					Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
 				continue;
 			}
@@ -768,7 +795,7 @@ class BootstrapSocket extends Bootstrap {
 			const entityId = (data.params.id) ? data.params.id : data.response.id;
 			if (!entityId && data.verb === 'delete') {
 				this.__broadcastData(data, roomKey);
-				Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end-no-entity-deletion`, container.timer,
+				Logging.logTimer(`__masterBroadcastToRooms::roomBroadcast::end-no-entity-deletion`, container.timer,
 					Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
 				continue;
 			}
@@ -784,7 +811,7 @@ class BootstrapSocket extends Bootstrap {
 
 			const broadcast = await this.__evaluateRoomQueryOperation(room.access.query, entity);
 			if (!broadcast && verb === 'post') {
-				Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end-falsy-evaluateRoomQueryOperation-post`, container.timer,
+				Logging.logTimer(`__masterBroadcastToRooms::roomBroadcast::end-falsy-evaluateRoomQueryOperation-post`, container.timer,
 					Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
 				continue;
 			}
@@ -792,7 +819,7 @@ class BootstrapSocket extends Bootstrap {
 			if (!broadcast) {
 				data.verb = 'delete';
 				this.__broadcastData(data, roomKey);
-				Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end-falsy-evaluateRoomQueryOperation-delete`, container.timer,
+				Logging.logTimer(`__masterBroadcastToRooms::roomBroadcast::end-falsy-evaluateRoomQueryOperation-delete`, container.timer,
 					Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
 				continue;
 			}
@@ -811,7 +838,7 @@ class BootstrapSocket extends Bootstrap {
 			}
 
 			this.__broadcastData(data, roomKey);
-			Logging.logTimer(`__masterBroadcastToUsers::roomBroadcast::end`, container.timer,
+			Logging.logTimer(`__masterBroadcastToRooms::roomBroadcast::end`, container.timer,
 				Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
 		}
 
