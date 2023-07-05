@@ -152,28 +152,41 @@ describe('Realtime', async () => {
 	});
 
 	// This set of tests will test the functionality of tracking the state of a request.
-	describe('bjs-requests', async () => {
-		let requestId = null;
+	describe('bjs-request-* events', async () => {
+		let req = null;
 		it('Should make a request to /cars, responce should contain a x-bjs-request-id header', async () => {
-			const req = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${Config.testToken}`);
+			req = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${Config.testToken}`);
 			if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${ENDPOINT}`);
-			requestId = req.headers.get('x-bjs-request-id');
-			assert(requestId);
-
-			// TEMP - Tests will fail because buttress trys to shutdown before request is closed.
-			await req.json();
+			assert(req.headers.get('x-bjs-request-id'));
 		});
 
-		// Request Made -> Request ID returned in Headers
-		// ...
-		// User sends Request ID to server -> User is subscribed to request room
-		// ...
-		// Data is sent through about the state of the stream
-		// ...
-		// Room is cleared after request sends EOL or timeout
-		// ...
-		// User knows when request is finished so room won't be available.
-		// ...
-		// Might be better to have some way of piping the data directly to the user.
+		it('Should handle a message from the user and subscribe them to a request room', async () => {
+			testEnv.socket.emit('bjs-request-subscribe', {id: req.headers.get('x-bjs-request-id')});
+			await new Promise((resolve) => {
+				testEnv.socket.once('bjs-request-subscribe-ack', (data) => {
+					assert.equal(data.id, req.headers.get('x-bjs-request-id'));
+					resolve();
+				});
+			});
+		});
+
+		it('Should receive an event with the state of the request stream', async () => {
+			await new Promise((resolve) => {
+				testEnv.socket.once('bjs-request-status', (data) => {
+					assert.equal(data.id, req.headers.get('x-bjs-request-id'));
+					assert.equal(data.status, 'done');
+					resolve();
+				});
+
+				// Up to this point the request is hanging on sending the data. Lets
+				// release the kraken.
+				req.json();
+			});
+		});
+
+		// TODO: Test that the requests that are going through data sharing pathway.
+		//  - Test a request where a pathway succeeds
+		//  - Test a request where a pathway fails (informs the user tha the requset done but incomplete)
+		//  - Test a request where a pathway is slow (informs that request is running slow due to reason)
 	});
 });

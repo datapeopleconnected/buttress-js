@@ -347,6 +347,11 @@ class Routes {
 			stream: [],
 		};
 
+		// Define some helper functions which allow us to send request metadata
+		// to the realtime process to feedback to subscrtibers.
+		req.bjsReqStatus = (data, nrp) => nrp.emit(`sock:worker:request-status`, {id: req.id, ...data});
+		req.bjsReqClose = (nrp) => nrp.emit(`sock:worker:request-end`, {id: req.id, status: 'done'});
+
 		Logging.logTimer(`[${req.method.toUpperCase()}] ${req.path}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		next();
 	}

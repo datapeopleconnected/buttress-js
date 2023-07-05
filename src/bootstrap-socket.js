@@ -80,11 +80,15 @@ class BootstrapSocket extends Bootstrap {
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
+		// A map that holds reference to sockets which have subscribed to a request
+		// the map keys will expire after 5 minutes.
+		this._requestSockets = new Helpers.ExpireMap(5 * 60 * 1000);
+
 		// Policy rooms should just be a map of roomId -> {collections,projections}
 		// We dont't need to track what users are in which room as this is already
 		// done for us.
-		// Only the Primary will hold this structure, it can then pass it down to
-		// the appropriate workers
+		// Only the Primary will hold this structure, it can then be accessed by
+		// the appropriate workers on request
 		this._policyRooms = {
 			/*
 			roomId: {
@@ -145,6 +149,9 @@ class BootstrapSocket extends Bootstrap {
 			await new Promise((resolve) => this._redisClientIOSub.quit(resolve));
 			this._redisClientIOSub = null;
 		}
+
+		this._requestSockets.destory();
+		this._requestSockets = null;
 
 		// Close down all socket.io connections / handlers
 		if (this.io) {
@@ -400,6 +407,20 @@ class BootstrapSocket extends Bootstrap {
 				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
 			}
 
+			socket.on('bjs-request-subscribe', (data) => {
+				if (!data.id) return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} missing id`);
+				Logging.logSilly(`[${apiPath}] bjs-request-subscribe ${socket.id} ${data.id}`);
+
+				// Check to see if there is already a socket subbing to this id.
+				const reqSock = this._requestSockets.get(data.id);
+				if (reqSock && socket !== reqSock) return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} already subscribed`);
+
+				// if the socket hasn't already been subscribed then we'll set it.
+				if (!reqSock) this._requestSockets.set(data.id, socket);
+
+				socket.emit('bjs-request-subscribe-ack', data);
+			});
+
 			socket.on('disconnect', () => {
 				Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
 			});
@@ -584,6 +605,24 @@ class BootstrapSocket extends Bootstrap {
 			}
 
 			this.__nrp.emit('primary:debugRollcallResponce', {id: data.id, responce: nspSids});
+		});
+
+		this.__nrp.on('sock:worker:request-status', async (data) => {
+			if (!data.id) return;
+
+			const socket = this._requestSockets.get(data.id);
+			if (!socket) return;
+
+			socket.emit('bjs-request-status', data);
+		});
+		this.__nrp.on('sock:worker:request-end', async (data) => {
+			if (!data.id) return;
+
+			const socket = this._requestSockets.get(data.id);
+			if (!socket) return;
+
+			socket.emit('bjs-request-status', data);
+			this._requestSockets.delete(data.id);
 		});
 	}
 

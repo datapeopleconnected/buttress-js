@@ -429,3 +429,47 @@ module.exports.compareByProps = (compareProperties, a, b) => {
 
 	return 0;
 };
+
+module.exports.ExpireMap = class ExpireMap extends Map {
+	constructor(expireTime) {
+		super();
+		this.expireTime = expireTime;
+
+		this.gcTimeout = null;
+	}
+
+	set(key, value) {
+		super.set(key, {
+			value,
+			expire: Date.now() + this.expireTime,
+		});
+	}
+
+	get(key) {
+		const item = super.get(key);
+		if (!item) return undefined;
+
+		if (item.expire < Date.now()) {
+			this.delete(key);
+			return undefined;
+		}
+
+		return item.value;
+	}
+
+	// This is dumb
+	destory() {
+		if (this.gcTimeout) clearTimeout(this.gcTimeout);
+		this.clear();
+	}
+
+	_gc() {
+		this.gcTimeout = setTimeout(() => {
+			for (const key of this.keys()) {
+				this.get(key);
+			}
+
+			this._gc();
+		}, this.expireTime);
+	}
+};

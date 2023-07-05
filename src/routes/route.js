@@ -147,6 +147,8 @@ class Route {
 		// Send the result back to the client and resolve the request from
 		// this point onward you should treat the request as furfilled.
 		if (result instanceof Stream && result.readable) {
+			result.on('bjs-stream-status', (data) => req.bjsReqStatus(data, this._nrp));
+
 			const resStream = new Stream.PassThrough({objectMode: true});
 			const broadcastStream = new Stream.PassThrough({objectMode: true});
 
@@ -163,6 +165,8 @@ class Route {
 			await this._logActivity(req, res);
 
 			await this._boardcastData(req, res, broadcastStream);
+
+			req.bjsReqStatus({status: 'ready'}, this._nrp);
 		} else {
 			// await Plugins.do_action('route-add-many:_exec', this.schema, results);
 
@@ -207,6 +211,7 @@ class Route {
 			result.once('end', () => {
 				// Logging.logTimerException(`PERF: STREAM DONE: ${this.path}`, req.timer, 0.05, req.id);
 				Logging.logTimer(`_respond:end-stream chunks:${chunkCount}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+				req.bjsReqClose(this._nrp);
 				this._close(req);
 			});
 
