@@ -53,11 +53,11 @@ const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
 	if (!activationResult || !activationResult.status) return dataSharing;
 
 	// Flag our data sharing agreement as active & update the remote app token with the new one.
-	await Model.AppDataSharing.activate(dataSharing._id, activationResult.token);
+	await Model.AppDataSharing.activate(dataSharing.id, activationResult.token);
 	dataSharing.remoteApp.token = activationResult.token;
 
 	// Update our data sharing agreement token with the new value.
-	await Model.Token.update({'_id': dataSharingTokenId}, {$set: {'value': newToken}});
+	await Model.Token.update({'id': dataSharingTokenId}, {$set: {'value': newToken}});
 
 	// Rebuild the connection string with the new token
 	connectionString = Helpers.DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
@@ -190,7 +190,7 @@ class AddDataSharing extends Route {
 	async _exec(req, res, validate) {
 		const result = await this.model.add(req.body);
 		let dataSharing = (result.dataSharing) ? result.dataSharing : result;
-		this.log(`Added App Data Sharing ${dataSharing._id}`);
+		this.log(`Added App Data Sharing ${dataSharing.id}`);
 
 		dataSharing = Object.assign(dataSharing, {
 			registrationToken: result.token.value,
@@ -199,7 +199,7 @@ class AddDataSharing extends Route {
 		// skip if we don't have a registration token
 		if (!dataSharing.remoteApp.token) return dataSharing;
 
-		return await activateDataSharing(dataSharing, result.token._id);
+		return await activateDataSharing(dataSharing, result.token.id);
 	}
 }
 routes.push(AddDataSharing);
@@ -324,7 +324,7 @@ class UpdateAppDataSharingPolicy extends Route {
 
 			// Lookup
 			this.model.exists(req.params.dataSharingId, {
-				'_appId': req.authApp._id,
+				'_appId': req.authApp.id,
 			})
 				.then((res) => {
 					if (res !== true) {
@@ -339,7 +339,7 @@ class UpdateAppDataSharingPolicy extends Route {
 
 	_exec(req, res, validate) {
 		// TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-		return this.model.updatePolicy(req.authApp._id, req.params.dataSharingId, req.body)
+		return this.model.updatePolicy(req.authApp.id, req.params.dataSharingId, req.body)
 			.then(() => true);
 	}
 }
@@ -381,7 +381,7 @@ class ActivateAppDataSharing extends Route {
 		return this.model.findById(token._appDataSharingId)
 			.then((dataSharing) => {
 				if (!dataSharing) {
-					this.log(`ERROR: Unable to find dataSharing with token ${token._id}`, Route.LogLevel.ERR, req.id);
+					this.log(`ERROR: Unable to find dataSharing with token ${token.id}`, Route.LogLevel.ERR, req.id);
 					throw new Helpers.Errors.RequestError(500, `no_datasharing`);
 				}
 
@@ -395,10 +395,10 @@ class ActivateAppDataSharing extends Route {
 		const newLocalToken = Model.Token.createTokenString();
 
 		const {newToken} = req.body;
-		await this.model.activate(dataSharing._id, newToken);
+		await this.model.activate(dataSharing.id, newToken);
 
 		await Model.Token.update({
-			'_id': req.token._id,
+			'id': req.token.id,
 		}, {$set: {'value': newLocalToken}});
 
 		return {
@@ -437,7 +437,7 @@ class ReactivateAppDataSharing extends Route {
 		const exists = await this.model.findById(dataSharingId);
 
 		if (!exists) {
-			this.log(`ERROR: Unable to find dataSharing with token ${token._id}`, Route.LogLevel.ERR, req.id);
+			this.log(`ERROR: Unable to find dataSharing with token ${token.id}`, Route.LogLevel.ERR, req.id);
 			return Promise.reject(new Helpers.Errors.RequestError(500, `no_datasharing`));
 		}
 
@@ -445,7 +445,7 @@ class ReactivateAppDataSharing extends Route {
 	}
 
 	_exec(req, res, dataSharing) {
-		return this.model.deactivate(dataSharing._id)
+		return this.model.deactivate(dataSharing.id)
 			.then(() => true);
 	}
 }
@@ -480,7 +480,7 @@ class DeactivateAppDataSharing extends Route {
 		const exists = await this.model.findById(dataSharingId);
 
 		if (!exists) {
-			this.log(`ERROR: Unable to find dataSharing with token ${token._id}`, Route.LogLevel.ERR, req.id);
+			this.log(`ERROR: Unable to find dataSharing with token ${token.id}`, Route.LogLevel.ERR, req.id);
 			return Promise.reject(new Helpers.Errors.RequestError(500, `no_datasharing`));
 		}
 
@@ -488,7 +488,7 @@ class DeactivateAppDataSharing extends Route {
 	}
 
 	_exec(req, res, dataSharing) {
-		return this.model.deactivate(dataSharing._id)
+		return this.model.deactivate(dataSharing.id)
 			.then(() => true);
 	}
 }
@@ -520,7 +520,7 @@ class StatusAppDataSharing extends Route {
 		const exists = await this.model.findById(dataSharingId);
 
 		if (!exists) {
-			this.log(`ERROR: Unable to find dataSharing with token ${token._id}`, Route.LogLevel.ERR, req.id);
+			this.log(`ERROR: Unable to find dataSharing with token ${token.id}`, Route.LogLevel.ERR, req.id);
 			return Promise.reject(new Helpers.Errors.RequestError(500, `no_datasharing`));
 		}
 

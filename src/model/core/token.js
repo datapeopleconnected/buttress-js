@@ -212,7 +212,7 @@ class TokenSchemaModel extends StandardModel {
 		}
 
 		await super.update({
-			'_id': this.createId(tokenId),
+			'id': this.createId(tokenId),
 		}, {$set: {'policyProperties': policyProperties}});
 
 		this._nrp.emit('app-routes:bust-cache', {});
@@ -235,7 +235,7 @@ class TokenSchemaModel extends StandardModel {
 		}, []);
 
 		await super.update({
-			'_id': this.createId(token._id),
+			'id': this.createId(token.id),
 		}, {
 			$set: {
 				'policyProperties': {
@@ -254,7 +254,7 @@ class TokenSchemaModel extends StandardModel {
 	 */
 	async clearPolicyPropertiesById(tokenId) {
 		await super.update({
-			'_id': this.createId(tokenId),
+			'id': this.createId(tokenId),
 		}, {
 			$set: {
 				'policyProperties': {},
@@ -270,7 +270,7 @@ class TokenSchemaModel extends StandardModel {
  */
 // schema.virtual('details').get(function() {
 //   return {
-//     id: this._id,
+//     id: this.id,
 //     type: this.type,
 //     app: this.app,
 //     user: this.user,

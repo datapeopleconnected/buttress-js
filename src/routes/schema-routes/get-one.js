@@ -40,12 +40,12 @@ module.exports = class GetOne extends Route {
 			throw new Helpers.Errors.RequestError(400, 'invalid_id');
 		}
 
-		let query = {_id: objectId};
+		let query = {id: objectId};
 		if (req.body.query && Object.keys(req.body.query).length > 0) {
 			query = req.body.query;
 
 			query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
-			query._id = objectId;
+			query.id = objectId;
 		}
 
 		return {

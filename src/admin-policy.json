@@ -25,7 +25,7 @@
 			"endpoints": ["GET"],
 			"query": [{
 				"schema": ["app"],
-				"_id": {
+				"id": {
 					"@eq": null
 				}
 			}, {

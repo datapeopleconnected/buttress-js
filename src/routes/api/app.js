@@ -43,7 +43,7 @@ class GetAppList extends Route {
 
 	_exec(req, res, validate) {
 		if (req.token.type !== Route.Constants.Type.SYSTEM) {
-			return Model.App.find({_id: req.authApp._id});
+			return Model.App.find({id: req.authApp.id});
 		}
 
 		return Model.App.findAll();
@@ -80,13 +80,13 @@ class SearchAppList extends Route {
 
 		const tokenIds = appsDB.map((app) => Model.Token.createId(app._tokenId));
 		const appTokens = await Helpers.streamAll(await Model.Token.find({
-			_id: {
+			id: {
 				$in: tokenIds,
 			},
 		}));
 
 		return appsDB.reduce((arr, app) => {
-			const appToken = appTokens.find((t) => t._id.toString() === app._tokenId.toString());
+			const appToken = appTokens.find((t) => t.id.toString() === app._tokenId.toString());
 			app.tokenValue = appToken.value;
 			arr.push(app);
 			return arr;
@@ -446,7 +446,7 @@ class UpdateAppSchema extends Route {
 	}
 
 	async _exec(req, res, rawSchema) {
-		const updatedSchema = await Model.App.updateSchema(req.authApp._id, req.body, rawSchema);
+		const updatedSchema = await Model.App.updateSchema(req.authApp.id, req.body, rawSchema);
 		let schema = '';
 		try {
 			schema = Schema.decode(updatedSchema);
@@ -564,14 +564,14 @@ class SetAppPolicyPropertyList extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const appId = (req.params.appId) ? req.params.appId : req.authApp._id;
+		const appId = (req.params.appId) ? req.params.appId : req.authApp.id;
 		const update = Object.assign({}, validate);
 		if (update.query) delete update.query;
 
 		let query = {};
 		if (appId) {
 			query = {
-				_id: {
+				id: {
 					$eq: appId,
 				},
 			};

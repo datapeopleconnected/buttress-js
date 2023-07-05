@@ -345,7 +345,7 @@ class BootstrapSocket extends Bootstrap {
 			}
 
 			socket.data.type = token.type;
-			socket.data.tokenId = token._id.toString();
+			socket.data.tokenId = token.id.toString();
 
 			Logging.logDebug(`Fetching app with apiPath: ${apiPath}`);
 			const app = await Model.App.findOne({apiPath: apiPath});
@@ -363,9 +363,9 @@ class BootstrapSocket extends Bootstrap {
 			}, {});
 
 			if (token.type === 'dataSharing') {
-				Logging.logDebug(`Fetching data share with tokenId: ${token._id}`);
+				Logging.logDebug(`Fetching data share with tokenId: ${token.id}`);
 				const dataShare = await Model.AppDataSharing.findOne({
-					_tokenId: this.primaryDatastore.ID.new(token._id),
+					_tokenId: this.primaryDatastore.ID.new(token.id),
 					active: true,
 				});
 				if (!dataShare) {
@@ -373,7 +373,7 @@ class BootstrapSocket extends Bootstrap {
 					return next('invalid-data-share');
 				}
 
-				socket.data.dataShareId = dataShare._id.toString();
+				socket.data.dataShareId = dataShare.id.toString();
 
 				// Emit this activity to our instance.
 				// This would result in the event being mutiplied
@@ -384,7 +384,7 @@ class BootstrapSocket extends Bootstrap {
 					}
 
 					data.isSameApp = app.apiPath === data.appAPIPath;
-					data.appId = app._id;
+					data.appId = app.id;
 					data.appAPIPath = app.apiPath;
 
 					this.__nrp.emit('activity', data);
@@ -399,7 +399,7 @@ class BootstrapSocket extends Bootstrap {
 					return next('invalid-token-user-ID');
 				}
 
-				socket.data.userId = user._id.toString();
+				socket.data.userId = user.id.toString();
 				socket.data.userRef = user.auth[0].email ?? user.auth[0].appId;
 
 				await this.__workerEvaluateUserRooms(user, app, socket);
@@ -436,7 +436,7 @@ class BootstrapSocket extends Bootstrap {
 				// Early out if userId isn't set, we must not have a user token
 				if (!socket.data.userId) return;
 				// Check that the request is for the correct app
-				if (!data.appId || app._id.toString() !== data.appId) return;
+				if (!data.appId || app.id.toString() !== data.appId) return;
 				// Optional - If they've provided a userId then we only want to evaluate the single users room.
 				if (data.userId && socket.data.userId !== data.userId) return;
 
@@ -635,8 +635,8 @@ class BootstrapSocket extends Bootstrap {
 	}
 
 	async __workerEvaluateUserRooms(user, app, socket, clear = false) {
-		Logging.logSilly(`__workerEvaluateUserRooms::start userId:${user._id} socketId:${socket.id}`);
-		const userRoomsStruct = await AccessControl.getUserRoomStructures(user, app._id, socket.request);
+		Logging.logSilly(`__workerEvaluateUserRooms::start userId:${user.id} socketId:${socket.id}`);
+		const userRoomsStruct = await AccessControl.getUserRoomStructures(user, app.id, socket.request);
 		const userRooms = Object.keys(userRoomsStruct);
 
 		if (userRooms.length < 1) {
@@ -663,28 +663,28 @@ class BootstrapSocket extends Bootstrap {
 				// to clear their data... don't hold your breath, they may say no.
 				socket.emit('db-connect-room', {
 					collections: collections,
-					userId: user._id,
+					userId: user.id,
 					room: roomId,
 					apiPath: app.apiPath,
 				});
 			}
 
-			Logging.log(`[${app.apiPath}][${user._id}] Joining ${socket.id} to rooms ${roomsToJoin.join(', ')}`);
+			Logging.log(`[${app.apiPath}][${user.id}] Joining ${socket.id} to rooms ${roomsToJoin.join(', ')}`);
 		}
 
 		// DEBUG - Rooms have changed lets notify
 		this.__nrp.emit('debug:dump', {});
 
-		// Logging.log(`[${app.apiPath}][${user._id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
+		// Logging.log(`[${app.apiPath}][${user.id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
 		Logging.logSilly(`__workerEvaluateUserRooms::end socketId:${socket.id}`);
 	}
 
 	async __workerUserLeaveRooms(user, app, socket, roomsToLeave = null, clear = false) {
-		Logging.logSilly(`__workerUserLeaveRooms::start userId:${user._id} socketId:${socket.id}`);
+		Logging.logSilly(`__workerUserLeaveRooms::start userId:${user.id} socketId:${socket.id}`);
 
 		if (roomsToLeave.length < 1) {
 			// We've got no rooms to leave, early out.
-			Logging.logSilly(`__workerUserLeaveRooms::end-no-rooms-to-leave userId:${user._id} socketId:${socket.id}`);
+			Logging.logSilly(`__workerUserLeaveRooms::end-no-rooms-to-leave userId:${user.id} socketId:${socket.id}`);
 			return;
 		}
 
@@ -699,7 +699,7 @@ class BootstrapSocket extends Bootstrap {
 				// to clear their data... don't hold your breath, they may say no.
 				socket.emit('db-disconnect-room', {
 					collections: collections,
-					userId: user._id,
+					userId: user.id,
 					room: roomId,
 					apiPath: app.apiPath,
 				});
@@ -710,8 +710,8 @@ class BootstrapSocket extends Bootstrap {
 			socket.leave(roomId);
 		}
 
-		Logging.log(`[${app.apiPath}][${user._id}] Remove ${socket.id} from rooms ${roomsToLeave.join(',')}`);
-		Logging.logSilly(`__workerUserLeaveRooms::end userId:${user._id} socketId:${socket.id}`);
+		Logging.log(`[${app.apiPath}][${user.id}] Remove ${socket.id} from rooms ${roomsToLeave.join(',')}`);
+		Logging.logSilly(`__workerUserLeaveRooms::end userId:${user.id} socketId:${socket.id}`);
 	}
 
 	async __primaryOnActivity(data) {
@@ -845,7 +845,7 @@ class BootstrapSocket extends Bootstrap {
 			}
 
 			// TODO: Should be using ID fromt datastore not direct ObjectID
-			const rxsEntity = await Model[`${appShortId}-${collection}`].find({_id: new ObjectId(entityId)});
+			const rxsEntity = await Model[`${appShortId}-${collection}`].find({id: new ObjectId(entityId)});
 			const entity = await Helpers.streamFirst(rxsEntity);
 
 			const broadcast = await this.__evaluateRoomQueryOperation(room.access.query, entity);
@@ -970,7 +970,7 @@ class BootstrapSocket extends Bootstrap {
 			return Logging.logDebug(`Namespace already created: ${app.name}`);
 		}
 
-		const token = await Model.Token.findOne({_id: app._tokenId});
+		const token = await Model.Token.findOne({id: app._tokenId});
 		if (!token) return Logging.logWarn(`No Token found for ${app.name}`);
 
 		const isSuper = token.type === Model.Token.Constants.Type.SYSTEM;
@@ -987,7 +987,7 @@ class BootstrapSocket extends Bootstrap {
 			this.__superApps.push(app.apiPath);
 		}
 
-		Logging.log(`${(isSuper) ? 'SUPER' : 'APP'} Name: ${app.name}, App ID: ${app._id}, Path: /${app.apiPath}`);
+		Logging.log(`${(isSuper) ? 'SUPER' : 'APP'} Name: ${app.name}, App ID: ${app.id}, Path: /${app.apiPath}`);
 	}
 
 	async __primaryCreateDataShareConnection(dataShare) {

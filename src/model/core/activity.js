@@ -134,7 +134,7 @@ class ActivitySchemaModel extends StandardModel {
 	 */
 	__parseAddBody(body) {
 		const user = body.req.authUser;
-		const userName = user ? `${user._id}` : 'App';
+		const userName = user ? `${user.id}` : 'App';
 
 		body.activityTitle = body.activityTitle.replace('%USER_NAME%', userName);
 		body.activityDescription = body.activityDescription.replace('%USER_NAME%', userName);
@@ -155,13 +155,13 @@ class ActivitySchemaModel extends StandardModel {
 			query: q,
 			body: Schema.encode(body.req.body), // HACK - Due to schema update results.
 			timestamp: new Date(),
-			_tokenId: body.req.token._id,
-			_userId: (body.req.authUser) ? body.req.authUser._id : null,
-			_appId: body.req.authApp._id,
+			_tokenId: body.req.token.id,
+			_userId: (body.req.authUser) ? body.req.authUser.id : null,
+			_appId: body.req.authApp.id,
 		};
 
 		if (body.id) {
-			md._id = this.adapter.ID.new(body.id);
+			md.id = this.adapter.ID.new(body.id);
 		}
 
 		delete body.req;

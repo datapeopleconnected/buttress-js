@@ -86,9 +86,9 @@ class Model {
 
 		for await (const app of rxsApps) {
 			if (!app || !app.__schema) return;
-			if (appId && app._id.toString() !== appId) continue;
+			if (appId && app.id.toString() !== appId) continue;
 
-			Logging.logSilly(`Model:initSchema: ${app._id}`);
+			Logging.logSilly(`Model:initSchema: ${app.id}`);
 
 			// Check for connection
 			let datastore = null;
@@ -98,7 +98,7 @@ class Model {
 					await datastore.connect();
 				} catch (err) {
 					if (err instanceof Errors.UnsupportedDatastore) {
-						Logging.logWarn(`${err} for ${app._id}`);
+						Logging.logWarn(`${err} for ${app.id}`);
 						return;
 					}
 
@@ -174,7 +174,7 @@ class Model {
 	 */
 	async _initSchemaModel(app, schemaData, mainDatastore) {
 		let modelName = `${schemaData.name}`;
-		const appShortId = (app) ? shortId(app._id) : null;
+		const appShortId = (app) ? shortId(app.id) : null;
 
 		modelName = (appShortId) ? `${appShortId}-${schemaData.name}` : modelName;
 
@@ -197,7 +197,7 @@ class Model {
 
 				const dataSharing = await this.AppDataSharing.findOne({
 					'name': remote.name,
-					'_appId': app._id,
+					'_appId': app.id,
 				});
 
 				if (!dataSharing) {

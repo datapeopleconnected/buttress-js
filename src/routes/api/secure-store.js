@@ -45,7 +45,7 @@ class AddSecureStore extends Route {
 
 		const secureStoreExist = await Model.SecureStore.findOne({
 			name: req.body.name,
-			_appId: Model.App.createId(req.authApp._id),
+			_appId: Model.App.createId(req.authApp.id),
 		});
 		if (secureStoreExist) {
 			this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);

@@ -344,9 +344,9 @@ class Route {
 					params: req.params,
 					timestamp: new Date(),
 					response: _result,
-					user: req.authUser ? req.authUser._id : '',
+					user: req.authUser ? req.authUser.id : '',
 					appAPIPath: req.authApp ? req.authApp.apiPath : '',
-					appId: req.authApp ? req.authApp._id : '',
+					appId: req.authApp ? req.authApp.id : '',
 					isSuper: isSuper,
 					schemaName: this.schema?.name,
 				});
@@ -526,8 +526,8 @@ class Route {
 		}
 
 		// const userWildcard = /^user\/me.+/;
-		// if (routeSpec.match(userWildcard) && req.params.id == req.authUser._id) {
-		// 	Logging.logSilly(`Matched user ${req.authUser._id} to /user/${req.params.id}`);
+		// if (routeSpec.match(userWildcard) && req.params.id == req.authUser.id) {
+		// 	Logging.logSilly(`Matched user ${req.authUser.id} to /user/${req.params.id}`);
 		// 	return true;
 		// }
 

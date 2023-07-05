@@ -49,7 +49,7 @@ module.exports = class GetMany extends Route {
 
 	_exec(req, res, query) {
 		return this.model.find(
-			{_id: {$in: query.ids.map((id) => this.model.createId(id))}},
+			{id: {$in: query.ids.map((id) => this.model.createId(id))}},
 			{}, 0, 0, null, query.project,
 		);
 	}

@@ -126,7 +126,7 @@ class AppDataSharingSchemaModel extends StandardModel {
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 
-		await this.__createDataSharingPolicy(appDataSharingBody, token._id);
+		await this.__createDataSharingPolicy(appDataSharingBody, token.id);
 
 		Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
 		this._nrp.emit('app-policy:bust-cache', {
@@ -135,7 +135,7 @@ class AppDataSharingSchemaModel extends StandardModel {
 
 		const rxsDataShare = await super.add(appDataSharingBody, {
 			_appId: appDataSharingBody._appId,
-			_tokenId: token._id,
+			_tokenId: token.id,
 		});
 		const dataSharing = await Helpers.streamFirst(rxsDataShare);
 
@@ -149,7 +149,7 @@ class AppDataSharingSchemaModel extends StandardModel {
 				'#tokenType': {
 					'@eq': 'DATA_SHARING',
 				},
-				'_id': {
+				'id': {
 					'@eq': tokenId,
 				},
 			},

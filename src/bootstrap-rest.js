@@ -217,7 +217,7 @@ class BootstrapRest extends Bootstrap {
 			fs.writeFile(pathName, JSON.stringify(app), (err) => {
 				if (err) return reject(err);
 				Logging.log(`--------------------------------------------------------`);
-				Logging.log(` SUPER APP CREATED: ${superApp.app._id}`);
+				Logging.log(` SUPER APP CREATED: ${superApp.app.id}`);
 				Logging.log(``);
 				Logging.log(` Token can be found at the following path:`);
 				Logging.log(` ${pathName}`);
@@ -256,7 +256,7 @@ class BootstrapRest extends Bootstrap {
 		const rxsApps = await Model.App.findAll();
 		for await (const app of rxsApps) {
 			const appSchema = Schema.decode(app.__schema);
-			const appShortId = shortId(app._id);
+			const appShortId = shortId(app.id);
 			Logging.log(`Adding ${localSchema.length} local schema for ${appShortId}:${app.name}:${appSchema.length}`);
 			localSchema.forEach((cS) => {
 				const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);
@@ -268,7 +268,7 @@ class BootstrapRest extends Bootstrap {
 				appSchema[appSchemaIdx] = schema;
 			});
 
-			await Model.App.updateSchema(app._id, appSchema);
+			await Model.App.updateSchema(app.id, appSchema);
 		}
 	}
 }

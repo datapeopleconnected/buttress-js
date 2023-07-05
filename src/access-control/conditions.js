@@ -63,7 +63,7 @@ class Conditions {
 
 	async applyPolicyConditions(req, userPolicies) {
 		if (!this.appShortId) {
-			this.appShortId = Helpers.shortId(req.authApp._id);
+			this.appShortId = Helpers.shortId(req.authApp.id);
 		}
 		return await Object.keys(userPolicies).reduce(async (prev, policyKey) => {
 			await prev;

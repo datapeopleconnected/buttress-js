@@ -344,11 +344,6 @@ const __prepareSchemaResult = (result, token = false, projection = false) => {
 	const _prepare = (chunk, path) => {
 		if (!chunk) return chunk;
 
-		if (chunk._id) {
-			chunk.id = chunk._id;
-			delete chunk._id;
-		}
-
 		if (typeof chunk === 'object') {
 			if (Datastore.getInstance('core').ID.isValid(chunk)) {
 				return chunk;

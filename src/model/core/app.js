@@ -151,21 +151,21 @@ class AppSchemaModel extends StandardModel {
 
 		const token = await Helpers.streamFirst(rxsToken);
 
-		const rxsApp = await super.add(body, {_tokenId: token._id});
+		const rxsApp = await super.add(body, {_tokenId: token.id});
 		const app = await Helpers.streamFirst(rxsApp);
 
 		await this.__handleAddingNonSystemApp(body, token);
 
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
 		this._nrp.emit('app-routes:bust-cache', {});
-		Logging.logSilly(`Emitting app:created ${app._id}`);
-		this._nrp.emit('app:created', {appId: app._id});
-		Logging.logSilly(`Emitting app-schema:updated ${app._id}`);
-		this._nrp.emit('app-schema:updated', {appId: app._id});
+		Logging.logSilly(`Emitting app:created ${app.id}`);
+		this._nrp.emit('app:created', {appId: app.id});
+		Logging.logSilly(`Emitting app-schema:updated ${app.id}`);
+		this._nrp.emit('app-schema:updated', {appId: app.id});
 
-		Logging.logSilly(`Emitting app-policy:bust-cache ${app._id}`);
+		Logging.logSilly(`Emitting app-policy:bust-cache ${app.id}`);
 		this._nrp.emit('app-policy:bust-cache', {
-			appId: app._id,
+			appId: app.id,
 		});
 
 		return Promise.resolve({app: app, token: token});
@@ -211,7 +211,7 @@ class AppSchemaModel extends StandardModel {
 				query: [{
 					schema: ['app'],
 					query: {
-						_id: {
+						id: {
 							'@eq': body.id,
 						},
 					},
@@ -219,12 +219,12 @@ class AppSchemaModel extends StandardModel {
 			}],
 		}, body.id);
 
-		await Model.Token.setPolicyPropertiesById(token._id, {
+		await Model.Token.setPolicyPropertiesById(token.id, {
 			role: 'APP',
 		});
 
 		await Model.App.setPolicyPropertiesList({
-			_id: {
+			id: {
 				$eq: body.id,
 			},
 		}, appPolicyPropertiesList);
@@ -275,7 +275,7 @@ class AppSchemaModel extends StandardModel {
 		const requiredDSAs = Object.keys(dataSharingSchema);
 		if (requiredDSAs.length > 0) {
 			const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
-				'_appId': req.authApp._id,
+				'_appId': req.authApp.id,
 				'name': {
 					$in: requiredDSAs,
 				},
@@ -358,7 +358,7 @@ class AppSchemaModel extends StandardModel {
 	 * @return {Promise} - resolves to the token
 	 */
 	getToken() {
-		return Model.Token.findOne({_id: this._tokenId});
+		return Model.Token.findOne({id: this._tokenId});
 	}
 
 	/**
@@ -366,8 +366,8 @@ class AppSchemaModel extends StandardModel {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	async rm(entity) {
-		await Model.AppDataSharing.rmAll({_appId: entity._id});
-		const appShortId = (entity) ? Helpers.shortId(entity._id) : null;
+		await Model.AppDataSharing.rmAll({_appId: entity.id});
+		const appShortId = (entity) ? Helpers.shortId(entity.id) : null;
 
 		// Delete Schema collections
 		if (appShortId) {
@@ -390,7 +390,7 @@ class AppSchemaModel extends StandardModel {
 	 */
 	async updateOAuth(appId, oAuth) {
 		return super.update({
-			'_id': this.createId(appId),
+			'id': this.createId(appId),
 		}, {$set: {'oAuth': oAuth}});
 	}
 }

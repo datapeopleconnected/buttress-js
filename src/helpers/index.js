@@ -61,11 +61,6 @@ const __prepareResult = (result) => {
 	const prepare = (chunk) => {
 		if (!chunk) return chunk;
 
-		if (chunk._id) {
-			chunk.id = chunk._id;
-			delete chunk._id;
-		}
-
 		if (typeof chunk === 'object') {
 			Object.keys(chunk).forEach((key) => {
 				if (key.indexOf('_') !== -1) {
@@ -92,18 +87,12 @@ class JSONStringifyStream extends Transform {
 
 	_transform(chunk, encoding, cb) {
 		const nonReplacerKeys = [ // TODO: This needs to be reviewed
-			'_id', '_app', '__v', '_user', '_token',
+			'_app', '__v', '_user', '_token',
 		];
 
 		const __replacer = (key, value) => {
 			if (nonReplacerKeys.indexOf(key) !== -1) {
 				return undefined;
-			}
-			if (Array.isArray(value)) {
-				return value.map((c) => {
-					if (c && c._id) c.id = c._id;
-					return c;
-				});
 			}
 
 			return value;
@@ -314,9 +303,7 @@ module.exports.streamAll = (stream) => {
 		const arr = [];
 		stream.on('error', (err) => reject(err));
 		stream.on('end', () => resolve(arr));
-		stream.on('data', (item) => {
-			arr.push(item);
-		});
+		stream.on('data', (item) => arr.push(item));
 	});
 };
 

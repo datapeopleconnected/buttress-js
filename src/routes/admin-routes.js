@@ -49,7 +49,7 @@ class AdminRoutes {
 			}
 
 			const superApp = await Model.App.findOne({
-				_tokenId: Model.Token.createId(superToken._id),
+				_tokenId: Model.Token.createId(superToken.id),
 			});
 
 			if (!superApp) {
@@ -77,12 +77,12 @@ class AdminRoutes {
 			}
 
 			const superApp = await Model.App.findOne({
-				_tokenId: Model.Token.createId(superToken._id),
+				_tokenId: Model.Token.createId(superToken.id),
 			});
 
 			await this._updateAppPolicySelectorList(superApp);
 
-			res.status(200).send({appId: superApp._id});
+			res.status(200).send({appId: superApp.id});
 		});
 
 		app.post('/api/v1/admin/install-lambda', async (req, res) => {
@@ -109,10 +109,10 @@ class AdminRoutes {
 
 			try {
 				const adminApp = await Model.App.findOne({
-					_tokenId: Model.Token.createId(adminToken._id),
+					_tokenId: Model.Token.createId(adminToken.id),
 				});
 
-				await this._createAdminPolicy(adminApp._id);
+				await this._createAdminPolicy(adminApp.id);
 				for await (const lambdaKey of lambdaToInstall) {
 					await this._createAdminLambda(adminLambda[lambdaKey]);
 				}
@@ -120,7 +120,7 @@ class AdminRoutes {
 				if (refreshAdminToken) {
 					await this._refreshAdminAppToken(adminToken, adminApp);
 
-					await Model.App.updateById(Model.App.createId(adminApp._id), {
+					await Model.App.updateById(Model.App.createId(adminApp.id), {
 						$set: {
 							adminActive: true,
 						},
@@ -157,7 +157,7 @@ class AdminRoutes {
 		}
 		if (adminToken) {
 			adminApp = await Model.App.findOne({
-				_tokenId: Model.Token.createId(adminToken._id),
+				_tokenId: Model.Token.createId(adminToken.id),
 			});
 		}
 
@@ -191,8 +191,8 @@ class AdminRoutes {
 		}
 
 		const query = {
-			_id: {
-				$eq: app._id,
+			id: {
+				$eq: app.id,
 			},
 		};
 		await Model.App.setPolicyPropertiesList(query, adminPolicyPropsList);
@@ -217,7 +217,7 @@ class AdminRoutes {
 					const appQueryIdx = policy.config[idx].query.findIndex((q) => q.schema.includes('app'));
 					const userQueryIdx = policy.config[idx].query.findIndex((q) => q.schema.includes('user'));
 					if (appQueryIdx !== -1) {
-						policy.config[idx].query[appQueryIdx]._id = {
+						policy.config[idx].query[appQueryIdx].id = {
 							'@eq': appId,
 						};
 					}
@@ -246,7 +246,7 @@ class AdminRoutes {
 				throw new Error('Cannot find an admin app token');
 			}
 
-			const adminApp = await Model.App.findOne({_tokenId: Model.Token.createId(adminToken._id)});
+			const adminApp = await Model.App.findOne({_tokenId: Model.Token.createId(adminToken.id)});
 			if (!adminApp) {
 				throw new Error('Cannot find an admin app');
 			}
@@ -254,7 +254,7 @@ class AdminRoutes {
 			for await (const lambda of lambdas) {
 				const lambdaDB = await Model.Lambda.findOne({
 					name: lambda.name,
-					_appId: Model.App.createId(adminApp._id),
+					_appId: Model.App.createId(adminApp.id),
 				});
 				if (lambdaDB) continue;
 
@@ -287,12 +287,12 @@ class AdminRoutes {
 			type: Model.Token.Constants.Type.SYSTEM,
 			permissions: token.permissions,
 		}, {
-			_appId: app._id,
+			_appId: app.id,
 		});
 		const newToken = await Helpers.streamFirst(rxsNewToken);
-		await Model.App.updateById(Model.App.createId(app._id), {
+		await Model.App.updateById(Model.App.createId(app.id), {
 			$set: {
-				_tokenId: Model.Token.createId(newToken._id),
+				_tokenId: Model.Token.createId(newToken.id),
 			},
 		});
 

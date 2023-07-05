@@ -29,7 +29,7 @@ class Filter {
 	}
 
 	async addAccessControlPolicyQuery(req, tokenPolicies) {
-		this._globalQueryEnv.authUserId = req.authUser?._id;
+		this._globalQueryEnv.authUserId = req.authUser?.id;
 
 		await Object.keys(tokenPolicies).reduce(async (prev, key) => {
 			await prev;
@@ -77,8 +77,8 @@ class Filter {
 				return;
 			}
 
-			if (req.authApp && req.authApp._id && Object.keys(env).length > 0) {
-				await this.__substituteEnvVariables(translatedQuery[key], env, req.authApp._id);
+			if (req.authApp && req.authApp.id && Object.keys(env).length > 0) {
+				await this.__substituteEnvVariables(translatedQuery[key], env, req.authApp.id);
 			}
 
 			req[str][key] = translatedQuery[key];
@@ -100,7 +100,7 @@ class Filter {
 		if (queryValue === 'personId') {
 			const appShortId = shortId(appId);
 			const person = await Model[`${appShortId}-people`].findOne({authId: this._globalQueryEnv.authUserId});
-			this._globalQueryEnv.personId = person._id;
+			this._globalQueryEnv.personId = person.id;
 		}
 
 		return this._globalQueryEnv?.[queryValue];

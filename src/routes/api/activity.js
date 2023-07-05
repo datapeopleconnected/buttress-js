@@ -38,7 +38,7 @@ class GetActivityList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Activity.findAll(req.authApp._id, req.token);
+		return Model.Activity.findAll(req.authApp.id, req.token);
 	}
 }
 routes.push(GetActivityList);

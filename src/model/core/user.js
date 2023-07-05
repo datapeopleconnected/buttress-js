@@ -168,9 +168,9 @@ class UserSchemaModel extends StandardModel {
 	// 	};
 
 	// 	const rxsUser = await super.add(userBody, {
-	// 		_appId: Model.authApp._id,
+	// 		_appId: Model.authApp.id,
 	// 		_appMetadata: [{
-	// 			appId: Model.authApp._id,
+	// 			appId: Model.authApp.id,
 	// 			policyProperties: (body.policyProperties) ? body.policyProperties : null,
 	// 		}],
 	// 	});
@@ -183,8 +183,8 @@ class UserSchemaModel extends StandardModel {
 	// 	}
 
 	// 	const rxsToken = await Model.Token.add(auth, {
-	// 		_appId: Model.authApp._id,
-	// 		_userId: user._id,
+	// 		_appId: Model.authApp.id,
+	// 		_userId: user.id,
 	// 	});
 	// 	const token = await Helpers.streamFirst(rxsToken);
 
@@ -227,7 +227,7 @@ class UserSchemaModel extends StandardModel {
 		});
 
 		const rxsUser = await super.add(userBody, {
-			_appId: Model.authApp._id,
+			_appId: Model.authApp.id,
 		});
 		const user = await Helpers.streamFirst(rxsUser);
 
@@ -242,8 +242,8 @@ class UserSchemaModel extends StandardModel {
 			};
 
 			const rxsToken = await Model.Token.add(userToken, {
-				_appId: Model.authApp._id,
-				_userId: user._id,
+				_appId: Model.authApp.id,
+				_userId: user.id,
 			});
 			const token = await Helpers.streamFirst(rxsToken);
 
@@ -311,7 +311,7 @@ class UserSchemaModel extends StandardModel {
 
 		const update = {};
 		update[`auth.${authIdx}`] = auth;
-		return super.updateById(user._id, update).then(() => true);
+		return super.updateById(user.id, update).then(() => true);
 	}
 
 	/**
@@ -343,7 +343,7 @@ class UserSchemaModel extends StandardModel {
 	 * @return {Promise} - resolves to a User object or null
 	 */
 	getByUsername(username) {
-		return super.findOne({username: username}, {_id: 1});
+		return super.findOne({username: username}, {id: 1});
 	}
 
 	/**

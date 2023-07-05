@@ -160,7 +160,7 @@ class LambdaManager {
 
 		Logging.logSilly(`Pushing a new path mutation lambda (${lambda.name}) into the path mutation cached array`);
 		this._lambdaPathsMutation.push({
-			lambdaId: lambda._id,
+			lambdaId: lambda.id,
 			type: trigger.type,
 			paths: trigger.pathMutation.paths,
 		});
@@ -178,7 +178,7 @@ class LambdaManager {
 
 		const execLambdas = lambdas.map((lambda) => {
 			const output = {
-				lambdaId: (lambda.lambdaId) ? lambda.lambdaId : lambda._id,
+				lambdaId: (lambda.lambdaId) ? lambda.lambdaId : lambda.id,
 				lambdaType: (lambda.triggerType) ? lambda.triggerType : 'CRON',
 			};
 

@@ -180,7 +180,7 @@ module.exports = class Buttress extends AbstractAdapter {
 	rm(entity) {
 		entity = this.convertBSONObjects(entity);
 		return this.resolveAfterInit()
-			.then(() => this.collection.remove(entity._id));
+			.then(() => this.collection.remove(entity.id));
 	}
 
 	/**

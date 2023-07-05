@@ -383,7 +383,7 @@ class Helpers {
 
 	_pushLambdaExecutionLog(log, type) {
 		Model.LambdaExecution.update({
-			_id: Model.LambdaExecution.createId(this.lambdaExecution._id),
+			id: Model.LambdaExecution.createId(this.lambdaExecution.id),
 		}, {
 			$push: {
 				logs: {

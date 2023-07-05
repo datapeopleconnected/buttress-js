@@ -94,7 +94,7 @@ class GetPolicyList extends Route {
 			return Model.Policy.findByIds(ids);
 		}
 
-		return Model.Policy.findAll(req.authApp._id, req.token);
+		return Model.Policy.findAll(req.authApp.id, req.token);
 	}
 }
 routes.push(GetPolicyList);
@@ -165,7 +165,7 @@ class AddPolicy extends Route {
 				name: {
 					$eq: req.body.name,
 				},
-				_appId: Model.App.createId(app._id),
+				_appId: Model.App.createId(app.id),
 			});
 			if (policyExist) {
 				this.log(`[${this.name}] Policy with name ${req.body.name} already exists`, Route.LogLevel.ERR);
@@ -185,10 +185,10 @@ class AddPolicy extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Policy.add(req.body, req.authApp._id)
+		return Model.Policy.add(req.body, req.authApp.id)
 			.then((policy) => {
 				this._nrp.emit('app-policy:bust-cache', {
-					appId: req.authApp._id,
+					appId: req.authApp.id,
 				});
 				return policy;
 			});
@@ -324,15 +324,15 @@ class SyncPolicies extends Route {
 
 	async _exec(req, res, validate) {
 		await Model.Policy.rmAll({
-			_appId: req.authApp._id,
+			_appId: req.authApp.id,
 		});
 
 		for await (const policy of req.body) {
-			await Model.Policy.add(policy, req.authApp._id);
+			await Model.Policy.add(policy, req.authApp.id);
 		}
 
 		this._nrp.emit('app-policy:bust-cache', {
-			appId: req.authApp._id,
+			appId: req.authApp.id,
 		});
 
 		return true;
@@ -411,12 +411,12 @@ class DeleteTransientPolicy extends Route {
 		await Model.Policy.rm(validate);
 
 		this._nrp.emit('app-policy:bust-cache', {
-			appId: req.authApp._id,
+			appId: req.authApp.id,
 		});
 
 		// Trigger socket process to re-evaluate rooms
 		this._nrp.emit('worker:socket:evaluateUserRooms', {
-			appId: req.authApp._id,
+			appId: req.authApp.id,
 		});
 
 		return true;
@@ -456,7 +456,7 @@ class DeletePolicy extends Route {
 		return Model.Policy.rm(this._policy)
 			.then(() => {
 				this._nrp.emit('app-policy:bust-cache', {
-					appId: req.authApp._id,
+					appId: req.authApp.id,
 				});
 
 				return true;
@@ -476,7 +476,7 @@ class DeleteAppPolicies extends Route {
 	}
 
 	async _validate(req) {
-		const rxsPolicies = await Model.Policy.findAll(req.authApp._id, req.token);
+		const rxsPolicies = await Model.Policy.findAll(req.authApp.id, req.token);
 		const policies = [];
 		for await (const policy of rxsPolicies) {
 			policies.push(policy);

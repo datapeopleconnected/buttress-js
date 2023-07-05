@@ -35,7 +35,7 @@ class StandardModel {
 
 		this.app = app || null;
 
-		this.appShortId = (app) ? Helpers.shortId(app._id) : null;
+		this.appShortId = (app) ? Helpers.shortId(app.id) : null;
 		this.collectionName = (schemaData) ? `${schemaData.name}` : null;
 
 		if (this.appShortId) {
@@ -46,7 +46,7 @@ class StandardModel {
 
 		if (this.__nrp) {
 			nrp.on('app:update-schema', (data) => {
-				if (!app || (app._id.toString() !== data.appId)) return;
+				if (!app || (app.id.toString() !== data.appId)) return;
 
 				data.schemas.forEach((schema) => {
 					if (schema.name !== this.schemaData.name) return;
@@ -186,14 +186,7 @@ class StandardModel {
 
 		// Convert id
 		let propSchema = null;
-		if (!schemaFlat[property] && (property === 'id' || property === '_id')) {
-		// if (!schemaFlat[property] && (property === 'id' || property === 'id')) {
-			// Convert id -> _id to handle querying of document root index without having to pass _id
-			property = '_id';
-			propSchema = {
-				__type: 'id',
-			};
-		} else if (schemaFlat[property]) {
+		if (schemaFlat[property]) {
 			propSchema = schemaFlat[property];
 		} else if (Object.keys(schemaFlat) > 0) {
 			throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
@@ -263,7 +256,7 @@ class StandardModel {
 				if (!{}.hasOwnProperty.call(roles.schema.authFilter.env, property)) continue;
 				const query = roles.schema.authFilter.env[property];
 
-				let propertyMap = '_id';
+				let propertyMap = 'id';
 				if (query.map) {
 					propertyMap = query.map;
 				}
@@ -325,9 +318,9 @@ class StandardModel {
 		const entity = Object.assign({}, internals);
 
 		if (body.id) {
-			entity._id = this.adapter.ID.new(body.id);
+			entity.id = this.adapter.ID.new(body.id);
 		} else {
-			entity._id = this.adapter.ID.new();
+			entity.id = this.adapter.ID.new();
 		}
 
 		if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {

@@ -114,7 +114,7 @@ class AccessControl {
 		if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
 
 		const tokenPolicies = this.__getTokenPolicies(token, appId);
-		Logging.logSilly(`Got ${tokenPolicies.length} Matched policies for token ${token.type}:${token._id}`, req.id);
+		Logging.logSilly(`Got ${tokenPolicies.length} Matched policies for token ${token.type}:${token.id}`, req.id);
 
 		const policyOutcome = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
 		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
@@ -129,7 +129,7 @@ class AccessControl {
 				policies: policyOutcome.res,
 				appId: appId,
 				apiPath: req.authApp.apiPath,
-				userId: user._id,
+				userId: user.id,
 				schemaNames: [...this._coreSchema, ...this._schemas[appId]].map((s) => s.name),
 				schemaName: schemaName,
 				path: requestedURL,
@@ -188,19 +188,19 @@ class AccessControl {
 
 		if (!req.authApp) {
 			req.authApp = {
-				_id: appId,
+				id: appId,
 			};
 		}
 		if (!req.authUser) {
 			req.authUser = {
-				_id: user._id,
+				id: user.id,
 			};
 		}
 
 		const rooms = {};
 		const token = await Model.Token.findOne({
 			_userId: {
-				$eq: Model.User.createId(user._id),
+				$eq: Model.User.createId(user.id),
 			},
 		});
 		const tokenPolicies = this.__getTokenPolicies(token, appId);
@@ -236,7 +236,7 @@ class AccessControl {
 		// 	Object.keys(schema).forEach((key) => {
 		// 		if (!schema[key].userIds) return;
 
-		// 		const userIdx = schema[key].userIds.findIndex((id) => id.toString() === user._id.toString());
+		// 		const userIdx = schema[key].userIds.findIndex((id) => id.toString() === user.id.toString());
 		// 		if (userIdx !== -1) {
 		// 			arr.push(key);
 		// 		}
@@ -262,7 +262,7 @@ class AccessControl {
 			err: {},
 		};
 
-		appId = (!appId && req.authApp && req.authApp._id) ? req.authApp._id : appId;
+		appId = (!appId && req.authApp && req.authApp.id) ? req.authApp.id : appId;
 
 		// TODO: better way to figure out the request verb
 		const requestVerb = req.method || req.originalMethod;
@@ -537,7 +537,7 @@ class AccessControl {
 			delete tokenPolicyProps[key];
 		});
 
-		await Model.Token.setPolicyPropertiesById(userToken._id, tokenPolicyProps);
+		await Model.Token.setPolicyPropertiesById(userToken.id, tokenPolicyProps);
 	}
 
 	__getInnerObjectValue(originalObj) {
