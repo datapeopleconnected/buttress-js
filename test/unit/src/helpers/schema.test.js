@@ -19,7 +19,7 @@ const assert = require('assert');
 
 const Helpers = require('../../../../dist/helpers');
 
-describe('helpers.schema:populateObject', () => {
+describe('helpers.schema:sanitizeObject', () => {
 	const schema = {
 		name: 'example-schema',
 		properties: {
@@ -65,12 +65,12 @@ describe('helpers.schema:populateObject', () => {
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
 	let result = null;
 
-	it('should have function, populateObject', async () => {
-		assert(typeof Helpers.Schema.populateObject === 'function');
+	it('should have function, sanitizeObject', async () => {
+		assert(typeof Helpers.Schema.sanitizeObject === 'function');
 	});
 
-	it('should execute the populateObject function', async () => {
-		result = Helpers.Schema.populateObject(flattenedSchema, []);
+	it('should execute the sanitizeObject function', async () => {
+		result = Helpers.Schema.sanitizeObject(flattenedSchema, []);
 		assert(result !== null);
 	});
 

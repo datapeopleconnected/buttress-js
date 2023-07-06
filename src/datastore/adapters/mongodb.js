@@ -89,21 +89,28 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		}, Promise.resolve([]));
 
 		const ops = documents.map((c) => {
-			return {
-				insertOne: {
-					document: c,
-				},
-			};
+			return {insertOne: {document: c}};
 		});
 
-		// return await new Promise((resolve, reject) => {
 		if (ops.length < 1) return Promise.resolve([]);
 
 		const res = await this.collection.bulkWrite(ops);
 
-		const insertedIds = Object.values(res.insertedIds).map((id) => new ObjectId(id));
+		const readable = new Stream.Readable({objectMode: true});
+		readable._read = () => {};
 
-		return this.find({_id: {$in: insertedIds}});
+		// Lets merged the inserted ids back into the documents, previously we were
+		// looking them up in the database again which is a waste of time.
+		new Promise((resolve) => setTimeout(() => {
+			documents.forEach((document, idx) => {
+				document._id = res.insertedIds[idx];
+				readable.push(document);
+			});
+			readable.push(null);
+			resolve();
+		}, 1));
+
+		return this._modifyDocumentStream(readable);
 	}
 
 	async batchUpdateProcess(id, body, context, schemaConfig, model = '') {
@@ -124,7 +131,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			let value = null;
 			if (schemaConfig && schemaConfig.__schema) {
 				const fb = Helpers.Schema.getFlattenedBody(body.value);
-				value = Helpers.Schema.populateObject(schemaConfig.__schema, fb);
+				value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
 			} else {
 				value = body.value;
 			}
@@ -203,7 +210,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			let value = null;
 			if (schemaConfig && schemaConfig.__schema) {
 				const fb = Helpers.Schema.getFlattenedBody(body.value);
-				value = Helpers.Schema.populateObject(schemaConfig.__schema, fb);
+				value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
 			} else {
 				value = body.value;
 			}

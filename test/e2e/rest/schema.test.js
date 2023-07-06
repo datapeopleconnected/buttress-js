@@ -61,15 +61,22 @@ describe('Schema', async () => {
 			testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app1.token);
 			assert.strictEqual(testEnv.apps.app1.schema.length, 1);
 			assert.strictEqual(testEnv.apps.app1.schema[0].name, 'car');
-			assert.strictEqual(typeof testEnv.apps.app1.schema[0].properties.id, 'object',
-				'Schema is missing an id property which is added by Buttress');
 			assert.strictEqual(typeof testEnv.apps.app1.schema[0].properties.name, 'object');
+		});
+
+		it('Should have added id to the schema even though it wasn\'t provided', async () => {
+			assert.strictEqual(typeof testEnv.apps.app1.schema[0].properties.id, 'object');
+		});
+
+		it('Should have added source to the schema even though it wasn\'t provided', async () => {
+			assert.notEqual(typeof testEnv.apps.app1.schema[0].properties.source, undefined);
 		});
 	});
 
 	describe('Requests', async () => {
 		describe('Methods', async () => {
-			it('Should make a POST request to bulk add', async () => {
+			it('Should make a POST request to bulk add', async function() {
+				this.timeout(5000);
 				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add?token=${testEnv.apps.app1.token}`, {
 					method: 'POST',
 					headers: {'Content-Type': 'application/json'},

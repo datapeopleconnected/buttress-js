@@ -129,6 +129,8 @@ const __getPropDefault = (config) => {
 module.exports.getPropDefault = __getPropDefault;
 
 const __validateProp = (prop, config) => {
+	// TODO: This function needs a refactor, we shouldn't be modifying the prop ref.
+
 	let type = typeof prop.value;
 	let valid = false;
 
@@ -416,13 +418,20 @@ module.exports.unflattenObject = __unflattenObject;
  * @param {Integer} bodyIdx
  * @return {Object} - A fully populated object using schema defaults and values provided.
  */
-const __populateObject = (schemaFlat, values, body = null, bodyIdx = null) => {
+const __sanitizeObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 	const res = {};
 	const objects = {};
 	for (const property in schemaFlat) {
 		if (!{}.hasOwnProperty.call(schemaFlat, property)) continue;
 		let propVal = values.find((v) => v.path === property);
 		const config = schemaFlat[property];
+
+		if (property === 'source') {
+			// Source is a special case, we don't actually want it in our objects that get saved
+			// as Buttress adds this property to objects to give the client ha hit on whhere the
+			// object came from.
+			continue;
+		}
 
 		const path = property.split('.');
 		let isSubPropOfArray = false;
@@ -463,7 +472,7 @@ const __populateObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
-			value = value.map((v, idx) => __populateObject(config.__schema, __getFlattenedBody(v), body[property], idx));
+			value = value.map((v, idx) => __sanitizeObject(config.__schema, __getFlattenedBody(v), body[property], idx));
 		} else if (root && path.length > 0 || schemaFlat[property].__type === 'object') {
 			if (!objects[root]) {
 				objects[root] = {};
@@ -476,7 +485,7 @@ const __populateObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 	}
 	return res;
 };
-module.exports.populateObject = __populateObject;
+module.exports.sanitizeObject = __sanitizeObject;
 
 const __getSchemaKeys = (obj) => {
 	return Object.keys(obj).reduce((arr, key) => {

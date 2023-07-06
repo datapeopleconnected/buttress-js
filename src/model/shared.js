@@ -25,7 +25,7 @@ const Helpers = require('../helpers');
 * APP-SPECIFIC SCHEMA
 *
 **********************************************************************************/
-const _validateAppProperties = function(schema, body) {
+const _validateSchemaObject = function(schema, body) {
 	// const schema = __getCollectionSchema(collection);
 	if (schema === false) return {isValid: true};
 
@@ -40,21 +40,18 @@ const _validateAppProperties = function(schema, body) {
  * @param {Object} body - object containing properties to be applied
  * @return {Object} - returns an object with only validated properties
  */
-const _applyAppProperties = function(schema, body) {
+const _sanitizeSchemaObject = function(schema, body) {
 	// const schema = __getCollectionSchema(collection);
 	if (schema === false) return {};
 
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
-
-	// TODO: Strip body of fields that don't match schema
-
 	const flattenedBody = Helpers.Schema.getFlattenedBody(body);
 
-	return Helpers.Schema.populateObject(flattenedSchema, flattenedBody, body);
+	return Helpers.Schema.sanitizeObject(flattenedSchema, flattenedBody, body);
 };
 
-module.exports.validateAppProperties = _validateAppProperties;
-module.exports.applyAppProperties = _applyAppProperties;
+module.exports.validateSchemaObject = _validateSchemaObject;
+module.exports.sanitizeSchemaObject = _sanitizeSchemaObject;
 
 /* ********************************************************************************
  *

@@ -139,10 +139,14 @@ class Route {
 		const token = await this._authenticate(req, res);
 
 		req.timings.validate = req.timer.interval;
+		Logging.logTimer('Route:exec:validate:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		const validate = await this._validate(req, res, token);
+		Logging.logTimer('Route:exec:validate:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		req.timings.exec = req.timer.interval;
+		Logging.logTimer('Route:exec:exec:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		const result = await this._exec(req, res, validate);
+		Logging.logTimer('Route:exec:exec:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		// Send the result back to the client and resolve the request from
 		// this point onward you should treat the request as furfilled.
@@ -200,8 +204,7 @@ class Route {
 			const stringifyStream = new Helpers.JSONStringifyStream({}, (chunk) => {
 				chunkCount++;
 				if (chunkCount % this.timingChunkSample === 0) req.timings.stream.push(req.timer.interval);
-				if (!this.redactResults) return chunk;
-				return Helpers.Schema.prepareSchemaResult(chunk, req.token);
+				return (this.redactResults) ? Helpers.Schema.prepareSchemaResult(chunk, req.token) : chunk;
 			});
 
 			res.set('Content-Type', 'application/json');

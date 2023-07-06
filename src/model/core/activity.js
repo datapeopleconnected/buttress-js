@@ -167,9 +167,7 @@ class ActivitySchemaModel extends StandardModel {
 		delete body.req;
 		delete body.res;
 
-		const validated = Shared.applyAppProperties(ActivitySchemaModel.Schema, body);
-
-		return validated;
+		return Shared.sanitizeSchemaObject(ActivitySchemaModel.Schema, body);
 	}
 
 	add(body, internals) {

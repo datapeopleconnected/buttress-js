@@ -86,18 +86,6 @@ class JSONStringifyStream extends Transform {
 	}
 
 	_transform(chunk, encoding, cb) {
-		const nonReplacerKeys = [ // TODO: This needs to be reviewed
-			'_app', '__v', '_user', '_token',
-		];
-
-		const __replacer = (key, value) => {
-			if (nonReplacerKeys.indexOf(key) !== -1) {
-				return undefined;
-			}
-
-			return value;
-		};
-
 		if (this.prepare) {
 			chunk = this.prepare(chunk);
 		} else {
@@ -105,11 +93,10 @@ class JSONStringifyStream extends Transform {
 		}
 
 		// Dont return any blank objects
-		if (chunk === null || typeof chunk === 'object' && Object.keys(chunk).length < 1) {
-			return cb();
-		}
+		if (chunk === null || typeof chunk === 'object' && Object.keys(chunk).length < 1) return cb();
 
-		const str = JSON.stringify(chunk, __replacer);
+		// Stringify the object thats come in and strip any keys/props which are prefixed with a underscore
+		const str = JSON.stringify(chunk, (key, value) => (key.indexOf('_') === 0) ? undefined : value);
 
 		if (this._first) {
 			this._first = false;

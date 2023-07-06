@@ -78,7 +78,7 @@ class StandardModel {
 			invalid: [],
 		};
 
-		const app = Shared.validateAppProperties(this.schemaData, body);
+		const app = Shared.validateSchemaObject(this.schemaData, body);
 		if (app.isValid === false) {
 			res.isValid = false;
 			res.invalid = res.invalid.concat(app.invalid);
@@ -328,9 +328,7 @@ class StandardModel {
 			entity.updatedAt = (body.updatedAt) ? Sugar.Date.create(body.updatedAt) : null;
 		}
 
-		const validated = Shared.applyAppProperties(this.schemaData, body);
-
-		return Object.assign(validated, entity);
+		return Object.assign(Shared.sanitizeSchemaObject(this.schemaData, body), entity);
 	}
 	add(body, internals) {
 		return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
