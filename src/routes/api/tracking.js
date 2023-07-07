@@ -26,8 +26,8 @@ const routes = [];
  * @class GetTrackingList
  */
 class GetTrackingList extends Route {
-	constructor(nrp) {
-		super('tracking', 'GET TRACKING LIST', nrp);
+	constructor(nrp, redisClient) {
+		super('tracking', 'GET TRACKING LIST', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}

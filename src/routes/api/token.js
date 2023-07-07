@@ -27,8 +27,8 @@ const routes = [];
  * @class GetTokenList
  */
 class GetTokenList extends Route {
-	constructor(nrp) {
-		super('token', 'GET TOKEN LIST', nrp);
+	constructor(nrp, redisClient) {
+		super('token', 'GET TOKEN LIST', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;

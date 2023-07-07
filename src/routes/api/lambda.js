@@ -46,8 +46,8 @@ const lambdaConsole = {
  * @class GetLambda
  */
 class GetLambda extends Route {
-	constructor(nrp) {
-		super('lambda/:id', 'GET LAMBDA', nrp);
+	constructor(nrp, redisClient) {
+		super('lambda/:id', 'GET LAMBDA', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}

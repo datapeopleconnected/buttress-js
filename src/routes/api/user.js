@@ -29,8 +29,8 @@ const routes = [];
  * @class GetUserList
  */
 class GetUserList extends Route {
-	constructor(nrp) {
-		super('user', 'GET USER LIST', nrp);
+	constructor(nrp, redisClient) {
+		super('user', 'GET USER LIST', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}

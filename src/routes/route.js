@@ -94,7 +94,7 @@ const Constants = {
 };
 
 class Route {
-	constructor(path, name, nrp = null) {
+	constructor(path, name, services) {
 		this.verb = Constants.Verbs.GET;
 		this.Type = Constants.Type.SYSTEM;
 		this.permissions = Constants.Permissions.READ;
@@ -117,7 +117,11 @@ class Route {
 		this.path = path;
 		this.name = name;
 
-		this._nrp = nrp;
+		this._nrp = services.get('nrp');
+
+		this._redisClient = services.get('redisClient');
+
+		this._sourceIdCheckMap = new Map();;
 	}
 
 	/**
@@ -203,6 +207,7 @@ class Route {
 			let chunkCount = 0;
 			const stringifyStream = new Helpers.JSONStringifyStream({}, (chunk) => {
 				chunkCount++;
+
 				if (chunkCount % this.timingChunkSample === 0) req.timings.stream.push(req.timer.interval);
 				return Helpers.Schema.prepareSchemaResult(chunk, req.authApp.id);
 			});

@@ -27,13 +27,11 @@ const StandardModel = require('../type/standard');
 
 
 class AppSchemaModel extends StandardModel {
-	constructor(nrp) {
+	constructor(services) {
 		const schema = AppSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 
 		this._localSchema = null;
-
-		this._nrp = nrp;
 	}
 
 	static get Constants() {
@@ -157,14 +155,14 @@ class AppSchemaModel extends StandardModel {
 		await this.__handleAddingNonSystemApp(body, token);
 
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
-		this._nrp.emit('app-routes:bust-cache', {});
+		this.__nrp.emit('app-routes:bust-cache', {});
 		Logging.logSilly(`Emitting app:created ${app.id}`);
-		this._nrp.emit('app:created', {appId: app.id});
+		this.__nrp.emit('app:created', {appId: app.id});
 		Logging.logSilly(`Emitting app-schema:updated ${app.id}`);
-		this._nrp.emit('app-schema:updated', {appId: app.id});
+		this.__nrp.emit('app-schema:updated', {appId: app.id});
 
 		Logging.logSilly(`Emitting app-policy:bust-cache ${app.id}`);
-		this._nrp.emit('app-policy:bust-cache', {
+		this.__nrp.emit('app-policy:bust-cache', {
 			appId: app.id,
 		});
 
@@ -247,8 +245,8 @@ class AppSchemaModel extends StandardModel {
 		}
 
 		Logging.logSilly(`Emitting app-schema:updated ${appId}`);
-		this._nrp.emit('app-schema:updated', {appId: appId});
-		this._nrp.emit('app:update-schema', {
+		this.__nrp.emit('app-schema:updated', {appId: appId});
+		this.__nrp.emit('app:update-schema', {
 			appId: appId,
 			schemas: Schema.decode(appSchema),
 		});

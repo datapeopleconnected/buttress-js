@@ -94,8 +94,8 @@ const routes = [];
  * @class GetAppDataSharing
  */
 class GetAppDataSharing extends Route {
-	constructor(nrp) {
-		super('appDataSharing/:id', 'GET APP DATA SHARING', nrp);
+	constructor(nrp, redisClient) {
+		super('appDataSharing/:id', 'GET APP DATA SHARING', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}

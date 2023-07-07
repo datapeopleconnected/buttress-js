@@ -29,6 +29,8 @@ class Bootstrap extends EventEmitter {
 	protected __shutdown: boolean = false;
 
 	private _resolveWorkersInitialised?: Function;
+	
+	protected __services: Map<string, unknown> = new Map();
 
 	constructor() {
 		super();
@@ -42,7 +44,8 @@ class Bootstrap extends EventEmitter {
 	async init() {
 		this.__shutdown = false;
 
-		this.__nrp = NRP(Config.redis);
+		this.__services.set('nrp', NRP(Config.redis));
+		this.__nrp = this.__services.get('nrp') as NRP.NodeRedisPubSub;
 	}
 
 	async clean() {

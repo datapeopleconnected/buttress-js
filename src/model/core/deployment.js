@@ -19,9 +19,9 @@ const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
 class DeploymentSchemaModel extends StandardModel {
-	constructor(nrp) {
+	constructor(services) {
 		const schema = DeploymentSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 	}
 
 	static get Schema() {

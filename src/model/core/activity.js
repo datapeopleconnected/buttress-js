@@ -35,9 +35,9 @@ const Visibility = {
 };
 
 class ActivitySchemaModel extends StandardModel {
-	constructor(nrp) {
+	constructor(services) {
 		const schema = ActivitySchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 	}
 
 	static get Constants() {

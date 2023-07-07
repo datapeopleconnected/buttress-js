@@ -29,7 +29,7 @@ const {Errors, DataSharing} = require('../helpers');
 const Datastore = require('../datastore');
 
 const StandardModel = require('./type/standard');
-const RemoteModel = require('./type/remote');
+const RemoteCombinedModel = require('./type/remote-combined');
 
 /**
  * @param {string} model - name of the model to load
@@ -49,12 +49,12 @@ class Model {
 
 		this.coreSchema = [];
 
-		this._nrp = null;
+		this._services = null;
 	}
 
-	async init(nrp) {
+	async init(services) {
 		Logging.logSilly('Model:init');
-		this._nrp = nrp;
+		this._services = services;
 	}
 
 	async clean() {
@@ -156,7 +156,7 @@ class Model {
 
 		if (!this.models[name]) {
 			Logging.logSilly(`Creating core model: ${name}`);
-			this.models[name] = new CoreSchemaModel(this._nrp);
+			this.models[name] = new CoreSchemaModel(this._services);
 			await this.models[name].initAdapter(Datastore.getInstance('core'));
 
 			this.__addModelGetter(name);
@@ -213,10 +213,12 @@ class Model {
 				const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
 				const remoteDatastore = Datastore.createInstance({connectionString});
 
+				remoteDatastore.dataSharingId = dataSharing.id;
+
 				datastores.push(remoteDatastore);
 			}
 
-			this.models[modelName] = new RemoteModel(schemaData, app, this._nrp);
+			this.models[modelName] = new RemoteCombinedModel(schemaData, app, this._services);
 
 			try {
 				await this.models[modelName].initAdapter(mainDatastore, datastores);
@@ -229,7 +231,10 @@ class Model {
 			this.__addModelGetter(modelName);
 			return this.models[modelName];
 		} else {
-			this.models[modelName] = new StandardModel(schemaData, app, this._nrp);
+			if ((this._services instanceof Map) === false) {
+				throw new Error('FUCK');
+			}
+			this.models[modelName] = new StandardModel(schemaData, app, this._services);
 			await this.models[modelName].initAdapter(mainDatastore);
 		}
 

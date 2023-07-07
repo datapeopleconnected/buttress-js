@@ -34,9 +34,9 @@ const Type = {
 };
 
 class TrackingSchemaModel extends StandardModel {
-	constructor(nrp) {
+	constructor(services) {
 		const schema = TrackingSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 	}
 
 	static get Constants() {

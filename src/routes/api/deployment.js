@@ -24,8 +24,8 @@ const routes = [];
  * @class SearchDeploymentList
  */
 class SearchDeploymentList extends Route {
-	constructor(nrp) {
-		super('deployment', 'SEARCH DEPLOYMENT LIST', nrp);
+	constructor(nrp, redisClient) {
+		super('deployment', 'SEARCH DEPLOYMENT LIST', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}

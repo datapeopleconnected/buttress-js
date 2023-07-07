@@ -48,11 +48,15 @@ class Routes {
 		this._tokens = [];
 		this._routerMap = {};
 
+		this._services = null;
+
 		this._nrp = null;
 	}
 
-	async init(nrp) {
-		this._nrp = nrp;
+	async init(services) {
+		this._services = services;
+
+		this._nrp = services.get('nrp');
 	}
 
 	/**
@@ -286,7 +290,7 @@ class Routes {
 	 * @private
 	 */
 	_initRoute(app, Route, core, ...additional) {
-		const route = (core) ? new Route(this._nrp) : new Route(null, null, this._nrp);
+		const route = (core) ? new Route(this._services) : new Route(null, null, this._services);
 		const routePath = path.join(...[
 			Config.app.apiPrefix,
 			...additional,
@@ -308,7 +312,7 @@ class Routes {
 			const appShortId = Helpers.shortId(app.id);
 
 			try {
-				route = new Route(schemaData, appShortId, this._nrp);
+				route = new Route(schemaData, appShortId, this._services);
 			} catch (err) {
 				if (err instanceof Helpers.Errors.RouteMissingModel) return Logging.logWarn(`${err.message} for ${app.name}`);
 

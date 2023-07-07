@@ -16,7 +16,6 @@
 const Stream = require('stream');
 const ObjectId = require('mongodb').ObjectId;
 const MongoClient = require('mongodb').MongoClient;
-const syncthrough = require('syncthrough');
 
 const Model = require('../../model');
 const Helpers = require('../../helpers');

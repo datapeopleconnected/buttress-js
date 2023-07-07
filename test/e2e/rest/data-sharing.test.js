@@ -152,15 +152,11 @@ describe('Data Sharing', async () => {
 					name: 'app2-to-app1',
 					schema: 'car',
 				}],
-				properties: {
-					price: {
-						__type: 'number',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-				},
 			}], testEnv.apps.app2.token);
+
+			assert(testEnv.apps.app2.schema[0].properties.id);
+			assert(testEnv.apps.app2.schema[0].properties.name);
+			assert(testEnv.apps.app2.schema[0].properties.sourceId);
 
 			// Give Buttress time to create the routes.
 			await new Promise((r) => setTimeout(r, 500));
@@ -177,22 +173,38 @@ describe('Data Sharing', async () => {
 			assert.strictEqual(cars[0].name, testEnv.cars[0].name);
 		});
 
-		// it('Should be able to POST cars from App2 which will use data sharing to post the data to App1', async function() {
-		// 	const [result] = await bjsReq({
-		// 		url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
-		// 		method: 'POST',
-		// 		headers: {'Content-Type': 'application/json'},
-		// 		body: JSON.stringify({
-		// 			name: 'A blue car',
-		// 			price: 2000.00,
-		// 		}),
-		// 	}, testEnv.apps.app2.token);
-		// 	testEnv.cars.push(result);
+		it('Should be able to POST cars from App2 which will save the data against App2 because no source is provided', async function() {
+			const [result] = await bjsReq({
+				url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({
+					name: 'A blue car',
+				}),
+			}, testEnv.apps.app2.token);
+			testEnv.cars.push(result);
 
-		// 	assert(result.id !== null && result.id !== undefined);
-		// 	assert.strictEqual(result.name, 'A blue car');
-		// 	assert.strictEqual(result.price, 2000.00);
-		// });
+			assert(result.id !== null && result.id !== undefined);
+			assert.strictEqual(result.name, 'A blue car');
+			assert.strictEqual(result.price, 2000.00);
+		});
+
+		it('Should be able to POST cars from App2 which will save the data against App1 because a source is provided', async function() {
+			const [result] = await bjsReq({
+				url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({
+					name: 'A blue car',
+					sourceId: 'HERE SOON, I PROMISE',
+				}),
+			}, testEnv.apps.app2.token);
+			testEnv.cars.push(result);
+
+			assert(result.id !== null && result.id !== undefined);
+			assert.strictEqual(result.name, 'A blue car');
+			assert.strictEqual(result.price, 2000.00);
+		});
 
 		// it('Should be able to GET cars direct from App1 without extra price property', async function() {
 		// 	const cars = await bjsReq({

@@ -35,11 +35,9 @@ const Type = {
 };
 
 class TokenSchemaModel extends StandardModel {
-	constructor(nrp) {
+	constructor(services) {
 		const schema = TokenSchemaModel.Schema;
-		super(schema, null, nrp);
-
-		this._nrp = nrp;
+		super(schema, null, services);
 	}
 
 	static get Constants() {
@@ -215,7 +213,7 @@ class TokenSchemaModel extends StandardModel {
 			'id': this.createId(tokenId),
 		}, {$set: {'policyProperties': policyProperties}});
 
-		this._nrp.emit('app-routes:bust-cache', {});
+		this.__nrp.emit('app-routes:bust-cache', {});
 	}
 
 	/**
@@ -245,7 +243,7 @@ class TokenSchemaModel extends StandardModel {
 			},
 		});
 
-		this._nrp.emit('app-routes:bust-cache', {});
+		this.__nrp.emit('app-routes:bust-cache', {});
 	}
 
 	/**
@@ -261,7 +259,7 @@ class TokenSchemaModel extends StandardModel {
 			},
 		});
 
-		this._nrp.emit('app-routes:bust-cache', {});
+		this.__nrp.emit('app-routes:bust-cache', {});
 	}
 }
 

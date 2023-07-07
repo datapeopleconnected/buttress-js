@@ -118,7 +118,7 @@ class BootstrapSocket extends Bootstrap {
 		await this.primaryDatastore.connect();
 
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
-		await Model.init(this.__nrp);
+		await Model.init(this.__services);
 		await AccessControl.init(this.__nrp);
 
 		// Init models

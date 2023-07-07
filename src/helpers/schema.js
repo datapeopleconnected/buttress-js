@@ -358,7 +358,8 @@ const __prepareSchemaResult = (result, sourceId= false, projection = false) => {
 
 			// If no path is provided then we're dealing with a root object.
 			if (!path) {
-				if (sourceId) chunk.source = sourceId;
+				// If there's no sourceId, then it's an object from us.
+				if (!chunk.sourceId && sourceId) chunk.sourceId = sourceId;
 			}
 
 			// NOT GOOD

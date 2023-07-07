@@ -21,9 +21,9 @@ const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
 class SecureStoreSchemaModel extends StandardModel {
-	constructor(nrp) {
+	constructor(services) {
 		const schema = SecureStoreSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 	}
 
 	static get Schema() {

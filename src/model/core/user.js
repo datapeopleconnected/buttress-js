@@ -36,11 +36,9 @@ const App = {
 };
 
 class UserSchemaModel extends StandardModel {
-	constructor(nrp) {
+	constructor(services) {
 		const schema = UserSchemaModel.Schema;
-		super(schema, null, nrp);
-
-		this._nrp = nrp;
+		super(schema, null, services);
 	}
 
 	static get Constants() {
@@ -188,7 +186,7 @@ class UserSchemaModel extends StandardModel {
 	// 	});
 	// 	const token = await Helpers.streamFirst(rxsToken);
 
-	// 	this._nrp.emit('app-routes:bust-cache', {});
+	// 	this.__nrp.emit('app-routes:bust-cache', {});
 
 	// 	if (token) {
 	// 		user.tokens.push({
@@ -255,7 +253,7 @@ class UserSchemaModel extends StandardModel {
 			}
 		}
 
-		this._nrp.emit('app-routes:bust-cache', {});
+		this.__nrp.emit('app-routes:bust-cache', {});
 
 		return user;
 	}

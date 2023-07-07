@@ -30,8 +30,8 @@ const Datastore = require('../../datastore');
  * @class GetPolicy
  */
 class GetPolicy extends Route {
-	constructor(nrp) {
-		super('policy/:id', 'GET POLICY', nrp);
+	constructor(nrp, redisClient) {
+		super('policy/:id', 'GET POLICY', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}

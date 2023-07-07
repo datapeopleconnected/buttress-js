@@ -27,13 +27,11 @@ const StandardModel = require('../type/standard');
  * @class AppDataSharingSchemaModel
  */
 class AppDataSharingSchemaModel extends StandardModel {
-	constructor(nrp) {
+	constructor(services) {
 		const schema = AppDataSharingSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 
 		this._localSchema = null;
-
-		this._nrp = nrp;
 	}
 
 	static get Constants() {
@@ -129,7 +127,7 @@ class AppDataSharingSchemaModel extends StandardModel {
 		await this.__createDataSharingPolicy(appDataSharingBody, token.id);
 
 		Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
-		this._nrp.emit('app-policy:bust-cache', {
+		this.__nrp.emit('app-policy:bust-cache', {
 			appId: appDataSharingBody._appId,
 		});
 
@@ -208,7 +206,7 @@ class AppDataSharingSchemaModel extends StandardModel {
 			update.$set['remoteApp.token'] = newToken;
 		}
 
-		this._nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
+		this.__nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}
@@ -225,7 +223,7 @@ class AppDataSharingSchemaModel extends StandardModel {
 		};
 
 		// TODO implement socket deactivation
-		this._nrp.emit('dataShare:deactivated', {appDataSharingId: appDataSharingId});
+		this.__nrp.emit('dataShare:deactivated', {appDataSharingId: appDataSharingId});
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}

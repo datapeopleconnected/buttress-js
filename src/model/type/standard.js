@@ -29,7 +29,7 @@ const Sugar = require('sugar');
  **********************************************************************************/
 
 class StandardModel {
-	constructor(schemaData, app, nrp=null) {
+	constructor(schemaData, app, services) {
 		this.schemaData = schemaData;
 		this.flatSchemaData = (schemaData) ? Helpers.getFlattenedSchema(this.schemaData) : null;
 
@@ -42,10 +42,12 @@ class StandardModel {
 			this.collectionName = `${this.appShortId}-${this.collectionName}`;
 		}
 
-		this.__nrp = nrp || null;
+		this.__services = services;
 
-		if (this.__nrp) {
-			nrp.on('app:update-schema', (data) => {
+		this.__nrp = services.get('nrp');
+
+		if (schemaData.core) {
+			this.__nrp.on('app:update-schema', (data) => {
 				if (!app || (app.id.toString() !== data.appId)) return;
 
 				data.schemas.forEach((schema) => {

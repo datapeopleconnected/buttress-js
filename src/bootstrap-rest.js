@@ -20,6 +20,7 @@ const path = require('path');
 const fs = require('fs');
 const cluster = require('cluster');
 const express = require('express');
+const {createClient} = require('redis');
 const cors = require('cors');
 const methodOverride = require('method-override');
 const bodyParser = require('body-parser');
@@ -33,6 +34,8 @@ const Routes = require('./routes');
 const Logging = require('./helpers/logging');
 const Schema = require('./schema');
 const shortId = require('./helpers').shortId;
+
+const {SourceDataSharingRouting} = require('./services/source-ds-routing');
 
 const Datastore = require('./datastore');
 
@@ -60,9 +63,12 @@ class BootstrapRest extends Bootstrap {
 		Logging.logDebug(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
+		this.__services.set('redisClient', createClient(Config.redis));
+		this.__services.set('sdsRouting', new SourceDataSharingRouting(this.__services.get('redisClient')));
+
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
 		Logging.logDebug(`Init process libs...`);
-		await Model.init(this.__nrp);
+		await Model.init(this.__services);
 		await AccessControl.init(this.__nrp);
 		await Plugins.initialise(
 			Plugins.APP_TYPE.REST,
@@ -81,6 +87,18 @@ class BootstrapRest extends Bootstrap {
 		// TODO: Handle requests that are in flight and shut them down.
 
 		// this.routes.clean();
+
+		if (this.__services.has('redisClient')) {
+			Logging.logSilly('Closing _redisClientRest client');
+			this.__services.get('redisClient').quit();
+			this.__services.delete('redisClient');
+		}
+
+		if (this.__services.has('sdsRouting')) {
+			Logging.logSilly('Closing _sdsRouting');
+			this.__services.get('sdsRouting').clean();
+			this.__services.delete('sdsRouting');
+		}
 
 		// Destory all models
 		await Model.clean();
@@ -149,7 +167,7 @@ class BootstrapRest extends Bootstrap {
 
 		this.routes = new Routes(app);
 
-		await this.routes.init(this.__nrp);
+		await this.routes.init(this.__services);
 		await this.routes.initRoutes();
 
 		this._restServer = await app.listen(Config.listenPorts.rest);

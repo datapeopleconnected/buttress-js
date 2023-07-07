@@ -154,6 +154,7 @@ describe('Realtime', async () => {
 	// This set of tests will test the functionality of tracking the state of a request.
 	describe('bjs-request-* events', async () => {
 		let req = null;
+		let deferedBJSRequestStatusPromise = null;
 		it('Should make a request to /cars, responce should contain a x-bjs-request-id header', async () => {
 			req = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${Config.testToken}`);
 			if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${ENDPOINT}`);
@@ -162,6 +163,15 @@ describe('Realtime', async () => {
 
 		it('Should handle a message from the user and subscribe them to a request room', async () => {
 			testEnv.socket.emit('bjs-request-subscribe', {id: req.headers.get('x-bjs-request-id')});
+
+			deferedBJSRequestStatusPromise = new Promise((resolve) => {
+				testEnv.socket.once('bjs-request-status', (data) => {
+					assert.equal(data.id, req.headers.get('x-bjs-request-id'));
+					assert.equal(data.status, 'done');
+					resolve();
+				});
+			});
+
 			await new Promise((resolve) => {
 				testEnv.socket.once('bjs-request-subscribe-ack', (data) => {
 					assert.equal(data.id, req.headers.get('x-bjs-request-id'));
@@ -171,17 +181,12 @@ describe('Realtime', async () => {
 		});
 
 		it('Should receive an event with the state of the request stream', async () => {
-			await new Promise((resolve) => {
-				testEnv.socket.once('bjs-request-status', (data) => {
-					assert.equal(data.id, req.headers.get('x-bjs-request-id'));
-					assert.equal(data.status, 'done');
-					resolve();
-				});
+			assert(deferedBJSRequestStatusPromise);
+			await deferedBJSRequestStatusPromise;
 
-				// Up to this point the request is hanging on sending the data. Lets
-				// release the kraken.
-				req.json();
-			});
+			// Up to this point the request is hanging on sending the data. Lets
+			// release the kraken.
+			req.json();
 		});
 
 		// TODO: Test that the requests that are going through data sharing pathway.

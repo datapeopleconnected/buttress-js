@@ -38,7 +38,7 @@ export class SortedStreams extends Readable {
 
 	public limit: number;
 
-	constructor(sources: Readable[], compareFn: Function, limit: number) {
+	constructor(sources: Readable[], compareFn: Function, limit: number = 0) {
 		super({objectMode: true});
 
 		this._compareFn = compareFn || this._defaultCompare;
@@ -120,6 +120,8 @@ export class SortedStreams extends Readable {
 
 			return;
 		}
+
+		this.emit('chunkSent', {chunk: holder.chunk, sourceIdx: holder.sourceIdx});
 
 		this._sources[holder.sourceIdx].queued--;
 		this.sent++;

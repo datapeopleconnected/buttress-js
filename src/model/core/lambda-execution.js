@@ -20,9 +20,9 @@ const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
 class LambdaExecutionSchemaModel extends StandardModel {
-	constructor(nrp) {
+	constructor(services) {
 		const schema = LambdaExecutionSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 	}
 
 	static get Schema() {

@@ -29,8 +29,8 @@ const routes = [];
  * @class AddSecureStore
  */
 class AddSecureStore extends Route {
-	constructor(nrp) {
-		super('secureStore', 'ADD SECURE STORE', nrp);
+	constructor(nrp, redisClient) {
+		super('secureStore', 'ADD SECURE STORE', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}

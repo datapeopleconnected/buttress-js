@@ -36,9 +36,9 @@ const lambdaConsole = {
 	'console.dir': '',
 };
 class LambdaSchemaModel extends StandardModel {
-	constructor(nrp) {
+	constructor(services) {
 		const schema = LambdaSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 
 		this.name = 'LAMBDA';
 	}
