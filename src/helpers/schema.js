@@ -342,39 +342,46 @@ const __validate = (schema, values, parentProperty, body = null) => {
 };
 module.exports.validate = __validate;
 
-const __prepareSchemaResult = (result, token = false, projection = false) => {
+const __prepareSchemaResult = (result, sourceId= false, projection = false) => {
 	const _prepare = (chunk, path) => {
 		if (!chunk) return chunk;
 
+		if (path) {
+			if (path.indexOf('_') === 0) return undefined;
+		}
+
 		if (typeof chunk === 'object') {
-			if (Datastore.getInstance('core').ID.isValid(chunk)) {
-				return chunk;
-			}
-			if (chunk instanceof Date) {
-				return chunk;
-			}
+			if (Datastore.getInstance('core').ID.isValid(chunk)) return chunk;
+			if (chunk instanceof Date) return chunk;
 
 			chunk = Object.assign({}, chunk);
-			if (token && token.type === 'app') return chunk;
+
+			// If no path is provided then we're dealing with a root object.
+			if (!path) {
+				if (sourceId) chunk.source = sourceId;
+			}
 
 			// NOT GOOD
-			if (token && token.type === 'dataSharing') {
-				return chunk;
-			}
+			// if (token && token.type === 'app') return chunk;
+			// if (token && token.type === 'dataSharing') return chunk;
 
 			if (projection) {
 				// TODO: Make a pass on the projections
 			}
 
-			Object.keys(chunk).forEach((key) => {
+			for (const key in chunk) {
+				if (!{}.hasOwnProperty.call(chunk, key)) continue;
 				chunk[key] = (Array.isArray(chunk[key])) ? chunk[key].map((c) => _prepare(c, key)) : _prepare(chunk[key], key);
-			});
+
+				// We've done some processing, if we're left with undefined, remove it.
+				if (chunk[key] === undefined) delete chunk[key];
+			}
 		}
 
 		return chunk;
 	};
 
-	return (Array.isArray(result)) ? result.map((c) => _prepare(c, [])) : _prepare(result, []);
+	return (Array.isArray(result)) ? result.map((c) => _prepare(c, null)) : _prepare(result, null);
 };
 module.exports.prepareSchemaResult = __prepareSchemaResult;
 

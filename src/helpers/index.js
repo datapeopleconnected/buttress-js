@@ -57,46 +57,24 @@ class Timer {
 
 module.exports.Timer = Timer;
 
-const __prepareResult = (result) => {
-	const prepare = (chunk) => {
-		if (!chunk) return chunk;
-
-		if (typeof chunk === 'object') {
-			Object.keys(chunk).forEach((key) => {
-				if (key.indexOf('_') !== -1) {
-					// return delete chunk[key];
-				}
-
-				chunk[key] = (Array.isArray(chunk[key])) ? chunk[key].map((c) => prepare(c)) : prepare(chunk[key]);
-			});
-		}
-
-		return chunk;
-	};
-
-	return (Array.isArray(result)) ? result.map((c) => prepare(c)) : prepare(result);
-};
-module.exports.prepareResult = __prepareResult;
 class JSONStringifyStream extends Transform {
 	constructor(options, prepare) {
 		super(Object.assign(options || {}, {objectMode: true}));
+
+		if (!prepare || typeof prepare !== 'function') throw new Error('JSONStringifyStream requires a prepare function');
 
 		this._first = true;
 		this.prepare = prepare;
 	}
 
 	_transform(chunk, encoding, cb) {
-		if (this.prepare) {
-			chunk = this.prepare(chunk);
-		} else {
-			chunk = __prepareResult(chunk, this.schema, this.token);
-		}
+		chunk = this.prepare(chunk);
 
 		// Dont return any blank objects
 		if (chunk === null || typeof chunk === 'object' && Object.keys(chunk).length < 1) return cb();
 
 		// Stringify the object thats come in and strip any keys/props which are prefixed with a underscore
-		const str = JSON.stringify(chunk, (key, value) => (key.indexOf('_') === 0) ? undefined : value);
+		const str = JSON.stringify(chunk);
 
 		if (this._first) {
 			this._first = false;

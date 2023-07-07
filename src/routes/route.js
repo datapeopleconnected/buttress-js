@@ -204,7 +204,7 @@ class Route {
 			const stringifyStream = new Helpers.JSONStringifyStream({}, (chunk) => {
 				chunkCount++;
 				if (chunkCount % this.timingChunkSample === 0) req.timings.stream.push(req.timer.interval);
-				return (this.redactResults) ? Helpers.Schema.prepareSchemaResult(chunk, req.token) : chunk;
+				return Helpers.Schema.prepareSchemaResult(chunk, req.authApp.id);
 			});
 
 			res.set('Content-Type', 'application/json');
@@ -224,7 +224,7 @@ class Route {
 		}
 
 		if (this.redactResults) {
-			res.json(Helpers.Schema.prepareSchemaResult(result, req.token));
+			res.json(Helpers.Schema.prepareSchemaResult(result, req.authApp.id));
 		} else {
 			res.json(result);
 		}
@@ -359,14 +359,12 @@ class Route {
 		};
 
 		if (isReadStream) {
-			result.on('data', (data) => {
-				emit(Helpers.Schema.prepareSchemaResult(data));
-			});
+			result.on('data', (data) => emit(Helpers.Schema.prepareSchemaResult(data, req.authApp.id)));
 			Logging.logTimer('_broadcast:end-stream', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
 		}
 
-		emit(Helpers.Schema.prepareSchemaResult(result));
+		emit(Helpers.Schema.prepareSchemaResult(result, req.authApp.id));
 		Logging.logTimer('_broadcast:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
 
