@@ -109,7 +109,11 @@ class Route {
 
 		this.timingChunkSample = 250;
 
+		// Defaults for system/core routes, will be overridden by __configureSchemaRoute
+		// for schema routes.
+		this.core = true;
 		this.redactResults = true;
+		this.addSourceId = false;
 
 		this.schema = null;
 		this.model = null;
@@ -120,8 +124,14 @@ class Route {
 		this._nrp = services.get('nrp');
 
 		this._redisClient = services.get('redisClient');
+	}
 
-		this._sourceIdCheckMap = new Map();;
+	// Quickly apply some common schemaRoute configurations, will typically be called
+	// straight after the constructor super call.
+	__configureSchemaRoute() {
+		this.core = false;
+		this.redactResults = true;
+		this.addSourceId = true;
 	}
 
 	/**
@@ -209,7 +219,7 @@ class Route {
 				chunkCount++;
 
 				if (chunkCount % this.timingChunkSample === 0) req.timings.stream.push(req.timer.interval);
-				return Helpers.Schema.prepareSchemaResult(chunk, req.authApp.id);
+				return (this.redactResults) ? Helpers.Schema.prepareSchemaResult(chunk, (this.addSourceId) ? req.authApp.id : null) : chunk;
 			});
 
 			res.set('Content-Type', 'application/json');
@@ -229,7 +239,7 @@ class Route {
 		}
 
 		if (this.redactResults) {
-			res.json(Helpers.Schema.prepareSchemaResult(result, req.authApp.id));
+			res.json(Helpers.Schema.prepareSchemaResult(result, (this.addSourceId) ? req.authApp.id : null));
 		} else {
 			res.json(result);
 		}

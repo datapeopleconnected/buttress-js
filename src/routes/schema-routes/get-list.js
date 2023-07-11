@@ -11,6 +11,7 @@ const Schema = require('../../schema');
 module.exports = class GetList extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}`, `GET ${schema.name} LIST`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 

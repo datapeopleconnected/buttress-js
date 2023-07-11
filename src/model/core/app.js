@@ -230,15 +230,14 @@ class AppSchemaModel extends StandardModel {
 
 	/**
 	 * @param {ObjectId} appId - app id which needs to be updated
-	 * @param {object} appSchema - schema object for the app
+	 * @param {object} compiledSchema - schema object for the app
 	 * @param {object} rawSchema - encoded raw app schema
 	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
 	 */
-	async updateSchema(appId, appSchema, rawSchema) {
+	async updateSchema(appId, compiledSchema, rawSchema) {
 		Logging.logSilly(`Update Schema ${appId}`);
 
-		appSchema = Schema.encode(appSchema);
-		await super.updateById(appId, {$set: {__schema: appSchema}});
+		await super.updateById(appId, {$set: {__schema: Schema.encode(compiledSchema)}});
 
 		if (rawSchema) {
 			await super.updateById(appId, {$set: {__rawSchema: rawSchema}});
@@ -248,7 +247,7 @@ class AppSchemaModel extends StandardModel {
 		this.__nrp.emit('app-schema:updated', {appId: appId});
 		this.__nrp.emit('app:update-schema', {
 			appId: appId,
-			schemas: Schema.decode(appSchema),
+			schemas: compiledSchema,
 		});
 		const updatedSchema = (await super.findById(appId))?.__rawSchema;
 		return updatedSchema;
@@ -285,6 +284,7 @@ class AppSchemaModel extends StandardModel {
 				if (!DSA) continue;
 				// Load DSA
 
+				// TODO: Should being using an adapter via the datastore.
 				const api = Buttress.new();
 				await api.init({
 					buttressUrl: DSA.remoteApp.endpoint,
@@ -293,7 +293,7 @@ class AppSchemaModel extends StandardModel {
 					allowUnauthorized: true, // Move along, nothing to see here...
 				});
 
-				const remoteSchema = await api.App.getSchema({
+				const remoteSchema = await api.App.getSchema(false, {
 					params: {
 						only: dataSharingSchema[DSAName].join(','),
 					},
@@ -301,10 +301,9 @@ class AppSchemaModel extends StandardModel {
 
 				remoteSchema.forEach((rs) => {
 					schemaWithRemoteRef
-						.filter((s) => s.remote.some((r) => r.name === DSAName && r.schema === rs.name))
+						.filter((s) => s.remotes && s.remotes.some((r) => r.name === DSAName && r.schema === rs.name))
 						.forEach((s) => {
 							// Merge RS into schema
-							delete s.remotes;
 							const collectionIdx = collections.findIndex((s) => s.name === rs.name);
 							if (collectionIdx === -1) return;
 							collections[collectionIdx] = Helpers.mergeDeep(rs, s);

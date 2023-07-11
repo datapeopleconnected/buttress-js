@@ -19,17 +19,23 @@ export class SourceDataSharingRouting {
     this._proecssInformCheck();
   }
 
-  async get(key: string) {
-    if (!key) return undefined;
+  getKey(appId: string, sourceId: string) {
+    return `${appId}-${sourceId}`;
+  }
 
+  async get(appId: string, sourceId: string) {
+    if (!appId || !sourceId) return undefined;
+
+    const key = this.getKey(appId, sourceId);
     if (this._tempCheckMap.has(key)) return this._tempCheckMap.get(key);
 
     await this._redisClient.get(key);
   }
 
-  inform(key: string, value: string) {
+  inform(appId: string, sourceId: string, dataSharingId: string) {
+    const key = this.getKey(appId, sourceId);
     if (!this._tempCheckMap.has(key)) {
-      this._tempCheckMap.set(key, value);
+      this._tempCheckMap.set(key, dataSharingId);
       this._setInformCheckTimeout();
     }
   }
@@ -44,12 +50,10 @@ export class SourceDataSharingRouting {
     for await (const [key, value] of this._tempCheckMap.entries()) {
       const current = await new Promise((resolve, reject) => this._redisClient.get(`sds-route:${key}`, (err, res) => (err ? reject(err) : resolve(res))));
       if (current === value) {
-        console.log(`Key ${key} with value ${current} already exists in Redis. Skipping...`);
         continue;
       }
 
       await new Promise((resolve, reject) => this._redisClient.set(`sds-route:${key}`, value, (err, res) => (err ? reject(err) : resolve(res))));
-      console.log(`Key ${key} with value ${value} set in Redis.`);
     }
 
     this._setInformCheckTimeout();

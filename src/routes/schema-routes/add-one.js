@@ -10,6 +10,8 @@ const Plugins = require('../../plugins');
 module.exports = class AddOne extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}`, `ADD ${schema.name}`, nrp);
+		this.__configureSchemaRoute();
+
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 

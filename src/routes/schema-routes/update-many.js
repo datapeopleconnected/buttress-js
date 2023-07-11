@@ -9,6 +9,7 @@ const Schema = require('../../schema');
 module.exports = class UpdateMany extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}/bulk/update`, `BULK UPDATE ${schema.name}`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 

@@ -70,9 +70,6 @@ export class SortedStreams extends Readable {
 		this._sources.forEach((holder, idx) => {
 			holder.source.on('data', (chunk) => this._handleSourceChunk(chunk, idx));
 			holder.source.on('end', () => this._handleSourceEnd(holder));
-			
-			// Release the stream if it's paused.
-			// console.log('isPaused', holder.source.isPaused(), holder.source);
 			if (holder.source.isPaused()) holder.source.resume();
 		});
 	}
@@ -186,6 +183,8 @@ export const parseJsonArrayStream = () => new Transform({
 			let trimmedLine = line.trim();
 			if (trimmedLine.startsWith('[')) trimmedLine = trimmedLine.slice(1);
 			if (trimmedLine.endsWith(']')) trimmedLine = trimmedLine.slice(0, -1);
+			if (trimmedLine.startsWith(',')) trimmedLine = trimmedLine.slice(1);
+			if (trimmedLine.endsWith(',')) trimmedLine = trimmedLine.slice(0, -1);
 			if (trimmedLine !== '') {
 				// TODO: replace JSON.parse with a tokenizer
 				try {

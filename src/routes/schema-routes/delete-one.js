@@ -9,6 +9,7 @@ const Schema = require('../../schema');
 module.exports = class DeleteOne extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}/:id`, `DELETE ${schema.name}`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 

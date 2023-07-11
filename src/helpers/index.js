@@ -79,9 +79,9 @@ class JSONStringifyStream extends Transform {
 		if (this._first) {
 			this._first = false;
 			this.push(`[`);
-			this.push(`${str}`);
+			this.push(`${str}\n`);
 		} else {
-			this.push(`,${str}`);
+			this.push(`,${str}\n`);
 		}
 
 		cb();

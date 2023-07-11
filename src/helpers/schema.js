@@ -342,7 +342,7 @@ const __validate = (schema, values, parentProperty, body = null) => {
 };
 module.exports.validate = __validate;
 
-const __prepareSchemaResult = (result, sourceId= false, projection = false) => {
+const __prepareSchemaResult = (result, sourceId = null, projection = false) => {
 	const _prepare = (chunk, path) => {
 		if (!chunk) return chunk;
 

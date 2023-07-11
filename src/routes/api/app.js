@@ -344,6 +344,7 @@ class GetAppSchema extends Route {
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this.redactResults = false;
+		this.addSourceId = false;
 	}
 
 	async _validate(req, res, token) {
@@ -408,6 +409,9 @@ class UpdateAppSchema extends Route {
 		super('app/schema', 'UPDATE APP SCHEMA', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.redactResults = false;
+		this.addSourceId = false;
 	}
 
 	async _validate(req, res, token) {
@@ -424,41 +428,42 @@ class UpdateAppSchema extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
 		}
 
+		const rawSchema = req.body;
+
 		// Sort templates
-		req.body = req.body.sort((a, b) => (a.type.indexOf('collection') === 0) ? 1 : (b.type.indexOf('collection') === 0) ? -1 : 0);
+		let compiledSchema = rawSchema.sort((a, b) => (a.type.indexOf('collection') === 0) ? 1 : (b.type.indexOf('collection') === 0) ? -1 : 0);
 
 		try {
-			// merging req schema to get the extends schemas
-			req.body = Schema.merge(req.body, Model.App.localSchema);
+			compiledSchema = await Model.App.mergeRemoteSchema(req, compiledSchema);
+
+			// Merge any schema extends
+			compiledSchema = Schema.merge(compiledSchema, Model.App.localSchema);
 
 			// building the schema to check for any timeseries
-			const res = await Schema.buildCollections(req.body);
-			const rawSchema = JSON.stringify(res);
+			compiledSchema = await Schema.buildCollections(compiledSchema);
 
 			// merging the built timeseries to get the extends schemas
-			req.body = Schema.merge(res, Model.App.localSchema);
+			compiledSchema = Schema.merge(compiledSchema, Model.App.localSchema);
 
-			return rawSchema;
+			return {
+				rawSchema: JSON.stringify(rawSchema),
+				compiledSchema,
+			};
 		} catch (err) {
 			Logging.logError(err);
 			throw new Helpers.Errors.RequestError(400, `invalid_body_type`);
 		}
 	}
 
-	async _exec(req, res, rawSchema) {
-		const updatedSchema = await Model.App.updateSchema(req.authApp.id, req.body, rawSchema);
-		let schema = '';
-		try {
-			schema = Schema.decode(updatedSchema);
-		} catch (err) {
-			if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
-			else throw err;
-		}
+	async _exec(req, res, {rawSchema, compiledSchema}) {
+		await Model.App.updateSchema(req.authApp.id, compiledSchema, rawSchema);
 
-		// Quicky, remove extends as nobody needs it outside of buttress
-		schema.forEach((s) => delete s.extends);
+		const a = compiledSchema.filter((s) => s.type === 'collection').map((s) => {
+			delete s.extends;
+			return s;
+		});
 
-		return schema;
+		return a;
 	}
 }
 routes.push(UpdateAppSchema);

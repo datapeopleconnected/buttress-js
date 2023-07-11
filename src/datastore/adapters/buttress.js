@@ -85,9 +85,9 @@ module.exports = class Buttress extends AbstractAdapter {
 		}
 	}
 
-	async getSchema(only = []) {
+	async getSchema(rawSchema = false, only = []) {
 		await this.resolveAfterInit();
-		return await this.__connection.App.getSchema({
+		return await this.__connection.App.getSchema(rawSchema, {
 			params: {
 				only: only.join(','),
 			},
@@ -135,34 +135,33 @@ module.exports = class Buttress extends AbstractAdapter {
 
 	async batchUpdateProcess(id, body) {
 		await this.resolveAfterInit();
-		return await this.collection.update(id, body);
+		const result = await this.collection.update(id, body);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {object} body
 	 * @return {Promise}
 	 */
-	add(body) {
+	async add(body) {
 		body = this.convertBSONObjects(body);
-		return this.resolveAfterInit()
-			.then(() => {
-				if (Array.isArray(body)) {
-					return this.collection.bulkSave(body);
-				}
+		await this.resolveAfterInit();
 
-				return this.collection.save(body);
-			});
+		const result = (Array.isArray(body)) ? await this.collection.bulkSave(body, {stream: true}) :
+			await this.collection.save(body, {stream: true});
+
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {string} id
 	 * @return {Boolean}
 	 */
-	exists(id) {
+	async exists(id) {
 		id = this.convertBSONObjects(id);
-		return this.resolveAfterInit()
-			.then(() => this.collection.get(id))
-			.then((res) => (res) ? true : false);
+		await this.resolveAfterInit();
+		const result = await this.collection.get(id);
+		return (result) ? true : false;
 	}
 
 	/**
@@ -177,39 +176,43 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @param {object} entity
 	 * @return {Promise}
 	 */
-	rm(entity) {
+	async rm(entity) {
 		entity = this.convertBSONObjects(entity);
-		return this.resolveAfterInit()
-			.then(() => this.collection.remove(entity.id));
+		await this.resolveAfterInit();
+		const result = await this.collection.remove(entity.id);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {array} ids
 	 * @return {Promise}
 	 */
-	rmBulk(ids) {
+	async rmBulk(ids) {
 		ids = this.convertBSONObjects(ids);
-		return this.resolveAfterInit()
-			.then(() => this.collection.bulkRemove(ids));
+		await this.resolveAfterInit();
+		const result = await this.collection.bulkRemove(ids);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {object} query
 	 * @return {Promise}
 	 */
-	rmAll(query) {
-		return this.resolveAfterInit()
-			.then(() => this.collection.removeAll(query));
+	async rmAll(query) {
+		await this.resolveAfterInit();
+		const result = await this.collection.removeAll(query);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {string} id
 	 * @return {Promise}
 	 */
-	findById(id) {
+	async findById(id) {
 		id = this.convertBSONObjects(id);
-		return this.resolveAfterInit()
-			.then(() => this.collection.get(id));
+		await this.resolveAfterInit();
+		const result = await this.collection.get(id);
+		return this.handleResult(result);
 	}
 
 	/**
@@ -248,27 +251,30 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @param {Array} ids - mongoDB query
 	 * @return {Promise}
 	 */
-	findAllById(ids) {
+	async findAllById(ids) {
 		ids = this.convertBSONObjects(ids);
-		return this.resolveAfterInit()
-			.then(() => this.collection.bulkGet(ids));
+		await this.resolveAfterInit();
+		const result = await this.collection.bulkGet(ids);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {Object} query - mongoDB query
 	 * @return {Promise}
 	 */
-	count(query) {
+	async count(query) {
 		query = this.convertBSONObjects(query);
-		return this.resolveAfterInit()
-			.then(() => this.collection.count(query));
+		await this.resolveAfterInit();
+		const result = await this.collection.count(query);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @return {Promise}
 	 */
-	drop() {
-		return this.resolveAfterInit()
-			.then(() => this.collection.removeAll());
+	async drop() {
+		await this.resolveAfterInit();
+		const result = await this.collection.removeAll();
+		return this.handleResult(result);
 	}
 };

@@ -1,10 +1,10 @@
 const fetch = require('cross-fetch');
 const Config = require('node-env-obj')();
 
-const bjsReq = async (opts, token=Config.testToken) => {
+const bjsReq = async (opts, token=Config.testToken, floop = false) => {
 	const req = await fetch(`${opts.url}?token=${token}`, opts);
 	if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${opts.url}`);
-	return await req.json();
+	return (floop) ? await req.text() : await req.json();
 };
 
 const createApp = async (ENDPOINT, name, apiPath, token) => await bjsReq({

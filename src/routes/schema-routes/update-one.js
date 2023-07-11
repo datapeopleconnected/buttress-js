@@ -9,6 +9,7 @@ const Schema = require('../../schema');
 module.exports = class UpdateOne extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}/:id`, `UPDATE ${schema.name}`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 

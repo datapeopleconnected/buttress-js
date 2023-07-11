@@ -45,7 +45,7 @@ describe('Schema', async () => {
 
 	describe('Basic', async () => {
 		it('Should update the app schema', async () => {
-			const carsSchema = {
+			const schema = [{
 				name: 'car',
 				type: 'collection',
 				properties: {
@@ -56,12 +56,25 @@ describe('Schema', async () => {
 						__allowUpdate: true,
 					},
 				},
-			};
+			}, {
+				name: 'colours',
+				type: 'collection',
+				properties: {
+					name: {
+						__type: 'string',
+						__default: null,
+						__required: true,
+						__allowUpdate: true,
+					},
+				},
+			}];
 
-			testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app1.token);
-			assert.strictEqual(testEnv.apps.app1.schema.length, 1);
+			testEnv.apps.app1.schema = await updateSchema(ENDPOINT, schema, testEnv.apps.app1.token);
+			assert.strictEqual(testEnv.apps.app1.schema.length, 2);
 			assert.strictEqual(testEnv.apps.app1.schema[0].name, 'car');
+			assert.strictEqual(typeof testEnv.apps.app1.schema[0].properties.id, 'object');
 			assert.strictEqual(typeof testEnv.apps.app1.schema[0].properties.name, 'object');
+			assert.strictEqual(typeof testEnv.apps.app1.schema[0].properties.sourceId, 'object');
 		});
 
 		it('Should have added id to the schema even though it wasn\'t provided', async () => {
@@ -70,6 +83,25 @@ describe('Schema', async () => {
 
 		it('Should have added source to the schema even though it wasn\'t provided', async () => {
 			assert.notEqual(typeof testEnv.apps.app1.schema[0].properties.source, undefined);
+		});
+
+		it('Should be able to fetch the schema', async () => {
+			const getResponse = await fetch(`${ENDPOINT}/api/v1/app/schema?token=${testEnv.apps.app1.token}`);
+			assert.strictEqual(getResponse.status, 200);
+
+			const body = await getResponse.json();
+			assert.strictEqual(body.length, 2);
+			assert.strictEqual(body[0].name, 'car');
+			assert.strictEqual(body[1].name, 'colours');
+		});
+
+		it('Should be able to fetch only the requested schema', async () => {
+			const getResponse = await fetch(`${ENDPOINT}/api/v1/app/schema?token=${testEnv.apps.app1.token}&only=colours`);
+			assert.strictEqual(getResponse.status, 200);
+
+			const body = await getResponse.json();
+			assert.strictEqual(body.length, 1);
+			assert.strictEqual(body[0].name, 'colours');
 		});
 	});
 

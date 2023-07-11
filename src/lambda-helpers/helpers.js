@@ -330,17 +330,13 @@ class Helpers {
 				`;
 				jail.setSync(`_${pluginName}_${method}`, new ivm.Reference(async (args, resolve, reject) => {
 					Logging.logVerbose(`${pluginName}_${method}`);
-					// console.log(args);
 					const outcome = await pluginMeta.plugin[method](args);
-					// console.log(outcome);
 					resolve.applyIgnored(undefined, [
 						new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto(),
 					]);
 				}));
 			}
 		}
-
-		// console.log(this._pluginBootstrap);
 	}
 
 	_createLambdaNameSpace(isolate, context) {
@@ -409,7 +405,6 @@ class Helpers {
 			let files = [];
 			const items = fs.readdirSync(dirName, {withFileTypes: true});
 			for (const item of items) {
-				// console.log(item.name);
 				if (item.name === '.git') continue;
 
 				if (item.isDirectory()) {

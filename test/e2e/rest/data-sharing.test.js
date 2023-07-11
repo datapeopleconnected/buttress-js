@@ -186,7 +186,6 @@ describe('Data Sharing', async () => {
 
 			assert(result.id !== null && result.id !== undefined);
 			assert.strictEqual(result.name, 'A blue car');
-			assert.strictEqual(result.price, 2000.00);
 		});
 
 		it('Should be able to POST cars from App2 which will save the data against App1 because a source is provided', async function() {
@@ -195,43 +194,15 @@ describe('Data Sharing', async () => {
 				method: 'POST',
 				headers: {'Content-Type': 'application/json'},
 				body: JSON.stringify({
-					name: 'A blue car',
-					sourceId: 'HERE SOON, I PROMISE',
+					name: 'A purple car',
+					sourceId: testEnv.cars[0].sourceId, // This should be the sourceId for app 1.
 				}),
 			}, testEnv.apps.app2.token);
 			testEnv.cars.push(result);
 
 			assert(result.id !== null && result.id !== undefined);
-			assert.strictEqual(result.name, 'A blue car');
-			assert.strictEqual(result.price, 2000.00);
+			assert.strictEqual(result.name, 'A purple car');
 		});
-
-		// it('Should be able to GET cars direct from App1 without extra price property', async function() {
-		// 	const cars = await bjsReq({
-		// 		url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
-		// 		method: 'GET',
-		// 	}, testEnv.apps.app1.token);
-
-		// 	assert.strictEqual(cars.length, 1);
-		// 	assert.strictEqual(cars[0].id, testEnv.cars[1].id);
-		// 	assert.strictEqual(cars[0].name, testEnv.cars[1].name);
-		// });
-
-		// it('Should be able to GET cars from App2 which will use data sharing to retrive data from App1', async function() {
-		// 	const cars = await bjsReq({
-		// 		url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
-		// 		method: 'GET',
-		// 	}, testEnv.apps.app2.token);
-
-		// 	assert.strictEqual(cars.length, 2);
-
-		// 	assert.strictEqual(cars[0].id, testEnv.cars[0].id);
-		// 	assert.strictEqual(cars[0].name, testEnv.cars[0].name);
-
-		// 	assert.strictEqual(cars[1].id, testEnv.cars[1].id);
-		// 	assert.strictEqual(cars[1].name, testEnv.cars[1].name);
-		// 	assert.strictEqual(cars[1].price, testEnv.cars[1].price);
-		// });
 	});
 
 	describe('Handling mutiple agreement sources', async () => {
@@ -304,14 +275,6 @@ describe('Data Sharing', async () => {
 					name: 'app2-to-app3',
 					schema: 'car',
 				}],
-				properties: {
-					price: {
-						__type: 'number',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-				},
 			}], testEnv.apps.app2.token);
 
 			// Give Buttress time to create the routes.
@@ -326,32 +289,18 @@ describe('Data Sharing', async () => {
 				headers: {'mode': 'no-cors'},
 			}, testEnv.apps.app2.token);
 
-			assert.strictEqual(cars.length, 2);
+			assert.strictEqual(cars.length, testEnv.cars.length);
 			assert.strictEqual(cars[0].id, testEnv.cars[0].id);
 			assert.strictEqual(cars[0].name, testEnv.cars[0].name);
 
 			assert.strictEqual(cars[1].id, testEnv.cars[1].id);
 			assert.strictEqual(cars[1].name, testEnv.cars[1].name);
+
+			assert.strictEqual(cars[2].id, testEnv.cars[2].id);
+			assert.strictEqual(cars[2].name, testEnv.cars[2].name);
+
+			assert.strictEqual(cars[3].id, testEnv.cars[3].id);
+			assert.strictEqual(cars[3].name, testEnv.cars[3].name);
 		});
-
-		// TODO: more here
-
-		// it('Should be able to POST cars from App2 which will use data sharing to post the data to App1', async function() {
-		// 	const result = await bjsReq({
-		// 		url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
-		// 		method: 'POST',
-		// 		headers: {'Content-Type': 'application/json'},
-		// 		body: JSON.stringify({
-		// 			name: 'A blue car',
-		// 			price: 2000.00,
-		// 		}),
-		// 	}, testEnv.apps.app2.token);
-		// 	testEnv.car = result;
-
-		// 	assert(result.id !== null && result.id !== undefined);
-		// 	assert.strictEqual(result.name, 'A blue car');
-		// 	// TODO: Uncomment when feature is complete
-		// 	// assert.strictEqual(result.price, 2000.00);
-		// });
 	});
 });

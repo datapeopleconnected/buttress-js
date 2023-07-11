@@ -39,10 +39,11 @@ class RemoteCombinedModel extends StandardModel {
 		if (localDataStore) {
 			this.localModel = new StandardModel(this.schemaData, this.app, this.__services);
 
-			this.localModel.adapter = localDataStore.adapter.cloneAdapterConnection();
-			await this.localModel.adapter.connect();
-			await this.localModel.adapter.setCollection(`${this.schemaData.name}`);
-			await this.localModel.adapter.updateSchema(this.schemaData);
+			// this.localModel.adapter = localDataStore.adapter.cloneAdapterConnection();
+			await this.localModel.initAdapter(localDataStore);
+			// await this.localModel.adapter.connect();
+			// await this.localModel.adapter.setCollection(`${this.schemaData.name}`);
+			// await this.localModel.adapter.updateSchema(this.schemaData);
 		}
 
 		for await (const remoteDatastore of remoteDatastores) {
@@ -59,7 +60,7 @@ class RemoteCombinedModel extends StandardModel {
 
 			// TODO: this shouldn't be necessary when using a standard model.
 			if (model.adapter.getSchema) {
-				const remoteSchemas = await model.adapter.getSchema([this.schemaData.name]);
+				const remoteSchemas = await model.adapter.getSchema(false, [this.schemaData.name]);
 				if (remoteSchemas && remoteSchemas.length > 0) {
 					delete this.schemaData.remotes;
 					this.schemaData = Helpers.mergeDeep(this.schemaData, remoteSchemas.pop());
@@ -77,14 +78,16 @@ class RemoteCombinedModel extends StandardModel {
 	}
 
 	async _getTargetModel(sourceId) {
-		const dataSharingId = await this._sdsRouting.get(sourceId);
-		if (dataSharingId) {
-			const model = this.remoteModels.find((remoteModel) => remoteModel.dataSharingId === dataSharingId);
-			if (!model) {
-				throw new Error('Unable to find remote model');
-			}
+		if (sourceId) {
+			const dataSharingId = await this._sdsRouting.get(this.app.id.toString(), sourceId);
+			if (dataSharingId) {
+				const model = this.remoteModels.find((remoteModel) => remoteModel.dataSharingId.toString() === dataSharingId);
+				if (!model) {
+					throw new Error('Unable to find remote model');
+				}
 
-			return model;
+				return model;
+			}
 		}
 
 		return this.localModel;
@@ -190,6 +193,8 @@ class RemoteCombinedModel extends StandardModel {
 		// Make a call out to each of the remotes, and merge the streams into on single stream.
 		const sources = [];
 
+		sources.push(await this.localModel.find(query, excludes, limit, skip, sort, project));
+
 		for await (const remote of this.remoteModels) {
 			sources.push(await remote.find(query, excludes, limit, skip, sort, project));
 		}
@@ -197,8 +202,11 @@ class RemoteCombinedModel extends StandardModel {
 		const combinedStream = new Helpers.Stream.SortedStreams(sources, (a, b) => Helpers.compareByProps(sortMap, a, b), limit);
 
 		// When a chunk is sent, we'll inform the routing service of the sourceId.
-		combinedStream.on('chunkSent', (data) =>
-			this._sdsRouting.inform(data.chunk.sourceId, this.remoteModels[data.sourceIdx].dataSharingId.toString()));
+		// We're always expecting the first source to be the local model.
+		combinedStream.on('chunkSent', (data) => {
+			return (data.sourceIdx > 0) ? this._sdsRouting.inform(this.app.id.toString(), data.chunk.sourceId,
+				this.remoteModels[data.sourceIdx - 1].dataSharingId.toString()) : null;
+		});
 
 		return combinedStream;
 	}
@@ -218,7 +226,7 @@ class RemoteCombinedModel extends StandardModel {
 
 		// When a chunk is sent, we'll inform the routing service of the sourceId.
 		combinedStream.on('chunkSent', (data) =>
-			this._sdsRouting.inform(data.chunk.sourceId, this.remoteModels[data.sourceIdx].dataSharingId.toString()));
+			this._sdsRouting.inform(this.app.id.toString(), data.chunk.sourceId, this.remoteModels[data.sourceIdx].dataSharingId.toString()));
 
 		return combinedStream;
 	}

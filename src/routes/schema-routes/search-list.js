@@ -9,6 +9,7 @@ const Schema = require('../../schema');
 module.exports = class SearchList extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}`, `SEARCH ${schema.name} LIST`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 

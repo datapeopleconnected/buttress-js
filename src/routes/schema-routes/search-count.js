@@ -9,6 +9,7 @@ const Schema = require('../../schema');
 module.exports = class SearchCount extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}/count`, `COUNT ${schema.name}`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SERACH;
 
