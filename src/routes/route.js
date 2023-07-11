@@ -487,24 +487,6 @@ class Route {
 			 */
 			Logging.logTimer(`_authenticate:start-app-routes`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-			// TODO: This should be replaced by the access control.
-			// let authorised = false;
-			// const token = req.token;
-
-			// for (let x = 0; x < token.permissions.length; x++) {
-			// 	const p = token.permissions[x];
-			// 	if (this._matchRoute(req, p.route) && this._matchPermission(p.permission)) {
-			// 		authorised = true;
-			// 		break;
-			// 	}
-			// }
-
-			// if (authorised === false) {
-			// 	this.log(`EAUTH: NO PERMISSION FOR ROUTE - ${this.path}`, Logging.Constants.LogLevel.ERR);
-			// 	Logging.logTimer('_authenticate:end-no-permission-route', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			// 	return reject(new Helpers.Errors.RequestError(403, 'no_permission_for_route'));
-			// }
-
 			// BYPASS schema checks for app tokens
 			if (req.token.type === 'app') {
 				Logging.logTimer('_authenticate:end-app-token', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -523,41 +505,6 @@ class Route {
 
 			resolve(req.token);
 		});
-	}
-
-	/**
-	 * @param {object} req - The request object to be compared to
-	 * @param {string} routeSpec - See above for accepted route specs
-	 * @return {boolean} - true if the route is authorised
-	 * @private
-	 */
-	_matchRoute(req, routeSpec) {
-		// if (routeSpec === '*' && req.token.authLevel >= Constants.Auth.SUPER) {
-		if (routeSpec === '*') {
-			return true;
-		}
-
-		if (routeSpec === this.path) {
-			return true;
-		}
-
-		// const userWildcard = /^user\/me.+/;
-		// if (routeSpec.match(userWildcard) && req.params.id == req.authUser.id) {
-		// 	Logging.logSilly(`Matched user ${req.authUser.id} to /user/${req.params.id}`);
-		// 	return true;
-		// }
-
-		const wildcard = /(.+)(\/\*)/;
-		const matches = routeSpec.match(wildcard);
-		if (matches) {
-			if (this.path.match(new RegExp(`^${matches[1]}`)) &&
-				// TODO probably need to change the last line in the if condition
-				(req.token.type === Constants.Type.APP ||req.token.type === Constants.Type.SYSTEM)) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**
