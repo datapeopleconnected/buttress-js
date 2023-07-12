@@ -48,7 +48,7 @@ class BootstrapLambda extends Bootstrap {
 		await this.primaryDatastore.connect();
 
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
-		await Model.init(this.__nrp);
+		await Model.init(this.__services);
 
 		return await this.__createCluster();
 	}
@@ -71,9 +71,9 @@ class BootstrapLambda extends Bootstrap {
 			Logging.logVerbose(`Primary Main LAMB`);
 			await Model.initCoreModels();
 
-			this._nrp.on('lambdaProcessWorker:worker-initiated', (id) => {
+			this.__nrp.on('lambdaProcessWorker:worker-initiated', (id) => {
 				const type = this.__getLambdaWorkerType();
-				this._nrp.emit('lambdaProcessMaster:worker-type', {id, type});
+				this.__nrp.emit('lambdaProcessMaster:worker-type', {id, type});
 			});
 
 			new LambdaManager();
@@ -88,11 +88,11 @@ class BootstrapLambda extends Bootstrap {
 		await Model.initCoreModels();
 
 		const type = await new Promise((resolve) => {
-			this._nrp.on('lambdaProcessMaster:worker-type', (data) => {
+			this.__nrp.on('lambdaProcessMaster:worker-type', (data) => {
 				if (data.id !== this.id) return;
 				resolve(data.type);
 			}, () => {
-				this._nrp.emit('lambdaProcessWorker:worker-initiated', this.id);
+				this.__nrp.emit('lambdaProcessWorker:worker-initiated', this.id);
 			});
 		});
 
