@@ -174,7 +174,8 @@ class LambdasRunner {
 			Logging.logDebug(err);
 
 			if (type === 'API_ENDPOINT') {
-				nrp.emit('lambda-execution-finish', {code: 400, res: err.errMessage, restWorkerId: data.restWorkerId});
+				const message = (err.message) ? err.message : err.errMessage;
+				nrp.emit('lambda-execution-finish', {code: 400, err: message, restWorkerId: data.restWorkerId});
 			}
 
 			return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));

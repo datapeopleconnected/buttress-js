@@ -726,7 +726,8 @@ class Routes {
 			} else if (result.lambdaOutput) {
 				res.status(result.lambdaOutput.code).send({
 					res: result.lambdaOutput.res,
-					executionId: result.lambdaExecution.id,
+					err: result.lambdaOutput.err,
+					executionId: result.lambdaExecution._id,
 				});
 			} else {
 				res.status(200).send({
@@ -761,7 +762,8 @@ class Routes {
 			if (result.lambdaOutput) {
 				res.status(result.lambdaOutput.code).send({
 					res: result.lambdaOutput.res,
-					executionId: result.lambdaExecution.id,
+					err: result.lambdaOutput.err,
+					executionId: result.lambdaExecution._id,
 				});
 			} else {
 				res.status(200).send({
