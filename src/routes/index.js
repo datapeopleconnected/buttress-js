@@ -727,7 +727,7 @@ class Routes {
 				res.status(result.lambdaOutput.code).send({
 					res: result.lambdaOutput.res,
 					err: result.lambdaOutput.err,
-					executionId: result.lambdaExecution._id,
+					executionId: result.lambdaExecution.id,
 				});
 			} else {
 				res.status(200).send({
@@ -763,7 +763,7 @@ class Routes {
 				res.status(result.lambdaOutput.code).send({
 					res: result.lambdaOutput.res,
 					err: result.lambdaOutput.err,
-					executionId: result.lambdaExecution._id,
+					executionId: result.lambdaExecution.id,
 				});
 			} else {
 				res.status(200).send({

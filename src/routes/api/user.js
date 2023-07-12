@@ -93,7 +93,7 @@ class GetUser extends Route {
 			}
 
 			if (userTokens.length < 1 && user) {
-				userTokens = await Helpers.streamAll(await Model.Token.findUserAuthTokens(user._id, req.authApp._id));
+				userTokens = await Helpers.streamAll(await Model.Token.findUserAuthTokens(user.id, req.authApp.id));
 			}
 			if (userTokens.length > 0 && !user) {
 				const [token] = userTokens;
@@ -153,7 +153,7 @@ class FindUser extends Route {
 			tokens: [],
 		};
 
-		const userTokens = await Helpers.streamAll(await Model.Token.findUserAuthTokens(_user._id, req.authApp._id));
+		const userTokens = await Helpers.streamAll(await Model.Token.findUserAuthTokens(_user.id, req.authApp.id));
 		output.tokens = (userTokens.length > 0) ? userTokens.map((t) => {
 			return {
 				value: t.value,
