@@ -236,7 +236,7 @@ class UpdatePolicy extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Policy.updateByPath(req.body, req.params.id, 'Policy');
+		return Model.Policy.updateByPath(req.body, req.params.id, null, 'Policy');
 	}
 }
 routes.push(UpdatePolicy);
@@ -281,7 +281,7 @@ class BulkUpdatePolicy extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.Policy.updateByPath(item.body, item.id, 'Policy');
+			await Model.Policy.updateByPath(item.body, item.id, null, 'Policy');
 		}
 		return true;
 	}

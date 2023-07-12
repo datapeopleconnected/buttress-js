@@ -78,19 +78,17 @@ class RemoteCombinedModel extends StandardModel {
 	}
 
 	async _getTargetModel(sourceId) {
-		if (sourceId) {
-			const dataSharingId = await this._sdsRouting.get(this.app.id.toString(), sourceId);
-			if (dataSharingId) {
-				const model = this.remoteModels.find((remoteModel) => remoteModel.dataSharingId.toString() === dataSharingId);
-				if (!model) {
-					throw new Error('Unable to find remote model');
-				}
+		if (!sourceId || sourceId === this.app.id.toString()) return this.localModel;
 
-				return model;
+		const dataSharingId = await this._sdsRouting.get(this.app.id.toString(), sourceId);
+		if (dataSharingId) {
+			const model = this.remoteModels.find((remoteModel) => remoteModel.dataSharingId.toString() === dataSharingId);
+			if (!model) {
+				throw new Error('Unable to find remote model');
 			}
-		}
 
-		return this.localModel;
+			return model;
+		}
 	}
 
 	/**

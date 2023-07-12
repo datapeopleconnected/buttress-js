@@ -712,7 +712,7 @@ class AppUpdate extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.App.updateByPath(req.body, req.params.id, 'App');
+		return Model.App.updateByPath(req.body, req.params.id, null, 'App');
 	}
 }
 routes.push(AppUpdate);

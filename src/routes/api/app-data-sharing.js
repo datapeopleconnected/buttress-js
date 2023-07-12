@@ -242,7 +242,7 @@ class UpdateAppDataSharing extends Route {
 
 	async _exec(req, res, validate) {
 		// TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-		return Model.AppDataSharing.updateByPath(req.body, req.params.dataSharingId, 'AppDataSharing');
+		return Model.AppDataSharing.updateByPath(req.body, req.params.dataSharingId, null, 'AppDataSharing');
 	}
 }
 routes.push(UpdateAppDataSharing);
@@ -288,7 +288,7 @@ class BulkUpdateAppDataSharing extends Route {
 	async _exec(req, res, validate) {
 		for await (const item of req.body) {
 			// TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-			await Model.AppDataSharing.updateByPath(item.body, item.id, 'AppDataSharing');
+			await Model.AppDataSharing.updateByPath(item.body, item.id, null, 'AppDataSharing');
 		}
 
 		return true;
@@ -323,7 +323,7 @@ class UpdateAppDataSharingPolicy extends Route {
 			}
 
 			// Lookup
-			this.model.exists(req.params.dataSharingId, {
+			this.model.exists(req.params.dataSharingId, null, {
 				'_appId': req.authApp.id,
 			})
 				.then((res) => {

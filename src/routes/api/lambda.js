@@ -264,7 +264,7 @@ class UpdateLambda extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Lambda.updateByPath(req.body, req.params.id, 'Lambda');
+		return Model.Lambda.updateByPath(req.body, req.params.id, null, 'Lambda');
 	}
 }
 routes.push(UpdateLambda);
@@ -309,7 +309,7 @@ class BulkUpdateLambda extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.Lambda.updateByPath(item.body, item.id, 'Lambda');
+			await Model.Lambda.updateByPath(item.body, item.id, null, 'Lambda');
 		}
 		return true;
 	}

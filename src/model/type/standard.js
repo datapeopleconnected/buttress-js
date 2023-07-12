@@ -375,10 +375,12 @@ class StandardModel {
 	/**
 	 * @param {object} body
 	 * @param {string} id
+	 * @param {string} sourceId
 	 * @param {string} model
 	 * @return {promise}
 	 */
-	async updateByPath(body, id, model) {
+	// TODO: Model shouldn't be being passed through this way.
+	async updateByPath(body, id, sourceId = null, model = null) {
 		if (body instanceof Array === false) {
 			body = [body];
 		}
@@ -409,11 +411,12 @@ class StandardModel {
 	}
 
 	/**
-	 * @param {*} id
-	 * @param {*} extra
+	 * @param {string} id
+	 * @param {string} sourceId
+	 * @param {object} extra
 	 * @return {Promise}
 	 */
-	exists(id, extra = {}) {
+	exists(id, sourceId = null, extra = {}) {
 		return this.adapter.exists(id, extra);
 	}
 

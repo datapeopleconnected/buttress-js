@@ -217,7 +217,7 @@ class UpdateSecureStore extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.SecureStore.updateByPath(req.body, req.params.id, 'SecureStore');
+		return Model.SecureStore.updateByPath(req.body, req.params.id, null, 'SecureStore');
 	}
 }
 routes.push(UpdateSecureStore);
@@ -259,7 +259,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.SecureStore.updateByPath(item.body, item.id, 'SecureStore');
+			await Model.SecureStore.updateByPath(item.body, item.id, null, 'SecureStore');
 		}
 		return true;
 	}

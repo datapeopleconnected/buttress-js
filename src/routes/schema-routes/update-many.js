@@ -81,7 +81,7 @@ module.exports = class UpdateMany extends Route {
 					}
 				}
 
-				return this.model.exists(update.id)
+				return this.model.exists(update.id, body.sourceId)
 					.then((exists) => {
 						if (!exists) {
 							this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.id);
@@ -102,8 +102,8 @@ module.exports = class UpdateMany extends Route {
 		const output = [];
 		return data.reduce(
 			(prev, body) => prev
-				.then(() => this.model.updateByPath(body.body, body.id))
-				.then((result) => output.push({id: body.id, results: result})),
+				.then(() => this.model.updateByPath(body.body, body.id, body.sourceId))
+				.then((result) => output.push({id: body.id, sourceId: body.sourceId, results: result})),
 			Promise.resolve(),
 		)
 			.then(() => output);

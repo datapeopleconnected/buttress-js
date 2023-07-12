@@ -191,6 +191,23 @@ describe('Schema', async () => {
 				assert.strictEqual(updates.length, 1);
 			});
 
+			it('Should make a PUT request with a sourceId', async () => {
+				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/` +
+					`car/${testEnv.cars[0].sourceId}/${testEnv.cars[0].id}` +
+					`?token=${testEnv.apps.app1.token}`, {
+					method: 'PUT',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify({
+						path: 'name',
+						value: 'name-test-updated2',
+					}),
+				});
+				assert.strictEqual(getResponse.status, 200);
+
+				const updates = await getResponse.json();
+				assert.strictEqual(updates.length, 1);
+			});
+
 			// TODO: Update Many
 
 			it('Should make a DELETE request for a single Id', async () => {

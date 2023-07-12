@@ -94,11 +94,12 @@ const Constants = {
 };
 
 class Route {
-	constructor(path, name, services) {
+	constructor(paths, name, services) {
 		this.verb = Constants.Verbs.GET;
 		this.Type = Constants.Type.SYSTEM;
 		this.permissions = Constants.Permissions.READ;
 
+		this.activity = true;
 		this.activityBroadcast = false;
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
 		this.activityTitle = 'Private Activity';
@@ -118,7 +119,8 @@ class Route {
 		this.schema = null;
 		this.model = null;
 
-		this.path = path;
+		this.paths = Array.isArray(paths) ? paths : [paths];
+
 		this.name = name;
 
 		this._nrp = services.get('nrp');
@@ -227,7 +229,7 @@ class Route {
 			Logging.logTimer(`_respond:start-stream`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			result.once('end', () => {
-				// Logging.logTimerException(`PERF: STREAM DONE: ${this.path}`, req.timer, 0.05, req.id);
+				// Logging.logTimerException(`PERF: STREAM DONE: ${req.pathSpec}`, req.timer, 0.05, req.id);
 				Logging.logTimer(`_respond:end-stream chunks:${chunkCount}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 				req.bjsReqClose(this._nrp);
 				this._close(req);
@@ -246,8 +248,8 @@ class Route {
 
 		this._close(req);
 
-		Logging.logTimer(`_respond:end ${this.path}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		// Logging.logTimerException(`PERF: DONE: ${this.path}`, req.timer, 0.05, req.id);
+		Logging.logTimer(`_respond:end ${req.pathSpec}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		// Logging.logTimerException(`PERF: DONE: ${req.pathSpec}`, req.timer, 0.05, req.id);
 
 		return result;
 	}
@@ -264,17 +266,9 @@ class Route {
 			return;
 		}
 
-		let addActivty = true;
-		if (this.path === 'tracking') {
-			addActivty = false;
-		}
-		if (this.path === 'user/:app?') {
-			addActivty = false;
-		}
-
 		// Fire and forget
-		if (addActivty) {
-			this._addLogActivity(req, this.path, this.verb);
+		if (this.activity) {
+			this._addLogActivity(req, req.pathSpec, this.verb);
 		}
 
 		Logging.logTimer('_logActivity:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -356,7 +350,7 @@ class Route {
 					visibility: this.activityVisibility,
 					broadcast: this.activityBroadcast,
 					path: path,
-					pathSpec: this.path,
+					pathSpec: req.pathSpec,
 					verb: this.verb,
 					permissions: this.permissions,
 					params: req.params,
@@ -407,7 +401,7 @@ class Route {
 		const id = req.params.id;
 
 		if (this.verb === Constants.Verbs.POST) {
-			if (this.path.includes(Constants.BulkRequests.BULK_PUT)) {
+			if (req.pathSpec.includes(Constants.BulkRequests.BULK_PUT)) {
 				body.forEach((item) => {
 					if (Array.isArray(item.body)) {
 						item.body.forEach((obj) => {
@@ -419,7 +413,7 @@ class Route {
 						values.push(item.body.value);
 					}
 				});
-			} else if (this.path.includes(Constants.BulkRequests.BULK_DEL)) {
+			} else if (req.pathSpec.includes(Constants.BulkRequests.BULK_DEL)) {
 				body.forEach((id) => paths.push(`${this.schema?.name}.${id}`));
 			} else {
 				paths.push(this.schema?.name);

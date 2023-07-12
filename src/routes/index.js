@@ -291,13 +291,18 @@ class Routes {
 	 */
 	_initRoute(app, Route, core, ...additional) {
 		const route = (core) ? new Route(this._services) : new Route(null, null, this._services);
-		const routePath = path.join(...[
-			Config.app.apiPrefix,
-			...additional,
-			route.path,
-		]);
-		Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
-		app[route.verb](routePath, (req, res, next) => route.exec(req, res).catch(next));
+		route.paths.forEach((pathSpec) => {
+			const routePath = path.join(...[
+				Config.app.apiPrefix,
+				...additional,
+				pathSpec,
+			]);
+			Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
+			app[route.verb](routePath, (req, res, next) => {
+				req.pathSpec = pathSpec;
+				return route.exec(req, res).catch(next);
+			});
+		});
 	}
 
 	/**
@@ -319,14 +324,19 @@ class Routes {
 				throw err;
 			}
 
-			let routePath = path.join(...[
-				(app.apiPath) ? app.apiPath : appShortId,
-				Config.app.apiPrefix,
-				route.path,
-			]);
-			if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
-			Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
-			express[route.verb](routePath, (req, res, next) => route.exec(req, res).catch(next));
+			route.paths.forEach((pathSpec) => {
+				let routePath = path.join(...[
+					(app.apiPath) ? app.apiPath : appShortId,
+					Config.app.apiPrefix,
+					pathSpec,
+				]);
+				if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
+				Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
+				express[route.verb](routePath, (req, res, next) => {
+					req.pathSpec = pathSpec;
+					return route.exec(req, res).catch(next);
+				});
+			});
 		});
 	}
 
