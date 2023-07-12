@@ -231,9 +231,6 @@ class Model {
 			this.__addModelGetter(modelName);
 			return this.models[modelName];
 		} else {
-			if ((this._services instanceof Map) === false) {
-				throw new Error('FUCK');
-			}
 			this.models[modelName] = new StandardModel(schemaData, app, this._services);
 			await this.models[modelName].initAdapter(mainDatastore);
 		}
