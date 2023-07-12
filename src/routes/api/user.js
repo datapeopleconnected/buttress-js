@@ -66,7 +66,7 @@ class GetUser extends Route {
 
 		try {
 			let user = null;
-			let userToken = null;
+			let userTokens = [];
 			const userId = (ObjectId.isValid(parameter)) ? Model.User.createId(parameter) : null;
 			user = await Model.User.findOne({
 				'$or': [{
@@ -77,33 +77,45 @@ class GetUser extends Route {
 					'auth.email': {
 						$eq: parameter,
 					},
+				}, {
+					'auth.username': {
+						$eq: parameter,
+					},
 				}],
 			});
 
 			if (!user) {
-				userToken = await Model.Token.findOne({
+				userTokens = await Helpers.streamAll(await Model.Token.findAll({
 					value: {
 						$eq: parameter,
 					},
-				});
+				}));
 			}
 
-			if (!userToken && user) {
-				userToken = await Helpers.streamFirst(await Model.Token.findUserAuthTokens(user.id, req.authApp.id));
+			if (userTokens.length < 1 && user) {
+				userTokens = await Helpers.streamAll(await Model.Token.findUserAuthTokens(user._id, req.authApp._id));
 			}
-			if (userToken && !user) {
-				user = await Model.User.findById(userToken._userId);
+			if (userTokens.length > 0 && !user) {
+				const [token] = userTokens;
+				user = await Model.User.findById(token._userId);
 			}
-			if (!user || !userToken) {
+			if (!user) {
 				this.log(`[${this.name}] Could not fetch user data using ${parameter}`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
+			}
+			if (userTokens.length < 1) {
+				this.log(`[${this.name}] User does not have a token yet ${parameter}`, Route.LogLevel.ERR);
 			}
 
 			const output = {
 				id: user.id,
 				auth: user.auth,
-				token: userToken?.value || null,
-				policyProperties: userToken.policyProperties || null,
+				tokens: (userTokens.length > 0) ? userTokens.map((t) => {
+					return {
+						value: t.value,
+						policyProperties: t.policyProperties,
+					};
+				}) : null,
 			};
 
 			return output;
@@ -138,15 +150,16 @@ class FindUser extends Route {
 		const output = {
 			id: _user.id,
 			auth: _user.auth,
-			token: null,
+			tokens: [],
 		};
 
-		const rxTokens = Model.Token.findUserAuthTokens(_user.id, req.authApp.id);
-		const userToken = await Helpers.streamFirst(rxTokens);
-		if (userToken) {
-			output.token = userToken.value;
-			output.policyProperties = userToken.policyProperties || null;
-		}
+		const userTokens = await Helpers.streamAll(await Model.Token.findUserAuthTokens(_user._id, req.authApp._id));
+		output.tokens = (userTokens.length > 0) ? userTokens.map((t) => {
+			return {
+				value: t.value,
+				policyProperties: t.policyProperties,
+			};
+		}) : null;
 
 		return Promise.resolve(output);
 	}
@@ -186,10 +199,10 @@ class GetUserByToken extends Route {
 			throw new Helpers.Errors.RequestError(400, `invalid_token`);
 		}
 
-		const user = await Model.User.findById(userToken._user);
+		const user = await Model.User.findById(userToken._userId);
 		if (!user) {
 			this.log('ERROR: Can not find a user with the provided token', Route.LogLevel.ERR);
-			throw new Helpers.Errors.RequestError(404, `user_not_find`);
+			throw new Helpers.Errors.RequestError(404, `user_not_found`);
 		}
 
 		return {
@@ -265,6 +278,7 @@ class CreateUserAuthToken extends Route {
 
 		return {
 			value: token.value,
+			policyProperties: token.policyProperties,
 		};
 	}
 }
@@ -379,15 +393,12 @@ class AddUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_already_exists_with_that_name`));
 		}
 
-		if (!req.body.policyProperties) {
-			this.log(`[${this.name}] Missing user required property policyProperties`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_properties`));
-		}
-
-		const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.policyProperties);
-		if (!policyCheck) {
-			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
+		if (req.body.token && req.body.token.policyProperties) {
+			const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.token.policyProperties);
+			if (!policyCheck) {
+				this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
+			}
 		}
 
 		return Promise.resolve(true);
@@ -400,8 +411,10 @@ class AddUser extends Route {
 		return {
 			id: user.id,
 			auth: user.auth,
-			token: token?.value || [],
-			policyProperties: token?.policyProperties || null,
+			token: {
+				value: token?.value || [],
+				policyProperties: token?.policyProperties || null,
+			},
 		};
 	}
 }
