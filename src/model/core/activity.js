@@ -16,14 +16,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 const Model = require('../');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Schema = require('../../schema');
 // const Sugar = require('sugar');
 const Shared = require('../shared');
 // const Helpers = require('../../helpers');
 // const Config = require('node-env-obj')('../../');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 /**
  * Constants
@@ -34,10 +34,10 @@ const Visibility = {
 	PRIVATE: visibility[1],
 };
 
-class ActivitySchemaModel extends SchemaModel {
-	constructor(nrp) {
+class ActivitySchemaModel extends StandardModel {
+	constructor(services) {
 		const schema = ActivitySchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 	}
 
 	static get Constants() {
@@ -134,7 +134,7 @@ class ActivitySchemaModel extends SchemaModel {
 	 */
 	__parseAddBody(body) {
 		const user = body.req.authUser;
-		const userName = user ? `${user._id}` : 'App';
+		const userName = user ? `${user.id}` : 'App';
 
 		body.activityTitle = body.activityTitle.replace('%USER_NAME%', userName);
 		body.activityDescription = body.activityDescription.replace('%USER_NAME%', userName);
@@ -155,21 +155,19 @@ class ActivitySchemaModel extends SchemaModel {
 			query: q,
 			body: Schema.encode(body.req.body), // HACK - Due to schema update results.
 			timestamp: new Date(),
-			_tokenId: body.req.token._id,
-			_userId: (body.req.authUser) ? body.req.authUser._id : null,
-			_appId: body.req.authApp._id,
+			_tokenId: body.req.token.id,
+			_userId: (body.req.authUser) ? body.req.authUser.id : null,
+			_appId: body.req.authApp.id,
 		};
 
 		if (body.id) {
-			md._id = this.adapter.ID.new(body.id);
+			md.id = this.adapter.ID.new(body.id);
 		}
 
 		delete body.req;
 		delete body.res;
 
-		const validated = Shared.applyAppProperties(ActivitySchemaModel.Schema, body);
-
-		return validated;
+		return Shared.sanitizeSchemaObject(ActivitySchemaModel.Schema, body);
 	}
 
 	add(body, internals) {

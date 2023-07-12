@@ -46,8 +46,8 @@ const lambdaConsole = {
  * @class GetLambda
  */
 class GetLambda extends Route {
-	constructor(nrp) {
-		super('lambda/:id', 'GET LAMBDA', nrp);
+	constructor(nrp, redisClient) {
+		super('lambda/:id', 'GET LAMBDA', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -110,7 +110,7 @@ class GetLambdaList extends Route {
 			return Model.Lambda.findByIds(ids);
 		}
 
-		return Model.Lambda.findAll(req.authApp._id, req.token);
+		return Model.Lambda.findAll(req.authApp.id, req.token);
 	}
 }
 routes.push(GetLambdaList);
@@ -198,7 +198,7 @@ class AddLambda extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		let appId = req.authApp._id;
+		let appId = req.authApp.id;
 		if (!appId) {
 			const token = await this._getToken(req);
 			if (token && token._appId) {
@@ -264,7 +264,7 @@ class UpdateLambda extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Lambda.updateByPath(req.body, req.params.id, 'Lambda');
+		return Model.Lambda.updateByPath(req.body, req.params.id, null, 'Lambda');
 	}
 }
 routes.push(UpdateLambda);
@@ -309,7 +309,7 @@ class BulkUpdateLambda extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.Lambda.updateByPath(item.body, item.id, 'Lambda');
+			await Model.Lambda.updateByPath(item.body, item.id, null, 'Lambda');
 		}
 		return true;
 	}
@@ -420,7 +420,7 @@ class EditLambdaDeployment extends Route {
 			});
 		} else {
 			await Model.Deployment.update({
-				_id: Model.Deployment.createId(deployment._id),
+				id: Model.Deployment.createId(deployment.id),
 			}, {$set: {deployedAt: Sugar.Date.create('now')}});
 		}
 
@@ -478,7 +478,7 @@ class SetLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Token.setPolicyPropertiesById(validate._id, req.body);
+		await Model.Token.setPolicyPropertiesById(validate.id, req.body);
 		return true;
 	}
 }
@@ -608,7 +608,7 @@ class DeleteLambda extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
 		}
 
-		const lambdaToken = await Model.Token.findOne({_lambdaId: lambda._id});
+		const lambdaToken = await Model.Token.findOne({_lambdaId: lambda.id});
 		if (!lambdaToken) {
 			this.log(`ERROR: Could not fetch lambda's token`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `could_fetch_lambda_token`));
@@ -622,7 +622,7 @@ class DeleteLambda extends Route {
 
 	async _exec(req, res, validate) {
 		// TODO make sure that the git repo is not used by any other lambdas before deleteing it
-		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${validate.lambda._id}`);
+		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${validate.lambda.id}`);
 		await Model.Lambda.rm(validate.lambda);
 		await Model.Token.rm(validate.token);
 		return true;

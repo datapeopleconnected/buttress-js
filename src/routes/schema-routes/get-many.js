@@ -9,6 +9,7 @@ const Schema = require('../../schema');
 module.exports = class GetMany extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}/bulk/load`, `BULK GET ${schema.name}`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -25,7 +26,7 @@ module.exports = class GetMany extends Route {
 		this.model = Model[schemaCollection];
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`GetList Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 	}
 
@@ -49,7 +50,7 @@ module.exports = class GetMany extends Route {
 
 	_exec(req, res, query) {
 		return this.model.find(
-			{_id: {$in: query.ids.map((id) => this.model.createId(id))}},
+			{id: {$in: query.ids.map((id) => this.model.createId(id))}},
 			{}, 0, 0, null, query.project,
 		);
 	}

@@ -18,9 +18,9 @@
 
 const Crypto = require('crypto');
 // const Shared = require('../shared');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 /**
  * Constants
@@ -34,12 +34,10 @@ const Type = {
 	LAMBDA: type[4],
 };
 
-class TokenSchemaModel extends SchemaModel {
-	constructor(nrp) {
+class TokenSchemaModel extends StandardModel {
+	constructor(services) {
 		const schema = TokenSchemaModel.Schema;
-		super(schema, null, nrp);
-
-		this._nrp = nrp;
+		super(schema, null, services);
 	}
 
 	static get Constants() {
@@ -212,10 +210,10 @@ class TokenSchemaModel extends SchemaModel {
 		}
 
 		await super.update({
-			'_id': this.createId(tokenId),
+			'id': this.createId(tokenId),
 		}, {$set: {'policyProperties': policyProperties}});
 
-		this._nrp.emit('app-routes:bust-cache', {});
+		this.__nrp.emit('app-routes:bust-cache', {});
 	}
 
 	/**
@@ -235,7 +233,7 @@ class TokenSchemaModel extends SchemaModel {
 		}, []);
 
 		await super.update({
-			'_id': this.createId(token._id),
+			'id': this.createId(token.id),
 		}, {
 			$set: {
 				'policyProperties': {
@@ -245,7 +243,7 @@ class TokenSchemaModel extends SchemaModel {
 			},
 		});
 
-		this._nrp.emit('app-routes:bust-cache', {});
+		this.__nrp.emit('app-routes:bust-cache', {});
 	}
 
 	/**
@@ -254,14 +252,14 @@ class TokenSchemaModel extends SchemaModel {
 	 */
 	async clearPolicyPropertiesById(tokenId) {
 		await super.update({
-			'_id': this.createId(tokenId),
+			'id': this.createId(tokenId),
 		}, {
 			$set: {
 				'policyProperties': {},
 			},
 		});
 
-		this._nrp.emit('app-routes:bust-cache', {});
+		this.__nrp.emit('app-routes:bust-cache', {});
 	}
 }
 
@@ -270,7 +268,7 @@ class TokenSchemaModel extends SchemaModel {
  */
 // schema.virtual('details').get(function() {
 //   return {
-//     id: this._id,
+//     id: this.id,
 //     type: this.type,
 //     app: this.app,
 //     user: this.user,

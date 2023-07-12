@@ -17,12 +17,12 @@
  */
 
 const Stream = require('stream');
-const JSONStream = require('JSONStream');
 const ObjectId = require('mongodb').ObjectId;
 const ButtressAPI = require('@buttress/api');
 
 const {Errors} = require('../../helpers');
-const Logging = require('../../logging');
+const {parseJsonArrayStream} = require('../../helpers/stream');
+const Logging = require('../../helpers/logging');
 
 const AbstractAdapter = require('../abstract-adapter');
 
@@ -36,51 +36,23 @@ class AdapterId {
 	}
 }
 
+
 module.exports = class Buttress extends AbstractAdapter {
 	constructor(uri, options, connection = null) {
 		super(uri, options, connection);
 
-		this.connection = ButtressAPI.new();
-
-		// console.log(uri, options, connection);
-
-		// eslint-disable-next-line no-unused-vars
-		// const [_, collection] = schemaData.remote.split('.');
-
-		// this.endpoint = dataSharing.remoteApp.endpoint;
-		// this.token = dataSharing.remoteApp.token;
-		// this.apiPath = dataSharing.remoteApp.apiPath;
-
-		// this.buttress = ButtressAPI.new();
-
-		// // Hack - Give a little time for another instance to get up to speed
-		// // before trying to init
+		this.__connection = ButtressAPI.new();
 
 		this.init = false;
 		this.initPendingResolve = [];
-
-		// // TOOD: Handle the case we're another instance isn't available
-		// setTimeout(() => {
-		// 	this.buttress.init({
-		// 		buttressUrl: this.endpoint,
-		// 		appToken: this.token,
-		// 		apiPath: this.apiPath,
-		// 		allowUnauthorized: true, // WUT!?
-		// 	})
-		// 		.then(() => {
-		// 			this.collection = this.buttress.getCollection(collection);
-		// 			this.init = true;
-		// 			this.initPendingResolve.forEach((r) => r());
-		// 		});
-		// }, 500);
 	}
 
 	async connect() {
-		if (this.init) return this.connection;
+		if (this.init) return this.__connection;
 
 		const protocol = this.uri.protocol === 'butts:' ? 'https' : 'http';
 
-		await this.connection.init({
+		await this.__connection.init({
 			buttressUrl: `${protocol}://${this.uri.host}`,
 			appToken: this.uri.searchParams.get('token'),
 			apiPath: this.uri.pathname,
@@ -94,28 +66,28 @@ module.exports = class Buttress extends AbstractAdapter {
 	}
 
 	cloneAdapterConnection() {
-		return new Buttress(this.uri, this.options, this.connection);
+		return new Buttress(this.uri, this.options, this.__connection);
 	}
 
 	async close() {
 		// TODO: Handle closing down socket connections??
-		this.connection = null;
+		this.__connection = null;
 		this.init = false;
 		this.initPendingResolve = [];
 	}
 
 	async setCollection(collectionName) {
 		try {
-			this.collection = this.connection.getCollection(collectionName);
+			this.collection = this.__connection.getCollection(collectionName);
 		} catch (err) {
 			if (err instanceof ButtressAPI.Errors.SchemaNotFound) throw new Errors.SchemaNotFound(err.message);
 			else throw err;
 		}
 	}
 
-	async getSchema(only = []) {
+	async getSchema(rawSchema = false, only = []) {
 		await this.resolveAfterInit();
-		return await this.connection.App.getSchema({
+		return await this.__connection.App.getSchema(rawSchema, {
 			params: {
 				only: only.join(','),
 			},
@@ -124,7 +96,7 @@ module.exports = class Buttress extends AbstractAdapter {
 
 	async activateDataSharing(registrationToken, newToken) {
 		await this.resolveAfterInit();
-		return await this.connection.AppDataSharing.activate(registrationToken, newToken);
+		return await this.__connection.AppDataSharing.activate(registrationToken, newToken);
 	}
 
 	get ID() {
@@ -154,7 +126,8 @@ module.exports = class Buttress extends AbstractAdapter {
 
 	handleResult(result) {
 		if (result instanceof Stream && result.readable) {
-			return result.pipe(JSONStream.parse('.'));
+			// Stream will be an array of objects, parse them out.
+			return result.pipe(parseJsonArrayStream());
 		}
 
 		return result;
@@ -162,34 +135,33 @@ module.exports = class Buttress extends AbstractAdapter {
 
 	async batchUpdateProcess(id, body) {
 		await this.resolveAfterInit();
-		return await this.collection.update(id, body);
+		const result = await this.collection.update(id, body);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {object} body
 	 * @return {Promise}
 	 */
-	add(body) {
+	async add(body) {
 		body = this.convertBSONObjects(body);
-		return this.resolveAfterInit()
-			.then(() => {
-				if (Array.isArray(body)) {
-					return this.collection.bulkSave(body);
-				}
+		await this.resolveAfterInit();
 
-				return this.collection.save(body);
-			});
+		const result = (Array.isArray(body)) ? await this.collection.bulkSave(body, {stream: true}) :
+			await this.collection.save(body, {stream: true});
+
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {string} id
 	 * @return {Boolean}
 	 */
-	exists(id) {
+	async exists(id) {
 		id = this.convertBSONObjects(id);
-		return this.resolveAfterInit()
-			.then(() => this.collection.get(id))
-			.then((res) => (res) ? true : false);
+		await this.resolveAfterInit();
+		const result = await this.collection.get(id);
+		return (result) ? true : false;
 	}
 
 	/**
@@ -204,39 +176,43 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @param {object} entity
 	 * @return {Promise}
 	 */
-	rm(entity) {
+	async rm(entity) {
 		entity = this.convertBSONObjects(entity);
-		return this.resolveAfterInit()
-			.then(() => this.collection.remove(entity._id));
+		await this.resolveAfterInit();
+		const result = await this.collection.remove(entity.id);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {array} ids
 	 * @return {Promise}
 	 */
-	rmBulk(ids) {
+	async rmBulk(ids) {
 		ids = this.convertBSONObjects(ids);
-		return this.resolveAfterInit()
-			.then(() => this.collection.bulkRemove(ids));
+		await this.resolveAfterInit();
+		const result = await this.collection.bulkRemove(ids);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {object} query
 	 * @return {Promise}
 	 */
-	rmAll(query) {
-		return this.resolveAfterInit()
-			.then(() => this.collection.removeAll(query));
+	async rmAll(query) {
+		await this.resolveAfterInit();
+		const result = await this.collection.removeAll(query);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {string} id
 	 * @return {Promise}
 	 */
-	findById(id) {
+	async findById(id) {
 		id = this.convertBSONObjects(id);
-		return this.resolveAfterInit()
-			.then(() => this.collection.get(id));
+		await this.resolveAfterInit();
+		const result = await this.collection.get(id);
+		return this.handleResult(result);
 	}
 
 	/**
@@ -275,27 +251,30 @@ module.exports = class Buttress extends AbstractAdapter {
 	 * @param {Array} ids - mongoDB query
 	 * @return {Promise}
 	 */
-	findAllById(ids) {
+	async findAllById(ids) {
 		ids = this.convertBSONObjects(ids);
-		return this.resolveAfterInit()
-			.then(() => this.collection.bulkGet(ids));
+		await this.resolveAfterInit();
+		const result = await this.collection.bulkGet(ids);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @param {Object} query - mongoDB query
 	 * @return {Promise}
 	 */
-	count(query) {
+	async count(query) {
 		query = this.convertBSONObjects(query);
-		return this.resolveAfterInit()
-			.then(() => this.collection.count(query));
+		await this.resolveAfterInit();
+		const result = await this.collection.count(query);
+		return this.handleResult(result);
 	}
 
 	/**
 	 * @return {Promise}
 	 */
-	drop() {
-		return this.resolveAfterInit()
-			.then(() => this.collection.removeAll());
+	async drop() {
+		await this.resolveAfterInit();
+		const result = await this.collection.removeAll();
+		return this.handleResult(result);
 	}
 };

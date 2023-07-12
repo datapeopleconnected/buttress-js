@@ -18,23 +18,24 @@
 
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
-const EventEmitter = require('events');
 const cluster = require('cluster');
 const express = require('express');
+const {createClient} = require('redis');
 const cors = require('cors');
 const methodOverride = require('method-override');
 const bodyParser = require('body-parser');
 const morgan = require('morgan');
-const NRP = require('node-redis-pubsub');
 
 const Config = require('node-env-obj')();
 
+const Bootstrap = require('./bootstrap');
 const Model = require('./model');
 const Routes = require('./routes');
-const Logging = require('./logging');
+const Logging = require('./helpers/logging');
 const Schema = require('./schema');
 const shortId = require('./helpers').shortId;
+
+const {SourceDataSharingRouting} = require('./services/source-ds-routing');
 
 const Datastore = require('./datastore');
 
@@ -45,97 +46,84 @@ const AccessControl = require('./access-control');
 morgan.token('id', (req) => req.id);
 
 Error.stackTraceLimit = Infinity;
-class BootstrapRest extends EventEmitter {
+class BootstrapRest extends Bootstrap {
 	constructor() {
 		super();
 
-		const ConfigWorkerCount = parseInt(Config.app.workers);
-		this.workerProcesses = (isNaN(ConfigWorkerCount)) ? os.cpus().length : ConfigWorkerCount;
-
-		this.workers = [];
-
 		this.routes = null;
-
-		this.id = (cluster.isMaster) ? 'MASTER' : cluster.worker.id;
 
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
 		this._restServer = null;
-		this._nrp = null;
 	}
 
 	async init() {
-		Logging.log(`Connecting to primary datastore...`);
+		await super.init();
+
+		Logging.logDebug(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
-		this._nrp = new NRP(Config.redis);
+		this.__services.set('redisClient', createClient(Config.redis));
+		this.__services.set('sdsRouting', new SourceDataSharingRouting(this.__services.get('redisClient')));
 
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
-		await Model.init(this._nrp);
-		await AccessControl.init(this._nrp);
-
-		if (cluster.isMaster) {
-			await this.__initMaster();
-		} else {
-			await this.__initWorker();
-		}
-
+		Logging.logDebug(`Init process libs...`);
+		await Model.init(this.__services);
+		await AccessControl.init(this.__nrp);
 		await Plugins.initialise(
 			Plugins.APP_TYPE.REST,
 			(cluster.isMaster) ? Plugins.PROCESS_ROLE.MAIN : Plugins.PROCESS_ROLE.WORKER,
 			(Config.rest.app === 'primary') ? Plugins.INFRASTRUCTURE_ROLE.PRIMARY : Plugins.INFRASTRUCTURE_ROLE.SECONDARY,
 		);
 
-		if (!cluster.isMaster) {
-			Plugins.initRoutes(this.routes);
-		}
-
-		return cluster.isMaster;
+		return await this.__createCluster();
 	}
 
 	async clean() {
+		await super.clean();
 		Logging.logDebug('Shutting down all connections');
 		Logging.logSilly('BootstrapRest:clean');
-		// Should close down all connections
-		// Kill worker processes
-		for (let x = 0; x < this.workers.length; x++) {
-			Logging.logSilly(`Killing worker ${x}`);
-			this.workers[x].kill();
-		}
 
-		// Destroy all routes
+		// TODO: Handle requests that are in flight and shut them down.
+
 		// this.routes.clean();
 
+		if (this.__services.has('redisClient')) {
+			Logging.logSilly('Closing _redisClientRest client');
+			this.__services.get('redisClient').quit();
+			this.__services.delete('redisClient');
+		}
+
+		if (this.__services.has('sdsRouting')) {
+			Logging.logSilly('Closing _sdsRouting');
+			this.__services.get('sdsRouting').clean();
+			this.__services.delete('sdsRouting');
+		}
+
 		// Destory all models
-		// Model.clean();
+		await Model.clean();
 
 		if (this._restServer) {
 			Logging.logSilly('Closing express server');
 			this._restServer.close((err) => (err) ? process.exit(1) : Logging.logSilly(`Express server closed`));
 		}
 
-		// Close out the NRP connection
-		if (this._nrp) {
-			Logging.logSilly('Closing node redis pubsub connection');
-			this._nrp.quit();
-		}
-
 		// Close Datastore connections
 		Logging.logSilly('Closing down all datastore connections');
-		Datastore.clean();
+		await Datastore.clean();
 	}
 
 	async __initMaster() {
 		const isPrimary = Config.rest.app === 'primary';
 
-		this._nrp.on('app-schema:updated', (data) => {
+		this.__nrp.on('app-schema:updated', (data) => {
 			Logging.logDebug(`App Schema Updated: ${data.appId}`);
 			this.notifyWorkers({
 				type: 'app-schema:updated',
 				appId: data.appId,
 			});
 		});
-		this._nrp.on('app-routes:bust-cache', () => {
+		this.__nrp.on('app-routes:bust-cache', () => {
 			Logging.logDebug(`App Routes: Bust token cache`);
 			this.notifyWorkers({
 				type: 'app-routes:bust-cache',
@@ -151,17 +139,14 @@ class BootstrapRest extends EventEmitter {
 			Logging.logVerbose(`Secondary Master REST`);
 		}
 
-		if (this.workerProcesses === 0) {
-			Logging.logWarn(`Running in SINGLE Instance mode, BUTTRESS_APP_WORKERS has been set to 0`);
-			await this.__initWorker();
-		} else {
-			await this.__spawnWorkers();
-		}
+		await this.__spawnWorkers();
 	}
 
 	async __initWorker() {
+		Plugins.initRoutes(this.routes);
+
 		const app = express();
-		app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
+		// app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 		app.enable('trust proxy', 1);
 		app.use(bodyParser.json({limit: '20mb'}));
 		app.use(bodyParser.urlencoded({extended: true}));
@@ -175,12 +160,6 @@ class BootstrapRest extends EventEmitter {
 
 		Plugins.on('request', (req, res) => app.handle(req, res));
 
-		process.on('unhandledRejection', (error) => {
-			Logging.logError(error);
-		});
-
-		process.on('message', (payload) => this.handleProcessMessage(payload));
-
 		await Model.initCoreModels();
 
 		const localSchema = this._getLocalSchemas();
@@ -188,7 +167,7 @@ class BootstrapRest extends EventEmitter {
 
 		this.routes = new Routes(app);
 
-		await this.routes.init(this._nrp);
+		await this.routes.init(this.__services);
 		await this.routes.initRoutes();
 
 		this._restServer = await app.listen(Config.listenPorts.rest);
@@ -197,21 +176,11 @@ class BootstrapRest extends EventEmitter {
 		await this.routes.initAppRoutes();
 	}
 
-	async notifyWorkers(payload) {
-		if (this.workerProcesses > 0) {
-			Logging.logDebug(`notifying ${this.workers.length} Workers`);
-			this.workers.forEach((w) => w.send(payload));
-		} else {
-			Logging.logSilly(`single instance mode notification`);
-			await this.handleProcessMessage(payload);
-		}
-	}
-
-	async handleProcessMessage(payload) {
+	async __handleMessageFromMain(payload) {
 		if (payload.type === 'app-schema:updated') {
 			if (!this.routes) return Logging.logDebug(`Skipping app schema update, router not created yet`);
 			Logging.logDebug(`App Schema Updated: ${payload.appId}`);
-			await Model.initSchema();
+			await Model.initSchema(payload.appId);
 			await this.routes.regenerateAppRoutes(payload.appId);
 			Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
 		} else if (payload.type === 'app-routes:bust-cache') {
@@ -222,57 +191,51 @@ class BootstrapRest extends EventEmitter {
 		}
 	}
 
-	__spawnWorkers() {
-		Logging.logVerbose(`Spawning ${this.workerProcesses} REST Workers`);
-
-		const __spawn = (idx) => {
-			this.workers[idx] = cluster.fork();
-		};
-
-		for (let x = 0; x < this.workerProcesses; x++) {
-			__spawn(x);
-		}
-	}
-
 	async __systemInstall() {
 		Logging.log('Checking for existing apps.');
-
 		const pathName = path.join(Config.paths.appData, 'super.json');
 
-		const appCount = await Model.App.count();
+		let superApp = null;
 
-		if (appCount > 0) {
-			Logging.log('Existing apps found - Skipping install.');
+		try {
+			const appCount = await Model.App.count();
+			if (appCount > 0) {
+				Logging.log('Existing apps found - Skipping install.');
 
-			if (fs.existsSync(pathName)) {
-				Logging.logWarn(`--------------------------------------------------------`);
-				Logging.logWarn(' !!WARNING!!');
-				Logging.logWarn(' Super token file still exists on the file system.');
-				Logging.logWarn(' Please capture this token and remove delete the file:');
-				Logging.logWarn(` rm ${pathName}`);
-				Logging.logWarn(`--------------------------------------------------------`);
+				if (fs.existsSync(pathName)) {
+					Logging.logWarn(`--------------------------------------------------------`);
+					Logging.logWarn(' !!WARNING!!');
+					Logging.logWarn(' Super token file still exists on the file system.');
+					Logging.logWarn(' Please capture this token and remove delete the file:');
+					Logging.logWarn(` rm ${pathName}`);
+					Logging.logWarn(`--------------------------------------------------------`);
+				}
+
+				return;
 			}
 
-			return;
+			superApp = await Model.App.add({
+				name: `${Config.app.title} TEST`,
+				type: Model.Token.Constants.Type.SYSTEM,
+				permissions: [{route: '*', permission: '*'}],
+				apiPath: 'bjs',
+				domain: '',
+			});
+		} catch (err) {
+			Logging.logError(err);
+			Logging.logError('Failed to create super app.');
+			throw err;
 		}
 
-		const res = await Model.App.add({
-			name: `${Config.app.title} TEST`,
-			type: Model.Token.Constants.Type.SYSTEM,
-			permissions: [{route: '*', permission: '*'}],
-			apiPath: 'bjs',
-			domain: '',
-		});
-
 		await new Promise((resolve, reject) => {
-			const app = Object.assign(res.app, {token: res.token.value});
+			const app = Object.assign(superApp.app, {token: superApp.token.value});
 
 			if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, {recursive: true});
 
 			fs.writeFile(pathName, JSON.stringify(app), (err) => {
 				if (err) return reject(err);
 				Logging.log(`--------------------------------------------------------`);
-				Logging.log(` SUPER APP CREATED: ${res.app._id}`);
+				Logging.log(` SUPER APP CREATED: ${superApp.app.id}`);
 				Logging.log(``);
 				Logging.log(` Token can be found at the following path:`);
 				Logging.log(` ${pathName}`);
@@ -311,7 +274,7 @@ class BootstrapRest extends EventEmitter {
 		const rxsApps = await Model.App.findAll();
 		for await (const app of rxsApps) {
 			const appSchema = Schema.decode(app.__schema);
-			const appShortId = shortId(app._id);
+			const appShortId = shortId(app.id);
 			Logging.log(`Adding ${localSchema.length} local schema for ${appShortId}:${app.name}:${appSchema.length}`);
 			localSchema.forEach((cS) => {
 				const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);
@@ -323,7 +286,7 @@ class BootstrapRest extends EventEmitter {
 				appSchema[appSchemaIdx] = schema;
 			});
 
-			await Model.App.updateSchema(app._id, appSchema);
+			await Model.App.updateSchema(app.id, appSchema);
 		}
 	}
 }

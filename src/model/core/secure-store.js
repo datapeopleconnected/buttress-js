@@ -17,13 +17,13 @@
  */
 
 const Model = require('../');
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
-class SecureStoreSchemaModel extends SchemaModel {
-	constructor(nrp) {
+class SecureStoreSchemaModel extends StandardModel {
+	constructor(services) {
 		const schema = SecureStoreSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 	}
 
 	static get Schema() {
@@ -69,7 +69,7 @@ class SecureStoreSchemaModel extends SchemaModel {
 		// TODO This logic should be moved out to the route, to keep req logic
 		// with the http handling. appId should just be passed through with the
 		// body.
-		let appId = Model?.authApp?._id;
+		let appId = Model?.authApp?.id;
 		if (!appId) {
 			const token = await this._getToken(req);
 			if (token && token._appId) {

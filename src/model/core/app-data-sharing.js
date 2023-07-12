@@ -18,22 +18,20 @@
 
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Model = require('..');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 /**
  * @class AppDataSharingSchemaModel
  */
-class AppDataSharingSchemaModel extends SchemaModel {
-	constructor(nrp) {
+class AppDataSharingSchemaModel extends StandardModel {
+	constructor(services) {
 		const schema = AppDataSharingSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 
 		this._localSchema = null;
-
-		this._nrp = nrp;
 	}
 
 	static get Constants() {
@@ -126,16 +124,16 @@ class AppDataSharingSchemaModel extends SchemaModel {
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 
-		await this.__createDataSharingPolicy(appDataSharingBody, token._id);
+		await this.__createDataSharingPolicy(appDataSharingBody, token.id);
 
 		Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
-		this._nrp.emit('app-policy:bust-cache', {
+		this.__nrp.emit('app-policy:bust-cache', {
 			appId: appDataSharingBody._appId,
 		});
 
 		const rxsDataShare = await super.add(appDataSharingBody, {
 			_appId: appDataSharingBody._appId,
-			_tokenId: token._id,
+			_tokenId: token.id,
 		});
 		const dataSharing = await Helpers.streamFirst(rxsDataShare);
 
@@ -149,7 +147,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 				'#tokenType': {
 					'@eq': 'DATA_SHARING',
 				},
-				'_id': {
+				'id': {
 					'@eq': tokenId,
 				},
 			},
@@ -208,7 +206,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 			update.$set['remoteApp.token'] = newToken;
 		}
 
-		this._nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
+		this.__nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}
@@ -225,7 +223,7 @@ class AppDataSharingSchemaModel extends SchemaModel {
 		};
 
 		// TODO implement socket deactivation
-		this._nrp.emit('dataShare:deactivated', {appDataSharingId: appDataSharingId});
+		this.__nrp.emit('dataShare:deactivated', {appDataSharingId: appDataSharingId});
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}

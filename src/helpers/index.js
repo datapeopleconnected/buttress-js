@@ -16,20 +16,20 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Errors = require('./helpers/errors');
-const DataSharingHelpers = require('./helpers/data-sharing');
+const Errors = require('./errors');
+const DataSharingHelpers = require('./data-sharing');
 
 const stream = require('stream');
 const Transform = stream.Transform;
 
-const Datastore = require('./datastore');
+const Datastore = require('../datastore');
 
 module.exports.DataSharing = DataSharingHelpers;
 
 module.exports.Errors = Errors;
 
-module.exports.Schema = require('./helpers/schema');
-module.exports.Stream = require('./helpers/stream');
+module.exports.Schema = require('./schema');
+module.exports.Stream = require('./stream');
 
 class Timer {
 	constructor() {
@@ -57,77 +57,31 @@ class Timer {
 
 module.exports.Timer = Timer;
 
-const __prepareResult = (result) => {
-	const prepare = (chunk) => {
-		if (!chunk) return chunk;
-
-		if (chunk._id) {
-			chunk.id = chunk._id;
-			delete chunk._id;
-		}
-
-		if (typeof chunk === 'object') {
-			Object.keys(chunk).forEach((key) => {
-				if (key.indexOf('_') !== -1) {
-					// return delete chunk[key];
-				}
-
-				chunk[key] = (Array.isArray(chunk[key])) ? chunk[key].map((c) => prepare(c)) : prepare(chunk[key]);
-			});
-		}
-
-		return chunk;
-	};
-
-	return (Array.isArray(result)) ? result.map((c) => prepare(c)) : prepare(result);
-};
-module.exports.prepareResult = __prepareResult;
 class JSONStringifyStream extends Transform {
 	constructor(options, prepare) {
 		super(Object.assign(options || {}, {objectMode: true}));
+
+		if (!prepare || typeof prepare !== 'function') throw new Error('JSONStringifyStream requires a prepare function');
 
 		this._first = true;
 		this.prepare = prepare;
 	}
 
 	_transform(chunk, encoding, cb) {
-		const nonReplacerKeys = [ // TODO: This needs to be reviewed
-			'_id', '_app', '__v', '_user', '_token',
-		];
-
-		const __replacer = (key, value) => {
-			if (nonReplacerKeys.indexOf(key) !== -1) {
-				return undefined;
-			}
-			if (Array.isArray(value)) {
-				return value.map((c) => {
-					if (c && c._id) c.id = c._id;
-					return c;
-				});
-			}
-
-			return value;
-		};
-
-		if (this.prepare) {
-			chunk = this.prepare(chunk);
-		} else {
-			chunk = __prepareResult(chunk, this.schema, this.token);
-		}
+		chunk = this.prepare(chunk);
 
 		// Dont return any blank objects
-		if (chunk === null || typeof chunk === 'object' && Object.keys(chunk).length < 1) {
-			return cb();
-		}
+		if (chunk === null || typeof chunk === 'object' && Object.keys(chunk).length < 1) return cb();
 
-		const str = JSON.stringify(chunk, __replacer);
+		// Stringify the object thats come in and strip any keys/props which are prefixed with a underscore
+		const str = JSON.stringify(chunk);
 
 		if (this._first) {
 			this._first = false;
 			this.push(`[`);
-			this.push(`${str}`);
+			this.push(`${str}\n`);
 		} else {
-			this.push(`,${str}`);
+			this.push(`,${str}\n`);
 		}
 
 		cb();
@@ -292,8 +246,6 @@ const __getFlattenedSchema = (schema) => {
 module.exports.getFlattenedSchema = __getFlattenedSchema;
 
 module.exports.streamFirst = (stream) => {
-	// TODO: Handle none stream being passed through
-
 	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
 		throw new Error(`Expected Stream but got '${stream}'`);
 	}
@@ -316,9 +268,7 @@ module.exports.streamAll = (stream) => {
 		const arr = [];
 		stream.on('error', (err) => reject(err));
 		stream.on('end', () => resolve(arr));
-		stream.on('data', (item) => {
-			arr.push(item);
-		});
+		stream.on('data', (item) => arr.push(item));
 	});
 };
 
@@ -415,4 +365,63 @@ module.exports.updateCoreSchemaObject = (update, extendedPathContext) => {
 	}
 
 	return update;
+};
+
+module.exports.compareByProps = (compareProperties, a, b) => {
+	for (const key of compareProperties.keys()) {
+		const sortOrder = compareProperties.get(key);
+
+		// TODO: path resolution.
+		const valueA = (a && a[key]) ? a[key] : null;
+		const valueB = (b && b[key]) ? b[key] : null;
+
+		if (valueA < valueB) return -1 * sortOrder;
+		if (valueA > valueB) return 1 * sortOrder;
+	}
+
+	return 0;
+};
+
+module.exports.ExpireMap = class ExpireMap extends Map {
+	constructor(expireTime) {
+		super();
+		this.expireTime = expireTime;
+
+		this.gcTimeout = null;
+	}
+
+	set(key, value) {
+		super.set(key, {
+			value,
+			expire: Date.now() + this.expireTime,
+		});
+	}
+
+	get(key) {
+		const item = super.get(key);
+		if (!item) return undefined;
+
+		if (item.expire < Date.now()) {
+			this.delete(key);
+			return undefined;
+		}
+
+		return item.value;
+	}
+
+	// This is dumb
+	destory() {
+		if (this.gcTimeout) clearTimeout(this.gcTimeout);
+		this.clear();
+	}
+
+	_gc() {
+		this.gcTimeout = setTimeout(() => {
+			for (const key of this.keys()) {
+				this.get(key);
+			}
+
+			this._gc();
+		}, this.expireTime);
+	}
 };

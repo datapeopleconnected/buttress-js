@@ -22,10 +22,10 @@ const exec = util.promisify(require('child_process').exec);
 
 const Config = require('node-env-obj')();
 const Sugar = require('sugar');
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 const Model = require('../');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 
 const lambdaConsole = {
 	'console.log': 'lambda.log',
@@ -35,10 +35,10 @@ const lambdaConsole = {
 	'console.error': 'lambda.logError',
 	'console.dir': '',
 };
-class LambdaSchemaModel extends SchemaModel {
-	constructor(nrp) {
+class LambdaSchemaModel extends StandardModel {
+	constructor(services) {
 		const schema = LambdaSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 
 		this.name = 'LAMBDA';
 	}
@@ -271,12 +271,12 @@ class LambdaSchemaModel extends SchemaModel {
 		};
 
 		const rxsLambda = await super.add(lambdaBody, {
-			_appId: app._id,
+			_appId: app.id,
 		});
 		const lambda = await Helpers.streamFirst(rxsLambda);
 
 		const deployment = {
-			lambdaId: lambda._id,
+			lambdaId: lambda.id,
 			hash: lambda.git.hash,
 			branch: lambda.git.branch,
 			deployedAt: Sugar.Date.create('now'),
@@ -286,11 +286,11 @@ class LambdaSchemaModel extends SchemaModel {
 
 		auth.type = Model.Token.Constants.Type.LAMBDA;
 		await Model.Token.add(auth, {
-			_appId: Model.authApp._id,
-			_lambdaId: lambda._id,
+			_appId: Model.authApp.id,
+			_lambdaId: lambda.id,
 		});
 
-		await exec(`cd ${Config.paths.lambda.code}; mv lambda-${lambda.name} lambda-${lambda._id}`);
+		await exec(`cd ${Config.paths.lambda.code}; mv lambda-${lambda.name} lambda-${lambda.id}`);
 
 		return lambda;
 	}
@@ -325,7 +325,7 @@ class LambdaSchemaModel extends SchemaModel {
 						$eq: apiTrigger.apiEndpoint.url,
 					},
 					'_appId': {
-						$eq: app._id,
+						$eq: app.id,
 					},
 				});
 			}

@@ -20,7 +20,7 @@ const path = require('path');
 const fs = require('fs');
 const Sugar = require('sugar');
 
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 const Schema = require('../schema');
 const shortId = require('../helpers').shortId;
 
@@ -28,8 +28,8 @@ const {Errors, DataSharing} = require('../helpers');
 
 const Datastore = require('../datastore');
 
-const SchemaModel = require('./schemaModel');
-const SchemaModelRemote = require('./type/remote');
+const StandardModel = require('./type/standard');
+const RemoteCombinedModel = require('./type/remote-combined');
 
 /**
  * @param {string} model - name of the model to load
@@ -49,12 +49,23 @@ class Model {
 
 		this.coreSchema = [];
 
-		this._nrp = null;
+		this._services = null;
 	}
 
-	async init(nrp) {
+	async init(services) {
 		Logging.logSilly('Model:init');
-		this._nrp = nrp;
+		this._services = services;
+	}
+
+	async clean() {
+		Logging.logSilly('Model:clean');
+		this.models = {};
+		this.Schema = {};
+		this.Constants = {};
+		this.app = false;
+		this.appMetadataChanged = false;
+
+		this.coreSchema = [];
 	}
 
 	async initCoreModels() {
@@ -68,12 +79,16 @@ class Model {
 		}
 	}
 
-	async initSchema() {
+
+	async initSchema(appId = null) {
 		Logging.logSilly('Model:initSchema');
 		const rxsApps = await this.models.App.findAll();
 
 		for await (const app of rxsApps) {
 			if (!app || !app.__schema) return;
+			if (appId && app.id.toString() !== appId) continue;
+
+			Logging.logSilly(`Model:initSchema: ${app.id}`);
 
 			// Check for connection
 			let datastore = null;
@@ -83,7 +98,7 @@ class Model {
 					await datastore.connect();
 				} catch (err) {
 					if (err instanceof Errors.UnsupportedDatastore) {
-						Logging.logWarn(`${err} for ${app._id}`);
+						Logging.logWarn(`${err} for ${app.id}`);
 						return;
 					}
 
@@ -105,10 +120,27 @@ class Model {
 				await this._initSchemaModel(app, schema, datastore);
 			}
 		}
+
+		Logging.logSilly('Model:initSchema:end');
 	}
 
-	initModel(modelName) {
-		return this[modelName];
+	/**
+	 * Use to access a defined model, should be used in place of the
+	 * object property accessor.
+	 * @param {string} name
+	 * @return {object}
+	 */
+	getModel(name) {
+		return this[name];
+	}
+
+	/**
+	 * Used to define a object property accessor for a defined model.
+	 * @param {string} name
+	 * @deprecated
+	 */
+	__addModelGetter(name) {
+		Object.defineProperty(this, name, {get: () => this.models[name], configurable: true});
 	}
 
 	/**
@@ -118,16 +150,16 @@ class Model {
 	 */
 	async _initCoreModel(model) {
 		const name = Sugar.String.camelize(model);
-		const CoreSchemaModel = require(`./schema/${model.toLowerCase()}`);
+		const CoreSchemaModel = require(`./core/${model.toLowerCase()}`);
 
 		this.coreSchema.push(name);
 
 		if (!this.models[name]) {
 			Logging.logSilly(`Creating core model: ${name}`);
-			this.models[name] = new CoreSchemaModel(this._nrp);
+			this.models[name] = new CoreSchemaModel(this._services);
 			await this.models[name].initAdapter(Datastore.getInstance('core'));
 
-			this.__defineGetter__(name, () => this.models[name]);
+			this.__addModelGetter(name);
 		}
 
 		return this.models[name];
@@ -141,64 +173,73 @@ class Model {
 	 * @private
 	 */
 	async _initSchemaModel(app, schemaData, mainDatastore) {
-		let name = `${schemaData.name}`;
-		const appShortId = (app) ? shortId(app._id) : null;
+		let modelName = `${schemaData.name}`;
+		const appShortId = (app) ? shortId(app.id) : null;
 
-		name = (appShortId) ? `${appShortId}-${schemaData.name}` : name;
+		modelName = (appShortId) ? `${appShortId}-${schemaData.name}` : modelName;
+
+		// if (this.models[modelName]) {
+		// 	this.__addModelGetter(modelName);
+		// 	return this.models[modelName];
+		// }
 
 		// Is data sharing
-		if (!this.models[name]) {
-			if (schemaData.remote) {
-				const [dataSharingName, collection] = schemaData.remote.split('.');
+		if (schemaData.remotes) {
+			const remotes = (Array.isArray(schemaData.remotes)) ? schemaData.remotes : [schemaData.remotes];
 
-				if (!dataSharingName || !collection) {
-					Logging.logWarn(`Invalid Schema remote descriptor (${dataSharingName}.${collection})`);
+			const datastores = [];
+
+			for await (const remote of remotes) {
+				if (!remote.name || !remote.schema) {
+					Logging.logWarn(`Invalid Schema remote descriptor (${remote.name}.${remote.schema})`);
 					return;
 				}
 
 				const dataSharing = await this.AppDataSharing.findOne({
-					'name': dataSharingName,
-					'_appId': app._id,
+					'name': remote.name,
+					'_appId': app.id,
 				});
 
 				if (!dataSharing) {
-					Logging.logError(`Unable to find data sharing (${dataSharingName}.${collection}) for ${app.name}`);
+					Logging.logError(`Unable to find data sharing (${remote.name}.${remote.schema}) for ${app.name}`);
 					return;
 				}
 
 				if (!dataSharing.active) {
-					Logging.logDebug(`Data sharing not active yet, skipping (${dataSharingName}.${collection}) for ${app.name}`);
+					Logging.logDebug(`Data sharing not active yet, skipping (${remote.name}.${remote.schema}) for ${app.name}`);
 					return;
 				}
 
 				const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
 				const remoteDatastore = Datastore.createInstance({connectionString});
 
-				this.models[name] = new SchemaModelRemote(
-					schemaData, app,
-					new SchemaModel(schemaData, app, this._nrp),
-					new SchemaModel(schemaData, app, this._nrp),
-					this._nrp,
-				);
+				remoteDatastore.dataSharingId = dataSharing.id;
 
-				try {
-					await this.models[name].initAdapter(mainDatastore, remoteDatastore);
-				} catch (err) {
-					// Skip defining this model, the error will get picked up later when route is defined ore accessed
-					if (err instanceof Errors.SchemaNotFound) return;
-					else throw err;
-				}
-
-				this.__defineGetter__(name, () => this.models[name]);
-				return this.models[name];
-			} else {
-				this.models[name] = new SchemaModel(schemaData, app, this._nrp);
-				await this.models[name].initAdapter(mainDatastore);
+				datastores.push(remoteDatastore);
 			}
+
+			this.models[modelName] = new RemoteCombinedModel(schemaData, app, this._services);
+
+			try {
+				await this.models[modelName].initAdapter(mainDatastore, datastores);
+			} catch (err) {
+				// Skip defining this model, the error will get picked up later when route is defined ore accessed
+				if (err instanceof Errors.SchemaNotFound) return;
+				else throw err;
+			}
+
+			this.__addModelGetter(modelName);
+			return this.models[modelName];
+		} else {
+			if ((this._services instanceof Map) === false) {
+				throw new Error('FUCK');
+			}
+			this.models[modelName] = new StandardModel(schemaData, app, this._services);
+			await this.models[modelName].initAdapter(mainDatastore);
 		}
 
-		this.__defineGetter__(name, () => this.models[name]);
-		return this.models[name];
+		this.__addModelGetter(modelName);
+		return this.models[modelName];
 	}
 
 	/**
@@ -206,7 +247,7 @@ class Model {
  * @return {array} - list of files containing schemas
  */
 	_getModels() {
-		const filenames = fs.readdirSync(`${__dirname}/schema`);
+		const filenames = fs.readdirSync(`${__dirname}/core`);
 
 		const files = [];
 		for (let x = 0; x < filenames.length; x++) {

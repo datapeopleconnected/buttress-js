@@ -19,7 +19,7 @@
 const Stream = require('stream');
 // const JSONStream = require('JSONStream');
 const Config = require('node-env-obj')();
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 // const Schema = require('../schema');
 const Model = require('../model');
 const Helpers = require('../helpers');
@@ -94,11 +94,12 @@ const Constants = {
 };
 
 class Route {
-	constructor(path, name, nrp = null) {
+	constructor(paths, name, services) {
 		this.verb = Constants.Verbs.GET;
 		this.Type = Constants.Type.SYSTEM;
 		this.permissions = Constants.Permissions.READ;
 
+		this.activity = true;
 		this.activityBroadcast = false;
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
 		this.activityTitle = 'Private Activity';
@@ -109,15 +110,30 @@ class Route {
 
 		this.timingChunkSample = 250;
 
+		// Defaults for system/core routes, will be overridden by __configureSchemaRoute
+		// for schema routes.
+		this.core = true;
 		this.redactResults = true;
+		this.addSourceId = false;
 
 		this.schema = null;
 		this.model = null;
 
-		this.path = path;
+		this.paths = Array.isArray(paths) ? paths : [paths];
+
 		this.name = name;
 
-		this._nrp = nrp;
+		this._nrp = services.get('nrp');
+
+		this._redisClient = services.get('redisClient');
+	}
+
+	// Quickly apply some common schemaRoute configurations, will typically be called
+	// straight after the constructor super call.
+	__configureSchemaRoute() {
+		this.core = false;
+		this.redactResults = true;
+		this.addSourceId = true;
 	}
 
 	/**
@@ -139,14 +155,20 @@ class Route {
 		const token = await this._authenticate(req, res);
 
 		req.timings.validate = req.timer.interval;
+		Logging.logTimer('Route:exec:validate:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		const validate = await this._validate(req, res, token);
+		Logging.logTimer('Route:exec:validate:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		req.timings.exec = req.timer.interval;
+		Logging.logTimer('Route:exec:exec:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		const result = await this._exec(req, res, validate);
+		Logging.logTimer('Route:exec:exec:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		// Send the result back to the client and resolve the request from
 		// this point onward you should treat the request as furfilled.
 		if (result instanceof Stream && result.readable) {
+			result.on('bjs-stream-status', (data) => req.bjsReqStatus(data, this._nrp));
+
 			const resStream = new Stream.PassThrough({objectMode: true});
 			const broadcastStream = new Stream.PassThrough({objectMode: true});
 
@@ -163,6 +185,8 @@ class Route {
 			await this._logActivity(req, res);
 
 			await this._boardcastData(req, res, broadcastStream);
+
+			req.bjsReqStatus({status: 'ready'}, this._nrp);
 		} else {
 			// await Plugins.do_action('route-add-many:_exec', this.schema, results);
 
@@ -195,9 +219,9 @@ class Route {
 			let chunkCount = 0;
 			const stringifyStream = new Helpers.JSONStringifyStream({}, (chunk) => {
 				chunkCount++;
+
 				if (chunkCount % this.timingChunkSample === 0) req.timings.stream.push(req.timer.interval);
-				if (!this.redactResults) return chunk;
-				return Helpers.Schema.prepareSchemaResult(chunk, req.token);
+				return (this.redactResults) ? Helpers.Schema.prepareSchemaResult(chunk, (this.addSourceId) ? req.authApp.id : null) : chunk;
 			});
 
 			res.set('Content-Type', 'application/json');
@@ -205,8 +229,9 @@ class Route {
 			Logging.logTimer(`_respond:start-stream`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			result.once('end', () => {
-				// Logging.logTimerException(`PERF: STREAM DONE: ${this.path}`, req.timer, 0.05, req.id);
+				// Logging.logTimerException(`PERF: STREAM DONE: ${req.pathSpec}`, req.timer, 0.05, req.id);
 				Logging.logTimer(`_respond:end-stream chunks:${chunkCount}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+				req.bjsReqClose(this._nrp);
 				this._close(req);
 			});
 
@@ -216,15 +241,15 @@ class Route {
 		}
 
 		if (this.redactResults) {
-			res.json(Helpers.Schema.prepareSchemaResult(result, req.token));
+			res.json(Helpers.Schema.prepareSchemaResult(result, (this.addSourceId) ? req.authApp.id : null));
 		} else {
 			res.json(result);
 		}
 
 		this._close(req);
 
-		Logging.logTimer(`_respond:end ${this.path}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		// Logging.logTimerException(`PERF: DONE: ${this.path}`, req.timer, 0.05, req.id);
+		Logging.logTimer(`_respond:end ${req.pathSpec}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		// Logging.logTimerException(`PERF: DONE: ${req.pathSpec}`, req.timer, 0.05, req.id);
 
 		return result;
 	}
@@ -241,17 +266,9 @@ class Route {
 			return;
 		}
 
-		let addActivty = true;
-		if (this.path === 'tracking') {
-			addActivty = false;
-		}
-		if (this.path === 'user/:app?') {
-			addActivty = false;
-		}
-
 		// Fire and forget
-		if (addActivty) {
-			this._addLogActivity(req, this.path, this.verb);
+		if (this.activity) {
+			this._addLogActivity(req, req.pathSpec, this.verb);
 		}
 
 		Logging.logTimer('_logActivity:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -333,15 +350,15 @@ class Route {
 					visibility: this.activityVisibility,
 					broadcast: this.activityBroadcast,
 					path: path,
-					pathSpec: this.path,
+					pathSpec: req.pathSpec,
 					verb: this.verb,
 					permissions: this.permissions,
 					params: req.params,
 					timestamp: new Date(),
 					response: _result,
-					user: req.authUser ? req.authUser._id : '',
+					user: req.authUser ? req.authUser.id : '',
 					appAPIPath: req.authApp ? req.authApp.apiPath : '',
-					appId: req.authApp ? req.authApp._id : '',
+					appId: req.authApp ? req.authApp.id : '',
 					isSuper: isSuper,
 					schemaName: this.schema?.name,
 				});
@@ -351,14 +368,12 @@ class Route {
 		};
 
 		if (isReadStream) {
-			result.on('data', (data) => {
-				emit(Helpers.Schema.prepareSchemaResult(data));
-			});
+			result.on('data', (data) => emit(Helpers.Schema.prepareSchemaResult(data, req.authApp.id)));
 			Logging.logTimer('_broadcast:end-stream', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
 		}
 
-		emit(Helpers.Schema.prepareSchemaResult(result));
+		emit(Helpers.Schema.prepareSchemaResult(result, req.authApp.id));
 		Logging.logTimer('_broadcast:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
 
@@ -386,7 +401,7 @@ class Route {
 		const id = req.params.id;
 
 		if (this.verb === Constants.Verbs.POST) {
-			if (this.path.includes(Constants.BulkRequests.BULK_PUT)) {
+			if (req.pathSpec.includes(Constants.BulkRequests.BULK_PUT)) {
 				body.forEach((item) => {
 					if (Array.isArray(item.body)) {
 						item.body.forEach((obj) => {
@@ -398,7 +413,7 @@ class Route {
 						values.push(item.body.value);
 					}
 				});
-			} else if (this.path.includes(Constants.BulkRequests.BULK_DEL)) {
+			} else if (req.pathSpec.includes(Constants.BulkRequests.BULK_DEL)) {
 				body.forEach((id) => paths.push(`${this.schema?.name}.${id}`));
 			} else {
 				paths.push(this.schema?.name);
@@ -466,24 +481,6 @@ class Route {
 			 */
 			Logging.logTimer(`_authenticate:start-app-routes`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-			// TODO: This should be replaced by the access control.
-			// let authorised = false;
-			// const token = req.token;
-
-			// for (let x = 0; x < token.permissions.length; x++) {
-			// 	const p = token.permissions[x];
-			// 	if (this._matchRoute(req, p.route) && this._matchPermission(p.permission)) {
-			// 		authorised = true;
-			// 		break;
-			// 	}
-			// }
-
-			// if (authorised === false) {
-			// 	this.log(`EAUTH: NO PERMISSION FOR ROUTE - ${this.path}`, Logging.Constants.LogLevel.ERR);
-			// 	Logging.logTimer('_authenticate:end-no-permission-route', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			// 	return reject(new Helpers.Errors.RequestError(403, 'no_permission_for_route'));
-			// }
-
 			// BYPASS schema checks for app tokens
 			if (req.token.type === 'app') {
 				Logging.logTimer('_authenticate:end-app-token', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -502,41 +499,6 @@ class Route {
 
 			resolve(req.token);
 		});
-	}
-
-	/**
-	 * @param {object} req - The request object to be compared to
-	 * @param {string} routeSpec - See above for accepted route specs
-	 * @return {boolean} - true if the route is authorised
-	 * @private
-	 */
-	_matchRoute(req, routeSpec) {
-		// if (routeSpec === '*' && req.token.authLevel >= Constants.Auth.SUPER) {
-		if (routeSpec === '*') {
-			return true;
-		}
-
-		if (routeSpec === this.path) {
-			return true;
-		}
-
-		// const userWildcard = /^user\/me.+/;
-		// if (routeSpec.match(userWildcard) && req.params.id == req.authUser._id) {
-		// 	Logging.logSilly(`Matched user ${req.authUser._id} to /user/${req.params.id}`);
-		// 	return true;
-		// }
-
-		const wildcard = /(.+)(\/\*)/;
-		const matches = routeSpec.match(wildcard);
-		if (matches) {
-			if (this.path.match(new RegExp(`^${matches[1]}`)) &&
-				// TODO probably need to change the last line in the if condition
-				(req.token.type === Constants.Type.APP ||req.token.type === Constants.Type.SYSTEM)) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	/**

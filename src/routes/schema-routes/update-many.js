@@ -9,6 +9,7 @@ const Schema = require('../../schema');
 module.exports = class UpdateMany extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}/bulk/update`, `BULK UPDATE ${schema.name}`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -25,7 +26,7 @@ module.exports = class UpdateMany extends Route {
 		this.model = Model[schemaCollection];
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`GetList Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 
 		this._entity = null;
@@ -80,7 +81,7 @@ module.exports = class UpdateMany extends Route {
 					}
 				}
 
-				return this.model.exists(update.id)
+				return this.model.exists(update.id, body.sourceId)
 					.then((exists) => {
 						if (!exists) {
 							this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.id);
@@ -101,8 +102,8 @@ module.exports = class UpdateMany extends Route {
 		const output = [];
 		return data.reduce(
 			(prev, body) => prev
-				.then(() => this.model.updateByPath(body.body, body.id))
-				.then((result) => output.push({id: body.id, results: result})),
+				.then(() => this.model.updateByPath(body.body, body.id, body.sourceId))
+				.then((result) => output.push({id: body.id, sourceId: body.sourceId, results: result})),
 			Promise.resolve(),
 		)
 			.then(() => output);

@@ -24,8 +24,8 @@ const routes = [];
  * @class SearchExecutionList
  */
 class SearchExecutionList extends Route {
-	constructor(nrp) {
-		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', nrp);
+	constructor(nrp, redisClient) {
+		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}

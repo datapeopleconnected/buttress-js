@@ -21,7 +21,7 @@ const Sugar = require('sugar');
 
 const Route = require('../route');
 const Model = require('../../model');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
 
@@ -31,8 +31,8 @@ const routes = [];
  * @class GetAppList
  */
 class GetAppList extends Route {
-	constructor(nrp) {
-		super('app', 'GET APP LIST', nrp);
+	constructor(nrp, redisClient) {
+		super('app', 'GET APP LIST', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -43,7 +43,7 @@ class GetAppList extends Route {
 
 	_exec(req, res, validate) {
 		if (req.token.type !== Route.Constants.Type.SYSTEM) {
-			return Model.App.find({_id: req.authApp._id});
+			return Model.App.find({id: req.authApp.id});
 		}
 
 		return Model.App.findAll();
@@ -80,13 +80,13 @@ class SearchAppList extends Route {
 
 		const tokenIds = appsDB.map((app) => Model.Token.createId(app._tokenId));
 		const appTokens = await Helpers.streamAll(await Model.Token.find({
-			_id: {
+			id: {
 				$in: tokenIds,
 			},
 		}));
 
 		return appsDB.reduce((arr, app) => {
-			const appToken = appTokens.find((t) => t._id.toString() === app._tokenId.toString());
+			const appToken = appTokens.find((t) => t.id.toString() === app._tokenId.toString());
 			app.tokenValue = appToken.value;
 			arr.push(app);
 			return arr;
@@ -344,6 +344,7 @@ class GetAppSchema extends Route {
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this.redactResults = false;
+		this.addSourceId = false;
 	}
 
 	async _validate(req, res, token) {
@@ -408,6 +409,9 @@ class UpdateAppSchema extends Route {
 		super('app/schema', 'UPDATE APP SCHEMA', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
+
+		this.redactResults = false;
+		this.addSourceId = false;
 	}
 
 	async _validate(req, res, token) {
@@ -424,41 +428,42 @@ class UpdateAppSchema extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
 		}
 
+		const rawSchema = req.body;
+
 		// Sort templates
-		req.body = req.body.sort((a, b) => (a.type.indexOf('collection') === 0) ? 1 : (b.type.indexOf('collection') === 0) ? -1 : 0);
+		let compiledSchema = rawSchema.sort((a, b) => (a.type.indexOf('collection') === 0) ? 1 : (b.type.indexOf('collection') === 0) ? -1 : 0);
 
 		try {
-			// merging req schema to get the extends schemas
-			req.body = Schema.merge(req.body, Model.App.localSchema);
+			compiledSchema = await Model.App.mergeRemoteSchema(req, compiledSchema);
+
+			// Merge any schema extends
+			compiledSchema = Schema.merge(compiledSchema, Model.App.localSchema);
 
 			// building the schema to check for any timeseries
-			const res = await Schema.buildCollections(req.body);
-			const rawSchema = JSON.stringify(res);
+			compiledSchema = await Schema.buildCollections(compiledSchema);
 
 			// merging the built timeseries to get the extends schemas
-			req.body = Schema.merge(res, Model.App.localSchema);
+			compiledSchema = Schema.merge(compiledSchema, Model.App.localSchema);
 
-			return rawSchema;
+			return {
+				rawSchema: JSON.stringify(rawSchema),
+				compiledSchema,
+			};
 		} catch (err) {
 			Logging.logError(err);
 			throw new Helpers.Errors.RequestError(400, `invalid_body_type`);
 		}
 	}
 
-	async _exec(req, res, rawSchema) {
-		const updatedSchema = await Model.App.updateSchema(req.authApp._id, req.body, rawSchema);
-		let schema = '';
-		try {
-			schema = Schema.decode(updatedSchema);
-		} catch (err) {
-			if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
-			else throw err;
-		}
+	async _exec(req, res, {rawSchema, compiledSchema}) {
+		await Model.App.updateSchema(req.authApp.id, compiledSchema, rawSchema);
 
-		// Quicky, remove extends as nobody needs it outside of buttress
-		schema.forEach((s) => delete s.extends);
+		const a = compiledSchema.filter((s) => s.type === 'collection').map((s) => {
+			delete s.extends;
+			return s;
+		});
 
-		return schema;
+		return a;
 	}
 }
 routes.push(UpdateAppSchema);
@@ -564,14 +569,14 @@ class SetAppPolicyPropertyList extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const appId = (req.params.appId) ? req.params.appId : req.authApp._id;
+		const appId = (req.params.appId) ? req.params.appId : req.authApp.id;
 		const update = Object.assign({}, validate);
 		if (update.query) delete update.query;
 
 		let query = {};
 		if (appId) {
 			query = {
-				_id: {
+				id: {
 					$eq: appId,
 				},
 			};
@@ -707,7 +712,7 @@ class AppUpdate extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.App.updateByPath(req.body, req.params.id, 'App');
+		return Model.App.updateByPath(req.body, req.params.id, null, 'App');
 	}
 }
 routes.push(AppUpdate);

@@ -9,6 +9,7 @@ const Schema = require('../../schema');
 module.exports = class SearchCount extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}/count`, `COUNT ${schema.name}`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SERACH;
 
@@ -25,7 +26,7 @@ module.exports = class SearchCount extends Route {
 		this.model = Model[schemaCollection];
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`getCount Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 	}
 

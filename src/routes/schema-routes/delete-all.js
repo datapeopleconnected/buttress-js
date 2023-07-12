@@ -9,6 +9,7 @@ const Schema = require('../../schema');
 module.exports = class DeleteAll extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}`, `DELETE ALL ${schema.name}`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 
@@ -25,7 +26,7 @@ module.exports = class DeleteAll extends Route {
 		this.model = Model[schemaCollection];
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`GetList Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 	}
 

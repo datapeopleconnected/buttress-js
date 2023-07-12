@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Logging = require('../logging');
-const Shared = require('./shared');
-const Helpers = require('../helpers');
-const shortId = require('../helpers').shortId;
+const Logging = require('../../helpers/logging');
+const Helpers = require('../../helpers');
+
+const Shared = require('../shared');
 
 const Sugar = require('sugar');
 
@@ -28,23 +28,27 @@ const Sugar = require('sugar');
  *
  **********************************************************************************/
 
-class SchemaModel {
-	constructor(schemaData, app, nrp=null) {
+class StandardModel {
+	constructor(schemaData, app, services) {
 		this.schemaData = schemaData;
 		this.flatSchemaData = (schemaData) ? Helpers.getFlattenedSchema(this.schemaData) : null;
 
 		this.app = app || null;
 
-		this.appShortId = (app) ? shortId(app._id) : null;
+		this.appShortId = (app) ? Helpers.shortId(app.id) : null;
 		this.collectionName = (schemaData) ? `${schemaData.name}` : null;
 
 		if (this.appShortId) {
 			this.collectionName = `${this.appShortId}-${this.collectionName}`;
 		}
 
-		if (nrp) {
-			nrp.on('app:update-schema', (data) => {
-				if (!app || (app._id.toString() !== data.appId)) return;
+		this.__services = services;
+
+		this.__nrp = services.get('nrp');
+
+		if (schemaData.core) {
+			this.__nrp.on('app:update-schema', (data) => {
+				if (!app || (app.id.toString() !== data.appId)) return;
 
 				data.schemas.forEach((schema) => {
 					if (schema.name !== this.schemaData.name) return;
@@ -76,7 +80,7 @@ class SchemaModel {
 			invalid: [],
 		};
 
-		const app = Shared.validateAppProperties(this.schemaData, body);
+		const app = Shared.validateSchemaObject(this.schemaData, body);
 		if (app.isValid === false) {
 			res.isValid = false;
 			res.invalid = res.invalid.concat(app.invalid);
@@ -184,14 +188,7 @@ class SchemaModel {
 
 		// Convert id
 		let propSchema = null;
-		if (!schemaFlat[property] && (property === 'id' || property === '_id')) {
-		// if (!schemaFlat[property] && (property === 'id' || property === 'id')) {
-			// Convert id -> _id to handle querying of document root index without having to pass _id
-			property = '_id';
-			propSchema = {
-				__type: 'id',
-			};
-		} else if (schemaFlat[property]) {
+		if (schemaFlat[property]) {
 			propSchema = schemaFlat[property];
 		} else if (Object.keys(schemaFlat) > 0) {
 			throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
@@ -261,7 +258,7 @@ class SchemaModel {
 				if (!{}.hasOwnProperty.call(roles.schema.authFilter.env, property)) continue;
 				const query = roles.schema.authFilter.env[property];
 
-				let propertyMap = '_id';
+				let propertyMap = 'id';
 				if (query.map) {
 					propertyMap = query.map;
 				}
@@ -323,9 +320,9 @@ class SchemaModel {
 		const entity = Object.assign({}, internals);
 
 		if (body.id) {
-			entity._id = this.adapter.ID.new(body.id);
+			entity.id = this.adapter.ID.new(body.id);
 		} else {
-			entity._id = this.adapter.ID.new();
+			entity.id = this.adapter.ID.new();
 		}
 
 		if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {
@@ -333,9 +330,7 @@ class SchemaModel {
 			entity.updatedAt = (body.updatedAt) ? Sugar.Date.create(body.updatedAt) : null;
 		}
 
-		const validated = Shared.applyAppProperties(this.schemaData, body);
-
-		return Object.assign(validated, entity);
+		return Object.assign(Shared.sanitizeSchemaObject(this.schemaData, body), entity);
 	}
 	add(body, internals) {
 		return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
@@ -380,10 +375,12 @@ class SchemaModel {
 	/**
 	 * @param {object} body
 	 * @param {string} id
+	 * @param {string} sourceId
 	 * @param {string} model
 	 * @return {promise}
 	 */
-	async updateByPath(body, id, model) {
+	// TODO: Model shouldn't be being passed through this way.
+	async updateByPath(body, id, sourceId = null, model = null) {
 		if (body instanceof Array === false) {
 			body = [body];
 		}
@@ -414,11 +411,12 @@ class SchemaModel {
 	}
 
 	/**
-	 * @param {*} id
-	 * @param {*} extra
+	 * @param {string} id
+	 * @param {string} sourceId
+	 * @param {object} extra
 	 * @return {Promise}
 	 */
-	exists(id, extra = {}) {
+	exists(id, sourceId = null, extra = {}) {
 		return this.adapter.exists(id, extra);
 	}
 
@@ -514,4 +512,4 @@ class SchemaModel {
 	}
 }
 
-module.exports = SchemaModel;
+module.exports = StandardModel;

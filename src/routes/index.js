@@ -26,7 +26,7 @@ const ObjectId = require('mongodb').ObjectId;
 const Config = require('node-env-obj')();
 
 // const Route = require('./route');
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 const Schema = require('../schema');
 const Helpers = require('../helpers');
 const AccessControl = require('../access-control');
@@ -48,11 +48,15 @@ class Routes {
 		this._tokens = [];
 		this._routerMap = {};
 
+		this._services = null;
+
 		this._nrp = null;
 	}
 
-	async init(nrp) {
-		this._nrp = nrp;
+	async init(services) {
+		this._services = services;
+
+		this._nrp = services.get('nrp');
 	}
 
 	/**
@@ -230,7 +234,7 @@ class Routes {
 
 		// Get DS agreements
 		const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
-			'_appId': app._id,
+			'_appId': app.id,
 		}));
 
 		const appRouter = this._createRouter();
@@ -238,16 +242,26 @@ class Routes {
 		Schema.decode(app.__schema)
 			.filter((schema) => schema.type.indexOf('collection') === 0)
 			.filter((schema) => {
-				if (!schema.remote) return true;
-				const [dsaName] = schema.remote.split('.');
+				if (!schema.remotes) return true;
+				const remotes = (Array.isArray(schema.remotes)) ? schema.remotes : [schema.remotes];
 
-				if (appDSAs.find((dsa) => dsa.active && dsa.name === dsaName)) return true;
+				const nonActiveDSA = remotes.reduce((arr, remoteRef) => {
+					// if the data sharing agreement is not active, we'll make note of the name for debugging.
+					if (appDSAs.find((dsa) => dsa.active && dsa.name === remoteRef.name) === undefined) {
+						arr.push(remoteRef.name);
+					}
+					return arr;
+				}, []);
 
-				Logging.logWarn(`Routes:_generateAppRoutes ${app._id} skipping route /${app.apiPath} for ${schema.name}, DSA not active`);
-				return false;
+				if (nonActiveDSA.length > 0) {
+					Logging.logWarn(`Routes:_generateAppRoutes ${app.id} skipping route /${app.apiPath} for ${schema.name}, DSA not active`);
+					return false;
+				}
+
+				return true;
 			})
 			.forEach((schema) => {
-				Logging.logSilly(`Routes:_generateAppRoutes ${app._id} init routes /${app.apiPath} for ${schema.name}`);
+				Logging.logSilly(`Routes:_generateAppRoutes ${app.id} init routes /${app.apiPath} for ${schema.name}`);
 				return this._initSchemaRoutes(appRouter, app, schema);
 			});
 
@@ -276,14 +290,19 @@ class Routes {
 	 * @private
 	 */
 	_initRoute(app, Route, core, ...additional) {
-		const route = (core) ? new Route(this._nrp) : new Route(null, null, this._nrp);
-		const routePath = path.join(...[
-			Config.app.apiPrefix,
-			...additional,
-			route.path,
-		]);
-		Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
-		app[route.verb](routePath, (req, res, next) => route.exec(req, res).catch(next));
+		const route = (core) ? new Route(this._services) : new Route(null, null, this._services);
+		route.paths.forEach((pathSpec) => {
+			const routePath = path.join(...[
+				Config.app.apiPrefix,
+				...additional,
+				pathSpec,
+			]);
+			Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
+			app[route.verb](routePath, (req, res, next) => {
+				req.pathSpec = pathSpec;
+				return route.exec(req, res).catch(next);
+			});
+		});
 	}
 
 	/**
@@ -295,30 +314,37 @@ class Routes {
 		SchemaRoutes.forEach((Route) => {
 			let route = null;
 
-			const appShortId = Helpers.shortId(app._id);
+			const appShortId = Helpers.shortId(app.id);
 
 			try {
-				route = new Route(schemaData, appShortId, this._nrp);
+				route = new Route(schemaData, appShortId, this._services);
 			} catch (err) {
 				if (err instanceof Helpers.Errors.RouteMissingModel) return Logging.logWarn(`${err.message} for ${app.name}`);
 
 				throw err;
 			}
 
-			let routePath = path.join(...[
-				(app.apiPath) ? app.apiPath : appShortId,
-				Config.app.apiPrefix,
-				route.path,
-			]);
-			if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
-			Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
-			express[route.verb](routePath, (req, res, next) => route.exec(req, res).catch(next));
+			route.paths.forEach((pathSpec) => {
+				let routePath = path.join(...[
+					(app.apiPath) ? app.apiPath : appShortId,
+					Config.app.apiPrefix,
+					pathSpec,
+				]);
+				if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
+				Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
+				express[route.verb](routePath, (req, res, next) => {
+					req.pathSpec = pathSpec;
+					return route.exec(req, res).catch(next);
+				});
+			});
 		});
 	}
 
 	_timeRequest(req, res, next) {
 		// Just assign a arbitrary id to the request to help identify it in the logs
 		req.id = Datastore.getInstance('core').ID.new();
+		res.set('x-bjs-request-id', req.id);
+
 		req.timer = new Helpers.Timer();
 		req.timer.start();
 
@@ -334,6 +360,11 @@ class Routes {
 			close: null,
 			stream: [],
 		};
+
+		// Define some helper functions which allow us to send request metadata
+		// to the realtime process to feedback to subscrtibers.
+		req.bjsReqStatus = (data, nrp) => nrp.emit(`sock:worker:request-status`, {id: req.id, ...data});
+		req.bjsReqClose = (nrp) => nrp.emit(`sock:worker:request-end`, {id: req.id, status: 'done'});
 
 		Logging.logTimer(`[${req.method.toUpperCase()}] ${req.path}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		next();
@@ -389,22 +420,22 @@ class Routes {
 					$eq: endpoint,
 				},
 				'_appId': {
-					$eq: apiLambdaApp._id,
+					$eq: apiLambdaApp.id,
 				},
 			});
 		}
 
 		if (apiLambda && apiLambda.type === 'PUBLIC') {
 			const token = await Model.Token.findOne({
-				_lambdaId: apiLambda._id,
+				_lambdaId: apiLambda.id,
 			});
 			req.token = token;
 			Model.authApp = req.authApp = apiLambdaApp;
-			Logging.logTimer(`_authenticateAPILambdaToken:got-app ${req.authApp._id}`,
+			Logging.logTimer(`_authenticateAPILambdaToken:got-app ${req.authApp.id}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			req.authLambda = apiLambda;
-			Logging.logTimer(`_authenticateAPILambdaToken:got-lambda ${req.authLambda._id}`,
+			Logging.logTimer(`_authenticateAPILambdaToken:got-lambda ${req.authLambda.id}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			Logging.logTimer('_authenticateAPILambdaToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -432,7 +463,7 @@ class Routes {
 
 			req.token = token;
 
-			Logging.logTimer(`_authenticateToken:got-token ${(req.token) ? req.token._id : token}`,
+			Logging.logTimer(`_authenticateToken:got-token ${(req.token) ? req.token.id : token}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			Logging.logTimer(`_authenticateToken:got-token type ${(req.token) ? req.token.type : token}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -445,29 +476,29 @@ class Routes {
 			}
 
 			Model.authApp = req.authApp = app;
-			Logging.logTimer(`_authenticateToken:got-app ${(req.authApp) ? req.authApp._id : app}`,
+			Logging.logTimer(`_authenticateToken:got-app ${(req.authApp) ? req.authApp.id : app}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			if (req.authApp) {
-				Logging.logTimer(`_authenticateToken:got-app shortId: ${Helpers.shortId(app._id)}`,
+				Logging.logTimer(`_authenticateToken:got-app shortId: ${Helpers.shortId(app.id)}`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
 
 			const appDataSharing = (req.token._appDataSharingId) ? await Model.AppDataSharing.findById(req.token._appDataSharingId) : null;
 			req.authAppDataSharing = appDataSharing;
 			Logging.logTimer(
-				`_authenticateToken:got-app-data-sharing-agreement ${(req.authAppDataSharing) ? req.authAppDataSharing._id : appDataSharing}`,
+				`_authenticateToken:got-app-data-sharing-agreement ${(req.authAppDataSharing) ? req.authAppDataSharing.id : appDataSharing}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id,
 			);
 
 			const lambda = (req.token._lambdaId) ? await Model.Lambda.findById(req.token._lambdaId) : null;
 			req.authLambda = lambda;
-			Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda._id : lambda}`,
+			Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda.id : lambda}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			const user = (req.token._userId) ? await Model.User.findById(req.token._userId) : null;
 			req.authUser = user;
-			Logging.logTimer(`_authenticateToken:got-user ${(req.authUser) ? req.authUser._id : user}`,
+			Logging.logTimer(`_authenticateToken:got-user ${(req.authUser) ? req.authUser.id : user}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 			Logging.logTimer('_authenticateToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -640,7 +671,7 @@ class Routes {
 				type: Model.Token.Constants.Type.SYSTEM,
 			}],
 		}));
-		const tokenIds = appsToken.map((t) => t._id);
+		const tokenIds = appsToken.map((t) => t.id);
 		const apps = await Helpers.streamAll(await Model.App.find({
 			_tokenId: {
 				$in: tokenIds,
@@ -695,11 +726,11 @@ class Routes {
 			} else if (result.lambdaOutput) {
 				res.status(result.lambdaOutput.code).send({
 					res: result.lambdaOutput.res,
-					executionId: result.lambdaExecution._id,
+					executionId: result.lambdaExecution.id,
 				});
 			} else {
 				res.status(200).send({
-					executionId: result.lambdaExecution._id,
+					executionId: result.lambdaExecution.id,
 				});
 			}
 		});
@@ -730,11 +761,11 @@ class Routes {
 			if (result.lambdaOutput) {
 				res.status(result.lambdaOutput.code).send({
 					res: result.lambdaOutput.res,
-					executionId: result.lambdaExecution._id,
+					executionId: result.lambdaExecution.id,
 				});
 			} else {
 				res.status(200).send({
-					executionId: result.lambdaExecution._id,
+					executionId: result.lambdaExecution.id,
 				});
 			}
 		});
@@ -793,7 +824,7 @@ class Routes {
 		}
 
 		const deployment = await Model.Deployment.findOne({
-			lambdaId: Model.Lambda.createId(lambda._id),
+			lambdaId: Model.Lambda.createId(lambda.id),
 			hash: lambda.git.hash,
 		});
 		if (!deployment) {
@@ -803,8 +834,8 @@ class Routes {
 		}
 
 		const lambdaExecution = await Model.LambdaExecution.add({
-			lambdaId: Model.Lambda.createId(lambda._id),
-			deploymentId: Model.Deployment.createId(deployment._id),
+			lambdaId: Model.Lambda.createId(lambda.id),
+			deploymentId: Model.Deployment.createId(deployment.id),
 		});
 
 		res.lambdaExecution = lambdaExecution;
@@ -812,7 +843,7 @@ class Routes {
 
 		const data = {
 			restWorkerId: this.id,
-			lambdaId: lambda._id,
+			lambdaId: lambda.id,
 			triggerType: triggerAPI.type,
 			lambdaExecBehavior: triggerAPI.apiEndpoint.type,
 			headers,

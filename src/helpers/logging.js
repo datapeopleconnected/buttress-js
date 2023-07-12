@@ -157,6 +157,10 @@ class Logging {
 		// _logLevel = level;
 	}
 
+	get level() {
+		return this.logger.level;
+	}
+
 	/**
 	 * @param {string} log - Text to log
 	 * @param {string} level - level to log at

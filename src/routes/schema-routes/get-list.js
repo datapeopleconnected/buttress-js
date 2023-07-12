@@ -2,7 +2,7 @@
 const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Schema = require('../../schema');
 
 /**
@@ -11,6 +11,7 @@ const Schema = require('../../schema');
 module.exports = class GetList extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}`, `GET ${schema.name} LIST`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 
@@ -31,7 +32,7 @@ module.exports = class GetList extends Route {
 		Logging.logSilly(`Created route: ${this.name} for ${schemaCollection}`);
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`GetList Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 	}
 

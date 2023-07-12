@@ -25,7 +25,7 @@ class PolicyMatch {
 
 		if (token.type === 'dataSharing') {
 			const eq = (part, value) => part && part['@eq'] && part['@eq'].toString() === value.toString();
-			return eq(selection['#tokenType'], 'DATA_SHARING') && eq(selection['_id'], token._id);
+			return eq(selection['#tokenType'], 'DATA_SHARING') && eq(selection['id'], token.id);
 		}
 
 		if (!token || !token.policyProperties) return;

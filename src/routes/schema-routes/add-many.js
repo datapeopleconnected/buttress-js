@@ -7,8 +7,10 @@ const Schema = require('../../schema');
  * @class AddMany
  */
 module.exports = class AddMany extends Route {
-	constructor(schema, appShort, nrp) {
-		super(`${schema.name}/bulk/add`, `BULK ADD ${schema.name}`, nrp);
+	constructor(schema, appShort, nrp, redisClient) {
+		super(`${schema.name}/bulk/add`, `BULK ADD ${schema.name}`, nrp, redisClient);
+		this.__configureSchemaRoute();
+
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -25,7 +27,7 @@ module.exports = class AddMany extends Route {
 		this.model = Model[schemaCollection];
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`GetList Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 	}
 

@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Logging = require('../logging');
+const Logging = require('./logging');
 const Sugar = require('sugar');
 
 const Datastore = require('../datastore');
@@ -129,6 +129,8 @@ const __getPropDefault = (config) => {
 module.exports.getPropDefault = __getPropDefault;
 
 const __validateProp = (prop, config) => {
+	// TODO: This function needs a refactor, we shouldn't be modifying the prop ref.
+
 	let type = typeof prop.value;
 	let valid = false;
 
@@ -340,44 +342,47 @@ const __validate = (schema, values, parentProperty, body = null) => {
 };
 module.exports.validate = __validate;
 
-const __prepareSchemaResult = (result, token = false, projection = false) => {
+const __prepareSchemaResult = (result, sourceId = null, projection = false) => {
 	const _prepare = (chunk, path) => {
 		if (!chunk) return chunk;
 
-		if (chunk._id) {
-			chunk.id = chunk._id;
-			delete chunk._id;
+		if (path) {
+			if (path.indexOf('_') === 0) return undefined;
 		}
 
 		if (typeof chunk === 'object') {
-			if (Datastore.getInstance('core').ID.isValid(chunk)) {
-				return chunk;
-			}
-			if (chunk instanceof Date) {
-				return chunk;
-			}
+			if (Datastore.getInstance('core').ID.isValid(chunk)) return chunk;
+			if (chunk instanceof Date) return chunk;
 
 			chunk = Object.assign({}, chunk);
-			if (token && token.type === 'app') return chunk;
+
+			// If no path is provided then we're dealing with a root object.
+			if (!path) {
+				// If there's no sourceId, then it's an object from us.
+				if (!chunk.sourceId && sourceId) chunk.sourceId = sourceId;
+			}
 
 			// NOT GOOD
-			if (token && token.type === 'dataSharing') {
-				return chunk;
-			}
+			// if (token && token.type === 'app') return chunk;
+			// if (token && token.type === 'dataSharing') return chunk;
 
 			if (projection) {
 				// TODO: Make a pass on the projections
 			}
 
-			Object.keys(chunk).forEach((key) => {
+			for (const key in chunk) {
+				if (!{}.hasOwnProperty.call(chunk, key)) continue;
 				chunk[key] = (Array.isArray(chunk[key])) ? chunk[key].map((c) => _prepare(c, key)) : _prepare(chunk[key], key);
-			});
+
+				// We've done some processing, if we're left with undefined, remove it.
+				if (chunk[key] === undefined) delete chunk[key];
+			}
 		}
 
 		return chunk;
 	};
 
-	return (Array.isArray(result)) ? result.map((c) => _prepare(c, [])) : _prepare(result, []);
+	return (Array.isArray(result)) ? result.map((c) => _prepare(c, null)) : _prepare(result, null);
 };
 module.exports.prepareSchemaResult = __prepareSchemaResult;
 
@@ -421,13 +426,20 @@ module.exports.unflattenObject = __unflattenObject;
  * @param {Integer} bodyIdx
  * @return {Object} - A fully populated object using schema defaults and values provided.
  */
-const __populateObject = (schemaFlat, values, body = null, bodyIdx = null) => {
+const __sanitizeObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 	const res = {};
 	const objects = {};
 	for (const property in schemaFlat) {
 		if (!{}.hasOwnProperty.call(schemaFlat, property)) continue;
 		let propVal = values.find((v) => v.path === property);
 		const config = schemaFlat[property];
+
+		if (property === 'source') {
+			// Source is a special case, we don't actually want it in our objects that get saved
+			// as Buttress adds this property to objects to give the client ha hit on whhere the
+			// object came from.
+			continue;
+		}
 
 		const path = property.split('.');
 		let isSubPropOfArray = false;
@@ -468,7 +480,7 @@ const __populateObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
-			value = value.map((v, idx) => __populateObject(config.__schema, __getFlattenedBody(v), body[property], idx));
+			value = value.map((v, idx) => __sanitizeObject(config.__schema, __getFlattenedBody(v), body[property], idx));
 		} else if (root && path.length > 0 || schemaFlat[property].__type === 'object') {
 			if (!objects[root]) {
 				objects[root] = {};
@@ -481,7 +493,7 @@ const __populateObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 	}
 	return res;
 };
-module.exports.populateObject = __populateObject;
+module.exports.sanitizeObject = __sanitizeObject;
 
 const __getSchemaKeys = (obj) => {
 	return Object.keys(obj).reduce((arr, key) => {

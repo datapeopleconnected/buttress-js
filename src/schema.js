@@ -94,7 +94,12 @@ class Schema {
 
 	static async build(schemas) {
 		schemas = await Plugins.apply_filters('before_schema_build', schemas);
-		schemas = schemas.map((schema) => Schema.extend(schemas, schema));
+		schemas = schemas.map((schema) => {
+			schema.properties = schema.properties || {};
+			schema.properties.id = {__type: 'id', __default: 'new', __allowUpdate: false, __core: true};
+			schema.properties.sourceId = {__type: 'id', __allowUpdate: false, __core: true};
+			return Schema.extend(schemas, schema);
+		});
 		for await (const schema of schemas) {
 			const res = await this.createTimeSeriesSchema(schema.name, schema.properties);
 			if (!res) continue;

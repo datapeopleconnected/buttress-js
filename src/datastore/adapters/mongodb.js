@@ -13,13 +13,13 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
+const Stream = require('stream');
 const ObjectId = require('mongodb').ObjectId;
 const MongoClient = require('mongodb').MongoClient;
 
 const Model = require('../../model');
 const Helpers = require('../../helpers');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 
 const AbstractAdapter = require('../abstract-adapter');
 
@@ -41,27 +41,31 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	async connect() {
-		if (this.connection) return this.connection;
+		if (this.__connection) return this.__connection;
 
 		// Remove the pathname as we'll selected the db using the client method
 		const connectionString = this.uri.href.replace(this.uri.pathname, '');
 
 		this._client = await MongoClient.connect(connectionString, this.options);
 
-		return this.connection = this._client.db(this.uri.pathname.replace(/\//g, ''));
+		this.__connection = this._client.db(this.uri.pathname.replace(/\//g, ''));
+
+		return this.__connection;
 	}
 
 	async close() {
 		if (!this._client) return;
-		this._client.close();
+		await this._client.close();
+		this.__connection = null;
+		this._client = null;
 	}
 
 	cloneAdapterConnection() {
-		return new MongodbAdapter(this.uri, this.options, this.connection);
+		return new MongodbAdapter(this.uri, this.options, this.__connection);
 	}
 
 	async setCollection(collectionName) {
-		this.collection = this.connection.collection(collectionName);
+		this.collection = this.__connection.collection(collectionName);
 	}
 
 	get ID() {
@@ -80,26 +84,33 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		const documents = await body.reduce(async (prev, item) => {
 			const arr = await prev;
 			return arr.concat([
-				await modifier(item),
+				this._prepareDocumentForMongo(modifier(item)),
 			]);
 		}, Promise.resolve([]));
 
 		const ops = documents.map((c) => {
-			return {
-				insertOne: {
-					document: c,
-				},
-			};
+			return {insertOne: {document: c}};
 		});
 
-		// return await new Promise((resolve, reject) => {
 		if (ops.length < 1) return Promise.resolve([]);
 
 		const res = await this.collection.bulkWrite(ops);
 
-		const insertedIds = Object.values(res.insertedIds).map((id) => new ObjectId(id));
+		const readable = new Stream.Readable({objectMode: true});
+		readable._read = () => {};
 
-		return this.find({_id: {$in: insertedIds}});
+		// Lets merged the inserted ids back into the documents, previously we were
+		// looking them up in the database again which is a waste of time.
+		new Promise((resolve) => setTimeout(() => {
+			documents.forEach((document, idx) => {
+				document._id = res.insertedIds[idx];
+				readable.push(document);
+			});
+			readable.push(null);
+			resolve();
+		}, 1));
+
+		return this._modifyDocumentStream(readable);
 	}
 
 	async batchUpdateProcess(id, body, context, schemaConfig, model = '') {
@@ -120,7 +131,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			let value = null;
 			if (schemaConfig && schemaConfig.__schema) {
 				const fb = Helpers.Schema.getFlattenedBody(body.value);
-				value = Helpers.Schema.populateObject(schemaConfig.__schema, fb);
+				value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
 			} else {
 				value = body.value;
 			}
@@ -199,7 +210,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			let value = null;
 			if (schemaConfig && schemaConfig.__schema) {
 				const fb = Helpers.Schema.getFlattenedBody(body.value);
-				value = Helpers.Schema.populateObject(schemaConfig.__schema, fb);
+				value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
 			} else {
 				value = body.value;
 			}
@@ -254,20 +265,20 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 	update(select, update) {
 		return new Promise((resolve, reject) => {
-			this.collection.updateMany(select, update, (err, object) => {
+			this.collection.updateMany(this._prepareQueryForMongo(select), update, (err, object) => {
 				if (err) return reject(new Error(err));
 
-				resolve(object);
+				resolve(this._modifyDocument(object));
 			});
 		});
 	}
 
 	updateOne(query, update) {
 		return new Promise((resolve, reject) => {
-			this.collection.updateOne(query, update, (err, object) => {
+			this.collection.updateOne(this._prepareQueryForMongo(query), update, (err, object) => {
 				if (err) return reject(new Error(err));
 
-				resolve(object);
+				resolve(this._modifyDocument(object));
 			});
 		});
 	}
@@ -279,13 +290,13 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			this.collection.updateOne({_id: id}, query, (err, object) => {
 				if (err) return reject(new Error(err));
 
-				resolve(object);
+				resolve(this._modifyDocument(object));
 			});
 		});
 	}
 
 	exists(id, extra = {}) {
-		Logging.logSilly(`exists: ${this.collectionName} ${id}`);
+		Logging.logSilly(`exists: ${this.collection.namespace} ${id}`);
 
 		return this.collection.countDocuments({
 			_id: new ObjectId(id),
@@ -320,7 +331,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	rmBulk(ids) {
-		// Logging.log(`rmBulk: ${this.collectionName} ${ids}`, Logging.Constants.LogLevel.SILLY);
+		// Logging.log(`rmBulk: ${this.collection.namespace} ${ids}`, Logging.Constants.LogLevel.SILLY);
 		return this.rmAll({_id: {$in: ids}});
 	}
 
@@ -330,10 +341,10 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 */
 	rmAll(query) {
 		if (!query) query = {};
-		// Logging.logSilly(`rmAll: ${this.collectionName} ${query}`);
+		// Logging.logSilly(`rmAll: ${this.collection.namespace} ${query}`);
 
 		return new Promise((resolve) => {
-			this.collection.deleteMany(query, (err, doc) => {
+			this.collection.deleteMany(this._prepareQueryForMongo(query), (err, doc) => {
 				if (err) throw err;
 				resolve(doc);
 			});
@@ -344,14 +355,14 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {String} id - entity id to get
 	 * @return {Promise} - resolves to an array of Companies
 	 */
-	findById(id) {
-		// Logging.logSilly(`Schema:findById: ${this.collectionName} ${id}`);
+	async findById(id) {
+		// Logging.logSilly(`Schema:findById: ${this.collection.namespace} ${id}`);
 
 		if (id instanceof ObjectId === false) {
 			id = new ObjectId(id);
 		}
 
-		return this.collection.findOne({_id: id}, {});
+		return this._modifyDocument(await this.collection.findOne({_id: id}, {}));
 	}
 
 	/**
@@ -364,9 +375,12 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {ReadableStream} - stream
 	 */
 	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
-		Logging.logSilly(`find: ${this.collectionName} ${query}`);
+		if (Logging.level === Logging.Constants.LogLevel.SILLY) {
+			Logging.logSilly(`find: ${this.collection.namespace} query: ${JSON.stringify(query)}, excludes: ${excludes}`+
+				`limit: ${limit}, skip: ${skip}, sort: ${JSON.stringify(sort)}`);
+		}
 
-		let results = this.collection.find(query, excludes)
+		let results = this.collection.find(this._prepareQueryForMongo(query), excludes)
 			.skip(skip)
 			.limit(limit)
 			.sort(sort);
@@ -375,7 +389,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			results = results.project(project);
 		}
 
-		return results.stream();
+		return this._modifyDocumentStream(results.stream());
 	}
 
 	/**
@@ -384,12 +398,12 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - resolves to an array of docs
 	 */
 	findOne(query, excludes = {}) {
-		// Logging.logSilly(`findOne: ${this.collectionName} ${query}`);
+		// Logging.logSilly(`findOne: ${this.collection.namespace} ${query}`);
 
 		return new Promise((resolve) => {
-			this.collection.find(query, excludes).toArray((err, doc) => {
+			this.collection.find(this._prepareQueryForMongo(query), this._prepareQueryForMongo(excludes)).toArray((err, doc) => {
 				if (err) throw err;
-				resolve(doc[0]);
+				resolve(this._modifyDocument(doc[0]));
 			});
 		});
 	}
@@ -398,7 +412,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - resolves to an array of Companies
 	 */
 	findAll() {
-		// Logging.logSilly(`findAll: ${this.collectionName}`);
+		// Logging.logSilly(`findAll: ${this.collection.namespace}`);
 
 		return this.find({});
 	}
@@ -408,7 +422,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - resolves to an array of Companies
 	 */
 	findAllById(ids) {
-		// Logging.logSilly(`update: ${this.collectionName} ${ids}`);
+		// Logging.logSilly(`update: ${this.collection.namespace} ${ids}`);
 
 		return this.find({_id: {$in: ids.map((id) => new ObjectId(id))}}, {});
 	}
@@ -418,7 +432,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - resolves to an array of Companies
 	 */
 	count(query) {
-		return this.collection.countDocuments(query);
+		return this.collection.countDocuments(this._prepareQueryForMongo(query));
 	}
 
 	/**
@@ -431,5 +445,39 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 				throw err;
 			});
+	}
+
+	// Modify a straem of docuemnts, converting _id to id
+	_modifyDocument(doc) {
+		if (doc && doc._id) {
+			doc.id = doc._id;
+			delete doc._id;
+		}
+
+		return doc;
+	}
+	_modifyDocumentStream(stream) {
+		const transformStream = new Stream.Transform({
+			objectMode: true,
+			transform: (doc, enc, cb) => cb(null, this._modifyDocument(doc)),
+		});
+
+		return stream.pipe(transformStream);
+	}
+
+	// Methods for modifying a document or query to handle converting from id to _id
+	_prepareDocumentForMongo(document) {
+		if (document && document.id) {
+			document._id = document.id;
+			delete document.id;
+		}
+		return document;
+	}
+	_prepareQueryForMongo(query) {
+		if (query && query.id) {
+			query._id = query.id;
+			delete query.id;
+		}
+		return query;
 	}
 };

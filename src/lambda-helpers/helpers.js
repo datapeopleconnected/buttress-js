@@ -8,7 +8,7 @@ const base64url = require('base64url');
 
 const lambdaMail = require('./mail');
 const Model = require('../model');
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 // const { Object } = require('sugar');
 
 const Config = require('node-env-obj')();
@@ -330,17 +330,13 @@ class Helpers {
 				`;
 				jail.setSync(`_${pluginName}_${method}`, new ivm.Reference(async (args, resolve, reject) => {
 					Logging.logVerbose(`${pluginName}_${method}`);
-					// console.log(args);
 					const outcome = await pluginMeta.plugin[method](args);
-					// console.log(outcome);
 					resolve.applyIgnored(undefined, [
 						new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto(),
 					]);
 				}));
 			}
 		}
-
-		// console.log(this._pluginBootstrap);
 	}
 
 	_createLambdaNameSpace(isolate, context) {
@@ -383,7 +379,7 @@ class Helpers {
 
 	_pushLambdaExecutionLog(log, type) {
 		Model.LambdaExecution.update({
-			_id: Model.LambdaExecution.createId(this.lambdaExecution._id),
+			id: Model.LambdaExecution.createId(this.lambdaExecution.id),
 		}, {
 			$push: {
 				logs: {
@@ -409,7 +405,6 @@ class Helpers {
 			let files = [];
 			const items = fs.readdirSync(dirName, {withFileTypes: true});
 			for (const item of items) {
-				// console.log(item.name);
 				if (item.name === '.git') continue;
 
 				if (item.isDirectory()) {

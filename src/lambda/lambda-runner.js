@@ -12,7 +12,7 @@ const {v4: uuidv4} = require('uuid');
 const webpack = require('webpack');
 const NodePolyfillPlugin = require('node-polyfill-webpack-plugin');
 
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 const Model = require('../model');
 const Helpers = require('../helpers');
 const lambdaHelpers = require('../lambda-helpers/helpers');
@@ -88,8 +88,8 @@ class LambdasRunner {
 		}
 
 		const rxsLambdaToken = await Model.Token.find({
-			_appId: Model.App.createId(app._id),
-			_lambdaId: Model.User.createId(lambda._id),
+			_appId: Model.App.createId(app.id),
+			_lambdaId: Model.User.createId(lambda.id),
 		});
 		const lambdaToken = await Helpers.streamFirst(rxsLambdaToken);
 		if (!lambdaToken) {
@@ -122,11 +122,11 @@ class LambdasRunner {
 		this._jail.setSync('buttressOptions', new ivm.ExternalCopy(buttressOptions).copyInto());
 		this._jail.setSync('lambdaModules', new ivm.ExternalCopy(lambdaModules).copyInto());
 		this._jail.setSync('lambdaInfo', new ivm.ExternalCopy({
-			lambdaId: lambda._id.toString(),
+			lambdaId: lambda.id.toString(),
 			metadata: lambda.metadata,
 			lambdaToken: lambdaToken.value,
 			appApiPath: apiPath,
-			fileName: `lambda_${lambda._id}`,
+			fileName: `lambda_${lambda.id}`,
 			entryPoint: lambda.git.entryPoint,
 		}).copyInto());
 		this._jail.setSync('lambdaData', new ivm.ExternalCopy(data.body).copyInto());
@@ -210,7 +210,7 @@ class LambdasRunner {
 		}
 
 		let execution = await Model.LambdaExecution.findOne({
-			lambdaId: Model.Lambda.createId(lambda._id),
+			lambdaId: Model.Lambda.createId(lambda.id),
 			status: 'PENDING',
 		});
 
@@ -285,7 +285,7 @@ class LambdasRunner {
 
 	async _createLambdaExecution(lambda) {
 		const deployment = await Model.Deployment.findOne({
-			lambdaId: Model.Lambda.createId(lambda._id),
+			lambdaId: Model.Lambda.createId(lambda.id),
 			hash: lambda.git.hash,
 		});
 
@@ -293,15 +293,15 @@ class LambdasRunner {
 		if (!deployment) return;
 
 		const lambdaExecution = await Model.LambdaExecution.add({
-			lambdaId: Model.Lambda.createId(lambda._id),
-			deploymentId: Model.Deployment.createId(deployment._id),
+			lambdaId: Model.Lambda.createId(lambda.id),
+			deploymentId: Model.Deployment.createId(deployment.id),
 		});
 
 		return lambdaExecution;
 	}
 
 	async _updateDBLambdaRunningExecution(lambda, execution, type) {
-		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution._id), {
+		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution.id), {
 			$set: {
 				status: 'RUNNING',
 				startedAt: Sugar.Date.create('now'),
@@ -309,14 +309,14 @@ class LambdasRunner {
 		});
 		if (type === 'CRON') {
 			await Model.Lambda.update({
-				'_id': Model.Lambda.createId(lambda._id),
+				'id': Model.Lambda.createId(lambda.id),
 				'trigger.type': type,
 			}, {$set: {'trigger.$.cron.status': 'RUNNING'}});
 		}
 	}
 
 	async _updateDBLambdaFinishExecution(lambda, execution, type, trigger) {
-		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution._id), {
+		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution.id), {
 			$set: {
 				status: 'COMPLETE',
 				endedAt: Sugar.Date.create('now'),
@@ -329,7 +329,7 @@ class LambdasRunner {
 				'trigger.$.cron.executionTime': Sugar.Date.create(trigger.periodicExecution),
 			};
 			await Model.Lambda.update({
-				'_id': Model.Lambda.createId(lambda._id),
+				'id': Model.Lambda.createId(lambda.id),
 				'trigger.type': type,
 			}, {
 				$set: completeTriggerObj,
@@ -338,7 +338,7 @@ class LambdasRunner {
 	}
 
 	async _updateDBLambdaErrorExecution(lambda, execution, type, log = null) {
-		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution._id), {
+		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution.id), {
 			$set: {
 				status: 'ERROR',
 				endedAt: Sugar.Date.create('now'),
@@ -346,13 +346,13 @@ class LambdasRunner {
 		});
 		if (type === 'CRON') {
 			await Model.Lambda.update({
-				'_id': Model.Lambda.createId(lambda._id),
+				'id': Model.Lambda.createId(lambda.id),
 				'trigger.type': type,
 			}, {$set: {'trigger.$.cron.status': 'ERROR'}});
 		}
 		if (log) {
 			await Model.LambdaExecution.update({
-				_id: Model.LambdaExecution.createId(execution._id),
+				id: Model.LambdaExecution.createId(execution.id),
 			}, {
 				$push: {
 					logs: {
@@ -365,11 +365,11 @@ class LambdasRunner {
 	}
 
 	async installLambdaPackages(lambda, packageAllowList) {
-		const packagePath = `${Config.paths.lambda.code}/lambda-${lambda._id}/package.json`;
+		const packagePath = `${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`;
 		const modules = [];
 		if (!fs.existsSync(packagePath)) return modules;
 
-		const packages = require(`${Config.paths.lambda.code}/lambda-${lambda._id}/package.json`);
+		const packages = require(`${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`);
 		for await (const packageKey of Object.keys(packages.dependencies)) {
 			try {
 				await exec(`npm ls ${packageKey}`);
@@ -411,7 +411,7 @@ class LambdasRunner {
 		const modules = [];
 		const entryDir = path.dirname(lambda.git.entryFile);
 		const entryFile = path.basename(lambda.git.entryFile);
-		const lambdaDir = `${Config.paths.lambda.code}/lambda-${lambda._id}/./${entryDir}`; // Again ugly /./ because... indolence
+		const lambdaDir = `${Config.paths.lambda.code}/lambda-${lambda.id}/./${entryDir}`; // Again ugly /./ because... indolence
 
 		modules.push({
 			packageName: '@buttress/api',
@@ -423,7 +423,7 @@ class LambdasRunner {
 			packageName: 'sugar',
 			name: 'Sugar',
 		}, {
-			name: `lambda_${lambda._id}`,
+			name: `lambda_${lambda.id}`,
 			import: `${lambdaDir}/${entryFile}`,
 		});
 

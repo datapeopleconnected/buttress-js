@@ -18,7 +18,7 @@
  */
 const Route = require('../route');
 const Model = require('../../model');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Helpers = require('../../helpers');
 const ObjectId = require('mongodb').ObjectId;
 const Datastore = require('../../datastore');
@@ -29,8 +29,8 @@ const routes = [];
  * @class GetUserList
  */
 class GetUserList extends Route {
-	constructor(nrp) {
-		super('user', 'GET USER LIST', nrp);
+	constructor(nrp, redisClient) {
+		super('user', 'GET USER LIST', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -40,7 +40,7 @@ class GetUserList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.User.findAll(req.authApp._id, req.token);
+		return Model.User.findAll(req.authApp.id, req.token);
 	}
 }
 routes.push(GetUserList);
@@ -70,7 +70,7 @@ class GetUser extends Route {
 			const userId = (ObjectId.isValid(parameter)) ? Model.User.createId(parameter) : null;
 			user = await Model.User.findOne({
 				'$or': [{
-					'_id': {
+					'id': {
 						$eq: userId,
 					},
 				}, {
@@ -108,7 +108,7 @@ class GetUser extends Route {
 			}
 
 			const output = {
-				id: user._id,
+				id: user.id,
 				auth: user.auth,
 				tokens: (userTokens.length > 0) ? userTokens.map((t) => {
 					return {
@@ -148,7 +148,7 @@ class FindUser extends Route {
 		}
 
 		const output = {
-			id: _user._id,
+			id: _user.id,
 			auth: _user.auth,
 			tokens: [],
 		};
@@ -206,7 +206,7 @@ class GetUserByToken extends Route {
 		}
 
 		return {
-			id: user._id,
+			id: user.id,
 			auth: user.auth,
 			token: userToken.value,
 			policyProperties: userToken.policyProperties || null,
@@ -264,14 +264,14 @@ class CreateUserAuthToken extends Route {
 
 	async _exec(req, res, user) {
 		const rxsToken = await Model.Token.add(req.body, {
-			_appId: Datastore.getInstance('core').ID.new(req.authApp._id),
-			_userId: Datastore.getInstance('core').ID.new(user._id),
+			_appId: Datastore.getInstance('core').ID.new(req.authApp.id),
+			_userId: Datastore.getInstance('core').ID.new(user.id),
 		});
 		const token = await Helpers.streamFirst(rxsToken);
 
 		// We'll make sure to add the user to the app
-		// if (user._appId !== req.authApp._id.toString()) {
-		// 	await Model.User.updateApps(user, req.authApp._id);
+		// if (user._appId !== req.authApp.id.toString()) {
+		// 	await Model.User.updateApps(user, req.authApp.id);
 		// }
 
 		this._nrp.emit('app-routes:bust-cache', {});
@@ -319,7 +319,7 @@ routes.push(CreateUserAuthToken);
 // 			}
 
 // 			req.body.auth.type = Model.Token.Constants.Type.USER;
-// 			req.body.auth.app = req.authApp._id;
+// 			req.body.auth.app = req.authApp.id;
 // 		} else {
 // 			this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
 // 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
@@ -339,12 +339,12 @@ routes.push(CreateUserAuthToken);
 // 		// TODO: Strip back return data, should match find user
 // 		let policyProperties = null;
 // 		if (user._appMetadata) {
-// 			const _appMetadata = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
+// 			const _appMetadata = user._appMetadata.find((md) => md.appId.toString() === req.authApp.id.toString());
 // 			policyProperties = (_appMetadata) ? _appMetadata.policyProperties : null;
 // 		}
 
 // 		return {
-// 			id: user._id,
+// 			id: user.id,
 // 			auth: user.auth,
 // 			tokens: user.tokens,
 // 			policyProperties,
@@ -381,7 +381,7 @@ class AddUser extends Route {
 			const user = await Model.User.findOne({
 				'auth.email': auth.email,
 				'auth.app': auth.app,
-				'_appId': Model.App.createId(req.authApp._id),
+				'_appId': Model.App.createId(req.authApp.id),
 			});
 			if (user) {
 				existingUsers.push(user);
@@ -409,7 +409,7 @@ class AddUser extends Route {
 
 		const [token] = user.tokens;
 		return {
-			id: user._id,
+			id: user.id,
 			auth: user.auth,
 			token: {
 				value: token?.value || [],
@@ -515,11 +515,11 @@ class SetUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Token.setPolicyPropertiesById(validate._id, req.body);
+		await Model.Token.setPolicyPropertiesById(validate.id, req.body);
 
 		this._nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
-			appId: req.authApp._id,
+			appId: req.authApp.id,
 		});
 
 		// TODO: Do we really need to wait for the socket to respond?
@@ -529,7 +529,7 @@ class SetUserPolicyProperties extends Route {
 		// 	this._nrp.emit('worker:socket:evaluateUserRooms', {
 		// 		id,
 		// 		userId: req.params.id,
-		// 		appId: req.authApp._id,
+		// 		appId: req.authApp.id,
 		// 	});
 
 		// 	let unsubscribe = null;
@@ -586,7 +586,7 @@ class UpdateUserPolicyProperties extends Route {
 
 		this._nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
-			appId: req.authApp._id,
+			appId: req.authApp.id,
 		});
 
 		// TODO: Do we really need to wait for the socket to respond?
@@ -596,7 +596,7 @@ class UpdateUserPolicyProperties extends Route {
 		// 	this._nrp.emit('worker:socket:evaluateUserRooms', {
 		// 		id,
 		// 		userId: req.params.id,
-		// 		appId: req.authApp._id,
+		// 		appId: req.authApp.id,
 		// 	});
 
 		// 	let unsubscribe = null;
@@ -658,11 +658,11 @@ class RemoveUserPolicyProperties extends Route {
 				delete policyProps[key];
 			}
 		});
-		await Model.Token.updatePolicyPropertiesById(validate._id, policyProps);
+		await Model.Token.updatePolicyPropertiesById(validate.id, policyProps);
 
 		this._nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
-			appId: req.authApp._id,
+			appId: req.authApp.id,
 		});
 
 		return true;
@@ -707,11 +707,11 @@ class ClearUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Token.clearPolicyPropertiesById(validate._id);
+		await Model.Token.clearPolicyPropertiesById(validate.id);
 
 		this._nrp.emit('worker:socket:evaluateUserRooms', {
 			userId: req.params.id,
-			appId: req.authApp._id,
+			appId: req.authApp.id,
 		});
 
 		return true;
@@ -763,7 +763,7 @@ class DeleteUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.Token.findOne({_userId: user._id});
+		const userToken = await Model.Token.findOne({_userId: user.id});
 		if (token.value === userToken?.value) {
 			this.log(`ERROR: A user could not delete itself`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_can_not_delete_itself`));
@@ -821,7 +821,7 @@ class clearUserLocalData extends Route {
 	_exec(req, res, user) {
 		this._nrp.emit('clearUserLocalData', {
 			appAPIPath: req.authApp ? req.authApp.apiPath : '',
-			userId: user._id,
+			userId: user.id,
 			collections: (req.body.collections)? req.body.collections : false,
 		});
 	}

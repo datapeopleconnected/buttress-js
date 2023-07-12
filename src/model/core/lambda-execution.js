@@ -16,13 +16,13 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 const Sugar = require('sugar');
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
-class LambdaExecutionSchemaModel extends SchemaModel {
-	constructor(nrp) {
+class LambdaExecutionSchemaModel extends StandardModel {
+	constructor(services) {
 		const schema = LambdaExecutionSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 	}
 
 	static get Schema() {

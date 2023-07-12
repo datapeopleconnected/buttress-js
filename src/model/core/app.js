@@ -20,20 +20,18 @@ const Buttress = require('@buttress/api');
 
 const Model = require('../');
 const Schema = require('../../schema');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 const Helpers = require('../../helpers');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 
-class AppSchemaModel extends SchemaModel {
-	constructor(nrp) {
+class AppSchemaModel extends StandardModel {
+	constructor(services) {
 		const schema = AppSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 
 		this._localSchema = null;
-
-		this._nrp = nrp;
 	}
 
 	static get Constants() {
@@ -151,19 +149,21 @@ class AppSchemaModel extends SchemaModel {
 
 		const token = await Helpers.streamFirst(rxsToken);
 
-		const rxsApp = await super.add(body, {_tokenId: token._id});
+		const rxsApp = await super.add(body, {_tokenId: token.id});
 		const app = await Helpers.streamFirst(rxsApp);
 
 		await this.__handleAddingNonSystemApp(body, token);
 
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
-		this._nrp.emit('app-routes:bust-cache', {});
-		Logging.logSilly(`Emitting app-schema:updated ${app._id}`);
-		this._nrp.emit('app-schema:updated', {appId: app._id});
+		this.__nrp.emit('app-routes:bust-cache', {});
+		Logging.logSilly(`Emitting app:created ${app.id}`);
+		this.__nrp.emit('app:created', {appId: app.id});
+		Logging.logSilly(`Emitting app-schema:updated ${app.id}`);
+		this.__nrp.emit('app-schema:updated', {appId: app.id});
 
-		Logging.logSilly(`Emitting app-policy:bust-cache ${app._id}`);
-		this._nrp.emit('app-policy:bust-cache', {
-			appId: app._id,
+		Logging.logSilly(`Emitting app-policy:bust-cache ${app.id}`);
+		this.__nrp.emit('app-policy:bust-cache', {
+			appId: app.id,
 		});
 
 		return Promise.resolve({app: app, token: token});
@@ -209,7 +209,7 @@ class AppSchemaModel extends SchemaModel {
 				query: [{
 					schema: ['app'],
 					query: {
-						_id: {
+						id: {
 							'@eq': body.id,
 						},
 					},
@@ -217,12 +217,12 @@ class AppSchemaModel extends SchemaModel {
 			}],
 		}, body.id);
 
-		await Model.Token.setPolicyPropertiesById(token._id, {
+		await Model.Token.setPolicyPropertiesById(token.id, {
 			role: 'APP',
 		});
 
 		await Model.App.setPolicyPropertiesList({
-			_id: {
+			id: {
 				$eq: body.id,
 			},
 		}, appPolicyPropertiesList);
@@ -230,38 +230,39 @@ class AppSchemaModel extends SchemaModel {
 
 	/**
 	 * @param {ObjectId} appId - app id which needs to be updated
-	 * @param {object} appSchema - schema object for the app
+	 * @param {object} compiledSchema - schema object for the app
 	 * @param {object} rawSchema - encoded raw app schema
 	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
 	 */
-	async updateSchema(appId, appSchema, rawSchema) {
+	async updateSchema(appId, compiledSchema, rawSchema) {
 		Logging.logSilly(`Update Schema ${appId}`);
 
-		appSchema = Schema.encode(appSchema);
-		await super.updateById(appId, {$set: {__schema: appSchema}});
+		await super.updateById(appId, {$set: {__schema: Schema.encode(compiledSchema)}});
 
 		if (rawSchema) {
 			await super.updateById(appId, {$set: {__rawSchema: rawSchema}});
 		}
 
 		Logging.logSilly(`Emitting app-schema:updated ${appId}`);
-		this._nrp.emit('app-schema:updated', {appId: appId});
-		this._nrp.emit('app:update-schema', {
+		this.__nrp.emit('app-schema:updated', {appId: appId});
+		this.__nrp.emit('app:update-schema', {
 			appId: appId,
-			schemas: Schema.decode(appSchema),
+			schemas: compiledSchema,
 		});
 		const updatedSchema = (await super.findById(appId))?.__rawSchema;
 		return updatedSchema;
 	}
 
 	async mergeRemoteSchema(req, collections) {
-		const schemaWithRemoteRef = collections.filter((s) => s.remote);
+		const schemaWithRemoteRef = collections.filter((s) => s.remotes);
 
 		// TODO: Check params for any core scheam thats been requested.
+		// TODO: Handle mutiple remotes
 		const dataSharingSchema = schemaWithRemoteRef.reduce((map, collection) => {
-			const [DSA, ...schema] = collection.remote.split('.');
-			if (!map[DSA]) map[DSA] = [];
-			map[DSA].push(schema);
+			collection.remotes.forEach((remote) => {
+				if (!map[remote.name]) map[remote.name] = [];
+				map[remote.name].push(remote.schema);
+			});
 			return map;
 		}, {});
 
@@ -271,7 +272,7 @@ class AppSchemaModel extends SchemaModel {
 		const requiredDSAs = Object.keys(dataSharingSchema);
 		if (requiredDSAs.length > 0) {
 			const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
-				'_appId': req.authApp._id,
+				'_appId': req.authApp.id,
 				'name': {
 					$in: requiredDSAs,
 				},
@@ -283,6 +284,7 @@ class AppSchemaModel extends SchemaModel {
 				if (!DSA) continue;
 				// Load DSA
 
+				// TODO: Should being using an adapter via the datastore.
 				const api = Buttress.new();
 				await api.init({
 					buttressUrl: DSA.remoteApp.endpoint,
@@ -291,7 +293,7 @@ class AppSchemaModel extends SchemaModel {
 					allowUnauthorized: true, // Move along, nothing to see here...
 				});
 
-				const remoteSchema = await api.App.getSchema({
+				const remoteSchema = await api.App.getSchema(false, {
 					params: {
 						only: dataSharingSchema[DSAName].join(','),
 					},
@@ -299,10 +301,9 @@ class AppSchemaModel extends SchemaModel {
 
 				remoteSchema.forEach((rs) => {
 					schemaWithRemoteRef
-						.filter((s) => s.remote === `${DSAName}.${rs.name}`)
+						.filter((s) => s.remotes && s.remotes.some((r) => r.name === DSAName && r.schema === rs.name))
 						.forEach((s) => {
 							// Merge RS into schema
-							delete s.remote;
 							const collectionIdx = collections.findIndex((s) => s.name === rs.name);
 							if (collectionIdx === -1) return;
 							collections[collectionIdx] = Helpers.mergeDeep(rs, s);
@@ -354,7 +355,7 @@ class AppSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves to the token
 	 */
 	getToken() {
-		return Model.Token.findOne({_id: this._tokenId});
+		return Model.Token.findOne({id: this._tokenId});
 	}
 
 	/**
@@ -362,8 +363,8 @@ class AppSchemaModel extends SchemaModel {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	async rm(entity) {
-		await Model.AppDataSharing.rmAll({_appId: entity._id});
-		const appShortId = (entity) ? Helpers.shortId(entity._id) : null;
+		await Model.AppDataSharing.rmAll({_appId: entity.id});
+		const appShortId = (entity) ? Helpers.shortId(entity.id) : null;
 
 		// Delete Schema collections
 		if (appShortId) {
@@ -386,7 +387,7 @@ class AppSchemaModel extends SchemaModel {
 	 */
 	async updateOAuth(appId, oAuth) {
 		return super.update({
-			'_id': this.createId(appId),
+			'id': this.createId(appId),
 		}, {$set: {'oAuth': oAuth}});
 	}
 }

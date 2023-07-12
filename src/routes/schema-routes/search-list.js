@@ -9,6 +9,7 @@ const Schema = require('../../schema');
 module.exports = class SearchList extends Route {
 	constructor(schema, appShort, nrp) {
 		super(`${schema.name}`, `SEARCH ${schema.name} LIST`, nrp);
+		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 
@@ -25,7 +26,7 @@ module.exports = class SearchList extends Route {
 		this.model = Model[schemaCollection];
 
 		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`SearchList Route missing model ${schemaCollection}`);
+			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
 	}
 

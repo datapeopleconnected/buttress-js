@@ -22,7 +22,7 @@ module.exports = class AbstractAdapter {
 
 		this.requiresFormalSchema = false;
 
-		this.connection = connection;
+		this.__connection = connection;
 
 		this.collection = null;
 	}

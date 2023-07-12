@@ -17,11 +17,11 @@
  */
 
 const Model = require('../');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 // const Shared = require('../shared');
 const Helpers = require('../../helpers');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 /**
  * Constants
@@ -35,12 +35,10 @@ const App = {
 	MICROSOFT: apps[4],
 };
 
-class UserSchemaModel extends SchemaModel {
-	constructor(nrp) {
+class UserSchemaModel extends StandardModel {
+	constructor(services) {
 		const schema = UserSchemaModel.Schema;
-		super(schema, null, nrp);
-
-		this._nrp = nrp;
+		super(schema, null, services);
 	}
 
 	static get Constants() {
@@ -168,9 +166,9 @@ class UserSchemaModel extends SchemaModel {
 	// 	};
 
 	// 	const rxsUser = await super.add(userBody, {
-	// 		_appId: Model.authApp._id,
+	// 		_appId: Model.authApp.id,
 	// 		_appMetadata: [{
-	// 			appId: Model.authApp._id,
+	// 			appId: Model.authApp.id,
 	// 			policyProperties: (body.policyProperties) ? body.policyProperties : null,
 	// 		}],
 	// 	});
@@ -183,12 +181,12 @@ class UserSchemaModel extends SchemaModel {
 	// 	}
 
 	// 	const rxsToken = await Model.Token.add(auth, {
-	// 		_appId: Model.authApp._id,
-	// 		_userId: user._id,
+	// 		_appId: Model.authApp.id,
+	// 		_userId: user.id,
 	// 	});
 	// 	const token = await Helpers.streamFirst(rxsToken);
 
-	// 	this._nrp.emit('app-routes:bust-cache', {});
+	// 	this.__nrp.emit('app-routes:bust-cache', {});
 
 	// 	if (token) {
 	// 		user.tokens.push({
@@ -227,7 +225,7 @@ class UserSchemaModel extends SchemaModel {
 		});
 
 		const rxsUser = await super.add(userBody, {
-			_appId: Model.authApp._id,
+			_appId: Model.authApp.id,
 		});
 		const user = await Helpers.streamFirst(rxsUser);
 
@@ -243,8 +241,8 @@ class UserSchemaModel extends SchemaModel {
 			};
 
 			const rxsToken = await Model.Token.add(userToken, {
-				_appId: Model.authApp._id,
-				_userId: user._id,
+				_appId: Model.authApp.id,
+				_userId: user.id,
 			});
 			const token = await Helpers.streamFirst(rxsToken);
 
@@ -256,7 +254,7 @@ class UserSchemaModel extends SchemaModel {
 			}
 		}
 
-		this._nrp.emit('app-routes:bust-cache', {});
+		this.__nrp.emit('app-routes:bust-cache', {});
 
 		return user;
 	}
@@ -312,7 +310,7 @@ class UserSchemaModel extends SchemaModel {
 
 		const update = {};
 		update[`auth.${authIdx}`] = auth;
-		return super.updateById(user._id, update).then(() => true);
+		return super.updateById(user.id, update).then(() => true);
 	}
 
 	/**
@@ -344,7 +342,7 @@ class UserSchemaModel extends SchemaModel {
 	 * @return {Promise} - resolves to a User object or null
 	 */
 	getByUsername(username) {
-		return super.findOne({username: username}, {_id: 1});
+		return super.findOne({username: username}, {id: 1});
 	}
 
 	/**

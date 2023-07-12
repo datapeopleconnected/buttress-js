@@ -29,8 +29,8 @@ const routes = [];
  * @class AddSecureStore
  */
 class AddSecureStore extends Route {
-	constructor(nrp) {
-		super('secureStore', 'ADD SECURE STORE', nrp);
+	constructor(nrp, redisClient) {
+		super('secureStore', 'ADD SECURE STORE', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -45,7 +45,7 @@ class AddSecureStore extends Route {
 
 		const secureStoreExist = await Model.SecureStore.findOne({
 			name: req.body.name,
-			_appId: Model.App.createId(req.authApp._id),
+			_appId: Model.App.createId(req.authApp.id),
 		});
 		if (secureStoreExist) {
 			this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);
@@ -217,7 +217,7 @@ class UpdateSecureStore extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.SecureStore.updateByPath(req.body, req.params.id, 'SecureStore');
+		return Model.SecureStore.updateByPath(req.body, req.params.id, null, 'SecureStore');
 	}
 }
 routes.push(UpdateSecureStore);
@@ -259,7 +259,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.SecureStore.updateByPath(item.body, item.id, 'SecureStore');
+			await Model.SecureStore.updateByPath(item.body, item.id, null, 'SecureStore');
 		}
 		return true;
 	}

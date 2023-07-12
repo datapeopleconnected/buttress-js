@@ -17,11 +17,11 @@
  */
 
 const Model = require('../');
-const Logging = require('../../logging');
+const Logging = require('../../helpers/logging');
 // const Shared = require('../shared');
 // const Sugar = require('sugar');
 
-const SchemaModel = require('../schemaModel');
+const StandardModel = require('../type/standard');
 
 /**
  * Constants
@@ -33,10 +33,10 @@ const Type = {
 	LOGGING: type[2],
 };
 
-class TrackingSchemaModel extends SchemaModel {
-	constructor(nrp) {
+class TrackingSchemaModel extends StandardModel {
+	constructor(services) {
 		const schema = TrackingSchemaModel.Schema;
-		super(schema, null, nrp);
+		super(schema, null, services);
 	}
 
 	static get Constants() {

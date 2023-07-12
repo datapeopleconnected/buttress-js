@@ -26,8 +26,8 @@ const routes = [];
  * @class GetTrackingList
  */
 class GetTrackingList extends Route {
-	constructor(nrp) {
-		super('tracking', 'GET TRACKING LIST', nrp);
+	constructor(nrp, redisClient) {
+		super('tracking', 'GET TRACKING LIST', nrp, redisClient);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -51,6 +51,7 @@ class AddTracking extends Route {
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
+		this.activity = false;
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
 		this.activityBroadcast = false;
 	}
@@ -88,6 +89,7 @@ class UpdateTracking extends Route {
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
+		this.activity = false;
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}

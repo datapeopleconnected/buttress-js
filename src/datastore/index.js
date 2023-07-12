@@ -19,7 +19,7 @@ const hash = require('crypto').createHash;
 // const Config = require('node-env-obj')();
 const Factory = require('./adapter-factory');
 
-const Logging = require('../logging');
+const Logging = require('../helpers/logging');
 
 const datastores = {
 	core: null,
@@ -77,7 +77,7 @@ module.exports = {
 	},
 	clean: async () => {
 		for await (const key of Object.keys(datastores)) {
-			if (datastores[key].adapter.close) datastores[key].adapter.close();
+			if (datastores[key].adapter.close) await datastores[key].adapter.close();
 			delete datastores[key];
 		}
 	},
