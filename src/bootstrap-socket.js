@@ -34,7 +34,6 @@ const Bootstrap = require('./bootstrap');
 const Config = require('node-env-obj')();
 
 const ObjectId = require('mongodb').ObjectId;
-const shortId = require('./helpers').shortId;
 const Model = require('./model');
 const Helpers = require('./helpers');
 const Logging = require('./helpers/logging');
@@ -830,7 +829,7 @@ class BootstrapSocket extends Bootstrap {
 				continue;
 			}
 
-			const appShortId = shortId(appId);
+			const appShortId = Helpers.shortId(appId);
 			const entityId = (data.params.id) ? data.params.id : data.response.id;
 			if (!entityId && data.verb === 'delete') {
 				this.__broadcastData(data, roomKey);
