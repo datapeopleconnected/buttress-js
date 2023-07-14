@@ -141,7 +141,7 @@ class FindUser extends Route {
 	}
 
 	async _validate(req, res, token) {
-		const _user = await Model.User.getByAppId(req.params.app, req.params.id);
+		const _user = await Model.User.getByAuthAppId(req.params.app, req.params.id, req.authApp.id);
 		if (!_user) {
 			this.log(`[${this.name}] Could not fetch user`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));

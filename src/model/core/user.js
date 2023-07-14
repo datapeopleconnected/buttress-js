@@ -346,15 +346,17 @@ class UserSchemaModel extends StandardModel {
 	}
 
 	/**
-	 * @param {string} appName - Name of the authenticating App (facebook|twitter|google) that owns the user
-	 * @param {string} appUserId - AppId of the user
+	 * @param {string} authAppName - Name of the authenticating App (facebook|twitter|google) that owns the user
+	 * @param {string} authAppUserId - Id of the user in the authenticating App
+	 * @param {string} appId - Buttress App Id of the user
 	 * @return {Promise} - resolves to an array of Apps
 	 */
-	getByAppId(appName, appUserId) {
+	getByAuthAppId(authAppName, authAppUserId, appId = undefined) {
 		return super.findOne({
-			'auth.app': appName,
-			'auth.appId': appUserId,
-		}, {});
+			'auth.app': authAppName,
+			'auth.appId': authAppUserId,
+			...(appId) ? {_appId: this.createId(appId)} : {},
+		});
 	}
 }
 
