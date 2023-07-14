@@ -158,7 +158,7 @@ class LambdaSchemaModel extends StandardModel {
 									'RUNNING',
 									'ERROR',
 								],
-								__required: true,
+								__required: false,
 								__allowUpdate: true,
 							},
 						},
@@ -186,7 +186,7 @@ class LambdaSchemaModel extends StandardModel {
 									'ASYNC',
 									'SYNC',
 								],
-								__required: true,
+								__required: false,
 								__allowUpdate: true,
 							},
 							redirect: {
@@ -200,7 +200,7 @@ class LambdaSchemaModel extends StandardModel {
 							paths: {
 								__type: 'array',
 								__itemtype: 'string',
-								__required: true,
+								__required: false,
 								__allowUpdate: true,
 							},
 						},
