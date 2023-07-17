@@ -474,10 +474,19 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return document;
 	}
 	_prepareQueryForMongo(query) {
-		if (query && query.id) {
+		if (!query) return query;
+
+		if (query.id) {
 			query._id = query.id;
 			delete query.id;
+		} else if (query['$or'] || query['$and']) {
+			if (query['$or']) {
+				query['$or'] = query['$or'].map((q) => this._prepareQueryForMongo(q));
+			} else if (query['$and']) {
+				query['$and'] = query['$and'].map((q) => this._prepareQueryForMongo(q));
+			}
 		}
+
 		return query;
 	}
 };
