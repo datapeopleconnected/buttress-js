@@ -20,7 +20,6 @@ const Route = require('../route');
 const Model = require('../../model');
 const Logging = require('../../helpers/logging');
 const Helpers = require('../../helpers');
-const ObjectId = require('mongodb').ObjectId;
 const Datastore = require('../../datastore');
 
 const routes = [];
@@ -50,7 +49,7 @@ routes.push(GetUserList);
  */
 class GetUser extends Route {
 	constructor(nrp) {
-		super('user/:parameter', 'GET USER', nrp);
+		super('user/:id', 'GET USER', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -58,70 +57,53 @@ class GetUser extends Route {
 	}
 
 	async _validate(req, res, token) {
-		const parameter = req.params.parameter;
-		if (!parameter) {
+		if (!req.params.id) {
 			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+			throw new Helpers.Errors.RequestError(400, `missing_field`);
 		}
 
+		let user = null;
+		let userTokens = [];
+		let userId = null;
 		try {
-			let user = null;
-			let userTokens = [];
-			const userId = (ObjectId.isValid(parameter)) ? Model.User.createId(parameter) : null;
-			user = await Model.User.findOne({
-				'$or': [{
-					'id': {
-						$eq: userId,
-					},
-				}, {
-					'auth.email': {
-						$eq: parameter,
-					},
-				}, {
-					'auth.username': {
-						$eq: parameter,
-					},
-				}],
-			});
-
-			if (!user) {
-				userTokens = await Helpers.streamAll(await Model.Token.findAll({
-					value: {
-						$eq: parameter,
-					},
-				}));
-			}
-
-			if (userTokens.length < 1 && user) {
-				userTokens = await Helpers.streamAll(await Model.Token.findUserAuthTokens(user.id, req.authApp.id));
-			}
-			if (userTokens.length > 0 && !user) {
-				const [token] = userTokens;
-				user = await Model.User.findById(token._userId);
-			}
-			if (!user) {
-				this.log(`[${this.name}] Could not fetch user data using ${parameter}`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
-			}
-			if (userTokens.length < 1) {
-				this.log(`[${this.name}] User does not have a token yet ${parameter}`, Route.LogLevel.ERR);
-			}
-
-			const output = {
-				id: user.id,
-				auth: user.auth,
-				tokens: (userTokens.length > 0) ? userTokens.map((t) => {
-					return {
-						value: t.value,
-						policyProperties: t.policyProperties,
-					};
-				}) : null,
-			};
-
-			return output;
+			userId = Model.User.createId(req.params.id);
 		} catch (err) {
-			return Promise.reject(err);
+			throw new Helpers.Errors.RequestError(400, `inavlid_id`);
 		}
+
+		user = await Model.User.findOne({
+			'$or': [{
+				'id': {
+					$eq: userId,
+				},
+			}],
+			...(req.authApp.id) ? {_appId: Model.App.createId(req.authApp.id)} : {},
+		});
+
+		if (!user) {
+			this.log(`[${this.name}] Could not fetch user data using ${userId}`, Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(404, `user_not_found`);
+		}
+
+		if (userTokens.length < 1 && user) {
+			userTokens = await Helpers.streamAll(await Model.Token.findUserAuthTokens(user.id, req.authApp.id));
+		}
+		if (userTokens.length < 1) {
+			this.log(`[${this.name}] User does not have a token yet ${userId}`, Route.LogLevel.ERR);
+		}
+
+		const output = {
+			id: user.id,
+			auth: user.auth,
+			tokens: (userTokens.length > 0) ? userTokens.map((t) => {
+				return {
+					value: t.value,
+					policyProperties: t.policyProperties,
+				};
+			}) : null,
+		};
+
+		return output;
 	}
 
 	_exec(req, res, user) {
