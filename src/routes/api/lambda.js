@@ -353,26 +353,29 @@ class EditLambdaDeployment extends Route {
 
 			const entryFilePath = (req.body.entryFile) ? req.body.entryFile : lambda.git.entryFile;
 			const entryPoint = (req.body.entryPoint) ? req.body.entryPoint : lambda.git.entryPoint;
+			const gitHash = (req.body.hash) ? req.body.hash : lambda.git.hash;
 
-			await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git fetch`);
-			const checkoutRes = await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git checkout ${branch}`);
+			const lambdaFolderName = `lambda-${gitHash}`;
+
+			await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git fetch`);
+			const checkoutRes = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${branch}`);
 			if (!checkoutRes.stdout) {
 				this.log(`[${this.name}] Lambda ${branch} does not exist`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `branch_${branch}_does_not_exist_for_lambda`));
 			}
 
-			await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git pull`);
-			const results = await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git branch ${branch} --contains ${hash}`);
+			await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git pull`);
+			const results = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git branch ${branch} --contains ${hash}`);
 			if (!results.stdout) {
 				this.log(`[${this.name}] Lambda hash:${hash} does not exist on ${branch} branch`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_${hash}_does_not_exist_on_branch_${branch}`));
 			}
 
-			await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git checkout ${hash}`);
+			await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${hash}`);
 
 
 			const entryDir = path.dirname(entryFilePath);
-			const lambdaDir = `${Config.paths.lambda.code}/lambda-${req.params.id}/./${entryDir}`; // Ugly `/./` because I am lazy
+			const lambdaDir = `${Config.paths.lambda.code}/${lambdaFolderName}/./${entryDir}`; // Ugly `/./` because I am lazy
 			const files = fs.readdirSync(lambdaDir);
 			const entryFile = entryFilePath.split('/').pop();
 			if (entryFilePath && !files.includes(entryFile)) {
@@ -391,7 +394,7 @@ class EditLambdaDeployment extends Route {
 					}
 
 					if (content.includes(log)) {
-						await exec(`cd ${Config.paths.lambda.code}/lambda-${req.params.id}; git checkout ${lambda.git.hash}`);
+						await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${lambda.git.hash}`);
 						throw new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`);
 					}
 				}

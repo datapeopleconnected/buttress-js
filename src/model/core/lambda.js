@@ -290,7 +290,7 @@ class LambdaSchemaModel extends StandardModel {
 			_lambdaId: lambda.id,
 		});
 
-		await exec(`cd ${Config.paths.lambda.code}; mv lambda-${lambda.name} lambda-${lambda.id}`);
+		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.git.hash}; mv lambda-${lambda.name} lambda-${lambda.git.hash}`);
 
 		return lambda;
 	}

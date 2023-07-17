@@ -412,7 +412,7 @@ class LambdasRunner {
 		const modules = [];
 		const entryDir = path.dirname(lambda.git.entryFile);
 		const entryFile = path.basename(lambda.git.entryFile);
-		const lambdaDir = `${Config.paths.lambda.code}/lambda-${lambda.id}/./${entryDir}`; // Again ugly /./ because... indolence
+		const lambdaDir = `${Config.paths.lambda.code}/lambda-${lambda.git.hash}/./${entryDir}`; // Again ugly /./ because... indolence
 
 		modules.push({
 			packageName: '@buttress/api',
