@@ -348,6 +348,9 @@ class EditLambdaDeployment extends Route {
 				this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
 			}
+
+			// TODO: Refactor below code into a seperate file for handling managment of lambda deployments.
+
 			const entryFilePath = (req.body.entryFile) ? req.body.entryFile : lambda.git.entryFile;
 			const entryPoint = (req.body.entryPoint) ? req.body.entryPoint : lambda.git.entryPoint;
 

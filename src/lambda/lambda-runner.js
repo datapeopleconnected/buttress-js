@@ -82,11 +82,6 @@ class LambdasRunner {
 			return Promise.reject(new Error(`Unable to find git repo for lambda ${lambda.name}`));
 		}
 
-		const appToken = await Model.Token.findById(app._tokenId);
-		if (!appToken) {
-			return Promise.reject(new Error(`Unable to find app token for app ${app.name}`));
-		}
-
 		const rxsLambdaToken = await Model.Token.find({
 			_appId: Model.App.createId(app.id),
 			_lambdaId: Model.User.createId(lambda.id),
@@ -110,6 +105,11 @@ class LambdasRunner {
 
 		lambdaHelpers.lambdaExecution = execution;
 		await this._updateDBLambdaRunningExecution(lambda, execution, type);
+
+		// TODO: Handle case where lambda code doesn't exist on file system. (Clone Repo)
+		// TODO: Handle case where lambda code can't be cloned. (Inform Manager)
+
+		// TODO: Handle case where repo code hash doesn't match lambda. (Update Repo)
 
 		// const modulesNames = await this.installLambdaPackages(lambda, appAllowList); // not install packages on lambdas anymore
 		const modulesNames = this._getLambdaModulesName(lambda);
@@ -190,11 +190,11 @@ class LambdasRunner {
 	async fetchExecuteLambda(payload) {
 		const lambdaId = payload.data.lambdaId;
 		const lambda = await Model.Lambda.findById(lambdaId);
-		// TODO add a meaningful error message
+		// TODO add a meaningful error message & notify manager
 		if (!lambda) return;
 
 		const app = await Model.App.findById(lambda._appId);
-		// TODO add a meaningful error message
+		// TODO add a meaningful error message & notify manager
 		if (!app) return;
 
 		const cronTrigger = lambda.trigger.findIndex((t) => t.type === 'CRON');
