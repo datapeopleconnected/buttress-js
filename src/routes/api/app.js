@@ -536,11 +536,6 @@ class SetAppPolicyPropertyList extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_type`));
 			}
 
-			if (!req.params.appId && (!req.body.query || Object.keys(req.body.query).length < 1)) {
-				this.log('ERROR: Missing appId or a query to update a targetted app', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_app_query`));
-			}
-
 			const policyPropertiesList = Object.keys(req.body).filter((key) => key !== 'query');
 			const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(req.body[key]));
 			if (!validPolicyPropertiesList) {
@@ -569,7 +564,7 @@ class SetAppPolicyPropertyList extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const appId = (req.params.appId) ? req.params.appId : req.authApp.id;
+		const appId = req.authApp.id;
 		const update = Object.assign({}, validate);
 		if (update.query) delete update.query;
 

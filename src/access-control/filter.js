@@ -1,6 +1,11 @@
+const Sugar = require('sugar');
+
 const ObjectId = require('mongodb').ObjectId;
 const accessControlHelpers = require('./helpers');
-const shortId = require('../helpers').shortId;
+
+const PolicyEnv = require('./env');
+
+const Helpers = require('../helpers');
 const Model = require('../model');
 
 /**
@@ -22,15 +27,14 @@ class Filter {
 			'$nin',
 		];
 
-		this._globalQueryEnv = {
-			authUserId: null,
-			personId: null,
-		};
+		this.manipulationVerbs = [
+			'PUT',
+			// 'POST', // SKIPPING POST FOR NOW
+			'DELETE',
+		];
 	}
 
 	async addAccessControlPolicyQuery(req, tokenPolicies) {
-		this._globalQueryEnv.authUserId = req.authUser?.id;
-
 		await Object.keys(tokenPolicies).reduce(async (prev, key) => {
 			await prev;
 			await tokenPolicies[key].query.reduce(async (prev, q) => {
@@ -46,7 +50,7 @@ class Filter {
 			req[str] = {};
 		}
 
-		if (translatedQuery === null) return req[str];
+		if (translatedQuery === null || Object.values(req[str]).length > 0) return req[str];
 
 		await Object.keys(translatedQuery).reduce(async (prev, key) => {
 			await prev;
@@ -78,32 +82,17 @@ class Filter {
 			}
 
 			if (req.authApp && req.authApp.id && Object.keys(env).length > 0) {
-				await this.__substituteEnvVariables(translatedQuery[key], env, req.authApp.id);
+				await this.__substituteEnvVariables(translatedQuery[key], env, req.authApp.id, req.authUser);
 			}
 
 			req[str][key] = translatedQuery[key];
 		}, Promise.resolve());
 	}
 
-	async __substituteEnvVariables(obj, env, appId) {
+	async __substituteEnvVariables(obj, env, appId, authUser) {
 		for await (const key of Object.keys(obj)) {
-			obj[key] = await this.getQueryEnvironmentVar(obj[key], env, appId);
+			obj[key] = await PolicyEnv.getQueryEnvironmentVar(obj[key], env, appId, authUser);
 		}
-	}
-
-	async getQueryEnvironmentVar(environmentKey, envVars, appId) {
-		if (!environmentKey || !environmentKey.includes('env')) return environmentKey;
-
-		const path = environmentKey.replace('env', '').split('.').filter((v) => v);
-		const queryValue = path.reduce((obj, str) => obj?.[str], envVars);
-
-		if (queryValue === 'personId') {
-			const appShortId = shortId(appId);
-			const person = await Model[`${appShortId}-people`].findOne({authId: this._globalQueryEnv.authUserId});
-			this._globalQueryEnv.personId = person.id;
-		}
-
-		return this._globalQueryEnv?.[queryValue];
 	}
 
 	async applyAccessControlPolicyQuery(req) {
@@ -142,6 +131,54 @@ class Filter {
 			req.body.query = deepQueryObj;
 		}
 
+		return passed;
+	}
+
+	// TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
+	async evaluateManipulationActions(req, collection) {
+		const coreSchema = await accessControlHelpers.cacheCoreSchema();
+		const coreSchemNames = coreSchema.map((c) => Sugar.String.singularize(c.name));
+		const isCoreSchema = coreSchemNames.includes(collection);
+
+		const verb = req.method;
+		if (!this.manipulationVerbs.includes(verb)) return true;
+
+		const appId = req.authApp.id;
+		const appShortId = Helpers.shortId(appId);
+		const body = (Array.isArray(req.body)) ? req.body : [req.body];
+		let query = (req.body.query) ? req.body.query : {};
+		const baseURL = req.url.replace(/\?.*/, '');
+		const id = (baseURL) ? baseURL.split('/').pop() : undefined;
+		let passed = true;
+
+		if (isCoreSchema) {
+			collection = Sugar.String.capitalize(collection);
+		} else {
+			collection = `${appShortId}-${collection}`;
+		}
+
+		for await (const update of body) {
+			if (id && ObjectId.isValid(id)) {
+				query._id = id;
+			} else if (update.id && ObjectId.isValid(update.id)) {
+				query._id = update.id;
+			}
+
+			if (query._id && typeof query._id !== 'object') {
+				query._id = await Model[collection].createId(query._id);
+			}
+
+			const parsedQuery = await Model[collection].parseQuery(query, {}, Model[collection].flatSchemaData);
+			query = {...query, ...parsedQuery};
+			const res = await Model[collection].count(query);
+			if (!res) {
+				passed = false;
+				delete query._id;
+				return passed;
+			}
+		}
+
+		delete query._id;
 		return passed;
 	}
 

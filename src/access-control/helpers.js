@@ -1,10 +1,28 @@
 const Sugar = require('sugar');
 
+const Model = require('../model');
+const Logging = require('../helpers/logging');
+
 /**
  * @class Conditoins
  */
 class Helpers {
-	constructor() {}
+	constructor() {
+		this.__coreSchema = null;
+	}
+
+	async cacheCoreSchema() {
+		if (this.__coreSchema) return this.__coreSchema;
+
+		this.__coreSchema = Model._getModels().reduce((arr, name) => {
+			name = Sugar.String.camelize(name);
+			arr.push(Model[name].schemaData);
+			return arr;
+		}, []);
+
+		Logging.logSilly(`Refreshed core cache got ${this.__coreSchema.length} schema`);
+		return this.__coreSchema;
+	}
 
 	evaluateOperation(lhs, rhs, operator) {
 		let passed = false;

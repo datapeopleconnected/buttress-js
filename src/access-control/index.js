@@ -19,6 +19,7 @@ const AccessControlConditions = require('./conditions');
 const AccessControlFilter = require('./filter');
 const AccessControlProjection = require('./projection');
 const AccessControlPolicyMatch = require('./policy-match');
+const AccessControlHelpers = require('./helpers');
 
 class AccessControl {
 	constructor() {
@@ -100,7 +101,10 @@ class AccessControl {
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
 		const schemaName = schemaPath.shift();
 
-		if (this._coreSchema.length < 1) await this.__cacheCoreSchema();
+		if (this._coreSchema.length < 1) {
+			this._coreSchema = await AccessControlHelpers.cacheCoreSchema();
+			this._coreSchemaNames = this._coreSchema.map((c) => Sugar.String.singularize(c.name));
+		}
 
 		if (user && this._coreSchemaNames.some((n) => n === schemaName)) {
 			const userAppToken = await Model.Token.findOne({
@@ -449,25 +453,26 @@ class AccessControl {
 		if (!policyQuery) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-query-permission-error`;
-			outcome.err.message = 'Policy query Can not access the queried data';
+			outcome.err.message = 'Policy query can not access the queried data';
+			return outcome;
+		}
+
+
+		// TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
+		const passedEvalutaion = await AccessControlFilter.evaluateManipulationActions(req, schemaName);
+		if (!passedEvalutaion) {
+			outcome.err.statusCode = 404;
+			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-query-permission-error`;
+			outcome.err.message = 'Accessed data can not be manipulated with your restricted policy';
 			return outcome;
 		}
 
 		outcome.res = schemaBasePolicyConfig;
 		Logging.logTimer(`__getPolicyOutcome::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
 		return outcome;
 	}
 
-	async __cacheCoreSchema() {
-		this._coreSchema = Model._getModels().reduce((arr, name) => {
-			name = Sugar.String.camelize(name);
-			arr.push(Model[name].schemaData);
-			return arr;
-		}, []);
-		this._coreSchemaNames = this._coreSchema.map((c) => Sugar.String.singularize(c.name));
-
-		Logging.logSilly(`Refreshed core cache got ${this._coreSchema.length} schema`);
-	}
 
 	async __cacheAppSchema(appId) {
 		const app = await Model.App.findById(appId);
