@@ -16,10 +16,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const path = require('path');
-const fs = require('fs');
-const Sugar = require('sugar');
-
 const Logging = require('../helpers/logging');
 const Schema = require('../schema');
 const shortId = require('../helpers').shortId;
@@ -31,10 +27,19 @@ const Datastore = require('../datastore');
 const StandardModel = require('./type/standard');
 const RemoteCombinedModel = require('./type/remote-combined');
 
-/**
- * @param {string} model - name of the model to load
- * @private
- */
+const CoreModels = {
+	Activity: require('./core/activity'),
+	App: require('./core/app'),
+	AppDataSharing: require('./core/app-data-sharing'),
+	Deployment: require('./core/deployment'),
+	Lambda: require('./core/lambda'),
+	LambdaExecution: require('./core/lambda-execution'),
+	Policy: require('./core/policy'),
+	SecureStore: require('./core/secure-store'),
+	Token: require('./core/token'),
+	Tracking: require('./core/tracking'),
+	User: require('./core/user'),
+};
 
 /**
  * @class Model
@@ -70,15 +75,16 @@ class Model {
 
 	async initCoreModels() {
 		Logging.logSilly('Model:initCoreModels');
-		// Core Models
-		const models = this._getModels();
+
+		// We don't need to dynamicly include the core models, there arn't that many
+		// and they're not going to change. We'll just staticlly define them instead.
+		const models = Object.keys(CoreModels);
 		Logging.log(models, Logging.Constants.LogLevel.SILLY);
 
 		for (let x = 0; x < models.length; x++) {
 			await this._initCoreModel(models[x]);
 		}
 	}
-
 
 	async initSchema(appId = null) {
 		Logging.logSilly('Model:initSchema');
@@ -128,10 +134,14 @@ class Model {
 	 * Use to access a defined model, should be used in place of the
 	 * object property accessor.
 	 * @param {string} name
-	 * @return {object}
+	 * @return {Standard}
 	 */
 	getModel(name) {
-		return this[name];
+		return this.models[name];
+	}
+
+	get CoreModels() {
+		return CoreModels;
 	}
 
 	/**
@@ -144,13 +154,12 @@ class Model {
 	}
 
 	/**
-	 * @param {string} model - demand loads the schema
+	 * @param {string} name - demand loads the schema
 	 * @return {object} SchemaModel - initiated schema model built from passed schema object
 	 * @private
 	 */
-	async _initCoreModel(model) {
-		const name = Sugar.String.camelize(model);
-		const CoreSchemaModel = require(`./core/${model.toLowerCase()}`);
+	async _initCoreModel(name) {
+		const CoreSchemaModel = CoreModels[name];
 
 		this.coreSchema.push(name);
 
@@ -237,23 +246,6 @@ class Model {
 
 		this.__addModelGetter(modelName);
 		return this.models[modelName];
-	}
-
-	/**
- * @private
- * @return {array} - list of files containing schemas
- */
-	_getModels() {
-		const filenames = fs.readdirSync(`${__dirname}/core`);
-
-		const files = [];
-		for (let x = 0; x < filenames.length; x++) {
-			const file = filenames[x];
-			if (path.extname(file) === '.js') {
-				files.push(path.basename(file, '.js'));
-			}
-		}
-		return files;
 	}
 }
 

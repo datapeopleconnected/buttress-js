@@ -14,11 +14,8 @@ class Helpers {
 	async cacheCoreSchema() {
 		if (this.__coreSchema) return this.__coreSchema;
 
-		this.__coreSchema = Model._getModels().reduce((arr, name) => {
-			name = Sugar.String.camelize(name);
-			arr.push(Model[name].schemaData);
-			return arr;
-		}, []);
+		// Accessing private..
+		this.__coreSchema = Object.values(Model.CoreModels).map((model) => model.schemaData);
 
 		Logging.logSilly(`Refreshed core cache got ${this.__coreSchema.length} schema`);
 		return this.__coreSchema;
