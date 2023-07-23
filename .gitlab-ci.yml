@@ -1,5 +1,11 @@
 image: node:14
 
+variables:
+  NODE_ENV: "test"
+  BUTTRESS_DATASTORE_CONNECTION_STRING: "mongodb://mongo:27017"
+  BUTTRESS_APP_WORKERS: "0"
+  BUTTRESS_REDIS_HOST: "redis"
+
 # This folder is cached between builds
 # https://docs.gitlab.com/ee/ci/yaml/index.html#cache
 cache:
@@ -24,8 +30,8 @@ test-job:   # This job runs in the test stage.
   script:
     - npm run coverage
   services:
-  - mongo:6
-  - redis:latest
+    - mongo:6
+    - redis:latest
 
 lint-test-job:   # This job also runs in the test stage.
   stage: test    # It can run at the same time as unit-test-job (in parallel).
