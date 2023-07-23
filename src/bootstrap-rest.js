@@ -47,7 +47,7 @@ morgan.token('id', (req) => req.id);
 
 Error.stackTraceLimit = Infinity;
 class BootstrapRest extends Bootstrap {
-	constructor() {
+	constructor(installMode = false) {
 		super();
 
 		this.routes = null;
@@ -55,6 +55,8 @@ class BootstrapRest extends Bootstrap {
 		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
 		this._restServer = null;
+
+		this._installMode = process.env.INSTALL_MODE || installMode || false;
 	}
 
 	async init() {
@@ -134,6 +136,13 @@ class BootstrapRest extends Bootstrap {
 			Logging.logVerbose(`Primary Master REST`);
 			await Model.initCoreModels();
 			await this.__systemInstall();
+
+			// If we're running in install mode we'll just shutdown now.
+			if (this._installMode) {
+				Logging.log(`Install complete. Shutting down...`);
+				process.exit(0);
+			}
+
 			await this.__updateAppSchema();
 		} else {
 			Logging.logVerbose(`Secondary Master REST`);
