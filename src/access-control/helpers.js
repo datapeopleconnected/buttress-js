@@ -15,7 +15,7 @@ class Helpers {
 		if (this.__coreSchema) return this.__coreSchema;
 
 		// Accessing private..
-		this.__coreSchema = Object.values(Model.CoreModels).map((model) => model.schemaData);
+		this.__coreSchema = Object.values(Model.CoreModels).map((model) => model.Schema);
 
 		Logging.logSilly(`Refreshed core cache got ${this.__coreSchema.length} schema`);
 		return this.__coreSchema;
