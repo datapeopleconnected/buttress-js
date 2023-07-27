@@ -72,8 +72,16 @@ class Plugins extends EventEmitter {
 	}
 
 	async _findPluginEntryFiles(dir) {
-		const dirs = await fs.readdir(dir);
 		const result = [];
+
+		let dirs = [];
+		try {
+			dirs = await fs.readdir(dir);
+		} catch (e) {
+			if (e.code === 'ENOENT') return result;
+
+			throw e;
+		}
 
 		for (const subdir of dirs) {
 			const subDirPath = path.join(dir, subdir);
