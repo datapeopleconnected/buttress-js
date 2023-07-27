@@ -13,6 +13,7 @@
     "inlineSources": true,
     "rootDir": "./src",
     "allowJs": true,
+    "checkJs": false,
     "skipLibCheck": true
   },
   "include": ["./src/**/*"],

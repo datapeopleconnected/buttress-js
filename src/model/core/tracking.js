@@ -16,7 +16,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Model = require('../');
 const Logging = require('../../helpers/logging');
 // const Shared = require('../shared');
 // const Sugar = require('sugar');
@@ -198,7 +197,7 @@ class TrackingSchemaModel extends StandardModel {
 	findAll(appId, token) {
 		Logging.log(`findAll: ${appId}`, Logging.Constants.LogLevel.DEBUG);
 
-		if (token && token.type === Model.Token.Constants.Type.SYSTEM) {
+		if (token && token.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
 			return this.find({});
 		}
 

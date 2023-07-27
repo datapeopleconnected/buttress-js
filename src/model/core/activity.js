@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Model = require('../');
 const Logging = require('../../helpers/logging');
 const Schema = require('../../schema');
 // const Sugar = require('sugar');
@@ -179,7 +178,7 @@ class ActivitySchemaModel extends StandardModel {
 	findAll(appId, token) {
 		Logging.log(`getAll: ${appId}`, Logging.Constants.LogLevel.DEBUG);
 
-		if (token && token.type === Model.Token.Constants.Type.SYSTEM) {
+		if (token && token.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
 			return super.findAll({});
 		}
 

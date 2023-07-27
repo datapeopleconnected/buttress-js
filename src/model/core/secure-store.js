@@ -16,7 +16,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Model = require('../');
 const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
@@ -69,18 +68,18 @@ class SecureStoreSchemaModel extends StandardModel {
 		// TODO This logic should be moved out to the route, to keep req logic
 		// with the http handling. appId should just be passed through with the
 		// body.
-		let appId = Model?.authApp?.id;
+		let appId = req.authApp.id;
 		if (!appId) {
 			const token = await this._getToken(req);
 			if (token && token._appId) {
 				appId = token._appId;
 			}
 			if (token && token._lambdaId) {
-				const lambda = await Model.Lambda.findById(token._lambdaId);
+				const lambda = await this.__modelManager.Lambda.findById(token._lambdaId);
 				appId = lambda._appId;
 			}
 			if (token && token._userId) {
-				const user = await Model.User.findById(token._userId);
+				const user = await this.__modelManager.User.findById(token._userId);
 				appId = user._appId;
 			}
 		}

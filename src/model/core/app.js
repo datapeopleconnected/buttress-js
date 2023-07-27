@@ -18,13 +18,11 @@
 
 const Buttress = require('@buttress/api');
 
-const Model = require('../');
 const Schema = require('../../schema');
 const Logging = require('../../helpers/logging');
 const Helpers = require('../../helpers');
 
 const StandardModel = require('../type/standard');
-
 
 class AppSchemaModel extends StandardModel {
 	constructor(services) {
@@ -128,10 +126,10 @@ class AppSchemaModel extends StandardModel {
 	async add(body) {
 		body.id = this.createId();
 
-		if (body.type === Model.Token.Constants.Type.SYSTEM) {
-			const adminToken = await Model.Token.findOne({
+		if (body.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
+			const adminToken = await this.__modelManager.Token.findOne({
 				type: {
-					$eq: Model.Token.Constants.Type.SYSTEM,
+					$eq: this.__modelManager.Token.Constants.Type.SYSTEM,
 				},
 			});
 
@@ -140,8 +138,8 @@ class AppSchemaModel extends StandardModel {
 			}
 		}
 
-		const rxsToken = await Model.Token.add({
-			type: (body.type) ? body.type : Model.Token.Constants.Type.APP,
+		const rxsToken = await this.__modelManager.Token.add({
+			type: (body.type) ? body.type : this.__modelManager.Token.Constants.Type.APP,
 			permissions: body.permissions,
 		}, {
 			_appId: body.id,
@@ -170,7 +168,7 @@ class AppSchemaModel extends StandardModel {
 	}
 
 	async __handleAddingNonSystemApp(body, token) {
-		if (body.type === Model.Token.Constants.Type.SYSTEM) return;
+		if (body.type === this.__modelManager.Token.Constants.Type.SYSTEM) return;
 
 		let appPolicyPropertiesList = body.policyPropertiesList;
 		const list = {
@@ -184,7 +182,7 @@ class AppSchemaModel extends StandardModel {
 		});
 		appPolicyPropertiesList = {...appPolicyPropertiesList, ...list};
 
-		await Model.Policy.add({
+		await this.__modelManager.Policy.add({
 			name: `App Policy - ${body.name}`,
 			selection: {
 				role: {
@@ -217,11 +215,11 @@ class AppSchemaModel extends StandardModel {
 			}],
 		}, body.id);
 
-		await Model.Token.setPolicyPropertiesById(token.id, {
+		await this.__modelManager.Token.setPolicyPropertiesById(token.id, {
 			role: 'APP',
 		});
 
-		await Model.App.setPolicyPropertiesList({
+		await this.__modelManager.App.setPolicyPropertiesList({
 			id: {
 				$eq: body.id,
 			},
@@ -271,7 +269,7 @@ class AppSchemaModel extends StandardModel {
 		// Load DSA for curent app
 		const requiredDSAs = Object.keys(dataSharingSchema);
 		if (requiredDSAs.length > 0) {
-			const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
+			const appDSAs = await Helpers.streamAll(await this.__modelManager.AppDataSharing.find({
 				'_appId': req.authApp.id,
 				'name': {
 					$in: requiredDSAs,
@@ -355,7 +353,7 @@ class AppSchemaModel extends StandardModel {
 	 * @return {Promise} - resolves to the token
 	 */
 	getToken() {
-		return Model.Token.findOne({id: this._tokenId});
+		return this.__modelManager.Token.findOne({id: this._tokenId});
 	}
 
 	/**
@@ -363,16 +361,16 @@ class AppSchemaModel extends StandardModel {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	async rm(entity) {
-		await Model.AppDataSharing.rmAll({_appId: entity.id});
+		await this.__modelManager.AppDataSharing.rmAll({_appId: entity.id});
 		const appShortId = (entity) ? Helpers.shortId(entity.id) : null;
 
 		// Delete Schema collections
 		if (appShortId) {
-			const appSchemaModels = Object.keys(Model.models).filter((k) => k.indexOf(appShortId) !== -1);
+			const appSchemaModels = Object.keys(this.__modelManager.models).filter((k) => k.indexOf(appShortId) !== -1);
 			for (let i = 0; i < appSchemaModels.length; i++) {
-				if (Model[appSchemaModels[i]] && Model[appSchemaModels[i]].drop) {
-					await Model[appSchemaModels[i]].drop();
-					delete Model[appSchemaModels[i]];
+				if (this.__modelManager[appSchemaModels[i]] && this.__modelManager[appSchemaModels[i]].drop) {
+					await this.__modelManager[appSchemaModels[i]].drop();
+					delete this.__modelManager[appSchemaModels[i]];
 				}
 			}
 		}

@@ -17,7 +17,6 @@
  */
 const Sugar = require('sugar');
 
-const Model = require('../');
 const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
@@ -153,7 +152,7 @@ class PolicySchemaModel extends StandardModel {
 	 * @return {Promise} - resolves to an array of Apps
 	 */
 	findAll(appId, token) {
-		if (token && token.type === Model.Token.Constants.Type.SYSTEM) {
+		if (token && token.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
 			return super.find({});
 		}
 

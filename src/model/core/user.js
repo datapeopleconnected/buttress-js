@@ -16,7 +16,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Model = require('../');
 const Logging = require('../../helpers/logging');
 // const Shared = require('../shared');
 const Helpers = require('../../helpers');
@@ -166,9 +165,9 @@ class UserSchemaModel extends StandardModel {
 	// 	};
 
 	// 	const rxsUser = await super.add(userBody, {
-	// 		_appId: Model.authApp.id,
+	// 		_appId: this.__modelManager.authApp.id,
 	// 		_appMetadata: [{
-	// 			appId: Model.authApp.id,
+	// 			appId: this.__modelManager.authApp.id,
 	// 			policyProperties: (body.policyProperties) ? body.policyProperties : null,
 	// 		}],
 	// 	});
@@ -180,8 +179,8 @@ class UserSchemaModel extends StandardModel {
 	// 		return user;
 	// 	}
 
-	// 	const rxsToken = await Model.Token.add(auth, {
-	// 		_appId: Model.authApp.id,
+	// 	const rxsToken = await this.__modelManager.Token.add(auth, {
+	// 		_appId: this.__modelManager.authApp.id,
 	// 		_userId: user.id,
 	// 	});
 	// 	const token = await Helpers.streamFirst(rxsToken);
@@ -225,7 +224,7 @@ class UserSchemaModel extends StandardModel {
 		});
 
 		const rxsUser = await super.add(userBody, {
-			_appId: Model.authApp.id,
+			_appId: this.__modelManager.authApp.id,
 		});
 		const user = await Helpers.streamFirst(rxsUser);
 
@@ -234,14 +233,14 @@ class UserSchemaModel extends StandardModel {
 		const tokenBody = body.token;
 		if (tokenBody && tokenBody.domains && tokenBody.policyProperties) {
 			const userToken = {
-				type: Model.Token.Constants.Type.USER,
+				type: this.__modelManager.Token.Constants.Type.USER,
 				permissions: [{route: '*', permission: '*'}],
 				domains: tokenBody.domains,
 				policyProperties: tokenBody.policyProperties,
 			};
 
-			const rxsToken = await Model.Token.add(userToken, {
-				_appId: Model.authApp.id,
+			const rxsToken = await this.__modelManager.Token.add(userToken, {
+				_appId: this.__modelManager.authApp.id,
 				_userId: user.id,
 			});
 			const token = await Helpers.streamFirst(rxsToken);
@@ -268,7 +267,7 @@ class UserSchemaModel extends StandardModel {
 		}
 
 		Logging.log(`not present: ${auth.app}:${auth.id}`, Logging.Constants.LogLevel.DEBUG);
-		this.auth.push(new Model.Appauth({
+		this.auth.push(new this.__modelManager.Appauth({
 			app: auth.app,
 			appId: auth.id,
 			username: auth.username,
@@ -319,7 +318,7 @@ class UserSchemaModel extends StandardModel {
 	 * @return {Promise} - resolves to an array of Apps
 	 */
 	findAll(appId, token) {
-		if (token && token.type === Model.Token.Constants.Type.SYSTEM) {
+		if (token && token.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
 			return super.find({});
 		}
 

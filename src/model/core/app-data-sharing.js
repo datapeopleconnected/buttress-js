@@ -19,7 +19,6 @@
 const Helpers = require('../../helpers');
 const Schema = require('../../schema');
 const Logging = require('../../helpers/logging');
-const Model = require('..');
 
 const StandardModel = require('../type/standard');
 
@@ -116,8 +115,8 @@ class AppDataSharingSchemaModel extends StandardModel {
 			_tokenId: null,
 		};
 
-		const rxsToken = await Model.Token.add({
-			type: Model.Token.Constants.Type.DATA_SHARING,
+		const rxsToken = await this.__modelManager.Token.add({
+			type: this.__modelManager.Token.Constants.Type.DATA_SHARING,
 		}, {
 			_appId: appDataSharingBody._appId,
 			_appDataSharingId: appDataSharingBody.id,
@@ -141,7 +140,7 @@ class AppDataSharingSchemaModel extends StandardModel {
 	}
 
 	async __createDataSharingPolicy(body, tokenId) {
-		return await Model.Policy.add({
+		return await this.__modelManager.Policy.add({
 			name: `Data Sharing Policy - ${body.name}`,
 			selection: {
 				'#tokenType': {

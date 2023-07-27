@@ -17,6 +17,7 @@ const Stream = require('stream');
 const ObjectId = require('mongodb').ObjectId;
 const MongoClient = require('mongodb').MongoClient;
 
+// The adapter shouldn't be making calls back out to the model, we're too deep.
 const Model = require('../../model');
 const Helpers = require('../../helpers');
 const Logging = require('../../helpers/logging');

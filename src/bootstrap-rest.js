@@ -67,6 +67,7 @@ class BootstrapRest extends Bootstrap {
 
 		this.__services.set('redisClient', createClient(Config.redis));
 		this.__services.set('sdsRouting', new SourceDataSharingRouting(this.__services.get('redisClient')));
+		this.__services.set('modelManager', Model);
 
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
 		Logging.logDebug(`Init process libs...`);

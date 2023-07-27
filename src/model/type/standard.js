@@ -46,6 +46,9 @@ class StandardModel {
 
 		this.__nrp = services.get('nrp');
 
+		this.__modelManager = this.__services.get('modelManager');
+		if (!this.__modelManager) throw new Error('Unable to find modelManager in services');
+
 		if (schemaData.core) {
 			this.__nrp.on('app:update-schema', (data) => {
 				if (!app || (app.id.toString() !== data.appId)) return;

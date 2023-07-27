@@ -24,7 +24,6 @@ const Config = require('node-env-obj')();
 const Sugar = require('sugar');
 const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
-const Model = require('../');
 const Logging = require('../../helpers/logging');
 
 const lambdaConsole = {
@@ -282,11 +281,11 @@ class LambdaSchemaModel extends StandardModel {
 			deployedAt: Sugar.Date.create('now'),
 		};
 
-		await Model.Deployment.add(deployment);
+		await this.__modelManager.Deployment.add(deployment);
 
-		auth.type = Model.Token.Constants.Type.LAMBDA;
-		await Model.Token.add(auth, {
-			_appId: Model.authApp.id,
+		auth.type = this.__modelManager.Token.Constants.Type.LAMBDA;
+		await this.__modelManager.Token.add(auth, {
+			_appId: this.__modelManager.authApp.id,
 			_lambdaId: lambda.id,
 		});
 
@@ -320,7 +319,7 @@ class LambdaSchemaModel extends StandardModel {
 			const apiTrigger = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
 			let lambdaExists = null;
 			if (apiTrigger && apiTrigger.apiEndpoint.url) {
-				lambdaExists = await Model.Lambda.findOne({
+				lambdaExists = await this.__modelManager.Lambda.findOne({
 					'trigger.apiEndpoint.url': {
 						$eq: apiTrigger.apiEndpoint.url,
 					},
@@ -401,7 +400,7 @@ class LambdaSchemaModel extends StandardModel {
 	 * @return {Promise} - resolves to an array of Apps
 	 */
 	findAll(appId, token) {
-		if (token && token.type === Model.Token.Constants.Type.SYSTEM) {
+		if (token && token.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
 			return super.find({});
 		}
 
