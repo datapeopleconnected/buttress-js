@@ -65,6 +65,7 @@ class BootstrapRest extends Bootstrap {
 		Logging.logDebug(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
+		// Register some services.
 		this.__services.set('redisClient', createClient(Config.redis));
 		this.__services.set('sdsRouting', new SourceDataSharingRouting(this.__services.get('redisClient')));
 		this.__services.set('modelManager', Model);

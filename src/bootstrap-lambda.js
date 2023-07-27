@@ -47,6 +47,9 @@ class BootstrapLambda extends Bootstrap {
 		Logging.log(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
+		// Register some services.
+		this.__services.set('modelManager', Model);
+
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
 		await Model.init(this.__services);
 
