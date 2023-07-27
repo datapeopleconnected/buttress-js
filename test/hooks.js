@@ -22,18 +22,19 @@ const Config = require('node-env-obj')({
 	configPath: '../src',
 });
 
-// Load the token from app_data/test/super.json and handle the case where it doesn't exist
-const tokenPath = `${Config.paths.appData}/super.json`;
-try {
-	const {token} = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
-	Config.testToken = token;
-} catch (e) {
-	console.log('');
-	console.error(`!🚨! ERROR !🚨! - Unable to perform tests without app_data/test/super.json.`);
-	console.log('');
-	console.error(`Please DELETE the existing test datastore. This will force Buttress to reinstall and create a new token file.`);
-	console.log('');
-	process.exit(1);
+if (process.env.TEST_ENV === 'e2e') {
+	const tokenPath = `${Config.paths.appData}/super.json`;
+	try {
+		const {token} = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+		Config.testToken = token;
+	} catch (e) {
+		console.log('');
+		console.error(`!🚨! ERROR !🚨! - Unable to perform tests without app_data/test/super.json.`);
+		console.log('');
+		console.error(`Please DELETE the existing test datastore. This will force Buttress to reinstall and create a new token file.`);
+		console.log('');
+		process.exit(1);
+	}
 }
 
 const Logging = require('../dist/helpers/logging');
