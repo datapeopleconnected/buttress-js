@@ -183,6 +183,14 @@ class Logging {
 	 * @param {string} log - Text to log
 	 * @param {string} id - id
 	 */
+	logInfo(log, id=null) {
+		this.log(log, LogLevel.INFO, id);
+	}
+
+	/**
+	 * @param {string} log - Text to log
+	 * @param {string} id - id
+	 */
 	logDebug(log, id=null) {
 		this.log(log, LogLevel.DEBUG, id);
 	}

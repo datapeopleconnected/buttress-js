@@ -366,6 +366,9 @@ class Routes {
 		req.bjsReqStatus = (data, nrp) => nrp.emit(`sock:worker:request-status`, {id: req.id, ...data});
 		req.bjsReqClose = (nrp) => nrp.emit(`sock:worker:request-end`, {id: req.id, status: 'done'});
 
+		const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+		Logging.logInfo(`[${req.method.toUpperCase()}] ${req.path} - ${ip}`, req.id);
 		Logging.logTimer(`[${req.method.toUpperCase()}] ${req.path}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		next();
 	}
