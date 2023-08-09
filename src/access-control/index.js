@@ -99,7 +99,7 @@ class AccessControl {
 		if (lambdaAPICall) return next();
 
 		const schemaPath = requestedURL.split('v1/').pop().split('/');
-		const schemaName = schemaPath.shift();
+		const schemaName = Schema.routeToModel(schemaPath.shift());
 
 		if (this._coreSchema.length < 1) {
 			this._coreSchema = await AccessControlHelpers.cacheCoreSchema();
@@ -420,8 +420,8 @@ class AccessControl {
 			}
 		}
 
-		const a = [...this._coreSchema, ...this._schemas[appId]];
-		const schema = a
+		const schemaCombined = [...this._coreSchema, ...this._schemas[appId]];
+		const schema = schemaCombined
 			.find((s) => s.name === schemaName || Sugar.String.singularize(s.name) === schemaName);
 
 		if (!schema) {

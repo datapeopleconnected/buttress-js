@@ -197,7 +197,7 @@ class Route {
 			await this._boardcastData(req, res, result);
 		}
 
-		Logging.logTimer(`Route:exec:end`, this._timer, Logging.Constants.LogLevel.SILLY, req.id);
+		Logging.logTimer(`Route:exec:end ${res.statusCode}`, this._timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
 
 	/**

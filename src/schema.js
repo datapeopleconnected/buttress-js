@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
+const Sugar = require('sugar');
 const crypto = require('crypto');
 const Helpers = require('./helpers');
 
@@ -33,6 +33,13 @@ class Schema {
 		this.__flattenedPermissionProperties = null;
 
 		this.init();
+	}
+
+	static get validTypes() {
+		return [
+			'collection',
+			'template',
+		];
 	}
 
 	init() {
@@ -85,6 +92,18 @@ class Schema {
 
 	static decodeKey(key) {
 		return key.replace(/\\u002e/g, '.').replace(/\\u0024/g, '$').replace(/\\\\/g, '\\');
+	}
+
+	static routeToModel(name) {
+		if (!name) return;
+
+		return name.split('/').map((part) => Sugar.String.camelize(part, false, true)).join('-');
+	}
+
+	static modelToRoute(name) {
+		if (!name) return;
+
+		return name.split('-').map((part) => Sugar.String.dasherize(part)).join('/');
 	}
 
 	static async buildCollections(schemas) {

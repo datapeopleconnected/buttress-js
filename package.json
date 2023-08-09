@@ -52,6 +52,7 @@
     "node-polyfill-webpack-plugin": "2.0.1",
     "node-redis-pubsub": "~5.0.0",
     "object-hash": "^3.0.0",
+    "on-finished": "^2.4.1",
     "pug": "^3.0.2",
     "randomstring": "^1.2.3",
     "redis": "~3.1.2",

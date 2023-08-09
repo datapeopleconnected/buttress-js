@@ -20,6 +20,7 @@
 const fs = require('fs');
 const path = require('path');
 const express = require('express');
+const onFinished = require('on-finished');
 const {v4: uuidv4} = require('uuid');
 const ObjectId = require('mongodb').ObjectId;
 
@@ -328,7 +329,7 @@ class Routes {
 				let routePath = path.join(...[
 					(app.apiPath) ? app.apiPath : appShortId,
 					Config.app.apiPrefix,
-					pathSpec,
+					Schema.modelToRoute(pathSpec),
 				]);
 				if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
 				Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
@@ -368,8 +369,15 @@ class Routes {
 
 		const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
-		Logging.logInfo(`[${req.method.toUpperCase()}] ${req.path} - ${ip}`, req.id);
-		Logging.logTimer(`[${req.method.toUpperCase()}] ${req.path}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		Logging.logDebug(`[${req.method.toUpperCase()}] ${req.path} - ${ip}`, req.id);
+		Logging.logTimer(`_timeRequest:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+		// onFinished
+		onFinished(res, () => {
+			Logging.logInfo(`[${req.method.toUpperCase()}] ${req.path} ${res.statusCode} - ${ip}`, req.id);
+			Logging.logTimer(`res finished`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		});
+
 		next();
 	}
 
@@ -446,7 +454,11 @@ class Routes {
 		}
 
 		// TODO: Accept the token via the requset header instead of query string
-		req.token = req.query.token;
+
+		// Get the bearer token from the Authorization header or query string
+		req.token = req.headers['authorization'] || req.query.token;
+
+		if (req.token) req.token = req.token.replace('Bearer ', '');
 		req.apiPath = req.query.apiPath;
 
 		Logging.logTimer(`_authenticateToken:start ${req.token}`,

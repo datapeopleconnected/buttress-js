@@ -24,6 +24,8 @@ const Helpers = require('../helpers');
 const adminPolicy = require('../admin-policy.json');
 const adminLambda = require('../admin-lambda.json');
 
+// TODO: This file might be able to be rolled into routes.
+
 class AdminRoutes {
 	constructor() {
 		this._routes = [

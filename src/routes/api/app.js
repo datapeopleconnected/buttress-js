@@ -430,6 +430,38 @@ class UpdateAppSchema extends Route {
 
 		const rawSchema = req.body;
 
+		// Check the validatiry of the rawSchema
+		try {
+			for (let i = 0; i < rawSchema.length; i++) {
+				const schema = rawSchema[i];
+				if (!schema.name) {
+					this.log(`ERROR: Missing name for schema at index ${i}`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `schema_missing_name`));
+				}
+				if (!schema.type) {
+					this.log(`ERROR: Missing type for schema at index ${i}`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `schema_missing_type`));
+				}
+
+				if (schema.name.length < 1 || schema.name.length > 20) {
+					this.log(`ERROR: Schema name needs to be between 1 and 20 alphanumeric characters (${schema.name})`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `schema_invalid_name`));
+				}
+				if (!/^[a-zA-Z0-9]+$/.test(schema.name)) {
+					this.log(`ERROR: Schema name can only contain alphanumeric characters (${schema.name})`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `schema_invalid_name`));
+				}
+
+				if (!Schema.validTypes.includes(schema.type)) {
+					this.log(`ERROR: Invalid schema type (${schema.type})`, Route.LogLevel.ERR);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `schema_invalid_type`));
+				}
+			}
+		} catch (err) {
+			Logging.logError(err);
+			throw err;
+		}
+
 		// Sort templates
 		let compiledSchema = rawSchema.sort((a, b) => (a.type.indexOf('collection') === 0) ? 1 : (b.type.indexOf('collection') === 0) ? -1 : 0);
 
@@ -473,7 +505,7 @@ routes.push(UpdateAppSchema);
  */
 class GetAppPolicyPropertyList extends Route {
 	constructor(nrp) {
-		super('app/policyPropertyList/:apiPath?', 'GET APP POLICY PROPERTY LIST', nrp);
+		super('app/policy-property-list/:apiPath?', 'GET APP POLICY PROPERTY LIST', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -514,7 +546,7 @@ routes.push(GetAppPolicyPropertyList);
  */
 class SetAppPolicyPropertyList extends Route {
 	constructor(nrp) {
-		super('app/policyPropertyList/:update/:appId?', 'SET APP POLICY PROPERTY LIST', nrp);
+		super('app/policy-property-list/:update/:appId?', 'SET APP POLICY PROPERTY LIST', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
