@@ -202,9 +202,7 @@ class AccessControl {
 			};
 		}
 		if (!req.authUser) {
-			req.authUser = {
-				id: user.id,
-			};
+			req.authUser = user;
 		}
 
 		const rooms = {};
