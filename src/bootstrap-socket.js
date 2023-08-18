@@ -638,6 +638,8 @@ class BootstrapSocket extends Bootstrap {
 
 	async __workerEvaluateUserRooms(user, app, socket, clear = false) {
 		Logging.logSilly(`__workerEvaluateUserRooms::start userId:${user.id} socketId:${socket.id}`);
+		// TODO: needs to build the user request on connection and build its authApp and authUser
+		// DO NOT USE socket.request
 		const userRoomsStruct = await AccessControl.getUserRoomStructures(user, app.id, socket.request);
 		const userRooms = Object.keys(userRoomsStruct);
 
