@@ -201,13 +201,15 @@ class LambdaManager {
 		return execLambdas.reduce((prev, next) => {
 			// Call out to workers to see who can run this lambda
 			return prev.then(() => {
-				nrp.emit('lambda-manager-announce', next);
-
 				const isAPILambda = next.restWorkerId;
 				if (isAPILambda) {
 					const lambdaIdx = this._lambdaAPI.findIndex((lambda) => next.lambdaId === lambda.lambdaId);
+					if (this._lambdaAPI[lambdaIdx].announced) return;
+
 					this._lambdaAPI[lambdaIdx].announced = true;
 				}
+
+				nrp.emit('lambda-manager-announce', next);
 			});
 		}, Promise.resolve());
 	}
