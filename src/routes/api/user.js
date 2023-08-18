@@ -452,7 +452,7 @@ routes.push(UpdateUser);
  */
 class SetUserPolicyProperties extends Route {
 	constructor(nrp) {
-		super('user/:id/policyProperty', 'SET USER POLICY PROPERTY', nrp);
+		super('user/:id/policy-property', 'SET USER POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -532,7 +532,7 @@ routes.push(SetUserPolicyProperties);
  */
 class UpdateUserPolicyProperties extends Route {
 	constructor(nrp) {
-		super('user/:id/updatePolicyProperty', 'UPDATE USER POLICY PROPERTY', nrp);
+		super('user/:id/update-policy-property', 'UPDATE USER POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -599,7 +599,7 @@ routes.push(UpdateUserPolicyProperties);
  */
 class RemoveUserPolicyProperties extends Route {
 	constructor(nrp) {
-		super('user/:id/removePolicyProperty', 'REMOVE USER POLICY PROPERTY', nrp);
+		super('user/:id/remove-policy-property', 'REMOVE USER POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -657,7 +657,7 @@ routes.push(RemoveUserPolicyProperties);
  */
 class ClearUserPolicyProperties extends Route {
 	constructor(nrp) {
-		super('user/:id/clearPolicyProperty', 'CLEAR USER POLICY PROPERTY', nrp);
+		super('user/:id/clear-policy-property', 'CLEAR USER POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -774,7 +774,7 @@ routes.push(DeleteUser);
  */
 class clearUserLocalData extends Route {
 	constructor(nrp) {
-		super('user/:id/clearLocalData', 'CLEAR USER LOCAL DATA', nrp);
+		super('user/:id/clear-local-data', 'CLEAR USER LOCAL DATA', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 

@@ -440,7 +440,7 @@ routes.push(EditLambdaDeployment);
  */
 class SetLambdaPolicyProperties extends Route {
 	constructor(nrp) {
-		super('lambda/:id/policyProperty', 'SET LAMBDA POLICY PROPERTY', nrp);
+		super('lambda/:id/policy-property', 'SET LAMBDA POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -495,7 +495,7 @@ routes.push(SetLambdaPolicyProperties);
  */
 class UpdateLambdaPolicyProperties extends Route {
 	constructor(nrp) {
-		super('lambda/:id/updatePolicyProperty', 'UPDATE LAMBDA POLICY PROPERTY', nrp);
+		super('lambda/:id/update-policy-property', 'UPDATE LAMBDA POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -552,7 +552,7 @@ routes.push(UpdateLambdaPolicyProperties);
  */
 class ClearLambdaPolicyProperties extends Route {
 	constructor(nrp) {
-		super('lambda/:id/clearPolicyProperty', 'REMOVE LAMBDA POLICY PROPERTY', nrp);
+		super('lambda/:id/clear-policy-property', 'REMOVE LAMBDA POLICY PROPERTY', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 

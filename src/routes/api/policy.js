@@ -391,7 +391,7 @@ routes.push(SyncPolicies);
  */
 class DeleteTransientPolicy extends Route {
 	constructor(nrp) {
-		super('policy/deleteTransientPolicy', 'DELETE POLICY BY NAME', nrp);
+		super('policy/delete-transient-policy', 'DELETE POLICY BY NAME', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
