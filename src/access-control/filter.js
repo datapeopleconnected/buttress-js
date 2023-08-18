@@ -178,7 +178,7 @@ class Filter {
 			}
 		}
 
-		delete query._id;
+		delete req.body.query; // Deleting it for manipulation verbs
 		return passed;
 	}
 
