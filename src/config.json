@@ -3,7 +3,7 @@
 		"NODE_ENV": "production",
 		"BUTTRESS_APP_TITLE": "ButtressJS",
 		"BUTTRESS_APP_CODE": "buttressjs",
-		"BUTTRESS_APP_PROTOCOL": "http",
+		"BUTTRESS_APP_PROTOCOL": "https",
 		"BUTTRESS_APP_PATH": "",
 		"BUTTRESS_APP_WORKERS": "FALSE",
 		"BUTTRESS_HOST_URL": "",
