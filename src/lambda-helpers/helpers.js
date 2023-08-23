@@ -105,6 +105,7 @@ class Helpers {
 				output.ok = response.ok;
 				output.status = (response.status)? response.status : null;
 				output.url = response.url;
+				output.redirected = response.redirected;
 
 				if (output.status !== 200 && response.url && response.url !== data.url.href) {
 					return _resolve(output);
