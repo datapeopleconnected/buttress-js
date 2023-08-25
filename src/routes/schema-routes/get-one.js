@@ -8,7 +8,9 @@ const Schema = require('../../schema');
  */
 module.exports = class GetOne extends Route {
 	constructor(schema, appShort, nrp) {
-		super(`${schema.name}/:id`, `GET ${schema.name}`, nrp);
+		const schemaRoutePath = Schema.modelToRoute(schema.name);
+
+		super(`${schemaRoutePath}/:id`, `GET ${schema.name}`, nrp);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;

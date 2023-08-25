@@ -9,7 +9,9 @@ const Plugins = require('../../plugins');
  */
 module.exports = class AddOne extends Route {
 	constructor(schema, appShort, nrp) {
-		super(`${schema.name}`, `ADD ${schema.name}`, nrp);
+		const schemaRoutePath = Schema.modelToRoute(schema.name);
+
+		super(`${schemaRoutePath}`, `ADD ${schema.name}`, nrp);
 		this.__configureSchemaRoute();
 
 		this.verb = Route.Constants.Verbs.POST;

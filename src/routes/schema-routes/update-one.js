@@ -8,9 +8,11 @@ const Schema = require('../../schema');
  */
 module.exports = class UpdateOne extends Route {
 	constructor(schema, appShort, nrp) {
+		const schemaRoutePath = Schema.modelToRoute(schema.name);
+
 		super([
-			`${schema.name}/:id`,
-			`${schema.name}/:sourceId/:id`,
+			`${schemaRoutePath}/:id`,
+			`${schemaRoutePath}/:sourceId/:id`,
 		], `UPDATE ${schema.name}`, nrp);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.PUT;

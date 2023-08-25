@@ -8,7 +8,9 @@ const Schema = require('../../schema');
  */
 module.exports = class GetMany extends Route {
 	constructor(schema, appShort, nrp) {
-		super(`${schema.name}/bulk/load`, `BULK GET ${schema.name}`, nrp);
+		const schemaRoutePath = Schema.modelToRoute(schema.name);
+
+		super(`${schemaRoutePath}/bulk/load`, `BULK GET ${schema.name}`, nrp);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.READ;

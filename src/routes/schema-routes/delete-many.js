@@ -8,7 +8,9 @@ const Schema = require('../../schema');
  */
 module.exports = class DeleteMany extends Route {
 	constructor(schema, appShort, nrp) {
-		super(`${schema.name}/bulk/delete`, `BULK DELETE ${schema.name}`, nrp);
+		const schemaRoutePath = Schema.modelToRoute(schema.name);
+
+		super(`${schemaRoutePath}/bulk/delete`, `BULK DELETE ${schema.name}`, nrp);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.DELETE;
