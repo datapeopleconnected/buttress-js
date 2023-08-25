@@ -186,7 +186,7 @@ const __extendPathContext = (pathContext, schema, prefix) => {
 		default:
 		case 'number':
 			extended[`^${prefix}${property}$`] = {type: 'scalar', values: []};
-			extended[`^${prefix}${property}.__increment__$`] = {type: 'scalar-increment', values: []};
+			extended[`^${prefix}${property}\.__increment__$`] = {type: 'scalar-increment', values: []};
 			break;
 		case 'object':
 		case 'date':
@@ -201,11 +201,14 @@ const __extendPathContext = (pathContext, schema, prefix) => {
 			}
 			break;
 		case 'array':
+			console.log(prefix, property, config);
 			extended[`^${prefix}${property}$`] = {type: 'vector-add', values: []};
-			extended[`^${prefix}${property}.([0-9]{1,11}).__remove__$`] = {type: 'vector-rm', values: []};
-			extended[`^${prefix}${property}.([0-9]{1,11})$`] = {type: 'scalar', values: []};
+			extended[`^${prefix}${property}\.([0-9]{1,11})\.__remove__$`] = {type: 'vector-rm', values: []};
+			extended[`^${prefix}${property}\.([0-9]{1,11})$`] = {type: 'scalar', values: []};
 			if (config.__schema) {
 				extended = __extendPathContext(extended, config.__schema, `${prefix}${property}.([0-9]{1,11}).`);
+			} else if (config.__itemtype) {
+				extended[`^${prefix}${property}\.([0-9]{1,11})\.(.+)$`] = {type: 'scalar', values: []};
 			}
 			break;
 		}
