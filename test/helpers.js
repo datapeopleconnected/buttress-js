@@ -23,7 +23,7 @@ const updateSchema = async (ENDPOINT, schema, token) => bjsReq({
 	body: JSON.stringify(schema),
 }, token);
 const registerDataSharing = async (ENDPOINT, agreement, token) => bjsReq({
-	url: `${ENDPOINT}/api/v1/appDataSharing`,
+	url: `${ENDPOINT}/api/v1/app-data-sharing`,
 	method: 'POST',
 	headers: {'Content-Type': 'application/json'},
 	body: JSON.stringify(agreement),
