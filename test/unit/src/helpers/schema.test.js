@@ -91,3 +91,72 @@ describe('helpers.schema:sanitizeObject', () => {
 		assert(result['cars'].length === 0);
 	});
 });
+
+describe('helpers.schema:getFlattenedBody', () => {
+	const body = {
+		name: 'example-object',
+		age: 31,
+		testSubObject: {
+			id: '64f092cb7b7d65a36cf64a51',
+			node: true,
+			fruit: 'orange',
+		},
+		unstructured: true,
+		array: [
+			'car',
+			'bike',
+			{arraySubOject: 'yes', arraySubOjectSubObject: {thisCouldGoOn: true}},
+		],
+	};
+
+	let result = null;
+
+	it('should have function, getFlattenedBody', async () => {
+		assert(typeof Helpers.Schema.getFlattenedBody === 'function');
+	});
+
+	it('should execute the getFlattenedBody function', async () => {
+		result = Helpers.Schema.getFlattenedBody(body);
+		assert(result !== null);
+	});
+
+	it('result should have property name which matches body value', async () => {
+		const {value} = result.find((r) => r.path === 'name');
+		assert(value !== undefined && value === body.name);
+	});
+
+	it('result should have property age which matches body value', async () => {
+		const {value} = result.find((r) => r.path === 'age');
+		assert(value !== undefined && value === body.age);
+	});
+
+	it('result should have property unstructured which matches body value', async () => {
+		const {value} = result.find((r) => r.path === 'unstructured');
+		assert(value !== undefined && value === body.unstructured);
+	});
+
+	it('result should have sub object property id flattened', async () => {
+		const {value} = result.find((r) => r.path === 'testSubObject.id');
+		assert(value !== undefined && value === body.testSubObject.id);
+	});
+
+	it('result should have sub object property fruit flattened', async () => {
+		const {value} = result.find((r) => r.path === 'testSubObject.fruit');
+		assert(value !== undefined && value === body.testSubObject.fruit);
+	});
+
+	it('result should have an array with length matching 3', async () => {
+		const {value} = result.find((r) => r.path === 'array');
+		assert(value !== undefined && value.length === 3);
+	});
+
+	it('result array should have matching sub values', async () => {
+		const {value} = result.find((r) => r.path === 'array');
+		assert(value[0] === 'car');
+		assert(value[1] === 'bike');
+
+		// Sub array objects aren't flattened
+		assert(value[2].arraySubOject === body.array[2].arraySubOject);
+		assert(value[2].arraySubOjectSubObject.thisCouldGoOn === body.array[2].arraySubOjectSubObject.thisCouldGoOn);
+	});
+});

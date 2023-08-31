@@ -329,7 +329,7 @@ class Routes {
 				let routePath = path.join(...[
 					(app.apiPath) ? app.apiPath : appShortId,
 					Config.app.apiPrefix,
-					pathSpec
+					pathSpec,
 				]);
 				if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
 				Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);

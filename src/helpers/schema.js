@@ -33,7 +33,7 @@ const __getFlattenedBody = (body) => {
 
 		if (typeof parent[property] !== 'object' || parent[property] instanceof Date ||
 			Array.isArray(parent[property]) || parent[property] === null ||
-			Datastore.getInstance('core').ID.isValid(body[property])) {
+			Datastore.getInstance('core').ID.instanceOf(body[property])) {
 			flattened.push({
 				path: path.join('.'),
 				value: parent[property],

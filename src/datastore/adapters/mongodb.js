@@ -32,6 +32,10 @@ class AdapterId {
 	static isValid(id) {
 		return ObjectId.isValid(id);
 	}
+
+	static instanceOf(id) {
+		return id instanceof ObjectId;
+	}
 }
 
 module.exports = class MongodbAdapter extends AbstractAdapter {

@@ -34,6 +34,8 @@ module.exports = class Datastore {
 			case 'butt:':
 			case 'butts:':
 				return require('./adapters/buttress.js');
+			case 'empty:':
+				return require('./adapters/empty.js');
 			default:
 				return null;
 			}
