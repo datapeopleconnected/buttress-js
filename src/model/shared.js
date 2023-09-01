@@ -201,7 +201,7 @@ const __extendPathContext = (pathContext, schema, prefix) => {
 			}
 			break;
 		case 'array':
-			extended[`^${prefix}${property}$`] = {type: 'vectoer-add', values: []};
+			extended[`^${prefix}${property}$`] = {type: 'vector-add', values: []};
 			extended[`^${prefix}${property}\.([0-9]{1,11})\.__remove__$`] = {type: 'vector-rm', values: []}; // eslint-disable-line no-useless-escape
 			extended[`^${prefix}${property}\.([0-9]{1,11})$`] = {type: 'scalar', values: []}; // eslint-disable-line no-useless-escape
 			if (config.__schema) {
