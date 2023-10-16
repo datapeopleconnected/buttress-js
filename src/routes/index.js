@@ -712,6 +712,9 @@ class Routes {
 				return;
 			}
 
+			// Disable cache for all lambda endpoints
+			res.set('Cache-Control', 'no-store');
+
 			if (result.triggerAPIType === 'SYNC') {
 				result.lambdaOutput = await new Promise((resolve) => {
 					this._nrp.on('lambda-execution-finish', (exec) => {
