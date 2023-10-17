@@ -121,8 +121,10 @@ class LambdaManager {
 		const lambdas = await Helpers.streamAll(rxsLambdas);
 		Logging.logSilly(`Got ${lambdas.length} pending cron lambdas`);
 
-
 		// TODO when creating a lambda exeuctionTime should be converted to a date!
+
+		// TODO: Optimise, we don't need to build an array here. We could just filter the items as and when we procss them.
+		// that way the whole stream isn't dumped into memory.
 		return lambdas.filter((lambda) => {
 			const now = Sugar.Date.create();
 			const cronTrigger = lambda.trigger.find((t) => t.type === 'CRON');
