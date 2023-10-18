@@ -79,7 +79,7 @@ class BootstrapLambda extends Bootstrap {
 				this.__nrp.emit('lambdaProcessMaster:worker-type', {id, type});
 			});
 
-			new LambdaManager();
+			new LambdaManager(this.__services);
 		} else {
 			Logging.logVerbose(`Secondary Main LAMB`);
 		}
@@ -99,7 +99,7 @@ class BootstrapLambda extends Bootstrap {
 			});
 		});
 
-		new LambdaRunner(type);
+		new LambdaRunner(this.__services, type);
 	}
 
 	__getLambdaWorkerType() {

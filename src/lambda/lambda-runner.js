@@ -5,8 +5,6 @@ const exec = util.promisify(require('child_process').exec);
 
 const Config = require('node-env-obj')();
 const Sugar = require('sugar');
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
 const ivm = require('isolated-vm');
 const {v4: uuidv4} = require('uuid');
 const webpack = require('webpack');
@@ -24,10 +22,13 @@ const lambdaHelpers = require('../lambda-helpers/helpers');
  */
 class LambdasRunner {
 	/**
+	 * @param {Object} services - service registry
 	 * @param {String} type
 	 * Creates an instance of LambdasRunner.
 	 */
-	constructor(type) {
+	constructor(services, type) {
+		this.__nrp = services.get('nrp');
+
 		this.id = uuidv4();
 		this.name = `LAMBDAS RUNNER ${this.id}`;
 		this.lambdaType = type;
@@ -167,7 +168,7 @@ class LambdasRunner {
 
 				if (trigger.redirect && lambdaHelpers.lambdaResult) lambdaHelpers.lambdaResult.redirect = true;
 				const result = (lambdaHelpers.lambdaResult) ? lambdaHelpers.lambdaResult : 'success';
-				nrp.emit('lambda-execution-finish', {code: 200, res: result, restWorkerId: data.restWorkerId});
+				this.__nrp.emit('lambda-execution-finish', {code: 200, res: result, restWorkerId: data.restWorkerId});
 			}
 		} catch (err) {
 			await this._updateDBLambdaErrorExecution(lambda, execution, type);
@@ -175,7 +176,7 @@ class LambdasRunner {
 
 			if (type === 'API_ENDPOINT') {
 				const message = (err.message) ? err.message : err.errMessage;
-				nrp.emit('lambda-execution-finish', {code: 400, err: message, restWorkerId: data.restWorkerId});
+				this.__nrp.emit('lambda-execution-finish', {code: 400, err: message, restWorkerId: data.restWorkerId});
 			}
 
 			return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));
@@ -224,7 +225,7 @@ class LambdasRunner {
 			await this.execute(lambda, execution, app, triggerType, payload.data);
 
 			this.working = false;
-			nrp.emit('lambda-worker-finished', {
+			this.__nrp.emit('lambda-worker-finished', {
 				workerId: this.id,
 				lambdaId: lambdaId,
 				restWorkerId: payload.data.restWorkerId,
@@ -237,7 +238,7 @@ class LambdasRunner {
 				message: err.message,
 				type: 'ERROR',
 			});
-			nrp.emit('lambda-worker-errored', {
+			this.__nrp.emit('lambda-worker-errored', {
 				workerId: payload.workerId,
 				workerExecID: payload.data.workerExecID,
 				restWorkerId: payload.data.restWorkerId,
@@ -252,7 +253,7 @@ class LambdasRunner {
 	 * Communicate with main process via Redis
 	 */
 	_subscribeToLambdaManager() {
-		nrp.on('lambda-manager-announce', (payload) => {
+		this.__nrp.on('lambda-manager-announce', (payload) => {
 			if (this.working) return;
 
 			if (this.lambdaType && payload.lambdaType !== this.lambdaType) {
@@ -261,20 +262,20 @@ class LambdasRunner {
 			}
 
 			Logging.logSilly(`[${this.name}] Manager called out ${payload.lambdaId}, attempting to acquire lambda`);
-			nrp.emit('lambda-worker-available', {
+			this.__nrp.emit('lambda-worker-available', {
 				workerId: this.id,
 				data: payload,
 			});
 		});
 
-		nrp.on('lambda-worker-execute', (payload) => {
+		this.__nrp.on('lambda-worker-execute', (payload) => {
 			if (payload.workerId !== this.id) return;
 
 			Logging.logDebug(`[${this.name}] Manager has told me to take task ${payload.data.lambdaId}`);
 
 			if (this.working) {
 				Logging.logWarn(`[${this.name}] I've taken on too much work, releasing ${payload.data.lambdaId}`);
-				nrp.emit('lambda-worker-overloaded', payload);
+				this.__nrp.emit('lambda-worker-overloaded', payload);
 				return;
 			}
 

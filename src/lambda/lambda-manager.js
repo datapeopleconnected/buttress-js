@@ -5,8 +5,6 @@ const uuid = require('uuid');
 const hash = require('object-hash');
 const Sugar = require('sugar');
 const Config = require('node-env-obj')();
-const NRP = require('node-redis-pubsub');
-const nrp = new NRP(Config.redis);
 
 const Logging = require('../helpers/logging');
 const Model = require('../model');
@@ -17,10 +15,13 @@ const Helpers = require('../helpers');
  */
 class LambdaManager {
 	/**
+	 * @param {Object} services - service registry
 	 * Creates an instance of LambdaManager.
 	 */
-	constructor() {
+	constructor(services) {
 		this.name = 'LAMBDA MANAGER';
+
+		this.__nrp = services.get('nrp');
 
 		this._workerMap = {};
 		this._lambdaMap = {};
@@ -42,7 +43,7 @@ class LambdaManager {
 		this._handleLambdaPathMutationExecution();
 		this._setTimeoutCheck();
 
-		nrp.on('app-lambda:path-mutation-bust-cache', async (lambda) => {
+		this.__nrp.on('app-lambda:path-mutation-bust-cache', async (lambda) => {
 			this.__populateLambdaPathsMutation(lambda);
 		});
 	}
@@ -211,7 +212,7 @@ class LambdaManager {
 					this._lambdaAPI[lambdaIdx].announced = true;
 				}
 
-				nrp.emit('lambda-manager-announce', next);
+				this.__nrp.emit('lambda-manager-announce', next);
 			});
 		}, Promise.resolve());
 	}
@@ -259,7 +260,7 @@ class LambdaManager {
 	_subscribeToLambdaWorkers() {
 		Logging.logDebug(`[${this.name}] Subscribing to worker network`);
 
-		nrp.on('lambda-worker-available', (payload) => {
+		this.__nrp.on('lambda-worker-available', (payload) => {
 			Logging.logSilly(`[${this.name}] ${payload.workerId} prepared to take on ${payload.data.lambdaId}`);
 			const lambdaMapHash = this._lambdaMap[payload.data.lambdaId];
 			const lambdaBodyHash = (payload.data.body) ? hash(payload.data.body) : lambdaMapHash;
@@ -280,21 +281,21 @@ class LambdaManager {
 			Logging.logDebug(`[${this.name}] ${payload.data.lambdaId} assigning to ${payload.workerId}`);
 
 			// Tell the worker to execute the task
-			nrp.emit('lambda-worker-execute', payload);
+			this.__nrp.emit('lambda-worker-execute', payload);
 		});
 
-		nrp.on('lambda-worker-overloaded', (payload) => {
+		this.__nrp.on('lambda-worker-overloaded', (payload) => {
 			Logging.logDebug(`[${this.name}] ${payload.workerId} was oversubscribed releasing ${payload.lambdaId}`);
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId);
 		});
 
-		nrp.on('lambda-worker-errored', (payload) => {
+		this.__nrp.on('lambda-worker-errored', (payload) => {
 			Logging.logError(`[${this.name}] ${payload.lambdaId} errored while running on ${payload.workerId}`);
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId, payload.workerExecID);
 			this._checkAPIAndPathMutationQueue();
 		});
 
-		nrp.on('lambda-worker-finished', (payload) => {
+		this.__nrp.on('lambda-worker-finished', (payload) => {
 			Logging.logDebug(`[${this.name}] ${payload.lambdaId} was completed by ${payload.workerId}`);
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId, payload.workerExecID);
 			this._checkAPIAndPathMutationQueue();
@@ -302,7 +303,7 @@ class LambdaManager {
 	}
 
 	async _handleLambdaAPIExecution() {
-		nrp.on('executeLambdaAPI', async (data) => {
+		this.__nrp.on('executeLambdaAPI', async (data) => {
 			data.workerExecID = uuid.v4();
 			Logging.log(`Manager is queuing API lambda ${data.lambdaId} to be executed`);
 			let index = this._lambdaAPI.length;
@@ -327,7 +328,7 @@ class LambdaManager {
 	 * Listening on redis event to handle the execution of the path mutations lambda
 	 */
 	async _handleLambdaPathMutationExecution() {
-		nrp.on('notifyLambdaPathChange', async (data) => {
+		this.__nrp.on('notifyLambdaPathChange', async (data) => {
 			const paths = data.paths;
 			const schema = data.collection;
 
