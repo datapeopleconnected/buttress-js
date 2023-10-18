@@ -50,7 +50,7 @@ class Bootstrap extends EventEmitter {
 
 	async clean() {
 		Logging.logDebug('Shutting down all connections');
-		Logging.logSilly('BootstrapRest:clean');
+		Logging.logSilly('Bootstrap:clean');
 
 		this.__shutdown = true;
 

@@ -39,6 +39,10 @@ class BootstrapLambda extends Bootstrap {
 		this.__apiWorkers = 0;
 		this.__pathMutationWorkers = 0;
 		this.__cronWorkers = 0;
+
+		// This need to be seperate incase the user is running in single instance mode.
+		this.__lambdaManagerProcess = null;
+		this.__lambdaWorkerProcess = null;
 	}
 
 	async init() {
@@ -59,7 +63,11 @@ class BootstrapLambda extends Bootstrap {
 	async clean() {
 		await super.clean();
 
-		Logging.logSilly('BootstrapLambda:clean');
+		Logging.logDebug('BootstrapLambda:clean');
+
+		// Clean up lambda process.
+		if (this.__lambdaManagerProcess) this.__lambdaManagerProcess.clean();
+		if (this.__lambdaWorkerProcess) this.__lambdaWorkerProcess.clean();
 
 		// Close Datastore connections
 		Logging.logSilly('Closing down all datastore connections');
@@ -79,7 +87,7 @@ class BootstrapLambda extends Bootstrap {
 				this.__nrp.emit('lambdaProcessMaster:worker-type', {id, type});
 			});
 
-			new LambdaManager(this.__services);
+			this.__lambdaManagerProcess = new LambdaManager(this.__services);
 		} else {
 			Logging.logVerbose(`Secondary Main LAMB`);
 		}
@@ -99,7 +107,7 @@ class BootstrapLambda extends Bootstrap {
 			});
 		});
 
-		new LambdaRunner(this.__services, type);
+		this.__lambdaWorkerProcess = new LambdaRunner(this.__services, type);
 	}
 
 	__getLambdaWorkerType() {

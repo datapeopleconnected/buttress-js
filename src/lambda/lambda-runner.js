@@ -40,6 +40,25 @@ class LambdasRunner {
 		this._timeout = null;
 		this._lambdaExecution = null;
 
+		this.init();
+	}
+
+	/**
+	 * @readonly
+	 * @static
+	 */
+	static get Constants() {
+		let timeout = parseInt(Config.timeout.lambdasRunner);
+		if (!timeout) timeout = 10;
+
+		return {
+			TIMEOUT: (timeout * 1000),
+		};
+	}
+
+	async init() {
+		Logging.logDebug('LambdasRunner:init');
+
 		this._isolate = new ivm.Isolate({
 			inspector: false,
 			onCatastrophicError: () => {
@@ -56,17 +75,10 @@ class LambdasRunner {
 		this._subscribeToLambdaManager();
 	}
 
-	/**
-	 * @readonly
-	 * @static
-	 */
-	static get Constants() {
-		let timeout = parseInt(Config.timeout.lambdasRunner);
-		if (!timeout) timeout = 10;
+	async clean() {
+		Logging.logDebug('LambdasRunner:clean');
 
-		return {
-			TIMEOUT: (timeout * 1000),
-		};
+		// Shutdown isolate
 	}
 
 	/**

@@ -31,21 +31,14 @@ class LambdaManager {
 		this._maximumRetry = 500;
 		this._lambdaPathMutationTimeout = 5000;
 
+		this.__haltQueue = false;
+
 		Logging.logDebug(`[${this.name}] Created instance`);
 
 		// TODO: Check to see if there is already a lambda manager in the network
 		this._isPrimary = true;
 
-		this._loadLambdaPathsMutation();
-		this._manageLambdaFolders();
-		this._subscribeToLambdaWorkers();
-		this._handleLambdaAPIExecution();
-		this._handleLambdaPathMutationExecution();
-		this._setTimeoutCheck();
-
-		this.__nrp.on('app-lambda:path-mutation-bust-cache', async (lambda) => {
-			this.__populateLambdaPathsMutation(lambda);
-		});
+		this.init();
 	}
 
 	/**
@@ -61,11 +54,44 @@ class LambdaManager {
 		};
 	}
 
+	async init() {
+		Logging.logDebug('LambdaManager:init');
+
+		this._loadLambdaPathsMutation();
+		this._manageLambdaFolders();
+		this._subscribeToLambdaWorkers();
+		this._handleLambdaAPIExecution();
+		this._handleLambdaPathMutationExecution();
+		this._setTimeoutCheck();
+
+		this.__nrp.on('app-lambda:path-mutation-bust-cache', async (lambda) => {
+			this.__populateLambdaPathsMutation(lambda);
+		});
+	}
+
+	async clean() {
+		Logging.logDebug('LambdaManager:clean');
+
+		this.__haltQueue = true;
+
+		if (this._timeout) clearTimeout(this._timeout);
+		this._timeout = null;
+
+		// TODO: Could do stuff here with dumping queue to cache.
+
+		// TODO: Could hold until current task is completed.
+	}
+
 	/**
 	 * Call queue after a specified timeout
 	 * @param {Boolean} [force=false]
 	 */
 	_setTimeoutCheck(force = false) {
+		if (this.__haltQueue) {
+			Logging.logWarn(`[${this.name}]: Attempted to check lambda queue but queue is halted`);
+			return;
+		}
+
 		if (this._timeout && !force) {
 			Logging.logWarn(`[${this.name}]: Check is already queued`);
 			return;
