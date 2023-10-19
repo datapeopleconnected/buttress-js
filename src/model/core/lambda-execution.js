@@ -72,6 +72,12 @@ class LambdaExecutionSchemaModel extends StandardModel {
 						},
 					},
 				},
+				executeAfter: {
+					__type: 'date',
+					__default: null,
+					__required: false,
+					__allowUpdate: true,
+				},
 				calledAt: {
 					__type: 'date',
 					__default: 'now',

@@ -334,8 +334,10 @@ class LambdaSchemaModel extends StandardModel {
 				throw new Helpers.Errors.RequestError(400, `duplicate_item`);
 			}
 
+			// Check to see if the requested git hash exists or just make sure the branch exists if we're using HEAD.
+			const exPramChkBranch = (gitHash !== 'HEAD') ? `git branch ${branch} --contains ${gitHash}` : `git ls-remote --heads origin ${branch}`;
 			const result = await exec(`cd ${Config.paths.lambda.code}; git clone --filter=blob:limit=1m ${url} lambda-${name};
-				cd lambda-${name}; git branch ${branch} --contains ${gitHash}`);
+				cd lambda-${name}; ${exPramChkBranch}`);
 			if (!result.stdout) {
 				if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
 					await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);

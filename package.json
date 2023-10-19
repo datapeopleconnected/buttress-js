@@ -14,7 +14,7 @@
     "docs": "npx docsify serve ./docs",
     "test": "npm run build && npm run test:unit && npm run test:e2e",
     "test:unit": "NODE_ENV=test mocha --recursive --parallel test/unit/**/*",
-    "test:e2e": "NODE_ENV=test node test/before-e2e.js && NODE_ENV=test INSTALL_MODE=true ./bin/app.sh && NODE_ENV=test TEST_ENV=e2e mocha --recursive --bail test/e2e/index.test.js",
+    "test:e2e": "NODE_ENV=test node test/before-e2e.js && echo \"Running BJS in Install Mode.\" && NODE_ENV=test INSTALL_MODE=true ./bin/app.sh && echo \"Install Complete.\\n\"&& NODE_ENV=test TEST_ENV=e2e mocha --recursive --bail test/e2e/index.test.js",
     "build": "rimraf dist/* && gulp build",
     "watch": "npm run build && gulp watch",
     "lint": "eslint 'src/**/*.js'",

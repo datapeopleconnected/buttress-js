@@ -13,11 +13,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const fetch = require('cross-fetch');
 const {describe, it, before, after} = require('mocha');
 const assert = require('assert');
 
-const {createApp, updateSchema} = require('../../helpers');
+const {createApp, createLambda, updatePolicyPropertyList} = require('../../helpers');
 
 const BootstrapRest = require('../../../dist/bootstrap-rest');
 const BootstrapLambda = require('../../../dist/bootstrap-lambda');
@@ -28,7 +27,7 @@ const ENDPOINT = `https://test.local.buttressjs.com`;
 
 const testEnv = {
 	apps: {},
-	cars: [],
+	lambdas: {},
 };
 
 // This suite of tests will run against the REST API
@@ -40,7 +39,10 @@ describe('Schema', async () => {
 		await REST_PROCESS.init();
 		await LAMBDA_PROCESS.init();
 
-		// testEnv.apps.app1 = await createApp(ENDPOINT, 'Test Req App', 'test-req-app');
+		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test Lambda App', 'test-lambda-app');
+		await updatePolicyPropertyList(ENDPOINT, {
+			lambda: ['TEST_ACCESS'],
+		}, testEnv.apps.app1.token);
 	});
 
 	after(async function() {
@@ -49,8 +51,49 @@ describe('Schema', async () => {
 	});
 
 	describe('Basic', async () => {
-		it('Should update the app schema', async () => {
-			assert.strictEqual(false, true);
+		it('Should create a lambda \'hello-world\' in the test app', async function() {
+			this.timeout(20000);
+
+			testEnv.lambdas['api-hello-world'] = await createLambda(ENDPOINT, {
+				name: 'api-hello-world',
+				type: 'PUBLIC',
+				git: {
+					url: '/home/tom/Projects/Lighten/buttress-js',
+					branch: 'develop',
+					hash: 'HEAD',
+					entryFile: 'test/data/lambda/hello-world.js',
+					entryPoint: 'execute',
+				},
+				trigger: [{
+					type: 'CRON',
+					apiEndpoint: {
+						method: 'GET',
+						url: 'hello/world',
+						type: 'SYNC',
+					},
+				}],
+			}, {
+				domains: ['localhost'],
+				permissions: [{route: '*', permission: '*'}],
+				policyProperties: {lambda: 'TEST_ACCESS'},
+			}, testEnv.apps.app1.token);
+		});
+
+		// TODO: Basics tests to do with the lambda process
+		// TODO: Test Scheduling a one off lambad to be run.
+	});
+
+	describe('Trigger', async () => {
+		describe('Cron', async () => {
+			// TODO: Test for cron trigger.
+		});
+
+		describe('Path Mutation', async () => {
+			// TODO: Test for path mutation.
+		});
+
+		describe('API Endpoint', async () => {
+			// TODO: Test for API endpoint.
 		});
 	});
 });

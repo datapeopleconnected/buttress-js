@@ -104,27 +104,27 @@ class LambdaManager {
 			return;
 		}
 
-		this._timeout = setTimeout(async () => {
-			// TODO: Reset long running lambda
-			try {
-				const lambdas = await this._getPendingLambda();
-				// TODO: Handle pausing lambdas due to READ / WRITE access
-				await this._announceLambdas(lambdas);
-				this._setTimeoutCheck(true);
-			} catch (err) {
-				let message = err;
-				if (err.statusMessage) message = err.statusMessage;
-				if (err.message) message = err.message;
-				Logging.logError(`[${this.name}]: Error: ${message}`);
-				if (err.stack) console.error(err.stack);
+		this._timeout = setTimeout(() => this.__checkQueue(), LambdaManager.Constants.TIMEOUT);
+	}
 
-				if (err.response && err.response.data) {
-					console.error(err.response.data);
-				}
+	async __checkQueue() {
+		try {
+			const lambdas = await this._getPendingLambda();
+			// TODO: Handle pausing lambdas due to READ / WRITE access
+			await this._announceLambdas(lambdas);
+		} catch (err) {
+			let message = err;
+			if (err.statusMessage) message = err.statusMessage;
+			if (err.message) message = err.message;
+			Logging.logError(`[${this.name}]: Error: ${message}`);
+			if (err.stack) console.error(err.stack);
 
-				this._setTimeoutCheck(true);
+			if (err.response && err.response.data) {
+				console.error(err.response.data);
 			}
-		}, LambdaManager.Constants.TIMEOUT);
+		}
+
+		this._setTimeoutCheck(true);
 	}
 
 	/**
@@ -132,9 +132,17 @@ class LambdaManager {
 	 * @return {Promise}
 	 */
 	async _getPendingLambda() {
+		// We need to unify the way we check for lambdas
+		//  - Get transient executions (API, Path Mutation)
+		//  - Get pending executions (Scheduled / Cron)
+		//  - Mix the priorities, pick and announce.
+
+		// The announcement process should be optimised to only to stop the announcements if nobody is listening.
+		// Instead of look at the lambda triggers witn the Lambda model we should look at the executions for anything that is scheduled and PENDING.
+
 		// TODO: Could just return the lambda id, instead of the whole lambda object
 		// TODO: Move the date filter to the query if possible?
-		const rxsLambdas = await Model.Lambda.find({
+		const rxsLambdas = await Model.LambdaExecution.find({
 			'executable': {
 				$eq: true,
 			},

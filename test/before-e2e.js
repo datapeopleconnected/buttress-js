@@ -7,6 +7,9 @@ const Config = require('node-env-obj')({
 });
 
 (async () => {
+	console.log('---------');
+	console.log(`🏁 Clearing out test env for e2e tests.`);
+
 	// Make a connection to the datastore.
 	this._client = await MongoClient.connect(Config.datastore.connectionString, {appName: Config.app.code, maxPoolSize: 100});
 	this.connection = this._client.db(`${Config.app.code}-${Config.env}`);
@@ -53,5 +56,5 @@ const Config = require('node-env-obj')({
 	this.collections = null;
 
 	console.log('Datastore clean up complete! 🥳🥳');
-	console.log('');
+	console.log('---------');
 })();
