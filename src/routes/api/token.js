@@ -27,8 +27,8 @@ const routes = [];
  * @class GetTokenList
  */
 class GetTokenList extends Route {
-	constructor(nrp, redisClient) {
-		super('token', 'GET TOKEN LIST', nrp, redisClient);
+	constructor(nrp) {
+		super('token', 'GET TOKEN LIST', nrp, Model.Token);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -41,13 +41,13 @@ class GetTokenList extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const rxsToken = Model.Token.findAll();
+		const rxsToken = this.model.findAll();
 		const tokens = [];
 		for await (const token of rxsToken) {
 			tokens.push(token);
 		}
 
-		return tokens.filter((t) => t.type !== Model.Token.Constants.Type.SYSTEM);
+		return tokens.filter((t) => t.type !== this.model.Constants.Type.SYSTEM);
 	}
 }
 routes.push(GetTokenList);
@@ -57,7 +57,7 @@ routes.push(GetTokenList);
  */
 class DeleteAllTokens extends Route {
 	constructor(nrp) {
-		super('token/:type?', 'DELETE ALL TOKENS', nrp);
+		super('token/:type?', 'DELETE ALL TOKENS', nrp, Model.Token);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -70,7 +70,7 @@ class DeleteAllTokens extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Token.rmAll({
+		return this.model.rmAll({
 			type: req.params.type,
 		}).then(() => true);
 	}
@@ -82,7 +82,7 @@ routes.push(DeleteAllTokens);
  */
 class SearchUserToken extends Route {
 	constructor(nrp) {
-		super('token', 'SEARCH USER TOKEN', nrp);
+		super('token', 'SEARCH USER TOKEN', nrp, Model.Token);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -102,12 +102,12 @@ class SearchUserToken extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.Token.parseQuery(result.query, {}, Model.Token.flatSchemaData);
+		result.query = this.model.parseQuery(result.query, {}, this.model.flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return Model.Token.find(validate.query);
+		return this.model.find(validate.query);
 	}
 }
 routes.push(SearchUserToken);

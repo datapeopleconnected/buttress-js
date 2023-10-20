@@ -856,7 +856,7 @@ class Routes {
 		const lambdaExecution = await Model.LambdaExecution.add({
 			lambdaId: Model.Lambda.createId(lambda.id),
 			deploymentId: Model.Deployment.createId(deployment.id),
-		});
+		}, lambda._appId);
 
 		res.lambdaExecution = lambdaExecution;
 		res.triggerAPIType = triggerAPI.apiEndpoint.type;

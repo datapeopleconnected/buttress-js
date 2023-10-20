@@ -59,7 +59,7 @@
 			"options": "%BUTTRESS_DATASTORE_OPTIONS%"
 		},
 		"timeout": {
-			"lambda": "%BUTTRESS_TIMEOUT_LAMBDA%",
+			"lambdaManager": "%BUTTRESS_TIMEOUT_LAMBDA%",
 			"lambdasRunner": "%BUTTRESS_TIMEOUT_LAMBDAS_RUNNER%"
 		},
 		"redis": {
@@ -74,6 +74,7 @@
 			"app": "%BUTTRESS_REST_APP%"
 		},
 		"paths": {
+			"root": "%BUTTRESS_APP_PATH%",
 			"logs": {
 				"dev":"%BUTTRESS_APP_PATH%/logs/dev",
 				"prod":"%BUTTRESS_APP_PATH%/logs/prod",

@@ -28,7 +28,7 @@ const routes = [];
  */
 class GetActivityList extends Route {
 	constructor(services) {
-		super('activity', 'GET ACTIVITY LIST', services);
+		super('activity', 'GET ACTIVITY LIST', services, Model.Activity);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -38,7 +38,7 @@ class GetActivityList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Activity.findAll(req.authApp.id, req.token);
+		return this.model.findAll(req.authApp.id, req.token);
 	}
 }
 routes.push(GetActivityList);
@@ -48,7 +48,7 @@ routes.push(GetActivityList);
  */
 class GetActivity extends Route {
 	constructor(services) {
-		super('activity/:id', 'GET ACTIVITY', services);
+		super('activity/:id', 'GET ACTIVITY', services, Model.Activity);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -61,7 +61,7 @@ class GetActivity extends Route {
 				this.log('ERROR: Missing required field', Route.LogLevel.ERR, req.id);
 				return reject(new Helpers.Errors.RequestError(400, `missing_required_fields`));
 			}
-			Model.Activity.findById(req.params.id).then((activity) => {
+			this.model.findById(req.params.id).then((activity) => {
 				if (!activity) {
 					this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR, req.id);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -83,7 +83,7 @@ routes.push(GetActivity);
  */
 class DeleteAllActivity extends Route {
 	constructor(services) {
-		super('activity', 'DELETE ALL ACTIVITY', services);
+		super('activity', 'DELETE ALL ACTIVITY', services, Model.Activity);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -94,7 +94,7 @@ class DeleteAllActivity extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Activity.rmAll().then(() => true);
+		return this.model.rmAll().then(() => true);
 	}
 }
 routes.push(DeleteAllActivity);
@@ -104,7 +104,7 @@ routes.push(DeleteAllActivity);
  */
 class AddActivityMetadata extends Route {
 	constructor(services) {
-		super('activity/:id/metadata/:key', 'ADD ACTIVITY METADATA', services);
+		super('activity/:id/metadata/:key', 'ADD ACTIVITY METADATA', services, Model.Activity);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -113,7 +113,7 @@ class AddActivityMetadata extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			Model.Activity.findById(req.params.id).then((activity) => {
+			this.model.findById(req.params.id).then((activity) => {
 				if (!activity) {
 					this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -143,7 +143,7 @@ routes.push(AddActivityMetadata);
  */
 class UpdateActivityMetadata extends Route {
 	constructor(services) {
-		super('activity/:id/metadata/:key', 'UPDATE ACTIVITY METADATA', services);
+		super('activity/:id/metadata/:key', 'UPDATE ACTIVITY METADATA', services, Model.Activity);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -152,7 +152,7 @@ class UpdateActivityMetadata extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			Model.Activity.findById(req.params.id).then((activity) => {
+			this.model.findById(req.params.id).then((activity) => {
 				if (!activity) {
 					this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -185,7 +185,7 @@ routes.push(UpdateActivityMetadata);
  */
 class GetActivityMetadata extends Route {
 	constructor(services) {
-		super('activity/:id/metadata/:key', 'GET ACTIVITY METADATA', services);
+		super('activity/:id/metadata/:key', 'GET ACTIVITY METADATA', services, Model.Activity);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.GET;
 
@@ -194,7 +194,7 @@ class GetActivityMetadata extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			Model.Activity.findById(req.params.id).then((activity) => {
+			this.model.findById(req.params.id).then((activity) => {
 				if (!activity) {
 					this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -222,7 +222,7 @@ routes.push(GetActivityMetadata);
  */
 class DeleteActivityMetadata extends Route {
 	constructor(services) {
-		super('activity/:id/metadata/:key', 'DELETE ACTIVITY METADATA', services);
+		super('activity/:id/metadata/:key', 'DELETE ACTIVITY METADATA', services, Model.Activity);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 		this._activity = false;
@@ -230,7 +230,7 @@ class DeleteActivityMetadata extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			Model.Activity
+			this.model
 				.findById(req.params.id).select('id')
 				.then((activity) => {
 					if (!activity) {

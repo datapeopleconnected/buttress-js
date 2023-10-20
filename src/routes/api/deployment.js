@@ -24,8 +24,8 @@ const routes = [];
  * @class SearchDeploymentList
  */
 class SearchDeploymentList extends Route {
-	constructor(nrp, redisClient) {
-		super('deployment', 'SEARCH DEPLOYMENT LIST', nrp, redisClient);
+	constructor(services) {
+		super('deployment', 'SEARCH DEPLOYMENT LIST', services, Model.Deployment);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -42,12 +42,12 @@ class SearchDeploymentList extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.Deployment.parseQuery(result.query, {}, Model.Deployment.flatSchemaData);
+		result.query = this.model.parseQuery(result.query, {}, this.model.flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return Model.Deployment.find(validate.query);
+		return this.model.find(validate.query);
 	}
 }
 routes.push(SearchDeploymentList);
@@ -56,15 +56,13 @@ routes.push(SearchDeploymentList);
  * @class DeploymentCount
  */
 class DeploymentCount extends Route {
-	constructor(nrp) {
-		super(`deployment/count`, `COUNT DEPLOYMENTS`, nrp);
+	constructor(services) {
+		super(`deployment/count`, `COUNT DEPLOYMENTS`, services, Model.Deployment);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT DEPLOYMENTS`;
 		this.activityBroadcast = false;
-
-		this.model = Model.Deployment;
 	}
 
 	_validate(req, res, token) {
@@ -91,7 +89,7 @@ class DeploymentCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return Model.Deployment.count(validateResult.query);
+		return this.model.count(validateResult.query);
 	}
 }
 routes.push(DeploymentCount);

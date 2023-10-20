@@ -54,22 +54,30 @@ class DeploymentSchemaModel extends StandardModel {
 					__required: true,
 					__allowUpdate: true,
 				},
+				_appId: {
+					__type: 'id',
+					__required: true,
+					__allowUpdate: false,
+				},
 			},
 		};
 	}
 
 	/**
 	 * @param {Object} body - body passed through from a POST request
+	 * @param {string} appId - the appId the deployment blongs to
 	 * @return {Promise} - fulfilled with lambda Object when the database request is completed
 	 */
-	async add(body) {
+	async add(body, appId) {
 		const deploymentBody = {
 			lambdaId: (body.lambdaId) ? body.lambdaId : null,
 			hash: (body.hash) ? body.hash : null,
 			branch: (body.branch) ? body.branch : null,
 		};
 
-		const rxsDeployment = await super.add(deploymentBody);
+		const rxsDeployment = await super.add(deploymentBody, {
+			_appId: appId,
+		});
 		const deployment = await Helpers.streamFirst(rxsDeployment);
 
 		return deployment;

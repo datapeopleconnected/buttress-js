@@ -26,8 +26,8 @@ const routes = [];
  * @class GetTrackingList
  */
 class GetTrackingList extends Route {
-	constructor(nrp, redisClient) {
-		super('tracking', 'GET TRACKING LIST', nrp, redisClient);
+	constructor(nrp) {
+		super('tracking', 'GET TRACKING LIST', nrp, Model.Tracking);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -37,7 +37,7 @@ class GetTrackingList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Tracking.getAll();
+		return this.model.getAll();
 	}
 }
 routes.push(GetTrackingList);
@@ -47,7 +47,7 @@ routes.push(GetTrackingList);
  */
 class AddTracking extends Route {
 	constructor(nrp) {
-		super('tracking', 'ADD TRACKING', nrp);
+		super('tracking', 'ADD TRACKING', nrp, Model.Tracking);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -58,7 +58,7 @@ class AddTracking extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const validation = Model.Tracking.validate(req.body);
+			const validation = this.model.validate(req.body);
 			if (!validation.isValid) {
 				if (validation.missing.length > 0) {
 					this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR);
@@ -78,14 +78,14 @@ class AddTracking extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Tracking.add(req.body);
+		return this.model.add(req.body);
 	}
 }
 routes.push(AddTracking);
 
 class UpdateTracking extends Route {
 	constructor(nrp) {
-		super('tracking/:id', 'UPDATE TRACKING', nrp);
+		super('tracking/:id', 'UPDATE TRACKING', nrp, Model.Tracking);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -96,7 +96,7 @@ class UpdateTracking extends Route {
 
 	_validate() {
 		return new Promise((resolve, reject) => {
-			const {validation, body} = Model.Tracking.validateUpdate(this.req.body);
+			const {validation, body} = this.model.validateUpdate(this.req.body);
 			this.req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -109,7 +109,7 @@ class UpdateTracking extends Route {
 				}
 			}
 
-			Model.Tracking.exists(this.req.params.id)
+			this.model.exists(this.req.params.id)
 				.then((exists) => {
 					if (!exists) {
 						this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
@@ -121,7 +121,7 @@ class UpdateTracking extends Route {
 	}
 
 	_exec() {
-		return Model.Tracking.updateByPath(this.req.body, this.req.params.id);
+		return this.model.updateByPath(this.req.body, this.req.params.id);
 	}
 }
 routes.push(UpdateTracking);
@@ -131,7 +131,7 @@ routes.push(UpdateTracking);
  */
 class DeleteTracking extends Route {
 	constructor(nrp) {
-		super('tracking/:id', 'DELETE TRACKING', nrp);
+		super('tracking/:id', 'DELETE TRACKING', nrp, Model.Tracking);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 		this._tracking = false;
@@ -139,7 +139,7 @@ class DeleteTracking extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			Model.Tracking.findById(req.params.id)
+			this.model.findById(req.params.id)
 				.then((tracking) => {
 					if (!tracking) {
 						this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
@@ -162,7 +162,7 @@ routes.push(DeleteTracking);
  */
 class DeleteAllTrackings extends Route {
 	constructor(nrp) {
-		super('tracking', 'DELETE ALL TRACKINGS', nrp);
+		super('tracking', 'DELETE ALL TRACKINGS', nrp, Model.Tracking);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
@@ -172,7 +172,7 @@ class DeleteAllTrackings extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Tracking.rmAll().then(() => true);
+		return this.model.rmAll().then(() => true);
 	}
 }
 routes.push(DeleteAllTrackings);

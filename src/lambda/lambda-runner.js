@@ -309,7 +309,7 @@ class LambdasRunner {
 		const lambdaExecution = await Model.LambdaExecution.add({
 			lambdaId: Model.Lambda.createId(lambda.id),
 			deploymentId: Model.Deployment.createId(deployment.id),
-		});
+		}, lambda._appId);
 
 		return lambdaExecution;
 	}

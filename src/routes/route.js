@@ -23,6 +23,7 @@ const Logging = require('../helpers/logging');
 // const Schema = require('../schema');
 const Model = require('../model');
 const Helpers = require('../helpers');
+const Schema = require('../schema');
 // const AccessControl = require('../access-control');
 
 const SchemaModelRemote = require('../model/type/remote');
@@ -94,7 +95,7 @@ const Constants = {
 };
 
 class Route {
-	constructor(paths, name, services) {
+	constructor(paths, name, services, model) {
 		this.verb = Constants.Verbs.GET;
 		this.Type = Constants.Type.SYSTEM;
 		this.permissions = Constants.Permissions.READ;
@@ -116,8 +117,8 @@ class Route {
 		this.redactResults = true;
 		this.addSourceId = false;
 
-		this.schema = null;
-		this.model = null;
+		this.model = (model) ? model : null;
+		this.schema = (model) ? new Schema(model.schemaData) : null;
 
 		this.paths = Array.isArray(paths) ? paths : [paths];
 
@@ -382,9 +383,11 @@ class Route {
 	 * @param {Object} req
 	 */
 	_checkBasedPathLambda(req) {
-		// core schema
+		// NOTE: Do we not want to receive updates on core schema?
+		// TODO: There should be a restriction here to scope to the application.
 		if (!this.schema) return;
 
+		const schemaName = this.model?.schemaData.name;
 		const isLambdaChange = req.token.type === Model.Token.Constants.Type.LAMBDA;
 		if (isLambdaChange) {
 			// If the current lambda is a path mutation, we don't want to trigger other path mutations
@@ -405,36 +408,36 @@ class Route {
 				body.forEach((item) => {
 					if (Array.isArray(item.body)) {
 						item.body.forEach((obj) => {
-							paths.push(`${this.schema?.name}.${item.id}.${obj.path}`);
+							paths.push(`${schemaName}.${item.id}.${obj.path}`);
 							item.body.forEach((i) => values.push(i.value));
 						});
 					} else {
-						paths.push(`${this.schema?.name}.${item.id}.${item.body.path}`);
+						paths.push(`${schemaName}.${item.id}.${item.body.path}`);
 						values.push(item.body.value);
 					}
 				});
 			} else if (req.pathSpec.includes(Constants.BulkRequests.BULK_DEL)) {
-				body.forEach((id) => paths.push(`${this.schema?.name}.${id}`));
+				body.forEach((id) => paths.push(`${schemaName}.${id}`));
 			} else {
-				paths.push(this.schema?.name);
+				paths.push(schemaName);
 				values.push(body);
 			}
 		}
 
 		if (this.verb === Constants.Verbs.DEL) {
 			if (id) {
-				paths.push(`${this.schema?.name}.${id}`);
+				paths.push(`${schemaName}.${id}`);
 			} else if (Array.isArray(body)) {
-				body.forEach((item) => paths.push(`${this.schema?.name}.${item.path}`));
+				body.forEach((item) => paths.push(`${schemaName}.${item.path}`));
 			} else {
-				paths.push(this.schema?.name);
+				paths.push(schemaName);
 			}
 		}
 		if (this.verb === Constants.Verbs.PUT) {
 			if (!Array.isArray(body)) body = [body];
 			body.forEach((item) => {
 				if (!item.path) return;
-				paths.push(`${this.schema?.name}.${id}.${item.path}`);
+				paths.push(`${schemaName}.${id}.${item.path}`);
 				values.push(item.value);
 			});
 		}
@@ -444,7 +447,7 @@ class Route {
 			this._nrp.emit('notifyLambdaPathChange', {
 				paths,
 				values,
-				collection: this.schema?.name,
+				collection: schemaName,
 			});
 		}
 	}

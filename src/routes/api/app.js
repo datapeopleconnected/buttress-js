@@ -31,8 +31,8 @@ const routes = [];
  * @class GetAppList
  */
 class GetAppList extends Route {
-	constructor(nrp, redisClient) {
-		super('app', 'GET APP LIST', nrp, redisClient);
+	constructor(services) {
+		super('app', 'GET APP LIST', services, Model.App);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -43,10 +43,10 @@ class GetAppList extends Route {
 
 	_exec(req, res, validate) {
 		if (req.token.type !== Route.Constants.Type.SYSTEM) {
-			return Model.App.find({id: req.authApp.id});
+			return this.model.find({id: req.authApp.id});
 		}
 
-		return Model.App.findAll();
+		return this.model.findAll();
 	}
 }
 routes.push(GetAppList);
@@ -56,7 +56,7 @@ routes.push(GetAppList);
  */
 class SearchAppList extends Route {
 	constructor(nrp) {
-		super('app', 'GET APP LIST', nrp);
+		super('app', 'GET APP LIST', nrp, Model.App);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 	}
@@ -71,12 +71,12 @@ class SearchAppList extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.App.parseQuery(result.query, {}, Model.App.flatSchemaData);
+		result.query = this.model.parseQuery(result.query, {}, this.model.flatSchemaData);
 		return result;
 	}
 
 	async _exec(req, res, validate) {
-		const appsDB = await Helpers.streamAll(await Model.App.find(validate.query));
+		const appsDB = await Helpers.streamAll(await this.model.find(validate.query));
 
 		const tokenIds = appsDB.map((app) => Model.Token.createId(app._tokenId));
 		const appTokens = await Helpers.streamAll(await Model.Token.find({
@@ -101,7 +101,7 @@ routes.push(SearchAppList);
 class GetApp extends Route {
 	constructor(nrp) {
 		// Should change to app apiPath instead of ID
-		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', nrp);
+		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', nrp, Model.App);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -114,7 +114,7 @@ class GetApp extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_fields`));
 		}
 
-		const app = await Model.App.findById(req.params.id);
+		const app = await this.model.findById(req.params.id);
 		if (!app) {
 			this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -137,13 +137,9 @@ routes.push(GetApp);
  */
 class AddApp extends Route {
 	constructor(nrp) {
-		super('app', 'APP ADD', nrp);
+		super('app', 'APP ADD', nrp, Model.App);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
-
-		// Fetch model
-		this.schema = new Schema(Model.App.schemaData);
-		this.model = Model.App;
 	}
 
 	_validate(req, res, token) {
@@ -205,7 +201,7 @@ class AddApp extends Route {
 
 	_exec(req, res, validate) {
 		return new Promise((resolve, reject) => {
-			Model.App.add(req.body)
+			this.model.add(req.body)
 				.then((res) => {
 					this._nrp.emit('app:configure-lambda-endpoints', res.app.apiPath);
 
@@ -223,7 +219,7 @@ routes.push(AddApp);
  */
 class DeleteApp extends Route {
 	constructor(nrp) {
-		super('app/:id', 'DELETE APP', nrp);
+		super('app/:id', 'DELETE APP', nrp, Model.App);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 		this._app = false;
@@ -235,7 +231,7 @@ class DeleteApp extends Route {
 				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
-			Model.App.findById(req.params.id).then((app) => {
+			this.model.findById(req.params.id).then((app) => {
 				if (!app) {
 					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -248,7 +244,7 @@ class DeleteApp extends Route {
 
 	_exec(req, res, validate) {
 		return new Promise((resolve, reject) => {
-			Model.App.rm(this._app).then(() => true).then(resolve, reject);
+			this.model.rm(this._app).then(() => true).then(resolve, reject);
 		});
 	}
 }
@@ -259,7 +255,7 @@ routes.push(DeleteApp);
  */
 class GetAppPermissionList extends Route {
 	constructor(nrp) {
-		super('app/:id/permission', 'GET APP PERMISSION LIST', nrp);
+		super('app/:id/permission', 'GET APP PERMISSION LIST', nrp, Model.App);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 
@@ -272,7 +268,7 @@ class GetAppPermissionList extends Route {
 				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
-			Model.App.findById(req.params.id).then((app) => {
+			this.model.findById(req.params.id).then((app) => {
 				if (!app) {
 					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -301,7 +297,7 @@ routes.push(GetAppPermissionList);
  */
 class AddAppPermission extends Route {
 	constructor(nrp) {
-		super('app/:id/permission', 'ADD APP PERMISSION', nrp);
+		super('app/:id/permission', 'ADD APP PERMISSION', nrp, Model.App);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -310,7 +306,7 @@ class AddAppPermission extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			Model.App.findById(req.params.id).then((app) => {
+			this.model.findById(req.params.id).then((app) => {
 				if (!app) {
 					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -339,7 +335,7 @@ routes.push(AddAppPermission);
  */
 class GetAppSchema extends Route {
 	constructor(nrp) {
-		super('app/schema', 'GET APP SCHEMA', nrp);
+		super('app/schema', 'GET APP SCHEMA', nrp, Model.App);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -372,7 +368,7 @@ class GetAppSchema extends Route {
 
 			cores.forEach((core) => {
 				const coreModel = Model[Sugar.String.camelize(core)];
-				if (coreModel && coreModel.appShortId === null) {
+				if (coreModel && corethis.modelShortId === null) {
 					schema.push(coreModel.schemaData);
 				}
 			});
@@ -387,7 +383,7 @@ class GetAppSchema extends Route {
 	}
 
 	async _exec(req, res, collections) {
-		const mergedSchema = (req.query.rawSchema) ? collections : await Model.App.mergeRemoteSchema(req, collections);
+		const mergedSchema = (req.query.rawSchema) ? collections : await this.model.mergeRemoteSchema(req, collections);
 
 		// Quicky, remove extends as nobody needs it outside of buttress
 		mergedSchema.forEach((s) => delete s.extends);
@@ -406,7 +402,7 @@ routes.push(GetAppSchema);
  */
 class UpdateAppSchema extends Route {
 	constructor(nrp) {
-		super('app/schema', 'UPDATE APP SCHEMA', nrp);
+		super('app/schema', 'UPDATE APP SCHEMA', nrp, Model.App);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -466,16 +462,16 @@ class UpdateAppSchema extends Route {
 		let compiledSchema = rawSchema.sort((a, b) => (a.type.indexOf('collection') === 0) ? 1 : (b.type.indexOf('collection') === 0) ? -1 : 0);
 
 		try {
-			compiledSchema = await Model.App.mergeRemoteSchema(req, compiledSchema);
+			compiledSchema = await this.model.mergeRemoteSchema(req, compiledSchema);
 
 			// Merge any schema extends
-			compiledSchema = Schema.merge(compiledSchema, Model.App.localSchema);
+			compiledSchema = Schema.merge(compiledSchema, this.model.localSchema);
 
 			// building the schema to check for any timeseries
 			compiledSchema = await Schema.buildCollections(compiledSchema);
 
 			// merging the built timeseries to get the extends schemas
-			compiledSchema = Schema.merge(compiledSchema, Model.App.localSchema);
+			compiledSchema = Schema.merge(compiledSchema, this.model.localSchema);
 
 			return {
 				rawSchema: JSON.stringify(rawSchema),
@@ -488,7 +484,7 @@ class UpdateAppSchema extends Route {
 	}
 
 	async _exec(req, res, {rawSchema, compiledSchema}) {
-		await Model.App.updateSchema(req.authApp.id, compiledSchema, rawSchema);
+		await this.model.updateSchema(req.authApp.id, compiledSchema, rawSchema);
 
 		const a = compiledSchema.filter((s) => s.type === 'collection').map((s) => {
 			delete s.extends;
@@ -505,7 +501,7 @@ routes.push(UpdateAppSchema);
  */
 class GetAppPolicyPropertyList extends Route {
 	constructor(nrp) {
-		super('app/policy-property-list/:apiPath?', 'GET APP POLICY PROPERTY LIST', nrp);
+		super('app/policy-property-list/:apiPath?', 'GET APP POLICY PROPERTY LIST', nrp, Model.App);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -525,7 +521,7 @@ class GetAppPolicyPropertyList extends Route {
 		}
 
 		if (apiPath) {
-			app = await Model.App.findOne({
+			app = await this.model.findOne({
 				apiPath: {
 					$eq: apiPath,
 				},
@@ -546,7 +542,7 @@ routes.push(GetAppPolicyPropertyList);
  */
 class SetAppPolicyPropertyList extends Route {
 	constructor(nrp) {
-		super('app/policy-property-list/:update/:appId?', 'SET APP POLICY PROPERTY LIST', nrp);
+		super('app/policy-property-list/:update/:appId?', 'SET APP POLICY PROPERTY LIST', nrp, Model.App);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -612,7 +608,7 @@ class SetAppPolicyPropertyList extends Route {
 			query = validate.query;
 		}
 
-		await Model.App.setPolicyPropertiesList(query, update);
+		await this.model.setPolicyPropertiesList(query, update);
 		return update;
 	}
 }
@@ -623,14 +619,12 @@ routes.push(SetAppPolicyPropertyList);
  */
 class AppCount extends Route {
 	constructor(nrp) {
-		super(`app/count`, `COUNT APPS`, nrp);
+		super(`app/count`, `COUNT APPS`, nrp, Model.App);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT APPS`;
 		this.activityBroadcast = false;
-
-		this.model = Model.App;
 	}
 
 	_validate(req, res, token) {
@@ -657,7 +651,7 @@ class AppCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return Model.App.count(validateResult.query);
+		return this.model.count(validateResult.query);
 	}
 }
 routes.push(AppCount);
@@ -667,14 +661,12 @@ routes.push(AppCount);
  */
 class AppUpdateOAuth extends Route {
 	constructor(nrp) {
-		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, nrp);
+		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, nrp, Model.App);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityDescription = `UPDATE APPS OAUTH`;
 		this.activityBroadcast = false;
-
-		this.model = Model.App;
 	}
 
 	async _validate(req, res, token) {
@@ -683,7 +675,7 @@ class AppUpdateOAuth extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const app = await Model.App.findById(req.params.id);
+		const app = await this.model.findById(req.params.id);
 		if (!app) {
 			this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -693,7 +685,7 @@ class AppUpdateOAuth extends Route {
 
 	async _exec(req, res, validate) {
 		const oAuth = (Array.isArray(req.body.value)) ? req.body.value : [req.body.value];
-		await Model.App.updateOAuth(req.params.id, oAuth);
+		await this.model.updateOAuth(req.params.id, oAuth);
 		return true;
 	}
 }
@@ -706,18 +698,16 @@ routes.push(AppUpdateOAuth);
  */
 class AppUpdate extends Route {
 	constructor(nrp) {
-		super(`app/:id`, `UPDATE AN APP`, nrp);
+		super(`app/:id`, `UPDATE AN APP`, nrp, Model.App);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
-
-		this.model = Model.App;
 	}
 
 	async _validate(req, res, token) {
-		const {validation, body} = Model.App.validateUpdate(req.body);
+		const {validation, body} = this.model.validateUpdate(req.body);
 		req.body = body;
 		if (!validation.isValid) {
 			if (validation.isPathValid === false) {
@@ -730,7 +720,7 @@ class AppUpdate extends Route {
 			}
 		}
 
-		const exists = await Model.App.exists(req.params.id);
+		const exists = await this.model.exists(req.params.id);
 		if (!exists) {
 			this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -739,7 +729,7 @@ class AppUpdate extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.App.updateByPath(req.body, req.params.id, null, 'App');
+		return this.model.updateByPath(req.body, req.params.id, null, 'App');
 	}
 }
 routes.push(AppUpdate);

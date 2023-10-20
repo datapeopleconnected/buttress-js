@@ -24,8 +24,8 @@ const routes = [];
  * @class SearchExecutionList
  */
 class SearchExecutionList extends Route {
-	constructor(nrp, redisClient) {
-		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', nrp, redisClient);
+	constructor(services) {
+		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', services, Model.LambdaExecution);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -42,12 +42,12 @@ class SearchExecutionList extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.LambdaExecution.parseQuery(result.query, {}, Model.LambdaExecution.flatSchemaData);
+		result.query = this.model.parseQuery(result.query, {}, this.model.flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return Model.LambdaExecution.find(validate.query);
+		return this.model.find(validate.query);
 	}
 }
 routes.push(SearchExecutionList);
@@ -57,14 +57,12 @@ routes.push(SearchExecutionList);
  */
 class LambdaExecutionCount extends Route {
 	constructor(nrp) {
-		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`, nrp);
+		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`, nrp, Model.LambdaExecution);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT LAMBDA EXECUTION`;
 		this.activityBroadcast = false;
-
-		this.model = Model.LambdaExecution;
 	}
 
 	_validate(req, res, token) {
@@ -91,7 +89,7 @@ class LambdaExecutionCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return Model.LambdaExecution.count(validateResult.query);
+		return this.model.count(validateResult.query);
 	}
 }
 routes.push(LambdaExecutionCount);

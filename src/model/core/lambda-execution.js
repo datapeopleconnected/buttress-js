@@ -96,22 +96,30 @@ class LambdaExecutionSchemaModel extends StandardModel {
 					__required: false,
 					__allowUpdate: true,
 				},
+				_appId: {
+					__type: 'id',
+					__required: true,
+					__allowUpdate: false,
+				},
 			},
 		};
 	}
 
 	/**
 	 * @param {Object} body - body passed through from a POST request
+	 * @param {string} appId - the appId the lambda execution blongs to
 	 * @return {Promise} - fulfilled with lambda execution Object when the database request is completed
 	 */
-	async add(body) {
+	async add(body, appId) {
 		const executionBody = {
 			lambdaId: (body.lambdaId) ? body.lambdaId : null,
 			logs: (body.logs) ? body.logs : [],
 			calledAt: Sugar.Date.create('now'),
 		};
 
-		const rxsExecution = await super.add(executionBody);
+		const rxsExecution = await super.add(executionBody, {
+			_appId: appId,
+		});
 		const execution = await Helpers.streamFirst(rxsExecution);
 
 		return execution;

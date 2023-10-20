@@ -281,11 +281,11 @@ class LambdaSchemaModel extends StandardModel {
 			deployedAt: Sugar.Date.create('now'),
 		};
 
-		await this.__modelManager.Deployment.add(deployment);
+		await this.__modelManager.Deployment.add(deployment, app.id);
 
 		auth.type = this.__modelManager.Token.Constants.Type.LAMBDA;
 		await this.__modelManager.Token.add(auth, {
-			_appId: this.__modelManager.authApp.id,
+			_appId: app.id,
 			_lambdaId: lambda.id,
 		});
 

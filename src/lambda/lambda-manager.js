@@ -142,7 +142,7 @@ class LambdaManager {
 
 		// TODO: Could just return the lambda id, instead of the whole lambda object
 		// TODO: Move the date filter to the query if possible?
-		const rxsLambdas = await Model.LambdaExecution.find({
+		const rxsLambdas = await Model.Lambda.find({
 			'executable': {
 				$eq: true,
 			},
@@ -154,7 +154,7 @@ class LambdaManager {
 			},
 		});
 		const lambdas = await Helpers.streamAll(rxsLambdas);
-		Logging.logSilly(`Got ${lambdas.length} pending cron lambdas`);
+		Logging.logDebug(`Got ${lambdas.length} pending cron lambdas`);
 
 		// TODO when creating a lambda exeuctionTime should be converted to a date!
 

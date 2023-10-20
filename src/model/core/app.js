@@ -195,7 +195,7 @@ class AppSchemaModel extends StandardModel {
 					schema: ['%APP_SCHEMA%'],
 					access: '%FULL_ACCESS%',
 				}, {
-					schema: ['policy', 'user', 'lambda', 'appDataSharing', 'secureStore'],
+					schema: ['policy', 'user', 'lambda', 'lambdaExecution', 'deployment', 'appDataSharing', 'secureStore'],
 					query: {
 						_appId: {
 							'@eq': body.id,

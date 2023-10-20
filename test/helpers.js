@@ -3,7 +3,7 @@ const Config = require('node-env-obj')();
 
 const bjsReq = async (opts, token=Config.testToken, floop = false) => {
 	const req = await fetch(`${opts.url}?token=${token}`, opts);
-	if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${opts.url}`);
+	if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from ${opts.url}`);
 	return (floop) ? await req.text() : await req.json();
 };
 

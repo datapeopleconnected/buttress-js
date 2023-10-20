@@ -46,8 +46,8 @@ const lambdaConsole = {
  * @class GetLambda
  */
 class GetLambda extends Route {
-	constructor(nrp, redisClient) {
-		super('lambda/:id', 'GET LAMBDA', nrp, redisClient);
+	constructor(nrp) {
+		super('lambda/:id', 'GET LAMBDA', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -63,7 +63,7 @@ class GetLambda extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
 		}
 
-		const lambda = await Model.Lambda.findById(id);
+		const lambda = await this.model.findById(id);
 		if (!lambda) {
 			this.log(`[${this.name}] Cannot find a lambda with id id`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_does_not_exist`));
@@ -83,7 +83,7 @@ routes.push(GetLambda);
  */
 class GetLambdaList extends Route {
 	constructor(nrp) {
-		super('lambda', 'GET LAMBDA LIST', nrp);
+		super('lambda', 'GET LAMBDA LIST', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -107,10 +107,10 @@ class GetLambdaList extends Route {
 	_exec(req, res, validate) {
 		const ids = req.body.ids;
 		if (ids && ids.length > 0) {
-			return Model.Lambda.findByIds(ids);
+			return this.model.findByIds(ids);
 		}
 
-		return Model.Lambda.findAll(req.authApp.id, req.token);
+		return this.model.findAll(req.authApp.id, req.token);
 	}
 }
 routes.push(GetLambdaList);
@@ -120,7 +120,7 @@ routes.push(GetLambdaList);
  */
 class SearchLambdaList extends Route {
 	constructor(nrp) {
-		super('lambda', 'SEARCH LAMBDA LIST', nrp);
+		super('lambda', 'SEARCH LAMBDA LIST', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -137,12 +137,12 @@ class SearchLambdaList extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.Lambda.parseQuery(result.query, {}, Model.Lambda.flatSchemaData);
+		result.query = this.model.parseQuery(result.query, {}, this.model.flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return Model.Lambda.find(validate.query);
+		return this.model.find(validate.query);
 	}
 }
 routes.push(SearchLambdaList);
@@ -152,7 +152,7 @@ routes.push(SearchLambdaList);
  */
 class AddLambda extends Route {
 	constructor(nrp) {
-		super('lambda', 'ADD LAMBDA', nrp);
+		super('lambda', 'ADD LAMBDA', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -205,7 +205,7 @@ class AddLambda extends Route {
 				appId = token._appId;
 			}
 			if (token && token._lambdaId) {
-				const lambda = await Model.Lambda.findById(token._lambdaId);
+				const lambda = await this.model.findById(token._lambdaId);
 				appId = lambda._appId;
 			}
 			if (token && token._userId) {
@@ -215,7 +215,7 @@ class AddLambda extends Route {
 		}
 
 		const app = await Model.App.findById(appId);
-		const lambda = await Model.Lambda.add(req.body.lambda, req.body.auth, app);
+		const lambda = await this.model.add(req.body.lambda, req.body.auth, app);
 		this._nrp.emit('app-lambda:path-mutation-bust-cache', lambda);
 
 		return lambda;
@@ -228,7 +228,7 @@ routes.push(AddLambda);
  */
 class UpdateLambda extends Route {
 	constructor(nrp) {
-		super('lambda/:id', 'UPDATE LAMBDA', nrp);
+		super('lambda/:id', 'UPDATE LAMBDA', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -238,7 +238,7 @@ class UpdateLambda extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const {validation, body} = Model.Lambda.validateUpdate(req.body);
+			const {validation, body} = this.model.validateUpdate(req.body);
 			req.body = body;
 
 			if (!validation.isValid) {
@@ -252,7 +252,7 @@ class UpdateLambda extends Route {
 				}
 			}
 
-			Model.Lambda.exists(req.params.id)
+			this.model.exists(req.params.id)
 				.then((exists) => {
 					if (!exists) {
 						this.log('ERROR: Invalid LAMBDA ID', Route.LogLevel.ERR);
@@ -264,7 +264,7 @@ class UpdateLambda extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Lambda.updateByPath(req.body, req.params.id, null, 'Lambda');
+		return this.model.updateByPath(req.body, req.params.id, null, 'Lambda');
 	}
 }
 routes.push(UpdateLambda);
@@ -274,7 +274,7 @@ routes.push(UpdateLambda);
  */
 class BulkUpdateLambda extends Route {
 	constructor(nrp) {
-		super('lambda/bulk/update', 'BULK UPDATE LAMBDA', nrp);
+		super('lambda/bulk/update', 'BULK UPDATE LAMBDA', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -284,7 +284,7 @@ class BulkUpdateLambda extends Route {
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const {validation, body} = Model.Lambda.validateUpdate(item.body);
+			const {validation, body} = this.model.validateUpdate(item.body);
 			item.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -297,7 +297,7 @@ class BulkUpdateLambda extends Route {
 				}
 			}
 
-			const exists = Model.Lambda.exists(item.id);
+			const exists = this.model.exists(item.id);
 			if (!exists) {
 				this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -309,7 +309,7 @@ class BulkUpdateLambda extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.Lambda.updateByPath(item.body, item.id, null, 'Lambda');
+			await this.model.updateByPath(item.body, item.id, null, 'Lambda');
 		}
 		return true;
 	}
@@ -321,7 +321,7 @@ routes.push(BulkUpdateLambda);
  */
 class EditLambdaDeployment extends Route {
 	constructor(nrp) {
-		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', nrp);
+		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -343,7 +343,7 @@ class EditLambdaDeployment extends Route {
 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_deployment_hash`));
 			}
 
-			const lambda = await Model.Lambda.findById(req.params.id);
+			const lambda = await this.model.findById(req.params.id);
 			if (!lambda) {
 				this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
@@ -373,7 +373,6 @@ class EditLambdaDeployment extends Route {
 
 			await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${hash}`);
 
-
 			const entryDir = path.dirname(entryFilePath);
 			const lambdaDir = `${Config.paths.lambda.code}/${lambdaFolderName}/./${entryDir}`; // Ugly `/./` because I am lazy
 			const files = fs.readdirSync(lambdaDir);
@@ -400,7 +399,11 @@ class EditLambdaDeployment extends Route {
 				}
 			}
 
-			return Promise.resolve(true);
+			return Promise.resolve({
+				hash: req.body.hash,
+				branch: req.body.body,
+				lambda,
+			});
 		} catch (err) {
 			this.log(`[${this.name}] ${err.message}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, err.message));
@@ -409,21 +412,21 @@ class EditLambdaDeployment extends Route {
 
 	async _exec(req, res, validate) {
 		const deployment = await Model.Deployment.findOne({
-			lambdaId: Model.Lambda.createId(req.params.id),
-			hash: req.body.hash,
+			lambdaId: this.model.createId(validate.lambda.id),
+			hash: validate.hash,
 		});
 
-		const lambdaLastDeployment = await Model.Lambda.setDeployment(req.params.id, {
-			'git.branch': req.body.branch,
-			'git.hash': req.body.hash,
+		const lambdaLastDeployment = await this.model.setDeployment(validate.lambda.id, {
+			'git.branch': validate.branch,
+			'git.hash': validate.hash,
 		});
 
 		if (!deployment) {
 			await Model.Deployment.add({
-				lambdaId: req.params.id,
-				hash: req.body.hash,
-				branch: req.body.branch,
-			});
+				lambdaId: validate.lambda.id,
+				hash: validate.hash,
+				branch: validate.branch,
+			}, validate.lambda._appId);
 		} else {
 			await Model.Deployment.update({
 				id: Model.Deployment.createId(deployment.id),
@@ -440,7 +443,7 @@ routes.push(EditLambdaDeployment);
  */
 class SetLambdaPolicyProperties extends Route {
 	constructor(nrp) {
-		super('lambda/:id/policy-property', 'SET LAMBDA POLICY PROPERTY', nrp);
+		super('lambda/:id/policy-property', 'SET LAMBDA POLICY PROPERTY', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -460,7 +463,7 @@ class SetLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = await Model.Lambda.exists(req.params.id);
+		const exists = await this.model.exists(req.params.id);
 		if (!exists) {
 			this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -473,7 +476,7 @@ class SetLambdaPolicyProperties extends Route {
 		}
 
 		const lambdaToken = await Model.Token.findOne({
-			_lambdaId: Model.Lambda.createId(req.params.id),
+			_lambdaId: this.model.createId(req.params.id),
 		});
 		if (!lambdaToken) {
 			this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
@@ -495,7 +498,7 @@ routes.push(SetLambdaPolicyProperties);
  */
 class UpdateLambdaPolicyProperties extends Route {
 	constructor(nrp) {
-		super('lambda/:id/update-policy-property', 'UPDATE LAMBDA POLICY PROPERTY', nrp);
+		super('lambda/:id/update-policy-property', 'UPDATE LAMBDA POLICY PROPERTY', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -515,7 +518,7 @@ class UpdateLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = await Model.Lambda.exists(req.params.id);
+		const exists = await this.model.exists(req.params.id);
 		if (!exists) {
 			this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -528,7 +531,7 @@ class UpdateLambdaPolicyProperties extends Route {
 		}
 
 		const lambdaToken = await Model.Token.findOne({
-			_lambdaId: Model.Lambda.createId(req.params.id),
+			_lambdaId: this.model.createId(req.params.id),
 		});
 		if (!lambdaToken) {
 			this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
@@ -552,7 +555,7 @@ routes.push(UpdateLambdaPolicyProperties);
  */
 class ClearLambdaPolicyProperties extends Route {
 	constructor(nrp) {
-		super('lambda/:id/clear-policy-property', 'REMOVE LAMBDA POLICY PROPERTY', nrp);
+		super('lambda/:id/clear-policy-property', 'REMOVE LAMBDA POLICY PROPERTY', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -566,14 +569,14 @@ class ClearLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = await Model.Lambda.exists(req.params.id);
+		const exists = await this.model.exists(req.params.id);
 		if (!exists) {
 			this.log('ERROR: Invalid lambda ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
 		const lambdaToken = await Model.Token.findOne({
-			_lambdaId: Model.Lambda.createId(req.params.id),
+			_lambdaId: this.model.createId(req.params.id),
 		});
 		if (!lambdaToken) {
 			this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
@@ -597,7 +600,7 @@ routes.push(ClearLambdaPolicyProperties);
  */
 class DeleteLambda extends Route {
 	constructor(nrp) {
-		super('lambda/:id', 'DELETE LAMBDA', nrp);
+		super('lambda/:id', 'DELETE LAMBDA', nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -608,7 +611,7 @@ class DeleteLambda extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
 		}
 
-		const lambda = await Model.Lambda.findById(req.params.id);
+		const lambda = await this.model.findById(req.params.id);
 		if (!lambda) {
 			this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
@@ -629,7 +632,7 @@ class DeleteLambda extends Route {
 	async _exec(req, res, validate) {
 		// TODO make sure that the git repo is not used by any other lambdas before deleteing it
 		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${validate.lambda.id}`);
-		await Model.Lambda.rm(validate.lambda);
+		await this.model.rm(validate.lambda);
 		await Model.Token.rm(validate.token);
 		return true;
 	}
@@ -641,14 +644,12 @@ routes.push(DeleteLambda);
  */
 class LambdaCount extends Route {
 	constructor(nrp) {
-		super(`lambda/count`, `COUNT LAMBDAS`, nrp);
+		super(`lambda/count`, `COUNT LAMBDAS`, nrp, Model.Lambda);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT LAMBDAS`;
 		this.activityBroadcast = false;
-
-		this.model = Model.Lambda;
 	}
 
 	_validate(req, res, token) {
@@ -675,7 +676,7 @@ class LambdaCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return Model.Lambda.count(validateResult.query);
+		return this.model.count(validateResult.query);
 	}
 }
 routes.push(LambdaCount);
