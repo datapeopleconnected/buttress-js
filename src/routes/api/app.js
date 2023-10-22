@@ -368,7 +368,7 @@ class GetAppSchema extends Route {
 
 			cores.forEach((core) => {
 				const coreModel = Model[Sugar.String.camelize(core)];
-				if (coreModel && corethis.modelShortId === null) {
+				if (coreModel && coreModel.appShortId === null) {
 					schema.push(coreModel.schemaData);
 				}
 			});

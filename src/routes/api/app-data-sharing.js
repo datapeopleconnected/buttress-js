@@ -18,7 +18,7 @@
 const Route = require('../route');
 const Model = require('../../model');
 const Helpers = require('../../helpers');
-const Schema = require('../../schema');
+// const Schema = require('../../schema');
 // const Logging = require('../../logging');
 
 const Datastore = require('../../datastore');
