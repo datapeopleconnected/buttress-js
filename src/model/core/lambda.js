@@ -274,14 +274,26 @@ class LambdaSchemaModel extends StandardModel {
 		});
 		const lambda = await Helpers.streamFirst(rxsLambda);
 
-		const deployment = {
+		const deployment = await this.__modelManager.Deployment.add({
 			lambdaId: lambda.id,
 			hash: lambda.git.hash,
 			branch: lambda.git.branch,
 			deployedAt: Sugar.Date.create('now'),
-		};
+		}, app.id);
 
-		await this.__modelManager.Deployment.add(deployment, app.id);
+		// Check if lambda has a cron trigger, if it does then create a execution doc.
+		const cronTrigger = lambda.trigger.filter((t) => t.type === 'CRON');
+		for await (const trigger of cronTrigger) {
+			if (trigger.cron.periodicExecution) {
+				await this.__modelManager.LambdaExecution.add({
+					triggerType: 'CRON',
+					lambdaId: lambda.id,
+					deploymentId: deployment.id,
+					executeAfter: Sugar.Date.create(),
+					nextCronExpression: trigger.cron.periodicExecution,
+				}, lambda._appId);
+			}
+		}
 
 		auth.type = this.__modelManager.Token.Constants.Type.LAMBDA;
 		await this.__modelManager.Token.add(auth, {

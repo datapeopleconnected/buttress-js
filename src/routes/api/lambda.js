@@ -319,6 +319,59 @@ routes.push(BulkUpdateLambda);
 /**
  * @class EditLambdaDeployment
  */
+class ScheduleLambdaExecution extends Route {
+	constructor(nrp) {
+		super('lambda/:id/schedule', 'SCHEDULE LAMBDA EXECUTION', nrp, Model.Lambda);
+		this.verb = Route.Constants.Verbs.POST;
+		this.permissions = Route.Constants.Permissions.ADD;
+	}
+
+	async _validate(req, res, token) {
+		if (!req.body) {
+			this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_post_body`));
+		}
+
+		// This should be auto scoped to the app id.
+		const lambda = await this.model.findOne({
+			id: this.model.createId(req.params.id),
+			...(req.authApp.id) ? {_appId: Model.App.createId(req.authApp.id)} : {},
+		});
+		if (!lambda) {
+			this.log('ERROR: Lambda not found', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
+		}
+
+		// Find deployment
+		const deploymentQuery = {
+			lambdaId: lambda.id,
+		};
+		if (req.body.deploymentId) {
+			deploymentQuery.id = Model.Deployment.createId(req.body.deploymentId);
+		}
+
+		const deployment = await Model.Deployment.findOne(deploymentQuery);
+
+		return {
+			appId: lambda._appId,
+			execution: {
+				triggerType: 'CRON',
+				lambdaId: lambda.id,
+				deploymentId: deployment.id,
+				executeAfter: req.body.executeAfter,
+			},
+		};
+	}
+
+	async _exec(req, res, validate) {
+		return await Model.LambdaExecution.add(validate.execution, validate.appId);
+	}
+}
+routes.push(ScheduleLambdaExecution);
+
+/**
+ * @class EditLambdaDeployment
+ */
 class EditLambdaDeployment extends Route {
 	constructor(nrp) {
 		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', nrp, Model.Lambda);

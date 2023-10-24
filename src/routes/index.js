@@ -854,6 +854,7 @@ class Routes {
 		}
 
 		const lambdaExecution = await Model.LambdaExecution.add({
+			triggerType: 'API_ENDPOINT',
 			lambdaId: Model.Lambda.createId(lambda.id),
 			deploymentId: Model.Deployment.createId(deployment.id),
 		}, lambda._appId);
@@ -876,7 +877,7 @@ class Routes {
 		}
 
 		if (!res.errCode && !res.errMessage) {
-			this._nrp.emit('executeLambdaAPI', data);
+			this._nrp.emit('rest:worker:exec-lambda-api', data);
 		}
 
 		return res;

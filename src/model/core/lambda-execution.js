@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Sugar = require('sugar');
 const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 
@@ -41,6 +40,17 @@ class LambdaExecutionSchemaModel extends StandardModel {
 					__type: 'id',
 					__required: true,
 					__allowUpdate: false,
+				},
+				triggerType: {
+					__type: 'string',
+					__default: null,
+					__enum: [
+						'CRON',
+						'PATH_MUTATION',
+						'API_ENDPOINT',
+					],
+					__required: true,
+					__allowUpdate: true,
 				},
 				status: {
 					__type: 'string',
@@ -78,12 +88,6 @@ class LambdaExecutionSchemaModel extends StandardModel {
 					__required: false,
 					__allowUpdate: true,
 				},
-				calledAt: {
-					__type: 'date',
-					__default: 'now',
-					__required: true,
-					__allowUpdate: true,
-				},
 				startedAt: {
 					__type: 'date',
 					__default: null,
@@ -96,10 +100,27 @@ class LambdaExecutionSchemaModel extends StandardModel {
 					__required: false,
 					__allowUpdate: true,
 				},
+				nextCronExpression: {
+					__type: 'string',
+					__default: null,
+					__required: false,
+					__allowUpdate: true,
+				},
 				_appId: {
 					__type: 'id',
 					__required: true,
 					__allowUpdate: false,
+				},
+				createdAt: {
+					__type: 'date',
+					__value: 'now',
+					__required: false,
+					__allowUpdate: false,
+				},
+				updatedAt: {
+					__type: 'date',
+					__required: false,
+					__allowUpdate: true,
 				},
 			},
 		};
@@ -113,13 +134,14 @@ class LambdaExecutionSchemaModel extends StandardModel {
 	async add(body, appId) {
 		const executionBody = {
 			lambdaId: (body.lambdaId) ? body.lambdaId : null,
+			deploymentId: (body.deploymentId) ? body.deploymentId : null,
+			triggerType: (body.triggerType) ? body.triggerType : null,
 			logs: (body.logs) ? body.logs : [],
-			calledAt: Sugar.Date.create('now'),
+			executeAfter: (body.executeAfter) ? body.executeAfter : null,
+			nextCronExpression: (body.nextCronExpression) ? body.nextCronExpression : null,
 		};
 
-		const rxsExecution = await super.add(executionBody, {
-			_appId: appId,
-		});
+		const rxsExecution = await super.add(executionBody, {_appId: appId});
 		const execution = await Helpers.streamFirst(rxsExecution);
 
 		return execution;

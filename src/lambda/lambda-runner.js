@@ -117,7 +117,7 @@ class LambdasRunner {
 		const lambdaModules = {};
 
 		lambdaHelpers.lambdaExecution = execution;
-		await this._updateDBLambdaRunningExecution(lambda, execution, type);
+		await this._updateDBLambdaRunningExecution(execution);
 
 		// TODO: Handle case where lambda code doesn't exist on file system. (Clone Repo)
 		// TODO: Handle case where lambda code can't be cloned. (Inform Manager)
@@ -171,7 +171,7 @@ class LambdasRunner {
 			await hostile.run(this._context, {promise: true});
 			// Maybe dispose isolate after executin the lambda?
 
-			await this._updateDBLambdaFinishExecution(lambda, execution, type, trigger);
+			await this._updateDBLambdaFinishExecution(execution);
 
 			if (type === 'API_ENDPOINT') {
 				if (lambdaHelpers.lambdaResult && lambdaHelpers.lambdaResult.err) {
@@ -183,7 +183,7 @@ class LambdasRunner {
 				this.__nrp.emit('lambda-execution-finish', {code: 200, res: result, restWorkerId: data.restWorkerId});
 			}
 		} catch (err) {
-			await this._updateDBLambdaErrorExecution(lambda, execution, type);
+			await this._updateDBLambdaErrorExecution(lambda);
 			Logging.logDebug(err);
 
 			if (type === 'API_ENDPOINT') {
@@ -210,28 +210,16 @@ class LambdasRunner {
 		// TODO add a meaningful error message & notify manager
 		if (!app) return;
 
-		const cronTrigger = lambda.trigger.findIndex((t) => t.type === 'CRON');
-		const apiEndpointTrigger = lambda.trigger.findIndex((t) => t.type === 'API_ENDPOINT');
-		const pathMutationTrigger = lambda.trigger.findIndex((t) => t.type === 'PATH_MUTATION');
+		const triggerType = payload.data.lambdaType;
 
-		let triggerType = null;
-		if (cronTrigger !== -1) {
-			triggerType = lambda.trigger[cronTrigger].type;
-		} else if (apiEndpointTrigger !== -1) {
-			triggerType = lambda.trigger[apiEndpointTrigger].type;
-		} else if (pathMutationTrigger !== -1) {
-			triggerType = lambda.trigger[pathMutationTrigger].type;
-		}
-
+		const executionId = payload.data.executionId;
 		let execution = await Model.LambdaExecution.findOne({
-			lambdaId: Model.Lambda.createId(lambda.id),
+			id: Model.LambdaExecution.createId(executionId),
 			status: 'PENDING',
 		});
 
-		if (!execution && apiEndpointTrigger !== -1) return;
-
 		try {
-			execution = (execution) ? execution : await this._createLambdaExecution(lambda);
+			execution = (execution) ? execution : await this._createLambdaExecution(lambda, triggerType);
 
 			this._lambdaExecution = execution;
 			await this.execute(lambda, execution, app, triggerType, payload.data);
@@ -246,7 +234,7 @@ class LambdasRunner {
 		} catch (err) {
 			this.working = false;
 			Logging.logError(err.message);
-			await this._updateDBLambdaErrorExecution(lambda, execution, triggerType, {
+			await this._updateDBLambdaErrorExecution(execution, {
 				message: err.message,
 				type: 'ERROR',
 			});
@@ -265,7 +253,7 @@ class LambdasRunner {
 	 * Communicate with main process via Redis
 	 */
 	_subscribeToLambdaManager() {
-		this.__nrp.on('lambda-manager-announce', (payload) => {
+		this.__nrp.on('lambda:worker:announce', (payload) => {
 			if (this.working) return;
 
 			if (this.lambdaType && payload.lambdaType !== this.lambdaType) {
@@ -280,7 +268,7 @@ class LambdasRunner {
 			});
 		});
 
-		this.__nrp.on('lambda-worker-execute', (payload) => {
+		this.__nrp.on('lambda:worker:execute', (payload) => {
 			if (payload.workerId !== this.id) return;
 
 			Logging.logDebug(`[${this.name}] Manager has told me to take task ${payload.data.lambdaId}`);
@@ -297,7 +285,7 @@ class LambdasRunner {
 		});
 	}
 
-	async _createLambdaExecution(lambda) {
+	async _createLambdaExecution(lambda, type) {
 		const deployment = await Model.Deployment.findOne({
 			lambdaId: Model.Lambda.createId(lambda.id),
 			hash: lambda.git.hash,
@@ -307,6 +295,7 @@ class LambdasRunner {
 		if (!deployment) return;
 
 		const lambdaExecution = await Model.LambdaExecution.add({
+			triggerType: type,
 			lambdaId: Model.Lambda.createId(lambda.id),
 			deploymentId: Model.Deployment.createId(deployment.id),
 		}, lambda._appId);
@@ -314,22 +303,23 @@ class LambdasRunner {
 		return lambdaExecution;
 	}
 
-	async _updateDBLambdaRunningExecution(lambda, execution, type) {
+	async _updateDBLambdaRunningExecution(execution) {
 		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution.id), {
 			$set: {
 				status: 'RUNNING',
 				startedAt: Sugar.Date.create('now'),
 			},
 		});
-		if (type === 'CRON') {
-			await Model.Lambda.update({
-				'id': Model.Lambda.createId(lambda.id),
-				'trigger.type': type,
-			}, {$set: {'trigger.$.cron.status': 'RUNNING'}});
-		}
+
+		// if (type === 'CRON') {
+		// 	await Model.Lambda.update({
+		// 		'id': Model.Lambda.createId(lambda.id),
+		// 		'trigger.type': type,
+		// 	}, {$set: {'trigger.$.cron.status': 'RUNNING'}});
+		// }
 	}
 
-	async _updateDBLambdaFinishExecution(lambda, execution, type, trigger) {
+	async _updateDBLambdaFinishExecution(execution) {
 		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution.id), {
 			$set: {
 				status: 'COMPLETE',
@@ -337,33 +327,41 @@ class LambdasRunner {
 			},
 		});
 
-		if (type === 'CRON') {
-			const completeTriggerObj = {
-				'trigger.$.cron.status': 'PENDING',
-				'trigger.$.cron.executionTime': Sugar.Date.create(trigger.periodicExecution),
-			};
-			await Model.Lambda.update({
-				'id': Model.Lambda.createId(lambda.id),
-				'trigger.type': type,
-			}, {
-				$set: completeTriggerObj,
-			});
+		if (execution.nextCronExpression) {
+			await Model.LambdaExecution.add({
+				triggerType: 'CRON',
+				lambdaId: Model.Lambda.createId(execution.lambdaId),
+				deploymentId: Model.Deployment.createId(execution.deploymentId),
+				executeAfter: Sugar.Date.create(execution.nextCronExpression),
+				nextCronExpression: execution.nextCronExpression,
+			}, execution._appId);
+
+			// const completeTriggerObj = {
+			// 	'trigger.$.cron.status': 'PENDING',
+			// 	'trigger.$.cron.executionTime': Sugar.Date.create(trigger.periodicExecution),
+			// };
+			// await Model.Lambda.update({
+			// 	'id': Model.Lambda.createId(lambda.id),
+			// 	'trigger.type': type,
+			// }, {
+			// 	$set: completeTriggerObj,
+			// });
 		}
 	}
 
-	async _updateDBLambdaErrorExecution(lambda, execution, type, log = null) {
+	async _updateDBLambdaErrorExecution(execution, log = null) {
 		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution.id), {
 			$set: {
 				status: 'ERROR',
 				endedAt: Sugar.Date.create('now'),
 			},
 		});
-		if (type === 'CRON') {
-			await Model.Lambda.update({
-				'id': Model.Lambda.createId(lambda.id),
-				'trigger.type': type,
-			}, {$set: {'trigger.$.cron.status': 'ERROR'}});
-		}
+		// if (type === 'CRON') {
+		// 	await Model.Lambda.update({
+		// 		'id': Model.Lambda.createId(lambda.id),
+		// 		'trigger.type': type,
+		// 	}, {$set: {'trigger.$.cron.status': 'ERROR'}});
+		// }
 		if (log) {
 			await Model.LambdaExecution.update({
 				id: Model.LambdaExecution.createId(execution.id),

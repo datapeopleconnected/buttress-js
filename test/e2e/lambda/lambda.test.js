@@ -18,7 +18,7 @@ const assert = require('assert');
 
 const Config = require('node-env-obj')();
 
-const {createApp, createLambda, updatePolicyPropertyList, bjsReq} = require('../../helpers');
+const {createApp, createLambda, updatePolicyPropertyList, bjsReq, bjsReqPost} = require('../../helpers');
 
 const BootstrapRest = require('../../../dist/bootstrap-rest');
 const BootstrapLambda = require('../../../dist/bootstrap-lambda');
@@ -30,29 +30,22 @@ const ENDPOINT = `https://test.local.buttressjs.com`;
 const testEnv = {
 	apps: {},
 	lambdas: {},
+	exec: {},
 };
 
-const getExecResult = async (url, lambdaId, attempt=0) => {
-	if (attempt > 5) return;
+const getExecResult = async (url, query, attempt=0) => {
+	if (attempt > 6) return;
 
 	const [result] = await bjsReq({
 		url,
 		method: 'SEARCH',
 		headers: {'Content-Type': 'application/json'},
-		body: JSON.stringify({
-			query: {
-				lambdaId,
-				status: {
-					$eq: 'COMPLETE',
-				},
-			}
-		}),
+		body: JSON.stringify({query}),
 	}, testEnv.apps.app1.token);
-
 	if (result) return result;
 
 	await new Promise((resolve) => setTimeout(resolve, 2000));
-	return getExecResult(url, lambdaId, attempt + 1);
+	return getExecResult(url, query, attempt + 1);
 };
 
 // This suite of tests will run against the REST API
@@ -103,7 +96,6 @@ describe('Lambda', async () => {
 		});
 
 		// TODO: Basics tests to do with the lambda process
-		// TODO: Test Scheduling a one off lambad to be run.
 	});
 
 	describe('Trigger', async () => {
@@ -134,10 +126,44 @@ describe('Lambda', async () => {
 				}, testEnv.apps.app1.token);
 			});
 
-			it('Should update a property to a value show that the cron ran.', async function() {
+			it('Should change the cron execution status from pending to complete.', async function() {
 				this.timeout(20000);
 
-				const result = await getExecResult(`${ENDPOINT}/api/v1/lambda-execution`, testEnv.lambdas['cron-test'].id);
+				const result = await getExecResult(`${ENDPOINT}/api/v1/lambda-execution`, {
+					lambdaId: {
+						$eq: testEnv.lambdas['cron-test'].id,
+					},
+					status: {
+						$eq: 'COMPLETE',
+					},
+				});
+				assert.notEqual(result, undefined);
+				assert.strictEqual(result.status, 'COMPLETE');
+			});
+
+			it('Should create a single lambda exeuction.', async function() {
+				const exec = await bjsReqPost(`${ENDPOINT}/api/v1/lambda/${testEnv.lambdas['cron-test'].id}/schedule`, {
+					executeAfter: new Date().toISOString(),
+				}, testEnv.apps.app1.token);
+
+				assert.notEqual(exec, undefined);
+				assert.strictEqual(exec.lambdaId, testEnv.lambdas['cron-test'].id);
+				assert.strictEqual(exec.status, 'PENDING');
+
+				testEnv.exec['cron-test-schedule'] = exec;
+			});
+
+			it('Should change the scheduled execution status from pending to complete.', async function() {
+				this.timeout(20000);
+
+				const result = await getExecResult(`${ENDPOINT}/api/v1/lambda-execution`, {
+					id: {
+						$eq: testEnv.exec['cron-test-schedule'].id,
+					},
+					status: {
+						$eq: 'COMPLETE',
+					},
+				});
 				assert.notEqual(result, undefined);
 				assert.strictEqual(result.status, 'COMPLETE');
 			});
@@ -186,7 +212,14 @@ describe('Lambda', async () => {
 				assert.strictEqual(updateResult.value, 'Test Lambda App 2');
 
 				// Verify path mutation lambda ran
-				const verifyLambdaRan = await getExecResult(`${ENDPOINT}/api/v1/lambda-execution`, testEnv.lambdas['path-mutation'].id);
+				const verifyLambdaRan = await getExecResult(`${ENDPOINT}/api/v1/lambda-execution`, {
+					lambdaId: {
+						$eq: testEnv.lambdas['path-mutation'].id,
+					},
+					status: {
+						$eq: 'COMPLETE',
+					},
+				});
 				assert.notEqual(verifyLambdaRan, undefined);
 				assert.strictEqual(verifyLambdaRan.status, 'COMPLETE');
 			});

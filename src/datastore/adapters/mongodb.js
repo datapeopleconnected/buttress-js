@@ -482,7 +482,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		if (!query) return query;
 
 		if (query.id) {
-			query._id = query.id;
+			query._id = this._convertIdValue(query.id);
 			delete query.id;
 		} else if (query['$or'] || query['$and']) {
 			if (query['$or']) {
@@ -493,5 +493,27 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		}
 
 		return query;
+	}
+
+	/**
+	 * Handling converting part of an expression to a object id.
+	 * @param {object | string} expression
+	 * @return {object | string}
+	 */
+	_convertIdValue(expression) {
+		if (typeof expression === 'object' && !(expression instanceof ObjectId)) {
+			const keys = Object.keys(expression);
+			if (keys.length === 1) {
+				const [key] = keys;
+				return {[key]: new ObjectId(expression[key])};
+			} else {
+				// Not sure what we've got here.
+				Logging.logDebug(JSON.stringify(expression));
+				throw new Error('Unknown expression in query.');
+			}
+		}
+
+		// It's not an object, so must be a value.
+		return new ObjectId(expression);
 	}
 };

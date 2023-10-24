@@ -6,24 +6,15 @@ const bjsReq = async (opts, token=Config.testToken, floop = false) => {
 	if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from ${opts.url}`);
 	return (floop) ? await req.text() : await req.json();
 };
+const bjsReqPost = async (url, body, token) => await bjsReq({
+	url,
+	method: 'POST',
+	headers: {'Content-Type': 'application/json'},
+	body: JSON.stringify(body),
+}, token);
 
-const createApp = async (ENDPOINT, name, apiPath, token) => await bjsReq({
-	url: `${ENDPOINT}/api/v1/app`,
-	method: 'POST',
-	headers: {'Content-Type': 'application/json'},
-	body: JSON.stringify({
-		name,
-		apiPath,
-	}),
-}, token);
-const createLambda = async (ENDPOINT, lambda, auth, token) => await bjsReq({
-	url: `${ENDPOINT}/api/v1/lambda`,
-	method: 'POST',
-	headers: {'Content-Type': 'application/json'},
-	body: JSON.stringify({
-		lambda, auth,
-	}),
-}, token);
+const createApp = async (ENDPOINT, name, apiPath, token) => await bjsReqPost(`${ENDPOINT}/api/v1/app`, {name, apiPath}, token);
+const createLambda = async (ENDPOINT, lambda, auth, token) => await bjsReqPost(`${ENDPOINT}/api/v1/lambda`, {lambda, auth}, token);
 
 const updateSchema = async (ENDPOINT, schema, token) => bjsReq({
 	url: `${ENDPOINT}/api/v1/app/schema`,
@@ -46,6 +37,7 @@ const registerDataSharing = async (ENDPOINT, agreement, token) => bjsReq({
 
 module.exports = {
 	bjsReq,
+	bjsReqPost,
 	createApp,
 	createLambda,
 	updateSchema,

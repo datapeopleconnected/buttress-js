@@ -43,11 +43,13 @@ if (process.env.TEST_ENV === 'e2e') {
 
 const Logging = require('../dist/helpers/logging');
 
+const SHOW_LOG = (!!process.env.SHOW_LOG);
+
 exports.mochaHooks = {
 	beforeAll() {
 		// TODO: Clear out the db so we can start clean.
 		Logging.init('TEST');
-		Logging.captureOutput(true);
+		if (!SHOW_LOG) Logging.captureOutput(true);
 	},
 	afterAll() {
 		// Logging.captureOutput(false);

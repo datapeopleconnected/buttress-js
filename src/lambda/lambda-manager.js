@@ -3,7 +3,6 @@ const util = require('util');
 const exec = util.promisify(require('child_process').exec);
 const uuid = require('uuid');
 const hash = require('object-hash');
-const Sugar = require('sugar');
 const Config = require('node-env-obj')();
 
 const Logging = require('../helpers/logging');
@@ -109,9 +108,9 @@ class LambdaManager {
 
 	async __checkQueue() {
 		try {
-			const lambdas = await this._getPendingLambda();
+			const lambdaExec = await this.__getPendingLambdaExec();
 			// TODO: Handle pausing lambdas due to READ / WRITE access
-			await this._announceLambdas(lambdas);
+			await this.__announcePendingExecutions(lambdaExec);
 		} catch (err) {
 			let message = err;
 			if (err.statusMessage) message = err.statusMessage;
@@ -131,7 +130,7 @@ class LambdaManager {
 	 * Check to see if there are any pending cron lambda
 	 * @return {Promise}
 	 */
-	async _getPendingLambda() {
+	async __getPendingLambdaExec() {
 		// We need to unify the way we check for lambdas
 		//  - Get transient executions (API, Path Mutation)
 		//  - Get pending executions (Scheduled / Cron)
@@ -142,30 +141,30 @@ class LambdaManager {
 
 		// TODO: Could just return the lambda id, instead of the whole lambda object
 		// TODO: Move the date filter to the query if possible?
-		const rxsLambdas = await Model.Lambda.find({
-			'executable': {
-				$eq: true,
-			},
-			'trigger.cron.status': {
+		// Not sure why this isn't happening inside the model.
+		const query = Model.LambdaExecution.parseQuery({
+			'status': {
 				$eq: 'PENDING',
 			},
-			'trigger.cron.periodicExecution': {
-				$ne: null,
+			'executeAfter': {
+				$lteDate: new Date().toISOString(),
 			},
-		});
-		const lambdas = await Helpers.streamAll(rxsLambdas);
+		}, {}, Model.LambdaExecution.flatSchemaData);
+
+		const rxLambdas = await Model.LambdaExecution.find(query);
+		const lambdas = await Helpers.streamAll(rxLambdas);
 		Logging.logDebug(`Got ${lambdas.length} pending cron lambdas`);
 
-		// TODO when creating a lambda exeuctionTime should be converted to a date!
+		return lambdas;
 
 		// TODO: Optimise, we don't need to build an array here. We could just filter the items as and when we procss them.
 		// that way the whole stream isn't dumped into memory.
-		return lambdas.filter((lambda) => {
-			const now = Sugar.Date.create();
-			const cronTrigger = lambda.trigger.find((t) => t.type === 'CRON');
-			const cronExecutionTime = Sugar.Date.create(cronTrigger.cron.executionTime);
-			return cronTrigger && (cronTrigger.cron.executionTime === 'now' || Sugar.Date.isAfter(now, cronExecutionTime));
-		});
+		// return lambdas.filter((lambda) => {
+		// 	const now = Sugar.Date.create();
+		// 	const cronTrigger = lambda.trigger.find((t) => t.type === 'CRON');
+		// 	const cronExecutionTime = Sugar.Date.create(cronTrigger.cron.executionTime);
+		// 	return cronTrigger && (cronTrigger.cron.executionTime === 'now' || Sugar.Date.isAfter(now, cronExecutionTime));
+		// });
 	}
 
 	/**
@@ -205,50 +204,43 @@ class LambdaManager {
 
 	/**
 	 * Annouce to workers that the manager has some lambdas
-	 * @param {Array} lambdas
+	 * @param {Array} lambdaExecs
 	 * @return {Promise}
 	 */
-	_announceLambdas(lambdas) {
-		if (lambdas.length > 0) {
-			Logging.log(`[${this.name}]: Got ${lambdas.length} lambdas to announce`);
-		}
-
-		const execLambdas = lambdas.map((lambda) => {
-			const output = {
-				lambdaId: (lambda.lambdaId) ? lambda.lambdaId : lambda.id,
-				lambdaType: (lambda.triggerType) ? lambda.triggerType : 'CRON',
+	async __announcePendingExecutions(lambdaExecs) {
+		let count = 0;
+		for await (const lambdaExec of lambdaExecs) {
+			const messagePayload = {
+				executionId: (lambdaExec.id) ? lambdaExec.id : null,
+				lambdaId: (lambdaExec.lambdaId) ? lambdaExec.lambdaId : lambdaExec.id,
+				lambdaType: (lambdaExec.triggerType) ? lambdaExec.triggerType : 'CRON',
 			};
 
-			const isAPILambda = lambda.restWorkerId;
-			const isPathMutation = lambda.pathMutation;
+			const isAPILambda = lambdaExec.restWorkerId;
+			const isPathMutation = lambdaExec.pathMutation;
 			if (isAPILambda || isPathMutation) {
-				output.body = lambda.body;
-				output.workerExecID = lambda.workerExecID;
+				messagePayload.body = lambdaExec.body;
+				messagePayload.workerExecID = lambdaExec.workerExecID;
 			}
 
 			if (isAPILambda) {
-				output.restWorkerId = lambda.restWorkerId;
-				output.query = lambda.query;
-				output.headers = lambda.headers;
+				messagePayload.restWorkerId = lambdaExec.restWorkerId;
+				messagePayload.query = lambdaExec.query;
+				messagePayload.headers = lambdaExec.headers;
 			}
 
-			return output;
-		});
+			if (isAPILambda) {
+				const lambdaIdx = this._lambdaAPI.findIndex((lambda) => messagePayload.lambdaId === lambda.lambdaId);
+				if (this._lambdaAPI[lambdaIdx].announced) return;
 
-		return execLambdas.reduce((prev, next) => {
-			// Call out to workers to see who can run this lambda
-			return prev.then(() => {
-				const isAPILambda = next.restWorkerId;
-				if (isAPILambda) {
-					const lambdaIdx = this._lambdaAPI.findIndex((lambda) => next.lambdaId === lambda.lambdaId);
-					if (this._lambdaAPI[lambdaIdx].announced) return;
+				this._lambdaAPI[lambdaIdx].announced = true;
+			}
 
-					this._lambdaAPI[lambdaIdx].announced = true;
-				}
+			this.__nrp.emit('lambda:worker:announce', messagePayload);
+			count++;
+		}
 
-				this.__nrp.emit('lambda-manager-announce', next);
-			});
-		}, Promise.resolve());
+		Logging.log(`[${this.name}]: accounced ${count} lambda`);
 	}
 
 	/**
@@ -299,6 +291,9 @@ class LambdaManager {
 			const lambdaMapHash = this._lambdaMap[payload.data.lambdaId];
 			const lambdaBodyHash = (payload.data.body) ? hash(payload.data.body) : lambdaMapHash;
 
+			// There is too much work going on here, we want to track and check if the id is already processed
+			// if not then we releace the lambda to the worker.
+
 			if (lambdaMapHash && lambdaMapHash === lambdaBodyHash) {
 				// Another worker has already accepted this lambda so we'll just ignore it
 				Logging.logSilly(`[${this.name}] ${payload.data.lambdaId} is already registered in the lambda queue`);
@@ -315,7 +310,7 @@ class LambdaManager {
 			Logging.logDebug(`[${this.name}] ${payload.data.lambdaId} assigning to ${payload.workerId}`);
 
 			// Tell the worker to execute the task
-			this.__nrp.emit('lambda-worker-execute', payload);
+			this.__nrp.emit('lambda:worker:execute', payload);
 		});
 
 		this.__nrp.on('lambda-worker-overloaded', (payload) => {
@@ -337,7 +332,7 @@ class LambdaManager {
 	}
 
 	async _handleLambdaAPIExecution() {
-		this.__nrp.on('executeLambdaAPI', async (data) => {
+		this.__nrp.on('rest:worker:exec-lambda-api', async (data) => {
 			data.workerExecID = uuid.v4();
 			Logging.log(`Manager is queuing API lambda ${data.lambdaId} to be executed`);
 			let index = this._lambdaAPI.length;
@@ -347,14 +342,14 @@ class LambdaManager {
 			}
 
 			this._lambdaAPI.splice(index, 0, data);
-			this._announceLambdas(this._lambdaAPI);
+			this.__announcePendingExecutions(this._lambdaAPI);
 		});
 	}
 
 	async _checkAPIAndPathMutationQueue() {
 		const arr = this._lambdaAPI.concat(this._lambdaPathsMutationExec);
 		if (arr.length > 0) {
-			this._announceLambdas(arr);
+			this.__announcePendingExecutions(arr);
 		}
 	}
 
@@ -492,7 +487,7 @@ class LambdaManager {
 		const pathMutationLambda = this._lambdaPathsMutationExec[pathMutationLambdaIdx];
 		delete this._lambdaPathsMutationExec[pathMutationLambdaIdx].timer;
 
-		this._announceLambdas([pathMutationLambda]);
+		this.__announcePendingExecutions([pathMutationLambda]);
 	}
 
 	/**
