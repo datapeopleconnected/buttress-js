@@ -111,6 +111,24 @@ class LambdaExecutionSchemaModel extends StandardModel {
 					__required: true,
 					__allowUpdate: false,
 				},
+				metadata: {
+					__type: 'array',
+					__allowUpdate: true,
+					__schema: {
+						key: {
+							__type: 'string',
+							__default: null,
+							__required: true,
+							__allowUpdate: true,
+						},
+						value: {
+							__type: 'string',
+							__default: null,
+							__required: true,
+							__allowUpdate: true,
+						},
+					},
+				},
 				createdAt: {
 					__type: 'date',
 					__value: 'now',
@@ -139,6 +157,7 @@ class LambdaExecutionSchemaModel extends StandardModel {
 			logs: (body.logs) ? body.logs : [],
 			executeAfter: (body.executeAfter) ? body.executeAfter : null,
 			nextCronExpression: (body.nextCronExpression) ? body.nextCronExpression : null,
+			metadata: (body.metadata) ? body.metadata : [],
 		};
 
 		const rxsExecution = await super.add(executionBody, {_appId: appId});
