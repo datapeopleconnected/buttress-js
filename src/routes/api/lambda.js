@@ -352,6 +352,8 @@ class ScheduleLambdaExecution extends Route {
 
 		const deployment = await Model.Deployment.findOne(deploymentQuery);
 
+		// TODO: need to validate the input.
+
 		return {
 			appId: lambda._appId,
 			execution: {
@@ -359,6 +361,7 @@ class ScheduleLambdaExecution extends Route {
 				lambdaId: lambda.id,
 				deploymentId: deployment.id,
 				executeAfter: req.body.executeAfter,
+				metadata: req.body.metadata,
 			},
 		};
 	}
