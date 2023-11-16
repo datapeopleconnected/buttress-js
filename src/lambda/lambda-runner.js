@@ -213,13 +213,16 @@ class LambdasRunner {
 		const triggerType = payload.data.lambdaType;
 
 		const executionId = payload.data.executionId;
-		let execution = await Model.LambdaExecution.findOne({
+		if (!executionId) throw new Error('unable to fetch execute lambda, missing executionId');
+
+		const execution = await Model.LambdaExecution.findOne({
 			id: Model.LambdaExecution.createId(executionId),
 			status: 'PENDING',
 		});
+		if (!execution) throw new Error('Unable to find pending execution, with id: ' + executionId);
 
 		try {
-			execution = (execution) ? execution : await this._createLambdaExecution(lambda, triggerType);
+			// execution = (execution) ? execution : await this._createLambdaExecution(lambda, triggerType);
 
 			this._lambdaExecution = execution;
 			await this.execute(lambda, execution, app, triggerType, payload.data);

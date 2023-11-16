@@ -863,6 +863,7 @@ class Routes {
 		res.triggerAPIType = triggerAPI.apiEndpoint.type;
 
 		const data = {
+			id: lambdaExecution.id,
 			restWorkerId: this.id,
 			lambdaId: lambda.id,
 			triggerType: triggerAPI.type,
