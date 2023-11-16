@@ -133,6 +133,8 @@ class LambdasRunner {
 		});
 
 		this._jail.setSync('buttressOptions', new ivm.ExternalCopy(buttressOptions).copyInto());
+
+		// Would be better to just group these under one namespace "lambda". Unless we're going.
 		this._jail.setSync('lambdaModules', new ivm.ExternalCopy(lambdaModules).copyInto());
 		this._jail.setSync('lambdaInfo', new ivm.ExternalCopy({
 			lambdaId: lambda.id.toString(),
@@ -145,6 +147,21 @@ class LambdasRunner {
 		this._jail.setSync('lambdaData', new ivm.ExternalCopy(data.body).copyInto());
 		this._jail.setSync('lambdaQuery', new ivm.ExternalCopy(data.query).copyInto());
 		this._jail.setSync('lambdaRequestHeaders', new ivm.ExternalCopy(data.headers).copyInto());
+
+		// Just exposing a few properties of exeuction
+		this._jail.setSync('lambdaExecution', new ivm.ExternalCopy({
+			id: execution.id.toString(),
+			lambdaId: execution.lambdaId.toString(),
+			deploymentId: execution.deploymentId.toString(),
+			triggerType: execution.triggerType,
+			executeAfter: execution.executeAfter,
+			nextCronExpression: execution.nextCronExpression,
+			status: execution.status,
+			startedAt: execution.startedAt,
+			endedAt: execution.endedAt,
+			// Can we copy arrays?
+			metadata: execution.metadata,
+		}).copyInto());
 
 		try {
 			const hostile = this._isolate.compileScriptSync(`
