@@ -352,7 +352,11 @@ class ScheduleLambdaExecution extends Route {
 
 		const deployment = await Model.Deployment.findOne(deploymentQuery);
 
-		// TODO: need to validate the input.
+		const executeAfter = Sugar.Date.create(req.body.executeAfter);
+		if (!Sugar.Date.isValid(executeAfter)) {
+			this.log('ERROR: Invalid executeAfter date expression', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_execute_after_date`));
+		}
 
 		return {
 			appId: lambda._appId,
@@ -360,7 +364,7 @@ class ScheduleLambdaExecution extends Route {
 				triggerType: 'CRON',
 				lambdaId: lambda.id,
 				deploymentId: deployment.id,
-				executeAfter: req.body.executeAfter,
+				executeAfter: executeAfter.toString(),
 				metadata: req.body.metadata,
 			},
 		};
