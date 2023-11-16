@@ -34,7 +34,7 @@
     "url": "https://github.com/wearelighten/buttress-js/issues"
   },
   "dependencies": {
-    "@buttress/api": "~3.0.0-38",
+    "@buttress/api": "~3.0.0-39",
     "@buttress/snippets": "~1.0.0-17",
     "@hashgraph/sdk": "^2.19.2",
     "@socket.io/redis-adapter": "~7.2.0",
