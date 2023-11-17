@@ -91,7 +91,7 @@ class Model {
 		const rxsApps = await this.models.App.findAll();
 
 		for await (const app of rxsApps) {
-			if (!app || !app.__schema) return;
+			if (!app || !app.__schema) continue;
 			if (appId && app.id.toString() !== appId) continue;
 
 			Logging.logSilly(`Model:initSchema: ${app.id}`);

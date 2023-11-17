@@ -71,7 +71,6 @@ class Bootstrap extends EventEmitter {
 		if (cluster.isMaster) {
 			Logging.log(`Init Main Process`);
 			await this.__initMaster();
-			process.on('message', (message: LocalProcessMessage) => this._handleMessageFromMain(message));
 			process.on('unhandledRejection', (error) => Logging.logError(error));
 		} else {
 			Logging.log(`Init Worker Process [${cluster.worker?.id}]`);
@@ -80,6 +79,9 @@ class Bootstrap extends EventEmitter {
 				type: 'worker:initiated',
 				payload: null,
 			} as LocalProcessMessage);
+
+			process.on('message', (message: LocalProcessMessage) => this._handleMessageFromMain(message));
+			process.on('unhandledRejection', (error) => Logging.logError(error));
 		}
 
 		return cluster.isMaster;
