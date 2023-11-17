@@ -505,7 +505,8 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			const keys = Object.keys(expression);
 			if (keys.length === 1) {
 				const [key] = keys;
-				return {[key]: new ObjectId(expression[key])};
+				const value = this._getExpressionValue(expression[key]);
+				return {[key]: value};
 			} else {
 				// Not sure what we've got here.
 				Logging.logDebug(JSON.stringify(expression));
@@ -515,5 +516,20 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 		// It's not an object, so must be a value.
 		return new ObjectId(expression);
+	}
+
+	/**
+	 * Handling getting a value of an expression and converting it to object id.
+	 * @param {array | string} value
+	 * @return {array | string}
+	 */
+	_getExpressionValue(value) {
+		if (Array.isArray(value) && value.length > 1) {
+			return value.map((v) => new ObjectId(v));
+		} else if (Array.isArray(value) && value.length < 1) {
+			return value;
+		} else {
+			return new ObjectId(value);
+		}
 	}
 };
