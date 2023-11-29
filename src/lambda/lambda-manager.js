@@ -243,6 +243,24 @@ class LambdaManager {
 		Logging.log(`[${this.name}]: accounced ${count} lambda`);
 	}
 
+	async _createLambdaExecution(lambda, type) {
+		const deployment = await Model.Deployment.findOne({
+			lambdaId: Model.Lambda.createId(lambda.id),
+			hash: lambda.git.hash,
+		});
+
+		// TODO add a meaningful error message
+		if (!deployment) return;
+
+		const lambdaExecution = await Model.LambdaExecution.add({
+			triggerType: type,
+			lambdaId: Model.Lambda.createId(lambda.id),
+			deploymentId: Model.Deployment.createId(deployment.id),
+		}, lambda._appId);
+
+		return lambdaExecution;
+	}
+
 	/**
 	 * Track a worker lambda
 	 * @param {Object} payload
@@ -446,12 +464,16 @@ class LambdaManager {
 
 			const retry = this._lambdaPathsMutationExec[debouncedLambdaIdx]?.retry || 0;
 
-			if (debouncedLambdaIdx === -1 || retry > this._maximumRetry) {
+			if (retry > this._maximumRetry) {
+				// TODO: Clean up exec records
+				Logging.logError(`[${this.name}] Lambda ${lambda.id} has reached the maximum retry of ${this._maximumRetry}`);
+				return;
+			}
+
+			if (debouncedLambdaIdx === -1) {
 				const execID = uuid.v4();
 				this._lambdaPathsMutationExec.push({
-					timer: setTimeout(() => {
-						this._announcePathMutationLambda(execID);
-					}, timeout),
+					timer: setTimeout(() => this._announcePathMutationLambda(execID), timeout),
 					pathMutation: true,
 					triggerType: lambda.type,
 					lambdaId: lambda.id,
@@ -464,12 +486,12 @@ class LambdaManager {
 				return;
 			}
 
-			clearTimeout(this._lambdaPathsMutationExec[debouncedLambdaIdx]?.timer);
-			this._lambdaPathsMutationExec[debouncedLambdaIdx].timer = setTimeout(() => {
-				this._announcePathMutationLambda(lambda.id, bodyHash);
-			}, timeout);
-			this._lambdaPathsMutationExec[debouncedLambdaIdx].body = this._lambdaPathsMutationExec[debouncedLambdaIdx].body.concat(body);
-			this._lambdaPathsMutationExec[debouncedLambdaIdx].retry = this._lambdaPathsMutationExec[debouncedLambdaIdx].retry + 1;
+			const pmExecRecord = this._lambdaPathsMutationExec[debouncedLambdaIdx];
+
+			clearTimeout(pmExecRecord?.timer);
+			pmExecRecord.timer = setTimeout(() => this._announcePathMutationLambda(pmExecRecord.workerExecID), timeout);
+			pmExecRecord.body = pmExecRecord.body.concat(body);
+			pmExecRecord.retry = pmExecRecord.retry + 1;
 
 			return;
 		});
@@ -477,15 +499,22 @@ class LambdaManager {
 
 	/**
 	 * announce path mutation lambda
-	 * @param {String} lambdaId
-	 * @param {String} bodyHash
+	 * @param {String} execID
 	 */
-	async _announcePathMutationLambda(lambdaId, bodyHash) {
-		const pathMutationLambdaIdx = this._lambdaPathsMutationExec.findIndex(
-			(item) => (item.lambdaId.toString() === lambdaId.toString() && item.bodyHash === bodyHash));
+	async _announcePathMutationLambda(execID) {
+		const pathMutationLambdaIdx = this._lambdaPathsMutationExec.findIndex((item) => item.workerExecID.toString() === execID.toString());
 
 		const pathMutationLambda = this._lambdaPathsMutationExec[pathMutationLambdaIdx];
 		delete this._lambdaPathsMutationExec[pathMutationLambdaIdx].timer;
+
+		// Fetch the lambda by id
+		const lambda = await Model.Lambda.findById(pathMutationLambda.lambdaId);
+
+		// Create an execution if one doesn't exist
+		if (!pathMutationLambda.id) {
+			const {id} = await this._createLambdaExecution(lambda, pathMutationLambda.triggerType);
+			pathMutationLambda.id = id;
+		}
 
 		this.__announcePendingExecutions([pathMutationLambda]);
 	}

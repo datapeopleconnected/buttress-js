@@ -239,8 +239,6 @@ class LambdasRunner {
 		if (!execution) throw new Error('Unable to find pending execution, with id: ' + executionId);
 
 		try {
-			// execution = (execution) ? execution : await this._createLambdaExecution(lambda, triggerType);
-
 			this._lambdaExecution = execution;
 			await this.execute(lambda, execution, app, triggerType, payload.data);
 
@@ -303,24 +301,6 @@ class LambdasRunner {
 
 			this.fetchExecuteLambda(payload);
 		});
-	}
-
-	async _createLambdaExecution(lambda, type) {
-		const deployment = await Model.Deployment.findOne({
-			lambdaId: Model.Lambda.createId(lambda.id),
-			hash: lambda.git.hash,
-		});
-
-		// TODO add a meaningful error message
-		if (!deployment) return;
-
-		const lambdaExecution = await Model.LambdaExecution.add({
-			triggerType: type,
-			lambdaId: Model.Lambda.createId(lambda.id),
-			deploymentId: Model.Deployment.createId(deployment.id),
-		}, lambda._appId);
-
-		return lambdaExecution;
 	}
 
 	async _updateDBLambdaRunningExecution(execution) {
