@@ -1,9 +1,10 @@
 const gulp = require('gulp');
 const ts = require('gulp-typescript');
 
+const tsProject = ts.createProject('tsconfig.json');
+
 // Define a task to compile TypeScript files from src to dist
 gulp.task('typescript', () => {
-	const tsProject = ts.createProject('tsconfig.json');
 	return tsProject.src()
 		.pipe(tsProject(ts.reporter.longReporter()))
 		.pipe(gulp.dest('dist'));
