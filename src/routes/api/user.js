@@ -124,12 +124,13 @@ class GetUserByToken extends Route {
 		}
 
 		const user = await Model.User.findById(userToken._user);
+		const userAppMetaData = user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString());
 
 		return {
 			id: user._id,
 			auth: user.auth,
 			token: userToken.value,
-			policyProperties: user._appMetadata.find((md) => md.appId.toString() === req.authApp._id.toString())?.policyProperties,
+			policyProperties: (userAppMetaData) ? userAppMetaData.policyProperties : null,
 		};
 	}
 
