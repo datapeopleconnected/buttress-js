@@ -240,7 +240,7 @@ class LambdaManager {
 			count++;
 		}
 
-		Logging.log(`[${this.name}]: accounced ${count} lambda`);
+		if (count > 0) Logging.log(`[${this.name}]: announced ${count} lambda`);
 	}
 
 	async _createLambdaExecution(lambda, type) {
