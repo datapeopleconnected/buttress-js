@@ -227,9 +227,7 @@ class LambdaManager {
 				messagePayload.restWorkerId = lambdaExec.restWorkerId;
 				messagePayload.query = lambdaExec.query;
 				messagePayload.headers = lambdaExec.headers;
-			}
 
-			if (isAPILambda) {
 				const lambdaIdx = this._lambdaAPI.findIndex((lambda) => messagePayload.lambdaId === lambda.lambdaId);
 				if (this._lambdaAPI[lambdaIdx].announced) return;
 
