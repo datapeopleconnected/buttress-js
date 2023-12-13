@@ -26,10 +26,13 @@
 
 		"LAMBDA_API_WORKERS": "%LAMBDA_API_WORKERS%",
 		"LAMBDA_PATH_MUTATION_WORKERS": "%LAMBDA_PATH_MUTATION_WORKERS%",
-		"LAMBDA_CRON_WORKERS": "%LAMBDA_CRON_WORKERS%"
+		"LAMBDA_CRON_WORKERS": "%LAMBDA_CRON_WORKERS%",
+
+		"LAMBDA_DEVELOPMENT_EMAIL_ADDRESS": "%LAMBDA_DEVELOPMENT_EMAIL_ADDRESS%"
 	},
 	"global": {
 		"env": "%NODE_ENV%",
+		"developmentEmailAddress": "test",
 		"app": {
 			"title": "%BUTTRESS_APP_TITLE%",
 			"description": "The federated real-time open data platform",
@@ -43,7 +46,8 @@
 		"lambda": {
 			"apiWorkers": "%LAMBDA_API_WORKERS%",
 			"pathMutationWorkers": "%LAMBDA_PATH_MUTATION_WORKERS%",
-			"cronWorkers": "%LAMBDA_CRON_WORKERS%"
+			"cronWorkers": "%LAMBDA_CRON_WORKERS%",
+			"developmentEmailAddress": "%LAMBDA_DEVELOPMENT_EMAIL_ADDRESS%"
 		},
 		"logging": {
 			"level": "%BUTTRESS_LOGGING_LEVEL%",

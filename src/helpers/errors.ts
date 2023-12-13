@@ -57,3 +57,45 @@ export class NotYetImplemented extends Error {
 		this.name = 'NotYetImplemented';
 	}
 };
+
+export class InvalidRequest extends Error {
+	code: number;
+
+	constructor (message: string, code: number) {
+		super(message);
+		this.name = 'InvalidRequest';
+		this.code = code;
+	}
+}
+
+export class Unauthenticated extends Error {
+	status: string;
+	code: number;
+
+	constructor (message: string, status: string, code: number) {
+		super(message);
+		this.name = 'Unauthenticated';
+		this.status = status;
+		this.code = code;
+	}
+}
+
+export class InvalidToken extends Error {
+	code: number;
+
+	constructor (message: string, code: number) {
+		super(message);
+		this.name = 'InvalidToken';
+		this.code = code;
+	}
+}
+
+export class CodedError extends Error {
+	code: number;
+
+	constructor (message: string, code: number) {
+		super(message);
+		this.name = 'GENERIC_LAMBDA_ERROR';
+		this.code = code;
+	}
+}

@@ -137,7 +137,9 @@ class LambdasRunner {
 		// Would be better to just group these under one namespace "lambda". Unless we're going.
 		this._jail.setSync('lambdaModules', new ivm.ExternalCopy(lambdaModules).copyInto());
 		this._jail.setSync('lambdaInfo', new ivm.ExternalCopy({
+			env: Config.env,
 			lambdaId: lambda.id.toString(),
+			gitHash: lambda.git.hash,
 			metadata: lambda.metadata,
 			lambdaToken: lambdaToken.value,
 			appApiPath: apiPath,

@@ -9,6 +9,7 @@ const base64url = require('base64url');
 const lambdaMail = require('./mail');
 const Model = require('../model');
 const Logging = require('../helpers/logging');
+const {Errors} = require('../helpers');
 // const { Object } = require('sugar');
 
 const Config = require('node-env-obj')();
@@ -27,6 +28,8 @@ class Helpers {
 		this.lambdaResult = null;
 		this._plugins = {};
 		this._pluginBootstrap = '';
+
+		this.successfulHTTPScode = [200, 201, 202];
 	}
 
 	async _createIsolateContext(isolate, context, jail) {
@@ -46,17 +49,26 @@ class Helpers {
 			this.lambdaResult = res;
 		}));
 
+		jail.setSync('_getEmailTemplate', new ivm.Reference(async (data, resolve, reject) => {
+			try {
+				Logging.logVerbose(`[${this.name}] Populating email body from template ${data.emailTemplate}`);
+
+				const render = lambdaMail.getEmailTemplate(
+					`${Config.paths.lambda.code}/lambda-${data.gitHash}/${data.emailTemplate}`, data.emailTemplate,
+				);
+
+				const output = await render(data.emailData);
+				return resolve.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
+				]);
+			} catch (err) {
+				reject.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto(),
+				]);
+			}
+		}));
 		jail.setSync('_lambdaAPI', new ivm.Reference(async (api, data, resolve) => {
 			const lambdaAPIs = {
-				getEmailTemplate: async () => {
-					Logging.logVerbose(`[${this.name}] Populating email body from template ${data.emailTemplate}`);
-
-					const render = lambdaMail.getEmailTemplate(
-						`${Config.paths.lambda.code}/lambda-${data.lambdaId}/${data.emailTemplate}.pug`, data.emailTemplate,
-					);
-
-					return render(data.emailData);
-				},
 				cryptoCreateSign: () => {
 					const signer = crypto.createSign(data.signature);
 					if (data.preSignature) {
@@ -95,7 +107,14 @@ class Helpers {
 			]);
 		}));
 		jail.setSync('_fetch', new ivm.Reference(async (data, callback, resolve, reject) => {
-			data.url = (typeof data.url === 'string') ? new URL(data.url) : data.url;
+			if (typeof data === 'string') {
+				const url = new URL(data);
+				data = {
+					url,
+				};
+			} else if (data.url) {
+				data.url = (typeof data.url === 'string') ? new URL(data.url) : data.url;
+			}
 			try {
 				if (data?.options?.body && data.options.headers && data.options.headers['Content-Type'] === 'application/x-www-form-urlencoded') {
 					data.options.body = this._encodeReqBody(data.options.body);
@@ -107,12 +126,31 @@ class Helpers {
 				output.url = response.url;
 				output.redirected = response.redirected;
 
-				if (output.status !== 200 && response.url && response.url !== data.url.href) {
+				if (!this.successfulHTTPScode.includes(output.status) && response.url && response.url !== data.url.href) {
 					return _resolve(output);
 				}
 
-				if (output.status !== 200) {
-					throw new Error(`${data.url.pathname} is ${response.statusText}`);
+				if (!this.successfulHTTPScode.includes(output.status)) {
+					let text = await response.text();
+					if (text && typeof text === 'string') {
+						text = JSON.parse(text);
+						if (text.error && text.error.status === 'UNAUTHENTICATED') {
+							throw new Errors.Unauthenticated(text.error.message, text.error.status, text.error.code);
+						}
+						if (text.error && text.error.status) {
+							throw new Error(`${data.url.pathname} error is ${text.error.status}`);
+						}
+						if (text.error.toUpperCase() === 'INVALID_TOKEN') {
+							throw new Errors.InvalidToken(text.error, 400);
+						}
+						if (text.error.toUpperCase() === 'INVALID_REQUEST') {
+							throw new Errors.InvalidRequest(text.error, 400);
+						}
+
+						throw new Error(`${data.url.pathname} error is ${text.error}`);
+					} else {
+						throw new Errors.CodedError(`${data.url.pathname} error is ${response.statusText}`, response.status);
+					}
 				}
 
 				if (callback) {
@@ -129,12 +167,23 @@ class Helpers {
 						throw new Error(err);
 					});
 				} else {
-					output.body = await response.json();
+					output.body = (output.status === 200 || output.status === 201) ? await response.json() : null;
 					return _resolve(output);
 				}
 			} catch (err) {
+				const error = {};
+				if (err.message) {
+					error.message = err.message;
+				}
+				if (err.code) {
+					error.code = err.code;
+				}
+				if (err.status) {
+					error.status = err.status;
+				}
+				const reference = (Object.keys(error).length > 0) ? new ivm.Reference(error).copySync() : new ivm.Reference(err).copySync();
 				reject.applyIgnored(undefined, [
-					new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto(),
+					new ivm.ExternalCopy(reference).copyInto(),
 				]);
 			}
 
@@ -198,6 +247,9 @@ class Helpers {
 			let fetch = _fetch;
 			delete _fetch;
 
+			let getEmailTemplate = _getEmailTemplate;
+			delete _getEmailTemplate;
+
 			let lambdaAPI = _lambdaAPI;
 			delete _lambdaAPI;
 
@@ -248,6 +300,19 @@ class Helpers {
 						[
 							new ivm.ExternalCopy(data).copyInto(),
 							callback,
+							new ivm.Reference(resolve),
+							new ivm.Reference(reject),
+						],
+					);
+				});
+			}
+
+			global.getEmailTemplate = (data) => {
+				return new Promise((resolve, reject) => {
+					getEmailTemplate.applyIgnored(
+						undefined,
+						[
+							new ivm.ExternalCopy(data).copyInto(),
 							new ivm.Reference(resolve),
 							new ivm.Reference(reject),
 						],
@@ -367,6 +432,9 @@ class Helpers {
 				fetch: async (...args) => {
 					return fetch(...args);
 				},
+				getEmailTemplate: async(...args) => {
+					return getEmailTemplate(...args);
+				},
 				getCodeChallenge: async (...args) => {
 					return getCodeChallenge(...args);
 				},
@@ -374,6 +442,8 @@ class Helpers {
 					body: {},
 					query: {},
 				},
+				env: '${new ivm.Reference(Config.env.toUpperCase()).copySync()}',
+				developmentEmailAddress: '${new ivm.Reference(Config.lambda.developmentEmailAddress).copySync()}',
 			};
 		`).runSync(context);
 	}
