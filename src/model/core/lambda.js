@@ -346,38 +346,123 @@ class LambdaSchemaModel extends StandardModel {
 				throw new Helpers.Errors.RequestError(400, `duplicate_item`);
 			}
 
-			// Check to see if the requested git hash exists or just make sure the branch exists if we're using HEAD.
-			const exPramChkBranch = (gitHash !== 'HEAD') ? `git branch ${branch} --contains ${gitHash}` : `git ls-remote --heads origin ${branch}`;
-			const result = await exec(`cd ${Config.paths.lambda.code}; git clone --filter=blob:limit=1m ${url} lambda-${name};
-				cd lambda-${name}; ${exPramChkBranch}`);
-			if (!result.stdout) {
-				if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
-					await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
-				}
-				Logging.logError(`[${this.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
-				throw new Helpers.Errors.RequestError(400, `missing_field`);
-			}
-
-			await exec(`cd ${Config.paths.lambda.code}/lambda-${name}; git checkout ${gitHash}`);
-
-			// TODO it should only clone the lambda file from the repo
-			const entryDir = path.dirname(entryFile);
-			const lambdaDir = `${Config.paths.lambda.code}/lambda-${name}/./${entryDir}`; // Ugly `/./` because I am lazy
-			const files = fs.readdirSync(lambdaDir);
-			for await (const file of files) {
-				if (path.extname(file) !== '.js') continue;
-
-				const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
-				for await (const log of Object.keys(lambdaConsole)) {
-					if (content.includes(log)) {
-						await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
-						throw new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`);
-					}
-				}
-			}
+			await this.gitFolderClone(gitHash, branch, name, url, entryFile);
 		} catch (err) {
 			if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
 				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
+			}
+
+			Logging.logError(`[${this.name}] ${err.message}`);
+			throw err;
+		}
+	}
+
+	async gitFolderClone(gitHash, branch, name, url, entryFile) {
+		// Check to see if the requested git hash exists or just make sure the branch exists if we're using HEAD.
+		const exPramChkBranch = (gitHash !== 'HEAD') ? `git branch ${branch} --contains ${gitHash}` : `git ls-remote --heads origin ${branch}`;
+		const result = await exec(`cd ${Config.paths.lambda.code}; git clone --filter=blob:limit=1m ${url} lambda-${name};
+			cd lambda-${name}; ${exPramChkBranch}`);
+		if (!result.stdout) {
+			if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
+				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
+			}
+			Logging.logError(`[${this.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
+			throw new Helpers.Errors.RequestError(400, `missing_field`);
+		}
+
+		await exec(`cd ${Config.paths.lambda.code}/lambda-${name}; git checkout ${gitHash}`);
+
+		// TODO it should only clone the lambda file from the repo
+		const entryDir = path.dirname(entryFile);
+		const lambdaDir = `${Config.paths.lambda.code}/lambda-${name}/./${entryDir}`; // Ugly `/./` because I am lazy
+		const files = fs.readdirSync(lambdaDir);
+		for await (const file of files) {
+			if (path.extname(file) !== '.js') continue;
+
+			const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
+			for await (const log of Object.keys(lambdaConsole)) {
+				if (content.includes(log)) {
+					await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
+					throw new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`);
+				}
+			}
+		}
+	}
+
+	async pullLambdaCode(lambda, lambdaDeployInfo = {}) {
+		try {
+			const branch = (lambdaDeployInfo.branch) ? lambdaDeployInfo.branch : lambda.git.branch;
+			const gitHash = (lambdaDeployInfo.hash) ? lambdaDeployInfo.hash : lambda.git.hash;
+			const entryFilePath = (lambdaDeployInfo.entryFilePath) ? lambdaDeployInfo.entryFilePath : lambda.git.entryFile;
+			const entryPoint = (lambdaDeployInfo.entryPoint) ? lambdaDeployInfo.entryPoint : lambda.git.entryPoint;
+
+			// TODO: Refactor below code into a seperate file for handling managment of lambda deployments.
+			const lambdaFolderName = `lambda-${gitHash}`;
+			if (!fs.existsSync(`${Config.paths.lambda.code}/${lambdaFolderName}`)) {
+				await this.gitFolderClone(gitHash, branch, lambda.name, lambda.git.url, entryFilePath);
+				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.git.hash}; mv lambda-${lambda.name} lambda-${lambda.git.hash}`);
+			} else {
+				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git fetch`);
+				const checkoutRes = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${branch}`);
+				if (!checkoutRes.stdout) {
+					this.log(`[${this.name}] Lambda ${branch} does not exist`);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `branch_${branch}_does_not_exist_for_lambda`));
+				}
+
+				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git pull`);
+				const results = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git branch ${branch} --contains ${gitHash}`);
+				if (!results.stdout) {
+					this.log(`[${this.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
+					return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_${gitHash}_does_not_exist_on_branch_${branch}`));
+				}
+
+				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${gitHash}`);
+
+				const entryDir = path.dirname(entryFilePath);
+				const lambdaDir = `${Config.paths.lambda.code}/${lambdaFolderName}/./${entryDir}`; // Ugly `/./` because I am lazy
+				const files = fs.readdirSync(lambdaDir);
+				const entryFile = entryFilePath.split('/').pop();
+				if (entryFilePath && !files.includes(entryFile)) {
+					this.log(`[${this.name}] No such file ${entryFile} - ${lambda.name} ${gitHash} ${branch}`);
+					throw new Helpers.Errors.RequestError(404, `entry_file_not_found`);
+				}
+
+				for await (const file of files) {
+					if (path.extname(file) !== '.js') continue;
+
+					const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
+					for await (const log of Object.keys(lambdaConsole)) {
+						if (entryFile === file && entryPoint && !content.includes(entryPoint)) {
+							this.log(`[${this.name}] No such function ${entryPoint} - ${lambda.name}`);
+							throw new Helpers.Errors.RequestError(404, `entry_point_not_found`);
+						}
+
+						if (content.includes(log)) {
+							await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${lambda.git.hash}`);
+							throw new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`);
+						}
+					}
+				}
+			}
+
+			const deployment = await this.__modelManager.Deployment.findOne({
+				lambdaId: this.createId(lambda.id),
+				hash: gitHash,
+			});
+			if (!deployment) {
+				await this.__modelManager.Deployment.add({
+					lambdaId: lambda.id,
+					hash: gitHash,
+					branch: branch,
+				}, lambda._appId);
+			} else {
+				await this.__modelManager.Deployment.update({
+					id: this.__modelManager.Deployment.createId(deployment.id),
+				}, {$set: {deployedAt: Sugar.Date.create('now')}});
+			}
+		} catch (err) {
+			if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${lambda.name}`)) {
+				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.name}`);
 			}
 
 			Logging.logError(`[${this.name}] ${err.message}`);

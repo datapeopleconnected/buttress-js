@@ -16,8 +16,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const path = require('path');
-const fs = require('fs');
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
 const Config = require('node-env-obj')();
@@ -32,15 +30,6 @@ const Helpers = require('../../helpers');
 const routes = [];
 
 const Datastore = require('../../datastore');
-
-const lambdaConsole = {
-	'console.log': 'lambda.log',
-	'console.info': 'lambda.log',
-	'console.debug': 'lambda.logDebug',
-	'console.warn': 'lambda.logWarn',
-	'console.error': 'lambda.logError',
-	'console.dir': '',
-};
 
 /**
  * @class GetLambda
@@ -263,8 +252,14 @@ class UpdateLambda extends Route {
 		});
 	}
 
-	_exec(req, res, validate) {
-		return this.model.updateByPath(req.body, req.params.id, null, 'Lambda');
+	async _exec(req, res, validate) {
+		const updated = await this.model.updateByPath(req.body, req.params.id, null, 'Lambda');
+
+		const lambda = await this.model.findById(req.params.id);
+		if (req.body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
+			await this.model.pullLambdaCode(lambda);
+		}
+		return updated;
 	}
 }
 routes.push(UpdateLambda);
@@ -310,6 +305,10 @@ class BulkUpdateLambda extends Route {
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
 			await this.model.updateByPath(item.body, item.id, null, 'Lambda');
+			const lambda = await this.model.findById(item.id);
+			if (item.body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
+				await this.model.pullLambdaCode(lambda);
+			}
 		}
 		return true;
 	}
@@ -409,55 +408,15 @@ class EditLambdaDeployment extends Route {
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
 			}
 
-			// TODO: Refactor below code into a seperate file for handling managment of lambda deployments.
-
 			const entryFilePath = (req.body.entryFile) ? req.body.entryFile : lambda.git.entryFile;
 			const entryPoint = (req.body.entryPoint) ? req.body.entryPoint : lambda.git.entryPoint;
-			const gitHash = (req.body.hash) ? req.body.hash : lambda.git.hash;
-
-			const lambdaFolderName = `lambda-${gitHash}`;
-
-			await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git fetch`);
-			const checkoutRes = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${branch}`);
-			if (!checkoutRes.stdout) {
-				this.log(`[${this.name}] Lambda ${branch} does not exist`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `branch_${branch}_does_not_exist_for_lambda`));
-			}
-
-			await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git pull`);
-			const results = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git branch ${branch} --contains ${hash}`);
-			if (!results.stdout) {
-				this.log(`[${this.name}] Lambda hash:${hash} does not exist on ${branch} branch`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_${hash}_does_not_exist_on_branch_${branch}`));
-			}
-
-			await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${hash}`);
-
-			const entryDir = path.dirname(entryFilePath);
-			const lambdaDir = `${Config.paths.lambda.code}/${lambdaFolderName}/./${entryDir}`; // Ugly `/./` because I am lazy
-			const files = fs.readdirSync(lambdaDir);
-			const entryFile = entryFilePath.split('/').pop();
-			if (entryFilePath && !files.includes(entryFile)) {
-				this.log(`[${this.name}] No such file ${entryFile} - ${lambda.name} ${hash} ${branch}`, Route.LogLevel.ERR);
-				throw new Helpers.Errors.RequestError(404, `entry_file_not_found`);
-			}
-
-			for await (const file of files) {
-				if (path.extname(file) !== '.js') continue;
-
-				const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
-				for await (const log of Object.keys(lambdaConsole)) {
-					if (entryFile === file && entryPoint && !content.includes(entryPoint)) {
-						this.log(`[${this.name}] No such function ${entryPoint} - ${lambda.name}`, Route.LogLevel.ERR);
-						throw new Helpers.Errors.RequestError(404, `entry_point_not_found`);
-					}
-
-					if (content.includes(log)) {
-						await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${lambda.git.hash}`);
-						throw new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`);
-					}
-				}
-			}
+			const lambdaDeployInfo = {
+				branch,
+				hash,
+				entryFilePath,
+				entryPoint,
+			};
+			await this.model.pullLambdaCode(lambda, lambdaDeployInfo);
 
 			return Promise.resolve({
 				hash: req.body.hash,
@@ -470,30 +429,11 @@ class EditLambdaDeployment extends Route {
 		}
 	}
 
-	async _exec(req, res, validate) {
-		const deployment = await Model.Deployment.findOne({
-			lambdaId: this.model.createId(validate.lambda.id),
-			hash: validate.hash,
-		});
-
-		const lambdaLastDeployment = await this.model.setDeployment(validate.lambda.id, {
+	_exec(req, res, validate) {
+		return this.model.setDeployment(validate.lambda.id, {
 			'git.branch': validate.branch,
 			'git.hash': validate.hash,
 		});
-
-		if (!deployment) {
-			await Model.Deployment.add({
-				lambdaId: validate.lambda.id,
-				hash: validate.hash,
-				branch: validate.branch,
-			}, validate.lambda._appId);
-		} else {
-			await Model.Deployment.update({
-				id: Model.Deployment.createId(deployment.id),
-			}, {$set: {deployedAt: Sugar.Date.create('now')}});
-		}
-
-		return lambdaLastDeployment;
 	}
 }
 routes.push(EditLambdaDeployment);
