@@ -52,6 +52,13 @@ class Routes {
 		this._services = null;
 
 		this._nrp = null;
+
+		this._preRouteMiddleware = [
+			(...args) => this._timeRequest(...args),
+			(...args) => this._authenticateToken(...args),
+			(...args) => AccessControl.accessControlPolicyMiddleware(...args),
+			(...args) => this._configCrossDomain(...args),
+		];
 	}
 
 	async init(services) {
@@ -158,10 +165,11 @@ class Routes {
 	_createRouter() {
 		const apiRouter = express.Router(); // eslint-disable-line new-cap
 
-		apiRouter.use((...args) => this._timeRequest(...args));
-		apiRouter.use((...args) => this._authenticateToken(...args));
-		apiRouter.use((...args) => AccessControl.accessControlPolicyMiddleware(...args));
-		apiRouter.use((...args) => this._configCrossDomain(...args));
+		// We used to assign middleware to the router here. When a request comes in
+		// each defined router is called to see if it has matching routes, this resulted
+		// in the middleware being called mutliple times for each router defined.
+		// I've now moved the middleware to be called before each route.
+		// See: this._preRouteMiddleware
 
 		return apiRouter;
 	}
@@ -299,7 +307,7 @@ class Routes {
 				pathSpec,
 			]);
 			Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
-			app[route.verb](routePath, (req, res, next) => {
+			app[route.verb](routePath, this._preRouteMiddleware, (req, res, next) => {
 				req.pathSpec = pathSpec;
 				return route.exec(req, res).catch(next);
 			});
@@ -333,7 +341,7 @@ class Routes {
 				]);
 				if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
 				Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
-				express[route.verb](routePath, (req, res, next) => {
+				express[route.verb](routePath, this._preRouteMiddleware, (req, res, next) => {
 					req.pathSpec = pathSpec;
 					return route.exec(req, res).catch(next);
 				});
