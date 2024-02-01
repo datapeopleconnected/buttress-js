@@ -785,7 +785,23 @@ class Routes {
 				});
 			}
 
-			if (result.lambdaOutput) {
+			if (result.lambdaOutput && result.lambdaOutput.res && result.lambdaOutput.res.redirect) {
+				const url = result.lambdaOutput.res.url;
+				const queryObj = result.lambdaOutput.res.query;
+				let query = '';
+				if (queryObj) {
+					query = Object.keys(queryObj).reduce((output, key) => {
+						if (!output) {
+							output = `${key}=${queryObj[key]}`;
+						} else {
+							output = `${output}&${key}=${queryObj[key]}`;
+						}
+						return output;
+					}, null);
+				}
+				const redirectURL = (query) ? `${url}?${query}` : url;
+				res.redirect(redirectURL);
+			} else if (result.lambdaOutput) {
 				res.status(result.lambdaOutput.code).send({
 					res: result.lambdaOutput.res,
 					err: result.lambdaOutput.err,
