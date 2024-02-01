@@ -81,6 +81,22 @@ const __getPropDefault = (config) => {
 		res = config.__default === undefined ? false : config.__default;
 		break;
 	case 'string':
+		if (config.__default) {
+			if (config.__default === 'randomString') {
+				const length = 36;
+				const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+				const mask = 0x3d;
+
+				const bytes = Crypto.randomBytes(length);
+				for (let x = 0; x < bytes.length; x++) {
+					const byte = bytes[x];
+					res += chars[byte & mask];
+				}
+			} else {
+				res = config.__default;
+			}
+		}
+		break;
 	case 'text':
 		res = config.__default === undefined ? '' : config.__default;
 		break;

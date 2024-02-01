@@ -130,8 +130,7 @@ class AccessControl {
 		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
 			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			Logging.logError(policyOutcome.err.message);
-			res.status(policyOutcome.err.statusCode).send({message: policyOutcome.err.message});
-			return;
+			return res.status(policyOutcome.err.statusCode).send({message: policyOutcome.err.message});
 		}
 
 		if (user) {
@@ -523,7 +522,7 @@ class AccessControl {
 			const policyIdx = this._queuedLimitedPolicy.push(p.name);
 			setTimeout(async () => {
 				await this.__removeUserPropertiesPolicySelection(userToken, p);
-				await Model.Policy.rm(p);
+				await Model.Policy.rm(p.id);
 
 				this._nrp.emit('app-policy:bust-cache', {
 					appId,
