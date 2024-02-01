@@ -77,9 +77,6 @@ class Helpers {
 					}
 					return signer.sign(data.key, data.encodingType);
 				},
-				cryptoRandomBytes: () => {
-					return crypto.randomBytes(data);
-				},
 				updateMetadata: async () => {
 					if (data.idx === -1) {
 						await Model.Lambda.updateById(Model.Lambda.createId(data.id), {
@@ -140,14 +137,15 @@ class Helpers {
 						if (text.error && text.error.status) {
 							throw new Error(`${data.url.pathname} error is ${text.error.status}`);
 						}
-						if (text.error.toUpperCase() === 'INVALID_TOKEN') {
+						if (text.error && text.error.toUpperCase() === 'INVALID_TOKEN') {
 							throw new Errors.InvalidToken(text.error, 400);
 						}
-						if (text.error.toUpperCase() === 'INVALID_REQUEST') {
+						if (text.error && text.error.toUpperCase() === 'INVALID_REQUEST') {
 							throw new Errors.InvalidRequest(text.error, 400);
 						}
 
-						throw new Error(`${data.url.pathname} error is ${text.error}`);
+						const message = (text.error) ? text.error : (text.message) ? text.message : text.statusMessage;
+						throw new Error(`${data.url.pathname} error is ${message}`);
 					} else {
 						throw new Errors.CodedError(`${data.url.pathname} error is ${response.statusText}`, response.status);
 					}
@@ -190,6 +188,17 @@ class Helpers {
 			function _resolve(output) {
 				resolve.applyIgnored(undefined, [
 					new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
+				]);
+			}
+		}));
+		jail.setSync('_cryptoRandomBytes', new ivm.Reference(async (data, resolve, reject) => {
+			try {
+				return resolve.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(crypto.randomBytes(data)).copySync()).copyInto(),
+				]);
+			} catch (err) {
+				reject.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto(),
 				]);
 			}
 		}));
@@ -247,6 +256,9 @@ class Helpers {
 			let fetch = _fetch;
 			delete _fetch;
 
+			let cryptoRandomBytes = _cryptoRandomBytes;
+			delete _cryptoRandomBytes;
+
 			let getEmailTemplate = _getEmailTemplate;
 			delete _getEmailTemplate;
 
@@ -300,6 +312,19 @@ class Helpers {
 						[
 							new ivm.ExternalCopy(data).copyInto(),
 							callback,
+							new ivm.Reference(resolve),
+							new ivm.Reference(reject),
+						],
+					);
+				});
+			}
+
+			global.cryptoRandomBytes = (data) => {
+				return new Promise((resolve, reject) => {
+					cryptoRandomBytes.applyIgnored(
+						undefined,
+						[
+							new ivm.ExternalCopy(data).copyInto(),
 							new ivm.Reference(resolve),
 							new ivm.Reference(reject),
 						],
@@ -431,6 +456,9 @@ class Helpers {
 				},
 				fetch: async (...args) => {
 					return fetch(...args);
+				},
+				cryptoRandomBytes: async (...args) => {
+					return cryptoRandomBytes(...args);
 				},
 				getEmailTemplate: async(...args) => {
 					return getEmailTemplate(...args);
