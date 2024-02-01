@@ -147,7 +147,7 @@ class RemoteCombinedModel extends StandardModel {
 	 * @return {Promise}
 	 */
 	async rm(entity, sourceId) {
-		return await this._getTargetModel(sourceId).rm(entity);
+		return await this._getTargetModel(sourceId).rm(entity.id);
 	}
 
 	/**

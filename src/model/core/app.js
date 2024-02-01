@@ -375,7 +375,7 @@ class AppSchemaModel extends StandardModel {
 			}
 		}
 
-		return super.rm(entity);
+		return super.rm(entity.id);
 	}
 
 	/**

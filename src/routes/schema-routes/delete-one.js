@@ -47,7 +47,7 @@ module.exports = class DeleteOne extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return this.model.rm(this._entity)
+		return this.model.rm(this._entity.id)
 			.then(() => true);
 	}
 };

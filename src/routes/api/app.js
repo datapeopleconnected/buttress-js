@@ -244,7 +244,7 @@ class DeleteApp extends Route {
 
 	_exec(req, res, validate) {
 		return new Promise((resolve, reject) => {
-			this.model.rm(this._app).then(() => true).then(resolve, reject);
+			this.model.rm(this._app.id).then(() => true).then(resolve, reject);
 		});
 	}
 }

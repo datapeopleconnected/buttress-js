@@ -332,7 +332,7 @@ class DeleteSecureStore extends Route {
 	}
 
 	async _exec(req, res, secureStore) {
-		await Model.SecureStore.rm(secureStore);
+		await Model.SecureStore.rm(secureStore.id);
 		return true;
 	}
 }

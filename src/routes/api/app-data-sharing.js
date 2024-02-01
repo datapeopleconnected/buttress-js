@@ -653,8 +653,8 @@ class DeleteAppDataSharingAgreement extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await this.model.rm(validate.appDataSharing);
-		await Model.Token.rm(validate.token);
+		await this.model.rm(validate.appDataSharing.id);
+		await Model.Token.rm(validate.token.id);
 		return true;
 	}
 }

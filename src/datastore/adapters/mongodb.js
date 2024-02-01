@@ -318,13 +318,13 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	/**
-	 * @param {App} entity - entity object to be deleted
+	 * @param {string} id - id to be deleted
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rm(entity) {
+	rm(id) {
 		// Logging.log(`DELETING: ${entity._id}`, Logging.Constants.LogLevel.DEBUG);
 		return new Promise((resolve) => {
-			this.collection.deleteOne({_id: new ObjectId(entity._id)}, (err, cursor) => {
+			this.collection.deleteOne({_id: new ObjectId(id)}, (err, cursor) => {
 				if (err) throw err;
 				resolve(cursor);
 			});

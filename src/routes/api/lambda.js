@@ -632,8 +632,8 @@ class DeleteLambda extends Route {
 	async _exec(req, res, validate) {
 		// TODO make sure that the git repo is not used by any other lambdas before deleteing it
 		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${validate.lambda.id}`);
-		await this.model.rm(validate.lambda);
-		await Model.Token.rm(validate.token);
+		await this.model.rm(validate.lambda.id);
+		await Model.Token.rm(validate.token.id);
 		return true;
 	}
 }

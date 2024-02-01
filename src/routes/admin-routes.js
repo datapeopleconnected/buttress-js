@@ -298,7 +298,7 @@ class AdminRoutes {
 			},
 		});
 
-		await Model.Token.rm(token);
+		await Model.Token.rm(token.id);
 	}
 }
 

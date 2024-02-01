@@ -758,10 +758,10 @@ class DeleteUser extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.User.rm(validate.user);
+		await Model.User.rm(validate.user.id);
 
 		if (validate.token) {
-			await Model.Token.rm(validate.token);
+			await Model.Token.rm(validate.token.id);
 		}
 
 		return true;

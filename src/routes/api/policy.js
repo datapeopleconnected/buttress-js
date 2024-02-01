@@ -408,7 +408,7 @@ class DeleteTransientPolicy extends Route {
 	async _exec(req, res, validate) {
 		if (!validate) return true;
 
-		await Model.Policy.rm(validate);
+		await Model.Policy.rm(validate.id);
 
 		this._nrp.emit('app-policy:bust-cache', {
 			appId: req.authApp.id,
@@ -453,7 +453,7 @@ class DeletePolicy extends Route {
 	}
 
 	_exec(req) {
-		return Model.Policy.rm(this._policy)
+		return Model.Policy.rm(this._policy.id)
 			.then(() => {
 				this._nrp.emit('app-policy:bust-cache', {
 					appId: req.authApp.id,
