@@ -81,7 +81,7 @@ const __getPropDefault = (config) => {
 		res = config.__default === undefined ? false : config.__default;
 		break;
 	case 'string':
-		if (config.__default) {
+		if (config.__default !== null || config.__default !== undefined) {
 			if (config.__default === 'randomString') {
 				const length = 36;
 				const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
