@@ -103,7 +103,6 @@ class LambdasRunner {
 		if (!lambdaToken) {
 			return Promise.reject(new Error(`Unable to find lambda token for lambda ${lambda.name}`));
 		}
-
 		const apiPath = app.apiPath;
 		// const appAllowList = app.allowList;
 		let trigger = lambda.trigger.find((t) => t.type === type);
@@ -139,6 +138,7 @@ class LambdasRunner {
 		this._jail.setSync('lambdaInfo', new ivm.ExternalCopy({
 			env: Config.env,
 			lambdaId: lambda.id.toString(),
+			executionId: execution.id.toString(),
 			gitHash: lambda.git.hash,
 			metadata: lambda.metadata,
 			lambdaToken: lambdaToken.value,
