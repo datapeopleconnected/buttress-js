@@ -95,25 +95,28 @@ class LambdasRunner {
 			return Promise.reject(new Error(`Unable to find git repo for lambda ${lambda.name}`));
 		}
 
-		let tokenQuery = {
+		const rxsLambdaToken = await Model.Token.find({
 			_appId: Model.App.createId(app.id),
 			_lambdaId: Model.User.createId(lambda.id),
-		};
-
-		if (execution._tokenId) {
-			tokenQuery = {
-				_id: Model.App.createId(execution._tokenId),
-			};
-		}
-
-		const rxsLambdaToken = await Model.Token.find(tokenQuery);
+		});
 		const lambdaToken = await Helpers.streamFirst(rxsLambdaToken);
 		if (!lambdaToken) {
 			return Promise.reject(new Error(`Unable to find lambda token for lambda ${lambda.name}, execution ${execution.id}`));
 		}
 
+		let executionToken = lambdaToken;
+		if (execution._tokenId) {
+			const rxsExecToken = await Model.Token.find({
+				_id: Model.App.createId(execution._tokenId),
+			});
+			const execToken = await Helpers.streamFirst(rxsExecToken);
+			if (!execToken) {
+				return Promise.reject(new Error(`Unable to find lambda token for lambda ${lambda.name}, execution ${execution.id}`));
+			}
+			executionToken = execToken;
+		}
+
 		// TODO: This token could be a user token that's been provided or lambda token
-		const tokenValue = lambdaToken.value;
 
 		const apiPath = app.apiPath;
 		// const appAllowList = app.allowList;
@@ -121,7 +124,7 @@ class LambdasRunner {
 		trigger = trigger?.[Sugar.String.camelize(type, false)];
 		const buttressOptions = {
 			buttressUrl: `${Config.app.protocol}://${Config.app.host}`,
-			appToken: tokenValue,
+			appToken: executionToken.value,
 			apiPath: apiPath,
 			allowUnauthorized: true,
 		};
@@ -153,7 +156,7 @@ class LambdasRunner {
 			executionId: execution.id.toString(),
 			gitHash: lambda.git.hash,
 			metadata: lambda.metadata,
-			lambdaToken: tokenValue,
+			lambdaToken: lambdaToken.value,
 			appApiPath: apiPath,
 			fileName: `lambda_${lambda.id}`,
 			entryPoint: lambda.git.entryPoint,

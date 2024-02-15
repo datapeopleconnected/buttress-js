@@ -106,19 +106,19 @@ class AccessControl {
 			this._coreSchemaNames = this._coreSchema.map((c) => Sugar.String.singularize(c.name));
 		}
 
-		if (user && this._coreSchemaNames.some((n) => n === schemaName)) {
-			const userAppToken = await Model.Token.findOne({
-				_appId: {
-					$eq: user._appId,
-				},
-				type: {
-					$eq: Model.Token.Constants.Type.SYSTEM,
-				},
-			});
-			if (!userAppToken) {
-				return res.status(401).send({message: `Non admin app user can not do any core schema requests`});
-			}
-		}
+		// if (user && this._coreSchemaNames.some((n) => n === schemaName)) {
+		// 	const userAppToken = await Model.Token.findOne({
+		// 		_appId: {
+		// 			$eq: user._appId,
+		// 		},
+		// 		type: {
+		// 			$eq: Model.Token.Constants.Type.SYSTEM,
+		// 		},
+		// 	});
+		// 	if (!userAppToken) {
+		// 		return res.status(401).send({message: `Non admin app user can not do any core schema requests`});
+		// 	}
+		// }
 
 		if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
 		if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
@@ -308,7 +308,7 @@ class AccessControl {
 		if (policiesConfig.length < 1) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			outcome.err.message = 'Request does not have any policy rules matching the request verb';
+			outcome.err.message = `Request does not have any policy rules matching the request verb ${requestVerb} and schema ${schemaName}`;
 			return outcome;
 		}
 

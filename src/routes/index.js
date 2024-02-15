@@ -480,8 +480,6 @@ class Routes {
 				throw new Helpers.Errors.RequestError(400, 'missing_token');
 			}
 
-			console.log(`USING TOKEN ${req.token.type} ${req.token.value}`);
-
 			Logging.logTimer(`_authenticateToken:got-token ${req.token.id}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			Logging.logTimer(`_authenticateToken:got-token type ${req.token.type}`,
