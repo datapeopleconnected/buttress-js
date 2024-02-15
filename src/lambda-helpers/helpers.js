@@ -119,7 +119,7 @@ class Helpers {
 				const response = await fetch(data.url, data.options);
 				const output = {};
 				output.ok = response.ok;
-				output.status = (response.status)? response.status : null;
+				output.status = (response.status) ? response.status : null;
 				output.url = response.url;
 				output.redirected = response.redirected;
 
@@ -128,23 +128,33 @@ class Helpers {
 				}
 
 				if (!this.successfulHTTPScode.includes(output.status)) {
-					let text = await response.text();
+					const text = await response.text();
 					if (text && typeof text === 'string') {
-						text = JSON.parse(text);
-						if (text.error && text.error.status === 'UNAUTHENTICATED') {
-							throw new Errors.Unauthenticated(text.error.message, text.error.status, text.error.code);
-						}
-						if (text.error && text.error.status) {
-							throw new Error(`${data.url.pathname} error is ${text.error.status}`);
-						}
-						if (text.error && text.error.toUpperCase() === 'INVALID_TOKEN') {
-							throw new Errors.InvalidToken(text.error, 400);
-						}
-						if (text.error && text.error.toUpperCase() === 'INVALID_REQUEST') {
-							throw new Errors.InvalidRequest(text.error, 400);
+						let message = text;
+						let json = null;
+						try {
+							json = JSON.parse(text);
+						} catch (err) {
+							// If we failed to parse the json we'll just treat it as a string.
 						}
 
-						const message = (text.error) ? text.error : (text.message) ? text.message : text.statusMessage;
+						if (json) {
+							if (text.error && text.error.status === 'UNAUTHENTICATED') {
+								throw new Errors.Unauthenticated(text.error.message, text.error.status, text.error.code);
+							}
+							if (text.error && text.error.status) {
+								throw new Error(`${data.url.pathname} error is ${text.error.status}`);
+							}
+							if (text.error && text.error.toUpperCase() === 'INVALID_TOKEN') {
+								throw new Errors.InvalidToken(text.error, 400);
+							}
+							if (text.error && text.error.toUpperCase() === 'INVALID_REQUEST') {
+								throw new Errors.InvalidRequest(text.error, 400);
+							}
+
+							message = (text.error) ? text.error : (text.message) ? text.message : text.statusMessage;
+						}
+
 						throw new Error(`${data.url.pathname} error is ${message}`);
 					} else {
 						throw new Errors.CodedError(`${data.url.pathname} error is ${response.statusText}`, response.status);
