@@ -139,20 +139,20 @@ class Helpers {
 						}
 
 						if (json) {
-							if (text.error && text.error.status === 'UNAUTHENTICATED') {
-								throw new Errors.Unauthenticated(text.error.message, text.error.status, text.error.code);
+							if (json.error && json.error.status === 'UNAUTHENTICATED') {
+								throw new Errors.Unauthenticated(json.error.message, json.error.status, json.error.code);
 							}
-							if (text.error && text.error.status) {
-								throw new Error(`${data.url.pathname} error is ${text.error.status}`);
+							if (json.error && json.error.status) {
+								throw new Error(`${data.url.pathname} error is ${json.error.status}`);
 							}
-							if (text.error && text.error.toUpperCase() === 'INVALID_TOKEN') {
+							if (json.error && json.error.toUpperCase() === 'INVALID_TOKEN') {
 								throw new Errors.InvalidToken(text.error, 400);
 							}
-							if (text.error && text.error.toUpperCase() === 'INVALID_REQUEST') {
+							if (json.error && json.error.toUpperCase() === 'INVALID_REQUEST') {
 								throw new Errors.InvalidRequest(text.error, 400);
 							}
 
-							message = (text.error) ? text.error : (text.message) ? text.message : text.statusMessage;
+							message = (json.error) ? json.error : (json.message) ? json.message : json.statusMessage;
 						}
 
 						throw new Error(`${data.url.pathname} error is ${message}`);
