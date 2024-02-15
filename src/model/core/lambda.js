@@ -188,6 +188,12 @@ class LambdaSchemaModel extends StandardModel {
 								__required: false,
 								__allowUpdate: true,
 							},
+							useCallerToken: {
+								__type: 'boolean',
+								__default: false,
+								__required: false,
+								__allowUpdate: true,
+							},
 							redirect: {
 								__type: 'boolean',
 								__default: false,

@@ -111,6 +111,11 @@ class LambdaExecutionSchemaModel extends StandardModel {
 					__required: true,
 					__allowUpdate: false,
 				},
+				_tokenId: {
+					__type: 'id',
+					__required: true,
+					__allowUpdate: false,
+				},
 				metadata: {
 					__type: 'array',
 					__allowUpdate: true,
@@ -147,9 +152,10 @@ class LambdaExecutionSchemaModel extends StandardModel {
 	/**
 	 * @param {Object} body - body passed through from a POST request
 	 * @param {string} appId - the appId the lambda execution blongs to
+	 * @param {string} tokenId - the tokenId that should be used to exeucte the lambda
 	 * @return {Promise} - fulfilled with lambda execution Object when the database request is completed
 	 */
-	async add(body, appId) {
+	async add(body, appId, tokenId = null) {
 		const executionBody = {
 			lambdaId: (body.lambdaId) ? body.lambdaId : null,
 			deploymentId: (body.deploymentId) ? body.deploymentId : null,
@@ -160,7 +166,10 @@ class LambdaExecutionSchemaModel extends StandardModel {
 			metadata: (body.metadata) ? body.metadata : [],
 		};
 
-		const rxsExecution = await super.add(executionBody, {_appId: appId});
+		const internals = {_appId: appId};
+		if (tokenId) internals._tokenId = tokenId;
+
+		const rxsExecution = await super.add(executionBody, internals);
 		const execution = await Helpers.streamFirst(rxsExecution);
 
 		return execution;

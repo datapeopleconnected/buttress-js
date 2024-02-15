@@ -95,21 +95,33 @@ class LambdasRunner {
 			return Promise.reject(new Error(`Unable to find git repo for lambda ${lambda.name}`));
 		}
 
-		const rxsLambdaToken = await Model.Token.find({
+		let tokenQuery = {
 			_appId: Model.App.createId(app.id),
 			_lambdaId: Model.User.createId(lambda.id),
-		});
+		};
+
+		if (execution._tokenId) {
+			tokenQuery = {
+				_id: Model.App.createId(execution._tokenId),
+			};
+		}
+
+		const rxsLambdaToken = await Model.Token.find(tokenQuery);
 		const lambdaToken = await Helpers.streamFirst(rxsLambdaToken);
 		if (!lambdaToken) {
-			return Promise.reject(new Error(`Unable to find lambda token for lambda ${lambda.name}`));
+			return Promise.reject(new Error(`Unable to find lambda token for lambda ${lambda.name}, execution ${execution.id}`));
 		}
+
+		// TODO: This token could be a user token that's been provided or lambda token
+		const tokenValue = lambdaToken.value;
+
 		const apiPath = app.apiPath;
 		// const appAllowList = app.allowList;
 		let trigger = lambda.trigger.find((t) => t.type === type);
 		trigger = trigger?.[Sugar.String.camelize(type, false)];
 		const buttressOptions = {
 			buttressUrl: `${Config.app.protocol}://${Config.app.host}`,
-			appToken: lambdaToken.value,
+			appToken: tokenValue,
 			apiPath: apiPath,
 			allowUnauthorized: true,
 		};
@@ -141,7 +153,7 @@ class LambdasRunner {
 			executionId: execution.id.toString(),
 			gitHash: lambda.git.hash,
 			metadata: lambda.metadata,
-			lambdaToken: lambdaToken.value,
+			lambdaToken: tokenValue,
 			appApiPath: apiPath,
 			fileName: `lambda_${lambda.id}`,
 			entryPoint: lambda.git.entryPoint,
@@ -336,6 +348,7 @@ class LambdasRunner {
 				deploymentId: Model.Deployment.createId(execution.deploymentId),
 				executeAfter: Sugar.Date.create(execution.nextCronExpression),
 				nextCronExpression: execution.nextCronExpression,
+				_tokenId: (execution._tokenId) ? Model.Lambda.createId(execution._tokenId) : null,
 			}, execution._appId);
 
 			// const completeTriggerObj = {
