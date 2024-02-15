@@ -424,13 +424,13 @@ class Routes {
 			let tokenApp = null;
 			let useUserToken = true;
 
-			const isLambdaAPICall = req.url.includes('/api/v1/lambda/');
+			const isLambdaAPICall = req.url.includes('/lambda/v1/');
 			if (isLambdaAPICall) {
 				let apiLambdaTrigger = null;
 				let apiLambdaApp = null;
 				let apiPath = null;
 
-				[apiPath] = req.url.split('/api/v1/lambda/').join('').split('/');
+				[apiPath] = req.url.split('/lambda/v1/').join('').split('/');
 				apiLambdaApp = await Model.App.findOne({
 					apiPath: {
 						$eq: apiPath,
@@ -438,7 +438,7 @@ class Routes {
 				});
 
 				if (apiLambdaApp) {
-					const [endpoint] = req.url.split(`/api/v1/lambda/${apiPath}/`).join('').split('?');
+					const [endpoint] = req.url.split(`/lambda/v1/${apiPath}/`).join('').split('?');
 					req.authLambda = await Model.Lambda.findOne({
 						'trigger.apiEndpoint.url': {
 							$eq: endpoint,
@@ -733,7 +733,7 @@ class Routes {
 	}
 
 	async __configureAppLambdaEndpoints(apiPath) {
-		this.app.get(`/api/v1/lambda/${apiPath}/*`, this._preRouteMiddleware, async (req, res) => {
+		this.app.get(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req, res) => {
 			const [endpoint] = Object.values(req.params);
 			const result = await this._validateLambdaAPIExecution(endpoint, 'GET', req.headers, req.query, null, req.token);
 			if (result.errCode && result.errMessage) {
@@ -783,7 +783,7 @@ class Routes {
 			}
 		});
 
-		this.app.post(`/api/v1/lambda/${apiPath}/*`, this._preRouteMiddleware, async (req, res) => {
+		this.app.post(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req, res) => {
 			const [endpoint] = Object.values(req.params);
 			if (!req.body || Object.values(req.body).length < 1) {
 				res.status(400).send({message: 'missing_request_body'});
@@ -833,24 +833,6 @@ class Routes {
 					executionId: result.lambdaExecution.id,
 				});
 			}
-		});
-
-		// retrieve the status of a lambda execution
-		this.app.get(`/api/v1/lambda/status/${apiPath}/:executionId`, async (req, res) => {
-			const executionId = req.params.executionId;
-			const isValidId = ObjectId.isValid(executionId);
-			if (!isValidId) {
-				res.status(400).send({message: 'invalid_input'});
-				return;
-			}
-
-			const lambdaExecution = await Model.LambdaExecution.findById(executionId);
-			if (!lambdaExecution) {
-				res.status(404).send({message: 'not_found'});
-				return;
-			}
-
-			res.status(200).send({status: lambdaExecution.status});
 		});
 	}
 

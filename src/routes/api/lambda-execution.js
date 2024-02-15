@@ -62,6 +62,44 @@ class GetLambdaExecution extends Route {
 routes.push(GetLambdaExecution);
 
 /**
+ * @class GetLambdaExecution
+ */
+class GetLambdaExecutionStatus extends Route {
+	constructor(nrp) {
+		super('lambda-execution/:id/status', 'GET LAMBDA EXECUTION STATUS', nrp, Model.LambdaExecution);
+		this.verb = Route.Constants.Verbs.GET;
+		this.permissions = Route.Constants.Permissions.READ;
+	}
+
+	async _validate(req, res, token) {
+		const id = req.params.id;
+		if (!id) {
+			this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
+		}
+		if (!ObjectId.isValid(id)) {
+			this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
+		}
+
+		const lambdaExecution = await this.model.findById(id);
+		if (!lambdaExecution) {
+			this.log(`[${this.name}] Cannot find a lambda execution with id id`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_execution_does_not_exist`));
+		}
+
+		return lambdaExecution.status;
+	}
+
+	_exec(req, res, status) {
+		return {
+			status,
+		};
+	}
+}
+routes.push(GetLambdaExecutionStatus);
+
+/**
  * @class UpdateLambdaExecution
  */
 class UpdateLambdaExecution extends Route {

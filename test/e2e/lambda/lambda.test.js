@@ -228,7 +228,7 @@ describe('Lambda', async () => {
 		describe('API Endpoint', async () => {
 			it('Should receive 200 from \'hello-world\' lambda', async function() {
 				await bjsReq({
-					url: `${ENDPOINT}/api/v1/lambda/${testEnv.apps.app1.apiPath}/hello/world`,
+					url: `${ENDPOINT}/lambda/v1/${testEnv.apps.app1.apiPath}/hello/world`,
 					method: 'GET',
 				}, testEnv.apps.app1.token);
 			});

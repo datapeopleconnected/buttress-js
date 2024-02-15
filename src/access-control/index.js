@@ -80,13 +80,13 @@ class AccessControl {
 		let lambdaAPICall = false;
 		let requestedURL = req.originalUrl || req.url;
 		requestedURL = requestedURL.split('?').shift();
-		const isLambdaCall = requestedURL.indexOf('/api/v1/lambda') === 0;
+		const isLambdaCall = requestedURL.indexOf('/lambda/v1') === 0;
 
 		if (lambda && !user && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
 		if (user && !coreSchemaCall && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
 
 		if (isLambdaCall) {
-			const lambdaURL = requestedURL.replace(`/api/v1/lambda/${req.authApp.apiPath}/`, '');
+			const lambdaURL = requestedURL.replace(`/lambda/v1/${req.authApp.apiPath}/`, '');
 			lambdaAPICall = await Model.Lambda.findOne({
 				'trigger.apiEndpoint.url': {
 					$eq: lambdaURL,

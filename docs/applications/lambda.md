@@ -1,7 +1,7 @@
 # Introduction
 TODO
 
-It is worth mentioning that the API lambda is executed by either calling the /api/v1/lambda/{lambdaId} or /api/v1/lambda/{lambdaAPIURL}
+It is worth mentioning that the API lambda is executed by either calling the /lambda/v1/{lambdaId} or /lambda/v1/{lambdaAPIURL}
 
 # Create a Lambda
 The following steps are going to detail how to a lambda within Buttress.
