@@ -153,7 +153,7 @@ class LambdaManager {
 
 		const rxLambdas = await Model.LambdaExecution.find(query);
 		const lambdas = await Helpers.streamAll(rxLambdas);
-		Logging.logDebug(`Got ${lambdas.length} pending cron lambdas`);
+		Logging.logSilly(`Got ${lambdas.length} pending cron lambdas`);
 
 		return lambdas;
 
