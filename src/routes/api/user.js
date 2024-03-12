@@ -62,6 +62,14 @@ class GetUser extends Route {
 			throw new Helpers.Errors.RequestError(400, `missing_field`);
 		}
 
+		if (req.params.id === 'me') {
+			if (!token) {
+				this.log(`[${this.name}] Missing token`, Route.LogLevel.ERR);
+				throw new Helpers.Errors.RequestError(400, `missing_token`);
+			}
+			req.params.id = token._userId;
+		}
+
 		let user = null;
 		let userTokens = [];
 		let userId = null;
