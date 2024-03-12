@@ -104,6 +104,7 @@ class LambdasRunner {
 			return Promise.reject(new Error(`Unable to find lambda token for lambda ${lambda.name}, execution ${execution.id}`));
 		}
 
+		let executionUserId = null;
 		let executionToken = lambdaToken;
 		if (execution._tokenId) {
 			const rxsExecToken = await Model.Token.find({
@@ -114,9 +115,18 @@ class LambdasRunner {
 				return Promise.reject(new Error(`Unable to find lambda token for lambda ${lambda.name}, execution ${execution.id}`));
 			}
 			executionToken = execToken;
-		}
 
-		// TODO: This token could be a user token that's been provided or lambda token
+			if (execToken.type === 'user') {
+				const rxsUser = await Model.User.find({
+					_id: Model.User.createId(execToken._userId),
+				});
+				const user = await Helpers.streamFirst(rxsUser);
+				if (!user) {
+					return Promise.reject(new Error(`Unable to find user for token ${execToken.id}`));
+				}
+				executionUserId = user.id.toString();
+			}
+		}
 
 		const apiPath = app.apiPath;
 		// const appAllowList = app.allowList;
@@ -148,7 +158,7 @@ class LambdasRunner {
 
 		this._jail.setSync('buttressOptions', new ivm.ExternalCopy(buttressOptions).copyInto());
 
-		// Would be better to just group these under one namespace "lambda". Unless we're going.
+		// * Would be better to just group these under one namespace "lambda". Unless we're going.
 		this._jail.setSync('lambdaModules', new ivm.ExternalCopy(lambdaModules).copyInto());
 		this._jail.setSync('lambdaInfo', new ivm.ExternalCopy({
 			env: Config.env,
@@ -157,6 +167,7 @@ class LambdasRunner {
 			gitHash: lambda.git.hash,
 			metadata: lambda.metadata,
 			lambdaToken: lambdaToken.value,
+			userId: executionUserId,
 			appApiPath: apiPath,
 			fileName: `lambda_${lambda.id}`,
 			entryPoint: lambda.git.entryPoint,
