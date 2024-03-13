@@ -551,13 +551,9 @@ class AccessControl {
 	__getInnerObjectValue(originalObj) {
 		if (!originalObj) return null;
 
-		return Object.keys(originalObj).reduce((obj, key) => {
-			if (key !== 'schema') {
-				obj[key] = originalObj[key];
-			}
-
-			return obj;
-		}, {});
+		// eslint-disable-next-line no-unused-vars
+		const {schema, ...rest} = originalObj;
+		return rest;
 	}
 }
 module.exports = new AccessControl();

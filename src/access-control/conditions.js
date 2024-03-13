@@ -2,6 +2,7 @@ const Sugar = require('sugar');
 
 const accessControlHelpers = require('./helpers');
 const Filter = require('./filter');
+const PolicyEnv = require('./env');
 const Helpers = require('../helpers');
 const Model = require('../model');
 
@@ -134,6 +135,7 @@ class Conditions {
 	}
 
 	async __checkInnerConditions(req, envVar, conditionObj, key, passed, partialPass) {
+		const environmentKeys = Object.keys(envVar);
 		const conditionKey = key.replace(this.envStr, '');
 		const isSchemaQuery = this.conditionQueryRegex.test(conditionKey);
 
@@ -141,6 +143,9 @@ class Conditions {
 			return true;
 		}
 
+		if (environmentKeys.includes(conditionKey)) {
+			return this.__evaluateEnvCondition(req, conditionObj, envVar, conditionKey, req.authApp.id, req.authUser);
+		}
 		if (typeof conditionObj[key] === 'object' && !this.conditionKeys.includes(conditionKey) && !isSchemaQuery) {
 			return await this.__checkCondition(req, envVar, conditionObj[key], passed, partialPass);
 		}
@@ -351,6 +356,20 @@ class Conditions {
 		return val;
 	}
 
+	async __evaluateEnvCondition(req, condition, envVars, conditionKey, appId, authUser) {
+		const output = await PolicyEnv.getQueryEnvironmentVar(conditionKey, envVars, appId, authUser, true);
+		const modifiedCondition = {...condition};
+		modifiedCondition[output] = modifiedCondition[`env.${conditionKey}`];
+		delete modifiedCondition[`env.${conditionKey}`];
+		let passed = false;
+		for await (const key of Object.keys(modifiedCondition)) {
+			for await (const operator of Object.keys(modifiedCondition[key])) {
+				passed = await this.__checkConditionQuery(req, envVars, operator, modifiedCondition, key, conditionKey);
+			}
+		}
+
+		return passed;
+	}
 	__getObjectValByPathKey(obj, key) {
 		let value = null;
 

@@ -91,14 +91,50 @@ class Filter {
 
 	async __substituteEnvVariables(obj, env, appId, authUser) {
 		for await (const key of Object.keys(obj)) {
-			obj[key] = await PolicyEnv.getQueryEnvironmentVar(obj[key], env, appId, authUser);
+			const envKey = await this.__findEnvString(obj[key]);
+			if (!envKey) continue;
+
+			const output = await PolicyEnv.getQueryEnvironmentVar(envKey, env, appId, authUser);
+			obj[key] = await this.__substituteEnvString(obj[key], output);
 		}
+	}
+
+	async __findEnvString(input) {
+		if (input && typeof input === 'string' && input.includes('env.')) {
+			return input;
+		}
+
+		if (input && typeof input === 'object') {
+			for (const key of Object.keys(input)) {
+				const result = await this.__findEnvString(input[key]);
+				if (result !== false) {
+					return result;
+				}
+			}
+		}
+		return false;
+	}
+
+	async __substituteEnvString(input, newValue) {
+		if (input && typeof input === 'string') {
+			if (input.startsWith('env.')) {
+				return newValue;
+			} else {
+				return input;
+			}
+		}
+
+		if (input && typeof input === 'object') {
+			for (const key of Object.keys(input)) {
+				input[key] = await this.__substituteEnvString(input[key], newValue);
+			}
+		}
+		return input;
 	}
 
 	async applyAccessControlPolicyQuery(req) {
 		let passed = true;
 		const accessControlQuery = req.accessControlQuery;
-
 		if (!accessControlQuery || Object.keys(accessControlQuery).length < 1) return passed;
 
 		const reqQuery = (req.body.query)? req.body.query : null;
@@ -193,6 +229,7 @@ class Filter {
 
 			if (!modifiedQuery) {
 				originalQuery[key] = accessControlQuery[key];
+				modifiedQuery = true;
 			}
 
 			return modifiedQuery;
@@ -325,51 +362,23 @@ class Filter {
 		return modifiedQuery;
 	}
 
-	async __convertPrefixToQueryPrefix(obj, baseKey = null, newObj = {}) {
-		if (obj === null) return null;
-
-		for await (const key of Object.keys(obj)) {
-			if (typeof obj[key] === 'object' && !Array.isArray(obj[key]) && !ObjectId.isValid(obj[key])) {
-				await this.__convertPrefixToQueryPrefix(obj[key], key, newObj);
-				continue;
+	async __convertPrefixToQueryPrefix(obj) {
+		if (typeof obj === 'object' && obj !== null && !ObjectId.isValid(obj)) {
+			const newObj = {};
+			for (const key of Object.keys(obj)) {
+				const newKey = key.replace(/@/g, '$');
+				newObj[newKey] = await this.__convertPrefixToQueryPrefix(obj[key]);
 			}
 
-			if (Array.isArray(obj[key]) && this.logicalOperator.includes(key)) {
-				await this.__convertPrefixQueryArray(obj[key], key, newObj);
-				continue;
+			if (Array.isArray(obj)) {
+				const arrayValues = Object.values(newObj);
+				return arrayValues.length === 1 ? arrayValues.shift() : arrayValues;
 			}
 
-			if (!newObj[baseKey]) {
-				newObj[baseKey] = {};
-			}
-
-			const newKey = this.__replacePrefix(key);
-			newObj[baseKey][newKey] = obj[key];
+			return newObj;
+		} else {
+			return obj;
 		}
-
-		return newObj;
-	}
-
-	__convertPrefixQueryArray(arr, key, newObj) {
-		let logicalKey = null;
-		if (this.logicalOperator.includes(key)) {
-			logicalKey = this.__replacePrefix(key);
-			newObj[logicalKey] = [];
-		}
-
-		if (!logicalKey) {
-			// TODO throw new error if logical operator is not supported
-			return;
-		}
-
-		return arr.reduce((prev, obj) => {
-			return prev.then(() => {
-				return this.__convertPrefixToQueryPrefix(obj)
-					.then((convertedObj) => {
-						newObj[logicalKey].push(convertedObj);
-					});
-			});
-		}, Promise.resolve());
 	}
 
 	__getQueryKeys(query, baseKey = null) {
@@ -390,10 +399,6 @@ class Filter {
 
 			return arr;
 		}, []);
-	}
-
-	__replacePrefix(str) {
-		return str.replace('@', '$');
 	}
 
 	async _getDeepQueryObj(queryObj, newObj = {}) {

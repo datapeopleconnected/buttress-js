@@ -145,10 +145,10 @@ class Helpers {
 							if (json.error && json.error.status) {
 								throw new Error(`${data.url.pathname} error is ${json.error.status}`);
 							}
-							if (json.error && json.error.toUpperCase() === 'INVALID_TOKEN') {
+							if (json.error && (typeof json.error === 'string' && json.error.toUpperCase() === 'INVALID_TOKEN')) {
 								throw new Errors.InvalidToken(text.error, 400);
 							}
-							if (json.error && json.error.toUpperCase() === 'INVALID_REQUEST') {
+							if (json.error && (typeof json.error === 'string' && json.error.toUpperCase() === 'INVALID_REQUEST')) {
 								throw new Errors.InvalidRequest(text.error, 400);
 							}
 
@@ -500,6 +500,8 @@ class Helpers {
 	}
 
 	_encodeReqBody(body) {
+		if (typeof body === 'string') return encodeURIComponent(body);
+
 		const formBody = [];
 		Object.keys(body).forEach((key) => {
 			const encodedKey = encodeURIComponent(key);

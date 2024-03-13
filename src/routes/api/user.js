@@ -397,14 +397,10 @@ class AddUser extends Route {
 	async _exec(req, res, validate) {
 		const user = await Model.User.add(req.body);
 
-		const [token] = user.tokens;
 		return {
 			id: user.id,
 			auth: user.auth,
-			token: {
-				value: token?.value || [],
-				policyProperties: token?.policyProperties || null,
-			},
+			tokens: user.tokens,
 		};
 	}
 }
@@ -565,7 +561,7 @@ class UpdateUserPolicyProperties extends Route {
 		});
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
+			return Promise.reject(new Helpers.Errors.RequestError(400, `user_token_not_found`));
 		}
 
 		return Promise.resolve(userToken);
