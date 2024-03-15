@@ -82,7 +82,7 @@ class PolicyEnv {
 		const appShortId = shortId(appId);
 		for await (const key of Object.keys(query)) {
 			if (typeof query[key] !== 'object') throw new Error(`env query needs to be a query object ${query[key]}`);
-			const operator = this.queryOperator.find((op) => Object.keys(query[key]).every((key) => key === op));
+			const operator = this.queryOperator.find((op) => Object.keys(query[key]).every((key) => key.replace(/@/g, '$') === op));
 			if (!operator) throw new Error(`Can not find an operator for ${query[key]}`);
 
 			const dbQuery = query[key][operator];
