@@ -9,25 +9,25 @@ const shortId = require('../helpers').shortId;
  */
 class PolicyEnv {
 	constructor() {
-		this.queryOperator = [
-			'$eq',
-			'$not',
-			'$gt',
-			'$lt',
-			'$gte',
-			'$lte',
-			'$gtDate',
-			'$gteDate',
-			'$ltDate',
-			'$lteDate',
-			'$rex',
-			'$rexi',
-			'$in',
-			'$nin',
-			'$exists',
-			'$inProp',
-			'$elMatch',
-		];
+		this.queryOperator = {
+			'@eq': '$eq',
+			'@not': '$not',
+			'@gt': '$gt',
+			'@lt': '$lt',
+			'@gte': '$gte',
+			'@lte': '$lte',
+			'@gtDate': '$gtDate',
+			'@gteDate': '$gteDate',
+			'@ltDate': '$ltDate',
+			'@lteDate': '$lteDate',
+			'@rex': '$rex',
+			'@rexi': '$rexi',
+			'@in': '$in',
+			'@nin': '$nin',
+			'@exists': '$exists',
+			'@inProp': '$inProp',
+			'@elMatch': '$elMatch',
+		};
 	}
 
 	async getQueryEnvironmentVar(environmentKey, envVars, appId, authUser, conditionFlag = false) {
@@ -72,7 +72,7 @@ class PolicyEnv {
 
 	async __getAppSchemaEnvValue(appId, user, envVars, envObj) {
 		const schema = envObj.collection;
-		const query = envObj.query;
+		const query = this.__replaceOperatorKey(envObj.query);
 		const output = envObj.output;
 		const outputType = envObj.type;
 		const lookUpObject = {
@@ -82,7 +82,7 @@ class PolicyEnv {
 		const appShortId = shortId(appId);
 		for await (const key of Object.keys(query)) {
 			if (typeof query[key] !== 'object') throw new Error(`env query needs to be a query object ${query[key]}`);
-			const operator = this.queryOperator.find((op) => Object.keys(query[key]).every((key) => key.replace(/@/g, '$') === op));
+			const operator = Object.values(this.queryOperator).find((op) => Object.keys(query[key]).every((key) => key === op));
 			if (!operator) throw new Error(`Can not find an operator for ${query[key]}`);
 
 			const dbQuery = query[key][operator];
@@ -158,6 +158,20 @@ class PolicyEnv {
 
 			return arr;
 		}, []);
+	}
+
+	__replaceOperatorKey(obj) {
+		if (!obj || typeof obj !== 'object') {
+			return obj; // Return the input if it's not an object
+		}
+
+		const newObj = {};
+		for (const key of Object.keys(obj)) {
+			const value = obj[key];
+			const updatedKey = this.queryOperator[key] || key;
+			newObj[updatedKey] = this.__replaceOperatorKey(value); // Recursively update nested objects
+		}
+		return newObj;
 	}
 }
 module.exports = new PolicyEnv();

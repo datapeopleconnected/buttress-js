@@ -32,7 +32,6 @@
 	},
 	"global": {
 		"env": "%NODE_ENV%",
-		"developmentEmailAddress": "test",
 		"app": {
 			"title": "%BUTTRESS_APP_TITLE%",
 			"description": "The federated real-time open data platform",

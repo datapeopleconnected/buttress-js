@@ -16,6 +16,7 @@
 
 const Logging = require('./logging');
 const Sugar = require('sugar');
+const crypto = require('crypto');
 
 const Datastore = require('../datastore');
 
@@ -87,7 +88,8 @@ const __getPropDefault = (config) => {
 				const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 				const mask = 0x3d;
 
-				const bytes = Crypto.randomBytes(length);
+				const bytes = crypto.randomBytes(length);
+				res = '';
 				for (let x = 0; x < bytes.length; x++) {
 					const byte = bytes[x];
 					res += chars[byte & mask];
@@ -277,7 +279,7 @@ const __validate = (schema, values, parentProperty, body = null) => {
 		}
 		if (isSubPropOfArray) continue;
 
-		if (propVal === undefined) {
+		if (propVal === undefined || (propVal && propVal.value === config.__default)) {
 			// NOTE: This feels wrong
 			if (body && body[property] && schema && schema[property] && schema[property].__type === 'object') {
 				const definedObjectKeys = Object.keys(schema).filter((key) => key !== property).map((v) => v.replace(`${property}.`, ''));
@@ -303,16 +305,21 @@ const __validate = (schema, values, parentProperty, body = null) => {
 				continue;
 			}
 
-			if (config.__required) {
+			if (config.__required && propVal === undefined && (config.__default === null || config.__default === undefined)) {
 				res.isValid = false;
 				Logging.logWarn(`Missing required ${property}`);
 				res.missing.push(property);
 				continue;
 			}
 
+			const defaultValue = __getPropDefault(config);
+			if (propVal && propVal.value === config.__default) {
+				body[property] = defaultValue;
+			}
+
 			propVal = {
 				path: property,
-				value: __getPropDefault(config),
+				value: defaultValue,
 			};
 			values.push(propVal);
 		}
