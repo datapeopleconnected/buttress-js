@@ -524,10 +524,8 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @return {array | string}
 	 */
 	_getExpressionValue(value) {
-		if (Array.isArray(value) && value.length > 1) {
-			return value.map((v) => new ObjectId(v));
-		} else if (Array.isArray(value) && value.length < 1) {
-			return value;
+		if (Array.isArray(value)) {
+			return (value.length > 0) ? value.map((v) => new ObjectId(v)) : value;
 		} else {
 			return new ObjectId(value);
 		}
