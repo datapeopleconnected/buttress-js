@@ -327,7 +327,6 @@ class Filter {
 			return false;
 		}
 
-
 		const [accessControlOperator] = Object.keys(accessControlQueryObj);
 		const [lhs] = Object.values(originalQueryObj);
 		const rhs = accessControlQueryObj[accessControlOperator];

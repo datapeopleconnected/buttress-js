@@ -27,7 +27,7 @@ class Helpers {
 		switch (operator) {
 		case '$eq':
 		case '@eq': {
-			passed = lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
+			passed = !rhs || lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
 		}
 			break;
 		case '$not':
@@ -90,9 +90,11 @@ class Helpers {
 		case '$in':
 		case '@in': {
 			if (Array.isArray(lhs)) {
-				passed = lhs.every((i) => rhs.includes(i));
+				passed = lhs.every((i) => {
+					return rhs.some((j) => j.toString() === i.toString());
+				});
 			} else {
-				passed = rhs.some((i) => i === lhs);
+				passed = rhs.some((i) => i.toString() === lhs.toString());
 			}
 		}
 			break;

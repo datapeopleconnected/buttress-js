@@ -906,6 +906,7 @@ class BootstrapSocket extends Bootstrap {
 			} else {
 				const [queryOperator] = Object.keys(roomQuery[operator]);
 				const rhs = roomQuery[operator][queryOperator];
+				operator = operator.replace(/^_+/, '');
 				const lhs = (ObjectId.isValid(entity[operator])) ? entity[operator].toString() : entity[operator];
 				const passed = await AccessControlHelpers.evaluateOperation(lhs, rhs, queryOperator);
 				if (partialPass && passed) {

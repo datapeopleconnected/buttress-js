@@ -454,7 +454,6 @@ class AccessControl {
 			return outcome;
 		}
 
-
 		// TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
 		const passedEvalutaion = await AccessControlFilter.evaluateManipulationActions(req, schemaName);
 		if (!passedEvalutaion) {
