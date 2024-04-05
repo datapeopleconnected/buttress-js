@@ -27,7 +27,7 @@ class Helpers {
 		switch (operator) {
 		case '$eq':
 		case '@eq': {
-			passed = !rhs || lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
+			passed = !lhs || !rhs || lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
 		}
 			break;
 		case '$not':
