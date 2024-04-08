@@ -424,6 +424,8 @@ class Routes {
 			let tokenApp = null;
 			let useUserToken = true;
 
+			req.authLambda = null;
+
 			const isLambdaAPICall = req.url.includes('/lambda/v1/');
 			if (isLambdaAPICall) {
 				let apiLambdaTrigger = null;
@@ -437,21 +439,30 @@ class Routes {
 					},
 				});
 
-				if (apiLambdaApp) {
-					const [endpoint] = req.url.split(`/lambda/v1/${apiPath}/`).join('').split('?');
-					req.authLambda = await Model.Lambda.findOne({
-						'trigger.apiEndpoint.url': {
-							$eq: endpoint,
-						},
-						'_appId': {
-							$eq: apiLambdaApp.id,
-						},
-					});
-					Logging.logTimer(`_authenticateAPILambdaToken:got-lambda ${req.authLambda.id}`,
-						req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
-					apiLambdaTrigger = req.authLambda.trigger.find((t) => t.type === 'API_ENDPOINT' && t.apiEndpoint.url === endpoint);
+				if (!apiLambdaApp) {
+					Logging.logTimer(`_authenticateToken:end-unknown-lambda-app-endpoint`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+					throw new Helpers.Errors.RequestError(404, 'unknown_lambda_endpoint');
 				}
+
+				const [endpoint] = req.url.split(`/lambda/v1/${apiPath}/`).join('').split('?');
+				req.authLambda = await Model.Lambda.findOne({
+					'trigger.apiEndpoint.url': {
+						$eq: endpoint,
+					},
+					'_appId': {
+						$eq: apiLambdaApp.id,
+					},
+				});
+
+				if (!req.authLambda) {
+					Logging.logTimer(`_authenticateToken:end-unknown-lambda-endpoint`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+					throw new Helpers.Errors.RequestError(404, 'unknown_lambda_endpoint');
+				}
+
+				Logging.logTimer(`_authenticateAPILambdaToken:got-lambda ${req.authLambda.id}`,
+					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+				apiLambdaTrigger = req.authLambda.trigger.find((t) => t.type === 'API_ENDPOINT' && t.apiEndpoint.url === endpoint);
 
 				useUserToken = (apiLambdaTrigger && apiLambdaTrigger.apiEndpoint.useCallerToken);
 				if (!useUserToken) {
@@ -466,6 +477,12 @@ class Routes {
 					// Logging.logTimer('_authenticateAPILambdaToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 					// return next();
 				}
+			} else if (req.token?._lambdaId) {
+				// If we're not calling a lambda endpoint then look up the lambda via the token.
+				const lambda = await Model.Lambda.findById(req.token._lambdaId);
+				req.authLambda = lambda;
+				Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda.id : lambda}`,
+					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
 
 			req.apiPath = req.query.apiPath;
@@ -505,13 +522,6 @@ class Routes {
 				`_authenticateToken:got-app-data-sharing-agreement ${(req.authAppDataSharing) ? req.authAppDataSharing.id : appDataSharing}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id,
 			);
-
-			if (!req.authLambda) {
-				const lambda = (req.token._lambdaId) ? await Model.Lambda.findById(req.token._lambdaId) : null;
-				req.authLambda = lambda;
-				Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda.id : lambda}`,
-					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			}
 
 			const user = (req.token._userId) ? await Model.User.findById(req.token._userId) : null;
 			req.authUser = user;
