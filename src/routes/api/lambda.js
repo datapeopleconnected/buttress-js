@@ -19,7 +19,7 @@
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
 const Config = require('node-env-obj')();
-const ObjectId = require('mongodb').ObjectId;
+const {ObjectId} = require('bson');
 const Sugar = require('sugar');
 
 // const AccessControl = require('../../access-control');

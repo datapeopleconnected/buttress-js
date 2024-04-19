@@ -17,7 +17,7 @@
  */
 
 const Stream = require('stream');
-const ObjectId = require('mongodb').ObjectId;
+const {ObjectId} = require('bson');
 const ButtressAPI = require('@buttress/api');
 
 const {Errors} = require('../../helpers');

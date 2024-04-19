@@ -22,7 +22,7 @@ const path = require('path');
 const express = require('express');
 const onFinished = require('on-finished');
 const {v4: uuidv4} = require('uuid');
-const ObjectId = require('mongodb').ObjectId;
+const {ObjectId} = require('bson');
 
 const Config = require('node-env-obj')();
 

@@ -1,6 +1,6 @@
 const Sugar = require('sugar');
 
-const ObjectId = require('mongodb').ObjectId;
+const {ObjectId} = require('bson');
 const accessControlHelpers = require('./helpers');
 
 const PolicyEnv = require('./env');

@@ -33,7 +33,7 @@ const Bootstrap = require('./bootstrap');
 
 const Config = require('node-env-obj')();
 
-const ObjectId = require('mongodb').ObjectId;
+const {ObjectId} = require('bson');
 const Model = require('./model');
 const Helpers = require('./helpers');
 const Logging = require('./helpers/logging');

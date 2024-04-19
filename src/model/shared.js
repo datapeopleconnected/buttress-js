@@ -66,7 +66,7 @@ module.exports.sanitizeSchemaObject = _sanitizeSchemaObject;
  */
 const _doValidateUpdate = function(pathContext, flattenedSchema) {
 	return (body) => {
-		Logging.logDebug(`_doValidateUpdate: path: ${body.path}, value: ${body.value}`);
+		Logging.logSilly(`_doValidateUpdate: path: ${body.path}, value: ${body.value}`);
 		const res = {
 			isValid: false,
 			isMissingRequired: false,

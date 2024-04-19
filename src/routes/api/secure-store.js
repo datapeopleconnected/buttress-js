@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const ObjectId = require('mongodb').ObjectId;
+const {ObjectId} = require('bson');
 
 const Route = require('../route');
 const Model = require('../../model');
