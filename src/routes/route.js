@@ -392,8 +392,8 @@ class Route {
 		if (isLambdaChange) {
 			// If the current lambda is a path mutation, we don't want to trigger other path mutations
 			// not great but we'll just block all lambdas that have a pathMutation trigger
-			if (req.authLambda.trigger.find((t) => t.type === 'PATH_MUTATION')) {
-				Logging.logSilly(`Blocked path mutation lambda ${req.authLambda.name} from triggering other path mutations`);
+			if (req.authLambda && req.authLambda.trigger.find((t) => t.type === 'PATH_MUTATION')) {
+				Logging.logDebug(`Blocked path mutation lambda ${req.authLambda.name} from triggering other path mutations`);
 				return;
 			}
 		}
