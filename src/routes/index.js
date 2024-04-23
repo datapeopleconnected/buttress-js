@@ -477,12 +477,6 @@ class Routes {
 					// Logging.logTimer('_authenticateAPILambdaToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 					// return next();
 				}
-			} else if (req.token?._lambdaId) {
-				// If we're not calling a lambda endpoint then look up the lambda via the token.
-				const lambda = await Model.Lambda.findById(req.token._lambdaId);
-				req.authLambda = lambda;
-				Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda.id : lambda}`,
-					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
 
 			req.apiPath = req.query.apiPath;
@@ -490,6 +484,15 @@ class Routes {
 			// Parse the token from the req headers / params
 			if (useUserToken) {
 				req.token = await this._getProvidedToken(req);
+			}
+
+			// If not a lambda API call
+			if (!isLambdaAPICall && req.token?._lambdaId) {
+				// If we're not calling a lambda endpoint then look up the lambda via the token.
+				const lambda = await Model.Lambda.findById(req.token._lambdaId);
+				req.authLambda = lambda;
+				Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda.id : lambda}`,
+					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
 
 			if (!req.token) {

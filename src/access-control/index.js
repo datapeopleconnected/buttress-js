@@ -73,17 +73,14 @@ class AccessControl {
 		if (req.isPluginPath) return next();
 
 		const user = req.authUser;
-		const lambda = req.authLambda;
 		const appId = token._appId.toString();
 		const requestVerb = req.method || req.originalMethod;
-		const coreSchemaCall = req.params.core;
 		let lambdaAPICall = false;
 		let requestedURL = req.originalUrl || req.url;
 		requestedURL = requestedURL.split('?').shift();
 		const isLambdaCall = requestedURL.indexOf('/lambda/v1') === 0;
 
-		if (lambda && !user && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
-		if (user && !coreSchemaCall && requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
+		if (requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
 
 		if (isLambdaCall) {
 			const lambdaURL = requestedURL.replace(`/lambda/v1/${req.authApp.apiPath}/`, '');
