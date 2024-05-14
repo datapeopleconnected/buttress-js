@@ -523,7 +523,8 @@ class LambdasRunner {
 			});
 		})
 			.catch((err) => {
-				console.error(err);
+				Logging.logError('Error whilst bundling lambda modules');
+				Logging.logError(err);
 			});
 	}
 
@@ -539,7 +540,13 @@ class LambdasRunner {
 				file = mod.name;
 				this._registeredBundles.push(mod.name);
 			}
-			this._isolate.compileScriptSync(fs.readFileSync(`${Config.paths.lambda.bundles}/${file}.js`, 'utf8')).runSync(this._context);
+			try {
+				this._isolate.compileScriptSync(fs.readFileSync(`${Config.paths.lambda.bundles}/${file}.js`, 'utf8'))
+					.runSync(this._context);
+			} catch (err) {
+				Logging.logError(`Error registering lambda module ${mod.name}`);
+				throw err;
+			}
 		}
 	}
 }
