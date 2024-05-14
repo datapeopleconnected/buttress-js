@@ -240,8 +240,8 @@ class Helpers {
 		this._createLambdaNameSpace(isolate, context);
 	}
 
-	async _createHostIsolateBridge(isolate, context) {
-		const bootstrap = await isolate.compileScript(`new function() {
+	_createHostIsolateBridge(isolate, context) {
+		const bootstrap = isolate.compileScriptSync(`new function() {
 			let ivm = _ivm;
 			delete _ivm;
 
@@ -376,7 +376,7 @@ class Helpers {
 				});
 			}`);
 
-		await bootstrap.run(context);
+		bootstrap.runSync(context);
 	}
 
 
@@ -443,45 +443,49 @@ class Helpers {
 	_createLambdaNameSpace(isolate, context) {
 		isolate.compileScriptSync(`
 			const lambda = {
-				log: (...args) => {
-					log(...args);
-				},
-				logDebug: (...args) => {
-					logDebug(...args);
-				},
-				logSilly: (...args) => {
-					logSilly(...args);
-				},
-				logVerbose: (...args) => {
-					logVerbose(...args);
-				},
-				logWarn: (...args) => {
-					logWarn(...args);
-				},
-				logError: (...args) => {
-					logError(...args);
-				},
-				setResult: (...args) => {
-					setResult(...args);
-				},
-				fetch: async (...args) => {
-					return fetch(...args);
-				},
-				cryptoRandomBytes: async (...args) => {
-					return cryptoRandomBytes(...args);
-				},
-				getEmailTemplate: async(...args) => {
-					return getEmailTemplate(...args);
-				},
-				getCodeChallenge: async (...args) => {
-					return getCodeChallenge(...args);
-				},
+				log: (...args) => log(...args),
+				logDebug: (...args) => logDebug(...args),
+				logSilly: (...args) => logSilly(...args),
+				logVerbose: (...args) => logVerbose(...args),
+				logWarn: (...args) => logWarn(...args),
+				logError: (...args) => logError(...args),
+				setResult: (...args) => setResult(...args),
+				fetch: async (...args) => fetch(...args),
+				cryptoRandomBytes: async (...args) => cryptoRandomBytes(...args),
+				getEmailTemplate: async(...args) => getEmailTemplate(...args),
+				getCodeChallenge: async (...args) => getCodeChallenge(...args),
 				req: {
 					body: {},
 					query: {},
 				},
 				env: '${new ivm.Reference(Config.env.toUpperCase()).copySync()}',
 				developmentEmailAddress: '${new ivm.Reference(Config.lambda.developmentEmailAddress).copySync()}',
+			};
+			console = {
+				log: lambda.log,
+				debug: lambda.logDebug,
+				silly: lambda.logSilly,
+				verbose: lambda.logVerbose,
+				warn: lambda.logWarn,
+				error: lambda.logError,
+				assert: (condition, ...data) => {
+					if (!condition) {
+						lambda.logError('Assertion failed:', ...data);
+					}
+				},
+				time: (label = 'default') => {
+					if (!console.timers) {
+						console.timers = {};
+					}
+					console.timers[label] = Date.now();
+				},
+				timeEnd: (label = 'default') => {
+					if (console.timers && console.timers[label]) {
+						const duration = Date.now() - console.timers[label];
+						lambda.log(\`\${label}: \${duration}ms\`);
+						delete console.timers[label];
+					}
+				},
 			};
 		`).runSync(context);
 	}
