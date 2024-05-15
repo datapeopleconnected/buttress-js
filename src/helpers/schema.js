@@ -334,7 +334,7 @@ const __validate = (schema, values, parentProperty, body = null) => {
 		if (config.__type === 'array' && config.__schema) {
 			propVal.value.reduce((errors, v, idx) => {
 				const values = __getFlattenedBody(v);
-				const res = __validate(config.__schema, values, `${property}.${idx}.`);
+				const res = __validate(config.__schema, values, `${property}.${idx}.`, body);
 				if (!res.invalid) return errors;
 				if (res.missing.length) {
 					errors.missing = errors.missing.concat(res.missing);

@@ -94,7 +94,7 @@ class Helpers {
 					return rhs.some((j) => j.toString() === i.toString());
 				});
 			} else {
-				passed = rhs.some((i) => i.toString() === lhs.toString());
+				passed = lhs && rhs.some((i) => i.toString() === lhs.toString());
 			}
 		}
 			break;
