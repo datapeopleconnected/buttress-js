@@ -529,7 +529,7 @@ class Routes {
 			let user = null;
 			if (req.token._userId) {
 				user = await Model.User.findById(req.token._userId);
-				Logging.logError(`Request was made with a valid token but no user was found for token ${req.token.id}`);
+				Logging.logSilly(`Request was made with a valid token but no user was found for token ${req.token.id}`);
 				if (!user) throw new Helpers.Errors.RequestError(400, 'invalid_token');
 			}
 
