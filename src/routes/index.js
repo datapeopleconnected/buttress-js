@@ -526,7 +526,13 @@ class Routes {
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id,
 			);
 
-			const user = (req.token._userId) ? await Model.User.findById(req.token._userId) : null;
+			let user = null;
+			if (req.token._userId) {
+				user = await Model.User.findById(req.token._userId);
+				Logging.logError(`Request was made with a valid token but no user was found for token ${req.token.id}`);
+				if (!user) throw new Helpers.Errors.RequestError(400, 'invalid_token');
+			}
+
 			req.authUser = user;
 			Logging.logTimer(`_authenticateToken:got-user ${(req.authUser) ? req.authUser.id : user}`,
 				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -631,12 +637,6 @@ class Routes {
 			res.header('Access-Control-Allow-Headers', 'content-type');
 			Logging.logTimer('_configCrossDomain:end-app-token', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			next();
-			return;
-		}
-
-		if (!req.authUser) {
-			res.status(401).json({message: 'Auth user is required'});
-			Logging.logTimer('_configCrossDomain:end-no-auth-user', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
 		}
 
