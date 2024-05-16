@@ -26,14 +26,6 @@ const StandardModel = require('../type/standard');
 const Helpers = require('../../helpers');
 const Logging = require('../../helpers/logging');
 
-const lambdaConsole = {
-	'console.log': 'lambda.log',
-	'console.info': 'lambda.log',
-	'console.debug': 'lambda.logDebug',
-	'console.warn': 'lambda.logWarn',
-	'console.error': 'lambda.logError',
-	'console.dir': '',
-};
 class LambdaSchemaModel extends StandardModel {
 	constructor(services) {
 		const schema = LambdaSchemaModel.Schema;
@@ -376,23 +368,8 @@ class LambdaSchemaModel extends StandardModel {
 			throw new Helpers.Errors.RequestError(400, `missing_field`);
 		}
 
-		await exec(`cd ${Config.paths.lambda.code}/lambda-${name}; git checkout ${gitHash}`);
-
 		// TODO it should only clone the lambda file from the repo
-		const entryDir = path.dirname(entryFile);
-		const lambdaDir = `${Config.paths.lambda.code}/lambda-${name}/./${entryDir}`; // Ugly `/./` because I am lazy
-		const files = fs.readdirSync(lambdaDir);
-		for await (const file of files) {
-			if (path.extname(file) !== '.js') continue;
-
-			const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
-			for await (const log of Object.keys(lambdaConsole)) {
-				if (content.includes(log)) {
-					await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
-					throw new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`);
-				}
-			}
-		}
+		await exec(`cd ${Config.paths.lambda.code}/lambda-${name}; git checkout ${gitHash}`);
 	}
 
 	async pullLambdaCode(lambda, lambdaDeployInfo = {}) {
@@ -437,16 +414,9 @@ class LambdaSchemaModel extends StandardModel {
 					if (path.extname(file) !== '.js') continue;
 
 					const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
-					for await (const log of Object.keys(lambdaConsole)) {
-						if (entryFile === file && entryPoint && !content.includes(entryPoint)) {
-							this.log(`[${this.name}] No such function ${entryPoint} - ${lambda.name}`);
-							throw new Helpers.Errors.RequestError(404, `entry_point_not_found`);
-						}
-
-						if (content.includes(log)) {
-							await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${lambda.git.hash}`);
-							throw new Helpers.Errors.RequestError(400, `unsupported use of console, use ${lambdaConsole[log]} instead`);
-						}
+					if (entryFile === file && entryPoint && !content.includes(entryPoint)) {
+						this.log(`[${this.name}] No such function ${entryPoint} - ${lambda.name}`);
+						throw new Helpers.Errors.RequestError(404, `entry_point_not_found`);
 					}
 				}
 			}
