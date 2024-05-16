@@ -522,9 +522,17 @@ class LambdasRunner {
 				resolve();
 			});
 		})
-			.catch((err) => {
+			.catch((error) => {
 				Logging.logError('Error whilst bundling lambda modules');
-				Logging.logError(err);
+				if (Array.isArray(error)) {
+					error.forEach((err) => {
+						Logging.logError(err.message);
+					});
+				} else if (typeof error === 'string') {
+					Logging.logError(error.message);
+				} else {
+					Logging.logError(error.message);
+				}
 			});
 	}
 
