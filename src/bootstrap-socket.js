@@ -487,6 +487,10 @@ class BootstrapSocket extends Bootstrap {
 			await this.__createAppNamespace(app);
 		});
 
+		this.__nrp.on('app-schema:updated', async (data) => {
+			await Model.initSchema(data.appId);
+		});
+
 		this.__nrp.on('queuePolicyRoomCloseSocketEvent', async (data) => {
 			if (!this._policyRooms[data.appId]) return;
 			Logging.logSilly(`queuePolicyRoomCloseSocketEvent ${data.appId}`);
@@ -848,7 +852,12 @@ class BootstrapSocket extends Bootstrap {
 				continue;
 			}
 
-			// TODO: Should be using ID fromt datastore not direct ObjectID
+			if (!Model[`${appShortId}-${collection}`]) {
+				Logging.logWarn(`Unable to broadcast entity, can not find ${appShortId}-${collection} in the database`);
+				continue;
+			}
+
+			// TODO: Should be using ID from datastore not direct ObjectID
 			const rxsEntity = await Model[`${appShortId}-${collection}`].find({id: new ObjectId(entityId)});
 			const entity = await Helpers.streamFirst(rxsEntity);
 
