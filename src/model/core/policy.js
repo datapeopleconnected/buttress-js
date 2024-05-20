@@ -41,7 +41,7 @@ class PolicySchemaModel extends StandardModel {
 				},
 				merge: {
 					__type: 'boolean',
-					__default: false,
+					__default: true,
 					__required: true,
 					__allowUpdate: true,
 				},
