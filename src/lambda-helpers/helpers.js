@@ -149,7 +149,13 @@ class Helpers {
 								throw new Errors.InvalidToken(text.error, 400);
 							}
 							if (json.error && (typeof json.error === 'string' && json.error.toUpperCase() === 'INVALID_REQUEST')) {
-								throw new Errors.InvalidRequest(text.error, 400);
+								const msg = (text.error) ? text.error : (json.error_description) ? json.error_description : null;
+								throw new Errors.InvalidRequest(msg, 400);
+							}
+							if (json.message && json.code) {
+								const error = new Error(json.message);
+								error.code = json.code;
+								throw error;
 							}
 
 							message = (json.error) ? json.error : (json.message) ? json.message : json.statusMessage;

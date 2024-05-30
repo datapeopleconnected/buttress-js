@@ -65,7 +65,10 @@ class Projection {
 				}
 
 				const updatePaths = requestBody.map((elem) => elem.path);
-				const allowedPathUpdates = projectionKeys.filter((key) => updatePaths.some((updateKey) => updateKey === key));
+				const allowedPathUpdates = projectionKeys.filter((key) => updatePaths.some((updateKey) => {
+					const pattern = new RegExp(`^${key}`);
+					return pattern.test(updateKey);
+				}));
 				if (allowedPathUpdates.length === updatePaths.length || projectionKeys.length < 1) {
 					update = true;
 				}

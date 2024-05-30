@@ -421,7 +421,7 @@ class AccessControl {
 		if (!schema) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			outcome.err.message = 'Request schema does not exist in the app';
+			outcome.err.message = `Request schema: ${schemaName} - does not exist in the app`;
 			return outcome;
 		}
 
@@ -430,7 +430,7 @@ class AccessControl {
 		if (Object.keys(schemaBasePolicyConfig).length < 1) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:conditions-not-fulfilled`;
-			outcome.err.message = 'Access control policy conditions are not fulfilled';
+			outcome.err.message = `Access control policy conditions are not fulfilled to access ${schemaName}`;
 			return outcome;
 		}
 
@@ -439,7 +439,7 @@ class AccessControl {
 		if (!policyProjection) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-properties-permission-error`;
-			outcome.err.message = 'Can not access/edit properties without privileged access';
+			outcome.err.message = `Can not access/edit properties of ${schemaName} without privileged access`;
 			return outcome;
 		}
 
@@ -447,7 +447,7 @@ class AccessControl {
 		if (!policyQuery) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-query-permission-error`;
-			outcome.err.message = 'Policy query can not access the queried data';
+			outcome.err.message = `Policy query can not access the queried data from ${schemaName}`;
 			return outcome;
 		}
 
@@ -456,7 +456,7 @@ class AccessControl {
 		if (!passedEvalutaion) {
 			outcome.err.statusCode = 404;
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-query-permission-error`;
-			outcome.err.message = 'Accessed data can not be manipulated with your restricted policy';
+			outcome.err.message = `Accessed data from ${schemaName} can not be manipulated with your restricted policy`;
 			return outcome;
 		}
 
