@@ -1,15 +1,16 @@
 const ivm = require('isolated-vm');
 const fetch = require('cross-fetch');
 const crypto = require('crypto');
-const fs = require('fs');
 const URL = require('url').URL;
 const randomstring = require('randomstring');
 const base64url = require('base64url');
+const puppeteer = require('puppeteer');
 
 const lambdaMail = require('./mail');
 const Model = require('../model');
 const Logging = require('../helpers/logging');
 const {Errors} = require('../helpers');
+const IsolateBridge = require('./isolate-bridge');
 // const { Object } = require('sugar');
 
 const Config = require('node-env-obj')();
@@ -26,14 +27,12 @@ class Helpers {
 	constructor() {
 		this.lambdaExecution = null;
 		this.lambdaResult = null;
-		this._plugins = {};
-		this._pluginBootstrap = '';
 
 		this.successfulHTTPScode = [200, 201, 202];
 	}
 
 	async _createIsolateContext(isolate, context, jail) {
-		this.registerPlugins();
+		IsolateBridge.registerPlugins();
 
 		jail.setSync('global', jail.derefInto());
 		jail.setSync('_ivm', ivm);
@@ -146,10 +145,10 @@ class Helpers {
 								throw new Error(`${data.url.pathname} error is ${json.error.status}`);
 							}
 							if (json.error && (typeof json.error === 'string' && json.error.toUpperCase() === 'INVALID_TOKEN')) {
-								throw new Errors.InvalidToken(text.error, 400);
+								throw new Errors.InvalidToken(json.error, 400);
 							}
 							if (json.error && (typeof json.error === 'string' && json.error.toUpperCase() === 'INVALID_REQUEST')) {
-								const msg = (text.error) ? text.error : (json.error_description) ? json.error_description : null;
+								const msg = (text && text.error) ? text.error : (json.error_description) ? json.error_description : null;
 								throw new Errors.InvalidRequest(msg, 400);
 							}
 							if (json.message && json.code) {
@@ -239,274 +238,31 @@ class Helpers {
 				]);
 			}
 		}));
+		jail.setSync('_generatePDF', new ivm.Reference(async (htmlString, resolve, reject) => {
+			try {
+				if (!htmlString) throw new Error(`Missing HTML string for pdf generation`);
+				const browser = await puppeteer.launch({headless: true});
+				const page = await browser.newPage();
 
-		this._setupPlugins(jail);
-		this._setupLambdaLogs(jail);
-		this._createHostIsolateBridge(isolate, context);
-		this._createLambdaNameSpace(isolate, context);
-	}
-
-	_createHostIsolateBridge(isolate, context) {
-		const bootstrap = isolate.compileScriptSync(`new function() {
-			let ivm = _ivm;
-			delete _ivm;
-
-			${this._pluginBootstrap}
-
-			let log = _log;
-			delete _log;
-			let logSilly = _logSilly;
-			delete _logSilly;
-			let logDebug = _logDebug;
-			delete _logDebug;
-			let logVerbose = _logVerbose;
-			delete _logVerbose;
-			let logWarn = _logWarn;
-			delete _logWarn;
-			let logError = _logError;
-			delete _logError;
-
-			let setResult = _setResult;
-			delete _setResult;
-
-			let fetch = _fetch;
-			delete _fetch;
-
-			let cryptoRandomBytes = _cryptoRandomBytes;
-			delete _cryptoRandomBytes;
-
-			let getEmailTemplate = _getEmailTemplate;
-			delete _getEmailTemplate;
-
-			let lambdaAPI = _lambdaAPI;
-			delete _lambdaAPI;
-
-			let getCodeChallenge = _getCodeChallenge;
-			delete _getCodeChallenge;
-
-			global.log = (...args) => {
-				log.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
+				// Set the HTML content
+				await page.setContent(htmlString, {waitUntil: 'networkidle2'});
+				const buffer = await page.pdf({format: 'A4', printBackground: true});
+				await browser.close();
+				resolve.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(buffer.toString('base64')).copySync()).copyInto(),
+				]);
+			} catch (err) {
+				const reference = new ivm.Reference(err).copySync();
+				reject.applyIgnored(undefined, [
+					new ivm.ExternalCopy(reference).copyInto(),
+				]);
 			}
-			global.logSilly = (...args) => {
-				logSilly.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
-			}
-			global.logDebug = (...args) => {
-				logDebug.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
-			}
-			global.logVerbose = (...args) => {
-				logVerbose.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
-			}
-			global.logWarn = (...args) => {
-				logWarn.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
-			}
-			global.logError = (...args) => {
-				logError.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
-			}
-
-			global.setResult = (...args) => {
-				setResult.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
-			}
-
-			global.lambdaAPI = (key, value) => {
-				return new Promise((resolve) => {
-					lambdaAPI.applyIgnored(
-						undefined,
-						[new ivm.ExternalCopy(key).copyInto(), new ivm.ExternalCopy(value).copyInto(), new ivm.Reference(resolve)],
-					);
-				});
-			}
-
-			global.fetch = (data, callback = null) => {
-				return new Promise((resolve, reject) => {
-					if (!callback) {
-						callback = new ivm.ExternalCopy(callback).copyInto();
-					} else {
-						callback = new ivm.Reference(callback)
-					}
-					fetch.applyIgnored(
-						undefined,
-						[
-							new ivm.ExternalCopy(data).copyInto(),
-							callback,
-							new ivm.Reference(resolve),
-							new ivm.Reference(reject),
-						],
-					);
-				});
-			}
-
-			global.cryptoRandomBytes = (data) => {
-				return new Promise((resolve, reject) => {
-					cryptoRandomBytes.applyIgnored(
-						undefined,
-						[
-							new ivm.ExternalCopy(data).copyInto(),
-							new ivm.Reference(resolve),
-							new ivm.Reference(reject),
-						],
-					);
-				});
-			}
-
-			global.getEmailTemplate = (data) => {
-				return new Promise((resolve, reject) => {
-					getEmailTemplate.applyIgnored(
-						undefined,
-						[
-							new ivm.ExternalCopy(data).copyInto(),
-							new ivm.Reference(resolve),
-							new ivm.Reference(reject),
-						],
-					);
-				});
-			}
-
-			global.getCodeChallenge = (data) => {
-				return new Promise((resolve, reject) => {
-					getCodeChallenge.applyIgnored(
-						undefined,
-						[new ivm.ExternalCopy(data).copyInto(), new ivm.Reference(resolve), new ivm.Reference(reject)],
-					);
-				});
-			}
-
-			return new ivm.Reference(function forwardMainPromise(mainFunc, resolve) {
-				const derefMainFunc = mainFunc.deref();
-
-				derefMainFunc().then((value) => {
-					resolve.applyIgnored(
-							undefined,
-							[new ivm.ExternalCopy(value).copyInto()],
-						);
-					});
-				});
-			}`);
-
-		bootstrap.runSync(context);
-	}
-
-
-	async _setupLambdaLogs(jail) {
-		jail.setSync('_log', new ivm.Reference((...args) => {
-			Logging.log(...args);
-			this._pushLambdaExecutionLog(...args, 'log');
 		}));
 
-		jail.setSync('_logDebug', new ivm.Reference((...args) => {
-			Logging.logDebug(...args);
-			this._pushLambdaExecutionLog(...args, 'debug');
-		}));
-
-		jail.setSync('_logSilly', new ivm.Reference((...args) => {
-			Logging.logSilly(...args);
-			this._pushLambdaExecutionLog(...args, 'silly');
-		}));
-
-		jail.setSync('_logVerbose', new ivm.Reference((...args) => {
-			Logging.logVerbose(...args);
-			this._pushLambdaExecutionLog(...args, 'verbose');
-		}));
-
-		jail.setSync('_logWarn', new ivm.Reference((...args) => {
-			Logging.logWarn(...args);
-			this._pushLambdaExecutionLog(...args, 'warn');
-		}));
-
-		jail.setSync('_logError', new ivm.Reference((...args) => {
-			Logging.logError(...args);
-			this._pushLambdaExecutionLog(...args, 'error');
-		}));
-	}
-
-	async _setupPlugins(jail) {
-		this._pluginBootstrap = '';
-
-		for (const [pluginName, pluginMeta] of Object.entries(this._plugins)) {
-			for (const method of pluginMeta.methods) {
-				this._pluginBootstrap += `
-					let ${pluginName}_${method} = _${pluginName}_${method};
-					delete _${pluginName}_${method};
-					global.${pluginName}_${method} = (args) => {
-						return new Promise((resolve, reject) => {
-							${pluginName}_${method}.applyIgnored(
-								undefined,
-								[new ivm.ExternalCopy(args).copyInto(), new ivm.Reference(resolve), new ivm.Reference(reject)],
-							);
-						});
-					}
-				`;
-				jail.setSync(`_${pluginName}_${method}`, new ivm.Reference(async (args, resolve, reject) => {
-					Logging.logVerbose(`${pluginName}_${method}`);
-					const outcome = await pluginMeta.plugin[method](args);
-					resolve.applyIgnored(undefined, [
-						new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto(),
-					]);
-				}));
-			}
-		}
-	}
-
-	_createLambdaNameSpace(isolate, context) {
-		isolate.compileScriptSync(`
-			const lambda = {
-				log: (...args) => log(...args),
-				logDebug: (...args) => logDebug(...args),
-				logSilly: (...args) => logSilly(...args),
-				logVerbose: (...args) => logVerbose(...args),
-				logWarn: (...args) => logWarn(...args),
-				logError: (...args) => logError(...args),
-				setResult: (...args) => setResult(...args),
-				fetch: async (...args) => fetch(...args),
-				cryptoRandomBytes: async (...args) => cryptoRandomBytes(...args),
-				getEmailTemplate: async(...args) => getEmailTemplate(...args),
-				getCodeChallenge: async (...args) => getCodeChallenge(...args),
-				req: {
-					body: {},
-					query: {},
-				},
-				env: '${new ivm.Reference(Config.env.toUpperCase()).copySync()}',
-				developmentEmailAddress: '${new ivm.Reference(Config.lambda.developmentEmailAddress).copySync()}',
-			};
-			console = {
-				log: lambda.log,
-				debug: lambda.logDebug,
-				silly: lambda.logSilly,
-				verbose: lambda.logVerbose,
-				warn: lambda.logWarn,
-				error: lambda.logError,
-				assert: (condition, ...data) => {
-					if (!condition) {
-						lambda.logError('Assertion failed:', ...data);
-					}
-				},
-				time: (label = 'default') => {
-					if (!console.timers) {
-						console.timers = {};
-					}
-					console.timers[label] = Date.now();
-				},
-				timeEnd: (label = 'default') => {
-					if (console.timers && console.timers[label]) {
-						const duration = Date.now() - console.timers[label];
-						lambda.log(\`\${label}: \${duration}ms\`);
-						delete console.timers[label];
-					}
-				},
-			};
-		`).runSync(context);
-	}
-
-	_pushLambdaExecutionLog(log, type) {
-		Model.LambdaExecution.update({
-			id: Model.LambdaExecution.createId(this.lambdaExecution.id),
-		}, {
-			$push: {
-				logs: {
-					log,
-					type,
-				},
-			},
-		});
+		IsolateBridge.setupPlugins(jail);
+		IsolateBridge.setupLambdaLogs(jail);
+		IsolateBridge.createHostIsolateBridge(isolate, context);
+		IsolateBridge.createLambdaNameSpace(isolate, context);
 	}
 
 	_encodeReqBody(body) {
@@ -519,39 +275,6 @@ class Helpers {
 			formBody.push(encodedKey + '=' + encodedValue);
 		});
 		return formBody.join('&');
-	}
-
-	registerPlugins() {
-		const getClassesList = (dirName) => {
-			let files = [];
-			const items = fs.readdirSync(dirName, {withFileTypes: true});
-			for (const item of items) {
-				if (item.name === '.git') continue;
-
-				if (item.isDirectory()) {
-					files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
-				} else {
-					files.push(require(`${dirName}/${item.name}`));
-				}
-			}
-
-			return files;
-		};
-
-		this._plugins = {};
-		const classes = getClassesList(Config.paths.lambda.plugins);
-		const plugins = classes.filter((c) => c.startUp);
-		const prot = ['constructor', 'startUp'];
-		plugins.forEach((p) => {
-			const className = p.constructor.name;
-
-			const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(p)).filter((n) => prot.indexOf(n) === -1 && /^_/.exec(n) === null);
-			this._plugins[className] = {plugin: p, methods: methods};
-
-			Logging.logVerbose(`Plugin '${className}' Methods: ${methods.join(',')}`);
-			p.startUp();
-		});
-		Logging.log(`Registered: ${Object.keys(this._plugins).length} lambda plugins`);
 	}
 }
 
