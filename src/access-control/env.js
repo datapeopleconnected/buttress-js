@@ -57,10 +57,12 @@ class PolicyEnv {
 	}
 
 	async __isUserSchema(schema) {
+		if (!schema) return false;
 		return Model.coreSchema.some((s) => s.toUpperCase() === schema.toUpperCase()) && schema.toUpperCase() === 'USER';
 	}
 
 	async __isAppSchema(schema, appId) {
+		if (!schema) return false;
 		const appShortId = shortId(appId);
 		return (Model[`${appShortId}-${schema}`]) ? true : false;
 	}
