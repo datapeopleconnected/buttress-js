@@ -207,6 +207,7 @@ class BootstrapSocket extends Bootstrap {
 		this.emitter = new Emitter(this._redisClientEmitter);
 
 		if (this.isPrimary) {
+			Logging.logVerbose(`Primary Main SOCKET`);
 			await this.__registerNRPPrimaryListeners();
 
 			this.__namespace['stats'] = {
@@ -234,6 +235,8 @@ class BootstrapSocket extends Bootstrap {
 
 				await this.__createAppNamespace(app);
 			}
+		} else {
+			Logging.logVerbose(`Secondary Main SOCKET`);
 		}
 
 		// This should be distributed across instances

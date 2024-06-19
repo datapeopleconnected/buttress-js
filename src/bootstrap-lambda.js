@@ -79,7 +79,7 @@ class BootstrapLambda extends Bootstrap {
 		const isPrimary = Config.rest.app === 'primary';
 
 		if (isPrimary) {
-			Logging.logVerbose(`Primary Main LAMB`);
+			Logging.logVerbose(`Primary Main LAMBDA`);
 			await Model.initCoreModels();
 
 			this.__nrp.on('lambdaProcessWorker:worker-initiated', (id) => {
@@ -89,7 +89,7 @@ class BootstrapLambda extends Bootstrap {
 
 			this.__lambdaManagerProcess = new LambdaManager(this.__services);
 		} else {
-			Logging.logVerbose(`Secondary Main LAMB`);
+			Logging.logVerbose(`Secondary Main LAMBDA`);
 		}
 
 		await this.__spawnWorkers();

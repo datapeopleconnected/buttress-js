@@ -135,7 +135,7 @@ class BootstrapRest extends Bootstrap {
 		});
 
 		if (isPrimary) {
-			Logging.logVerbose(`Primary Master REST`);
+			Logging.logVerbose(`Primary Main REST`);
 			await Model.initCoreModels();
 			await this.__systemInstall();
 
@@ -147,7 +147,7 @@ class BootstrapRest extends Bootstrap {
 
 			await this.__updateAppSchema();
 		} else {
-			Logging.logVerbose(`Secondary Master REST`);
+			Logging.logVerbose(`Secondary Main REST`);
 		}
 
 		await this.__spawnWorkers();

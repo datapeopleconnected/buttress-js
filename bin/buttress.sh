@@ -20,12 +20,15 @@ then
   $BASE_DIR/app-lambda.sh 2>&1 &
 else
   # Start the first process
+  echo "Starting REST"
   $BASE_DIR/app.sh 2>&1 &
 
   # Start the second process
+  echo "Starting Socket"
   $BASE_DIR/app-socket.sh 2>&1 &
 
   # Start the third process
+  echo "Starting Lambda"
   $BASE_DIR/app-lambda.sh 2>&1 &
 fi
 
