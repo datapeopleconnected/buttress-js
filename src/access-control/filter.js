@@ -361,23 +361,20 @@ class Filter {
 		return modifiedQuery;
 	}
 
-	async __convertPrefixToQueryPrefix(obj) {
-		if (typeof obj === 'object' && obj !== null && !ObjectId.isValid(obj)) {
-			const newObj = {};
-			for (const key of Object.keys(obj)) {
-				const newKey = key.replace(/@/g, '$');
-				newObj[newKey] = await this.__convertPrefixToQueryPrefix(obj[key]);
-			}
-
-			if (Array.isArray(obj)) {
-				const arrayValues = Object.values(newObj);
-				return arrayValues.length === 1 ? arrayValues.shift() : arrayValues;
-			}
-
-			return newObj;
-		} else {
+	__convertPrefixToQueryPrefix(obj) {
+		if (typeof obj !== 'object' || obj === null || ObjectId.isValid(obj)) {
 			return obj;
 		}
+
+		if (Array.isArray(obj)) {
+			return obj.map(this.__convertPrefixToQueryPrefix.bind(this));
+		}
+
+		return Object.keys(obj).reduce((acc, key) => {
+			const newKey = key.replace(/@/g, '$');
+			acc[newKey] = this.__convertPrefixToQueryPrefix(obj[key]);
+			return acc;
+		}, {});
 	}
 
 	__getQueryKeys(query, baseKey = null) {
