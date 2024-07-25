@@ -861,9 +861,7 @@ class BootstrapSocket extends Bootstrap {
 			}
 
 			// TODO: Should be using ID from datastore not direct ObjectID
-			const rxsEntity = await Model[`${appShortId}-${collection}`].find({id: new ObjectId(entityId)});
-			const entity = await Helpers.streamFirst(rxsEntity);
-
+			const entity = await Model[`${appShortId}-${collection}`].findById(entityId);
 			const broadcast = await this.__evaluateRoomQueryOperation(room.access.query, entity);
 			if (!broadcast && verb === 'post') {
 				Logging.logTimer(`__masterBroadcastToRooms::roomBroadcast::end-falsy-evaluateRoomQueryOperation-post`, container.timer,
