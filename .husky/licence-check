@@ -2,7 +2,6 @@
 
 script_path=$(dirname "$0")
 
-src_dir="src"
 license_file="$script_path/licencing_header.txt"
 LICENSE_HEADER=$(cat "$license_file")
 excluded_extensions=("html" "json")
@@ -26,16 +25,20 @@ check_license() {
   return 0
 }
 
-# Iterate through files in the src directory
-find "$src_dir" -type f | while read -r file; do
-  ext="${file##*.}"
-  if [[ ! " ${excluded_extensions[*]} " =~ " $ext " ]]; then
-    check_license "$file"
-    if [[ $? -ne 0 ]]; then
-      echo "true" > "$has_errors_file"
+check_dir() {
+  find "$1" -type f | while read -r file; do
+    ext="${file##*.}"
+    if [[ ! " ${excluded_extensions[*]} " =~ " $ext " ]]; then
+      check_license "$file"
+      if [[ $? -ne 0 ]]; then
+        echo "true" > "$has_errors_file"
+      fi
     fi
-  fi
-done
+  done
+}
+
+check_dir "src"
+check_dir "test"
 
 has_errors=$(<"$has_errors_file")
 rm "$has_errors_file"
