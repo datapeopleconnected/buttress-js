@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
  * Copyright (C) 2016-2024 Data People Connected LTD.
@@ -15,36 +13,3 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
-const pug = require('pug');
-
-/**
- * Mail
- * @class
- */
-class Mail {
-	/**
-	 * Constructor for Mail
-	 */
-	constructor() {
-		this._templates = {};
-	}
-
-	/**
-	 * Returns the render function for a given template
-	 * @param {String} path - template path
-	 * @param {String} key - template key
-	 * @return {Object} template - pug render function for the given template
-	 */
-	getEmailTemplate(path, key) {
-		if (this._templates[key]) return this._templates[key];
-
-		this._templates[key] = pug.compileFile(path, {
-			test: 'I am here',
-		});
-
-		return this._templates[key];
-	}
-}
-
-module.exports = new Mail();

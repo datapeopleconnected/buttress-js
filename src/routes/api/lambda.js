@@ -16,6 +16,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+
 const util = require('util');
 const exec = util.promisify(require('child_process').exec);
 const Config = require('node-env-obj')();
