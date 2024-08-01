@@ -136,6 +136,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			let value = null;
 			if (schemaConfig && schemaConfig.__schema) {
 				const fb = Helpers.Schema.getFlattenedBody(body.value);
+				// ! This should happen outside of the database adapter unless it's DB specific.
 				value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
 			} else {
 				value = body.value;

@@ -407,8 +407,16 @@ class StandardModel {
 			if (!config && flattenedSchema) {
 				config = flattenedSchema[update.path.replace(/\.\d+/g, '')];
 			}
+
+			// If we're doing a vector-add operation but the user has provided an array as the value then we want to
+			// update the whole property.
+			let context = extendedPathContext[update.contextPath];
+			if (context.type === 'vector-add' && Array.isArray(body.value)) {
+				context = {type: 'scalar', values: []};
+			}
+
 			return arr.concat([
-				await this.adapter.batchUpdateProcess(id, update, extendedPathContext[update.contextPath], config, model),
+				await this.adapter.batchUpdateProcess(id, update, context, config, model),
 			]);
 		}, Promise.resolve([]));
 	}
