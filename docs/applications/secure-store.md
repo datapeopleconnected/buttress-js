@@ -36,37 +36,27 @@ bjs secure-store list-property
 }, {
   "name": "allowed-members",
   "storeData": [{
-    "identifierEmail": "tomc@wearelighten.co.uk",
+    "identifierEmail": "tomc@dpc-ltd.com",
     "policySelectors": {
       "role": "developer"
     }
   }, {
-    "identifierEmail": "mahmoud@wearelighten.co.uk",
+    "identifierEmail": "mahmoud@dpc-ltd.com",
     "policySelectors": {
       "role": "developer"
     }
   }, {
-    "identifierEmail": "spencer@wearelighten.co.uk",
+    "identifierEmail": "spencer@dpc-ltd.com",
     "policySelectors": {
       "role": "developer"
     }
   }, {
-    "identifierEmail": "chris@evansfinch.co.uk",
+    "identifierEmail": "chris@dpc-ltd.com",
     "policySelectors": {
       "role": "developer"
     }
   }, {
     "identifierEmail": "brian.bishop@dpc-ltd.com",
-    "policySelectors": {
-      "role": "developer"
-    }
-  }, {
-    "identifierEmail": "admin.user@holisticdemo.app",
-    "policySelectors": {
-      "role": "developer"
-    }
-  }, {
-    "identifierEmail": "engineer.user@holisticdemo.app",
     "policySelectors": {
       "role": "developer"
     }

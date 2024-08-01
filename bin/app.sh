@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # Buttress - The federated real-time open data platform
-# Copyright (C) 2016-2022 Data Performance Consultancy LTD.
-# <https://dataperformanceconsultancy.com/>
+# Copyright (C) 2016-2024 Data People Connected LTD.
+# <https://www.dpc-ltd.com/>
 # 
 # This file is part of Buttress.
 # Buttress is free software: you can redistribute it and/or modify it under the

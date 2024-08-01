@@ -2,8 +2,8 @@
 
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2022 Data Performance Consultancy LTD.
- * <https://dataperformanceconsultancy.com/>
+ * Copyright (C) 2016-2024 Data People Connected LTD.
+ * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
  * Buttress is free software: you can redistribute it and/or modify it under the
@@ -117,8 +117,8 @@ class Logging {
 	startupMessage() {
 		console.log(`***`);
 		console.log(` * Buttress - The federated real-time open data platform`);
-		console.log(` * Copyright (C) 2016-2022 Data Performance Consultancy LTD.`);
-		console.log(` * <https://dataperformanceconsultancy.com/>`);
+		console.log(` * Copyright (C) 2016-2024 Data People Connected LTD.`);
+		console.log(` * <https://www.dpc-ltd.com/>`);
 		console.log(` *`);
 		console.log(` * Buttress is free software: you can redistribute it and/or modify it under the`);
 		console.log(` * terms of the GNU Affero General Public Licence as published by the Free Software`);
