@@ -15,15 +15,26 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import Stream from 'stream';
 
-const Helpers = require('../../helpers');
-const StandardModel = require('./standard');
-const RemoteModel = require('./remote');
+import * as Helpers from '../../helpers';
+
+import StandardModel from './standard';
+import RemoteModel from './remote';
+
+import { SourceDataSharingRouting } from '../../services/source-ds-routing';
 
 /**
  * @class RemoteCombinedModel
  */
-class RemoteCombinedModel extends StandardModel {
+export default class RemoteCombinedModel extends StandardModel {
+
+	localModel: any;
+
+	remoteModels: any[];
+
+	_sdsRouting: SourceDataSharingRouting;
+
 	constructor(schemaData, app, services) {
 		super(schemaData, app, services);
 
@@ -189,7 +200,7 @@ class RemoteCombinedModel extends StandardModel {
 		if (sortMap.size < 1) sortMap.set('id', 1);
 
 		// Make a call out to each of the remotes, and merge the streams into on single stream.
-		const sources = [];
+		const sources: Stream.Readable[] = [];
 
 		sources.push(await this.localModel.find(query, excludes, limit, skip, sort, project));
 
@@ -214,7 +225,7 @@ class RemoteCombinedModel extends StandardModel {
 	 */
 	async findAll() {
 		// Make a call out to each of the remotes, and merge the streams into on single stream.
-		const sources = [];
+		const sources: Stream.Readable[] = [];
 
 		for await (const remote of this.remoteModels) {
 			sources.push(await remote.findAll());
@@ -235,7 +246,8 @@ class RemoteCombinedModel extends StandardModel {
 	 * @deprecated - use find
 	 */
 	findAllById(ids) {
-		return this.remote.findAllById(ids);
+		throw new Error('Not yet implemented');
+		// return this.remote.findAllById(ids);
 	}
 
 	/**
@@ -244,7 +256,7 @@ class RemoteCombinedModel extends StandardModel {
 	 */
 	async count(query) {
 		// Make a call out to each of the remotes, and merge the streams into on single stream.
-		const sourceReqs = [];
+		const sourceReqs: Promise<number>[] = [];
 
 		for await (const remote of this.remoteModels) {
 			sourceReqs.push(await remote.count(query));
@@ -260,5 +272,3 @@ class RemoteCombinedModel extends StandardModel {
 		return await this.localModel.drop();
 	}
 }
-
-module.exports = RemoteCombinedModel;

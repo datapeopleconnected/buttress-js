@@ -17,22 +17,22 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Sugar = require('sugar');
+import Sugar from 'sugar';
 
-const Route = require('../route');
-const Model = require('../../model');
-const Logging = require('../../helpers/logging');
-const Helpers = require('../../helpers');
-const Schema = require('../../schema');
+import Route from '../route';
+import Model from '../../model';
+import Logging from '../../helpers/logging';
+import * as Helpers from '../../helpers';
+import Schema from '../../schema';
 
-const routes = [];
+const routes: (typeof Route)[] = [];
 
 /**
  * @class GetAppList
  */
 class GetAppList extends Route {
 	constructor(services) {
-		super('app', 'GET APP LIST', services, Model.App);
+		super('app', 'GET APP LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -56,13 +56,15 @@ routes.push(GetAppList);
  */
 class SearchAppList extends Route {
 	constructor(nrp) {
-		super('app', 'GET APP LIST', nrp, Model.App);
+		super('app', 'GET APP LIST', nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 	}
 
-	_validate(req, res, token) {
-		const result = {
+	async _validate(req, res, token) {
+		const result: {
+			query: any
+		} = {
 			query: {
 				$and: [],
 			},
@@ -78,8 +80,8 @@ class SearchAppList extends Route {
 	async _exec(req, res, validate) {
 		const appsDB = await Helpers.streamAll(await this.model.find(validate.query));
 
-		const tokenIds = appsDB.map((app) => Model.Token.createId(app._tokenId));
-		const appTokens = await Helpers.streamAll(await Model.Token.find({
+		const tokenIds = appsDB.map((app) => Model.getModel('Token').createId(app._tokenId));
+		const appTokens = await Helpers.streamAll(await Model.getModel('Token').find({
 			id: {
 				$in: tokenIds,
 			},
@@ -101,11 +103,9 @@ routes.push(SearchAppList);
 class GetApp extends Route {
 	constructor(nrp) {
 		// Should change to app apiPath instead of ID
-		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', nrp, Model.App);
+		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
-
-		this._app = false;
 	}
 
 	async _validate(req, res, token) {
@@ -124,7 +124,7 @@ class GetApp extends Route {
 	}
 
 	_exec(req, res, validate) {
-		const appToken = Model.Token.findById(Model.Token.createId(validate._tokenId));
+		const appToken = Model.getModel('Token').findById(Model.getModel('Token').createId(validate._tokenId));
 		validate.tokenValue = appToken.value;
 
 		return validate;
@@ -137,7 +137,7 @@ routes.push(GetApp);
  */
 class AddApp extends Route {
 	constructor(nrp) {
-		super('app', 'APP ADD', nrp, Model.App);
+		super('app', 'APP ADD', nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -160,7 +160,7 @@ class AddApp extends Route {
 			}
 
 			const appType = req.body.type;
-			if (!req.body.policyPropertiesList && appType !== Model.Token.Constants.Type.SYSTEM) {
+			if (!req.body.policyPropertiesList && appType !== Model.getModel('Token').Constants.Type.SYSTEM) {
 				req.body.policyPropertiesList = {};
 			}
 
@@ -203,7 +203,7 @@ class AddApp extends Route {
 		return new Promise((resolve, reject) => {
 			this.model.add(req.body)
 				.then((res) => {
-					this._nrp.emit('app:configure-lambda-endpoints', res.app.apiPath);
+					this._nrp?.emit('app:configure-lambda-endpoints', res.app.apiPath);
 
 					return Object.assign(res.app, {token: res.token.value});
 				})
@@ -219,123 +219,39 @@ routes.push(AddApp);
  */
 class DeleteApp extends Route {
 	constructor(nrp) {
-		super('app/:id', 'DELETE APP', nrp, Model.App);
+		super('app/:id', 'DELETE APP', nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
-		this._app = false;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.params.id) {
-				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
-			this.model.findById(req.params.id).then((app) => {
-				if (!app) {
-					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-				}
-				this._app = app;
-				resolve(true);
-			});
-		});
+	async _validate(req, res, token) {
+		if (!req.params.id) {
+			this.log('ERROR: Missing required field', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `missing_field`);
+		}
+
+		const app = await this.model.findById(req.params.id);
+		if (!app) {
+			this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `invalid_id`);
+		}
+
+		return app;
 	}
 
-	_exec(req, res, validate) {
-		return new Promise((resolve, reject) => {
-			this.model.rm(this._app.id).then(() => true).then(resolve, reject);
-		});
+	async _exec(req, res, app) {
+		await this.model.rm(app.id)
+		return true;
 	}
 }
 routes.push(DeleteApp);
-
-/**
- * @class GetAppPermissionList
- */
-class GetAppPermissionList extends Route {
-	constructor(nrp) {
-		super('app/:id/permission', 'GET APP PERMISSION LIST', nrp, Model.App);
-		this.verb = Route.Constants.Verbs.GET;
-		this.permissions = Route.Constants.Permissions.LIST;
-
-		this._app = false;
-	}
-
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.params.id) {
-				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
-			this.model.findById(req.params.id).then((app) => {
-				if (!app) {
-					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-				}
-				this._app = app;
-				resolve(true);
-			});
-		});
-	}
-
-	_exec(req, res, validate) {
-		return new Promise((resolve, reject) => {
-			resolve(this._app.permissions.map((p) => {
-				return {
-					route: p.route,
-					permission: p.permission,
-				};
-			}));
-		});
-	}
-}
-routes.push(GetAppPermissionList);
-
-/**
- * @class AddAppPermission
- */
-class AddAppPermission extends Route {
-	constructor(nrp) {
-		super('app/:id/permission', 'ADD APP PERMISSION', nrp, Model.App);
-		this.verb = Route.Constants.Verbs.PUT;
-		this.permissions = Route.Constants.Permissions.ADD;
-
-		this._app = false;
-	}
-
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			this.model.findById(req.params.id).then((app) => {
-				if (!app) {
-					this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-				}
-
-				if (!req.body.route || !req.body.permission) {
-					this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `missing_field`));
-				}
-
-				this._app = app;
-				resolve(true);
-			});
-		});
-	}
-
-	_exec(req, res, validate) {
-		return this._app.addOrUpdatePermission(req.body.route, req.body.permission)
-			.then((a) => a.details);
-	}
-}
-routes.push(AddAppPermission);
 
 /**
  * @class GetAppSchema
  */
 class GetAppSchema extends Route {
 	constructor(nrp) {
-		super('app/schema', 'GET APP SCHEMA', nrp, Model.App);
+		super('app/schema', 'GET APP SCHEMA', nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -368,7 +284,7 @@ class GetAppSchema extends Route {
 
 			cores.forEach((core) => {
 				const coreModel = Model[Sugar.String.camelize(core)];
-				if (coreModel && coreModel.appShortId === null) {
+				if (coreModel && coreModel.getModel('App').ShortId === null) {
 					schema.push(coreModel.schemaData);
 				}
 			});
@@ -402,7 +318,7 @@ routes.push(GetAppSchema);
  */
 class UpdateAppSchema extends Route {
 	constructor(nrp) {
-		super('app/schema', 'UPDATE APP SCHEMA', nrp, Model.App);
+		super('app/schema', 'UPDATE APP SCHEMA', nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -501,7 +417,7 @@ routes.push(UpdateAppSchema);
  */
 class GetAppPolicyPropertyList extends Route {
 	constructor(nrp) {
-		super('app/policy-property-list/:apiPath?', 'GET APP POLICY PROPERTY LIST', nrp, Model.App);
+		super('app/policy-property-list/:apiPath?', 'GET APP POLICY PROPERTY LIST', nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -514,7 +430,7 @@ class GetAppPolicyPropertyList extends Route {
 		}
 
 		const apiPath = req.params.apiPath;
-		const isSuper = token.type === Model.Token.Constants.Type.SYSTEM;
+		const isSuper = token.type === Model.getModel('Token').Constants.Type.SYSTEM;
 		if (apiPath && apiPath !== app.apiPath && !isSuper) {
 			this.log('ERROR: Cannot fetch policy properties list for another app', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `cannot_fetch_list_for_another_app`));
@@ -542,7 +458,7 @@ routes.push(GetAppPolicyPropertyList);
  */
 class SetAppPolicyPropertyList extends Route {
 	constructor(nrp) {
-		super('app/policy-property-list/:update/:appId?', 'SET APP POLICY PROPERTY LIST', nrp, Model.App);
+		super('app/policy-property-list/:update/:appId?', 'SET APP POLICY PROPERTY LIST', nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -619,7 +535,7 @@ routes.push(SetAppPolicyPropertyList);
  */
 class AppCount extends Route {
 	constructor(nrp) {
-		super(`app/count`, `COUNT APPS`, nrp, Model.App);
+		super(`app/count`, `COUNT APPS`, nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -627,12 +543,14 @@ class AppCount extends Route {
 		this.activityBroadcast = false;
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		const result = {
 			query: {},
 		};
 
-		let query = {};
+		let query: {
+			$and?: any
+		} = {};
 
 		if (!query.$and) {
 			query.$and = [];
@@ -661,7 +579,7 @@ routes.push(AppCount);
  */
 class AppUpdateOAuth extends Route {
 	constructor(nrp) {
-		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, nrp, Model.App);
+		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -698,11 +616,11 @@ routes.push(AppUpdateOAuth);
  */
 class AppUpdate extends Route {
 	constructor(nrp) {
-		super(`app/:id`, `UPDATE AN APP`, nrp, Model.App);
+		super(`app/:id`, `UPDATE AN APP`, nrp, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -737,4 +655,4 @@ routes.push(AppUpdate);
 /**
  * @type {*[]}
  */
-module.exports = routes;
+export default routes;

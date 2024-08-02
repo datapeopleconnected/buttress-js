@@ -14,13 +14,13 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Logging = require('./logging');
-const Sugar = require('sugar');
-const crypto = require('crypto');
+import Logging from './logging';
+import Sugar from 'sugar';
+import crypto from 'crypto';
 
 const Datastore = require('../datastore');
 
-const uuid = require('uuid');
+import uuid from 'uuid';
 
 /* ********************************************************************************
 *
@@ -46,7 +46,7 @@ const __getFlattenedBody = (body) => {
 		// Treat an empty object as null
 		if (typeof parent[property] === 'object') {
 			const keys = Object.keys(parent[property]);
-			if (keys < 1) {
+			if (keys.length < 1) {
 				flattened.push({
 					path: path.join('.'),
 					value: null,
@@ -72,7 +72,7 @@ const __getFlattenedBody = (body) => {
 
 	return flattened;
 };
-module.exports.getFlattenedBody = __getFlattenedBody;
+export const getFlattenedBody = __getFlattenedBody;
 
 const __getPropDefault = (config) => {
 	let res;
@@ -144,7 +144,7 @@ const __getPropDefault = (config) => {
 	}
 	return res;
 };
-module.exports.getPropDefault = __getPropDefault;
+export const getPropDefault = __getPropDefault;
 
 const __validateProp = (prop, config) => {
 	// TODO: This function needs a refactor, we shouldn't be modifying the prop ref.
@@ -252,10 +252,14 @@ const __validateProp = (prop, config) => {
 
 	return valid;
 };
-module.exports.validateProp = __validateProp;
+export const validateProp = __validateProp;
 
-const __validate = (schema, values, parentProperty, body = null) => {
-	const res = {
+const __validate = (schema, values, parentProperty, body?: any) => {
+	const res: {
+		isValid: boolean,
+		missing: string[],
+		invalid: string[],
+	} = {
 		isValid: true,
 		missing: [],
 		invalid: [],
@@ -313,7 +317,7 @@ const __validate = (schema, values, parentProperty, body = null) => {
 			}
 
 			const defaultValue = __getPropDefault(config);
-			if (propVal && propVal.value === config.__default) {
+			if (body && propVal && propVal.value === config.__default) {
 				body[property] = defaultValue;
 			}
 
@@ -363,7 +367,7 @@ const __validate = (schema, values, parentProperty, body = null) => {
 
 	return res;
 };
-module.exports.validate = __validate;
+export const validate = __validate;
 
 const __prepareSchemaResult = (result, sourceId = null, projection = false) => {
 	const _prepare = (chunk, path) => {
@@ -407,7 +411,7 @@ const __prepareSchemaResult = (result, sourceId = null, projection = false) => {
 
 	return (Array.isArray(result)) ? result.map((c) => _prepare(c, null)) : _prepare(result, null);
 };
-module.exports.prepareSchemaResult = __prepareSchemaResult;
+export const prepareSchemaResult = __prepareSchemaResult;
 
 const __inflateObject = (parent, path, value) => {
 	if (path.length === 0) {
@@ -438,7 +442,7 @@ function __unflattenObject(data) {
 	}
 	return result;
 }
-module.exports.unflattenObject = __unflattenObject;
+export const unflattenObject = __unflattenObject;
 
 // TODO: Need to handle flatterned array paths
 // TODO: Shared has simliar code, this may be a duplicate
@@ -449,7 +453,7 @@ module.exports.unflattenObject = __unflattenObject;
  * @param {Integer} bodyIdx
  * @return {Object} - A fully populated object using schema defaults and values provided.
  */
-const __sanitizeObject = (schemaFlat, values, body = null, bodyIdx = null) => {
+const __sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number) => {
 	const res = {};
 	const objects = {};
 	for (const property in schemaFlat) {
@@ -485,6 +489,7 @@ const __sanitizeObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 			propVal.path = property.split('.').pop();
 			propVal.value = (value) ? value : __getPropDefault(config);
 			if (Array.isArray(body)) {
+				if (!bodyIdx) throw new Error('bodyIdx is required but condition wasn\'t set to handle it being undefined');
 				const isSubProperty = property.split('.');
 				propVal.path = property;
 				propVal.value = (isSubProperty.length > 1) ? isSubProperty.reduce((obj, str) => obj?.[str], body[bodyIdx]) : body[bodyIdx][property];
@@ -503,8 +508,10 @@ const __sanitizeObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
+			if (!body) throw new Error('body is required but condition wasn\'t set to handle it being undefined');
 			value = value.map((v, idx) => __sanitizeObject(config.__schema, __getFlattenedBody(v), body[property], idx));
 		} else if (root && path.length > 0 || schemaFlat[property].__type === 'object') {
+			if (!root) throw new Error('root is required but condition wasn\'t set to handle it being undefined');
 			if (!objects[root]) {
 				objects[root] = {};
 			}
@@ -512,14 +519,14 @@ const __sanitizeObject = (schemaFlat, values, body = null, bodyIdx = null) => {
 			value = objects[root];
 		}
 
-		res[root] = value;
+		if (root !== undefined) res[root] = value;
 	}
 	return res;
 };
-module.exports.sanitizeObject = __sanitizeObject;
+export const sanitizeObject = __sanitizeObject;
 
 const __getSchemaKeys = (obj) => {
-	return Object.keys(obj).reduce((arr, key) => {
+	return Object.keys(obj).reduce((arr: string[], key) => {
 		if (obj[key].__type === 'object') {
 			arr.push(key);
 		}
@@ -535,4 +542,4 @@ const __getSchemaKeys = (obj) => {
 		return arr;
 	}, []);
 };
-module.exports.getSchemaKeys = __getSchemaKeys;
+export const getSchemaKeys = __getSchemaKeys;

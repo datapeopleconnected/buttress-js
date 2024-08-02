@@ -16,13 +16,13 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Route = require('../route');
-const Model = require('../../model');
-const Logging = require('../../helpers/logging');
-const Helpers = require('../../helpers');
+import Route from '../route';
+import Model from '../../model';
+import Logging from '../../helpers/logging';
+import * as Helpers from '../../helpers';
 const Datastore = require('../../datastore');
 
-const routes = [];
+const routes: (typeof Route)[] = [];
 
 /**
  * @class GetUserList
@@ -39,7 +39,11 @@ class GetUserList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.User.findAll(req.authApp.id, req.token);
+		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+			return Model.getModel('User').findAll();
+		}
+
+		return Model.getModel('User').find({ _appId: Model.getModel('User').createId(req.authApp.id) });
 	}
 }
 routes.push(GetUserList);
@@ -52,8 +56,6 @@ class GetUser extends Route {
 		super('user/:id', 'GET USER', nrp);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
-
-		this._user = false;
 	}
 
 	async _validate(req, res, token) {
@@ -70,22 +72,23 @@ class GetUser extends Route {
 			req.params.id = token._userId;
 		}
 
-		let user = null;
-		let userTokens = [];
-		let userId = null;
+		let user: any = null;
+		let userTokens: any[] = [];
+		let userId: string;
+
 		try {
-			userId = Model.User.createId(req.params.id);
+			userId = Model.getModel('User').createId(req.params.id);
 		} catch (err) {
 			throw new Helpers.Errors.RequestError(400, `inavlid_id`);
 		}
 
-		user = await Model.User.findOne({
+		user = await Model.getModel('User').findOne({
 			'$or': [{
 				'id': {
 					$eq: userId,
 				},
 			}],
-			...(req.authApp.id) ? {_appId: Model.App.createId(req.authApp.id)} : {},
+			...(req.authApp.id) ? {_appId: Model.getModel('App').createId(req.authApp.id)} : {},
 		});
 
 		if (!user) {
@@ -94,7 +97,7 @@ class GetUser extends Route {
 		}
 
 		if (userTokens.length < 1 && user) {
-			userTokens = await Helpers.streamAll(await Model.Token.findUserAuthTokens(user.id, req.authApp.id));
+			userTokens = await Helpers.streamAll(await Model.getModel('Token').findUserAuthTokens(user.id, req.authApp.id));
 		}
 		if (userTokens.length < 1) {
 			this.log(`[${this.name}] User does not have a token yet ${userId}`, Route.LogLevel.ERR);
@@ -131,25 +134,29 @@ class FindUser extends Route {
 	}
 
 	async _validate(req, res, token) {
-		const _user = await Model.User.getByAuthAppId(req.params.app, req.params.id, req.authApp.id);
+		const _user = await Model.getModel('User').getByAuthAppId(req.params.app, req.params.id, req.authApp.id);
 		if (!_user) {
 			this.log(`[${this.name}] Could not fetch user`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
 		}
 
-		const output = {
+		const output: {
+			id: string;
+			auth: any;
+			tokens: any[];
+		} = {
 			id: _user.id,
 			auth: _user.auth,
 			tokens: [],
 		};
 
-		const userTokens = await Helpers.streamAll(await Model.Token.findUserAuthTokens(_user.id, req.authApp.id));
+		const userTokens = await Helpers.streamAll(await Model.getModel('Token').findUserAuthTokens(_user.id, req.authApp.id));
 		output.tokens = (userTokens.length > 0) ? userTokens.map((t) => {
 			return {
 				value: t.value,
 				policyProperties: t.policyProperties,
 			};
-		}) : null;
+		}) : [];
 
 		return Promise.resolve(output);
 	}
@@ -168,8 +175,6 @@ class GetUserByToken extends Route {
 		super('user/get-by-token', 'GET USER BY TOKEN', nrp);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.READ;
-
-		this._user = false;
 	}
 
 	async _validate(req) {
@@ -179,7 +184,7 @@ class GetUserByToken extends Route {
 			throw new Helpers.Errors.RequestError(400, `missing_field`);
 		}
 
-		const userToken = await Model.Token.findOne({
+		const userToken = await Model.getModel('Token').findOne({
 			value: {
 				$eq: token,
 			},
@@ -189,7 +194,7 @@ class GetUserByToken extends Route {
 			throw new Helpers.Errors.RequestError(400, `invalid_token`);
 		}
 
-		const user = await Model.User.findById(userToken._userId);
+		const user = await Model.getModel('User').findById(userToken._userId);
 		if (!user) {
 			this.log('ERROR: Can not find a user with the provided token', Route.LogLevel.ERR);
 			throw new Helpers.Errors.RequestError(404, `user_not_found`);
@@ -230,14 +235,14 @@ class CreateUserAuthToken extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		req.body.type = Model.Token.Constants.Type.USER;
+		req.body.type = Model.getModel('Token').Constants.Type.USER;
 
 		if (!req.params.id) {
 			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const user = await Model.User.findById(req.params.id);
+		const user = await Model.getModel('User').findById(req.params.id);
 		if (!user) {
 			this.log(`[${this.name}] User not found`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
@@ -253,18 +258,18 @@ class CreateUserAuthToken extends Route {
 	}
 
 	async _exec(req, res, user) {
-		const rxsToken = await Model.Token.add(req.body, {
+		const rxsToken = await Model.getModel('Token').add(req.body, {
 			_appId: Datastore.getInstance('core').ID.new(req.authApp.id),
 			_userId: Datastore.getInstance('core').ID.new(user.id),
 		});
-		const token = await Helpers.streamFirst(rxsToken);
+		const token: any = await Helpers.streamFirst(rxsToken);
 
 		// We'll make sure to add the user to the app
-		// if (user._appId !== req.authApp.id.toString()) {
-		// 	await Model.User.updateApps(user, req.authApp.id);
+		// if+ (user._appId !== req.authApp.id.toString()) {
+		// 	await Model.getModel('User').updateApps(user, req.authApp.id);
 		// }
 
-		this._nrp.emit('app-routes:bust-cache', {});
+		this._nrp?.emit('app-routes:bust-cache', '{}');
 
 		return {
 			value: token.value,
@@ -308,7 +313,7 @@ routes.push(CreateUserAuthToken);
 // 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 // 			}
 
-// 			req.body.auth.type = Model.Token.Constants.Type.USER;
+// 			req.body.auth.type = Model.getModel('Token').Constants.Type.USER;
 // 			req.body.auth.app = req.authApp.id;
 // 		} else {
 // 			this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
@@ -325,7 +330,7 @@ routes.push(CreateUserAuthToken);
 // 	}
 
 // 	async _exec(req, res, validate) {
-// 		const user = await Model.User.add(req.body.user, req.body.auth);
+// 		const user = await Model.getModel('User').add(req.body.user, req.body.auth);
 // 		// TODO: Strip back return data, should match find user
 // 		let policyProperties = null;
 // 		if (user._appMetadata) {
@@ -366,12 +371,12 @@ class AddUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_user_auth`));
 		}
 
-		const existingUsers = [];
+		const existingUsers: any[] = [];
 		for await (const auth of req.body.auth) {
-			const user = await Model.User.findOne({
+			const user = await Model.getModel('User').findOne({
 				'auth.email': auth.email,
 				'auth.app': auth.app,
-				'_appId': Model.App.createId(req.authApp.id),
+				'_appId': Model.getModel('App').createId(req.authApp.id),
 			});
 			if (user) {
 				existingUsers.push(user);
@@ -385,7 +390,7 @@ class AddUser extends Route {
 
 		if (req.body.token && req.body.token.policyProperties) {
 			const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.token.policyProperties);
-			if (!policyCheck) {
+			if (!policyCheck.passed) {
 				this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
 			}
@@ -395,7 +400,7 @@ class AddUser extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const user = await Model.User.add(req.body);
+		const user = await Model.getModel('User').add(req.body);
 
 		return {
 			id: user.id,
@@ -415,13 +420,13 @@ class UpdateUser extends Route {
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const {validation, body} = Model.User.validateUpdate(req.body);
+			const {validation, body} = Model.getModel('User').validateUpdate(req.body);
 			req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -434,7 +439,7 @@ class UpdateUser extends Route {
 				}
 			}
 
-			Model.User.exists(req.params.id)
+			Model.getModel('User').exists(req.params.id)
 				.then((exists) => {
 					if (!exists) {
 						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
@@ -446,7 +451,7 @@ class UpdateUser extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.User.updateByPath(req.body, req.params.id);
+		return Model.getModel('User').updateByPath(req.body, req.params.id);
 	}
 }
 routes.push(UpdateUser);
@@ -460,12 +465,12 @@ class SetUserPolicyProperties extends Route {
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	async _validate(req, res, token) {
-		const userId = Model.User.createId(req.params.id);
+		const userId = Model.getModel('User').createId(req.params.id);
 		const app = req.authApp;
 		if (!app) {
 			this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
@@ -477,13 +482,13 @@ class SetUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = await Model.User.exists(userId);
+		const exists = await Model.getModel('User').exists(userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.Token.findOne({
+		const userToken = await Model.getModel('Token').findOne({
 			_userId: userId,
 		});
 		if (!userToken) {
@@ -501,12 +506,12 @@ class SetUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Token.setPolicyPropertiesById(validate.id, req.body);
+		await Model.getModel('Token').setPolicyPropertiesById(validate.id, req.body);
 
-		this._nrp.emit('worker:socket:evaluateUserRooms', {
+		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 			userId: req.params.id,
 			appId: req.authApp.id,
-		});
+		}));
 
 		// TODO: Do we really need to wait for the socket to respond?
 		// await new Promise((resolve) => {
@@ -540,7 +545,7 @@ class UpdateUserPolicyProperties extends Route {
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -550,14 +555,14 @@ class UpdateUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = Model.User.exists(req.params.id);
+		const exists = Model.getModel('User').exists(req.params.id);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.Token.findOne({
-			_userId: Model.User.createId(req.params.id),
+		const userToken = await Model.getModel('Token').findOne({
+			_userId: Model.getModel('User').createId(req.params.id),
 		});
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
@@ -568,12 +573,12 @@ class UpdateUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Token.updatePolicyPropertiesById(validate, req.body);
+		await Model.getModel('Token').updatePolicyPropertiesById(validate, req.body);
 
-		this._nrp.emit('worker:socket:evaluateUserRooms', {
+		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 			userId: req.params.id,
 			appId: req.authApp.id,
-		});
+		}));
 
 		// TODO: Do we really need to wait for the socket to respond?
 		// await new Promise((resolve) => {
@@ -607,7 +612,7 @@ class RemoveUserPolicyProperties extends Route {
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -617,14 +622,14 @@ class RemoveUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = Model.User.exists(req.params.id);
+		const exists = Model.getModel('User').exists(req.params.id);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.Token.findOne({
-			_userId: Model.User.createId(req.params.id),
+		const userToken = await Model.getModel('Token').findOne({
+			_userId: Model.getModel('User').createId(req.params.id),
 		});
 
 
@@ -644,12 +649,12 @@ class RemoveUserPolicyProperties extends Route {
 				delete policyProps[key];
 			}
 		});
-		await Model.Token.updatePolicyPropertiesById(validate.id, policyProps);
+		await Model.getModel('Token').updatePolicyPropertiesById(validate.id, policyProps);
 
-		this._nrp.emit('worker:socket:evaluateUserRooms', {
+		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 			userId: req.params.id,
 			appId: req.authApp.id,
-		});
+		}));
 
 		return true;
 	}
@@ -665,7 +670,7 @@ class ClearUserPolicyProperties extends Route {
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -675,14 +680,14 @@ class ClearUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = Model.User.exists(req.params.id);
+		const exists = Model.getModel('User').exists(req.params.id);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.Token.findOne({
-			_userId: Model.User.createId(req.params.id),
+		const userToken = await Model.getModel('Token').findOne({
+			_userId: Model.getModel('User').createId(req.params.id),
 		});
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
@@ -693,12 +698,12 @@ class ClearUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Token.clearPolicyPropertiesById(validate.id);
+		await Model.getModel('Token').clearPolicyPropertiesById(validate.id);
 
-		this._nrp.emit('worker:socket:evaluateUserRooms', {
+		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 			userId: req.params.id,
 			appId: req.authApp.id,
-		});
+		}));
 
 		return true;
 	}
@@ -721,7 +726,7 @@ class DeleteAllUsers extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.User.rmAll().then(() => true);
+		return Model.getModel('User').rmAll().then(() => true);
 	}
 }
 routes.push(DeleteAllUsers);
@@ -734,7 +739,6 @@ class DeleteUser extends Route {
 		super('user/:id', 'DELETE USER', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
-		this._user = false;
 	}
 
 	async _validate(req, res, token) {
@@ -743,13 +747,13 @@ class DeleteUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const user = await Model.User.findById(req.params.id);
+		const user = await Model.getModel('User').findById(req.params.id);
 		if (!user) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.Token.findOne({_userId: user.id});
+		const userToken = await Model.getModel('Token').findOne({_userId: user.id});
 		if (token.value === userToken?.value) {
 			this.log(`ERROR: A user could not delete itself`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_can_not_delete_itself`));
@@ -762,10 +766,10 @@ class DeleteUser extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.User.rm(validate.user.id);
+		await Model.getModel('User').rm(validate.user.id);
 
 		if (validate.token) {
-			await Model.Token.rm(validate.token.id);
+			await Model.getModel('Token').rm(validate.token.id);
 		}
 
 		return true;
@@ -781,8 +785,6 @@ class clearUserLocalData extends Route {
 		super('user/:id/clear-local-data', 'CLEAR USER LOCAL DATA', nrp);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
-
-		this._user = false;
 	}
 
 	_validate(req, res, token) {
@@ -792,7 +794,7 @@ class clearUserLocalData extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
-			Model.User.findById(req.params.id)
+			Model.getModel('User').findById(req.params.id)
 				.then((user) => {
 					if (user) {
 						return resolve(user);
@@ -804,12 +806,12 @@ class clearUserLocalData extends Route {
 		});
 	}
 
-	_exec(req, res, user) {
-		this._nrp.emit('clearUserLocalData', {
+	async _exec(req, res, user) {
+		this._nrp?.emit('clearUserLocalData', JSON.stringify({
 			appAPIPath: req.authApp ? req.authApp.apiPath : '',
 			userId: user.id,
 			collections: (req.body.collections)? req.body.collections : false,
-		});
+		}));
 	}
 }
 routes.push(clearUserLocalData);
@@ -824,8 +826,14 @@ class SearchUserList extends Route {
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
-	_validate(req, res, token) {
-		const result = {
+	async _validate(req, res, token) {
+		const result: {
+			query: any;
+			skip: number;
+			limit: number;
+			sort: any;
+			project: any
+		} = {
 			query: {
 				$and: [],
 			},
@@ -843,12 +851,12 @@ class SearchUserList extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.User.parseQuery(result.query, {}, Model.User.flatSchemaData);
+		result.query = Model.getModel('User').parseQuery(result.query, {}, Model.getModel('User').flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return Model.User.find(validate.query, {},
+		return Model.getModel('User').find(validate.query, {},
 			validate.limit, validate.skip, validate.sort, validate.project);
 	}
 }
@@ -866,15 +874,15 @@ class UserCount extends Route {
 		this.activityDescription = `COUNT USERS`;
 		this.activityBroadcast = false;
 
-		this.model = Model.User;
+		this.model = Model.getModel('User');
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		const result = {
 			query: {},
 		};
 
-		let query = {};
+		let query: any = {};
 
 		if (!query.$and) {
 			query.$and = [];
@@ -893,7 +901,7 @@ class UserCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return Model.User.count(validateResult.query);
+		return Model.getModel('User').count(validateResult.query);
 	}
 }
 routes.push(UserCount);
@@ -901,4 +909,4 @@ routes.push(UserCount);
 /**
  * @type {*[]}
  */
-module.exports = routes;
+export default routes;

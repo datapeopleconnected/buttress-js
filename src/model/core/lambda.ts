@@ -15,18 +15,24 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const path = require('path');
-const fs = require('fs');
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
+import fs from 'fs';
+import path from 'path';
+import util from 'util';
 
-const Config = require('node-env-obj')();
-const Sugar = require('sugar');
-const StandardModel = require('../type/standard');
-const Helpers = require('../../helpers');
-const Logging = require('../../helpers/logging');
+import {exec as cpExec} from 'child_process';
+const exec = util.promisify(cpExec);
 
-class LambdaSchemaModel extends StandardModel {
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
+import Sugar from 'sugar';
+import StandardModel from '../type/standard';
+import * as Helpers from '../../helpers';
+import Logging from '../../helpers/logging';
+
+export default class LambdaSchemaModel extends StandardModel {
+
+	name: string;
+
 	constructor(services) {
 		const schema = LambdaSchemaModel.Schema;
 		super(schema, null, services);
@@ -237,10 +243,11 @@ class LambdaSchemaModel extends StandardModel {
 	 * @param {Object} app - Lambda app
 	 * @return {Promise} - fulfilled with lambda Object when the database request is completed
 	 */
+	// add(body, internals?: any) {
 	async add(body, auth, app) {
 		await this.gitCloneLambda(body, auth, app);
 
-		let deployments = [];
+		let deployments: any[] = [];
 		if (body.git.deployments) {
 			deployments = body.git.deployments;
 		}
@@ -270,7 +277,7 @@ class LambdaSchemaModel extends StandardModel {
 		const rxsLambda = await super.add(lambdaBody, {
 			_appId: app.id,
 		});
-		const lambda = await Helpers.streamFirst(rxsLambda);
+		const lambda: any = await Helpers.streamFirst(rxsLambda);
 
 		const deployment = await this.__modelManager.Deployment.add({
 			lambdaId: lambda.id,
@@ -350,7 +357,9 @@ class LambdaSchemaModel extends StandardModel {
 				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
 			}
 
-			Logging.logError(`[${this.name}] ${err.message}`);
+			if (err instanceof Error) {
+				Logging.logError(`[${this.name}] ${err.message}`);
+			}
 			throw err;
 		}
 	}
@@ -372,7 +381,7 @@ class LambdaSchemaModel extends StandardModel {
 		await exec(`cd ${Config.paths.lambda.code}/lambda-${name}; git checkout ${gitHash}`);
 	}
 
-	async pullLambdaCode(lambda, lambdaDeployInfo = {}) {
+	async pullLambdaCode(lambda, lambdaDeployInfo: any = {}) {
 		try {
 			const branch = (lambdaDeployInfo.branch) ? lambdaDeployInfo.branch : lambda.git.branch;
 			const gitHash = (lambdaDeployInfo.hash) ? lambdaDeployInfo.hash : lambda.git.hash;
@@ -388,14 +397,14 @@ class LambdaSchemaModel extends StandardModel {
 				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git fetch`);
 				const checkoutRes = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${branch}`);
 				if (!checkoutRes.stdout) {
-					this.log(`[${this.name}] Lambda ${branch} does not exist`);
+					Logging.log(`[${this.name}] Lambda ${branch} does not exist`);
 					return Promise.reject(new Helpers.Errors.RequestError(400, `branch_${branch}_does_not_exist_for_lambda`));
 				}
 
 				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git pull`);
 				const results = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git branch ${branch} --contains ${gitHash}`);
 				if (!results.stdout) {
-					this.log(`[${this.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
+					Logging.log(`[${this.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
 					return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_${gitHash}_does_not_exist_on_branch_${branch}`));
 				}
 
@@ -406,7 +415,7 @@ class LambdaSchemaModel extends StandardModel {
 				const files = fs.readdirSync(lambdaDir);
 				const entryFile = entryFilePath.split('/').pop();
 				if (entryFilePath && !files.includes(entryFile)) {
-					this.log(`[${this.name}] No such file ${entryFile} - ${lambda.name} ${gitHash} ${branch}`);
+					Logging.log(`[${this.name}] No such file ${entryFile} - ${lambda.name} ${gitHash} ${branch}`);
 					throw new Helpers.Errors.RequestError(404, `entry_file_not_found`);
 				}
 
@@ -415,7 +424,7 @@ class LambdaSchemaModel extends StandardModel {
 
 					const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
 					if (entryFile === file && entryPoint && !content.includes(entryPoint)) {
-						this.log(`[${this.name}] No such function ${entryPoint} - ${lambda.name}`);
+						Logging.log(`[${this.name}] No such function ${entryPoint} - ${lambda.name}`);
 						throw new Helpers.Errors.RequestError(404, `entry_point_not_found`);
 					}
 				}
@@ -441,7 +450,9 @@ class LambdaSchemaModel extends StandardModel {
 				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.name}`);
 			}
 
-			Logging.logError(`[${this.name}] ${err.message}`);
+			if (err instanceof Error) {
+				Logging.logError(`[${this.name}] ${err.message}`);
+			}
 			throw err;
 		}
 	}
@@ -468,22 +479,4 @@ class LambdaSchemaModel extends StandardModel {
 
 		return lambdaLastDeployment;
 	}
-
-	/**
-	 * @param {ObjectId} appId - id of the App that owns the user
-	 * @param {int} token - request token
-	 * @return {Promise} - resolves to an array of Apps
-	 */
-	findAll(appId, token) {
-		if (token && token.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
-			return super.find({});
-		}
-
-		return super.find({_appId: appId});
-	}
 }
-
-/**
- * Exports
- */
-module.exports = LambdaSchemaModel;

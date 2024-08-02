@@ -13,23 +13,22 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Stream = require('stream');
-const ObjectId = require('mongodb').ObjectId;
-const MongoClient = require('mongodb').MongoClient;
+import Stream from 'stream';
+import {ObjectId, MongoClient, MongoClientOptions, Db, Collection, Document} from 'mongodb';
 
 // The adapter shouldn't be making calls back out to the model, we're too deep.
-const Model = require('../../model');
-const Helpers = require('../../helpers');
-const Logging = require('../../helpers/logging');
+import Model from '../../model';
+import * as Helpers from '../../helpers';
+import Logging from '../../helpers/logging';
 
-const AbstractAdapter = require('../abstract-adapter');
+import AbstractAdapter from '../abstract-adapter';
 
 class AdapterId {
-	static new(id) {
+	static new(id: string) {
 		return new ObjectId(id);
 	}
 
-	static isValid(id) {
+	static isValid(id: string) {
 		return ObjectId.isValid(id);
 	}
 
@@ -38,12 +37,28 @@ class AdapterId {
 	}
 }
 
-module.exports = class MongodbAdapter extends AbstractAdapter {
-	constructor(uri, options, connection = null) {
-		super(uri, options, connection);
+interface BJSDocument {
+	[key: string]: any;
+}
 
-		this._client = null;
-	}
+interface Context {
+	[key: string]: any;
+	type: string;
+}
+
+interface SchemaConfig {
+	__schema: any;
+}
+
+export default class MongodbAdapter extends AbstractAdapter {
+
+	private _client?: MongoClient;
+
+	options?: MongoClientOptions;
+
+	protected __connection?: Db;
+
+	collection?: Collection;
 
 	async connect() {
 		if (this.__connection) return this.__connection;
@@ -51,7 +66,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		// Remove the pathname as we'll selected the db using the client method
 		const connectionString = this.uri.href.replace(this.uri.pathname, '');
 
-		this._client = await MongoClient.connect(connectionString, this.options);
+		this._client = await MongoClient.connect(connectionString, this.options || {});
 
 		this.__connection = this._client.db(this.uri.pathname.replace(/\//g, ''));
 
@@ -61,15 +76,16 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	async close() {
 		if (!this._client) return;
 		await this._client.close();
-		this.__connection = null;
-		this._client = null;
+		delete this.__connection;
+		delete this._client;
 	}
 
 	cloneAdapterConnection() {
 		return new MongodbAdapter(this.uri, this.options, this.__connection);
 	}
 
-	async setCollection(collectionName) {
+	async setCollection(collectionName: string) {
+		if (!this.__connection) throw new Error('No connection');
 		this.collection = this.__connection.collection(collectionName);
 	}
 
@@ -81,7 +97,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return this.__batchAddProcess(body, modifier);
 	}
 
-	async __batchAddProcess(body, modifier) {
+	async __batchAddProcess(body: BJSDocument[], modifier: any) {
 		if (body instanceof Array === false) {
 			body = [body];
 		}
@@ -93,21 +109,22 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			]);
 		}, Promise.resolve([]));
 
-		const ops = documents.map((c) => {
+		const ops = documents.map((c: BJSDocument) => {
 			return {insertOne: {document: c}};
 		});
 
 		if (ops.length < 1) return Promise.resolve([]);
 
-		const res = await this.collection.bulkWrite(ops);
+		const res = await this.collection?.bulkWrite(ops);
+		if (!res) throw new Error('Unable to bulk write');
 
 		const readable = new Stream.Readable({objectMode: true});
 		readable._read = () => {};
 
 		// Lets merged the inserted ids back into the documents, previously we were
 		// looking them up in the database again which is a waste of time.
-		new Promise((resolve) => setTimeout(() => {
-			documents.forEach((document, idx) => {
+		new Promise<void>((resolve) => setTimeout(() => {
+			documents.forEach((document: any, idx: number) => {
 				document._id = res.insertedIds[idx];
 				readable.push(document);
 			});
@@ -118,33 +135,30 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return this._modifyDocumentStream(readable);
 	}
 
-	async batchUpdateProcess(id, body, context, schemaConfig, model = '') {
-		if (!context) {
-			throw new Error(`batchUpdateProcess called without context; ${id}`);
-		}
+	async batchUpdateProcess(id: string, body: {path: string, value: any}, context: Context, schemaConfig: SchemaConfig, model?: string) {
+		if (!context) throw new Error(`batchUpdateProcess called without context; ${id}`);
 
 		const updateType = context.type;
-		let response = null;
+		let response: any = null;
 
-		const ops = [];
+		const ops: {updateOne: any}[] = [];
 
 		switch (updateType) {
 		default: {
 			throw new Error(`Invalid update type: ${updateType}`);
 		}
 		case 'vector-add': {
-			let value = null;
+			let value: any = null;
 			if (schemaConfig && schemaConfig.__schema) {
 				const fb = Helpers.Schema.getFlattenedBody(body.value);
-				// ! This should happen outside of the database adapter unless it's DB specific.
 				value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
 			} else {
 				value = body.value;
 			}
 
 			if (!schemaConfig && model) {
-				const entity = await Model[model].findById(id);
-				const objValue = {};
+				const entity = await Model.getModel(model).findById(id);
+				const objValue: {[key: string]: any} = {};
 				let updateValueExists = true;
 				let modifiedPath = '';
 				let basePath = body.path;
@@ -213,7 +227,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			response = {numRemoved: 1, index: index};
 		} break;
 		case 'scalar': {
-			let value = null;
+			let value: any = null;
 			if (schemaConfig && schemaConfig.__schema) {
 				const fb = Helpers.Schema.getFlattenedBody(body.value);
 				value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
@@ -257,7 +271,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		return new Promise((resolve, reject) => {
 			if (!ops.length) throw new Error('Aargh');
 
-			this.collection.bulkWrite(ops, (err, res) => {
+			this.collection?.bulkWrite(ops, (err, res) => {
 				if (err) return reject(err);
 
 				resolve({
@@ -269,42 +283,47 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 		});
 	}
 
-	update(select, update) {
+	update(select: any, update: any) {
 		return new Promise((resolve, reject) => {
-			this.collection.updateMany(this._prepareQueryForMongo(select), update, (err, object) => {
-				if (err) return reject(new Error(err));
+			const res = this.collection?.updateMany(this._prepareQueryForMongo(select), update, (err, object) => {
+				if (err) return reject(err);
 
 				resolve(this._modifyDocument(object));
 			});
+			if (!res) reject(new Error('Unable to update'));
 		});
 	}
 
-	updateOne(query, update) {
+	updateOne(query: any, update: any) {
 		return new Promise((resolve, reject) => {
-			this.collection.updateOne(this._prepareQueryForMongo(query), update, (err, object) => {
-				if (err) return reject(new Error(err));
+			const res = this.collection?.updateOne(this._prepareQueryForMongo(query), update, (err, object) => {
+				if (err) return reject(err);
 
 				resolve(this._modifyDocument(object));
 			});
+			if (!res) reject(new Error('Unable to updateOne'));
 		});
 	}
 
-	updateById(id, query) {
+	updateById(id: string, query: any) {
 		// Logging.logSilly(`updateById: ${id} ${query}`);
 
 		return new Promise((resolve, reject) => {
-			this.collection.updateOne({_id: id}, query, (err, object) => {
-				if (err) return reject(new Error(err));
+			const res = this.collection?.updateOne({_id: new ObjectId(id)}, query, (err, object) => {
+				if (err) return reject(err);
 
 				resolve(this._modifyDocument(object));
 			});
+			if (!res) reject(new Error('Unable to updateOne'));
 		});
 	}
 
-	exists(id, extra = {}) {
+	exists(id: string, extra = {}) {
+		if (!this.collection) throw new Error('No collection');
+
 		Logging.logSilly(`exists: ${this.collection.namespace} ${id}`);
 
-		return this.collection.countDocuments({
+		return this.collection?.countDocuments({
 			_id: new ObjectId(id),
 			...extra,
 		})
@@ -322,13 +341,14 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {string} id - id to be deleted
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rm(id) {
+	rm(entity: any) {
 		// Logging.log(`DELETING: ${entity._id}`, Logging.Constants.LogLevel.DEBUG);
 		return new Promise((resolve) => {
-			this.collection.deleteOne({_id: new ObjectId(id)}, (err, cursor) => {
+			const res = this.collection?.deleteOne({_id: new ObjectId(entity._id)}, (err, cursor) => {
 				if (err) throw err;
 				resolve(cursor);
 			});
+			if (!res) throw new Error('Unable to delete');
 		});
 	}
 
@@ -336,7 +356,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {Array} ids - Array of entity ids to delete
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rmBulk(ids) {
+	rmBulk(ids: any) {
 		// Logging.log(`rmBulk: ${this.collection.namespace} ${ids}`, Logging.Constants.LogLevel.SILLY);
 		return this.rmAll({_id: {$in: ids}});
 	}
@@ -345,15 +365,16 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {Object} query - mongoDB query
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rmAll(query) {
+	rmAll(query: any) {
 		if (!query) query = {};
 		// Logging.logSilly(`rmAll: ${this.collection.namespace} ${query}`);
 
 		return new Promise((resolve) => {
-			this.collection.deleteMany(this._prepareQueryForMongo(query), (err, doc) => {
+			const res = this.collection?.deleteMany(this._prepareQueryForMongo(query), (err, doc) => {
 				if (err) throw err;
 				resolve(doc);
 			});
+			if (!res) throw new Error('Unable to deleteMany');
 		});
 	}
 
@@ -361,14 +382,13 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {String} id - entity id to get
 	 * @return {Promise} - resolves to an array of Companies
 	 */
-	async findById(id) {
+	async findById(id: string) {
 		// Logging.logSilly(`Schema:findById: ${this.collection.namespace} ${id}`);
 
-		if (id instanceof ObjectId === false) {
-			id = new ObjectId(id);
-		}
+		const document = await this.collection?.findOne({_id: new ObjectId(id)}, {});
+		if (!document) throw new Error('Unable to find document');
 
-		return this._modifyDocument(await this.collection.findOne({_id: id}, {}));
+		return this._modifyDocument(document);
 	}
 
 	/**
@@ -380,7 +400,9 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {ReadableStream} - stream
 	 */
-	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+	find(query:any, excludes = {}, limit = 0, skip = 0, sort: any = null, project = null) {
+		if (!this.collection) throw new Error('No collection');
+
 		if (Logging.level === Logging.Constants.LogLevel.SILLY) {
 			Logging.logSilly(`find: ${this.collection.namespace} query: ${JSON.stringify(query)}, excludes: ${excludes}`+
 				`limit: ${limit}, skip: ${skip}, sort: ${JSON.stringify(sort)}`);
@@ -403,14 +425,15 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {Object} excludes - mongoDB query excludes
 	 * @return {Promise} - resolves to an array of docs
 	 */
-	findOne(query, excludes = {}) {
+	findOne(query: any, excludes = {}) {
 		// Logging.logSilly(`findOne: ${this.collection.namespace} ${query}`);
 
-		return new Promise((resolve) => {
-			this.collection.find(this._prepareQueryForMongo(query), this._prepareQueryForMongo(excludes)).toArray((err, doc) => {
-				if (err) throw err;
-				resolve(this._modifyDocument(doc[0]));
+		return new Promise((resolve, reject) => {
+			const res = this.collection?.find(this._prepareQueryForMongo(query), this._prepareQueryForMongo(excludes)).toArray((err, doc) => {
+				if (err) return reject(err);
+				resolve(this._modifyDocument((doc) ? doc[0] : null));
 			});
+			if (!res) reject(new Error('Unable to find'));
 		});
 	}
 
@@ -427,7 +450,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {Array} ids - Array of entities ids to get
 	 * @return {Promise} - resolves to an array of Companies
 	 */
-	findAllById(ids) {
+	findAllById(ids: string[]) {
 		// Logging.logSilly(`update: ${this.collection.namespace} ${ids}`);
 
 		return this.find({_id: {$in: ids.map((id) => new ObjectId(id))}}, {});
@@ -437,15 +460,15 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	 * @param {Object} query - mongoDB query
 	 * @return {Promise} - resolves to an array of Companies
 	 */
-	count(query) {
-		return this.collection.countDocuments(this._prepareQueryForMongo(query));
+	count(query: any) {
+		return this.collection?.countDocuments(this._prepareQueryForMongo(query));
 	}
 
 	/**
 	 * @return {Promise}
 	 */
 	drop() {
-		return this.collection.drop()
+		return this.collection?.drop()
 			.catch((err) => {
 				if (err.code === 26) return true; // NamespaceNotFound
 
@@ -454,7 +477,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	// Modify a straem of docuemnts, converting _id to id
-	_modifyDocument(doc) {
+	_modifyDocument(doc: any) {
 		if (doc && doc._id) {
 			doc.id = doc._id;
 			delete doc._id;
@@ -462,7 +485,7 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 
 		return doc;
 	}
-	_modifyDocumentStream(stream) {
+	_modifyDocumentStream(stream: Stream.Readable) {
 		const transformStream = new Stream.Transform({
 			objectMode: true,
 			transform: (doc, enc, cb) => cb(null, this._modifyDocument(doc)),
@@ -472,14 +495,14 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 	}
 
 	// Methods for modifying a document or query to handle converting from id to _id
-	_prepareDocumentForMongo(document) {
+	_prepareDocumentForMongo(document: any) {
 		if (document && document.id) {
 			document._id = document.id;
 			delete document.id;
 		}
 		return document;
 	}
-	_prepareQueryForMongo(query) {
+	_prepareQueryForMongo(query: any) {
 		if (!query) return query;
 
 		if (query.id) {
@@ -487,9 +510,9 @@ module.exports = class MongodbAdapter extends AbstractAdapter {
 			delete query.id;
 		} else if (query['$or'] || query['$and']) {
 			if (query['$or']) {
-				query['$or'] = query['$or'].map((q) => this._prepareQueryForMongo(q));
+				query['$or'] = query['$or'].map((q: any) => this._prepareQueryForMongo(q));
 			} else if (query['$and']) {
-				query['$and'] = query['$and'].map((q) => this._prepareQueryForMongo(q));
+				query['$and'] = query['$and'].map((q: any) => this._prepareQueryForMongo(q));
 			}
 		}
 

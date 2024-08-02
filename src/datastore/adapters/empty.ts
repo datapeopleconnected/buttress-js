@@ -13,25 +13,25 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const {ObjectId} = require('bson');
+import { ObjectId } from 'bson';
 
-const AbstractAdapter = require('../abstract-adapter');
+import AbstractAdapter from '../abstract-adapter';
 
 class AdapterId {
-	static new(id) {
+	static new(id: string) {
 		return new ObjectId(id);
 	}
 
-	static isValid(id) {
+	static isValid(id: string) {
 		return ObjectId.isValid(id);
 	}
 
-	static instanceOf(id) {
+	static instanceOf(id: string | ObjectId) {
 		return id instanceof ObjectId;
 	}
 }
 
-module.exports = class EmptyAdapter extends AbstractAdapter {
+export default class EmptyAdapter extends AbstractAdapter {
 	get ID() {
 		return AdapterId;
 	}

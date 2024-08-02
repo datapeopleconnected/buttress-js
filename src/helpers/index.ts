@@ -16,24 +16,27 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Errors = require('./errors');
-const DataSharingHelpers = require('./data-sharing');
+import * as DataSharingHelpers from './data-sharing';
 
-const stream = require('stream');
-const Transform = stream.Transform;
+import { Transform } from 'stream';
 
-const Datastore = require('../datastore');
+import Datastore from '../datastore';
 
-module.exports.DataSharing = DataSharingHelpers;
+export const DataSharing = DataSharingHelpers;
 
-module.exports.Errors = Errors;
+export * as Errors from './errors';
 
-module.exports.Schema = require('./schema');
-module.exports.Stream = require('./stream');
+export * as Schema from './schema';
 
-class Timer {
+export * as Stream from './stream';
+
+export class Timer {
+	private _start: number;
+	private _last: number;
+
 	constructor() {
 		this._start = 0;
+		this._last = 0;
 	}
 
 	start() {
@@ -55,9 +58,10 @@ class Timer {
 	}
 }
 
-module.exports.Timer = Timer;
+export class JSONStringifyStream extends Transform {
+	private _first: boolean;
+	private prepare: Function;
 
-class JSONStringifyStream extends Transform {
 	constructor(options, prepare) {
 		super(Object.assign(options || {}, {objectMode: true}));
 
@@ -98,17 +102,16 @@ class JSONStringifyStream extends Transform {
 	}
 }
 
-module.exports.JSONStringifyStream = JSONStringifyStream;
-
-module.exports.Promise = {
+const PromiseHelpers = {
 	prop: (prop) => ((val) => val[prop]),
 	func: (func) => ((val) => val[func]()),
 	nop: () => (() => null),
 	inject: (value) => (() => value),
 	arrayProp: (prop) => ((arr) => arr.map((a) => a[prop])),
 };
+export { PromiseHelpers as Promise };
 
-module.exports.shortId = (id) => {
+export const shortId = (id) => {
 	const toBase = (num, base) => {
 		const symbols = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-'.split('');
 		let decimal = num;
@@ -162,7 +165,7 @@ const __flattenRoles = (data, path) => {
 		return _roles;
 	}, []);
 };
-module.exports.flattenRoles = __flattenRoles;
+export const flattenRoles = __flattenRoles;
 
 const __flatternObject = (obj, output, paths) => {
 	if (!output) output = {};
@@ -181,9 +184,9 @@ const __flatternObject = (obj, output, paths) => {
 		return out;
 	}, output);
 };
-module.exports.flatternObject = __flatternObject;
+export const flatternObject = __flatternObject;
 
-module.exports.mergeDeep = (...objects) => {
+export const mergeDeep = (...objects) => {
 	const isObject = (obj) => obj && typeof obj === 'object';
 
 	return objects.reduce((prev, obj) => {
@@ -194,7 +197,7 @@ module.exports.mergeDeep = (...objects) => {
 			if (Array.isArray(pVal) && Array.isArray(oVal)) {
 				prev[key] = pVal.concat(...oVal);
 			} else if (isObject(pVal) && isObject(oVal)) {
-				prev[key] = module.exports.mergeDeep(pVal, oVal);
+				prev[key] = mergeDeep(pVal, oVal);
 			} else {
 				prev[key] = oVal;
 			}
@@ -204,7 +207,7 @@ module.exports.mergeDeep = (...objects) => {
 	}, {});
 };
 
-const __getFlattenedSchema = (schema) => {
+export const getFlattenedSchema = (schema) => {
 	const __buildFlattenedSchema = (property, parent, path, flattened) => {
 		path.push(property);
 
@@ -215,7 +218,7 @@ const __getFlattenedSchema = (schema) => {
 				__buildFlattenedSchema(childProp, parent[property].__schema, path, flattened);
 			}
 
-			parent[property].__schema = __getFlattenedSchema({properties: parent[property].__schema});
+			parent[property].__schema = getFlattenedSchema({properties: parent[property].__schema});
 			flattened[path.join('.')] = parent[property];
 		} else if (typeof parent[property] === 'object' && !parent[property].__type) {
 			// Handle Object
@@ -231,7 +234,9 @@ const __getFlattenedSchema = (schema) => {
 		path.pop();
 	};
 
-	const flattened = {};
+	const flattened: {
+		[key: string]: any;
+	} = {};
 	const path = [];
 
 	if (schema.properties) {
@@ -243,9 +248,8 @@ const __getFlattenedSchema = (schema) => {
 
 	return flattened;
 };
-module.exports.getFlattenedSchema = __getFlattenedSchema;
 
-module.exports.streamFirst = (stream) => {
+export const streamFirst = (stream) => {
 	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
 		throw new Error(`Expected Stream but got '${stream}'`);
 	}
@@ -259,33 +263,36 @@ module.exports.streamFirst = (stream) => {
 		});
 	});
 };
-module.exports.streamAll = (stream) => {
+export const streamAll = (stream): Promise<any[]> => {
 	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
 		throw new Error(`Expected Stream but got '${stream}'`);
 	}
 
 	return new Promise((resolve, reject) => {
-		const arr = [];
+		const arr: any[] = [];
 		stream.on('error', (err) => reject(err));
 		stream.on('end', () => resolve(arr));
 		stream.on('data', (item) => arr.push(item));
 	});
 };
 
-module.exports.trimSlashes = (str) => {
+export const trimSlashes = (str) => {
 	return (str) ? str.replace(/^\/+|\/+$/g, '') : str;
 };
 
-module.exports.awaitAll = async (arr, handler) => await Promise.all(arr.map(async (item) => await handler(item)));
-module.exports.awaitForEach = async (arr, handler) => {
+export const awaitAll = async (arr, handler) => await Promise.all(arr.map(async (item) => await handler(item)));
+export const awaitForEach = async (arr, handler) => {
 	await arr.reduce(async (prev, item) => {
 		await prev;
 		await handler(item);
 	}, Promise.resolve());
 };
 
-module.exports.checkAppPolicyProperty = async (appPolicyList, policyProperties) => {
-	const res = {
+export const checkAppPolicyProperty = async (appPolicyList, policyProperties) => {
+	const res: {
+		passed: boolean,
+		errMessage: string,
+	} = {
 		passed: true,
 		errMessage: '',
 	};
@@ -304,7 +311,7 @@ module.exports.checkAppPolicyProperty = async (appPolicyList, policyProperties) 
 			continue;
 		}
 
-		let operator = null;
+		let operator: string | null = null;
 		if (typeof policyProperties[key] === 'object') {
 			[operator] = Object.keys(policyProperties[key]);
 		}
@@ -335,11 +342,11 @@ module.exports.checkAppPolicyProperty = async (appPolicyList, policyProperties) 
 	return res;
 };
 
-module.exports.updateCoreSchemaObject = (update, extendedPathContext) => {
+export const updateCoreSchemaObject = (update, extendedPathContext) => {
 	const __updateObjectPath = (body) => {
 		const bodyPath = body.path.replace(pattern, '');
 		if (!Array.isArray(body) && body.value && typeof body.value === 'object' && !Array.isArray(body.value)) {
-			body = Object.keys(body.value).reduce((arr, key) => {
+			body = Object.keys(body.value).reduce((arr: {path: string, value: any}[], key) => {
 				const extendedPath = `${bodyPath}.${key}`;
 				if (!extendedPathContextKeys.some((key) => key.includes(extendedPath))) return arr;
 
@@ -355,11 +362,8 @@ module.exports.updateCoreSchemaObject = (update, extendedPathContext) => {
 
 	const extendedPathContextKeys = Object.keys(extendedPathContext);
 	const pattern = /\.\d+/g;
-	const newUpdate = [];
 	if (Array.isArray(update)) {
-		update.forEach((item) => {
-			newUpdate.push(__updateObjectPath(item));
-		});
+		update.forEach((item) => __updateObjectPath(item));
 	} else {
 		update = __updateObjectPath(update);
 	}
@@ -367,7 +371,7 @@ module.exports.updateCoreSchemaObject = (update, extendedPathContext) => {
 	return update;
 };
 
-module.exports.compareByProps = (compareProperties, a, b) => {
+export const compareByProps = (compareProperties, a, b) => {
 	for (const key of compareProperties.keys()) {
 		const sortOrder = compareProperties.get(key);
 
@@ -382,12 +386,13 @@ module.exports.compareByProps = (compareProperties, a, b) => {
 	return 0;
 };
 
-module.exports.ExpireMap = class ExpireMap extends Map {
+export class ExpireMap extends Map {
+	expireTime: number;
+	gcTimeout?: NodeJS.Timeout;
+
 	constructor(expireTime) {
 		super();
 		this.expireTime = expireTime;
-
-		this.gcTimeout = null;
 	}
 
 	set(key, value) {
@@ -395,6 +400,8 @@ module.exports.ExpireMap = class ExpireMap extends Map {
 			value,
 			expire: Date.now() + this.expireTime,
 		});
+
+		return this;
 	}
 
 	get(key) {

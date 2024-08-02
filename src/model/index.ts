@@ -16,16 +16,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Logging = require('../helpers/logging');
-const Schema = require('../schema');
-const shortId = require('../helpers').shortId;
+import Schema from '../schema';
+import Logging from '../helpers/logging';
+import {shortId, Errors, DataSharing} from '../helpers';
 
-const {Errors, DataSharing} = require('../helpers');
+import Datastore from '../datastore';
 
-const Datastore = require('../datastore');
-
-const StandardModel = require('./type/standard');
-const RemoteCombinedModel = require('./type/remote-combined');
+import StandardModel from './type/standard';
+import RemoteCombinedModel from './type/remote-combined';
 
 const CoreModels = {
 	Activity: require('./core/activity'),
@@ -45,6 +43,18 @@ const CoreModels = {
  * @class Model
  */
 class Model {
+	models: {[key: string]: any};
+	Schema: {[key: string]: any};
+
+	Constants: {[key: string]: any};
+
+	app: any;
+	appMetadataChanged: boolean;
+
+	coreSchema: any[];
+
+	_services: any;
+
 	constructor() {
 		this.models = {};
 		this.Schema = {};
@@ -97,7 +107,7 @@ class Model {
 			Logging.logSilly(`Model:initSchema: ${app.id}`);
 
 			// Check for connection
-			let datastore = null;
+			let datastore: any = null;
 			if (app.datastore && app.datastore.connectionString) {
 				try {
 					datastore = Datastore.createInstance(app.datastore);
@@ -114,7 +124,7 @@ class Model {
 				datastore = Datastore.getInstance('core');
 			}
 
-			let builtSchemas = null;
+			let builtSchemas: any[];
 			try {
 				builtSchemas = await Schema.buildCollections(Schema.decode(app.__schema));
 			} catch (err) {
@@ -136,7 +146,7 @@ class Model {
 	 * @param {string} name
 	 * @return {Standard}
 	 */
-	getModel(name) {
+	getModel(name: string) {
 		return this.models[name];
 	}
 
@@ -196,7 +206,7 @@ class Model {
 		if (schemaData.remotes) {
 			const remotes = (Array.isArray(schemaData.remotes)) ? schemaData.remotes : [schemaData.remotes];
 
-			const datastores = [];
+			const datastores: any[] = [];
 
 			for await (const remote of remotes) {
 				if (!remote.name || !remote.schema) {
@@ -204,7 +214,7 @@ class Model {
 					return;
 				}
 
-				const dataSharing = await this.AppDataSharing.findOne({
+				const dataSharing = await this.getModel('AppDataSharing').findOne({
 					'name': remote.name,
 					'_appId': app.id,
 				});
@@ -222,6 +232,7 @@ class Model {
 				const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
 				const remoteDatastore = Datastore.createInstance({connectionString});
 
+				// ? Datastore shouldn't really care about the data sharing ID.
 				remoteDatastore.dataSharingId = dataSharing.id;
 
 				datastores.push(remoteDatastore);
@@ -249,4 +260,4 @@ class Model {
 	}
 }
 
-module.exports = new Model();
+export default new Model();

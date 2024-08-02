@@ -14,19 +14,19 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
-const Schema = require('../../schema');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
+import Schema from '../../schema';
 
 /**
  * @class GetOne
  */
 module.exports = class GetOne extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema: any, appShort: string, services: any) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/:id`, `GET ${schema.name}`, nrp);
+		super(`${schemaRoutePath}/:id`, `GET ${schema.name}`, services);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;

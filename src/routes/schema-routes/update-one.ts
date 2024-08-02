@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
-const Schema = require('../../schema');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
+import Schema from '../../schema';
 
 /**
  * @class UpdateOne
@@ -49,8 +49,6 @@ module.exports = class UpdateOne extends Route {
 		if (!this.model) {
 			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
-
-		this._entity = null;
 	}
 
 	async _validate(req, res, token) {

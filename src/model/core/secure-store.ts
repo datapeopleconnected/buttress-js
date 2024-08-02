@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const StandardModel = require('../type/standard');
+import StandardModel from '../type/standard';
 const Helpers = require('../../helpers');
 
 class SecureStoreSchemaModel extends StandardModel {
@@ -70,7 +70,8 @@ class SecureStoreSchemaModel extends StandardModel {
 		// body.
 		let appId = req.authApp.id;
 		if (!appId) {
-			const token = await this._getToken(req);
+			// const token = await this._getToken(req);
+			const token = req.token;
 			if (token && token._appId) {
 				appId = token._appId;
 			}

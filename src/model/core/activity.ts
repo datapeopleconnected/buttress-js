@@ -15,14 +15,14 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Logging = require('../../helpers/logging');
-const Schema = require('../../schema');
-// const Sugar = require('sugar');
-const Shared = require('../shared');
-// const Helpers = require('../../helpers');
+import Logging from '../../helpers/logging';
+import Schema from '../../schema';
+// import Sugar from 'sugar';
+import * as Shared from '../shared';
+// import * as Helpers from '../../helpers';
 // const Config = require('node-env-obj')('../../');
 
-const StandardModel = require('../type/standard');
+import StandardModel from '../type/standard';
 
 /**
  * Constants
@@ -142,7 +142,7 @@ class ActivitySchemaModel extends StandardModel {
 		delete q.token;
 		delete q.urq;
 
-		const md = {
+		const md: any = {
 			title: body.activityTitle,
 			description: body.activityDescription,
 			visibility: body.activityVisibility,
@@ -173,19 +173,6 @@ class ActivitySchemaModel extends StandardModel {
 		body.req.body = Schema.encode(body.req.body);
 
 		return super.add(body);
-	}
-
-	findAll(appId, token) {
-		Logging.log(`getAll: ${appId}`, Logging.Constants.LogLevel.DEBUG);
-
-		if (token && token.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
-			return super.findAll({});
-		}
-
-		return super.find({
-			_appId: this.createId(appId),
-			visibility: ActivitySchemaModel.Constants.Visibility.PUBLIC,
-		});
 	}
 }
 

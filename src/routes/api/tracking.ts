@@ -16,18 +16,18 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
 
-const routes = [];
+const routes: (typeof Route)[] = [];
 
 /**
  * @class GetTrackingList
  */
 class GetTrackingList extends Route {
 	constructor(nrp) {
-		super('tracking', 'GET TRACKING LIST', nrp, Model.Tracking);
+		super('tracking', 'GET TRACKING LIST', nrp, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -47,12 +47,12 @@ routes.push(GetTrackingList);
  */
 class AddTracking extends Route {
 	constructor(nrp) {
-		super('tracking', 'ADD TRACKING', nrp, Model.Tracking);
+		super('tracking', 'ADD TRACKING', nrp, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
 		this.activity = false;
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = false;
 	}
 
@@ -85,19 +85,19 @@ routes.push(AddTracking);
 
 class UpdateTracking extends Route {
 	constructor(nrp) {
-		super('tracking/:id', 'UPDATE TRACKING', nrp, Model.Tracking);
+		super('tracking/:id', 'UPDATE TRACKING', nrp, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activity = false;
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
-	_validate() {
+	_validate(req) {
 		return new Promise((resolve, reject) => {
-			const {validation, body} = this.model.validateUpdate(this.req.body);
-			this.req.body = body;
+			const {validation, body} = this.model.validateUpdate(req.body);
+			req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
 					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
@@ -109,7 +109,7 @@ class UpdateTracking extends Route {
 				}
 			}
 
-			this.model.exists(this.req.params.id)
+			this.model.exists(req.params.id)
 				.then((exists) => {
 					if (!exists) {
 						this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
@@ -120,8 +120,8 @@ class UpdateTracking extends Route {
 		});
 	}
 
-	_exec() {
-		return this.model.updateByPath(this.req.body, this.req.params.id);
+	_exec(req ) {
+		return this.model.updateByPath(req.body, req.params.id);
 	}
 }
 routes.push(UpdateTracking);
@@ -131,28 +131,24 @@ routes.push(UpdateTracking);
  */
 class DeleteTracking extends Route {
 	constructor(nrp) {
-		super('tracking/:id', 'DELETE TRACKING', nrp, Model.Tracking);
+		super('tracking/:id', 'DELETE TRACKING', nrp, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
-		this._tracking = false;
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			this.model.findById(req.params.id)
-				.then((tracking) => {
-					if (!tracking) {
-						this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
-						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-					}
-					this._tracking = tracking;
-					resolve(true);
-				});
-		});
+	async _validate(req, res, token) {
+		const tracking = await this.model.findById(req.params.id)
+		if (!tracking) {
+			this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `invalid_id`);
+		}
+
+		return tracking
 	}
 
-	_exec(req, res, validate) {
-		return this._tracking.rm().then(() => true);
+	async _exec(req, res, tracking) {
+		await Model.getModel('Tracking').rm(tracking.id);
+		return true;
 	}
 }
 routes.push(DeleteTracking);
@@ -162,7 +158,7 @@ routes.push(DeleteTracking);
  */
 class DeleteAllTrackings extends Route {
 	constructor(nrp) {
-		super('tracking', 'DELETE ALL TRACKINGS', nrp, Model.Tracking);
+		super('tracking', 'DELETE ALL TRACKINGS', nrp, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
@@ -180,4 +176,4 @@ routes.push(DeleteAllTrackings);
 /**
  * @type {*[]}
  */
-module.exports = routes;
+export default routes;

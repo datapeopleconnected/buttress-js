@@ -18,13 +18,16 @@
 
 const Buttress = require('@buttress/api');
 
-const Schema = require('../../schema');
-const Logging = require('../../helpers/logging');
-const Helpers = require('../../helpers');
+import Schema from '../../schema';
+import Logging from '../../helpers/logging';
+import * as Helpers from '../../helpers';
 
-const StandardModel = require('../type/standard');
+import StandardModel from '../type/standard';
 
-class AppSchemaModel extends StandardModel {
+export default class AppSchemaModel extends StandardModel {
+
+	private _localSchema: any;
+
 	constructor(services) {
 		const schema = AppSchemaModel.Schema;
 		super(schema, null, services);
@@ -145,10 +148,10 @@ class AppSchemaModel extends StandardModel {
 			_appId: body.id,
 		});
 
-		const token = await Helpers.streamFirst(rxsToken);
+		const token: any = await Helpers.streamFirst(rxsToken);
 
 		const rxsApp = await super.add(body, {_tokenId: token.id});
-		const app = await Helpers.streamFirst(rxsApp);
+		const app: any = await Helpers.streamFirst(rxsApp);
 
 		await this.__handleAddingNonSystemApp(body, token);
 
@@ -327,29 +330,10 @@ class AppSchemaModel extends StandardModel {
 	}
 
 	/**
-	 * @param {string} route - route for the permission
-	 * @param {*} permission - permission to apply to the route
-	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
-	 */
-	addOrUpdatePermission(route, permission) {
-		Logging.log(route, Logging.Constants.LogLevel.DEBUG);
-		Logging.log(permission, Logging.Constants.LogLevel.DEBUG);
-
-		return this.getToken()
-			.then((token) => {
-				if (!token) {
-					throw new Error('No valid authentication token.');
-				}
-
-				return token.addOrUpdatePermission();
-			});
-	}
-
-	/**
 	 * @return {Promise} - resolves to the token
 	 */
-	getToken() {
-		return this.__modelManager.Token.findOne({id: this._tokenId});
+	getToken(app) {
+		return this.__modelManager.Token.findOne({id: app._tokenId});
 	}
 
 	/**
@@ -385,8 +369,3 @@ class AppSchemaModel extends StandardModel {
 		}, {$set: {'oAuth': oAuth}});
 	}
 }
-
-/**
- * Exports
- */
-module.exports = AppSchemaModel;

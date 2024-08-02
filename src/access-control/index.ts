@@ -16,20 +16,37 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Sugar = require('sugar');
-require('sugar-inflections');
-const hash = require('object-hash');
+import Sugar from 'sugar';
+import 'sugar-inflections';
 
-const Model = require('../model');
-const Logging = require('../helpers/logging');
-const Schema = require('../schema');
-const AccessControlConditions = require('./conditions');
-const AccessControlFilter = require('./filter');
-const AccessControlProjection = require('./projection');
-const AccessControlPolicyMatch = require('./policy-match');
-const AccessControlHelpers = require('./helpers');
+import hash from 'object-hash';
+import NRP from 'node-redis-pubsub';
+
+import Model from '../model';
+import Logging from '../helpers/logging';
+import Schema from '../schema';
+
+import AccessControlConditions from './conditions';
+import AccessControlFilter from './filter';
+import AccessControlProjection from './projection';
+import AccessControlPolicyMatch from './policy-match';
+import AccessControlHelpers from './helpers';
 
 class AccessControl {
+	_schemas: {[key: string]: any};
+	_policies: {[key: string]: any};
+
+	_queuedLimitedPolicy: string[];
+
+	_oneWeekMilliseconds: number;
+
+	_coreSchema: any[];
+	_coreSchemaNames: string[];
+
+	_queryAccess: string[];
+
+	_nrp?: NRP.NodeRedisPubSub;
+
 	constructor() {
 		this._schemas = {};
 		this._policies = {};
@@ -54,8 +71,9 @@ class AccessControl {
 	}
 
 	handleCacheListeners() {
-		this._nrp.on('app-policy:bust-cache', async (data) => await this.__cacheAppPolicies(data.appId));
-		this._nrp.on('app-schema:updated', async (data) => await this.__cacheAppSchema(data.appId));
+		if (!this._nrp) throw new Error('Unable to register listeners, NRP not set');
+		this._nrp.on('app-policy:bust-cache', async (data: any) => await this.__cacheAppPolicies(data.appId));
+		this._nrp.on('app-schema:updated', async (data: any) => await this.__cacheAppSchema(data.appId));
 	}
 
 	/**
@@ -69,7 +87,7 @@ class AccessControl {
 	async accessControlPolicyMiddleware(req, res, next) {
 		Logging.logTimer(`accessControlPolicyMiddleware::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-		const isSystemToken = req.token.type === Model.Token.Constants.Type.SYSTEM;
+		const isSystemToken = req.token.type === Model.getModel('Token').Constants.Type.SYSTEM;
 		if (isSystemToken) return next();
 
 		const token = req.token;
@@ -92,12 +110,12 @@ class AccessControl {
 
 		if (isLambdaCall) {
 			const lambdaURL = requestedURL.replace(`/lambda/v1/${req.authApp.apiPath}/`, '');
-			lambdaAPICall = await Model.Lambda.findOne({
+			lambdaAPICall = await Model.getModel('Lambda').findOne({
 				'trigger.apiEndpoint.url': {
 					$eq: lambdaURL,
 				},
 				'_appId': {
-					$eq: Model.Lambda.createId(appId),
+					$eq: Model.getModel('Lambda').createId(appId),
 				},
 			});
 		}
@@ -112,12 +130,12 @@ class AccessControl {
 		}
 
 		// if (user && this._coreSchemaNames.some((n) => n === schemaName)) {
-		// 	const userAppToken = await Model.Token.findOne({
+		// 	const userAppToken = await Model.getModel('Token').findOne({
 		// 		_appId: {
 		// 			$eq: user._appId,
 		// 		},
 		// 		type: {
-		// 			$eq: Model.Token.Constants.Type.SYSTEM,
+		// 			$eq: Model.getModel('Token').Constants.Type.SYSTEM,
 		// 		},
 		// 	});
 		// 	if (!userAppToken) {
@@ -131,7 +149,7 @@ class AccessControl {
 		const tokenPolicies = this.__getTokenPolicies(token, appId);
 		Logging.logSilly(`Got ${tokenPolicies.length} Matched policies for token ${token.type}:${token.id}`, req.id);
 
-		const policyOutcome = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
+		const policyOutcome: any = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
 		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
 			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			Logging.logError(policyOutcome.err.message);
@@ -151,7 +169,7 @@ class AccessControl {
 			await this._queuePolicyLimitDeleteEvent(tokenPolicies, token, appId);
 			// TODO: This doesn't need to happen here, move to sock
 			// await this._checkAccessControlDBBasedQueryCondition(req, params);
-			this._nrp.emit('queuePolicyRoomCloseSocketEvent', params);
+			this._nrp?.emit('queuePolicyRoomCloseSocketEvent', JSON.stringify(params));
 		}
 
 		// TODO: This doesn't need to happen here, move to sock
@@ -163,7 +181,7 @@ class AccessControl {
 
 	async _getSchemaRoomStructure(tokenPolicies, req, schemaName, appId) {
 		Logging.logTimer(`_getSchemaRoomStructure::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		const outcome = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
+		const outcome: any = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
 
 		if (outcome.err.statusCode || outcome.err.message) {
 			Logging.logError(`getRoomStructure statusCode:${outcome.err.statusCode} message:${outcome.err.message}`);
@@ -194,7 +212,7 @@ class AccessControl {
 		return {roomId: hash(outcome.res), structure};
 	}
 
-	async getUserRoomStructures(user, appId, req = {}) {
+	async getUserRoomStructures(user, appId, req: any = {}) {
 		Logging.logTimer(`getUserRoomStructures::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
@@ -210,9 +228,9 @@ class AccessControl {
 		}
 
 		const rooms = {};
-		const token = await Model.Token.findOne({
+		const token = await Model.getModel('Token').findOne({
 			_userId: {
-				$eq: Model.User.createId(user.id),
+				$eq: Model.getModel('User').createId(user.id),
 			},
 		});
 		const tokenPolicies = this.__getTokenPolicies(token, appId);
@@ -225,6 +243,7 @@ class AccessControl {
 			if (!rooms[roomId]) {
 				rooms[roomId] = structure;
 			} else {
+				if (!structure) throw new Error('getUserRoomStructures - structure is not defined');
 				rooms[roomId].schema[schema.name] = structure.schema[schema.name];
 			}
 		}
@@ -267,9 +286,9 @@ class AccessControl {
 	 * @param {String} appId
 	 * @return {Object}
 	 */
-	async __getPolicyOutcome(tokenPolicies, req, schemaName, appId = null) {
+	async __getPolicyOutcome(tokenPolicies, req, schemaName, appId: string | null = null) {
 		Logging.logTimer(`__getPolicyOutcome::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		const outcome = {
+		const outcome: any = {
 			res: {},
 			err: {},
 		};
@@ -360,7 +379,7 @@ class AccessControl {
 
 				if (!obj[policy.name]) {
 					obj[policy.name] = {
-						appId: appId.toString(),
+						appId: appId?.toString(),
 						env: {},
 						conditions: [],
 						query: [],
@@ -416,12 +435,14 @@ class AccessControl {
 
 			await AccessControlConditions.applyPolicyConditions(req, highestPolicyPriorityConfig);
 			if (Object.keys(highestPolicyPriorityConfig).length < 1) {
+				if (!highestPriorityKey) throw new Error('Trying delete key from schemaBasePolicyConfig but key is not defined');
 				delete schemaBasePolicyConfig[highestPriorityKey];
 			} else {
 				schemaBasePolicyConfig = highestPolicyPriorityConfig;
 			}
 		}
 
+		if (!appId) throw new Error('Trying to combine core with app schema but appId is not defined');
 		const schemaCombined = [...this._coreSchema, ...this._schemas[appId]];
 		const schema = schemaCombined
 			.find((s) => s.name === schemaName || Sugar.String.singularize(s.name) === schemaName);
@@ -476,16 +497,16 @@ class AccessControl {
 
 
 	async __cacheAppSchema(appId) {
-		const app = await Model.App.findById(appId);
+		const app = await Model.getModel('App').findById(appId);
 		this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type.indexOf('collection') === 0);
 
 		Logging.logSilly(`Refreshed schema cache for app ${appId} got ${this._schemas[appId].length} schema`);
 	}
 
 	async __cacheAppPolicies(appId) {
-		const policies = [];
-		const rxsPolicies = await Model.Policy.find({
-			_appId: Model.Policy.createId(appId),
+		const policies: any[] = [];
+		const rxsPolicies = await Model.getModel('Policy').find({
+			_appId: Model.getModel('Policy').createId(appId),
 		});
 		for await (const policy of rxsPolicies) {
 			policies.push(policy);
@@ -505,13 +526,13 @@ class AccessControl {
 		if (requestMethod !== 'PUT') return;
 
 		const id = params.path.split('/').pop();
-		this._nrp.emit('accessControlPolicy:disconnectQueryBasedSocket', {
+		this._nrp?.emit('accessControlPolicy:disconnectQueryBasedSocket', JSON.stringify({
 			appId: params.appId,
 			apiPath: params.apiPath,
 			userId: params.userId,
 			id: id,
 			updatedSchema: params.schemaName,
-		});
+		}));
 	}
 
 	_queuePolicyLimitDeleteEvent(policies, userToken, appId) {
@@ -519,23 +540,23 @@ class AccessControl {
 		if (limitedPolicies.length < 1) return;
 
 		limitedPolicies.forEach((p) => {
-			const nearlyExpired = Sugar.Date.create(p.limit) - Sugar.Date.create();
+			const nearlyExpired = Sugar.Date.create(p.limit).getTime() - Sugar.Date.create().getTime();
 			if (this._oneWeekMilliseconds < nearlyExpired) return;
 			if (this._queuedLimitedPolicy.includes(p.name)) return;
 
 			const policyIdx = this._queuedLimitedPolicy.push(p.name);
 			setTimeout(async () => {
 				await this.__removeUserPropertiesPolicySelection(userToken, p);
-				await Model.Policy.rm(p.id);
+				await Model.getModel('Policy').rm(p.id);
 
-				this._nrp.emit('app-policy:bust-cache', {
+				this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
 					appId,
-				});
+				}))
 
-				this._nrp.emit('worker:socket:updateUserSocketRooms', {
-					userId: Model.User.create(userToken._userId),
+				this._nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
+					userId: Model.getModel('User').create(userToken._userId),
 					appId,
-				});
+				}));
 
 				this._queuedLimitedPolicy.splice(policyIdx, 1);
 			}, nearlyExpired);
@@ -549,7 +570,7 @@ class AccessControl {
 			delete tokenPolicyProps[key];
 		});
 
-		await Model.Token.setPolicyPropertiesById(userToken.id, tokenPolicyProps);
+		await Model.getModel('Token').setPolicyPropertiesById(userToken.id, tokenPolicyProps);
 	}
 
 	__getInnerObjectValue(originalObj) {
@@ -560,4 +581,4 @@ class AccessControl {
 		return rest;
 	}
 }
-module.exports = new AccessControl();
+export default new AccessControl();

@@ -16,21 +16,19 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Helpers = require('../../helpers');
-const Schema = require('../../schema');
-const Logging = require('../../helpers/logging');
+import * as Helpers from '../../helpers';
+import Schema from '../../schema';
+import Logging from '../../helpers/logging';
 
-const StandardModel = require('../type/standard');
+import StandardModel from '../type/standard';
 
 /**
  * @class AppDataSharingSchemaModel
  */
-class AppDataSharingSchemaModel extends StandardModel {
+export default class AppDataSharingSchemaModel extends StandardModel {
 	constructor(services) {
 		const schema = AppDataSharingSchemaModel.Schema;
 		super(schema, null, services);
-
-		this._localSchema = null;
 	}
 
 	static get Constants() {
@@ -121,7 +119,7 @@ class AppDataSharingSchemaModel extends StandardModel {
 			_appId: appDataSharingBody._appId,
 			_appDataSharingId: appDataSharingBody.id,
 		});
-		const token = await Helpers.streamFirst(rxsToken);
+		const token: any = await Helpers.streamFirst(rxsToken);
 
 		await this.__createDataSharingPolicy(appDataSharingBody, token.id);
 
@@ -227,8 +225,3 @@ class AppDataSharingSchemaModel extends StandardModel {
 		return this.updateById(this.createId(appDataSharingId), update);
 	}
 }
-
-/**
- * Exports
- */
-module.exports = AppDataSharingSchemaModel;

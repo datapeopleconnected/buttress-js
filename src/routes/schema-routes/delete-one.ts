@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
-const Schema = require('../../schema');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
+import Schema from '../../schema';
 
 /**
  * @class DeleteOne
@@ -46,24 +46,19 @@ module.exports = class DeleteOne extends Route {
 		if (!this.model) {
 			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
 		}
-
-		this._entity = false;
 	}
 
-	_validate(req, res, token) {
-		return this.model.findById(req.params.id)
-			.then((entity) => {
-				if (!entity) {
-					this.log(`${this.schema.name}: Invalid ID`, Route.LogLevel.ERR, req.id);
-					return {statusCode: 400};
-				}
-				this._entity = entity;
-				return true;
-			});
+	async _validate(req, res, token) {
+		const entity = await this.model.findById(req.params.id)
+		if (!entity) {
+			throw new Helpers.Errors.RequestError(400, `${this.schema.name}: Invalid ID`);
+		}
+
+		return entity;
 	}
 
-	_exec(req, res, validate) {
-		return this.model.rm(this._entity.id)
-			.then(() => true);
+	async _exec(req, res, entity) {
+		await this.model.rm(entity.id);
+		return true;
 	}
 };

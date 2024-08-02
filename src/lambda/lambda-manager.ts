@@ -16,25 +16,44 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const fs = require('fs');
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
-const uuid = require('uuid');
-const hash = require('object-hash');
-const Config = require('node-env-obj')();
+import fs from 'fs';
+import util from 'util';
+import uuid from 'uuid';
+import hash from 'object-hash';
+import NRP from 'node-redis-pubsub';
 
-const Logging = require('../helpers/logging');
-const Model = require('../model');
-const Helpers = require('../helpers');
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
+
+import Logging from '../helpers/logging';
+import Model from '../model';
+import * as Helpers from '../helpers';
+
+import {exec as cpExec} from 'child_process';
+const exec = util.promisify(cpExec);
 
 /**
  * @class LambdaManager
  */
 class LambdaManager {
-	/**
-	 * @param {Object} services - service registry
-	 * Creates an instance of LambdaManager.
-	 */
+	name: string;
+
+	private __nrp?: NRP.NodeRedisPubSub;
+
+	private _workerMap: any;
+	private _lambdaMap: any;
+	private _lambdaAPI: any[];
+	private _lambdaPathsMutation: any[];
+	private _lambdaPathsMutationExec: any[];
+	private _maximumRetry: number;
+	private _lambdaPathMutationTimeout: number;
+
+	private __haltQueue: boolean;
+
+	private _isPrimary: boolean;
+
+	private _timeout?: NodeJS.Timeout;
+
 	constructor(services) {
 		this.name = 'LAMBDA MANAGER';
 
@@ -81,7 +100,7 @@ class LambdaManager {
 		this._handleLambdaPathMutationExecution();
 		this._setTimeoutCheck();
 
-		this.__nrp.on('app-lambda:path-mutation-bust-cache', async (lambda) => {
+		this.__nrp?.on('app-lambda:path-mutation-bust-cache', async (lambda) => {
 			this.__populateLambdaPathsMutation(lambda);
 		});
 	}
@@ -92,7 +111,7 @@ class LambdaManager {
 		this.__haltQueue = true;
 
 		if (this._timeout) clearTimeout(this._timeout);
-		this._timeout = null;
+		this._timeout = undefined;
 
 		// TODO: Could do stuff here with dumping queue to cache.
 
@@ -129,7 +148,7 @@ class LambdaManager {
 			const lambdaExec = await this.__getPendingLambdaExec();
 			// TODO: Handle pausing lambdas due to READ / WRITE access
 			await this.__announcePendingExecutions(lambdaExec);
-		} catch (err) {
+		} catch (err: any) {
 			let message = err;
 			if (err.statusMessage) message = err.statusMessage;
 			if (err.message) message = err.message;
@@ -160,16 +179,16 @@ class LambdaManager {
 		// TODO: Could just return the lambda id, instead of the whole lambda object
 		// TODO: Move the date filter to the query if possible?
 		// Not sure why this isn't happening inside the model.
-		const query = Model.LambdaExecution.parseQuery({
+		const query = Model.getModel('Lambda').Execution.parseQuery({
 			'status': {
 				$eq: 'PENDING',
 			},
 			'executeAfter': {
 				$lteDate: new Date().toISOString(),
 			},
-		}, {}, Model.LambdaExecution.flatSchemaData);
+		}, {}, Model.getModel('Lambda').Execution.flatSchemaData);
 
-		const rxLambdas = await Model.LambdaExecution.find(query);
+		const rxLambdas = await Model.getModel('Lambda').Execution.find(query);
 		const lambdas = await Helpers.streamAll(rxLambdas);
 		Logging.logSilly(`Got ${lambdas.length} pending cron lambdas`);
 
@@ -190,7 +209,7 @@ class LambdaManager {
 	 * @return {Promise}
 	 */
 	async _loadLambdaPathsMutation() {
-		const rxsLambdas = await Model.Lambda.find({
+		const rxsLambdas = await Model.getModel('Lambda').find({
 			'executable': {
 				$eq: true,
 			},
@@ -228,7 +247,16 @@ class LambdaManager {
 	async __announcePendingExecutions(lambdaExecs) {
 		let count = 0;
 		for await (const lambdaExec of lambdaExecs) {
-			const messagePayload = {
+			const messagePayload: {
+				executionId: string;
+				lambdaId: string;
+				lambdaType: string;
+				restWorkerId?: string;
+				query?: any;
+				headers?: any;
+				body?: any;
+				workerExecID?: string;
+			} = {
 				executionId: (lambdaExec.id) ? lambdaExec.id : null,
 				lambdaId: (lambdaExec.lambdaId) ? lambdaExec.lambdaId : lambdaExec.id,
 				lambdaType: (lambdaExec.triggerType) ? lambdaExec.triggerType : 'CRON',
@@ -252,7 +280,7 @@ class LambdaManager {
 				this._lambdaAPI[lambdaIdx].announced = true;
 			}
 
-			this.__nrp.emit('lambda:worker:announce', messagePayload);
+			this.__nrp?.emit('lambda:worker:announce', JSON.stringify(messagePayload));
 			count++;
 		}
 
@@ -260,18 +288,18 @@ class LambdaManager {
 	}
 
 	async _createLambdaExecution(lambda, type) {
-		const deployment = await Model.Deployment.findOne({
-			lambdaId: Model.Lambda.createId(lambda.id),
+		const deployment = await Model.getModel('Deployment').findOne({
+			lambdaId: Model.getModel('Lambda').createId(lambda.id),
 			hash: lambda.git.hash,
 		});
 
 		// TODO add a meaningful error message
 		if (!deployment) return;
 
-		const lambdaExecution = await Model.LambdaExecution.add({
+		const lambdaExecution = await Model.getModel('Lambda').Execution.add({
 			triggerType: type,
-			lambdaId: Model.Lambda.createId(lambda.id),
-			deploymentId: Model.Deployment.createId(deployment.id),
+			lambdaId: Model.getModel('Lambda').createId(lambda.id),
+			deploymentId: Model.getModel('Deployment').createId(deployment.id),
 		}, lambda._appId);
 
 		return lambdaExecution;
@@ -320,7 +348,9 @@ class LambdaManager {
 	_subscribeToLambdaWorkers() {
 		Logging.logDebug(`[${this.name}] Subscribing to worker network`);
 
-		this.__nrp.on('lambda-worker-available', (payload) => {
+		if (!this.__nrp) throw new Error('No NRP instance found');
+
+		this.__nrp.on('lambda-worker-available', (payload: any) => {
 			Logging.logSilly(`[${this.name}] ${payload.workerId} prepared to take on ${payload.data.lambdaId}`);
 			const lambdaMapHash = this._lambdaMap[payload.data.lambdaId];
 			const lambdaBodyHash = (payload.data.body) ? hash(payload.data.body) : lambdaMapHash;
@@ -344,21 +374,21 @@ class LambdaManager {
 			Logging.logDebug(`[${this.name}] ${payload.data.lambdaId} assigning to ${payload.workerId}`);
 
 			// Tell the worker to execute the task
-			this.__nrp.emit('lambda:worker:execute', payload);
+			this.__nrp?.emit('lambda:worker:execute', payload);
 		});
 
-		this.__nrp.on('lambda-worker-overloaded', (payload) => {
+		this.__nrp.on('lambda-worker-overloaded', (payload: any) => {
 			Logging.logDebug(`[${this.name}] ${payload.workerId} was oversubscribed releasing ${payload.lambdaId}`);
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId);
 		});
 
-		this.__nrp.on('lambda-worker-errored', (payload) => {
+		this.__nrp.on('lambda-worker-errored', (payload: any) => {
 			Logging.logError(`[${this.name}] ${payload.lambdaId} errored while running on ${payload.workerId}`);
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId, payload.workerExecID);
 			this._checkAPIAndPathMutationQueue();
 		});
 
-		this.__nrp.on('lambda-worker-finished', (payload) => {
+		this.__nrp.on('lambda-worker-finished', (payload: any) => {
 			Logging.logDebug(`[${this.name}] ${payload.lambdaId} was completed by ${payload.workerId}`);
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId, payload.workerExecID);
 			this._checkAPIAndPathMutationQueue();
@@ -366,7 +396,7 @@ class LambdaManager {
 	}
 
 	async _handleLambdaAPIExecution() {
-		this.__nrp.on('rest:worker:exec-lambda-api', async (data) => {
+		this.__nrp?.on('rest:worker:exec-lambda-api', async (data: any) => {
 			data.workerExecID = uuid.v4();
 			Logging.log(`Manager is queuing API lambda ${data.lambdaId} to be executed`);
 			let index = this._lambdaAPI.length;
@@ -391,7 +421,7 @@ class LambdaManager {
 	 * Listening on redis event to handle the execution of the path mutations lambda
 	 */
 	async _handleLambdaPathMutationExecution() {
-		this.__nrp.on('notifyLambdaPathChange', async (data) => {
+		this.__nrp?.on('notifyLambdaPathChange', async (data: any) => {
 			const paths = data.paths;
 			const schema = data.collection;
 
@@ -524,7 +554,7 @@ class LambdaManager {
 		delete this._lambdaPathsMutationExec[pathMutationLambdaIdx].timer;
 
 		// Fetch the lambda by id
-		const lambda = await Model.Lambda.findById(pathMutationLambda.lambdaId);
+		const lambda = await Model.getModel('Lambda').findById(pathMutationLambda.lambdaId);
 
 		// Create an execution if one doesn't exist
 		if (!pathMutationLambda.id) {

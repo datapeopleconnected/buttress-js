@@ -17,9 +17,9 @@
  */
 const Config = require('node-env-obj')();
 
-const Model = require('../model');
-const Logging = require('../helpers/logging');
-const Helpers = require('../helpers');
+import Model from '../model';
+import Logging from '../helpers/logging';
+import * as Helpers from '../helpers';
 
 const adminPolicy = require('../admin-policy.json');
 const adminLambda = require('../admin-lambda.json');
@@ -27,6 +27,8 @@ const adminLambda = require('../admin-lambda.json');
 // TODO: This file might be able to be rolled into routes.
 
 class AdminRoutes {
+	_routes: string[];
+
 	constructor() {
 		this._routes = [
 			'/api/v1/check/admin',
@@ -42,16 +44,16 @@ class AdminRoutes {
 	 */
 	async initAdminRoutes(app) {
 		app.get('/api/v1/check/admin', async (req, res) => {
-			const superToken = await Model.Token.findOne({
-				type: Model.Token.Constants.Type.SYSTEM,
+			const superToken = await Model.getModel('Token').findOne({
+				type: Model.getModel('Token').Constants.Type.SYSTEM,
 			});
 			if (!superToken) {
 				Logging.logError('Buttress admin check can not find super token');
 				return res.status(404).send({message: 'admin_app_not_found'});
 			}
 
-			const superApp = await Model.App.findOne({
-				_tokenId: Model.Token.createId(superToken.id),
+			const superApp = await Model.getModel('App').findOne({
+				_tokenId: Model.getModel('Token').createId(superToken.id),
 			});
 
 			if (!superApp) {
@@ -68,7 +70,7 @@ class AdminRoutes {
 
 		app.get('/api/v1/admin/activate/:superToken', async (req, res) => {
 			const tokenValue = req.params.superToken;
-			const superToken = await Model.Token.findOne({
+			const superToken = await Model.getModel('Token').findOne({
 				value: tokenValue,
 				type: 'system',
 			});
@@ -78,8 +80,8 @@ class AdminRoutes {
 				return res.status(404).send({message: 'Please enter a valid admin token to activate your admin app'});
 			}
 
-			const superApp = await Model.App.findOne({
-				_tokenId: Model.Token.createId(superToken.id),
+			const superApp = await Model.getModel('App').findOne({
+				_tokenId: Model.getModel('Token').createId(superToken.id),
 			});
 
 			await this._updateAppPolicySelectorList(superApp);
@@ -91,13 +93,13 @@ class AdminRoutes {
 			const tokenValue = req.query.token;
 			const lambdaToInstall = req.body.installLambda;
 			const refreshAdminToken = req.body.refreshAdminToken;
-			const adminToken = await Model.Token.findOne({
+			const adminToken = await Model.getModel('Token').findOne({
 				value: tokenValue,
 			});
 			if (!adminToken) {
 				return res.status(401).send({message: 'invalid_token'});
 			}
-			if (adminToken.type !== Model.Token.Constants.Type.SYSTEM) {
+			if (adminToken.type !== Model.getModel('Token').Constants.Type.SYSTEM) {
 				return res.status(401).send({message: 'unauthorised_token'});
 			}
 			if (!lambdaToInstall || !Array.isArray(lambdaToInstall)) {
@@ -110,8 +112,8 @@ class AdminRoutes {
 			}
 
 			try {
-				const adminApp = await Model.App.findOne({
-					_tokenId: Model.Token.createId(adminToken.id),
+				const adminApp = await Model.getModel('App').findOne({
+					_tokenId: Model.getModel('Token').createId(adminToken.id),
 				});
 
 				await this._createAdminPolicy(adminApp.id);
@@ -122,7 +124,7 @@ class AdminRoutes {
 				if (refreshAdminToken) {
 					await this._refreshAdminAppToken(adminToken, adminApp);
 
-					await Model.App.updateById(Model.App.createId(adminApp.id), {
+					await Model.getModel('App').updateById(Model.getModel('App').createId(adminApp.id), {
 						$set: {
 							adminActive: true,
 						},
@@ -131,14 +133,17 @@ class AdminRoutes {
 
 				res.status(200).send({message: 'done'});
 			} catch (err) {
-				console.error(err);
-				res.status(404).send({message: err.message});
+				if (err instanceof Error){
+					res.status(404).send({message: err.message});
+				}
+
+				throw err;
 			}
 		});
 	}
 
 	async checkAdminCall(req) {
-		let adminToken = null;
+		let adminToken: any = null;
 		let adminApp = null;
 		const isAdminRouteCall = this._routes.some((r) => {
 			let reqURL = req.url;
@@ -153,13 +158,13 @@ class AdminRoutes {
 		});
 
 		if (isAdminRouteCall) {
-			adminToken = await Model.Token.findOne({
-				type: Model.Token.Constants.Type.SYSTEM,
+			adminToken = await Model.getModel('Token').findOne({
+				type: Model.getModel('Token').Constants.Type.SYSTEM,
 			});
 		}
 		if (adminToken) {
-			adminApp = await Model.App.findOne({
-				_tokenId: Model.Token.createId(adminToken.id),
+			adminApp = await Model.getModel('App').findOne({
+				_tokenId: Model.getModel('Token').createId(adminToken.id),
 			});
 		}
 
@@ -197,7 +202,7 @@ class AdminRoutes {
 				$eq: app.id,
 			},
 		};
-		await Model.App.setPolicyPropertiesList(query, adminPolicyPropsList);
+		await Model.getModel('App').setPolicyPropertiesList(query, adminPolicyPropsList);
 	}
 
 	/**
@@ -206,7 +211,7 @@ class AdminRoutes {
 	 */
 	async _createAdminPolicy(appId) {
 		for await (const policy of adminPolicy) {
-			const policyDB = await Model.Policy.findOne({
+			const policyDB = await Model.getModel('Policy').findOne({
 				name: {
 					$eq: policy.name,
 				},
@@ -231,7 +236,7 @@ class AdminRoutes {
 				});
 			}
 
-			await Model.Policy.add(policy, appId);
+			await Model.getModel('Policy').add(policy, appId);
 		}
 	}
 
@@ -241,22 +246,22 @@ class AdminRoutes {
 	 */
 	async _createAdminLambda(lambdas) {
 		try {
-			const adminToken = await Model.Token.findOne({
-				type: Model.Token.Constants.Type.SYSTEM,
+			const adminToken = await Model.getModel('Token').findOne({
+				type: Model.getModel('Token').Constants.Type.SYSTEM,
 			});
 			if (!adminToken) {
 				throw new Error('Cannot find an admin app token');
 			}
 
-			const adminApp = await Model.App.findOne({_tokenId: Model.Token.createId(adminToken.id)});
+			const adminApp = await Model.getModel('App').findOne({_tokenId: Model.getModel('Token').createId(adminToken.id)});
 			if (!adminApp) {
 				throw new Error('Cannot find an admin app');
 			}
 
 			for await (const lambda of lambdas) {
-				const lambdaDB = await Model.Lambda.findOne({
+				const lambdaDB = await Model.getModel('Lambda').findOne({
 					name: lambda.name,
-					_appId: Model.App.createId(adminApp.id),
+					_appId: Model.getModel('App').createId(adminApp.id),
 				});
 				if (lambdaDB) continue;
 
@@ -269,13 +274,18 @@ class AdminRoutes {
 					policyProperties: lambda.policyProperties,
 				};
 
-				await Model.Lambda.add(lambda, adminLambdaAuth, adminApp);
+				await Model.getModel('Lambda').add(lambda, adminLambdaAuth, adminApp);
 			}
 
-			delete Model.authApp;
+			// ? This normally get's attached the request and not the model manager
+			// delete Model.authApp;
 		} catch (err) {
-			Logging.logError(`Lambda Manager failed to clone required lambdas for installation due to ${err.message}`);
-			throw new Error(err);
+			if (err instanceof Error) {
+				Logging.logError(`Lambda Manager failed to clone required lambdas for installation due to ${err.message}`);
+				throw err;
+			} else {
+				throw new Error(`Uncaught error in Lambda Manager: ${err}`);
+			}
 		}
 	}
 
@@ -285,21 +295,21 @@ class AdminRoutes {
 	 * @param {Object} app
 	 */
 	async _refreshAdminAppToken(token, app) {
-		const rxsNewToken = await Model.Token.add({
-			type: Model.Token.Constants.Type.SYSTEM,
+		const rxsNewToken = await Model.getModel('Token').add({
+			type: Model.getModel('Token').Constants.Type.SYSTEM,
 			permissions: token.permissions,
 		}, {
 			_appId: app.id,
 		});
-		const newToken = await Helpers.streamFirst(rxsNewToken);
-		await Model.App.updateById(Model.App.createId(app.id), {
+		const newToken: any = await Helpers.streamFirst(rxsNewToken);
+		await Model.getModel('App').updateById(Model.getModel('App').createId(app.id), {
 			$set: {
-				_tokenId: Model.Token.createId(newToken.id),
+				_tokenId: Model.getModel('Token').createId(newToken.id),
 			},
 		});
 
-		await Model.Token.rm(token.id);
+		await Model.getModel('Token').rm(token.id);
 	}
 }
 
-module.exports = new AdminRoutes();
+export default new AdminRoutes();

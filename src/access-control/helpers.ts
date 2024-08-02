@@ -18,8 +18,8 @@
 
 import Sugar from 'sugar';
 
-const Model = require('../model');
-const Logging = require('../helpers/logging');
+import Model from '../model';
+import Logging from '../helpers/logging';
 
 /**
  * @class Conditoins
@@ -37,7 +37,7 @@ class Helpers {
 		return this.__coreSchema;
 	}
 
-	evaluateOperation(lhs, rhs, operator) {
+	evaluateOperation(lhs, rhs, operator): boolean {
 		let passed = false;
 
 		switch (operator) {
@@ -131,4 +131,4 @@ class Helpers {
 	}
 }
 
-module.exports = new Helpers();
+export default new Helpers();

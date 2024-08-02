@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
-const Schema = require('../../schema');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
+import Schema from '../../schema';
 
 /**
  * @class SearchList
@@ -48,7 +48,7 @@ module.exports = class SearchList extends Route {
 		}
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		const result = {
 			query: {},
 			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
@@ -60,7 +60,7 @@ module.exports = class SearchList extends Route {
 		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
 		if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
 
-		let query = {};
+		let query: any = {};
 
 		if (!query.$and) {
 			query.$and = [];

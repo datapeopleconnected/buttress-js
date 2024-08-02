@@ -17,10 +17,10 @@
  */
 
 const Crypto = require('crypto');
-// const Shared = require('../shared');
-const Logging = require('../../helpers/logging');
+// import * as Shared from '../shared';
+import Logging from '../../helpers/logging';
 
-const StandardModel = require('../type/standard');
+import StandardModel from '../type/standard';
 
 /**
  * Constants
@@ -161,24 +161,6 @@ class TokenSchemaModel extends StandardModel {
 	add(body, internals) {
 		body.value = this.createTokenString();
 		return super.add(body, internals);
-	}
-
-	/**
-	 * @param {string} route - route for the permission
-	 * @param {*} permission - permission to apply to the route
-	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
-	 */
-	addOrUpdatePermission(route, permission) {
-		Logging.log(route, Logging.Constants.LogLevel.DEBUG);
-		Logging.log(permission, Logging.Constants.LogLevel.DEBUG);
-
-		const exists = this.permissions.find((p) => p.route === route);
-		if (exists) {
-			exists.permission = permission;
-		} else {
-			this.permissions.push({route, permission});
-		}
-		return this.save();
 	}
 
 	/**

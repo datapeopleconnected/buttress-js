@@ -16,13 +16,17 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const pug = require('pug');
+import pug from 'pug';
 
 /**
  * Mail
  * @class
  */
-class Mail {
+export default class Mail {
+	_templates: {
+		[key: string]: pug.compileTemplate;
+	};
+
 	/**
 	 * Constructor for Mail
 	 */
@@ -46,5 +50,3 @@ class Mail {
 		return this._templates[key];
 	}
 }
-
-module.exports = new Mail();

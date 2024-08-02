@@ -15,8 +15,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const StandardModel = require('../type/standard');
-const Helpers = require('../../helpers');
+import StandardModel from '../type/standard';
+import * as Helpers from '../../helpers';
 
 class LambdaExecutionSchemaModel extends StandardModel {
 	constructor(services) {
@@ -166,7 +166,7 @@ class LambdaExecutionSchemaModel extends StandardModel {
 			metadata: (body.metadata) ? body.metadata : [],
 		};
 
-		const internals = {_appId: appId};
+		const internals: any = {_appId: appId};
 		if (tokenId) internals._tokenId = tokenId;
 
 		const rxsExecution = await super.add(executionBody, internals);

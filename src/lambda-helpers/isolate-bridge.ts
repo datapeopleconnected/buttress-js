@@ -16,13 +16,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const ivm = require('isolated-vm');
-const fs = require('fs');
+import ivm from 'isolated-vm';
+import fs from 'fs';
 
-const Model = require('../model');
-const Logging = require('../helpers/logging');
+import Model from '../model';
+import Logging from '../helpers/logging';
 
-const Config = require('node-env-obj')();
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
 
 
 /**
@@ -30,6 +31,14 @@ const Config = require('node-env-obj')();
  * @class
  */
 class IsolateBridge {
+	_plugins: {
+		[key: string]: {
+			plugin: any;
+			methods: string[];
+		};
+	};
+	_pluginBootstrap: string;
+
 	/**
 	 * Constructor for Helpers
 	 */
@@ -40,7 +49,7 @@ class IsolateBridge {
 
 	registerPlugins() {
 		const getClassesList = (dirName) => {
-			let files = [];
+			let files: NodeRequire[] = [];
 			const items = fs.readdirSync(dirName, {withFileTypes: true});
 			for (const item of items) {
 				if (item.name === '.git') continue;
@@ -56,7 +65,7 @@ class IsolateBridge {
 		};
 
 		this._plugins = {};
-		const classes = getClassesList(Config.paths.lambda.plugins);
+		const classes: any = getClassesList(Config.paths.lambda.plugins);
 		const plugins = classes.filter((c) => c.startUp);
 		const prot = ['constructor', 'startUp'];
 		plugins.forEach((p) => {
@@ -257,47 +266,48 @@ class IsolateBridge {
 
 	async setupLambdaLogs(jail) {
 		jail.setSync('_log', new ivm.Reference((...args) => {
-			Logging.log(...args);
-			this._pushLambdaExecutionLog(...args, 'log');
+			Logging.log(args[0], args[2], args[3]);
+			this._pushLambdaExecutionLog(args[0], 'log');
 		}));
 
 		jail.setSync('_logDebug', new ivm.Reference((...args) => {
-			Logging.logDebug(...args);
-			this._pushLambdaExecutionLog(...args, 'debug');
+			Logging.logDebug(args[0], args[2]);
+			this._pushLambdaExecutionLog(args[0], 'debug');
 		}));
 
 		jail.setSync('_logSilly', new ivm.Reference((...args) => {
-			Logging.logSilly(...args);
-			this._pushLambdaExecutionLog(...args, 'silly');
+			Logging.logSilly(args[0], args[2]);
+			this._pushLambdaExecutionLog(args[0], 'silly');
 		}));
 
 		jail.setSync('_logVerbose', new ivm.Reference((...args) => {
-			Logging.logVerbose(...args);
-			this._pushLambdaExecutionLog(...args, 'verbose');
+			Logging.logVerbose(args[0], args[2]);
+			this._pushLambdaExecutionLog(args[0], 'verbose');
 		}));
 
 		jail.setSync('_logWarn', new ivm.Reference((...args) => {
-			Logging.logWarn(...args);
-			this._pushLambdaExecutionLog(...args, 'warn');
+			Logging.logWarn(args[0], args[2]);
+			this._pushLambdaExecutionLog(args[0], 'warn');
 		}));
 
 		jail.setSync('_logError', new ivm.Reference((...args) => {
-			Logging.logError(...args);
-			this._pushLambdaExecutionLog(...args, 'error');
+			Logging.logError(args[0], args[2]);
+			this._pushLambdaExecutionLog(args[0], 'error');
 		}));
 	}
 
 	_pushLambdaExecutionLog(log, type) {
-		Model.LambdaExecution.update({
-			id: Model.LambdaExecution.createId(this.lambdaExecution.id),
-		}, {
-			$push: {
-				logs: {
-					log,
-					type,
-				},
-			},
-		});
+		throw new Error('Need to resolve where this.lambdaExecution.id is coming from');
+		// Model.getModel('Lambda').Execution.update({
+		// 	id: Model.getModel('Lambda').Execution.createId(this.lambdaExecution.id),
+		// }, {
+		// 	$push: {
+		// 		logs: {
+		// 			log,
+		// 			type,
+		// 		},
+		// 	},
+		// });
 	}
 
 	createLambdaNameSpace(isolate, context) {

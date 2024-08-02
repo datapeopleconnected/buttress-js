@@ -14,11 +14,13 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Errors = require('../helpers/errors');
-const Config = require('node-env-obj')();
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
 
-module.exports = class Datastore {
-	static create(connectionString, optsString) {
+import Errors from '../helpers/errors';
+
+export default class Datastore {
+	static create(connectionString: string, optsString: string) {
 		const uri = new URL(connectionString);
 
 		if (!uri.pathname) {
@@ -46,7 +48,7 @@ module.exports = class Datastore {
 		return new Adapter(uri, options);
 	}
 
-	static connect(connectionString, options) {
+	static connect(connectionString: string, options: string) {
 		const adatper = this.create(connectionString, options);
 
 		return adatper.connect()

@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const ivm = require('isolated-vm');
+import ivm from 'isolated-vm';
 const fetch = require('cross-fetch');
 const crypto = require('crypto');
 const URL = require('url').URL;
@@ -25,13 +25,14 @@ const base64url = require('base64url');
 const puppeteer = require('puppeteer');
 
 const lambdaMail = require('./mail');
-const Model = require('../model');
-const Logging = require('../helpers/logging');
+import Model from '../model';
+import Logging from '../helpers/logging';
 const {Errors} = require('../helpers');
 const IsolateBridge = require('./isolate-bridge');
 // const { Object } = require('sugar');
 
-const Config = require('node-env-obj')();
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
 
 
 /**
@@ -39,6 +40,11 @@ const Config = require('node-env-obj')();
  * @class
  */
 class Helpers {
+
+	lambdaExecution: any;
+	lambdaResult: any;
+
+	successfulHTTPScode: number[];
 	/**
 	 * Constructor for Helpers
 	 */
@@ -68,7 +74,7 @@ class Helpers {
 
 		jail.setSync('_getEmailTemplate', new ivm.Reference(async (data, resolve, reject) => {
 			try {
-				Logging.logVerbose(`[${this.name}] Populating email body from template ${data.emailTemplate}`);
+				Logging.logVerbose(`Populating email body from template ${data.emailTemplate}`);
 
 				const render = lambdaMail.getEmailTemplate(
 					`${Config.paths.lambda.code}/lambda-${data.gitHash}/${data.emailTemplate}`, data.emailTemplate,
@@ -96,7 +102,7 @@ class Helpers {
 				},
 				updateMetadata: async () => {
 					if (data.idx === -1) {
-						await Model.Lambda.updateById(Model.Lambda.createId(data.id), {
+						await Model.getModel('Lambda').updateById(Model.getModel('Lambda').createId(data.id), {
 							$push: {
 								metadata: {
 									key: data.key,
@@ -105,7 +111,7 @@ class Helpers {
 							},
 						});
 					} else {
-						await Model.Lambda.updateById(Model.Lambda.createId(data.id), {
+						await Model.getModel('Lambda').updateById(Model.getModel('Lambda').createId(data.id), {
 							$set: {
 								[`metadata.${data.idx}.value`]: data.value,
 							},
@@ -134,21 +140,28 @@ class Helpers {
 					data.options.body = this._encodeReqBody(data.options.body);
 				}
 				const response = await fetch(data.url, data.options);
-				const output = {};
-				output.ok = response.ok;
-				output.status = (response.status) ? response.status : null;
-				output.url = response.url;
-				output.redirected = response.redirected;
+				const output: {
+					ok: boolean,
+					status: number | null,
+					url: string,
+					redirected: boolean,
+					body?: any,
+				} = {
+					ok: response.ok,
+					status: (response.status) ? response.status : null,
+					url: response.url,
+					redirected: response.redirected
+				};
 
-				if (!this.successfulHTTPScode.includes(output.status) && response.url && response.url !== data.url.href) {
+				if (output.status && !this.successfulHTTPScode.includes(output.status) && response.url && response.url !== data.url.href) {
 					return _resolve(output);
 				}
 
-				if (!this.successfulHTTPScode.includes(output.status)) {
+				if (output.status && !this.successfulHTTPScode.includes(output.status)) {
 					const text = await response.text();
 					if (text && typeof text === 'string') {
 						let message = text;
-						let json = null;
+						let json: any = null;
 						try {
 							json = JSON.parse(text);
 						} catch (err) {
@@ -170,7 +183,7 @@ class Helpers {
 								throw new Errors.InvalidRequest(msg, 400);
 							}
 							if (json.message && json.code) {
-								const error = new Error(json.message);
+								const error: any = new Error(json.message);
 								error.code = json.code;
 								throw error;
 							}
@@ -201,8 +214,8 @@ class Helpers {
 					output.body = (output.status === 200 || output.status === 201) ? await response.json() : null;
 					return _resolve(output);
 				}
-			} catch (err) {
-				const error = {};
+			} catch (err: any) {
+				const error: any = {};
 				if (err.message) {
 					error.message = err.message;
 				}
@@ -286,7 +299,7 @@ class Helpers {
 	_encodeReqBody(body) {
 		if (typeof body === 'string') return encodeURIComponent(body);
 
-		const formBody = [];
+		const formBody: any[] = [];
 		Object.keys(body).forEach((key) => {
 			const encodedKey = encodeURIComponent(key);
 			const encodedValue = encodeURIComponent(body[key]);
@@ -296,4 +309,4 @@ class Helpers {
 	}
 }
 
-module.exports = new Helpers();
+export default new Helpers();

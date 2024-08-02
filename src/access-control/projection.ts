@@ -16,12 +16,15 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Helpers = require('../helpers');
+import * as Helpers from '../helpers';
 
 /**
  * @class Projection
  */
 class Projection {
+	private logicalOperator: string[];
+	private _ignoredQueryKeys: string[];
+
 	constructor() {
 		this.logicalOperator = [
 			'$and',
@@ -35,7 +38,7 @@ class Projection {
 	}
 
 	async addAccessControlPolicyQueryProjection(req, userPolicies, schema) {
-		const isPoliciesAllowed = [];
+		const isPoliciesAllowed: Promise<any>[] = [];
 
 		await Object.keys(userPolicies).reduce(async (prev, key) => {
 			await prev;
@@ -105,7 +108,7 @@ class Projection {
 	__checkPorjectionPath(requestBody, projectionKeys) {
 		const query = (requestBody.query) ? requestBody.query : requestBody;
 		const paths = Object.keys(query).filter((key) => key && !this._ignoredQueryKeys.includes(key));
-		let queryKeys = [];
+		let queryKeys: string[] = [];
 
 		paths.forEach((path) => {
 			if (this.logicalOperator.includes(path)) {
@@ -121,4 +124,4 @@ class Projection {
 		return queryKeys.every((key) => projectionKeys.includes(key));
 	}
 }
-module.exports = new Projection();
+export default new Projection();

@@ -16,19 +16,19 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Route = require('../route');
-const Model = require('../../model');
+import Route from '../route';
+import Model from '../../model';
 // var Logging = require('../../logging');
-// const Helpers = require('../../helpers');
+// import * as Helpers from '../../helpers';
 
-const routes = [];
+const routes: (typeof Route)[] = [];
 
 /**
  * @class GetTokenList
  */
 class GetTokenList extends Route {
 	constructor(nrp) {
-		super('token', 'GET TOKEN LIST', nrp, Model.Token);
+		super('token', 'GET TOKEN LIST', nrp, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -42,7 +42,7 @@ class GetTokenList extends Route {
 
 	async _exec(req, res, validate) {
 		const rxsToken = this.model.findAll();
-		const tokens = [];
+		const tokens: any[] = [];
 		for await (const token of rxsToken) {
 			tokens.push(token);
 		}
@@ -57,7 +57,7 @@ routes.push(GetTokenList);
  */
 class DeleteAllTokens extends Route {
 	constructor(nrp) {
-		super('token/:type?', 'DELETE ALL TOKENS', nrp, Model.Token);
+		super('token/:type?', 'DELETE ALL TOKENS', nrp, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -82,7 +82,7 @@ routes.push(DeleteAllTokens);
  */
 class SearchUserToken extends Route {
 	constructor(nrp) {
-		super('token', 'SEARCH USER TOKEN', nrp, Model.Token);
+		super('token', 'SEARCH USER TOKEN', nrp, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -90,8 +90,12 @@ class SearchUserToken extends Route {
 		this.redactResults = false;
 	}
 
-	_validate(req, res, token) {
-		const result = {
+	async _validate(req, res, token) {
+		const result: {
+			query: {
+				$and: any[],
+			},
+		} = {
 			query: {
 				$and: [],
 			},
@@ -115,4 +119,4 @@ routes.push(SearchUserToken);
 /**
  * @type {*[]}
  */
-module.exports = routes;
+export default routes;

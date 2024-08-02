@@ -19,7 +19,8 @@ import cluster, {Worker} from 'cluster';
 import EventEmitter from 'events';
 import NRP from 'node-redis-pubsub';
 
-const Config = require('node-env-obj')();
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
 
 const Logging = require('./helpers/logging');
 
@@ -28,12 +29,12 @@ interface WorkerHolder {
 	worker: Worker;
 }
 
-interface LocalProcessMessage {
+export interface LocalProcessMessage {
 	type: string;
 	payload: any;
 }
 
-class Bootstrap extends EventEmitter {
+export default class Bootstrap extends EventEmitter {
 	id: string;
 
 	workerProcesses: number;
@@ -57,11 +58,13 @@ class Bootstrap extends EventEmitter {
 		this.id = (cluster.isWorker && cluster.worker) ? `${cluster.worker.id}` : 'MAIN';
 	}
 
-	async init() {
+	async init(): Promise<boolean> {
 		this.__shutdown = false;
 
 		this.__services.set('nrp', NRP(Config.redis));
 		this.__nrp = this.__services.get('nrp') as NRP.NodeRedisPubSub;
+
+		return true;
 	}
 
 	async clean() {
@@ -170,5 +173,3 @@ class Bootstrap extends EventEmitter {
 		delete this._resolveWorkersInitialised;
 	}
 }
-
-module.exports = Bootstrap;

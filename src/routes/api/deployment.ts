@@ -15,23 +15,27 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Route = require('../route');
-const Model = require('../../model');
+import Route from '../route';
+import Model from '../../model';
 
-const routes = [];
+const routes: (typeof Route)[] = [];
 
 /**
  * @class SearchDeploymentList
  */
 class SearchDeploymentList extends Route {
 	constructor(services) {
-		super('deployment', 'SEARCH DEPLOYMENT LIST', services, Model.Deployment);
+		super('deployment', 'SEARCH DEPLOYMENT LIST', services, Model.getModel('Deployment'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
-	_validate(req, res, token) {
-		const result = {
+	async _validate(req, res, token) {
+		const result: {
+			query: {
+				$and: any[],
+			},
+		} = {
 			query: {
 				$and: [],
 			},
@@ -57,7 +61,7 @@ routes.push(SearchDeploymentList);
  */
 class DeploymentCount extends Route {
 	constructor(services) {
-		super(`deployment/count`, `COUNT DEPLOYMENTS`, services, Model.Deployment);
+		super(`deployment/count`, `COUNT DEPLOYMENTS`, services, Model.getModel('Deployment'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -65,12 +69,14 @@ class DeploymentCount extends Route {
 		this.activityBroadcast = false;
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		const result = {
 			query: {},
 		};
 
-		let query = {};
+		let query: {
+			$and?: any[],
+		} = {};
 
 		if (!query.$and) {
 			query.$and = [];
@@ -97,4 +103,4 @@ routes.push(DeploymentCount);
 /**
  * @type {*[]}
  */
-module.exports = routes;
+export default routes;

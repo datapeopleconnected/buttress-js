@@ -15,12 +15,12 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Logging = require('../../helpers/logging');
-const Helpers = require('../../helpers');
+import Sugar from 'sugar';
 
-const Shared = require('../shared');
+import Logging from '../../helpers/logging';
+import * as Helpers from '../../helpers';
 
-const Sugar = require('sugar');
+import * as Shared from '../shared';
 
 /* ********************************************************************************
  *
@@ -28,7 +28,21 @@ const Sugar = require('sugar');
  *
  **********************************************************************************/
 
-class StandardModel {
+export default class StandardModel {
+	schemaData: any;
+	flatSchemaData: any;
+
+	app: any;
+
+	appShortId: any;
+	collectionName: any;
+
+	__services: any;
+	__nrp: any;
+	__modelManager: any;
+
+	adapter: any;
+
 	constructor(schemaData, app, services) {
 		this.schemaData = schemaData;
 		this.flatSchemaData = (schemaData) ? Helpers.getFlattenedSchema(this.schemaData) : null;
@@ -72,12 +86,16 @@ class StandardModel {
 		}
 	}
 
-	createId(id) {
+	createId(id?: string) {
 		return this.adapter.ID.new(id);
 	}
 
 	__doValidation(body) {
-		const res = {
+		const res: {
+			isValid: boolean;
+			missing: string[];
+			invalid: string[];
+		} = {
 			isValid: true,
 			missing: [],
 			invalid: [],
@@ -127,7 +145,7 @@ class StandardModel {
 				for (let operator in command) {
 					if (!{}.hasOwnProperty.call(command, operator)) continue;
 					const operand = command[operator];
-					let operandOptions = null;
+					let operandOptions: string | undefined = undefined;
 
 					switch (operator) {
 					case '$not':
@@ -174,7 +192,7 @@ class StandardModel {
 		return output;
 	}
 
-	parseQueryProperty(property, operator, operand, operandOptions = null, output = {}, envFlat = {}, schemaFlat = {}) {
+	parseQueryProperty(property, operator, operand, operandOptions?, output = {}, envFlat = {}, schemaFlat = {}) {
 		// Check to see if operand is a path and fetch value
 		if (operand && operand.indexOf && operand.indexOf('.') !== -1) {
 			let path = operand.split('.');
@@ -190,10 +208,10 @@ class StandardModel {
 		}
 
 		// Convert id
-		let propSchema = null;
+		let propSchema: any = undefined;
 		if (schemaFlat[property]) {
 			propSchema = schemaFlat[property];
-		} else if (Object.keys(schemaFlat) > 0) {
+		} else if (Object.keys(schemaFlat).length > 0) {
 			throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
 		}
 
@@ -254,7 +272,7 @@ class StandardModel {
 			authUserId: token._userId,
 		};
 
-		const tasks = [];
+		const tasks: Function[] = [];
 
 		if (roles.schema.authFilter.env) {
 			for (const property in roles.schema.authFilter.env) {
@@ -291,7 +309,7 @@ class StandardModel {
 						tasks.push(async () => {
 							const rxsResult = await collection.find(propertyQuery, fields);
 
-							return new Promise((resolve) => {
+							return new Promise<void>((resolve) => {
 								if (!env[property]) env[property] = [];
 
 								rxsResult.on('data', (res) => {
@@ -335,7 +353,7 @@ class StandardModel {
 
 		return Object.assign(Shared.sanitizeSchemaObject(this.schemaData, body), entity);
 	}
-	add(body, internals) {
+	add(body, internals?: any) {
 		return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
 	}
 
@@ -479,7 +497,7 @@ class StandardModel {
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {ReadableStream} - stream
 	 */
-	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+	find(query, excludes?: any, limit?: number, skip?: number, sort?: any, project?: any) {
 		return this.adapter.find(query, excludes, limit, skip, sort, project);
 	}
 
@@ -522,5 +540,3 @@ class StandardModel {
 		return this.adapter.drop();
 	}
 }
-
-module.exports = StandardModel;

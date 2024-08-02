@@ -14,11 +14,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
-const Logging = require('../../helpers/logging');
-const Schema = require('../../schema');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
+import Logging from '../../helpers/logging';
+import Schema from '../../schema';
 
 /**
  * @class GetList
@@ -53,7 +53,7 @@ module.exports = class GetList extends Route {
 		}
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		const result = {
@@ -61,7 +61,7 @@ module.exports = class GetList extends Route {
 			project: (req.body && req.body.project)? req.body.project : false,
 		};
 
-		let query = {};
+		let query: any = {};
 		if (!query.$and) {
 			query.$and = [];
 		}

@@ -16,11 +16,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const fs = require('fs').promises;
-const path = require('path');
-const EventEmitter = require('events');
+import { promises as fs } from 'fs';
+import path from 'path';
+import { EventEmitter } from 'events';
 
-const Config = require('node-env-obj')();
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
 
 const APP_TYPE = {
 	REST: 'rest',
@@ -37,9 +38,16 @@ const INFRASTRUCTURE_ROLE = {
 };
 
 class Plugins extends EventEmitter {
+	plugins: any[] = [];
+	filters: {[key: string] : any};
+	actions: {[key: string] : any};
+
+	appType?: string;
+	processRole?: string;
+	infrastructureRole?: string;
+
 	constructor() {
 		super();
-		this.plugins = [];
 
 		this.filters = {};
 		this.actions = {};
@@ -90,12 +98,12 @@ class Plugins extends EventEmitter {
 	}
 
 	async _findPluginEntryFiles(dir) {
-		const result = [];
+		const result: string[] = [];
 
-		let dirs = [];
+		let dirs: string[] = [];
 		try {
 			dirs = await fs.readdir(dir);
-		} catch (e) {
+		} catch (e: any) {
 			if (e.code === 'ENOENT') return result;
 
 			throw e;
@@ -162,4 +170,4 @@ class Plugins extends EventEmitter {
 	}
 }
 
-module.exports = new Plugins();
+export default new Plugins();

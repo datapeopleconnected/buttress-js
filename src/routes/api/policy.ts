@@ -15,14 +15,14 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const {ObjectId} = require('bson');
+import {ObjectId} from 'bson';
 
 // const AccessControl = require('../../access-control');
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
 
-const routes = [];
+const routes: (typeof Route)[] = [];
 
 const Datastore = require('../../datastore');
 
@@ -47,7 +47,7 @@ class GetPolicy extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_id`));
 		}
 
-		const policy = await Model.Policy.findById(id);
+		const policy = await Model.getModel('Policy').findById(id);
 		if (!policy) {
 			this.log(`[${this.name}] Cannot find a policy with id id`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `policy_does_not_exist`));
@@ -80,7 +80,7 @@ class GetPolicyList extends Route {
 					Datastore.getInstance('core').ID.new(id);
 				} catch (err) {
 					this.log(`POLICY: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-					return Promise.reject(new Helpers.RequestError(400, 'invalid_id'));
+					throw new Helpers.Errors.RequestError(400, 'invalid_id');
 				}
 			});
 		}
@@ -91,10 +91,14 @@ class GetPolicyList extends Route {
 	_exec(req, res, validate) {
 		const ids = req.body.ids;
 		if (ids && ids.length > 0) {
-			return Model.Policy.findByIds(ids);
+			return Model.getModel('Policy').findByIds(ids);
 		}
 
-		return Model.Policy.findAll(req.authApp.id, req.token);
+		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+			return Model.getModel('Policy').findAll({});
+		}
+
+		return Model.getModel('Policy').find({_appId: req.authApp.id});
 	}
 }
 routes.push(GetPolicyList);
@@ -109,8 +113,14 @@ class SearchPolicyList extends Route {
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
-	_validate(req, res, token) {
-		const result = {
+	async _validate(req, res, token) {
+		const result: {
+			query: any,
+			skip: number,
+			limit: number,
+			sort: any,
+			project: any,
+		} = {
 			query: {
 				$and: [],
 			},
@@ -128,12 +138,12 @@ class SearchPolicyList extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.Policy.parseQuery(result.query, {}, Model.Policy.flatSchemaData);
+		result.query = Model.getModel('Policy').parseQuery(result.query, {}, Model.getModel('Policy').flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return Model.Policy.find(validate.query, {},
+		return Model.getModel('Policy').find(validate.query, {},
 			validate.limit, validate.skip, validate.sort, validate.project);
 	}
 }
@@ -161,11 +171,11 @@ class AddPolicy extends Route {
 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
-			const policyExist = await Model.Policy.findOne({
+			const policyExist = await Model.getModel('Policy').findOne({
 				name: {
 					$eq: req.body.name,
 				},
-				_appId: Model.App.createId(app.id),
+				_appId: Model.getModel('App').createId(app.id),
 			});
 			if (policyExist) {
 				this.log(`[${this.name}] Policy with name ${req.body.name} already exists`, Route.LogLevel.ERR);
@@ -185,11 +195,11 @@ class AddPolicy extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Policy.add(req.body, req.authApp.id)
+		return Model.getModel('Policy').add(req.body, req.authApp.id)
 			.then((policy) => {
-				this._nrp.emit('app-policy:bust-cache', {
+				this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
 					appId: req.authApp.id,
-				});
+				}));
 				return policy;
 			});
 	}
@@ -205,13 +215,13 @@ class UpdatePolicy extends Route {
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const {validation, body} = Model.Policy.validateUpdate(req.body);
+			const {validation, body} = Model.getModel('Policy').validateUpdate(req.body);
 			req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -224,7 +234,7 @@ class UpdatePolicy extends Route {
 				}
 			}
 
-			Model.Policy.exists(req.params.id)
+			Model.getModel('Policy').exists(req.params.id)
 				.then((exists) => {
 					if (!exists) {
 						this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
@@ -236,7 +246,7 @@ class UpdatePolicy extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.Policy.updateByPath(req.body, req.params.id, null, 'Policy');
+		return Model.getModel('Policy').updateByPath(req.body, req.params.id, null, 'Policy');
 	}
 }
 routes.push(UpdatePolicy);
@@ -250,13 +260,13 @@ class BulkUpdatePolicy extends Route {
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const {validation, body} = Model.Policy.validateUpdate(item.body);
+			const {validation, body} = Model.getModel('Policy').validateUpdate(item.body);
 			item.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -269,7 +279,7 @@ class BulkUpdatePolicy extends Route {
 				}
 			}
 
-			const exists = Model.Policy.exists(item.id);
+			const exists = Model.getModel('Policy').exists(item.id);
 			if (!exists) {
 				this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -281,7 +291,7 @@ class BulkUpdatePolicy extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.Policy.updateByPath(item.body, item.id, null, 'Policy');
+			await Model.getModel('Policy').updateByPath(item.body, item.id, null, 'Policy');
 		}
 		return true;
 	}
@@ -323,17 +333,17 @@ class SyncPolicies extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Policy.rmAll({
+		await Model.getModel('Policy').rmAll({
 			_appId: req.authApp.id,
 		});
 
 		for await (const policy of req.body) {
-			await Model.Policy.add(policy, req.authApp.id);
+			await Model.getModel('Policy').add(policy, req.authApp.id);
 		}
 
-		this._nrp.emit('app-policy:bust-cache', {
+		this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
 			appId: req.authApp.id,
-		});
+		}));
 
 		return true;
 	}
@@ -351,15 +361,15 @@ class PolicyCount extends Route {
 		this.activityDescription = `COUNT POLICIES`;
 		this.activityBroadcast = false;
 
-		this.model = Model.Policy;
+		this.model = Model.getModel('Policy');
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		const result = {
 			query: {},
 		};
 
-		let query = {};
+		let query: any = {};
 
 		if (!query.$and) {
 			query.$and = [];
@@ -378,7 +388,7 @@ class PolicyCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return Model.Policy.count(validateResult.query);
+		return Model.getModel('Policy').count(validateResult.query);
 	}
 }
 routes.push(PolicyCount);
@@ -402,22 +412,22 @@ class DeleteTransientPolicy extends Route {
 			throw new Helpers.Errors.RequestError(400, `missing_field`);
 		}
 
-		return await Helpers.streamFirst(await Model.Policy.find({name: req.body.name}));
+		return await Helpers.streamFirst(await Model.getModel('Policy').find({name: req.body.name}));
 	}
 
 	async _exec(req, res, validate) {
 		if (!validate) return true;
 
-		await Model.Policy.rm(validate.id);
+		await Model.getModel('Policy').rm(validate.id);
 
-		this._nrp.emit('app-policy:bust-cache', {
+		this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
 			appId: req.authApp.id,
-		});
+		}));
 
 		// Trigger socket process to re-evaluate rooms
-		this._nrp.emit('worker:socket:evaluateUserRooms', {
+		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 			appId: req.authApp.id,
-		});
+		}))
 
 		return true;
 	}
@@ -432,35 +442,31 @@ class DeletePolicy extends Route {
 		super('policy/:id', 'DELETE POLICY', nrp);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
-		this._policy = false;
 	}
 
-	_validate(req) {
-		return new Promise((resolve, reject) => {
-			if (!req.params.id) {
-				this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-				return reject(new Helpers.RequestError(400, `missing_field`));
-			}
-			Model.Policy.findById(req.params.id).then((policy) => {
-				if (!policy) {
-					this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
-					return reject(new Helpers.RequestError(400, `invalid_id`));
-				}
-				this._policy = policy;
-				resolve(true);
-			});
-		});
+	async _validate(req) {
+		if (!req.params.id) {
+			this.log('ERROR: Missing required field', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `missing_field`);
+		}
+
+		const policy = await Model.getModel('Policy').findById(req.params.id);
+		if (!policy) {
+			this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
+			throw new Helpers.Errors.RequestError(400, `invalid_id`);
+		}
+		
+		return policy;
 	}
 
-	_exec(req) {
-		return Model.Policy.rm(this._policy.id)
-			.then(() => {
-				this._nrp.emit('app-policy:bust-cache', {
-					appId: req.authApp.id,
-				});
+	async _exec(req, res, policy) {
+		await Model.getModel('Policy').rm(policy.id);
 
-				return true;
-			});
+		this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
+			appId: req.authApp.id,
+		}));
+
+		return true;
 	}
 }
 routes.push(DeletePolicy);
@@ -476,8 +482,10 @@ class DeleteAppPolicies extends Route {
 	}
 
 	async _validate(req) {
-		const rxsPolicies = await Model.Policy.findAll(req.authApp.id, req.token);
-		const policies = [];
+		const rxsPolicies = (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) ?
+			await Model.getModel('Policy').findAll() : await Model.getModel('Policy').find({_appId: Model.getModel('App').ID.new(req.authApp.id)});
+
+		const policies: any[] = [];
 		for await (const policy of rxsPolicies) {
 			policies.push(policy);
 		}
@@ -487,7 +495,7 @@ class DeleteAppPolicies extends Route {
 
 	_exec(req, res, validate) {
 		return new Promise((resolve, reject) => {
-			Model.Policy.rmBulk(validate).then(() => true).then(resolve, reject);
+			Model.getModel('Policy').rmBulk(validate).then(() => true).then(resolve, reject);
 		});
 	}
 }
@@ -496,4 +504,4 @@ routes.push(DeleteAppPolicies);
 /**
  * @type {*[]}
  */
-module.exports = routes;
+export default routes;

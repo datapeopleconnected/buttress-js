@@ -24,32 +24,34 @@ interface Config {
     protocol: string;
     host: string;
     apiPrefix: string;
-    workers: number;
+    workers: string;
   }
   lambda: {
-    apiWorkers: number;
-    pathMutationWorkers: number;
-    cronWorkers: number;
+    apiWorkers: string;
+    pathMutationWorkers: string;
+    cronWorkers: string;
+    developmentEmailAddress: string;
   }
   logging: {
     level: string;
     slow: boolean;
-    slowTime: number;
+    slowTime: string;
   }
   listenPorts: {
-    rest: number;
-    sock: number;
+    rest: string;
+    sock: string;
   }
   datastore: {
     connectionString: string;
     options: string;
   }
   timeout: {
-    lambda: number;
-    lambdasRunner: number;
+    lambda: string;
+    lambdasRunner: string;
+    lambdaManager: string;
   }
   redis: {
-    port: number;
+    port: string;
     host: string;
     scope: string;
   }

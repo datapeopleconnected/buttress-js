@@ -16,22 +16,28 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const fs = require('fs');
-const path = require('path');
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
+import fs from 'fs';
+import path from 'path';
+import util from 'util';
+import NRP from 'node-redis-pubsub';
 
-const Config = require('node-env-obj')();
-const Sugar = require('sugar');
-const ivm = require('isolated-vm');
-const {v4: uuidv4} = require('uuid');
-const webpack = require('webpack');
-const NodePolyfillPlugin = require('node-polyfill-webpack-plugin');
+import {exec as cpExec} from 'child_process';
+const exec = util.promisify(cpExec);
 
-const Logging = require('../helpers/logging');
-const Model = require('../model');
-const Helpers = require('../helpers');
-const lambdaHelpers = require('../lambda-helpers/helpers');
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
+
+import Sugar from 'sugar';
+import ivm from 'isolated-vm';
+import {v4 as uuidv4} from 'uuid';
+import webpack from 'webpack';
+
+import NodePolyfillPlugin from 'node-polyfill-webpack-plugin';
+
+import Logging from '../helpers/logging';
+import Model from '../model';
+import * as Helpers from '../helpers';
+import lambdaHelpers from '../lambda-helpers/helpers';
 
 /**
  * Queue up pending Lambdas and execute them
@@ -39,11 +45,24 @@ const lambdaHelpers = require('../lambda-helpers/helpers');
  * @class LambdasRunner
  */
 class LambdasRunner {
-	/**
-	 * @param {Object} services - service registry
-	 * @param {String} type
-	 * Creates an instance of LambdasRunner.
-	 */
+
+	id: string;
+	name: string;
+	lambdaType: string;
+
+	working: boolean;
+
+	_timeout?: NodeJS.Timeout;
+	_lambdaExecution: any;
+
+	_isolate?: ivm.Isolate;
+	_context?: ivm.Context;
+	_jail?: ivm.Reference;
+	_registeredBundles: string[] = [];
+	_compiledLambdas: any;
+
+	private __nrp?: NRP.NodeRedisPubSub;
+
 	constructor(services, type) {
 		this.__nrp = services.get('nrp');
 
@@ -55,7 +74,6 @@ class LambdasRunner {
 
 		this.working = false;
 
-		this._timeout = null;
 		this._lambdaExecution = null;
 
 		this.init();
@@ -109,15 +127,19 @@ class LambdasRunner {
 	 * @return {Promise}
 	 */
 	async execute(lambda, execution, app, type, data) {
+		if (!this._isolate) throw new Error('Isolate not initialised');
+		if (!this._jail) throw new Error('Isolate Jail not initialised');
+		if (!this._context) throw new Error('Isolate Context not initialised');
+
 		if (!lambda.git || !lambda.git.url) {
 			return Promise.reject(new Error(`Unable to find git repo for lambda ${lambda.name}`));
 		}
 
-		const rxsLambdaToken = await Model.Token.find({
-			_appId: Model.App.createId(app.id),
-			_lambdaId: Model.User.createId(lambda.id),
+		const rxsLambdaToken = await Model.getModel('Token').find({
+			_appId: Model.getModel('App').createId(app.id),
+			_lambdaId: Model.getModel('User').createId(lambda.id),
 		});
-		const lambdaToken = await Helpers.streamFirst(rxsLambdaToken);
+		const lambdaToken: any = await Helpers.streamFirst(rxsLambdaToken);
 		if (!lambdaToken) {
 			return Promise.reject(new Error(`Unable to find lambda token for lambda ${lambda.name}, execution ${execution.id}`));
 		}
@@ -125,20 +147,20 @@ class LambdasRunner {
 		let executionUserId = null;
 		let executionToken = lambdaToken;
 		if (execution._tokenId) {
-			const rxsExecToken = await Model.Token.find({
-				_id: Model.App.createId(execution._tokenId),
+			const rxsExecToken = await Model.getModel('Token').find({
+				_id: Model.getModel('App').createId(execution._tokenId),
 			});
-			const execToken = await Helpers.streamFirst(rxsExecToken);
+			const execToken: any = await Helpers.streamFirst(rxsExecToken);
 			if (!execToken) {
 				return Promise.reject(new Error(`Unable to find lambda token for lambda ${lambda.name}, execution ${execution.id}`));
 			}
 			executionToken = execToken;
 
 			if (execToken.type === 'user') {
-				const rxsUser = await Model.User.find({
-					_id: Model.User.createId(execToken._userId),
+				const rxsUser = await Model.getModel('User').find({
+					_id: Model.getModel('User').createId(execToken._userId),
 				});
-				const user = await Helpers.streamFirst(rxsUser);
+				const user: any = await Helpers.streamFirst(rxsUser);
 				if (!user) {
 					return Promise.reject(new Error(`Unable to find user for token ${execToken.id}`));
 				}
@@ -158,6 +180,7 @@ class LambdasRunner {
 		};
 		const lambdaModules = {};
 
+		// ? This doesn't seem right
 		lambdaHelpers.lambdaExecution = execution;
 		await this._updateDBLambdaRunningExecution(execution);
 
@@ -170,7 +193,7 @@ class LambdasRunner {
 		const modulesNames = this._getLambdaModulesName(lambda);
 		await this.bundleLambdaModules(modulesNames);
 		await this._registerLambdaModules(modulesNames);
-		modulesNames.forEach((m) => {
+		modulesNames.forEach((m: any) => {
 			lambdaModules[m.name] = m.name;
 		});
 
@@ -243,15 +266,21 @@ class LambdasRunner {
 
 				if (trigger.redirect && lambdaHelpers.lambdaResult) lambdaHelpers.lambdaResult.redirect = true;
 				const result = (lambdaHelpers.lambdaResult) ? lambdaHelpers.lambdaResult : 'success';
-				this.__nrp.emit('lambda-execution-finish', {code: 200, res: result, restWorkerId: data.restWorkerId});
+				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({code: 200, res: result, restWorkerId: data.restWorkerId}));
 			}
-		} catch (err) {
+		} catch (err: any) {
 			await this._updateDBLambdaErrorExecution(lambda);
 			Logging.logDebug(err);
 
 			if (type === 'API_ENDPOINT') {
-				const message = (err.message) ? err.message : err.errMessage;
-				this.__nrp.emit('lambda-execution-finish', {code: 400, err: message, restWorkerId: data.restWorkerId});
+				let message = 'Unkown error occurred';
+				if (err instanceof Error) {
+					message = err.message;
+				} else if (err?.hasOwnProperty('errMessage')) {
+					message = err.errMessage;
+				}
+
+				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({code: 400, err: message, restWorkerId: data.restWorkerId}));
 			}
 
 			return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));
@@ -265,11 +294,11 @@ class LambdasRunner {
 	 */
 	async fetchExecuteLambda(payload) {
 		const lambdaId = payload.data.lambdaId;
-		const lambda = await Model.Lambda.findById(lambdaId);
+		const lambda = await Model.getModel('Lambda').findById(lambdaId);
 		// TODO add a meaningful error message & notify manager
 		if (!lambda) return;
 
-		const app = await Model.App.findById(lambda._appId);
+		const app = await Model.getModel('App').findById(lambda._appId);
 		// TODO add a meaningful error message & notify manager
 		if (!app) return;
 
@@ -278,8 +307,8 @@ class LambdasRunner {
 		const executionId = payload.data.executionId;
 		if (!executionId) throw new Error('unable to fetch execute lambda, missing executionId');
 
-		const execution = await Model.LambdaExecution.findOne({
-			id: Model.LambdaExecution.createId(executionId),
+		const execution = await Model.getModel('Lambda').Execution.findOne({
+			id: Model.getModel('Lambda').Execution.createId(executionId),
 			status: 'PENDING',
 		});
 		if (!execution) throw new Error('Unable to find pending execution, with id: ' + executionId);
@@ -289,27 +318,27 @@ class LambdasRunner {
 			await this.execute(lambda, execution, app, triggerType, payload.data);
 
 			this.working = false;
-			this.__nrp.emit('lambda-worker-finished', {
+			this.__nrp?.emit('lambda-worker-finished', JSON.stringify({
 				workerId: this.id,
 				lambdaId: lambdaId,
 				restWorkerId: payload.data.restWorkerId,
 				workerExecID: payload.data.workerExecID,
-			});
-		} catch (err) {
+			}));
+		} catch (err: any) {
 			this.working = false;
 			Logging.logError(err.message);
 			await this._updateDBLambdaErrorExecution(execution, {
 				message: err.message,
 				type: 'ERROR',
 			});
-			this.__nrp.emit('lambda-worker-errored', {
+			this.__nrp?.emit('lambda-worker-errored', JSON.stringify({
 				workerId: payload.workerId,
 				workerExecID: payload.data.workerExecID,
 				restWorkerId: payload.data.restWorkerId,
 				lambdaId: lambdaId,
 				lambdaType: triggerType,
 				errMessage: err.message,
-			});
+			}));
 		}
 	}
 
@@ -317,7 +346,7 @@ class LambdasRunner {
 	 * Communicate with main process via Redis
 	 */
 	_subscribeToLambdaManager() {
-		this.__nrp.on('lambda:worker:announce', (payload) => {
+		this.__nrp?.on('lambda:worker:announce', (payload: any) => {
 			if (this.working) return;
 
 			if (this.lambdaType && payload.lambdaType !== this.lambdaType) {
@@ -326,20 +355,20 @@ class LambdasRunner {
 			}
 
 			Logging.logSilly(`[${this.name}] Manager called out ${payload.lambdaId}, attempting to acquire lambda`);
-			this.__nrp.emit('lambda-worker-available', {
+			this.__nrp?.emit('lambda-worker-available', JSON.stringify({
 				workerId: this.id,
 				data: payload,
-			});
+			}));
 		});
 
-		this.__nrp.on('lambda:worker:execute', (payload) => {
+		this.__nrp?.on('lambda:worker:execute', (payload: any) => {
 			if (payload.workerId !== this.id) return;
 
 			Logging.logDebug(`[${this.name}] Manager has told me to take task ${payload.data.lambdaId}`);
 
 			if (this.working) {
 				Logging.logWarn(`[${this.name}] I've taken on too much work, releasing ${payload.data.lambdaId}`);
-				this.__nrp.emit('lambda-worker-overloaded', payload);
+				this.__nrp?.emit('lambda-worker-overloaded', JSON.stringify(payload));
 				return;
 			}
 
@@ -350,7 +379,7 @@ class LambdasRunner {
 	}
 
 	async _updateDBLambdaRunningExecution(execution) {
-		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution.id), {
+		await Model.getModel('Lambda').Execution.updateById(Model.getModel('Lambda').Execution.createId(execution.id), {
 			$set: {
 				status: 'RUNNING',
 				startedAt: Sugar.Date.create('now'),
@@ -358,15 +387,15 @@ class LambdasRunner {
 		});
 
 		// if (type === 'CRON') {
-		// 	await Model.Lambda.update({
-		// 		'id': Model.Lambda.createId(lambda.id),
+		// 	await Model.getModel('Lambda').update({
+		// 		'id': Model.getModel('Lambda').createId(lambda.id),
 		// 		'trigger.type': type,
 		// 	}, {$set: {'trigger.$.cron.status': 'RUNNING'}});
 		// }
 	}
 
 	async _updateDBLambdaFinishExecution(execution) {
-		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution.id), {
+		await Model.getModel('Lambda').Execution.updateById(Model.getModel('Lambda').Execution.createId(execution.id), {
 			$set: {
 				status: 'COMPLETE',
 				endedAt: Sugar.Date.create('now'),
@@ -374,21 +403,21 @@ class LambdasRunner {
 		});
 
 		if (execution.nextCronExpression) {
-			await Model.LambdaExecution.add({
+			await Model.getModel('Lambda').Execution.add({
 				triggerType: 'CRON',
-				lambdaId: Model.Lambda.createId(execution.lambdaId),
-				deploymentId: Model.Deployment.createId(execution.deploymentId),
+				lambdaId: Model.getModel('Lambda').createId(execution.lambdaId),
+				deploymentId: Model.getModel('Deployment').createId(execution.deploymentId),
 				executeAfter: Sugar.Date.create(execution.nextCronExpression),
 				nextCronExpression: execution.nextCronExpression,
-				_tokenId: (execution._tokenId) ? Model.Lambda.createId(execution._tokenId) : null,
+				_tokenId: (execution._tokenId) ? Model.getModel('Lambda').createId(execution._tokenId) : null,
 			}, execution._appId);
 
 			// const completeTriggerObj = {
 			// 	'trigger.$.cron.status': 'PENDING',
 			// 	'trigger.$.cron.executionTime': Sugar.Date.create(trigger.periodicExecution),
 			// };
-			// await Model.Lambda.update({
-			// 	'id': Model.Lambda.createId(lambda.id),
+			// await Model.getModel('Lambda').update({
+			// 	'id': Model.getModel('Lambda').createId(lambda.id),
 			// 	'trigger.type': type,
 			// }, {
 			// 	$set: completeTriggerObj,
@@ -396,22 +425,22 @@ class LambdasRunner {
 		}
 	}
 
-	async _updateDBLambdaErrorExecution(execution, log = null) {
-		await Model.LambdaExecution.updateById(Model.LambdaExecution.createId(execution.id), {
+	async _updateDBLambdaErrorExecution(execution, log: any = null) {
+		await Model.getModel('Lambda').Execution.updateById(Model.getModel('Lambda').Execution.createId(execution.id), {
 			$set: {
 				status: 'ERROR',
 				endedAt: Sugar.Date.create('now'),
 			},
 		});
 		// if (type === 'CRON') {
-		// 	await Model.Lambda.update({
-		// 		'id': Model.Lambda.createId(lambda.id),
+		// 	await Model.getModel('Lambda').update({
+		// 		'id': Model.getModel('Lambda').createId(lambda.id),
 		// 		'trigger.type': type,
 		// 	}, {$set: {'trigger.$.cron.status': 'ERROR'}});
 		// }
 		if (log) {
-			await Model.LambdaExecution.update({
-				id: Model.LambdaExecution.createId(execution.id),
+			await Model.getModel('Lambda').Execution.update({
+				id: Model.getModel('Lambda').Execution.createId(execution.id),
 			}, {
 				$push: {
 					logs: {
@@ -425,14 +454,14 @@ class LambdasRunner {
 
 	async installLambdaPackages(lambda, packageAllowList) {
 		const packagePath = `${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`;
-		const modules = [];
+		const modules: any[] = [];
 		if (!fs.existsSync(packagePath)) return modules;
 
 		const packages = require(`${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`);
 		for await (const packageKey of Object.keys(packages.dependencies)) {
 			try {
 				await exec(`npm ls ${packageKey}`);
-			} catch (err) {
+			} catch (err: any) {
 				let packageVersion = packages.dependencies[packageKey];
 				const matchedPattern = packageVersion.match(/(^\D)/);
 				const [removedPattern] = (matchedPattern) ? matchedPattern : [];
@@ -467,7 +496,7 @@ class LambdasRunner {
 	}
 
 	_getLambdaModulesName(lambda) {
-		const modules = [];
+		const modules: any[] = [];
 		const entryDir = path.dirname(lambda.git.entryFile);
 		const entryFile = path.basename(lambda.git.entryFile);
 		const lambdaDir = `${Config.paths.lambda.code}/lambda-${lambda.git.hash}/./${entryDir}`; // Again ugly /./ because... indolence
@@ -504,7 +533,7 @@ class LambdasRunner {
 			};
 		});
 
-		return new Promise((resolve, reject) => {
+		return new Promise<void>((resolve, reject) => {
 			webpack({
 				target: 'es2020',
 				mode: 'development',
@@ -521,7 +550,7 @@ class LambdasRunner {
 					path: path.resolve(Config.paths.lambda.bundles),
 					chunkFormat: 'commonjs',
 				},
-			}, function(err, stats) {
+			}, function(err: any, stats) {
 				if (err && err.details) {
 					reject(err.details);
 				}
@@ -540,14 +569,14 @@ class LambdasRunner {
 				resolve();
 			});
 		})
-			.catch((error) => {
+			.catch((error: any) => {
 				Logging.logError('Error whilst bundling lambda modules');
 				if (Array.isArray(error)) {
 					error.forEach((err) => {
 						Logging.logError(err.message);
 					});
 				} else if (typeof error === 'string') {
-					Logging.logError(error.message);
+					Logging.logError(error);
 				} else {
 					Logging.logError(error.message);
 				}
@@ -555,6 +584,9 @@ class LambdasRunner {
 	}
 
 	async _registerLambdaModules(lambdaModules) {
+		if (!this._isolate) throw new Error('Isolate not initialised');
+		if (!this._context) throw new Error('Isolate not initialised');
+
 		for await (const mod of lambdaModules) {
 			if (this._registeredBundles.includes(mod.packageName) || this._registeredBundles.includes(mod.name)) continue;
 

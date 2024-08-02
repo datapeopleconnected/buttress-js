@@ -28,7 +28,7 @@ const LambdaManager = require('./lambda/lambda-manager');
 const LambdaRunner = require('./lambda/lambda-runner');
 
 morgan.token('id', (req) => req.id);
-class BootstrapLambda extends Bootstrap {
+export default class BootstrapLambda extends Bootstrap {
 	constructor() {
 		super();
 
@@ -115,7 +115,7 @@ class BootstrapLambda extends Bootstrap {
 		const pathMutationWorkers = Number(Config.lambda.pathMutationWorkers);
 		const cronWorkers = Number(Config.lambda.cronWorkers);
 
-		let type = null;
+		let type: string = 'UNKNOWN';
 		if (this.__apiWorkers < APIWorkers) {
 			type = 'API_ENDPOINT';
 			this.__apiWorkers++;
@@ -130,5 +130,3 @@ class BootstrapLambda extends Bootstrap {
 		return type;
 	}
 }
-
-module.exports = BootstrapLambda;

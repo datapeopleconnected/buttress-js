@@ -17,11 +17,9 @@
  */
 
 import {ObjectId} from 'bson';
-const Helpers = require('../helpers');
+import * as Helpers from '../helpers';
 
-const Model = require('../model');
-const shortId = require('../helpers').shortId;
-
+import Model from '../model';
 
 class PolicyEnv {
 	private _globalQueryEnv: {[index: string]: string} = {};
@@ -83,7 +81,7 @@ class PolicyEnv {
 
 	async __isAppSchema(schema, appId) {
 		if (!schema) return false;
-		const appShortId = shortId(appId);
+		const appShortId = Helpers.shortId(appId);
 		return (Model[`${appShortId}-${schema}`]) ? true : false;
 	}
 
@@ -101,7 +99,7 @@ class PolicyEnv {
 			user,
 		};
 
-		const appShortId = shortId(appId);
+		const appShortId = Helpers.shortId(appId);
 		for await (const key of Object.keys(query)) {
 			if (typeof query[key] !== 'object') throw new Error(`env query needs to be a query object ${query[key]}`);
 			const operator = Object.values(this.queryOperator).find((op) => Object.keys(query[key]).every((key) => key === op));
@@ -196,4 +194,4 @@ class PolicyEnv {
 		return newObj;
 	}
 }
-module.exports = new PolicyEnv();
+export default new PolicyEnv();

@@ -16,11 +16,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Logging = require('../../helpers/logging');
-// const Shared = require('../shared');
-// const Sugar = require('sugar');
+import Logging from '../../helpers/logging';
+// import * as Shared from '../shared';
+// import Sugar from 'sugar';
 
-const StandardModel = require('../type/standard');
+import StandardModel from '../type/standard';
 
 /**
  * Constants
@@ -162,7 +162,11 @@ class TrackingSchemaModel extends StandardModel {
 	 * @return {Object} - returns an object with validation context
 	 */
 	__doValidation(body) {
-		const res = {
+		const res: {
+			isValid: boolean,
+			missing: string[],
+			invalid: string[],
+		} = {
 			isValid: true,
 			missing: [],
 			invalid: [],
@@ -187,21 +191,6 @@ class TrackingSchemaModel extends StandardModel {
 		const validation = body.map(this.__doValidation).filter((v) => v.isValid === false);
 
 		return validation.length >= 1 ? validation[0] : {isValid: true};
-	}
-
-	/**
-	* @param {object} appId - appId which we are requesting tracking for.
-	* @param {int} token - req token.
-	* @return {Promise} - resolves to an array of Apps
-	 */
-	findAll(appId, token) {
-		Logging.log(`findAll: ${appId}`, Logging.Constants.LogLevel.DEBUG);
-
-		if (token && token.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
-			return this.find({});
-		}
-
-		return this.find({_appId: this.adapter.ID.new(appId)});
 	}
 }
 

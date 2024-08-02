@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
-const Schema = require('../../schema');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
+import Schema from '../../schema';
 
 /**
  * @class Count
@@ -29,7 +29,7 @@ module.exports = class SearchCount extends Route {
 		super(`${schemaRoutePath}/count`, `COUNT ${schema.name}`, nrp);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.permissions = Route.Constants.Permissions.SERACH;
+		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT ${schema.name}`;
 		this.activityBroadcast = false;
@@ -48,12 +48,12 @@ module.exports = class SearchCount extends Route {
 		}
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		const result = {
 			query: {},
 		};
 
-		let query = {};
+		let query: any = {};
 
 		if (!query.$and) {
 			query.$and = [];

@@ -16,8 +16,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Logging = require('../helpers/logging');
-const Helpers = require('../helpers');
+import Logging from '../helpers/logging';
+import * as Helpers from '../helpers';
 // const Model = require('./index');
 
 /* ********************************************************************************
@@ -25,9 +25,13 @@ const Helpers = require('../helpers');
 * APP-SPECIFIC SCHEMA
 *
 **********************************************************************************/
-const _validateSchemaObject = function(schema, body) {
+export const validateSchemaObject = function(schema, body) {
 	// const schema = __getCollectionSchema(collection);
-	if (schema === false) return {isValid: true};
+	if (schema === false) return {
+		isValid: true,
+		missing: [],
+		invalid: [],
+	};
 
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
 	const flattenedBody = Helpers.Schema.getFlattenedBody(body);
@@ -40,7 +44,7 @@ const _validateSchemaObject = function(schema, body) {
  * @param {Object} body - object containing properties to be applied
  * @return {Object} - returns an object with only validated properties
  */
-const _sanitizeSchemaObject = function(schema, body) {
+export const sanitizeSchemaObject = function(schema, body) {
 	// const schema = __getCollectionSchema(collection);
 	if (schema === false) return {};
 
@@ -49,9 +53,6 @@ const _sanitizeSchemaObject = function(schema, body) {
 
 	return Helpers.Schema.sanitizeObject(flattenedSchema, flattenedBody, body);
 };
-
-module.exports.validateSchemaObject = _validateSchemaObject;
-module.exports.sanitizeSchemaObject = _sanitizeSchemaObject;
 
 /* ********************************************************************************
  *
@@ -64,15 +65,16 @@ module.exports.sanitizeSchemaObject = _sanitizeSchemaObject;
  * @param {Object} flattenedSchema - schema object keyed on path
  * @return {Object} - returns an object with validation context
  */
-const _doValidateUpdate = function(pathContext, flattenedSchema) {
+export const doValidateUpdate = function(pathContext, flattenedSchema) {
 	return (body) => {
-		Logging.logSilly(`_doValidateUpdate: path: ${body.path}, value: ${body.value}`);
+		Logging.logSilly(`doValidateUpdate: path: ${body.path}, value: ${body.value}`);
 		const res = {
 			isValid: false,
 			isMissingRequired: false,
 			missingRequired: '',
 			isPathValid: false,
 			invalidPath: '',
+			invalidValue: '',
 			isValueValid: false,
 			invalidValid: '',
 		};
@@ -93,7 +95,7 @@ const _doValidateUpdate = function(pathContext, flattenedSchema) {
 			return res;
 		}
 
-		res.missingRequired = false;
+		res.missingRequired = '';
 
 		let validPath = false;
 		body.contextPath = false;
@@ -113,7 +115,7 @@ const _doValidateUpdate = function(pathContext, flattenedSchema) {
 			}
 
 			const blankObjectKeys = Helpers.Schema.getSchemaKeys(flattenedSchema);
-			const matchObject = blankObjectKeys.reduce((match, key) => {
+			const matchObject = blankObjectKeys.reduce((match: RegExpExecArray | null, key) => {
 				const rexMatch = rex.exec(key);
 				if (!rexMatch) return match;
 
@@ -175,7 +177,7 @@ const _doValidateUpdate = function(pathContext, flattenedSchema) {
 	};
 };
 
-const __extendPathContext = (pathContext, schema, prefix) => {
+export const extendPathContext = (pathContext, schema, prefix) => {
 	if (!schema) return pathContext;
 	let extended = {};
 	for (const property in schema) {
@@ -206,7 +208,7 @@ const __extendPathContext = (pathContext, schema, prefix) => {
 			extended[`^${prefix}${property}\.([0-9]{1,11})$`] = {type: 'scalar', values: []}; // eslint-disable-line no-useless-escape
 			if (config.__schema) {
 				// eslint-disable-next-line no-useless-escape
-				extended = __extendPathContext(extended, config.__schema, `${prefix}${property}\.([0-9]{1,11})\.`);
+				extended = extendPathContext(extended, config.__schema, `${prefix}${property}\.([0-9]{1,11})\.`);
 			} else if (config.__itemtype) {
 				extended[`^${prefix}${property}\.([0-9]{1,11})\.(.+)$`] = {type: 'scalar', values: []}; // eslint-disable-line no-useless-escape
 			}
@@ -215,14 +217,13 @@ const __extendPathContext = (pathContext, schema, prefix) => {
 	}
 	return Object.assign(extended, pathContext);
 };
-module.exports.extendPathContext = __extendPathContext;
 
-module.exports.validateUpdate = function(pathContext, schema) {
+export const validateUpdate = function(pathContext, schema) {
 	return function(body) {
 		Logging.logDebug(body instanceof Array);
 		// const schema = __getCollectionSchema(collection);
 		const flattenedSchema = schema ? Helpers.getFlattenedSchema(schema) : false;
-		const extendedPathContext = __extendPathContext(pathContext, flattenedSchema, '');
+		const extendedPathContext = extendPathContext(pathContext, flattenedSchema, '');
 
 		if (schema.core) {
 			body = Helpers.updateCoreSchemaObject(body, extendedPathContext);
@@ -232,7 +233,7 @@ module.exports.validateUpdate = function(pathContext, schema) {
 			body = [body];
 		}
 
-		const validation = body.map(_doValidateUpdate(extendedPathContext, flattenedSchema)).filter((v) => v.isValid === false);
+		const validation = body.map(doValidateUpdate(extendedPathContext, flattenedSchema)).filter((v) => v.isValid === false);
 
 		return {
 			validation: validation.length >= 1 ? validation[0] : {isValid: true},

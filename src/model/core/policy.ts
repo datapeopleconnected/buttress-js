@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Sugar = require('sugar');
+import Sugar from 'sugar';
 
-const StandardModel = require('../type/standard');
-const Helpers = require('../../helpers');
+import StandardModel from '../type/standard';
+import * as Helpers from '../../helpers';
 
 class PolicySchemaModel extends StandardModel {
 	constructor(services) {
@@ -115,7 +115,7 @@ class PolicySchemaModel extends StandardModel {
 	 * @return {Promise} - fulfilled with policy Object when the database request is completed
 	 */
 	async add(body, appId) {
-		const policyConfig = [];
+		const policyConfig: any[] = [];
 		if (body.config) {
 			body.config.forEach((item) => {
 				policyConfig.push({
@@ -144,19 +144,6 @@ class PolicySchemaModel extends StandardModel {
 		const policy = await Helpers.streamFirst(rxsPolicy);
 
 		return policy;
-	}
-
-	/**
-	 * @param {ObjectId} appId - id of the App that owns the user
-	 * @param {int} token - request token
-	 * @return {Promise} - resolves to an array of Apps
-	 */
-	findAll(appId, token) {
-		if (token && token.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
-			return super.find({});
-		}
-
-		return super.find({_appId: appId});
 	}
 }
 

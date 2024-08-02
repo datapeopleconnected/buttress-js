@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-'use strict';
 
 /**
  * Buttress - The federated real-time open data platform
@@ -17,31 +16,32 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import cluster from 'cluster';
+import Sugar from 'sugar';
+import createConfig from 'node-env-obj';
+
 const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
 
-const Config = require('node-env-obj')({
+const Config = createConfig({
 	envFile: `.${env}.env`,
 	envPath: '../../',
 	configPath: '../',
-});
-const cluster = require('cluster');
-const Sugar = require('sugar');
+}) as unknown as Config;
 
 Sugar.Date.setLocale('en-GB');
 
-const BootstrapRest = require('../bootstrap-rest');
-const Logging = require('../helpers/logging');
+import Logging from '../helpers/logging';
+import BootstrapRest from '../bootstrap-rest';
+
+Logging.init('REST');
 
 if (cluster.isMaster) Logging.startupMessage();
 
-/**
- *
- */
-Logging.init('REST');
+(async () => {
+	try {
+		const app = new BootstrapRest();
+		const isMaster = await app.init();
 
-const app = new BootstrapRest();
-app.init()
-	.then((isMaster) => {
 		if (isMaster) {
 			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Master v${Config.app.version} listening on port ` +
 				`${Config.listenPorts.rest} in ${Config.env} mode.`);
@@ -50,5 +50,13 @@ app.init()
 			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Worker v${Config.app.version} ` +
 				`in ${Config.env} mode.`);
 		}
-	})
-	.catch(Logging.Promise.logError());
+	} catch (err) {
+		if (err instanceof Error || typeof err === 'string') {
+			Logging.logError(err);
+		} else {
+			console.error(err);
+		}
+
+		process.exit(1);
+	}
+})();

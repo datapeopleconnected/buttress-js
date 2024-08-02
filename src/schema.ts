@@ -15,22 +15,27 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Sugar = require('sugar');
-const crypto = require('crypto');
-const Helpers = require('./helpers');
+import Sugar from 'sugar';
+import crypto from 'crypto';
+import * as Helpers from './helpers';
 
-const Plugins = require('./plugins');
+import Plugins from './plugins';
 
-class Schema {
+export default class Schema {
+	data: any;
+
+	name: string;
+
+	digest?: string;
+
+	private __flattened?: { [key: string]: any };
+
+	private __flattenedPermissionProperties?: { [key: string]: any };
+
 	constructor(data) {
 		this.data = data;
 
 		this.name = data.name;
-
-		this.digest = null;
-
-		this.__flattened = null;
-		this.__flattenedPermissionProperties = null;
 
 		this.init();
 	}
@@ -97,7 +102,7 @@ class Schema {
 	static routeToModel(name) {
 		if (!name) return;
 
-		return name.split('/').map((part) => Sugar.String.camelize(part, false, true)).join('-');
+		return name.split('/').map((part) => Sugar.String.camelize(part, false)).join('-');
 	}
 
 	static modelToRoute(name) {
@@ -106,7 +111,7 @@ class Schema {
 		return name.split('-').map((part) => Sugar.String.dasherize(part)).join('/');
 	}
 
-	static async buildCollections(schemas) {
+	static async buildCollections(schemas): Promise<any[]> {
 		const builtSchemas = await Schema.build(schemas);
 		return builtSchemas.filter((s) => s.type.indexOf('collection') === 0);
 	}
@@ -205,5 +210,3 @@ class Schema {
 		return timeSeries;
 	}
 }
-module.exports = Schema;
-

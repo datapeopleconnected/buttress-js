@@ -40,10 +40,22 @@ const Constants = {
 	LogLevel: LogLevel,
 };
 
-let _captureOutput = false;
-let _captureOutputBuffer = [];
-
 class Logging {
+	private _prefixes: {
+		app: string,
+		parts: string[],
+		string: string,
+	};
+	promises: LoggingPromise;
+
+	logger?: winston.Logger;
+
+	private _captureOutput = false;
+	private _captureOutputBuffer: {
+		level: string,
+		message: string,
+	}[] = [];
+
 	constructor() {
 		this._prefixes = {
 			app: 'APP',
@@ -65,9 +77,9 @@ class Logging {
 		return new Logging();
 	}
 
-	setLogApp(extra) {
+	setLogApp(extra?: string | string[]) {
 		this._prefixes.parts = [this._prefixes.app];
-		this._prefixes.parts.push((cluster.isWorker) ? `${cluster.worker.id}` : 'MAIN');
+		this._prefixes.parts.push((cluster.isWorker) ? `${cluster.worker?.id}` : 'MAIN');
 
 		if (extra) this._prefixes.parts = this._prefixes.parts.concat((Array.isArray(extra)) ? extra : [extra]);
 
@@ -105,15 +117,20 @@ class Logging {
 			this.clean();
 		}
 
-		_captureOutput = mode;
+		this._captureOutput = mode;
 	}
 	flush() {
-		_captureOutputBuffer.forEach((line) => {
+		this._captureOutputBuffer.forEach((line) => {
+			if (!this.logger) {
+				console.log(line);
+				return;
+			}
+
 			this.logger.log(line);
 		});
 	}
 	clean() {
-		_captureOutputBuffer = [];
+		this._captureOutputBuffer = [];
 	}
 
 	startupMessage() {
@@ -146,8 +163,13 @@ class Logging {
 			message: (id) ? `[${id}] ${log}` : log,
 		};
 
-		if (_captureOutput) {
-			_captureOutputBuffer.push(line);
+		if (this._captureOutput) {
+			this._captureOutputBuffer.push(line);
+			return;
+		}
+
+		if (!this.logger) {
+			console.log(`[${level}] ${log}`);
 			return;
 		}
 
@@ -155,11 +177,14 @@ class Logging {
 	}
 
 	setLogLevel(level) {
+		if (!this.logger) return;
+
 		this.logger.level = level;
 		// _logLevel = level;
 	}
 
 	get level() {
+		if (!this.logger) return;
 		return this.logger.level;
 	}
 
@@ -168,7 +193,7 @@ class Logging {
 	 * @param {string} level - level to log at
 	 * @param {string} id - id
 	 */
-	log(log, level, id=null) {
+	log(log, level?: string, id?: string) {
 		level = level || LogLevel.DEFAULT;
 		this._log(log, level, id);
 	}
@@ -177,7 +202,7 @@ class Logging {
 	 * @param {string} log - Text to log
 	 * @param {string} id - id
 	 */
-	logVerbose(log, id=null) {
+	logVerbose(log, id?: string) {
 		this.log(log, LogLevel.VERBOSE, id);
 	}
 
@@ -185,7 +210,7 @@ class Logging {
 	 * @param {string} log - Text to log
 	 * @param {string} id - id
 	 */
-	logInfo(log, id=null) {
+	logInfo(log, id?: string) {
 		this.log(log, LogLevel.INFO, id);
 	}
 
@@ -193,7 +218,7 @@ class Logging {
 	 * @param {string} log - Text to log
 	 * @param {string} id - id
 	 */
-	logDebug(log, id=null) {
+	logDebug(log, id?: string) {
 		this.log(log, LogLevel.DEBUG, id);
 	}
 
@@ -201,7 +226,7 @@ class Logging {
 	 * @param {string} log - Text to log
 	 * @param {string} id - id
 	 */
-	logSilly(log, id=null) {
+	logSilly(log, id?: string) {
 		this.log(log, LogLevel.SILLY, id);
 	}
 
@@ -209,14 +234,14 @@ class Logging {
 	 * @param {string} warn - warning to log
 	 * @param {string} id - id
 	 */
-	logWarn(warn, id=null) {
+	logWarn(warn, id?: string) {
 		this._log(warn, LogLevel.WARN, id);
 	}
 	/**
 	 * @param {string} err - error object to log
 	 * @param {string} id - id
 	 */
-	logError(err, id=null) {
+	logError(err, id?: string) {
 		if (err && err.stack && err.message) {
 			this._log(err.message, LogLevel.ERR, id);
 			this._log(err.stack, LogLevel.ERR, id);
@@ -231,7 +256,7 @@ class Logging {
 	 * @param {string} level - level to log at
 	 * @param {string} id - id
 	 */
-	logTimer(log, timer, level, id=null) {
+	logTimer(log, timer, level, id?: string) {
 		level = level || LogLevel.INFO;
 		if (!timer) {
 			this._log(log, level, id);
@@ -246,7 +271,7 @@ class Logging {
 	 * @param {string} time - time above which to log the exception
 	 * @param {string} id - id
 	 */
-	logTimerException(log, timer, time, id=null) {
+	logTimerException(log, timer, time, id?: string) {
 		const level = LogLevel.ERR;
 		if (timer.interval > time) {
 			this._log(`[${timer.interval.toFixed(6)}s][${timer.lapTime.toFixed(6)}s] ${log} ${timer.interval.toFixed(3)}s > ${time}s`, level, id);
@@ -259,6 +284,8 @@ class Logging {
 }
 
 class LoggingPromise {
+	logging: Logging;
+
 	constructor(logging) {
 		this.logging = logging;
 	}
@@ -269,7 +296,7 @@ class LoggingPromise {
 	 * @return {function(*)} - returns a function for chaining into a promise
 	 * @param {string} id - id
 	 */
-	log(log, level, id=null) {
+	log(log, level, id?: string) {
 		level = level || LogLevel.DEFAULT;
 		return (res) => {
 			this.logging.log(`${log}: ${res}`, level, id);
@@ -415,7 +442,7 @@ class LoggingPromise {
 	 * @return {function(*)} - returns a function for chaining into a promise
 	 * @param {string} id - id
 	 */
-	logInfo(log, id=null) {
+	logInfo(log, id?: string) {
 		const level = LogLevel.INFO;
 		return log(log, level, id);
 	}
@@ -425,7 +452,7 @@ class LoggingPromise {
 	 * @return {function(*)} - returns a function for chaining into a promise
 	 * @param {string} id - id
 	 */
-	logVerbose(log, id=null) {
+	logVerbose(log, id?: string) {
 		const level = LogLevel.VERBOSE;
 		return log(log, level, id);
 	}
@@ -435,7 +462,7 @@ class LoggingPromise {
 	 * @return {function(*)} - returns a function for chaining into a promise
 	 * @param {string} id - id
 	 */
-	logDebug(log, id=null) {
+	logDebug(log, id?: string) {
 		const level = LogLevel.DEBUG;
 		return log(log, level, id);
 	}
@@ -445,7 +472,7 @@ class LoggingPromise {
 	 * @return {function(*)} - returns a function for chaining into a promise
 	 * @param {string} id - id
 	 */
-	logSilly(log, id=null) {
+	logSilly(log, id?: string) {
 		const level = LogLevel.SILLY;
 		return log(log, level, id);
 	}
@@ -457,7 +484,7 @@ class LoggingPromise {
 	 * @return {function(*)} - returns a function for chaining into a promise
 	 * @param {string} id - id
 	 */
-	logTimer(log, timer, level, id=null) {
+	logTimer(log, timer, level, id?: string) {
 		return (res) => {
 			this.logging.logTimer(log, timer, level, id);
 			return res;
@@ -471,7 +498,7 @@ class LoggingPromise {
 	 * @return {function(*)} - returns a function for chaining into a promise
 	 * @param {string} id - id
 	 */
-	logTimerException(log, timer, time, id=null) {
+	logTimerException(log, timer, time, id?: string) {
 		return (res) => {
 			this.logging.logTimerException(log, timer, time, id);
 
@@ -480,4 +507,4 @@ class LoggingPromise {
 	}
 }
 
-module.exports = new Logging();
+export default new Logging();

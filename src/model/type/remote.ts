@@ -15,17 +15,17 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const StandardModel = require('./standard');
+import StandardModel from './standard';
 
 /**
  * @class RemoteModel
  */
-class RemoteModel extends StandardModel {
-	constructor(schemaData, app, dataSharingId, services) {
+export default class RemoteModel extends StandardModel {
+	dataSharingId: string;
+
+	constructor(schemaData, app, dataSharingId: string, services) {
 		super(schemaData, app, services);
 
 		this.dataSharingId = dataSharingId;
 	}
 }
-
-module.exports = RemoteModel;

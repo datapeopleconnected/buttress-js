@@ -14,26 +14,36 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const hash = require('crypto').createHash;
+import { createHash } from 'crypto';
 
 // const Config = require('node-env-obj')();
 const Factory = require('./adapter-factory');
 
-const Logging = require('../helpers/logging');
+import Logging from '../helpers/logging';
 
-const datastores = {
-	core: null,
-};
+const datastores: {
+	[key: string]: Datastore;
+} = {};
+
+interface DatastoreConfig {
+	connectionString: string;
+	options?: string;
+}
 
 /**
  * This class is used to manage the lifecycle of an adapter
  */
 class Datastore {
-	constructor(config) {
+	private _adapter: any;
+	private _hash?: string;
+
+	dataSharingId?: string;
+
+	constructor(config: DatastoreConfig) {
 		this.setAdapter(config);
 	}
 
-	setAdapter(config) {
+	setAdapter(config: DatastoreConfig) {
 		this._adapter = Factory.create(config.connectionString, config.options);
 	}
 
@@ -59,12 +69,12 @@ class Datastore {
 	}
 }
 
-module.exports = {
+export default {
 	Class: Datastore,
-	hashConfig(config) {
-		return hash('sha1').update(Buffer.from(config.connectionString)).digest('base64');
+	hashConfig(config: DatastoreConfig) {
+		return createHash('sha1').update(Buffer.from(config.connectionString)).digest('base64');
 	},
-	createInstance(config, core = false) {
+	createInstance(config: DatastoreConfig, core = false) {
 		const hash = (core) ? 'core' : this.hashConfig(config);
 		if (datastores[hash]) return datastores[hash];
 

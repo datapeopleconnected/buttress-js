@@ -16,11 +16,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Route = require('../route');
-// const Model = require('../../model');
+import Route from '../route';
+// import Model from '../../model';
 const os = require('os');
 
-const routes = [];
+const routes: (typeof Route)[] = [];
 
 /**
  * @class GetTrackingList
@@ -32,11 +32,11 @@ class GetProcessStatus extends Route {
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		return Promise.resolve(true);
 	}
 
-	_exec(req, res, validate) {
+	async _exec(req, res, validate) {
 		const mem = process.memoryUsage().rss;
 		const memTotal = os.totalmem();
 
@@ -55,4 +55,4 @@ routes.push(GetProcessStatus);
 /**
  * @type {*[]}
  */
-module.exports = routes;
+export default routes;

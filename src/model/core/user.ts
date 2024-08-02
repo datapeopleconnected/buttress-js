@@ -16,11 +16,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Logging = require('../../helpers/logging');
-// const Shared = require('../shared');
-const Helpers = require('../../helpers');
+import Logging from '../../helpers/logging';
+// import * as Shared from '../shared';
+import * as Helpers from '../../helpers';
 
-const StandardModel = require('../type/standard');
+import StandardModel from '../type/standard';
 
 /**
  * Constants
@@ -34,7 +34,7 @@ const App = {
 	MICROSOFT: apps[4],
 };
 
-class UserSchemaModel extends StandardModel {
+export default class UserSchemaModel extends StandardModel {
 	constructor(services) {
 		const schema = UserSchemaModel.Schema;
 		super(schema, null, services);
@@ -201,7 +201,24 @@ class UserSchemaModel extends StandardModel {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	async add(body) {
-		const userBody = {
+		const userBody: {
+			id: string,
+			auth: Array<{
+				app: string,
+				appId: string,
+				username: string,
+				password: string,
+				profileUrl: string,
+				images: {
+					profile: string,
+					banner: string,
+				},
+				email: string,
+				token: string,
+				tokenSecret: string,
+				refreshToken: string,
+			}>
+		}= {
 			id: (body.id) ? this.createId(body.id) : this.createId(),
 			auth: [],
 		};
@@ -226,7 +243,7 @@ class UserSchemaModel extends StandardModel {
 		const rxsUser = await super.add(userBody, {
 			_appId: this.__modelManager.authApp.id,
 		});
-		const user = await Helpers.streamFirst(rxsUser);
+		const user: any = await Helpers.streamFirst(rxsUser);
 
 		user.tokens = [];
 
@@ -243,7 +260,7 @@ class UserSchemaModel extends StandardModel {
 				_appId: this.__modelManager.authApp.id,
 				_userId: user.id,
 			});
-			const token = await Helpers.streamFirst(rxsToken);
+			const token: any = await Helpers.streamFirst(rxsToken);
 
 			if (token) {
 				user.tokens.push({
@@ -258,31 +275,32 @@ class UserSchemaModel extends StandardModel {
 		return user;
 	}
 
-	addAuth(auth) {
-		Logging.log(`addAuth: ${auth.app}`, Logging.Constants.LogLevel.INFO);
-		const existing = this.auth.find((a) => a.app === auth.app && a.id == auth.id); // eslint-disable-line eqeqeq
-		if (existing) {
-			Logging.log(`present: ${auth.app}:${auth.id}`, Logging.Constants.LogLevel.DEBUG);
-			return Promise.resolve(this);
-		}
+	// addAuth(auth) {
+	// 	Logging.log(`addAuth: ${auth.app}`, Logging.Constants.LogLevel.INFO);
+	// 	const existing = this.auth.find((a) => a.app === auth.app && a.id == auth.id); // eslint-disable-line eqeqeq
+	// 	if (existing) {
+	// 		Logging.log(`present: ${auth.app}:${auth.id}`, Logging.Constants.LogLevel.DEBUG);
+	// 		return Promise.resolve(this);
+	// 	}
 
-		Logging.log(`not present: ${auth.app}:${auth.id}`, Logging.Constants.LogLevel.DEBUG);
-		this.auth.push(new this.__modelManager.Appauth({
-			app: auth.app,
-			appId: auth.id,
-			username: auth.username,
-			profileUrl: auth.profileUrl,
-			images: {
-				profile: auth.profileImgUrl,
-				banner: auth.bannerImgUrl,
-			},
-			email: auth.email,
-			token: auth.token,
-			tokenSecret: auth.tokenSecret,
-			refreshToken: auth.refreshToken,
-		}));
-		return this.save();
-	}
+	// 	Logging.log(`not present: ${auth.app}:${auth.id}`, Logging.Constants.LogLevel.DEBUG);
+	// 	this.auth.push(new this.__modelManager.Appauth({
+	// 		app: auth.app,
+	// 		appId: auth.id,
+	// 		username: auth.username,
+	// 		profileUrl: auth.profileUrl,
+	// 		images: {
+	// 			profile: auth.profileImgUrl,
+	// 			banner: auth.bannerImgUrl,
+	// 		},
+	// 		email: auth.email,
+	// 		token: auth.token,
+	// 		tokenSecret: auth.tokenSecret,
+	// 		refreshToken: auth.refreshToken,
+	// 	}));
+
+	// 	return this.save();
+	// }
 
 	/**
 	 * @param {object} user - user object of which the token is being updated
@@ -313,30 +331,6 @@ class UserSchemaModel extends StandardModel {
 	}
 
 	/**
-	 * @param {ObjectId} appId - id of the App that owns the user
-	 * @param {int} token - request token
-	 * @return {Promise} - resolves to an array of Apps
-	 */
-	findAll(appId, token) {
-		if (token && token.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
-			return super.find({});
-		}
-
-		return super.find({_appId: appId});
-	}
-
-	/**
-	 * @param {String} id - entity id to get
-	 * @param {ObjectId} appId - id of the App that owns the user
-	 * @return {Promise} - resolves to an array of Companies
-	 */
-	findById(id, appId) {
-		// Logging.logSilly(`User:findById: ${this.collectionName} ${id}`);
-
-		return super.findById(id);
-	}
-
-	/**
 	 * @param {string} username - username to check for
 	 * @return {Promise} - resolves to a User object or null
 	 */
@@ -358,8 +352,3 @@ class UserSchemaModel extends StandardModel {
 		});
 	}
 }
-
-/**
- * Exports
- */
-module.exports = UserSchemaModel;

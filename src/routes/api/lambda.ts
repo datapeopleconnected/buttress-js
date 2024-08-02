@@ -17,18 +17,22 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const util = require('util');
-const exec = util.promisify(require('child_process').exec);
-const Config = require('node-env-obj')();
-const {ObjectId} = require('bson');
-const Sugar = require('sugar');
+import util from 'util';
+import Sugar from 'sugar';
+import {ObjectId} from 'bson';
+
+import {exec as cpExec} from 'child_process';
+const exec = util.promisify(cpExec);
+
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
 
 // const AccessControl = require('../../access-control');
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
 
-const routes = [];
+const routes: (typeof Route)[] = [];
 
 const Datastore = require('../../datastore');
 
@@ -37,7 +41,7 @@ const Datastore = require('../../datastore');
  */
 class GetLambda extends Route {
 	constructor(nrp) {
-		super('lambda/:id', 'GET LAMBDA', nrp, Model.Lambda);
+		super('lambda/:id', 'GET LAMBDA', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -73,7 +77,7 @@ routes.push(GetLambda);
  */
 class GetLambdaList extends Route {
 	constructor(nrp) {
-		super('lambda', 'GET LAMBDA LIST', nrp, Model.Lambda);
+		super('lambda', 'GET LAMBDA LIST', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -86,7 +90,7 @@ class GetLambdaList extends Route {
 					Datastore.getInstance('core').ID.new(id);
 				} catch (err) {
 					this.log(`POLICY: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-					return Promise.reject(new Helpers.RequestError(400, 'invalid_id'));
+					throw new Helpers.Errors.RequestError(400, 'invalid_id');
 				}
 			});
 		}
@@ -94,13 +98,14 @@ class GetLambdaList extends Route {
 		return Promise.resolve(true);
 	}
 
-	_exec(req, res, validate) {
+	async _exec(req, res, validate) {
 		const ids = req.body.ids;
 		if (ids && ids.length > 0) {
 			return this.model.findByIds(ids);
 		}
 
-		return this.model.findAll(req.authApp.id, req.token);
+		return (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) ?
+			await this.model.findAll() : await this.model.find({_appId: this.model.ID.new(req.authApp.id)});
 	}
 }
 routes.push(GetLambdaList);
@@ -110,13 +115,15 @@ routes.push(GetLambdaList);
  */
 class SearchLambdaList extends Route {
 	constructor(nrp) {
-		super('lambda', 'SEARCH LAMBDA LIST', nrp, Model.Lambda);
+		super('lambda', 'SEARCH LAMBDA LIST', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
-	_validate(req, res, token) {
-		const result = {
+	async _validate(req, res, token) {
+		const result: {
+			query: any
+		} = {
 			query: {
 				$and: [],
 			},
@@ -142,7 +149,7 @@ routes.push(SearchLambdaList);
  */
 class AddLambda extends Route {
 	constructor(nrp) {
-		super('lambda', 'ADD LAMBDA', nrp, Model.Lambda);
+		super('lambda', 'ADD LAMBDA', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -190,7 +197,8 @@ class AddLambda extends Route {
 	async _exec(req, res, validate) {
 		let appId = req.authApp.id;
 		if (!appId) {
-			const token = await this._getToken(req);
+			// const token = await this._getToken(req);
+			const token = req.token;
 			if (token && token._appId) {
 				appId = token._appId;
 			}
@@ -199,14 +207,14 @@ class AddLambda extends Route {
 				appId = lambda._appId;
 			}
 			if (token && token._userId) {
-				const user = await Model.User.findById(token._userId);
+				const user = await Model.getModel('User').findById(token._userId);
 				appId = user._appId;
 			}
 		}
 
-		const app = await Model.App.findById(appId);
+		const app = await Model.getModel('App').findById(appId);
 		const lambda = await this.model.add(req.body.lambda, req.body.auth, app);
-		this._nrp.emit('app-lambda:path-mutation-bust-cache', lambda);
+		this._nrp?.emit('app-lambda:path-mutation-bust-cache', JSON.stringify(lambda));
 
 		return lambda;
 	}
@@ -218,11 +226,11 @@ routes.push(AddLambda);
  */
 class UpdateLambda extends Route {
 	constructor(nrp) {
-		super('lambda/:id', 'UPDATE LAMBDA', nrp, Model.Lambda);
+		super('lambda/:id', 'UPDATE LAMBDA', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -270,11 +278,11 @@ routes.push(UpdateLambda);
  */
 class BulkUpdateLambda extends Route {
 	constructor(nrp) {
-		super('lambda/bulk/update', 'BULK UPDATE LAMBDA', nrp, Model.Lambda);
+		super('lambda/bulk/update', 'BULK UPDATE LAMBDA', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -321,7 +329,7 @@ routes.push(BulkUpdateLambda);
  */
 class ScheduleLambdaExecution extends Route {
 	constructor(nrp) {
-		super('lambda/:id/schedule', 'SCHEDULE LAMBDA EXECUTION', nrp, Model.Lambda);
+		super('lambda/:id/schedule', 'SCHEDULE LAMBDA EXECUTION', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -335,7 +343,7 @@ class ScheduleLambdaExecution extends Route {
 		// This should be auto scoped to the app id.
 		const lambda = await this.model.findOne({
 			id: this.model.createId(req.params.id),
-			...(req.authApp.id) ? {_appId: Model.App.createId(req.authApp.id)} : {},
+			...(req.authApp.id) ? {_appId: Model.getModel('App').createId(req.authApp.id)} : {},
 		});
 		if (!lambda) {
 			this.log('ERROR: Lambda not found', Route.LogLevel.ERR);
@@ -343,14 +351,17 @@ class ScheduleLambdaExecution extends Route {
 		}
 
 		// Find deployment
-		const deploymentQuery = {
+		const deploymentQuery: {
+			lambdaId: string
+			id?: string
+		} = {
 			lambdaId: lambda.id,
 		};
 		if (req.body.deploymentId) {
-			deploymentQuery.id = Model.Deployment.createId(req.body.deploymentId);
+			deploymentQuery.id = Model.getModel('Deployment').createId(req.body.deploymentId);
 		}
 
-		const deployment = await Model.Deployment.findOne(deploymentQuery);
+		const deployment = await Model.getModel('Deployment').findOne(deploymentQuery);
 
 		const executeAfter = Sugar.Date.create(req.body.executeAfter);
 		if (!Sugar.Date.isValid(executeAfter)) {
@@ -371,7 +382,7 @@ class ScheduleLambdaExecution extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		return await Model.LambdaExecution.add(validate.execution, validate.appId);
+		return await Model.getModel('Lambda').Execution.add(validate.execution, validate.appId);
 	}
 }
 routes.push(ScheduleLambdaExecution);
@@ -381,7 +392,7 @@ routes.push(ScheduleLambdaExecution);
  */
 class EditLambdaDeployment extends Route {
 	constructor(nrp) {
-		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', nrp, Model.Lambda);
+		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -424,7 +435,7 @@ class EditLambdaDeployment extends Route {
 				branch: req.body.body,
 				lambda,
 			});
-		} catch (err) {
+		} catch (err: any) {
 			this.log(`[${this.name}] ${err.message}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, err.message));
 		}
@@ -444,11 +455,11 @@ routes.push(EditLambdaDeployment);
  */
 class SetLambdaPolicyProperties extends Route {
 	constructor(nrp) {
-		super('lambda/:id/policy-property', 'SET LAMBDA POLICY PROPERTY', nrp, Model.Lambda);
+		super('lambda/:id/policy-property', 'SET LAMBDA POLICY PROPERTY', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -476,7 +487,7 @@ class SetLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 		}
 
-		const lambdaToken = await Model.Token.findOne({
+		const lambdaToken = await Model.getModel('Token').findOne({
 			_lambdaId: this.model.createId(req.params.id),
 		});
 		if (!lambdaToken) {
@@ -488,7 +499,7 @@ class SetLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Token.setPolicyPropertiesById(validate.id, req.body);
+		await Model.getModel('Token').setPolicyPropertiesById(validate.id, req.body);
 		return true;
 	}
 }
@@ -499,11 +510,11 @@ routes.push(SetLambdaPolicyProperties);
  */
 class UpdateLambdaPolicyProperties extends Route {
 	constructor(nrp) {
-		super('lambda/:id/update-policy-property', 'UPDATE LAMBDA POLICY PROPERTY', nrp, Model.Lambda);
+		super('lambda/:id/update-policy-property', 'UPDATE LAMBDA POLICY PROPERTY', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -531,7 +542,7 @@ class UpdateLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 		}
 
-		const lambdaToken = await Model.Token.findOne({
+		const lambdaToken = await Model.getModel('Token').findOne({
 			_lambdaId: this.model.createId(req.params.id),
 		});
 		if (!lambdaToken) {
@@ -545,7 +556,7 @@ class UpdateLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Token.updatePolicyPropertiesById(validate.token, req.body);
+		await Model.getModel('Token').updatePolicyPropertiesById(validate.token, req.body);
 		return true;
 	}
 }
@@ -556,11 +567,11 @@ routes.push(UpdateLambdaPolicyProperties);
  */
 class ClearLambdaPolicyProperties extends Route {
 	constructor(nrp) {
-		super('lambda/:id/clear-policy-property', 'REMOVE LAMBDA POLICY PROPERTY', nrp, Model.Lambda);
+		super('lambda/:id/clear-policy-property', 'REMOVE LAMBDA POLICY PROPERTY', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -576,7 +587,7 @@ class ClearLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const lambdaToken = await Model.Token.findOne({
+		const lambdaToken = await Model.getModel('Token').findOne({
 			_lambdaId: this.model.createId(req.params.id),
 		});
 		if (!lambdaToken) {
@@ -590,7 +601,7 @@ class ClearLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.Token.clearPolicyPropertiesById(validate.token);
+		await Model.getModel('Token').clearPolicyPropertiesById(validate.token);
 		return true;
 	}
 }
@@ -601,7 +612,7 @@ routes.push(ClearLambdaPolicyProperties);
  */
 class DeleteLambda extends Route {
 	constructor(nrp) {
-		super('lambda/:id', 'DELETE LAMBDA', nrp, Model.Lambda);
+		super('lambda/:id', 'DELETE LAMBDA', nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -618,7 +629,7 @@ class DeleteLambda extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
 		}
 
-		const lambdaToken = await Model.Token.findOne({_lambdaId: lambda.id});
+		const lambdaToken = await Model.getModel('Token').findOne({_lambdaId: lambda.id});
 		if (!lambdaToken) {
 			this.log(`ERROR: Could not fetch lambda's token`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `could_fetch_lambda_token`));
@@ -634,7 +645,7 @@ class DeleteLambda extends Route {
 		// TODO make sure that the git repo is not used by any other lambdas before deleteing it
 		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${validate.lambda.id}`);
 		await this.model.rm(validate.lambda.id);
-		await Model.Token.rm(validate.token.id);
+		await Model.getModel('Token').rm(validate.token.id);
 		return true;
 	}
 }
@@ -645,7 +656,7 @@ routes.push(DeleteLambda);
  */
 class LambdaCount extends Route {
 	constructor(nrp) {
-		super(`lambda/count`, `COUNT LAMBDAS`, nrp, Model.Lambda);
+		super(`lambda/count`, `COUNT LAMBDAS`, nrp, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -653,12 +664,12 @@ class LambdaCount extends Route {
 		this.activityBroadcast = false;
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		const result = {
 			query: {},
 		};
 
-		let query = {};
+		let query: any = {};
 
 		if (!query.$and) {
 			query.$and = [];
@@ -685,4 +696,4 @@ routes.push(LambdaCount);
 /**
  * @type {*[]}
  */
-module.exports = routes;
+export default routes;

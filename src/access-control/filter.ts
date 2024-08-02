@@ -17,14 +17,14 @@
  */
 
 import Sugar from 'sugar';
+import { ObjectId } from 'bson';
 
-const {ObjectId} = require('bson');
-const accessControlHelpers = require('./helpers');
+import accessControlHelpers from './helpers';
 
-const PolicyEnv = require('./env');
+import PolicyEnv from './env'
 
-const Helpers = require('../helpers');
-const Model = require('../model');
+import * as Helpers from '../helpers';
+import Model from '../model';
 
 /**
  * @class Filter
@@ -455,4 +455,4 @@ class Filter {
 		return isEmpty;
 	}
 }
-module.exports = new Filter();
+export default new Filter();

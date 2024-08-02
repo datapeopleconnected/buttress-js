@@ -21,8 +21,8 @@ import Sugar from 'sugar';
 const accessControlHelpers = require('./helpers');
 const Filter = require('./filter');
 const PolicyEnv = require('./env');
-const Helpers = require('../helpers');
-const Model = require('../model');
+import * as Helpers from '../helpers';
+import Model from '../model';
 
 /**
  * @class Conditoins
@@ -466,4 +466,5 @@ class Conditions {
 		}
 	}
 }
-module.exports = new Conditions();
+
+export default new Conditions();

@@ -13,10 +13,17 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const {Errors} = require('../helpers');
+import { URL } from 'url';
+import { Errors } from '../helpers';
 
-module.exports = class AbstractAdapter {
-	constructor(uri, options, connection = null) {
+export default class AbstractAdapter {
+	uri: URL;
+	options?: unknown;
+	requiresFormalSchema: boolean;
+	protected __connection?: unknown;
+	collection?: unknown;
+
+	constructor(uri: URL, options: unknown, connection?: unknown) {
 		this.uri = uri;
 		this.options = options;
 
@@ -31,58 +38,58 @@ module.exports = class AbstractAdapter {
 		throw new Errors.NotYetImplemented('cloneAdapterConnection');
 	}
 
-	setCollection(collectionName) {
+	setCollection(collectionName: string) {
 		throw new Errors.NotYetImplemented('setCollection');
 	}
 
-	updateSchema(schemaData) {
+	updateSchema(schemaData: unknown) {
 		if (!this.requiresFormalSchema) return;
 
 		throw new Errors.NotYetImplemented('updateSchema');
 	}
 
-	get ID() {
+	get ID(): unknown {
 		throw new Errors.NotYetImplemented('get ID');
 	}
 
-	add(body, modifier) {
+	add(body: unknown, modifier: unknown) {
 		throw new Errors.NotYetImplemented('add');
 	}
 
-	async batchUpdateProcess(id, body, context, schemaConfig) {
+	async batchUpdateProcess(id: string, body: unknown, context: unknown, schemaConfig: unknown): Promise<unknown> {
 		throw new Errors.NotYetImplemented('batchUpdateProcess');
 	}
 
-	updateById(id, query) {
+	updateById(id: string, query: unknown) {
 		throw new Errors.NotYetImplemented('updateById');
 	}
 
-	updateOne(query, update) {
+	updateOne(query: unknown, update: unknown) {
 		throw new Errors.NotYetImplemented('updateOne');
 	}
 
-	exists(id, extra = {}) {
+	exists(id: string, extra = {}) {
 		throw new Errors.NotYetImplemented('exists');
 	}
 
 	/*
 	* @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	*/
-	isDuplicate(details) {
+	isDuplicate(details: unknown) {
 		throw new Errors.NotYetImplemented('isDuplicate');
 	}
 
 	/**
 	 * @param {App} entity - entity object to be deleted
 	 */
-	rm(entity) {
+	rm(entity: unknown) {
 		throw new Errors.NotYetImplemented('rm');
 	}
 
 	/**
 	 * @param {Array} ids - Array of entity ids to delete
 	 */
-	rmBulk(ids) {
+	rmBulk(ids: unknown) {
 		throw new Errors.NotYetImplemented('rmBulk');
 	}
 
@@ -90,14 +97,14 @@ module.exports = class AbstractAdapter {
 	 * @param {Object} query - mongoDB query
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rmAll(query) {
+	rmAll(query: unknown) {
 		throw new Errors.NotYetImplemented('rmAll');
 	}
 
 	/**
 	 * @param {String} id - entity id to get
 	 */
-	findById(id) {
+	findById(id: unknown) {
 		throw new Errors.NotYetImplemented('findById');
 	}
 
@@ -109,7 +116,7 @@ module.exports = class AbstractAdapter {
 	 * @param {Object} sort - mongoDB sort object
 	 * @param {Boolean} project - mongoDB project ids
 	 */
-	find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+	find(query: unknown, excludes = {}, limit = 0, skip = 0, sort = null, project = null) {
 		throw new Errors.NotYetImplemented('find');
 	}
 
@@ -117,7 +124,7 @@ module.exports = class AbstractAdapter {
 	 * @param {Object} query - mongoDB query
 	 * @param {Object} excludes - mongoDB query excludes
 	 */
-	findOne(query, excludes = {}) {
+	findOne(query: unknown, excludes = {}) {
 		throw new Errors.NotYetImplemented('findOnedd');
 	}
 
@@ -130,14 +137,14 @@ module.exports = class AbstractAdapter {
 	/**
 	 * @param {Array} ids - Array of entities ids to get
 	 */
-	findAllById(ids) {
+	findAllById(ids: string[]) {
 		throw new Errors.NotYetImplemented('findAllById');
 	}
 
 	/**
 	 * @param {Object} query - mongoDB query
 	 */
-	count(query) {
+	count(query: unknown) {
 		throw new Errors.NotYetImplemented('count');
 	}
 

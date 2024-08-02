@@ -17,31 +17,42 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const fs = require('fs');
-const path = require('path');
-const express = require('express');
-const onFinished = require('on-finished');
-const {v4: uuidv4} = require('uuid');
-const {ObjectId} = require('bson');
+import fs from 'fs';
+import path from 'path';
+import express from 'express';
+import onFinished from 'on-finished';
+import {v4 as uuidv4} from 'uuid';
+import {ObjectId} from 'bson';
+import NRP from 'node-redis-pubsub';
 
-const Config = require('node-env-obj')();
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
 
 // const Route = require('./route');
-const Logging = require('../helpers/logging');
-const Schema = require('../schema');
-const Helpers = require('../helpers');
-const AccessControl = require('../access-control');
-const Model = require('../model');
+import Logging from '../helpers/logging';
+import Schema from '../schema';
+import * as Helpers from '../helpers';
+import AccessControl from '../access-control';
+import Model from '../model';
 
-const AdminRoutes = require('./admin-routes');
-const SchemaRoutes = require('./schema-routes');
+import AdminRoutes from './admin-routes';
+import SchemaRoutes from './schema-routes';
 
-const Datastore = require('../datastore');
+import Datastore from '../datastore';
 
 class Routes {
-	/**
-	 * @param {Object} app - express app object
-	 */
+	app: express.Application;
+	id: string;
+
+	_tokens: any[];
+	_routerMap: any;
+
+	_services: any;
+
+	_nrp?: NRP.NodeRedisPubSub;
+
+	_preRouteMiddleware: any[];
+
 	constructor(app) {
 		this.app = app;
 		this.id = uuidv4();
@@ -51,13 +62,11 @@ class Routes {
 
 		this._services = null;
 
-		this._nrp = null;
-
 		this._preRouteMiddleware = [
-			(...args) => this._timeRequest(...args),
-			(...args) => this._authenticateToken(...args),
-			(...args) => AccessControl.accessControlPolicyMiddleware(...args),
-			(...args) => this._configCrossDomain(...args),
+			(...args) => this._timeRequest(args[0], args[2], args[3]),
+			(...args) => this._authenticateToken(args[0], args[2], args[3]),
+			(...args) => AccessControl.accessControlPolicyMiddleware(args[0], args[2], args[3]),
+			(...args) => this._configCrossDomain(args[0], args[2], args[3]),
 		];
 	}
 
@@ -153,7 +162,7 @@ class Routes {
 	}
 
 	async initAppRoutes() {
-		const rxsApps = await Model.App.findAll();
+		const rxsApps = await Model.getModel('App').findAll();
 		for await (const app of rxsApps) {
 			await this._generateAppRoutes(app);
 		}
@@ -229,7 +238,7 @@ class Routes {
 	 */
 	regenerateAppRoutes(appId) {
 		Logging.logSilly(`Routes:regenerateAppRoutes regenerating routes for ${appId}`);
-		return Model.App.findById(appId)
+		return Model.getModel('App').findById(appId)
 			.then((app) => this._generateAppRoutes(app));
 	}
 
@@ -242,7 +251,7 @@ class Routes {
 		if (!app.__schema) return;
 
 		// Get DS agreements
-		const appDSAs = await Helpers.streamAll(await Model.AppDataSharing.find({
+		const appDSAs = await Helpers.streamAll(await Model.getModel('App').DataSharing.find({
 			'_appId': app.id,
 		}));
 
@@ -321,7 +330,7 @@ class Routes {
 	 */
 	_initSchemaRoutes(express, app, schemaData) {
 		SchemaRoutes.forEach((Route) => {
-			let route = null;
+			let route: typeof Route;
 
 			const appShortId = Helpers.shortId(app.id);
 
@@ -413,7 +422,7 @@ class Routes {
 				Logging.logTimer(`_authenticateAdminToken:got-admin-token`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-				Model.authApp = req.authApp = adminRoutecall.adminApp;
+				req.authApp = adminRoutecall.adminApp;
 				Logging.logTimer(`_authenticateAdminApp:got-admin-app`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
@@ -421,19 +430,19 @@ class Routes {
 				return next();
 			}
 
-			let tokenApp = null;
-			let useUserToken = true;
+			let tokenApp: any = null;
+			let useUserToken: any = true;
 
 			req.authLambda = null;
 
 			const isLambdaAPICall = req.url.includes('/lambda/v1/');
 			if (isLambdaAPICall) {
-				let apiLambdaTrigger = null;
-				let apiLambdaApp = null;
+				let apiLambdaTrigger: any = null;
+				let apiLambdaApp: any = null;
 				let apiPath = null;
 
 				[apiPath] = req.url.split('/lambda/v1/').join('').split('/');
-				apiLambdaApp = await Model.App.findOne({
+				apiLambdaApp = await Model.getModel('App').findOne({
 					apiPath: {
 						$eq: apiPath,
 					},
@@ -445,7 +454,7 @@ class Routes {
 				}
 
 				const [endpoint] = req.url.split(`/lambda/v1/${apiPath}/`).join('').split('?');
-				req.authLambda = await Model.Lambda.findOne({
+				req.authLambda = await Model.getModel('Lambda').findOne({
 					'trigger.apiEndpoint.url': {
 						$eq: endpoint,
 					},
@@ -466,11 +475,11 @@ class Routes {
 
 				useUserToken = (apiLambdaTrigger && apiLambdaTrigger.apiEndpoint.useCallerToken);
 				if (!useUserToken) {
-					const token = await Model.Token.findOne({
+					const token = await Model.getModel('Token').findOne({
 						_lambdaId: req.authLambda.id,
 					});
 					req.token = token;
-					Model.authApp = req.authApp = apiLambdaApp;
+					req.authApp = apiLambdaApp;
 					// Logging.logTimer(`_authenticateAPILambdaToken:got-app ${req.authApp.id}`,
 					// 	req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
@@ -489,7 +498,7 @@ class Routes {
 			// If not a lambda API call
 			if (!isLambdaAPICall && req.token?._lambdaId) {
 				// If we're not calling a lambda endpoint then look up the lambda via the token.
-				const lambda = await Model.Lambda.findById(req.token._lambdaId);
+				const lambda = await Model.getModel('Lambda').findById(req.token._lambdaId);
 				req.authLambda = lambda;
 				Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda.id : lambda}`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -507,19 +516,19 @@ class Routes {
 
 			if (!req.authApp) {
 				if (req.apiPath) {
-					tokenApp = await Model.App.findOne({apiPath: req.apiPath});
+					tokenApp = await Model.getModel('App').findOne({apiPath: req.apiPath});
 				} else if (req.token._appId) {
-					tokenApp = await Model.App.findById(req.token._appId);
+					tokenApp = await Model.getModel('App').findById(req.token._appId);
 				}
 
-				Model.authApp = req.authApp = tokenApp;
+				req.authApp = tokenApp;
 				Logging.logTimer(`_authenticateToken:got-app ${(req.authApp) ? req.authApp.id : tokenApp}`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 				Logging.logTimer(`_authenticateToken:got-app shortId: ${Helpers.shortId(tokenApp.id)}`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
 
-			const appDataSharing = (req.token._appDataSharingId) ? await Model.AppDataSharing.findById(req.token._appDataSharingId) : null;
+			const appDataSharing = (req.token._appDataSharingId) ? await Model.getModel('App').DataSharing.findById(req.token._appDataSharingId) : null;
 			req.authAppDataSharing = appDataSharing;
 			Logging.logTimer(
 				`_authenticateToken:got-app-data-sharing-agreement ${(req.authAppDataSharing) ? req.authAppDataSharing.id : appDataSharing}`,
@@ -528,7 +537,7 @@ class Routes {
 
 			let user = null;
 			if (req.token._userId) {
-				user = await Model.User.findById(req.token._userId);
+				user = await Model.getModel('User').findById(req.token._userId);
 				Logging.logSilly(`Request was made with a valid token but no user was found for token ${req.token.id}`);
 				if (!user) throw new Helpers.Errors.RequestError(400, 'invalid_token');
 			}
@@ -573,7 +582,7 @@ class Routes {
 		Logging.logTimer('_getToken:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		let token = null;
 
-		if (this._tokens.length > 0 && !Model.appMetadataChanged) {
+		if (this._tokens.length > 0 && !Model.getModel('App').MetadataChanged) {
 			token = this._lookupToken(this._tokens, value);
 			if (token) {
 				Logging.logTimer('_getToken:end-cache', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -584,7 +593,7 @@ class Routes {
 		// TODO: This needs to be smarter
 		await this.loadTokens();
 
-		Model.appMetadataChanged = false;
+		Model.getModel('App').MetadataChanged = false;
 		token = this._lookupToken(this._tokens, value);
 		Logging.logTimer('_getToken:end-lookup', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		return token;
@@ -606,8 +615,8 @@ class Routes {
 	 * @private
 	 */
 	async loadTokens() {
-		const tokens = [];
-		const rxsToken = await Model.Token.findAll();
+		const tokens: any[] = [];
+		const rxsToken = await Model.getModel('Token').findAll();
 
 		for await (const token of rxsToken) {
 			tokens.push(token);
@@ -631,7 +640,7 @@ class Routes {
 			Logging.logTimer('_configCrossDomain:end-no-auth', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
 		}
-		if (req.token.type !== Model.Token.Constants.Type.USER) {
+		if (req.token.type !== Model.getModel('Token').Constants.Type.USER) {
 			res.header('Access-Control-Allow-Origin', '*');
 			res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,SEARCH,OPTIONS');
 			res.header('Access-Control-Allow-Headers', 'content-type');
@@ -708,7 +717,7 @@ class Routes {
 	_getCoreRoutes() {
 		const filenames = fs.readdirSync(`${__dirname}/api`);
 
-		const files = [];
+		const files: NodeRequire[] = [];
 		for (let x = 0; x < filenames.length; x++) {
 			const file = filenames[x];
 			if (path.extname(file) === '.js') {
@@ -719,15 +728,15 @@ class Routes {
 	}
 
 	async _setupLambdaEndpoints() {
-		const appsToken = await Helpers.streamAll(await Model.Token.find({
+		const appsToken = await Helpers.streamAll(await Model.getModel('Token').find({
 			$or: [{
-				type: Model.Token.Constants.Type.APP,
+				type: Model.getModel('Token').Constants.Type.APP,
 			}, {
-				type: Model.Token.Constants.Type.SYSTEM,
+				type: Model.getModel('Token').Constants.Type.SYSTEM,
 			}],
 		}));
 		const tokenIds = appsToken.map((t) => t.id);
-		const apps = await Helpers.streamAll(await Model.App.find({
+		const apps = await Helpers.streamAll(await Model.getModel('App').find({
 			_tokenId: {
 				$in: tokenIds,
 			},
@@ -738,7 +747,7 @@ class Routes {
 			this.__configureAppLambdaEndpoints(apiPath);
 		});
 
-		this._nrp.on('app:configure-lambda-endpoints', (apiPath) => {
+		this._nrp?.on('app:configure-lambda-endpoints', (apiPath) => {
 			this.__configureAppLambdaEndpoints(apiPath);
 		});
 	}
@@ -746,7 +755,7 @@ class Routes {
 	async __configureAppLambdaEndpoints(apiPath) {
 		this.app.get(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req, res) => {
 			const [endpoint] = Object.values(req.params);
-			const result = await this._validateLambdaAPIExecution(endpoint, 'GET', req.headers, req.query, null, req.token);
+			const result: any = await this._validateLambdaAPIExecution(endpoint, 'GET', req.headers, req.query, null, req.token);
 			if (result.errCode && result.errMessage) {
 				res.status(result.errCode).send({message: result.errMessage});
 				return;
@@ -757,7 +766,7 @@ class Routes {
 
 			if (result.triggerAPIType === 'SYNC') {
 				result.lambdaOutput = await new Promise((resolve) => {
-					this._nrp.on('lambda-execution-finish', (exec) => {
+					this._nrp?.on('lambda-execution-finish', (exec: any) => {
 						if (exec.restWorkerId === this.id) {
 							resolve(exec);
 						}
@@ -768,7 +777,7 @@ class Routes {
 			if (result.lambdaOutput && result.lambdaOutput.res && result.lambdaOutput.res.redirect) {
 				const url = result.lambdaOutput.res.url;
 				const queryObj = result.lambdaOutput.res.query;
-				let query = '';
+				let query: string = '';
 				if (queryObj) {
 					query = Object.keys(queryObj).reduce((output, key) => {
 						if (!output) {
@@ -777,7 +786,7 @@ class Routes {
 							output = `${output}&${key}=${queryObj[key]}`;
 						}
 						return output;
-					}, null);
+					}, '');
 				}
 				const redirectURL = (query) ? `${url}?${query}` : url;
 				res.redirect(redirectURL);
@@ -801,7 +810,7 @@ class Routes {
 				return;
 			}
 
-			const result = await this._validateLambdaAPIExecution(endpoint, 'POST', req.headers, null, req.body, req.token);
+			const result: any = await this._validateLambdaAPIExecution(endpoint, 'POST', req.headers, null, req.body, req.token);
 			if (result.errCode && result.errMessage) {
 				res.status(result.errCode).send({message: result.errMessage});
 				return;
@@ -809,7 +818,7 @@ class Routes {
 
 			if (result.triggerAPIType === 'SYNC') {
 				result.lambdaOutput = await new Promise((resolve) => {
-					this._nrp.on('lambda-execution-finish', (exec) => {
+					this._nrp?.on('lambda-execution-finish', (exec: any) => {
 						if (exec.restWorkerId === this.id) {
 							resolve(exec);
 						}
@@ -829,7 +838,7 @@ class Routes {
 							output = `${output}&${key}=${queryObj[key]}`;
 						}
 						return output;
-					}, null);
+					}, '');
 				}
 				const redirectURL = (query) ? `${url}?${query}` : url;
 				res.redirect(redirectURL);
@@ -847,15 +856,15 @@ class Routes {
 		});
 	}
 
-	async _validateLambdaAPIExecution(endpoint, method, headers, query = null, body = null, token = null) {
-		const res = {};
-		let lambda = null;
+	async _validateLambdaAPIExecution(endpoint, method, headers, query = null, body = null, token: any = null) {
+		const res: any = {};
+		let lambda: any = null;
 
 		const isEndPointId = ObjectId.isValid(endpoint);
 		if (isEndPointId) {
-			lambda = await Model.Lambda.findById(endpoint);
+			lambda = await Model.getModel('Lambda').findById(endpoint);
 		} else {
-			lambda = await Model.Lambda.findOne({
+			lambda = await Model.getModel('Lambda').findOne({
 				'trigger.apiEndpoint.url': {
 					$eq: endpoint,
 				},
@@ -884,8 +893,8 @@ class Routes {
 			// TODO: Lambda is private and we should prob do something here?
 		}
 
-		const deployment = await Model.Deployment.findOne({
-			lambdaId: Model.Lambda.createId(lambda.id),
+		const deployment = await Model.getModel('Deployment').findOne({
+			lambdaId: Model.getModel('Lambda').createId(lambda.id),
 			hash: lambda.git.hash,
 		});
 		if (!deployment) {
@@ -894,16 +903,25 @@ class Routes {
 			return res;
 		}
 
-		const lambdaExecution = await Model.LambdaExecution.add({
+		const lambdaExecution = await Model.getModel('Lambda').Execution.add({
 			triggerType: 'API_ENDPOINT',
-			lambdaId: Model.Lambda.createId(lambda.id),
-			deploymentId: Model.Deployment.createId(deployment.id),
-		}, lambda._appId, (triggerAPI.apiEndpoint.useCallerToken) ? Model.Token.createId(token.id) : null);
+			lambdaId: Model.getModel('Lambda').createId(lambda.id),
+			deploymentId: Model.getModel('Deployment').createId(deployment.id),
+		}, lambda._appId, (triggerAPI.apiEndpoint.useCallerToken) ? Model.getModel('Token').createId(token.id) : null);
 
 		res.lambdaExecution = lambdaExecution;
 		res.triggerAPIType = triggerAPI.apiEndpoint.type;
 
-		const data = {
+		const data: {
+			id: string;
+			restWorkerId: string;
+			lambdaId: string;
+			triggerType: string;
+			lambdaExecBehavior: string;
+			headers: any;
+			body?: any;
+			query?: any;
+		} = {
 			id: lambdaExecution.id,
 			restWorkerId: this.id,
 			lambdaId: lambda.id,
@@ -919,11 +937,11 @@ class Routes {
 		}
 
 		if (!res.errCode && !res.errMessage) {
-			this._nrp.emit('rest:worker:exec-lambda-api', data);
+			this._nrp?.emit('rest:worker:exec-lambda-api', JSON.stringify(data));
 		}
 
 		return res;
 	}
 }
 
-module.exports = Routes;
+export default Routes;

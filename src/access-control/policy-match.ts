@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const AccessControlHelpers = require('./helpers');
+import AccessControlHelpers from './helpers';
 
 /**
  * @class PolicyMatch
@@ -48,19 +48,19 @@ class PolicyMatch {
 		if (!token || !token.policyProperties) return;
 
 		const policyProperties = token.policyProperties;
-		const matches = Object.keys(selection).reduce((arr, key) => {
+		const matches = Object.keys(selection).reduce((arr: boolean[], key) => {
 			if (!(key in policyProperties)) return arr;
 			const [selectionCriterionKey] = Object.keys(selection[key]);
 			let [rhs] = Object.values(selection[key]);
 			let lhs = policyProperties[key];
 			lhs = (!Array.isArray(lhs)) ? [lhs] : lhs;
-			if (!Number(rhs)) rhs = rhs.toUpperCase();
+			if (typeof rhs === 'string') rhs = rhs.toUpperCase();
 			lhs = lhs.map((s) => {
-				if (!Number(lhs)) s = s.toUpperCase();
+				if (typeof lhs === 'string') s = s.toUpperCase();
 				return s;
 			});
 
-			lhs.reduce((flag, val) => {
+			lhs.reduce((flag: boolean, val) => {
 				flag = AccessControlHelpers.evaluateOperation(val, rhs, selectionCriterionKey);
 				if (flag) {
 					match = flag;
@@ -75,4 +75,4 @@ class PolicyMatch {
 		return (matches.length > 0) ? matches.every((v) => v) : match;
 	}
 }
-module.exports = new PolicyMatch();
+export default new PolicyMatch();

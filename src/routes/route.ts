@@ -16,17 +16,19 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Stream = require('stream');
+import Stream from 'stream';
 // const JSONStream = require('JSONStream');
 const Config = require('node-env-obj')();
-const Logging = require('../helpers/logging');
-// const Schema = require('../schema');
-const Model = require('../model');
-const Helpers = require('../helpers');
-const Schema = require('../schema');
+import Logging from '../helpers/logging';
+// import Schema from '../schema';
+import Model from '../model';
+import * as Helpers from '../helpers';
+import Schema from '../schema';
 // const AccessControl = require('../access-control');
 
-const SchemaModelRemote = require('../model/type/remote');
+import SchemaModelRemote from '../model/type/remote';
+
+import NRP from "node-redis-pubsub";
 
 /**
  */
@@ -94,29 +96,40 @@ const Constants = {
 	},
 };
 
-class Route {
-	constructor(paths, name, services, model) {
-		this.verb = Constants.Verbs.GET;
-		this.Type = Constants.Type.SYSTEM;
-		this.permissions = Constants.Permissions.READ;
+export default class Route {
+	verb: string = Constants.Verbs.GET;
+	authType: string = Constants.Type.SYSTEM;
+	permissions: string = Constants.Permissions.READ;
 
-		this.activity = true;
-		this.activityBroadcast = false;
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
-		this.activityTitle = 'Private Activity';
-		this.activityDescription = '';
+	activity: boolean = true;
+	activityBroadcast: boolean = false;
+	activityVisibility: string = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+	activityTitle: string = 'Private Activity';
+	activityDescription: string = '';
 
-		this.slowLogging = Config.logging.slow === 'TRUE';
-		this.slowLoggingTime = parseFloat(Config.logging.slowTime);
+	slowLogging: boolean = Config.logging.slow === 'TRUE'
+	slowLoggingTime: number = parseFloat(Config.logging.slowTime);
 
-		this.timingChunkSample = 250;
+	timingChunkSample: number = 250;
 
-		// Defaults for system/core routes, will be overridden by __configureSchemaRoute
-		// for schema routes.
-		this.core = true;
-		this.redactResults = true;
-		this.addSourceId = false;
+	core: boolean = false;
+	redactResults: boolean = true;
+	addSourceId: boolean = false;
 
+	model: any;
+	schema: any;
+	
+	paths: string[];
+
+	name: string;
+
+	_nrp?: NRP.NodeRedisPubSub;
+
+	_redisClient: any;
+
+	_timer?: Helpers.Timer;
+
+	constructor(paths: string | string[], name: string, services: any, model?: any) {
 		this.model = (model) ? model : null;
 		this.schema = (model) ? new Schema(model.schemaData) : null;
 
@@ -125,6 +138,7 @@ class Route {
 		this.name = name;
 
 		this._nrp = services.get('nrp');
+		if (!this._nrp) throw new Error('Route: NRP not found in services');
 
 		this._redisClient = services.get('redisClient');
 	}
@@ -135,6 +149,14 @@ class Route {
 		this.core = false;
 		this.redactResults = true;
 		this.addSourceId = true;
+	}
+
+	async _validate(req, res, token): Promise<unknown> {
+		throw new Error('Route:_validate not implemented');
+	}
+
+	async _exec(req, res, validate): Promise<unknown> {
+		throw new Error('Route:_exec not implemented');
 	}
 
 	/**
@@ -150,7 +172,7 @@ class Route {
 
 		if (!this._exec) {
 			Logging.logTimer('Route:exec:end-no-exec-defined', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			return Promise.reject(new Helpers.Errors.RequestError(500));
+			throw new Helpers.Errors.RequestError(500, 'Tried to exec route but no exec function defined');
 		}
 
 		const token = await this._authenticate(req, res);
@@ -167,7 +189,7 @@ class Route {
 
 		// Send the result back to the client and resolve the request from
 		// this point onward you should treat the request as furfilled.
-		if (result instanceof Stream && result.readable) {
+		if (result instanceof Stream.Readable && result.readable) {
 			result.on('bjs-stream-status', (data) => req.bjsReqStatus(data, this._nrp));
 
 			const resStream = new Stream.PassThrough({objectMode: true});
@@ -211,7 +233,7 @@ class Route {
 	async _respond(req, res, result) {
 		req.timings.respond = req.timer.interval;
 
-		const isReadStream = (result instanceof Stream && result.readable);
+		const isReadStream = (result instanceof Stream.Readable && result.readable);
 
 		Logging.logTimer(`_respond:start isReadStream:${isReadStream} redactResults:${this.redactResults}`,
 			req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -278,14 +300,14 @@ class Route {
 	_addLogActivity(req, path, verb) {
 		Logging.logTimer('_addLogActivity:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		// TODO: Activty should pass back a stripped version of the activty object.
-		return Model.Activity.add({
+		return Model.getModel('Activity').add({
 			activityTitle: this.activityTitle,
 			activityDescription: this.activityDescription,
 			activityVisibility: this.activityVisibility,
 			path: path,
 			verb: verb,
 			permissions: this.permissions,
-			auth: this.auth,
+			// auth: this.auth,
 			params: req.params,
 			req: req,
 			res: {},
@@ -340,12 +362,12 @@ class Route {
 	async _broadcast(req, res, result, path, isSuper = false) {
 		Logging.logTimer('_broadcast:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-		const isReadStream = (result instanceof Stream && result.readable);
+		const isReadStream = (result instanceof Stream.Readable && result.readable);
 		await this._checkBasedPathLambda(req);
 
 		const emit = (_result) => {
 			if (this.activityBroadcast === true) {
-				this._nrp.emit('activity', {
+				this._nrp?.emit('activity', JSON.stringify({
 					title: this.activityTitle,
 					description: this.activityDescription,
 					visibility: this.activityVisibility,
@@ -362,7 +384,7 @@ class Route {
 					appId: req.authApp ? req.authApp.id : '',
 					isSuper: isSuper,
 					schemaName: this.schema?.name,
-				});
+				}));
 			} else {
 				// Trigger the emit activity so we can update the stats namespace
 			}
@@ -388,7 +410,7 @@ class Route {
 		if (!this.schema) return;
 
 		const schemaName = this.model?.schemaData.name;
-		const isLambdaChange = req.token.type === Model.Token.Constants.Type.LAMBDA;
+		const isLambdaChange = req.token.type === Model.getModel('Token').Constants.Type.LAMBDA;
 		if (isLambdaChange) {
 			// If the current lambda is a path mutation, we don't want to trigger other path mutations
 			// not great but we'll just block all lambdas that have a pathMutation trigger
@@ -398,8 +420,8 @@ class Route {
 			}
 		}
 
-		let paths = [];
-		const values = [];
+		let paths: string[] = [];
+		const values: any[] = [];
 		let body = JSON.parse(req.body);
 		const id = req.params.id;
 
@@ -444,11 +466,11 @@ class Route {
 
 		paths = paths.filter((v, idx, arr) => arr.indexOf(v) === idx);
 		if (paths.length > 0) {
-			this._nrp.emit('notifyLambdaPathChange', {
+			this._nrp?.emit('notifyLambdaPathChange', JSON.stringify({
 				paths,
 				values,
 				collection: schemaName,
-			});
+			}));
 		}
 	}
 
@@ -521,9 +543,9 @@ class Route {
 	 * @param {string} log - log text
 	 * @param {enum} level - NONE, ERR, WARN, INFO
 	 */
-	log(log, level) {
+	log(log: string, level?: string, reqId?: string) {
 		level = level || Logging.Constants.LogLevel.INFO;
-		Logging.log(log, level);
+		Logging.log(log, level, reqId);
 	}
 
 	/**
@@ -561,5 +583,3 @@ class Route {
 		return Logging.Constants.LogLevel;
 	}
 }
-
-module.exports = Route;

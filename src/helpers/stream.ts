@@ -38,7 +38,7 @@ export class SortedStreams extends Readable {
 
 	public limit: number;
 
-	constructor(sources: Readable[], compareFn: Function, limit: number = 0) {
+	constructor(sources: Readable[], compareFn?: Function, limit: number = 0) {
 		super({objectMode: true});
 
 		this._compareFn = compareFn || this._defaultCompare;

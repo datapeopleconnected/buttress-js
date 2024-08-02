@@ -16,32 +16,38 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Stream = require('stream');
-const {ObjectId} = require('bson');
-const ButtressAPI = require('@buttress/api');
+import Stream from 'stream';
+import {ObjectId} from 'bson';
+import ButtressAPI from '@buttress/api';
 
-const {Errors} = require('../../helpers');
-const {parseJsonArrayStream} = require('../../helpers/stream');
-const Logging = require('../../helpers/logging');
+import Errors from '../../helpers/errors';
+import {parseJsonArrayStream} from '../../helpers/stream';
+import Logging from '../../helpers/logging';
 
-const AbstractAdapter = require('../abstract-adapter');
+import AbstractAdapter from '../abstract-adapter';
 
 class AdapterId {
-	static new(id) {
+	static new(id: string) {
 		return new ObjectId(id);
 	}
 
-	static isValid(id) {
+	static isValid(id: string) {
 		return ObjectId.isValid(id);
 	}
 
-	static instanceOf(id) {
+	static instanceOf(id: string | ObjectId) {
 		return id instanceof ObjectId;
 	}
 }
 
+export default class Buttress extends AbstractAdapter {
+	init: boolean;
+	initPendingResolve: Function[];
 
-module.exports = class Buttress extends AbstractAdapter {
+	protected __connection: any;
+
+	collection: any;
+
 	constructor(uri, options, connection = null) {
 		super(uri, options, connection);
 
@@ -80,11 +86,11 @@ module.exports = class Buttress extends AbstractAdapter {
 		this.initPendingResolve = [];
 	}
 
-	async setCollection(collectionName) {
+	async setCollection(collectionName: string) {
 		try {
 			this.collection = this.__connection.getCollection(collectionName);
-		} catch (err) {
-			if (err instanceof ButtressAPI.Errors.SchemaNotFound) throw new Errors.SchemaNotFound(err.message);
+		} catch (err: unknown) {
+			if (err instanceof ButtressAPI.Errors.SchemaNotFound) throw new Errors.SchemaNotFound((err as ButtressAPI.Errors.SchemaNotFound).message);
 			else throw err;
 		}
 	}
@@ -128,8 +134,8 @@ module.exports = class Buttress extends AbstractAdapter {
 		return target;
 	}
 
-	handleResult(result) {
-		if (result instanceof Stream && result.readable) {
+	handleResult(result: Stream.Readable | any) {
+		if (result instanceof Stream.Readable && result.readable) {
 			// Stream will be an array of objects, parse them out.
 			return result.pipe(parseJsonArrayStream());
 		}

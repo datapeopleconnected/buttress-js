@@ -15,10 +15,12 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const fs = require('fs');
+import fs from 'fs';
+
+// ? Why are we dynamically loading classes from the filesystem?
 
 const getClassesList = (dirName) => {
-	let files = [];
+	let files: NodeRequire[] = [];
 	const items = fs.readdirSync(dirName, {withFileTypes: true});
 	for (const item of items) {
 		if (item.isDirectory()) {
@@ -40,4 +42,4 @@ const lambdaAPI = classes.reduce((obj, file) => {
 	return obj;
 }, {});
 
-module.exports = lambdaAPI;
+export default lambdaAPI;

@@ -16,14 +16,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {ObjectId} = require('bson');
+import {ObjectId} from 'bson';
 
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
 // const Logging = require('../../logging');
 
-const routes = [];
+const routes: (typeof Route)[] = [];
 
 /**
  * @class AddSecureStore
@@ -43,9 +43,9 @@ class AddSecureStore extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const secureStoreExist = await Model.SecureStore.findOne({
+		const secureStoreExist = await Model.getModel('SecureStore').findOne({
 			name: req.body.name,
-			_appId: Model.App.createId(req.authApp.id),
+			_appId: Model.getModel('App').createId(req.authApp.id),
 		});
 		if (secureStoreExist) {
 			this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);
@@ -56,7 +56,7 @@ class AddSecureStore extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.SecureStore.add(req, req.body);
+		return Model.getModel('SecureStore').add(req, req.body);
 	}
 }
 routes.push(AddSecureStore);
@@ -91,7 +91,7 @@ class AddManySecureStore extends Route {
 		}
 
 		for await (const secureStore of req.body) {
-			const secureStoreExist = await Model.SecureStore.findOne({name: secureStore.name});
+			const secureStoreExist = await Model.getModel('SecureStore').findOne({name: secureStore.name});
 			if (secureStoreExist) {
 				this.log(`ERROR: Secure Store with this name ${secureStore.name} already exists`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
@@ -103,7 +103,7 @@ class AddManySecureStore extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const secureStore of req.body) {
-			await Model.SecureStore.add(req, secureStore);
+			await Model.getModel('SecureStore').add(req, secureStore);
 		}
 
 		return true;
@@ -132,7 +132,7 @@ class GetSecureStore extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
 		}
 
-		const secureStore = await Model.SecureStore.findById(id);
+		const secureStore = await Model.getModel('SecureStore').findById(id);
 		if (!secureStore) {
 			this.log(`[${this.name}] Cannot find a secure store with id ${id}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `secure_store_does_not_exist`));
@@ -164,7 +164,7 @@ class FindSecureStore extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const secureStore = await Model.SecureStore.findOne({
+		const secureStore = await Model.getModel('SecureStore').findOne({
 			name: {
 				$eq: name,
 			},
@@ -190,12 +190,12 @@ class UpdateSecureStore extends Route {
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	async _validate(req, res, token) {
-		const {validation, body} = Model.SecureStore.validateUpdate(req.body);
+		const {validation, body} = Model.getModel('SecureStore').validateUpdate(req.body);
 		req.body = body;
 		if (!validation.isValid) {
 			if (validation.isPathValid === false) {
@@ -208,7 +208,7 @@ class UpdateSecureStore extends Route {
 			}
 		}
 
-		const exists = await Model.SecureStore.exists(req.params.id);
+		const exists = await Model.getModel('SecureStore').exists(req.params.id);
 		if (!exists) {
 			this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -217,7 +217,7 @@ class UpdateSecureStore extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.SecureStore.updateByPath(req.body, req.params.id, null, 'SecureStore');
+		return Model.getModel('SecureStore').updateByPath(req.body, req.params.id, null, 'SecureStore');
 	}
 }
 routes.push(UpdateSecureStore);
@@ -234,7 +234,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const {validation, body} = Model.SecureStore.validateUpdate(item.body);
+			const {validation, body} = Model.getModel('SecureStore').validateUpdate(item.body);
 			item.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -247,7 +247,7 @@ class BulkUpdateSecureStore extends Route {
 				}
 			}
 
-			const exists = await Model.SecureStore.exists(item.id);
+			const exists = await Model.getModel('SecureStore').exists(item.id);
 			if (!exists) {
 				this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -259,7 +259,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.SecureStore.updateByPath(item.body, item.id, null, 'SecureStore');
+			await Model.getModel('SecureStore').updateByPath(item.body, item.id, null, 'SecureStore');
 		}
 		return true;
 	}
@@ -276,8 +276,14 @@ class SearchSecureStoreList extends Route {
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
-	_validate(req, res, token) {
-		const result = {
+	async _validate(req, res, token) {
+		const result: {
+			query: any,
+			skip: number,
+			limit: number,
+			sort: any,
+			project: any,
+		} = {
 			query: {
 				$and: [],
 			},
@@ -295,12 +301,12 @@ class SearchSecureStoreList extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.SecureStore.parseQuery(result.query, {}, Model.SecureStore.flatSchemaData);
+		result.query = Model.getModel('SecureStore').parseQuery(result.query, {}, Model.getModel('SecureStore').flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return Model.SecureStore.find(validate.query, {},
+		return Model.getModel('SecureStore').find(validate.query, {},
 			validate.limit, validate.skip, validate.sort, validate.project);
 	}
 }
@@ -322,7 +328,7 @@ class DeleteSecureStore extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
 		}
 
-		const secureStore = await Model.SecureStore.findById(req.params.id);
+		const secureStore = await Model.getModel('SecureStore').findById(req.params.id);
 		if (!secureStore) {
 			this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
@@ -332,7 +338,7 @@ class DeleteSecureStore extends Route {
 	}
 
 	async _exec(req, res, secureStore) {
-		await Model.SecureStore.rm(secureStore.id);
+		await Model.getModel('SecureStore').rm(secureStore.id);
 		return true;
 	}
 }
@@ -349,15 +355,15 @@ class SecureStoreCount extends Route {
 
 		this.activityBroadcast = false;
 
-		this.model = Model.SecureStore;
+		this.model = Model.getModel('SecureStore');
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		const result = {
 			query: {},
 		};
 
-		let query = {};
+		let query: any = {};
 
 		if (!query.$and) {
 			query.$and = [];
@@ -376,7 +382,7 @@ class SecureStoreCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return Model.SecureStore.count(validateResult.query);
+		return Model.getModel('SecureStore').count(validateResult.query);
 	}
 }
 routes.push(SecureStoreCount);
@@ -384,4 +390,4 @@ routes.push(SecureStoreCount);
 /**
  * @type {*[]}
  */
-module.exports = routes;
+export default routes;

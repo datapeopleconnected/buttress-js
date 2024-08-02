@@ -16,21 +16,20 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {ObjectId} = require('bson');
+import {ObjectId} from 'bson';
 
-const Route = require('../route');
-const Model = require('../../model');
-const Helpers = require('../../helpers');
+import Route from '../route';
+import Model from '../../model';
+import * as Helpers from '../../helpers';
 
-const routes = [];
-
+const routes: (typeof Route)[] = [];
 
 /**
  * @class GetLambdaExecution
  */
 class GetLambdaExecution extends Route {
 	constructor(nrp) {
-		super('lambda-execution/:id', 'GET LAMBDA EXECUTION', nrp, Model.LambdaExecution);
+		super('lambda-execution/:id', 'GET LAMBDA EXECUTION', nrp, Model.getModel('Lambda').Execution);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -66,7 +65,7 @@ routes.push(GetLambdaExecution);
  */
 class GetLambdaExecutionStatus extends Route {
 	constructor(nrp) {
-		super('lambda-execution/:id/status', 'GET LAMBDA EXECUTION STATUS', nrp, Model.LambdaExecution);
+		super('lambda-execution/:id/status', 'GET LAMBDA EXECUTION STATUS', nrp, Model.getModel('Lambda').Execution);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -91,7 +90,7 @@ class GetLambdaExecutionStatus extends Route {
 		return lambdaExecution.status;
 	}
 
-	_exec(req, res, status) {
+	async _exec(req, res, status) {
 		return {
 			status,
 		};
@@ -104,11 +103,11 @@ routes.push(GetLambdaExecutionStatus);
  */
 class UpdateLambdaExecution extends Route {
 	constructor(nrp) {
-		super('lambda-execution/:id', 'UPDATE LAMBDA EXECUTION', nrp, Model.LambdaExecution);
+		super('lambda-execution/:id', 'UPDATE LAMBDA EXECUTION', nrp, Model.getModel('Lambda').Execution);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.Activity.Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -150,13 +149,15 @@ routes.push(UpdateLambdaExecution);
  */
 class SearchExecutionList extends Route {
 	constructor(services) {
-		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', services, Model.LambdaExecution);
+		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', services, Model.getModel('Lambda').Execution);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
-	_validate(req, res, token) {
-		const result = {
+	async _validate(req, res, token) {
+		const result: {
+			query: any
+		} = {
 			query: {
 				$and: [],
 			},
@@ -182,7 +183,7 @@ routes.push(SearchExecutionList);
  */
 class LambdaExecutionCount extends Route {
 	constructor(nrp) {
-		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`, nrp, Model.LambdaExecution);
+		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`, nrp, Model.getModel('Lambda').Execution);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -190,12 +191,12 @@ class LambdaExecutionCount extends Route {
 		this.activityBroadcast = false;
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
 		const result = {
 			query: {},
 		};
 
-		let query = {};
+		let query: any = {};
 
 		if (!query.$and) {
 			query.$and = [];
@@ -222,4 +223,4 @@ routes.push(LambdaExecutionCount);
 /**
  * @type {*[]}
  */
-module.exports = routes;
+export default routes;

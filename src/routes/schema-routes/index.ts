@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-module.exports = [
+export default [
 	require('./add-many'),
 	require('./add-one'),
 	require('./delete-all'),
