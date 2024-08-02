@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-'use strict';
 
 /**
  * Buttress - The federated real-time open data platform
@@ -17,31 +16,32 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import cluster from 'cluster';
+import Sugar from 'sugar';
+import createConfig from 'node-env-obj';
+
 const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
 
-const Config = require('node-env-obj')({
+const Config = createConfig({
 	envFile: `.${env}.env`,
 	envPath: '../../',
 	configPath: '../',
-});
-const cluster = require('cluster');
-const Sugar = require('sugar');
+}) as unknown as Config;
 
 Sugar.Date.setLocale('en-GB');
 
-const BootstrapLambda = require('../bootstrap-lambda');
-const Logging = require('../helpers/logging');
+import Logging from '../helpers/logging';
+import BootstrapLambda from '../bootstrap-lambda';
+
+Logging.init('LAMBDA');
 
 if (cluster.isMaster) Logging.startupMessage();
 
-/**
- *
- */
-Logging.init('LAMBDA');
+(async () => {
+	try {
+		const app = new BootstrapLambda();
+		const isMaster = await app.init();
 
-const app = new BootstrapLambda();
-app.init()
-	.then((isMaster) => {
 		if (isMaster) {
 			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Master v${Config.app.version} in ${Config.env} mode.`);
 			Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
@@ -49,5 +49,13 @@ app.init()
 			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Worker v${Config.app.version} ` +
 				`in ${Config.env} mode.`);
 		}
-	})
-	.catch(Logging.Promise.logError());
+	} catch (err) {
+		if (err instanceof Error || typeof err === 'string') {
+			Logging.logError(err);
+		} else {
+			console.error(err);
+		}
+
+		process.exit(1);
+	}
+})();

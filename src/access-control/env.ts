@@ -16,16 +16,18 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {ObjectId} = require('bson');
+import {ObjectId} from 'bson';
 const Helpers = require('../helpers');
 
 const Model = require('../model');
 const shortId = require('../helpers').shortId;
 
-/**
- * @class PolicyEnv
- */
+
 class PolicyEnv {
+	private _globalQueryEnv: {[index: string]: string} = {};
+
+	queryOperator: {[index: string]: string};
+
 	constructor() {
 		this.queryOperator = {
 			'@eq': '$eq',
@@ -54,7 +56,7 @@ class PolicyEnv {
 		const path = environmentKey.replace('env', '').split('.').filter((v) => v);
 		const queryValue = path.reduce((obj, str) => obj?.[str], envVars);
 
-		let root = null;
+		let root: string | null = null;
 		if (typeof queryValue === 'string') {
 			[root] = queryValue.split('.');
 		} else if (typeof queryValue === 'object') {

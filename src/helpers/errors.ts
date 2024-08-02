@@ -99,3 +99,16 @@ export class CodedError extends Error {
 		this.code = code;
 	}
 }
+
+export default {
+	RequestError,
+	SchemaNotFound,
+	SchemaInvalid,
+	RouteMissingModel,
+	UnsupportedDatastore,
+	NotYetImplemented,
+    InvalidRequest,
+    Unauthenticated,
+    InvalidToken,
+    CodedError
+};

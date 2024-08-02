@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Sugar = require('sugar');
+import Sugar from 'sugar';
 
 const Model = require('../model');
 const Logging = require('../helpers/logging');
@@ -25,9 +25,7 @@ const Logging = require('../helpers/logging');
  * @class Conditoins
  */
 class Helpers {
-	constructor() {
-		this.__coreSchema = null;
-	}
+	private __coreSchema?: any[];
 
 	async cacheCoreSchema() {
 		if (this.__coreSchema) return this.__coreSchema;

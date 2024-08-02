@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Sugar = require('sugar');
+import Sugar from 'sugar';
 
 const {ObjectId} = require('bson');
 const accessControlHelpers = require('./helpers');
@@ -30,6 +30,10 @@ const Model = require('../model');
  * @class Filter
  */
 class Filter {
+	logicalOperator: string[];
+	arrayOperators: string[];
+	manipulationVerbs: string[];
+
 	constructor() {
 		this.logicalOperator = [
 			'@and',
@@ -62,7 +66,7 @@ class Filter {
 		}, Promise.resolve());
 	}
 
-	async addAccessControlPolicyRuleQuery(req, policyQuery, str, env = null) {
+	async addAccessControlPolicyRuleQuery(req, policyQuery, str, env: any = null) {
 		const translatedQuery = await this.__convertPrefixToQueryPrefix(policyQuery);
 		if (!req[str]) {
 			req[str] = {};
@@ -243,7 +247,7 @@ class Filter {
 
 		const originalQueryLogicalArr = originalQuery[key];
 		if (!originalQueryLogicalArr) {
-			modifiedQuery = this.__prioritiseAccessControlQuery(accessControlQueryLogicalArr, originalQuery, key);
+			modifiedQuery = this.__prioritiseAccessControlQuery(accessControlQueryLogicalArr, originalQuery);
 
 			if (!modifiedQuery) {
 				originalQuery[key] = accessControlQuery[key];
@@ -308,7 +312,7 @@ class Filter {
 	__addAccessControlQueryPropertyToOriginalQuery(originalQuery, accessControlQuery, key) {
 		const originalQueryObj = originalQuery[key];
 		const accessControlQueryObj = accessControlQuery[key];
-		let operandKey = null;
+		let operandKey: string | null = null;
 
 		if (!originalQueryObj) {
 			originalQuery[key] = accessControlQueryObj;
@@ -395,8 +399,8 @@ class Filter {
 		}, {});
 	}
 
-	__getQueryKeys(query, baseKey = null) {
-		return Object.keys(query).reduce((arr, key) => {
+	__getQueryKeys(query, baseKey?: string) {
+		return Object.keys(query).reduce((arr: string[], key) => {
 			if (key === '__crPath') return arr;
 
 			if (!baseKey) {

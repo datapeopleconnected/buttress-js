@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Sugar = require('sugar');
+import Sugar from 'sugar';
 
 const accessControlHelpers = require('./helpers');
 const Filter = require('./filter');
@@ -28,6 +28,23 @@ const Model = require('../model');
  * @class Conditoins
  */
 class Conditions {
+	queryOperator: string[];
+	conditionKeys: string[];
+	logicalOperator: string[];
+	conditionEndRange: string[];
+
+	IPv4Regex: RegExp;
+	IPv6Regex: RegExp;
+	conditionQueryRegex: RegExp;
+
+	envStr: string;
+	appShortId: string | null;
+
+	passedCondition: {
+		partial: boolean;
+		full: boolean;
+	};
+
 	constructor() {
 		this.queryOperator = [
 			'@eq',
@@ -94,7 +111,7 @@ class Conditions {
 		const conditions = userPolicies[key].conditions;
 		if (!conditions || !conditions.length) return;
 
-		let isConditionFullFilled = null;
+		let isConditionFullFilled: boolean | null = null;
 		await conditions.reduce(async (prev, condition) => {
 			await prev;
 
@@ -176,7 +193,7 @@ class Conditions {
 			return await this.__getDbConditionQueryResult(dbConditionQuery, varSchemaKey);
 		}
 
-		return await Object.keys(conditionObj[key]).reduce(async (innerPrev, operator) => {
+		return await Object.keys(conditionObj[key]).reduce(async (innerPrev: Promise<void | boolean>, operator) => {
 			await innerPrev;
 			return await this.__checkConditionQuery(req, envVar, operator, conditionObj, key, conditionKey);
 		}, Promise.resolve());
@@ -208,8 +225,8 @@ class Conditions {
 	}
 
 	async __getDbConditionQueryResult(query, varSchemaKey) {
-		const collection = `${this.appShortId}-${varSchemaKey}`;
-		const convertedQuery = {};
+		const collection = (this.appShortId) ? `${this.appShortId}-${varSchemaKey}` : varSchemaKey;
+		const convertedQuery: any = {};
 		await Filter.addAccessControlPolicyRuleQuery(convertedQuery, query, 'conditionQuery');
 		query = Model[collection].parseQuery(convertedQuery.conditionQuery, {}, Model[collection].flatSchemaData);
 		return await Model[collection].count(query) > 0;
@@ -290,22 +307,22 @@ class Conditions {
 		}
 
 		if (req.connection && req.connection.remoteAddress) {
-			requestIPAddress.connectionRemoteAddress = req.connection.remoteAddress;
+			requestIPAddress['connectionRemoteAddress'] = req.connection.remoteAddress;
 		}
 
 		if (req.socket && req.socket.remoteAddress) {
-			requestIPAddress.socketRemoteAddress = req.socket.remoteAddress;
+			requestIPAddress['socketRemoteAddress'] = req.socket.remoteAddress;
 		}
 
 		if (req.connection && req.connection.socket && req.connection.socket.remoteAddress) {
-			requestIPAddress.connectionSocketRemoteAddress = req.connection.socket.remoteAddress;
+			requestIPAddress['connectionSocketRemoteAddress'] = req.connection.socket.remoteAddress;
 		}
 
 		if (req.info && req.info.remoteAddress) {
-			requestIPAddress.infoRemoteAddress = req.info.remoteAddress;
+			requestIPAddress['infoRemoteAddress'] = req.info.remoteAddress;
 		}
 
-		const proxyClientIP = Object.keys(proxyIPAddress).reduce((arr, key) => {
+		const proxyClientIP = Object.keys(proxyIPAddress).reduce((arr: string[], key) => {
 			const ipAddress = this.__getClientIpFromXForwardedFor(key);
 			if (ipAddress) {
 				arr.push(ipAddress);
@@ -318,12 +335,12 @@ class Conditions {
 			return proxyClientIP.shift();
 		}
 
-		const clientIP = Object.keys(requestIPAddress).reduce((arr, key) => {
+		const clientIP = Object.keys(requestIPAddress).reduce((arr: string[], key) => {
 			let IPv4 = requestIPAddress[key].match(this.IPv4Regex);
-			IPv4 = (IPv4)? IPv4.pop() : null;
+			IPv4 = (IPv4) ? IPv4.pop() : null;
 			let IPv6 = requestIPAddress[key].match(this.IPv6Regex);
-			IPv6 = (IPv6)? IPv6.pop() : null;
-			arr.push((IPv4)? IPv4 : IPv6);
+			IPv6 = (IPv6) ? IPv6.pop() : null;
+			arr.push((IPv4) ? IPv4 : IPv6);
 
 			return arr;
 		}, []);
@@ -337,7 +354,7 @@ class Conditions {
 		return firstClientIP;
 	}
 
-	__getClientIpFromXForwardedFor(str) {
+	__getClientIpFromXForwardedFor(str: string) {
 		const forwardedIPs = str.split(',').map((ip) => {
 			ip = ip.trim();
 			if (ip.includes(':')) {
@@ -398,8 +415,8 @@ class Conditions {
 		return value;
 	}
 
-	async isPolicyDateTimeBased(conditions, pass = false) {
-		let res = false;
+	async isPolicyDateTimeBased(conditions, pass = false): Promise<string | boolean | undefined> {
+		let res: boolean | string = false;
 		for await (const key of Object.keys(conditions)) {
 			if (Array.isArray(conditions[key])) {
 				if (this.logicalOperator.includes(key)) {

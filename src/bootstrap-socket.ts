@@ -16,8 +16,9 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import net from 'net';
+
 const hash = require('object-hash');
-const net = require('net');
 const Express = require('express');
 const {createClient} = require('redis');
 const {v4: uuidv4} = require('uuid');
@@ -25,7 +26,7 @@ const Sugar = require('sugar');
 require('sugar-inflections');
 
 const sio = require('socket.io');
-const sioClient = require('socket.io-client');
+import sioClient, {Socket as sioClientSocket} from 'socket.io-client';
 const redisAdapter = require('@socket.io/redis-adapter');
 const {Emitter} = require('@socket.io/redis-emitter');
 
@@ -47,6 +48,10 @@ const Schema = require('./schema');
 const Datastore = require('./datastore');
 
 class BootstrapSocket extends Bootstrap {
+	private _dataShareSockets: {
+		[key: string]: sioClientSocket[]
+	} = {};
+
 	constructor() {
 		super();
 
@@ -176,6 +181,7 @@ class BootstrapSocket extends Bootstrap {
 		for await (const sockets of Object.values(this._dataShareSockets)) {
 			for await (const socket of sockets) {
 				Logging.logSilly('Closing data share socket');
+				// @ts-ignore - Double check the sio-client types
 				socket.destroy();
 			}
 		}
@@ -193,7 +199,7 @@ class BootstrapSocket extends Bootstrap {
 	 * @param {*} channel
 	 * @param {*} message
 	 */
-	async _messagePrimary(channel, message) {
+	async _messagePrimary(channel: string, message?: any): Promise<any> {
 		// Generate an identifier for message
 		const id = uuidv4();
 		// Notify the primary with our payload
@@ -464,7 +470,7 @@ class BootstrapSocket extends Bootstrap {
 		await this.__registerNRPWorkerListeners();
 		await this.__registerNRPProcessListeners();
 
-		process.on('message', (message, input) => {
+		process.on('message', (message: string, input: net.Socket) => {
 			if (message === 'buttress:connection') {
 				const connection = input;
 				this._socketExpressServer.emit('connection', connection);

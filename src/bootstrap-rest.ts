@@ -206,7 +206,7 @@ class BootstrapRest extends Bootstrap {
 		Logging.log('Checking for existing apps.');
 		const pathName = path.join(Config.paths.appData, 'super.json');
 
-		let superApp = null;
+		let superApp: any = null;
 
 		try {
 			const appCount = await Model.App.count();
@@ -232,13 +232,19 @@ class BootstrapRest extends Bootstrap {
 				apiPath: 'bjs',
 				domain: '',
 			});
+
+			if (!superApp) {
+				Logging.logError('Failed to create super app.');
+				throw new Error('Failed to create super app.');
+			}
+
 		} catch (err) {
 			Logging.logError(err);
 			Logging.logError('Failed to create super app.');
 			throw err;
 		}
 
-		await new Promise((resolve, reject) => {
+		await new Promise<void>((resolve, reject) => {
 			const app = Object.assign(superApp.app, {token: superApp.token.value});
 
 			if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, {recursive: true});
@@ -265,7 +271,7 @@ class BootstrapRest extends Bootstrap {
 	_getLocalSchemas() {
 		const filenames = fs.readdirSync(`${__dirname}/schema`);
 
-		const files = [];
+		const files: any[] = [];
 		for (let x = 0; x < filenames.length; x++) {
 			const file = filenames[x];
 			if (path.extname(file) === '.json') {

@@ -16,9 +16,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const cluster = require('cluster');
-const winston = require('winston');
-const Config = require('node-env-obj')();
+import cluster from 'cluster';
+import winston from 'winston';
+
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
 
 /**
  *
