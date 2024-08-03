@@ -243,8 +243,9 @@ export default class LambdaSchemaModel extends StandardModel {
 	 * @param {Object} app - Lambda app
 	 * @return {Promise} - fulfilled with lambda Object when the database request is completed
 	 */
-	// add(body, internals?: any) {
-	async add(body, auth, app) {
+	async add(body, internals?: any) {
+		const {auth, app} = internals;
+
 		await this.gitCloneLambda(body, auth, app);
 
 		let deployments: any[] = [];

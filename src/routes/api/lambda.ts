@@ -213,7 +213,7 @@ class AddLambda extends Route {
 		}
 
 		const app = await Model.getModel('App').findById(appId);
-		const lambda = await this.model.add(req.body.lambda, req.body.auth, app);
+		const lambda = await this.model.add(req.body.lambda, {auth: req.body.auth, app});
 		this._nrp?.emit('app-lambda:path-mutation-bust-cache', JSON.stringify(lambda));
 
 		return lambda;
