@@ -46,7 +46,9 @@ export default class RemoteCombinedModel extends StandardModel {
 		this._sdsRouting = services.get('sdsRouting');
 	}
 
-	async initAdapter(localDataStore, remoteDatastores) {
+	async initAdapter(localDataStore, remoteDatastores?) {
+		if (!remoteDatastores) throw new Error('Remote datastores are required');
+
 		if (localDataStore) {
 			this.localModel = new StandardModel(this.schemaData, this.app, this.__services);
 
@@ -110,13 +112,9 @@ export default class RemoteCombinedModel extends StandardModel {
 		return (await this._getTargetModel(body.sourceId)).add(body);
 	}
 
-	/**
-	 * @param {object} details
-	 * @param {string} id
-	 * @param {string} sourceId
-	 * @return {Promise}
-	 */
-	async update(details, id, sourceId) {
+	async update(details, id, sourceId?) {
+		if (!sourceId) throw new Error('SourceId is required for update');
+
 		return (await this._getTargetModel(sourceId)).updateById(id, details);
 	}
 
@@ -144,7 +142,9 @@ export default class RemoteCombinedModel extends StandardModel {
 	 * @param {string} sourceId
 	 * @return {Boolean}
 	 */
-	async isDuplicate(details, sourceId) {
+	async isDuplicate(details, sourceId?) {
+		if (!sourceId) throw new Error('SourceId is required for isDuplicate');
+
 		return (await this._getTargetModel(sourceId)).isDuplicate(details);
 		// // Make a call to each api, if any return true then return true.
 		// const calls = this.remoteModels.map((remoteModel) => remoteModel.isDuplicate(details));
@@ -157,8 +157,10 @@ export default class RemoteCombinedModel extends StandardModel {
 	 * @param {string} sourceId
 	 * @return {Promise}
 	 */
-	async rm(entity, sourceId) {
-		return await this._getTargetModel(sourceId).rm(entity.id);
+	async rm(entity, sourceId?) {
+		if (!sourceId) throw new Error('SourceId is required for rm');
+
+		return (await this._getTargetModel(sourceId)).rm(entity.id);
 	}
 
 	/**
@@ -182,8 +184,10 @@ export default class RemoteCombinedModel extends StandardModel {
 	 * @param {string} sourceId
 	 * @return {Promise}
 	 */
-	async findById(id, sourceId) {
-		return await this._getTargetModel(sourceId).findById(id);
+	async findById(id, sourceId?) {
+		if (!sourceId) throw new Error('SourceId is required for findById');
+
+		return (await this._getTargetModel(sourceId)).findById(id);
 	}
 
 	/**

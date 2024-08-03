@@ -452,8 +452,8 @@ export default class StandardModel {
 	/**
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	isDuplicate() {
-		return this.adapter.isDuplicate();
+	isDuplicate(details) {
+		return this.adapter.isDuplicate(details);
 	}
 
 	/**
