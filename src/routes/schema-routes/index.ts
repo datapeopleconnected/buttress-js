@@ -14,17 +14,30 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import addMany from './add-many';
+import addOne from './add-one';
+import deleteAll from './delete-all';
+import deleteMany from './delete-many';
+import deleteOne from './delete-one';
+import getList from './get-list';
+import getMany from './get-many';
+import getOne from './get-one';
+import searchCount from './search-count';
+import searchList from './search-list';
+import updateMany from './update-many';
+import updateOne from './update-one';
+
 export default [
-	require('./add-many'),
-	require('./add-one'),
-	require('./delete-all'),
-	require('./delete-many'),
-	require('./delete-one'),
-	require('./get-list'),
-	require('./get-many'),
-	require('./get-one'),
-	require('./search-count'),
-	require('./search-list'),
-	require('./update-many'),
-	require('./update-one'),
+	addMany,
+	addOne,
+	deleteAll,
+	deleteMany,
+	deleteOne,
+	getList,
+	getMany,
+	getOne,
+	searchCount,
+	searchList,
+	updateMany,
+	updateOne
 ];

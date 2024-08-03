@@ -18,8 +18,6 @@
 
 import Route from '../route';
 import Model from '../../model';
-// var Logging = require('../../logging');
-// import * as Helpers from '../../helpers';
 
 const routes: (typeof Route)[] = [];
 

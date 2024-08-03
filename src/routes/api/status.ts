@@ -17,8 +17,7 @@
  */
 
 import Route from '../route';
-// import Model from '../../model';
-const os = require('os');
+import os from 'os';
 
 const routes: (typeof Route)[] = [];
 

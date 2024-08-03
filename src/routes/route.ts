@@ -17,14 +17,14 @@
  */
 
 import Stream from 'stream';
-// const JSONStream = require('JSONStream');
-const Config = require('node-env-obj')();
+
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
+
 import Logging from '../helpers/logging';
-// import Schema from '../schema';
 import Model from '../model';
 import * as Helpers from '../helpers';
 import Schema from '../schema';
-// const AccessControl = require('../access-control');
 
 import SchemaModelRemote from '../model/type/remote';
 

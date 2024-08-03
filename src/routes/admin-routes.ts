@@ -15,14 +15,15 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const Config = require('node-env-obj')();
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
 
 import Model from '../model';
 import Logging from '../helpers/logging';
 import * as Helpers from '../helpers';
 
-const adminPolicy = require('../admin-policy.json');
-const adminLambda = require('../admin-lambda.json');
+import adminPolicy from '../admin-policy.json';
+import adminLambda from '../admin-lambda.json';
 
 // TODO: This file might be able to be rolled into routes.
 
@@ -223,7 +224,7 @@ class AdminRoutes {
 				policy.config.forEach((conf, idx) => {
 					const appQueryIdx = policy.config[idx].query.findIndex((q) => q.schema.includes('app'));
 					const userQueryIdx = policy.config[idx].query.findIndex((q) => q.schema.includes('user'));
-					if (appQueryIdx !== -1) {
+					if (appQueryIdx !== -1 && policy.config[idx].query[appQueryIdx].id) {
 						policy.config[idx].query[appQueryIdx].id = {
 							'@eq': appId,
 						};

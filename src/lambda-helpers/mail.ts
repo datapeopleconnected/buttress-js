@@ -22,7 +22,7 @@ import pug from 'pug';
  * Mail
  * @class
  */
-export default class Mail {
+class Mail {
 	_templates: {
 		[key: string]: pug.compileTemplate;
 	};
@@ -50,3 +50,4 @@ export default class Mail {
 		return this._templates[key];
 	}
 }
+export default new Mail();

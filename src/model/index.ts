@@ -25,18 +25,30 @@ import Datastore from '../datastore';
 import StandardModel from './type/standard';
 import RemoteCombinedModel from './type/remote-combined';
 
+import Activity from './core/activity';
+import App from './core/app';
+import AppDataSharing from './core/app-data-sharing';
+import Deployment from './core/deployment';
+import Lambda from './core/lambda';
+import LambdaExecution from './core/lambda-execution';
+import Policy from './core/policy';
+import SecureStore from './core/secure-store';
+import Token from './core/token';
+import Tracking from './core/tracking';
+import User from './core/user';
+
 const CoreModels = {
-	Activity: require('./core/activity'),
-	App: require('./core/app'),
-	AppDataSharing: require('./core/app-data-sharing'),
-	Deployment: require('./core/deployment'),
-	Lambda: require('./core/lambda'),
-	LambdaExecution: require('./core/lambda-execution'),
-	Policy: require('./core/policy'),
-	SecureStore: require('./core/secure-store'),
-	Token: require('./core/token'),
-	Tracking: require('./core/tracking'),
-	User: require('./core/user'),
+  Activity,
+  App,
+  AppDataSharing,
+  Deployment,
+  Lambda,
+  LambdaExecution,
+  Policy,
+  SecureStore,
+  Token,
+  Tracking,
+  User,
 };
 
 /**

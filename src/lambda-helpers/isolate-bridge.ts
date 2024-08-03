@@ -361,4 +361,4 @@ class IsolateBridge {
 		`).runSync(context);
 	}
 }
-module.exports = new IsolateBridge();
+export default new IsolateBridge();

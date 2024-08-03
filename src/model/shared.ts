@@ -18,7 +18,6 @@
 
 import Logging from '../helpers/logging';
 import * as Helpers from '../helpers';
-// const Model = require('./index');
 
 /* ********************************************************************************
 *

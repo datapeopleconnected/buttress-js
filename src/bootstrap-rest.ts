@@ -29,17 +29,17 @@ import createConfig from 'node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import Bootstrap, {LocalProcessMessage} from './bootstrap';
-const Model = require('./model');
-const Routes = require('./routes');
-const Logging = require('./helpers/logging');
-const Schema = require('./schema');
+import Model from './model';
+import Routes from './routes';
+import Logging from './helpers/logging';
+import Schema from './schema';
 import {shortId} from './helpers';
 
 import {SourceDataSharingRouting} from './services/source-ds-routing';
 
 import Datastore from './datastore';
 import Plugins from './plugins';
-const AccessControl = require('./access-control');
+import AccessControl from './access-control';
 
 // morgan.token('id', (req) => req.id);
 

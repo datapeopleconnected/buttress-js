@@ -18,12 +18,12 @@ import Route from '../route';
 import Model from '../../model';
 import * as Helpers from '../../helpers';
 import Schema from '../../schema';
-const Plugins = require('../../plugins');
+import Plugins from '../../plugins';
 
 /**
  * @class AddOne
  */
-module.exports = class AddOne extends Route {
+export default class AddOne extends Route {
 	constructor(schema, appShort, nrp) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 

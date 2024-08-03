@@ -28,7 +28,6 @@ import NRP from 'node-redis-pubsub';
 import createConfig from 'node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-// const Route = require('./route');
 import Logging from '../helpers/logging';
 import Schema from '../schema';
 import * as Helpers from '../helpers';

@@ -22,7 +22,7 @@ import Schema from '../../schema';
 /**
  * @class Count
  */
-module.exports = class SearchCount extends Route {
+export default class SearchCount extends Route {
 	constructor(schema, appShort, nrp) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 

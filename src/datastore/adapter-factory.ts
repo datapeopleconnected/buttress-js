@@ -19,8 +19,13 @@ const Config = createConfig() as unknown as Config;
 
 import Errors from '../helpers/errors';
 
+import MongoDB from './adapters/mongodb';
+import Buttress from './adapters/buttress';
+import Empty from './adapters/empty';
+
+
 export default class Datastore {
-	static create(connectionString: string, optsString: string) {
+	static create(connectionString: string, optsString?: string) {
 		const uri = new URL(connectionString);
 
 		if (!uri.pathname) {
@@ -32,12 +37,12 @@ export default class Datastore {
 		const Adapter = (() => {
 			switch (uri.protocol) {
 			case 'mongodb:':
-				return require('./adapters/mongodb.js');
+				return MongoDB;
 			case 'butt:':
 			case 'butts:':
-				return require('./adapters/buttress.js');
+				return Buttress;
 			case 'empty:':
-				return require('./adapters/empty.js');
+				return Empty;
 			default:
 				return null;
 			}

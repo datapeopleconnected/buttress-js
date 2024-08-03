@@ -15,21 +15,20 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
+import Stream from 'stream';
 import ivm from 'isolated-vm';
-const fetch = require('cross-fetch');
-const crypto = require('crypto');
-const URL = require('url').URL;
-const randomstring = require('randomstring');
-const base64url = require('base64url');
-const puppeteer = require('puppeteer');
+import fetch from 'cross-fetch';
+import crypto from 'crypto';
+import {URL} from 'url';
+import randomstring from 'randomstring';
+import base64url from 'base64url';
+import puppeteer from 'puppeteer';
 
-const lambdaMail = require('./mail');
+import lambdaMail from './mail';
 import Model from '../model';
 import Logging from '../helpers/logging';
-const {Errors} = require('../helpers');
-const IsolateBridge = require('./isolate-bridge');
-// const { Object } = require('sugar');
+import {Errors} from '../helpers';
+import IsolateBridge from './isolate-bridge';
 
 import createConfig from 'node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -198,18 +197,31 @@ class Helpers {
 				}
 
 				if (callback) {
-					response.body.on('data', (chunk) => {
-						chunk = chunk.toString();
+					if (!response.body) {
+						// Handle this
+						throw new Error('No response body');
+					}
+
+					if (response.body instanceof Stream) {
+						response.body.on('data', (chunk) => {
+							chunk = chunk.toString();
+							callback.applyIgnored(undefined, [
+								new ivm.ExternalCopy(new ivm.Reference(chunk).copySync()).copyInto(),
+							]);
+						});
+						response.body.on('end', () => {
+							return _resolve(output);
+						});
+						response.body.on('error', (err) => {
+							throw new Error(err);
+						});
+					} else {
+						const text = await response.text();
 						callback.applyIgnored(undefined, [
-							new ivm.ExternalCopy(new ivm.Reference(chunk).copySync()).copyInto(),
+							new ivm.ExternalCopy(new ivm.Reference(text).copySync()).copyInto(),
 						]);
-					});
-					response.body.on('end', () => {
 						return _resolve(output);
-					});
-					response.body.on('error', (err) => {
-						throw new Error(err);
-					});
+					}
 				} else {
 					output.body = (output.status === 200 || output.status === 201) ? await response.json() : null;
 					return _resolve(output);

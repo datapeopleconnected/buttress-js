@@ -34,7 +34,7 @@ interface Config {
   }
   logging: {
     level: string;
-    slow: boolean;
+    slow: string;
     slowTime: string;
   }
   listenPorts: {

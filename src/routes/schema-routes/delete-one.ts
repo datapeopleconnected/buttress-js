@@ -22,7 +22,7 @@ import Schema from '../../schema';
 /**
  * @class DeleteOne
  */
-module.exports = class DeleteOne extends Route {
+export default class DeleteOne extends Route {
 	constructor(schema, appShort, nrp) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 

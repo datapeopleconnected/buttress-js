@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Buttress = require('@buttress/api');
+import Buttress from '@buttress/api';
 
 import Schema from '../../schema';
 import Logging from '../../helpers/logging';

@@ -22,7 +22,7 @@ import NRP from 'node-redis-pubsub';
 import createConfig from 'node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-const Logging = require('./helpers/logging');
+import Logging from './helpers/logging';
 
 interface WorkerHolder {
 	initiated: boolean;

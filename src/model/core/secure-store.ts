@@ -17,7 +17,7 @@
  */
 
 import StandardModel from '../type/standard';
-const Helpers = require('../../helpers');
+import * as Helpers from '../../helpers';
 
 class SecureStoreSchemaModel extends StandardModel {
 	constructor(services) {
@@ -97,4 +97,4 @@ class SecureStoreSchemaModel extends StandardModel {
 /**
  * Exports
  */
-module.exports = SecureStoreSchemaModel;
+export default SecureStoreSchemaModel;

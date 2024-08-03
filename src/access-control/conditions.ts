@@ -18,9 +18,9 @@
 
 import Sugar from 'sugar';
 
-const accessControlHelpers = require('./helpers');
-const Filter = require('./filter');
-const PolicyEnv = require('./env');
+import accessControlHelpers from './helpers';
+import Filter from './filter';
+import PolicyEnv from './env';
 import * as Helpers from '../helpers';
 import Model from '../model';
 

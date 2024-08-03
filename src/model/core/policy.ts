@@ -150,4 +150,4 @@ class PolicySchemaModel extends StandardModel {
 /**
  * Exports
  */
-module.exports = PolicySchemaModel;
+export default PolicySchemaModel;

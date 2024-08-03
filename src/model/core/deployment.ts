@@ -87,4 +87,4 @@ class DeploymentSchemaModel extends StandardModel {
 /**
  * Exports
  */
-module.exports = DeploymentSchemaModel;
+export default DeploymentSchemaModel;

@@ -19,7 +19,6 @@
 import Route from '../route';
 import Model from '../../model';
 import * as Helpers from '../../helpers';
-// const Logging = require('../../logging');
 
 const routes: (typeof Route)[] = [];
 

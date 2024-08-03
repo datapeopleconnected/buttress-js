@@ -16,8 +16,10 @@
 
 import { createHash } from 'crypto';
 
-// const Config = require('node-env-obj')();
-const Factory = require('./adapter-factory');
+// import createConfig from 'node-env-obj';
+// const Config = createConfig() as unknown as Config;
+
+import Factory from './adapter-factory';
 
 import Logging from '../helpers/logging';
 
@@ -44,6 +46,9 @@ class Datastore {
 	}
 
 	setAdapter(config: DatastoreConfig) {
+
+		console.log(Factory);
+
 		this._adapter = Factory.create(config.connectionString, config.options);
 	}
 

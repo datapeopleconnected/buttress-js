@@ -23,7 +23,7 @@ import Schema from '../../schema';
 /**
  * @class GetList
  */
-module.exports = class GetList extends Route {
+export default class GetList extends Route {
 	constructor(schema, appShort, nrp) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 

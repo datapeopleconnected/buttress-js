@@ -17,10 +17,7 @@
  */
 import Logging from '../../helpers/logging';
 import Schema from '../../schema';
-// import Sugar from 'sugar';
 import * as Shared from '../shared';
-// import * as Helpers from '../../helpers';
-// const Config = require('node-env-obj')('../../');
 
 import StandardModel from '../type/standard';
 
@@ -179,4 +176,4 @@ class ActivitySchemaModel extends StandardModel {
 /**
  * Exports
  */
-module.exports = ActivitySchemaModel;
+export default ActivitySchemaModel;

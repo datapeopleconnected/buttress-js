@@ -35,4 +35,8 @@ export default class EmptyAdapter extends AbstractAdapter {
 	get ID() {
 		return AdapterId;
 	}
+
+	async connect() {
+		return Promise.resolve();
+	}
 };

@@ -179,4 +179,4 @@ class LambdaExecutionSchemaModel extends StandardModel {
 /**
  * Exports
  */
-module.exports = LambdaExecutionSchemaModel;
+export default LambdaExecutionSchemaModel;

@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const Crypto = require('crypto');
+import Crypto from 'crypto';
 // import * as Shared from '../shared';
 import Logging from '../../helpers/logging';
 
@@ -265,4 +265,4 @@ class TokenSchemaModel extends StandardModel {
 /**
  * Exports
  */
-module.exports = TokenSchemaModel;
+export default TokenSchemaModel;

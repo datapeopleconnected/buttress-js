@@ -16,16 +16,16 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const EventEmitter = require('events');
-
-const plugins = require('./index');
+import EventEmitter from 'events';
+import plugins from'./index';
 
 class ButtressPlugin extends EventEmitter {
+	appType?: string;
+	processRole?: string;
+	infrastructureRole?: string;
+
 	constructor() {
 		super();
-		this.appType = null;
-		this.processRole = null;
-		this.infrastructureRole = null;
 	}
 
 	async initialise() {
@@ -59,4 +59,4 @@ class ButtressPlugin extends EventEmitter {
 	}
 }
 
-module.exports = ButtressPlugin;
+export default ButtressPlugin;

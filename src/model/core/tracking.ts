@@ -199,4 +199,4 @@ class TrackingSchemaModel extends StandardModel {
 * EXPORTS
 *
 **********************************************************************************/
-module.exports = TrackingSchemaModel;
+export default TrackingSchemaModel;

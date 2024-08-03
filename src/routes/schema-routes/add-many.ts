@@ -22,7 +22,7 @@ import Schema from '../../schema';
 /**
  * @class AddMany
  */
-module.exports = class AddMany extends Route {
+export default class AddMany extends Route {
 	constructor(schema, appShort, nrp, redisClient) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 

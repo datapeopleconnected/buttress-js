@@ -15,20 +15,32 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-const morgan = require('morgan');
+import morgan from 'morgan';
 
-const Config = require('node-env-obj')();
+import createConfig from 'node-env-obj';
+const Config = createConfig() as unknown as Config;
 
-const Bootstrap = require('./bootstrap');
-const Datastore = require('./datastore');
-const Logging = require('./helpers/logging');
-const Model = require('./model');
+import Bootstrap from './bootstrap';
+import Datastore from './datastore';
+import Logging from './helpers/logging';
+import Model from './model';
 
-const LambdaManager = require('./lambda/lambda-manager');
-const LambdaRunner = require('./lambda/lambda-runner');
+import LambdaManager from './lambda/lambda-manager';
+import LambdaRunner from './lambda/lambda-runner';
 
 morgan.token('id', (req) => req.id);
 export default class BootstrapLambda extends Bootstrap {
+	routes: any;
+
+	primaryDatastore: any;
+
+	__apiWorkers: number;
+	__pathMutationWorkers: number;
+	__cronWorkers: number;
+
+	__lambdaManagerProcess?: LambdaManager;
+	__lambdaWorkerProcess?: LambdaRunner;
+
 	constructor() {
 		super();
 
@@ -39,10 +51,6 @@ export default class BootstrapLambda extends Bootstrap {
 		this.__apiWorkers = 0;
 		this.__pathMutationWorkers = 0;
 		this.__cronWorkers = 0;
-
-		// This need to be seperate incase the user is running in single instance mode.
-		this.__lambdaManagerProcess = null;
-		this.__lambdaWorkerProcess = null;
 	}
 
 	async init() {
@@ -82,9 +90,9 @@ export default class BootstrapLambda extends Bootstrap {
 			Logging.logVerbose(`Primary Main LAMBDA`);
 			await Model.initCoreModels();
 
-			this.__nrp.on('lambdaProcessWorker:worker-initiated', (id) => {
+			this.__nrp?.on('lambdaProcessWorker:worker-initiated', (id) => {
 				const type = this.__getLambdaWorkerType();
-				this.__nrp.emit('lambdaProcessMaster:worker-type', {id, type});
+				this.__nrp?.emit('lambdaProcessMaster:worker-type', JSON.stringify({id, type}));
 			});
 
 			this.__lambdaManagerProcess = new LambdaManager(this.__services);
@@ -99,11 +107,11 @@ export default class BootstrapLambda extends Bootstrap {
 		await Model.initCoreModels();
 
 		const type = await new Promise((resolve) => {
-			this.__nrp.on('lambdaProcessMaster:worker-type', (data) => {
+			this.__nrp?.on('lambdaProcessMaster:worker-type', (data: any) => {
 				if (data.id !== this.id) return;
 				resolve(data.type);
 			}, () => {
-				this.__nrp.emit('lambdaProcessWorker:worker-initiated', this.id);
+				this.__nrp?.emit('lambdaProcessWorker:worker-initiated', this.id);
 			});
 		});
 

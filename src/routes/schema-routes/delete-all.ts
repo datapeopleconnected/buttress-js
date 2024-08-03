@@ -22,7 +22,7 @@ import Schema from '../../schema';
 /**
  * @class DeleteAll
  */
-module.exports = class DeleteAll extends Route {
+export default class DeleteAll extends Route {
 	constructor(schema, appShort, nrp) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 

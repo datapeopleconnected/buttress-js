@@ -18,7 +18,7 @@ import Logging from './logging';
 import Sugar from 'sugar';
 import crypto from 'crypto';
 
-const Datastore = require('../datastore');
+import Datastore from '../datastore';
 
 import uuid from 'uuid';
 

@@ -17,14 +17,13 @@
  */
 import {ObjectId} from 'bson';
 
-// const AccessControl = require('../../access-control');
 import Route from '../route';
 import Model from '../../model';
 import * as Helpers from '../../helpers';
 
-const routes: (typeof Route)[] = [];
+import Datastore from'../../datastore';
 
-const Datastore = require('../../datastore');
+const routes: (typeof Route)[] = [];
 
 /**
  * @class GetPolicy

@@ -18,11 +18,11 @@
 import Route from '../route';
 import Model from '../../model';
 import * as Helpers from '../../helpers';
-// import Schema from '../../schema';
-// const Logging = require('../../logging');
 
-const Datastore = require('../../datastore');
-const DatastoreFactory = require('../../datastore/adapter-factory');
+import Datastore from '../../datastore';
+import DatastoreFactory from '../../datastore/adapter-factory';
+
+import ButtressAdapater from '../../datastore/adapters/buttress';
 
 /**
  * The data sharing agreement registration process should be as follows:
@@ -47,6 +47,10 @@ const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
 	// Create datastore, this will be used to activate the data sharing agreement.
 	const buttressAdapter = DatastoreFactory.create(connectionString);
 	await buttressAdapter.connect();
+
+	if (buttressAdapter instanceof ButtressAdapater === false) {
+		throw new Error('Expected a Buttress Adapter but got something else');
+	}
 
 	// Send a request to the remote app to activate the data sharing agreement.
 	const activationResult = await buttressAdapter.activateDataSharing(dataSharing.remoteApp.token, newToken);

@@ -44,7 +44,7 @@ import lambdaHelpers from '../lambda-helpers/helpers';
  *
  * @class LambdasRunner
  */
-class LambdasRunner {
+export default class LambdasRunner {
 
 	id: string;
 	name: string;
@@ -608,4 +608,3 @@ class LambdasRunner {
 		}
 	}
 }
-module.exports = LambdasRunner;

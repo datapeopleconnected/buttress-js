@@ -35,7 +35,7 @@ const exec = util.promisify(cpExec);
 /**
  * @class LambdaManager
  */
-class LambdaManager {
+export default class LambdaManager {
 	name: string;
 
 	private __nrp?: NRP.NodeRedisPubSub;
@@ -582,5 +582,3 @@ class LambdaManager {
 		}
 	}
 }
-
-module.exports = LambdaManager;

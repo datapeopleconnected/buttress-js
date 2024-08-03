@@ -22,7 +22,7 @@ import Schema from '../../schema';
 /**
  * @class GetMany
  */
-module.exports = class GetMany extends Route {
+export default class GetMany extends Route {
 	constructor(schema, appShort, nrp) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 

@@ -20,7 +20,7 @@ import Route from '../route';
 import Model from '../../model';
 import Logging from '../../helpers/logging';
 import * as Helpers from '../../helpers';
-const Datastore = require('../../datastore');
+import Datastore from'../../datastore';
 
 const routes: (typeof Route)[] = [];
 
