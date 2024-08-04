@@ -17,7 +17,7 @@
 const {describe, it} = require('mocha');
 const assert = require('assert');
 
-const BootstrapRest = require('../../../dist/bootstrap-rest');
+const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
 
 describe('bootstrap-rest:class', () => {
 	it(`should create an instance of the bootstrapRest class`, () => {

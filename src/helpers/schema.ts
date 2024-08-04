@@ -453,9 +453,10 @@ export const unflattenObject = __unflattenObject;
  * @param {Integer} bodyIdx
  * @return {Object} - A fully populated object using schema defaults and values provided.
  */
-const __sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number) => {
+export const sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number) => {
 	const res = {};
 	const objects = {};
+
 	for (const property in schemaFlat) {
 		if (!{}.hasOwnProperty.call(schemaFlat, property)) continue;
 		let propVal = values.find((v) => v.path === property);
@@ -508,8 +509,11 @@ const __sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number) => 
 
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
-			if (!body) throw new Error('body is required but condition wasn\'t set to handle it being undefined');
-			value = value.map((v, idx) => __sanitizeObject(config.__schema, __getFlattenedBody(v), body[property], idx));
+			if (!body || !body[property]) {
+				value = [];
+			} else {
+				value = value.map((v, idx) => sanitizeObject(config.__schema, __getFlattenedBody(v), body[property], idx));
+			}
 		} else if (root && path.length > 0 || schemaFlat[property].__type === 'object') {
 			if (!root) throw new Error('root is required but condition wasn\'t set to handle it being undefined');
 			if (!objects[root]) {
@@ -523,7 +527,6 @@ const __sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number) => 
 	}
 	return res;
 };
-export const sanitizeObject = __sanitizeObject;
 
 const __getSchemaKeys = (obj) => {
 	return Object.keys(obj).reduce((arr: string[], key) => {
