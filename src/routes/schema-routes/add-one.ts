@@ -24,10 +24,10 @@ import Plugins from '../../plugins';
  * @class AddOne
  */
 export default class AddOne extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `ADD ${schema.name}`, nrp);
+		super(`${schemaRoutePath}`, `ADD ${schema.name}`, services);
 		this.__configureSchemaRoute();
 
 		this.verb = Route.Constants.Verbs.POST;

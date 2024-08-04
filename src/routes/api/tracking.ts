@@ -26,8 +26,8 @@ const routes: (typeof Route)[] = [];
  * @class GetTrackingList
  */
 class GetTrackingList extends Route {
-	constructor(nrp) {
-		super('tracking', 'GET TRACKING LIST', nrp, Model.getModel('Tracking'));
+	constructor(services) {
+		super('tracking', 'GET TRACKING LIST', services, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -46,8 +46,8 @@ routes.push(GetTrackingList);
  * @class AddTracking
  */
 class AddTracking extends Route {
-	constructor(nrp) {
-		super('tracking', 'ADD TRACKING', nrp, Model.getModel('Tracking'));
+	constructor(services) {
+		super('tracking', 'ADD TRACKING', services, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -84,8 +84,8 @@ class AddTracking extends Route {
 routes.push(AddTracking);
 
 class UpdateTracking extends Route {
-	constructor(nrp) {
-		super('tracking/:id', 'UPDATE TRACKING', nrp, Model.getModel('Tracking'));
+	constructor(services) {
+		super('tracking/:id', 'UPDATE TRACKING', services, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -130,8 +130,8 @@ routes.push(UpdateTracking);
  * @class DeleteTracking
  */
 class DeleteTracking extends Route {
-	constructor(nrp) {
-		super('tracking/:id', 'DELETE TRACKING', nrp, Model.getModel('Tracking'));
+	constructor(services) {
+		super('tracking/:id', 'DELETE TRACKING', services, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
@@ -157,8 +157,8 @@ routes.push(DeleteTracking);
  * @class DeleteAllTrackings
  */
 class DeleteAllTrackings extends Route {
-	constructor(nrp) {
-		super('tracking', 'DELETE ALL TRACKINGS', nrp, Model.getModel('Tracking'));
+	constructor(services) {
+		super('tracking', 'DELETE ALL TRACKINGS', services, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}

@@ -23,13 +23,13 @@ import Schema from '../../schema';
  * @class UpdateOne
  */
 export default class UpdateOne extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
 		super([
 			`${schemaRoutePath}/:id`,
 			`${schemaRoutePath}/:sourceId/:id`,
-		], `UPDATE ${schema.name}`, nrp);
+		], `UPDATE ${schema.name}`, services);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;

@@ -46,9 +46,6 @@ class Datastore {
 	}
 
 	setAdapter(config: DatastoreConfig) {
-
-		console.log(Factory);
-
 		this._adapter = Factory.create(config.connectionString, config.options);
 	}
 

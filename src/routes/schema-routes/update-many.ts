@@ -23,10 +23,10 @@ import Schema from '../../schema';
  * @class UpdateMany
  */
 export default class UpdateMany extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/update`, `BULK UPDATE ${schema.name}`, nrp);
+		super(`${schemaRoutePath}/bulk/update`, `BULK UPDATE ${schema.name}`, services);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;

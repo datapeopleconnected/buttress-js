@@ -29,8 +29,8 @@ const routes: (typeof Route)[] = [];
  * @class GetPolicy
  */
 class GetPolicy extends Route {
-	constructor(nrp, redisClient) {
-		super('policy/:id', 'GET POLICY', nrp, redisClient);
+	constructor(services) {
+		super('policy/:id', 'GET POLICY', services);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -65,8 +65,8 @@ routes.push(GetPolicy);
  * @class GetPolicyList
  */
 class GetPolicyList extends Route {
-	constructor(nrp) {
-		super('policy', 'GET POLICY LIST', nrp);
+	constructor(services) {
+		super('policy', 'GET POLICY LIST', services);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -106,8 +106,8 @@ routes.push(GetPolicyList);
  * @class SearchPolicyList
  */
 class SearchPolicyList extends Route {
-	constructor(nrp) {
-		super('policy', 'SEARCH POLICY LIST', nrp);
+	constructor(services) {
+		super('policy', 'SEARCH POLICY LIST', services);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -152,8 +152,8 @@ routes.push(SearchPolicyList);
  * @class AddPolicy
  */
 class AddPolicy extends Route {
-	constructor(nrp) {
-		super('policy', 'ADD POLICY', nrp);
+	constructor(services) {
+		super('policy', 'ADD POLICY', services);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -209,8 +209,8 @@ routes.push(AddPolicy);
  * @class UpdatePolicy
  */
 class UpdatePolicy extends Route {
-	constructor(nrp) {
-		super('policy/:id', 'UPDATE POLICY', nrp);
+	constructor(services) {
+		super('policy/:id', 'UPDATE POLICY', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -254,8 +254,8 @@ routes.push(UpdatePolicy);
  * @class BulkUpdatePolicy
  */
 class BulkUpdatePolicy extends Route {
-	constructor(nrp) {
-		super('policy/bulk/update', 'UPDATE POLICY', nrp);
+	constructor(services) {
+		super('policy/bulk/update', 'UPDATE POLICY', services);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -301,8 +301,8 @@ routes.push(BulkUpdatePolicy);
  * @class SyncPolicies
  */
 class SyncPolicies extends Route {
-	constructor(nrp) {
-		super('policy/sync', 'SYNC POLICIES', nrp);
+	constructor(services) {
+		super('policy/sync', 'SYNC POLICIES', services);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -352,8 +352,8 @@ class SyncPolicies extends Route {
  * @class PolicyCount
  */
 class PolicyCount extends Route {
-	constructor(nrp) {
-		super(`policy/count`, `COUNT POLICIES`, nrp);
+	constructor(services) {
+		super(`policy/count`, `COUNT POLICIES`, services);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -399,8 +399,8 @@ routes.push(SyncPolicies);
  * @class DeleteTransientPolicy
  */
 class DeleteTransientPolicy extends Route {
-	constructor(nrp) {
-		super('policy/delete-transient-policy', 'DELETE POLICY BY NAME', nrp);
+	constructor(services) {
+		super('policy/delete-transient-policy', 'DELETE POLICY BY NAME', services);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -437,8 +437,8 @@ routes.push(DeleteTransientPolicy);
  * @class DeletePolicy
  */
 class DeletePolicy extends Route {
-	constructor(nrp) {
-		super('policy/:id', 'DELETE POLICY', nrp);
+	constructor(services) {
+		super('policy/:id', 'DELETE POLICY', services);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -474,8 +474,8 @@ routes.push(DeletePolicy);
  * @class DeleteAppPolicies
  */
 class DeleteAppPolicies extends Route {
-	constructor(nrp) {
-		super('policy', 'DELETE ALL APP POLICIES', nrp);
+	constructor(services) {
+		super('policy', 'DELETE ALL APP POLICIES', services);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}

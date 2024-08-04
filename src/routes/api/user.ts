@@ -28,8 +28,8 @@ const routes: (typeof Route)[] = [];
  * @class GetUserList
  */
 class GetUserList extends Route {
-	constructor(nrp, redisClient) {
-		super('user', 'GET USER LIST', nrp, redisClient);
+	constructor(services) {
+		super('user', 'GET USER LIST', services);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -52,8 +52,8 @@ routes.push(GetUserList);
  * @class GetUser
  */
 class GetUser extends Route {
-	constructor(nrp) {
-		super('user/:id', 'GET USER', nrp);
+	constructor(services) {
+		super('user/:id', 'GET USER', services);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -127,8 +127,8 @@ routes.push(GetUser);
  * @class FindUser
  */
 class FindUser extends Route {
-	constructor(nrp) {
-		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER', nrp);
+	constructor(services) {
+		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER', services);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -171,8 +171,8 @@ routes.push(FindUser);
  * @class GetUserByToken
  */
 class GetUserByToken extends Route {
-	constructor(nrp) {
-		super('user/get-by-token', 'GET USER BY TOKEN', nrp);
+	constructor(services) {
+		super('user/get-by-token', 'GET USER BY TOKEN', services);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -218,8 +218,8 @@ routes.push(GetUserByToken);
  * @class CreateUserAuthToken
  */
 class CreateUserAuthToken extends Route {
-	constructor(nrp) {
-		super('user/:id/token', 'CREATE USER AUTH TOKEN', nrp);
+	constructor(services) {
+		super('user/:id/token', 'CREATE USER AUTH TOKEN', services);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -352,8 +352,8 @@ routes.push(CreateUserAuthToken);
  * @class AddUser
  */
 class AddUser extends Route {
-	constructor(nrp) {
-		super('user', 'ADD USER', nrp);
+	constructor(services) {
+		super('user', 'ADD USER', services);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -415,8 +415,8 @@ routes.push(AddUser);
  * @class UpdateUser
  */
 class UpdateUser extends Route {
-	constructor(nrp) {
-		super('user/:id', 'UPDATE USER', nrp);
+	constructor(services) {
+		super('user/:id', 'UPDATE USER', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -460,8 +460,8 @@ routes.push(UpdateUser);
  * @class SetUserPolicyProperties
  */
 class SetUserPolicyProperties extends Route {
-	constructor(nrp) {
-		super('user/:id/policy-property', 'SET USER POLICY PROPERTY', nrp);
+	constructor(services) {
+		super('user/:id/policy-property', 'SET USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -540,8 +540,8 @@ routes.push(SetUserPolicyProperties);
  * @class UpdateUserPolicyProperties
  */
 class UpdateUserPolicyProperties extends Route {
-	constructor(nrp) {
-		super('user/:id/update-policy-property', 'UPDATE USER POLICY PROPERTY', nrp);
+	constructor(services) {
+		super('user/:id/update-policy-property', 'UPDATE USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -607,8 +607,8 @@ routes.push(UpdateUserPolicyProperties);
  * @class RemoveUserPolicyProperties
  */
 class RemoveUserPolicyProperties extends Route {
-	constructor(nrp) {
-		super('user/:id/remove-policy-property', 'REMOVE USER POLICY PROPERTY', nrp);
+	constructor(services) {
+		super('user/:id/remove-policy-property', 'REMOVE USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -665,8 +665,8 @@ routes.push(RemoveUserPolicyProperties);
  * @class ClearUserPolicyProperties
  */
 class ClearUserPolicyProperties extends Route {
-	constructor(nrp) {
-		super('user/:id/clear-policy-property', 'CLEAR USER POLICY PROPERTY', nrp);
+	constructor(services) {
+		super('user/:id/clear-policy-property', 'CLEAR USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -714,8 +714,8 @@ routes.push(ClearUserPolicyProperties);
  * @class DeleteAllUsers
  */
 class DeleteAllUsers extends Route {
-	constructor(nrp) {
-		super('user', 'DELETE ALL USERS', nrp);
+	constructor(services) {
+		super('user', 'DELETE ALL USERS', services);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -735,8 +735,8 @@ routes.push(DeleteAllUsers);
  * @class DeleteUser
  */
 class DeleteUser extends Route {
-	constructor(nrp) {
-		super('user/:id', 'DELETE USER', nrp);
+	constructor(services) {
+		super('user/:id', 'DELETE USER', services);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
@@ -781,8 +781,8 @@ routes.push(DeleteUser);
  * @class clearUserLocalData
  */
 class clearUserLocalData extends Route {
-	constructor(nrp) {
-		super('user/:id/clear-local-data', 'CLEAR USER LOCAL DATA', nrp);
+	constructor(services) {
+		super('user/:id/clear-local-data', 'CLEAR USER LOCAL DATA', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -820,8 +820,8 @@ routes.push(clearUserLocalData);
  * @class SearchUserList
  */
 class SearchUserList extends Route {
-	constructor(nrp) {
-		super('user', 'SEARCH USER LIST', nrp);
+	constructor(services) {
+		super('user', 'SEARCH USER LIST', services);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -866,8 +866,8 @@ routes.push(SearchUserList);
  * @class UserCount
  */
 class UserCount extends Route {
-	constructor(nrp) {
-		super(`user/count`, `COUNT USERS`, nrp);
+	constructor(services) {
+		super(`user/count`, `COUNT USERS`, services);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 

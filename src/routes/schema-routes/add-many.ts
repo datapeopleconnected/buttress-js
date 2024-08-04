@@ -23,10 +23,10 @@ import Schema from '../../schema';
  * @class AddMany
  */
 export default class AddMany extends Route {
-	constructor(schema, appShort, nrp, redisClient) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/add`, `BULK ADD ${schema.name}`, nrp, redisClient);
+		super(`${schemaRoutePath}/bulk/add`, `BULK ADD ${schema.name}`, services);
 		this.__configureSchemaRoute();
 
 		this.verb = Route.Constants.Verbs.POST;

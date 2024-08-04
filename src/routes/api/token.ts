@@ -25,8 +25,8 @@ const routes: (typeof Route)[] = [];
  * @class GetTokenList
  */
 class GetTokenList extends Route {
-	constructor(nrp) {
-		super('token', 'GET TOKEN LIST', nrp, Model.getModel('Token'));
+	constructor(services) {
+		super('token', 'GET TOKEN LIST', services, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -54,8 +54,8 @@ routes.push(GetTokenList);
  * @class DeleteAllTokens
  */
 class DeleteAllTokens extends Route {
-	constructor(nrp) {
-		super('token/:type?', 'DELETE ALL TOKENS', nrp, Model.getModel('Token'));
+	constructor(services) {
+		super('token/:type?', 'DELETE ALL TOKENS', services, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -79,8 +79,8 @@ routes.push(DeleteAllTokens);
  * @class SearchUserToken
  */
 class SearchUserToken extends Route {
-	constructor(nrp) {
-		super('token', 'SEARCH USER TOKEN', nrp, Model.getModel('Token'));
+	constructor(services) {
+		super('token', 'SEARCH USER TOKEN', services, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.SEARCH;

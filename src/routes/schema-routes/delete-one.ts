@@ -23,10 +23,10 @@ import Schema from '../../schema';
  * @class DeleteOne
  */
 export default class DeleteOne extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/:id`, `DELETE ${schema.name}`, nrp);
+		super(`${schemaRoutePath}/:id`, `DELETE ${schema.name}`, services);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;

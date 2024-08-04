@@ -33,6 +33,7 @@ import Schema from '../schema';
 import * as Helpers from '../helpers';
 import AccessControl from '../access-control';
 import Model from '../model';
+import Route from './route';
 
 import AdminRoutes from './admin-routes';
 import SchemaRoutes from './schema-routes';
@@ -73,6 +74,7 @@ class Routes {
 		this._services = services;
 
 		this._nrp = services.get('nrp');
+		if (!this._nrp) throw new Error('Routes: NRP not found in services');
 	}
 
 	/**
@@ -328,13 +330,13 @@ class Routes {
 	 * @param  {Object} schemaData - schema data object
 	 */
 	_initSchemaRoutes(express, app, schemaData) {
-		SchemaRoutes.forEach((Route) => {
-			let route: typeof Route;
+		SchemaRoutes.forEach((SchemaRoute) => {
+			let route: Route;
 
 			const appShortId = Helpers.shortId(app.id);
 
 			try {
-				route = new Route(schemaData, appShortId, this._services);
+				route = new SchemaRoute(schemaData, appShortId, this._services);
 			} catch (err) {
 				if (err instanceof Helpers.Errors.RouteMissingModel) return Logging.logWarn(`${err.message} for ${app.name}`);
 

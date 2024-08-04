@@ -24,10 +24,10 @@ import Schema from '../../schema';
  * @class GetList
  */
 export default class GetList extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `GET ${schema.name} LIST`, nrp);
+		super(`${schemaRoutePath}`, `GET ${schema.name} LIST`, services);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;

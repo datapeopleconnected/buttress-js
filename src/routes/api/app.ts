@@ -55,8 +55,8 @@ routes.push(GetAppList);
  * @class SearchAppList
  */
 class SearchAppList extends Route {
-	constructor(nrp) {
-		super('app', 'GET APP LIST', nrp, Model.getModel('App'));
+	constructor(services) {
+		super('app', 'GET APP LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 	}
@@ -101,9 +101,9 @@ routes.push(SearchAppList);
  * @class GetApp
  */
 class GetApp extends Route {
-	constructor(nrp) {
+	constructor(services) {
 		// Should change to app apiPath instead of ID
-		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', nrp, Model.getModel('App'));
+		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -136,8 +136,8 @@ routes.push(GetApp);
  * @class AddApp
  */
 class AddApp extends Route {
-	constructor(nrp) {
-		super('app', 'APP ADD', nrp, Model.getModel('App'));
+	constructor(services) {
+		super('app', 'APP ADD', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -218,8 +218,8 @@ routes.push(AddApp);
  * @class DeleteApp
  */
 class DeleteApp extends Route {
-	constructor(nrp) {
-		super('app/:id', 'DELETE APP', nrp, Model.getModel('App'));
+	constructor(services) {
+		super('app/:id', 'DELETE APP', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -250,8 +250,8 @@ routes.push(DeleteApp);
  * @class GetAppSchema
  */
 class GetAppSchema extends Route {
-	constructor(nrp) {
-		super('app/schema', 'GET APP SCHEMA', nrp, Model.getModel('App'));
+	constructor(services) {
+		super('app/schema', 'GET APP SCHEMA', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 
@@ -317,8 +317,8 @@ routes.push(GetAppSchema);
  * @class UpdateAppSchema
  */
 class UpdateAppSchema extends Route {
-	constructor(nrp) {
-		super('app/schema', 'UPDATE APP SCHEMA', nrp, Model.getModel('App'));
+	constructor(services) {
+		super('app/schema', 'UPDATE APP SCHEMA', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -416,8 +416,8 @@ routes.push(UpdateAppSchema);
  * @class GetAppPolicyPropertyList
  */
 class GetAppPolicyPropertyList extends Route {
-	constructor(nrp) {
-		super('app/policy-property-list/:apiPath?', 'GET APP POLICY PROPERTY LIST', nrp, Model.getModel('App'));
+	constructor(services) {
+		super('app/policy-property-list/:apiPath?', 'GET APP POLICY PROPERTY LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -457,8 +457,8 @@ routes.push(GetAppPolicyPropertyList);
  * @class SetAppPolicyPropertyList
  */
 class SetAppPolicyPropertyList extends Route {
-	constructor(nrp) {
-		super('app/policy-property-list/:update/:appId?', 'SET APP POLICY PROPERTY LIST', nrp, Model.getModel('App'));
+	constructor(services) {
+		super('app/policy-property-list/:update/:appId?', 'SET APP POLICY PROPERTY LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -534,8 +534,8 @@ routes.push(SetAppPolicyPropertyList);
  * @class AppCount
  */
 class AppCount extends Route {
-	constructor(nrp) {
-		super(`app/count`, `COUNT APPS`, nrp, Model.getModel('App'));
+	constructor(services) {
+		super(`app/count`, `COUNT APPS`, services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -578,8 +578,8 @@ routes.push(AppCount);
  * @class AppUpdateOAuth
  */
 class AppUpdateOAuth extends Route {
-	constructor(nrp) {
-		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, nrp, Model.getModel('App'));
+	constructor(services) {
+		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -615,8 +615,8 @@ routes.push(AppUpdateOAuth);
  * @class AppUpdate
  */
 class AppUpdate extends Route {
-	constructor(nrp) {
-		super(`app/:id`, `UPDATE AN APP`, nrp, Model.getModel('App'));
+	constructor(services) {
+		super(`app/:id`, `UPDATE AN APP`, services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 

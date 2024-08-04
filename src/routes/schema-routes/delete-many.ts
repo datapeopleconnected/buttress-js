@@ -23,10 +23,10 @@ import Schema from '../../schema';
  * @class DeleteMany
  */
 export default class DeleteMany extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/delete`, `BULK DELETE ${schema.name}`, nrp);
+		super(`${schemaRoutePath}/bulk/delete`, `BULK DELETE ${schema.name}`, services);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.DELETE;

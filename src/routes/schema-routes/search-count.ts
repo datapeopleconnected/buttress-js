@@ -23,10 +23,10 @@ import Schema from '../../schema';
  * @class Count
  */
 export default class SearchCount extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/count`, `COUNT ${schema.name}`, nrp);
+		super(`${schemaRoutePath}/count`, `COUNT ${schema.name}`, services);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;

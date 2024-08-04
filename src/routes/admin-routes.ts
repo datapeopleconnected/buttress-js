@@ -211,7 +211,7 @@ class AdminRoutes {
 	 * @param {String} appId
 	 */
 	async _createAdminPolicy(appId) {
-		for await (const policy of adminPolicy) {
+		for await (const policy of (adminPolicy as any)) {
 			const policyDB = await Model.getModel('Policy').findOne({
 				name: {
 					$eq: policy.name,

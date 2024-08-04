@@ -23,10 +23,10 @@ import Schema from '../../schema';
  * @class SearchList
  */
 export default class SearchList extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `SEARCH ${schema.name} LIST`, nrp);
+		super(`${schemaRoutePath}`, `SEARCH ${schema.name} LIST`, services);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;

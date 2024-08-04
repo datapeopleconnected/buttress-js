@@ -39,8 +39,8 @@ const routes: (typeof Route)[] = [];
  * @class GetLambda
  */
 class GetLambda extends Route {
-	constructor(nrp) {
-		super('lambda/:id', 'GET LAMBDA', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda/:id', 'GET LAMBDA', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -75,8 +75,8 @@ routes.push(GetLambda);
  * @class GetLambdaList
  */
 class GetLambdaList extends Route {
-	constructor(nrp) {
-		super('lambda', 'GET LAMBDA LIST', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda', 'GET LAMBDA LIST', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -113,8 +113,8 @@ routes.push(GetLambdaList);
  * @class SearchLambdaList
  */
 class SearchLambdaList extends Route {
-	constructor(nrp) {
-		super('lambda', 'SEARCH LAMBDA LIST', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda', 'SEARCH LAMBDA LIST', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -147,8 +147,8 @@ routes.push(SearchLambdaList);
  * @class AddLambda
  */
 class AddLambda extends Route {
-	constructor(nrp) {
-		super('lambda', 'ADD LAMBDA', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda', 'ADD LAMBDA', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -224,8 +224,8 @@ routes.push(AddLambda);
  * @class UpdateLambda
  */
 class UpdateLambda extends Route {
-	constructor(nrp) {
-		super('lambda/:id', 'UPDATE LAMBDA', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda/:id', 'UPDATE LAMBDA', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -276,8 +276,8 @@ routes.push(UpdateLambda);
  * @class BulkUpdateLambda
  */
 class BulkUpdateLambda extends Route {
-	constructor(nrp) {
-		super('lambda/bulk/update', 'BULK UPDATE LAMBDA', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda/bulk/update', 'BULK UPDATE LAMBDA', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -327,8 +327,8 @@ routes.push(BulkUpdateLambda);
  * @class EditLambdaDeployment
  */
 class ScheduleLambdaExecution extends Route {
-	constructor(nrp) {
-		super('lambda/:id/schedule', 'SCHEDULE LAMBDA EXECUTION', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda/:id/schedule', 'SCHEDULE LAMBDA EXECUTION', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -390,8 +390,8 @@ routes.push(ScheduleLambdaExecution);
  * @class EditLambdaDeployment
  */
 class EditLambdaDeployment extends Route {
-	constructor(nrp) {
-		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -453,8 +453,8 @@ routes.push(EditLambdaDeployment);
  * @class SetLambdaPolicyProperties
  */
 class SetLambdaPolicyProperties extends Route {
-	constructor(nrp) {
-		super('lambda/:id/policy-property', 'SET LAMBDA POLICY PROPERTY', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda/:id/policy-property', 'SET LAMBDA POLICY PROPERTY', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -508,8 +508,8 @@ routes.push(SetLambdaPolicyProperties);
  * @class UpdateLambdaPolicyProperties
  */
 class UpdateLambdaPolicyProperties extends Route {
-	constructor(nrp) {
-		super('lambda/:id/update-policy-property', 'UPDATE LAMBDA POLICY PROPERTY', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda/:id/update-policy-property', 'UPDATE LAMBDA POLICY PROPERTY', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -565,8 +565,8 @@ routes.push(UpdateLambdaPolicyProperties);
  * @class ClearLambdaPolicyProperties
  */
 class ClearLambdaPolicyProperties extends Route {
-	constructor(nrp) {
-		super('lambda/:id/clear-policy-property', 'REMOVE LAMBDA POLICY PROPERTY', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda/:id/clear-policy-property', 'REMOVE LAMBDA POLICY PROPERTY', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -610,8 +610,8 @@ routes.push(ClearLambdaPolicyProperties);
  * @class DeleteLambda
  */
 class DeleteLambda extends Route {
-	constructor(nrp) {
-		super('lambda/:id', 'DELETE LAMBDA', nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super('lambda/:id', 'DELETE LAMBDA', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -654,8 +654,8 @@ routes.push(DeleteLambda);
  * @class LambdaCount
  */
 class LambdaCount extends Route {
-	constructor(nrp) {
-		super(`lambda/count`, `COUNT LAMBDAS`, nrp, Model.getModel('Lambda'));
+	constructor(services) {
+		super(`lambda/count`, `COUNT LAMBDAS`, services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 

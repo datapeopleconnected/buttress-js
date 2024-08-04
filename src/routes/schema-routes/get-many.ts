@@ -23,10 +23,10 @@ import Schema from '../../schema';
  * @class GetMany
  */
 export default class GetMany extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/load`, `BULK GET ${schema.name}`, nrp);
+		super(`${schemaRoutePath}/bulk/load`, `BULK GET ${schema.name}`, services);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.READ;

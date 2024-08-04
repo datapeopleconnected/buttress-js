@@ -23,10 +23,10 @@ import Schema from '../../schema';
  * @class DeleteAll
  */
 export default class DeleteAll extends Route {
-	constructor(schema, appShort, nrp) {
+	constructor(schema, appShort, services) {
 		const schemaRoutePath = Schema.modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `DELETE ALL ${schema.name}`, nrp);
+		super(`${schemaRoutePath}`, `DELETE ALL ${schema.name}`, services);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;

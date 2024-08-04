@@ -28,8 +28,8 @@ const routes: (typeof Route)[] = [];
  * @class AddSecureStore
  */
 class AddSecureStore extends Route {
-	constructor(nrp, redisClient) {
-		super('secure-store', 'ADD SECURE STORE', nrp, redisClient);
+	constructor(services) {
+		super('secure-store', 'ADD SECURE STORE', services);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -64,8 +64,8 @@ routes.push(AddSecureStore);
  * @class AddManySecureStore
  */
 class AddManySecureStore extends Route {
-	constructor(nrp) {
-		super('secure-store/bulk/add', 'ADD SECURE STORE', nrp);
+	constructor(services) {
+		super('secure-store/bulk/add', 'ADD SECURE STORE', services);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -114,8 +114,8 @@ routes.push(AddManySecureStore);
  * @class GetSecureStore
  */
 class GetSecureStore extends Route {
-	constructor(nrp) {
-		super('secure-store/:id', 'GET SECURE STORE', nrp);
+	constructor(services) {
+		super('secure-store/:id', 'GET SECURE STORE', services);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -150,8 +150,8 @@ routes.push(GetSecureStore);
  * @class FindSecureStore
  */
 class FindSecureStore extends Route {
-	constructor(nrp) {
-		super('secure-store/name/:name', 'FIND SECURE STORE BY NAME', nrp);
+	constructor(services) {
+		super('secure-store/name/:name', 'FIND SECURE STORE BY NAME', services);
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -184,8 +184,8 @@ routes.push(FindSecureStore);
  * @class UpdateSecureStore
  */
 class UpdateSecureStore extends Route {
-	constructor(nrp) {
-		super('secure-store/:id', 'UPDATE SECURE STORE', nrp);
+	constructor(services) {
+		super('secure-store/:id', 'UPDATE SECURE STORE', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -225,8 +225,8 @@ routes.push(UpdateSecureStore);
  * @class BulkUpdateSecureStore
  */
 class BulkUpdateSecureStore extends Route {
-	constructor(nrp) {
-		super('secure-store/bulk/update', 'BULK UPDATE SECURE STORE', nrp);
+	constructor(services) {
+		super('secure-store/bulk/update', 'BULK UPDATE SECURE STORE', services);
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -269,8 +269,8 @@ routes.push(BulkUpdateSecureStore);
  * @class SearchSecureStoreList
  */
 class SearchSecureStoreList extends Route {
-	constructor(nrp) {
-		super('secure-store', 'SEARCH SECURE STORE LIST', nrp);
+	constructor(services) {
+		super('secure-store', 'SEARCH SECURE STORE LIST', services);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -315,8 +315,8 @@ routes.push(SearchSecureStoreList);
  * @class DeleteSecureStore
  */
 class DeleteSecureStore extends Route {
-	constructor(nrp) {
-		super('secure-store/:id', 'DELETE SECURE STORE', nrp);
+	constructor(services) {
+		super('secure-store/:id', 'DELETE SECURE STORE', services);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -347,8 +347,8 @@ routes.push(DeleteSecureStore);
  * @class SecureStoreCount
  */
 class SecureStoreCount extends Route {
-	constructor(nrp) {
-		super('secure-store/count', 'COUNT SECURE STORES', nrp);
+	constructor(services) {
+		super('secure-store/count', 'COUNT SECURE STORES', services);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
