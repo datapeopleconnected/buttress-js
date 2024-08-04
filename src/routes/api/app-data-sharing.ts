@@ -57,7 +57,7 @@ const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
 	if (!activationResult || !activationResult.status) return dataSharing;
 
 	// Flag our data sharing agreement as active & update the remote app token with the new one.
-	await Model.getModel('App').DataSharing.activate(dataSharing.id, activationResult.token);
+	await Model.getModel('AppDataSharing').activate(dataSharing.id, activationResult.token);
 	dataSharing.remoteApp.token = activationResult.token;
 
 	// Update our data sharing agreement token with the new value.
@@ -99,7 +99,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/:id', 'GET APP DATA SHARING', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing/:id', 'GET APP DATA SHARING', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -135,7 +135,7 @@ routes.push(GetAppDataSharing);
 */
 class AddDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing', 'ADD APP DATA SHARING', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing', 'ADD APP DATA SHARING', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
@@ -209,7 +209,7 @@ routes.push(AddDataSharing);
  */
 class UpdateAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/:dataSharingId', 'UPDATE APP DATA SHARING AGREEMENT', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing/:dataSharingId', 'UPDATE APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -252,7 +252,7 @@ routes.push(UpdateAppDataSharing);
  */
 class BulkUpdateAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/bulk/update', 'BULK UPDATE APP DATA SHARING AGREEMENT', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing/bulk/update', 'BULK UPDATE APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -301,7 +301,7 @@ routes.push(BulkUpdateAppDataSharing);
  */
 class UpdateAppDataSharingPolicy extends Route {
 	constructor(services) {
-		super('app-data-sharing/:dataSharingId/policy', 'UPDATE APP DATA SHARING AGREEMENT POLICY', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing/:dataSharingId/policy', 'UPDATE APP DATA SHARING AGREEMENT POLICY', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -349,7 +349,7 @@ routes.push(UpdateAppDataSharingPolicy);
  */
 class ActivateAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/activate', 'POST Activate App Data Sharing', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing/activate', 'POST Activate App Data Sharing', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -409,7 +409,7 @@ routes.push(ActivateAppDataSharing);
  */
 class ReactivateAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/reactivate/:dataSharingId', 'UPDATE Reactivate App Data Sharing', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing/reactivate/:dataSharingId', 'UPDATE Reactivate App Data Sharing', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -448,7 +448,7 @@ routes.push(ReactivateAppDataSharing);
  */
 class DeactivateAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/deactivate/:dataSharingId', 'UPDATE Deactivate App Data Sharing', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing/deactivate/:dataSharingId', 'UPDATE Deactivate App Data Sharing', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -484,7 +484,7 @@ routes.push(DeactivateAppDataSharing);
 
 class StatusAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/:dataSharingId/status', 'GET App Data Sharing Status', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing/:dataSharingId/status', 'GET App Data Sharing Status', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -524,7 +524,7 @@ routes.push(StatusAppDataSharing);
  */
 class GetAllAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing', 'APP DATA SHARING AGREEMENT LIST', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing', 'APP DATA SHARING AGREEMENT LIST', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -544,7 +544,7 @@ routes.push(GetAllAppDataSharing);
  */
 class SearchAppDataSharingAgreement extends Route {
 	constructor(services) {
-		super('app-data-sharing', 'SEARCH APP DATA SHARING AGREEMENT LIST', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing', 'SEARCH APP DATA SHARING AGREEMENT LIST', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -590,7 +590,7 @@ routes.push(SearchAppDataSharingAgreement);
  */
 class AppDataSharingAgreementCount extends Route {
 	constructor(services) {
-		super('app-data-sharing/count', 'COUNT APP DATA SHARING AGREEMENT', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing/count', 'COUNT APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
@@ -631,7 +631,7 @@ routes.push(AppDataSharingAgreementCount);
  */
 class DeleteAppDataSharingAgreement extends Route {
 	constructor(services) {
-		super('app-data-sharing/:id', 'DELETE APP DATA SHARING AGREEMENT', services, Model.getModel('App').DataSharing);
+		super('app-data-sharing/:id', 'DELETE APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 

@@ -65,7 +65,7 @@ class AccessControl {
 	}
 
 	async init(nrp) {
-		if (!this._nrp) throw new Error('Unable to init access control, NRP not set');
+		if (!nrp) throw new Error('Unable to init access control, NRP not set');
 
 		this._nrp = nrp;
 

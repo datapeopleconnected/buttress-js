@@ -268,54 +268,30 @@ export default class MongodbAdapter extends AbstractAdapter {
 		} break;
 		}
 
-		return new Promise((resolve, reject) => {
-			if (!ops.length) throw new Error('Aargh');
+		const res = await this.collection?.bulkWrite(ops);
+		if (!res) throw new Error('Unable to bulk write');
 
-			this.collection?.bulkWrite(ops, (err, res) => {
-				if (err) return reject(err);
-
-				resolve({
-					type: updateType,
-					path: body.path,
-					value: response,
-				});
-			});
-		});
+		return {
+			type: updateType,
+			path: body.path,
+			value: response,
+		};
 	}
 
-	update(select: any, update: any) {
-		return new Promise((resolve, reject) => {
-			const res = this.collection?.updateMany(this._prepareQueryForMongo(select), update, (err, object) => {
-				if (err) return reject(err);
-
-				resolve(this._modifyDocument(object));
-			});
-			if (!res) reject(new Error('Unable to update'));
-		});
+	async update(select: any, update: any) {
+		const object = await this.collection?.updateMany(this._prepareQueryForMongo(select), update);
+		return this._modifyDocument(object);
 	}
 
-	updateOne(query: any, update: any) {
-		return new Promise((resolve, reject) => {
-			const res = this.collection?.updateOne(this._prepareQueryForMongo(query), update, (err, object) => {
-				if (err) return reject(err);
-
-				resolve(this._modifyDocument(object));
-			});
-			if (!res) reject(new Error('Unable to updateOne'));
-		});
+	async updateOne(query: any, update: any) {
+		const object = await this.collection?.updateOne(this._prepareQueryForMongo(query), update);
+		return this._modifyDocument(object);
 	}
 
-	updateById(id: string, query: any) {
-		// Logging.logSilly(`updateById: ${id} ${query}`);
+	async updateById(id: string, query: any) {
+		const object = await this.collection?.updateOne({_id: new ObjectId(id)}, query);
 
-		return new Promise((resolve, reject) => {
-			const res = this.collection?.updateOne({_id: new ObjectId(id)}, query, (err, object) => {
-				if (err) return reject(err);
-
-				resolve(this._modifyDocument(object));
-			});
-			if (!res) reject(new Error('Unable to updateOne'));
-		});
+		return this._modifyDocument(object);
 	}
 
 	exists(id: string, extra = {}) {
@@ -341,15 +317,11 @@ export default class MongodbAdapter extends AbstractAdapter {
 	 * @param {string} id - id to be deleted
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rm(entity: any) {
-		// Logging.log(`DELETING: ${entity._id}`, Logging.Constants.LogLevel.DEBUG);
-		return new Promise((resolve) => {
-			const res = this.collection?.deleteOne({_id: new ObjectId(entity._id)}, (err, cursor) => {
-				if (err) throw err;
-				resolve(cursor);
-			});
-			if (!res) throw new Error('Unable to delete');
-		});
+	async rm(entity: any) {
+		const cursor = this.collection?.deleteOne({_id: new ObjectId(entity._id)});
+		if (!cursor) throw new Error('Unable to delete');
+
+		return cursor;
 	}
 
 	/**
@@ -365,17 +337,13 @@ export default class MongodbAdapter extends AbstractAdapter {
 	 * @param {Object} query - mongoDB query
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rmAll(query: any) {
+	async rmAll(query: any) {
 		if (!query) query = {};
-		// Logging.logSilly(`rmAll: ${this.collection.namespace} ${query}`);
 
-		return new Promise((resolve) => {
-			const res = this.collection?.deleteMany(this._prepareQueryForMongo(query), (err, doc) => {
-				if (err) throw err;
-				resolve(doc);
-			});
-			if (!res) throw new Error('Unable to deleteMany');
-		});
+		const doc = await this.collection?.deleteMany(this._prepareQueryForMongo(query));
+		if (!doc) throw new Error('Unable to deleteMany');
+
+		return doc;
 	}
 
 	/**
@@ -425,16 +393,11 @@ export default class MongodbAdapter extends AbstractAdapter {
 	 * @param {Object} excludes - mongoDB query excludes
 	 * @return {Promise} - resolves to an array of docs
 	 */
-	findOne(query: any, excludes = {}) {
-		// Logging.logSilly(`findOne: ${this.collection.namespace} ${query}`);
+	async findOne(query: any, excludes = {}) {
+		const doc = await this.collection?.findOne(this._prepareQueryForMongo(query), this._prepareQueryForMongo(excludes));
+		if (!doc) throw new Error('Unable to find');
 
-		return new Promise((resolve, reject) => {
-			const res = this.collection?.find(this._prepareQueryForMongo(query), this._prepareQueryForMongo(excludes)).toArray((err, doc) => {
-				if (err) return reject(err);
-				resolve(this._modifyDocument((doc) ? doc[0] : null));
-			});
-			if (!res) reject(new Error('Unable to find'));
-		});
+		return this._modifyDocument(doc);
 	}
 
 	/**
@@ -467,13 +430,17 @@ export default class MongodbAdapter extends AbstractAdapter {
 	/**
 	 * @return {Promise}
 	 */
-	drop() {
-		return this.collection?.drop()
-			.catch((err) => {
-				if (err.code === 26) return true; // NamespaceNotFound
+	async drop() {
+		try {
+			const res = await this.collection?.drop();
+			if (!res) throw new Error('Unable to drop');
 
-				throw err;
-			});
+			return true;
+		} catch (err: any) {
+			if (err.code === 26) return true; // NamespaceNotFound
+
+			throw err;
+		}
 	}
 
 	// Modify a straem of docuemnts, converting _id to id

@@ -284,7 +284,7 @@ export default class BootstrapSocket extends Bootstrap {
 		// This should be distributed across instances
 		if (this.isPrimary) {
 			Logging.logSilly(`Setting up data sharing connections`);
-			const rxsDataShare = await Model.getModel('App').DataSharing.find({
+			const rxsDataShare = await Model.getModel('AppDataSharing').find({
 				active: true,
 			});
 
@@ -415,7 +415,7 @@ export default class BootstrapSocket extends Bootstrap {
 
 			if (token.type === 'dataSharing') {
 				Logging.logDebug(`Fetching data share with tokenId: ${token.id}`);
-				const dataShare = await Model.getModel('App').DataSharing.findOne({
+				const dataShare = await Model.getModel('AppDataSharing').findOne({
 					_tokenId: this._primaryDatastore.ID.new(token.id),
 					active: true,
 				});
@@ -530,7 +530,7 @@ export default class BootstrapSocket extends Bootstrap {
 		this.__nrp.on('activity', (data) => this.__primaryOnActivity(data));
 		this.__nrp.on('clearUserLocalData', (data) => this.__primaryClearUserLocalData(data));
 		this.__nrp.on('dataShare:activated', async (data: any) => {
-			const dataShare = await Model.getModel('App').DataSharing.findById(data.appDataSharingId);
+			const dataShare = await Model.getModel('AppDataSharing').findById(data.appDataSharingId);
 			await this.__primaryCreateDataShareConnection(dataShare);
 		});
 

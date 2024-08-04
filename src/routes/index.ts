@@ -252,7 +252,7 @@ class Routes {
 		if (!app.__schema) return;
 
 		// Get DS agreements
-		const appDSAs = await Helpers.streamAll(await Model.getModel('App').DataSharing.find({
+		const appDSAs = await Helpers.streamAll(await Model.getModel('AppDataSharing').find({
 			'_appId': app.id,
 		}));
 
@@ -529,7 +529,7 @@ class Routes {
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
 
-			const appDataSharing = (req.token._appDataSharingId) ? await Model.getModel('App').DataSharing.findById(req.token._appDataSharingId) : null;
+			const appDataSharing = (req.token._appDataSharingId) ? await Model.getModel('AppDataSharing').findById(req.token._appDataSharingId) : null;
 			req.authAppDataSharing = appDataSharing;
 			Logging.logTimer(
 				`_authenticateToken:got-app-data-sharing-agreement ${(req.authAppDataSharing) ? req.authAppDataSharing.id : appDataSharing}`,

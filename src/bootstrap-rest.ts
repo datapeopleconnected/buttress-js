@@ -69,16 +69,17 @@ export default class BootstrapRest extends Bootstrap {
 		Logging.logDebug(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
-		const redisClient = this.__services.get('redisClient');
-		if (redisClient === undefined) throw new Error('Redis client not found whilst trying to init BootstrapRest');
-
 		// Register some services.
 		this.__services.set('redisClient', createClient({
 			port: parseInt(Config.redis.port, 10) || 6379,
 			host: Config.redis.host,
 			prefix: Config.redis.scope
 		}));
-		this.__services.set('sdsRouting', new SourceDataSharingRouting(redisClient as RedisClient));
+
+		const redisClient = this.__services.get('redisClient') as RedisClient;
+		if (redisClient === undefined) throw new Error('Redis client not found whilst trying to init BootstrapRest');
+
+		this.__services.set('sdsRouting', new SourceDataSharingRouting(redisClient));
 		this.__services.set('modelManager', Model);
 
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
