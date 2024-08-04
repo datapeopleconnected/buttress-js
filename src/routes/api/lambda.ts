@@ -381,7 +381,7 @@ class ScheduleLambdaExecution extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		return await Model.getModel('Lambda').Execution.add(validate.execution, validate.appId);
+		return await Model.getModel('LambdaExecution').add(validate.execution, validate.appId);
 	}
 }
 routes.push(ScheduleLambdaExecution);

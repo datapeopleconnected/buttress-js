@@ -307,8 +307,8 @@ export default class LambdasRunner {
 		const executionId = payload.data.executionId;
 		if (!executionId) throw new Error('unable to fetch execute lambda, missing executionId');
 
-		const execution = await Model.getModel('Lambda').Execution.findOne({
-			id: Model.getModel('Lambda').Execution.createId(executionId),
+		const execution = await Model.getModel('LambdaExecution').findOne({
+			id: Model.getModel('LambdaExecution').createId(executionId),
 			status: 'PENDING',
 		});
 		if (!execution) throw new Error('Unable to find pending execution, with id: ' + executionId);
@@ -379,7 +379,7 @@ export default class LambdasRunner {
 	}
 
 	async _updateDBLambdaRunningExecution(execution) {
-		await Model.getModel('Lambda').Execution.updateById(Model.getModel('Lambda').Execution.createId(execution.id), {
+		await Model.getModel('LambdaExecution').updateById(Model.getModel('LambdaExecution').createId(execution.id), {
 			$set: {
 				status: 'RUNNING',
 				startedAt: Sugar.Date.create('now'),
@@ -395,7 +395,7 @@ export default class LambdasRunner {
 	}
 
 	async _updateDBLambdaFinishExecution(execution) {
-		await Model.getModel('Lambda').Execution.updateById(Model.getModel('Lambda').Execution.createId(execution.id), {
+		await Model.getModel('LambdaExecution').updateById(Model.getModel('LambdaExecution').createId(execution.id), {
 			$set: {
 				status: 'COMPLETE',
 				endedAt: Sugar.Date.create('now'),
@@ -403,7 +403,7 @@ export default class LambdasRunner {
 		});
 
 		if (execution.nextCronExpression) {
-			await Model.getModel('Lambda').Execution.add({
+			await Model.getModel('LambdaExecution').add({
 				triggerType: 'CRON',
 				lambdaId: Model.getModel('Lambda').createId(execution.lambdaId),
 				deploymentId: Model.getModel('Deployment').createId(execution.deploymentId),
@@ -426,7 +426,7 @@ export default class LambdasRunner {
 	}
 
 	async _updateDBLambdaErrorExecution(execution, log: any = null) {
-		await Model.getModel('Lambda').Execution.updateById(Model.getModel('Lambda').Execution.createId(execution.id), {
+		await Model.getModel('LambdaExecution').updateById(Model.getModel('LambdaExecution').createId(execution.id), {
 			$set: {
 				status: 'ERROR',
 				endedAt: Sugar.Date.create('now'),
@@ -439,8 +439,8 @@ export default class LambdasRunner {
 		// 	}, {$set: {'trigger.$.cron.status': 'ERROR'}});
 		// }
 		if (log) {
-			await Model.getModel('Lambda').Execution.update({
-				id: Model.getModel('Lambda').Execution.createId(execution.id),
+			await Model.getModel('LambdaExecution').update({
+				id: Model.getModel('LambdaExecution').createId(execution.id),
 			}, {
 				$push: {
 					logs: {

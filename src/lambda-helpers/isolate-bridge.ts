@@ -298,8 +298,8 @@ class IsolateBridge {
 
 	_pushLambdaExecutionLog(log, type) {
 		throw new Error('Need to resolve where this.lambdaExecution.id is coming from');
-		// Model.getModel('Lambda').Execution.update({
-		// 	id: Model.getModel('Lambda').Execution.createId(this.lambdaExecution.id),
+		// Model.getModel('LambdaExecution').update({
+		// 	id: Model.getModel('LambdaExecution').createId(this.lambdaExecution.id),
 		// }, {
 		// 	$push: {
 		// 		logs: {

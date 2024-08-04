@@ -213,7 +213,7 @@ export default class BootstrapSocket extends Bootstrap {
 		for await (const sockets of Object.values(this._dataShareSockets)) {
 			for await (const socket of sockets) {
 				Logging.logSilly('Closing data share socket');
-				// @ts-ignore - Double check the sio-client types
+				// @ts-expect-error - Double check the sio-client types
 				socket.destroy();
 			}
 		}

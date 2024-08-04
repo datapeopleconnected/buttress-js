@@ -179,16 +179,16 @@ export default class LambdaManager {
 		// TODO: Could just return the lambda id, instead of the whole lambda object
 		// TODO: Move the date filter to the query if possible?
 		// Not sure why this isn't happening inside the model.
-		const query = Model.getModel('Lambda').Execution.parseQuery({
+		const query = Model.getModel('LambdaExecution').parseQuery({
 			'status': {
 				$eq: 'PENDING',
 			},
 			'executeAfter': {
 				$lteDate: new Date().toISOString(),
 			},
-		}, {}, Model.getModel('Lambda').Execution.flatSchemaData);
+		}, {}, Model.getModel('LambdaExecution').flatSchemaData);
 
-		const rxLambdas = await Model.getModel('Lambda').Execution.find(query);
+		const rxLambdas = await Model.getModel('LambdaExecution').find(query);
 		const lambdas = await Helpers.streamAll(rxLambdas);
 		Logging.logSilly(`Got ${lambdas.length} pending cron lambdas`);
 
@@ -296,7 +296,7 @@ export default class LambdaManager {
 		// TODO add a meaningful error message
 		if (!deployment) return;
 
-		const lambdaExecution = await Model.getModel('Lambda').Execution.add({
+		const lambdaExecution = await Model.getModel('LambdaExecution').add({
 			triggerType: type,
 			lambdaId: Model.getModel('Lambda').createId(lambda.id),
 			deploymentId: Model.getModel('Deployment').createId(deployment.id),

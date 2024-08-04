@@ -904,7 +904,7 @@ class Routes {
 			return res;
 		}
 
-		const lambdaExecution = await Model.getModel('Lambda').Execution.add({
+		const lambdaExecution = await Model.getModel('LambdaExecution').add({
 			triggerType: 'API_ENDPOINT',
 			lambdaId: Model.getModel('Lambda').createId(lambda.id),
 			deploymentId: Model.getModel('Deployment').createId(deployment.id),

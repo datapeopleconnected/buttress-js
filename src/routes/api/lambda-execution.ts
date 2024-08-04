@@ -29,7 +29,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetLambdaExecution extends Route {
 	constructor(services) {
-		super('lambda-execution/:id', 'GET LAMBDA EXECUTION', services, Model.getModel('Lambda').Execution);
+		super('lambda-execution/:id', 'GET LAMBDA EXECUTION', services, Model.getModel('LambdaExecution'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -65,7 +65,7 @@ routes.push(GetLambdaExecution);
  */
 class GetLambdaExecutionStatus extends Route {
 	constructor(services) {
-		super('lambda-execution/:id/status', 'GET LAMBDA EXECUTION STATUS', services, Model.getModel('Lambda').Execution);
+		super('lambda-execution/:id/status', 'GET LAMBDA EXECUTION STATUS', services, Model.getModel('LambdaExecution'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
@@ -103,7 +103,7 @@ routes.push(GetLambdaExecutionStatus);
  */
 class UpdateLambdaExecution extends Route {
 	constructor(services) {
-		super('lambda-execution/:id', 'UPDATE LAMBDA EXECUTION', services, Model.getModel('Lambda').Execution);
+		super('lambda-execution/:id', 'UPDATE LAMBDA EXECUTION', services, Model.getModel('LambdaExecution'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
@@ -149,7 +149,7 @@ routes.push(UpdateLambdaExecution);
  */
 class SearchExecutionList extends Route {
 	constructor(services) {
-		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', services, Model.getModel('Lambda').Execution);
+		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', services, Model.getModel('LambdaExecution'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
@@ -183,7 +183,7 @@ routes.push(SearchExecutionList);
  */
 class LambdaExecutionCount extends Route {
 	constructor(services) {
-		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`, services, Model.getModel('Lambda').Execution);
+		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`, services, Model.getModel('LambdaExecution'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
