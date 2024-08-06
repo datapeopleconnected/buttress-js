@@ -1,0 +1,158 @@
+{
+	"GOOGLE": [
+		{
+			"name": "google-auth",
+			"type": "PUBLIC",
+			"git": {
+				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/auth.git",
+				"branch": "main",
+				"hash": "74bbc4e768745bd261bff9d93f404ab718e45912",
+				"entryFile": "index.js",
+				"entryPoint": "execute"
+			},
+			"trigger": [{
+				"type": "API_ENDPOINT",
+				"apiEndpoint": {
+				"method": "GET",
+				"url": "google/auth/authenticate",
+				"type": "SYNC",
+				"redirect": true
+				}
+			}],
+			"policyProperties": {
+				"role": "ADMIN_LAMBDA"
+			}
+		}, {
+			"name": "google-callback-auth",
+			"type": "PUBLIC",
+			"git": {
+				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/bjs-google-auth-callback.git",
+				"branch": "main",
+				"hash": "ce1a500c3038d13fe45ef3326a5ceb1ee6917621",
+				"entryFile": "index.js",
+				"entryPoint": "execute"
+			},
+			"trigger": [{
+				"type": "API_ENDPOINT",
+				"apiEndpoint": {
+					"method": "GET",
+					"url": "auth/google/callback",
+					"type": "SYNC",
+					"redirect": true
+				}
+			}],
+			"policyProperties": {
+				"role": "ADMIN_LAMBDA"
+			}
+		}, {
+			"name": "get-auth-user",
+			"git": {
+				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/get-auth-user.git",
+				"branch": "main",
+				"hash": "8a6eceb9d42bb7510849784d51d07f8a731a2715",
+				"entryFile": "index.js",
+				"entryPoint": "execute"
+			},
+			"trigger": [{
+				"type": "API_ENDPOINT",
+				"apiEndpoint": {
+					"method": "GET",
+					"url": "auth/user",
+					"type": "SYNC"
+				}
+			}],
+			"policyProperties": {
+				"role": "ADMIN_LAMBDA"
+			}
+		}
+	],
+	"MICROSOFT": [{
+			"name": "microsoft-auth",
+			"type": "PUBLIC",
+			"git": {
+				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/microsoft-auth.git",
+				"branch": "main",
+				"hash": "577e1ed4ba3349b5f8ff61155798cc44914ff76f",
+				"entryFile": "index.js",
+				"entryPoint": "execute"
+			},
+			"trigger": [{
+				"type": "API_ENDPOINT",
+				"apiEndpoint": {
+				"method": "GET",
+				"url": "microsoft/auth/authenticate",
+				"type": "SYNC",
+				"redirect": true
+				}
+			}],
+			"policyProperties": {
+				"role": "ADMIN_LAMBDA"
+			}
+		}, {
+			"name": "microsoft-callback-auth",
+			"type": "PUBLIC",
+			"git": {
+				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/bjs-microsoft-auth-callback.git",
+				"branch": "main",
+				"hash": "b42bab73307260e7b8ed4b1bbb7c02b9de529b90",
+				"entryFile": "index.js",
+				"entryPoint": "execute"
+			},
+			"trigger": [{
+				"type": "API_ENDPOINT",
+				"apiEndpoint": {
+					"method": "GET",
+					"url": "auth/microsoft/callback",
+					"type": "SYNC",
+					"redirect": true
+				}
+			}],
+			"policyProperties": {
+				"role": "ADMIN_LAMBDA"
+			}
+		}, {
+			"name": "get-auth-user",
+			"git": {
+				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/get-auth-user.git",
+				"branch": "main",
+				"hash": "8a6eceb9d42bb7510849784d51d07f8a731a2715",
+				"entryFile": "index.js",
+				"entryPoint": "execute"
+			},
+			"trigger": [{
+				"type": "API_ENDPOINT",
+				"apiEndpoint": {
+					"method": "GET",
+					"url": "auth/user",
+					"type": "SYNC"
+				}
+			}],
+			"policyProperties": {
+				"role": "ADMIN_LAMBDA"
+			}
+		}
+	],
+	"LOCAL_STRATEGY": [{
+			"name": "local-auth",
+			"type": "PUBLIC",
+			"git": {
+				"url": "ssh://git@git.wearelighten.co.uk:8822/lambdas/local-auth.git",
+				"branch": "main",
+				"hash": "3ca5d83c999a2d642eb32d8cdd94e66a83f5e109",
+				"entryFile": "index.js",
+				"entryPoint": "execute"
+			},
+			"trigger": [{
+				"type": "API_ENDPOINT",
+				"apiEndpoint": {
+				"method": "POST",
+				"url": "local/auth/authenticate",
+				"type": "SYNC"
+				}
+			}],
+			"policyProperties": {
+				"role": "ADMIN_LAMBDA"
+			}
+		}
+	]
+}

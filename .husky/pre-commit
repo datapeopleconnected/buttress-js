@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+. "$(dirname -- "$0")/_/husky.sh"
+
+# npm run lint
+
+npm run licence-check

@@ -1,0 +1,54 @@
+#!/bin/bash
+
+script_path=$(dirname "$0")
+
+license_file="$script_path/licencing_header.txt"
+LICENSE_HEADER=$(cat "$license_file")
+excluded_extensions=("html" "json")
+
+has_errors_file="/tmp/bjs-lc-errors"
+echo "false" > "$has_errors_file"
+
+bold() {
+  echo -e "\033[1m$1\033[0m"
+}
+
+check_license() {
+  local content=$(cat "$1")
+  local mod_content=${content//"$LICENSE_HEADER"}
+
+  if [ "$content" == "$mod_content" ]; then
+    bold $1
+    return 1
+  fi
+
+  return 0
+}
+
+check_dir() {
+  find "$1" -type f | while read -r file; do
+    ext="${file##*.}"
+    if [[ ! " ${excluded_extensions[*]} " =~ " $ext " ]]; then
+      check_license "$file"
+      if [[ $? -ne 0 ]]; then
+        echo "true" > "$has_errors_file"
+      fi
+    fi
+  done
+}
+
+check_dir "src"
+check_dir "test"
+
+has_errors=$(<"$has_errors_file")
+rm "$has_errors_file"
+
+if [[ "$has_errors" == "true" ]]; then
+  echo -e "Licensing Check: \033[31mFailed\033[0m"
+  echo "The above files are missing or have the incorrect license header."
+  echo "The license header can be found in the file ./.husky/licensing_header.txt"
+  exit 1
+fi
+
+echo -e "Licensing Check: \033[32mPassed\033[0m"
+echo ""

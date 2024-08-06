@@ -1,7 +1,7 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2022 Data Performance Consultancy LTD.
- * <https://dataperformanceconsultancy.com/>
+ * Copyright (C) 2016-2024 Data People Connected LTD.
+ * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
  * Buttress is free software: you can redistribute it and/or modify it under the
@@ -14,19 +14,42 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-require('node-env-obj')({
+const fs = require('fs');
+const Config = require('node-env-obj')({
 	basePath: __dirname,
 	envFile: `.test.env`,
 	envPath: '../',
 	configPath: '../src',
 });
 
-const Logging = require('../src/logging');
+if (process.env.TEST_ENV === 'e2e') {
+	const tokenPath = `${Config.paths.appData}/super.json`;
+	try {
+		const {token} = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+		Config.testToken = token;
+	} catch (e) {
+		console.log('');
+		console.error(`!🚨! ERROR !🚨! - Unable to perform tests without app_data/test/super.json.`);
+		console.log('');
+		console.error(`Please DELETE the existing test datastore. This will force Buttress to reinstall and create a new token file.`);
+		console.log('');
+		process.exit(1);
+	}
+} else {
+	// Mock Datastore
+	const {default: Datastore} = require('../dist/datastore');
+	Datastore.createInstance({connectionString: `empty://buttressjs.com`}, true);
+}
+
+const {default: Logging} = require('../dist/helpers/logging');
+
+const SHOW_LOG = (!!process.env.SHOW_LOG);
 
 exports.mochaHooks = {
 	beforeAll() {
+		// TODO: Clear out the db so we can start clean.
 		Logging.init('TEST');
-		Logging.captureOutput(true);
+		if (!SHOW_LOG) Logging.captureOutput(true);
 	},
 	afterAll() {
 		// Logging.captureOutput(false);
