@@ -23,8 +23,8 @@ const Config = require('node-env-obj')();
 
 const {createApp, updateSchema, bjsReq} = require('../../helpers');
 
-const BootstrapRest = require('../../../dist/bootstrap-rest');
-const BootstrapSocket = require('../../../dist/bootstrap-socket');
+const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
+const {default: BootstrapSocket} = require('../../../dist/bootstrap-socket');
 
 const ENDPOINT = `https://test.local.buttressjs.com`;
 

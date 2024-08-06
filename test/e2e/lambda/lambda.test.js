@@ -21,8 +21,8 @@ const Config = require('node-env-obj')();
 
 const {createApp, createLambda, updatePolicyPropertyList, bjsReq, bjsReqPost} = require('../../helpers');
 
-const BootstrapRest = require('../../../dist/bootstrap-rest');
-const BootstrapLambda = require('../../../dist/bootstrap-lambda');
+const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
+const {default: BootstrapLambda} = require('../../../dist/bootstrap-lambda');
 
 let LAMBDA_PROCESS = null;
 let REST_PROCESS = null;

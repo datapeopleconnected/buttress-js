@@ -4,6 +4,8 @@
     "module": "CommonJS",
     "lib": ["ES2020"],
     "moduleResolution": "node",
+    "resolveJsonModule": true,
+    "noImplicitAny": false,
     "noEmitOnError": true,
     "strict": true,
     "esModuleInterop": true,

@@ -37,11 +37,11 @@ if (process.env.TEST_ENV === 'e2e') {
 	}
 } else {
 	// Mock Datastore
-	const Datastore = require('../dist/datastore');
+	const {default: Datastore} = require('../dist/datastore');
 	Datastore.createInstance({connectionString: `empty://buttressjs.com`}, true);
 }
 
-const Logging = require('../dist/helpers/logging');
+const {default: Logging} = require('../dist/helpers/logging');
 
 const SHOW_LOG = (!!process.env.SHOW_LOG);
 

@@ -18,9 +18,9 @@ const fetch = require('cross-fetch');
 const {describe, it, before, after} = require('mocha');
 const assert = require('assert');
 
-const {createApp, updateSchema, bjsReq, registerDataSharing} = require('../../helpers');
+const {createApp, updateSchema} = require('../../helpers');
 
-const BootstrapRest = require('../../../dist/bootstrap-rest');
+const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
 
 let REST_PROCESS = null;
 const ENDPOINT = `https://test.local.buttressjs.com`;
