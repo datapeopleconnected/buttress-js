@@ -26,7 +26,7 @@ import Logging from './helpers/logging';
 import Model from './model';
 
 import LambdaManager from './lambda/lambda-manager';
-import LambdaRunner from './lambda/lambda-runner';
+import LambdaRunner, {LambdaType} from './lambda/lambda-runner';
 
 morgan.token('id', (req) => req.id);
 export default class BootstrapLambda extends Bootstrap {
@@ -106,14 +106,20 @@ export default class BootstrapLambda extends Bootstrap {
 	async __initWorker() {
 		await Model.initCoreModels();
 
-		const type = await new Promise((resolve) => {
-			this.__nrp?.on('lambdaProcessMaster:worker-type', (data: any) => {
-				if (data.id !== this.id) return;
-				resolve(data.type);
-			}, () => {
-				this.__nrp?.emit('lambdaProcessWorker:worker-initiated', this.id);
+		let type = LambdaType.ALL;
+
+		if (this.workerProcesses > 0) {
+			type = await new Promise((resolve) => {
+				this.__nrp?.on('lambdaProcessMaster:worker-type', (data: any) => {
+					data = JSON.parse(data);
+		
+					if (data.id !== this.id) return;
+					resolve(data.type);
+				}, () => {
+					this.__nrp?.emit('lambdaProcessWorker:worker-initiated', this.id);
+				});
 			});
-		});
+		}
 
 		this.__lambdaWorkerProcess = new LambdaRunner(this.__services, type);
 	}
@@ -123,15 +129,15 @@ export default class BootstrapLambda extends Bootstrap {
 		const pathMutationWorkers = Number(Config.lambda.pathMutationWorkers);
 		const cronWorkers = Number(Config.lambda.cronWorkers);
 
-		let type: string = 'UNKNOWN';
+		let type = LambdaType.ALL;
 		if (this.__apiWorkers < APIWorkers) {
-			type = 'API_ENDPOINT';
+			type = LambdaType.API_ENDPOINT;
 			this.__apiWorkers++;
 		} else if (this.__pathMutationWorkers < pathMutationWorkers) {
-			type = 'PATH_MUTATION';
+			type = LambdaType.PATH_MUTATION;
 			this.__pathMutationWorkers++;
 		} else if (this.__cronWorkers < cronWorkers) {
-			type = 'CRON';
+			type = LambdaType.CRON;
 			this.__cronWorkers++;
 		}
 

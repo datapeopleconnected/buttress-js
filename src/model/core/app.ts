@@ -156,16 +156,16 @@ export default class AppSchemaModel extends StandardModel {
 		await this.__handleAddingNonSystemApp(body, token);
 
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
-		this.__nrp.emit('app-routes:bust-cache', {});
+		this.__nrp?.emit('app-routes:bust-cache', '{}');
 		Logging.logSilly(`Emitting app:created ${app.id}`);
-		this.__nrp.emit('app:created', {appId: app.id});
+		this.__nrp?.emit('app:created', JSON.stringify({appId: app.id}));
 		Logging.logSilly(`Emitting app-schema:updated ${app.id}`);
-		this.__nrp.emit('app-schema:updated', {appId: app.id});
+		this.__nrp?.emit('app-schema:updated', JSON.stringify({appId: app.id}));
 
 		Logging.logSilly(`Emitting app-policy:bust-cache ${app.id}`);
-		this.__nrp.emit('app-policy:bust-cache', {
+		this.__nrp?.emit('app-policy:bust-cache', JSON.stringify({
 			appId: app.id,
-		});
+		}));
 
 		return Promise.resolve({app: app, token: token});
 	}
@@ -241,11 +241,11 @@ export default class AppSchemaModel extends StandardModel {
 		}
 
 		Logging.logSilly(`Emitting app-schema:updated ${appId}`);
-		this.__nrp.emit('app-schema:updated', {appId: appId});
-		this.__nrp.emit('app:update-schema', {
+		this.__nrp?.emit('app-schema:updated', JSON.stringify({appId: appId}));
+		this.__nrp?.emit('app:update-schema', JSON.stringify({
 			appId: appId,
 			schemas: compiledSchema,
-		});
+		}));
 		const updatedSchema = (await super.findById(appId))?.__rawSchema;
 		return updatedSchema;
 	}

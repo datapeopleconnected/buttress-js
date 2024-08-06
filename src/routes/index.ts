@@ -16,8 +16,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
-import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import onFinished from 'on-finished';
@@ -39,6 +37,9 @@ import AdminRoutes from './admin-routes';
 import SchemaRoutes from './schema-routes';
 
 import Datastore from '../datastore';
+
+// Core Routes
+import {Routes as CoreRoutes} from './api';
 
 class Routes {
 	app: express.Application;
@@ -63,10 +64,10 @@ class Routes {
 		this._services = null;
 
 		this._preRouteMiddleware = [
-			(...args) => this._timeRequest(args[0], args[2], args[3]),
-			(...args) => this._authenticateToken(args[0], args[2], args[3]),
-			(...args) => AccessControl.accessControlPolicyMiddleware(args[0], args[2], args[3]),
-			(...args) => this._configCrossDomain(args[0], args[2], args[3]),
+			(req, res, next) => this._timeRequest(req, res, next),
+			(req, res, next) => this._authenticateToken(req, res, next),
+			(req, res, next) => AccessControl.accessControlPolicyMiddleware(req, res, next),
+			(req, res, next) => this._configCrossDomain(req, res, next),
 		];
 	}
 
@@ -382,8 +383,8 @@ class Routes {
 
 		// Define some helper functions which allow us to send request metadata
 		// to the realtime process to feedback to subscrtibers.
-		req.bjsReqStatus = (data, nrp) => nrp.emit(`sock:worker:request-status`, {id: req.id, ...data});
-		req.bjsReqClose = (nrp) => nrp.emit(`sock:worker:request-end`, {id: req.id, status: 'done'});
+		req.bjsReqStatus = (data, nrp) => nrp.emit(`sock:worker:request-status`, JSON.stringify({id: req.id, ...data}));
+		req.bjsReqClose = (nrp) => nrp.emit(`sock:worker:request-end`, JSON.stringify({id: req.id, status: 'done'}));
 
 		const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
@@ -716,16 +717,7 @@ class Routes {
 	 * @private
 	 */
 	_getCoreRoutes() {
-		const filenames = fs.readdirSync(`${__dirname}/api`);
-
-		const files: NodeRequire[] = [];
-		for (let x = 0; x < filenames.length; x++) {
-			const file = filenames[x];
-			if (path.extname(file) === '.js') {
-				files.push(require(`./api/${path.basename(file, '.js')}`));
-			}
-		}
-		return files;
+		return CoreRoutes;
 	}
 
 	async _setupLambdaEndpoints() {
@@ -768,6 +760,7 @@ class Routes {
 			if (result.triggerAPIType === 'SYNC') {
 				result.lambdaOutput = await new Promise((resolve) => {
 					this._nrp?.on('lambda-execution-finish', (exec: any) => {
+						exec = JSON.parse(exec);
 						if (exec.restWorkerId === this.id) {
 							resolve(exec);
 						}
@@ -820,6 +813,7 @@ class Routes {
 			if (result.triggerAPIType === 'SYNC') {
 				result.lambdaOutput = await new Promise((resolve) => {
 					this._nrp?.on('lambda-execution-finish', (exec: any) => {
+						exec = JSON.parse(exec);
 						if (exec.restWorkerId === this.id) {
 							resolve(exec);
 						}

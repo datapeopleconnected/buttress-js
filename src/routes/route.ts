@@ -96,9 +96,12 @@ const Constants = {
 	},
 };
 
+const AuthTypeOrder = Object.values(Constants.Type);
+const authTypeIdx = (type) => AuthTypeOrder.indexOf(type);
+
 export default class Route {
 	verb: string = Constants.Verbs.GET;
-	authType: string = Constants.Type.SYSTEM;
+	authType: string = Constants.Type.USER;
 	permissions: string = Constants.Permissions.READ;
 
 	activity: boolean = true;
@@ -489,12 +492,11 @@ export default class Route {
 				return reject(new Helpers.Errors.RequestError(401, 'invalid_token'));
 			}
 
-			if (this.authType && req.token.type !== this.authType) {
+			if (this.authType && authTypeIdx(req.token.type) < authTypeIdx(this.authType)) {
 				this.log(`EAUTH: INSUFFICIENT AUTHORITY ${req.token.type} is not equal to ${this.authType}`, Logging.Constants.LogLevel.ERR, req.id);
 				Logging.logTimer('_authenticate:end-insufficient-authority', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 				return reject(new Helpers.Errors.RequestError(401, 'insufficient_authority'));
 			}
-
 			/**
 			 * @description Route:
 			 *  '*' - all routes (SUPER)

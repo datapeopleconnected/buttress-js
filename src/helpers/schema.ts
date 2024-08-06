@@ -20,7 +20,7 @@ import crypto from 'crypto';
 
 import Datastore from '../datastore';
 
-import uuid from 'uuid';
+import {v4 as uuidv4} from 'uuid';
 
 /* ********************************************************************************
 *
@@ -125,7 +125,7 @@ const __getPropDefault = (config) => {
 	case 'uuid':
 		if (config.__default) {
 			if (config.__default === 'new') {
-				res = uuid.v4();
+				res = uuidv4();
 			} else {
 				res = config.__default;
 			}

@@ -29,6 +29,7 @@ class GetTrackingList extends Route {
 	constructor(services) {
 		super('tracking', 'GET TRACKING LIST', services, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -49,6 +50,7 @@ class AddTracking extends Route {
 	constructor(services) {
 		super('tracking', 'ADD TRACKING', services, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.POST;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.ADD;
 
 		this.activity = false;
@@ -87,6 +89,7 @@ class UpdateTracking extends Route {
 	constructor(services) {
 		super('tracking/:id', 'UPDATE TRACKING', services, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activity = false;
@@ -133,6 +136,7 @@ class DeleteTracking extends Route {
 	constructor(services) {
 		super('tracking/:id', 'DELETE TRACKING', services, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.DEL;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
 
@@ -160,6 +164,7 @@ class DeleteAllTrackings extends Route {
 	constructor(services) {
 		super('tracking', 'DELETE ALL TRACKINGS', services, Model.getModel('Tracking'));
 		this.verb = Route.Constants.Verbs.DEL;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
 

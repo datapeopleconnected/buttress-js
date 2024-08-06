@@ -42,6 +42,7 @@ class GetLambda extends Route {
 	constructor(services) {
 		super('lambda/:id', 'GET LAMBDA', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -78,6 +79,7 @@ class GetLambdaList extends Route {
 	constructor(services) {
 		super('lambda', 'GET LAMBDA LIST', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -116,6 +118,7 @@ class SearchLambdaList extends Route {
 	constructor(services) {
 		super('lambda', 'SEARCH LAMBDA LIST', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.SEARCH;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -150,6 +153,7 @@ class AddLambda extends Route {
 	constructor(services) {
 		super('lambda', 'ADD LAMBDA', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -227,6 +231,7 @@ class UpdateLambda extends Route {
 	constructor(services) {
 		super('lambda/:id', 'UPDATE LAMBDA', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -279,6 +284,7 @@ class BulkUpdateLambda extends Route {
 	constructor(services) {
 		super('lambda/bulk/update', 'BULK UPDATE LAMBDA', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -330,6 +336,7 @@ class ScheduleLambdaExecution extends Route {
 	constructor(services) {
 		super('lambda/:id/schedule', 'SCHEDULE LAMBDA EXECUTION', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -393,6 +400,7 @@ class EditLambdaDeployment extends Route {
 	constructor(services) {
 		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -456,6 +464,7 @@ class SetLambdaPolicyProperties extends Route {
 	constructor(services) {
 		super('lambda/:id/policy-property', 'SET LAMBDA POLICY PROPERTY', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -511,6 +520,7 @@ class UpdateLambdaPolicyProperties extends Route {
 	constructor(services) {
 		super('lambda/:id/update-policy-property', 'UPDATE LAMBDA POLICY PROPERTY', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -568,6 +578,7 @@ class ClearLambdaPolicyProperties extends Route {
 	constructor(services) {
 		super('lambda/:id/clear-policy-property', 'REMOVE LAMBDA POLICY PROPERTY', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -613,6 +624,7 @@ class DeleteLambda extends Route {
 	constructor(services) {
 		super('lambda/:id', 'DELETE LAMBDA', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.DEL;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -657,6 +669,7 @@ class LambdaCount extends Route {
 	constructor(services) {
 		super(`lambda/count`, `COUNT LAMBDAS`, services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.SEARCH;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT LAMBDAS`;

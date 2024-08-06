@@ -76,6 +76,7 @@
     "eslint-config-google": "^0.14.0",
     "gulp": "^4.0.2",
     "gulp-typescript": "^6.0.0-alpha.1",
+    "gulp-sourcemaps": "^3.0.0",
     "husky": "^8.0.3",
     "mocha": "^10.2.0",
     "typescript": "^5.5.4",

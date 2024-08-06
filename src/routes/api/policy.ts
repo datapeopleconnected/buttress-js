@@ -32,6 +32,7 @@ class GetPolicy extends Route {
 	constructor(services) {
 		super('policy/:id', 'GET POLICY', services);
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -68,6 +69,7 @@ class GetPolicyList extends Route {
 	constructor(services) {
 		super('policy', 'GET POLICY LIST', services);
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -109,6 +111,7 @@ class SearchPolicyList extends Route {
 	constructor(services) {
 		super('policy', 'SEARCH POLICY LIST', services);
 		this.verb = Route.Constants.Verbs.SEARCH;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -155,6 +158,7 @@ class AddPolicy extends Route {
 	constructor(services) {
 		super('policy', 'ADD POLICY', services);
 		this.verb = Route.Constants.Verbs.POST;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -212,6 +216,7 @@ class UpdatePolicy extends Route {
 	constructor(services) {
 		super('policy/:id', 'UPDATE POLICY', services);
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -257,6 +262,7 @@ class BulkUpdatePolicy extends Route {
 	constructor(services) {
 		super('policy/bulk/update', 'UPDATE POLICY', services);
 		this.verb = Route.Constants.Verbs.POST;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -304,6 +310,7 @@ class SyncPolicies extends Route {
 	constructor(services) {
 		super('policy/sync', 'SYNC POLICIES', services);
 		this.verb = Route.Constants.Verbs.POST;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -355,6 +362,7 @@ class PolicyCount extends Route {
 	constructor(services) {
 		super(`policy/count`, `COUNT POLICIES`, services);
 		this.verb = Route.Constants.Verbs.SEARCH;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT POLICIES`;
@@ -402,6 +410,7 @@ class DeleteTransientPolicy extends Route {
 	constructor(services) {
 		super('policy/delete-transient-policy', 'DELETE POLICY BY NAME', services);
 		this.verb = Route.Constants.Verbs.POST;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -440,6 +449,7 @@ class DeletePolicy extends Route {
 	constructor(services) {
 		super('policy/:id', 'DELETE POLICY', services);
 		this.verb = Route.Constants.Verbs.DEL;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -477,6 +487,7 @@ class DeleteAppPolicies extends Route {
 	constructor(services) {
 		super('policy', 'DELETE ALL APP POLICIES', services);
 		this.verb = Route.Constants.Verbs.DEL;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 

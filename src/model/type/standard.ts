@@ -21,6 +21,7 @@ import Logging from '../../helpers/logging';
 import * as Helpers from '../../helpers';
 
 import * as Shared from '../shared';
+import NRP from 'node-redis-pubsub';
 
 /* ********************************************************************************
  *
@@ -38,7 +39,7 @@ export default class StandardModel {
 	collectionName: any;
 
 	__services: any;
-	__nrp: any;
+	__nrp?: NRP.NodeRedisPubSub;
 	__modelManager: any;
 
 	adapter: any;
@@ -59,12 +60,14 @@ export default class StandardModel {
 		this.__services = services;
 
 		this.__nrp = services.get('nrp');
+		if (!this.__nrp) throw new Error('Unable to find nrp in services');
 
 		this.__modelManager = this.__services.get('modelManager');
 		if (!this.__modelManager) throw new Error('Unable to find modelManager in services');
 
 		if (schemaData.core) {
-			this.__nrp.on('app:update-schema', (data) => {
+			this.__nrp.on('app:update-schema', (data: any) => {
+				data = JSON.parse(data);
 				if (!app || (app.id.toString() !== data.appId)) return;
 
 				data.schemas.forEach((schema) => {
@@ -212,7 +215,7 @@ export default class StandardModel {
 		if (schemaFlat[property]) {
 			propSchema = schemaFlat[property];
 		} else if (Object.keys(schemaFlat).length > 0) {
-			throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
+			// throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
 		}
 
 		if (operator === '$elemMatch' && propSchema && propSchema.__schema) {

@@ -18,7 +18,7 @@
 
 import fs from 'fs';
 import util from 'util';
-import uuid from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 import hash from 'object-hash';
 import NRP from 'node-redis-pubsub';
 
@@ -101,6 +101,7 @@ export default class LambdaManager {
 		this._setTimeoutCheck();
 
 		this.__nrp?.on('app-lambda:path-mutation-bust-cache', async (lambda) => {
+			lambda = JSON.parse(lambda);
 			this.__populateLambdaPathsMutation(lambda);
 		});
 	}
@@ -351,6 +352,7 @@ export default class LambdaManager {
 		if (!this.__nrp) throw new Error('No NRP instance found');
 
 		this.__nrp.on('lambda-worker-available', (payload: any) => {
+			payload = JSON.parse(payload);
 			Logging.logSilly(`[${this.name}] ${payload.workerId} prepared to take on ${payload.data.lambdaId}`);
 			const lambdaMapHash = this._lambdaMap[payload.data.lambdaId];
 			const lambdaBodyHash = (payload.data.body) ? hash(payload.data.body) : lambdaMapHash;
@@ -374,21 +376,24 @@ export default class LambdaManager {
 			Logging.logDebug(`[${this.name}] ${payload.data.lambdaId} assigning to ${payload.workerId}`);
 
 			// Tell the worker to execute the task
-			this.__nrp?.emit('lambda:worker:execute', payload);
+			this.__nrp?.emit('lambda:worker:execute', JSON.stringify(payload));
 		});
 
 		this.__nrp.on('lambda-worker-overloaded', (payload: any) => {
+			payload = JSON.parse(payload);
 			Logging.logDebug(`[${this.name}] ${payload.workerId} was oversubscribed releasing ${payload.lambdaId}`);
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId);
 		});
 
 		this.__nrp.on('lambda-worker-errored', (payload: any) => {
+			payload = JSON.parse(payload);
 			Logging.logError(`[${this.name}] ${payload.lambdaId} errored while running on ${payload.workerId}`);
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId, payload.workerExecID);
 			this._checkAPIAndPathMutationQueue();
 		});
 
 		this.__nrp.on('lambda-worker-finished', (payload: any) => {
+			payload = JSON.parse(payload);
 			Logging.logDebug(`[${this.name}] ${payload.lambdaId} was completed by ${payload.workerId}`);
 			this.untrackWorkerLambda(payload.workerId, payload.lambdaId, payload.workerExecID);
 			this._checkAPIAndPathMutationQueue();
@@ -397,7 +402,9 @@ export default class LambdaManager {
 
 	async _handleLambdaAPIExecution() {
 		this.__nrp?.on('rest:worker:exec-lambda-api', async (data: any) => {
-			data.workerExecID = uuid.v4();
+			data = JSON.parse(data);
+
+			data.workerExecID = uuidv4();
 			Logging.log(`Manager is queuing API lambda ${data.lambdaId} to be executed`);
 			let index = this._lambdaAPI.length;
 			if (data.lambdaExecBehavior === 'SYNC' && index > 0) {
@@ -422,6 +429,8 @@ export default class LambdaManager {
 	 */
 	async _handleLambdaPathMutationExecution() {
 		this.__nrp?.on('notifyLambdaPathChange', async (data: any) => {
+			data = JSON.parse(data);
+	
 			const paths = data.paths;
 			const schema = data.collection;
 
@@ -517,7 +526,7 @@ export default class LambdaManager {
 			}
 
 			if (debouncedLambdaIdx === -1) {
-				const execID = uuid.v4();
+				const execID = uuidv4();
 				this._lambdaPathsMutationExec.push({
 					timer: setTimeout(() => this._announcePathMutationLambda(execID), timeout),
 					pathMutation: true,

@@ -74,8 +74,14 @@ class AccessControl {
 
 	handleCacheListeners() {
 		if (!this._nrp) throw new Error('Unable to register listeners, NRP not set');
-		this._nrp.on('app-policy:bust-cache', async (data: any) => await this.__cacheAppPolicies(data.appId));
-		this._nrp.on('app-schema:updated', async (data: any) => await this.__cacheAppSchema(data.appId));
+		this._nrp.on('app-policy:bust-cache', async (data: any) => {
+			data = JSON.parse(data);
+			await this.__cacheAppPolicies(data.appId);
+		});
+		this._nrp.on('app-schema:updated', async (data: any) => {
+			data = JSON.parse(data);
+			await this.__cacheAppSchema(data.appId);
+		});
 	}
 
 	/**

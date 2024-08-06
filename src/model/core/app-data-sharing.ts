@@ -124,9 +124,9 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 		await this.__createDataSharingPolicy(appDataSharingBody, token.id);
 
 		Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
-		this.__nrp.emit('app-policy:bust-cache', {
+		this.__nrp?.emit('app-policy:bust-cache', JSON.stringify({
 			appId: appDataSharingBody._appId,
-		});
+		}));
 
 		const rxsDataShare = await super.add(appDataSharingBody, {
 			_appId: appDataSharingBody._appId,
@@ -203,7 +203,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 			update.$set['remoteApp.token'] = newToken;
 		}
 
-		this.__nrp.emit('dataShare:activated', {appDataSharingId: appDataSharingId});
+		this.__nrp?.emit('dataShare:activated', JSON.stringify({appDataSharingId: appDataSharingId}));
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}
@@ -220,7 +220,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 		};
 
 		// TODO implement socket deactivation
-		this.__nrp.emit('dataShare:deactivated', {appDataSharingId: appDataSharingId});
+		this.__nrp?.emit('dataShare:deactivated', JSON.stringify({appDataSharingId: appDataSharingId}));
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}

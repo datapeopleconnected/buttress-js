@@ -438,7 +438,7 @@ export default class BootstrapSocket extends Bootstrap {
 					data.appId = app.id;
 					data.appAPIPath = app.apiPath;
 
-					this.__nrp?.emit('activity', data);
+					this.__nrp?.emit('activity', JSON.stringify(data));
 				});
 
 				Logging.log(`[${apiPath}][DataShare] Connected ${socket.id} to room ${dataShare.name}`);
@@ -484,6 +484,8 @@ export default class BootstrapSocket extends Bootstrap {
 			 */
 			const debounceMap = {};
 			this.__nrp?.on('worker:socket:evaluateUserRooms', async (data: any) => {
+				data = JSON.parse(data);
+
 				// Early out if userId isn't set, we must not have a user token
 				if (!socket.data.userId) return;
 				// Check that the request is for the correct app
@@ -527,39 +529,49 @@ export default class BootstrapSocket extends Bootstrap {
 
 		if (!this.__nrp) throw new Error('No NRP instance');
 
-		this.__nrp.on('activity', (data) => this.__primaryOnActivity(data));
+		this.__nrp.on('activity', (data) => {
+			data = JSON.parse(data);
+			this.__primaryOnActivity(data)
+		});
 		this.__nrp.on('clearUserLocalData', (data) => this.__primaryClearUserLocalData(data));
 		this.__nrp.on('dataShare:activated', async (data: any) => {
+			data = JSON.parse(data);
 			const dataShare = await Model.getModel('AppDataSharing').findById(data.appDataSharingId);
 			await this.__primaryCreateDataShareConnection(dataShare);
 		});
 
 		this.__nrp.on('app:created', async (data: any) => {
+			data = JSON.parse(data);
 			const app = await Model.getModel('App').findById(data.appId);
 			await this.__createAppNamespace(app);
 		});
 
 		this.__nrp.on('app-schema:updated', async (data: any) => {
+			data = JSON.parse(data);
 			await Model.initSchema(data.appId);
 		});
 
 		this.__nrp.on('queuePolicyRoomCloseSocketEvent', async (data: any) => {
+			data = JSON.parse(data);
 			if (!this._policyRooms[data.appId]) return;
 			Logging.logSilly(`queuePolicyRoomCloseSocketEvent ${data.appId}`);
 			await this._primaryQueuePolicyRoomCloseSocketEvent(data);
 		});
 
 		this.__nrp.on('queueBasedConditionQuery', (data: any) => {
+			data = JSON.parse(data);
 			Logging.logSilly(`queueBasedConditionQuery`);
 			this._policyCloseSocketEvents.push(data);
 		});
 
 		this.__nrp.on('accessControlPolicy:disconnectQueryBasedSocket', async (data: any) => {
+			data = JSON.parse(data);
 			Logging.logSilly(`accessControlPolicy:disconnectQueryBasedSocket`);
 			await this._primaryDisconnectQueryBasedSocket(data);
 		});
 
 		this.__nrp.on('primary:debugRollcall', async (data: any) => {
+			data = JSON.parse(data);
 			Logging.logSilly(`primary:debugRollcall ${data.id}`);
 
 			const id = uuidv4();
@@ -586,12 +598,14 @@ export default class BootstrapSocket extends Bootstrap {
 			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({id: data.id, response: result}));
 		});
 		this.__nrp.on('primary:debugRollcallResponce', async (data: any) => {
+			data = JSON.parse(data);
 			if (!this._processResQueue[data.id]) return;
 			this._processResQueue[data.id].callback(data.responce);
 		});
 
 		// Take updates from the workers on room structs and update our copy
 		this.__nrp.on('primary:updatePolicyRooms', async (data: any) => {
+			data = JSON.parse(data);
 			Logging.logSilly(`primary:updatePolicyRooms ${data.id}`);
 
 			for (const roomId of Object.keys(data.message)) {
@@ -602,12 +616,14 @@ export default class BootstrapSocket extends Bootstrap {
 		});
 
 		this.__nrp.on('primary:getPolicyRooms', async (data: any) => {
+			data = JSON.parse(data);
 			Logging.logSilly(`primary:getPolicyRooms ${data.id}`);
 			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({id: data.id, response: this._policyRooms}));
 		});
 
 		// Serve up a copy of the policy rooms to the requester
 		this.__nrp.on('primary:getPolicyRoomsByIds', async (data: any) => {
+			data = JSON.parse(data);
 			Logging.logSilly(`primary:getPolicyRoomsByIds ${data.id}`);
 
 			const roomStructs = data.message.rooms
@@ -620,6 +636,7 @@ export default class BootstrapSocket extends Bootstrap {
 		});
 
 		this.__nrp.on('primary:getPolicyRoomsByAppId', async (data: any) => {
+			data = JSON.parse(data);
 			Logging.logSilly(`primary:getPolicyRoomsByAppId ${data.id}`);
 
 			const roomStructs = Object.keys(this._policyRooms)
@@ -647,6 +664,7 @@ export default class BootstrapSocket extends Bootstrap {
 		if (!this.__nrp) throw new Error('No NRP instance');
 
 		this.__nrp.on('worker:debugRollcall', async (data: any) => {
+			data = JSON.parse(data);
 			Logging.logSilly(`worker:debugRollcall ${data.id}`);
 
 			const nspSids = {};
@@ -668,6 +686,7 @@ export default class BootstrapSocket extends Bootstrap {
 		});
 
 		this.__nrp.on('sock:worker:request-status', async (data: any) => {
+			data = JSON.parse(data);
 			if (!data.id) return;
 
 			const socket = this._requestSockets.get(data.id);
@@ -676,6 +695,7 @@ export default class BootstrapSocket extends Bootstrap {
 			socket.emit('bjs-request-status', data);
 		});
 		this.__nrp.on('sock:worker:request-end', async (data: any) => {
+			data = JSON.parse(data);
 			if (!data.id) return;
 
 			const socket = this._requestSockets.get(data.id);
@@ -688,6 +708,8 @@ export default class BootstrapSocket extends Bootstrap {
 
 	async __registerNRPProcessListeners() {
 		this.__nrp?.on('process:messageQueueResponse', (data: any) => {
+			data = JSON.parse(data);
+
 			if (!this._processResQueue[data.id]) return;
 			Logging.logSilly(`process:messageQueueResponse ${data.id}`);
 			this._processResQueue[data.id].resolve(data.response);

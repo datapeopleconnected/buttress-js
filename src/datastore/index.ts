@@ -35,7 +35,7 @@ interface DatastoreConfig {
 /**
  * This class is used to manage the lifecycle of an adapter
  */
-class Datastore {
+export class Datastore {
 	private _adapter: any;
 	private _hash?: string;
 
@@ -72,7 +72,6 @@ class Datastore {
 }
 
 export default {
-	Class: Datastore,
 	hashConfig(config: DatastoreConfig) {
 		return createHash('sha1').update(Buffer.from(config.connectionString)).digest('base64');
 	},
@@ -89,7 +88,9 @@ export default {
 	},
 	clean: async () => {
 		for await (const key of Object.keys(datastores)) {
-			if (datastores[key].adapter.close) await datastores[key].adapter.close();
+			if (datastores[key] && datastores[key].adapter && datastores[key].adapter.close) {
+				await datastores[key].adapter.close();
+			}
 			delete datastores[key];
 		}
 	},

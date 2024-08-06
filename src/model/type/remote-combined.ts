@@ -143,8 +143,6 @@ export default class RemoteCombinedModel extends StandardModel {
 	 * @return {Boolean}
 	 */
 	async isDuplicate(details, sourceId?) {
-		if (!sourceId) throw new Error('SourceId is required for isDuplicate');
-
 		return (await this._getTargetModel(sourceId)).isDuplicate(details);
 		// // Make a call to each api, if any return true then return true.
 		// const calls = this.remoteModels.map((remoteModel) => remoteModel.isDuplicate(details));

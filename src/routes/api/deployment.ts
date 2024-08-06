@@ -27,6 +27,7 @@ class SearchDeploymentList extends Route {
 	constructor(services) {
 		super('deployment', 'SEARCH DEPLOYMENT LIST', services, Model.getModel('Deployment'));
 		this.verb = Route.Constants.Verbs.SEARCH;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -63,6 +64,7 @@ class DeploymentCount extends Route {
 	constructor(services) {
 		super(`deployment/count`, `COUNT DEPLOYMENTS`, services, Model.getModel('Deployment'));
 		this.verb = Route.Constants.Verbs.SEARCH;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT DEPLOYMENTS`;

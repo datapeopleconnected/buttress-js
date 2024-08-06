@@ -195,7 +195,7 @@ class TokenSchemaModel extends StandardModel {
 			'id': this.createId(tokenId),
 		}, {$set: {'policyProperties': policyProperties}});
 
-		this.__nrp.emit('app-routes:bust-cache', {});
+		this.__nrp?.emit('app-routes:bust-cache', '{}');
 	}
 
 	/**
@@ -225,7 +225,7 @@ class TokenSchemaModel extends StandardModel {
 			},
 		});
 
-		this.__nrp.emit('app-routes:bust-cache', {});
+		this.__nrp?.emit('app-routes:bust-cache', '{}');
 	}
 
 	/**
@@ -241,7 +241,7 @@ class TokenSchemaModel extends StandardModel {
 			},
 		});
 
-		this.__nrp.emit('app-routes:bust-cache', {});
+		this.__nrp?.emit('app-routes:bust-cache', '{}');
 	}
 }
 

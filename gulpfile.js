@@ -1,12 +1,15 @@
 const gulp = require('gulp');
 const ts = require('gulp-typescript');
+const sourceMaps = require('gulp-sourcemaps');
 
 const tsProject = ts.createProject('tsconfig.json');
 
 // Define a task to compile TypeScript files from src to dist
 gulp.task('typescript', () => {
 	return tsProject.src()
+		.pipe(sourceMaps.init())
 		.pipe(tsProject(ts.reporter.longReporter()))
+		.pipe(sourceMaps.write())
 		.pipe(gulp.dest('dist'));
 });
 

@@ -34,6 +34,7 @@ class GetAppList extends Route {
 	constructor(services) {
 		super('app', 'GET APP LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -58,6 +59,7 @@ class SearchAppList extends Route {
 	constructor(services) {
 		super('app', 'GET APP LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.SEARCH;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 	}
 
@@ -105,6 +107,7 @@ class GetApp extends Route {
 		// Should change to app apiPath instead of ID
 		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -139,6 +142,7 @@ class AddApp extends Route {
 	constructor(services) {
 		super('app', 'APP ADD', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.POST;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -221,6 +225,7 @@ class DeleteApp extends Route {
 	constructor(services) {
 		super('app/:id', 'DELETE APP', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.DEL;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -253,6 +258,7 @@ class GetAppSchema extends Route {
 	constructor(services) {
 		super('app/schema', 'GET APP SCHEMA', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.USER;
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this.redactResults = false;
@@ -320,6 +326,7 @@ class UpdateAppSchema extends Route {
 	constructor(services) {
 		super('app/schema', 'UPDATE APP SCHEMA', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.redactResults = false;
@@ -419,6 +426,7 @@ class GetAppPolicyPropertyList extends Route {
 	constructor(services) {
 		super('app/policy-property-list/:apiPath?', 'GET APP POLICY PROPERTY LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -460,6 +468,7 @@ class SetAppPolicyPropertyList extends Route {
 	constructor(services) {
 		super('app/policy-property-list/:update/:appId?', 'SET APP POLICY PROPERTY LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -537,6 +546,7 @@ class AppCount extends Route {
 	constructor(services) {
 		super(`app/count`, `COUNT APPS`, services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.SEARCH;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT APPS`;
@@ -581,6 +591,7 @@ class AppUpdateOAuth extends Route {
 	constructor(services) {
 		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityDescription = `UPDATE APPS OAUTH`;
@@ -618,6 +629,7 @@ class AppUpdate extends Route {
 	constructor(services) {
 		super(`app/:id`, `UPDATE AN APP`, services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.PUT;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;

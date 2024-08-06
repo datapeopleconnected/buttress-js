@@ -37,7 +37,7 @@ import {shortId} from './helpers';
 
 import {SourceDataSharingRouting} from './services/source-ds-routing';
 
-import Datastore from './datastore';
+import DatastoreManager, {Datastore} from './datastore';
 import Plugins from './plugins';
 import AccessControl from './access-control';
 
@@ -45,8 +45,8 @@ import AccessControl from './access-control';
 
 Error.stackTraceLimit = Infinity;
 export default class BootstrapRest extends Bootstrap {
-	routes: any;
-	primaryDatastore: any;
+	routes?: Routes;
+	primaryDatastore: Datastore;
 
 	_restServer: Express.Application;
 	_installMode: boolean;
@@ -54,9 +54,7 @@ export default class BootstrapRest extends Bootstrap {
 	constructor(installMode = false) {
 		super();
 
-		this.routes = null;
-
-		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
+		this.primaryDatastore = DatastoreManager.createInstance(Config.datastore, true);
 
 		this._restServer = null;
 
@@ -126,7 +124,7 @@ export default class BootstrapRest extends Bootstrap {
 
 		// Close Datastore connections
 		Logging.logSilly('Closing down all datastore connections');
-		await Datastore.clean();
+		await DatastoreManager.clean();
 	}
 
 	async __initMaster() {
@@ -135,6 +133,7 @@ export default class BootstrapRest extends Bootstrap {
 		if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');
 
 		this.__nrp.on('app-schema:updated', (data: any) => {
+			data = JSON.parse(data);
 			Logging.logDebug(`App Schema Updated: ${data.appId}`);
 			this.notifyWorkers({
 				type: 'app-schema:updated',

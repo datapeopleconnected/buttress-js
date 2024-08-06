@@ -75,7 +75,12 @@ export default class MongodbAdapter extends AbstractAdapter {
 
 	async close() {
 		if (!this._client) return;
-		await this._client.close();
+		try {
+			await this._client.close();
+		} catch (err: any) {
+			console.error('Caught error while closing mongo connection');
+			console.error(err);
+		}
 		delete this.__connection;
 		delete this._client;
 	}
@@ -395,9 +400,8 @@ export default class MongodbAdapter extends AbstractAdapter {
 	 */
 	async findOne(query: any, excludes = {}) {
 		const doc = await this.collection?.findOne(this._prepareQueryForMongo(query), this._prepareQueryForMongo(excludes));
-		if (!doc) throw new Error('Unable to find');
 
-		return this._modifyDocument(doc);
+		return (doc) ? this._modifyDocument(doc) : null;
 	}
 
 	/**

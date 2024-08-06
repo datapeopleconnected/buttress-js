@@ -270,7 +270,7 @@ export default class UserSchemaModel extends StandardModel {
 			}
 		}
 
-		this.__nrp.emit('app-routes:bust-cache', {});
+		this.__nrp?.emit('app-routes:bust-cache', '{}');
 
 		return user;
 	}

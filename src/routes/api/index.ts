@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
  * Copyright (C) 2016-2024 Data People Connected LTD.
@@ -16,43 +14,30 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Route from '../route';
-import os from 'os';
+import Activity from './activity';
+import AppDataSharing from './app-data-sharing';
+import App from './app';
+import Deployment from './deployment';
+import Lambda from './lambda';
+import LambdaExecution from './lambda-execution';
+import Policy from './policy';
+import SecureStore from './secure-store';
+import status from './status';
+import Token from './token';
+import Tracking from './tracking';
+import User from './user';
 
-const routes: (typeof Route)[] = [];
-
-/**
- * @class GetTrackingList
- */
-class GetProcessStatus extends Route {
-	constructor(services) {
-		super('status', 'GET TRACKING LIST', services);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.USER;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
-
-	async _validate(req, res, token) {
-		return Promise.resolve(true);
-	}
-
-	async _exec(req, res, validate) {
-		const mem = process.memoryUsage().rss;
-		const memTotal = os.totalmem();
-
-		return {
-			uptime: process.uptime(),
-			memory: {
-				used: mem,
-				total: memTotal,
-				percent: Number((mem / memTotal) * 100).toFixed(2),
-			},
-		};
-	}
-}
-routes.push(GetProcessStatus);
-
-/**
- * @type {*[]}
- */
-export default routes;
+export const Routes = [
+  Activity,
+  AppDataSharing,
+  App,
+  Deployment,
+  Lambda,
+  LambdaExecution,
+  Policy,
+  SecureStore,
+  status,
+  Token,
+  Tracking,
+  User,
+];

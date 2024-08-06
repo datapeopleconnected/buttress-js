@@ -39,6 +39,13 @@ import Model from '../model';
 import * as Helpers from '../helpers';
 import lambdaHelpers from '../lambda-helpers/helpers';
 
+export enum LambdaType {
+	API_ENDPOINT = 'API_ENDPOINT',
+	PATH_MUTATION = 'PATH_MUTATION',
+	CRON = 'CRON',
+	ALL = 'ALL',
+}
+
 /**
  * Queue up pending Lambdas and execute them
  *
@@ -48,7 +55,7 @@ export default class LambdasRunner {
 
 	id: string;
 	name: string;
-	lambdaType: string;
+	lambdaType: LambdaType;
 
 	working: boolean;
 
@@ -349,7 +356,9 @@ export default class LambdasRunner {
 		this.__nrp?.on('lambda:worker:announce', (payload: any) => {
 			if (this.working) return;
 
-			if (this.lambdaType && payload.lambdaType !== this.lambdaType) {
+			payload = JSON.parse(payload);
+
+			if (this.lambdaType && this.lambdaType !== LambdaType.ALL && payload.lambdaType !== this.lambdaType) {
 				Logging.logSilly(`Can not run a ${payload.lambdaType} on ${this.lambdaType} worker`);
 				return;
 			}
@@ -362,6 +371,8 @@ export default class LambdasRunner {
 		});
 
 		this.__nrp?.on('lambda:worker:execute', (payload: any) => {
+			payload = JSON.parse(payload);
+
 			if (payload.workerId !== this.id) return;
 
 			Logging.logDebug(`[${this.name}] Manager has told me to take task ${payload.data.lambdaId}`);

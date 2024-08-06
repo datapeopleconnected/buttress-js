@@ -29,6 +29,7 @@ class GetActivityList extends Route {
 	constructor(services) {
 		super('activity', 'GET ACTIVITY LIST', services, Model.getModel('Activity'));
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -56,6 +57,7 @@ class GetActivity extends Route {
 	constructor(services) {
 		super('activity/:id', 'GET ACTIVITY', services, Model.getModel('Activity'));
 		this.verb = Route.Constants.Verbs.GET;
+		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
