@@ -234,16 +234,15 @@ class CreateUserAuthToken extends Route {
 	async _validate(req, res, token) {
 		if (!req.body ||
 			!req.body.policyProperties ||
-			!req.body.permissions ||
 			!req.body.domains) {
-			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			this.log(`[${this.name}] Missing required field (policyProperties or domains)`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
 		req.body.type = Model.getModel('Token').Constants.Type.USER;
 
 		if (!req.params.id) {
-			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			this.log(`[${this.name}] Missing required field (id)`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
