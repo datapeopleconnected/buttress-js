@@ -406,7 +406,9 @@ class AddUser extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const user = await Model.getModel('User').add(req.body);
+		const user = await Model.getModel('User').add(req.body, {
+			_appId: Model.getModel('App').createId(req.authApp.id),
+		});
 
 		return {
 			id: user.id,

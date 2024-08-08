@@ -200,7 +200,7 @@ export default class UserSchemaModel extends StandardModel {
 	 * @param {Object} body - body passed through from a POST request
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	async add(body) {
+	async add(body, internals?: any) {
 		const userBody: {
 			id: string,
 			auth: Array<{
@@ -241,7 +241,7 @@ export default class UserSchemaModel extends StandardModel {
 		});
 
 		const rxsUser = await super.add(userBody, {
-			_appId: this.__modelManager.authApp.id,
+			_appId: internals._appId,
 		});
 		const user: any = await Helpers.streamFirst(rxsUser);
 
@@ -257,7 +257,7 @@ export default class UserSchemaModel extends StandardModel {
 			};
 
 			const rxsToken = await this.__modelManager.Token.add(userToken, {
-				_appId: this.__modelManager.authApp.id,
+				_appId: internals._appId,
 				_userId: user.id,
 			});
 			const token: any = await Helpers.streamFirst(rxsToken);
