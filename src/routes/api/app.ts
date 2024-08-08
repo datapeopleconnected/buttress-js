@@ -163,29 +163,10 @@ class AddApp extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Unhandled error.`));
 			}
 
-			const appType = req.body.type;
-			if (!req.body.policyPropertiesList && appType !== Model.getModel('Token').Constants.Type.SYSTEM) {
-				req.body.policyPropertiesList = {};
-			}
-
-			if (!req.body.permissions || req.body.permissions.length === 0) {
-				const permissions = [
-					{route: '*', permission: '*'},
-				];
-				req.body.permissions = JSON.stringify(permissions);
-			}
-
-			try {
-				req.body.permissions = JSON.parse(req.body.permissions);
-			} catch (e) {
-				this.log('ERROR: Badly formed JSON in permissions', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `invalid_json`));
-			}
-
-			const postedPropsList = req.body.policyPropertiesList;
-			if (postedPropsList) {
-				const policyPropertiesList = Object.keys(postedPropsList).filter((key) => key !== 'query');
-				const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(postedPropsList[key]));
+			req.body.policyPropertiesList = req.body.policyPropertiesList || {};
+			if (req.body.policyPropertiesList) {
+				const policyPropertiesList = Object.keys(req.body.policyPropertiesList).filter((key) => key !== 'query');
+				const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(req.body.policyPropertiesList[key]));
 				if (!validPolicyPropertiesList) {
 					this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_field`));

@@ -129,20 +129,8 @@ export default class AppSchemaModel extends StandardModel {
 	async add(body) {
 		body.id = this.createId();
 
-		if (body.type === this.__modelManager.Token.Constants.Type.SYSTEM) {
-			const adminToken = await this.__modelManager.Token.findOne({
-				type: {
-					$eq: this.__modelManager.Token.Constants.Type.SYSTEM,
-				},
-			});
-
-			if (adminToken) {
-				return Promise.reject(new Helpers.Errors.RequestError(400, `This Buttress instance already have a system app`));
-			}
-		}
-
 		const rxsToken = await this.__modelManager.Token.add({
-			type: (body.type) ? body.type : this.__modelManager.Token.Constants.Type.APP,
+			type: this.__modelManager.Token.Constants.Type.APP,
 			permissions: body.permissions,
 		}, {
 			_appId: body.id,
@@ -177,9 +165,9 @@ export default class AppSchemaModel extends StandardModel {
 		const list = {
 			role: ['APP'],
 		};
-		const currentAppListKeys = Object.keys(appPolicyPropertiesList);
+		const bodyAppListKeys = Object.keys(appPolicyPropertiesList);
 		Object.keys(list).forEach((key) => {
-			if (currentAppListKeys.includes(key)) {
+			if (bodyAppListKeys.includes(key)) {
 				list[key] = list[key].concat(appPolicyPropertiesList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
 			}
 		});
