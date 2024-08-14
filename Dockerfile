@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:fermium-bullseye-slim
+FROM node:18-bullseye-slim
 
 WORKDIR /code
 
