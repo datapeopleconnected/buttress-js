@@ -276,7 +276,12 @@ export default class AppSchemaModel extends StandardModel {
 					apiPath: DSA.remoteApp.apiPath,
 					appToken: DSA.remoteApp.token,
 					allowUnauthorized: true, // Move along, nothing to see here...
+					version: 1,
 				});
+
+				if (!api.App) {
+					throw new Error('Unable to load DSA due to missing App API');
+				}
 
 				const remoteSchema = await api.App.getSchema(false, {
 					params: {
