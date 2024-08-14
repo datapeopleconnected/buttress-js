@@ -309,7 +309,7 @@ export default class BootstrapSocket extends Bootstrap {
 	}
 
 	async __initWorker() {
-		const app = new Express();
+		const app = Express();
 		this._socketExpressServer = (this.workerProcesses > 0) ? app.listen(0, 'localhost') :
 			app.listen(Config.listenPorts.sock);
 		this.io = new sio(this._socketExpressServer, {

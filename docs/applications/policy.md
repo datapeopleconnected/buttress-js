@@ -42,7 +42,7 @@ bjs policy list-property
     "endpoints": ["GET"],
     "query": [{
       "schema": ["email"],
-      "access": "FULL_ACCESS"
+      "access": "%FULL_ACCESS%"
     }]
   }]
 }, {
@@ -64,6 +64,6 @@ bjs policy list-property
 }]
 ```
 
-The example file above contains two policies, The first policy is called email-reader. As shown in the selection block of the first policy the requester must have emailReader policy property in their list for the policy to be applied to their request (The application also must have emailReader in its list to be able to assign it to the requester). The said policy is only applied when reading - "GET" - from the email collection and it gives full access to the email data - "FULL_ACCESS".
+The example file above contains two policies, The first policy is called email-reader. As shown in the selection block of the first policy the requester must have emailReader policy property in their list for the policy to be applied to their request (The application also must have emailReader in its list to be able to assign it to the requester). The said policy is only applied when reading - "GET" - from the email collection and it gives full access to the email data - "%FULL_ACCESS%".
 
 The second policy is called junior-account-manager, its selection block shows that the requester must have role accountant in ther list for the policy to be applied. The configuration block of the policy shows that the policy will be applied when reading, editing, adding or deleting from the finance collection, but it shows that the policy will only give access to the data that salary is less than 40k in the finance collection.

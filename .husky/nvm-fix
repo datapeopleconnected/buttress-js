@@ -2,6 +2,7 @@
 
 NVM="$HOME/.config/nvm"
 HUSKYRC="$HOME/.huskyrc"
+
 echo $NVM
 if [ -d "$NVM" ]; then
   if [ ! -f "$HUSKYRC" ]; then

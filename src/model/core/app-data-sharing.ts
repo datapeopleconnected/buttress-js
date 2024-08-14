@@ -107,9 +107,9 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 				token: body.remoteApp.token,
 			},
 
-			policy: (body.policy) ? body.policy : [],
+			policyConfig: (body.policyConfig) ? body.policyConfig : [],
 
-			_appId: this.createId(body._appId),
+			_appId: this.createId(body.appId),
 			_tokenId: null,
 		};
 
@@ -148,7 +148,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 					'@eq': tokenId,
 				},
 			},
-			config: body.policy,
+			config: body.policyConfig,
 		}, body._appId);
 	}
 

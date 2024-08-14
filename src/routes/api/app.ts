@@ -163,29 +163,10 @@ class AddApp extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Unhandled error.`));
 			}
 
-			const appType = req.body.type;
-			if (!req.body.policyPropertiesList && appType !== Model.getModel('Token').Constants.Type.SYSTEM) {
-				req.body.policyPropertiesList = {};
-			}
-
-			if (!req.body.permissions || req.body.permissions.length === 0) {
-				const permissions = [
-					{route: '*', permission: '*'},
-				];
-				req.body.permissions = JSON.stringify(permissions);
-			}
-
-			try {
-				req.body.permissions = JSON.parse(req.body.permissions);
-			} catch (e) {
-				this.log('ERROR: Badly formed JSON in permissions', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `invalid_json`));
-			}
-
-			const postedPropsList = req.body.policyPropertiesList;
-			if (postedPropsList) {
-				const policyPropertiesList = Object.keys(postedPropsList).filter((key) => key !== 'query');
-				const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(postedPropsList[key]));
+			req.body.policyPropertiesList = req.body.policyPropertiesList || {};
+			if (req.body.policyPropertiesList) {
+				const policyPropertiesList = Object.keys(req.body.policyPropertiesList).filter((key) => key !== 'query');
+				const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(req.body.policyPropertiesList[key]));
 				if (!validPolicyPropertiesList) {
 					this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
 					return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
@@ -245,11 +226,47 @@ class DeleteApp extends Route {
 	}
 
 	async _exec(req, res, app) {
-		await this.model.rm(app.id)
+		await this.model.rm(app)
 		return true;
 	}
 }
 routes.push(DeleteApp);
+
+/**
+ * @class DeleteAppPolicies
+ */
+class DeleteAllApps extends Route {
+	constructor(services) {
+		super('app', 'DELETE ALL APPS', services, Model.getModel('App'));
+		this.verb = Route.Constants.Verbs.DEL;
+		this.authType = Route.Constants.Type.SYSTEM;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	async _validate(req) {
+		return true;
+	}
+
+	async _exec(req, res, validate) {
+		// Get a list of system tokens
+		const systemTokens = await Helpers.streamAll(await Model.getModel('Token').find({
+			type: Model.getModel('Token').Constants.Type.SYSTEM,
+		}, {}, 0, 0, {}, {_appId: 1}));
+
+		const systemApps = systemTokens.map((t) => t._appId.toString());
+		const appApps = await this.model.find({ id: { $nin: systemApps } }, {}, 0, 0, {}, {id: 1, _tokenId: 1});
+
+		for await (const app of appApps) {
+			if (systemApps.includes(app.id.toString())) continue;
+
+			Logging.logDebug(`Deleting app: ${app.id}`);
+			await this.model.rm(app);
+		}
+
+		return true;
+	}
+}
+routes.push(DeleteAllApps);
 
 /**
  * @class GetAppSchema
