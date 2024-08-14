@@ -18,7 +18,7 @@
 
 import Stream from 'stream';
 import {ObjectId} from 'bson';
-import ButtressAPI from '@buttress/api';
+import ButtressAPI, {Errors as BAPIErrors} from '@buttress/api';
 
 import Errors from '../../helpers/errors';
 import {parseJsonArrayStream} from '../../helpers/stream';
@@ -90,7 +90,7 @@ export default class Buttress extends AbstractAdapter {
 		try {
 			this.collection = this.__connection.getCollection(collectionName);
 		} catch (err: unknown) {
-			if (err instanceof ButtressAPI.Errors.SchemaNotFound) throw new Errors.SchemaNotFound((err as ButtressAPI.Errors.SchemaNotFound).message);
+			if (err instanceof BAPIErrors.SchemaNotFound) throw new Errors.SchemaNotFound((err).message);
 			else throw err;
 		}
 	}

@@ -5,10 +5,13 @@ WORKDIR /code
 
 ENV APP_TYPE=all
 
-COPY package.json package.json
-RUN npm install
-
 WORKDIR /code
 COPY . .
+
+RUN ls -la
+
+COPY package.json package.json
+RUN npm install
+RUN npm run build
 
 CMD ["./bin/buttress.sh"]
