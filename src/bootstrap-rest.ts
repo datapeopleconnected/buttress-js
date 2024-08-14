@@ -18,6 +18,7 @@
 
 import path from 'path';
 import fs from 'fs';
+import http from 'http';
 import cluster from 'cluster';
 import Express from 'express';
 import {RedisClient, createClient} from 'redis';
@@ -48,15 +49,13 @@ export default class BootstrapRest extends Bootstrap {
 	routes?: Routes;
 	primaryDatastore: Datastore;
 
-	_restServer: Express.Application;
+	_restServer?: http.Server;
 	_installMode: boolean;
 
 	constructor(installMode = false) {
 		super();
 
 		this.primaryDatastore = DatastoreManager.createInstance(Config.datastore, true);
-
-		this._restServer = null;
 
 		this._installMode = process.env.INSTALL_MODE === 'true' || installMode || false;
 	}
@@ -174,7 +173,7 @@ export default class BootstrapRest extends Bootstrap {
 
 		const app = Express();
 		// app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
-		app.enable('trust proxy', 1);
+		app.enable('trust proxy');
 		app.use(bodyParser.json({limit: '20mb'}));
 		app.use(bodyParser.urlencoded({extended: true}));
 		app.use(methodOverride());
@@ -184,7 +183,8 @@ export default class BootstrapRest extends Bootstrap {
 			credentials: true,
 		}));
 		app.use(Express.static(`${Config.paths.appData}/public`));
-
+		
+		// @ts-expect-error - Calling a private function within the class, this is the only way it's exposed.
 		Plugins.on('request', (req, res) => app.handle(req, res));
 
 		await Model.initCoreModels();

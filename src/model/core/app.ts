@@ -329,10 +329,34 @@ export default class AppSchemaModel extends StandardModel {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	async rm(entity) {
+		Logging.logSilly(`Deleting all app data sharing for app ${entity.id}`);
 		await this.__modelManager.AppDataSharing.rmAll({_appId: entity.id});
-		const appShortId = (entity) ? Helpers.shortId(entity.id) : null;
 
-		// Delete Schema collections
+		Logging.logSilly(`Deleting all tokens for app ${entity.id}`);
+		await this.__modelManager.Token.rmAll({_appId: entity.id});
+
+		// TODO: Delete all data sharing
+		Logging.logSilly(`Deleting all app data sharing for app ${entity.id}`);
+		await this.__modelManager.AppDataSharing.rmAll({_appId: entity.id});
+
+		// TODO: Delete all lambdas
+		Logging.logSilly(`Deleting all lambdas for app ${entity.id}`);
+		await this.__modelManager.Lambda.rmAll({_appId: entity.id});
+
+		// TODO: Delete all deployments
+		Logging.logSilly(`Deleting all deployments for app ${entity.id}`);
+		await this.__modelManager.Deployment.rmAll({_appId: entity.id});
+
+		// TODO: Delete all lambda executions
+		Logging.logSilly(`Deleting all lambda executions for app ${entity.id}`);
+		await this.__modelManager.LambdaExecution.rmAll({_appId: entity.id});
+
+		// TODO: Delete all policy
+		Logging.logSilly(`Deleting all policy for app ${entity.id}`);
+		await this.__modelManager.Policy.rmAll({_appId: entity.id});
+
+		Logging.logSilly(`Deleting schema for app ${entity.id}`);
+		const appShortId = (entity) ? Helpers.shortId(entity.id) : null;
 		if (appShortId) {
 			const appSchemaModels = Object.keys(this.__modelManager.models).filter((k) => k.indexOf(appShortId) !== -1);
 			for (let i = 0; i < appSchemaModels.length; i++) {
@@ -343,7 +367,7 @@ export default class AppSchemaModel extends StandardModel {
 			}
 		}
 
-		return super.rm(entity.id);
+		return super.rm(entity.id.toString());
 	}
 
 	/**

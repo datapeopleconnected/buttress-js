@@ -164,12 +164,12 @@ class AddDataSharing extends Route {
 		}
 
 		// If we're not super then set the appId to be the current appId
-		if (!req.body._appId || token.type !== Model.getModel('Token').Constants.Type.DATA_SHARING) {
-			req.body._appId = token._appId;
+		if (token.type !== Model.getModel('Token').Constants.Type.SYSTEM || !req.body.appId) {
+			req.body.appId = token._appId;
 		}
 
-		if (!req.body.policy) {
-			this.log(`[${this.name}] Policy is required when creating a data sharing agreement`, Route.LogLevel.ERR);
+		if (!req.body.policyConfig) {
+			this.log(`[${this.name}] Policy Config is required when creating a data sharing agreement`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_policy`));
 		}
 
@@ -639,9 +639,9 @@ class AppDataSharingAgreementCount extends Route {
 routes.push(AppDataSharingAgreementCount);
 
 /**
- * @class DeleteAppDataSharingAgreement
+ * @class DeleteDataSharingAgreement
  */
-class DeleteAppDataSharingAgreement extends Route {
+class DeleteDataSharingAgreement extends Route {
 	constructor(services) {
 		super('app-data-sharing/:id', 'DELETE APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
 		this.verb = Route.Constants.Verbs.DEL;
@@ -681,7 +681,40 @@ class DeleteAppDataSharingAgreement extends Route {
 		return true;
 	}
 }
-routes.push(DeleteAppDataSharingAgreement);
+routes.push(DeleteDataSharingAgreement);
+
+/**
+ * @class DeleteAppPolicies
+ */
+class DeleteAllDataSharingAgreement extends Route {
+	constructor(services) {
+		super('app-data-sharing', 'DELETE ALL DATA SHARING', services, Model.getModel('AppDataSharing'));
+		this.verb = Route.Constants.Verbs.DEL;
+		this.authType = Route.Constants.Type.SYSTEM;
+		this.permissions = Route.Constants.Permissions.WRITE;
+	}
+
+	async _validate(req) {
+		const dsFind = await this.model.find({}, {}, 0, 0, {}, {id: 1, _tokenId: 1});
+
+		return (await Helpers.streamAll(dsFind)).reduce((arr, ds) => {
+			arr.dsIds.push(ds.id);
+			arr.tokenIds.push(ds._tokenId);
+			return arr;	
+		}, {
+			dsIds: [],
+			tokenIds: [],
+		});
+	}
+
+	async _exec(req, res, validate) {
+		await this.model.rmBulk(validate.dsIds);
+		await Model.getModel('Token').rmBulk(validate.tokenIds);
+
+		return true;
+	}
+}
+routes.push(DeleteAllDataSharingAgreement);
 
 /**
  * @type {*[]}

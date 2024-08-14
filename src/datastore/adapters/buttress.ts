@@ -183,13 +183,13 @@ export default class Buttress extends AbstractAdapter {
 	}
 
 	/**
-	 * @param {object} entity
+	 * @param {string} id
 	 * @return {Promise}
 	 */
-	async rm(entity) {
-		entity = this.convertBSONObjects(entity);
+	async rm(id: string) {
+		// entity = this.convertBSONObjects(entity);
 		await this.resolveAfterInit();
-		const result = await this.collection.remove(entity.id);
+		const result = await this.collection.remove(id);
 		return this.handleResult(result);
 	}
 

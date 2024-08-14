@@ -322,8 +322,8 @@ export default class MongodbAdapter extends AbstractAdapter {
 	 * @param {string} id - id to be deleted
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	async rm(entity: any) {
-		const cursor = this.collection?.deleteOne({_id: new ObjectId(entity._id)});
+	async rm(id: string) {
+		const cursor = this.collection?.deleteOne({_id: new ObjectId(id)});
 		if (!cursor) throw new Error('Unable to delete');
 
 		return cursor;

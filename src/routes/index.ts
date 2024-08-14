@@ -86,7 +86,7 @@ class Routes {
 		this.app.get('/favicon.ico', (req, res, next) => res.sendStatus(404));
 		this.app.get(['/', '/index.html'], (req, res, next) => res.sendFile(path.join(__dirname, '../static/index.html')));
 
-		this.app.use((req, res, next) => {
+		this.app.use((req: any, res, next) => {
 			req.on('close', function() {
 				Logging.logSilly(`close`, req.id);
 			});

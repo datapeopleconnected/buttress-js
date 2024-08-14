@@ -80,9 +80,9 @@ export default class AbstractAdapter {
 	}
 
 	/**
-	 * @param {App} entity - entity object to be deleted
+	 * @param {App} id - id of the object to be deleted
 	 */
-	rm(entity: unknown) {
+	rm(id: unknown) {
 		throw new Errors.NotYetImplemented('rm');
 	}
 

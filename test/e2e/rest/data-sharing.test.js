@@ -98,7 +98,7 @@ describe('Data Sharing', async () => {
 					token: null,
 				},
 
-				policy: [{
+				policyConfig: [{
 					endpoints: ['%ALL%'],
 					query: [{
 						schema: ['%ALL%'],
@@ -128,7 +128,7 @@ describe('Data Sharing', async () => {
 					token: testEnv.agreements[`app1-to-app2`].registrationToken,
 				},
 
-				policy: [{
+				policyConfig: [{
 					endpoints: ['%ALL%'],
 					query: [{
 						schema: ['%ALL%'],
@@ -218,7 +218,7 @@ describe('Data Sharing', async () => {
 					token: null,
 				},
 
-				policy: [{
+				policyConfig: [{
 					endpoints: ['%ALL%'],
 					query: [{
 						schema: ['%ALL%'],
@@ -248,7 +248,7 @@ describe('Data Sharing', async () => {
 					token: testEnv.agreements[`app3-to-app2`].registrationToken,
 				},
 
-				policy: [{
+				policyConfig: [{
 					endpoints: ['%ALL%'],
 					query: [{
 						schema: ['%ALL%'],

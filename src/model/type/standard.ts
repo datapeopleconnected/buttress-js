@@ -463,7 +463,7 @@ export default class StandardModel {
 	 * @param {string} id - id to be deleted
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
-	rm(id) {
+	rm(id: string) {
 		return this.adapter.rm(id);
 	}
 
