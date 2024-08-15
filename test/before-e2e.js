@@ -32,38 +32,42 @@ const Config = require('node-env-obj')({
 
 	console.log(`🤝 Connected to the datastore: ${Config.datastore.connectionString}`);
 
+	// Drop all collections
+	await this.connection.dropDatabase();
+	console.log(`💥 Dropping all collections`);
+
 	// Fetch all of the collections.
-	this.collections = await this.connection.collections();
-	console.log(`📖 Found ${this.collections.length} collections.`);
+	// this.collections = await this.connection.collections();
+	// console.log(`📖 Found ${this.collections.length} collections.`);
 
-	// We only want to keep data for the super app it's token.
-	const coreCollections = ['apps', 'tokens'];
+	// // We only want to keep data for the super app it's token.
+	// const coreCollections = ['apps', 'tokens'];
 
-	// Drop all collections that are not in coreCollections.
-	await Promise.all(
-		this.collections.map(async (collection) => {
-			if (coreCollections.indexOf(collection.collectionName) === -1) {
-				await collection.drop();
-			}
-		}),
-	);
-	console.log(`✔️ Dropping all non-core collections`);
+	// // Drop all collections that are not in coreCollections.
+	// await Promise.all(
+	// 	this.collections.map(async (collection) => {
+	// 		if (coreCollections.indexOf(collection.collectionName) === -1) {
+	// 			await collection.drop();
+	// 		}
+	// 	}),
+	// );
+	// console.log(`✔️ Dropping all non-core collections`);
 
-	// Delete all documents from apps that don't have the apiPath 'bjs'.
-	await this.connection.collection('apps').deleteMany({
-		apiPath: {
-			$ne: 'bjs',
-		},
-	});
-	console.log(`✔️ Cleaning up apps collection`);
+	// // Delete all documents from apps that don't have the apiPath 'bjs'.
+	// await this.connection.collection('apps').deleteMany({
+	// 	apiPath: {
+	// 		$ne: 'bjs',
+	// 	},
+	// });
+	// console.log(`✔️ Cleaning up apps collection`);
 
-	// Delete any documents from tokens that don't have the type 'system'.
-	await this.connection.collection('tokens').deleteMany({
-		type: {
-			$ne: 'system',
-		},
-	});
-	console.log(`✔️ Cleaning up tokens collection`);
+	// // Delete any documents from tokens that don't have the type 'system'.
+	// await this.connection.collection('tokens').deleteMany({
+	// 	type: {
+	// 		$ne: 'system',
+	// 	},
+	// });
+	// console.log(`✔️ Cleaning up tokens collection`);
 
 	// Close out and clean up.
 	await this._client.close();
