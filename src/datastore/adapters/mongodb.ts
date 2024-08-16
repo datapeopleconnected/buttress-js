@@ -78,11 +78,14 @@ export default class MongodbAdapter extends AbstractAdapter {
 		try {
 			await this._client.close();
 		} catch (err: any) {
+			// Ignore it, bug is within mongodb driver
+			if (err.message.includes('undefined (reading \'close\')')) return;
 			console.error('Caught error while closing mongo connection');
 			console.error(err);
+		} finally {
+			delete this.__connection;
+			delete this._client;
 		}
-		delete this.__connection;
-		delete this._client;
 	}
 
 	cloneAdapterConnection() {
