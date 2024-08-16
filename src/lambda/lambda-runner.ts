@@ -247,6 +247,10 @@ export default class LambdasRunner {
 						return global[moduleName];
 					}
 
+					if (Buttress.default) {
+						global.Buttress = Buttress.default;
+					}
+
 					if (!Buttress._initialised) {
 						await Buttress.init(buttressOptions, true);
 					} else {
