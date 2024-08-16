@@ -243,10 +243,10 @@ export default class BootstrapRest extends Bootstrap {
 
 			superApp = await Model.getModel('App').add({
 				name: `${Config.app.title} TEST`,
-				type: Model.getModel('Token').Constants.Type.SYSTEM,
-				permissions: [{route: '*', permission: '*'}],
 				apiPath: 'bjs',
 				domain: '',
+			}, {
+				type: Model.getModel('Token').Constants.Type.SYSTEM,
 			});
 
 			if (!superApp) {

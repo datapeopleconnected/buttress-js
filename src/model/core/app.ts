@@ -126,12 +126,20 @@ export default class AppSchemaModel extends StandardModel {
 	 * @param {Object} body - body passed through from a POST request
 	 * @return {Promise} - fulfilled with App Object when the database request is completed
 	 */
-	async add(body) {
+	async add(body, internals?: {type? : string}) {
 		body.id = this.createId();
 
+		const isSuper = internals?.type === this.__modelManager.Token.Constants.Type.SYSTEM;
+		if (isSuper) {
+			const adminToken = await this.__modelManager.Token.findOne({ type: { $eq: this.__modelManager.Token.Constants.Type.SYSTEM } });
+
+			if (adminToken) {
+				return Promise.reject(new Helpers.Errors.RequestError(400, `This Buttress instance already have a system app`));
+			}
+		}
+
 		const rxsToken = await this.__modelManager.Token.add({
-			type: this.__modelManager.Token.Constants.Type.APP,
-			permissions: body.permissions,
+			type: (isSuper) ? this.__modelManager.Token.Constants.Type.SYSTEM : this.__modelManager.Token.Constants.Type.APP
 		}, {
 			_appId: body.id,
 		});
@@ -141,7 +149,7 @@ export default class AppSchemaModel extends StandardModel {
 		const rxsApp = await super.add(body, {_tokenId: token.id});
 		const app: any = await Helpers.streamFirst(rxsApp);
 
-		await this.__handleAddingNonSystemApp(body, token);
+		if (!isSuper) await this.__handleAddingNonSystemApp(body, token);
 
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
 		this.__nrp?.emit('app-routes:bust-cache', '{}');
@@ -159,8 +167,6 @@ export default class AppSchemaModel extends StandardModel {
 	}
 
 	async __handleAddingNonSystemApp(body, token) {
-		if (body.type === this.__modelManager.Token.Constants.Type.SYSTEM) return;
-
 		let appPolicyPropertiesList = body.policyPropertiesList;
 		const list = {
 			role: ['APP'],
