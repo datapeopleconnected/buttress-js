@@ -289,10 +289,12 @@ class Helpers {
 
 				// Set the HTML content
 				await page.setContent(htmlString, {waitUntil: 'networkidle2'});
-				const buffer = await page.pdf({format: 'A4', printBackground: true});
+
+				// ! These lines should have tests written against them.
+				const pdfResult = await page.pdf({format: 'A4', printBackground: true});
 				await browser.close();
 				resolve.applyIgnored(undefined, [
-					new ivm.ExternalCopy(new ivm.Reference(buffer.toString('base64')).copySync()).copyInto(),
+					new ivm.ExternalCopy(new ivm.Reference(Buffer.from(pdfResult).toString('base64')).copySync()).copyInto(),
 				]);
 			} catch (err) {
 				const reference = new ivm.Reference(err).copySync();
