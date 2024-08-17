@@ -15,11 +15,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import fs from 'node:fs';
 
 import ivm from 'isolated-vm';
-import fs from 'fs';
 
-import Model from '../model';
 import Logging from '../helpers/logging';
 
 import createConfig from 'node-env-obj';

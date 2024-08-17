@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Stream from 'stream';
+import Stream from 'node:stream';
 import {ObjectId} from 'bson';
 import ButtressAPI, {Errors as BAPIErrors} from '@buttress/api';
 

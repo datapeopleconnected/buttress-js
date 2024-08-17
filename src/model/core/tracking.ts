@@ -16,10 +16,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Logging from '../../helpers/logging';
-// import * as Shared from '../shared';
-// import Sugar from 'sugar';
-
 import StandardModel from '../type/standard';
 
 /**

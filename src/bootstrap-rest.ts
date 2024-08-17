@@ -16,10 +16,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import path from 'path';
-import fs from 'fs';
-import http from 'http';
-import cluster from 'cluster';
+import path from 'node:path';
+import fs from 'node:fs';
+import http from 'node:http';
+import cluster from 'node:cluster';
+
 import Express from 'express';
 import {RedisClient, createClient} from 'redis';
 import cors from 'cors';

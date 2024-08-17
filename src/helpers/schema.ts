@@ -13,10 +13,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import crypto from 'node:crypto';
 
 import Logging from './logging';
 import Sugar from 'sugar';
-import crypto from 'crypto';
 
 import Datastore from '../datastore';
 

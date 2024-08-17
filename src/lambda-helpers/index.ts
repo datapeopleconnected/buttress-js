@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import fs from 'fs';
+import fs from 'node:fs';
 
 // ? Why are we dynamically loading classes from the filesystem?
 

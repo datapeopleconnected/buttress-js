@@ -15,15 +15,16 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import fs from 'fs';
-import path from 'path';
-import util from 'util';
+import fs from 'node:fs';
+import path from 'node:path';
+import util from 'node:util';
+import {exec as cpExec} from 'node:child_process';
 
-import {exec as cpExec} from 'child_process';
 const exec = util.promisify(cpExec);
 
 import createConfig from 'node-env-obj';
 const Config = createConfig() as unknown as Config;
+
 import Sugar from 'sugar';
 import StandardModel from '../type/standard';
 import * as Helpers from '../../helpers';

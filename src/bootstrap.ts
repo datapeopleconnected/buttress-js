@@ -14,9 +14,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import os from 'os';
-import cluster, {Worker} from 'cluster';
-import EventEmitter from 'events';
+import os from 'node:os';
+import cluster, {Worker} from 'node:cluster';
+import EventEmitter from 'node:events';
 import NRP from 'node-redis-pubsub';
 
 import createConfig from 'node-env-obj';

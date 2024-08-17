@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import {ObjectId} from 'bson';
+import { ObjectId } from 'bson';
 
 import Route from '../route';
 import Model from '../../model';

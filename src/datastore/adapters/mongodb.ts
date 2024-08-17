@@ -13,8 +13,9 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Stream from 'stream';
-import {ObjectId, MongoClient, MongoClientOptions, Db, Collection, Document} from 'mongodb';
+import Stream from 'node:stream';
+
+import { ObjectId, MongoClient, MongoClientOptions, Db, Collection } from 'mongodb';
 
 // The adapter shouldn't be making calls back out to the model, we're too deep.
 import Model from '../../model';

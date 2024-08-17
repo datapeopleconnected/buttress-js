@@ -15,11 +15,12 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Stream from 'stream';
+import { URL } from 'node:url';
+import Stream from 'node:stream';
+
 import ivm from 'isolated-vm';
 import fetch from 'cross-fetch';
 import crypto from 'crypto';
-import {URL} from 'url';
 import randomstring from 'randomstring';
 import base64url from 'base64url';
 import puppeteer from 'puppeteer';

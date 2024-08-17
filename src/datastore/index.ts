@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
 
 // import createConfig from 'node-env-obj';
 // const Config = createConfig() as unknown as Config;

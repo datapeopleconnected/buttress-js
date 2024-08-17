@@ -17,7 +17,6 @@
  */
 
 import Logging from '../../helpers/logging';
-// import * as Shared from '../shared';
 import * as Helpers from '../../helpers';
 
 import StandardModel from '../type/standard';

@@ -15,10 +15,9 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Transform } from 'node:stream';
 
 import * as DataSharingHelpers from './data-sharing';
-
-import { Transform } from 'stream';
 
 import Datastore from '../datastore';
 

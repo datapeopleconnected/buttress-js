@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Stream from 'stream';
+import Stream from 'node:stream';
 
 import * as Helpers from '../../helpers';
 

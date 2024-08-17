@@ -16,7 +16,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import cluster from 'cluster';
+import cluster from 'node:cluster';
+
 import Sugar from 'sugar';
 import createConfig from 'node-env-obj';
 

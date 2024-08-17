@@ -16,8 +16,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import fs from 'fs';
-import util from 'util';
+import fs from 'node:fs';
+import util from 'node:util';
+import {exec as cpExec} from 'node:child_process';
+
 import { v4 as uuidv4 } from 'uuid';
 import hash from 'object-hash';
 import NRP from 'node-redis-pubsub';
@@ -29,7 +31,7 @@ import Logging from '../helpers/logging';
 import Model from '../model';
 import * as Helpers from '../helpers';
 
-import {exec as cpExec} from 'child_process';
+
 const exec = util.promisify(cpExec);
 
 /**

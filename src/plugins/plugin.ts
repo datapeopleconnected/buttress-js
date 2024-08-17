@@ -16,7 +16,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import EventEmitter from 'events';
+import EventEmitter from 'node:events';
+
 import plugins from'./index';
 
 class ButtressPlugin extends EventEmitter {

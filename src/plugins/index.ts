@@ -16,9 +16,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { promises as fs } from 'fs';
-import path from 'path';
-import { EventEmitter } from 'events';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import { EventEmitter } from 'node:events';
 
 import createConfig from 'node-env-obj';
 const Config = createConfig() as unknown as Config;

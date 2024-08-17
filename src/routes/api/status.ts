@@ -15,9 +15,9 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import os from 'node:os';
 
 import Route from '../route';
-import os from 'os';
 
 const routes: (typeof Route)[] = [];
 

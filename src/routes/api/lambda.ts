@@ -17,11 +17,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import util from 'util';
-import Sugar from 'sugar';
-import {ObjectId} from 'bson';
+import util from 'node:util';
+import { exec as cpExec } from 'node:child_process';
 
-import {exec as cpExec} from 'child_process';
+import Sugar from 'sugar';
+import { ObjectId } from 'bson';
+
 const exec = util.promisify(cpExec);
 
 import createConfig from 'node-env-obj';

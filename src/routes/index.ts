@@ -16,7 +16,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import path from 'path';
+import path from 'node:path';
+
 import express from 'express';
 import onFinished from 'on-finished';
 import {v4 as uuidv4} from 'uuid';

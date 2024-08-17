@@ -16,7 +16,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import net from 'net';
+import net from 'node:net';
 
 import createConfig from 'node-env-obj';
 
