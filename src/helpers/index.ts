@@ -316,7 +316,7 @@ export const checkAppPolicyProperty = async (appPolicyList, policyProperties) =>
 		}
 		const appPolicyPropertiesValues = appPolicyList[key];
 		const equalValue = (operator) ? policyProperties[key][operator] : policyProperties[key];
-		if (!equalValue) {
+		if (equalValue === null || equalValue === undefined) {
 			res.passed = false;
 			res.errMessage = 'Policy property value not listed';
 		}
