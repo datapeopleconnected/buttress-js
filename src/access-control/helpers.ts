@@ -40,10 +40,16 @@ class Helpers {
 	evaluateOperation(lhs, rhs, operator): boolean {
 		let passed = false;
 
+		if (rhs === null || lhs === null) {
+			// If either are null then we'll just fail the check, with the exeption being if we're checking for null.
+			if (rhs === null && lhs === null && (operator === '$eq' || operator === '@eq')) return true;
+
+			return false;
+		}
 		switch (operator) {
 		case '$eq':
 		case '@eq': {
-			passed = !lhs || !rhs || lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
+			passed = lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
 		}
 			break;
 		case '$not':
