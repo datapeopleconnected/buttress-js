@@ -36,16 +36,17 @@ class PolicyMatch {
 		}, []);
 	}
 
-	__checkPolicySelection(p, token) {
-		let match = false;
+	__checkPolicySelection(p, token): boolean {
 		const selection = p.selection;
+
+		if (!token) return false;
 
 		if (token.type === 'dataSharing') {
 			const eq = (part, value) => part && part['@eq'] && part['@eq'].toString() === value.toString();
 			return eq(selection['#tokenType'], 'DATA_SHARING') && eq(selection['id'], token.id);
 		}
 
-		if (!token || !token.policyProperties) return;
+		if (!token.policyProperties) return false;
 
 		const policyProperties = token.policyProperties;
 		const matches = Object.keys(selection).reduce((arr: boolean[], key) => {
@@ -60,19 +61,16 @@ class PolicyMatch {
 				return s;
 			});
 
-			lhs.reduce((flag: boolean, val) => {
-				flag = AccessControlHelpers.evaluateOperation(val, rhs, selectionCriterionKey);
-				if (flag) {
-					match = flag;
-					return;
-				}
-			}, false);
-			arr.push(match);
+			const selectionMatches = lhs.reduce((acc: Array<boolean>, val) => {
+				acc.push(AccessControlHelpers.evaluateOperation(val, rhs, selectionCriterionKey));
+				return acc;
+			}, []);
+			arr.push(selectionMatches);
 
 			return arr;
 		}, []);
 
-		return (matches.length > 0) ? matches.every((v) => v) : match;
+		return (matches.length > 0) ? matches.flat().every((v) => v) : false;
 	}
 }
 export default new PolicyMatch();
