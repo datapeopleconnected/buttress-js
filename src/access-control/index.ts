@@ -329,7 +329,7 @@ class AccessControl {
 			if (config) {
 				arr.push({
 					name: policy.name,
-					merge: policy.merge,
+					env: (policy.env) ? policy.env : null,
 					config,
 				});
 			}
@@ -344,7 +344,7 @@ class AccessControl {
 			return outcome;
 		}
 
-		let schemaBasePolicyConfig = policiesConfig.reduce((obj, policy) => {
+		const schemaBasePolicyConfig = policiesConfig.reduce((obj, policy) => {
 			const conditionSchemaIdx = policy.config.conditions.findIndex((cond) => {
 				const cs = cond.schema;
 				if (isCoreSchema) {
@@ -392,7 +392,6 @@ class AccessControl {
 						conditions: [],
 						query: [],
 						projection: [],
-						merge: policy.merge,
 					};
 				}
 
@@ -409,7 +408,7 @@ class AccessControl {
 					obj[policy.name].projection.push(projection);
 				}
 				obj[policy.name].env = {
-					...obj.env,
+					...policy.env,
 					...policy.config.env,
 				};
 			}
@@ -422,32 +421,6 @@ class AccessControl {
 			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
 			outcome.err.message = `Request policy does not have access to the requested schema: ${schemaName}`;
 			return outcome;
-		}
-
-		const mergedPolicyConfig = Object.keys(schemaBasePolicyConfig).reduce((obj, configKey) => {
-			if (schemaBasePolicyConfig[configKey].merge) {
-				obj[configKey] = schemaBasePolicyConfig[configKey];
-			}
-
-			return obj;
-		}, {});
-
-		if (Object.keys(schemaBasePolicyConfig).length !== Object.keys(mergedPolicyConfig).length) {
-			const highestPriorityKey = Object.keys(schemaBasePolicyConfig).pop();
-			const highestPolicyPriorityConfig = Object.keys(schemaBasePolicyConfig).reduce((obj, configKey) => {
-				if (highestPriorityKey !== configKey) return obj;
-
-				obj[configKey] = schemaBasePolicyConfig[configKey];
-				return obj;
-			}, {});
-
-			await AccessControlConditions.applyPolicyConditions(req, highestPolicyPriorityConfig);
-			if (Object.keys(highestPolicyPriorityConfig).length < 1) {
-				if (!highestPriorityKey) throw new Error('Trying delete key from schemaBasePolicyConfig but key is not defined');
-				delete schemaBasePolicyConfig[highestPriorityKey];
-			} else {
-				schemaBasePolicyConfig = highestPolicyPriorityConfig;
-			}
 		}
 
 		if (!appId) throw new Error('Trying to combine core with app schema but appId is not defined');

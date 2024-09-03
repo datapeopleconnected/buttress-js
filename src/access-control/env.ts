@@ -150,7 +150,7 @@ class PolicyEnv {
 			return result.every((obj) => obj[output.key]);
 		}
 
-		return (result.length > 0 && result[output]) ? result[output] : false;
+		return (result.length > 0 && result[output]) ? result[output] : (outputType === 'array') ? [] : '';
 	}
 
 	__getObjValueByPath(obj, path) {

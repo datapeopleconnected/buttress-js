@@ -184,7 +184,7 @@ export default class BootstrapRest extends Bootstrap {
 			credentials: true,
 		}));
 		app.use(Express.static(`${Config.paths.appData}/public`));
-		
+
 		// @ts-expect-error - Calling a private function within the class, this is the only way it's exposed.
 		Plugins.on('request', (req, res) => app.handle(req, res));
 

@@ -39,12 +39,6 @@ class PolicySchemaModel extends StandardModel {
 					__required: true,
 					__allowUpdate: true,
 				},
-				merge: {
-					__type: 'boolean',
-					__default: true,
-					__required: true,
-					__allowUpdate: true,
-				},
 				priority: {
 					__type: 'number',
 					__default: 0,
@@ -52,6 +46,12 @@ class PolicySchemaModel extends StandardModel {
 					__allowUpdate: true,
 				},
 				selection: {
+					__type: 'object',
+					__default: null,
+					__required: true,
+					__allowUpdate: true,
+				},
+				env: {
 					__type: 'object',
 					__default: null,
 					__required: true,
@@ -131,9 +131,9 @@ class PolicySchemaModel extends StandardModel {
 		const policyBody = {
 			id: (body.id) ? this.createId(body.id) : this.createId(),
 			name: (body.name) ? body.name : null,
-			merge: (body.merge) ? body.merge : false,
 			priority: (body.priority) ? body.priority : 0,
-			selection: (body.selection) ? body.selection : [],
+			selection: (body.selection) ? body.selection : {},
+			env: (body.env) ? body.env : {},
 			config: policyConfig,
 			limit: (body.limit) ? Sugar.Date.create(body.limit) : null,
 		};
