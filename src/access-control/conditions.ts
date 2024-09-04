@@ -38,7 +38,6 @@ class Conditions {
 	conditionQueryRegex: RegExp;
 
 	envStr: string;
-	appShortId: string | null;
 
 	constructor() {
 		this.queryOperator = [
@@ -85,12 +84,9 @@ class Conditions {
 
 		this.conditionQueryRegex = new RegExp('query.');
 		this.envStr = 'env.';
-		this.appShortId = null;
 	}
 
 	async applyPolicyConditions(req, userPolicies) {
-		if (!this.appShortId) this.appShortId = Helpers.shortId(req.authApp.id);
-
 		for await (const policyKey of Object.keys(userPolicies)) {
 			await this.__checkPolicyConditions(req, userPolicies, policyKey);
 		}
@@ -173,7 +169,8 @@ class Conditions {
 			const dbConditionQuery = Object.assign({}, envVar[varSchemaKey]);
 			this.__buildDbConditionQuery(envVar, conditionObj[key], varSchemaKey, dbConditionQuery);
 
-			return await this.__getDbConditionQueryResult(dbConditionQuery, varSchemaKey);
+			const appShortId = (req.authApp.id) ? Helpers.shortId(req.authApp.id) : undefined;
+			return await this.__getDbConditionQueryResult(dbConditionQuery, varSchemaKey, appShortId);
 		}
 
 		let evaluationRes = false;
@@ -209,12 +206,20 @@ class Conditions {
 		});
 	}
 
-	async __getDbConditionQueryResult(query, varSchemaKey) {
-		const collection = (this.appShortId) ? `${this.appShortId}-${varSchemaKey}` : varSchemaKey;
+	async __getDbConditionQueryResult(query: any, schemaName: string, shortId?: string) {
+		const collection = (shortId) ? `${shortId}-${schemaName}` : schemaName;
+		let model = Model.getModel(collection);
+
+		// If we're unable to find the model on the app then check if we're targeting a core schema.
+		if (model === undefined) model = Model.getCoreModel(schemaName);
+
+		// If model is still not defined then there is no hope.
+		if (model === undefined) throw new Error(`Unable to find model for schema: ${schemaName}`);
+
 		const convertedQuery: any = {};
 		await Filter.addAccessControlPolicyRuleQuery(convertedQuery, query, 'conditionQuery');
-		query = Model[collection].parseQuery(convertedQuery.conditionQuery, {}, Model[collection].flatSchemaData);
-		return await Model[collection].count(query) > 0;
+		query = model.parseQuery(convertedQuery.conditionQuery, {}, model.flatSchemaData);
+		return await model.count(query) > 0;
 	}
 
 	async __checkConditionQuery(req, envVar, operator, conditionObj, key, conditionKey) {

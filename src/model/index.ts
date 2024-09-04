@@ -161,6 +161,9 @@ class Model {
 	getModel(name: string) {
 		return this.models[name];
 	}
+	getCoreModel(name: string) {
+		return CoreModels[name];
+	}
 
 	get CoreModels() {
 		return CoreModels;
