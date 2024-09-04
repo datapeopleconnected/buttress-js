@@ -213,7 +213,7 @@ export default class LambdaManager {
 	 * @return {Promise}
 	 */
 	async _loadLambdaPathsMutation() {
-		const rxsLambdas = await Model.getModel('lambda').find({
+		const rxsLambdas = await Model.getModel('Lambda').find({
 			'executable': {
 				$eq: true,
 			},
@@ -430,7 +430,7 @@ export default class LambdaManager {
 	}
 
 	async _executePendingPathMutation() {
-		const rxsLambdaExecs = await Model.getModel('lambdaExecution').find({
+		const rxsLambdaExecs = await Model.getModel('LambdaExecution').find({
 			'status': {
 				$eq: 'PENDING',
 			},
