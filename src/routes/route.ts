@@ -347,6 +347,8 @@ export default class Route {
 		// Replace API version prefix
 		path = `/${path.join('/')}`.replace(Config.app.apiPrefix, '');
 
+		this._broadcast(req, res, result, path, true);
+
 		this._broadcast(req, res, result, path);
 
 		Logging.logTimer('_boardcastData:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
