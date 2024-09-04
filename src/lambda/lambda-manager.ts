@@ -99,7 +99,8 @@ export default class LambdaManager {
 		this._manageLambdaFolders();
 		this._subscribeToLambdaWorkers();
 		this._handleLambdaAPIExecution();
-		this._handleLambdaPathMutationExecution();
+		this._notifyLambdaPathChange();
+		this._executePendingPathMutation();
 		this._setTimeoutCheck();
 
 		this.__nrp?.on('app-lambda:path-mutation-bust-cache', async (lambda) => {
@@ -212,7 +213,7 @@ export default class LambdaManager {
 	 * @return {Promise}
 	 */
 	async _loadLambdaPathsMutation() {
-		const rxsLambdas = await Model.getModel('Lambda').find({
+		const rxsLambdas = await Model.getModel('lambda').find({
 			'executable': {
 				$eq: true,
 			},
@@ -225,9 +226,9 @@ export default class LambdaManager {
 
 		if (lambdas.length < 1) return;
 
-		lambdas.forEach((lambda) => {
-			this.__populateLambdaPathsMutation(lambda);
-		});
+		for await (const lambda of lambdas) {
+			await this.__populateLambdaPathsMutation(lambda);
+		}
 	}
 
 	__populateLambdaPathsMutation(lambda) {
@@ -237,6 +238,7 @@ export default class LambdaManager {
 		Logging.logSilly(`Pushing a new path mutation lambda (${lambda.name}) into the path mutation cached array`);
 		this._lambdaPathsMutation.push({
 			lambdaId: lambda.id,
+			git: lambda.git,
 			type: trigger.type,
 			paths: trigger.pathMutation.paths,
 		});
@@ -290,7 +292,7 @@ export default class LambdaManager {
 		if (count > 0) Logging.log(`[${this.name}]: announced ${count} lambda`);
 	}
 
-	async _createLambdaExecution(lambda, type) {
+	async _createLambdaExecution(lambda, type, metadata: {key: string, value: string}[] = []) {
 		const deployment = await Model.getModel('Deployment').findOne({
 			lambdaId: Model.getModel('Lambda').createId(lambda.id),
 			hash: lambda.git.hash,
@@ -303,6 +305,7 @@ export default class LambdaManager {
 			triggerType: type,
 			lambdaId: Model.getModel('Lambda').createId(lambda.id),
 			deploymentId: Model.getModel('Deployment').createId(deployment.id),
+			metadata: metadata,
 		}, lambda._appId);
 
 		return lambdaExecution;
@@ -420,40 +423,76 @@ export default class LambdaManager {
 	}
 
 	async _checkAPIAndPathMutationQueue() {
-		const arr = this._lambdaAPI.concat(this._lambdaPathsMutationExec);
+		const arr = this._lambdaAPI.concat(this._lambdaPathsMutationExec.filter((i) => i.id));
 		if (arr.length > 0) {
 			this.__announcePendingExecutions(arr);
+		}
+	}
+
+	async _executePendingPathMutation() {
+		const rxsLambdaExecs = await Model.getModel('lambdaExecution').find({
+			'status': {
+				$eq: 'PENDING',
+			},
+			'triggerType': {
+				$eq: 'PATH_MUTATION',
+			},
+		});
+
+		const lambdaExecs = await Helpers.streamAll(rxsLambdaExecs);
+		if (lambdaExecs.length < 1) return;
+		for await (const lambdaExec of lambdaExecs) {
+			const crMetadata = lambdaExec.metadata.find((m) => m.key === 'CR');
+			if (!crMetadata) continue;
+
+			const cr = JSON.parse(crMetadata.value);
+			if (!cr) continue;
+			const [data] = cr;
+			await this._handleLambdaPathMutationExecution(data, false, lambdaExec.id);
 		}
 	}
 
 	/**
 	 * Listening on redis event to handle the execution of the path mutations lambda
 	 */
-	async _handleLambdaPathMutationExecution() {
-		this.__nrp?.on('notifyLambdaPathChange', async (data: any) => {
+	_notifyLambdaPathChange() {
+		this.__nrp?.on('notifyLambdaPathChange', async (data) => {
 			data = JSON.parse(data);
-	
-			const paths = data.paths;
-			const schema = data.collection;
-
-			Logging.logDebug(`Manager is announcing path mutation lambda to be executed for ${schema} on paths ${paths}`);
-
-			const lambdas = this._lambdaPathsMutation.filter((item) => {
-				return item.paths.some((itemPath) => paths.some((path) => this._checkMatchingPaths(path, itemPath, schema)));
-			}).map((item) => {
-				return {
-					id: item.lambdaId,
-					type: item.type,
-				};
-			});
-
-			const cr = [{
-				paths,
-				values: data.values,
-			}];
-
-			this._debounceLambdaTriggers(lambdas, cr, this._lambdaPathMutationTimeout);
+			await this._handleLambdaPathMutationExecution(data);
 		});
+	}
+
+	/**
+	 * Handle lambda path mutation execution
+	 * @param {Object} data
+	 * @param {Boolean} addExecution
+	 * @param {string} executionId
+	 */
+	async _handleLambdaPathMutationExecution(data, addExecution = true, executionId = null) {
+		data = JSON.parse(data);
+	
+		const paths = data.paths;
+		const schema = data.collection;
+		const values = data.values;
+
+		Logging.logDebug(`Manager is announcing path mutation lambda to be executed for ${schema} on paths ${paths}`);
+		const lambdas = this._lambdaPathsMutation.filter((item) => {
+			return item.paths.some((itemPath) => paths.some((path) => this._checkMatchingPaths(path, itemPath, schema)));
+		}).map((item) => {
+			return {
+				id: item.lambdaId,
+				git: item.git,
+				type: item.type,
+			};
+		});
+
+		const cr = [{
+			paths,
+			values,
+			schema,
+		}];
+
+		this._debounceLambdaTriggers(lambdas, cr, addExecution, executionId);
 	}
 
 	/**
@@ -508,15 +547,16 @@ export default class LambdaManager {
 	 * Debounces checks for based path lambdas
 	 * @param {Array} lambdas
 	 * @param {Array} body
-	 * @param {String} timeout
+	 * @param {Boolean} addExecution
+	 * @param {string} executionId
 	 */
-	async _debounceLambdaTriggers(lambdas, body, timeout) {
+	async _debounceLambdaTriggers(lambdas, body, addExecution, executionId) {
 		// We'll make a hash of the body so we can use it to compare in the debouncer
 		const bodyHash = hash(body);
 
-		lambdas.forEach((lambda) => {
-			// Check to see if there is an path mutation for the same lambda & body
-			const debouncedLambdaIdx = this._lambdaPathsMutationExec.findIndex(
+		for await (const lambda of lambdas) {
+			// Check to see if there is a path mutation for the same lambda & body
+			let debouncedLambdaIdx = this._lambdaPathsMutationExec.findIndex(
 				(item) => (item.lambdaId.toString() === lambda.id.toString() && item.bodyHash === bodyHash));
 
 			const retry = this._lambdaPathsMutationExec[debouncedLambdaIdx]?.retry || 0;
@@ -529,8 +569,9 @@ export default class LambdaManager {
 
 			if (debouncedLambdaIdx === -1) {
 				const execID = uuidv4();
-				this._lambdaPathsMutationExec.push({
-					timer: setTimeout(() => this._announcePathMutationLambda(execID), timeout),
+				debouncedLambdaIdx = this._lambdaPathsMutationExec.push({
+					id: executionId,
+					timer: setTimeout(() => this._announcePathMutationLambda(execID), this._lambdaPathMutationTimeout),
 					pathMutation: true,
 					triggerType: lambda.type,
 					lambdaId: lambda.id,
@@ -538,20 +579,24 @@ export default class LambdaManager {
 					body,
 					bodyHash,
 					retry: 1,
-				});
+				}) - 1;
+			}
 
+			if (addExecution && debouncedLambdaIdx === -1) {
+				const lambdaExecMetadata = [{key: 'CR', value: JSON.stringify(body)}];
+				const execution = await this._createLambdaExecution(lambda, lambda.type, lambdaExecMetadata);
+				this._lambdaPathsMutationExec[debouncedLambdaIdx].id = execution.id;
 				return;
 			}
 
 			const pmExecRecord = this._lambdaPathsMutationExec[debouncedLambdaIdx];
 
 			clearTimeout(pmExecRecord?.timer);
-			pmExecRecord.timer = setTimeout(() => this._announcePathMutationLambda(pmExecRecord.workerExecID), timeout);
+			pmExecRecord.timer = setTimeout(() => this._announcePathMutationLambda(pmExecRecord.workerExecID), this._lambdaPathMutationTimeout);
 			pmExecRecord.body = pmExecRecord.body.concat(body);
 			pmExecRecord.retry = pmExecRecord.retry + 1;
-
 			return;
-		});
+		}
 	}
 
 	/**
@@ -569,7 +614,8 @@ export default class LambdaManager {
 
 		// Create an execution if one doesn't exist
 		if (!pathMutationLambda.id) {
-			const {id} = await this._createLambdaExecution(lambda, pathMutationLambda.triggerType);
+			const lambdaExecMetadata = [{key: 'CR', value: JSON.stringify(pathMutationLambda.body)}];
+			const {id} = await this._createLambdaExecution(lambda, pathMutationLambda.triggerType, lambdaExecMetadata);
 			pathMutationLambda.id = id;
 		}
 
