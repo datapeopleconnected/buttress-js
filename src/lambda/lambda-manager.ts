@@ -469,8 +469,6 @@ export default class LambdaManager {
 	 * @param {string} executionId
 	 */
 	async _handleLambdaPathMutationExecution(data, addExecution = true, executionId = null) {
-		data = JSON.parse(data);
-	
 		const paths = data.paths;
 		const schema = data.collection;
 		const values = data.values;
