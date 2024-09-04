@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
  * Copyright (C) 2016-2024 Data People Connected LTD.
@@ -586,7 +584,6 @@ class AccessControl {
 	__getInnerObjectValue(originalObj) {
 		if (!originalObj) return null;
 
-		// eslint-disable-next-line no-unused-vars
 		const {schema, ...rest} = originalObj;
 		return rest;
 	}

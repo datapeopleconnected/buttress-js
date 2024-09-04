@@ -1,5 +1,3 @@
-'use strict'; // eslint-disable-line max-lines
-
 /**
  * Buttress - The federated real-time open data platform
  * Copyright (C) 2016-2024 Data People Connected LTD.

@@ -183,7 +183,7 @@ const __validateProp = (prop, config) => {
 	case 'id':
 		if (type === 'string') {
 			try {
-				prop.value = Datastore.getInstance('core').ID.new(prop.value); // eslint-disable-line new-cap
+				prop.value = Datastore.getInstance('core').ID.new(prop.value);
 				valid = type === 'string';
 			} catch (e) {
 				valid = false;
@@ -191,7 +191,7 @@ const __validateProp = (prop, config) => {
 		} else if (type === 'object') {
 			if (Datastore.getInstance('core').ID.isValid(prop.value)) {
 				try {
-					prop.value = Datastore.getInstance('core').ID.new(prop.value); // eslint-disable-line new-cap
+					prop.value = Datastore.getInstance('core').ID.new(prop.value);
 					valid = true;
 				} catch (e) {
 					valid = false;
