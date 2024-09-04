@@ -16,7 +16,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Sugar from 'sugar';
+import Sugar from '../helpers/sugar';
 
 import Model from '../model';
 import Logging from '../helpers/logging';
@@ -46,6 +46,7 @@ class Helpers {
 
 			return false;
 		}
+
 		switch (operator) {
 		case '$eq':
 		case '@eq': {

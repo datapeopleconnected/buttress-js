@@ -28,13 +28,13 @@ const exec = util.promisify(cpExec);
 import createConfig from 'node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Sugar from 'sugar';
 import ivm from 'isolated-vm';
 import {v4 as uuidv4} from 'uuid';
 import webpack from 'webpack';
 
 import NodePolyfillPlugin from 'node-polyfill-webpack-plugin';
 
+import Sugar from '../helpers/sugar';
 import Logging from '../helpers/logging';
 import Model from '../model';
 import * as Helpers from '../helpers';

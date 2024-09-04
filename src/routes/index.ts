@@ -20,8 +20,8 @@ import path from 'node:path';
 
 import express from 'express';
 import onFinished from 'on-finished';
-import {v4 as uuidv4} from 'uuid';
-import {ObjectId} from 'bson';
+import { v4 as uuidv4 } from 'uuid';
+import { ObjectId } from 'bson';
 import NRP from 'node-redis-pubsub';
 
 import createConfig from 'node-env-obj';
@@ -40,7 +40,7 @@ import SchemaRoutes from './schema-routes';
 import Datastore from '../datastore';
 
 // Core Routes
-import {Routes as CoreRoutes} from './api';
+import { Routes as CoreRoutes } from './api';
 
 class Routes {
 	app: express.Application;

@@ -16,12 +16,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Sugar from 'sugar';
-import 'sugar-inflections';
-
 import hash from 'object-hash';
 import NRP from 'node-redis-pubsub';
 
+import Sugar from '../helpers/sugar';
 import Model from '../model';
 import Logging from '../helpers/logging';
 import Schema from '../schema';

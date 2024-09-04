@@ -25,7 +25,7 @@ const exec = util.promisify(cpExec);
 import createConfig from 'node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Sugar from 'sugar';
+import Sugar from '../../helpers/sugar';
 import StandardModel from '../type/standard';
 import * as Helpers from '../../helpers';
 import Logging from '../../helpers/logging';

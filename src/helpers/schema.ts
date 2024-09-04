@@ -16,7 +16,7 @@
 import crypto from 'node:crypto';
 
 import Logging from './logging';
-import Sugar from 'sugar';
+import Sugar from './sugar';
 
 import Datastore from '../datastore';
 

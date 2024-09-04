@@ -20,7 +20,6 @@
 import util from 'node:util';
 import { exec as cpExec } from 'node:child_process';
 
-import Sugar from 'sugar';
 import { ObjectId } from 'bson';
 
 const exec = util.promisify(cpExec);
@@ -30,6 +29,7 @@ const Config = createConfig() as unknown as Config;
 
 import Route from '../route';
 import Model from '../../model';
+import Sugar from '../../helpers/sugar';
 import * as Helpers from '../../helpers';
 
 import Datastore from '../../datastore';

@@ -17,10 +17,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Sugar from 'sugar';
-
 import Route from '../route';
 import Model from '../../model';
+import Sugar from '../../helpers/sugar';
 import Logging from '../../helpers/logging';
 import * as Helpers from '../../helpers';
 import Schema from '../../schema';

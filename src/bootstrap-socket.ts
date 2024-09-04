@@ -25,8 +25,7 @@ import Express from 'express';
 import {ObjectId} from 'bson';
 import {createClient} from 'redis';
 import {v4 as uuidv4} from 'uuid';
-import Sugar from 'sugar';
-import 'sugar-inflections';
+import Sugar from './helpers/sugar';
 
 import {Server as sio, Socket as sioSocket} from 'socket.io';
 import sioClient, {Socket as sioClientSocket} from 'socket.io-client';

@@ -17,7 +17,7 @@
  */
 import crypto from 'node:crypto';
 
-import Sugar from 'sugar';
+import Sugar from './helpers/sugar';
 import * as Helpers from './helpers';
 
 import Plugins from './plugins';

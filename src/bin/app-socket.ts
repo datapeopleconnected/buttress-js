@@ -18,7 +18,6 @@
 
 import cluster from 'node:cluster';
 
-import Sugar from 'sugar';
 import createConfig from 'node-env-obj';
 
 const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
@@ -28,8 +27,6 @@ const Config = createConfig({
 	envPath: '../../',
 	configPath: '../',
 }) as unknown as Config;
-
-Sugar.Date.setLocale('en-GB');
 
 import Logging from '../helpers/logging';
 import BootstrapSocket from '../bootstrap-socket';

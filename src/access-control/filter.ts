@@ -16,7 +16,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Sugar from 'sugar';
+import Sugar from '../helpers/sugar';
+
 import { ObjectId } from 'bson';
 
 import accessControlHelpers from './helpers';
