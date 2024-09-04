@@ -427,6 +427,7 @@ class Routes {
 				return next();
 			}
 
+			let reqToken: any = null;
 			let tokenApp: any = null;
 			let useUserToken: any = true;
 
@@ -465,6 +466,12 @@ class Routes {
 					throw new Helpers.Errors.RequestError(404, 'unknown_lambda_endpoint');
 				}
 
+				// For now make sure that the private lambdas are called by an existing token
+				if (req.authLambda.type === 'PRIVATE' && !reqToken) {
+					reqToken = await this._getProvidedToken(req);
+					// TODO: Lambda is private and we should prob do something here?
+				}
+
 				Logging.logTimer(`_authenticateAPILambdaToken:got-lambda ${req.authLambda.id}`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
@@ -489,7 +496,7 @@ class Routes {
 
 			// Parse the token from the req headers / params
 			if (useUserToken) {
-				req.token = await this._getProvidedToken(req);
+				req.token = (reqToken) ? reqToken : await this._getProvidedToken(req);
 			}
 
 			// If not a lambda API call
@@ -878,10 +885,6 @@ class Routes {
 			res.errCode = 404;
 			res.errMessage = 'api_method_not_found';
 			return res;
-		}
-
-		if (lambda.type === 'PRIVATE') {
-			// TODO: Lambda is private and we should prob do something here?
 		}
 
 		const deployment = await Model.getModel('Deployment').findOne({
