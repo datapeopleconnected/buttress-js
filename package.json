@@ -33,10 +33,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/wearelighten/buttress-js.git"
+    "url": "https://github.com/datapeopleconnected/buttress-js.git"
   },
   "bugs": {
-    "url": "https://github.com/wearelighten/buttress-js/issues"
+    "url": "https://github.com/datapeopleconnected/buttress-js/issues"
   },
   "dependencies": {
     "@buttress/api": "~3.0.0-50",

@@ -46,4 +46,4 @@ You can also run the individually using the following:
 ```
 ## Testing ##
 Tests are implemented in the ButtressJS API.
-You can find the API here: https://github.com/wearelighten/buttress-js-api
+You can find the API here: https://github.com/datapeopleconnected/buttress-js-api
