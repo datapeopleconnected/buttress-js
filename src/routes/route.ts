@@ -351,6 +351,8 @@ export default class Route {
 
 		this._broadcast(req, res, result, path);
 
+		await this._checkBasedPathLambda(req);
+
 		Logging.logTimer('_boardcastData:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 	}
 
@@ -366,7 +368,6 @@ export default class Route {
 		Logging.logTimer('_broadcast:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		const isReadStream = (result instanceof Stream.Readable && result.readable);
-		await this._checkBasedPathLambda(req);
 
 		const emit = (_result) => {
 			if (this.activityBroadcast === true) {
