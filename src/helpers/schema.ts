@@ -490,7 +490,8 @@ export const sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number
 			propVal.path = property.split('.').pop();
 			propVal.value = (value) ? value : __getPropDefault(config);
 			if (Array.isArray(body)) {
-				if (!bodyIdx) throw new Error('bodyIdx is required but condition wasn\'t set to handle it being undefined');
+				// TODO: Error here
+				if (bodyIdx === undefined) throw new Error('bodyIdx is required but condition wasn\'t set to handle it being undefined');
 				const isSubProperty = property.split('.');
 				propVal.path = property;
 				propVal.value = (isSubProperty.length > 1) ? isSubProperty.reduce((obj, str) => obj?.[str], body[bodyIdx]) : body[bodyIdx][property];

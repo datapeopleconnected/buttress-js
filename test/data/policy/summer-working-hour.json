@@ -1,0 +1,51 @@
+{
+  "name": "summer-working-hours",
+  "priority": 2,
+  "merge": true,
+  "selection": {
+    "securityClearance": {
+      "@eq": 1
+    }
+  },
+  "config": [
+    {
+      "endpoints": [
+        "GET"
+      ],
+      "env": {
+        "startTime": "01:00",
+        "endTime": "01:01",
+        "time": "now"
+      },
+      "conditions": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "@and": [
+            {
+              "@env.time": {
+                "@gtDate": "env.startTime"
+              }
+            },
+            {
+              "@env.time": {
+                "@ltDate": "env.endTime"
+              }
+            }
+          ]
+        }
+      ],
+      "projection": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "keys": [
+            "name"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "name": "override-access",
+  "selection": {
+    "securityClearance": {
+      "@eq": 100
+    }
+  },
+  "config": [
+    {
+      "endpoints": [
+        "GET"
+      ],
+      "env": {
+        "switch": {
+          "id": "62b09ee325c88db16d9da6ca",
+          "state": "ON"
+        }
+      },
+      "conditions": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "@and": [
+            {
+              "query.switch": {
+                "switch.id": {
+                  "@eq": "env.switch.id"
+                },
+                "switch.state": {
+                  "@eq": "env.switch.state"
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "query": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "access": "%FULL_ACCESS%"
+        }
+      ]
+    }
+  ]
+}

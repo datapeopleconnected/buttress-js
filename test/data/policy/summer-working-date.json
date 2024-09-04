@@ -1,0 +1,49 @@
+{
+  "name": "summer-working-date",
+  "priority": 1,
+  "merge": true,
+  "selection": {
+    "grade": {
+      "@eq": 6
+    }
+  },
+  "config": [
+    {
+      "endpoints": [
+        "GET"
+      ],
+      "env": {
+        "startDate": "01/07/2022",
+        "endDate": "31/01/2042",
+        "date": "now"
+      },
+      "conditions": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "@and": [
+            {
+              "@env.date": {
+                "@gtDate": "env.startDate"
+              }
+            },
+            {
+              "@env.date": {
+                "@ltDate": "env.endDate"
+              }
+            }
+          ]
+        }
+      ],
+      "query": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "access": "%FULL_ACCESS%"
+        }
+      ]
+    }
+  ]
+}

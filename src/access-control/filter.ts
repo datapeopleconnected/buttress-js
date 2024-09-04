@@ -58,13 +58,11 @@ class Filter {
 	}
 
 	async addAccessControlPolicyQuery(req, tokenPolicies) {
-		await Object.keys(tokenPolicies).reduce(async (prev, key) => {
-			await prev;
-			await tokenPolicies[key].query.reduce(async (prev, q) => {
-				await prev;
+		for await (const key of Object.keys(tokenPolicies)) {
+			for await (const q of tokenPolicies[key].query) {
 				await this.addAccessControlPolicyRuleQuery(req, q, 'accessControlQuery', tokenPolicies[key].env);
-			}, Promise.resolve());
-		}, Promise.resolve());
+			}
+		}
 	}
 
 	async addAccessControlPolicyRuleQuery(req, policyQuery, str, env: any = null) {
@@ -73,35 +71,34 @@ class Filter {
 			req[str] = {};
 		}
 
-		if (translatedQuery === null || Object.values(req[str]).length > 0) return req[str];
+		if (translatedQuery === null) return req[str];
 
-		await Object.keys(translatedQuery).reduce(async (prev, key) => {
-			await prev;
+		for await (const key of Object.keys(translatedQuery)) {
+			if (Object.keys(translatedQuery[key]).length < 1) return;
 
-			if (!Object.keys(translatedQuery[key]).length) return;
-			if (req[str][key] && Array.isArray(req[str][key]) && Array.isArray(translatedQuery[key])) {
-				await translatedQuery[key].reduce(async (prev, elem) => {
-					await prev;
+			if (req[str][key]) {
+				if (Array.isArray(req[str][key]) && Array.isArray(translatedQuery[key])) {
+					for await (const elem of translatedQuery[key]) {
+						const elementExist = req[str][key].findIndex((el) => {
+							return JSON.stringify(el) === JSON.stringify(elem);
+						});
 
-					const elementExist = req[str][key].findIndex((el) => {
-						return JSON.stringify(el) === JSON.stringify(elem);
+						if (elementExist !== -1) return;
+						req[str][key].push(elem);
+					}
+
+					return;
+				} else if (!Array.isArray(req[str][key]) && !Array.isArray(translatedQuery[key])) {
+					Object.keys(req[str][key]).forEach((k) => {
+						if (this.arrayOperators.includes(k)) {
+							req[str][key][k] = req[str][key][k].concat(translatedQuery[key][k]).filter((v, idx, arr) => arr.indexOf(v) === idx);
+						} else {
+							req[str][key][k] = translatedQuery[key][k];
+						}
 					});
 
-					if (elementExist !== -1) return;
-					req[str][key].push(elem);
-				}, Promise.resolve());
-
-				return;
-			}
-
-			if (req[str][key] && !Array.isArray(req[str][key]) && !Array.isArray(translatedQuery[key])) {
-				Object.keys(req[str][key]).forEach((k) => {
-					if (!this.arrayOperators.includes(k)) return;
-
-					req[str][key][k] = req[str][key][k].concat(translatedQuery[key][k]).filter((v, idx, arr) => arr.indexOf(v) === idx);
-				});
-
-				return;
+					return;
+				}
 			}
 
 			if (req.authApp && req.authApp.id && Object.keys(env).length > 0) {
@@ -109,7 +106,7 @@ class Filter {
 			}
 
 			req[str][key] = translatedQuery[key];
-		}, Promise.resolve());
+		}
 	}
 
 	async __substituteEnvVariables(obj, env, appId, authUser) {
@@ -163,6 +160,7 @@ class Filter {
 		const reqQuery = (req.body.query)? req.body.query : null;
 		const isOriginalQueryEmpty = await this._checkOriginalQueryIsEmpty(reqQuery);
 		if (isOriginalQueryEmpty) {
+			// TODO: Shouldn't be merging the query here.
 			req.body.query = accessControlQuery;
 			return passed;
 		}
@@ -187,6 +185,7 @@ class Filter {
 			}
 
 			passed = this.__addAccessControlQueryPropertyToOriginalQuery(deepQueryObj, accessControlQuery, key);
+			// TODO: Shouldn't be merging the query here.
 			req.body.query = deepQueryObj;
 		}
 

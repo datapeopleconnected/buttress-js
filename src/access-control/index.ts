@@ -30,6 +30,26 @@ import AccessControlProjection from './projection';
 import AccessControlPolicyMatch from './policy-match';
 import AccessControlHelpers from './helpers';
 
+interface SchemaBasePolicyConfig {
+	[key: string]: {
+		appId: string;
+		env: any;
+		conditions: any[];
+		query: any[];
+		projection: any[];
+		merge: boolean;
+	};
+}
+
+interface ACOutcome {
+	res: SchemaBasePolicyConfig;
+	err: {
+		statusCode?: number;
+		logTimerMsg?: string;
+		message?: string;
+	};
+}
+
 class AccessControl {
 	_schemas: {[key: string]: any};
 	_policies: {[key: string]: any};
@@ -93,6 +113,9 @@ class AccessControl {
 	async accessControlPolicyMiddleware(req, res, next) {
 		Logging.logTimer(`accessControlPolicyMiddleware::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
+		// Define a property on the request that we'll use for the access control
+		req.ac = {};
+
 		const isSystemToken = req.token.type === Model.getModel('Token').Constants.Type.SYSTEM;
 		if (isSystemToken) return next();
 
@@ -155,16 +178,22 @@ class AccessControl {
 		const tokenPolicies = this.__getTokenPolicies(token, appId);
 		Logging.logSilly(`Got ${tokenPolicies.length} Matched policies for token ${token.type}:${token.id}`, req.id);
 
-		const policyOutcome: any = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
-		if (policyOutcome.err.statusCode && policyOutcome.err.message) {
-			Logging.logTimer(policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			Logging.logError(policyOutcome.err.message);
-			return res.status(policyOutcome.err.statusCode).send({message: policyOutcome.err.message});
+		try {
+			req.ac.policyOutcome = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
+		} catch (err: any) {
+			Logging.logError(`Error in accessControlPolicyMiddleware: ${err.message}`);
+			console.error(err);
+			return res.status(500).send({message: 'Internal Server Error'});
+		}
+		if (req.ac.policyOutcome.err.statusCode && req.ac.policyOutcome.err.message) {
+			Logging.logTimer(req.ac.policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+			Logging.logError(req.ac.policyOutcome.err.message);
+			return res.status(req.ac.policyOutcome.err.statusCode).send({message: req.ac.policyOutcome.err.message});
 		}
 
 		if (user) {
 			const params = {
-				policies: policyOutcome.res,
+				policies: req.ac.policyOutcome.res,
 				appId: appId,
 				apiPath: req.authApp.apiPath,
 				userId: user.id,
@@ -187,7 +216,7 @@ class AccessControl {
 
 	async _getSchemaRoomStructure(tokenPolicies, req, schemaName, appId) {
 		Logging.logTimer(`_getSchemaRoomStructure::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		const outcome: any = await this.__getPolicyOutcome(tokenPolicies, req, schemaName, appId);
+		const outcome: any = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
 
 		if (outcome.err.statusCode || outcome.err.message) {
 			Logging.logError(`getRoomStructure statusCode:${outcome.err.statusCode} message:${outcome.err.message}`);
@@ -292,9 +321,9 @@ class AccessControl {
 	 * @param {String} appId
 	 * @return {Object}
 	 */
-	async __getPolicyOutcome(tokenPolicies, req, schemaName, appId: string | null = null) {
-		Logging.logTimer(`__getPolicyOutcome::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		const outcome: any = {
+	async __getOutcome(tokenPolicies, req, schemaName, appId: string | null = null) {
+		Logging.logTimer(`__getOutcome::start - policies:${tokenPolicies.length}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		const outcome: ACOutcome = {
 			res: {},
 			err: {},
 		};
@@ -342,6 +371,7 @@ class AccessControl {
 			return outcome;
 		}
 
+		// Merged down policies into one config
 		const schemaBasePolicyConfig = policiesConfig.reduce((obj, policy) => {
 			const conditionSchemaIdx = policy.config.conditions.findIndex((cond) => {
 				const cs = cond.schema;
@@ -434,7 +464,7 @@ class AccessControl {
 		}
 
 		await AccessControlConditions.applyPolicyConditions(req, schemaBasePolicyConfig);
-
+		// This check seems wrong.
 		if (Object.keys(schemaBasePolicyConfig).length < 1) {
 			outcome.err.statusCode = 401;
 			outcome.err.logTimerMsg = `_accessControlPolicy:conditions-not-fulfilled`;
@@ -442,6 +472,7 @@ class AccessControl {
 			return outcome;
 		}
 
+		// TODO: This applys to req and should be moved.
 		await AccessControlFilter.addAccessControlPolicyQuery(req, schemaBasePolicyConfig);
 		const policyProjection = await AccessControlProjection.addAccessControlPolicyQueryProjection(req, schemaBasePolicyConfig, schema);
 		if (!policyProjection) {
@@ -469,7 +500,7 @@ class AccessControl {
 		}
 
 		outcome.res = schemaBasePolicyConfig;
-		Logging.logTimer(`__getPolicyOutcome::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		Logging.logTimer(`__getOutcome::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		return outcome;
 	}

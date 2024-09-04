@@ -40,11 +40,6 @@ class Conditions {
 	envStr: string;
 	appShortId: string | null;
 
-	passedCondition: {
-		partial: boolean;
-		full: boolean;
-	};
-
 	constructor() {
 		this.queryOperator = [
 			'@eq',
@@ -91,98 +86,86 @@ class Conditions {
 		this.conditionQueryRegex = new RegExp('query.');
 		this.envStr = 'env.';
 		this.appShortId = null;
-		this.passedCondition = {
-			partial: false,
-			full: true,
-		};
 	}
 
 	async applyPolicyConditions(req, userPolicies) {
-		if (!this.appShortId) {
-			this.appShortId = Helpers.shortId(req.authApp.id);
-		}
-		return await Object.keys(userPolicies).reduce(async (prev, policyKey) => {
-			await prev;
+		if (!this.appShortId) this.appShortId = Helpers.shortId(req.authApp.id);
+
+		for await (const policyKey of Object.keys(userPolicies)) {
 			await this.__checkPolicyConditions(req, userPolicies, policyKey);
-		}, Promise.resolve());
+		}
 	}
 
 	async __checkPolicyConditions(req, userPolicies, key) {
 		const conditions = userPolicies[key].conditions;
 		if (!conditions || !conditions.length) return;
 
-		let isConditionFullFilled: boolean | null = null;
-		await conditions.reduce(async (prev, condition) => {
-			await prev;
-
-			if (!isConditionFullFilled && isConditionFullFilled !== null) {
-				return;
-			}
-
+		let isConditionFullFilled = false;
+		for await (const condition of conditions) {
 			isConditionFullFilled = await this.__checkLogicalCondition(req, condition, userPolicies[key].env);
-		}, Promise.resolve());
 
+			// If we hit a condition that is not fullfilled, we can break out of the loop.
+			if (isConditionFullFilled === false) break;
+		}
+
+		// TODO: Refactor to return a result instead of modifying the object.
 		if (!isConditionFullFilled) {
 			delete userPolicies[key];
 		}
 	}
 
 	async __checkLogicalCondition(req, condition, envVariables) {
-		this.passedCondition.partial = false;
-		let result = false;
+		const results: Array<boolean> = [];
 
-		await Object.keys(condition).reduce(async (prev, key) => {
-			await prev;
-
-			const obj = condition[key];
-			const partialPass = (key === '@or') ? true : false;
-			this.passedCondition.full = (!partialPass) ? true : false;
+		for await (const key of Object.keys(condition)) {
 			if (this.logicalOperator.includes(key)) {
-				await obj.reduce(async (prev, conditionObj) => {
-					await prev;
-					result = await this.__checkCondition(req, envVariables, conditionObj, false, partialPass);
-				}, Promise.resolve());
-			} else {
-				result = await this.__checkCondition(req, envVariables, condition, false, false);
+				const partialPass = (key === '@or') ? true : false;
+
+				const innerResults: Array<boolean> = [];
+				// TODO: Add check as this is expected to be an array.
+				for await (const conditionObj of condition[key]) {
+					innerResults.push(await this.__checkCondition(req, envVariables, conditionObj, partialPass));
+				}
+
+				if (partialPass) {
+					results.push(innerResults.some((r) => r));
+				} else {
+					results.push((innerResults.length > 0) ? innerResults.every((r) => r) : false);
+				}
+
+				continue;
 			}
-		}, Promise.resolve());
-
-		return result;
-	}
-
-	async __checkCondition(req, envVar, conditionObj, passed, partialPass) {
-		const objectKeys = Object.keys(conditionObj);
-
-		for await (const key of objectKeys) {
-			passed = await this.__checkInnerConditions(req, envVar, conditionObj, key, passed, partialPass);
-			if (this.conditionKeys.includes(`@${key}`)) continue;
-
-			if (partialPass && passed) {
-				this.passedCondition.partial = true;
-			}
-
-			if (!passed) {
-				this.passedCondition.full = false;
-			}
+			
+			results.push(await this.__checkCondition(req, envVariables, condition, false));
 		}
 
-		return (partialPass)? this.passedCondition.partial : this.passedCondition.full;
+		return (results.length > 0) ? results.every((r) => r) : false;
 	}
 
-	async __checkInnerConditions(req, envVar, conditionObj, key, passed, partialPass) {
+	async __checkCondition(req, envVar, conditionObj, partialPass): Promise<boolean> {
+		const results: Array<boolean> = [];
+		for await (const key of Object.keys(conditionObj)) {
+			const innerCondResult = await this.__checkInnerConditions(req, envVar, conditionObj, key, partialPass);
+			// if (this.conditionKeys.includes(`@${key}`)) continue;
+
+			results.push(innerCondResult);
+		}
+
+		if (partialPass) return results.some((r) => r);
+
+		return (results.length > 0) ? results.every((r) => r) : false;
+	}
+
+	async __checkInnerConditions(req, envVar, conditionObj, key, partialPass): Promise<boolean> {
 		const environmentKeys = Object.keys(envVar);
 		const conditionKey = key.replace(this.envStr, '');
 		const isSchemaQuery = this.conditionQueryRegex.test(conditionKey);
-
-		if (this.passedCondition.partial) {
-			return true;
-		}
 
 		if (environmentKeys.includes(conditionKey)) {
 			return this.__evaluateEnvCondition(req, conditionObj, envVar, conditionKey, req.authApp.id, req.authUser);
 		}
 		if (typeof conditionObj[key] === 'object' && !this.conditionKeys.includes(conditionKey) && !isSchemaQuery) {
-			return await this.__checkCondition(req, envVar, conditionObj[key], passed, partialPass);
+			return await this.__checkCondition(req, envVar, conditionObj[key], partialPass);
 		}
 
 		if (isSchemaQuery) {
@@ -193,10 +176,12 @@ class Conditions {
 			return await this.__getDbConditionQueryResult(dbConditionQuery, varSchemaKey);
 		}
 
-		return await Object.keys(conditionObj[key]).reduce(async (innerPrev: Promise<void | boolean>, operator) => {
-			await innerPrev;
-			return await this.__checkConditionQuery(req, envVar, operator, conditionObj, key, conditionKey);
-		}, Promise.resolve());
+		let evaluationRes = false;
+		// TODO: ?? What if theres more than one operator?
+		for await (const operator of Object.keys(conditionObj[key])) {
+			evaluationRes = await this.__checkConditionQuery(req, envVar, operator, conditionObj, key, conditionKey);
+		}
+		return evaluationRes;
 	}
 
 	__buildDbConditionQuery(envVariables, conditions, varSchemaKey, query = {}) {
@@ -394,12 +379,18 @@ class Conditions {
 	async __evaluateEnvCondition(req, condition, envVars, conditionKey, appId, authUser) {
 		const output = await PolicyEnv.getQueryEnvironmentVar(conditionKey, envVars, appId, authUser, true);
 		const modifiedCondition = {...condition};
-		modifiedCondition[output] = modifiedCondition[`env.${conditionKey}`];
-		delete modifiedCondition[`env.${conditionKey}`];
+
+		if (output !== undefined) {
+			modifiedCondition[output] = modifiedCondition[`env.${conditionKey}`];
+			delete modifiedCondition[`env.${conditionKey}`];
+		}
+
 		let passed = false;
 		for await (const key of Object.keys(modifiedCondition)) {
-			for await (const operator of Object.keys(modifiedCondition[key])) {
-				passed = await this.__checkConditionQuery(req, envVars, operator, modifiedCondition, key, conditionKey);
+			if (typeof modifiedCondition[key] === 'object') {
+				for await (const operator of Object.keys(modifiedCondition[key])) {
+					passed = await this.__checkConditionQuery(req, envVars, operator, modifiedCondition, key, conditionKey);
+				}
 			}
 		}
 

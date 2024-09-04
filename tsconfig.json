@@ -12,7 +12,7 @@
     "allowSyntheticDefaultImports": true,
     "outDir": "dist",
     "sourceMap": true,
-    "inlineSources": true,
+    "inlineSources": false,
     "rootDir": "./src",
     "allowJs": true,
     "checkJs": false,

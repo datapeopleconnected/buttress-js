@@ -214,8 +214,8 @@ export default class BootstrapRest extends Bootstrap {
 		} else if (message.type === 'app-routes:bust-cache') {
 			if (!this.routes) return Logging.logDebug(`Skipping token cache bust, router not created yet`);
 			// TODO: Maybe do this better than
-			Logging.logDebug(`App Routes: cache bust`);
 			await this.routes.loadTokens();
+			Logging.logDebug(`App Routes: cache bust`);
 		}
 	}
 

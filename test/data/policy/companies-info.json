@@ -1,0 +1,62 @@
+{
+  "name": "companies-info",
+  "selection": {
+    "grade": {
+      "@eq": 5
+    }
+  },
+  "config": [
+    {
+      "endpoints": [
+        "GET",
+        "SEARCH",
+        "DELETE"
+      ],
+      "query": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "access": "%FULL_ACCESS%"
+        }
+      ],
+      "projection": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "keys": [
+            "name",
+            "status",
+            "number"
+          ]
+        }
+      ]
+    },
+    {
+      "endpoints": [
+        "PUT",
+        "POST"
+      ],
+      "query": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "access": "%FULL_ACCESS%"
+        }
+      ],
+      "projection": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "keys": [
+            "name",
+            "number"
+          ]
+        }
+      ]
+    }
+  ]
+}

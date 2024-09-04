@@ -14,8 +14,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+require('source-map-support').install();
+
 require('./rest/schema.test.js');
 require('./rest/data-sharing.test.js');
+require('./rest/policy.test.js');
 
 require('./sock/realtime.test.js');
 

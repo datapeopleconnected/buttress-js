@@ -20,6 +20,7 @@ import {ObjectId} from 'bson';
 import * as Helpers from '../helpers';
 
 import Model from '../model';
+import e from 'express';
 
 class PolicyEnv {
 	private _globalQueryEnv: {[index: string]: string} = {};

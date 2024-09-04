@@ -1,0 +1,33 @@
+{
+  "name": "companies-name",
+  "selection": {
+    "grade": {
+      "@eq": 4
+    }
+  },
+  "config": [
+    {
+      "endpoints": [
+        "GET"
+      ],
+      "query": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "access": "%FULL_ACCESS%"
+        }
+      ],
+      "projection": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "keys": [
+            "name"
+          ]
+        }
+      ]
+    }
+  ]
+}

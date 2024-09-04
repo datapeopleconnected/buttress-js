@@ -1,0 +1,19 @@
+{
+  "name": "pt1-2",
+  "selection": {
+    "role": {
+      "@eq": "test1"
+    }
+  },
+  "config": [{
+    "endpoints": ["GET"],
+    "query": [{
+      "schema": ["car"],
+      "access": "%FULL_ACCESS%"
+    }]
+  }],
+  "projection": [{
+    "schema": ["car"],
+    "keys": ["color"]
+  }]
+}

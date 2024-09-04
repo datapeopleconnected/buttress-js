@@ -1,0 +1,15 @@
+{
+  "name": "admin-access",
+  "selection": {
+    "adminAccess": {
+      "@eq": true
+    }
+  },
+  "config": [{
+    "endpoints": ["GET", "SEARCH", "PUT", "POST", "DELETE"],
+    "query": [{
+      "schema": ["%ALL%"],
+      "access": "%FULL_ACCESS%"
+    }]
+  }]
+}

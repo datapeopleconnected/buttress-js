@@ -1,0 +1,47 @@
+{
+  "name": "working-date",
+  "selection": {
+    "grade": {
+      "@eq": 1
+    }
+  },
+  "config": [
+    {
+      "endpoints": [
+        "GET"
+      ],
+      "env": {
+        "startDate": "01/01/2022",
+        "endDate": "31/01/2042",
+        "date": "now"
+      },
+      "conditions": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "@and": [
+            {
+              "@env.date": {
+                "@gtDate": "env.startDate"
+              }
+            },
+            {
+              "@env.date": {
+                "@ltDate": "env.endDate"
+              }
+            }
+          ]
+        }
+      ],
+      "query": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "access": "%FULL_ACCESS%"
+        }
+      ]
+    }
+  ]
+}

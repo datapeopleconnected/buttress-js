@@ -18,7 +18,7 @@
  */
 import path from 'node:path';
 
-import express from 'express';
+import express, { Router, Request, Response, NextFunction } from 'express';
 import onFinished from 'on-finished';
 import { v4 as uuidv4 } from 'uuid';
 import { ObjectId } from 'bson';
@@ -65,10 +65,10 @@ class Routes {
 		this._services = null;
 
 		this._preRouteMiddleware = [
-			(req, res, next) => this._timeRequest(req, res, next),
-			(req, res, next) => this._authenticateToken(req, res, next),
-			(req, res, next) => AccessControl.accessControlPolicyMiddleware(req, res, next),
-			(req, res, next) => this._configCrossDomain(req, res, next),
+			(req: Request, res: Response, next: NextFunction) => this._timeRequest(req, res, next),
+			(req: Request, res: Response, next: NextFunction) => this._authenticateToken(req, res, next),
+			(req: Request, res: Response, next: NextFunction) => AccessControl.accessControlPolicyMiddleware(req, res, next),
+			(req: Request, res: Response, next: NextFunction) => this._configCrossDomain(req, res, next),
 		];
 	}
 
@@ -175,7 +175,7 @@ class Routes {
 	 * @return {object} - express router object
 	 */
 	_createRouter() {
-		const apiRouter = express.Router(); // eslint-disable-line new-cap
+		const apiRouter = Router();
 
 		// We used to assign middleware to the router here. When a request comes in
 		// each defined router is called to see if it has matching routes, this resulted
@@ -304,18 +304,12 @@ class Routes {
 		this._registerRouter(`plugin-${pluginName}`, pluginRouter);
 	}
 
-	/**
-	 * @param {Object} app - express app object
-	 * @param {Function} Route - route object
-	 * @param {Boolean} core - core
-	 * @private
-	 */
-	_initRoute(app, Route, core, ...additional) {
-		const route = (core) ? new Route(this._services) : new Route(null, null, this._services);
+	_initRoute(app: Router, routeClass: any, core: boolean, pathPrefix: string = '') {
+		const route = (core) ? new routeClass(this._services) : new routeClass(null, null, this._services);
 		route.paths.forEach((pathSpec) => {
 			const routePath = path.join(...[
 				Config.app.apiPrefix,
-				...additional,
+				pathPrefix,
 				pathSpec,
 			]);
 			Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
@@ -558,9 +552,10 @@ class Routes {
 
 	async _getProvidedToken(req) {
 		// Get the bearer token from the Authorization header or query string
-		let tokenValue = req.headers['authorization'] || req.query.token;
-
+		let tokenValue: string | undefined = req.headers['authorization'] || req.query.token;
 		if (tokenValue) tokenValue = tokenValue.replace('Bearer ', '');
+
+		Logging.logSilly(`_getProvidedToken:start ${tokenValue}`, req.id);
 
 		if (!tokenValue) {
 			Logging.logTimer(`_getProvidedToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);

@@ -1,0 +1,25 @@
+{
+  "name": "active-companies",
+  "selection": {
+    "grade": {
+      "@eq": 3
+    }
+  },
+  "config": [
+    {
+      "endpoints": [
+        "GET"
+      ],
+      "query": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "status": {
+            "@eq": "ACTIVE"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "name": "query-2",
+  "priority": 2,
+  "selection": {
+    "policyMergeQuery": {
+      "@gte": 2
+    }
+  },
+  "config": [
+    {
+      "endpoints": [
+        "GET"
+      ],
+      "query": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "status": {
+            "@eq": "DISSOLVED"
+          }
+        }
+      ]
+    }
+  ]
+}

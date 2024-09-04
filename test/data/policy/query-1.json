@@ -1,0 +1,26 @@
+{
+  "name": "query-1",
+  "priority": 1,
+  "selection": {
+    "policyMergeQuery": {
+      "@gte": 1
+    }
+  },
+  "config": [
+    {
+      "endpoints": [
+        "GET"
+      ],
+      "query": [
+        {
+          "schema": [
+            "organisation"
+          ],
+          "status": {
+            "@eq": "ACTIVE"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -497,6 +497,7 @@ class SetUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
+		// ! Token ID or value should really be passed to lookup the token, this is just updating the first token.
 		const userToken = await Model.getModel('Token').findOne({
 			_userId: userId,
 		});
@@ -504,7 +505,6 @@ class SetUserPolicyProperties extends Route {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
 		}
-
 		const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
 		if (!policyCheck.passed) {
 			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
