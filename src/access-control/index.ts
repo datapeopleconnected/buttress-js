@@ -28,7 +28,19 @@ import AccessControlProjection from './projection';
 import AccessControlPolicyMatch from './policy-match';
 import AccessControlHelpers from './helpers';
 
-interface SchemaBasePolicyConfig {
+export class PolicyError extends Error {
+	statusCode: number;
+	logTimerMsg?: string;
+
+	constructor(statusCode: number, message: string, logTimerMsg?: string) {
+		super(message);
+		this.name = 'PolicyError';
+		this.statusCode = statusCode;
+		this.logTimerMsg = logTimerMsg;
+	}
+}
+
+interface PolicyList {
 	[key: string]: {
 		appId: string;
 		env: any;
@@ -40,7 +52,7 @@ interface SchemaBasePolicyConfig {
 }
 
 interface ACOutcome {
-	res: SchemaBasePolicyConfig;
+	res: PolicyList;
 	err: {
 		statusCode?: number;
 		logTimerMsg?: string;
@@ -179,14 +191,15 @@ class AccessControl {
 		try {
 			req.ac.policyOutcome = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
 		} catch (err: any) {
+			if (err instanceof PolicyError) {
+				Logging.logTimer(err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+				Logging.logError(err.message);
+				return res.status(err.statusCode).send({message: err.message});
+			}
+
 			Logging.logError(`Error in accessControlPolicyMiddleware: ${err.message}`);
 			console.error(err);
 			return res.status(500).send({message: 'Internal Server Error'});
-		}
-		if (req.ac.policyOutcome.err.statusCode && req.ac.policyOutcome.err.message) {
-			Logging.logTimer(req.ac.policyOutcome.err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			Logging.logError(req.ac.policyOutcome.err.message);
-			return res.status(req.ac.policyOutcome.err.statusCode).send({message: req.ac.policyOutcome.err.message});
 		}
 
 		if (user) {
@@ -214,10 +227,18 @@ class AccessControl {
 
 	async _getSchemaRoomStructure(tokenPolicies, req, schemaName, appId) {
 		Logging.logTimer(`_getSchemaRoomStructure::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		const outcome: any = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
 
-		if (outcome.err.statusCode || outcome.err.message) {
-			Logging.logError(`getRoomStructure statusCode:${outcome.err.statusCode} message:${outcome.err.message}`);
+		let outcome: PolicyList;
+		try {
+			outcome = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
+		} catch (err: any) {
+			if (err instanceof PolicyError) {
+				Logging.logError(`getRoomStructure statusCode:${err.statusCode} message:${err.message}`);
+				return {};
+			}
+
+			Logging.logError(`Error in accessControlPolicyMiddleware: ${err.message}`);
+			console.error(err);
 			return {};
 		}
 
@@ -312,19 +333,13 @@ class AccessControl {
 	}
 
 	/**
-	 * compute policies outcome
-	 * @param {Array} tokenPolicies
-	 * @param {Object} req
-	 * @param {String} schemaName
-	 * @param {String} appId
-	 * @return {Object}
+	 * This is the main processing part of the policy engine, policies which have matched on the token are fed into this
+	 * function. The engine will then process the policies against the request and return a set of policies which are to
+	 * be processed.
 	 */
 	async __getOutcome(tokenPolicies, req, schemaName, appId: string | null = null) {
 		Logging.logTimer(`__getOutcome::start - policies:${tokenPolicies.length}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		const outcome: ACOutcome = {
-			res: {},
-			err: {},
-		};
+		const outcome: PolicyList = {};
 
 		appId = (!appId && req.authApp && req.authApp.id) ? req.authApp.id : appId;
 
@@ -334,10 +349,7 @@ class AccessControl {
 
 		tokenPolicies = tokenPolicies.sort((a, b) => a.priority - b.priority);
 		if (tokenPolicies.length < 1) {
-			outcome.err.statusCode = 401;
-			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			outcome.err.message = 'Request does not have any policy associated to it';
-			return outcome;
+			throw new PolicyError(401, 'Request does not have any policy associated to it', '_accessControlPolicy:access-control-policy-not-allowed');
 		}
 
 		const policiesConfig = tokenPolicies.reduce((arr, policy) => {
@@ -363,10 +375,7 @@ class AccessControl {
 		}, []);
 
 		if (policiesConfig.length < 1) {
-			outcome.err.statusCode = 401;
-			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			outcome.err.message = `Request does not have any policy rules matching the request verb ${requestVerb} and schema ${schemaName}`;
-			return outcome;
+			throw new PolicyError(401, `Request does not have any policy rules matching the request verb ${requestVerb} and schema ${schemaName}`, '_accessControlPolicy:access-control-policy-not-allowed');
 		}
 
 		// Merged down policies into one config
@@ -443,10 +452,7 @@ class AccessControl {
 		}, false);
 
 		if (!schemaBasePolicyConfig) {
-			outcome.err.statusCode = 401;
-			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			outcome.err.message = `Request policy does not have access to the requested schema: ${schemaName}`;
-			return outcome;
+			throw new PolicyError(401, `Request does not have any policy rules matching the request verb ${requestVerb} and schema ${schemaName}`, '_accessControlPolicy:access-control-policy-not-allowed');
 		}
 
 		if (!appId) throw new Error('Trying to combine core with app schema but appId is not defined');
@@ -455,46 +461,31 @@ class AccessControl {
 			.find((s) => s.name === schemaName || Sugar.String.singularize(s.name) === schemaName);
 
 		if (!schema) {
-			outcome.err.statusCode = 401;
-			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-policy-not-allowed`;
-			outcome.err.message = `Request schema: ${schemaName} - does not exist in the app`;
-			return outcome;
+			throw new PolicyError(401, `Request schema: ${schemaName} - does not exist in the app`, '_accessControlPolicy:access-control-policy-not-allowed');
 		}
 
 		await AccessControlConditions.applyPolicyConditions(req, schemaBasePolicyConfig);
 		// This check seems wrong.
 		if (Object.keys(schemaBasePolicyConfig).length < 1) {
-			outcome.err.statusCode = 401;
-			outcome.err.logTimerMsg = `_accessControlPolicy:conditions-not-fulfilled`;
-			outcome.err.message = `Access control policy conditions are not fulfilled to access ${schemaName}`;
-			return outcome;
+			throw new PolicyError(401, `Access control policy conditions are not fulfilled to access ${schemaName}`, '_accessControlPolicy:conditions-not-fulfilled');
 		}
 
 		// TODO: This applys to req and should be moved.
 		await AccessControlFilter.addAccessControlPolicyQuery(req, schemaBasePolicyConfig);
 		const policyProjection = await AccessControlProjection.addAccessControlPolicyQueryProjection(req, schemaBasePolicyConfig, schema);
 		if (!policyProjection) {
-			outcome.err.statusCode = 401;
-			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-properties-permission-error`;
-			outcome.err.message = `Can not access/edit properties of ${schemaName} without privileged access`;
-			return outcome;
+			throw new PolicyError(401, `Can not access/edit properties of ${schemaName} without privileged access`, '_accessControlPolicy:access-control-properties-permission-error');
 		}
 
 		const policyQuery = await AccessControlFilter.applyAccessControlPolicyQuery(req);
 		if (!policyQuery) {
-			outcome.err.statusCode = 401;
-			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-query-permission-error`;
-			outcome.err.message = `Policy query can not access the queried data from ${schemaName}`;
-			return outcome;
+			throw new PolicyError(401, `Policy query can not access the queried data from ${schemaName}`, '_accessControlPolicy:access-control-query-permission-error');
 		}
 
 		// TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
 		const passedEvalutaion = await AccessControlFilter.evaluateManipulationActions(req, schemaName);
 		if (!passedEvalutaion) {
-			outcome.err.statusCode = 404;
-			outcome.err.logTimerMsg = `_accessControlPolicy:access-control-query-permission-error`;
-			outcome.err.message = `Accessed data from ${schemaName} can not be manipulated with your restricted policy`;
-			return outcome;
+			throw new PolicyError(401, `Accessed data from ${schemaName} can not be manipulated with your restricted policy`, '_accessControlPolicy:access-control-query-permission-error');
 		}
 
 		outcome.res = schemaBasePolicyConfig;
