@@ -250,11 +250,14 @@ export default class LambdasRunner {
 						global.Buttress = Buttress.default;
 					}
 
-					if (!Buttress._initialised) {
-						await Buttress.init(buttressOptions, true);
-					} else {
-						Buttress.setAuthToken(buttressOptions.appToken);
+					// Clean up the global.
+					Buttress.clean();
+
+					if (Buttress._initialised) {
+						throw new Error('Buttress already initialised');
 					}
+
+					await Buttress.init(buttressOptions, true);
 
 					const lambdaBundle = require(lambdaInfo.fileName);
 					const lambdaCode = new lambdaBundle();
