@@ -17,6 +17,8 @@
 import Route from '../route';
 import Model from '../../model';
 
+import * as ACM from '../../access-control/models-access';
+
 const routes: (typeof Route)[] = [];
 
 /**
@@ -37,13 +39,13 @@ class GetTokenList extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const rxsToken = this.model.findAll();
-		const tokens: any[] = [];
-		for await (const token of rxsToken) {
-			tokens.push(token);
+		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+			return this.model.findAll();
 		}
 
-		return tokens.filter((t) => t.type !== this.model.Constants.Type.SYSTEM);
+		return this.model.find({
+			_appId: Model.getModel('App').createId(req.authApp.id),
+		});
 	}
 }
 routes.push(GetTokenList);
@@ -55,7 +57,7 @@ class DeleteAllTokens extends Route {
 	constructor(services) {
 		super('token/:type?', 'DELETE ALL TOKENS', services, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.SYSTEM;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.DELETE;
 
 		this.redactResults = false;
@@ -66,8 +68,15 @@ class DeleteAllTokens extends Route {
 	}
 
 	_exec(req, res, validate) {
+		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+			return this.model.rmAll({
+				type: req.params.type,
+			}).then(() => true);
+		}
+
 		return this.model.rmAll({
 			type: req.params.type,
+			_appId: Model.getModel('App').createId(req.authApp.id),
 		}).then(() => true);
 	}
 }
@@ -80,7 +89,7 @@ class SearchUserToken extends Route {
 	constructor(services) {
 		super('token', 'SEARCH USER TOKEN', services, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.SYSTEM;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.redactResults = false;
@@ -107,7 +116,7 @@ class SearchUserToken extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return this.model.find(validate.query);
+		return ACM.find(this.model, validate, req.ac);
 	}
 }
 routes.push(SearchUserToken);

@@ -7,11 +7,11 @@
 			}
 		},
 		"config": [{
-			"endpoints": ["%ALL%"],
-			"query": [{
-				"schema": ["%ALL%"],
+			"verbs": ["%ALL%"],
+			"schema": ["%ALL%"],
+			"query": {
 				"access": "%FULL_ACCESS%"
-			}]
+			}
 		}]
 	},
 	{
@@ -22,22 +22,25 @@
 			}
 		},
 		"config": [{
-			"endpoints": ["GET"],
-			"query": [{
-				"schema": ["app"],
+			"verbs": "GET",
+			"schema": ["app"],
+			"query": {
 				"id": {
 					"@eq": null
 				}
-			}, {
-				"schema": ["user"],
+			}
+		},{
+			"verbs": "GET",
+			"schema": ["user"],
+			"query": {
 				"_appId": {
 					"@eq": null
 				}
-			}]
+			}
 		}, {
-			"endpoints": ["SEARCH"],
+			"verbs": ["SEARCH"],
+			"schema": ["token", "user"],
 			"query": [{
-				"schema": ["token", "user"],
 				"_appId": {
 					"@eq": null
 				}

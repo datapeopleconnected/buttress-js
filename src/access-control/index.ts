@@ -22,11 +22,15 @@ import Model from '../model';
 import Logging from '../helpers/logging';
 import Schema from '../schema';
 
+import { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy';
+import { Token } from '../model/core/token';
+
 import AccessControlConditions from './conditions';
 import AccessControlFilter from './filter';
 import AccessControlProjection from './projection';
 import AccessControlPolicyMatch from './policy-match';
 import AccessControlHelpers from './helpers';
+import { BjsRequest } from '../types/bjs-express';
 
 export class PolicyError extends Error {
 	statusCode: number;
@@ -40,25 +44,14 @@ export class PolicyError extends Error {
 	}
 }
 
-interface PolicyList {
-	[key: string]: {
-		appId: string;
-		env: any;
-		conditions: any[];
-		query: any[];
-		projection: any[];
-		merge: boolean;
-	};
-}
+export type parsedPolicyConfig = (PolicyConfig & { appId: string, policies: string[] });
 
-interface ACOutcome {
-	res: PolicyList;
-	err: {
-		statusCode?: number;
-		logTimerMsg?: string;
-		message?: string;
-	};
-}
+export type ApplicablePolicies = {
+	name: string;
+	appId: string;
+	env: PolicyEnv | null;
+	config: PolicyConfig;
+};
 
 class AccessControl {
 	_schemas: {[key: string]: any};
@@ -71,8 +64,6 @@ class AccessControl {
 	_coreSchema: any[];
 	_coreSchemaNames: string[];
 
-	_queryAccess: string[];
-
 	_nrp?: NRP.NodeRedisPubSub;
 
 	constructor() {
@@ -84,12 +75,6 @@ class AccessControl {
 
 		this._coreSchema = [];
 		this._coreSchemaNames = [];
-
-		this._queryAccess = [
-			'%FULL_ACCESS%',
-			'%APP_SCHEMA%',
-			'%CORE_SCHEMA%',
-		];
 	}
 
 	async init(nrp) {
@@ -120,11 +105,13 @@ class AccessControl {
 	 * @return {Void}
 	 * @private
 	 */
-	async accessControlPolicyMiddleware(req, res, next) {
+	async accessControlPolicyMiddleware(req: BjsRequest, res, next) {
 		Logging.logTimer(`accessControlPolicyMiddleware::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		// Define a property on the request that we'll use for the access control
-		req.ac = {};
+		req.ac = {
+			policyConfigs: []
+		};
 
 		const isSystemToken = req.token.type === Model.getModel('Token').Constants.Type.SYSTEM;
 		if (isSystemToken) return next();
@@ -142,7 +129,7 @@ class AccessControl {
 		const requestVerb = req.method || req.originalMethod;
 		let lambdaAPICall = false;
 		let requestedURL = req.originalUrl || req.url;
-		requestedURL = requestedURL.split('?').shift();
+		requestedURL = requestedURL.split('?').shift() || '';
 		const isLambdaCall = requestedURL.indexOf('/lambda/v1') === 0;
 
 		if (requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
@@ -160,7 +147,7 @@ class AccessControl {
 		}
 		if (lambdaAPICall) return next();
 
-		const schemaPath = requestedURL.split('v1/').pop().split('/');
+		const schemaPath = (requestedURL.split('v1/').pop() || '').split('/');
 		const schemaName = Schema.routeToModel(schemaPath.shift());
 
 		if (this._coreSchema.length < 1) {
@@ -189,7 +176,7 @@ class AccessControl {
 		Logging.logSilly(`Got ${tokenPolicies.length} Matched policies for token ${token.type}:${token.id}`, req.id);
 
 		try {
-			req.ac.policyOutcome = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
+			req.ac.policyConfigs = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
 		} catch (err: any) {
 			if (err instanceof PolicyError) {
 				Logging.logTimer(err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -204,7 +191,7 @@ class AccessControl {
 
 		if (user) {
 			const params = {
-				policies: req.ac.policyOutcome.res,
+				policies: req.ac.policyConfigs,
 				appId: appId,
 				apiPath: req.authApp.apiPath,
 				userId: user.id,
@@ -228,7 +215,7 @@ class AccessControl {
 	async _getSchemaRoomStructure(tokenPolicies, req, schemaName, appId) {
 		Logging.logTimer(`_getSchemaRoomStructure::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-		let outcome: PolicyList;
+		let outcome: parsedPolicyConfig[];
 		try {
 			outcome = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
 		} catch (err: any) {
@@ -245,12 +232,13 @@ class AccessControl {
 		const structure = {
 			appId: appId,
 			schema: {},
-			appliedPolicy: Object.keys(outcome.res),
+			appliedPolicy: outcome.map((o) => o.policies).flat(),
 		};
 		structure.schema[schemaName] = {
 			access: {},
 		};
 
+		// These should be take from the outcome
 		const projectionKeys = (req.body && req.body.project) ? Object.keys(req.body.project) : [];
 		structure.schema[schemaName].access.query = (req.body.query)? req.body.query : {};
 
@@ -263,7 +251,7 @@ class AccessControl {
 
 		Logging.logTimer(`_getSchemaRoomStructure::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		// TODO: Add app id to hash
-		return {roomId: hash(outcome.res), structure};
+		return {roomId: hash(outcome), structure};
 	}
 
 	async getUserRoomStructures(user, appId, req: any = {}) {
@@ -290,7 +278,7 @@ class AccessControl {
 		const tokenPolicies = this.__getTokenPolicies(token, appId);
 		for await (const schema of this._schemas[appId]) {
 			req.body = {};
-			req.accessControlQuery = {};
+			// req.accessControlQuery = {};
 			const {roomId, structure} = await this._getSchemaRoomStructure(tokenPolicies, req, schema.name, appId);
 			if (!roomId) continue;
 
@@ -337,13 +325,12 @@ class AccessControl {
 	 * function. The engine will then process the policies against the request and return a set of policies which are to
 	 * be processed.
 	 */
-	async __getOutcome(tokenPolicies, req, schemaName, appId: string | null = null) {
+	async __getOutcome(tokenPolicies: Policy[], req, schemaName: string, appId: string | null = null) {
 		Logging.logTimer(`__getOutcome::start - policies:${tokenPolicies.length}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		const outcome: PolicyList = {};
 
 		appId = (!appId && req.authApp && req.authApp.id) ? req.authApp.id : appId;
+		if (!appId) throw new Error('Trying to combine core with app schema but appId is not defined');
 
-		// TODO: better way to figure out the request verb
 		const requestVerb = req.method || req.originalMethod;
 		const isCoreSchema = this._coreSchemaNames.some((n) => n === schemaName);
 
@@ -352,110 +339,38 @@ class AccessControl {
 			throw new PolicyError(401, 'Request does not have any policy associated to it', '_accessControlPolicy:access-control-policy-not-allowed');
 		}
 
-		const policiesConfig = tokenPolicies.reduce((arr, policy) => {
-			const config = policy.config.slice().reverse().find((c) => {
-				return (c.endpoints.includes(requestVerb) || c.endpoints.includes('%ALL%')) &&
-					c.query.some((q) => {
-						if (isCoreSchema) {
-							return q.schema.includes(schemaName) || q.schema.includes('%ALL%') || q.schema.includes('%CORE_SCHEMA%');
-						}
-						return q.schema.includes(schemaName) || q.schema.includes('%ALL%') || q.schema.includes('%APP_SCHEMA%');
-					});
+		// Filter down policies t aplicable to the request
+		let applicablePolicies = tokenPolicies.reduce((arr: ApplicablePolicies[], policy) => {
+			// * A query is needed regardless of what else is in the policy config, we'll discard any that are missing.
+			const configs = policy.config.filter((c) => {
+				return (c.query &&
+					c.verbs.includes(requestVerb) || c.verbs.includes('%ALL%')) &&
+					(
+						c.schema &&
+						c.schema.includes(schemaName) ||
+						c.schema.includes('%ALL%') ||
+						c.schema.includes((isCoreSchema) ? '%CORE_SCHEMA%' : '%APP_SCHEMA%'
+					)
+				);
 			});
 
-			if (config) {
+			configs.forEach((config, idx) => {
+				// TODO: Merging - Check the verbs, schema|endpoints and query. If they match then merge the other properties.
 				arr.push({
-					name: policy.name,
-					env: (policy.env) ? policy.env : null,
+					name: `${policy.name}#${idx}`,
+					env: policy.env,
+					appId,
 					config,
 				});
-			}
+			});
 
 			return arr;
 		}, []);
 
-		if (policiesConfig.length < 1) {
+		if (applicablePolicies.length < 1) {
 			throw new PolicyError(401, `Request does not have any policy rules matching the request verb ${requestVerb} and schema ${schemaName}`, '_accessControlPolicy:access-control-policy-not-allowed');
 		}
 
-		// Merged down policies into one config
-		const schemaBasePolicyConfig = policiesConfig.reduce((obj, policy) => {
-			const conditionSchemaIdx = policy.config.conditions.findIndex((cond) => {
-				const cs = cond.schema;
-				if (isCoreSchema) {
-					if (cs.includes('%ALL%') || cs.includes('%CORE_SCHEMA%') || cs.includes(schemaName)) return true;
-				} else {
-					if (cs.includes('%ALL%') || cs.includes('%APP_SCHEMA%') || cs.includes(schemaName)) return true;
-				}
-
-				return false;
-			});
-			const querySchemaIdx = policy.config.query.findIndex((q) => {
-				const qs = q.schema;
-				if (isCoreSchema) {
-					if (qs.includes('%ALL%') || qs.includes('%CORE_SCHEMA%') || qs.includes(schemaName)) return true;
-				} else {
-					if (qs.includes('%ALL%') || qs.includes('%APP_SCHEMA%') || qs.includes(schemaName)) return true;
-				}
-
-				return false;
-			});
-			const projectionSchemaIdx = policy.config.projection.findIndex((project) => {
-				const ps = project.schema;
-				if (isCoreSchema) {
-					if (ps.includes('%ALL%') || ps.includes('%CORE_SCHEMA%') || ps.includes(schemaName)) return true;
-				} else {
-					if (ps.includes('%ALL%') || ps.includes('%APP_SCHEMA%') || ps.includes(schemaName)) return true;
-				}
-
-				return false;
-			});
-
-			if (conditionSchemaIdx !== -1 || querySchemaIdx !== -1 || projectionSchemaIdx !== -1) {
-				const condition = this.__getInnerObjectValue(policy.config.conditions[conditionSchemaIdx]);
-				const projection = this.__getInnerObjectValue(policy.config.projection[projectionSchemaIdx]);
-				let query = this.__getInnerObjectValue(policy.config.query[querySchemaIdx]);
-
-				if (!obj) {
-					obj = {};
-				}
-
-				if (!obj[policy.name]) {
-					obj[policy.name] = {
-						appId: appId?.toString(),
-						env: {},
-						conditions: [],
-						query: [],
-						projection: [],
-					};
-				}
-
-				if (condition) {
-					obj[policy.name].conditions.push(condition);
-				}
-				if (query && query.access && this._queryAccess.includes(query.access)) {
-					query = {};
-				}
-				if (query) {
-					obj[policy.name].query.push(query);
-				}
-				if (projection) {
-					obj[policy.name].projection.push(projection);
-				}
-				obj[policy.name].env = {
-					...policy.env,
-					...policy.config.env,
-				};
-			}
-
-			return obj;
-		}, false);
-
-		if (!schemaBasePolicyConfig) {
-			throw new PolicyError(401, `Request does not have any policy rules matching the request verb ${requestVerb} and schema ${schemaName}`, '_accessControlPolicy:access-control-policy-not-allowed');
-		}
-
-		if (!appId) throw new Error('Trying to combine core with app schema but appId is not defined');
 		const schemaCombined = [...this._coreSchema, ...this._schemas[appId]];
 		const schema = schemaCombined
 			.find((s) => s.name === schemaName || Sugar.String.singularize(s.name) === schemaName);
@@ -464,32 +379,93 @@ class AccessControl {
 			throw new PolicyError(401, `Request schema: ${schemaName} - does not exist in the app`, '_accessControlPolicy:access-control-policy-not-allowed');
 		}
 
-		await AccessControlConditions.applyPolicyConditions(req, schemaBasePolicyConfig);
-		// This check seems wrong.
-		if (Object.keys(schemaBasePolicyConfig).length < 1) {
-			throw new PolicyError(401, `Access control policy conditions are not fulfilled to access ${schemaName}`, '_accessControlPolicy:conditions-not-fulfilled');
+		applicablePolicies = await AccessControlConditions.filterPoliciesByPolicyConditions(req, applicablePolicies);
+		if (applicablePolicies.length < 1) {
+			throw new PolicyError(401, `Access control policy condition is not fulfilled to access ${schemaName}`, '_accessControlPolicy:conditions-not-fulfilled');
 		}
 
-		// TODO: This applys to req and should be moved.
-		await AccessControlFilter.addAccessControlPolicyQuery(req, schemaBasePolicyConfig);
-		const policyProjection = await AccessControlProjection.addAccessControlPolicyQueryProjection(req, schemaBasePolicyConfig, schema);
-		if (!policyProjection) {
+		// Look through each of the policies and build the queries
+		applicablePolicies = await AccessControlFilter.buildApplicablePoliciesQuery(req, applicablePolicies);
+		applicablePolicies = await AccessControlProjection.filterPoliciesByPolicyProjection(req, applicablePolicies, schema);
+		if (applicablePolicies.length < 1) {
 			throw new PolicyError(401, `Can not access/edit properties of ${schemaName} without privileged access`, '_accessControlPolicy:access-control-properties-permission-error');
 		}
 
-		const policyQuery = await AccessControlFilter.applyAccessControlPolicyQuery(req);
-		if (!policyQuery) {
-			throw new PolicyError(401, `Policy query can not access the queried data from ${schemaName}`, '_accessControlPolicy:access-control-query-permission-error');
-		}
+		// TODO: Should merge the functionality of checking the queries and filtering out invalid queries during the build above.
+		// const policyQuery = await AccessControlFilter.applyAccessControlPolicyQuery(req, applicablePolicies);
+		// if (!policyQuery) {
+		// 	throw new PolicyError(401, `Policy query can not access the queried data from ${schemaName}`, '_accessControlPolicy:access-control-query-permission-error');
+		// }
 
-		// TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
-		const passedEvalutaion = await AccessControlFilter.evaluateManipulationActions(req, schemaName);
-		if (!passedEvalutaion) {
-			throw new PolicyError(401, `Accessed data from ${schemaName} can not be manipulated with your restricted policy`, '_accessControlPolicy:access-control-query-permission-error');
-		}
+		// TODO: This needs to be revisited, it's expecting the AC to be already applied.
+		// const passedEvalutaion = await AccessControlFilter.evaluateManipulationActions(req, schemaName);
+		// console.log('passedEvalutaion', passedEvalutaion, schemaName);
+		// if (!passedEvalutaion) {
+		// 	throw new PolicyError(401, `Accessed data from ${schemaName} can not be manipulated with your restricted policy`, '_accessControlPolicy:access-control-query-permission-error');
+		// }
 
-		outcome.res = schemaBasePolicyConfig;
-		Logging.logTimer(`__getOutcome::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+		const outcome: parsedPolicyConfig[] = [];
+		
+		// Merge down policies, this is really only for projections.
+		for (const policy of applicablePolicies) {
+			const policyConfig = {
+				...policy.config,
+				appId: policy.appId,
+				policies: [policy.name]
+			};
+
+			// TODO: If a merged does happen the what do we do with ENV?
+
+			// Try to see if we can merge this config with another policy.
+			const existingPolicyConfig = outcome.findIndex((existing) => {
+				const verbsMatch = policyConfig.verbs.every((v) => existing.verbs.includes(v));
+				if (!verbsMatch) return false;
+
+				if (existing.endpoints && policyConfig.endpoints) {
+					const endpointsMatch = policyConfig.endpoints.every((ep) => existing.endpoints.includes(ep));
+					if (!endpointsMatch) return false;
+				}
+				if (existing.schema && policyConfig.schema) {
+					const schemaMatch = policyConfig.schema.every((s) => existing.schema.includes(s));
+					if (!schemaMatch) return false;
+				}
+
+				const queryMatch = JSON.stringify(existing.query) === JSON.stringify(policyConfig.query);
+				if (!queryMatch) {
+					// If verbs & schema match, query doesn't and we have no projection then we can merge down the query.
+					if (existing.projection === null && policyConfig.projection === null) {
+						return true;
+					}
+
+					return false;
+				}
+
+				return true;
+			});
+
+			if (existingPolicyConfig !== -1) {
+				if (policyConfig.projection === null) {
+					// Try to merge down the queries
+					if (outcome[existingPolicyConfig].query === null) {
+						outcome[existingPolicyConfig].query = policyConfig.query;
+					} else {
+						// TODO: Have a function that will merge queries
+						outcome[existingPolicyConfig].query = AccessControlFilter.mergeQueryFilters(outcome[existingPolicyConfig].query, policyConfig.query, '$or');
+					}
+				} else {
+					if (outcome[existingPolicyConfig].projection === null) {
+						outcome[existingPolicyConfig].projection = policyConfig.projection;
+					} else {
+						outcome[existingPolicyConfig].projection = {...outcome[existingPolicyConfig].projection, ...policyConfig.projection};
+					}
+				}
+
+				outcome[existingPolicyConfig].policies = [...outcome[existingPolicyConfig].policies, ...policyConfig.policies];
+			} else {
+				outcome.push(policyConfig);
+			}
+		}
+		Logging.logTimer(`__getOutcome::end Policy Configs: ${Object.keys(outcome).length}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		return outcome;
 	}
@@ -516,7 +492,7 @@ class AccessControl {
 		this._policies[appId] = policies;
 	}
 
-	__getTokenPolicies(token, appId) {
+	__getTokenPolicies(token: Token, appId: string) {
 		return AccessControlPolicyMatch.__getTokenPolicies(this._policies[appId], token);
 	}
 

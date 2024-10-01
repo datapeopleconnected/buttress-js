@@ -27,6 +27,8 @@ import Schema from '../schema';
 import SchemaModelRemote from '../model/type/remote';
 
 import NRP from "node-redis-pubsub";
+import StandardModel from '../model/type/standard';
+import RemoteCombinedModel from '../model/type/remote-combined';
 
 /**
  */
@@ -363,9 +365,8 @@ export default class Route {
 	 * @param {boolean} isSuper
 	 */
 	async _broadcast(req, res, result, path, isSuper = false) {
-		Logging.logTimer('_broadcast:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
 		const isReadStream = (result instanceof Stream.Readable && result.readable);
+		Logging.logTimer(`_broadcast:start isReadStream:${isReadStream} path:${path} isSuper:${isSuper}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		const emit = (_result) => {
 			if (this.activityBroadcast === true) {
@@ -468,6 +469,7 @@ export default class Route {
 
 		paths = paths.filter((v, idx, arr) => arr.indexOf(v) === idx);
 		if (paths.length > 0) {
+
 			this._nrp?.emit('notifyLambdaPathChange', JSON.stringify({
 				paths,
 				values,

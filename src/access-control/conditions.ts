@@ -16,11 +16,14 @@
 
 import Sugar from '../helpers/sugar';
 
-import accessControlHelpers from './helpers';
+import accessControlHelpers, { CombineEnvGroups } from './helpers';
 import Filter from './filter';
-import PolicyEnv from './env';
+import Env from './env';
 import * as Helpers from '../helpers';
 import Model from '../model';
+
+import { ApplicablePolicies } from './index';
+import { PolicyCondition, PolicyConfig, PolicyEnv } from '../model/core/policy';
 
 /**
  * @class Conditoins
@@ -83,31 +86,29 @@ class Conditions {
 		this.envStr = 'env.';
 	}
 
-	async applyPolicyConditions(req, userPolicies) {
-		for await (const policyKey of Object.keys(userPolicies)) {
-			await this.__checkPolicyConditions(req, userPolicies, policyKey);
+	async filterPoliciesByPolicyConditions(req, userPolicies: ApplicablePolicies[]) {
+		const output: ApplicablePolicies[] = [];
+
+		for await (const policy of userPolicies) {
+			if (policy.config.condition === null) {
+				output.push(policy);
+			} else if (await this.__checkPolicyConditions(req, policy)) {
+				output.push(policy);
+			}
 		}
+
+		return output;
 	}
 
-	async __checkPolicyConditions(req, userPolicies, key) {
-		const conditions = userPolicies[key].conditions;
-		if (!conditions || !conditions.length) return;
+	async __checkPolicyConditions(req, policy: ApplicablePolicies) {
+		if (policy.config.condition === null) return false;
 
-		let isConditionFullFilled = false;
-		for await (const condition of conditions) {
-			isConditionFullFilled = await this.__checkLogicalCondition(req, condition, userPolicies[key].env);
+		const env = CombineEnvGroups(policy);
 
-			// If we hit a condition that is not fullfilled, we can break out of the loop.
-			if (isConditionFullFilled === false) break;
-		}
-
-		// TODO: Refactor to return a result instead of modifying the object.
-		if (!isConditionFullFilled) {
-			delete userPolicies[key];
-		}
+		return await this.__checkLogicalCondition(req, policy.config.condition, env);
 	}
 
-	async __checkLogicalCondition(req, condition, envVariables) {
+	async __checkLogicalCondition(req, condition: PolicyCondition, envVariables: PolicyEnv) {
 		const results: Array<boolean> = [];
 
 		for await (const key of Object.keys(condition)) {
@@ -135,10 +136,10 @@ class Conditions {
 		return (results.length > 0) ? results.every((r) => r) : false;
 	}
 
-	async __checkCondition(req, envVar, conditionObj, partialPass): Promise<boolean> {
+	async __checkCondition(req, envVariables: PolicyEnv | null, conditionObj, partialPass: boolean): Promise<boolean> {
 		const results: Array<boolean> = [];
 		for await (const key of Object.keys(conditionObj)) {
-			const innerCondResult = await this.__checkInnerConditions(req, envVar, conditionObj, key, partialPass);
+			const innerCondResult = await this.__checkInnerConditions(req, envVariables, conditionObj, key, partialPass);
 			// if (this.conditionKeys.includes(`@${key}`)) continue;
 
 			results.push(innerCondResult);
@@ -149,22 +150,22 @@ class Conditions {
 		return (results.length > 0) ? results.every((r) => r) : false;
 	}
 
-	async __checkInnerConditions(req, envVar, conditionObj, key, partialPass): Promise<boolean> {
-		const environmentKeys = Object.keys(envVar);
+	async __checkInnerConditions(req, envVariables: PolicyEnv | null, conditionObj, key, partialPass: boolean): Promise<boolean> {
+		const environmentKeys = Object.keys(envVariables || {});
 		const conditionKey = key.replace(this.envStr, '');
 		const isSchemaQuery = this.conditionQueryRegex.test(conditionKey);
 
 		if (environmentKeys.includes(conditionKey)) {
-			return this.__evaluateEnvCondition(req, conditionObj, envVar, conditionKey, req.authApp.id, req.authUser);
+			return this.__evaluateEnvCondition(req, conditionObj, envVariables, conditionKey, req.authApp.id, req.authUser);
 		}
 		if (typeof conditionObj[key] === 'object' && !this.conditionKeys.includes(conditionKey) && !isSchemaQuery) {
-			return await this.__checkCondition(req, envVar, conditionObj[key], partialPass);
+			return await this.__checkCondition(req, envVariables, conditionObj[key], partialPass);
 		}
 
 		if (isSchemaQuery) {
 			const varSchemaKey = key.replace('query.', '');
-			const dbConditionQuery = Object.assign({}, envVar[varSchemaKey]);
-			this.__buildDbConditionQuery(envVar, conditionObj[key], varSchemaKey, dbConditionQuery);
+			const dbConditionQuery = Object.assign({}, (envVariables || {})[varSchemaKey]);
+			this.__buildDbConditionQuery(envVariables, conditionObj[key], varSchemaKey, dbConditionQuery);
 
 			const appShortId = (req.authApp.id) ? Helpers.shortId(req.authApp.id) : undefined;
 			return await this.__getDbConditionQueryResult(dbConditionQuery, varSchemaKey, appShortId);
@@ -173,7 +174,7 @@ class Conditions {
 		let evaluationRes = false;
 		// TODO: ?? What if theres more than one operator?
 		for await (const operator of Object.keys(conditionObj[key])) {
-			evaluationRes = await this.__checkConditionQuery(req, envVar, operator, conditionObj, key, conditionKey);
+			evaluationRes = await this.__checkConditionQuery(req, envVariables, operator, conditionObj, key, conditionKey);
 		}
 		return evaluationRes;
 	}
@@ -213,9 +214,8 @@ class Conditions {
 		// If model is still not defined then there is no hope.
 		if (model === undefined) throw new Error(`Unable to find model for schema: ${schemaName}`);
 
-		const convertedQuery: any = {};
-		await Filter.addAccessControlPolicyRuleQuery(convertedQuery, query, 'conditionQuery');
-		query = model.parseQuery(convertedQuery.conditionQuery, {}, model.flatSchemaData);
+		const convertedQuery: any = await Filter.buildPolicyQuery({}, query, {});
+		query = model.parseQuery(convertedQuery, {}, model.flatSchemaData);
 		return await model.count(query) > 0;
 	}
 
@@ -379,7 +379,7 @@ class Conditions {
 	}
 
 	async __evaluateEnvCondition(req, condition, envVars, conditionKey, appId, authUser) {
-		const output = await PolicyEnv.getQueryEnvironmentVar(conditionKey, envVars, appId, authUser, true);
+		const output = await Env.getQueryEnvironmentVar(conditionKey, envVars, appId, authUser, true);
 		const modifiedCondition = {...condition};
 
 		if (output !== undefined) {

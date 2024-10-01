@@ -7,19 +7,17 @@
   },
   "config": [
     {
-      "endpoints": [
-        "GET"
+      "verbs": [
+        "GET", "SEARCH"
       ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "status": {
-            "@eq": "ACTIVE"
-          }
+      "schema": [
+        "organisation"
+      ],
+      "query": {
+        "status": {
+          "@eq": "ACTIVE"
         }
-      ]
+      }
     }
   ]
 }

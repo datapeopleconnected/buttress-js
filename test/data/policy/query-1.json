@@ -8,19 +8,17 @@
   },
   "config": [
     {
-      "endpoints": [
+      "verbs": [
         "GET"
       ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "status": {
-            "@eq": "ACTIVE"
-          }
+      "schema": [
+        "organisation"
+      ],
+      "query": {
+        "status": {
+          "@eq": "ACTIVE"
         }
-      ]
+      }
     }
   ]
 }

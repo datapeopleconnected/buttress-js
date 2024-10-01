@@ -31,7 +31,6 @@ const {
 const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
 
 const PolicyTestData = require('../../data/policy/index.js');
-const { timeout } = require('puppeteer');
 
 // Go over each of the policies and create a list of all the policy selection properties
 const PolicyPropertyList = Object.values(PolicyTestData).reduce((list, policy) => {
@@ -213,8 +212,12 @@ describe('Policy', async () => {
     // Shutdown
     await REST_PROCESS.clean();
   });
-
+  
   describe('Basic', async () => {
+    // Test the basic functionality of the policy system
+  });
+
+  describe('Ported API tests', async () => {
     before(async function() {
       // Create a user to test with.
       testEnv.users.basic1 = await createUser(ENDPOINT, {
@@ -245,7 +248,7 @@ describe('Policy', async () => {
         headers: {'Content-Type': 'application/json'},
       }, testEnv.users.basic1.tokens[0].value);
 
-      assert(result.length === 3);
+      assert(result.length === 3, `Expected 3 but got ${result.length}`);
     });
 
     it('Should fail accessing app companies using grade 0 policy', async function() {
@@ -299,14 +302,14 @@ describe('Policy', async () => {
       } catch (err) {
         if (err instanceof BJSReqError) {
           assert(err.code === 401, `Expected 401 but got ${err.code}`);
-          assert(err.message.includes('Access control policy conditions are not fulfilled'), `Got ${err.message}`);
+          assert(err.message.includes('Access control policy condition is not fulfilled'), `Got ${err.message}`);
         } else {
           throw err;
         }
       }
     });
 
-    it('should only return active companies', async function() {
+    it('should only return active companies on get', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 3,
       }, testEnv.apps.app1.token);
@@ -318,8 +321,38 @@ describe('Policy', async () => {
       }, testEnv.users.basic1.tokens[0].value);
 
       const activeCompanies = res.every((c) => c.status === 'ACTIVE');
-      assert(res.length === 1);
-      assert(activeCompanies);
+      assert(res.length === 1, `Expected 1 but got ${res.length}`);
+      assert(activeCompanies, `Expected all companies to be ACTIVE but got ${res.map((c) => c.status).join(', ')}`);
+    });
+
+    it('should only return active companies on search', async function() {
+      await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
+        grade: 3,
+      }, testEnv.apps.app1.token);
+
+      const res = await bjsReq({
+        url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+        method: 'SEARCH',
+        headers: {'Content-Type': 'application/json'},
+      }, testEnv.users.basic1.tokens[0].value);
+
+      const activeCompanies = res.every((c) => c.status === 'ACTIVE');
+      assert(res.length === 1, `Expected 1 but got ${res.length}`);
+      assert(activeCompanies, `Expected all companies to be ACTIVE but got ${res.map((c) => c.status).join(', ')}`);
+    });
+
+    it('should only return active companies on count', async function() {
+      await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
+        grade: 3,
+      }, testEnv.apps.app1.token);
+
+      const res = await bjsReq({
+        url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation/count`,
+        method: 'SEARCH',
+        headers: {'Content-Type': 'application/json'},
+      }, testEnv.users.basic1.tokens[0].value);
+
+      assert(res === 1, `Expected 1 but got ${res.length}`);
     });
 
     it ('should fail writing to properties and the policy does not include writing verb', async function() {
@@ -362,10 +395,10 @@ describe('Policy', async () => {
       const companiesName = res.map((company) => company.name).filter((v) => v);
       const companiesNumber = res.map((company) => company.number).filter((v) => v);
 
-      assert(res.length === 3);
-      assert(companiesStatus.length === 0);
-      assert(companiesName.length === 3);
-      assert(companiesNumber.length === 0);
+      assert(res.length === 3, `Expected 3 but got ${res.length}`);
+      assert(companiesStatus.length === 0, `Filtered companies status should be empty but got ${companiesStatus.length}`);
+      assert(companiesName.length === 3, `Filtered companies name should be 3 but got ${companiesName.length}`);
+      assert(companiesNumber.length === 0, `Filtered companies number should be empty but got ${companiesNumber.length}`);
     });
 
     it ('should fail writing to properties and it only has read access to properties', async function() {
@@ -387,7 +420,7 @@ describe('Policy', async () => {
       } catch (err) {
         if (err instanceof BJSReqError) {
           assert(err.code === 401, `Expected 401 but got ${err.code}`);
-          assert(err.message.includes('Can not access/edit properties of'), `Got ${err.message}`);
+          assert(err.message.includes('Can not access/edit properties (status)'), `Got ${err.message}`);
         } else {
           throw err;
         }
@@ -455,7 +488,7 @@ describe('Policy', async () => {
       } catch (err) {
         if (err instanceof BJSReqError) {
           assert(err.code === 401, `Expected 401 but got ${err.code}`);
-          assert(err.message.includes('Access control policy conditions are not fulfilled'), `Got ${err.message}`);
+          assert(err.message.includes('Access control policy condition is not fulfilled'), `Got ${err.message}`);
         } else {
           throw err;
         }
@@ -496,10 +529,10 @@ describe('Policy', async () => {
       const companiesName = res.map((company) => company.name).filter((v) => v);
       const companiesNumber = res.map((company) => company.number).filter((v) => v);
 
-      assert(res.length === 3);
-      assert(companiesStatus.length === 2);
-      assert(companiesName.length === 3);
-      assert(companiesNumber.length === 0);
+      assert(res.length === 3, `Expected 3 but got ${res.length}`);
+      assert(companiesStatus.length === 2, `Property filter status, expected 2 but got ${companiesStatus.length}`);
+      assert(companiesName.length === 3, `Property filter name, expected 3 but got ${companiesName.length}`);
+      assert(companiesNumber.length === 0, `Property filter number, expected 0 but got ${companiesNumber.length}`);
     });
 
     it ('should override policies query', async function() {
@@ -544,6 +577,12 @@ describe('Policy', async () => {
         method: 'GET',
         headers: {'mode': 'no-cors'},
       }, token.value);
+
+      // The results should contain two items with name "Car 0". One will include colour
+      const car0 = cars.filter((car) => car.name === 'Car 0');
+      assert(car0.length === 2, `Expected 2 but got ${car0.length}`);
+      const car0colourIdx = car0.findIndex((car) => car.color !== undefined);
+      assert(car0colourIdx !== -1, `Expected one of the cars to have a colour but got ${car0[car0colourIdx].color}`);
     });
   });
 });

@@ -7,27 +7,20 @@
   },
   "config": [
     {
-      "endpoints": [
+      "verbs": [
         "GET"
       ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "access": "%FULL_ACCESS%"
-        }
+      "schema": [
+        "organisation"
       ],
-      "projection": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "keys": [
-            "name"
-          ]
-        }
-      ]
+      "query": {
+        "access": "%FULL_ACCESS%"
+      },
+      "projection": {
+        "keys": [
+          "name"
+        ]
+      }
     }
   ]
 }

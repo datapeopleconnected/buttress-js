@@ -376,8 +376,11 @@ class AddUser extends Route {
 		const existingUsers: any[] = [];
 		for await (const auth of req.body.auth) {
 			const user = await Model.getModel('User').findOne({
-				'auth.email': auth.email,
 				'auth.app': auth.app,
+				$or: [
+					{'auth.appId': auth.appId},
+					{'auth.email': auth.email},
+				],
 				'_appId': Model.getModel('App').createId(req.authApp.id),
 			});
 			if (user) {
@@ -386,7 +389,8 @@ class AddUser extends Route {
 		}
 
 		if (existingUsers.length > 0) {
-			this.log(`[${this.name}] A user already exists with one of the auth username(s)`, Route.LogLevel.ERR);
+			this.log(`[${this.name}] A user already exists with matching auth (appId or email)`, Route.LogLevel.ERR);
+			Logging.logObject(existingUsers, Logging.LogLevel.DEBUG);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_already_exists_with_that_name`));
 		}
 
@@ -726,7 +730,7 @@ class DeleteAllUsers extends Route {
 	constructor(services) {
 		super('user', 'DELETE ALL USERS', services);
 		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.SYSTEM;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
 
@@ -735,6 +739,7 @@ class DeleteAllUsers extends Route {
 	}
 
 	_exec(req, res, validate) {
+		// ? Is this scoped to the app
 		return Model.getModel('User').rmAll().then(() => true);
 	}
 }

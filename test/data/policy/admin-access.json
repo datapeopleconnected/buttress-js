@@ -6,10 +6,10 @@
     }
   },
   "config": [{
-    "endpoints": ["GET", "SEARCH", "PUT", "POST", "DELETE"],
-    "query": [{
-      "schema": ["%ALL%"],
+    "verbs": ["GET", "SEARCH", "PUT", "POST", "DELETE"],
+    "schema": ["%ALL%"],
+    "query": {
       "access": "%FULL_ACCESS%"
-    }]
+    }
   }]
 }

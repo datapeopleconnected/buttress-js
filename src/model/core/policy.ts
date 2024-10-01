@@ -17,6 +17,56 @@ import Sugar from '../../helpers/sugar';
 import StandardModel from '../type/standard';
 import * as Helpers from '../../helpers';
 
+
+interface PolicyEnvQuery {
+	collection: string;
+	type: string;
+	query: any;
+	output: {
+		key: string;
+		type: string;
+	}
+}
+export interface PolicyEnv {
+	[key: string]: string | PolicyEnvQuery;
+}
+
+export interface PolicySelection {
+	[key: string]: {[key: string]: string};
+}
+
+export interface PolicyQuery {
+	[key: string]: any;
+}
+
+export interface PolicyCondition {
+	[key: string]: any;
+}
+
+export interface PolicyProjection {
+	[key: string]: any;
+}
+
+export interface PolicyConfig {
+	verbs: string[];
+	endpoints: string[];
+	schema: string[]
+	env: PolicyEnv | null;
+	condition: PolicyCondition | null;
+	query: PolicyQuery | null;
+	projection: PolicyProjection | null;
+}
+export interface Policy {
+	id: string;
+	name: string;
+	priority: number;
+	selection: PolicySelection | null;
+	env: PolicyEnv | null;
+	config: PolicyConfig[];
+	limit: Date | null;
+	_appId: string;
+}
+
 class PolicySchemaModel extends StandardModel {
 	constructor(services) {
 		const schema = PolicySchemaModel.Schema;
@@ -58,7 +108,19 @@ class PolicySchemaModel extends StandardModel {
 					__type: 'array',
 					__allowUpdate: true,
 					__schema: {
+						verbs: {
+							__type: 'array',
+							__itemtype: 'string',
+							__required: true,
+							__allowUpdate: true,
+						},
 						endpoints: {
+							__type: 'array',
+							__itemtype: 'string',
+							__required: true,
+							__allowUpdate: true,
+						},
+						schema: {
 							__type: 'array',
 							__itemtype: 'string',
 							__required: true,
@@ -70,21 +132,21 @@ class PolicySchemaModel extends StandardModel {
 							__required: true,
 							__allowUpdate: true,
 						},
-						conditions: {
-							__type: 'array',
-							__itemtype: 'object',
+						condition: {
+							__type: 'object',
+							__default: null,
 							__required: true,
 							__allowUpdate: true,
 						},
 						projection: {
-							__type: 'array',
-							__itemtype: 'object',
+							__type: 'object',
+							__default: null,
 							__required: true,
 							__allowUpdate: true,
 						},
 						query: {
-							__type: 'array',
-							__itemtype: 'object',
+							__type: 'object',
+							__default: null,
 							__required: true,
 							__allowUpdate: true,
 						},
@@ -116,11 +178,13 @@ class PolicySchemaModel extends StandardModel {
 		if (body.config) {
 			body.config.forEach((item) => {
 				policyConfig.push({
+					verbs: (item.verbs) ? item.verbs : [],
 					endpoints: (item.endpoints) ? item.endpoints : [],
+					schema: (item.schema) ? item.schema : [],
 					env: (item.env) ? item.env : null,
-					conditions: (item.conditions) ? item.conditions : [],
-					projection: (item.projection) ? item.projection : [],
-					query: (item.query) ? item.query : [],
+					condition: (item.condition) ? item.condition : null,
+					projection: (item.projection) ? item.projection : null,
+					query: (item.query) ? item.query : null,
 				});
 			});
 		}

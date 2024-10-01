@@ -7,8 +7,11 @@
   },
   "config": [
     {
-      "endpoints": [
+      "verbs": [
         "GET"
+      ],
+      "schema": [
+        "organisation"
       ],
       "env": {
         "switch": {
@@ -16,33 +19,23 @@
           "state": "ON"
         }
       },
-      "conditions": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "@and": [
-            {
-              "query.switch": {
-                "switch.id": {
-                  "@eq": "env.switch.id"
-                },
-                "switch.state": {
-                  "@eq": "env.switch.state"
-                }
+      "condition": {
+        "@and": [
+          {
+            "query.switch": {
+              "switch.id": {
+                "@eq": "env.switch.id"
+              },
+              "switch.state": {
+                "@eq": "env.switch.state"
               }
             }
-          ]
-        }
-      ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "access": "%FULL_ACCESS%"
-        }
-      ]
+          }
+        ]
+      },
+      "query": {
+        "access": "%FULL_ACCESS%"
+      }
     }
   ]
 }

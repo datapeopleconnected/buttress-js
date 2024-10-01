@@ -16,14 +16,17 @@
 
 import AccessControlHelpers from './helpers';
 
+import { Policy } from '../model/core/policy';
+import { Token } from '../model/core/token';
+
 /**
  * @class PolicyMatch
  */
 class PolicyMatch {
 	constructor() {}
 
-	__getTokenPolicies(policies, token) {
-		return policies.reduce((arr, p) => {
+	__getTokenPolicies(policies: Policy[], token?: Token) {
+		return policies.reduce((arr: Policy[], p) => {
 			if (!p.selection) return arr;
 
 			const match = this.__checkPolicySelection(p, token);
@@ -34,7 +37,7 @@ class PolicyMatch {
 		}, []);
 	}
 
-	__checkPolicySelection(p, token): boolean {
+	__checkPolicySelection(p, token?: Token): boolean {
 		const selection = p.selection;
 
 		if (!token) return false;

@@ -5,15 +5,39 @@
       "@eq": "test1"
     }
   },
-  "config": [{
-    "endpoints": ["GET"],
-    "query": [{
-      "schema": ["car"],
-      "access": "%FULL_ACCESS%"
-    }]
-  }],
-  "projection": [{
-    "schema": ["car"],
-    "keys": ["name"]
-  }]
+  "config": [
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "car"
+      ],
+      "query": {
+        "access": "%FULL_ACCESS%"
+      },
+      "projection": {
+        "keys": [
+          "name"
+        ]
+      }
+    },
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "car"
+      ],
+      "query": {
+        "name": "Car 0"
+      },
+      "projection": {
+        "keys": [
+          "name",
+          "color"
+        ]
+      }
+    }
+  ]
 }

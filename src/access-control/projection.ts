@@ -16,6 +16,8 @@
 
 import * as Helpers from '../helpers';
 
+import { ApplicablePolicies, PolicyError } from './index';
+
 /**
  * @class Projection
  */
@@ -35,75 +37,73 @@ class Projection {
 		];
 	}
 
-	async addAccessControlPolicyQueryProjection(req, userPolicies, schema) {
-		const isPoliciesAllowed: Promise<any>[] = [];
+	async filterPoliciesByPolicyProjection(req, applicablePolicies: ApplicablePolicies[], schema) {
+		const output: ApplicablePolicies[] = [];
 
-		await Object.keys(userPolicies).reduce(async (prev, key) => {
-			await prev;
-			isPoliciesAllowed.push(await this.__applyPolicyProjectinos(req, userPolicies[key].projection, schema));
-		}, Promise.resolve());
+		for await (const policy of applicablePolicies) {
+			if (policy.config.projection === null) {
+				output.push(policy);
+			} else if (await this.__applyPolicyProjection(req, policy.config.projection, schema)) {
+				policy.config.projection = await this.__applyPolicyProjection(req, policy.config.projection, schema);
+				output.push(policy);
+			}
+		}
 
-		return isPoliciesAllowed.every((flag) => flag);
+		return output;
 	}
 
-	async __applyPolicyProjectinos(req, projections, schema) {
+	async __applyPolicyProjection(req, projections, schema) {
 		const requestMethod = req.method;
 		const flattenedSchema = Helpers.getFlattenedSchema(schema);
 		let requestBody = req.body;
 
-		const outcome = projections.reduce((arr, proj) => {
-			const projectionKeys = proj.keys;
-			const projection = {};
+		const projectionKeys = projections.keys;
+		const projection = {};
 
-			if (projectionKeys && projectionKeys.length > 0) {
-				projectionKeys.forEach((key) => {
-					projection[key] = 1;
+		if (projectionKeys && projectionKeys.length > 0) {
+			projectionKeys.forEach((key) => {
+				projection[key] = 1;
+			});
+		}
+
+		if (requestMethod === 'POST') {
+			const updatePaths = Object.keys(requestBody).map((key) => key);
+
+			if (projectionKeys.length > 0) {
+				const removedPaths = updatePaths
+					.filter((key) => projectionKeys.every((updateKey) => updateKey !== key))
+					.filter((path) => flattenedSchema[path]);
+
+				removedPaths.forEach((i) => {
+					// ? There maybe a required field here but the user does not have access to it.
+					const config = flattenedSchema[i];
+					requestBody[i] = Helpers.Schema.getPropDefault(config);
 				});
 			}
-
-			if (requestMethod === 'POST') {
-				const updatePaths = Object.keys(requestBody).map((key) => key);
-
-				if (projectionKeys.length > 0) {
-					const removedPaths = updatePaths
-						.filter((key) => projectionKeys.every((updateKey) => updateKey !== key))
-						.filter((path) => flattenedSchema[path]);
-
-					removedPaths.forEach((i) => {
-						// TODO think about required fields that users do not have write access to
-						const config = flattenedSchema[i];
-						requestBody[i] = Helpers.Schema.getPropDefault(config);
-					});
-				}
-
-				arr.push(true);
-			} else if (requestMethod === 'PUT') {
-				let update = false;
-				if (!Array.isArray(requestBody) && typeof requestBody === 'object') {
-					requestBody = [requestBody];
-				}
-
-				const updatePaths = requestBody.map((elem) => elem.path);
-				const allowedPathUpdates = projectionKeys.filter((key) => updatePaths.some((updateKey) => {
-					const pattern = new RegExp(`^${key}`);
-					return pattern.test(updateKey);
-				}));
-				if (allowedPathUpdates.length === updatePaths.length || projectionKeys.length < 1) {
-					update = true;
-				}
-				arr.push(update);
-			} else {
-				arr.push((projectionKeys.length > 0)? this.__checkPorjectionPath(requestBody, projectionKeys) : true);
+		} else if (requestMethod === 'PUT') {
+			if (!Array.isArray(requestBody) && typeof requestBody === 'object') {
+				requestBody = [requestBody];
 			}
 
-			req.body.project = (req.body.project)? {...req.body.project, ...projection} : projection;
-			return arr;
-		}, []);
+			// Check to see if the any of the update paths don't exists within the projection keys,
+			// if they don't then we want to throw as the user doesn't have access.
+			const invalidPaths = requestBody.map((elem) => elem.path)
+				.filter((updateKey) => projectionKeys.find((key) => new RegExp(`^${key}`).test(updateKey)) === undefined);
 
-		return outcome.every((flag) => flag);
+			if (invalidPaths.length > 0) {
+				throw new PolicyError(401, `Can not access/edit properties (${invalidPaths.join (', ')}) of ${schema.name} without privileged access`);
+			}
+
+		} else {
+			if (projectionKeys.length > 0 && !this.__checkProjectionPath(requestBody, projectionKeys)) {
+				throw new Error(`Unable to query field that's outside of projection - failed path check`);
+			}
+		}
+
+		return projection;
 	}
 
-	__checkPorjectionPath(requestBody, projectionKeys) {
+	__checkProjectionPath(requestBody, projectionKeys) {
 		const query = (requestBody.query) ? requestBody.query : requestBody;
 		const paths = Object.keys(query).filter((key) => key && !this._ignoredQueryKeys.includes(key));
 		let queryKeys: string[] = [];

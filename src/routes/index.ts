@@ -39,6 +39,8 @@ import Datastore from '../datastore';
 // Core Routes
 import { Routes as CoreRoutes } from './api';
 
+import { BjsRequest } from '../types/bjs-express';
+
 class Routes {
 	app: express.Application;
 	id: string;
@@ -62,10 +64,10 @@ class Routes {
 		this._services = null;
 
 		this._preRouteMiddleware = [
-			(req: Request, res: Response, next: NextFunction) => this._timeRequest(req, res, next),
-			(req: Request, res: Response, next: NextFunction) => this._authenticateToken(req, res, next),
-			(req: Request, res: Response, next: NextFunction) => AccessControl.accessControlPolicyMiddleware(req, res, next),
-			(req: Request, res: Response, next: NextFunction) => this._configCrossDomain(req, res, next),
+			(req: BjsRequest, res: Response, next: NextFunction) => this._timeRequest(req, res, next),
+			(req: BjsRequest, res: Response, next: NextFunction) => this._authenticateToken(req, res, next),
+			(req: BjsRequest, res: Response, next: NextFunction) => AccessControl.accessControlPolicyMiddleware(req, res, next),
+			(req: BjsRequest, res: Response, next: NextFunction) => this._configCrossDomain(req, res, next),
 		];
 	}
 
@@ -352,7 +354,7 @@ class Routes {
 		});
 	}
 
-	_timeRequest(req, res, next) {
+	_timeRequest(req: BjsRequest, res, next) {
 		// Just assign a arbitrary id to the request to help identify it in the logs
 		req.id = Datastore.getInstance('core').ID.new();
 		res.set('x-bjs-request-id', req.id);
@@ -398,8 +400,8 @@ class Routes {
 	 * @param {Function} next - next handler function
 	 * @private
 	 */
-	async _authenticateToken(req, res, next) {
-		req.timings.authenticateToken = req.timer.interval;
+	async _authenticateToken(req: BjsRequest, res, next) {
+		req.timings.authenticateToken = req.timer?.interval || 0;
 		Logging.logTimer(`_authenticateToken:start ${req.token}`,
 			req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
@@ -434,7 +436,7 @@ class Routes {
 			if (isLambdaAPICall) {
 				let apiLambdaTrigger: any = null;
 				let apiLambdaApp: any = null;
-				let apiPath = null;
+				let apiPath: string = '';
 
 				[apiPath] = req.url.split('/lambda/v1/').join('').split('/');
 				apiLambdaApp = await Model.getModel('App').findOne({
@@ -489,7 +491,7 @@ class Routes {
 				}
 			}
 
-			req.apiPath = req.query.apiPath;
+			req.apiPath = (typeof req.query.apiPath === 'string') ? req.query.apiPath : '';
 
 			// Parse the token from the req headers / params
 			if (useUserToken) {

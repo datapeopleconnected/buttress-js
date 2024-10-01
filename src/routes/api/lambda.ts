@@ -184,8 +184,8 @@ class AddLambda extends Route {
 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
 			}
 
-			if (!req.body.auth.permissions || !req.body.auth.domains || !req.body.auth.policyProperties) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+			if (!req.body.auth.domains || !req.body.auth.policyProperties) {
+				this.log(`[${this.name}] Missing required field (auth.domains, auth.policyProperties)`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
@@ -215,7 +215,11 @@ class AddLambda extends Route {
 
 		const app = await Model.getModel('App').findById(appId);
 		const lambda = await this.model.add(req.body.lambda, {auth: req.body.auth, app});
-		this._nrp?.emit('app-lambda:path-mutation-bust-cache', JSON.stringify(lambda));
+
+		const hasPathMutation = lambda.trigger.some((t) => t.type === 'PATH_MUTATION');
+		if (hasPathMutation) {
+			this._nrp?.emit('rest:worker:add-path-mutation', JSON.stringify(lambda));
+		}
 
 		return lambda;
 	}
@@ -265,6 +269,8 @@ class UpdateLambda extends Route {
 
 	async _exec(req, res, validate) {
 		const updated = await this.model.updateByPath(req.body, req.params.id, null, 'Lambda');
+
+		// TODO: Check to see if the updated involved the triggers or path mutations.
 
 		const lambda = await this.model.findById(req.params.id);
 		if (req.body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
@@ -651,10 +657,14 @@ class DeleteLambda extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		// TODO make sure that the git repo is not used by any other lambdas before deleteing it
 		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${validate.lambda.id}`);
 		await this.model.rm(validate.lambda.id);
 		await Model.getModel('Token').rm(validate.token.id);
+
+		if (validate.lambda.trigger.some((t) => t.type === 'PATH_MUTATION')) {
+			this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', JSON.stringify(validate.lambda));
+		}
+
 		return true;
 	}
 }

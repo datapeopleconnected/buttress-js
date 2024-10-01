@@ -7,41 +7,34 @@
   },
   "config": [
     {
-      "endpoints": [
+      "verbs": [
         "GET"
+      ],
+      "schema": [
+        "organisation"
       ],
       "env": {
         "startTime": "01:00",
         "endTime": "01:01",
         "time": "now"
       },
-      "conditions": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "@and": [
-            {
-              "@env.time": {
-                "@gtDate": "env.startTime"
-              }
-            },
-            {
-              "@env.time": {
-                "@ltDate": "env.endTime"
-              }
+      "condition": {
+        "@and": [
+          {
+            "@env.time": {
+              "@gtDate": "env.startTime"
             }
-          ]
-        }
-      ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "access": "%FULL_ACCESS%"
-        }
-      ]
+          },
+          {
+            "@env.time": {
+              "@ltDate": "env.endTime"
+            }
+          }
+        ]
+      },
+      "query": {
+        "access": "%FULL_ACCESS%"
+      }
     }
   ]
 }

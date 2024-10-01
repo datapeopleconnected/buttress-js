@@ -185,24 +185,27 @@ export default class AppSchemaModel extends StandardModel {
 				},
 			},
 			config: [{
-				endpoints: ['%ALL%'],
-				query: [{
-					schema: ['%APP_SCHEMA%'],
+				verbs: ['%ALL%'],
+				schema: ['%APP_SCHEMA%'],
+				query: {
 					access: '%FULL_ACCESS%',
-				}, {
-					schema: ['policy', 'user', 'lambda', 'lambdaExecution', 'deployment', 'appDataSharing', 'secureStore'],
-					_appId: {
-						'@eq': body.id,
-					},
-				}],
+				}
 			}, {
-				endpoints: ['GET', 'PUT'],
-				query: [{
-					schema: ['app'],
+				verbs: ['GET', 'PUT'],
+				schema: ['app'],
+				query: {
 					_id: {
 						'@eq': body.id,
 					},
-				}],
+				},
+			}, {
+				verbs: ['%ALL%'],
+				schema: ['policy', 'user', 'token', 'lambda', 'lambdaExecution', 'deployment', 'appDataSharing', 'secureStore'],
+				query: {
+					_appId: {
+						'@eq': body.id,
+					},
+				}
 			}],
 		}, body.id);
 
@@ -375,6 +378,8 @@ export default class AppSchemaModel extends StandardModel {
 				}
 			}
 		}
+
+		this.__nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
 
 		return super.rm(entity.id.toString());
 	}

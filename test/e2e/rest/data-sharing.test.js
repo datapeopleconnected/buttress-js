@@ -99,11 +99,11 @@ describe('Data Sharing', async () => {
 				},
 
 				policyConfig: [{
-					endpoints: ['%ALL%'],
-					query: [{
-						schema: ['%ALL%'],
+					verbs: ['%ALL%'],
+					schema: ['%ALL%'],
+					query: {
 						access: '%FULL_ACCESS%',
-					}],
+					},
 				}],
 			}, testEnv.apps.app1.token);
 
@@ -129,11 +129,11 @@ describe('Data Sharing', async () => {
 				},
 
 				policyConfig: [{
-					endpoints: ['%ALL%'],
-					query: [{
-						schema: ['%ALL%'],
+					verbs: ['%ALL%'],
+					schema: ['%ALL%'],
+					query: {
 						access: '%FULL_ACCESS%',
-					}],
+					},
 				}],
 			}, testEnv.apps.app2.token);
 
@@ -219,11 +219,11 @@ describe('Data Sharing', async () => {
 				},
 
 				policyConfig: [{
-					endpoints: ['%ALL%'],
-					query: [{
-						schema: ['%ALL%'],
+					verbs: ['%ALL%'],
+					schema: ['%ALL%'],
+					query: {
 						access: '%FULL_ACCESS%',
-					}],
+					},
 				}],
 			}, testEnv.apps.app3.token);
 
@@ -249,11 +249,11 @@ describe('Data Sharing', async () => {
 				},
 
 				policyConfig: [{
-					endpoints: ['%ALL%'],
-					query: [{
-						schema: ['%ALL%'],
+					verbs: ['%ALL%'],
+					schema: ['%ALL%'],
+					query: {
 						access: '%FULL_ACCESS%',
-					}],
+					},
 				}],
 			}, testEnv.apps.app2.token);
 

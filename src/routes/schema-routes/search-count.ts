@@ -19,6 +19,8 @@ import Model from '../../model';
 import * as Helpers from '../../helpers';
 import Schema from '../../schema';
 
+import * as ACM from '../../access-control/models-access';
+
 /**
  * @class Count
  */
@@ -72,6 +74,6 @@ export default class SearchCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return this.model.count(validateResult.query);
+		return ACM.count(this.model, validateResult, req.ac);
 	}
 };

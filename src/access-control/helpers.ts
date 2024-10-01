@@ -19,6 +19,17 @@ import Sugar from '../helpers/sugar';
 import Model from '../model';
 import Logging from '../helpers/logging';
 
+import { ApplicablePolicies } from './index';
+import { PolicyEnv } from '../model/core/policy';
+
+export function CombineEnvGroups(policy: ApplicablePolicies): PolicyEnv {
+	let env: PolicyEnv = {};
+	if (policy.env !== null) env = { ...policy.env };
+	if (policy.config.env !== null) env = { ...env, ...policy.config.env };
+
+	return env;
+}
+
 /**
  * @class Conditoins
  */

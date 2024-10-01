@@ -9,50 +9,20 @@
   },
   "config": [
     {
-      "endpoints": [
+      "verbs": [
         "GET"
       ],
-      "projection": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "keys": [
-            "number"
-          ]
-        }
+      "schema": [
+        "organisation"
       ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "access": "%FULL_ACCESS%"
-        }
-      ]
-    },
-    {
-      "endpoints": [
-        "GET"
-      ],
-      "projection": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "keys": [
-            "status"
-          ]
-        }
-      ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "access": "%FULL_ACCESS%"
-        }
-      ]
+      "projection": {
+        "keys": [
+          "status"
+        ]
+      },
+      "query": {
+        "access": "%FULL_ACCESS%"
+      }
     }
   ]
 }

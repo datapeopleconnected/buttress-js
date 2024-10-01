@@ -1103,7 +1103,7 @@ export default class BootstrapSocket extends Bootstrap {
 		const room = hash(policies);
 		for await (const key of Object.keys(policies)) {
 			const policy = policies[key];
-			const conditionStr = policy.conditions.reduce((str, condition) => str = str + JSON.stringify(condition), '');
+			const conditionStr = policy.condition.reduce((str, condition) => str = str + JSON.stringify(condition), '');
 			if (!conditionStr) continue;
 
 			await this._queueEvent(data, room, policy, key, conditionStr);
@@ -1111,7 +1111,7 @@ export default class BootstrapSocket extends Bootstrap {
 	}
 
 	async _queueEvent(data, room, policy, roomKey, conditionStr) {
-		const conditions = policy.conditions;
+		const conditions = policy.condition;
 		conditions.reduce(async (prev, condition) => {
 			await prev;
 			const dateTimeBasedCondition = await AccessControlConditions.isPolicyDateTimeBased(condition);

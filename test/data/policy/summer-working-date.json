@@ -9,41 +9,34 @@
   },
   "config": [
     {
-      "endpoints": [
+      "verbs": [
         "GET"
+      ],
+      "schema": [
+        "organisation"
       ],
       "env": {
         "startDate": "01/07/2022",
         "endDate": "31/01/2042",
         "date": "now"
       },
-      "conditions": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "@and": [
-            {
-              "@env.date": {
-                "@gtDate": "env.startDate"
-              }
-            },
-            {
-              "@env.date": {
-                "@ltDate": "env.endDate"
-              }
+      "condition": {
+        "@and": [
+          {
+            "@env.date": {
+              "@gtDate": "env.startDate"
             }
-          ]
-        }
-      ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "access": "%FULL_ACCESS%"
-        }
-      ]
+          },
+          {
+            "@env.date": {
+              "@ltDate": "env.endDate"
+            }
+          }
+        ]
+      },
+      "query": {
+        "access": "%FULL_ACCESS%"
+      }
     }
   ]
 }
