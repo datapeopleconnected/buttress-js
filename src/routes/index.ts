@@ -434,9 +434,8 @@ class Routes {
 			if (isLambdaAPICall) {
 				let apiLambdaTrigger: any = null;
 				let apiLambdaApp: any = null;
-				let apiPath = null;
 
-				[apiPath] = req.url.split('/lambda/v1/').join('').split('/');
+				const [apiPath]: string = req.url.split('/lambda/v1/').join('').split('/');
 				apiLambdaApp = await Model.getModel('App').findOne({
 					apiPath: {
 						$eq: apiPath,

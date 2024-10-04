@@ -68,7 +68,7 @@ class PolicyMatch {
 			return arr;
 		}, []).flat();
 		
-		return (matches.length > 0) ? matches.every((v) => v) : false;
+		return (matches.length > 0) ? matches.some((v) => v) : false;
 	}
 }
 export default new PolicyMatch();

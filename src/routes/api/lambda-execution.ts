@@ -29,7 +29,7 @@ class GetLambdaExecution extends Route {
 	constructor(services) {
 		super('lambda-execution/:id', 'GET LAMBDA EXECUTION', services, Model.getModel('LambdaExecution'));
 		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -105,7 +105,7 @@ class UpdateLambdaExecution extends Route {
 	constructor(services) {
 		super('lambda-execution/:id', 'UPDATE LAMBDA EXECUTION', services, Model.getModel('LambdaExecution'));
 		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -152,7 +152,7 @@ class SearchExecutionList extends Route {
 	constructor(services) {
 		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', services, Model.getModel('LambdaExecution'));
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 

@@ -196,7 +196,7 @@ export default class AppSchemaModel extends StandardModel {
 					},
 				}],
 			}, {
-				endpoints: ['GET', 'PUT'],
+				endpoints: ['GET', 'SEARCH', 'PUT'],
 				query: [{
 					schema: ['app'],
 					_id: {

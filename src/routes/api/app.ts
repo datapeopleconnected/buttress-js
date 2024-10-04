@@ -55,7 +55,7 @@ class SearchAppList extends Route {
 	constructor(services) {
 		super('app', 'GET APP LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.SYSTEM;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 	}
 
@@ -103,7 +103,7 @@ class GetApp extends Route {
 		// Should change to app apiPath instead of ID
 		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.SYSTEM;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 

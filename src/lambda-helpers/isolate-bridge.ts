@@ -85,18 +85,18 @@ class IsolateBridge {
 				this._pluginBootstrap += `
 					let ${pluginName}_${method} = _${pluginName}_${method};
 					delete _${pluginName}_${method};
-					global.${pluginName}_${method} = (args) => {
+					global.${pluginName}_${method} = (...args) => {
 						return new Promise((resolve, reject) => {
 							${pluginName}_${method}.applyIgnored(
 								undefined,
-								[new ivm.ExternalCopy(args).copyInto(), new ivm.Reference(resolve), new ivm.Reference(reject)],
+								[new ivm.Reference(resolve), new ivm.Reference(reject)].concat(args.map(arg => new ivm.ExternalCopy(arg).copyInto())),
 							);
 						});
 					}
 				`;
-				jail.setSync(`_${pluginName}_${method}`, new ivm.Reference(async (args, resolve, reject) => {
+				jail.setSync(`_${pluginName}_${method}`, new ivm.Reference(async (resolve, reject, ...args) => {
 					Logging.logVerbose(`${pluginName}_${method}`);
-					const outcome = await pluginMeta.plugin[method](args);
+					const outcome = await pluginMeta.plugin[method](...args);
 					resolve.applyIgnored(undefined, [
 						new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto(),
 					]);

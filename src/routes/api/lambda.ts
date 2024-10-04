@@ -104,7 +104,7 @@ class GetLambdaList extends Route {
 		}
 
 		return (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) ?
-			await this.model.findAll() : await this.model.find({_appId: this.model.ID.new(req.authApp.id)});
+			await this.model.findAll() : await this.model.find({_appId: Datastore.getInstance('core').ID.new(req.authApp.id)});
 	}
 }
 routes.push(GetLambdaList);
@@ -334,7 +334,7 @@ class ScheduleLambdaExecution extends Route {
 	constructor(services) {
 		super('lambda/:id/schedule', 'SCHEDULE LAMBDA EXECUTION', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 

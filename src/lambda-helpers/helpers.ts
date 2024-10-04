@@ -94,7 +94,7 @@ class Helpers {
 					const signer = crypto.createSign(data.signature);
 					if (data.preSignature) {
 						signer.write(data.preSignature);
-						signer.end;
+						signer.end();
 					}
 					return signer.sign(data.key, data.encodingType);
 				},
