@@ -76,6 +76,12 @@ class Routes {
 
 		this._nrp = services.get('nrp');
 		if (!this._nrp) throw new Error('Routes: NRP not found in services');
+
+		this._nrp?.on('rest:worker:app-deleted', (exec: any) => {
+			exec = JSON.parse(exec);
+			if (!exec.apiPath) return;
+			this._deregisterRouter(exec.apiPath);
+		});
 	}
 
 	/**
@@ -222,6 +228,13 @@ class Routes {
 		this.app.use('', (...args) => this._getRouter(key)(...args));
 
 		this._repositionErrorHandler();
+	}
+
+	_deregisterRouter(key) {
+		if (!this._routerMap[key]) return;
+
+		Logging.logSilly(`Routes:_deregisterRouter Deregister ${key}`);
+		delete this._routerMap[key];
 	}
 
 	/**
@@ -677,12 +690,23 @@ class Routes {
 		Logging.logSilly(`_configCrossDomain:origin ${origin}`, req.id);
 		Logging.logSilly(`_configCrossDomain:domains ${domains}`, req.id);
 
-		const domainIdx = domains.indexOf(origin);
-		if (domainIdx === -1) {
-			Logging.logError(new Error(`Invalid Domain: ${origin}`));
-			res.sendStatus(403);
-			Logging.logTimer('_configCrossDomain:end-invalid-domain', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			return;
+		// Early out of a full wildcard is found within domains, if not then check for a match
+		// for origin within the domains array.
+		const hasFullWildcard = domains.includes('*');
+		if (!hasFullWildcard) {
+			const domainIdx = domains.findIndex((d) => {
+				if (d.indexOf('*') === -1) return d === origin;
+
+				const rex = new RegExp(d.replace(/\./g, '\\.').replace(/\*/g, '.*'));
+				return rex.test(origin);
+			});
+
+			if (domainIdx === -1) {
+				Logging.logError(new Error(`Invalid Domain: ${origin}`));
+				res.sendStatus(403);
+				Logging.logTimer('_configCrossDomain:end-invalid-domain', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+				return;
+			}
 		}
 
 		res.header('Access-Control-Allow-Origin', req.header('Origin'));

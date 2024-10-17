@@ -360,7 +360,7 @@ class AccessControl {
 					name: `${policy.name}#${idx}`,
 					env: policy.env,
 					appId,
-					config,
+					config: JSON.parse(JSON.stringify(config))
 				});
 			});
 

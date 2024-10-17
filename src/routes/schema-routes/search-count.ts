@@ -21,6 +21,11 @@ import Schema from '../../schema';
 
 import * as ACM from '../../access-control/models-access';
 
+interface validateResult {
+	queryParams: QueryParams<object>,
+	actualCount: boolean
+}
+
 /**
  * @class Count
  */
@@ -51,14 +56,21 @@ export default class SearchCount extends Route {
 	}
 
 	async _validate(req, res, token) {
-		const result = {
-			query: {},
+		const result: validateResult = {
+			queryParams: {
+				query: {},
+			},
+			actualCount: false
 		};
 
 		let query: any = {};
 
 		if (!query.$and) {
 			query.$and = [];
+		}
+
+		if (req.body.actualCount) {
+			result.actualCount = true;
 		}
 
 		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
@@ -69,11 +81,11 @@ export default class SearchCount extends Route {
 		}
 
 		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
-		result.query = query;
+		result.queryParams.query = query;
 		return result;
 	}
 
-	_exec(req, res, validateResult) {
-		return ACM.count(this.model, validateResult, req.ac);
+	_exec(req, res, validateResult: validateResult) {
+		return ACM.count(this.model, validateResult.queryParams, req.ac, validateResult.actualCount);
 	}
 };

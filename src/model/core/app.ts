@@ -379,7 +379,11 @@ export default class AppSchemaModel extends StandardModel {
 			}
 		}
 
-		this.__nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
+		const payload = JSON.stringify({appId: entity.id, apiPath: entity.apiPath});
+
+		// ? We don't know that his is being called within the rest worker...
+		this.__nrp?.emit('rest:worker:rebuild-path-mutation-cache', payload);
+		this.__nrp?.emit('rest:worker:app-deleted', payload);
 
 		return super.rm(entity.id.toString());
 	}

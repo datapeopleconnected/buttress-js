@@ -49,16 +49,26 @@ export async function find(model, query: QueryParams<object>, ac: {policyConfigs
   return model.find(model.parseQuery(conbined.query), {}, conbined.limit, conbined.skip, conbined.sort, conbined.project);
 }
 
-export async function count(model, query: QueryParams<object>, ac: {policyConfigs: parsedPolicyConfig[]}) {
+export async function count(model, query: QueryParams<object>, ac: {policyConfigs: parsedPolicyConfig[]}, actualCount: boolean = false) {
   if (ac.policyConfigs.length > 1) {
-    let count = 0;
+    if (actualCount) {
+      let count = 0;
 
-    for (const policyConfig of ac.policyConfigs) {
-      const conbined = await combineQueriesWithAc(query, policyConfig);
-      count += await model.count(model.parseQuery(conbined.query));
+      for (const policyConfig of ac.policyConfigs) {
+        const conbined = await combineQueriesWithAc(query, policyConfig);
+        count += await model.count(model.parseQuery(conbined.query));
+      }
+
+      return count;
+    } else {
+      const queries: {$or: BjsQuery<object>[]} = {$or: []};
+      for (const policyConfig of ac.policyConfigs) {
+        const conbined = await combineQueriesWithAc(query, policyConfig);
+        queries.$or.push(conbined.query);
+      }
+
+      return model.count(model.parseQuery(queries));
     }
-
-    return count;
   }
 
   const policyConfig = ac.policyConfigs[0] || {};
