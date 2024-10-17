@@ -43,16 +43,19 @@ class Projection {
 		for await (const policy of applicablePolicies) {
 			if (policy.config.projection === null) {
 				output.push(policy);
-			} else if (await this.__applyPolicyProjection(req, policy.config.projection, schema)) {
-				policy.config.projection = await this.__applyPolicyProjection(req, policy.config.projection, schema);
-				output.push(policy);
+			} else {
+				const result = await this.__applyPolicyProjection(req, policy.config.projection, schema);
+				if (result !== false) {
+					policy.config.projection = result;
+					output.push(policy);
+				}
 			}
 		}
 
 		return output;
 	}
 
-	async __applyPolicyProjection(req, projections, schema) {
+	async __applyPolicyProjection(req, projections, schema) : Promise<{ [key: string]: number } | false> {
 		const requestMethod = req.method;
 		const flattenedSchema = Helpers.getFlattenedSchema(schema);
 		let requestBody = req.body;
@@ -96,7 +99,7 @@ class Projection {
 
 		} else {
 			if (projectionKeys.length > 0 && !this.__checkProjectionPath(requestBody, projectionKeys)) {
-				throw new Error(`Unable to query field that's outside of projection - failed path check`);
+				return false;
 			}
 		}
 
