@@ -344,7 +344,7 @@ class AccessControl {
 			// * A query is needed regardless of what else is in the policy config, we'll discard any that are missing.
 			const configs = policy.config.filter((c) => {
 				return (c.query &&
-					c.verbs.includes(requestVerb) || c.verbs.includes('%ALL%')) &&
+					c.verbs && (c.verbs.includes(requestVerb) || c.verbs.includes('%ALL%'))) &&
 					(
 						c.schema &&
 						c.schema.includes(schemaName) ||
