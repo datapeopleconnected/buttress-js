@@ -104,7 +104,7 @@ class GetLambdaList extends Route {
 		}
 
 		return (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) ?
-			await this.model.findAll() : await this.model.find({_appId: this.model.ID.new(req.authApp.id)});
+			await this.model.findAll() : await this.model.find({_appId: this.model.adapter.ID.new(req.authApp.id)});
 	}
 }
 routes.push(GetLambdaList);

@@ -491,7 +491,7 @@ class DeleteAppPolicies extends Route {
 
 	async _validate(req) {
 		const rxsPolicies = (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) ?
-			await Model.getModel('Policy').findAll() : await Model.getModel('Policy').find({_appId: Model.getModel('App').ID.new(req.authApp.id)});
+			await Model.getModel('Policy').findAll() : await Model.getModel('Policy').find({_appId: Model.getModel('App').adapter.ID.new(req.authApp.id)});
 
 		const policies: any[] = [];
 		for await (const policy of rxsPolicies) {
