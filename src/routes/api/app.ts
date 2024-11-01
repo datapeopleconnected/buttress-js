@@ -30,7 +30,7 @@ class GetAppList extends Route {
 	constructor(services) {
 		super('app', 'GET APP LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.SYSTEM;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -55,7 +55,7 @@ class SearchAppList extends Route {
 	constructor(services) {
 		super('app', 'GET APP LIST', services, Model.getModel('App'));
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.SYSTEM;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 	}
 
