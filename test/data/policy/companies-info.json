@@ -1,5 +1,6 @@
 {
   "name": "companies-info",
+  "version": "1",
   "selection": {
     "grade": {
       "@eq": 5

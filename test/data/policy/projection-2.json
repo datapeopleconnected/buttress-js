@@ -1,5 +1,6 @@
 {
   "name": "projection-2",
+  "version": 1,
   "priority": 2,
   "merge": true,
   "selection": {

@@ -1,5 +1,6 @@
 {
   "name": "working-date",
+  "version": "1",
   "selection": {
     "grade": {
       "@eq": 1

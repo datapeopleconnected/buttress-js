@@ -1,5 +1,6 @@
 {
   "name": "query-1",
+  "version": 1,
   "priority": 1,
   "selection": {
     "policyMergeQuery": {

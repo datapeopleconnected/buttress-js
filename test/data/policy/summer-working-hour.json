@@ -1,5 +1,6 @@
 {
   "name": "summer-working-hours",
+  "version": 1,
   "priority": 2,
   "merge": true,
   "selection": {

@@ -1,5 +1,6 @@
 {
   "name": "summer-working-date",
+  "version": 1,
   "priority": 1,
   "merge": true,
   "selection": {

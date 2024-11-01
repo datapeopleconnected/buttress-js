@@ -189,6 +189,11 @@ class AddPolicy extends Route {
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_selection`));
 			}
 
+			if (!req.body.version) {
+				this.log(`[${this.name}] a version property is required: ${req.body.name}`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_no_version`));
+			}
+
 			return Promise.resolve(true);
 		} catch (err) {
 			return Promise.reject(err);

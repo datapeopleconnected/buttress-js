@@ -1,5 +1,6 @@
 {
   "name": "override-access",
+  "version": "1",
   "selection": {
     "securityClearance": {
       "@eq": 100

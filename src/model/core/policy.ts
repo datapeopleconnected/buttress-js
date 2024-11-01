@@ -86,6 +86,11 @@ class PolicySchemaModel extends StandardModel {
 					__required: true,
 					__allowUpdate: true,
 				},
+				version: {
+					__type: 'string',
+					__required: true,
+					__allowUpdate: true,
+				},
 				priority: {
 					__type: 'number',
 					__default: 0,

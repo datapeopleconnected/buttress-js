@@ -1,5 +1,6 @@
 {
   "name": "working-hours",
+  "version": "1",
   "selection": {
     "grade": {
       "@eq": 2

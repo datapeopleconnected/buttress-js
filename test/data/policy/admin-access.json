@@ -1,5 +1,6 @@
 {
   "name": "admin-access",
+  "version": "1",
   "selection": {
     "adminAccess": {
       "@eq": true
