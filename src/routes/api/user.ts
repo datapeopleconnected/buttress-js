@@ -28,7 +28,7 @@ class GetUserList extends Route {
 	constructor(services) {
 		super('user', 'GET USER LIST', services);
 		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -53,7 +53,7 @@ class GetUser extends Route {
 	constructor(services) {
 		super('user/:id', 'GET USER', services);
 		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -129,7 +129,7 @@ class FindUser extends Route {
 	constructor(services) {
 		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER', services);
 		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -174,7 +174,7 @@ class GetUserByToken extends Route {
 	constructor(services) {
 		super('user/get-by-token', 'GET USER BY TOKEN', services);
 		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
@@ -222,7 +222,7 @@ class CreateUserAuthToken extends Route {
 	constructor(services) {
 		super('user/:id/token', 'CREATE USER AUTH TOKEN', services);
 		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.redactResults = false;
@@ -356,7 +356,7 @@ class AddUser extends Route {
 	constructor(services) {
 		super('user', 'ADD USER', services);
 		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
@@ -426,7 +426,7 @@ class UpdateUser extends Route {
 	constructor(services) {
 		super('user/:id', 'UPDATE USER', services);
 		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -472,7 +472,7 @@ class SetUserPolicyProperties extends Route {
 	constructor(services) {
 		super('user/:id/policy-property', 'SET USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -553,7 +553,7 @@ class UpdateUserPolicyProperties extends Route {
 	constructor(services) {
 		super('user/:id/update-policy-property', 'UPDATE USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -621,7 +621,7 @@ class RemoveUserPolicyProperties extends Route {
 	constructor(services) {
 		super('user/:id/remove-policy-property', 'REMOVE USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -680,7 +680,7 @@ class ClearUserPolicyProperties extends Route {
 	constructor(services) {
 		super('user/:id/clear-policy-property', 'CLEAR USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
@@ -752,7 +752,7 @@ class DeleteUser extends Route {
 	constructor(services) {
 		super('user/:id', 'DELETE USER', services);
 		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
 
@@ -799,7 +799,7 @@ class clearUserLocalData extends Route {
 	constructor(services) {
 		super('user/:id/clear-local-data', 'CLEAR USER LOCAL DATA', services);
 		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
@@ -839,7 +839,7 @@ class SearchUserList extends Route {
 	constructor(services) {
 		super('user', 'SEARCH USER LIST', services);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -886,7 +886,7 @@ class UserCount extends Route {
 	constructor(services) {
 		super(`user/count`, `COUNT USERS`, services);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT USERS`;
