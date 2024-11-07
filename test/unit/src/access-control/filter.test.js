@@ -19,7 +19,7 @@ const assert = require('assert');
 
 const {default: Filter} = require('../../../../dist/access-control/filter');
 
-describe('access-control.filter:mergeQueryFilters', () => {
+describe('access-control/filter:mergeQueryFilters', () => {
   // These tests should cover merging mongoDB query filters.
 
   it('should merge two filters with AND operator', () => {

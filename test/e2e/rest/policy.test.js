@@ -79,6 +79,21 @@ const createCar = async (app, name, color, number) => {
   testEnv.cars.push(car);
 };
 
+const createPolicyUser = async (app, key, policyProperties) => {
+  const user = await createUser(ENDPOINT, {
+    app: 'test-app',
+    appId: `${key}-${Math.floor(Math.random() * 1000)}`,
+    email: `${key}+${Math.floor(Math.random() * 1000)}@buttressjs.com`,
+  }, {
+    domains: ['test.local.buttressjs.com'],
+    policyProperties,
+  }, app.token);
+
+  testEnv.users[key] = user;
+
+  return user;
+}
+
 const TestDataOrganisations = [{
   name: 'A&A CLEANING LTD LTD',
   number: '1',
@@ -206,6 +221,10 @@ describe('Policy', async () => {
       body: JSON.stringify(TestDataSwitch),
     }, testEnv.apps.app1.token);
     testEnv.switches.push(bjsSwitch);
+
+    await createPolicyUser(testEnv.apps.app1, 'basic1', {
+      adminAccess: true,
+    });
   });
 
   after(async function() {
@@ -215,23 +234,6 @@ describe('Policy', async () => {
   
   describe('Basic', async () => {
     // Test the basic functionality of the policy system
-  });
-
-  describe('Ported API tests', async () => {
-    before(async function() {
-      // Create a user to test with.
-      testEnv.users.basic1 = await createUser(ENDPOINT, {
-        app: 'test-app',
-        appId: `test-123`,
-        email: 'test+123@buttressjs.com',
-      }, {
-        domains: ['test.local.buttressjs.com'],
-        policyProperties: {
-          adminAccess: true,
-        },
-      }, testEnv.apps.app1.token);
-    });
-
     it('Should create policies on the app', async function() {
       const TestData = Object.values(PolicyTestData);
       for await (const policy of TestData) {
@@ -250,7 +252,44 @@ describe('Policy', async () => {
 
       assert(result.length === 3, `Expected 3 but got ${result.length}`);
     });
+  });
 
+  describe('Selection', async () => {
+    // Test the basic functionality of the policy system
+    before(async function() {
+      // Create a user to test with.
+      await createPolicyUser(testEnv.apps.app1, 'selection-basic', {
+        policySelection: 'basic',
+      });
+
+      await createPolicyUser(testEnv.apps.app1, 'selection-array', {
+        policySelection: ['array', 'none'],
+      });
+    });
+
+    it('Should allow user selection-basic to do access organisations', async function() {
+      const result = await bjsReq({
+        url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+        method: 'GET',
+        headers: {'Content-Type': 'application/json'},
+      }, testEnv.users['selection-basic'].tokens[0].value);
+
+      assert(result.length === 3, `Expected 3 but got ${result.length}`);
+    });
+
+    it('Should allow user selection-array to do access organisations', async function() {
+      const result = await bjsReq({
+        url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+        method: 'GET',
+        headers: {'Content-Type': 'application/json'},
+      }, testEnv.users['selection-array'].tokens[0].value);
+
+      assert(result.length === 3, `Expected 3 but got ${result.length}`);
+    });
+
+  });
+
+  describe('Ported API tests', async () => {
     it('Should fail accessing app companies using grade 0 policy', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 0,
