@@ -173,7 +173,7 @@ class AccessControl {
 		if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
 
 		const tokenPolicies = this.__getTokenPolicies(token, appId);
-		Logging.logSilly(`Got ${tokenPolicies.length} Matched policies for token ${token.type}:${token.id}`, req.id);
+		Logging.logSilly(`Got ${tokenPolicies.length} matching policies for token ${token.type}:${token.id}`, req.id);
 
 		try {
 			req.ac.policyConfigs = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
@@ -336,7 +336,7 @@ class AccessControl {
 
 		tokenPolicies = tokenPolicies.sort((a, b) => a.priority - b.priority);
 		if (tokenPolicies.length < 1) {
-			throw new PolicyError(401, 'Request does not have any policy associated to it', '_accessControlPolicy:access-control-policy-not-allowed');
+			throw new PolicyError(401, `Request does not have any policy associated to it`, '_accessControlPolicy:access-control-policy-not-allowed');
 		}
 
 		// Filter down policies t aplicable to the request
@@ -493,7 +493,7 @@ class AccessControl {
 	}
 
 	__getTokenPolicies(token: Token, appId: string) {
-		return AccessControlPolicyMatch.__getTokenPolicies(this._policies[appId], token);
+		return AccessControlPolicyMatch.getTokenPolicies(this._policies[appId], token);
 	}
 
 	async _checkAccessControlDBBasedQueryCondition(req, params) {

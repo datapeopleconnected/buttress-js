@@ -25,7 +25,7 @@ import { Token } from '../model/core/token';
 class PolicyMatch {
 	constructor() {}
 
-	__getTokenPolicies(policies: Policy[], token?: Token) {
+	getTokenPolicies(policies: Policy[], token?: Token) {
 		return policies.reduce((arr: Policy[], p) => {
 			if (!p.selection) return arr;
 
