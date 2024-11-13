@@ -257,82 +257,6 @@ export default class StandardModel {
 		return output;
 	}
 
-	/**
-	 * @param {stirng} token
-	 * @param {*} roles
-	 * @param {*} Model
-	 * @return {Promise}
-	 */
-	generateRoleFilterQuery(token, roles, Model) {
-		if (!roles.schema || !roles.schema.authFilter) {
-			return Promise.resolve({});
-		}
-
-		const env = {
-			authUserId: token._userId,
-		};
-
-		const tasks: Function[] = [];
-
-		if (roles.schema.authFilter.env) {
-			for (const property in roles.schema.authFilter.env) {
-				if (!{}.hasOwnProperty.call(roles.schema.authFilter.env, property)) continue;
-				const query = roles.schema.authFilter.env[property];
-
-				let propertyMap = 'id';
-				if (query.map) {
-					propertyMap = query.map;
-				}
-				for (const command in query) {
-					if (!{}.hasOwnProperty.call(query, command)) continue;
-
-					if (command.includes('schema.')) {
-						const commandPath = command.split('.');
-						commandPath.shift(); // Remove "schema"
-						const collectionName = commandPath.shift();
-						const collectionPath = `${this.appShortId}-${collectionName}`;
-						const collection = Model[collectionPath];
-
-						if (!collection) {
-							throw new Error(`Unable to find a collection named ${collectionName} while building authFilter.env`);
-						}
-
-						const propertyPath = commandPath.join('.');
-
-						let propertyQuery = {};
-						propertyQuery[propertyPath] = query[command];
-						propertyQuery = this.parseQuery(propertyQuery, env);
-
-						const fields = {};
-						fields[propertyPath] = true;
-
-						tasks.push(async () => {
-							const rxsResult = await collection.find(propertyQuery, fields);
-
-							return new Promise<void>((resolve) => {
-								if (!env[property]) env[property] = [];
-
-								rxsResult.on('data', (res) => {
-									// Map fetched properties into a array.
-									env[property].push(res[propertyMap]);
-									// Hack - Flattern any sub arrays down to the single level.
-									env[property] = [].concat(...env[property]);
-								});
-								rxsResult.once('end', () => resolve());
-							});
-						});
-					} else {
-						// Unknown operation
-					}
-				}
-			}
-		}
-
-		// Engage.
-		return tasks.reduce((prev, task) => prev.then(() => task()), Promise.resolve())
-			.then(() => this.parseQuery(roles.schema.authFilter.query, env, this.flatSchemaData));
-	}
-
 	/*
 	* @param {Object} body - body passed through from a POST request
 	* @return {Promise} - returns a promise that is fulfilled when the database request is completed
@@ -498,6 +422,9 @@ export default class StandardModel {
 	 * @return {ReadableStream} - stream
 	 */
 	find(query, excludes?: any, limit?: number, skip?: number, sort?: any, project?: any) {
+		// TODO: Handle AC query
+
+
 		return this.adapter.find(query, excludes, limit, skip, sort, project);
 	}
 

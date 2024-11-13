@@ -253,7 +253,7 @@ export default class LambdasRunner {
 					// Clean up the global.
 					Buttress.clean();
 
-					if (Buttress._initialised) {
+					if (Buttress.initialised) {
 						throw new Error('Buttress already initialised');
 					}
 
@@ -381,10 +381,10 @@ export default class LambdasRunner {
 
 			if (payload.workerId !== this.id) return;
 
-			Logging.logDebug(`[${this.name}] Manager has told me to take task ${payload.data.lambdaId}`);
+			Logging.logDebug(`[${this.name}] Manager has told me to take task ${payload.data.executionId}`);
 
 			if (this.working) {
-				Logging.logWarn(`[${this.name}] I've taken on too much work, releasing ${payload.data.lambdaId}`);
+				Logging.logWarn(`[${this.name}] I've taken on too much work, releasing ${payload.data.executionId}`);
 				this.__nrp?.emit('lambda-worker-overloaded', JSON.stringify(payload));
 				return;
 			}

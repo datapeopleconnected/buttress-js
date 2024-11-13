@@ -20,6 +20,8 @@ import * as Helpers from '../../helpers';
 import Logging from '../../helpers/logging';
 import Schema from '../../schema';
 
+import * as ACM from '../../access-control/models-access';
+
 /**
  * @class GetList
  */
@@ -83,11 +85,12 @@ export default class GetList extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		if (validateResult.query === false) {
-			return [];
-		}
+		// if (validateResult.query === false) {
+		// 	return Promise.resolve([]);
+		// }
 
 		Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
+		return ACM.find(this.model, validateResult, req.ac);
+		// return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
 	}
 };

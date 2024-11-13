@@ -1,5 +1,6 @@
 {
   "name": "query-2",
+  "version": 1,
   "priority": 2,
   "selection": {
     "policyMergeQuery": {
@@ -8,19 +9,17 @@
   },
   "config": [
     {
-      "endpoints": [
+      "verbs": [
         "GET"
       ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "status": {
-            "@eq": "DISSOLVED"
-          }
+      "schema": [
+        "organisation"
+      ],
+      "query": {
+        "status": {
+          "@eq": "DISSOLVED"
         }
-      ]
+      }
     }
   ]
 }

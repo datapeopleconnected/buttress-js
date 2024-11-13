@@ -19,6 +19,8 @@ import Model from '../../model';
 import * as Helpers from '../../helpers';
 import Schema from '../../schema';
 
+import * as ACM from '../../access-control/models-access';
+
 /**
  * @class SearchList
  */
@@ -78,7 +80,6 @@ export default class SearchList extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return this.model.find(validateResult.query, {},
-			validateResult.limit, validateResult.skip, validateResult.sort, validateResult.project);
+		return ACM.find(this.model, validateResult, req.ac);
 	}
 };

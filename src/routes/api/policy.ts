@@ -189,6 +189,11 @@ class AddPolicy extends Route {
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_selection`));
 			}
 
+			if (!req.body.version) {
+				this.log(`[${this.name}] a version property is required: ${req.body.name}`, Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_no_version`));
+			}
+
 			return Promise.resolve(true);
 		} catch (err) {
 			return Promise.reject(err);
@@ -491,7 +496,7 @@ class DeleteAppPolicies extends Route {
 
 	async _validate(req) {
 		const rxsPolicies = (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) ?
-			await Model.getModel('Policy').findAll() : await Model.getModel('Policy').find({_appId: Model.getModel('App').ID.new(req.authApp.id)});
+			await Model.getModel('Policy').findAll() : await Model.getModel('Policy').find({_appId: Model.getModel('App').adapter.ID.new(req.authApp.id)});
 
 		const policies: any[] = [];
 		for await (const policy of rxsPolicies) {

@@ -37,7 +37,7 @@ class GetActivityList extends Route {
 
 	_exec(req, res, validate) {
 		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
-			return this.model.findAll({});
+			return this.model.findAll();
 		}
 
 		return this.model.find({

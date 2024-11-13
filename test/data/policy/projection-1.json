@@ -1,5 +1,6 @@
 {
   "name": "projection-1",
+  "version": 1,
   "priority": 1,
   "merge": true,
   "selection": {
@@ -9,27 +10,20 @@
   },
   "config": [
     {
-      "endpoints": [
+      "verbs": [
         "GET"
       ],
-      "projection": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "keys": [
-            "name"
-          ]
-        }
+      "schema": [
+        "organisation"
       ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "access": "%FULL_ACCESS%"
-        }
-      ]
+      "projection": {
+        "keys": [
+          "name"
+        ]
+      },
+      "query": {
+        "access": "%FULL_ACCESS%"
+      }
     }
   ]
 }

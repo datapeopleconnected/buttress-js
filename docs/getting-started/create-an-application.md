@@ -113,11 +113,11 @@ More detail on the properties of polices can be [found here](./applications/poli
     }
   },
   "config": [{
-    "endpoints": ["GET", "SEARCH", "PUT", "POST", "DELETE"],
-    "query": [{
-      "schema": ["%ALL%"],
+    "verbs": ["GET", "SEARCH", "PUT", "POST", "DELETE"],
+    "schema": ["%ALL%"],
+    "query": {
       "access": "%FULL_ACCESS%"
-    }]
+    }
   }]
 }
 ```
@@ -166,11 +166,11 @@ Edit `policy.json` and add the following to it, the updateSchema schema function
     }
   },
   "config": [{
-    "endpoints": ["GET", "SEARCH", "PUT", "POST", "DELETE"],
-    "query": [{
-      "schema": ["%ALL%"],
+    "verbs": ["GET", "SEARCH", "PUT", "POST", "DELETE"],
+    "schema": ["%ALL%"],
+    "query": {
       "access": "%FULL_ACCESS%"
-    }]
+    }
   }]
 }]
 ```

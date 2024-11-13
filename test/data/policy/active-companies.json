@@ -1,5 +1,6 @@
 {
   "name": "active-companies",
+  "version": "1",
   "selection": {
     "grade": {
       "@eq": 3
@@ -7,19 +8,17 @@
   },
   "config": [
     {
-      "endpoints": [
-        "GET"
+      "verbs": [
+        "GET", "SEARCH"
       ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "status": {
-            "@eq": "ACTIVE"
-          }
+      "schema": [
+        "organisation"
+      ],
+      "query": {
+        "status": {
+          "@eq": "ACTIVE"
         }
-      ]
+      }
     }
   ]
 }

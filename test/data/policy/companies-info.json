@@ -1,5 +1,6 @@
 {
   "name": "companies-info",
+  "version": "1",
   "selection": {
     "grade": {
       "@eq": 5
@@ -7,56 +8,42 @@
   },
   "config": [
     {
-      "endpoints": [
+      "verbs": [
         "GET",
         "SEARCH",
         "DELETE"
       ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "access": "%FULL_ACCESS%"
-        }
+      "schema": [
+        "organisation"
       ],
-      "projection": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "keys": [
-            "name",
-            "status",
-            "number"
-          ]
-        }
-      ]
+      "query": {
+        "access": "%FULL_ACCESS%"
+      },
+      "projection": {
+        "keys": [
+          "name",
+          "status",
+          "number"
+        ]
+      }
     },
     {
-      "endpoints": [
+      "verbs": [
         "PUT",
         "POST"
       ],
-      "query": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "access": "%FULL_ACCESS%"
-        }
+      "schema": [
+        "organisation"
       ],
-      "projection": [
-        {
-          "schema": [
-            "organisation"
-          ],
-          "keys": [
-            "name",
-            "number"
-          ]
-        }
-      ]
+      "query": {
+        "access": "%FULL_ACCESS%"
+      },
+      "projection": {
+        "keys": [
+          "name",
+          "number"
+        ]
+      }
     }
   ]
 }

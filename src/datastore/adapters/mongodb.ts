@@ -377,7 +377,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 	 * @param {Boolean} project - mongoDB project ids
 	 * @return {ReadableStream} - stream
 	 */
-	find(query:any, excludes = {}, limit = 0, skip = 0, sort: any = null, project = null) {
+	find<T extends object>(query: BjsQuery<T>, excludes = {}, limit = 0, skip = 0, sort: any = null, project = null) {
 		if (!this.collection) throw new Error('No collection');
 
 		if (Logging.level === Logging.Constants.LogLevel.SILLY) {
@@ -402,7 +402,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 	 * @param {Object} excludes - mongoDB query excludes
 	 * @return {Promise} - resolves to an array of docs
 	 */
-	async findOne(query: any, excludes = {}) {
+	async findOne<T extends object>(query: BjsQuery<T>, excludes = {}) {
 		const doc = await this.collection?.findOne(this._prepareQueryForMongo(query), this._prepareQueryForMongo(excludes));
 
 		return (doc) ? this._modifyDocument(doc) : null;
@@ -477,7 +477,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 		}
 		return document;
 	}
-	_prepareQueryForMongo(query: any) {
+	_prepareQueryForMongo(query) {
 		if (!query) return query;
 
 		if (query.id) {

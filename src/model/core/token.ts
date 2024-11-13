@@ -30,6 +30,21 @@ const Type = {
 	LAMBDA: type[4],
 };
 
+export interface Token {
+	id: string
+	type: string;
+	value: string;
+	domains: string[];
+	permissions: {route: string; permission: string}[];
+	tags: string[];
+	policyProperties: any;
+	_appId: string;
+	_lambdaId: string;
+	_userId: string;
+	_entityId: string;
+	_appDataSharingId: string;
+}
+
 class TokenSchemaModel extends StandardModel {
 	constructor(services) {
 		const schema = TokenSchemaModel.Schema;

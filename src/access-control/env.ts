@@ -126,6 +126,7 @@ class PolicyEnv {
 			return result.reduce((item, obj) => {
 				item = obj[output.key];
 				if (output.type === 'id') {
+					// TODO: Shouldn't be directly accessing ObjectId, this should go through an adapter.
 					item = new ObjectId(item);
 				}
 

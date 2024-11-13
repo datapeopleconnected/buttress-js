@@ -153,7 +153,7 @@ class LambdaExecutionSchemaModel extends StandardModel {
 	 * @param {string} tokenId - the tokenId that should be used to exeucte the lambda
 	 * @return {Promise} - fulfilled with lambda execution Object when the database request is completed
 	 */
-	async add(body, appId, tokenId = null) {
+	async add(body, appId: string, tokenId: string | null = null) {
 		const executionBody = {
 			lambdaId: (body.lambdaId) ? body.lambdaId : null,
 			deploymentId: (body.deploymentId) ? body.deploymentId : null,
@@ -164,8 +164,10 @@ class LambdaExecutionSchemaModel extends StandardModel {
 			metadata: (body.metadata) ? body.metadata : [],
 		};
 
-		const internals: any = {_appId: appId};
-		if (tokenId) internals._tokenId = tokenId;
+		if (!appId) throw new Error('appId is required to create a lambda execution');
+
+		const internals: any = { _appId: this.__modelManager.getModel('App').createId(appId) };
+		if (tokenId) internals._tokenId = this.__modelManager.getModel('Token').createId(tokenId);
 
 		const rxsExecution = await super.add(executionBody, internals);
 		const execution = await Helpers.streamFirst(rxsExecution);

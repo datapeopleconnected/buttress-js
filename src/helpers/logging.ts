@@ -251,6 +251,18 @@ class Logging {
 
 	/**
 	 * @param {string} log - Text to log
+	 * @param {string} level - level to log at
+	 * @param {string} id - id
+	 */
+	logObject(log, level?: string, id?: string) {
+		level = level || LogLevel.DEFAULT;
+		if (!this.logger?.isLevelEnabled(level)) return;
+
+		this._log(JSON.stringify(log, null, 2), level, id);
+	}
+
+	/**
+	 * @param {string} log - Text to log
 	 * @param {Object} timer - Object with an 'interval' property
 	 * @param {string} level - level to log at
 	 * @param {string} id - id

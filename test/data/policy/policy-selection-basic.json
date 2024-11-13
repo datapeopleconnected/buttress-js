@@ -1,0 +1,16 @@
+{
+  "name": "policy-selection-basic",
+  "version": "1",
+  "selection": {
+    "policySelection": {
+      "@eq": "basic"
+    }
+  },
+  "config": [{
+    "verbs": ["GET", "SEARCH"],
+    "schema": ["organisation"],
+    "query": {
+      "access": "%FULL_ACCESS%"
+    }
+  }]
+}

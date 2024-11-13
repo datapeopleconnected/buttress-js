@@ -22,9 +22,10 @@ const OverrideAccess = require('./override-access.json');
 const Projection1 = require('./projection-1.json');
 const Projection2 = require('./projection-2.json');
 const PT11 = require('./pt1-1.json');
-const PT12 = require('./pt1-2.json');
 const Query1 = require('./query-1.json');
 const Query2 = require('./query-2.json');
+const PolicySelectionBasic = require('./policy-selection-basic.json');
+const PolicySelectionArray = require('./policy-selection-array.json');
 const SummerWorkingDate = require('./summer-working-date.json');
 const SummerWorkingHour = require('./summer-working-hour.json');
 const WorkingDate = require('./working-date.json');
@@ -39,9 +40,10 @@ module.exports = {
   'projection-1': Projection1,
   'projection-2': Projection2,
   'pt1-1': PT11,
-  'pt1-2': PT12,
   'query-1': Query1,
   'query-2': Query2,
+  'policy-selection-basic': PolicySelectionBasic,
+  'policy-selection-array': PolicySelectionArray,
   'summer-working-date': SummerWorkingDate,
   'summer-working-hour': SummerWorkingHour,
   'working-date': WorkingDate,
