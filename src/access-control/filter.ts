@@ -166,46 +166,6 @@ class Filter {
 		return input;
 	}
 
-	async applyAccessControlPolicyQuery(query: any, policyConfig: PolicyQuery) {
-		const accessControlQuery = policyConfig.query;
-		if (!accessControlQuery || Object.keys(accessControlQuery).length < 1) return query;
-
-		const reqQuery = (query) ? query : null;
-		const isOriginalQueryEmpty = await this._checkOriginalQueryIsEmpty(reqQuery);
-		if (isOriginalQueryEmpty) return accessControlQuery;
-
-		if (reqQuery === accessControlQuery) return accessControlQuery;
-
-		let deepQueryObj = {};
-		deepQueryObj = await this._getDeepQueryObj(reqQuery, deepQueryObj);
-
-		let passed = true;
-
-		// TODO: Seems like we'd wanna do these checks on the req query and not the access control query.
-		for await (const key of Object.keys(accessControlQuery)) {
-			if (!passed) continue;
-
-			if (Array.isArray(accessControlQuery[key]) && this.logicalOperator.includes(key)) {
-				passed = this.__crossCheckAccessControlMatchLogicalOperation(reqQuery, accessControlQuery, key);
-				continue;
-			}
-
-			if (Array.isArray(accessControlQuery[key]) && !this.logicalOperator.includes(key)) {
-				// TODO throw an error for invalid logical operation
-				passed = false;
-				continue;
-			}
-
-			passed = this.__addAccessControlQueryPropertyToOriginalQuery(deepQueryObj, accessControlQuery, key);
-		}
-
-		if (!passed) {
-			throw new Error('Wooops');
-		}
-
-		return deepQueryObj;
-	}
-
 	// TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
 	// TODO: This function needs a refactor, expecting the AC to be already applied to the queiries.
 	async evaluateManipulationActions(req, collection) {
@@ -249,149 +209,6 @@ class Filter {
 
 		delete req.body.query; // Deleting it for manipulation verbs
 		return passed;
-	}
-
-	__crossCheckAccessControlMatchLogicalOperation(originalQuery, accessControlQuery, key) {
-		let modifiedQuery = false;
-		const accessControlQueryLogicalArr = accessControlQuery[key];
-		if (!accessControlQueryLogicalArr) return modifiedQuery;
-
-		const originalQueryLogicalArr = originalQuery[key];
-		if (!originalQueryLogicalArr) {
-			modifiedQuery = this.__prioritiseAccessControlQuery(accessControlQueryLogicalArr, originalQuery);
-
-			if (!modifiedQuery) {
-				originalQuery[key] = accessControlQuery[key];
-				modifiedQuery = true;
-			}
-
-			return modifiedQuery;
-			// or modify query and return different results
-			// originalQuery[key] = accessControlQueryLogicalArr;
-		}
-
-		const originalQueryKeys = originalQueryLogicalArr.reduce((arr, obj) => {
-			Object.keys(obj).forEach((key) => arr.push(key));
-
-			return arr;
-		}, []);
-
-		accessControlQueryLogicalArr.forEach((accessControlObj) => {
-			Object.keys(accessControlObj).forEach((aKey) => {
-				if (originalQueryKeys.includes(aKey)) {
-					const keyIndex = originalQuery[key].findIndex((obj) => Object.keys(obj).some((i) => i === aKey));
-					if (JSON.stringify(originalQuery[key][keyIndex][aKey]) !== JSON.stringify(accessControlObj[aKey])) {
-						modifiedQuery = true;
-					}
-
-					// We can change the query to return the data that a user can access
-					// originalQuery[key][keyIndex] = {
-					// 	[aKey]: accessControlObj[aKey],
-					// };
-
-					// TODO should prompt the user to tell them that they do not have access to these property or send empty array
-					return;
-				}
-
-				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
-				originalQuery[key].push(accessControlObj);
-			});
-		});
-
-		Object.keys(accessControlQuery).forEach((acKey) => {
-			if (acKey === key) return;
-
-			if (originalQueryKeys.includes(acKey)) {
-				const keyIndex = originalQuery[key].findIndex((orgKeyObj) => Object.keys(orgKeyObj).some((orgKey) => orgKey == acKey));
-
-				if (JSON.stringify(originalQuery[key][keyIndex]) !== accessControlQuery[acKey]) {
-					modifiedQuery = true;
-				}
-
-				// We can change the query to return the data that a user can access
-				// originalQuery[key][keyIndex] = {
-				// [acKey]: accessControlQuery[acKey],
-				// };
-
-				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
-			}
-		});
-
-		return modifiedQuery;
-	}
-
-	__addAccessControlQueryPropertyToOriginalQuery(originalQuery, accessControlQuery, key) {
-		const originalQueryObj = originalQuery[key];
-		const accessControlQueryObj = accessControlQuery[key];
-		let operandKey: string | null = null;
-
-		if (!originalQueryObj) {
-			originalQuery[key] = accessControlQueryObj;
-			return true;
-		}
-
-		this.logicalOperator.forEach((operator) => {
-			if (!originalQuery[operator]) return;
-
-			originalQuery[operator].forEach((obj) => {
-				Object.keys(obj).forEach((objKey) => {
-					if (objKey === key) {
-						operandKey = operator;
-					}
-				});
-			});
-		});
-
-		if (!originalQueryObj && operandKey && accessControlQueryObj) {
-			const originalKeyIndex = originalQuery[operandKey].findIndex((obj) => Object.keys(obj).some((i) => i === key));
-			if (JSON.stringify(accessControlQueryObj) !== JSON.stringify(originalQuery[operandKey][originalKeyIndex])) {
-				// TODO needs to give the option to return an error at the minute it returns zero results
-				return true;
-			} else {
-				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
-			}
-
-			return false;
-		}
-
-		if ((!originalQueryObj && !operandKey)) {
-			// TODO maybe prompt the user as well to tell them that access control policies modified their query
-			originalQuery[key] = accessControlQueryObj;
-			return false;
-		}
-
-		const [accessControlOperator] = Object.keys(accessControlQueryObj);
-		const [lhs] = Object.values(originalQueryObj);
-		const rhs = accessControlQueryObj[accessControlOperator];
-		const evaluation = accessControlHelpers.evaluateOperation(lhs, rhs, accessControlOperator);
-		return evaluation;
-	}
-
-	__prioritiseAccessControlQuery(accessControlLogicalArr, originalQuery) {
-		let modifiedQuery = false;
-		const originalQueryKeys = this.__getQueryKeys(originalQuery);
-
-		const accessControlQueryKeys = accessControlLogicalArr.reduce((arr, obj) => {
-			Object.keys(obj).forEach((key) => {
-				arr.push(key);
-			});
-
-			return arr;
-		}, [])
-			.filter((v, idx, arr) => arr.indexOf(v) === idx);
-
-		originalQueryKeys.forEach((key) => {
-			if (accessControlQueryKeys.includes(key)) {
-				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
-				const keyIndex = accessControlLogicalArr.findIndex((obj) => Object.keys(obj).some((i) => i === key));
-				if (JSON.stringify(accessControlLogicalArr[keyIndex][key]) !== JSON.stringify(originalQuery[key])) {
-					modifiedQuery = true;
-					delete originalQuery[key];
-				}
-			}
-		});
-
-		return modifiedQuery;
 	}
 
 	__convertPrefixToQueryPrefix(obj) {
@@ -494,6 +311,11 @@ class Filter {
 		}
 
 		return newQuery;
+	}
+
+	// A function for merging a request query with an access control query. The Access control query will take priority.
+	mergeQueryFiltersWithAccessControl(reqQuery, accessControlQuery) {
+		return this.mergeQueryFilters(reqQuery, accessControlQuery, '$and');
 	}
 }
 export default new Filter();

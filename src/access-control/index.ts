@@ -391,12 +391,6 @@ class AccessControl {
 			throw new PolicyError(401, `Can not access/edit properties of ${schemaName} without privileged access`, '_accessControlPolicy:access-control-properties-permission-error');
 		}
 
-		// TODO: Should merge the functionality of checking the queries and filtering out invalid queries during the build above.
-		// const policyQuery = await AccessControlFilter.applyAccessControlPolicyQuery(req, applicablePolicies);
-		// if (!policyQuery) {
-		// 	throw new PolicyError(401, `Policy query can not access the queried data from ${schemaName}`, '_accessControlPolicy:access-control-query-permission-error');
-		// }
-
 		// TODO: This needs to be revisited, it's expecting the AC to be already applied.
 		// const passedEvalutaion = await AccessControlFilter.evaluateManipulationActions(req, schemaName);
 		// console.log('passedEvalutaion', passedEvalutaion, schemaName);

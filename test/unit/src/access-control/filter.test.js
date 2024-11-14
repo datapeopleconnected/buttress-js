@@ -19,66 +19,107 @@ const assert = require('assert');
 
 const {default: Filter} = require('../../../../dist/access-control/filter');
 
-describe('access-control/filter:mergeQueryFilters', () => {
-  // These tests should cover merging mongoDB query filters.
+describe('access-control/filter', () => {
+  describe('mergeQueryFilters', () => {
+    // These tests should cover merging mongoDB query filters.
 
-  it('should merge two filters with AND operator', () => {
-    const filter1 = { age: { $gt: 18 } };
-    const filter2 = { country: 'USA' };
-    const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
-    assert.deepStrictEqual(mergedFilter, { $and: [filter1, filter2] });
-  });
-  
-  it('should merge two filters with OR operator', () => {
-    const filter1 = { age: { $gt: 18 } };
-    const filter2 = { country: 'USA' };
-    const mergedFilter = Filter.mergeQueryFilters(filter1, filter2, '$or');
-    assert.deepStrictEqual(mergedFilter, { $or: [filter1, filter2] });
+    it('should merge two filters with AND operator', () => {
+      const filter1 = { age: { $gt: 18 } };
+      const filter2 = { country: 'USA' };
+      const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
+      assert.deepStrictEqual(mergedFilter, { $and: [filter1, filter2] });
+    });
+    
+    it('should merge two filters with OR operator', () => {
+      const filter1 = { age: { $gt: 18 } };
+      const filter2 = { country: 'USA' };
+      const mergedFilter = Filter.mergeQueryFilters(filter1, filter2, '$or');
+      assert.deepStrictEqual(mergedFilter, { $or: [filter1, filter2] });
+    });
+
+    it('should handle merging with existing AND operator', () => {
+      const filter1 = { $and: [{ age: { $gt: 18 } }, { country: 'USA' }] };
+      const filter2 = { city: 'New York' };
+      const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
+      assert.deepStrictEqual(mergedFilter, { $and: [...filter1.$and, filter2] });
+    });
+
+    it('should handle merging with existing OR operator', () => {
+      const filter1 = { $or: [{ age: { $gt: 18 } }, { country: 'USA' }] };
+      const filter2 = { city: 'New York' };
+      const mergedFilter = Filter.mergeQueryFilters(filter1, filter2, '$or');
+      assert.deepStrictEqual(mergedFilter, { $or: [...filter1.$or, filter2] });
+    });
+
+    it('should return the first filter if the second filter is empty', () => {
+      const filter1 = { age: { $gt: 18 } };
+      const filter2 = {};
+      const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
+      assert.deepStrictEqual(mergedFilter, filter1);
+    });
+
+    it('should return the second filter if the first filter is empty', () => {
+      const filter1 = {};
+      const filter2 = { country: 'USA' };
+      const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
+      assert.deepStrictEqual(mergedFilter, filter2);
+    });
+
+    it('should return an empty object if both filters are empty', () => {
+      const filter1 = {};
+      const filter2 = {};
+      const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
+      assert.deepStrictEqual(mergedFilter, {});
+    });
+
+    it('should throw an error if the operator is invalid', () => {
+      const filter1 = { age: { $gt: 18 } };
+      const filter2 = { country: 'USA' };
+      assert.throws(() => {
+        Filter.mergeQueryFilters(filter1, filter2, '$invalidOperator');
+      }, {
+        name: 'Error',
+        message: `Operator must be either '$and' or '$or'.`
+      });
+    });
   });
 
-  it('should handle merging with existing AND operator', () => {
-    const filter1 = { $and: [{ age: { $gt: 18 } }, { country: 'USA' }] };
-    const filter2 = { city: 'New York' };
-    const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
-    assert.deepStrictEqual(mergedFilter, { $and: [...filter1.$and, filter2] });
-  });
+  describe('mergeQueryFilters', () => {
+    it('should combine two queries with the default (and)', async () => {
+      const q1 = { "car": { "$eq": "blue" } };
+      const q2 = { "car": { "$eq": "red" } };
+      const mergedFilter = await Filter.mergeQueryFilters(q1, q2);
+      assert.deepStrictEqual(mergedFilter, { $and: [q1, q2] });
+    });
 
-  it('should handle merging with existing OR operator', () => {
-    const filter1 = { $or: [{ age: { $gt: 18 } }, { country: 'USA' }] };
-    const filter2 = { city: 'New York' };
-    const mergedFilter = Filter.mergeQueryFilters(filter1, filter2, '$or');
-    assert.deepStrictEqual(mergedFilter, { $or: [...filter1.$or, filter2] });
-  });
+    it('should combine two queries with $or', async () => {
+      const q1 = { "car": { "$eq": "blue" } };
+      const q2 = { "car": { "$eq": "red" } };
+      const mergedFilter = await Filter.mergeQueryFilters(q1, q2, '$or');
+      assert.deepStrictEqual(mergedFilter, { $or: [q1, q2] });
+    });
 
-  it('should return the first filter if the second filter is empty', () => {
-    const filter1 = { age: { $gt: 18 } };
-    const filter2 = {};
-    const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
-    assert.deepStrictEqual(mergedFilter, filter1);
-  });
+    it('should combine two queries with $and', async () => {
+      const q1 = { "car": { "$eq": "blue" } };
+      const q2 = { "car": { "$eq": "red" } };
+      const mergedFilter = await Filter.mergeQueryFilters(q1, q2, '$and');
+      assert.deepStrictEqual(mergedFilter, { $and: [q1, q2] });
+    });
 
-  it('should return the second filter if the first filter is empty', () => {
-    const filter1 = {};
-    const filter2 = { country: 'USA' };
-    const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
-    assert.deepStrictEqual(mergedFilter, filter2);
-  });
+    it('should combine two queries with $and merging down an existing $and', async () => {
+      const q1 = { $and: [{"car": { "$eq": "blue" }}] };
+      const q2 = { "car": { "$eq": "red" } };
+      const mergedFilter = await Filter.mergeQueryFilters(q1, q2, '$and');
+      assert.deepStrictEqual(mergedFilter, { $and: [q1.$and[0], q2]} );
+    });
+  })
 
-  it('should return an empty object if both filters are empty', () => {
-    const filter1 = {};
-    const filter2 = {};
-    const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
-    assert.deepStrictEqual(mergedFilter, {});
-  });
-
-  it('should throw an error if the operator is invalid', () => {
-    const filter1 = { age: { $gt: 18 } };
-    const filter2 = { country: 'USA' };
-    assert.throws(() => {
-      Filter.mergeQueryFilters(filter1, filter2, '$invalidOperator');
-    }, {
-      name: 'Error',
-      message: `Operator must be either '$and' or '$or'.`
+  describe('mergeQueryFiltersWithAccessControl', () => {
+    it('should merge together two queries', async () => {
+      const q1 = { "$and": [{ "userId": { "$eq": "a" } }] };
+      const q2 = { "userId": {"userId": { "$eq": "b" }} };
+      const mergedFilter = await Filter.mergeQueryFiltersWithAccessControl(q1, q2);
+      assert.deepStrictEqual(mergedFilter, { $and: [q1.$and[0], q2] });
     });
   });
 });

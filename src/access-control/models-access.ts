@@ -86,8 +86,10 @@ export async function combineQueriesWithAc(raw: QueryParams<object>, policyConfi
     project: raw.project
   };
 
-  // TODO: Merge in PolicyConfig.query
-  query.query = await AccessControlFilter.applyAccessControlPolicyQuery(query.query, policyConfig);
+  // Combine the user request query with the access control query we're trying to run.
+  if (policyConfig.query) {
+    query.query = await AccessControlFilter.mergeQueryFiltersWithAccessControl(query.query, policyConfig.query);
+  }
 
   if (policyConfig.projection !== null) {
     // TODO: We may need to do more in making sure the user isn't projection to something they don't have.
