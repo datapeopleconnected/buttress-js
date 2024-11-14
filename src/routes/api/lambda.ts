@@ -340,7 +340,7 @@ class ScheduleLambdaExecution extends Route {
 	constructor(services) {
 		super('lambda/:id/schedule', 'SCHEDULE LAMBDA EXECUTION', services, Model.getModel('Lambda'));
 		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.ADD;
 	}
 
