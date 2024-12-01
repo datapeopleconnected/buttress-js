@@ -575,8 +575,8 @@ class Routes {
 	}
 
 	/**
-	 * @param  {String} req - request object
-	 * @param  {String} value - token value
+	 * @param {String} req - request object
+	 * @param {String} value - token value
 	 * @return {Promise} - resolves with the matching token if any
 	 */
 	async _getToken(req, value) {

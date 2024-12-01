@@ -486,7 +486,7 @@ class SetAppPolicyPropertyList extends Route {
 	}
 
 	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
+		return new Promise(async (resolve, reject) => {
 			if (!req.authApp) {
 				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
 				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
@@ -509,11 +509,17 @@ class SetAppPolicyPropertyList extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 			}
 
+			let authAppPolicyProps = req.authApp.policyPropertiesList;
+			if (req.params.appId) {
+				const app = await this.model.findById(req.params.appId);
+				authAppPolicyProps = app.policyPropertiesList;
+			}
+
 			if (req.params.update === 'true') {
-				const currentAppListKeys = Object.keys(req.authApp.policyPropertiesList);
+				const currentAppListKeys = Object.keys(authAppPolicyProps);
 				Object.keys(req.body).forEach((key) => {
 					if (currentAppListKeys.includes(key)) {
-						req.body[key] = req.body[key].concat(req.authApp.policyPropertiesList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
+						req.body[key] = req.body[key].concat(authAppPolicyProps[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
 					}
 				});
 				const postedPropsList = Object.keys(req.body).reduce((obj, key) => {
@@ -522,7 +528,7 @@ class SetAppPolicyPropertyList extends Route {
 					obj[key] = req.body[key];
 					return obj;
 				}, {});
-				req.body = {...req.authApp.policyPropertiesList, ...postedPropsList};
+				req.body = {...authAppPolicyProps, ...postedPropsList};
 			}
 
 			resolve(req.body);
