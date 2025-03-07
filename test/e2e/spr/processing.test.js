@@ -14,8 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {io} = require('socket.io-client');
-const {describe, it, before, after} = require('mocha');
+const { io } = require('socket.io-client');
+const { describe, it, before, after } = require('mocha');
 const assert = require('assert');
 const fetch = require('cross-fetch');
 
@@ -32,9 +32,9 @@ const {
 	extractPolicyPropertyListFromPolicies
 } = require('../../helpers');
 
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
-const {default: BootstrapSocketPolicyRouter} = require('../../../dist/bootstrap-spr');
-const {default: BootstrapSocket} = require('../../../dist/bootstrap-socket');
+const { default: BootstrapRest } = require('../../../dist/bootstrap-rest');
+const { default: BootstrapSocketPolicyRouter } = require('../../../dist/bootstrap-spr');
+const { default: BootstrapSocket } = require('../../../dist/bootstrap-socket');
 
 // This suite of tests will run against the REST API and will
 // test the cababiliy of data sharing between different apps.
@@ -77,7 +77,7 @@ describe('Processing', async () => {
 		});
 	};
 
-	before(async function() {
+	before(async function () {
 		this.timeout(20000);
 
 		NRP_INSTANCE = NRP(Config.redis);
@@ -114,6 +114,12 @@ describe('Processing', async () => {
 					__required: true,
 					__allowUpdate: true,
 				},
+				colour: {
+					__type: 'string',
+					__default: null,
+					__required: false,
+					__allowUpdate: true,
+				},
 				createdAt: {
 					__type: 'date',
 					__default: "now",
@@ -125,7 +131,27 @@ describe('Processing', async () => {
 
 		// Create an app
 		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test SOCK 1', 'test-sock-1', PolicyPropertyList);
-		testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app1.token);
+		testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [
+			carsSchema,
+			{
+				name: 'selector',
+				type: 'collection',
+				properties: {
+					name: {
+						__type: 'string',
+						__default: null,
+						__required: true,
+						__allowUpdate: true,
+					},
+					value: {
+						__type: 'string',
+						__default: null,
+						__required: true,
+						__allowUpdate: true,
+					},
+				},
+			}
+		], testEnv.apps.app1.token);
 
 		for await (const policy of TestPolicies) {
 			await createPolicy(ENDPOINT, policy, testEnv.apps.app1.token);
@@ -147,12 +173,22 @@ describe('Processing', async () => {
 		await bjsReq({
 			url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
 			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
+			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(new Array(1000).fill(0).map((val, idx) => ({
-				name: `name-${Math.floor(Math.random()*100)}`,
-				colour: colours[idx & colours.length],
-				userId: testEnv.users[usersKeys[idx % usersKeys.length]].id
+				name: `name-${Math.floor(Math.random() * 100)}`,
+				colour: colours[Math.floor(Math.random() * colours.length)],
+				userId: testEnv.users[usersKeys[Math.floor(Math.random() * usersKeys.length)]].id,
 			}))),
+		}, testEnv.apps.app1.token);
+
+		await bjsReq({
+			url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/selector`,
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				name: `example-selector`,
+				value: 'red',
+			}),
 		}, testEnv.apps.app1.token);
 
 		testEnv.sockets.app = io(`${ENDPOINT}/${testEnv.apps.app1.apiPath}`, {
@@ -172,7 +208,7 @@ describe('Processing', async () => {
 		createUserSocket('env-test-5');
 	});
 
-	after(async function() {
+	after(async function () {
 		if (testEnv.socket) testEnv.socket.disconnect();
 
 		Object.values(subs).forEach((fn) => fn());
@@ -184,9 +220,9 @@ describe('Processing', async () => {
 	});
 
 	describe('Basic', () => {
-		it('Should receive a `rest:activity` event after a REST post', async function() {
+		it('Should receive a `rest:activity` event after a REST post', async function () {
 			this.timeout(5000);
-			const name = `name-${Math.floor(Math.random()*100)}`;
+			const name = `name-${Math.floor(Math.random() * 100)}`;
 
 			// Subscribe to the NRP event and wait for it to be received.
 			const subProm = new Promise((resolve) => {
@@ -201,8 +237,8 @@ describe('Processing', async () => {
 			await bjsReq({
 				url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
 				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({name, userId: testEnv.users.basic1.id}),
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name, userId: testEnv.users.basic1.id }),
 			}, testEnv.apps.app1.token);
 
 
@@ -210,8 +246,8 @@ describe('Processing', async () => {
 			await subProm;
 		});
 
-		it('Should generate a `spr:activity` event after a REST post', async function() {
-			const name = `name-${Math.floor(Math.random()*100)}`;
+		it('Should generate a `spr:activity` event after a REST post', async function () {
+			const name = `name-${Math.floor(Math.random() * 100)}`;
 
 			// Subscribe to the NRP event and wait for it to be received.
 			const subProm = new Promise((resolve) => {
@@ -226,8 +262,8 @@ describe('Processing', async () => {
 			await bjsReq({
 				url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
 				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({name, userId: testEnv.users.basic1.id}),
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name, userId: testEnv.users.basic1.id }),
 			}, testEnv.apps.app1.token);
 
 			// Wait for the sub promise to resolve.
@@ -261,39 +297,43 @@ describe('Processing', async () => {
 			[addedCar] = await bjsReq({
 				url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
 				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({name: testKey, userId: testEnv.users[testKey].id}),
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: testKey, userId: testEnv.users[testKey].id, colour: 'red' }),
 			}, testEnv.apps.app1.token);
 
 			await subProm;
 		};
 
-		it('Should handle a policy with a env inlcuding a static value query', async function() {
+		it('Should handle a policy with a env inlcuding a static value query', async function () {
 			this.timeout(10000);
 
 			await envAwaitPostedCar('env-test-1');
 		});
-		
-		it('Should handle a policy with a env inlcuding a date based condition', async function() {
+
+		it('Should handle a policy with a env inlcuding a date based query', async function () {
 			this.timeout(10000);
 
 			await envAwaitPostedCar('env-test-2');
 		});
 
-		it('Should handle a policy with a env inlcuding a entity based condition', async function() {
-			// TODO
-			throw new Error('Not implemented');
+		it('Should handle a policy with a env inlcuding a entity based query', async function () {
+			this.timeout(10000);
+
+			await envAwaitPostedCar('env-test-3');
 		});
 
-		it('Should handle a policy with a env inlcuding a user base query', async function() {
-			// TODO
+		it('Should handle a policy with a env inlcuding a user base query', async function () {
+			this.timeout(10000);
+
 			// TODO: If the env prop contains "user" then we need to check the policy against each token rather than in a group.
-			throw new Error('Not implemented');
+			await envAwaitPostedCar('env-test-4');
 		});
 
-		it('Should handle a policy with a env inlcuding a user base condition', async function() {
+		it('Should handle a policy with a env inlcuding a user base condition', async function () {
+			this.timeout(10000);
+
 			// TODO
-			throw new Error('Not implemented');
+			await envAwaitPostedCar('env-test-5');
 		});
 	});
 });

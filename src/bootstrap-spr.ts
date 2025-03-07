@@ -325,14 +325,12 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 				}
 
 				// TODO: The reqEnv should maybe be generated
-				const env = CombineEnvGroups(applicablePolicy, AccessControlEnv.generateBaseGlobalEnvs());
+				const env = CombineEnvGroups(applicablePolicy, AccessControlEnv.generateRequestGlobalEnvs(null, activity.appId, null));
 				// if (applicablePolicy.name === 'env-test-2') debugger;
 				const query = await AccessControlFilters.buildPolicyQuery(applicablePolicy.config.query, env, false);
 
 				// ? How does this work if it's a core schema?
-				if (applicablePolicy.name === 'env-test-2') console.log(query, entity);
 				const broadcast = (query) ? AccessControlFilters.evaluateQueryAgainstEntity(query, entity) : false;
-				if (applicablePolicy.name === 'env-test-2') console.log('Broadcast', broadcast);
 				if (!broadcast && activity.verb === 'post') {
 					Logging.logTimer(`_handleIncomingMessage::end-falsy-evaluateRoomQueryOperation-post entityId: ${entityId}`, container.timer,
 						Logging.Constants.LogLevel.SILLY, `${container.id}-${policy.id}`);

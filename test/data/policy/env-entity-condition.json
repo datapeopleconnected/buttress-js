@@ -8,18 +8,17 @@
     }
   },
   "env": {
-    "startDate": "01/07/2022",
-    "personId": {
-      "collection": "car",
-      "type": "array",
+    "carColour": {
+      "collection": "selector",
+      "type": "string",
       "query": {
-        "userId": {
-          "@eq": "#user.id"
+        "name": {
+          "@eq": "example-selector"
         }
       },
       "output": {
-        "key": "id",
-        "type": "id"
+        "key": "value",
+        "type": "string"
       }
     }
   },
@@ -29,11 +28,11 @@
         "GET"
       ],
       "schema": [
-        "organisation"
+        "car"
       ],
       "query": {
-        "#env.date.now": {
-          "@gtDate": "#env.startDate"
+        "colour": {
+          "@eq": "#env.carColour"
         }
       }
     }
