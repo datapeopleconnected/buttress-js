@@ -14,18 +14,43 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-require('source-map-support').install();
+export interface RESTActivity {
+  title: string;
+  description: string;
+  visibility: string;
+  broadcast: boolean;
+  path: string;
+  pathSpec: string;
+  verb: string;
+  permissions: string;
+  params: any;
+  timestamp: Date;
+  response: any;
+  user: string;
+  appAPIPath: string;
+  appId: string;
+  isSuper: boolean;
+  isSameApp?: boolean;
+  isCoreSchema: boolean;
+  schemaName: string;
+}
 
-require('./rest/core/token.test.js');
-require('./rest/core/user.test.js');
-
-require('./rest/schema.test.js');
-require('./rest/data-sharing.test.js');
-require('./rest/policy.test.js');
-
-require('./spr/processing.test.js');
-
-// require('./sock/realtime.test.js');
-
-// require('./lambda/lambda.test.js');
-
+export interface SPRActivity {
+  title: string;
+  description: string;
+  visibility: string;
+  broadcast: boolean;
+  path: string;
+  pathSpec: string;
+  verb: string;
+  permissions: string;
+  params: any;
+  timestamp: Date;
+  response: any;
+  user: string;
+  appAPIPath: string;
+  appId: string;
+  isSuper: boolean;
+  isSameApp?: boolean;
+  schemaName?: string;
+}

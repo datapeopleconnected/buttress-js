@@ -35,11 +35,12 @@ import Logging from './helpers/logging';
 import Schema from './schema';
 import {shortId} from './helpers';
 
-import {SourceDataSharingRouting} from './services/source-ds-routing';
+import { SourceDataSharingRouting } from './services/source-ds-routing';
 
 import DatastoreManager, {Datastore} from './datastore';
 import Plugins from './plugins';
 import AccessControl from './access-control';
+import { PolicyCache } from './services/policy-cache';
 
 // morgan.token('id', (req) => req.id);
 
@@ -65,6 +66,8 @@ export default class BootstrapRest extends Bootstrap {
 		Logging.logDebug(`Connecting to primary datastore...`);
 		await this.primaryDatastore.connect();
 
+		if (!this.__nrp) throw new Error('NRP not found whilst trying to init BootstrapRest');
+
 		// Register some services.
 		this.__services.set('redisClient', createClient({
 			port: parseInt(Config.redis.port, 10) || 6379,
@@ -75,16 +78,20 @@ export default class BootstrapRest extends Bootstrap {
 		const redisClient = this.__services.get('redisClient') as RedisClient;
 		if (redisClient === undefined) throw new Error('Redis client not found whilst trying to init BootstrapRest');
 
+		this.__services.set('policyCache', new PolicyCache(redisClient, Model))
+		const policyCache = this.__services.get('policyCache') as PolicyCache;
+		if (policyCache === undefined) throw new Error('PolicyCache not found whilst trying to init BootstrapRest');
+
 		this.__services.set('sdsRouting', new SourceDataSharingRouting(redisClient));
 		this.__services.set('modelManager', Model);
 
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
 		Logging.logDebug(`Init process libs...`);
 		await Model.init(this.__services);
-		await AccessControl.init(this.__nrp);
+		await AccessControl.init(this.__nrp, policyCache);
 		await Plugins.initialise(
 			Plugins.APP_TYPE.REST,
-			(cluster.isMaster) ? Plugins.PROCESS_ROLE.MAIN : Plugins.PROCESS_ROLE.WORKER,
+			(cluster.isPrimary) ? Plugins.PROCESS_ROLE.MAIN : Plugins.PROCESS_ROLE.WORKER,
 			(Config.rest.app === 'primary') ? Plugins.INFRASTRUCTURE_ROLE.PRIMARY : Plugins.INFRASTRUCTURE_ROLE.SECONDARY,
 		);
 
@@ -125,7 +132,7 @@ export default class BootstrapRest extends Bootstrap {
 		await DatastoreManager.clean();
 	}
 
-	async __initMaster() {
+	async __initMain() {
 		const isPrimary = Config.rest.app === 'primary';
 
 		if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');

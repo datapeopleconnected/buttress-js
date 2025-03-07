@@ -261,6 +261,7 @@ export default class UserSchemaModel extends StandardModel {
 
 			if (token) {
 				user.tokens.push({
+					id: token.id,
 					value: token.value,
 					policyProperties: token.policyProperties,
 				});
@@ -347,5 +348,14 @@ export default class UserSchemaModel extends StandardModel {
 			'auth.appId': authAppUserId,
 			...(appId) ? {_appId: this.createId(appId)} : {},
 		});
+	}
+
+
+	rmAll() {
+		return super.rmAll({});
+	}
+
+	rm(userId: string) {
+		return super.rm(userId);
 	}
 }

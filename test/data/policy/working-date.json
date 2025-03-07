@@ -16,19 +16,18 @@
       ],
       "env": {
         "startDate": "01/01/2022",
-        "endDate": "31/01/2042",
-        "date": "now"
+        "endDate": "31/01/2042"
       },
       "condition": {
         "@and": [
           {
-            "@env.date": {
-              "@gtDate": "env.startDate"
+            "#env.startDate": {
+              "@gtDate": "#env.date.now"
             }
           },
           {
-            "@env.date": {
-              "@ltDate": "env.endDate"
+            "#env.endDate": {
+              "@ltDate": "#env.date.now"
             }
           }
         ]

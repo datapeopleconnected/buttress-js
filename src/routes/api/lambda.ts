@@ -511,7 +511,7 @@ class SetLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').setPolicyPropertiesById(validate.id, req.body);
+		await Model.getModel('Token').setPolicyPropertiesById(validate.id.toString(), req.body);
 		return true;
 	}
 }
@@ -569,7 +569,7 @@ class UpdateLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').updatePolicyPropertiesById(validate.token, req.body);
+		await Model.getModel('Token').updatePolicyProperties(validate.token, req.body);
 		return true;
 	}
 }

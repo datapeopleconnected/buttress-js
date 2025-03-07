@@ -1,0 +1,41 @@
+{
+  "name": "env-test-3",
+  "version": 1,
+  "priority": 1,
+  "selection": {
+    "envTest": {
+      "@eq": 3
+    }
+  },
+  "env": {
+    "startDate": "01/07/2022",
+    "personId": {
+      "collection": "car",
+      "type": "array",
+      "query": {
+        "userId": {
+          "@eq": "#user.id"
+        }
+      },
+      "output": {
+        "key": "id",
+        "type": "id"
+      }
+    }
+  },
+  "config": [
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "organisation"
+      ],
+      "query": {
+        "#env.date.now": {
+          "@gtDate": "#env.startDate"
+        }
+      }
+    }
+  ]
+}

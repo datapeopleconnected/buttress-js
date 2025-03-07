@@ -125,7 +125,7 @@ export default class StandardModel {
 	 * @param {object} [schemaFlat={}]
 	 * @return {object} query
 	 */
-	parseQuery(query, envFlat = {}, schemaFlat = {}) {
+	parseQuery(query, envFlat = {}, schemaFlat = this.flatSchemaData) {
 		let output = {};
 
 		for (const property in query) {

@@ -209,7 +209,7 @@ export default class AppSchemaModel extends StandardModel {
 			}],
 		}, body.id);
 
-		await this.__modelManager.Token.setPolicyPropertiesById(token.id, {
+		await this.__modelManager.Token.setPolicyPropertiesById(token.id.toString(), {
 			role: 'APP',
 		});
 
@@ -346,6 +346,9 @@ export default class AppSchemaModel extends StandardModel {
 
 		Logging.logSilly(`Deleting all tokens for app ${entity.id}`);
 		await this.__modelManager.Token.rmAll({_appId: entity.id});
+
+		Logging.logSilly(`Deleting all users for app ${entity.id}`);
+		await this.__modelManager.User.rmAll({_appId: entity.id});
 
 		// TODO: Delete all data sharing
 		Logging.logSilly(`Deleting all app data sharing for app ${entity.id}`);

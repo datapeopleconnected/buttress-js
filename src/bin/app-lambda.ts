@@ -32,15 +32,15 @@ import BootstrapLambda from '../bootstrap-lambda';
 
 Logging.init('LAMBDA');
 
-if (cluster.isMaster) Logging.startupMessage();
+if (cluster.isPrimary) Logging.startupMessage();
 
 (async () => {
 	try {
 		const app = new BootstrapLambda();
-		const isMaster = await app.init();
+		const isMain = await app.init();
 
-		if (isMaster) {
-			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Master v${Config.app.version} in ${Config.env} mode.`);
+		if (isMain) {
+			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Main v${Config.app.version} in ${Config.env} mode.`);
 			Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
 		} else {
 			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Worker v${Config.app.version} ` +

@@ -31,6 +31,12 @@ const SummerWorkingHour = require('./summer-working-hour.json');
 const WorkingDate = require('./working-date.json');
 const WorkingHour = require('./working-hour.json');
 
+const EnvStaticValueQuery = require('./env-static-value-query.json');
+const EnvDateCondition = require('./env-date-condition.json');
+const EnvEntityCondition = require('./env-entity-condition.json');
+const EnvUserCondition = require('./env-user-condition.json');
+const EnvUserQuery = require('./env-user-query.json');
+
 module.exports = {
   'active-companies': ActiveCompanies,
   'admin-access': AdminAccess,
@@ -48,4 +54,9 @@ module.exports = {
   'summer-working-hour': SummerWorkingHour,
   'working-date': WorkingDate,
   'working-hour': WorkingHour,
+  'env-static-value-query': EnvStaticValueQuery,
+  'env-date-condition': EnvDateCondition,
+  'env-entity-condition': EnvEntityCondition,
+  'env-user-condition': EnvUserCondition,
+  'env-user-query': EnvUserQuery
 };

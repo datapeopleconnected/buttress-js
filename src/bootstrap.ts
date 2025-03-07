@@ -87,9 +87,9 @@ export default class Bootstrap extends EventEmitter {
 	}
 
 	protected async __createCluster() {
-		if (cluster.isMaster) {
+		if (cluster.isPrimary) {
 			Logging.log(`Init Main Process`);
-			await this.__initMaster();
+			await this.__initMain();
 			process.on('unhandledRejection', (error) => Logging.logError(error));
 		} else {
 			Logging.log(`Init Worker Process [${cluster.worker?.id}]`);
@@ -103,10 +103,10 @@ export default class Bootstrap extends EventEmitter {
 			process.on('unhandledRejection', (error) => Logging.logError(error));
 		}
 
-		return cluster.isMaster;
+		return cluster.isPrimary;
 	}
 
-	protected async __initMaster() {
+	protected async __initMain() {
 		throw new Error('Not Yet Implemented');
 	}
 

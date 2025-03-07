@@ -37,10 +37,10 @@ class PolicyMatch {
 		}, []);
 	}
 
-	__checkPolicySelection(p, token?: Token): boolean {
+	__checkPolicySelection(p: Policy, token?: Token): boolean {
 		const selection = p.selection;
 
-		if (!token) return false;
+		if (!token || selection === null) return false;
 
 		if (token.type === 'dataSharing') {
 			const eq = (part, value) => part && part['@eq'] && part['@eq'].toString() === value.toString();

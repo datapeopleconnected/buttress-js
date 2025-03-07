@@ -29,6 +29,7 @@ import SchemaModelRemote from '../model/type/remote';
 import NRP from "node-redis-pubsub";
 import StandardModel from '../model/type/standard';
 import RemoteCombinedModel from '../model/type/remote-combined';
+import { RESTActivity } from '../types/bjs-nrp-objects';
 
 /**
  */
@@ -370,7 +371,7 @@ export default class Route {
 
 		const emit = (_result) => {
 			if (this.activityBroadcast === true) {
-				this._nrp?.emit('activity', JSON.stringify({
+				this._nrp?.emit('rest:activity', JSON.stringify({
 					title: this.activityTitle,
 					description: this.activityDescription,
 					visibility: this.activityVisibility,
@@ -386,8 +387,9 @@ export default class Route {
 					appAPIPath: req.authApp ? req.authApp.apiPath : '',
 					appId: req.authApp ? req.authApp.id : '',
 					isSuper: isSuper,
-					schemaName: this.schema?.name,
-				}));
+					isCoreSchema: this.core,
+					schemaName: this.schema.name,
+				} as RESTActivity));
 			} else {
 				// Trigger the emit activity so we can update the stats namespace
 			}

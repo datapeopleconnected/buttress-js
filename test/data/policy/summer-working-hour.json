@@ -18,19 +18,18 @@
       ],
       "env": {
         "startTime": "01:00",
-        "endTime": "01:01",
-        "time": "now"
+        "endTime": "01:01"
       },
       "condition": {
         "@and": [
           {
-            "@env.time": {
-              "@gtDate": "env.startTime"
+            "#env.startTime": {
+              "@gtDate": "#env.date.now"
             }
           },
           {
-            "@env.time": {
-              "@ltDate": "env.endTime"
+            "#env.endTime": {
+              "@ltDate": "#env.date.now"
             }
           }
         ]

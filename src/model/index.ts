@@ -167,6 +167,10 @@ class Model {
 		return CoreModels;
 	}
 
+	getAppModel(appId: string, name: string) {
+		return this.getModel(`${shortId(appId)}-${name}`);
+	}
+
 	/**
 	 * Used to define a object property accessor for a defined model.
 	 * @param {string} name

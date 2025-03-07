@@ -33,15 +33,15 @@ import BootstrapSocket from '../bootstrap-socket';
 
 Logging.init('SOCK');
 
-if (cluster.isMaster) Logging.startupMessage();
+if (cluster.isPrimary) Logging.startupMessage();
 
 (async () => {
 	try {
 		const app = new BootstrapSocket();
-		const isMaster = await app.init();
+		const isMain = await app.init();
 
-		if (isMaster) {
-			Logging.log(`${Config.app.title} Socket Master v${Config.app.version} listening on port ` +
+		if (isMain) {
+			Logging.log(`${Config.app.title} Socket Main v${Config.app.version} listening on port ` +
 				`${Config.listenPorts.sock} in ${Config.env} mode.`);
 		} else {
 			Logging.log(`${Config.app.title} Socket Worker v${Config.app.version} in ${Config.env} mode.`);

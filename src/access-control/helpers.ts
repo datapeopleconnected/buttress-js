@@ -20,11 +20,11 @@ import Model from '../model';
 import Logging from '../helpers/logging';
 
 import { ApplicablePolicies } from './index';
-import { PolicyEnv } from '../model/core/policy';
+import { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy';
 
-export function CombineEnvGroups(policy: ApplicablePolicies): PolicyEnv {
-	let env: PolicyEnv = {};
-	if (policy.env !== null) env = { ...policy.env };
+export function CombineEnvGroups(policy: ApplicablePolicies, reqEnv?): PolicyEnv {
+	let env: PolicyEnv = (reqEnv) ? { ...reqEnv } : {};
+	if (policy.env !== null) env = { ...env, ...policy.env };
 	if (policy.config.env !== null) env = { ...env, ...policy.config.env };
 
 	return env;
@@ -89,22 +89,30 @@ class Helpers {
 			break;
 		case '$gtDate':
 		case '@gtDate': {
-			passed = Sugar.Date.isAfter(rhs, lhs);
+			const lhsDate = wrangleDateType(lhs);
+			if (!lhsDate) return false;
+			passed = Sugar.Date.isAfter(lhsDate, rhs);
 		}
 			break;
 		case '$gteDate':
 		case '@gteDate': {
-			passed = Sugar.Date.isAfter(rhs, lhs) || Sugar.Date.is(rhs, lhs);
+			const lhsDate = wrangleDateType(lhs);
+			if (!lhsDate) return false;
+			passed = Sugar.Date.isAfter(lhsDate, lhs) || Sugar.Date.is(lhsDate, lhs);
 		}
 			break;
 		case '$ltDate':
 		case '@ltDate': {
-			passed = Sugar.Date.isBefore(rhs, lhs);
+			const lhsDate = wrangleDateType(lhs);
+			if (!lhsDate) return false;
+			passed = Sugar.Date.isBefore(lhsDate, rhs);
 		}
 			break;
 		case '$lteDate':
 		case '@lteDate': {
-			passed = Sugar.Date.isBefore(rhs, lhs) || Sugar.Date.is(rhs, lhs);
+			const lhsDate = wrangleDateType(lhs);
+			if (!lhsDate) return false;
+			passed = Sugar.Date.isBefore(lhsDate, lhs) || Sugar.Date.is(lhsDate, lhs);
 		}
 			break;
 		case '$rex':
@@ -147,4 +155,82 @@ class Helpers {
 	}
 }
 
+// Wrangle the type over to a sugar date
+function wrangleDateType(val: unknown): Date | null | undefined {
+	if (val === null) return null;
+	if (val === undefined) return undefined;
+	if (typeof val === 'string') {
+		return Sugar.Date.create(val);
+	}
+
+	return val as Date;
+}
+
 export default new Helpers();
+
+export function filterPolicyConfigs(policy: Policy, schemaName: string, verb: string, isCoreSchema: boolean, verbCheckReadability: boolean = false): PolicyConfig[] {
+	return policy.config.filter((c) => {
+		if (!c.query || !c.verbs || !c.schema) return false;
+
+		let verbCheck = c.verbs.includes('%ALL%') || c.verbs.includes(verb);
+
+		if (verbCheckReadability) {
+			verbCheck = c.verbs.includes('%ALL%') || (c.verbs.includes('GET') || c.verbs.includes('SEARCH'));
+		}
+
+		const schemaCheck = c.schema.includes('%ALL%') || c.schema.includes(schemaName) || c.schema.includes((isCoreSchema) ? '%CORE_SCHEMA%' : '%APP_SCHEMA%');
+
+		return verbCheck && schemaCheck;
+	});
+}
+
+export function findPatternOccurrences(obj: any, pattern: string): { path: string[]; type: "key" | "value"; value: string }[] {
+	const occurrences: { path: string[]; type: "key" | "value"; value: string }[] = [];
+	const regex = new RegExp(pattern);
+
+	function recurse(currentObj: any, path: string[] = []): void {
+		for (const key in currentObj) {
+			if (Object.prototype.hasOwnProperty.call(currentObj, key)) {
+				const currentPath = [...path, key];
+				const value = currentObj[key];
+
+				if (typeof key === 'string' && regex.test(key)) {
+					occurrences.push({ path: currentPath, type: "key", value: key });
+				}
+
+				if (typeof value === 'string' && regex.test(value)) {
+					occurrences.push({ path: currentPath, type: "value", value: value });
+				} else if (typeof value === 'object' && value !== null) {
+					recurse(value, currentPath);
+				} else if (Array.isArray(value)) {
+					value.forEach((item, index) => {
+						const arrayPath = [...currentPath, index.toString()]; // Convert index to string
+						if (typeof item === 'string' && regex.test(item)) {
+							occurrences.push({ path: arrayPath, type: "value", value: item });
+						} else if (typeof item === 'object' && item !== null) {
+							recurse(item, arrayPath);
+						}
+					});
+				}
+			}
+		}
+	}
+
+	recurse(obj);
+	return occurrences;
+}
+
+export function containsTokenLevelRef(applicablePolicy: ApplicablePolicies) {
+	const outcome = {
+		condition: false,
+		query: false,
+	};
+
+	const conditionOccurrences = findPatternOccurrences(applicablePolicy.config.condition, '^(user\.|env\.)');
+	// console.log(conditionOccurrences);
+
+	// Loop over the condition and look for any key references to user. If we have any env vars then we need to resolve them to check
+	// to see if the user has access to the data.
+
+	return outcome;
+}

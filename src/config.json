@@ -68,7 +68,7 @@
 		"redis": {
 			"port": "%BUTTRESS_REDIS_PORT%",
 			"host": "%BUTTRESS_REDIS_HOST%",
-			"scope": "%BUTTRESS_APP_CODE%-internal"
+			"scope": "%BUTTRESS_APP_CODE%-internal:"
 		},
 		"sio": {
 			"app": "%BUTTRESS_SOCKET_APP%"

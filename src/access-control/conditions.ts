@@ -16,7 +16,7 @@
 
 import Sugar from '../helpers/sugar';
 
-import accessControlHelpers, { CombineEnvGroups } from './helpers';
+import AccessControlHelpers, { CombineEnvGroups } from './helpers';
 import Filter from './filter';
 import Env from './env';
 import * as Helpers from '../helpers';
@@ -28,71 +28,50 @@ import { PolicyCondition, PolicyConfig, PolicyEnv } from '../model/core/policy';
 /**
  * @class Conditoins
  */
-class Conditions {
-	queryOperator: string[];
-	conditionKeys: string[];
-	logicalOperator: string[];
-	conditionEndRange: string[];
+export class Conditions {
+	static queryOperator = [
+		'@eq',
+		'@not',
+		'@gt',
+		'@lt',
+		'@gte',
+		'@lte',
+		'@gtDate',
+		'@gteDate',
+		'@ltDate',
+		'@lteDate',
+		'@rex',
+		'@rexi',
+		'@in',
+		'@nin',
+		'@exists',
+		'@inProp',
+		'@elMatch',
+	];
+	static conditionKeys = [
+		'@location',
+		'@date',
+		'@time',
+	];;
+	static logicalOperator = [
+		'@and',
+		'@or',
+	];
+	static conditionEndRange = [
+		'@gt',
+		'@gte',
+		'@gtDate',
+		'@gteDate',
+	];
 
-	IPv4Regex: RegExp;
-	IPv6Regex: RegExp;
-	conditionQueryRegex: RegExp;
+	static envStr: string = 'env.';
+	static conditionQueryRegex = new RegExp('query.');
 
-	envStr: string;
-
-	constructor() {
-		this.queryOperator = [
-			'@eq',
-			'@not',
-			'@gt',
-			'@lt',
-			'@gte',
-			'@lte',
-			'@gtDate',
-			'@gteDate',
-			'@ltDate',
-			'@lteDate',
-			'@rex',
-			'@rexi',
-			'@in',
-			'@nin',
-			'@exists',
-			'@inProp',
-			'@elMatch',
-		];
-
-		this.conditionKeys = [
-			'@location',
-			'@date',
-			'@time',
-		];
-
-		this.logicalOperator = [
-			'@and',
-			'@or',
-		];
-
-		this.conditionEndRange = [
-			'@gt',
-			'@gte',
-			'@gtDate',
-			'@gteDate',
-		];
-
-		this.IPv4Regex = /((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}/g;
-		this.IPv6Regex = /(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))/g;
-
-		this.conditionQueryRegex = new RegExp('query.');
-		this.envStr = 'env.';
-	}
-
-	async filterPoliciesByPolicyConditions(req, userPolicies: ApplicablePolicies[]) {
+	async filterPoliciesByPolicyConditions(userPolicies: ApplicablePolicies[], reqEnv?) {
 		const output: ApplicablePolicies[] = [];
 
 		for await (const policy of userPolicies) {
-			if (policy.config.condition === null) {
-				output.push(policy);
-			} else if (await this.__checkPolicyConditions(req, policy)) {
+			if (policy.config.condition === null || await this.__checkPolicyConditions(policy, reqEnv)) {
 				output.push(policy);
 			}
 		}
@@ -100,28 +79,27 @@ class Conditions {
 		return output;
 	}
 
-	async __checkPolicyConditions(req, policy: ApplicablePolicies) {
+	async __checkPolicyConditions(policy: ApplicablePolicies, reqEnv) {
 		if (policy.config.condition === null) return false;
 
-		const env = CombineEnvGroups(policy);
-
-		return await this.__checkLogicalCondition(req, policy.config.condition, env);
+		const env = CombineEnvGroups(policy, reqEnv);
+		return await this.__checkCondition(policy.config.condition, env);
 	}
 
-	async __checkLogicalCondition(req, condition: PolicyCondition, envVariables: PolicyEnv) {
+	async __checkCondition(condition: PolicyCondition, envVariables: PolicyEnv, partialPass: boolean = false) {
 		const results: Array<boolean> = [];
 
 		for await (const key of Object.keys(condition)) {
-			if (this.logicalOperator.includes(key)) {
-				const partialPass = (key === '@or') ? true : false;
+			if (Conditions.logicalOperator.includes(key)) {
+				const innerPartialPass = (key === '@or' || key === '$or') ? true : false;
 
 				const innerResults: Array<boolean> = [];
 				// TODO: Add check as this is expected to be an array.
 				for await (const conditionObj of condition[key]) {
-					innerResults.push(await this.__checkCondition(req, envVariables, conditionObj, partialPass));
+					innerResults.push(await this.__checkCondition(conditionObj, envVariables, innerPartialPass));
 				}
 
-				if (partialPass) {
+				if (innerPartialPass) {
 					results.push(innerResults.some((r) => r));
 				} else {
 					results.push((innerResults.length > 0) ? innerResults.every((r) => r) : false);
@@ -129,20 +107,10 @@ class Conditions {
 
 				continue;
 			}
-			
-			results.push(await this.__checkCondition(req, envVariables, condition, false));
-		}
 
-		return (results.length > 0) ? results.every((r) => r) : false;
-	}
-
-	async __checkCondition(req, envVariables: PolicyEnv | null, conditionObj, partialPass: boolean): Promise<boolean> {
-		const results: Array<boolean> = [];
-		for await (const key of Object.keys(conditionObj)) {
-			const innerCondResult = await this.__checkInnerConditions(req, envVariables, conditionObj, key, partialPass);
-			// if (this.conditionKeys.includes(`@${key}`)) continue;
-
-			results.push(innerCondResult);
+			for await (const key of Object.keys(condition)) {
+				results.push(await this.__checkInnerConditions(condition, envVariables, key, partialPass));
+			}
 		}
 
 		if (partialPass) return results.some((r) => r);
@@ -150,33 +118,16 @@ class Conditions {
 		return (results.length > 0) ? results.every((r) => r) : false;
 	}
 
-	async __checkInnerConditions(req, envVariables: PolicyEnv | null, conditionObj, key, partialPass: boolean): Promise<boolean> {
-		const environmentKeys = Object.keys(envVariables || {});
-		const conditionKey = key.replace(this.envStr, '');
-		const isSchemaQuery = this.conditionQueryRegex.test(conditionKey);
-
-		if (environmentKeys.includes(conditionKey)) {
-			return this.__evaluateEnvCondition(req, conditionObj, envVariables, conditionKey, req.authApp.id, req.authUser);
-		}
-		if (typeof conditionObj[key] === 'object' && !this.conditionKeys.includes(conditionKey) && !isSchemaQuery) {
-			return await this.__checkCondition(req, envVariables, conditionObj[key], partialPass);
-		}
-
-		if (isSchemaQuery) {
-			const varSchemaKey = key.replace('query.', '');
-			const dbConditionQuery = Object.assign({}, (envVariables || {})[varSchemaKey]);
-			this.__buildDbConditionQuery(envVariables, conditionObj[key], varSchemaKey, dbConditionQuery);
-
-			const appShortId = (req.authApp.id) ? Helpers.shortId(req.authApp.id) : undefined;
-			return await this.__getDbConditionQueryResult(dbConditionQuery, varSchemaKey, appShortId);
-		}
-
-		let evaluationRes = false;
-		// TODO: ?? What if theres more than one operator?
+	async __checkInnerConditions(conditionObj, envVariables: PolicyEnv | null, key, partialPass: boolean = false): Promise<boolean> {
+		const results: boolean[] = [];
 		for await (const operator of Object.keys(conditionObj[key])) {
-			evaluationRes = await this.__checkConditionQuery(req, envVariables, operator, conditionObj, key, conditionKey);
+			results.push(await this.__checkConditionQuery(envVariables, operator, conditionObj, key));
 		}
-		return evaluationRes;
+
+		if (partialPass) return results.some((r) => r);
+
+		// The condition defaults are treated as AND by default.
+		return results.every((r) => r);
 	}
 
 	__buildDbConditionQuery(envVariables, conditions, varSchemaKey, query = {}) {
@@ -190,7 +141,7 @@ class Conditions {
 			if (!Array.isArray(value) && typeof value === 'object') {
 				this.__buildDbConditionQuery(envVariables, value, varSchemaKey, query);
 			} else {
-				const envQueryKeys = value.replace(this.envStr, '').split('.');
+				const envQueryKeys = value.replace(Conditions.envStr, '').split('.');
 				envQueryKeys.reduce((res, key) => {
 					res = res[key];
 					if (query[key]) {
@@ -214,205 +165,36 @@ class Conditions {
 		// If model is still not defined then there is no hope.
 		if (model === undefined) throw new Error(`Unable to find model for schema: ${schemaName}`);
 
-		const convertedQuery: any = await Filter.buildPolicyQuery({}, query, {});
+		const convertedQuery: any = await Filter.buildPolicyQuery(query, {});
 		query = model.parseQuery(convertedQuery, {}, model.flatSchemaData);
 		return await model.count(query) > 0;
 	}
 
-	async __checkConditionQuery(req, envVar, operator, conditionObj, key, conditionKey) {
+	async __checkConditionQuery(envVariables, operator, conditionObj, key) {
 		let evaluationRes = false;
 
-		if (!this.queryOperator.includes(operator)) {
-			// TODO throw an error bad operator
-			return evaluationRes;
+		if (!Conditions.queryOperator.includes(operator)) {
+			throw new Error(`Invalid policy condition operator: ${operator}`);
 		}
 
-		let lhs = conditionObj[key][operator];
-		let rhs = this.getEnvironmentVar(envVar, key);
+		const lhs = await Env.getEnvValue(conditionObj[key][operator], envVariables);
+		const rhs = await Env.getEnvValue(key, envVariables);
 
-		if (conditionKey === '@location') {
-			if (!lhs.match(this.IPv4Regex) && !lhs.match(this.IPv6Regex)) {
-				lhs = this.getEnvironmentVar(envVar, lhs);
-			}
-
-			rhs = this.__requestIPAddress(req);
-		}
-
-		if (conditionKey === '@date' || conditionKey === '@time') {
-			if (!Sugar.Date.isValid(Sugar.Date.create(lhs))) {
-				lhs = this.getEnvironmentVar(envVar, lhs);
-			}
-
-			rhs = Sugar.Date.create('now');
-			lhs = Sugar.Date.create(lhs);
-		}
-
-		if (!lhs || !rhs) {
+		if (lhs === undefined || rhs === undefined) {
 			// TODO throw an error for incomplete operation sides
 			return evaluationRes;
 		}
 
-		evaluationRes = accessControlHelpers.evaluateOperation(lhs, rhs, operator);
+		evaluationRes = AccessControlHelpers.evaluateOperation(lhs, rhs, operator);
 
 		return evaluationRes;
-	}
-
-	__requestIPAddress(req) {
-		const requestIPAddress = {};
-		const proxyIPAddress = {};
-
-		if (req['x-client-ip']) {
-			requestIPAddress['x-client-ip'] = req['x-client-ip'];
-		}
-
-		if (req['x-forwarded-for']) {
-			proxyIPAddress['x-forwarded-for'] = req['x-forwarded-for'];
-		}
-
-		if (req['cf-connecting-ip']) {
-			requestIPAddress['cf-connecting-ip'] = req['cf-connecting-ip'];
-		}
-
-		if (req['fastly-client-ip']) {
-			requestIPAddress['fastly-client-ip'] = req['fastly-client-ip'];
-		}
-
-		if (req['true-client-ip']) {
-			requestIPAddress['true-client-ip'] = req['true-client-ip'];
-		}
-
-		if (req['x-real-ip']) {
-			requestIPAddress['x-real-ip'] = req['x-real-ip'];
-		}
-
-		if (req['x-cluster-client-ip']) {
-			requestIPAddress['x-cluster-client-ip'] = req['x-cluster-client-ip'];
-		}
-
-		if (req['x-forwarded'] || req['forwarded-for'] || req['forwarded']) {
-			proxyIPAddress['x-forwarded'] = req['x-forwarded'] || req['forwarded-for'] || req['forwarded'];
-		}
-
-		if (req.connection && req.connection.remoteAddress) {
-			requestIPAddress['connectionRemoteAddress'] = req.connection.remoteAddress;
-		}
-
-		if (req.socket && req.socket.remoteAddress) {
-			requestIPAddress['socketRemoteAddress'] = req.socket.remoteAddress;
-		}
-
-		if (req.connection && req.connection.socket && req.connection.socket.remoteAddress) {
-			requestIPAddress['connectionSocketRemoteAddress'] = req.connection.socket.remoteAddress;
-		}
-
-		if (req.info && req.info.remoteAddress) {
-			requestIPAddress['infoRemoteAddress'] = req.info.remoteAddress;
-		}
-
-		const proxyClientIP = Object.keys(proxyIPAddress).reduce((arr: string[], key) => {
-			const ipAddress = this.__getClientIpFromXForwardedFor(key);
-			if (ipAddress) {
-				arr.push(ipAddress);
-			}
-
-			return arr;
-		}, []);
-
-		if (proxyClientIP.length > 0) {
-			return proxyClientIP.shift();
-		}
-
-		const clientIP = Object.keys(requestIPAddress).reduce((arr: string[], key) => {
-			let IPv4 = requestIPAddress[key].match(this.IPv4Regex);
-			IPv4 = (IPv4) ? IPv4.pop() : null;
-			let IPv6 = requestIPAddress[key].match(this.IPv6Regex);
-			IPv6 = (IPv6) ? IPv6.pop() : null;
-			arr.push((IPv4) ? IPv4 : IPv6);
-
-			return arr;
-		}, []);
-
-		const firstClientIP = clientIP.slice().pop();
-		const isDiffIPs = clientIP.every((ipAddress) => ipAddress === firstClientIP);
-		if (isDiffIPs) {
-			// should throw an error?
-		}
-
-		return firstClientIP;
-	}
-
-	__getClientIpFromXForwardedFor(str: string) {
-		const forwardedIPs = str.split(',').map((ip) => {
-			ip = ip.trim();
-			if (ip.includes(':')) {
-				const splitted = ip.split(':');
-				// make sure we only use this if it's ipv4 (ip:port)
-				if (splitted.length === 2) {
-					return splitted[0];
-				}
-			}
-
-			return ip;
-		});
-
-		return forwardedIPs.find((ip) => {
-			return ip.match(this.IPv4Regex) || ip.match(this.IPv6Regex);
-		});
-	}
-
-	getEnvironmentVar(envVars, environmentVar) {
-		if (!environmentVar.includes('env')) return environmentVar;
-
-		const path = environmentVar.replace('@', '').split('.');
-		let val = null;
-		let obj = envVars;
-
-		path.forEach((key) => {
-			if (val && !Array.isArray(val) && typeof val === 'object') {
-				obj = val;
-			}
-			val = this.__getObjectValByPathKey(obj, key);
-			if (!val) return;
-		});
-
-		return val;
-	}
-
-	async __evaluateEnvCondition(req, condition, envVars, conditionKey, appId, authUser) {
-		const output = await Env.getQueryEnvironmentVar(conditionKey, envVars, appId, authUser, true);
-		const modifiedCondition = {...condition};
-
-		if (output !== undefined) {
-			modifiedCondition[output] = modifiedCondition[`env.${conditionKey}`];
-			delete modifiedCondition[`env.${conditionKey}`];
-		}
-
-		let passed = false;
-		for await (const key of Object.keys(modifiedCondition)) {
-			if (typeof modifiedCondition[key] === 'object') {
-				for await (const operator of Object.keys(modifiedCondition[key])) {
-					passed = await this.__checkConditionQuery(req, envVars, operator, modifiedCondition, key, conditionKey);
-				}
-			}
-		}
-
-		return passed;
-	}
-	__getObjectValByPathKey(obj, key) {
-		let value = null;
-
-		if (obj && obj[key]) {
-			value = obj[key];
-		}
-
-		return value;
 	}
 
 	async isPolicyDateTimeBased(conditions, pass = false): Promise<string | boolean | undefined> {
 		let res: boolean | string = false;
 		for await (const key of Object.keys(conditions)) {
 			if (Array.isArray(conditions[key])) {
-				if (this.logicalOperator.includes(key)) {
+				if (Conditions.logicalOperator.includes(key)) {
 					for await (const item of conditions[key]) {
 						return await this.isPolicyDateTimeBased(item, pass);
 					}
@@ -422,9 +204,9 @@ class Conditions {
 			}
 
 			if (((key === 'date' || pass) || (key === 'time' || pass)) && typeof conditions[key] === 'object') {
-				const isDateTimeCondition = Object.keys(conditions[key]).some((cKey) => this.conditionEndRange.includes(cKey));
+				const isDateTimeCondition = Object.keys(conditions[key]).some((cKey) => Conditions.conditionEndRange.includes(cKey));
 				if (isDateTimeCondition) {
-					res = key.replace(`@${this.envStr}`, '');
+					res = key.replace(`${Conditions.envStr}`, '');
 					return res;
 				}
 
@@ -438,7 +220,7 @@ class Conditions {
 	async isPolicyQueryBasedCondition(condition, schemaNames) {
 		for await (const key of Object.keys(condition)) {
 			if (Array.isArray(condition[key])) {
-				if (this.logicalOperator.includes(key)) {
+				if (Conditions.logicalOperator.includes(key)) {
 					for await (const item of condition[key]) {
 						return await this.isPolicyQueryBasedCondition(item, schemaNames);
 					}

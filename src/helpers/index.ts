@@ -164,16 +164,15 @@ const __flattenRoles = (data, path) => {
 };
 export const flattenRoles = __flattenRoles;
 
-const __flatternObject = (obj, output, paths) => {
-	if (!output) output = {};
-	if (!paths) paths = [];
-
+export const flatternObject = (obj, output: {[index: string]: any} = {}, paths: string[] = []) => {
 	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
 		paths.push(key);
 		if (typeof obj[key] === 'object' && Datastore.getInstance('core').ID.isValid(obj[key])) {
 			out[paths.join('.')] = obj[key];
+		} else if (obj[key] instanceof Date) {
+			out[paths.join('.')] = obj[key];
 		} else if (typeof obj[key] === 'object' && obj[key] !== null) {
-			__flatternObject(obj[key], out, paths);
+			flatternObject(obj[key], out, paths);
 		} else {
 			out[paths.join('.')] = obj[key];
 		}
@@ -181,7 +180,6 @@ const __flatternObject = (obj, output, paths) => {
 		return out;
 	}, output);
 };
-export const flatternObject = __flatternObject;
 
 export const mergeDeep = (...objects) => {
 	const isObject = (obj) => obj && typeof obj === 'object';
@@ -382,6 +380,19 @@ export const compareByProps = (compareProperties, a, b) => {
 
 	return 0;
 };
+
+export const get = function(path: string, root: any): any {
+	const parts = path.toString().split('.');
+	let prop: any = root;
+
+	for (let i=0; i < parts.length; i += 1) {
+		if (!prop) return undefined;
+		const part = parts[i];
+		prop = (prop instanceof Map) ? prop.get(part) : prop[part];
+	}
+
+	return prop;
+}
 
 export class ExpireMap extends Map {
 	expireTime: number;

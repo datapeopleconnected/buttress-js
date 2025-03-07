@@ -16,8 +16,11 @@
 
 import Route from '../route';
 import Model from '../../model';
+import * as Helpers from '../../helpers';
 
 import * as ACM from '../../access-control/models-access';
+import { Token } from '../../model/core/token';
+import { queryObjects } from 'v8';
 
 const routes: (typeof Route)[] = [];
 
@@ -28,24 +31,34 @@ class GetTokenList extends Route {
 	constructor(services) {
 		super('token', 'GET TOKEN LIST', services, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.SYSTEM;
+		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
 
 		this.redactResults = false;
 	}
 
 	_validate(req, res, token) {
-		return Promise.resolve(true);
+		const queryParams: QueryParams<Token> = {
+			query: {
+				_appId: Model.getModel('App').createId(req.authApp.id)
+			},
+			project: {
+				id: 1,
+				type: 1,
+				policyProperties: 1
+			}
+		};
+
+		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+			queryParams.query = {};
+			queryParams.project = {};
+		}
+
+		return Promise.resolve(queryParams);
 	}
 
 	async _exec(req, res, validate) {
-		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
-			return this.model.findAll();
-		}
-
-		return this.model.find({
-			_appId: Model.getModel('App').createId(req.authApp.id),
-		});
+		return ACM.find(this.model, validate, req.ac);
 	}
 }
 routes.push(GetTokenList);
@@ -67,17 +80,42 @@ class DeleteAllTokens extends Route {
 		return Promise.resolve();
 	}
 
-	_exec(req, res, validate) {
-		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
-			return this.model.rmAll({
-				type: req.params.type,
-			}).then(() => true);
+	async _exec(req, res, validate) {
+		if (req.params.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+			this.log('ERROR: Cannot delete system tokens', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
 		}
 
-		return this.model.rmAll({
-			type: req.params.type,
-			_appId: Model.getModel('App').createId(req.authApp.id),
-		}).then(() => true);
+		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+			const query = (req.params.type) ? {
+				type: req.params.type
+			} : {
+				type: {
+					$ne: Model.getModel('Token').Constants.Type.SYSTEM
+				}
+			};
+			await this.model.rmAll(query);
+		} else {
+			if (req.params.type === Model.getModel('Token').Constants.Type.APP){
+				this.log('ERROR: Cannot delete app tokens as app', Route.LogLevel.ERR);
+				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
+			}
+
+			const query = (req.params.type) ? {
+				type: req.params.type
+			} : {
+				type: {
+					$ne: Model.getModel('Token').Constants.Type.APP
+				}
+			};
+
+			await this.model.rmAll({
+				...query,
+				_appId: Model.getModel('App').createId(req.authApp.id),
+			});
+		}
+
+		return true;
 	}
 }
 routes.push(DeleteAllTokens);
@@ -87,7 +125,7 @@ routes.push(DeleteAllTokens);
  */
 class SearchUserToken extends Route {
 	constructor(services) {
-		super('token', 'SEARCH USER TOKEN', services, Model.getModel('Token'));
+		super('token/:userId', 'GET USER TOKENS', services, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -96,23 +134,41 @@ class SearchUserToken extends Route {
 	}
 
 	async _validate(req, res, token) {
-		const result: {
+		const queryParams: QueryParams<Token> = {
 			query: {
-				$and: any[],
+				$and: [{_appId: Model.getModel('App').createId(req.authApp.id)}]
 			},
-		} = {
-			query: {
-				$and: [],
-			},
+			project: {
+				id: 1,
+				type: 1,
+				policyProperties: 1
+			}
 		};
 
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			result.query.$and.push(req.body.query);
+		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+			queryParams.query = {};
+			queryParams.project = {};
 		}
 
-		result.query = this.model.parseQuery(result.query, {}, this.model.flatSchemaData);
-		return result;
+		const exists = Model.getModel('User').exists(req.params.userId);
+		if (!exists) {
+			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_id`));
+		}
+
+		if (!queryParams.query.$and) {
+			queryParams.query.$and = [];
+		}
+		
+		queryParams.query.$and.push({
+			_userId: req.params.userId,
+		});
+
+		if (req.body.query) {
+			queryParams.query.$and.push(req.body.query);
+		}
+
+		return queryParams;
 	}
 
 	_exec(req, res, validate) {

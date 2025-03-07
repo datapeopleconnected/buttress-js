@@ -308,8 +308,17 @@ export default class MongodbAdapter extends AbstractAdapter {
 
 		Logging.logSilly(`exists: ${this.collection.namespace} ${id}`);
 
+		let _id: ObjectId | null = null;
+		try {
+			_id = new ObjectId(id);
+		} catch (err) {
+			return false;
+		}
+
+		if (_id === null) return false;
+
 		return this.collection?.countDocuments({
-			_id: new ObjectId(id),
+			_id,
 			...extra,
 		})
 			.then((count) => count > 0);

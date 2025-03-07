@@ -554,8 +554,11 @@ class Routes {
 			let user = null;
 			if (req.token._userId) {
 				user = await Model.getModel('User').findById(req.token._userId);
-				Logging.logSilly(`Request was made with a valid token but no user was found for token ${req.token.id}`);
-				if (!user) throw new Helpers.Errors.RequestError(400, 'invalid_token');
+
+				if (!user) {
+					Logging.logSilly(`Request was made with a valid token but no user was found for token ${req.token.id}`);
+					throw new Helpers.Errors.RequestError(400, 'invalid_token');
+				}
 			}
 
 			req.authUser = user;

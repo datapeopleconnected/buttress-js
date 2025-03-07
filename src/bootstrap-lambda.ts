@@ -80,7 +80,7 @@ export default class BootstrapLambda extends Bootstrap {
 		Datastore.clean();
 	}
 
-	async __initMaster() {
+	async __initMain() {
 		// Lambda workers config
 		const isPrimary = Config.rest.app === 'primary';
 
@@ -90,7 +90,7 @@ export default class BootstrapLambda extends Bootstrap {
 
 			this.__nrp?.on('lambdaProcessWorker:worker-initiated', (id) => {
 				const type = this.__getLambdaWorkerType();
-				this.__nrp?.emit('lambdaProcessMaster:worker-type', JSON.stringify({id, type}));
+				this.__nrp?.emit('lambdaProcessMain:worker-type', JSON.stringify({id, type}));
 			});
 
 			this.__lambdaManagerProcess = new LambdaManager(this.__services);
@@ -108,7 +108,7 @@ export default class BootstrapLambda extends Bootstrap {
 
 		if (this.workerProcesses > 0) {
 			type = await new Promise((resolve) => {
-				this.__nrp?.on('lambdaProcessMaster:worker-type', (data: any) => {
+				this.__nrp?.on('lambdaProcessMain:worker-type', (data: any) => {
 					data = JSON.parse(data);
 		
 					if (data.id !== this.id) return;

@@ -17,6 +17,7 @@
  */
 
 import cluster from 'node:cluster';
+
 import createConfig from 'node-env-obj';
 
 const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
@@ -28,24 +29,22 @@ const Config = createConfig({
 }) as unknown as Config;
 
 import Logging from '../helpers/logging';
-import BootstrapRest from '../bootstrap-rest';
+import BootstrapSocketPolicyRouter from '../bootstrap-spr';
 
-Logging.init('REST');
+Logging.init('SOCK');
 
 if (cluster.isPrimary) Logging.startupMessage();
 
 (async () => {
 	try {
-		const app = new BootstrapRest();
+		const app = new BootstrapSocketPolicyRouter();
 		const isMain = await app.init();
 
 		if (isMain) {
-			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Main v${Config.app.version} listening on port ` +
-				`${Config.listenPorts.rest} in ${Config.env} mode.`);
-			Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
+			Logging.log(`${Config.app.title} SPR Main v${Config.app.version} listening on port ` +
+				`${Config.listenPorts.sock} in ${Config.env} mode.`);
 		} else {
-			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Worker v${Config.app.version} ` +
-				`in ${Config.env} mode.`);
+			Logging.log(`${Config.app.title} SPR Worker v${Config.app.version} in ${Config.env} mode.`);
 		}
 	} catch (err) {
 		if (err instanceof Error || typeof err === 'string') {

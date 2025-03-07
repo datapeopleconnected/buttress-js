@@ -66,7 +66,7 @@ describe('Data Sharing', async () => {
 			},
 		};
 
-		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test App 1', 'test-app-1');
+		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test App 1', 'data-sharing-app-1');
 		testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app1.token);
 
 		await createCar(testEnv.apps.app1, 'A red car');

@@ -1,0 +1,28 @@
+{
+  "name": "env-test-5",
+  "version": 1,
+  "priority": 1,
+  "selection": {
+    "envTest": {
+      "@eq": 5
+    }
+  },
+  "env": {
+    "userId": "user.id"
+  },
+  "config": [
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "person"
+      ],
+      "query": {
+        "userId": {
+          "@eq": "#env.person"
+        }
+      }
+    }
+  ]
+}

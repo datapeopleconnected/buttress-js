@@ -29,7 +29,8 @@
     "docker:build-token": "npm run docker:build -- --build-arg NPM_TOKEN=${NPM_TOKEN}",
     "docker:run": "docker-compose -f .docker/docker-compose.yml up",
     "docker:run-full": "docker-compose -f .docker/docker-compose.full.yml up",
-    "prepare": "husky install && [ -f ./.husky/nvm-fix ] && ./.husky/nvm-fix || true"
+    "prepare": "husky install && [ -f ./.husky/nvm-fix ] && ./.husky/nvm-fix || true",
+    "nvm": "~/.nvm/nvm-exec which node | xargs -I {} bash -c 'ln -sf \"{}\" ./.nvm-node' && chmod +x ./.nvm-node"
   },
   "repository": {
     "type": "git",
