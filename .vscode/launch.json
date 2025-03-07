@@ -1,0 +1,53 @@
+{
+  "version": "0.2.0",
+  "compounds": [
+    {
+      "name": "Test",
+      "configurations": [
+        "Mocha Unit Tests",
+        "Mocha E2E Tests",
+      ]
+    }
+  ],
+  "configurations": [
+    {
+      "name": "Mocha Unit Tests",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceRoot}/node_modules/mocha/bin/_mocha",
+      "args": [
+        "--recursive",
+        "--parallel",
+        "test/unit/**/*"
+      ],
+      "cwd": "${workspaceRoot}",
+      "runtimeExecutable": "${workspaceRoot}/.nvm-node",
+      "env": {
+        "NODE_ENV": "test"
+      },
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "openOnSessionStart"
+    },
+    {
+      "name": "Mocha E2E Tests",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceRoot}/node_modules/mocha/bin/_mocha",
+      "args": [
+        "--recursive",
+        "--bail",
+        "test/e2e/index.test.js"
+      ],
+      "cwd": "${workspaceRoot}",
+      "runtimeExecutable": "${workspaceRoot}/.nvm-node",
+      "env": {
+        "NODE_ENV": "test",
+        "TEST_ENV": "e2e",
+        "SHOW_LOG": "true"
+      },
+      "preLaunchTask": "Run E2E Setup",
+      "console": "integratedTerminal",
+      "internalConsoleOptions": "openOnSessionStart"
+    }
+  ]
+}
