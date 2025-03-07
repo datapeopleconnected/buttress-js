@@ -13,21 +13,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import net from 'node:net';
-
 import createConfig from 'node-env-obj';
 
-import hash from 'object-hash';
-import Express from 'express';
-import {ObjectId} from 'bson';
-import {createClient, RedisClient} from 'redis';
-import {v4 as uuidv4} from 'uuid';
-import Sugar from './helpers/sugar';
-
-import {Server as sio, Socket as sioSocket} from 'socket.io';
-import sioClient, {Socket as sioClientSocket} from 'socket.io-client';
-import {createAdapter} from '@socket.io/redis-adapter';
-import {Emitter} from '@socket.io/redis-emitter';
+import { ObjectId } from 'bson';
+import { createClient, RedisClient } from 'redis';
 
 import Bootstrap from './bootstrap';
 
@@ -37,17 +26,14 @@ import Model from './model';
 import * as Helpers from './helpers';
 import Logging from './helpers/logging';
 
-import AccessControl, { ApplicablePolicies } from './access-control';
-import AccessControlHelpers, { CombineEnvGroups, containsTokenLevelRef, filterPolicyConfigs } from './access-control/helpers';
-import AccessControlConditions from './access-control/conditions';
+import { ApplicablePolicies } from './access-control';
+import { CombineEnvGroups, containsTokenLevelRef, filterPolicyConfigs } from './access-control/helpers';
 import AccessControlEnv from './access-control/env';
 import AccessControlFilters from './access-control/filter';
 
-import Schema from './schema';
-
 import Datastore from './datastore';
 import { RESTActivity } from './types/bjs-nrp-objects';
-import PolicySchemaModel, { Policy, PolicyQuery } from './model/core/policy';
+import { Policy } from './model/core/policy';
 import TokenSchemaModel, { Token } from './model/core/token';
 
 import { PolicyCache } from './services/policy-cache';
