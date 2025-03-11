@@ -167,12 +167,14 @@ export const flattenRoles = __flattenRoles;
 export const flatternObject = (obj, output: {[index: string]: any} = {}, paths: string[] = []) => {
 	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
 		paths.push(key);
-		if (typeof obj[key] === 'object' && Datastore.getInstance('core').ID.isValid(obj[key])) {
-			out[paths.join('.')] = obj[key];
-		} else if (obj[key] instanceof Date) {
-			out[paths.join('.')] = obj[key];
-		} else if (typeof obj[key] === 'object' && obj[key] !== null) {
+		
+		if (typeof obj[key] === 'object' && obj[key] !== null && obj[key] === '[object Object]') {
 			flatternObject(obj[key], out, paths);
+		} else if (Array.isArray(obj[key])) {
+			obj[key].forEach((item, index) => {
+				paths.push(index.toString());
+				flatternObject(item, out, paths);
+			});
 		} else {
 			out[paths.join('.')] = obj[key];
 		}
