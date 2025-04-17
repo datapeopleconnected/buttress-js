@@ -18,11 +18,13 @@ import Stream from 'node:stream';
 import { ObjectId, MongoClient, MongoClientOptions, Db, Collection } from 'mongodb';
 
 // The adapter shouldn't be making calls back out to the model, we're too deep.
-import Model from '../../model';
-import * as Helpers from '../../helpers';
-import Logging from '../../helpers/logging';
+import Model from '../../model/index.js';
+import * as Helpers from '../../helpers/index.js';
+import Logging from '../../helpers/logging.js';
 
-import AbstractAdapter from '../abstract-adapter';
+import AbstractAdapter from '../abstract-adapter.js';
+
+import { BjsQuery } from '../../types/bjs-query.js';
 
 class AdapterId {
 	static new(id: string) {
@@ -55,11 +57,11 @@ export default class MongodbAdapter extends AbstractAdapter {
 
 	private _client?: MongoClient;
 
-	options?: MongoClientOptions;
+	declare options?: MongoClientOptions;
 
-	protected __connection?: Db;
+	declare protected __connection?: Db;
 
-	collection?: Collection;
+	declare collection?: Collection;
 
 	async connect() {
 		if (this.__connection) return this.__connection;

@@ -14,10 +14,30 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Logging from '../../helpers/logging';
-import * as Helpers from '../../helpers';
+import Logging from '../../helpers/logging.js';
+import * as Helpers from '../../helpers/index.js';
 
-import StandardModel from '../type/standard';
+import StandardModel from '../type/standard.js';
+
+export interface User {
+	id: string,
+	auth: Array<{
+		app: string,
+		appId: string,
+		username: string,
+		password: string,
+		profileUrl: string,
+		images: {
+			profile: string,
+			banner: string,
+		},
+		email: string,
+		token: string,
+		tokenSecret: string,
+		refreshToken: string,
+	}>,
+	_appId: string,
+}
 
 /**
  * Constants

@@ -13,8 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Route from '../route';
-import Model from '../../model';
+import Route from '../route.js';
+import Model from '../../model/index.js';
 
 const routes: (typeof Route)[] = [];
 

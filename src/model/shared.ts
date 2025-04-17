@@ -14,8 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Logging from '../helpers/logging';
-import * as Helpers from '../helpers';
+import Logging from '../helpers/logging.js';
+import * as Helpers from '../helpers/index.js';
 
 /* ********************************************************************************
 *

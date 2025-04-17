@@ -16,8 +16,8 @@
 
 import Crypto from 'node:crypto';
 
-import StandardModel from '../type/standard';
-import { PolicyCache } from '../../services/policy-cache';
+import StandardModel from '../type/standard.js';
+import { PolicyCache } from '../../services/policy-cache.js';
 
 /**
  * Constants

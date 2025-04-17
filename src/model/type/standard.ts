@@ -13,11 +13,11 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Sugar from '../../helpers/sugar';
-import Logging from '../../helpers/logging';
-import * as Helpers from '../../helpers';
+import Sugar from '../../helpers/sugar.js';
+import Logging from '../../helpers/logging.js';
+import * as Helpers from '../../helpers/index.js';
 
-import * as Shared from '../shared';
+import * as Shared from '../shared.js';
 import NRP from 'node-redis-pubsub';
 
 /* ********************************************************************************

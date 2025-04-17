@@ -14,13 +14,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import * as Helpers from '../../helpers/index.js';
 
-import * as ACM from '../../access-control/models-access';
-import { Token } from '../../model/core/token';
-import { queryObjects } from 'v8';
+import * as ACM from '../../access-control/models-access.js';
+import { Token } from '../../model/core/token.js';
+
+import { QueryParams } from '../../types/bjs-query.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -29,7 +30,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetTokenList extends Route {
 	constructor(services) {
-		super('token', 'GET TOKEN LIST', services, Model.getModel('Token'));
+		super('token', 'LIST TOKEN', services, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -62,6 +63,53 @@ class GetTokenList extends Route {
 	}
 }
 routes.push(GetTokenList);
+
+/**
+ * @class GetTokenList
+ */
+class SearchTokenList extends Route {
+	constructor(services) {
+		super('token', 'SEARCH TOKEN', services, Model.getModel('Token'));
+		this.verb = Route.Constants.Verbs.SEARCH;
+		this.authType = Route.Constants.Type.APP;
+		this.permissions = Route.Constants.Permissions.SEARCH;
+
+		this.redactResults = false;
+	}
+
+	async _validate(req, res, token) {
+		const queryParams: QueryParams<Token> = {
+			query: {
+				$and: [{_appId: Model.getModel('App').createId(req.authApp.id)}]
+			},
+			project: {
+				id: 1,
+				type: 1,
+				policyProperties: 1
+			}
+		};
+
+		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+			queryParams.query = {};
+			queryParams.project = {};
+		}
+
+		if (!queryParams.query.$and) {
+			queryParams.query.$and = [];
+		}
+
+		if (req.body.query) {
+			queryParams.query.$and.push(req.body.query);
+		}
+
+		return queryParams;
+	}
+
+	_exec(req, res, validate) {
+		return ACM.find(this.model, validate, req.ac);
+	}
+}
+routes.push(SearchTokenList);
 
 /**
  * @class DeleteAllTokens
@@ -125,7 +173,7 @@ routes.push(DeleteAllTokens);
  */
 class SearchUserToken extends Route {
 	constructor(services) {
-		super('token/:userId', 'GET USER TOKENS', services, Model.getModel('Token'));
+		super('token/:userId', 'SEARCH USER TOKEN', services, Model.getModel('Token'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;

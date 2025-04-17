@@ -23,7 +23,7 @@ import NRP from 'node-redis-pubsub';
 
 const exec = util.promisify(cpExec);
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import ivm from 'isolated-vm';
@@ -32,11 +32,11 @@ import webpack from 'webpack';
 
 import NodePolyfillPlugin from 'node-polyfill-webpack-plugin';
 
-import Sugar from '../helpers/sugar';
-import Logging from '../helpers/logging';
-import Model from '../model';
-import * as Helpers from '../helpers';
-import lambdaHelpers from '../lambda-helpers/helpers';
+import Sugar from '../helpers/sugar.js';
+import Logging from '../helpers/logging.js';
+import Model from '../model/index.js';
+import * as Helpers from '../helpers/index.js';
+import lambdaHelpers from '../lambda-helpers/helpers.js';
 
 export enum LambdaType {
 	API_ENDPOINT = 'API_ENDPOINT',

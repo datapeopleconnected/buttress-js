@@ -14,16 +14,18 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Sugar from '../helpers/sugar';
+import Sugar from '../helpers/sugar.js';
 
-import Model from '../model';
-import Logging from '../helpers/logging';
+import Model from '../model/index.js';
+import Logging from '../helpers/logging.js';
 
-import { ApplicablePolicies } from './index';
-import { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy';
+import { ApplicablePolicyConfig } from './index.js';
+import { ACEnv, ACPolicyEnvCombined } from './env.js';
 
-export function CombineEnvGroups(policy: ApplicablePolicies, reqEnv?): PolicyEnv {
-	let env: PolicyEnv = (reqEnv) ? { ...reqEnv } : {};
+import { Policy, PolicyConfig } from '../model/core/policy.js';
+
+export function CombineEnvGroups(policy: ApplicablePolicyConfig, reqEnv: ACEnv): ACPolicyEnvCombined {
+	let env: ACPolicyEnvCombined = { ...reqEnv };
 	if (policy.env !== null) env = { ...env, ...policy.env };
 	if (policy.config.env !== null) env = { ...env, ...policy.config.env };
 
@@ -219,18 +221,58 @@ export function findPatternOccurrences(obj: any, pattern: string): { path: strin
 	recurse(obj);
 	return occurrences;
 }
+export function patternExists(obj: any, pattern: string): boolean {
+  const regex = new RegExp(pattern);
 
-export function containsTokenLevelRef(applicablePolicy: ApplicablePolicies) {
+  function recurse(currentObj: any): boolean {
+    for (const key in currentObj) {
+      if (Object.prototype.hasOwnProperty.call(currentObj, key)) {
+        const value = currentObj[key];
+
+        if (typeof key === 'string' && regex.test(key)) {
+          return true;
+        }
+
+        if (typeof value === 'string' && regex.test(value)) {
+          return true;
+        } else if (typeof value === 'object' && value !== null) {
+          if (recurse(value)) {
+            return true;
+          }
+        } else if (Array.isArray(value)) {
+          for (const item of value) {
+            if (typeof item === 'string' && regex.test(item)) {
+              return true;
+            } else if (typeof item === 'object' && item !== null) {
+              if (recurse(item)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  return recurse(obj);
+}
+
+export function containsTokenLevelRef(applicablePolicy: ApplicablePolicyConfig) {
 	const outcome = {
+		env: false,
+		configEnv: false,
 		condition: false,
 		query: false,
 	};
 
-	const conditionOccurrences = findPatternOccurrences(applicablePolicy.config.condition, '^(user\.|env\.)');
-	// console.log(conditionOccurrences);
-
-	// Loop over the condition and look for any key references to user. If we have any env vars then we need to resolve them to check
-	// to see if the user has access to the data.
+	
+	const pattern = '(#env\.user)';
+	outcome.env = patternExists(applicablePolicy.env, pattern);
+	outcome.configEnv = patternExists(applicablePolicy.config.env, pattern);
+	outcome.query = patternExists(applicablePolicy.config.query, pattern);
+	outcome.condition = patternExists(applicablePolicy.config.condition, pattern);
+	
 
 	return outcome;
 }

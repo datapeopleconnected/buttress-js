@@ -16,37 +16,16 @@
 
 import { RedisClient } from 'redis';
 
-import Logging from '../helpers/logging';
+import Logging from '../helpers/logging.js';
 
-import AccessControlPolicyMatch from '../access-control/policy-match';
+import AccessControlPolicyMatch from '../access-control/policy-match.js';
 
-import Model from '../model';
-import { Policy, PolicyConfig } from '../model/core/policy';
-import { Token } from '../model/core/token';
+import Model from '../model/index.js';
+import { Policy, PolicyConfig } from '../model/core/policy.js';
+import { Token } from '../model/core/token.js';
+import { User } from '../model/core/user.js';
 
-import * as Helpers from '../helpers';
-
-/**
- * The job of the PolicyCache is to manage accessing policies in accociation with tokens and cache them
- * for fast access via redis.
- * - All policy lookups should be done via this service
- * - Processing for keeping the cache fresh should be handled by the server (Run on SPR)
- */
-
-/**
- * Redis Keys
- * - token:${tokenId} - Set storing policy ids aplicable to the token. (Delete & Rebuild set)
- * - policy:${policyId}:tokens - Set storing token ids that are associated with the policy. (Members are plucked when rebuilding)
- * - app:${appId}:policies - Set storing the policy id, for quick lookup of policy configs
- * - app:${appId}:schema:${schemaName}:verb:${verb}
- * - app:${appId}:schema:%ALL%:verb:${verb}
- * - app:${appId}:schema:${schemaName}:verb:%ALL%
- * - app:${appId}:schema:%ALL%:verb:%ALL%
- * - app:${appId}:schema:%ALL%:verb:${verb}
- * - app:${appId}:schema:${schemaWildCard}:verb:${verb}
- * - app:${appId}:schema:${schemaWildCard}:verb:%ALL%
- * - connected-tokens - Set storing token ids that are connected to the server. Values should expire after a time.
- */
+import * as Helpers from '../helpers/index.js';
 
 export class PolicyCache {
   private _redisClient: RedisClient;
@@ -196,6 +175,7 @@ export class PolicyCache {
     });
 
     const policyIds = [...new Set(direct.concat(allWildcard).concat(typedWildcard))];
+    // console.log(event.appId, policyIds);
 
     if (policyIds.length < 1) return [];
 
@@ -207,17 +187,30 @@ export class PolicyCache {
     await new Promise<void>((resolve, reject) => {
       this._redisClient.zadd('connected-tokens', expiryTime, tokenId, (err) => (err) ? reject(err) : resolve());
     });
+
+    // Make sure the user object is cached.
+    // await this.cacheUser(user);
+
+    // await new Promise<void>((resolve, reject) => {
+    //   this._redisClient.hset(`connected-tokens:userIds`, tokenId, user.id, (err) => (err) ? reject(err) : resolve());
+    // });
   }
   async removeConnectedToken(tokenId: string) {
     await new Promise<void>((resolve, reject) => {
       this._redisClient.zrem('connected-tokens', tokenId, (err) => (err) ? reject(err) : resolve());
     });
+
+    // await new Promise<void>((resolve, reject) => {
+    //   this._redisClient.hdel(`connected-tokens:userIds`, tokenId, (err) => (err) ? reject(err) : resolve());
+    // });
   }
   async clearExpiredConnectedTokens() {
     const now = Math.floor(Date.now() / 1000);
     await new Promise<void>((resolve, reject) => {
       this._redisClient.zremrangebyscore('connected-tokens', 0, now, (err) => (err) ? reject(err) : resolve());
     });
+
+    // TODO: Need to clean up cached users
   }
 
   async addPolicy(policy) {
@@ -256,7 +249,7 @@ export class PolicyCache {
     }
   }
 
-  async getConnectedTokensByPolicyId(policyId: string) {
+  async getConnectedTokenIdsByPolicyId(policyId: string) {
     const now = Math.floor(Date.now() / 1000);
 
     const tokenIds = await new Promise<string[]>((resolve, reject) => {
@@ -280,6 +273,27 @@ export class PolicyCache {
     }
 
     return connectedPolicyTokens;
+  }
+
+  async cacheUser(user: User) {
+    const userExists = await new Promise<boolean>((resolve, reject) => {
+      this._redisClient.hexists(`users`, user.id, (err, num) => (err) ? reject(err) : resolve(num === 1));
+    });
+    if (userExists) return;
+
+    await new Promise<void>((resolve, reject) => {
+      this._redisClient.hset(`users`, user.id, JSON.stringify(user), (err) => (err) ? reject(err) : resolve());
+    });
+  }
+  async getCachedUser(userId: string) {
+    return await new Promise<User>((resolve, reject) => {
+      this._redisClient.hget(`users`, userId, (err, user) => (err) ? reject(err) : resolve(JSON.parse(user)));
+    });
+  }
+  async removeCachedUser(userId: string) {
+    await new Promise<void>((resolve, reject) => {
+      this._redisClient.hdel(`users`, userId, (err) => (err) ? reject(err) : resolve());
+    });
   }
 
   // I am the REST process, a user has sent a request to me, I need the policies that are associated with this token

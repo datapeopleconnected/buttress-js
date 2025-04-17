@@ -17,22 +17,22 @@
 import hash from 'object-hash';
 import NRP, { NodeRedisPubSub } from 'node-redis-pubsub';
 
-import Sugar from '../helpers/sugar';
-import Model from '../model';
-import Logging from '../helpers/logging';
-import Schema from '../schema';
+import Sugar from '../helpers/sugar.js';
+import Model from '../model/index.js';
+import Logging from '../helpers/logging.js';
+import Schema from '../schema.js';
 
-import { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy';
-import { Token } from '../model/core/token';
+import { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy.js';
+import { Token } from '../model/core/token.js';
 
-import AccessControlConditions from './conditions';
-import AccessControlFilter from './filter';
-import AccessControlEnv from './env';
-import AccessControlProjection from './projection';
-import AccessControlPolicyMatch from './policy-match';
-import AccessControlHelpers, { filterPolicyConfigs } from './helpers';
-import { BjsRequest } from '../types/bjs-express';
-import { PolicyCache } from '../services/policy-cache';
+import AccessControlConditions from './conditions.js';
+import AccessControlFilter from './filter.js';
+import AccessControlEnv from './env.js';
+import AccessControlProjection from './projection.js';
+import AccessControlPolicyMatch from './policy-match.js';
+import AccessControlHelpers, { filterPolicyConfigs } from './helpers.js';
+import { BjsRequest } from '../types/bjs-express.js';
+import { PolicyCache } from '../services/policy-cache.js';
 
 export class PolicyError extends Error {
 	statusCode: number;
@@ -48,7 +48,8 @@ export class PolicyError extends Error {
 
 export type parsedPolicyConfig = (PolicyConfig & { appId: string, policies: string[] });
 
-export type ApplicablePolicies = {
+export type ApplicablePolicyConfig = {
+	id: string
 	name: string;
 	appId: string;
 	env: PolicyEnv | null;
@@ -321,13 +322,14 @@ class AccessControl {
 		}
 
 		// Filter down policies t aplicable to the request
-		let applicablePolicies = tokenPolicies.reduce((arr: ApplicablePolicies[], policy) => {
+		let applicablePolicies = tokenPolicies.reduce((arr: ApplicablePolicyConfig[], policy) => {
 			// * A query is needed regardless of what else is in the policy config, we'll discard any that are missing.
 			const configs = filterPolicyConfigs(policy, schemaName, requestVerb, isCoreSchema);
 
 			configs.forEach((config, idx) => {
 				// TODO: Merging - Check the verbs, schema|endpoints and query. If they match then merge the other properties.
 				arr.push({
+					id: policy.id,
 					name: `${policy.name}#${idx}`,
 					env: policy.env,
 					appId,

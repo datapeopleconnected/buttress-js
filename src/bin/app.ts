@@ -17,18 +17,10 @@
  */
 
 import cluster from 'node:cluster';
-import createConfig from 'node-env-obj';
+import Config from '../helpers/config.js';
 
-const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
-
-const Config = createConfig({
-	envFile: `.${env}.env`,
-	envPath: '../../',
-	configPath: '../',
-}) as unknown as Config;
-
-import Logging from '../helpers/logging';
-import BootstrapRest from '../bootstrap-rest';
+import Logging from '../helpers/logging.js';
+import BootstrapRest from '../bootstrap-rest.js';
 
 Logging.init('REST');
 

@@ -14,14 +14,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Errors from '../helpers/errors';
+import Errors from '../helpers/errors.js';
 
-import MongoDB from './adapters/mongodb';
-import Buttress from './adapters/buttress';
-import Empty from './adapters/empty';
+import MongoDB from './adapters/mongodb.js';
+import Buttress from './adapters/buttress.js';
+import Empty from './adapters/empty.js';
 
 
 export default class Datastore {

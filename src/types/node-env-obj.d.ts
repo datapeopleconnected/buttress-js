@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-declare module 'node-env-obj' {
+declare module '@dpc/node-env-obj' {
   interface ConfigOptions {
     basePath?: string;
     envPath?: string;

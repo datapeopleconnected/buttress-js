@@ -15,7 +15,7 @@
  */
 import { URL } from 'node:url';
 
-import { Errors } from '../helpers';
+import { Errors } from '../helpers/index.js';
 
 export default class AbstractAdapter {
 	uri: URL;

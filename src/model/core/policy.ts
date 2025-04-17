@@ -13,12 +13,12 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Sugar from '../../helpers/sugar';
-import StandardModel from '../type/standard';
-import * as Helpers from '../../helpers';
+import Sugar from '../../helpers/sugar.js';
+import StandardModel from '../type/standard.js';
+import * as Helpers from '../../helpers/index.js';
 
 
-interface PolicyEnvQuery {
+export interface PolicyEnvQuery {
 	collection: string;
 	type: string;
 	query: any;

@@ -18,29 +18,30 @@ import path from 'node:path';
 import fs from 'node:fs';
 import http from 'node:http';
 import cluster from 'node:cluster';
+import { fileURLToPath } from 'node:url';
 
 import Express from 'express';
-import {RedisClient, createClient} from 'redis';
+import { RedisClient, createClient } from 'redis';
 import cors from 'cors';
 import methodOverride from 'method-override';
 import bodyParser from 'body-parser';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Bootstrap, {LocalProcessMessage} from './bootstrap';
-import Model from './model';
-import Routes from './routes';
-import Logging from './helpers/logging';
-import Schema from './schema';
-import {shortId} from './helpers';
+import Bootstrap, { LocalProcessMessage } from './bootstrap.js';
+import Model from './model/index.js';
+import Routes from './routes/index.js';
+import Logging from './helpers/logging.js';
+import Schema from './schema.js';
+import { shortId } from './helpers/index.js';
 
-import { SourceDataSharingRouting } from './services/source-ds-routing';
+import { SourceDataSharingRouting } from './services/source-ds-routing.js';
 
-import DatastoreManager, {Datastore} from './datastore';
-import Plugins from './plugins';
-import AccessControl from './access-control';
-import { PolicyCache } from './services/policy-cache';
+import DatastoreManager, { Datastore } from './datastore/index.js';
+import Plugins from './plugins/index.js';
+import AccessControl from './access-control/index.js';
+import { PolicyCache } from './services/policy-cache.js';
 
 // morgan.token('id', (req) => req.id);
 
@@ -180,8 +181,8 @@ export default class BootstrapRest extends Bootstrap {
 		const app = Express();
 		// app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 		app.enable('trust proxy');
-		app.use(bodyParser.json({limit: '20mb'}));
-		app.use(bodyParser.urlencoded({extended: true}));
+		app.use(bodyParser.json({ limit: '20mb' }));
+		app.use(bodyParser.urlencoded({ extended: true }));
 		app.use(methodOverride());
 		app.use(cors({
 			origin: true,
@@ -267,9 +268,9 @@ export default class BootstrapRest extends Bootstrap {
 		}
 
 		await new Promise<void>((resolve, reject) => {
-			const app = Object.assign(superApp.app, {token: superApp.token.value});
+			const app = Object.assign(superApp.app, { token: superApp.token.value });
 
-			if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, {recursive: true});
+			if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, { recursive: true });
 
 			fs.writeFile(pathName, JSON.stringify(app), (err) => {
 				if (err) return reject(err);
@@ -291,15 +292,23 @@ export default class BootstrapRest extends Bootstrap {
 	 * @return {Array} - content of json files loaded from local system
 	 */
 	_getLocalSchemas() {
+		const __filename = fileURLToPath(import.meta.url);
+		const __dirname = path.dirname(__filename);
+
 		const filenames = fs.readdirSync(`${__dirname}/schema`);
 
 		const files: any[] = [];
 		for (let x = 0; x < filenames.length; x++) {
 			const file = filenames[x];
 			if (path.extname(file) === '.json') {
-				files.push(require(`${__dirname}/schema/${path.basename(file, '.js')}`));
+				// Load the file using fs
+				const filePath = path.join(__dirname, 'schema', file);
+				const fileContent = fs.readFileSync(filePath, 'utf8');
+				const jsonData = JSON.parse(fileContent);
+				files.push(jsonData);
 			}
 		}
+
 		return files;
 	}
 
@@ -312,7 +321,7 @@ export default class BootstrapRest extends Bootstrap {
 
 		const rxsApps = await Model.getModel('App').findAll();
 		for await (const app of rxsApps) {
-			const appSchema = Schema.decode(app.__schema);
+			const appSchema: any[] = Schema.decode(app.__schema);
 			const appShortId = shortId(app.id);
 			Logging.log(`Adding ${localSchema.length} local schema for ${appShortId}:${app.name}:${appSchema.length}`);
 			localSchema.forEach((cS) => {

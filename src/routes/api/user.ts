@@ -13,11 +13,11 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Route from '../route';
-import Model from '../../model';
-import Logging from '../../helpers/logging';
-import * as Helpers from '../../helpers';
-import Datastore from'../../datastore';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import Logging from '../../helpers/logging.js';
+import * as Helpers from '../../helpers/index.js';
+import Datastore from'../../datastore/index.js';
 
 const routes: (typeof Route)[] = [];
 

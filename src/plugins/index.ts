@@ -18,7 +18,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { EventEmitter } from 'node:events';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 const APP_TYPE = {
@@ -86,7 +86,7 @@ class Plugins extends EventEmitter {
 	async _scanPlugins() {
 		const pluginDirs = await this._findPluginEntryFiles(Config.paths.plugins);
 		for (const pluginDir of pluginDirs) {
-			const plugin = new (require(pluginDir))(this.appType, this.processRole, this.infrastructureRole);
+			const plugin = new (await import(pluginDir))(this.appType, this.processRole, this.infrastructureRole);
 			this.attachListeners(plugin);
 			if (plugin.initialise) {
 				await plugin.initialise();

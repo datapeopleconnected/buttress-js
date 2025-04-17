@@ -22,12 +22,12 @@ import { v4 as uuidv4 } from 'uuid';
 import hash from 'object-hash';
 import NRP from 'node-redis-pubsub';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Logging from '../helpers/logging';
-import Model from '../model';
-import * as Helpers from '../helpers';
+import Logging from '../helpers/logging.js';
+import Model from '../model/index.js';
+import * as Helpers from '../helpers/index.js';
 
 
 const exec = util.promisify(cpExec);

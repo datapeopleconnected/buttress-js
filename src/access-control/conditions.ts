@@ -14,16 +14,16 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Sugar from '../helpers/sugar';
+import Sugar from '../helpers/sugar.js';
 
-import AccessControlHelpers, { CombineEnvGroups } from './helpers';
-import Filter from './filter';
-import Env from './env';
-import * as Helpers from '../helpers';
-import Model from '../model';
+import AccessControlHelpers, { CombineEnvGroups } from './helpers.js';
+import Filter from './filter.js';
+import Env, { ACPolicyEnvCombined } from './env.js';
+import * as Helpers from '../helpers/index.js';
+import Model from '../model/index.js';
 
-import { ApplicablePolicies } from './index';
-import { PolicyCondition, PolicyConfig, PolicyEnv } from '../model/core/policy';
+import { ApplicablePolicyConfig } from './index.js';
+import { PolicyCondition, PolicyConfig, PolicyEnv } from '../model/core/policy.js';
 
 /**
  * @class Conditoins
@@ -67,8 +67,8 @@ export class Conditions {
 	static envStr: string = 'env.';
 	static conditionQueryRegex = new RegExp('query.');
 
-	async filterPoliciesByPolicyConditions(userPolicies: ApplicablePolicies[], reqEnv?) {
-		const output: ApplicablePolicies[] = [];
+	async filterPoliciesByPolicyConditions(userPolicies: ApplicablePolicyConfig[], reqEnv?) {
+		const output: ApplicablePolicyConfig[] = [];
 
 		for await (const policy of userPolicies) {
 			if (policy.config.condition === null || await this.__checkPolicyConditions(policy, reqEnv)) {
@@ -79,14 +79,14 @@ export class Conditions {
 		return output;
 	}
 
-	async __checkPolicyConditions(policy: ApplicablePolicies, reqEnv) {
+	async __checkPolicyConditions(policy: ApplicablePolicyConfig, reqEnv) {
 		if (policy.config.condition === null) return false;
 
 		const env = CombineEnvGroups(policy, reqEnv);
 		return await this.__checkCondition(policy.config.condition, env);
 	}
 
-	async __checkCondition(condition: PolicyCondition, envVariables: PolicyEnv, partialPass: boolean = false) {
+	async __checkCondition(condition: PolicyCondition, envVariables: ACPolicyEnvCombined, partialPass: boolean = false) {
 		const results: Array<boolean> = [];
 
 		for await (const key of Object.keys(condition)) {
@@ -118,7 +118,7 @@ export class Conditions {
 		return (results.length > 0) ? results.every((r) => r) : false;
 	}
 
-	async __checkInnerConditions(conditionObj, envVariables: PolicyEnv | null, key, partialPass: boolean = false): Promise<boolean> {
+	async __checkInnerConditions(conditionObj, envVariables: ACPolicyEnvCombined | null, key, partialPass: boolean = false): Promise<boolean> {
 		const results: boolean[] = [];
 		for await (const operator of Object.keys(conditionObj[key])) {
 			results.push(await this.__checkConditionQuery(envVariables, operator, conditionObj, key));
@@ -155,20 +155,20 @@ export class Conditions {
 		});
 	}
 
-	async __getDbConditionQueryResult(query: any, schemaName: string, shortId?: string) {
-		const collection = (shortId) ? `${shortId}-${schemaName}` : schemaName;
-		let model = Model.getModel(collection);
+	// async __getDbConditionQueryResult(query: any, schemaName: string, shortId?: string) {
+	// 	const collection = (shortId) ? `${shortId}-${schemaName}` : schemaName;
+	// 	let model = Model.getModel(collection);
 
-		// If we're unable to find the model on the app then check if we're targeting a core schema.
-		if (model === undefined) model = Model.getCoreModel(schemaName);
+	// 	// If we're unable to find the model on the app then check if we're targeting a core schema.
+	// 	if (model === undefined) model = Model.getCoreModel(schemaName);
 
-		// If model is still not defined then there is no hope.
-		if (model === undefined) throw new Error(`Unable to find model for schema: ${schemaName}`);
+	// 	// If model is still not defined then there is no hope.
+	// 	if (model === undefined) throw new Error(`Unable to find model for schema: ${schemaName}`);
 
-		const convertedQuery: any = await Filter.buildPolicyQuery(query, {});
-		query = model.parseQuery(convertedQuery, {}, model.flatSchemaData);
-		return await model.count(query) > 0;
-	}
+	// 	const convertedQuery: any = await Filter.buildPolicyQuery(query, {});
+	// 	query = model.parseQuery(convertedQuery, {}, model.flatSchemaData);
+	// 	return await model.count(query) > 0;
+	// }
 
 	async __checkConditionQuery(envVariables, operator, conditionObj, key) {
 		let evaluationRes = false;

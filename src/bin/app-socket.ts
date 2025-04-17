@@ -18,7 +18,7 @@
 
 import cluster from 'node:cluster';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 
 const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
 
@@ -28,8 +28,8 @@ const Config = createConfig({
 	configPath: '../',
 }) as unknown as Config;
 
-import Logging from '../helpers/logging';
-import BootstrapSocket from '../bootstrap-socket';
+import Logging from '../helpers/logging.js';
+import BootstrapSocket from '../bootstrap-socket.js';
 
 Logging.init('SOCK');
 

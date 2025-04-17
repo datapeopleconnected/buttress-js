@@ -14,9 +14,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as Helpers from '../helpers';
+import * as Helpers from '../helpers/index.js';
 
-import { ApplicablePolicies, PolicyError } from './index';
+import { ApplicablePolicyConfig, PolicyError } from './index.js';
 
 /**
  * @class Projection
@@ -37,8 +37,8 @@ class Projection {
 		];
 	}
 
-	async filterPoliciesByPolicyProjection(req, applicablePolicies: ApplicablePolicies[], schema) {
-		const output: ApplicablePolicies[] = [];
+	async filterPoliciesByPolicyProjection(req, applicablePolicies: ApplicablePolicyConfig[], schema) {
+		const output: ApplicablePolicyConfig[] = [];
 
 		for await (const policy of applicablePolicies) {
 			if (policy.config.projection === null) {

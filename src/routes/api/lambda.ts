@@ -21,15 +21,15 @@ import { ObjectId } from 'bson';
 
 const exec = util.promisify(cpExec);
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Route from '../route';
-import Model from '../../model';
-import Sugar from '../../helpers/sugar';
-import * as Helpers from '../../helpers';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import Sugar from '../../helpers/sugar.js';
+import * as Helpers from '../../helpers/index.js';
 
-import Datastore from '../../datastore';
+import Datastore from '../../datastore/index.js';
 
 const routes: (typeof Route)[] = [];
 

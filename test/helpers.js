@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const fetch = require('cross-fetch');
-const Config = require('node-env-obj')();
+// const fetch = require('cross-fetch');
+import Config from './config.js';
 
-class BJSReqError extends Error {
+export class BJSReqError extends Error {
 	constructor(code, message) {
 		super(message);
 		this.name = 'BJSReqError';
@@ -25,7 +25,7 @@ class BJSReqError extends Error {
 	}
 } 
 
-const bjsReq = async (opts, token=Config.testToken, text = false) => {
+export const bjsReq = async (opts, token=Config.testToken, text = false) => {
 	opts.headers = opts.headers || {};
 	opts.headers['Authorization'] = `Bearer ${token}`;
 
@@ -42,23 +42,23 @@ const bjsReq = async (opts, token=Config.testToken, text = false) => {
 	}
 	return (text) ? await response.text() : await response.json();
 };
-const bjsReqPost = async (url, body, token) => await bjsReq({
+export const bjsReqPost = async (url, body, token) => await bjsReq({
 	url,
 	method: 'POST',
 	headers: {'Content-Type': 'application/json'},
 	body: JSON.stringify(body),
 }, token);
 
-const createApp = async (ENDPOINT, name, apiPath, policyPropertiesList, token) => await bjsReqPost(`${ENDPOINT}/api/v1/app`, {
+export const createApp = async (ENDPOINT, name, apiPath, policyPropertiesList, token) => await bjsReqPost(`${ENDPOINT}/api/v1/app`, {
 	name,
 	apiPath,
 	policyPropertiesList: policyPropertiesList || {},
 }, token);
-const createLambda = async (ENDPOINT, lambda, auth, token) => await bjsReqPost(`${ENDPOINT}/api/v1/lambda`, {lambda, auth}, token);
-const createUser = async (ENDPOINT, userData, authData, token) => await bjsReqPost(`${ENDPOINT}/api/v1/user`, {auth: [userData], token: authData, policyProperties: userData.policyProperties}, token);
-const createPolicy = async (ENDPOINT, policy, token) => await bjsReqPost(`${ENDPOINT}/api/v1/policy`, policy, token);
+export const createLambda = async (ENDPOINT, lambda, auth, token) => await bjsReqPost(`${ENDPOINT}/api/v1/lambda`, {lambda, auth}, token);
+export const createUser = async (ENDPOINT, userData, authData, token) => await bjsReqPost(`${ENDPOINT}/api/v1/user`, {auth: [userData], token: authData, policyProperties: userData.policyProperties}, token);
+export const createPolicy = async (ENDPOINT, policy, token) => await bjsReqPost(`${ENDPOINT}/api/v1/policy`, policy, token);
 
-const createPolicyUser = async (ENDPOINT, app, key, policyProperties) => {
+export const createPolicyUser = async (ENDPOINT, app, key, policyProperties) => {
   const user = await createUser(ENDPOINT, {
     app: 'app-test',
     appId: `${key}-${Math.floor(Math.random() * 1000)}`,
@@ -82,38 +82,38 @@ const createPolicyUser = async (ENDPOINT, app, key, policyProperties) => {
   return user;
 }
 
-const deleteApp = async (ENDPOINT, appId, token) => bjsReq({
+export const deleteApp = async (ENDPOINT, appId, token) => bjsReq({
 	url: `${ENDPOINT}/api/v1/app/${appId}`,
 	method: 'DELETE',
 }, token);
 
-const updateSchema = async (ENDPOINT, schema, token) => bjsReq({
+export const updateSchema = async (ENDPOINT, schema, token) => bjsReq({
 	url: `${ENDPOINT}/api/v1/app/schema`,
 	method: 'PUT',
 	headers: {'Content-Type': 'application/json'},
 	body: JSON.stringify(schema),
 }, token);
-const updatePolicyPropertyList = async (ENDPOINT, list, token) => bjsReq({
+export const updatePolicyPropertyList = async (ENDPOINT, list, token) => bjsReq({
 	url: `${ENDPOINT}/api/v1/app/policy-property-list/true`,
 	method: 'PUT',
 	headers: {'Content-Type': 'application/json'},
 	body: JSON.stringify(list),
 }, token);
-const registerDataSharing = async (ENDPOINT, agreement, token) => bjsReq({
+export const registerDataSharing = async (ENDPOINT, agreement, token) => bjsReq({
 	url: `${ENDPOINT}/api/v1/app-data-sharing`,
 	method: 'POST',
 	headers: {'Content-Type': 'application/json'},
 	body: JSON.stringify(agreement),
 }, token);
 
-const updateUserPolicyProperties = async (ENDPOINT, userId, body, userToken, apiToken) => bjsReq({
+export const updateUserPolicyProperties = async (ENDPOINT, userId, body, userToken, apiToken) => bjsReq({
 	url: `${ENDPOINT}/api/v1/user/${userId}/policy-property/${userToken}`,
 	method: 'PUT',
 	headers: {'Content-Type': 'application/json'},
 	body: JSON.stringify(body),
 }, apiToken);
 
-const extractPolicyPropertyListFromPolicies = (policies) => {
+export const extractPolicyPropertyListFromPolicies = (policies) => {
 	return policies.reduce((list, policy) => {
 		if (policy.selection) {
 			Object.keys(policy.selection).forEach((key) => {
@@ -129,24 +129,24 @@ const extractPolicyPropertyListFromPolicies = (policies) => {
 	}, {});
 };
 
-module.exports = {
-	BJSReqError,
-	bjsReq,
-	bjsReqPost,
+// export default {
+// 	BJSReqError,
+// 	bjsReq,
+// 	bjsReqPost,
 
-	extractPolicyPropertyListFromPolicies,
+// 	extractPolicyPropertyListFromPolicies,
 
-	createApp,
-	createUser,
-	createPolicy,
-	createLambda,
-	createPolicyUser,
+// 	createApp,
+// 	createUser,
+// 	createPolicy,
+// 	createLambda,
+// 	createPolicyUser,
 
-	updateSchema,
-	updatePolicyPropertyList,
-	updateUserPolicyProperties,
+// 	updateSchema,
+// 	updatePolicyPropertyList,
+// 	updateUserPolicyProperties,
 
-	registerDataSharing,
+// 	registerDataSharing,
 
-	deleteApp,
-};
+// 	deleteApp,
+// };

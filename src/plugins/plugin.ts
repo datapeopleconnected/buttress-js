@@ -16,7 +16,7 @@
 
 import EventEmitter from 'node:events';
 
-import plugins from'./index';
+import plugins from'./index.js';
 
 class ButtressPlugin extends EventEmitter {
 	appType?: string;

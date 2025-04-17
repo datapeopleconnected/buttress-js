@@ -14,21 +14,30 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {io} = require('socket.io-client');
-const {describe, it, before, after} = require('mocha');
-const assert = require('assert');
-const fetch = require('cross-fetch');
+import { io } from 'socket.io-client';
+import { describe, it, before, after } from 'mocha';
+import assert from 'assert';
+import fetch from 'cross-fetch';
 
-const Config = require('node-env-obj')();
+import Config from '@dpc/node-env-obj';
 
-const {createApp, updateSchema, bjsReq} = require('../../helpers');
+import {
+	bjsReq,
+	createApp,
+	updateSchema,
+	extractPolicyPropertyListFromPolicies,
+} from '../../helpers.js';
 
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
-const {default: BootstrapSocket} = require('../../../dist/bootstrap-socket');
+import BootstrapSPR from '../../../dist/bootstrap-spr.js';
+import BootstrapRest from '../../../dist/bootstrap-rest.js';
+import BootstrapSocket from '../../../dist/bootstrap-socket.js';
+
+import PolicyTestData from '../../data/policy/index.js';
 
 const ENDPOINT = `https://test.local.buttressjs.com`;
 
 let REST_PROCESS = null;
+let SPR_PROCESS = null;
 let SOCK_PROCESS = null;
 
 const testEnv = {
@@ -36,13 +45,20 @@ const testEnv = {
 	socket: null,
 };
 
-// This suite of tests will run against the REST API and will
-// test the cababiliy of data sharing between different apps.
 describe('Realtime', async () => {
+	const TestPolicies = [
+		PolicyTestData['admin-access'],
+	];
+	
+	const PolicyPropertyList = extractPolicyPropertyListFromPolicies(TestPolicies);
+
 	before(async function() {
 		this.timeout(20000);
 		REST_PROCESS = new BootstrapRest();
 		await REST_PROCESS.init();
+
+		SPR_PROCESS = new BootstrapSPR();
+		await SPR_PROCESS.init();
 
 		SOCK_PROCESS = new BootstrapSocket();
 		await SOCK_PROCESS.init();
@@ -62,8 +78,11 @@ describe('Realtime', async () => {
 		};
 
 		// Create an app
-		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test SOCK 1', 'test-sock-1');
+		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test SOCK 1', 'test-sock-1', PolicyPropertyList);
 		testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app1.token);
+
+		// Hack - Pause for a second to allow the schema to be created.
+		await new Promise((resolve) => setTimeout(resolve, 100));
 
 		// Add a 'few' cars
 		await bjsReq({
@@ -76,14 +95,17 @@ describe('Realtime', async () => {
 
 	after(async function() {
 		if (testEnv.socket) testEnv.socket.disconnect();
-		await REST_PROCESS.clean();
-		await SOCK_PROCESS.clean();
+		if (REST_PROCESS) await REST_PROCESS.clean();
+		if (SPR_PROCESS) await SPR_PROCESS.clean();
+		if (SOCK_PROCESS) await SOCK_PROCESS.clean();
 	});
 
 	describe('Connections', () => {
 		let socket = null;
 		it('Should be able to connect to Buttress using socket.io', function(done) {
-			socket = io(ENDPOINT);
+			socket = io(ENDPOINT, {
+				forceNew: true,
+			});
 
 			socket.once('connect', () => {
 				assert.equal(socket.connected, true);
@@ -103,7 +125,12 @@ describe('Realtime', async () => {
 
 	describe('db-activity', async () => {
 		it('Should be able to connect to Buttress using the app token', function(done) {
-			testEnv.socket = io(`${ENDPOINT}/${testEnv.apps.app1.apiPath}?token=${testEnv.apps.app1.token}`);
+			testEnv.socket = io(`${ENDPOINT}/${testEnv.apps.app1.apiPath}`, {
+				auth: {
+					token: testEnv.apps.app1.token,
+				},
+				forceNew: true,
+			});
 
 			testEnv.socket.once('connect', () => {
 				assert.equal(testEnv.socket.connected, true);

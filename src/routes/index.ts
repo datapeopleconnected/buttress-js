@@ -21,25 +21,25 @@ import { v4 as uuidv4 } from 'uuid';
 import { ObjectId } from 'bson';
 import NRP from 'node-redis-pubsub';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Logging from '../helpers/logging';
-import Schema from '../schema';
-import * as Helpers from '../helpers';
-import AccessControl from '../access-control';
-import Model from '../model';
-import Route from './route';
+import Logging from '../helpers/logging.js';
+import Schema from '../schema.js';
+import * as Helpers from '../helpers/index.js';
+import AccessControl from '../access-control/index.js';
+import Model from '../model/index.js';
+import Route from './route.js';
 
-import AdminRoutes from './admin-routes';
-import SchemaRoutes from './schema-routes';
+import AdminRoutes from './admin-routes.js';
+import SchemaRoutes from './schema-routes/index.js';
 
-import Datastore from '../datastore';
+import Datastore from '../datastore/index.js';
 
 // Core Routes
-import { Routes as CoreRoutes } from './api';
+import { Routes as CoreRoutes } from './api/index.js';
 
-import { BjsRequest } from '../types/bjs-express';
+import { BjsRequest } from '../types/bjs-express.js';
 
 class Routes {
 	app: express.Application;

@@ -14,30 +14,32 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const ActiveCompanies = require('./active-companies.json');
-const AdminAccess = require('./admin-access.json');
-const CompaniesInfo = require('./companies-info.json');
-const CompaniesName = require('./companies-name.json');
-const OverrideAccess = require('./override-access.json');
-const Projection1 = require('./projection-1.json');
-const Projection2 = require('./projection-2.json');
-const PT11 = require('./pt1-1.json');
-const Query1 = require('./query-1.json');
-const Query2 = require('./query-2.json');
-const PolicySelectionBasic = require('./policy-selection-basic.json');
-const PolicySelectionArray = require('./policy-selection-array.json');
-const SummerWorkingDate = require('./summer-working-date.json');
-const SummerWorkingHour = require('./summer-working-hour.json');
-const WorkingDate = require('./working-date.json');
-const WorkingHour = require('./working-hour.json');
+import ActiveCompanies from './active-companies.json' with { type: 'json' };
+import AdminAccess from './admin-access.json' with { type: 'json' };
+import CompaniesInfo from './companies-info.json' with { type: 'json' };
+import CompaniesName from './companies-name.json' with { type: 'json' };
+import OverrideAccess from './override-access.json' with { type: 'json' };
+import Projection1 from './projection-1.json' with { type: 'json' };
+import Projection2 from './projection-2.json' with { type: 'json' };
+import PT11 from './pt1-1.json' with { type: 'json' };
+import Query1 from './query-1.json' with { type: 'json' };
+import Query2 from './query-2.json' with { type: 'json' };
+import PolicySelectionBasic from './policy-selection-basic.json' with { type: 'json' };
+import PolicySelectionArray from './policy-selection-array.json' with { type: 'json' };
+import SummerWorkingDate from './summer-working-date.json' with { type: 'json' };
+import SummerWorkingHour from './summer-working-hour.json' with { type: 'json' };
+import WorkingDate from './working-date.json' with { type: 'json' };
+import WorkingHour from './working-hour.json' with { type: 'json' };
 
-const EnvStaticValueQuery = require('./env-static-value-query.json');
-const EnvDateCondition = require('./env-date-condition.json');
-const EnvEntityCondition = require('./env-entity-condition.json');
-const EnvUserCondition = require('./env-user-condition.json');
-const EnvUserQuery = require('./env-user-query.json');
+import EnvStaticValueQuery from './env-static-value-query.json' with { type: 'json' };
+import EnvDateCondition from './env-date-condition.json' with { type: 'json' };
+import EnvEntityCondition from './env-entity-condition.json' with { type: 'json' };
+import EnvUserCondition from './env-user-condition.json' with { type: 'json' };
+import EnvUserQuery from './env-user-query.json' with { type: 'json' };
 
-module.exports = {
+import LambdaTestAccess from './lambda-test-access.json' with { type: 'json' };
+
+export default {
   'active-companies': ActiveCompanies,
   'admin-access': AdminAccess,
   'companies-info': CompaniesInfo,
@@ -58,5 +60,6 @@ module.exports = {
   'env-date-condition': EnvDateCondition,
   'env-entity-condition': EnvEntityCondition,
   'env-user-condition': EnvUserCondition,
-  'env-user-query': EnvUserQuery
-};
+  'env-user-query': EnvUserQuery,
+  'lambda-test-access': LambdaTestAccess,
+};;

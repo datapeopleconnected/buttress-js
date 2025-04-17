@@ -14,13 +14,15 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Buttress from '@buttress/api';
+import ButtressExport from '@buttress/api';
+// TODO: Look into why the export from @buttress/api is not working as expected.
+const {default: ButtressAPI} = ButtressExport;
 
-import Schema from '../../schema';
-import Logging from '../../helpers/logging';
-import * as Helpers from '../../helpers';
+import Schema from '../../schema.js';
+import Logging from '../../helpers/logging.js';
+import * as Helpers from '../../helpers/index.js';
 
-import StandardModel from '../type/standard';
+import StandardModel from '../type/standard.js';
 
 export default class AppSchemaModel extends StandardModel {
 
@@ -277,7 +279,7 @@ export default class AppSchemaModel extends StandardModel {
 				// Load DSA
 
 				// TODO: Should being using an adapter via the datastore.
-				const api = Buttress.new();
+				const api = ButtressAPI.new();
 				await api.init({
 					buttressUrl: DSA.remoteApp.endpoint,
 					apiPath: DSA.remoteApp.apiPath,

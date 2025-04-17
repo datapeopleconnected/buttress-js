@@ -15,10 +15,10 @@
  */
 import crypto from 'node:crypto';
 
-import Logging from './logging';
-import Sugar from './sugar';
+import Logging from './logging.js';
+import Sugar from './sugar.js';
 
-import Datastore from '../datastore';
+import Datastore from '../datastore/index.js';
 
 import {v4 as uuidv4} from 'uuid';
 

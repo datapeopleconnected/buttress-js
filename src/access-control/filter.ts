@@ -14,20 +14,20 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Sugar from '../helpers/sugar';
+import Sugar from '../helpers/sugar.js';
 
 import { ObjectId } from 'bson';
 
-import AccessControlHelpers, { CombineEnvGroups } from './helpers';
+import AccessControlHelpers, { CombineEnvGroups } from './helpers.js';
 
-import Env from './env'
+import Env, { ACPolicyEnvCombined } from './env.js'
 
-import * as Helpers from '../helpers';
-import Model from '../model';
+import * as Helpers from '../helpers/index.js';
+import Model from '../model/index.js';
 
-import { ApplicablePolicies } from './index';
+import { ApplicablePolicyConfig } from './index.js';
 
-import { PolicyEnv, PolicyQuery } from '../model/core/policy';
+import { PolicyEnv, PolicyQuery } from '../model/core/policy.js';
 
 /**
  * @class Filter
@@ -83,8 +83,8 @@ export class Filter {
 	}
 
 	// This function will now take in policies, modifiy their queries and return back the list.
-	async buildApplicablePoliciesQuery(policies: ApplicablePolicies[], reqEnv) {
-		const output: ApplicablePolicies[] = [];
+	async buildApplicablePoliciesQuery(policies: ApplicablePolicyConfig[], reqEnv) {
+		const output: ApplicablePolicyConfig[] = [];
 
 		for await (const policy of policies) {
 			const p = Object.assign({}, policy);
@@ -99,7 +99,7 @@ export class Filter {
 	/**
 	 * Walk over a query object and replace any env variables with their values.
 	 */
-	async buildPolicyQuery(policyQuery: PolicyQuery | null, envVars: PolicyEnv, stripAccessKeys = true) {
+	async buildPolicyQuery(policyQuery: PolicyQuery | null, envVars: ACPolicyEnvCombined, stripAccessKeys = true) {
 		if (policyQuery === null) return null;
 
 		// Change @ prefixes over to $ for mongo queries.

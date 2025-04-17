@@ -15,10 +15,28 @@
  */
 
 import { ObjectId } from 'bson';
-import * as Helpers from '../helpers';
+import * as Helpers from '../helpers/index.js';
 
-import Model from '../model';
-import { Filter } from './filter';
+import { PolicyEnvQuery } from '../model/core/policy.js';
+
+import Model from '../model/index.js';
+import { Filter } from './filter.js';
+
+export interface ACBaseEnv {
+	date: {
+		now: string;
+	};
+}
+
+export interface ACEnv extends ACBaseEnv {
+	ipAddress: string | null;
+	user: any | null;
+	appId: string | null;
+}
+
+export interface ACPolicyEnvCombined extends ACEnv {
+	[custom: string]: string | PolicyEnvQuery | { now: string } | null;
+}
 
 export class PolicyEnv {
 
@@ -29,7 +47,7 @@ export class PolicyEnv {
 
 	private _globalQueryEnv: { [index: string]: string } = {};
 
-	generateBaseGlobalEnvs() {
+	generateBaseGlobalEnvs() : ACBaseEnv {
 		return {
 			date: {
 				now: new Date().toISOString(),
@@ -37,7 +55,7 @@ export class PolicyEnv {
 		};
 	}
 
-	generateRequestGlobalEnvs(req, appId, authUser) {
+	generateRequestGlobalEnvs(req, appId, authUser) : ACEnv {
 		return {
 			...this.generateBaseGlobalEnvs(),
 			ipAddress: null,

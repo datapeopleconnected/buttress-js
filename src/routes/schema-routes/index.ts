@@ -14,18 +14,18 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import addMany from './add-many';
-import addOne from './add-one';
-import deleteAll from './delete-all';
-import deleteMany from './delete-many';
-import deleteOne from './delete-one';
-import getList from './get-list';
-import getMany from './get-many';
-import getOne from './get-one';
-import searchCount from './search-count';
-import searchList from './search-list';
-import updateMany from './update-many';
-import updateOne from './update-one';
+import addMany from './add-many.js';
+import addOne from './add-one.js';
+import deleteAll from './delete-all.js';
+import deleteMany from './delete-many.js';
+import deleteOne from './delete-one.js';
+import getList from './get-list.js';
+import getMany from './get-many.js';
+import getOne from './get-one.js';
+import searchCount from './search-count.js';
+import searchList from './search-list.js';
+import updateMany from './update-many.js';
+import updateOne from './update-one.js';
 
 export default [
 	addMany,

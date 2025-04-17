@@ -18,8 +18,7 @@ import cluster from 'node:cluster';
 
 import winston from 'winston';
 
-import createConfig from 'node-env-obj';
-const Config = createConfig() as unknown as Config;
+import Config from './config.js';
 
 /**
  *

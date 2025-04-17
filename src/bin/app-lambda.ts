@@ -17,7 +17,7 @@
  */
 
 import cluster from 'node:cluster';
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 
 const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
 
@@ -27,8 +27,8 @@ const Config = createConfig({
 	configPath: '../',
 }) as unknown as Config;
 
-import Logging from '../helpers/logging';
-import BootstrapLambda from '../bootstrap-lambda';
+import Logging from '../helpers/logging.js';
+import BootstrapLambda from '../bootstrap-lambda.js';
 
 Logging.init('LAMBDA');
 

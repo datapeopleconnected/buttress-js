@@ -15,16 +15,16 @@
  */
 import morgan from 'morgan';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Bootstrap from './bootstrap';
-import Datastore from './datastore';
-import Logging from './helpers/logging';
-import Model from './model';
+import Bootstrap from './bootstrap.js';
+import Datastore from './datastore/index.js';
+import Logging from './helpers/logging.js';
+import Model from './model/index.js';
 
-import LambdaManager from './lambda/lambda-manager';
-import LambdaRunner, {LambdaType} from './lambda/lambda-runner';
+import LambdaManager from './lambda/lambda-manager.js';
+import LambdaRunner, { LambdaType } from './lambda/lambda-runner.js';
 
 morgan.token('id', (req) => req.id);
 export default class BootstrapLambda extends Bootstrap {
@@ -90,7 +90,7 @@ export default class BootstrapLambda extends Bootstrap {
 
 			this.__nrp?.on('lambdaProcessWorker:worker-initiated', (id) => {
 				const type = this.__getLambdaWorkerType();
-				this.__nrp?.emit('lambdaProcessMain:worker-type', JSON.stringify({id, type}));
+				this.__nrp?.emit('lambdaProcessMain:worker-type', JSON.stringify({ id, type }));
 			});
 
 			this.__lambdaManagerProcess = new LambdaManager(this.__services);
@@ -110,7 +110,7 @@ export default class BootstrapLambda extends Bootstrap {
 			type = await new Promise((resolve) => {
 				this.__nrp?.on('lambdaProcessMain:worker-type', (data: any) => {
 					data = JSON.parse(data);
-		
+
 					if (data.id !== this.id) return;
 					resolve(data.type);
 				}, () => {

@@ -13,32 +13,39 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 
 import { ObjectId } from 'bson';
 import { createClient, RedisClient } from 'redis';
 
-import Bootstrap from './bootstrap';
+import Bootstrap from './bootstrap.js';
 
 const Config = createConfig() as unknown as Config;
 
-import Model from './model';
-import * as Helpers from './helpers';
-import Logging from './helpers/logging';
+import Model from './model/index.js';
+import * as Helpers from './helpers/index.js';
+import Logging from './helpers/logging.js';
 
-import { ApplicablePolicies } from './access-control';
-import { CombineEnvGroups, containsTokenLevelRef, filterPolicyConfigs } from './access-control/helpers';
-import AccessControlEnv from './access-control/env';
-import AccessControlFilters from './access-control/filter';
+import { ApplicablePolicyConfig } from './access-control/index.js';
+import { CombineEnvGroups, containsTokenLevelRef, filterPolicyConfigs } from './access-control/helpers.js';
+import AccessControlEnv, { ACEnv, ACPolicyEnvCombined } from './access-control/env.js';
+import AccessControlFilters from './access-control/filter.js';
 
-import Datastore from './datastore';
-import { RESTActivity } from './types/bjs-nrp-objects';
-import { Policy } from './model/core/policy';
-import TokenSchemaModel, { Token } from './model/core/token';
+import Datastore from './datastore/index.js';
+import { RESTActivity } from './types/bjs-nrp-objects.js';
+import { Policy, PolicyEnv } from './model/core/policy.js';
+import TokenSchemaModel, { Token } from './model/core/token.js';
 
-import { PolicyCache } from './services/policy-cache';
+import { PolicyCache } from './services/policy-cache.js';
+import UserSchemaModel, { User } from './model/core/user.js';
+import projection from './access-control/projection.js';
 
 // Abstract policy cache
+
+interface ActivityMetadata {
+	id: string;
+	timer: Helpers.Timer;
+}
 
 /*
  * Message comes in, what's the work?
@@ -71,6 +78,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 	private _policyCache?: PolicyCache;
 
 	private _broadcastTokenBatchSize = 1000;
+
+	private _shutdown = false;
 
 	constructor() {
 		super();
@@ -110,6 +119,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 	}
 
 	async clean() {
+		this._shutdown = true;
+
 		await super.clean();
 
 		Logging.logSilly('BootstrapSPR:clean');
@@ -213,7 +224,6 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 			return;
 		}
 
-		// Cache all policies on startup?
 		await this._policyCache.getPoliciesByToken(token);
 
 		// Store the token in the list of connected tokens
@@ -233,7 +243,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 		if (!this._policyCache) throw new Error('No Policy Cache');
 
 		// Create a container that will be used to track the message event within the SPR and a timer.
-		const container = {
+		const activityMetadata: ActivityMetadata = {
 			id: Datastore.getInstance('core').ID.new(),
 			timer: new Helpers.Timer(),
 		};
@@ -256,7 +266,15 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
 		if (activity.isSuper) {
 			// TODO: Super tokens could be cached in redis, app tokens could be also be cached.
-			// Broadcast to all super tokens, relevent app tokens.
+			const tokenModel = (Model.getModel('Token') as TokenSchemaModel);
+			const systemTokens = await tokenModel.find({ type: 'system' });
+
+			for await (const systemToken of systemTokens) {
+				await this.__broadcastDataByToken(systemToken.id, activity);
+				Logging.logTimer(`_handleIncomingMessage::systemToken ${systemToken.id}`, activityMetadata.timer,
+					Logging.Constants.LogLevel.SILLY, `${activityMetadata.id}`);
+			}
+
 			return;
 		}
 
@@ -280,95 +298,150 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 			const configs = filterPolicyConfigs(policy, activity.schemaName, activity.verb, isCoreSchema, true);
 
 			for (const config of configs) {
-				const applicablePolicy: ApplicablePolicies = {
+				const applicablePolicy: ApplicablePolicyConfig = {
+					id: policy.id,
 					name: policy.name,
 					appId: 'test',
 					env: policy.env,
 					config,
-				}
+				};
 
-				// Look over the applicable policy and work out if the condition or query contains a token reference.
+				Logging.logSilly(`_handleIncomingMessage::start policy:${policy.name}, verbs:${config.verbs}, schema: ${config.schema}`, `${activityMetadata.id}-${policy.id}`);
+
+				// We're going to check the parts of the policy to see if there is anything that's token specific.
+				// If so then we'll do the policy checks based on the token.
 				const tokenLevelAssesment = containsTokenLevelRef(applicablePolicy);
-				// console.log('Token Level Assesment', tokenLevelAssesment);
+				if (tokenLevelAssesment.env || tokenLevelAssesment.configEnv || tokenLevelAssesment.condition || tokenLevelAssesment.query) {
+					const tokenIds = await this._policyCache.getConnectedTokenIdsByPolicyId(applicablePolicy.id);
 
-				Logging.logSilly(`_handleIncomingMessage::start policy:${policy.name}, verbs:${config.verbs}, schema: ${config.schema}`, `${container.id}-${policy.id}`);
+					const tokenModel = (Model.getModel('Token') as TokenSchemaModel);
+					const userModel = (Model.getModel('User') as UserSchemaModel);
 
-				if (!entityId && activity.verb === 'delete') {
-					this.__broadcastData(policy.id, activity);
-					Logging.logTimer(`_handleIncomingMessage::end-no-entity-deletion`, container.timer,
-						Logging.Constants.LogLevel.SILLY, `${container.id}-${policy.id}`);
-					continue;
-				}
+					for await (const tokenId of tokenIds) {
+						const env = CombineEnvGroups(applicablePolicy, await this.__constructTokenEnv(tokenId, activity.appId));
+						const broadcastActivity = await this.__checkActivityAgainstApplicablePolicy(applicablePolicy, activity, entity, env, activityMetadata);
 
-				if (!entityId) {
-					Logging.logWarn('Unable to broadcast entity, data is missing a id');
-					continue;
-				}
-
-				if (!entity) {
-					Logging.logWarn('Unable to broadcast entity, can not find entity');
-					continue;
-				}
-
-				// TODO: The reqEnv should maybe be generated
-				const env = CombineEnvGroups(applicablePolicy, AccessControlEnv.generateRequestGlobalEnvs(null, activity.appId, null));
-				// if (applicablePolicy.name === 'env-test-2') debugger;
-				const query = await AccessControlFilters.buildPolicyQuery(applicablePolicy.config.query, env, false);
-
-				// ? How does this work if it's a core schema?
-				const broadcast = (query) ? AccessControlFilters.evaluateQueryAgainstEntity(query, entity) : false;
-				if (!broadcast && activity.verb === 'post') {
-					Logging.logTimer(`_handleIncomingMessage::end-falsy-evaluateRoomQueryOperation-post entityId: ${entityId}`, container.timer,
-						Logging.Constants.LogLevel.SILLY, `${container.id}-${policy.id}`);
-					continue;
-				}
-
-				if (!broadcast) {
-					// ! This is a bit werid, need to be more explicit on what the case is here.
-					activity.verb = 'delete';
-					this.__broadcastData(policy.id, activity);
-					Logging.logTimer(`_handleIncomingMessage::end-falsy-evaluateRoomQueryOperation-delete`, container.timer,
-						Logging.Constants.LogLevel.SILLY, `${container.id}-${policy.id}`);
-					continue;
-				}
-
-				// TODO: Is this a flatterned object at this point? because this is only taking into account keys are the the root.
-				const roomProjectionKeys = (applicablePolicy.config.projection) ? applicablePolicy.config.projection : [];
-				const projectedData = roomProjectionKeys.reduce((obj, key) => {
-					if (activity.response[key]) {
-						obj[key] = activity.response[key];
+						// If we have a broadcast activity then we need to send it to the token.
+						if (broadcastActivity) {
+							await this.__broadcastDataByToken(tokenId, broadcastActivity);
+							Logging.logTimer(`_handleIncomingMessage::end-token`, activityMetadata.timer,
+								Logging.Constants.LogLevel.SILLY, `${activityMetadata.id}-${applicablePolicy.id}`);
+						}
 					}
 
-					return obj;
-				}, {});
-
-				if (Object.keys(projectedData).length > 0) {
-					activity.response = projectedData;
+					continue;
 				}
 
-				this.__broadcastData(policy.id, activity);
-				Logging.logTimer(`_handleIncomingMessage::end`, container.timer,
-					Logging.Constants.LogLevel.SILLY, `${container.id}-${policy.id}`);
+				// Check the policy against the activity and broadcast to all policy tokens.
+				const env = CombineEnvGroups(applicablePolicy, AccessControlEnv.generateRequestGlobalEnvs(null, activity.appId, null));
+				const broadcastActivity = await this.__checkActivityAgainstApplicablePolicy(applicablePolicy, activity, entity, env, activityMetadata);
+
+				if (broadcastActivity) {
+					await this.__broadcastDataByPolicyId(applicablePolicy.id, broadcastActivity);
+					Logging.logTimer(`_handleIncomingMessage::end`, activityMetadata.timer,
+						Logging.Constants.LogLevel.SILLY, `${activityMetadata.id}-${applicablePolicy.id}`);
+				}
 			}
 		}
 	}
 
-	private async __broadcastData(policyId: string, activty: RESTActivity) {
+	private async __constructTokenEnv(tokenId: string, appId: string): Promise<ACEnv> {
+		const tokenModel = (Model.getModel('Token') as TokenSchemaModel);
+		const userModel = (Model.getModel('User') as UserSchemaModel);
+
+		const token = await tokenModel.findOne({ _id: tokenModel.createId(tokenId) }) as Token;
+		if (!token) {
+			Logging.logWarn(`Token not found: ${tokenId}`);
+			return AccessControlEnv.generateRequestGlobalEnvs(null, appId, null);
+		}
+
+		let user: User | null = null;
+		if (token._userId) {
+			user = await userModel.findOne({ _id: userModel.createId(token._userId) }) as User;
+		}
+
+		return AccessControlEnv.generateRequestGlobalEnvs(null, appId, user);
+	}
+
+	private async __checkActivityAgainstApplicablePolicy(applicablePolicy: ApplicablePolicyConfig,
+		activity: RESTActivity, entity: any, env: ACPolicyEnvCombined, activityMetadata: ActivityMetadata): Promise<false | RESTActivity> {
+
+		if (!entity && activity.verb === 'delete') {
+			this.__broadcastDataByPolicyId(applicablePolicy.id, activity);
+			Logging.logTimer(`_handleIncomingMessage::end-no-entity-deletion`, activityMetadata.timer,
+				Logging.Constants.LogLevel.SILLY, `${activityMetadata.id}-${applicablePolicy.id}`);
+			return false;
+		}
+
+		if (!entity) {
+			Logging.logWarn('Unable to broadcast entity, can not find entity');
+			return false;
+		}
+
+		const query = await AccessControlFilters.buildPolicyQuery(applicablePolicy.config.query, env, false);
+
+		// ? How does this work if it's a core schema?
+		const broadcast = (query) ? AccessControlFilters.evaluateQueryAgainstEntity(query, entity) : false;
+		if (!broadcast && activity.verb === 'post') {
+			Logging.logTimer(`_handleIncomingMessage::end-falsy-evaluateRoomQueryOperation-post entityId: ${entity?.id}`, activityMetadata.timer,
+				Logging.Constants.LogLevel.SILLY, `${activityMetadata.id}-${applicablePolicy.id}`);
+			return false;
+		}
+
+		if (!broadcast) {
+			// ! This is a bit werid, need to be more explicit on what the case is here.
+			// activity.verb = 'delete';
+			// this.__broadcastDataByPolicyId(applicablePolicy.id, activity);
+			Logging.logTimer(`_handleIncomingMessage::end-falsy-evaluateRoomQueryOperation-delete`, activityMetadata.timer,
+				Logging.Constants.LogLevel.SILLY, `${activityMetadata.id}-${applicablePolicy.id}`);
+			return false;
+		}
+
+		const broadcastActivity = JSON.parse(JSON.stringify(activity)) as RESTActivity;
+
+		// TODO: Is this a flatterned object at this point? because this is only taking into account keys are the the root.
+		const roomProjectionKeys = (applicablePolicy.config.projection) ? applicablePolicy.config.projection : [];
+		if (roomProjectionKeys.length > 0) {
+			const projectedData = roomProjectionKeys.reduce((obj, key) => {
+				if (activity.response[key]) {
+					obj[key] = activity.response[key];
+				}
+
+				return obj;
+			}, {});
+
+			if (Object.keys(projectedData).length > 0) {
+				broadcastActivity.response = projectedData;
+			}
+		}
+
+		return broadcastActivity;
+	}
+
+	private async __broadcastDataByPolicyId(policyId: string, activty: RESTActivity) {
 		if (!this._policyCache) throw new Error('No Policy Cache');
 
 		// Fetch tokens associated with the policy, batch them up in groups of 1000 and broadcast them.
-		const tokens = await this._policyCache.getConnectedTokensByPolicyId(policyId);
+		const tokenIds = await this._policyCache.getConnectedTokenIdsByPolicyId(policyId);
 
-		Logging.logSilly(`Broadcasting activity for policy: ${policyId} to ${tokens.length} tokens`);
+		Logging.logSilly(`Broadcasting activity for policy: ${policyId} to ${tokenIds.length} tokens`);
 
 		// ? The activty event could actually be cached here and then the socket processes could fetch it
 		// ? from the cach rather than being sent over pub/sub.
 
-		for (let i = 0; i < tokens.length; i += this._broadcastTokenBatchSize) {
+		for (let i = 0; i < tokenIds.length; i += this._broadcastTokenBatchSize) {
 			this.__nrp?.emit('spr:activity', JSON.stringify({
-				tokens: tokens.slice(i, i + this._broadcastTokenBatchSize),
+				tokens: tokenIds.slice(i, i + this._broadcastTokenBatchSize),
 				activty
 			}));
 		}
+	}
+
+	// We may want to collect and batch these out to reduce the number of messages being sent.
+	private async __broadcastDataByToken(tokenId: string, activty: RESTActivity) {
+		this.__nrp?.emit('spr:activity', JSON.stringify({
+			tokens: [tokenId],
+			activty
+		}));
 	}
 }

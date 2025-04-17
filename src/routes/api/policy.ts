@@ -15,11 +15,11 @@
  */
 import { ObjectId } from 'bson';
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import * as Helpers from '../../helpers/index.js';
 
-import Datastore from'../../datastore';
+import Datastore from'../../datastore/index.js';
 
 const routes: (typeof Route)[] = [];
 

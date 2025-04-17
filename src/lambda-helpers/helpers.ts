@@ -20,16 +20,15 @@ import ivm from 'isolated-vm';
 import fetch from 'cross-fetch';
 import crypto from 'crypto';
 import randomstring from 'randomstring';
-import base64url from 'base64url';
 import puppeteer from 'puppeteer';
 
-import lambdaMail from './mail';
-import Model from '../model';
-import Logging from '../helpers/logging';
-import {Errors} from '../helpers';
-import IsolateBridge from './isolate-bridge';
+import lambdaMail from './mail.js';
+import Model from '../model/index.js';
+import Logging from '../helpers/logging.js';
+import { Errors } from '../helpers/index.js';
+import IsolateBridge from './isolate-bridge.js';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 
@@ -263,7 +262,7 @@ class Helpers {
 			try {
 				const codeVerifier = randomstring.generate(128);
 				const base64Digest = crypto.createHash('sha256').update(codeVerifier).digest('base64');
-				const codeChallenge = base64url.fromBase64(base64Digest);
+				const codeChallenge = base64Digest.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 				return _resolve({
 					codeVerifier,
 					codeChallenge,

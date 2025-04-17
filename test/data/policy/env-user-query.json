@@ -1,14 +1,14 @@
 {
-  "name": "env-test-5",
+  "name": "env-test-4",
   "version": 1,
   "priority": 1,
   "selection": {
     "envTest": {
-      "@eq": 5
+      "@eq": 4
     }
   },
   "env": {
-    "userId": "user.id"
+    "userId": "#env.user.id"
   },
   "config": [
     {
@@ -16,11 +16,11 @@
         "GET"
       ],
       "schema": [
-        "person"
+        "car"
       ],
       "query": {
         "userId": {
-          "@eq": "#env.person"
+          "@eq": "#env.userId"
         }
       }
     }

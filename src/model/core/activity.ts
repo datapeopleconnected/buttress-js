@@ -13,11 +13,11 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Logging from '../../helpers/logging';
-import Schema from '../../schema';
-import * as Shared from '../shared';
+import Logging from '../../helpers/logging.js';
+import Schema from '../../schema.js';
+import * as Shared from '../shared.js';
 
-import StandardModel from '../type/standard';
+import StandardModel from '../type/standard.js';
 
 /**
  * Constants

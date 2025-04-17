@@ -15,14 +15,16 @@
  */
 
 import Stream from 'node:stream';
-import {ObjectId} from 'bson';
-import ButtressAPI, {Errors as BAPIErrors} from '@buttress/api';
+import { ObjectId } from 'bson';
+import ButtressExport, { Errors as BAPIErrors } from '@buttress/api';
+// TODO: Look into why the export from @buttress/api is not working as expected.
+const { default: ButtressAPI } = ButtressExport;
 
-import Errors from '../../helpers/errors';
-import {parseJsonArrayStream} from '../../helpers/stream';
-import Logging from '../../helpers/logging';
+import Errors from '../../helpers/errors.js';
+import { parseJsonArrayStream } from '../../helpers/stream.js';
+import Logging from '../../helpers/logging.js';
 
-import AbstractAdapter from '../abstract-adapter';
+import AbstractAdapter from '../abstract-adapter.js';
 
 class AdapterId {
 	static new(id: string) {
@@ -44,7 +46,7 @@ export default class Buttress extends AbstractAdapter {
 
 	protected __connection: any;
 
-	collection: any;
+	declare collection: any;
 
 	constructor(uri, options, connection = null) {
 		super(uri, options, connection);
@@ -60,10 +62,14 @@ export default class Buttress extends AbstractAdapter {
 
 		const protocol = this.uri.protocol === 'butts:' ? 'https' : 'http';
 
+		const token = this.uri.searchParams.get('token');
+		if (!token) throw new Error('Missing token in Buttress connection string');
+
 		await this.__connection.init({
 			buttressUrl: `${protocol}://${this.uri.host}`,
-			appToken: this.uri.searchParams.get('token'),
+			appToken: token,
 			apiPath: this.uri.pathname,
+			version: 1,
 		});
 		Logging.logDebug(`connected to: ${this.uri.host}${this.uri.pathname}`);
 
@@ -155,8 +161,8 @@ export default class Buttress extends AbstractAdapter {
 		body = this.convertBSONObjects(body);
 		await this.resolveAfterInit();
 
-		const result = (Array.isArray(body)) ? await this.collection.bulkSave(body, {stream: true}) :
-			await this.collection.save(body, {stream: true});
+		const result = (Array.isArray(body)) ? await this.collection.bulkSave(body, { stream: true }) :
+			await this.collection.save(body, { stream: true });
 
 		return this.handleResult(result);
 	}

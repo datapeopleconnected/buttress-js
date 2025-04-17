@@ -13,31 +13,18 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import path from 'path';
+import { fileURLToPath } from 'url';
+import createConfig from '@dpc/node-env-obj';
 
-import Activity from './activity.js';
-import AppDataSharing from './app-data-sharing.js';
-import App from './app.js';
-import Deployment from './deployment.js';
-import Lambda from './lambda.js';
-import LambdaExecution from './lambda-execution.js';
-import Policy from './policy.js';
-import SecureStore from './secure-store.js';
-import status from './status.js';
-import Token from './token.js';
-import Tracking from './tracking.js';
-import User from './user.js';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-export const Routes = [
-  Activity,
-  AppDataSharing,
-  App,
-  Deployment,
-  Lambda,
-  LambdaExecution,
-  Policy,
-  SecureStore,
-  status,
-  Token,
-  Tracking,
-  User,
-];
+const Config = createConfig({
+	basePath: __dirname,
+	envFile: `.test.env`,
+	envPath: '../',
+	configPath: '../src',
+});
+
+export default Config;

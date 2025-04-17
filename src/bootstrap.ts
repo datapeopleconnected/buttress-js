@@ -14,15 +14,18 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import sourceMapSupport from 'source-map-support'
+sourceMapSupport.install();
+
 import os from 'node:os';
 import cluster, {Worker} from 'node:cluster';
 import EventEmitter from 'node:events';
 import NRP from 'node-redis-pubsub';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Logging from './helpers/logging';
+import Logging from './helpers/logging.js';
 
 interface WorkerHolder {
 	initiated: boolean;
@@ -63,6 +66,7 @@ export default class Bootstrap extends EventEmitter {
 
 		this.__services.set('nrp', NRP(Config.redis));
 		this.__nrp = this.__services.get('nrp') as NRP.NodeRedisPubSub;
+		this.__nrp.on('error', (data: string) => Logging.logError(data));
 
 		return true;
 	}

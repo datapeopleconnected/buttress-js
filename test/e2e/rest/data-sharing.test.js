@@ -14,12 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it, before, after} = require('mocha');
-const assert = require('assert');
+import { describe, it, before, after } from 'mocha';
+import assert from 'node:assert';
 
-const {createApp, updateSchema, bjsReq, registerDataSharing} = require('../../helpers');
+import { createApp, updateSchema, bjsReq, registerDataSharing } from '../../helpers.js';
 
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
+import BootstrapRest from '../../../dist/bootstrap-rest.js';
 
 let REST_PROCESS = null;
 const ENDPOINT = `https://test.local.buttressjs.com`;

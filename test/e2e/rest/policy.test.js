@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it, before, after} = require('mocha');
-const assert = require('assert');
+import { describe, it, before, after } from 'mocha';
+import assert from 'node:assert';
 
-const {
+import {
   createApp,
   updateSchema,
   BJSReqError,
@@ -28,11 +28,11 @@ const {
   createPolicyUser,
   updateUserPolicyProperties,
   extractPolicyPropertyListFromPolicies
-} = require('../../helpers');
+} from '../../helpers.js';
 
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
+import BootstrapRest from '../../../dist/bootstrap-rest.js';
 
-const PolicyTestData = require('../../data/policy/index.js');
+import PolicyTestData from '../../data/policy/index.js';
 
 // Go over each of the policies and create a list of all the policy selection properties
 const PolicyPropertyList = extractPolicyPropertyListFromPolicies(Object.values(PolicyTestData));

@@ -14,12 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import * as Helpers from '../../helpers/index.js';
+import Schema from '../../schema.js';
 
-import * as ACM from '../../access-control/models-access';
+import * as ACM from '../../access-control/models-access.js';
 
 /**
  * @class SearchList

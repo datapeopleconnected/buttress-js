@@ -15,37 +15,38 @@
  */
 import net from 'node:net';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 
 import hash from 'object-hash';
 import Express from 'express';
-import {ObjectId} from 'bson';
-import {createClient, RedisClient} from 'redis';
-import {v4 as uuidv4} from 'uuid';
-import Sugar from './helpers/sugar';
+import { ObjectId } from 'bson';
+import { createClient, RedisClient } from 'redis';
+import { v4 as uuidv4 } from 'uuid';
+import Sugar from './helpers/sugar.js';
 
-import {Server as sio, Socket as sioSocket} from 'socket.io';
-import sioClient, {Socket as sioClientSocket} from 'socket.io-client';
-import {createAdapter} from '@socket.io/redis-adapter';
-import {Emitter} from '@socket.io/redis-emitter';
+import { Server as sio, Socket as sioSocket } from 'socket.io';
+import sioClient, { Socket as sioClientSocket } from 'socket.io-client';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { Emitter } from '@socket.io/redis-emitter';
 
-import Bootstrap from './bootstrap';
+import Bootstrap from './bootstrap.js';
 
 const Config = createConfig() as unknown as Config;
 
-import Model from './model';
-import * as Helpers from './helpers';
-import Logging from './helpers/logging';
+import Model from './model/index.js';
+import * as Helpers from './helpers/index.js';
+import Logging from './helpers/logging.js';
 
-import AccessControl from './access-control';
-import AccessControlHelpers from './access-control/helpers';
-import AccessControlConditions from './access-control/conditions';
+import AccessControl from './access-control/index.js';
+import AccessControlHelpers from './access-control/helpers.js';
+import AccessControlConditions from './access-control/conditions.js';
 
-import Schema from './schema';
+import Schema from './schema.js';
 
-import Datastore from './datastore';
-import { RESTActivity, SPRActivity } from './types/bjs-nrp-objects';
-import { PolicyCache } from './services/policy-cache';
+import Datastore from './datastore/index.js';
+import { PolicyCache } from './services/policy-cache.js';
+
+import { RESTActivity, SPRActivity } from './types/bjs-nrp-objects.js';
 
 export default class BootstrapSocket extends Bootstrap {
 	private __namespace: any = {};
@@ -53,7 +54,7 @@ export default class BootstrapSocket extends Bootstrap {
 	private _dataShareSockets: {
 		[key: string]: sioClientSocket[]
 	} = {};
-	
+
 	private __superApps: any[] = [];
 
 	private _policyCloseSocketEvents: any[] = [];
@@ -244,9 +245,9 @@ export default class BootstrapSocket extends Bootstrap {
 		// Generate an identifier for message
 		const id = uuidv4();
 		// Notify the primary with our payload
-		this.__nrp?.emit(`primary:${channel}`, JSON.stringify({id, message, date: new Date()}));
+		this.__nrp?.emit(`primary:${channel}`, JSON.stringify({ id, message, date: new Date() }));
 		// Await a response from the primary
-		return await new Promise((resolve, reject) => this._processResQueue[id] = {resolve, reject});
+		return await new Promise((resolve, reject) => this._processResQueue[id] = { resolve, reject });
 	}
 
 	async __initMain() {
@@ -310,7 +311,7 @@ export default class BootstrapSocket extends Bootstrap {
 		// Fielding request through to the worker processes. Do we even need this? It feels like
 		// express should be handling this like we do on the rest.
 		if (this.workerProcesses > 0) {
-			this._mainServer = net.createServer({pauseOnConnect: true}, (connection) => {
+			this._mainServer = net.createServer({ pauseOnConnect: true }, (connection) => {
 				const worker = this.workers[this.__indexFromIP(connection.remoteAddress, this.workerProcesses)];
 				worker.worker.send('buttress:connection', connection);
 			}).listen(Config.listenPorts.sock);
@@ -358,7 +359,7 @@ export default class BootstrapSocket extends Bootstrap {
 			Logging.logWarn(`[${apiPath}] Connected ${socket.id}`);
 
 			Logging.logDebug(`Fetching token with value: ${rawToken}`);
-			const token = await Model.getModel('Token').findOne({value: rawToken});
+			const token = await Model.getModel('Token').findOne({ value: rawToken });
 			if (!token || token.type !== Model.getModel('Token').Constants.Type.SYSTEM) {
 				Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
 				return next('invalid-token');
@@ -399,7 +400,7 @@ export default class BootstrapSocket extends Bootstrap {
 			const rawToken = socket.handshake.auth.token || socket.handshake.query.token;
 
 			Logging.logDebug(`Fetching token with value: ${rawToken}`);
-			const token = await Model.getModel('Token').findOne({value: rawToken});
+			const token = await Model.getModel('Token').findOne({ value: rawToken });
 			if (!token) {
 				Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
 				return next('invalid-token');
@@ -409,7 +410,7 @@ export default class BootstrapSocket extends Bootstrap {
 			socket.data.tokenId = token.id.toString();
 
 			Logging.logDebug(`Fetching app with apiPath: ${apiPath}`);
-			const app = await Model.getModel('App').findOne({apiPath: apiPath});
+			const app = await Model.getModel('App').findOne({ apiPath: apiPath });
 			if (!app) {
 				Logging.logWarn(`Invalid app, closing connection: ${socket.id}`);
 				return next('invalid-app');
@@ -496,8 +497,8 @@ export default class BootstrapSocket extends Bootstrap {
 			});
 
 			/**
-			  * Take in an appId or userId an re-evalute the users rooms
-			 	* @param {Object} data
+				* Take in an appId or userId an re-evalute the users rooms
+					* @param {Object} data
 				* @param {string} data.appId
 				* @param {string} data.userId - Optional
 			 */
@@ -550,7 +551,6 @@ export default class BootstrapSocket extends Bootstrap {
 
 		if (!this.__nrp) throw new Error('No NRP instance');
 
-		// TODO: Event should come from the SPR
 		this.__nrp.on('spr:activity', (data) => this.__primaryOnActivity(JSON.parse(data)));
 		this.__nrp.on('clearUserLocalData', (data) => this.__primaryClearUserLocalData(data));
 		this.__nrp.on('dataShare:activated', async (data: any) => {
@@ -596,7 +596,7 @@ export default class BootstrapSocket extends Bootstrap {
 			const id = uuidv4();
 
 			// Broadcast to all and see whos listening
-			this.__nrp?.emit(`worker:debugRollcall`, JSON.stringify({id: data.id}));
+			this.__nrp?.emit(`worker:debugRollcall`, JSON.stringify({ id: data.id }));
 
 			// Generate an identifier for message
 			// Await a response from the primary
@@ -605,16 +605,16 @@ export default class BootstrapSocket extends Bootstrap {
 				let _timeout = setTimeout(() => resolve(_result), 50);
 				const handleResponce = (data) => {
 					clearTimeout(_timeout);
-					_result = {..._result, ...data};
+					_result = { ..._result, ...data };
 					_timeout = setTimeout(() => resolve(_result), 50);
 				};
 				// Debounce based on the callback
 				// await responces
 				// We'll just push in a callback and we'll handle the clean up
-				this._processResQueue[id] = {callback: handleResponce};
+				this._processResQueue[id] = { callback: handleResponce };
 			});
 
-			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({id: data.id, response: result}));
+			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({ id: data.id, response: result }));
 		});
 		this.__nrp.on('primary:debugRollcallResponce', async (data: any) => {
 			data = JSON.parse(data);
@@ -631,13 +631,13 @@ export default class BootstrapSocket extends Bootstrap {
 				this._policyRooms[roomId] = data.message[roomId];
 			}
 
-			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({id: data.id, response: true}));
+			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({ id: data.id, response: true }));
 		});
 
 		this.__nrp.on('primary:getPolicyRooms', async (data: any) => {
 			data = JSON.parse(data);
 			Logging.logSilly(`primary:getPolicyRooms ${data.id}`);
-			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({id: data.id, response: this._policyRooms}));
+			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({ id: data.id, response: this._policyRooms }));
 		});
 
 		// Serve up a copy of the policy rooms to the requester
@@ -651,7 +651,7 @@ export default class BootstrapSocket extends Bootstrap {
 					return map;
 				}, {});
 
-			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({id: data.id, response: roomStructs}));
+			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({ id: data.id, response: roomStructs }));
 		});
 
 		this.__nrp.on('primary:getPolicyRoomsByAppId', async (data: any) => {
@@ -665,7 +665,7 @@ export default class BootstrapSocket extends Bootstrap {
 					return map;
 				}, {});
 
-			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({id: data.id, response: roomStructs}));
+			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({ id: data.id, response: roomStructs }));
 		});
 
 		this.__nrp.on('primary:policy-updated', async (data) => {
@@ -701,7 +701,7 @@ export default class BootstrapSocket extends Bootstrap {
 				}
 			}
 
-			this.__nrp?.emit('primary:debugRollcallResponce', JSON.stringify({id: data.id, responce: nspSids}));
+			this.__nrp?.emit('primary:debugRollcallResponce', JSON.stringify({ id: data.id, responce: nspSids }));
 		});
 
 		this.__nrp.on('sock:worker:request-status', async (data: any) => {
@@ -791,7 +791,7 @@ export default class BootstrapSocket extends Bootstrap {
 		}
 
 		// Fetch the room structs if we're clearing the data, if not we don't need it.
-		const roomStructsToClear = (clear) ? await this._messagePrimary('getPolicyRoomsByIds', {rooms: roomsToLeave}) : null;
+		const roomStructsToClear = (clear) ? await this._messagePrimary('getPolicyRoomsByIds', { rooms: roomsToLeave }) : null;
 
 		for (const roomId of roomsToLeave) {
 			if (clear) {
@@ -1076,7 +1076,7 @@ export default class BootstrapSocket extends Bootstrap {
 			return Logging.logDebug(`Namespace already created: ${app.name}`);
 		}
 
-		const token = await Model.getModel('Token').findOne({id: app._tokenId});
+		const token = await Model.getModel('Token').findOne({ id: app._tokenId });
 		if (!token) return Logging.logWarn(`No Token found for ${app.name}`);
 
 		const isSuper = token.type === Model.getModel('Token').Constants.Type.SYSTEM;
@@ -1098,24 +1098,25 @@ export default class BootstrapSocket extends Bootstrap {
 
 	async __primaryCreateDataShareConnection(dataShare) {
 		const url = `${dataShare.remoteApp.endpoint}/${dataShare.remoteApp.apiPath}`;
-		Logging.logSilly(`Attempting to connect to ${url}`);
+		Logging.logSilly(`Attempting to connect to ${url} with token ${dataShare.remoteApp.token}`);
 		if (!this._dataShareSockets[dataShare._appId]) {
 			this._dataShareSockets[dataShare._appId] = [];
 		}
 
 		const socket = sioClient(url, {
-			query: {
+			auth: {
 				token: dataShare.remoteApp.token,
-			}
+			},
+			forceNew: true,
 		});
 
 		this._dataShareSockets[dataShare._appId].push(socket);
 
 		socket.on('connect', () => {
-			Logging.logSilly(`Connected to ${url} with id ${socket.id}`);
+			Logging.logSilly(`Data sharing ${dataShare.id} connected to ${url} with id ${socket.id}`);
 		});
 		socket.on('disconnect', () => {
-			Logging.logSilly(`Disconnected from ${url} with id ${socket.id}`);
+			Logging.logSilly(`Data sharing ${dataShare.id} disconnected from ${url} with id ${socket.id}`);
 		});
 	}
 

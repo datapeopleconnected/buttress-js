@@ -15,10 +15,10 @@
  */
 import crypto from 'node:crypto';
 
-import Sugar from './helpers/sugar';
-import * as Helpers from './helpers';
+import Sugar from './helpers/sugar.js';
+import * as Helpers from './helpers/index.js';
 
-import Plugins from './plugins';
+import Plugins from './plugins/index.js';
 
 export default class Schema {
 	data: any;

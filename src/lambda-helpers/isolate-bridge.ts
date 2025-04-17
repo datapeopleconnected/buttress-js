@@ -17,9 +17,9 @@ import fs from 'node:fs';
 
 import ivm from 'isolated-vm';
 
-import Logging from '../helpers/logging';
+import Logging from '../helpers/logging.js';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 

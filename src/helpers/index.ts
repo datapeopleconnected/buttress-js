@@ -15,17 +15,17 @@
  */
 import { Transform } from 'node:stream';
 
-import * as DataSharingHelpers from './data-sharing';
+import * as DataSharingHelpers from './data-sharing.js';
 
-import Datastore from '../datastore';
+import Datastore from '../datastore/index.js';
 
 export const DataSharing = DataSharingHelpers;
 
-export * as Errors from './errors';
+export * as Errors from './errors.js';
 
-export * as Schema from './schema';
+export * as Schema from './schema.js';
 
-export * as Stream from './stream';
+export * as Stream from './stream.js';
 
 export class Timer {
 	private _start: number;

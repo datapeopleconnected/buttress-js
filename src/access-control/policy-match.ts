@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import AccessControlHelpers from './helpers';
+import AccessControlHelpers from './helpers.js';
 
-import { Policy } from '../model/core/policy';
-import { Token } from '../model/core/token';
+import { Policy } from '../model/core/policy.js';
+import { Token } from '../model/core/token.js';
 
 /**
  * @class PolicyMatch

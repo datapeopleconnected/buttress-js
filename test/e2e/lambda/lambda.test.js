@@ -14,15 +14,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it, before, after} = require('mocha');
-const assert = require('assert');
+import { describe, it, before, after } from 'mocha';
+import assert from 'assert';
+import Config from '@dpc/node-env-obj';
 
-const Config = require('node-env-obj')();
+import { createApp, createLambda, updatePolicyPropertyList, bjsReq, bjsReqPost } from '../../helpers.js';
 
-const {createApp, createLambda, updatePolicyPropertyList, bjsReq, bjsReqPost} = require('../../helpers');
-
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
-const {default: BootstrapLambda} = require('../../../dist/bootstrap-lambda');
+import BootstrapRest from '../../../dist/bootstrap-rest.js';
+import BootstrapLambda from '../../../dist/bootstrap-lambda.js';
 
 let LAMBDA_PROCESS = null;
 let REST_PROCESS = null;
