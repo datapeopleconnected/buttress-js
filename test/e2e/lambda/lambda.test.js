@@ -16,7 +16,8 @@
 
 import { describe, it, before, after } from 'mocha';
 import assert from 'assert';
-import Config from '@dpc/node-env-obj';
+
+import Config from '../../config.js';
 
 import { createApp, createLambda, updatePolicyPropertyList, bjsReq, bjsReqPost } from '../../helpers.js';
 

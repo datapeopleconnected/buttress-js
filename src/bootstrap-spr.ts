@@ -314,8 +314,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 				if (tokenLevelAssesment.env || tokenLevelAssesment.configEnv || tokenLevelAssesment.condition || tokenLevelAssesment.query) {
 					const tokenIds = await this._policyCache.getConnectedTokenIdsByPolicyId(applicablePolicy.id);
 
-					const tokenModel = (Model.getModel('Token') as TokenSchemaModel);
-					const userModel = (Model.getModel('User') as UserSchemaModel);
+					// const tokenModel = (Model.getModel('Token') as TokenSchemaModel);
+					// const userModel = (Model.getModel('User') as UserSchemaModel);
 
 					for await (const tokenId of tokenIds) {
 						const env = CombineEnvGroups(applicablePolicy, await this.__constructTokenEnv(tokenId, activity.appId));
@@ -418,7 +418,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 		return broadcastActivity;
 	}
 
-	private async __broadcastDataByPolicyId(policyId: string, activty: RESTActivity) {
+	private async __broadcastDataByPolicyId(policyId: string, activity: RESTActivity) {
 		if (!this._policyCache) throw new Error('No Policy Cache');
 
 		// Fetch tokens associated with the policy, batch them up in groups of 1000 and broadcast them.
@@ -426,22 +426,22 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
 		Logging.logSilly(`Broadcasting activity for policy: ${policyId} to ${tokenIds.length} tokens`);
 
-		// ? The activty event could actually be cached here and then the socket processes could fetch it
+		// ? The activity event could actually be cached here and then the socket processes could fetch it
 		// ? from the cach rather than being sent over pub/sub.
 
 		for (let i = 0; i < tokenIds.length; i += this._broadcastTokenBatchSize) {
 			this.__nrp?.emit('spr:activity', JSON.stringify({
 				tokens: tokenIds.slice(i, i + this._broadcastTokenBatchSize),
-				activty
+				activity
 			}));
 		}
 	}
 
 	// We may want to collect and batch these out to reduce the number of messages being sent.
-	private async __broadcastDataByToken(tokenId: string, activty: RESTActivity) {
+	private async __broadcastDataByToken(tokenId: string, activity: RESTActivity) {
 		this.__nrp?.emit('spr:activity', JSON.stringify({
 			tokens: [tokenId],
-			activty
+			activity
 		}));
 	}
 }

@@ -550,6 +550,8 @@ export default class LambdasRunner {
 			};
 		});
 
+		// TODO: Fix error to do with require.
+
 		return new Promise<void>((resolve, reject) => {
 			webpack({
 				target: 'es2020',

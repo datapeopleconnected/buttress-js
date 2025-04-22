@@ -14,12 +14,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import assert from 'assert';
+
 import { io } from 'socket.io-client';
 import { describe, it, before, after } from 'mocha';
 
 import NRP from 'node-redis-pubsub';
 
-import Config from '../../config.js'
+import Config from '../../config.js';
 
 import {
 	bjsReq,
@@ -159,7 +161,7 @@ describe('Processing', async () => {
 				if (!addedCar) return;
 
 				const json = JSON.parse(data);
-				if (json.activty.schemaName !== 'car' || json.activty.response.id !== addedCar.id) return;
+				if (json.activity.schemaName !== 'car' || json.activity.response.id !== addedCar.id) return;
 
 				const result = json.tokens.includes(tokenId);
 				// assert(result, 'Token not found in the list of tokens');
@@ -329,10 +331,17 @@ describe('Processing', async () => {
 
 			// Subscribe to the NRP event and wait for it to be received.
 			const subProm = new Promise((resolve) => {
-				subs['test2'] = NRP_INSTANCE.subscribe('spr:activity', async (data) => {
+				subs['test2'] = NRP_INSTANCE.subscribe('spr:activity', async (dataRaw) => {
 					await subs['test2']();
 					delete subs['test2'];
-					resolve(JSON.parse(data));
+					const data = JSON.parse(dataRaw);
+
+					assert(Array.isArray(data.tokens), 'Tokens is not an array');
+					assert(data.tokens.length > 0, 'Tokens is empty');
+
+					assert(data.activity.schemaName === 'car', 'Schema name is not car');
+
+					resolve();
 				});
 			});
 

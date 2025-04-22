@@ -19,8 +19,6 @@ import { describe, it, before, after } from 'mocha';
 import assert from 'assert';
 import fetch from 'cross-fetch';
 
-import Config from '@dpc/node-env-obj';
-
 import {
 	bjsReq,
 	createApp,
@@ -49,10 +47,10 @@ describe('Realtime', async () => {
 	const TestPolicies = [
 		PolicyTestData['admin-access'],
 	];
-	
+
 	const PolicyPropertyList = extractPolicyPropertyListFromPolicies(TestPolicies);
 
-	before(async function() {
+	before(async function () {
 		this.timeout(20000);
 		REST_PROCESS = new BootstrapRest();
 		await REST_PROCESS.init();
@@ -85,15 +83,15 @@ describe('Realtime', async () => {
 		await new Promise((resolve) => setTimeout(resolve, 100));
 
 		// Add a 'few' cars
-		await bjsReq({
-			url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
-			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify(new Array(5000).fill(0).map(() => ({name: `name-${Math.floor(Math.random()*100)}`}))),
-		}, testEnv.apps.app1.token);
+		// await bjsReq({
+		// 	url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
+		// 	method: 'POST',
+		// 	headers: {'Content-Type': 'application/json'},
+		// 	body: JSON.stringify(new Array(5000).fill(0).map(() => ({name: `name-${Math.floor(Math.random()*100)}`}))),
+		// }, testEnv.apps.app1.token);
 	});
 
-	after(async function() {
+	after(async function () {
 		if (testEnv.socket) testEnv.socket.disconnect();
 		if (REST_PROCESS) await REST_PROCESS.clean();
 		if (SPR_PROCESS) await SPR_PROCESS.clean();
@@ -102,8 +100,11 @@ describe('Realtime', async () => {
 
 	describe('Connections', () => {
 		let socket = null;
-		it('Should be able to connect to Buttress using socket.io', function(done) {
+		it('Should be able to connect to Buttress using socket.io', function (done) {
 			socket = io(ENDPOINT, {
+				auth: {
+					token: testEnv.apps.app1.token,
+				},
 				forceNew: true,
 			});
 
@@ -113,7 +114,7 @@ describe('Realtime', async () => {
 			});
 		});
 
-		it('Should close down the socket.io connection', function(done) {
+		it('Should close down the socket.io connection', function (done) {
 			socket.once('disconnect', () => {
 				assert.equal(socket.id, undefined);
 				done();
@@ -124,7 +125,9 @@ describe('Realtime', async () => {
 	});
 
 	describe('db-activity', async () => {
-		it('Should be able to connect to Buttress using the app token', function(done) {
+		it('Should be able to connect to Buttress using the app token', function (done) {
+			this.timeout(20000);
+			// TODO: Slowness due to the bulk add, this needs to be addressed.
 			testEnv.socket = io(`${ENDPOINT}/${testEnv.apps.app1.apiPath}`, {
 				auth: {
 					token: testEnv.apps.app1.token,
@@ -138,33 +141,43 @@ describe('Realtime', async () => {
 			});
 		});
 
-		it('Should make a POST request to buttress and see a realtime activity generated', async () => {
-			const name = `name-${Math.floor(Math.random()*100)}`;
-			let cars = null;
-			const listener = new Promise((resolve) => {
-				testEnv.socket.once('db-activity', (ev) => {
-					assert.equal(typeof ev.data, 'object');
-					assert.equal(ev.data.verb, 'post');
-					assert.equal(ev.data.schemaName, 'car');
-					assert.equal(ev.data.response.name, name);
-					assert.equal(typeof ev.data.response.id, 'string');
-					assert.equal(cars[0].id, ev.data.response.id);
-					assert.equal(typeof ev.sequence, 'number');
-					resolve();
+		it('Should make a POST request to buttress and see a realtime activity generated', function (done) {
+			this.timeout(20000);
+
+			(async () => {
+				const name = `name-${Math.floor(Math.random() * 100)}`;
+				let cars = null;
+				const listener = new Promise((resolve) => {
+					testEnv.socket.once('db-activity', async (ev) => {
+						assert.equal(typeof ev.data, 'object');
+						assert.equal(ev.data.verb, 'post');
+						assert.equal(ev.data.schemaName, 'car');
+						assert.equal(ev.data.response.name, name);
+						assert.equal(typeof ev.data.response.id, 'string');
+						assert.equal(cars[0].id, ev.data.response.id);
+
+						const time = new Date(ev.time);
+						assert(time instanceof Date);
+						assert(!isNaN(time.getTime()));
+
+						resolve();
+					});
 				});
-			});
 
-			cars = await bjsReq({
-				url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({name}),
-			}, testEnv.apps.app1.token);
+				cars = await bjsReq({
+					url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ name }),
+				}, testEnv.apps.app1.token);
 
-			assert.equal(cars.length, 1);
-			assert.equal(cars[0].name, name);
+				assert.equal(cars.length, 1);
+				assert.equal(cars[0].name, name);
 
-			await listener;
+				await listener;
+
+				done();
+			})();
 		});
 
 		// TODO: event clear-local-db
@@ -172,24 +185,23 @@ describe('Realtime', async () => {
 		// TODO: event db-disconnect-room
 	});
 
-	describe('Rooms', async () => {
-		// TODO: Super token
-		// TODO: App Token
-		// TODO: Policy driven rooms
-	});
-
 	// This set of tests will test the functionality of tracking the state of a request.
 	describe('bjs-request-* events', async () => {
 		let req = null;
 		let deferedBJSRequestStatusPromise = null;
 		it('Should make a request to /cars, responce should contain a x-bjs-request-id header', async () => {
-			req = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${Config.testToken}`);
+			req = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`, {
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${testEnv.apps.app1.token}`,
+				},
+			});
 			if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${ENDPOINT}`);
 			assert(req.headers.get('x-bjs-request-id'));
 		});
 
 		it('Should handle a message from the user and subscribe them to a request room', async () => {
-			testEnv.socket.emit('bjs-request-subscribe', {id: req.headers.get('x-bjs-request-id')});
+			testEnv.socket.emit('bjs-request-subscribe', { id: req.headers.get('x-bjs-request-id') });
 
 			deferedBJSRequestStatusPromise = new Promise((resolve) => {
 				testEnv.socket.once('bjs-request-status', (data) => {

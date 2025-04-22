@@ -48,6 +48,8 @@ import { PolicyCache } from './services/policy-cache.js';
 
 import { RESTActivity, SPRActivity } from './types/bjs-nrp-objects.js';
 
+import { Token } from './model/core/token.js';
+
 export default class BootstrapSocket extends Bootstrap {
 	private __namespace: any = {};
 
@@ -70,10 +72,12 @@ export default class BootstrapSocket extends Bootstrap {
 
 	private _requestSockets: any;
 
+	// private _socketMap: Map<string, {socket: sioSocket}[]>;
+
 	private _policyRooms: any;
 
 	emitter: any;
-	io: any;
+	io?: sio;
 
 	isPrimary: boolean;
 
@@ -100,7 +104,6 @@ export default class BootstrapSocket extends Bootstrap {
 
 		this.isPrimary = Config.sio.app === 'primary';
 
-		this.io = null;
 		this._socketExpressServer = null;
 
 		this._mainServer = null;
@@ -141,6 +144,8 @@ export default class BootstrapSocket extends Bootstrap {
 			}
 			*/
 		};
+
+		// this._socketMap = new Map();
 
 		this.logicalOperator = [
 			'$or',
@@ -206,8 +211,8 @@ export default class BootstrapSocket extends Bootstrap {
 		if (this.io) {
 			Logging.logSilly('Closing socket.io');
 			this.io.disconnectSockets(true);
-			await new Promise((resolve) => this.io.close(resolve));
-			this.io = null;
+			await new Promise((resolve) => this.io?.close(resolve));
+			this.io = undefined;
 		}
 		if (this._socketExpressServer) {
 			Logging.logSilly('Closing socket.io express proxy');
@@ -278,15 +283,15 @@ export default class BootstrapSocket extends Bootstrap {
 			};
 
 			// create app namespaces
-			const rxsApps = await Model.getModel('App').findAll();
-			for await (const app of rxsApps) {
-				if (!app._tokenId) {
-					Logging.logWarn(`App with no token`);
-					continue;
-				}
+			// const rxsApps = await Model.getModel('App').findAll();
+			// for await (const app of rxsApps) {
+			// 	if (!app._tokenId) {
+			// 		Logging.logWarn(`App with no token`);
+			// 		continue;
+			// 	}
 
-				await this.__createAppNamespace(app);
-			}
+			// 	await this.__createAppNamespace(app);
+			// }
 		} else {
 			Logging.logVerbose(`Secondary Main SOCKET`);
 		}
@@ -354,7 +359,7 @@ export default class BootstrapSocket extends Bootstrap {
 		this.io.of(`/debug`).use(async (socket, next) => {
 			const apiPath = 'debug';
 			const rawToken = socket.handshake.query.token;
-			if (!rawToken) return next('invalid-token');
+			if (!rawToken) return next(new Error('invalid-token'));
 
 			Logging.logWarn(`[${apiPath}] Connected ${socket.id}`);
 
@@ -362,7 +367,7 @@ export default class BootstrapSocket extends Bootstrap {
 			const token = await Model.getModel('Token').findOne({ value: rawToken });
 			if (!token || token.type !== Model.getModel('Token').Constants.Type.SYSTEM) {
 				Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
-				return next('invalid-token');
+				return next(new Error('invalid-token'));
 			}
 
 			const debugDump = async () => {
@@ -394,141 +399,10 @@ export default class BootstrapSocket extends Bootstrap {
 		// });
 
 		Logging.logSilly(`Listening on app namespaces`);
-		this.io.of(/^\/[a-z\d-]+$/i).use(async (socket, next) => {
-			const apiPath = socket.nsp.name.substring(1);
-			// DEPRECATED: We should phase out accepting token via query and only use the auth headers.
-			const rawToken = socket.handshake.auth.token || socket.handshake.query.token;
+		this.io.of(/.*/).use(async (socket, next) => {
+			if (socket.nsp.name === '/stats' || socket.nsp.name === '/debug') return next();
 
-			Logging.logDebug(`Fetching token with value: ${rawToken}`);
-			const token = await Model.getModel('Token').findOne({ value: rawToken });
-			if (!token) {
-				Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
-				return next('invalid-token');
-			}
-
-			socket.data.type = token.type;
-			socket.data.tokenId = token.id.toString();
-
-			Logging.logDebug(`Fetching app with apiPath: ${apiPath}`);
-			const app = await Model.getModel('App').findOne({ apiPath: apiPath });
-			if (!app) {
-				Logging.logWarn(`Invalid app, closing connection: ${socket.id}`);
-				return next('invalid-app');
-			}
-
-			// Fire off a worker event to notify that a connection has been made with the token.
-			this.__nrp?.emit('worker:socket:connection', socket.data.tokenId);
-
-			if (token.type === 'dataSharing') {
-				const remoteSchemas = Schema.decode(app.__schema).reduce((obj, item) => {
-					if (!item.remotes) return obj;
-					item.remotes.forEach((remote) => {
-						obj[`${remote.name}.${remote.schema}`] = item;
-					});
-					return obj;
-				}, {});
-
-				Logging.logDebug(`Fetching data share with tokenId: ${token.id}`);
-				const dataShare = await Model.getModel('AppDataSharing').findOne({
-					_tokenId: this._primaryDatastore.ID.new(token.id),
-					active: true,
-				});
-				if (!dataShare) {
-					Logging.logWarn(`Invalid data share, closing connection: ${socket.id}`);
-					return next('invalid-data-share');
-				}
-
-				socket.data.dataShareId = dataShare.id.toString();
-
-				// Emit this activity to our instance.
-				// This would result in the event being mutiplied
-				socket.on('share', (data) => {
-					if (!data.schemaName || !remoteSchemas[`${dataShare.name}.${data.schemaName}`]) {
-						Logging.log(`Skipping data sharing app doesn't use schema ${app.apiPath} ${dataShare.name}.${data.schemaName}, ${socket.id}`);
-						return;
-					}
-
-					const activity: RESTActivity = {
-						...data,
-						appId: app.id,
-						appAPIPath: app.apiPath,
-						isSameApp: app.apiPath === data.appAPIPath
-					};
-
-					this.__nrp?.emit('rest:activity', JSON.stringify(activity));
-				});
-
-				Logging.log(`[${apiPath}][DataShare] Connected ${socket.id} to room ${dataShare.name}`);
-			} else if (token.type === 'user') {
-				Logging.logDebug(`Fetching user with id: ${token._userId}`);
-				const user = await Model.getModel('User').findById(token._userId);
-				if (!user) {
-					Logging.logWarn(`Invalid token user ID, closing connection: ${socket.id}`);
-					return next('invalid-token-user-ID');
-				}
-
-				socket.data.userId = user.id.toString();
-				socket.data.userRef = user.auth[0].email ?? user.auth[0].appId;
-
-				// await this.__workerEvaluateUserRooms(user, app, socket);
-			} else {
-				// TODO: We're not handling other token types like app, lambda, etc.
-				Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
-			}
-
-			socket.on('bjs-request-subscribe', (data) => {
-				if (!data.id) return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} missing id`);
-				Logging.logSilly(`[${apiPath}] bjs-request-subscribe ${socket.id} ${data.id}`);
-
-				// Check to see if there is already a socket subbing to this id.
-				const reqSock = this._requestSockets.get(data.id);
-				if (reqSock && socket !== reqSock) return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} already subscribed`);
-
-				// if the socket hasn't already been subscribed then we'll set it.
-				if (!reqSock) this._requestSockets.set(data.id, socket);
-
-				socket.emit('bjs-request-subscribe-ack', data);
-			});
-
-			socket.on('disconnect', () => {
-				Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
-
-				// this.__nrp?.emit('worker:socket:disconnect', socket.data.tokenId);
-			});
-
-			/**
-				* Take in an appId or userId an re-evalute the users rooms
-					* @param {Object} data
-				* @param {string} data.appId
-				* @param {string} data.userId - Optional
-			 */
-			const debounceMap = {};
-			// TODO: Would be better to subscribe to one event and then lookup the socket of interest.
-			// ? This might be redudent with the addition of the spr.
-			this.__nrp?.on('worker:socket:evaluateUserRooms', async (data: any) => {
-				data = JSON.parse(data);
-
-				// Early out if userId isn't set, we must not have a user token
-				if (!socket.data.userId) return;
-				// Check that the request is for the correct app
-				if (!data.appId || app.id.toString() !== data.appId) return;
-				// Optional - If they've provided a userId then we only want to evaluate the single users room.
-				if (data.userId && socket.data.userId !== data.userId) return;
-
-				// TODO: Could do with being debounced
-				const debounceKey = `worker:socket:evaluateUserRooms-${socket.data.userId}`;
-				if (debounceMap[debounceKey]) clearTimeout(debounceMap[debounceKey]);
-				debounceMap[debounceKey] = setTimeout(async () => {
-					debounceMap[debounceKey] = null;
-					Logging.logSilly(`worker:socket:evaluateUserRooms data.appId:${data.appId}` +
-						`data.userId:${data.userId} userId:${socket.data.userId} ${socket.id}`);
-
-					const user = await Model.getModel('User').findById(socket.data.userId);
-					// await this.__workerEvaluateUserRooms(user, app, socket, true);
-				}, 100);
-			});
-
-			next();
+			await this._workerHandleSocketConnection(socket, next);
 		});
 
 		await this.__registerNRPWorkerListeners();
@@ -546,12 +420,161 @@ export default class BootstrapSocket extends Bootstrap {
 		Logging.logSilly(`Worker ready`);
 	}
 
+	private async _workerHandleSocketConnection(socket: sioSocket, next: (err?: Error) => void) {
+		// DEPRECATED: We should phase out accepting token via query and only use the auth headers.
+		const rawToken = socket.handshake.auth.token || socket.handshake.query.token;
+
+		Logging.logDebug(`Fetching token with value: ${rawToken}`);
+		const token = await Model.getModel('Token').findOne({ value: rawToken }) as Token;
+		if (!token) {
+			Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
+			return next(new Error('invalid-token'));
+		}
+
+		socket.data.type = token.type;
+		socket.data.tokenId = token.id.toString();
+
+		Logging.logDebug(`Fetching app with appId: ${token._appId}`);
+		const app = await Model.getModel('App').findOne({ id: token._appId });
+		if (!app) {
+			Logging.logWarn(`Invalid app, closing connection: ${socket.id}`);
+			return next(new Error('invalid-app'));
+		}
+
+		const apiPath = app.apiPath;
+
+		// Join them to a room based on the tokenId.
+		socket.join(socket.data.tokenId);
+
+		// Fire off a worker event to notify that a connection has been made with the token.
+		this.__nrp?.emit('worker:socket:connection', socket.data.tokenId);
+
+		if (token.type === 'dataSharing') {
+			const remoteSchemas = Schema.decode(app.__schema).reduce((obj, item) => {
+				if (!item.remotes) return obj;
+				item.remotes.forEach((remote) => {
+					obj[`${remote.name}.${remote.schema}`] = item;
+				});
+				return obj;
+			}, {});
+
+			Logging.logDebug(`Fetching data share with tokenId: ${socket.data.tokenId}`);
+			const dataShare = await Model.getModel('AppDataSharing').findOne({
+				_tokenId: this._primaryDatastore.ID.new(socket.data.tokenId),
+				active: true,
+			});
+			if (!dataShare) {
+				Logging.logWarn(`Invalid data share, closing connection: ${socket.id}`);
+				return next(new Error('invalid-data-share'));
+			}
+
+			socket.data.dataShareId = dataShare.id.toString();
+
+			// Emit this activity to our instance.
+			// This would result in the event being mutiplied
+			socket.on('share', (data) => {
+				if (!data.schemaName || !remoteSchemas[`${dataShare.name}.${data.schemaName}`]) {
+					Logging.log(`Skipping data sharing app doesn't use schema ${app.apiPath} ${dataShare.name}.${data.schemaName}, ${socket.id}`);
+					return;
+				}
+
+				const activity: RESTActivity = {
+					...data,
+					appId: app.id,
+					appAPIPath: app.apiPath,
+					isSameApp: app.apiPath === data.appAPIPath
+				};
+
+				this.__nrp?.emit('rest:activity', JSON.stringify(activity));
+			});
+
+			Logging.log(`[${apiPath}][DataShare] Connected ${socket.id} to room ${dataShare.name}`);
+		} else if (token.type === 'user') {
+			Logging.logDebug(`Fetching user with id: ${token._userId}`);
+			const user = await Model.getModel('User').findById(token._userId);
+			if (!user) {
+				Logging.logWarn(`Invalid token user ID, closing connection: ${socket.id}`);
+				return next(new Error('invalid-token-user-ID'));
+			}
+
+			socket.data.userId = user.id.toString();
+			// socket.data.userRef = user.auth[0].email ?? user.auth[0].appId;
+
+			// await this.__workerEvaluateUserRooms(user, app, socket);
+		} else {
+			// TODO: We're not handling other token types like app, lambda, etc.
+			Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
+		}
+
+		socket.on('bjs-request-subscribe', (data) => {
+			if (!data.id) return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} missing id`);
+			Logging.logSilly(`[${apiPath}] bjs-request-subscribe ${socket.id} ${data.id}`);
+
+			// Check to see if there is already a socket subbing to this id.
+			const reqSock = this._requestSockets.get(data.id);
+			if (reqSock && socket !== reqSock) return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} already subscribed`);
+
+			// if the socket hasn't already been subscribed then we'll set it.
+			if (!reqSock) this._requestSockets.set(data.id, socket);
+
+			socket.emit('bjs-request-subscribe-ack', data);
+		});
+
+		socket.on('disconnect', () => {
+			Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
+
+			// if (socketMap) {
+			// 	const index = socketMap.findIndex((s) => s.socket.id === socket.id);
+			// 	if (index > -1) {
+			// 		socketMap.splice(index, 1);
+			// 		if (socketMap.length < 1) this._socketMap.delete(socket.data.tokenId);
+			// 	}
+			// }
+
+			this.__nrp?.emit('worker:socket:disconnect', socket.data.tokenId);
+		});
+
+		/**
+			* Take in an appId or userId an re-evalute the users rooms
+				* @param {Object} data
+			* @param {string} data.appId
+			* @param {string} data.userId - Optional
+			*/
+		// const debounceMap = {};
+		// TODO: Would be better to subscribe to one event and then lookup the socket of interest.
+		// ? This might be redudent with the addition of the spr.
+		// this.__nrp?.on('worker:socket:evaluateUserRooms', async (data: any) => {
+		// 	data = JSON.parse(data);
+
+		// 	// Early out if userId isn't set, we must not have a user token
+		// 	if (!socket.data.userId) return;
+		// 	// Check that the request is for the correct app
+		// 	if (!data.appId || app.id.toString() !== data.appId) return;
+		// 	// Optional - If they've provided a userId then we only want to evaluate the single users room.
+		// 	if (data.userId && socket.data.userId !== data.userId) return;
+
+		// 	// TODO: Could do with being debounced
+		// 	const debounceKey = `worker:socket:evaluateUserRooms-${socket.data.userId}`;
+		// 	if (debounceMap[debounceKey]) clearTimeout(debounceMap[debounceKey]);
+		// 	debounceMap[debounceKey] = setTimeout(async () => {
+		// 		debounceMap[debounceKey] = null;
+		// 		Logging.logSilly(`worker:socket:evaluateUserRooms data.appId:${data.appId}` +
+		// 			`data.userId:${data.userId} userId:${socket.data.userId} ${socket.id}`);
+
+		// 		const user = await Model.getModel('User').findById(socket.data.userId);
+		// 		// await this.__workerEvaluateUserRooms(user, app, socket, true);
+		// 	}, 100);
+		// });
+
+		next();
+	}
+
 	async __registerNRPPrimaryListeners() {
 		Logging.logDebug(`Primary Main`);
 
 		if (!this.__nrp) throw new Error('No NRP instance');
 
-		this.__nrp.on('spr:activity', (data) => this.__primaryOnActivity(JSON.parse(data)));
+		// this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
 		this.__nrp.on('clearUserLocalData', (data) => this.__primaryClearUserLocalData(data));
 		this.__nrp.on('dataShare:activated', async (data: any) => {
 			data = JSON.parse(data);
@@ -559,11 +582,11 @@ export default class BootstrapSocket extends Bootstrap {
 			await this.__primaryCreateDataShareConnection(dataShare);
 		});
 
-		this.__nrp.on('app:created', async (data: any) => {
-			data = JSON.parse(data);
-			const app = await Model.getModel('App').findById(data.appId);
-			await this.__createAppNamespace(app);
-		});
+		// this.__nrp.on('app:created', async (data: any) => {
+		// 	data = JSON.parse(data);
+		// 	const app = await Model.getModel('App').findById(data.appId);
+		// 	await this.__createAppNamespace(app);
+		// });
 
 		this.__nrp.on('app-schema:updated', async (data: any) => {
 			data = JSON.parse(data);
@@ -682,9 +705,13 @@ export default class BootstrapSocket extends Bootstrap {
 	async __registerNRPWorkerListeners() {
 		if (!this.__nrp) throw new Error('No NRP instance');
 
+		this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
+
 		this.__nrp.on('worker:debugRollcall', async (data: any) => {
 			data = JSON.parse(data);
 			Logging.logSilly(`worker:debugRollcall ${data.id}`);
+
+			if (!this.io) throw new Error('No socket.io instance');
 
 			const nspSids = {};
 			for (const nsp of this.io._nsps.keys()) {
@@ -816,239 +843,56 @@ export default class BootstrapSocket extends Bootstrap {
 		Logging.logSilly(`__workerUserLeaveRooms::end userId:${user.id} socketId:${socket.id}`);
 	}
 
-	async __primaryOnActivity(data: SPRActivity) {
+	private async _workerOnSPRActivity(data: { tokens: string[], activity: SPRActivity }) {
+		if (!this.io) throw new Error('No socket.io instance');
+
+		if (!data.tokens || data.tokens.length < 1) {
+			Logging.log(`[${data.activity.appAPIPath}][${data.activity.verb}] activity in on ${data.activity.path} - No tokens`,
+				Logging.Constants.LogLevel.SILLY);
+			return;
+		}
+
 		const container = {
 			id: Datastore.getInstance('core').ID.new(),
 			timer: new Helpers.Timer(),
 		};
 		container.timer.start();
-		Logging.logTimer(`[${data.appAPIPath}][${data.verb}] activity in on ${data.path}`,
+		Logging.logTimer(`[${data.activity.appAPIPath}][${data.activity.verb}] activity in on ${data.activity.path}`,
 			container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 
-		const apiPath = data.appAPIPath;
-
-		if (!this.emitter) {
-			throw new Error('SIO Emitter isn\'t defined');
-		}
+		const { tokens, activity } = data;
 
 		this.__namespace['stats'].emitter.emit('activity', 1);
-
 		Logging.logTimer(`emitted stats activity`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 
-		// Super apps?
-		if (data.isSuper) {
-			// Broadcast to any super apps
-			this.__superApps.forEach((superApiPath) => {
-				this.__namespace[superApiPath].sequence['super']++;
-				this.__namespace[superApiPath].emitter.emit('db-activity', {
-					data: data,
-					sequence: this.__namespace[superApiPath].sequence['super'],
-				});
-				Logging.logDebug(`[${superApiPath}][super][${data.verb}] ${data.path}`);
-			});
-
-			// Broadcast to the app token
-			if (data.appAPIPath) {
-				this.__namespace[data.appAPIPath].sequence['global']++;
-				this.__namespace[data.appAPIPath].emitter.emit('db-activity', {
-					data: data,
-					sequence: this.__namespace[data.appAPIPath].sequence['global'],
-				});
-				Logging.logDebug(`[${data.appAPIPath}][app][${data.verb}] ${data.path}`);
-			}
-
+		if (activity.broadcast === false) {
+			Logging.log(`[${activity.appAPIPath}][${activity.verb}] activity in on ${activity.path} - Early out as it isn't public.`,
+				Logging.Constants.LogLevel.SILLY);
 			return;
 		}
 
-		// Disable broadcasting to public space
-		if (data.broadcast === false) {
-			Logging.logDebug(`[${apiPath}][${data.verb}] ${data.path} - Early out as it isn't public.`);
-			return;
-		}
-
-		if (data.appId && this._dataShareSockets[data.appId] && data.isSameApp === undefined) {
-			Logging.logTimer(`[${data.appAPIPath}][${data.verb}] notifying data sharing`,
+		if (activity.appId && this._dataShareSockets[activity.appId] && activity.isSameApp === undefined) {
+			Logging.logTimer(`[${activity.appAPIPath}][${activity.verb}] notifying data sharing`,
 				container.timer, Logging.Constants.LogLevel.SILLY, container.id);
-			this._dataShareSockets[data.appId].forEach((sock) => sock.emit('share', data));
+			this._dataShareSockets[activity.appId].forEach((sock) => sock.emit('share', data));
 		}
 
-		// Broadcast on requested channel
-		if (!this.__namespace[apiPath]) {
-			// Init the namespace
-			// throw new Error('Trying to access namespace that doesn\'t exist');
-			Logging.logTimer(`[${data.appAPIPath}][${data.verb}] creating emitter for namespace /${apiPath}`,
-				container.timer, Logging.Constants.LogLevel.SILLY, container.id);
-			this.__namespace[apiPath] = {
-				emitter: this.emitter.of(`/${apiPath}`),
-				sequence: {
-					super: 0,
-					global: 0,
-				},
-			};
-		}
-
-		await this.__mainBroadcastToRooms(data, container);
-	}
-
-	async __mainBroadcastToRooms(data: any, container: any) {
-		Logging.logTimer(`__mainBroadcastToRooms::start`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
-
-		// TODO: Refactor to handle messages to tokens from SPR
-		// const _policyRooms = await this._messagePrimary('getPolicyRoomsByAppId', {appId: data.appId});
-		// const roomIds = Object.keys(_policyRooms);
-
-		// const appId = data.appId;
-		// const verb = data.verb;
-		// const collection = data.path.split('/').filter((v) => v).shift().replace('/', '');
-		// if (!roomIds || roomIds.length < 1) {
-		// 	Logging.logTimer(`__mainBroadcastToRooms::end-no-policy-room`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
-		// 	return;
-		// }
-
-		// const broadcastRoomsIds = roomIds.filter((roomId) => _policyRooms[roomId].schema[collection]);
-		// if (!broadcastRoomsIds || broadcastRoomsIds.length < 1) {
-		// 	Logging.logTimer(`__mainBroadcastToRooms::end-no-broadcast-rooms`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
-		// 	return;
-		// }
-
-		// for await (const roomKey of broadcastRoomsIds) {
-		// 	const room = _policyRooms[roomKey].schema[collection];
-		// 	Logging.logTimer(`__mainBroadcastToRooms::roomBroadcast::start`, container.timer,
-		// 		Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
-
-		// 	// We don't care at this point if we have users in a room we'll try and broadcast to it anyway.
-		// 	// if (room.userIds.length < 1) {
-		// 	// 	Logging.logTimer(`__mainBroadcastToRooms::roomBroadcast::end-no-users`, container.timer,
-		// 	// 		Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
-		// 	// 	continue;
-		// 	// }
-
-		// 	const roomQueryKeys = Object.keys(room.access.query);
-		// 	const roomProjectionKeys = (room.access.projection) ? room.access.projection : [];
-		// 	if (roomQueryKeys.length < 1 && roomProjectionKeys.length < 1) {
-		// 		this.__broadcastData(data, roomKey);
-		// 		Logging.logTimer(`__mainBroadcastToRooms::roomBroadcast::end-no-query-no-projection`, container.timer,
-		// 			Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
-		// 		continue;
-		// 	}
-
-		// 	const appShortId = Helpers.shortId(appId);
-		// 	const entityId = (data.params.id) ? data.params.id : data.response.id;
-		// 	if (!entityId && data.verb === 'delete') {
-		// 		this.__broadcastData(data, roomKey);
-		// 		Logging.logTimer(`__mainBroadcastToRooms::roomBroadcast::end-no-entity-deletion`, container.timer,
-		// 			Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
-		// 		continue;
-		// 	}
-
-		// 	if (!entityId) {
-		// 		Logging.logWarn('Unable to broadcast entity, data is missing a id');
-		// 		continue;
-		// 	}
-
-		// 	if (!Model[`${appShortId}-${collection}`]) {
-		// 		Logging.logWarn(`Unable to broadcast entity, can not find ${appShortId}-${collection} in the database`);
-		// 		continue;
-		// 	}
-
-		// 	// TODO: Should be using ID from datastore not direct ObjectID
-		// 	const entity = await Model[`${appShortId}-${collection}`].findById(entityId);
-		// 	const broadcast = await this.__evaluateRoomQueryOperation(room.access.query, entity);
-		// 	if (!broadcast && verb === 'post') {
-		// 		Logging.logTimer(`__mainBroadcastToRooms::roomBroadcast::end-falsy-evaluateRoomQueryOperation-post`, container.timer,
-		// 			Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
-		// 		continue;
-		// 	}
-
-		// 	if (!broadcast) {
-		// 		data.verb = 'delete';
-		// 		this.__broadcastData(data, roomKey);
-		// 		Logging.logTimer(`__mainBroadcastToRooms::roomBroadcast::end-falsy-evaluateRoomQueryOperation-delete`, container.timer,
-		// 			Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
-		// 		continue;
-		// 	}
-
-		// 	// TODO: Is this a flatterned object at this point?
-		// 	const projectedData = roomProjectionKeys.reduce((obj, key) => {
-		// 		if (data.response[key]) {
-		// 			obj[key] = data.response[key];
-		// 		}
-
-		// 		return obj;
-		// 	}, {});
-
-		// 	if (Object.keys(projectedData).length > 0) {
-		// 		data.response = projectedData;
-		// 	}
-
-		// 	this.__broadcastData(data, roomKey);
-		// 	Logging.logTimer(`__mainBroadcastToRooms::roomBroadcast::end`, container.timer,
-		// 		Logging.Constants.LogLevel.SILLY, `${container.id}-${roomKey}`);
-		// }
-
-		Logging.logTimer(`__mainBroadcastToRooms::end`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
-	}
-
-	// async __evaluateRoomQueryOperation(roomQuery: any, entity: any, partialPass?: boolean, fullPass?: boolean, skip = false) {
-	// 	if (!entity) return false;
-
-	// 	await Object.keys(roomQuery).reduce(async (prev, operator) => {
-	// 		await prev;
-
-	// 		partialPass = (partialPass === null)? (operator === '@or') ? true : false : partialPass;
-	// 		fullPass = (fullPass === null)? (!partialPass) ? true : false : fullPass;
-
-	// 		if (this.logicalOperator.includes(operator)) {
-	// 			const arr = roomQuery[operator];
-	// 			await arr.reduce(async (prev, conditionObj) => {
-	// 				await prev;
-	// 				await this.__evaluateRoomQueryOperation(conditionObj, entity, partialPass, fullPass, true);
-	// 			}, Promise.resolve());
-	// 		} else {
-	// 			const [queryOperator] = Object.keys(roomQuery[operator]);
-	// 			const rhs = roomQuery[operator][queryOperator];
-	// 			operator = operator.replace(/^_+/, '');
-	// 			const lhs = (ObjectId.isValid(entity[operator])) ? entity[operator].toString() : entity[operator];
-	// 			const passed = await AccessControlHelpers.evaluateOperation(lhs, rhs, queryOperator);
-	// 			if (partialPass && passed) {
-	// 				partialPass = true;
-	// 			}
-
-	// 			if (!passed) {
-	// 				fullPass = false;
-	// 			}
-	// 		}
-	// 	}, Promise.resolve());
-
-	// 	if (skip) return;
-
-	// 	return (partialPass)? partialPass : fullPass;
-	// }
-
-	__broadcastData(data, room) {
-		const apiPath = data.appAPIPath;
-		if (!this.__namespace[apiPath].sequence[room]) {
-			this.__namespace[apiPath].sequence[room] = 0;
-		}
-
-		const broadcastedData = {
-			response: data.response,
-			path: data.path,
-			pathSpec: data.pathSpec,
-			user: data.user,
-			verb: data.verb,
-			params: data.params,
-			isSameApp: data.isSameApp,
-			isBulkDelete: Object.keys(data.params).length < 1 && data.verb === 'delete',
+		const packet = {
+			time: new Date().toISOString(),
+			data: {
+				response: activity.response,
+				path: activity.path,
+				pathSpec: activity.pathSpec,
+				user: activity.user,
+				verb: activity.verb,
+				params: activity.params,
+				schemaName: activity.schemaName,
+				isSameApp: activity.isSameApp,
+				isBulkDelete: Object.keys(activity.params).length < 1 && activity.verb === 'delete',
+			},
 		};
 
-		Logging.logDebug(`[${apiPath}][${room}][${data.verb}] ${data.path}`);
-		this.__namespace[apiPath].sequence[room]++;
-		this.__namespace[apiPath].emitter.in(room).emit('db-activity', {
-			data: broadcastedData,
-			sequence: this.__namespace[apiPath].sequence[room],
-			room,
-		});
+		this.io.of(`/${data.activity.appAPIPath}`).to(tokens).emit('db-activity', packet);
 	}
 
 	__primaryClearUserLocalData(data) {

@@ -303,7 +303,7 @@ export default class Route {
 
 	_addLogActivity(req, path, verb) {
 		Logging.logTimer('_addLogActivity:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		// TODO: Activty should pass back a stripped version of the activty object.
+		// TODO: activity should pass back a stripped version of the activity object.
 		return Model.getModel('Activity').add({
 			activityTitle: this.activityTitle,
 			activityDescription: this.activityDescription,
