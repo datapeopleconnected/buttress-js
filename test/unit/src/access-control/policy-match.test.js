@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it} = require('mocha');
-const assert = require('assert');
+import { describe, it } from 'mocha';
+import assert from 'assert';
 
-const {default: PolicyMatch} = require('../../../../dist/access-control/policy-match');
+import PolicyMatch from '../../../../dist/access-control/policy-match.js';
 
 describe('access-control/policy-match:getTokenPolicies', () => {
   it('should return an empty array if no policies are provided', () => {

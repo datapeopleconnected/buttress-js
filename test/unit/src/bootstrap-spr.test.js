@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it} = require('mocha');
-const assert = require('assert');
+import { describe, it } from 'mocha';
+import assert from 'assert';
 
-const {default: BootstrapSocketPolicyRouter} = require('../../../dist/bootstrap-spr.js');
+import BootstrapSocketPolicyRouter from '../../../dist/bootstrap-spr.js';
 
 describe('bootstrap-spr:class', () => {
 	it(`should create an instance of the BootstrapSocketPolicyRouter class`, () => {

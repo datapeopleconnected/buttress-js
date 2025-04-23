@@ -24,7 +24,7 @@ import Logging from '../dist/helpers/logging.js';
 if (process.env.TEST_ENV === 'e2e') {
 	const tokenPath = `${Config.paths.appData}/super.json`;
 	try {
-		const {token} = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+		const { token } = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
 		Config.testToken = token;
 	} catch (e) {
 		console.log('');
@@ -35,8 +35,8 @@ if (process.env.TEST_ENV === 'e2e') {
 		process.exit(1);
 	}
 } else {
-	const Datastore = await import('../dist/datastore.js');
-	Datastore.createInstance({connectionString: `empty://buttressjs.com`}, true);
+	const { default : Datastore } = await import('../dist/datastore/index.js');
+	Datastore.createInstance({ connectionString: `empty://buttressjs.com` }, true);
 }
 
 const SHOW_LOG = (!!process.env.SHOW_LOG);

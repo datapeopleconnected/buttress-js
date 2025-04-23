@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it} = require('mocha');
-const assert = require('assert');
+import { describe, it } from 'mocha';
+import assert from 'assert';
 
-const Helpers = require('../../../../dist/helpers');
+import * as Helpers from '../../../../dist/helpers/index.js';
 
 describe('helpers.schema:sanitizeObject', () => {
 	const schema = {
@@ -105,7 +105,7 @@ describe('helpers.schema:getFlattenedBody', () => {
 		array: [
 			'car',
 			'bike',
-			{arraySubOject: 'yes', arraySubOjectSubObject: {thisCouldGoOn: true}},
+			{ arraySubOject: 'yes', arraySubOjectSubObject: { thisCouldGoOn: true } },
 		],
 	};
 
@@ -121,37 +121,37 @@ describe('helpers.schema:getFlattenedBody', () => {
 	});
 
 	it('result should have property name which matches body value', async () => {
-		const {value} = result.find((r) => r.path === 'name');
+		const { value } = result.find((r) => r.path === 'name');
 		assert(value !== undefined && value === body.name);
 	});
 
 	it('result should have property age which matches body value', async () => {
-		const {value} = result.find((r) => r.path === 'age');
+		const { value } = result.find((r) => r.path === 'age');
 		assert(value !== undefined && value === body.age);
 	});
 
 	it('result should have property unstructured which matches body value', async () => {
-		const {value} = result.find((r) => r.path === 'unstructured');
+		const { value } = result.find((r) => r.path === 'unstructured');
 		assert(value !== undefined && value === body.unstructured);
 	});
 
 	it('result should have sub object property id flattened', async () => {
-		const {value} = result.find((r) => r.path === 'testSubObject.id');
+		const { value } = result.find((r) => r.path === 'testSubObject.id');
 		assert(value !== undefined && value === body.testSubObject.id);
 	});
 
 	it('result should have sub object property fruit flattened', async () => {
-		const {value} = result.find((r) => r.path === 'testSubObject.fruit');
+		const { value } = result.find((r) => r.path === 'testSubObject.fruit');
 		assert(value !== undefined && value === body.testSubObject.fruit);
 	});
 
 	it('result should have an array with length matching 3', async () => {
-		const {value} = result.find((r) => r.path === 'array');
+		const { value } = result.find((r) => r.path === 'array');
 		assert(value !== undefined && value.length === 3);
 	});
 
 	it('result array should have matching sub values', async () => {
-		const {value} = result.find((r) => r.path === 'array');
+		const { value } = result.find((r) => r.path === 'array');
 		assert(value[0] === 'car');
 		assert(value[1] === 'bike');
 
