@@ -78,7 +78,7 @@ describe('Lambda', async () => {
 					url: Config.paths.root,
 					branch: 'develop',
 					hash: 'HEAD',
-					entryFile: 'test/data/lambda/hello-world.js',
+					entryFile: 'test/data/lambda/hello-world.cjs',
 					entryPoint: 'execute',
 				},
 				trigger: [{
@@ -109,7 +109,7 @@ describe('Lambda', async () => {
 						url: Config.paths.root,
 						branch: 'develop',
 						hash: 'HEAD',
-						entryFile: 'test/data/lambda/hello-world.js',
+						entryFile: 'test/data/lambda/hello-world.cjs',
 						entryPoint: 'execute',
 					},
 					trigger: [{
@@ -179,7 +179,7 @@ describe('Lambda', async () => {
 						url: Config.paths.root,
 						branch: 'develop',
 						hash: 'HEAD',
-						entryFile: 'test/data/lambda/hello-world.js',
+						entryFile: 'test/data/lambda/hello-world.cjs',
 						entryPoint: 'execute',
 					},
 					trigger: [{

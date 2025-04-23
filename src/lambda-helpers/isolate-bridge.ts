@@ -14,6 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 
 import ivm from 'isolated-vm';
 
@@ -46,7 +48,7 @@ class IsolateBridge {
 
 	registerPlugins() {
 		const getClassesList = (dirName) => {
-			let files: NodeRequire[] = [];
+			let files: NodeJS.Require[] = [];
 			const items = fs.readdirSync(dirName, {withFileTypes: true});
 			for (const item of items) {
 				if (item.name === '.git') continue;

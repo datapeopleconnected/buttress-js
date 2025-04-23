@@ -14,10 +14,13 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+
 import fs from 'node:fs';
 import path from 'node:path';
 import util from 'node:util';
-import {exec as cpExec} from 'node:child_process';
+import { exec as cpExec } from 'node:child_process';
 
 import NRP from 'node-redis-pubsub';
 
@@ -27,7 +30,7 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import ivm from 'isolated-vm';
-import {v4 as uuidv4} from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 import webpack from 'webpack';
 
 import NodePolyfillPlugin from 'node-polyfill-webpack-plugin';
@@ -267,7 +270,7 @@ export default class LambdasRunner {
 					await lambdaCode[lambdaInfo.entryPoint]();
 				})();
 			`);
-			await hostile.run(this._context, {promise: true});
+			await hostile.run(this._context, { promise: true });
 			// Maybe dispose isolate after executin the lambda?
 
 			await this._updateDBLambdaFinishExecution(execution);
@@ -279,7 +282,7 @@ export default class LambdasRunner {
 
 				if (trigger.redirect && lambdaHelpers.lambdaResult) lambdaHelpers.lambdaResult.redirect = true;
 				const result = (lambdaHelpers.lambdaResult) ? lambdaHelpers.lambdaResult : 'success';
-				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({code: 200, res: result, restWorkerId: data.restWorkerId}));
+				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({ code: 200, res: result, restWorkerId: data.restWorkerId }));
 			}
 		} catch (err: any) {
 			await this._updateDBLambdaErrorExecution(lambda);
@@ -293,7 +296,7 @@ export default class LambdasRunner {
 					message = err.errMessage;
 				}
 
-				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({code: 400, err: message, restWorkerId: data.restWorkerId}));
+				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({ code: 400, err: message, restWorkerId: data.restWorkerId }));
 			}
 
 			return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));
@@ -542,7 +545,7 @@ export default class LambdasRunner {
 			if (m.packageName && fs.existsSync(`${Config.paths.lambda.bundles}/${moduleName}.js`)) return;
 
 			entry[moduleName] = {
-				import: (m.import)? m.import : m.packageName,
+				import: (m.import) ? m.import : m.packageName,
 				library: {
 					name: m.name,
 					type: 'var',
@@ -569,7 +572,7 @@ export default class LambdasRunner {
 					path: path.resolve(Config.paths.lambda.bundles),
 					chunkFormat: 'commonjs',
 				},
-			}, function(err: any, stats) {
+			}, function (err: any, stats) {
 				if (err && err.details) {
 					reject(err.details);
 				}
