@@ -38,8 +38,6 @@ import * as Helpers from './helpers/index.js';
 import Logging from './helpers/logging.js';
 
 import AccessControl from './access-control/index.js';
-import AccessControlHelpers from './access-control/helpers.js';
-import AccessControlConditions from './access-control/conditions.js';
 
 import Schema from './schema.js';
 
@@ -61,8 +59,6 @@ export default class BootstrapSocket extends Bootstrap {
 
 	private _policyCloseSocketEvents: any[] = [];
 
-	private _oneWeekMilliseconds: number;
-
 	private _redisClient?: RedisClient;
 	private _redisClientEmitter: any;
 	private _redisClientIOPub: any;
@@ -71,10 +67,6 @@ export default class BootstrapSocket extends Bootstrap {
 	private _processResQueue: any;
 
 	private _requestSockets: any;
-
-	// private _socketMap: Map<string, {socket: sioSocket}[]>;
-
-	private _policyRooms: any;
 
 	emitter: any;
 	io?: sio;
@@ -100,8 +92,6 @@ export default class BootstrapSocket extends Bootstrap {
 
 		this._policyCloseSocketEvents = [];
 
-		this._oneWeekMilliseconds = Sugar.Number.day(7);
-
 		this.isPrimary = Config.sio.app === 'primary';
 
 		this._socketExpressServer = null;
@@ -122,30 +112,6 @@ export default class BootstrapSocket extends Bootstrap {
 		// A map that holds reference to sockets which have subscribed to a request
 		// the map keys will expire after 5 minutes.
 		this._requestSockets = new Helpers.ExpireMap(5 * 60 * 1000);
-
-		// Policy rooms should just be a map of roomId -> {collections,projections}
-		// We dont't need to track what users are in which room as this is already
-		// done for us.
-		// Only the Primary will hold this structure, it can then be accessed by
-		// the appropriate workers on request
-		this._policyRooms = {
-			/*
-			roomId: {
-				appId:
-				schema: {
-					car: {
-						access
-					},
-					car: {
-						access
-					}
-				}
-				appliedPolicy: []
-			}
-			*/
-		};
-
-		// this._socketMap = new Map();
 
 		this.logicalOperator = [
 			'$or',
@@ -274,24 +240,17 @@ export default class BootstrapSocket extends Bootstrap {
 					global: 0,
 				},
 			};
-			this.__namespace['debug'] = {
-				emitter: this.emitter.of(`/debug`),
-				sequence: {
-					super: 0,
-					global: 0,
-				},
-			};
 
 			// create app namespaces
-			// const rxsApps = await Model.getModel('App').findAll();
-			// for await (const app of rxsApps) {
-			// 	if (!app._tokenId) {
-			// 		Logging.logWarn(`App with no token`);
-			// 		continue;
-			// 	}
+			const rxsApps = await Model.getModel('App').findAll();
+			for await (const app of rxsApps) {
+				if (!app._tokenId) {
+					Logging.logWarn(`App with no token`);
+					continue;
+				}
 
-			// 	await this.__createAppNamespace(app);
-			// }
+				await this.__createAppNamespace(app);
+			}
 		} else {
 			Logging.logVerbose(`Secondary Main SOCKET`);
 		}
@@ -356,51 +315,9 @@ export default class BootstrapSocket extends Bootstrap {
 			});
 		});
 
-		this.io.of(`/debug`).use(async (socket, next) => {
-			const apiPath = 'debug';
-			const rawToken = socket.handshake.query.token;
-			if (!rawToken) return next(new Error('invalid-token'));
-
-			Logging.logWarn(`[${apiPath}] Connected ${socket.id}`);
-
-			Logging.logDebug(`Fetching token with value: ${rawToken}`);
-			const token = await Model.getModel('Token').findOne({ value: rawToken });
-			if (!token || token.type !== Model.getModel('Token').Constants.Type.SYSTEM) {
-				Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
-				return next(new Error('invalid-token'));
-			}
-
-			const debugDump = async () => {
-				const rooms = await this._messagePrimary('getPolicyRooms');
-				const rollcall = await this._messagePrimary('debugRollcall');
-
-				return {
-					Config,
-					rooms,
-					rollcall,
-				};
-			};
-
-			socket.on('request', async () => socket.emit('dump', await debugDump()));
-
-			this.__nrp?.on('debug:dump', async () => socket.emit('dump', await debugDump()));
-
-			socket.on('disconnect', () => {
-				Logging.log(`[${apiPath}] Disconnect ${socket.id}`);
-			});
-
-			next();
-		});
-		// debug.on('connect', (socket) => {
-		// 	Logging.logSilly(`${socket.id} Connected on /debug`);
-		// 	socket.on('disconnect', () => {
-		// 		Logging.logSilly(`${socket.id} Disconnect on /debug`);
-		// 	});
-		// });
-
 		Logging.logSilly(`Listening on app namespaces`);
 		this.io.of(/.*/).use(async (socket, next) => {
-			if (socket.nsp.name === '/stats' || socket.nsp.name === '/debug') return next();
+			if (socket.nsp.name === '/stats') return next();
 
 			await this._workerHandleSocketConnection(socket, next);
 		});
@@ -498,9 +415,6 @@ export default class BootstrapSocket extends Bootstrap {
 			}
 
 			socket.data.userId = user.id.toString();
-			// socket.data.userRef = user.auth[0].email ?? user.auth[0].appId;
-
-			// await this.__workerEvaluateUserRooms(user, app, socket);
 		} else {
 			// TODO: We're not handling other token types like app, lambda, etc.
 			Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
@@ -523,48 +437,8 @@ export default class BootstrapSocket extends Bootstrap {
 		socket.on('disconnect', () => {
 			Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
 
-			// if (socketMap) {
-			// 	const index = socketMap.findIndex((s) => s.socket.id === socket.id);
-			// 	if (index > -1) {
-			// 		socketMap.splice(index, 1);
-			// 		if (socketMap.length < 1) this._socketMap.delete(socket.data.tokenId);
-			// 	}
-			// }
-
 			this.__nrp?.emit('worker:socket:disconnect', socket.data.tokenId);
 		});
-
-		/**
-			* Take in an appId or userId an re-evalute the users rooms
-				* @param {Object} data
-			* @param {string} data.appId
-			* @param {string} data.userId - Optional
-			*/
-		// const debounceMap = {};
-		// TODO: Would be better to subscribe to one event and then lookup the socket of interest.
-		// ? This might be redudent with the addition of the spr.
-		// this.__nrp?.on('worker:socket:evaluateUserRooms', async (data: any) => {
-		// 	data = JSON.parse(data);
-
-		// 	// Early out if userId isn't set, we must not have a user token
-		// 	if (!socket.data.userId) return;
-		// 	// Check that the request is for the correct app
-		// 	if (!data.appId || app.id.toString() !== data.appId) return;
-		// 	// Optional - If they've provided a userId then we only want to evaluate the single users room.
-		// 	if (data.userId && socket.data.userId !== data.userId) return;
-
-		// 	// TODO: Could do with being debounced
-		// 	const debounceKey = `worker:socket:evaluateUserRooms-${socket.data.userId}`;
-		// 	if (debounceMap[debounceKey]) clearTimeout(debounceMap[debounceKey]);
-		// 	debounceMap[debounceKey] = setTimeout(async () => {
-		// 		debounceMap[debounceKey] = null;
-		// 		Logging.logSilly(`worker:socket:evaluateUserRooms data.appId:${data.appId}` +
-		// 			`data.userId:${data.userId} userId:${socket.data.userId} ${socket.id}`);
-
-		// 		const user = await Model.getModel('User').findById(socket.data.userId);
-		// 		// await this.__workerEvaluateUserRooms(user, app, socket, true);
-		// 	}, 100);
-		// });
 
 		next();
 	}
@@ -582,120 +456,15 @@ export default class BootstrapSocket extends Bootstrap {
 			await this.__primaryCreateDataShareConnection(dataShare);
 		});
 
-		// this.__nrp.on('app:created', async (data: any) => {
-		// 	data = JSON.parse(data);
-		// 	const app = await Model.getModel('App').findById(data.appId);
-		// 	await this.__createAppNamespace(app);
-		// });
+		this.__nrp.on('app:created', async (data: any) => {
+			data = JSON.parse(data);
+			const app = await Model.getModel('App').findById(data.appId);
+			await this.__createAppNamespace(app);
+		});
 
 		this.__nrp.on('app-schema:updated', async (data: any) => {
 			data = JSON.parse(data);
 			await Model.initSchema(data.appId);
-		});
-
-		this.__nrp.on('queuePolicyRoomCloseSocketEvent', async (data: any) => {
-			data = JSON.parse(data);
-			if (!this._policyRooms[data.appId]) return;
-			Logging.logSilly(`queuePolicyRoomCloseSocketEvent ${data.appId}`);
-			await this._primaryQueuePolicyRoomCloseSocketEvent(data);
-		});
-
-		this.__nrp.on('queueBasedConditionQuery', (data: any) => {
-			data = JSON.parse(data);
-			Logging.logSilly(`queueBasedConditionQuery`);
-			this._policyCloseSocketEvents.push(data);
-		});
-
-		this.__nrp.on('accessControlPolicy:disconnectQueryBasedSocket', async (data: any) => {
-			data = JSON.parse(data);
-			Logging.logSilly(`accessControlPolicy:disconnectQueryBasedSocket`);
-			await this._primaryDisconnectQueryBasedSocket(data);
-		});
-
-		this.__nrp.on('primary:debugRollcall', async (data: any) => {
-			data = JSON.parse(data);
-			Logging.logSilly(`primary:debugRollcall ${data.id}`);
-
-			const id = uuidv4();
-
-			// Broadcast to all and see whos listening
-			this.__nrp?.emit(`worker:debugRollcall`, JSON.stringify({ id: data.id }));
-
-			// Generate an identifier for message
-			// Await a response from the primary
-			const result = await new Promise((resolve, reject) => {
-				let _result = {};
-				let _timeout = setTimeout(() => resolve(_result), 50);
-				const handleResponce = (data) => {
-					clearTimeout(_timeout);
-					_result = { ..._result, ...data };
-					_timeout = setTimeout(() => resolve(_result), 50);
-				};
-				// Debounce based on the callback
-				// await responces
-				// We'll just push in a callback and we'll handle the clean up
-				this._processResQueue[id] = { callback: handleResponce };
-			});
-
-			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({ id: data.id, response: result }));
-		});
-		this.__nrp.on('primary:debugRollcallResponce', async (data: any) => {
-			data = JSON.parse(data);
-			if (!this._processResQueue[data.id]) return;
-			this._processResQueue[data.id].callback(data.responce);
-		});
-
-		// Take updates from the workers on room structs and update our copy
-		this.__nrp.on('primary:updatePolicyRooms', async (data: any) => {
-			data = JSON.parse(data);
-			Logging.logSilly(`primary:updatePolicyRooms ${data.id}`);
-
-			for (const roomId of Object.keys(data.message)) {
-				this._policyRooms[roomId] = data.message[roomId];
-			}
-
-			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({ id: data.id, response: true }));
-		});
-
-		this.__nrp.on('primary:getPolicyRooms', async (data: any) => {
-			data = JSON.parse(data);
-			Logging.logSilly(`primary:getPolicyRooms ${data.id}`);
-			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({ id: data.id, response: this._policyRooms }));
-		});
-
-		// Serve up a copy of the policy rooms to the requester
-		this.__nrp.on('primary:getPolicyRoomsByIds', async (data: any) => {
-			data = JSON.parse(data);
-			Logging.logSilly(`primary:getPolicyRoomsByIds ${data.id}`);
-
-			const roomStructs = data.message.rooms
-				.reduce((map, roomId) => {
-					if (this._policyRooms[roomId]) map[roomId] = this._policyRooms[roomId];
-					return map;
-				}, {});
-
-			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({ id: data.id, response: roomStructs }));
-		});
-
-		this.__nrp.on('primary:getPolicyRoomsByAppId', async (data: any) => {
-			data = JSON.parse(data);
-			Logging.logSilly(`primary:getPolicyRoomsByAppId ${data.id}`);
-
-			const roomStructs = Object.keys(this._policyRooms)
-				.filter((roomId) => this._policyRooms[roomId].appId === data.message.appId)
-				.reduce((map, roomId) => {
-					map[roomId] = this._policyRooms[roomId];
-					return map;
-				}, {});
-
-			this.__nrp?.emit(`process:messageQueueResponse`, JSON.stringify({ id: data.id, response: roomStructs }));
-		});
-
-		this.__nrp.on('primary:policy-updated', async (data) => {
-			// Policy has been updated
-			// - Trigger workers to revaluate what rooms users are connected to.
-
-			// TODO: Handle outdated rooms and clean up this._policyRooms
 		});
 	}
 
@@ -706,30 +475,6 @@ export default class BootstrapSocket extends Bootstrap {
 		if (!this.__nrp) throw new Error('No NRP instance');
 
 		this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
-
-		this.__nrp.on('worker:debugRollcall', async (data: any) => {
-			data = JSON.parse(data);
-			Logging.logSilly(`worker:debugRollcall ${data.id}`);
-
-			if (!this.io) throw new Error('No socket.io instance');
-
-			const nspSids = {};
-			for (const nsp of this.io._nsps.keys()) {
-				// Ignore some namespaces
-				if (['/', '/stats', '/debug'].includes(nsp)) continue;
-				if (!nspSids[nsp]) nspSids[nsp] = {};
-				for (const [sid, rooms] of this.io.of(nsp).adapter.sids.entries()) {
-					if (!nspSids[nsp][sid]) {
-						nspSids[nsp][sid] = {
-							socketData: this.io.of(nsp).sockets.get(sid)?.data,
-							rooms: Array.from(rooms.values()),
-						};
-					}
-				}
-			}
-
-			this.__nrp?.emit('primary:debugRollcallResponce', JSON.stringify({ id: data.id, responce: nspSids }));
-		});
 
 		this.__nrp.on('sock:worker:request-status', async (data: any) => {
 			data = JSON.parse(data);
@@ -760,87 +505,6 @@ export default class BootstrapSocket extends Bootstrap {
 			Logging.logSilly(`process:messageQueueResponse ${data.id}`);
 			this._processResQueue[data.id].resolve(data.response);
 		});
-	}
-
-	async __workerEvaluateUserRooms(user: any, app: any, socket: sioSocket, clear = false) {
-		Logging.logSilly(`__workerEvaluateUserRooms::start userId:${user.id} socketId:${socket.id}`);
-		// DO NOT USE socket.request
-		const userRoomsStruct = await AccessControl.getUserRoomStructures(user, app.id, socket.request);
-		const userRooms = Object.keys(userRoomsStruct);
-
-		if (userRooms.length < 1) {
-			Logging.logSilly(`__workerEvaluateUserRooms::end-no-user-rooms socketId:${socket.id}`);
-			return;
-		}
-
-		this._messagePrimary('updatePolicyRooms', userRoomsStruct);
-
-		const currentRooms = Array.from(socket.rooms.values());
-		const roomsToLeave = currentRooms.filter((roomId) => roomId !== socket.id && !userRooms.includes(roomId));
-		const roomsToJoin = userRooms.filter((roomId) => !currentRooms.includes(roomId));
-
-		await this.__workerUserLeaveRooms(user, app, socket, roomsToLeave, clear);
-
-		if (roomsToJoin.length > 0) {
-			socket.join(roomsToJoin);
-
-			// Emit event to users
-			for (const roomId of roomsToJoin) {
-				const collections = Object.keys(userRoomsStruct[roomId].schema);
-
-				// Instead of broadcasting to everyone that a user needs to clear their data, we'll just ask the user POLITELY
-				// to clear their data... don't hold your breath, they may say no.
-				socket.emit('db-connect-room', {
-					collections: collections,
-					userId: user.id,
-					room: roomId,
-					apiPath: app.apiPath,
-				});
-			}
-
-			Logging.log(`[${app.apiPath}][${user.id}] Joining ${socket.id} to rooms ${roomsToJoin.join(', ')}`);
-		}
-
-		// DEBUG - Rooms have changed lets notify
-		this.__nrp?.emit('debug:dump', '{}');
-
-		// Logging.log(`[${app.apiPath}][${user.id}] Connected ${socket.id} to room ${userRooms.join(', ')}`);
-		Logging.logSilly(`__workerEvaluateUserRooms::end socketId:${socket.id}`);
-	}
-
-	async __workerUserLeaveRooms(user: any, app: any, socket: sioSocket, roomsToLeave?: string[], clear = false) {
-		Logging.logSilly(`__workerUserLeaveRooms::start userId:${user.id} socketId:${socket.id}`);
-
-		if (!roomsToLeave || roomsToLeave.length < 1) {
-			// We've got no rooms to leave, early out.
-			Logging.logSilly(`__workerUserLeaveRooms::end-no-rooms-to-leave userId:${user.id} socketId:${socket.id}`);
-			return;
-		}
-
-		// Fetch the room structs if we're clearing the data, if not we don't need it.
-		const roomStructsToClear = (clear) ? await this._messagePrimary('getPolicyRoomsByIds', { rooms: roomsToLeave }) : null;
-
-		for (const roomId of roomsToLeave) {
-			if (clear) {
-				const collections = Object.keys(roomStructsToClear[roomId].schema);
-
-				// Instead of broadcasting to everyone that a user needs to clear their data, we'll just ask the user POLITELY
-				// to clear their data... don't hold your breath, they may say no.
-				socket.emit('db-disconnect-room', {
-					collections: collections,
-					userId: user.id,
-					room: roomId,
-					apiPath: app.apiPath,
-				});
-			}
-
-			// I'm not sure there is a need to wait for the user to respond that they've left the room, we'll just revoke their
-			// access now and it's up to them to have honored clearing the data
-			socket.leave(roomId);
-		}
-
-		Logging.log(`[${app.apiPath}][${user.id}] Remove ${socket.id} from rooms ${roomsToLeave.join(',')}`);
-		Logging.logSilly(`__workerUserLeaveRooms::end userId:${user.id} socketId:${socket.id}`);
 	}
 
 	private async _workerOnSPRActivity(data: { tokens: string[], activity: SPRActivity }) {
@@ -962,108 +626,5 @@ export default class BootstrapSocket extends Bootstrap {
 		socket.on('disconnect', () => {
 			Logging.logSilly(`Data sharing ${dataShare.id} disconnected from ${url} with id ${socket.id}`);
 		});
-	}
-
-	async _primaryQueuePolicyRoomCloseSocketEvent(data) {
-		const policies = data.policies;
-		// TODO: Add app id to hash
-		const room = hash(policies);
-		for await (const key of Object.keys(policies)) {
-			const policy = policies[key];
-			const conditionStr = policy.condition.reduce((str, condition) => str = str + JSON.stringify(condition), '');
-			if (!conditionStr) continue;
-
-			await this._queueEvent(data, room, policy, key, conditionStr);
-		}
-	}
-
-	async _queueEvent(data, room, policy, roomKey, conditionStr) {
-		const conditions = policy.condition;
-		conditions.reduce(async (prev, condition) => {
-			await prev;
-			const dateTimeBasedCondition = await AccessControlConditions.isPolicyDateTimeBased(condition);
-			if (dateTimeBasedCondition) {
-				let policyIdx = this._policyCloseSocketEvents.findIndex((event) => event.name === roomKey);
-				if (policyIdx === -1) {
-					policyIdx = this._policyCloseSocketEvents.push({
-						name: roomKey,
-						conditions: [
-							conditionStr,
-						],
-					});
-				} else {
-					const policyConditionExist = this._policyCloseSocketEvents[policyIdx].conditions.some((c) => c === conditionStr);
-					if (policyConditionExist) return;
-
-					this._policyCloseSocketEvents[policyIdx].conditions.push(conditionStr);
-				}
-
-				await this._queueDateTimeEvent(data, policy, dateTimeBasedCondition, policyIdx);
-				return;
-			}
-
-			const queryBasedCondition = await AccessControlConditions.isPolicyQueryBasedCondition(condition, data.schemaNames);
-			if (queryBasedCondition) {
-				this.__nrp?.emit('queueBasedConditionQuery', JSON.stringify({
-					room: room,
-					collection: queryBasedCondition.name,
-					identifier: queryBasedCondition.entityId,
-				}));
-			}
-		}, Promise.resolve());
-	}
-
-	/**
-	 * @deprecated Should be refactored as part of the SPR work.
-	 */
-	async _queueDateTimeEvent(data, policy, dateTimeBasedCondition, idx) {
-		// const envVars = policy.env;
-
-		throw new Error('DEPRECATED: call made to _queueDateTimeEvent');
-
-		// if (dateTimeBasedCondition === 'time') {
-		// 	const conditionEndTime = AccessControlConditions.getEnvironmentVar(envVars, 'env.endTime');
-		// 	if (!conditionEndTime) return;
-
-		// 	const timeout = Sugar.Date.range(`now`, `${conditionEndTime}`).milliseconds();
-		// 	setTimeout(() => {
-		// 		this.__nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
-		// 			userId: data.userId,
-		// 			appId: data.appId,
-		// 		}));
-		// 		this._policyCloseSocketEvents.splice(idx - 1, 1);
-		// 	}, timeout);
-		// }
-
-		// if (dateTimeBasedCondition === 'date') {
-		// 	const conditionEndDate = AccessControlConditions.getEnvironmentVar(envVars, 'env.endDate');
-		// 	if (!conditionEndDate) return;
-
-		// 	const nearlyExpired = Sugar.Date.create().getTime() - Sugar.Date.create(conditionEndDate).getTime();
-		// 	if (this._oneWeekMilliseconds > nearlyExpired) {
-		// 		setTimeout(() => {
-		// 			this.__nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
-		// 				userId: data.userId,
-		// 				appId: data.appId,
-		// 			}));
-		// 			this._policyCloseSocketEvents.splice(idx - 1, 1);
-		// 		}, nearlyExpired);
-		// 	}
-		// }
-	}
-
-	async _primaryDisconnectQueryBasedSocket(data) {
-		const schemaBasedConditionIdx = this._policyCloseSocketEvents.findIndex((c) => {
-			return c.collection === data.updatedSchema && c.identifier === data.identifier;
-		});
-
-		if (schemaBasedConditionIdx === -1) return;
-
-		this.__nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
-			userId: data.userId,
-			appId: data.appId,
-		}));
-
-		this._policyCloseSocketEvents.splice(schemaBasedConditionIdx, 1);
 	}
 }

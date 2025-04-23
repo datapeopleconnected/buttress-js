@@ -197,19 +197,19 @@ class AccessControl {
 		}
 
 		if (user) {
-			const params = {
-				policies: req.ac.policyConfigs,
-				appId: appId,
-				apiPath: req.authApp.apiPath,
-				userId: user.id,
-				schemaNames: [...this._coreSchema, ...this._schemas[appId]].map((s) => s.name),
-				schemaName: schemaName,
-				path: requestedURL,
-			};
+			// const params = {
+			// 	policies: req.ac.policyConfigs,
+			// 	appId: appId,
+			// 	apiPath: req.authApp.apiPath,
+			// 	userId: user.id,
+			// 	schemaNames: [...this._coreSchema, ...this._schemas[appId]].map((s) => s.name),
+			// 	schemaName: schemaName,
+			// 	path: requestedURL,
+			// };
 			await this._queuePolicyLimitDeleteEvent(tokenPolicies, token, appId);
 			// TODO: This doesn't need to happen here, move to sock
 			// await this._checkAccessControlDBBasedQueryCondition(req, params);
-			this._nrp?.emit('queuePolicyRoomCloseSocketEvent', JSON.stringify(params));
+			// this._nrp?.emit('queuePolicyRoomCloseSocketEvent', JSON.stringify(params));
 		}
 
 		// TODO: This doesn't need to happen here, move to sock
@@ -470,14 +470,14 @@ class AccessControl {
 		const requestMethod = req.method;
 		if (requestMethod !== 'PUT') return;
 
-		const id = params.path.split('/').pop();
-		this._nrp?.emit('accessControlPolicy:disconnectQueryBasedSocket', JSON.stringify({
-			appId: params.appId,
-			apiPath: params.apiPath,
-			userId: params.userId,
-			id: id,
-			updatedSchema: params.schemaName,
-		}));
+		// const id = params.path.split('/').pop();
+		// this._nrp?.emit('accessControlPolicy:disconnectQueryBasedSocket', JSON.stringify({
+		// 	appId: params.appId,
+		// 	apiPath: params.apiPath,
+		// 	userId: params.userId,
+		// 	id: id,
+		// 	updatedSchema: params.schemaName,
+		// }));
 	}
 
 	_queuePolicyLimitDeleteEvent(policies, userToken, appId) {
@@ -498,10 +498,10 @@ class AccessControl {
 					appId,
 				}))
 
-				this._nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
-					userId: Model.getModel('User').create(userToken._userId),
-					appId,
-				}));
+				// this._nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
+				// 	userId: Model.getModel('User').create(userToken._userId),
+				// 	appId,
+				// }));
 
 				this._queuedLimitedPolicy.splice(policyIdx, 1);
 			}, nearlyExpired);
