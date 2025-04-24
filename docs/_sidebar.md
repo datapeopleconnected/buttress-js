@@ -17,7 +17,7 @@
 
 * Applications
   * [Introduction](applications/)
-  * [Schema](todo.md)
+  * [Schema](applications/schema.md)
   * [Policy](applications/policy.md)
   * [Lambda](applications/lambda.md)
   * [Secure Store](applications/secure-store.md)
