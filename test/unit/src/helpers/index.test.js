@@ -14,33 +14,33 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it} = require('mocha');
-const assert = require('assert');
+import { describe, it } from 'mocha';
+import assert from 'assert';
 
-const Helpers = require('../../../../dist/helpers');
+import * as Helpers from '../../../../dist/helpers/index.js';
 
 describe('helpers.compareByProps', () => {
 	it('should handle one of the values being undefined', () => {
-		const a = {name: 'Alex', age: 10};
-		const b = {name: 'Jordan', age: undefined};
+		const a = { name: 'Alex', age: 10 };
+		const b = { name: 'Jordan', age: undefined };
 		assert.strictEqual(Helpers.compareByProps(new Map([['age', 1]]), a, b), 1);
 	});
 
 	it('should return 1 if a is greater than be when sorting by age', () => {
-		const a = {name: 'Alex', age: 10};
-		const b = {name: 'Jordan', age: 5};
+		const a = { name: 'Alex', age: 10 };
+		const b = { name: 'Jordan', age: 5 };
 		assert.strictEqual(Helpers.compareByProps(new Map([['age', 1]]), a, b), 1);
 	});
 
 	it('should return 0 if a is equal to be when sorting by age', () => {
-		const a = {name: 'Alex', age: 10};
-		const b = {name: 'Jordan', age: 10};
+		const a = { name: 'Alex', age: 10 };
+		const b = { name: 'Jordan', age: 10 };
 		assert.strictEqual(Helpers.compareByProps(new Map([['age', 1]]), a, b), 0);
 	});
 
 	it('should return 1 if a is greater than be when sorting by age desc', () => {
-		const a = {name: 'Alex', age: 10};
-		const b = {name: 'Jordan', age: 5};
+		const a = { name: 'Alex', age: 10 };
+		const b = { name: 'Jordan', age: 5 };
 		assert.strictEqual(Helpers.compareByProps(new Map([['age', -1]]), a, b), -1);
 	});
 });

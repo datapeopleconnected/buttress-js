@@ -22,13 +22,13 @@
       "condition": {
         "@and": [
           {
-            "@env.time": {
-              "@gtDate": "env.startTime"
+            "#env.date.now": {
+              "@gtDate": "#env.startTime"
             }
           },
           {
-            "@env.time": {
-              "@ltDate": "env.endTime"
+            "#env.date.now": {
+              "@ltDate": "#env.endTime"
             }
           }
         ]

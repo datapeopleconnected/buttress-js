@@ -16,10 +16,12 @@
 
 import { Stream } from 'node:stream';
 
-import AccessControlFilter from './filter';
+import AccessControlFilter from './filter.js';
 
-import { PolicyConfig } from '../model/core/policy';
-import { parsedPolicyConfig } from './index'
+import { PolicyConfig } from '../model/core/policy.js';
+import { parsedPolicyConfig } from './index.js';
+
+import { BjsQuery, QueryParams } from '../types/bjs-query.js';
 
 export async function find(model, query: QueryParams<object>, ac: {policyConfigs: parsedPolicyConfig[]}) {
   if (ac.policyConfigs.length > 1) {

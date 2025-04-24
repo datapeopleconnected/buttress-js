@@ -22,4 +22,4 @@ if [ ! -f "$FILE" ]; then
 	exit;
 fi
 
-node $FILE
+node --no-node-snapshot $FILE

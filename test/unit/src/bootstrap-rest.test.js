@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it} = require('mocha');
-const assert = require('assert');
+import { describe, it } from 'mocha';
+import assert from 'assert';
 
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
+import BootstrapRest from '../../../dist/bootstrap-rest.js';
 
 describe('bootstrap-rest:class', () => {
 	it(`should create an instance of the bootstrapRest class`, () => {

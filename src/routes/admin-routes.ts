@@ -13,15 +13,15 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Model from '../model';
-import Logging from '../helpers/logging';
-import * as Helpers from '../helpers';
+import Model from '../model/index.js';
+import Logging from '../helpers/logging.js';
+import * as Helpers from '../helpers/index.js';
 
-import adminPolicy from '../admin-policy.json';
-import adminLambda from '../admin-lambda.json';
+import adminPolicy from '../admin-policy.json' with { type: 'json' };
+import adminLambda from '../admin-lambda.json' with { type: 'json' };
 
 // TODO: This file might be able to be rolled into routes.
 
@@ -48,7 +48,7 @@ class AdminRoutes {
 			});
 			if (!superToken) {
 				Logging.logError('Buttress admin check can not find super token');
-				return res.status(404).send({message: 'admin_app_not_found'});
+				return res.status(404).send({ message: 'admin_app_not_found' });
 			}
 
 			const superApp = await Model.getModel('App').findOne({
@@ -57,7 +57,7 @@ class AdminRoutes {
 
 			if (!superApp) {
 				Logging.logError('Buttress admin check can not find super app');
-				return res.status(404).send({message: 'admin_app_not_found'});
+				return res.status(404).send({ message: 'admin_app_not_found' });
 			}
 
 			res.status(200).send({
@@ -76,7 +76,7 @@ class AdminRoutes {
 
 			if (!superToken) {
 				Logging.logError('The used token does not exist');
-				return res.status(404).send({message: 'Please enter a valid admin token to activate your admin app'});
+				return res.status(404).send({ message: 'Please enter a valid admin token to activate your admin app' });
 			}
 
 			const superApp = await Model.getModel('App').findOne({
@@ -85,7 +85,7 @@ class AdminRoutes {
 
 			await this._updateAppPolicySelectorList(superApp);
 
-			res.status(200).send({appId: superApp.id});
+			res.status(200).send({ appId: superApp.id });
 		});
 
 		app.post('/api/v1/admin/install-lambda', async (req, res) => {
@@ -96,18 +96,18 @@ class AdminRoutes {
 				value: tokenValue,
 			});
 			if (!adminToken) {
-				return res.status(401).send({message: 'invalid_token'});
+				return res.status(401).send({ message: 'invalid_token' });
 			}
 			if (adminToken.type !== Model.getModel('Token').Constants.Type.SYSTEM) {
-				return res.status(401).send({message: 'unauthorised_token'});
+				return res.status(401).send({ message: 'unauthorised_token' });
 			}
 			if (!lambdaToInstall || !Array.isArray(lambdaToInstall)) {
-				return res.status(400).send({message: 'invalid_body'});
+				return res.status(400).send({ message: 'invalid_body' });
 			}
 
 			const adminLambdaKeys = Object.keys(adminLambda);
 			if (!lambdaToInstall.every((key) => adminLambdaKeys.includes(key))) {
-				return res.status(404).send({message: 'lambda_not_found'});
+				return res.status(404).send({ message: 'lambda_not_found' });
 			}
 
 			try {
@@ -130,10 +130,10 @@ class AdminRoutes {
 					});
 				}
 
-				res.status(200).send({message: 'done'});
+				res.status(200).send({ message: 'done' });
 			} catch (err) {
-				if (err instanceof Error){
-					res.status(404).send({message: err.message});
+				if (err instanceof Error) {
+					res.status(404).send({ message: err.message });
 				}
 
 				throw err;
@@ -193,7 +193,7 @@ class AdminRoutes {
 						.filter((v, idx, arr) => arr.indexOf(v) === idx);
 				}
 			});
-			adminPolicyPropsList = {...policyPropsList, ...adminPolicyPropsList};
+			adminPolicyPropsList = { ...policyPropsList, ...adminPolicyPropsList };
 		}
 
 		const query = {
@@ -252,7 +252,7 @@ class AdminRoutes {
 				throw new Error('Cannot find an admin app token');
 			}
 
-			const adminApp = await Model.getModel('App').findOne({_tokenId: Model.getModel('Token').createId(adminToken.id)});
+			const adminApp = await Model.getModel('App').findOne({ _tokenId: Model.getModel('Token').createId(adminToken.id) });
 			if (!adminApp) {
 				throw new Error('Cannot find an admin app');
 			}
@@ -268,7 +268,7 @@ class AdminRoutes {
 					type: 'lambda',
 					domains: [Config.app.host],
 					permissions: [
-						{route: '*', permission: '*'},
+						{ route: '*', permission: '*' },
 					],
 					policyProperties: lambda.policyProperties,
 				};

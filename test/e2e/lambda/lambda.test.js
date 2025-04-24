@@ -14,15 +14,15 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it, before, after} = require('mocha');
-const assert = require('assert');
+import { describe, it, before, after } from 'mocha';
+import assert from 'assert';
 
-const Config = require('node-env-obj')();
+import Config from '../../config.js';
 
-const {createApp, createLambda, updatePolicyPropertyList, bjsReq, bjsReqPost} = require('../../helpers');
+import { createApp, createLambda, updatePolicyPropertyList, bjsReq, bjsReqPost } from '../../helpers.js';
 
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
-const {default: BootstrapLambda} = require('../../../dist/bootstrap-lambda');
+import BootstrapRest from '../../../dist/bootstrap-rest.js';
+import BootstrapLambda from '../../../dist/bootstrap-lambda.js';
 
 let LAMBDA_PROCESS = null;
 let REST_PROCESS = null;
@@ -78,7 +78,7 @@ describe('Lambda', async () => {
 					url: Config.paths.root,
 					branch: 'develop',
 					hash: 'HEAD',
-					entryFile: 'test/data/lambda/hello-world.js',
+					entryFile: 'test/data/lambda/hello-world.cjs',
 					entryPoint: 'execute',
 				},
 				trigger: [{
@@ -109,7 +109,7 @@ describe('Lambda', async () => {
 						url: Config.paths.root,
 						branch: 'develop',
 						hash: 'HEAD',
-						entryFile: 'test/data/lambda/hello-world.js',
+						entryFile: 'test/data/lambda/hello-world.cjs',
 						entryPoint: 'execute',
 					},
 					trigger: [{
@@ -179,7 +179,7 @@ describe('Lambda', async () => {
 						url: Config.paths.root,
 						branch: 'develop',
 						hash: 'HEAD',
-						entryFile: 'test/data/lambda/hello-world.js',
+						entryFile: 'test/data/lambda/hello-world.cjs',
 						entryPoint: 'execute',
 					},
 					trigger: [{

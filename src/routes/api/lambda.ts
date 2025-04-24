@@ -21,15 +21,15 @@ import { ObjectId } from 'bson';
 
 const exec = util.promisify(cpExec);
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Route from '../route';
-import Model from '../../model';
-import Sugar from '../../helpers/sugar';
-import * as Helpers from '../../helpers';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import Sugar from '../../helpers/sugar.js';
+import * as Helpers from '../../helpers/index.js';
 
-import Datastore from '../../datastore';
+import Datastore from '../../datastore/index.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -511,7 +511,7 @@ class SetLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').setPolicyPropertiesById(validate.id, req.body);
+		await Model.getModel('Token').setPolicyPropertiesById(validate.id.toString(), req.body);
 		return true;
 	}
 }
@@ -569,7 +569,7 @@ class UpdateLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').updatePolicyPropertiesById(validate.token, req.body);
+		await Model.getModel('Token').updatePolicyProperties(validate.token, req.body);
 		return true;
 	}
 }

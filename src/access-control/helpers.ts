@@ -14,17 +14,19 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Sugar from '../helpers/sugar';
+import Sugar from '../helpers/sugar.js';
 
-import Model from '../model';
-import Logging from '../helpers/logging';
+import Model from '../model/index.js';
+import Logging from '../helpers/logging.js';
 
-import { ApplicablePolicies } from './index';
-import { PolicyEnv } from '../model/core/policy';
+import { ApplicablePolicyConfig } from './index.js';
+import { ACEnv, ACPolicyEnvCombined } from './env.js';
 
-export function CombineEnvGroups(policy: ApplicablePolicies): PolicyEnv {
-	let env: PolicyEnv = {};
-	if (policy.env !== null) env = { ...policy.env };
+import { Policy, PolicyConfig } from '../model/core/policy.js';
+
+export function CombineEnvGroups(policy: ApplicablePolicyConfig, reqEnv: ACEnv): ACPolicyEnvCombined {
+	let env: ACPolicyEnvCombined = { ...reqEnv };
+	if (policy.env !== null) env = { ...env, ...policy.env };
 	if (policy.config.env !== null) env = { ...env, ...policy.config.env };
 
 	return env;
@@ -89,22 +91,30 @@ class Helpers {
 			break;
 		case '$gtDate':
 		case '@gtDate': {
-			passed = Sugar.Date.isAfter(rhs, lhs);
+			const lhsDate = wrangleDateType(lhs);
+			if (!lhsDate) return false;
+			passed = Sugar.Date.isAfter(lhsDate, rhs);
 		}
 			break;
 		case '$gteDate':
 		case '@gteDate': {
-			passed = Sugar.Date.isAfter(rhs, lhs) || Sugar.Date.is(rhs, lhs);
+			const lhsDate = wrangleDateType(lhs);
+			if (!lhsDate) return false;
+			passed = Sugar.Date.isAfter(lhsDate, lhs) || Sugar.Date.is(lhsDate, lhs);
 		}
 			break;
 		case '$ltDate':
 		case '@ltDate': {
-			passed = Sugar.Date.isBefore(rhs, lhs);
+			const lhsDate = wrangleDateType(lhs);
+			if (!lhsDate) return false;
+			passed = Sugar.Date.isBefore(lhsDate, rhs);
 		}
 			break;
 		case '$lteDate':
 		case '@lteDate': {
-			passed = Sugar.Date.isBefore(rhs, lhs) || Sugar.Date.is(rhs, lhs);
+			const lhsDate = wrangleDateType(lhs);
+			if (!lhsDate) return false;
+			passed = Sugar.Date.isBefore(lhsDate, lhs) || Sugar.Date.is(lhsDate, lhs);
 		}
 			break;
 		case '$rex':
@@ -147,4 +157,121 @@ class Helpers {
 	}
 }
 
+// Wrangle the type over to a sugar date
+function wrangleDateType(val: unknown): Date | null | undefined {
+	if (val === null) return null;
+	if (val === undefined) return undefined;
+	if (typeof val === 'string') {
+		return Sugar.Date.create(val);
+	}
+
+	return val as Date;
+}
+
 export default new Helpers();
+
+export function filterPolicyConfigs(policy: Policy, schemaName: string, verb: string, isCoreSchema: boolean, verbCheckReadability: boolean = false): PolicyConfig[] {
+	return policy.config.filter((c) => {
+		if (!c.query || !c.verbs || !c.schema) return false;
+
+		let verbCheck = c.verbs.includes('%ALL%') || c.verbs.includes(verb);
+
+		if (verbCheckReadability) {
+			verbCheck = c.verbs.includes('%ALL%') || (c.verbs.includes('GET') || c.verbs.includes('SEARCH'));
+		}
+
+		const schemaCheck = c.schema.includes('%ALL%') || c.schema.includes(schemaName) || c.schema.includes((isCoreSchema) ? '%CORE_SCHEMA%' : '%APP_SCHEMA%');
+
+		return verbCheck && schemaCheck;
+	});
+}
+
+export function findPatternOccurrences(obj: any, pattern: string): { path: string[]; type: "key" | "value"; value: string }[] {
+	const occurrences: { path: string[]; type: "key" | "value"; value: string }[] = [];
+	const regex = new RegExp(pattern);
+
+	function recurse(currentObj: any, path: string[] = []): void {
+		for (const key in currentObj) {
+			if (Object.prototype.hasOwnProperty.call(currentObj, key)) {
+				const currentPath = [...path, key];
+				const value = currentObj[key];
+
+				if (typeof key === 'string' && regex.test(key)) {
+					occurrences.push({ path: currentPath, type: "key", value: key });
+				}
+
+				if (typeof value === 'string' && regex.test(value)) {
+					occurrences.push({ path: currentPath, type: "value", value: value });
+				} else if (typeof value === 'object' && value !== null) {
+					recurse(value, currentPath);
+				} else if (Array.isArray(value)) {
+					value.forEach((item, index) => {
+						const arrayPath = [...currentPath, index.toString()]; // Convert index to string
+						if (typeof item === 'string' && regex.test(item)) {
+							occurrences.push({ path: arrayPath, type: "value", value: item });
+						} else if (typeof item === 'object' && item !== null) {
+							recurse(item, arrayPath);
+						}
+					});
+				}
+			}
+		}
+	}
+
+	recurse(obj);
+	return occurrences;
+}
+export function patternExists(obj: any, pattern: string): boolean {
+  const regex = new RegExp(pattern);
+
+  function recurse(currentObj: any): boolean {
+    for (const key in currentObj) {
+      if (Object.prototype.hasOwnProperty.call(currentObj, key)) {
+        const value = currentObj[key];
+
+        if (typeof key === 'string' && regex.test(key)) {
+          return true;
+        }
+
+        if (typeof value === 'string' && regex.test(value)) {
+          return true;
+        } else if (typeof value === 'object' && value !== null) {
+          if (recurse(value)) {
+            return true;
+          }
+        } else if (Array.isArray(value)) {
+          for (const item of value) {
+            if (typeof item === 'string' && regex.test(item)) {
+              return true;
+            } else if (typeof item === 'object' && item !== null) {
+              if (recurse(item)) {
+                return true;
+              }
+            }
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  return recurse(obj);
+}
+
+export function containsTokenLevelRef(applicablePolicy: ApplicablePolicyConfig) {
+	const outcome = {
+		env: false,
+		configEnv: false,
+		condition: false,
+		query: false,
+	};
+
+	// eslint-disable-next-line no-useless-escape
+	const pattern = '(#env\.user)';
+	outcome.env = patternExists(applicablePolicy.env, pattern);
+	outcome.configEnv = patternExists(applicablePolicy.config.env, pattern);
+	outcome.query = patternExists(applicablePolicy.config.query, pattern);
+	outcome.condition = patternExists(applicablePolicy.config.condition, pattern);	
+
+	return outcome;
+}

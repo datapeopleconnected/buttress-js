@@ -14,18 +14,17 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const fs = require('fs');
-const Config = require('node-env-obj')({
-	basePath: __dirname,
-	envFile: `.test.env`,
-	envPath: '../',
-	configPath: '../src',
-});
+import fs from 'node:fs';
+import process from 'node:process';
+
+import Config from './config.js';
+
+import Logging from '../dist/helpers/logging.js';
 
 if (process.env.TEST_ENV === 'e2e') {
 	const tokenPath = `${Config.paths.appData}/super.json`;
 	try {
-		const {token} = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
+		const { token } = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
 		Config.testToken = token;
 	} catch (e) {
 		console.log('');
@@ -36,16 +35,13 @@ if (process.env.TEST_ENV === 'e2e') {
 		process.exit(1);
 	}
 } else {
-	// Mock Datastore
-	const {default: Datastore} = require('../dist/datastore');
-	Datastore.createInstance({connectionString: `empty://buttressjs.com`}, true);
+	const { default : Datastore } = await import('../dist/datastore/index.js');
+	Datastore.createInstance({ connectionString: `empty://buttressjs.com` }, true);
 }
-
-const {default: Logging} = require('../dist/helpers/logging');
 
 const SHOW_LOG = (!!process.env.SHOW_LOG);
 
-exports.mochaHooks = {
+export const mochaHooks = {
 	beforeAll() {
 		// TODO: Clear out the db so we can start clean.
 		Logging.init('TEST');

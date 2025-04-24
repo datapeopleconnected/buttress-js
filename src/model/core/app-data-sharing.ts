@@ -14,11 +14,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
-import Logging from '../../helpers/logging';
+import * as Helpers from '../../helpers/index.js';
+import Schema from '../../schema.js';
+import Logging from '../../helpers/logging.js';
 
-import StandardModel from '../type/standard';
+import StandardModel from '../type/standard.js';
 
 /**
  * @class AppDataSharingSchemaModel

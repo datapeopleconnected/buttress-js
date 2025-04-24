@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it} = require('mocha');
-const assert = require('assert');
+import { describe, it } from 'mocha';
+import assert from 'assert';
 
-const {default: Filter} = require('../../../../dist/access-control/filter');
+import Filter from '../../../../dist/access-control/filter.js';
 
 describe('access-control/filter', () => {
   describe('mergeQueryFilters', () => {
@@ -29,7 +29,7 @@ describe('access-control/filter', () => {
       const mergedFilter = Filter.mergeQueryFilters(filter1, filter2);
       assert.deepStrictEqual(mergedFilter, { $and: [filter1, filter2] });
     });
-    
+
     it('should merge two filters with OR operator', () => {
       const filter1 = { age: { $gt: 18 } };
       const filter2 = { country: 'USA' };
@@ -107,17 +107,17 @@ describe('access-control/filter', () => {
     });
 
     it('should combine two queries with $and merging down an existing $and', async () => {
-      const q1 = { $and: [{"car": { "$eq": "blue" }}] };
+      const q1 = { $and: [{ "car": { "$eq": "blue" } }] };
       const q2 = { "car": { "$eq": "red" } };
       const mergedFilter = await Filter.mergeQueryFilters(q1, q2, '$and');
-      assert.deepStrictEqual(mergedFilter, { $and: [q1.$and[0], q2]} );
+      assert.deepStrictEqual(mergedFilter, { $and: [q1.$and[0], q2] });
     });
   })
 
   describe('mergeQueryFiltersWithAccessControl', () => {
     it('should merge together two queries', async () => {
       const q1 = { "$and": [{ "userId": { "$eq": "a" } }] };
-      const q2 = { "userId": {"userId": { "$eq": "b" }} };
+      const q2 = { "userId": { "userId": { "$eq": "b" } } };
       const mergedFilter = await Filter.mergeQueryFiltersWithAccessControl(q1, q2);
       assert.deepStrictEqual(mergedFilter, { $and: [q1.$and[0], q2] });
     });

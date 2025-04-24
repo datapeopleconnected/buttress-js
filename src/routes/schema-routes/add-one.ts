@@ -14,11 +14,11 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
-import Plugins from '../../plugins';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import * as Helpers from '../../helpers/index.js';
+import Schema from '../../schema.js';
+import Plugins from '../../plugins/index.js';
 
 /**
  * @class AddOne

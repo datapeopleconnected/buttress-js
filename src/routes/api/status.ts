@@ -15,7 +15,7 @@
  */
 import os from 'node:os';
 
-import Route from '../route';
+import Route from '../route.js';
 
 const routes: (typeof Route)[] = [];
 

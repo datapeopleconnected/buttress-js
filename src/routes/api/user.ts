@@ -13,13 +13,39 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Route from '../route';
-import Model from '../../model';
-import Logging from '../../helpers/logging';
-import * as Helpers from '../../helpers';
-import Datastore from'../../datastore';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import Logging from '../../helpers/logging.js';
+import * as Helpers from '../../helpers/index.js';
+import Datastore from'../../datastore/index.js';
 
 const routes: (typeof Route)[] = [];
+
+function getTokenQueryfromParams(req, userId) {
+	let tokenId = null;
+	try {
+		tokenId = Model.getModel('Token').createId(req.params.tokenId);
+	} catch (err) {
+		Logging.logSilly(err);
+	}
+	const tokenValue = (tokenId === null) ? req.params.tokenId : null;
+
+	if (!tokenId && !tokenValue) {
+		return null;
+	}
+
+	const tokenQuery: {
+		_id?: string;
+		_userId: string;
+		value?: string;
+	} = {
+		_userId: userId,
+	};
+	if (tokenId) tokenQuery._id = tokenId;
+	if (tokenValue) tokenQuery.value = tokenValue;
+
+	return tokenQuery;
+}
 
 /**
  * @class GetUserList
@@ -81,13 +107,15 @@ class GetUser extends Route {
 			throw new Helpers.Errors.RequestError(400, `inavlid_id`);
 		}
 
+
+		const isSystemToken = req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM;
 		user = await Model.getModel('User').findOne({
 			'$or': [{
 				'id': {
 					$eq: userId,
 				},
 			}],
-			...(req.authApp.id) ? {_appId: Model.getModel('App').createId(req.authApp.id)} : {},
+			...(req.authApp.id && !isSystemToken) ? { _appId: Model.getModel('App').createId(req.authApp.id) } : {},
 		});
 
 		if (!user) {
@@ -107,6 +135,7 @@ class GetUser extends Route {
 			auth: user.auth,
 			tokens: (userTokens.length > 0) ? userTokens.map((t) => {
 				return {
+					id: t.id,
 					value: t.value,
 					policyProperties: t.policyProperties,
 				};
@@ -470,17 +499,16 @@ routes.push(UpdateUser);
  */
 class SetUserPolicyProperties extends Route {
 	constructor(services) {
-		super('user/:id/policy-property', 'SET USER POLICY PROPERTY', services);
+		super('user/:id/policy-property/:tokenId', 'SET USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
+		this.activityBroadcast = false;
 	}
 
 	async _validate(req, res, token) {
-		const userId = Model.getModel('User').createId(req.params.id);
 		const app = req.authApp;
 		if (!app) {
 			this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
@@ -492,16 +520,20 @@ class SetUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
+		const userId = Model.getModel('User').createId(req.params.id);
 		const exists = await Model.getModel('User').exists(userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		// ! Token ID or value should really be passed to lookup the token, this is just updating the first token.
-		const userToken = await Model.getModel('Token').findOne({
-			_userId: userId,
-		});
+		const tokenQuery = getTokenQueryfromParams(req, userId);
+		if (!tokenQuery) {
+			this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
+		}
+
+		const userToken = await Model.getModel('Token').findOne(tokenQuery);
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -516,7 +548,7 @@ class SetUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').setPolicyPropertiesById(validate.id, req.body);
+		await Model.getModel('Token').setPolicyPropertiesById(validate.id.toString(), req.body);
 
 		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 			userId: req.params.id,
@@ -551,45 +583,61 @@ routes.push(SetUserPolicyProperties);
  */
 class UpdateUserPolicyProperties extends Route {
 	constructor(services) {
-		super('user/:id/update-policy-property', 'UPDATE USER POLICY PROPERTY', services);
+		super('user/:id/update-policy-property/:tokenId', 'UPDATE USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
+		this.activityBroadcast = false;
 	}
 
 	async _validate(req, res, token) {
+		const app = req.authApp;
+		if (!app) {
+			this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+		}
+
 		if (!req.body) {
 			this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = Model.getModel('User').exists(req.params.id);
+		const userId = Model.getModel('User').createId(req.params.id);
+		const exists = Model.getModel('User').exists(userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.getModel('Token').findOne({
-			_userId: Model.getModel('User').createId(req.params.id),
-		});
+		const tokenQuery = getTokenQueryfromParams(req, userId);
+		if (!tokenQuery) {
+			this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
+		}
+
+		const userToken = await Model.getModel('Token').findOne(tokenQuery);
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_token_not_found`));
+		}
+		const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
+		if (!policyCheck.passed) {
+			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 		}
 
 		return Promise.resolve(userToken);
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').updatePolicyPropertiesById(validate, req.body);
+		await Model.getModel('Token').updatePolicyProperties(validate, req.body);
 
-		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
-			userId: req.params.id,
-			appId: req.authApp.id,
-		}));
+		// this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
+		// 	userId: req.params.id,
+		// 	appId: req.authApp.id,
+		// }));
 
 		// TODO: Do we really need to wait for the socket to respond?
 		// await new Promise((resolve) => {
@@ -619,32 +667,35 @@ routes.push(UpdateUserPolicyProperties);
  */
 class RemoveUserPolicyProperties extends Route {
 	constructor(services) {
-		super('user/:id/remove-policy-property', 'REMOVE USER POLICY PROPERTY', services);
+		super('user/:id/remove-policy-property/:tokenId', 'REMOVE USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
+		this.activityBroadcast = false;
 	}
 
 	async _validate(req, res, token) {
-		if (!req.body || !req.body.policyProperties) {
+		if (!req.body) {
 			this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = Model.getModel('User').exists(req.params.id);
+		const userId = Model.getModel('User').createId(req.params.id);
+		const exists = Model.getModel('User').exists(userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.getModel('Token').findOne({
-			_userId: Model.getModel('User').createId(req.params.id),
-		});
+		const tokenQuery = getTokenQueryfromParams(req, userId);
+		if (!tokenQuery) {
+			this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
+		}
 
-
+		const userToken = await Model.getModel('Token').findOne(tokenQuery);
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -654,14 +705,14 @@ class RemoveUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const reqPolicyProps = req.body.policyProperties;
+		const reqPolicyProps = req.body;
 		const policyProps = validate.policyProperties;
 		Object.keys(reqPolicyProps).forEach((key) => {
 			if (policyProps[key] && policyProps[key] === reqPolicyProps[key]) {
 				delete policyProps[key];
 			}
 		});
-		await Model.getModel('Token').updatePolicyPropertiesById(validate.id, policyProps);
+		await Model.getModel('Token').updatePolicyProperties(validate, policyProps);
 
 		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 			userId: req.params.id,
@@ -678,13 +729,13 @@ routes.push(RemoveUserPolicyProperties);
  */
 class ClearUserPolicyProperties extends Route {
 	constructor(services) {
-		super('user/:id/clear-policy-property', 'CLEAR USER POLICY PROPERTY', services);
+		super('user/:id/clear-policy-property/:tokenId', 'CLEAR USER POLICY PROPERTY', services);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
+		this.activityBroadcast = false;
 	}
 
 	async _validate(req, res, token) {
@@ -693,15 +744,20 @@ class ClearUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const exists = Model.getModel('User').exists(req.params.id);
+		const userId = Model.getModel('User').createId(req.params.id);
+		const exists = Model.getModel('User').exists(userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.getModel('Token').findOne({
-			_userId: Model.getModel('User').createId(req.params.id),
-		});
+		const tokenQuery = getTokenQueryfromParams(req, userId);
+		if (!tokenQuery) {
+			this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
+			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
+		}
+
+		const userToken = await Model.getModel('Token').findOne(tokenQuery);
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -798,7 +854,7 @@ routes.push(DeleteUser);
 class clearUserLocalData extends Route {
 	constructor(services) {
 		super('user/:id/clear-local-data', 'CLEAR USER LOCAL DATA', services);
-		this.verb = Route.Constants.Verbs.PUT;
+		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
@@ -828,6 +884,8 @@ class clearUserLocalData extends Route {
 			userId: user.id,
 			collections: (req.body.collections)? req.body.collections : false,
 		}));
+
+		return true;
 	}
 }
 routes.push(clearUserLocalData);

@@ -14,29 +14,32 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
+
 import fs from 'node:fs';
 import path from 'node:path';
 import util from 'node:util';
-import {exec as cpExec} from 'node:child_process';
+import { exec as cpExec } from 'node:child_process';
 
 import NRP from 'node-redis-pubsub';
 
 const exec = util.promisify(cpExec);
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import ivm from 'isolated-vm';
-import {v4 as uuidv4} from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 import webpack from 'webpack';
 
 import NodePolyfillPlugin from 'node-polyfill-webpack-plugin';
 
-import Sugar from '../helpers/sugar';
-import Logging from '../helpers/logging';
-import Model from '../model';
-import * as Helpers from '../helpers';
-import lambdaHelpers from '../lambda-helpers/helpers';
+import Sugar from '../helpers/sugar.js';
+import Logging from '../helpers/logging.js';
+import Model from '../model/index.js';
+import * as Helpers from '../helpers/index.js';
+import lambdaHelpers from '../lambda-helpers/helpers.js';
 
 export enum LambdaType {
 	API_ENDPOINT = 'API_ENDPOINT',
@@ -267,7 +270,7 @@ export default class LambdasRunner {
 					await lambdaCode[lambdaInfo.entryPoint]();
 				})();
 			`);
-			await hostile.run(this._context, {promise: true});
+			await hostile.run(this._context, { promise: true });
 			// Maybe dispose isolate after executin the lambda?
 
 			await this._updateDBLambdaFinishExecution(execution);
@@ -279,7 +282,7 @@ export default class LambdasRunner {
 
 				if (trigger.redirect && lambdaHelpers.lambdaResult) lambdaHelpers.lambdaResult.redirect = true;
 				const result = (lambdaHelpers.lambdaResult) ? lambdaHelpers.lambdaResult : 'success';
-				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({code: 200, res: result, restWorkerId: data.restWorkerId}));
+				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({ code: 200, res: result, restWorkerId: data.restWorkerId }));
 			}
 		} catch (err: any) {
 			await this._updateDBLambdaErrorExecution(lambda);
@@ -289,11 +292,11 @@ export default class LambdasRunner {
 				let message = 'Unkown error occurred';
 				if (err instanceof Error) {
 					message = err.message;
-				} else if (err?.hasOwnProperty('errMessage')) {
+				} else if (err && Object.prototype.hasOwnProperty.call(err, 'errMessage')) {
 					message = err.errMessage;
 				}
 
-				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({code: 400, err: message, restWorkerId: data.restWorkerId}));
+				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({ code: 400, err: message, restWorkerId: data.restWorkerId }));
 			}
 
 			return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));
@@ -542,13 +545,15 @@ export default class LambdasRunner {
 			if (m.packageName && fs.existsSync(`${Config.paths.lambda.bundles}/${moduleName}.js`)) return;
 
 			entry[moduleName] = {
-				import: (m.import)? m.import : m.packageName,
+				import: (m.import) ? m.import : m.packageName,
 				library: {
 					name: m.name,
 					type: 'var',
 				},
 			};
 		});
+
+		// TODO: Fix error to do with require.
 
 		return new Promise<void>((resolve, reject) => {
 			webpack({
@@ -567,7 +572,7 @@ export default class LambdasRunner {
 					path: path.resolve(Config.paths.lambda.bundles),
 					chunkFormat: 'commonjs',
 				},
-			}, function(err: any, stats) {
+			}, function (err: any, stats) {
 				if (err && err.details) {
 					reject(err.details);
 				}

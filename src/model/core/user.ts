@@ -14,10 +14,30 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Logging from '../../helpers/logging';
-import * as Helpers from '../../helpers';
+import Logging from '../../helpers/logging.js';
+import * as Helpers from '../../helpers/index.js';
 
-import StandardModel from '../type/standard';
+import StandardModel from '../type/standard.js';
+
+export interface User {
+	id: string,
+	auth: Array<{
+		app: string,
+		appId: string,
+		username: string,
+		password: string,
+		profileUrl: string,
+		images: {
+			profile: string,
+			banner: string,
+		},
+		email: string,
+		token: string,
+		tokenSecret: string,
+		refreshToken: string,
+	}>,
+	_appId: string,
+}
 
 /**
  * Constants
@@ -261,6 +281,7 @@ export default class UserSchemaModel extends StandardModel {
 
 			if (token) {
 				user.tokens.push({
+					id: token.id,
 					value: token.value,
 					policyProperties: token.policyProperties,
 				});
@@ -347,5 +368,14 @@ export default class UserSchemaModel extends StandardModel {
 			'auth.appId': authAppUserId,
 			...(appId) ? {_appId: this.createId(appId)} : {},
 		});
+	}
+
+
+	rmAll() {
+		return super.rmAll({});
+	}
+
+	rm(userId: string) {
+		return super.rm(userId);
 	}
 }

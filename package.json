@@ -1,19 +1,20 @@
 {
   "name": "@buttress/buttress-js",
+  "type": "module",
   "version": "3.0.0-5",
   "description": "The federated real-time open data platform",
   "author": "Data People Connected LTD",
   "license": "AGPL-3.0-or-later",
   "private": true,
   "engines": {
-    "node": ">=18.18.2"
+    "node": ">=20.18.2"
   },
   "main": "deploy/app.js",
   "scripts": {
     "docs": "npx docsify serve ./docs",
     "test": "npm run build && npm run test:unit && npm run test:e2e",
     "test:unit": "NODE_ENV=test mocha --recursive --parallel test/unit/**/*",
-    "test:e2e": "NODE_ENV=test node test/before-e2e.js && echo \"Running BJS in Install Mode.\" && NODE_ENV=test INSTALL_MODE=true ./bin/app.sh && echo \"Install Complete.\\n\"&& NODE_ENV=test TEST_ENV=e2e mocha --recursive --bail test/e2e/index.test.js",
+    "test:e2e": "NODE_ENV=test node test/before-e2e.js && echo \"Running BJS in Install Mode.\" && NODE_ENV=test INSTALL_MODE=true ./bin/app.sh && echo \"Install Complete.\\n\"&& NODE_ENV=test TEST_ENV=e2e mocha --recursive --bail --no-node-snapshot test/e2e/index.test.js",
     "clean": "rimraf dist/*",
     "build": "npm run clean && npm run build-ts && npm run build-non-ts",
     "build-ts": "tsc",
@@ -29,7 +30,8 @@
     "docker:build-token": "npm run docker:build -- --build-arg NPM_TOKEN=${NPM_TOKEN}",
     "docker:run": "docker-compose -f .docker/docker-compose.yml up",
     "docker:run-full": "docker-compose -f .docker/docker-compose.full.yml up",
-    "prepare": "husky install && [ -f ./.husky/nvm-fix ] && ./.husky/nvm-fix || true"
+    "prepare": "husky install && [ -f ./.husky/nvm-fix ] && ./.husky/nvm-fix || true",
+    "nvm": "~/.nvm/nvm-exec which node | xargs -I {} bash -c 'ln -sf \"{}\" ./.nvm-node' && chmod +x ./.nvm-node"
   },
   "repository": {
     "type": "git",
@@ -41,19 +43,18 @@
   "dependencies": {
     "@buttress/api": "~3.0.0-51",
     "@buttress/snippets": "~1.0.0-26",
+    "@dpc/node-env-obj": "npm:@jsr/dpc__node-env-obj@^0.3.2",
     "@hashgraph/sdk": "^2.24.2",
     "@socket.io/redis-adapter": "~7.2.0",
     "@socket.io/redis-emitter": "~5.1.0",
-    "base64url": "~3.0.1",
     "body-parser": "~1.20.2",
     "bson": "^6.8.0",
     "cross-fetch": "~4.0.0",
     "express": "~4.19.2",
-    "isolated-vm": "~4.7.2",
+    "isolated-vm": "~5.0.4",
     "method-override": "~3.0.0",
     "mongodb": "~4.17.1",
     "morgan": "~1.10.0",
-    "node-env-obj": "~0.2.5",
     "node-polyfill-webpack-plugin": "~2.0.1",
     "node-redis-pubsub": "~5.0.0",
     "object-hash": "~3.0.0",
@@ -84,7 +85,7 @@
     "husky": "^8.0.3",
     "mocha": "^10.2.0",
     "source-map-support": "^0.5.21",
-    "typescript": "^5.5.4",
-    "typescript-eslint": "^8.0.0"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.29.1"
   }
 }

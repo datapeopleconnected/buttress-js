@@ -17,30 +17,22 @@
  */
 
 import cluster from 'node:cluster';
-import createConfig from 'node-env-obj';
+import Config from '../helpers/config.js';
 
-const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
-
-const Config = createConfig({
-	envFile: `.${env}.env`,
-	envPath: '../../',
-	configPath: '../',
-}) as unknown as Config;
-
-import Logging from '../helpers/logging';
-import BootstrapRest from '../bootstrap-rest';
+import Logging from '../helpers/logging.js';
+import BootstrapRest from '../bootstrap-rest.js';
 
 Logging.init('REST');
 
-if (cluster.isMaster) Logging.startupMessage();
+if (cluster.isPrimary) Logging.startupMessage();
 
 (async () => {
 	try {
 		const app = new BootstrapRest();
-		const isMaster = await app.init();
+		const isMain = await app.init();
 
-		if (isMaster) {
-			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Master v${Config.app.version} listening on port ` +
+		if (isMain) {
+			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Main v${Config.app.version} listening on port ` +
 				`${Config.listenPorts.rest} in ${Config.env} mode.`);
 			Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
 		} else {

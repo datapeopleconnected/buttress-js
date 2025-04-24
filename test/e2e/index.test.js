@@ -14,13 +14,19 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-require('source-map-support').install();
+import sourceMapSupport from 'source-map-support'
+sourceMapSupport.install();
 
-require('./rest/schema.test.js');
-require('./rest/data-sharing.test.js');
-require('./rest/policy.test.js');
+import './rest/core/token.test.js';
+import './rest/core/user.test.js';
 
-require('./sock/realtime.test.js');
+import './rest/schema.test.js';
+import './rest/data-sharing.test.js';
+import './rest/policy.test.js';
 
-require('./lambda/lambda.test.js');
+import './spr/processing.test.js';
+
+import './sock/realtime.test.js';
+
+import './lambda/lambda.test.js';
 

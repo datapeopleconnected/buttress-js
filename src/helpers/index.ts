@@ -15,17 +15,17 @@
  */
 import { Transform } from 'node:stream';
 
-import * as DataSharingHelpers from './data-sharing';
+import * as DataSharingHelpers from './data-sharing.js';
 
-import Datastore from '../datastore';
+import Datastore from '../datastore/index.js';
 
 export const DataSharing = DataSharingHelpers;
 
-export * as Errors from './errors';
+export * as Errors from './errors.js';
 
-export * as Schema from './schema';
+export * as Schema from './schema.js';
 
-export * as Stream from './stream';
+export * as Stream from './stream.js';
 
 export class Timer {
 	private _start: number;
@@ -57,7 +57,7 @@ export class Timer {
 
 export class JSONStringifyStream extends Transform {
 	private _first: boolean;
-	private prepare: Function;
+	private prepare: (chunk: any) => any;
 
 	constructor(options, prepare) {
 		super(Object.assign(options || {}, {objectMode: true}));
@@ -164,16 +164,17 @@ const __flattenRoles = (data, path) => {
 };
 export const flattenRoles = __flattenRoles;
 
-const __flatternObject = (obj, output, paths) => {
-	if (!output) output = {};
-	if (!paths) paths = [];
-
+export const flatternObject = (obj, output: {[index: string]: any} = {}, paths: string[] = []) => {
 	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
 		paths.push(key);
-		if (typeof obj[key] === 'object' && Datastore.getInstance('core').ID.isValid(obj[key])) {
-			out[paths.join('.')] = obj[key];
-		} else if (typeof obj[key] === 'object' && obj[key] !== null) {
-			__flatternObject(obj[key], out, paths);
+		
+		if (typeof obj[key] === 'object' && obj[key] !== null && obj[key] === '[object Object]') {
+			flatternObject(obj[key], out, paths);
+		} else if (Array.isArray(obj[key])) {
+			obj[key].forEach((item, index) => {
+				paths.push(index.toString());
+				flatternObject(item, out, paths);
+			});
 		} else {
 			out[paths.join('.')] = obj[key];
 		}
@@ -181,7 +182,6 @@ const __flatternObject = (obj, output, paths) => {
 		return out;
 	}, output);
 };
-export const flatternObject = __flatternObject;
 
 export const mergeDeep = (...objects) => {
 	const isObject = (obj) => obj && typeof obj === 'object';
@@ -382,6 +382,19 @@ export const compareByProps = (compareProperties, a, b) => {
 
 	return 0;
 };
+
+export const get = function(path: string, root: any): any {
+	const parts = path.toString().split('.');
+	let prop: any = root;
+
+	for (let i=0; i < parts.length; i += 1) {
+		if (!prop) return undefined;
+		const part = parts[i];
+		prop = (prop instanceof Map) ? prop.get(part) : prop[part];
+	}
+
+	return prop;
+}
 
 export class ExpireMap extends Map {
 	expireTime: number;

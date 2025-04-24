@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import AccessControlHelpers from './helpers';
+import AccessControlHelpers from './helpers.js';
 
-import { Policy } from '../model/core/policy';
-import { Token } from '../model/core/token';
+import { Policy } from '../model/core/policy.js';
+import { Token } from '../model/core/token.js';
 
 /**
  * @class PolicyMatch
@@ -37,10 +37,10 @@ class PolicyMatch {
 		}, []);
 	}
 
-	__checkPolicySelection(p, token?: Token): boolean {
+	__checkPolicySelection(p: Policy, token?: Token): boolean {
 		const selection = p.selection;
 
-		if (!token) return false;
+		if (!token || selection === null) return false;
 
 		if (token.type === 'dataSharing') {
 			const eq = (part, value) => part && part['@eq'] && part['@eq'].toString() === value.toString();

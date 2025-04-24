@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it} = require('mocha');
-const assert = require('assert');
+import { describe, it } from 'mocha';
+import assert from 'assert';
 
-const Helpers = require('../../../dist/helpers');
+import * as Helpers from '../../../dist/helpers/index.js';
 
 describe('helpers:getFlattenedSchema', () => {
 	const schema = {

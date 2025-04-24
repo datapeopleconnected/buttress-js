@@ -20,7 +20,8 @@ interface DataSharingConfig {
 }
 
 export function createDataSharingConnectionString(remoteApp: DataSharingConfig) {
-  let {endpoint, apiPath, token} = remoteApp;
+  const { apiPath, token } = remoteApp;
+  let { endpoint } = remoteApp;
 
   const secure = (endpoint.match(/https:\/\//ig));
   const portocol = secure ? 'butts' : 'butt';

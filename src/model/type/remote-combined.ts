@@ -15,12 +15,12 @@
  */
 import Stream from 'node:stream';
 
-import * as Helpers from '../../helpers';
+import * as Helpers from '../../helpers/index.js';
 
-import StandardModel from './standard';
-import RemoteModel from './remote';
+import StandardModel from './standard.js';
+import RemoteModel from './remote.js';
 
-import { SourceDataSharingRouting } from '../../services/source-ds-routing';
+import { SourceDataSharingRouting } from '../../services/source-ds-routing.js';
 
 /**
  * @class RemoteCombinedModel

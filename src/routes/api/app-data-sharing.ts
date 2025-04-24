@@ -13,14 +13,14 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import * as Helpers from '../../helpers/index.js';
 
-import Datastore from '../../datastore';
-import DatastoreFactory from '../../datastore/adapter-factory';
+import Datastore from '../../datastore/index.js';
+import DatastoreFactory from '../../datastore/adapter-factory.js';
 
-import ButtressAdapater from '../../datastore/adapters/buttress';
+import ButtressAdapater from '../../datastore/adapters/buttress.js';
 
 /**
  * The data sharing agreement registration process should be as follows:

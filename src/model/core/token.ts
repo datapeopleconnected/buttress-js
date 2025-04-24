@@ -16,7 +16,8 @@
 
 import Crypto from 'node:crypto';
 
-import StandardModel from '../type/standard';
+import StandardModel from '../type/standard.js';
+import { PolicyCache } from '../../services/policy-cache.js';
 
 /**
  * Constants
@@ -46,9 +47,15 @@ export interface Token {
 }
 
 class TokenSchemaModel extends StandardModel {
+
+	__policyCache: PolicyCache;
+
 	constructor(services) {
 		const schema = TokenSchemaModel.Schema;
 		super(schema, null, services);
+
+		this.__policyCache = this.__services.get('policyCache') as PolicyCache;
+		if (!this.__policyCache) throw new Error('Unable to find policyCache in services');
 	}
 
 	static get Constants() {
@@ -197,7 +204,7 @@ class TokenSchemaModel extends StandardModel {
 	 * @param {Object} policyProperties - Policy properties
 	 * @return {Promise} - resolves after updating token policy properties
 	 */
-	async setPolicyPropertiesById(tokenId, policyProperties) {
+	async setPolicyPropertiesById(tokenId: string, policyProperties) {
 		if (policyProperties.query) {
 			delete policyProperties.query; // What is this line for??
 		}
@@ -206,6 +213,7 @@ class TokenSchemaModel extends StandardModel {
 			'id': this.createId(tokenId),
 		}, {$set: {'policyProperties': policyProperties}});
 
+		this.__policyCache.setTokenIdAsStale(tokenId);
 		this.__nrp?.emit('app-routes:bust-cache', '{}');
 	}
 
@@ -214,7 +222,7 @@ class TokenSchemaModel extends StandardModel {
 	 * @param {Object} policyProperties - Policy properties
 	 * @return {Promise} - resolves to an array of Apps
 	 */
-	async updatePolicyPropertiesById(token, policyProperties) {
+	async updatePolicyProperties(token: Token, policyProperties) {
 		if (policyProperties.query) {
 			delete policyProperties.query; // Again, what is this line for??
 		}
@@ -236,6 +244,7 @@ class TokenSchemaModel extends StandardModel {
 			},
 		});
 
+		this.__policyCache.setTokenIdAsStale(token.id.toString());
 		this.__nrp?.emit('app-routes:bust-cache', '{}');
 	}
 

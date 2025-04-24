@@ -14,12 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it, before, after} = require('mocha');
-const assert = require('assert');
+import { describe, it, before, after } from 'mocha';
+import assert from 'node:assert';
 
-const {createApp, updateSchema, bjsReq, registerDataSharing} = require('../../helpers');
+import { createApp, updateSchema, bjsReq, registerDataSharing } from '../../helpers.js';
 
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
+import BootstrapRest from '../../../dist/bootstrap-rest.js';
 
 let REST_PROCESS = null;
 const ENDPOINT = `https://test.local.buttressjs.com`;
@@ -66,7 +66,7 @@ describe('Data Sharing', async () => {
 			},
 		};
 
-		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test App 1', 'test-app-1');
+		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test App 1', 'data-sharing-app-1');
 		testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app1.token);
 
 		await createCar(testEnv.apps.app1, 'A red car');

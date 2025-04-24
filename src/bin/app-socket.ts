@@ -18,7 +18,7 @@
 
 import cluster from 'node:cluster';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 
 const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
 
@@ -28,20 +28,20 @@ const Config = createConfig({
 	configPath: '../',
 }) as unknown as Config;
 
-import Logging from '../helpers/logging';
-import BootstrapSocket from '../bootstrap-socket';
+import Logging from '../helpers/logging.js';
+import BootstrapSocket from '../bootstrap-socket.js';
 
 Logging.init('SOCK');
 
-if (cluster.isMaster) Logging.startupMessage();
+if (cluster.isPrimary) Logging.startupMessage();
 
 (async () => {
 	try {
 		const app = new BootstrapSocket();
-		const isMaster = await app.init();
+		const isMain = await app.init();
 
-		if (isMaster) {
-			Logging.log(`${Config.app.title} Socket Master v${Config.app.version} listening on port ` +
+		if (isMain) {
+			Logging.log(`${Config.app.title} Socket Main v${Config.app.version} listening on port ` +
 				`${Config.listenPorts.sock} in ${Config.env} mode.`);
 		} else {
 			Logging.log(`${Config.app.title} Socket Worker v${Config.app.version} in ${Config.env} mode.`);

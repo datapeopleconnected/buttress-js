@@ -16,8 +16,8 @@
 
 import { Request } from 'express';
 
-import { Timer } from '../helpers/index';
-import { parsedPolicyConfig } from '../access-control';
+import { Timer } from '../helpers/index.js';
+import { parsedPolicyConfig } from '../access-control/index.js';
 
 export interface BjsRequest extends Request {
   id?: string;

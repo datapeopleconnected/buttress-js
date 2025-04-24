@@ -14,8 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import StandardModel from '../type/standard';
-import * as Helpers from '../../helpers';
+import StandardModel from '../type/standard.js';
+import * as Helpers from '../../helpers/index.js';
 
 class SecureStoreSchemaModel extends StandardModel {
 	constructor(services) {

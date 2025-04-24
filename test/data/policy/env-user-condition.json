@@ -1,0 +1,24 @@
+{
+	"name": "env-test-5",
+	"version": 1,
+	"priority": 1,
+	"selection": {
+		"envTest": {
+			"@eq": 5
+		}
+	},
+	"config": [
+		{
+			"verbs": ["GET"],
+			"schema": ["car"],
+			"condition": {
+				"#env.user.role.auth.appId": {
+					"@eq": "test"
+				}
+			},
+			"query": {
+				"access": "%FULL_ACCESS%"
+			}
+		}
+	]
+}

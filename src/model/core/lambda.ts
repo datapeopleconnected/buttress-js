@@ -20,13 +20,13 @@ import {exec as cpExec} from 'node:child_process';
 
 const exec = util.promisify(cpExec);
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Sugar from '../../helpers/sugar';
-import StandardModel from '../type/standard';
-import * as Helpers from '../../helpers';
-import Logging from '../../helpers/logging';
+import Sugar from '../../helpers/sugar.js';
+import StandardModel from '../type/standard.js';
+import * as Helpers from '../../helpers/index.js';
+import Logging from '../../helpers/logging.js';
 
 export default class LambdaSchemaModel extends StandardModel {
 

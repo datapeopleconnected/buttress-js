@@ -14,26 +14,26 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Schema from '../schema';
-import Logging from '../helpers/logging';
-import {shortId, Errors, DataSharing} from '../helpers';
+import Schema from '../schema.js';
+import Logging from '../helpers/logging.js';
+import { shortId, Errors, DataSharing } from '../helpers/index.js';
 
-import Datastore from '../datastore';
+import Datastore from '../datastore/index.js';
 
-import StandardModel from './type/standard';
-import RemoteCombinedModel from './type/remote-combined';
+import StandardModel from './type/standard.js';
+import RemoteCombinedModel from './type/remote-combined.js';
 
-import Activity from './core/activity';
-import App from './core/app';
-import AppDataSharing from './core/app-data-sharing';
-import Deployment from './core/deployment';
-import Lambda from './core/lambda';
-import LambdaExecution from './core/lambda-execution';
-import Policy from './core/policy';
-import SecureStore from './core/secure-store';
-import Token from './core/token';
-import Tracking from './core/tracking';
-import User from './core/user';
+import Activity from './core/activity.js';
+import App from './core/app.js';
+import AppDataSharing from './core/app-data-sharing.js';
+import Deployment from './core/deployment.js';
+import Lambda from './core/lambda.js';
+import LambdaExecution from './core/lambda-execution.js';
+import Policy from './core/policy.js';
+import SecureStore from './core/secure-store.js';
+import Token from './core/token.js';
+import Tracking from './core/tracking.js';
+import User from './core/user.js';
 
 const CoreModels = {
   Activity,
@@ -165,6 +165,10 @@ class Model {
 
 	get CoreModels() {
 		return CoreModels;
+	}
+
+	getAppModel(appId: string, name: string) {
+		return this.getModel(`${shortId(appId)}-${name}`);
 	}
 
 	/**

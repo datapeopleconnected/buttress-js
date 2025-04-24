@@ -16,9 +16,9 @@
 
 import {ObjectId} from 'bson';
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import * as Helpers from '../../helpers/index.js';
 
 const routes: (typeof Route)[] = [];
 

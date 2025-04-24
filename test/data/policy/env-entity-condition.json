@@ -1,0 +1,40 @@
+{
+  "name": "env-test-3",
+  "version": 1,
+  "priority": 1,
+  "selection": {
+    "envTest": {
+      "@eq": 3
+    }
+  },
+  "env": {
+    "carColour": {
+      "collection": "selector",
+      "type": "string",
+      "query": {
+        "name": {
+          "@eq": "example-selector"
+        }
+      },
+      "output": {
+        "key": "value",
+        "type": "string"
+      }
+    }
+  },
+  "config": [
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "car"
+      ],
+      "query": {
+        "colour": {
+          "@eq": "#env.carColour"
+        }
+      }
+    }
+  ]
+}

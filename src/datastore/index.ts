@@ -16,12 +16,12 @@
 
 import { createHash } from 'node:crypto';
 
-// import createConfig from 'node-env-obj';
+// import createConfig from '@dpc/node-env-obj';
 // const Config = createConfig() as unknown as Config;
 
-import Factory from './adapter-factory';
+import Factory from './adapter-factory.js';
 
-import Logging from '../helpers/logging';
+import Logging from '../helpers/logging.js';
 
 const datastores: {
 	[key: string]: Datastore;

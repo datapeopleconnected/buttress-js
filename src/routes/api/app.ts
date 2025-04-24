@@ -14,12 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Route from '../route';
-import Model from '../../model';
-import Sugar from '../../helpers/sugar';
-import Logging from '../../helpers/logging';
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
+import Route from '../route.js';
+import Model from '../../model/index.js';
+import Sugar from '../../helpers/sugar.js';
+import Logging from '../../helpers/logging.js';
+import * as Helpers from '../../helpers/index.js';
+import Schema from '../../schema.js';
 
 const routes: (typeof Route)[] = [];
 

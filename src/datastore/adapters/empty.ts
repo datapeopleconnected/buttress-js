@@ -15,7 +15,7 @@
  */
 import { ObjectId } from 'bson';
 
-import AbstractAdapter from '../abstract-adapter';
+import AbstractAdapter from '../abstract-adapter.js';
 
 class AdapterId {
 	static new(id: string) {

@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it, before, after} = require('mocha');
-const assert = require('assert');
+import { describe, it, before, after } from 'mocha';
+import assert from 'node:assert';
 
-const {
+import {
   createApp,
   updateSchema,
   BJSReqError,
@@ -25,27 +25,17 @@ const {
   bjsReqPost,
   createUser,
   createPolicy,
-  updateUserPolicyProperties
-} = require('../../helpers');
+  createPolicyUser,
+  updateUserPolicyProperties,
+  extractPolicyPropertyListFromPolicies
+} from '../../helpers.js';
 
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
+import BootstrapRest from '../../../dist/bootstrap-rest.js';
 
-const PolicyTestData = require('../../data/policy/index.js');
+import PolicyTestData from '../../data/policy/index.js';
 
 // Go over each of the policies and create a list of all the policy selection properties
-const PolicyPropertyList = Object.values(PolicyTestData).reduce((list, policy) => {
-  if (policy.selection) {
-    Object.keys(policy.selection).forEach((key) => {
-      if (!list[key]) list[key] = [];
-      if (typeof policy.selection[key] === 'object') {
-        list[key].push(...Object.values(policy.selection[key]));
-      } else {
-        list[key].push(policy.selection[key]);
-      }
-    });
-  }
-  return list;
-}, {});
+const PolicyPropertyList = extractPolicyPropertyListFromPolicies(Object.values(PolicyTestData));
 
 // Grade 0 is valid but isn't specified in the policy list
 if (PolicyPropertyList.grade) {
@@ -79,20 +69,13 @@ const createCar = async (app, name, color, number) => {
   testEnv.cars.push(car);
 };
 
-const createPolicyUser = async (app, key, policyProperties) => {
-  const user = await createUser(ENDPOINT, {
-    app: 'test-app',
-    appId: `${key}-${Math.floor(Math.random() * 1000)}`,
-    email: `${key}+${Math.floor(Math.random() * 1000)}@buttressjs.com`,
-  }, {
-    domains: ['test.local.buttressjs.com'],
-    policyProperties,
-  }, app.token);
+const _createPolicyUser = async (app, key, policyProperties) => {
+  const user = await createPolicyUser(ENDPOINT, app, key, policyProperties);
 
   testEnv.users[key] = user;
 
   return user;
-}
+};
 
 const TestDataOrganisations = [{
   name: 'A&A CLEANING LTD LTD',
@@ -193,7 +176,7 @@ describe('Policy', async () => {
 
     await REST_PROCESS.init();
 
-    testEnv.apps.app1 = await createApp(ENDPOINT, 'Test App 1', 'test-app-1', PolicyPropertyList);
+    testEnv.apps.app1 = await createApp(ENDPOINT, 'Test App 1', 'test-policy-app-1', PolicyPropertyList);
     testEnv.apps.app1.schema = await updateSchema(ENDPOINT, schema, testEnv.apps.app1.token);
 
     // Populate the schema with some data.
@@ -222,7 +205,7 @@ describe('Policy', async () => {
     }, testEnv.apps.app1.token);
     testEnv.switches.push(bjsSwitch);
 
-    await createPolicyUser(testEnv.apps.app1, 'basic1', {
+    await _createPolicyUser(testEnv.apps.app1, 'basic1', {
       adminAccess: true,
     });
   });
@@ -258,11 +241,11 @@ describe('Policy', async () => {
     // Test the basic functionality of the policy system
     before(async function() {
       // Create a user to test with.
-      await createPolicyUser(testEnv.apps.app1, 'selection-basic', {
+      await _createPolicyUser(testEnv.apps.app1, 'selection-basic', {
         policySelection: 'basic',
       });
 
-      await createPolicyUser(testEnv.apps.app1, 'selection-array', {
+      await _createPolicyUser(testEnv.apps.app1, 'selection-array', {
         policySelection: ['array', 'none'],
       });
     });
@@ -293,7 +276,7 @@ describe('Policy', async () => {
     it('Should fail accessing app companies using grade 0 policy', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 0,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       try {
         await bjsReq({
@@ -315,7 +298,7 @@ describe('Policy', async () => {
     it('Should access app companies using grade 1 policy', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 1,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       const res = await bjsReq({
         url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
@@ -329,7 +312,7 @@ describe('Policy', async () => {
       // TODO: The time should be adjusted on the policy or mocked to avoid the test passing at 01:00.
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 2,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       try {
         await bjsReq({
@@ -351,7 +334,7 @@ describe('Policy', async () => {
     it('should only return active companies on get', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 3,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       const res = await bjsReq({
         url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
@@ -367,7 +350,7 @@ describe('Policy', async () => {
     it('should only return active companies on search', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 3,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       const res = await bjsReq({
         url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
@@ -383,7 +366,7 @@ describe('Policy', async () => {
     it('should only return active companies on count', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 3,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       const res = await bjsReq({
         url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation/count`,
@@ -397,7 +380,7 @@ describe('Policy', async () => {
     it ('should fail writing to properties and the policy does not include writing verb', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 3,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       try {
         await bjsReq({
@@ -423,7 +406,7 @@ describe('Policy', async () => {
     it('should only return companies name', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 4,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       const res = await bjsReq({
         url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
@@ -443,7 +426,7 @@ describe('Policy', async () => {
     it ('should fail writing to properties and it only has read access to properties', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 5,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       try {
         await bjsReq({
@@ -469,7 +452,7 @@ describe('Policy', async () => {
     it ('should partially add a company to the database', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 5,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       const [result] = await bjsReqPost(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`, {
         name: 'DPC ltd',
@@ -486,7 +469,7 @@ describe('Policy', async () => {
     it ('should delete a company from the database', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 5,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       const result = await bjsReq({
         url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation/${testEnv.organisations[0].id}`,
@@ -500,7 +483,7 @@ describe('Policy', async () => {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         grade: 6,
         securityClearance: 1,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       const res = await bjsReq({
         url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
@@ -516,10 +499,10 @@ describe('Policy', async () => {
     it ('should fail override-access policy as the override switch is off', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         securityClearance: 100,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       try {
-        await bjsReq({
+        const res = await bjsReq({
           url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
           method: 'GET',
         }, testEnv.users.basic1.tokens[0].value);
@@ -557,7 +540,7 @@ describe('Policy', async () => {
     it ('should merge policies projection', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         policyProjection: 2,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       const res = await bjsReq({
         url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
@@ -577,7 +560,7 @@ describe('Policy', async () => {
     it ('should override policies query', async function() {
       await updateUserPolicyProperties(ENDPOINT, testEnv.users.basic1.id, {
         policyMergeQuery: 2,
-      }, testEnv.apps.app1.token);
+      }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
       const res = await bjsReq({
         url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,

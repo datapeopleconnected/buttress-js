@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES2020",
-    "module": "CommonJS",
-    "lib": ["ES2020"],
-    "moduleResolution": "node",
+    "target": "ES2023",
+    "module": "node18",
+    "lib": ["ES2023", "ESNext.AsyncIterable", "DOM.Iterable"],
+    "moduleResolution": "node16",
     "resolveJsonModule": true,
     "noImplicitAny": false,
     "noEmitOnError": true,

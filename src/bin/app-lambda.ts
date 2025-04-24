@@ -17,7 +17,7 @@
  */
 
 import cluster from 'node:cluster';
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 
 const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
 
@@ -27,20 +27,20 @@ const Config = createConfig({
 	configPath: '../',
 }) as unknown as Config;
 
-import Logging from '../helpers/logging';
-import BootstrapLambda from '../bootstrap-lambda';
+import Logging from '../helpers/logging.js';
+import BootstrapLambda from '../bootstrap-lambda.js';
 
 Logging.init('LAMBDA');
 
-if (cluster.isMaster) Logging.startupMessage();
+if (cluster.isPrimary) Logging.startupMessage();
 
 (async () => {
 	try {
 		const app = new BootstrapLambda();
-		const isMaster = await app.init();
+		const isMain = await app.init();
 
-		if (isMaster) {
-			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Master v${Config.app.version} in ${Config.env} mode.`);
+		if (isMain) {
+			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Main v${Config.app.version} in ${Config.env} mode.`);
 			Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
 		} else {
 			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Worker v${Config.app.version} ` +

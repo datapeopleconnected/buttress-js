@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-type BjsQuery<T extends object> = {
+export type BjsQuery<T extends object> = {
   [K in keyof T]?:
     | T[K]
     | {
@@ -44,7 +44,7 @@ type BjsQuery<T extends object> = {
   $not?: BjsQuery<T>;
 };
 
-type QueryParams<T extends object> = {
+export type QueryParams<T extends object> = {
   query: BjsQuery<T>;
   skip?: number;
   limit?: number;

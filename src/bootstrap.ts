@@ -14,15 +14,18 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import sourceMapSupport from 'source-map-support'
+sourceMapSupport.install();
+
 import os from 'node:os';
 import cluster, {Worker} from 'node:cluster';
 import EventEmitter from 'node:events';
 import NRP from 'node-redis-pubsub';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Logging from './helpers/logging';
+import Logging from './helpers/logging.js';
 
 interface WorkerHolder {
 	initiated: boolean;
@@ -45,7 +48,7 @@ export default class Bootstrap extends EventEmitter {
 
 	protected __shutdown: boolean = false;
 
-	private _resolveWorkersInitialised?: Function;
+	private _resolveWorkersInitialised?: (value?: unknown) => void;
 	
 	protected __services: Map<string, unknown> = new Map();
 
@@ -63,6 +66,7 @@ export default class Bootstrap extends EventEmitter {
 
 		this.__services.set('nrp', NRP(Config.redis));
 		this.__nrp = this.__services.get('nrp') as NRP.NodeRedisPubSub;
+		this.__nrp.on('error', (data: string) => Logging.logError(data));
 
 		return true;
 	}
@@ -87,9 +91,9 @@ export default class Bootstrap extends EventEmitter {
 	}
 
 	protected async __createCluster() {
-		if (cluster.isMaster) {
+		if (cluster.isPrimary) {
 			Logging.log(`Init Main Process`);
-			await this.__initMaster();
+			await this.__initMain();
 			process.on('unhandledRejection', (error) => Logging.logError(error));
 		} else {
 			Logging.log(`Init Worker Process [${cluster.worker?.id}]`);
@@ -103,10 +107,10 @@ export default class Bootstrap extends EventEmitter {
 			process.on('unhandledRejection', (error) => Logging.logError(error));
 		}
 
-		return cluster.isMaster;
+		return cluster.isPrimary;
 	}
 
-	protected async __initMaster() {
+	protected async __initMain() {
 		throw new Error('Not Yet Implemented');
 	}
 

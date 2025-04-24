@@ -16,19 +16,20 @@
 
 import Stream from 'node:stream';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Logging from '../helpers/logging';
-import Model from '../model';
-import * as Helpers from '../helpers';
-import Schema from '../schema';
+import Logging from '../helpers/logging.js';
+import Model from '../model/index.js';
+import * as Helpers from '../helpers/index.js';
+import Schema from '../schema.js';
 
-import SchemaModelRemote from '../model/type/remote';
+import SchemaModelRemote from '../model/type/remote.js';
 
 import NRP from "node-redis-pubsub";
-import StandardModel from '../model/type/standard';
-import RemoteCombinedModel from '../model/type/remote-combined';
+import StandardModel from '../model/type/standard.js';
+import RemoteCombinedModel from '../model/type/remote-combined.js';
+import { RESTActivity } from '../types/bjs-nrp-objects.js';
 
 /**
  */
@@ -302,7 +303,7 @@ export default class Route {
 
 	_addLogActivity(req, path, verb) {
 		Logging.logTimer('_addLogActivity:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		// TODO: Activty should pass back a stripped version of the activty object.
+		// TODO: activity should pass back a stripped version of the activity object.
 		return Model.getModel('Activity').add({
 			activityTitle: this.activityTitle,
 			activityDescription: this.activityDescription,
@@ -370,7 +371,7 @@ export default class Route {
 
 		const emit = (_result) => {
 			if (this.activityBroadcast === true) {
-				this._nrp?.emit('activity', JSON.stringify({
+				this._nrp?.emit('rest:activity', JSON.stringify({
 					title: this.activityTitle,
 					description: this.activityDescription,
 					visibility: this.activityVisibility,
@@ -386,8 +387,9 @@ export default class Route {
 					appAPIPath: req.authApp ? req.authApp.apiPath : '',
 					appId: req.authApp ? req.authApp.id : '',
 					isSuper: isSuper,
-					schemaName: this.schema?.name,
-				}));
+					isCoreSchema: this.core,
+					schemaName: this.schema.name,
+				} as RESTActivity));
 			} else {
 				// Trigger the emit activity so we can update the stats namespace
 			}

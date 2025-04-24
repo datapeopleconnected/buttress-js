@@ -21,25 +21,25 @@ import { v4 as uuidv4 } from 'uuid';
 import { ObjectId } from 'bson';
 import NRP from 'node-redis-pubsub';
 
-import createConfig from 'node-env-obj';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Logging from '../helpers/logging';
-import Schema from '../schema';
-import * as Helpers from '../helpers';
-import AccessControl from '../access-control';
-import Model from '../model';
-import Route from './route';
+import Logging from '../helpers/logging.js';
+import Schema from '../schema.js';
+import * as Helpers from '../helpers/index.js';
+import AccessControl from '../access-control/index.js';
+import Model from '../model/index.js';
+import Route from './route.js';
 
-import AdminRoutes from './admin-routes';
-import SchemaRoutes from './schema-routes';
+import AdminRoutes from './admin-routes.js';
+import SchemaRoutes from './schema-routes/index.js';
 
-import Datastore from '../datastore';
+import Datastore from '../datastore/index.js';
 
 // Core Routes
-import { Routes as CoreRoutes } from './api';
+import { Routes as CoreRoutes } from './api/index.js';
 
-import { BjsRequest } from '../types/bjs-express';
+import { BjsRequest } from '../types/bjs-express.js';
 
 class Routes {
 	app: express.Application;
@@ -554,8 +554,11 @@ class Routes {
 			let user = null;
 			if (req.token._userId) {
 				user = await Model.getModel('User').findById(req.token._userId);
-				Logging.logSilly(`Request was made with a valid token but no user was found for token ${req.token.id}`);
-				if (!user) throw new Helpers.Errors.RequestError(400, 'invalid_token');
+
+				if (!user) {
+					Logging.logSilly(`Request was made with a valid token but no user was found for token ${req.token.id}`);
+					throw new Helpers.Errors.RequestError(400, 'invalid_token');
+				}
 			}
 
 			req.authUser = user;

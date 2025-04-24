@@ -71,6 +71,11 @@ To run the `Rest` process in a separate terminal run
 NODE_ENV=development ./bin/app.sh
 ```
 
+To run the `SPR` process in a separate terminal run 
+```bash
+NODE_ENV=development ./bin/app-spr.sh
+```
+
 To run the `Sock` process in a separate terminal run 
 ```bash
 NODE_ENV=development ./bin/app-socket.sh

@@ -15,22 +15,24 @@
  */
 
 import hash from 'object-hash';
-import NRP from 'node-redis-pubsub';
+import NRP, { NodeRedisPubSub } from 'node-redis-pubsub';
 
-import Sugar from '../helpers/sugar';
-import Model from '../model';
-import Logging from '../helpers/logging';
-import Schema from '../schema';
+import Sugar from '../helpers/sugar.js';
+import Model from '../model/index.js';
+import Logging from '../helpers/logging.js';
+import Schema from '../schema.js';
 
-import { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy';
-import { Token } from '../model/core/token';
+import { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy.js';
+import { Token } from '../model/core/token.js';
 
-import AccessControlConditions from './conditions';
-import AccessControlFilter from './filter';
-import AccessControlProjection from './projection';
-import AccessControlPolicyMatch from './policy-match';
-import AccessControlHelpers from './helpers';
-import { BjsRequest } from '../types/bjs-express';
+import AccessControlConditions from './conditions.js';
+import AccessControlFilter from './filter.js';
+import AccessControlEnv from './env.js';
+import AccessControlProjection from './projection.js';
+import AccessControlPolicyMatch from './policy-match.js';
+import AccessControlHelpers, { filterPolicyConfigs } from './helpers.js';
+import { BjsRequest } from '../types/bjs-express.js';
+import { PolicyCache } from '../services/policy-cache.js';
 
 export class PolicyError extends Error {
 	statusCode: number;
@@ -46,7 +48,8 @@ export class PolicyError extends Error {
 
 export type parsedPolicyConfig = (PolicyConfig & { appId: string, policies: string[] });
 
-export type ApplicablePolicies = {
+export type ApplicablePolicyConfig = {
+	id: string
 	name: string;
 	appId: string;
 	env: PolicyEnv | null;
@@ -55,7 +58,7 @@ export type ApplicablePolicies = {
 
 class AccessControl {
 	_schemas: {[key: string]: any};
-	_policies: {[key: string]: any};
+	// _policies: {[key: string]: any};
 
 	_queuedLimitedPolicy: string[];
 
@@ -64,11 +67,13 @@ class AccessControl {
 	_coreSchema: any[];
 	_coreSchemaNames: string[];
 
-	_nrp?: NRP.NodeRedisPubSub;
+	_policyCache?: PolicyCache;
+
+	_nrp?: NodeRedisPubSub;
 
 	constructor() {
 		this._schemas = {};
-		this._policies = {};
+		// this._policies = {};
 		this._queuedLimitedPolicy = [];
 
 		this._oneWeekMilliseconds = Sugar.Number.day(7);
@@ -77,10 +82,11 @@ class AccessControl {
 		this._coreSchemaNames = [];
 	}
 
-	async init(nrp) {
+	async init(nrp: NodeRedisPubSub, policyCache: PolicyCache) {
 		if (!nrp) throw new Error('Unable to init access control, NRP not set');
 
 		this._nrp = nrp;
+		this._policyCache = policyCache;
 
 		this.handleCacheListeners();
 	}
@@ -89,7 +95,8 @@ class AccessControl {
 		if (!this._nrp) throw new Error('Unable to register listeners, NRP not set');
 		this._nrp.on('app-policy:bust-cache', async (data: any) => {
 			data = JSON.parse(data);
-			await this.__cacheAppPolicies(data.appId);
+			// TODO: Move to policy cache
+			// await this.__cacheAppPolicies(data.appId);
 		});
 		this._nrp.on('app-schema:updated', async (data: any) => {
 			data = JSON.parse(data);
@@ -170,9 +177,9 @@ class AccessControl {
 		// }
 
 		if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
-		if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
+		// if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
 
-		const tokenPolicies = this.__getTokenPolicies(token, appId);
+		const tokenPolicies = await this.__getTokenPolicies(token, appId);
 		Logging.logSilly(`Got ${tokenPolicies.length} matching policies for token ${token.type}:${token.id}`, req.id);
 
 		try {
@@ -190,19 +197,19 @@ class AccessControl {
 		}
 
 		if (user) {
-			const params = {
-				policies: req.ac.policyConfigs,
-				appId: appId,
-				apiPath: req.authApp.apiPath,
-				userId: user.id,
-				schemaNames: [...this._coreSchema, ...this._schemas[appId]].map((s) => s.name),
-				schemaName: schemaName,
-				path: requestedURL,
-			};
+			// const params = {
+			// 	policies: req.ac.policyConfigs,
+			// 	appId: appId,
+			// 	apiPath: req.authApp.apiPath,
+			// 	userId: user.id,
+			// 	schemaNames: [...this._coreSchema, ...this._schemas[appId]].map((s) => s.name),
+			// 	schemaName: schemaName,
+			// 	path: requestedURL,
+			// };
 			await this._queuePolicyLimitDeleteEvent(tokenPolicies, token, appId);
 			// TODO: This doesn't need to happen here, move to sock
 			// await this._checkAccessControlDBBasedQueryCondition(req, params);
-			this._nrp?.emit('queuePolicyRoomCloseSocketEvent', JSON.stringify(params));
+			// this._nrp?.emit('queuePolicyRoomCloseSocketEvent', JSON.stringify(params));
 		}
 
 		// TODO: This doesn't need to happen here, move to sock
@@ -238,7 +245,7 @@ class AccessControl {
 			access: {},
 		};
 
-		// These should be take from the outcome
+		// TODO: The following lines are now redundant, getOutcome no longer modifieds the req.body.
 		const projectionKeys = (req.body && req.body.project) ? Object.keys(req.body.project) : [];
 		structure.schema[schemaName].access.query = (req.body.query)? req.body.query : {};
 
@@ -257,7 +264,7 @@ class AccessControl {
 	async getUserRoomStructures(user, appId, req: any = {}) {
 		Logging.logTimer(`getUserRoomStructures::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-		if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
+		// if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
 		if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
 
 		if (!req.authApp) {
@@ -270,12 +277,13 @@ class AccessControl {
 		}
 
 		const rooms = {};
+		// ! This isn't taking into account there could be mutiple user tokens.
 		const token = await Model.getModel('Token').findOne({
 			_userId: {
 				$eq: Model.getModel('User').createId(user.id),
 			},
 		});
-		const tokenPolicies = this.__getTokenPolicies(token, appId);
+		const tokenPolicies = await this.__getTokenPolicies(token, appId);
 		for await (const schema of this._schemas[appId]) {
 			req.body = {};
 			// req.accessControlQuery = {};
@@ -295,37 +303,11 @@ class AccessControl {
 	}
 
 	/**
-	 * lookup policies and compute user rooms
-	 * @param {Object} user
-	 * @param {String} appId
-	 * @param {Object} req
-	 * @return {Object}
-	 */
-	async getUserRooms(user, appId, req) {
-		const rooms = await this.getUserRoomStructures(user, appId, req);
-		return Object.keys(rooms);
-		// return Object.keys(rooms).reduce((arr, key) => {
-		// 	const schema = appPolicyRooms[key];
-		// 	Object.keys(schema).forEach((key) => {
-		// 		if (!schema[key].userIds) return;
-
-		// 		const userIdx = schema[key].userIds.findIndex((id) => id.toString() === user.id.toString());
-		// 		if (userIdx !== -1) {
-		// 			arr.push(key);
-		// 		}
-		// 	});
-
-		// 	return arr;
-		// }, [])
-		// 	.filter((v, idx, arr) => arr.indexOf(v) === idx);
-	}
-
-	/**
 	 * This is the main processing part of the policy engine, policies which have matched on the token are fed into this
 	 * function. The engine will then process the policies against the request and return a set of policies which are to
 	 * be processed.
 	 */
-	async __getOutcome(tokenPolicies: Policy[], req, schemaName: string, appId: string | null = null) {
+	async __getOutcome(tokenPolicies: Policy[], req, schemaName: string, appId: string | null = null): Promise<parsedPolicyConfig[]> {
 		Logging.logTimer(`__getOutcome::start - policies:${tokenPolicies.length}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		appId = (!appId && req.authApp && req.authApp.id) ? req.authApp.id : appId;
@@ -340,23 +322,14 @@ class AccessControl {
 		}
 
 		// Filter down policies t aplicable to the request
-		let applicablePolicies = tokenPolicies.reduce((arr: ApplicablePolicies[], policy) => {
+		let applicablePolicies = tokenPolicies.reduce((arr: ApplicablePolicyConfig[], policy) => {
 			// * A query is needed regardless of what else is in the policy config, we'll discard any that are missing.
-			const configs = policy.config.filter((c) => {
-				return (c.query &&
-					c.verbs && (c.verbs.includes(requestVerb) || c.verbs.includes('%ALL%'))) &&
-					(
-						c.schema &&
-						c.schema.includes(schemaName) ||
-						c.schema.includes('%ALL%') ||
-						c.schema.includes((isCoreSchema) ? '%CORE_SCHEMA%' : '%APP_SCHEMA%'
-					)
-				);
-			});
+			const configs = filterPolicyConfigs(policy, schemaName, requestVerb, isCoreSchema);
 
 			configs.forEach((config, idx) => {
 				// TODO: Merging - Check the verbs, schema|endpoints and query. If they match then merge the other properties.
 				arr.push({
+					id: policy.id,
 					name: `${policy.name}#${idx}`,
 					env: policy.env,
 					appId,
@@ -379,13 +352,15 @@ class AccessControl {
 			throw new PolicyError(401, `Request schema: ${schemaName} - does not exist in the app`, '_accessControlPolicy:access-control-policy-not-allowed');
 		}
 
-		applicablePolicies = await AccessControlConditions.filterPoliciesByPolicyConditions(req, applicablePolicies);
+		const reqEnv = AccessControlEnv.generateRequestGlobalEnvs(req, appId, req.authUser);
+
+		applicablePolicies = await AccessControlConditions.filterPoliciesByPolicyConditions(applicablePolicies, reqEnv);
 		if (applicablePolicies.length < 1) {
 			throw new PolicyError(401, `Access control policy condition is not fulfilled to access ${schemaName}`, '_accessControlPolicy:conditions-not-fulfilled');
 		}
 
 		// Look through each of the policies and build the queries
-		applicablePolicies = await AccessControlFilter.buildApplicablePoliciesQuery(req, applicablePolicies);
+		applicablePolicies = await AccessControlFilter.buildApplicablePoliciesQuery(applicablePolicies, reqEnv);
 		applicablePolicies = await AccessControlProjection.filterPoliciesByPolicyProjection(req, applicablePolicies, schema);
 		if (applicablePolicies.length < 1) {
 			throw new PolicyError(401, `Can not access/edit properties of ${schemaName} without privileged access`, '_accessControlPolicy:access-control-properties-permission-error');
@@ -443,7 +418,6 @@ class AccessControl {
 					if (outcome[existingPolicyConfig].query === null) {
 						outcome[existingPolicyConfig].query = policyConfig.query;
 					} else {
-						// TODO: Have a function that will merge queries
 						outcome[existingPolicyConfig].query = AccessControlFilter.mergeQueryFilters(outcome[existingPolicyConfig].query, policyConfig.query, '$or');
 					}
 				} else {
@@ -472,36 +446,38 @@ class AccessControl {
 		Logging.logSilly(`Refreshed schema cache for app ${appId} got ${this._schemas[appId].length} schema`);
 	}
 
-	async __cacheAppPolicies(appId) {
-		const policies: any[] = [];
-		const rxsPolicies = await Model.getModel('Policy').find({
-			_appId: Model.getModel('Policy').createId(appId),
-		});
-		for await (const policy of rxsPolicies) {
-			policies.push(policy);
-		}
+	// async __cacheAppPolicies(appId) {
+	// 	const policies: any[] = [];
+	// 	const rxsPolicies = await Model.getModel('Policy').find({
+	// 		_appId: Model.getModel('Policy').createId(appId),
+	// 	});
+	// 	for await (const policy of rxsPolicies) {
+	// 		policies.push(policy);
+	// 	}
 
-		Logging.logSilly(`Refreshed policies for app ${appId} got ${policies.length} policies`);
+	// 	Logging.logSilly(`Refreshed policies for app ${appId} got ${policies.length} policies`);
 
-		this._policies[appId] = policies;
-	}
+	// 	this._policies[appId] = policies;
+	// }
 
-	__getTokenPolicies(token: Token, appId: string) {
-		return AccessControlPolicyMatch.getTokenPolicies(this._policies[appId], token);
+	async __getTokenPolicies(token: Token, appId: string) {
+		if (!this._policyCache) throw new Error('Unable to get token policies, policy cache not set');
+		return this._policyCache.getPoliciesByToken(token);
+		// return AccessControlPolicyMatch.getTokenPolicies(this._policies[appId], token);
 	}
 
 	async _checkAccessControlDBBasedQueryCondition(req, params) {
 		const requestMethod = req.method;
 		if (requestMethod !== 'PUT') return;
 
-		const id = params.path.split('/').pop();
-		this._nrp?.emit('accessControlPolicy:disconnectQueryBasedSocket', JSON.stringify({
-			appId: params.appId,
-			apiPath: params.apiPath,
-			userId: params.userId,
-			id: id,
-			updatedSchema: params.schemaName,
-		}));
+		// const id = params.path.split('/').pop();
+		// this._nrp?.emit('accessControlPolicy:disconnectQueryBasedSocket', JSON.stringify({
+		// 	appId: params.appId,
+		// 	apiPath: params.apiPath,
+		// 	userId: params.userId,
+		// 	id: id,
+		// 	updatedSchema: params.schemaName,
+		// }));
 	}
 
 	_queuePolicyLimitDeleteEvent(policies, userToken, appId) {
@@ -522,10 +498,10 @@ class AccessControl {
 					appId,
 				}))
 
-				this._nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
-					userId: Model.getModel('User').create(userToken._userId),
-					appId,
-				}));
+				// this._nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
+				// 	userId: Model.getModel('User').create(userToken._userId),
+				// 	appId,
+				// }));
 
 				this._queuedLimitedPolicy.splice(policyIdx, 1);
 			}, nearlyExpired);
@@ -539,7 +515,7 @@ class AccessControl {
 			delete tokenPolicyProps[key];
 		});
 
-		await Model.getModel('Token').setPolicyPropertiesById(userToken.id, tokenPolicyProps);
+		await Model.getModel('Token').setPolicyPropertiesById(userToken.id.toString(), tokenPolicyProps);
 	}
 
 	__getInnerObjectValue(originalObj) {
