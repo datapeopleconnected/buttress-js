@@ -28,7 +28,7 @@ export class SortedStreams extends Readable {
 
 	private _queue: any[];
 
-	private _compareFn: Function;
+	private _compareFn: (a: any, b: any) => number;
 
 	private _pauseUntilRead: boolean;
 
@@ -38,7 +38,7 @@ export class SortedStreams extends Readable {
 
 	public limit: number;
 
-	constructor(sources: Readable[], compareFn?: Function, limit: number = 0) {
+	constructor(sources: Readable[], compareFn?: (a: any, b: any) => number, limit: number = 0) {
 		super({objectMode: true});
 
 		this._compareFn = compareFn || this._defaultCompare;

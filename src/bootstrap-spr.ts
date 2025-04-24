@@ -153,13 +153,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 		await this.__spawnWorkers();
 	}
 
-	async __initWorker() {
-		this._redisClient = createClient({
-			host: Config.redis.host,
-			port: parseInt(Config.redis.port, 10) || 6379,
-			prefix: Config.redis.scope,
-		});
-	}
+	async __initWorker() {}
 
 	async __registerNRPPrimaryListeners() {
 		Logging.logDebug(`Primary Main`);

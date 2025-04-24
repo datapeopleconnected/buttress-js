@@ -48,7 +48,7 @@ export default class Bootstrap extends EventEmitter {
 
 	protected __shutdown: boolean = false;
 
-	private _resolveWorkersInitialised?: Function;
+	private _resolveWorkersInitialised?: (value?: unknown) => void;
 	
 	protected __services: Map<string, unknown> = new Map();
 

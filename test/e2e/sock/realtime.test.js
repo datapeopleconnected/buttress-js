@@ -81,14 +81,6 @@ describe('Realtime', async () => {
 
 		// Hack - Pause for a second to allow the schema to be created.
 		await new Promise((resolve) => setTimeout(resolve, 100));
-
-		// Add a 'few' cars
-		// await bjsReq({
-		// 	url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
-		// 	method: 'POST',
-		// 	headers: {'Content-Type': 'application/json'},
-		// 	body: JSON.stringify(new Array(5000).fill(0).map(() => ({name: `name-${Math.floor(Math.random()*100)}`}))),
-		// }, testEnv.apps.app1.token);
 	});
 
 	after(async function () {

@@ -292,7 +292,7 @@ export default class LambdasRunner {
 				let message = 'Unkown error occurred';
 				if (err instanceof Error) {
 					message = err.message;
-				} else if (err?.hasOwnProperty('errMessage')) {
+				} else if (err && Object.prototype.hasOwnProperty.call(err, 'errMessage')) {
 					message = err.errMessage;
 				}
 

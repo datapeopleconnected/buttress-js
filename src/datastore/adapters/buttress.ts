@@ -42,7 +42,7 @@ class AdapterId {
 
 export default class Buttress extends AbstractAdapter {
 	init: boolean;
-	initPendingResolve: Function[];
+	initPendingResolve: ((value?: unknown) => void)[];
 
 	protected __connection: any;
 

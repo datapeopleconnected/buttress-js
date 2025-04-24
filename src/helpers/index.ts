@@ -57,7 +57,7 @@ export class Timer {
 
 export class JSONStringifyStream extends Transform {
 	private _first: boolean;
-	private prepare: Function;
+	private prepare: (chunk: any) => any;
 
 	constructor(options, prepare) {
 		super(Object.assign(options || {}, {objectMode: true}));

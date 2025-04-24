@@ -170,6 +170,10 @@ export default class BootstrapSocket extends Bootstrap {
 			this._redisClientIOSub = null;
 		}
 
+		if (this._redisClient) {
+			this._redisClient.quit();
+		}
+
 		this._requestSockets.destory();
 		this._requestSockets = null;
 
