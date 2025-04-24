@@ -1,7 +1,6 @@
 name: Tests
 description: Run Unit & E2E tests on MongoDB and Redis
 
-
 on:
   push:
     branches:
@@ -39,20 +38,10 @@ jobs:
         image: mongo:latest
         ports:
           - 27017:27017
-        options: >
-          --health-cmd "mongo --eval 'db.runCommand({ ping: 1 })'"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 3
       redis:
         image: redis:latest
         ports:
           - 6379:6379
-        options: >
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 3
 
     steps:
     - name: Checkout code
