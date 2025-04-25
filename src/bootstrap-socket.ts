@@ -135,7 +135,7 @@ export default class BootstrapSocket extends Bootstrap {
 			prefix: Config.redis.scope,
 		});
 
-		this.__services.set('policyCache', new PolicyCache(this._redisClient, Model))
+		this.__services.set('policyCache', new PolicyCache(this._redisClient, Model));
 
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
 		await Model.init(this.__services);

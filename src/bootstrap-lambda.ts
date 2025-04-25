@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import morgan from 'morgan';
+import { createClient, RedisClient } from 'redis';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -23,6 +24,8 @@ import Datastore from './datastore/index.js';
 import Logging from './helpers/logging.js';
 import Model from './model/index.js';
 
+import { PolicyCache } from './services/policy-cache.js';
+
 import LambdaManager from './lambda/lambda-manager.js';
 import LambdaRunner, { LambdaType } from './lambda/lambda-runner.js';
 
@@ -31,6 +34,8 @@ export default class BootstrapLambda extends Bootstrap {
 	routes: any;
 
 	primaryDatastore: any;
+
+	private _redisClient?: RedisClient;
 
 	__apiWorkers: number;
 	__pathMutationWorkers: number;
@@ -60,6 +65,14 @@ export default class BootstrapLambda extends Bootstrap {
 		// Register some services.
 		this.__services.set('modelManager', Model);
 
+		this._redisClient = createClient({
+			host: Config.redis.host,
+			port: parseInt(Config.redis.port, 10) || 6379,
+			prefix: Config.redis.scope,
+		});
+
+		this.__services.set('policyCache', new PolicyCache(this._redisClient, Model));
+
 		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
 		await Model.init(this.__services);
 
@@ -74,6 +87,10 @@ export default class BootstrapLambda extends Bootstrap {
 		// Clean up lambda process.
 		if (this.__lambdaManagerProcess) this.__lambdaManagerProcess.clean();
 		if (this.__lambdaWorkerProcess) this.__lambdaWorkerProcess.clean();
+
+		if (this._redisClient) {
+			this._redisClient.quit();
+		}
 
 		// Close Datastore connections
 		Logging.logSilly('Closing down all datastore connections');
