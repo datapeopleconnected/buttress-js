@@ -53,13 +53,11 @@ class Helpers {
 	}
 
 	async _createIsolateContext(isolate, context, jail) {
-		console.log('Creating isolate jail');
 		IsolateBridge.registerPlugins();
 
 		jail.setSync('global', jail.derefInto({
 			release: false
 		}));
-		console.log('Creating isolate jail global');
 		jail.setSync('_ivm', ivm);
 		jail.setSync('_setResult', new ivm.Reference((res) => {
 			if (typeof res !== 'object' || Array.isArray(res)) {

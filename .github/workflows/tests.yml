@@ -60,7 +60,6 @@ jobs:
     - name: Run E2E Tests
       env:
         NODE_ENV: test
-        SHOW_LOG: TRUE
         BUTTRESS_APP_TITLE: ButtressJS TEST
         BUTTRESS_APP_CODE: bjs
         BUTTRESS_APP_PATH: ${{ github.workspace }}
