@@ -32,6 +32,7 @@ import {
 	updateSchema,
 	registerDataSharing,
 	extractPolicyPropertyListFromPolicies,
+	ENDPOINT,
 } from '../../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
@@ -56,8 +57,6 @@ describe('Processing', async () => {
 	];
 
 	const PolicyPropertyList = extractPolicyPropertyListFromPolicies(TestPolicies);
-
-	const ENDPOINT = `https://test.local.buttressjs.com`;
 
 	let NRP_INSTANCE = null;
 
@@ -121,15 +120,15 @@ describe('Processing', async () => {
 	};
 
 	const createTokenSocket = (name, token, app = 'app1') => {
-		testEnv.sockets[name] = io(`${ENDPOINT}/${testEnv.apps[app].apiPath}`, {
+		testEnv.sockets[name] = io(`${ENDPOINT.SOCK}/${testEnv.apps[app].apiPath}`, {
 			auth: { token: token },
 			forceNew: true
 		});
 	};
 
 	const createAppWithSchema = async (ref, name, path, policyProps) => {
-		testEnv.apps[ref] = await createApp(ENDPOINT, name, path, policyProps);
-		testEnv.apps[ref].schema = await updateSchema(ENDPOINT, [
+		testEnv.apps[ref] = await createApp(ENDPOINT.REST, name, path, policyProps);
+		testEnv.apps[ref].schema = await updateSchema(ENDPOINT.REST, [
 			carsSchema,
 			{
 				name: 'selector',
@@ -175,7 +174,7 @@ describe('Processing', async () => {
 		});
 
 		[addedCar] = await bjsReq({
-			url: `${ENDPOINT}/${app.apiPath}/api/v1/car`,
+			url: `${ENDPOINT.REST}/${app.apiPath}/api/v1/car`,
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ name: ref, userId: userId, colour: 'red' }),
@@ -186,7 +185,7 @@ describe('Processing', async () => {
 
 	const populateTestEnvTokens = async () => {
 		const [systemToken] = await bjsReq({
-			url: `${ENDPOINT}/api/v1/token`,
+			url: `${ENDPOINT.REST}/api/v1/token`,
 			method: 'SEARCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ query: { value: Config.testToken } }),
@@ -194,7 +193,7 @@ describe('Processing', async () => {
 		testEnv.tokens.systemToken = systemToken;
 
 		const [appToken] = await bjsReq({
-			url: `${ENDPOINT}/api/v1/token`,
+			url: `${ENDPOINT.REST}/api/v1/token`,
 			method: 'SEARCH',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ query: { value: testEnv.apps.app2.token } }),
@@ -202,7 +201,7 @@ describe('Processing', async () => {
 		testEnv.tokens.appToken = appToken;
 
 		const [dataSharingToken] = await bjsReq({
-			url: `${ENDPOINT}/api/v1/token`,
+			url: `${ENDPOINT.REST}/api/v1/token`,
 			method: 'SEARCH',
 			headers: { 'Content-Type': 'application/json' },
 			// TODO: Needs changing, We shouldn't be able to query internal prefixed data.
@@ -211,7 +210,7 @@ describe('Processing', async () => {
 		testEnv.tokens.dataSharingToken = dataSharingToken;
 
 		const [lambdaToken] = await bjsReq({
-			url: `${ENDPOINT}/api/v1/token`,
+			url: `${ENDPOINT.REST}/api/v1/token`,
 			method: 'SEARCH',
 			headers: { 'Content-Type': 'application/json' },
 			// TODO: Needs changing, We shouldn't be able to query internal prefixed data.
@@ -238,22 +237,22 @@ describe('Processing', async () => {
 		await createAppWithSchema('app1', 'Test SPR 1', 'test-spr-1', PolicyPropertyList);
 
 		for await (const policy of TestPolicies) {
-			await createPolicy(ENDPOINT, policy, testEnv.apps.app1.token);
+			await createPolicy(ENDPOINT.REST, policy, testEnv.apps.app1.token);
 		}
 
 		// Create a user to test with
-		testEnv.users['basic1'] = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'basic1', { adminAccess: true });
+		testEnv.users['basic1'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'basic1', { adminAccess: true });
 
-		testEnv.users['env-test-1'] = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'env-test-1', { envTest: 1 });
-		testEnv.users['env-test-2'] = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'env-test-2', { envTest: 2 });
-		testEnv.users['env-test-3'] = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'env-test-3', { envTest: 3 });
-		testEnv.users['env-test-4'] = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'env-test-4', { envTest: 4 });
-		testEnv.users['env-test-5'] = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'env-test-5', { envTest: 5 });
+		testEnv.users['env-test-1'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-1', { envTest: 1 });
+		testEnv.users['env-test-2'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-2', { envTest: 2 });
+		testEnv.users['env-test-3'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-3', { envTest: 3 });
+		testEnv.users['env-test-4'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-4', { envTest: 4 });
+		testEnv.users['env-test-5'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-5', { envTest: 5 });
 
 		const usersKeys = Object.keys(testEnv.users);
 		const colours = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'brown', 'black', 'white'];
 		await bjsReq({
-			url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
+			url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify(new Array(1000).fill(0).map((val, idx) => ({
@@ -264,7 +263,7 @@ describe('Processing', async () => {
 		}, testEnv.apps.app1.token);
 
 		await bjsReq({
-			url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/selector`,
+			url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/selector`,
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({
@@ -273,7 +272,7 @@ describe('Processing', async () => {
 			}),
 		}, testEnv.apps.app1.token);
 
-		testEnv.sockets.app = io(`${ENDPOINT}/${testEnv.apps.app1.apiPath}`, {
+		testEnv.sockets.app = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, {
 			auth: { token: testEnv.apps.app1.token },
 			forceNew: true
 		});
@@ -316,7 +315,7 @@ describe('Processing', async () => {
 
 			// Make a request to REST to generate the event.
 			await bjsReq({
-				url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name, userId: testEnv.users.basic1.id }),
@@ -347,7 +346,7 @@ describe('Processing', async () => {
 
 			// Make a request to REST to generate the event.
 			await bjsReq({
-				url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name, userId: testEnv.users.basic1.id }),
@@ -397,21 +396,22 @@ describe('Processing', async () => {
 
 	describe('Token Types', () => {
 		before(async function () {
-			testEnv.sockets.super = io(`${ENDPOINT}`, {
+			testEnv.sockets.super = io(`${ENDPOINT.REST}`, {
 				auth: { token: Config.testToken },
 				forceNew: true
 			});
 
 			await createAppWithSchema('app2', 'Test SPR 2', 'test-spr-2', PolicyPropertyList);
 
-			await createPolicy(ENDPOINT, PolicyTestData['env-static-value-query'], testEnv.apps.app2.token);
-			await createPolicy(ENDPOINT, PolicyTestData['lambda-test-access'], testEnv.apps.app2.token);
+			await createPolicy(ENDPOINT.REST, PolicyTestData['env-static-value-query'], testEnv.apps.app2.token);
+			await createPolicy(ENDPOINT.REST, PolicyTestData['lambda-test-access'], testEnv.apps.app2.token);
 
-			testEnv.dataSharing[DS1_NAME] = await registerDataSharing(ENDPOINT, {
+			testEnv.dataSharing[DS1_NAME] = await registerDataSharing(ENDPOINT.REST, {
 				name: DS1_NAME,
 
 				remoteApp: {
-					endpoint: ENDPOINT,
+					endpoint: ENDPOINT.REST,
+					ws: ENDPOINT.SOCK,
 					apiPath: testEnv.apps.app2.apiPath,
 					token: null,
 				},
@@ -425,11 +425,12 @@ describe('Processing', async () => {
 				}],
 			}, testEnv.apps.app1.token);
 
-			testEnv.dataSharing[DS2_NAME] = await registerDataSharing(ENDPOINT, {
+			testEnv.dataSharing[DS2_NAME] = await registerDataSharing(ENDPOINT.REST, {
 				name: DS2_NAME,
 
 				remoteApp: {
-					endpoint: ENDPOINT,
+					endpoint: ENDPOINT.REST,
+					ws: ENDPOINT.SOCK,
 					apiPath: testEnv.apps.app1.apiPath,
 					token: testEnv.dataSharing[DS1_NAME].registrationToken,
 				},
@@ -443,7 +444,7 @@ describe('Processing', async () => {
 				}],
 			}, testEnv.apps.app2.token);
 
-			testEnv.lambdas['token-test-lambda'] = await createLambda(ENDPOINT, {
+			testEnv.lambdas['token-test-lambda'] = await createLambda(ENDPOINT.REST, {
 					name: 'token-test-lambda',
 					type: 'PUBLIC',
 					git: {
@@ -467,7 +468,7 @@ describe('Processing', async () => {
 					policyProperties: { lambda: 'TEST_ACCESS' },
 				}, testEnv.apps.app2.token);
 
-			testEnv.users['token-type-test-1'] = await createPolicyUser(ENDPOINT, testEnv.apps.app2, 'token-type-test-1', { envTest: 1 });
+			testEnv.users['token-type-test-1'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'token-type-test-1', { envTest: 1 });
 
 			await populateTestEnvTokens();
 

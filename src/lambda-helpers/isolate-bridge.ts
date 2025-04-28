@@ -49,7 +49,16 @@ class IsolateBridge {
 	registerPlugins() {
 		const getClassesList = (dirName) => {
 			let files: NodeJS.Require[] = [];
-			const items = fs.readdirSync(dirName, {withFileTypes: true});
+
+			let items: fs.Dirent[];
+			try {
+				items = fs.readdirSync(dirName, {withFileTypes: true});
+			} catch (e: unknown) {
+				Logging.logError(`Error reading directory: ${dirName}`);
+				Logging.logError(e);
+				return [];
+			}
+
 			for (const item of items) {
 				if (item.name === '.git') continue;
 
@@ -67,6 +76,7 @@ class IsolateBridge {
 		const classes: any = getClassesList(Config.paths.lambda.plugins);
 		const plugins = classes.filter((c) => c.startUp);
 		const prot = ['constructor', 'startUp'];
+		Logging.logSilly('Plugins to register:', plugins.map((p) => p.constructor.name).join(','));
 		plugins.forEach((p) => {
 			const className = p.constructor.name;
 

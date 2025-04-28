@@ -17,13 +17,13 @@
 import { io } from 'socket.io-client';
 import { describe, it, before, after } from 'mocha';
 import assert from 'assert';
-import fetch from 'cross-fetch';
 
 import {
 	bjsReq,
 	createApp,
 	updateSchema,
 	extractPolicyPropertyListFromPolicies,
+	ENDPOINT,
 } from '../../helpers.js';
 
 import BootstrapSPR from '../../../dist/bootstrap-spr.js';
@@ -31,8 +31,6 @@ import BootstrapRest from '../../../dist/bootstrap-rest.js';
 import BootstrapSocket from '../../../dist/bootstrap-socket.js';
 
 import PolicyTestData from '../../data/policy/index.js';
-
-const ENDPOINT = `https://test.local.buttressjs.com`;
 
 let REST_PROCESS = null;
 let SPR_PROCESS = null;
@@ -76,8 +74,8 @@ describe('Realtime', async () => {
 		};
 
 		// Create an app
-		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test SOCK 1', 'test-sock-1', PolicyPropertyList);
-		testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app1.token);
+		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test SOCK 1', 'test-sock-1', PolicyPropertyList);
+		testEnv.apps.app1.schema = await updateSchema(ENDPOINT.REST, [carsSchema], testEnv.apps.app1.token);
 
 		// Hack - Pause for a second to allow the schema to be created.
 		await new Promise((resolve) => setTimeout(resolve, 100));
@@ -93,7 +91,7 @@ describe('Realtime', async () => {
 	describe('Connections', () => {
 		let socket = null;
 		it('Should be able to connect to Buttress using socket.io', function (done) {
-			socket = io(ENDPOINT, {
+			socket = io(ENDPOINT.SOCK, {
 				auth: {
 					token: testEnv.apps.app1.token,
 				},
@@ -120,7 +118,7 @@ describe('Realtime', async () => {
 		it('Should be able to connect to Buttress using the app token', function (done) {
 			this.timeout(20000);
 			// TODO: Slowness due to the bulk add, this needs to be addressed.
-			testEnv.socket = io(`${ENDPOINT}/${testEnv.apps.app1.apiPath}`, {
+			testEnv.socket = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, {
 				auth: {
 					token: testEnv.apps.app1.token,
 				},
@@ -157,7 +155,7 @@ describe('Realtime', async () => {
 				});
 
 				cars = await bjsReq({
-					url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ name }),
@@ -182,13 +180,13 @@ describe('Realtime', async () => {
 		let req = null;
 		let deferedBJSRequestStatusPromise = null;
 		it('Should make a request to /cars, responce should contain a x-bjs-request-id header', async () => {
-			req = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`, {
+			req = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`, {
 				headers: {
 					'Content-Type': 'application/json',
 					'Authorization': `Bearer ${testEnv.apps.app1.token}`,
 				},
 			});
-			if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${ENDPOINT}`);
+			if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${ENDPOINT.REST}`);
 			assert(req.headers.get('x-bjs-request-id'));
 		});
 

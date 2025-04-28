@@ -17,6 +17,11 @@
 // const fetch = require('cross-fetch');
 import Config from './config.js';
 
+export const ENDPOINT = {
+	REST: Config.url.rest,
+	SOCK: Config.url.ws,
+};
+
 export class BJSReqError extends Error {
 	constructor(code, message) {
 		super(message);
@@ -64,7 +69,7 @@ export const createPolicyUser = async (ENDPOINT, app, key, policyProperties) => 
     appId: `${key}-${Math.floor(Math.random() * 1000)}`,
     email: `${key}+${Math.floor(Math.random() * 1000)}@buttressjs.com`,
   }, {
-    domains: ['test.local.buttressjs.com'],
+    domains: [Config.app.host],
     policyProperties,
   }, app.token);
 

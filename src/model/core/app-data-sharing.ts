@@ -61,6 +61,12 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 						__required: true,
 						__allowUpdate: true,
 					},
+					ws: {
+						__type: 'string',
+						__default: null,
+						__required: false,
+						__allowUpdate: true,
+					},
 					apiPath: {
 						__type: 'string',
 						__default: null,
@@ -101,6 +107,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 
 			remoteApp: {
 				endpoint: Helpers.trimSlashes(body.remoteApp.endpoint),
+				ws: (body.remoteApp.ws) ? Helpers.trimSlashes(body.remoteApp.ws) : null,
 				apiPath: Helpers.trimSlashes(body.remoteApp.apiPath),
 				token: body.remoteApp.token,
 			},

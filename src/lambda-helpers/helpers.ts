@@ -17,7 +17,7 @@ import { URL } from 'node:url';
 import Stream from 'node:stream';
 
 import ivm from 'isolated-vm';
-import fetch from 'cross-fetch';
+// import fetch from 'cross-fetch';
 import crypto from 'crypto';
 import randomstring from 'randomstring';
 import puppeteer from 'puppeteer';
@@ -53,9 +53,13 @@ class Helpers {
 	}
 
 	async _createIsolateContext(isolate, context, jail) {
+		console.log('Creating isolate jail');
 		IsolateBridge.registerPlugins();
 
-		jail.setSync('global', jail.derefInto());
+		jail.setSync('global', jail.derefInto({
+			release: false
+		}));
+		console.log('Creating isolate jail global');
 		jail.setSync('_ivm', ivm);
 		jail.setSync('_setResult', new ivm.Reference((res) => {
 			if (typeof res !== 'object' || Array.isArray(res)) {

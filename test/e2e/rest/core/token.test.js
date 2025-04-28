@@ -17,12 +17,11 @@
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
-import { createApp, bjsReq, createPolicyUser, deleteApp } from '../../../helpers.js';
+import { createApp, bjsReq, createPolicyUser, deleteApp, ENDPOINT } from '../../../helpers.js';
 
 import BootstrapRest from '../../../../dist/bootstrap-rest.js';
 
 let REST_PROCESS = null;
-const ENDPOINT = `https://test.local.buttressjs.com`;
 
 const testEnv = {
 	apps: {},
@@ -35,14 +34,14 @@ describe('Token API', async () => {
 
 		await REST_PROCESS.init();
 		
-		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test Token API', 'test-token-api-1');
+		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test Token API', 'test-token-api-1');
 
 		// Create some users
-		testEnv.users.user1 = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'token-test-user1', {});
+		testEnv.users.user1 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'token-test-user1', {});
 	});
 
 	after(async function () {
-		await deleteApp(ENDPOINT, testEnv.apps.app1.id);
+		await deleteApp(ENDPOINT.REST, testEnv.apps.app1.id);
 
 		// Shutdown
 		await REST_PROCESS.clean();
@@ -51,7 +50,7 @@ describe('Token API', async () => {
 	describe('GetTokenList', async () => {
 		it('Should list all tokens in the system after a GET with a system token', async () => {
 			const tokens = await bjsReq({
-				url: `${ENDPOINT}/api/v1/token`,
+				url: `${ENDPOINT.REST}/api/v1/token`,
 				method: 'GET',
 				headers: { 'Content-Type': 'application/json' }
 			});
@@ -61,7 +60,7 @@ describe('Token API', async () => {
 
 		it('Should list all tokens in the system after a GET with a app token', async () => {
 			const tokens = await bjsReq({
-				url: `${ENDPOINT}/api/v1/token`,
+				url: `${ENDPOINT.REST}/api/v1/token`,
 				method: 'GET',
 				headers: { 'Content-Type': 'application/json' }
 			}, testEnv.apps.app1.token);
@@ -73,7 +72,7 @@ describe('Token API', async () => {
 	describe('DeleteAllTokens', () => {
 		it('Should delete all tokens in the system with a system token', async () => {
 			const response = await bjsReq({
-				url: `${ENDPOINT}/api/v1/token`,
+				url: `${ENDPOINT.REST}/api/v1/token`,
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' }
 			});
@@ -81,7 +80,7 @@ describe('Token API', async () => {
 			assert.strictEqual(response, true, "Response should be true");
 
 			const tokens = await bjsReq({
-				url: `${ENDPOINT}/api/v1/token`,
+				url: `${ENDPOINT.REST}/api/v1/token`,
 				method: 'GET',
 				headers: { 'Content-Type': 'application/json' }
 			});
@@ -89,15 +88,15 @@ describe('Token API', async () => {
 			assert.strictEqual(tokens.length, 1, "Tokens length should be 1 after deletion by system");
 
 			// Prepare space for next test
-			await deleteApp(ENDPOINT, testEnv.apps.app1.id);
+			await deleteApp(ENDPOINT.REST, testEnv.apps.app1.id);
 
-			testEnv.apps.app1 = await createApp(ENDPOINT, 'Test Token API', 'test-token-api-1');
-			testEnv.users.user1 = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'token-test-user1', {});
+			testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test Token API', 'test-token-api-1');
+			testEnv.users.user1 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'token-test-user1', {});
 		});
 
 		it('Should delete all tokens for an app with an app token', async () => {
 			const response = await bjsReq({
-				url: `${ENDPOINT}/api/v1/token`,
+				url: `${ENDPOINT.REST}/api/v1/token`,
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' }
 			}, testEnv.apps.app1.token);
@@ -105,7 +104,7 @@ describe('Token API', async () => {
 			assert.strictEqual(response, true, "Response should be true");
 
 			const tokens = await bjsReq({
-				url: `${ENDPOINT}/api/v1/token`,
+				url: `${ENDPOINT.REST}/api/v1/token`,
 				method: 'GET',
 				headers: { 'Content-Type': 'application/json' }
 			}, testEnv.apps.app1.token);
@@ -116,12 +115,12 @@ describe('Token API', async () => {
 
 	describe('SearchUserToken', () => {
 		before(async function () {
-			testEnv.users.user1 = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'token-test-user1', {});
+			testEnv.users.user1 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'token-test-user1', {});
 		});
 
 		it('Should search and return tokens for a specific user with a system token', async () => {
 			const tokens = await bjsReq({
-				url: `${ENDPOINT}/api/v1/token/${testEnv.users.user1.id}`,
+				url: `${ENDPOINT.REST}/api/v1/token/${testEnv.users.user1.id}`,
 				method: 'SEARCH',
 				headers: { 'Content-Type': 'application/json' }
 			});
@@ -131,7 +130,7 @@ describe('Token API', async () => {
 
 		it('Should search and return tokens for a specific user with an app token', async () => {
 			const tokens = await bjsReq({
-				url: `${ENDPOINT}/api/v1/token/${testEnv.users.user1.id}`,
+				url: `${ENDPOINT.REST}/api/v1/token/${testEnv.users.user1.id}`,
 				method: 'SEARCH',
 				headers: { 'Content-Type': 'application/json' }
 			}, testEnv.apps.app1.token);

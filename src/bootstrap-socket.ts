@@ -609,7 +609,12 @@ export default class BootstrapSocket extends Bootstrap {
 	}
 
 	async __primaryCreateDataShareConnection(dataShare) {
-		const url = `${dataShare.remoteApp.endpoint}/${dataShare.remoteApp.apiPath}`;
+		let url = `${dataShare.remoteApp.endpoint}/${dataShare.remoteApp.apiPath}`;
+
+		if (dataShare.remoteApp.ws) {
+			url = `${dataShare.remoteApp.ws}/${dataShare.remoteApp.apiPath}`;
+		}
+
 		Logging.logSilly(`Attempting to connect to ${url} with token ${dataShare.remoteApp.token}`);
 		if (!this._dataShareSockets[dataShare._appId]) {
 			this._dataShareSockets[dataShare._appId] = [];

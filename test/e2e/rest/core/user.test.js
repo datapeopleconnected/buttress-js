@@ -17,11 +17,10 @@
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
-import { createApp, bjsReq, createPolicyUser, deleteApp, BJSReqError } from '../../../helpers.js';
+import { createApp, bjsReq, createPolicyUser, deleteApp, BJSReqError, ENDPOINT } from '../../../helpers.js';
 
 import BootstrapRest from '../../../../dist/bootstrap-rest.js';
 
-const ENDPOINT = `https://test.local.buttressjs.com`;
 
 describe('User API', async () => {
 	const testEnv = {
@@ -36,10 +35,10 @@ describe('User API', async () => {
 
 		await REST_PROCESS.init();
 
-		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test User API', 'test-user-api-1', { someProperty: [ 'value', 'newValue' ] });
+		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test User API', 'test-user-api-1', { someProperty: [ 'value', 'newValue' ] });
 
 		// Create some users
-		testEnv.users.user1 = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'user-test-user1', {});
+		testEnv.users.user1 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'user-test-user1', {});
 	});
 
 	after(async function () {
@@ -52,7 +51,7 @@ describe('User API', async () => {
 	describe('GetUserList', () => {
 		it('Should list all users with a system token', async () => {
 			const users = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user`,
+				url: `${ENDPOINT.REST}/api/v1/user`,
 				method: 'GET',
 				headers: { 'Content-Type': 'application/json' }
 			});
@@ -62,7 +61,7 @@ describe('User API', async () => {
 
 		it('Should list users for a specific app with an app token', async () => {
 			const users = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user`,
+				url: `${ENDPOINT.REST}/api/v1/user`,
 				method: 'GET',
 				headers: { 'Content-Type': 'application/json' }
 			}, testEnv.apps.app1.token);
@@ -74,7 +73,7 @@ describe('User API', async () => {
 	describe('GetUser', () => {
 		it('Should get a user by ID with a system token', async () => {
 			const user = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/${testEnv.users.user1.id}`,
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}`,
 				method: 'GET',
 				headers: { 'Content-Type': 'application/json' }
 			});
@@ -97,7 +96,7 @@ describe('User API', async () => {
 	describe('FindUser', () => {
 		it('Should find a user by auth app ID with a app token', async () => {
 			const user = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/${testEnv.users.user1.auth[0].app}/${testEnv.users.user1.auth[0].appId}`,
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.auth[0].app}/${testEnv.users.user1.auth[0].appId}`,
 				method: 'GET',
 				headers: { 'Content-Type': 'application/json' }
 			}, testEnv.apps.app1.token);
@@ -109,7 +108,7 @@ describe('User API', async () => {
 	describe('GetUserByToken', () => {
 		it('Should get a user by token', async () => {
 			const user = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/get-by-token`,
+				url: `${ENDPOINT.REST}/api/v1/user/get-by-token`,
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ token: testEnv.users.user1.tokens[0].value })
@@ -126,7 +125,7 @@ describe('User API', async () => {
 				domains: ['example.com']
 			};
 			const token = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/${testEnv.users.user1.id}/token`,
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}/token`,
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(tokenData)
@@ -142,7 +141,7 @@ describe('User API', async () => {
 				auth: [{ app: 'twitter', appId: 'newUserId', email: 'newuser@example.com' }]
 			};
 			const user = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user`,
+				url: `${ENDPOINT.REST}/api/v1/user`,
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(userData)
@@ -159,7 +158,7 @@ describe('User API', async () => {
 				value: 'updateduser@example.com'
 			};
 			const [update] = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/${testEnv.users.user1.id}`,
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}`,
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify([data])
@@ -174,7 +173,7 @@ describe('User API', async () => {
 	describe('SetUserPolicyProperties', () => {
 		it('Should set user policy properties', async () => {
 			const response = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/${testEnv.users.user1.id}/policy-property/${testEnv.users.user1.tokens[0].id}`,
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}/policy-property/${testEnv.users.user1.tokens[0].id}`,
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ someProperty: 'value' })
@@ -186,7 +185,7 @@ describe('User API', async () => {
 		it('Should not set user policy properties if the policy property doesn\'t exist', async () => {
 			try {
 				await bjsReq({
-					url: `${ENDPOINT}/api/v1/user/${testEnv.users.user1.id}/policy-property/${testEnv.users.user1.tokens[0].id}`,
+					url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}/policy-property/${testEnv.users.user1.tokens[0].id}`,
 					method: 'PUT',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ someProperty: 'randomValue' })
@@ -203,7 +202,7 @@ describe('User API', async () => {
 	describe('UpdateUserPolicyProperties', () => {
 		it('Should update user policy properties', async () => {
 			const response = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/${testEnv.users.user1.id}/update-policy-property/${testEnv.users.user1.tokens[0].id}`,
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}/update-policy-property/${testEnv.users.user1.tokens[0].id}`,
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ someProperty: 'newValue' })
@@ -215,7 +214,7 @@ describe('User API', async () => {
 		it('Should not update the policy properties if the policy property doesn\'t exist', async () => {
 			try {
 				await bjsReq({
-					url: `${ENDPOINT}/api/v1/user/${testEnv.users.user1.id}/update-policy-property/${testEnv.users.user1.tokens[0].id}`,
+					url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}/update-policy-property/${testEnv.users.user1.tokens[0].id}`,
 					method: 'PUT',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ someProperty: 'randomValue' })
@@ -232,7 +231,7 @@ describe('User API', async () => {
 	describe('RemoveUserPolicyProperties', () => {
 		it('Should remove user policy properties', async () => {
 			const response = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/${testEnv.users.user1.id}/remove-policy-property/${testEnv.users.user1.tokens[0].id}`,
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}/remove-policy-property/${testEnv.users.user1.tokens[0].id}`,
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ someProperty: 'newValue' })
@@ -245,7 +244,7 @@ describe('User API', async () => {
 	describe('ClearUserPolicyProperties', () => {
 		it('Should clear user policy properties', async () => {
 			const response = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/${testEnv.users.user1.id}/clear-policy-property/${testEnv.users.user1.tokens[0].id}`,
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}/clear-policy-property/${testEnv.users.user1.tokens[0].id}`,
 				method: 'PUT',
 				headers: { 'Content-Type': 'application/json' }
 			}, testEnv.apps.app1.token);
@@ -257,7 +256,7 @@ describe('User API', async () => {
 	describe('DeleteAllUsers', () => {
 		it('Should delete all users', async () => {
 			const response = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user`,
+				url: `${ENDPOINT.REST}/api/v1/user`,
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' }
 			});
@@ -265,7 +264,7 @@ describe('User API', async () => {
 			assert.strictEqual(response, true, 'Response should be true');
 
 			const users = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user`,
+				url: `${ENDPOINT.REST}/api/v1/user`,
 				method: 'GET',
 				headers: { 'Content-Type': 'application/json' }
 			});
@@ -277,10 +276,10 @@ describe('User API', async () => {
 	describe('DeleteUser', () => {
 		it('Should delete a user', async () => {
 			// Add in a new user to be deleted.
-			testEnv.users.user2 = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'user-test-user2', {});
+			testEnv.users.user2 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'user-test-user2', {});
 
 			const response = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/${testEnv.users.user2.id}`,
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user2.id}`,
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' }
 			}, testEnv.apps.app1.token);
@@ -289,7 +288,7 @@ describe('User API', async () => {
 
 			try {
 				await bjsReq({
-					url: `${ENDPOINT}/api/v1/user/${testEnv.users.user2.id}`,
+					url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user2.id}`,
 					method: 'GET',
 					headers: { 'Content-Type': 'application/json' }
 				}, testEnv.apps.app1.token);
@@ -303,10 +302,10 @@ describe('User API', async () => {
 
 	describe('clearUserLocalData', () => {
 		it('Should clear user local data', async () => {
-			testEnv.users.user3 = await createPolicyUser(ENDPOINT, testEnv.apps.app1, 'user-test-user3', {});
+			testEnv.users.user3 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'user-test-user3', {});
 
 			const response = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/${testEnv.users.user3.id}/clear-local-data`,
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user3.id}/clear-local-data`,
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' }
 			}, testEnv.apps.app1.token);
@@ -319,7 +318,7 @@ describe('User API', async () => {
 		it('Should search and return a list of users', async () => {
 			const query = { email: 'user@example.com' };
 			const users = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user`,
+				url: `${ENDPOINT.REST}/api/v1/user`,
 				method: 'SEARCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: { query }
@@ -333,7 +332,7 @@ describe('User API', async () => {
 		it('Should return the count of users', async () => {
 			const query = { email: 'user@example.com' };
 			const count = await bjsReq({
-				url: `${ENDPOINT}/api/v1/user/count`,
+				url: `${ENDPOINT.REST}/api/v1/user/count`,
 				method: 'SEARCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: { query }

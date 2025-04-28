@@ -17,12 +17,11 @@
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
-import { createApp, updateSchema } from '../../helpers.js';
+import { createApp, updateSchema, ENDPOINT } from '../../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
 
 let REST_PROCESS = null;
-const ENDPOINT = `https://test.local.buttressjs.com`;
 
 const testEnv = {
 	apps: {},
@@ -36,7 +35,7 @@ describe('Schema', async () => {
 
 		await REST_PROCESS.init();
 
-		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test Req App', 'test-req-app');
+		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test Req App', 'test-req-app');
 	});
 
 	after(async function() {
@@ -69,7 +68,7 @@ describe('Schema', async () => {
 				},
 			}];
 
-			testEnv.apps.app1.schema = await updateSchema(ENDPOINT, schema, testEnv.apps.app1.token);
+			testEnv.apps.app1.schema = await updateSchema(ENDPOINT.REST, schema, testEnv.apps.app1.token);
 			assert.strictEqual(testEnv.apps.app1.schema.length, 2);
 			assert.strictEqual(testEnv.apps.app1.schema[0].name, 'car');
 			assert.strictEqual(typeof testEnv.apps.app1.schema[0].properties.id, 'object');
@@ -86,7 +85,7 @@ describe('Schema', async () => {
 		});
 
 		it('Should be able to fetch the schema', async () => {
-			const getResponse = await fetch(`${ENDPOINT}/api/v1/app/schema?token=${testEnv.apps.app1.token}`);
+			const getResponse = await fetch(`${ENDPOINT.REST}/api/v1/app/schema?token=${testEnv.apps.app1.token}`);
 			assert.strictEqual(getResponse.status, 200);
 
 			const body = await getResponse.json();
@@ -96,7 +95,7 @@ describe('Schema', async () => {
 		});
 
 		it('Should be able to fetch only the requested schema', async () => {
-			const getResponse = await fetch(`${ENDPOINT}/api/v1/app/schema?token=${testEnv.apps.app1.token}&only=colours`);
+			const getResponse = await fetch(`${ENDPOINT.REST}/api/v1/app/schema?token=${testEnv.apps.app1.token}&only=colours`);
 			assert.strictEqual(getResponse.status, 200);
 
 			const body = await getResponse.json();
@@ -109,7 +108,7 @@ describe('Schema', async () => {
 		describe('Methods', async () => {
 			it('Should make a POST request to bulk add', async function() {
 				this.timeout(5000);
-				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add?token=${testEnv.apps.app1.token}`, {
+				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add?token=${testEnv.apps.app1.token}`, {
 					method: 'POST',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify(new Array(5000).fill(0).map(() => ({name: `name-${Math.floor(Math.random()*100)}`}))),
@@ -121,7 +120,7 @@ describe('Schema', async () => {
 			});
 
 			it('Should make a GET request without providing params (LIST)', async () => {
-				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${testEnv.apps.app1.token}`);
+				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${testEnv.apps.app1.token}`);
 				assert.strictEqual(getResponse.status, 200);
 
 				const body = await getResponse.json();
@@ -129,7 +128,7 @@ describe('Schema', async () => {
 			});
 
 			it('Should make a POST request', async () => {
-				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${testEnv.apps.app1.token}`, {
+				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${testEnv.apps.app1.token}`, {
 					method: 'POST',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify({name: `name-test`}),
@@ -142,7 +141,7 @@ describe('Schema', async () => {
 			});
 
 			it('Should make a GET request for an entity by it\'s id', async () => {
-				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}` +
+				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}` +
 					`?token=${testEnv.apps.app1.token}`);
 				assert.strictEqual(getResponse.status, 200);
 
@@ -152,7 +151,7 @@ describe('Schema', async () => {
 			});
 
 			it(`Should make a SEARCH request for car with name 'name-test'`, async () => {
-				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${testEnv.apps.app1.token}`, {
+				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${testEnv.apps.app1.token}`, {
 					method: 'SEARCH',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify({query: {name: `name-test`}}),
@@ -164,7 +163,7 @@ describe('Schema', async () => {
 			});
 
 			it('Should make a SEARCH request to get the count of the results', async () => {
-				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/count?token=${testEnv.apps.app1.token}`, {
+				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/count?token=${testEnv.apps.app1.token}`, {
 					method: 'SEARCH',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify({name: `name-test`}),
@@ -176,7 +175,7 @@ describe('Schema', async () => {
 			});
 
 			it('Should make a PUT request to get the count of the results', async () => {
-				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}` +
+				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}` +
 					`?token=${testEnv.apps.app1.token}`, {
 					method: 'PUT',
 					headers: {'Content-Type': 'application/json'},
@@ -192,7 +191,7 @@ describe('Schema', async () => {
 			});
 
 			it('Should make a PUT request with a sourceId', async () => {
-				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/` +
+				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/` +
 					`car/${testEnv.cars[0].sourceId}/${testEnv.cars[0].id}` +
 					`?token=${testEnv.apps.app1.token}`, {
 					method: 'PUT',
@@ -211,7 +210,7 @@ describe('Schema', async () => {
 			// TODO: Update Many
 
 			it('Should make a DELETE request for a single Id', async () => {
-				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}` +
+				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}` +
 					`?token=${testEnv.apps.app1.token}`, {
 					method: 'delete',
 				});
@@ -224,7 +223,7 @@ describe('Schema', async () => {
 			// TODO: Delete Many
 
 			it('Should make a DELETE request with no params (Delete all)', async () => {
-				const getResponse = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car` +
+				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car` +
 					`?token=${testEnv.apps.app1.token}`, {
 					method: 'delete',
 				});

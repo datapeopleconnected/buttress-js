@@ -17,12 +17,11 @@
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
-import { createApp, updateSchema, bjsReq, registerDataSharing } from '../../helpers.js';
+import { createApp, updateSchema, bjsReq, registerDataSharing, ENDPOINT } from '../../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
 
 let REST_PROCESS = null;
-const ENDPOINT = `https://test.local.buttressjs.com`;
 
 const testEnv = {
 	apps: {},
@@ -32,7 +31,7 @@ const testEnv = {
 
 const createCar = async (app, name) => {
 	const [car] = await bjsReq({
-		url: `${ENDPOINT}/${app.apiPath}/api/v1/car`,
+		url: `${ENDPOINT.REST}/${app.apiPath}/api/v1/car`,
 		method: 'POST',
 		headers: {'Content-Type': 'application/json'},
 		body: JSON.stringify({
@@ -66,17 +65,17 @@ describe('Data Sharing', async () => {
 			},
 		};
 
-		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test App 1', 'data-sharing-app-1');
-		testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app1.token);
+		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test App 1', 'data-sharing-app-1');
+		testEnv.apps.app1.schema = await updateSchema(ENDPOINT.REST, [carsSchema], testEnv.apps.app1.token);
 
 		await createCar(testEnv.apps.app1, 'A red car');
 
 		// Test app 2 doesn't need a schema from the start, we'll add one later.
-		testEnv.apps.app2 = await createApp(ENDPOINT, 'Test App 2', 'test-app-2');
+		testEnv.apps.app2 = await createApp(ENDPOINT.REST, 'Test App 2', 'test-app-2');
 
 		// Create a third app which will be used as a cars sources too.
-		testEnv.apps.app3 = await createApp(ENDPOINT, 'Test App 3', 'test-app-3');
-		testEnv.apps.app3.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app3.token);
+		testEnv.apps.app3 = await createApp(ENDPOINT.REST, 'Test App 3', 'test-app-3');
+		testEnv.apps.app3.schema = await updateSchema(ENDPOINT.REST, [carsSchema], testEnv.apps.app3.token);
 
 		await createCar(testEnv.apps.app3, 'A green car');
 	});
@@ -86,14 +85,15 @@ describe('Data Sharing', async () => {
 		await REST_PROCESS.clean();
 	});
 
-	describe('Creating a agreement', async () => {
-		it('Should register a data sharing agreement between app1 and app2', async () => {
+	describe('Basics', async () => {
+		it('Should register an agreement with the correct data fields', async () => {
 			const name = `app1-to-app2`;
-			const agreement = await registerDataSharing(ENDPOINT, {
+			const agreement = await registerDataSharing(ENDPOINT.REST, {
 				name,
 
 				remoteApp: {
-					endpoint: ENDPOINT,
+					endpoint: ENDPOINT.REST,
+					ws: ENDPOINT.SOCK,
 					apiPath: testEnv.apps.app2.apiPath,
 					token: null,
 				},
@@ -108,7 +108,40 @@ describe('Data Sharing', async () => {
 			}, testEnv.apps.app1.token);
 
 			assert.strictEqual(agreement.name, name);
-			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT);
+			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT.REST);
+			assert.strictEqual(agreement.remoteApp.ws, ENDPOINT.SOCK);
+			assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app2.apiPath);
+			assert.strictEqual(agreement.remoteApp.token, null);
+			assert.strictEqual(agreement.active, false);
+			assert(agreement.registrationToken !== null && agreement.registrationToken !== undefined);
+		});
+	});
+
+	describe('Creating a agreement', async () => {
+		it('Should register a data sharing agreement between app1 and app2', async () => {
+			const name = `app1-to-app2`;
+			const agreement = await registerDataSharing(ENDPOINT.REST, {
+				name,
+
+				remoteApp: {
+					endpoint: ENDPOINT.REST,
+					ws: ENDPOINT.SOCK,
+					apiPath: testEnv.apps.app2.apiPath,
+					token: null,
+				},
+
+				policyConfig: [{
+					verbs: ['%ALL%'],
+					schema: ['%ALL%'],
+					query: {
+						access: '%FULL_ACCESS%',
+					},
+				}],
+			}, testEnv.apps.app1.token);
+
+			assert.strictEqual(agreement.name, name);
+			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT.REST);
+			assert.strictEqual(agreement.remoteApp.ws, ENDPOINT.SOCK);
 			assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app2.apiPath);
 			assert.strictEqual(agreement.remoteApp.token, null);
 			assert.strictEqual(agreement.active, false);
@@ -119,11 +152,12 @@ describe('Data Sharing', async () => {
 
 		it(`Should register a data sharing agreement between app2 and app1 & activate it`, async () => {
 			const name = `app2-to-app1`;
-			const agreement = await registerDataSharing(ENDPOINT, {
+			const agreement = await registerDataSharing(ENDPOINT.REST, {
 				name,
 
 				remoteApp: {
-					endpoint: ENDPOINT,
+					endpoint: ENDPOINT.REST,
+					ws: ENDPOINT.SOCK,
 					apiPath: testEnv.apps.app1.apiPath,
 					token: testEnv.agreements[`app1-to-app2`].registrationToken,
 				},
@@ -138,7 +172,8 @@ describe('Data Sharing', async () => {
 			}, testEnv.apps.app2.token);
 
 			assert.strictEqual(agreement.name, name);
-			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT);
+			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT.REST);
+			assert.strictEqual(agreement.remoteApp.ws, ENDPOINT.SOCK);
 			assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app1.apiPath);
 			assert.strictEqual(agreement.active, true);
 
@@ -146,7 +181,7 @@ describe('Data Sharing', async () => {
 		});
 
 		it(`Should update app2 schema to reference cars collection from app1`, async () => {
-			testEnv.apps.app2.schema = await updateSchema(ENDPOINT, [{
+			testEnv.apps.app2.schema = await updateSchema(ENDPOINT.REST, [{
 				name: 'car',
 				type: 'collection',
 				remotes: [{
@@ -165,7 +200,7 @@ describe('Data Sharing', async () => {
 
 		it('Should be able to GET cars from App2 which will use data sharing to retrive data from App1', async function() {
 			const cars = await bjsReq({
-				url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/car`,
 				method: 'GET',
 			}, testEnv.apps.app2.token);
 
@@ -176,7 +211,7 @@ describe('Data Sharing', async () => {
 
 		it('Should be able to POST cars from App2 which will save the data against App2 because no source is provided', async function() {
 			const [result] = await bjsReq({
-				url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/car`,
 				method: 'POST',
 				headers: {'Content-Type': 'application/json'},
 				body: JSON.stringify({
@@ -191,7 +226,7 @@ describe('Data Sharing', async () => {
 
 		it('Should be able to POST cars from App2 which will save the data against App1 because a source is provided', async function() {
 			const [result] = await bjsReq({
-				url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/car`,
 				method: 'POST',
 				headers: {'Content-Type': 'application/json'},
 				body: JSON.stringify({
@@ -209,11 +244,12 @@ describe('Data Sharing', async () => {
 	describe('Handling mutiple agreement sources', async () => {
 		it('Should register a data sharing agreement between app3 and app2', async () => {
 			const name = `app3-to-app2`;
-			const agreement = await registerDataSharing(ENDPOINT, {
+			const agreement = await registerDataSharing(ENDPOINT.REST, {
 				name,
 
 				remoteApp: {
-					endpoint: ENDPOINT,
+					endpoint: ENDPOINT.REST,
+					ws: ENDPOINT.SOCK,
 					apiPath: testEnv.apps.app2.apiPath,
 					token: null,
 				},
@@ -228,7 +264,8 @@ describe('Data Sharing', async () => {
 			}, testEnv.apps.app3.token);
 
 			assert.strictEqual(agreement.name, name);
-			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT);
+			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT.REST);
+			assert.strictEqual(agreement.remoteApp.ws, ENDPOINT.SOCK);
 			assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app2.apiPath);
 			assert.strictEqual(agreement.remoteApp.token, null);
 			assert.strictEqual(agreement.active, false);
@@ -239,11 +276,12 @@ describe('Data Sharing', async () => {
 
 		it(`Should register a data sharing agreement between app2 and app1 & activate it`, async () => {
 			const name = `app2-to-app3`;
-			const agreement = await registerDataSharing(ENDPOINT, {
+			const agreement = await registerDataSharing(ENDPOINT.REST, {
 				name,
 
 				remoteApp: {
-					endpoint: ENDPOINT,
+					endpoint: ENDPOINT.REST,
+					ws: ENDPOINT.SOCK,
 					apiPath: testEnv.apps.app3.apiPath,
 					token: testEnv.agreements[`app3-to-app2`].registrationToken,
 				},
@@ -258,7 +296,8 @@ describe('Data Sharing', async () => {
 			}, testEnv.apps.app2.token);
 
 			assert.strictEqual(agreement.name, name);
-			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT);
+			assert.strictEqual(agreement.remoteApp.endpoint, ENDPOINT.REST);
+			assert.strictEqual(agreement.remoteApp.ws, ENDPOINT.SOCK);
 			assert.strictEqual(agreement.remoteApp.apiPath, testEnv.apps.app3.apiPath);
 			assert.strictEqual(agreement.active, true);
 
@@ -266,7 +305,7 @@ describe('Data Sharing', async () => {
 		});
 
 		it(`Should update app2 schema to reference cars collection from app1 & app2`, async () => {
-			testEnv.apps.app2.schema = await updateSchema(ENDPOINT, [{
+			testEnv.apps.app2.schema = await updateSchema(ENDPOINT.REST, [{
 				name: 'car',
 				type: 'collection',
 				remotes: [{
@@ -285,7 +324,7 @@ describe('Data Sharing', async () => {
 		it('Should be able to GET cars from App2 which will use data sharing to retrive data from App1 & App3 combined', async function() {
 			this.timeout(20000);
 			const cars = await bjsReq({
-				url: `${ENDPOINT}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/car`,
 				method: 'GET',
 				headers: {'mode': 'no-cors'},
 			}, testEnv.apps.app2.token);
