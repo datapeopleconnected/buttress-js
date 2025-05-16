@@ -136,9 +136,9 @@ describe('User API', async () => {
 	});
 
 	describe('AddUser', () => {
-		it('Should add a new user', async () => {
+		it('Should add a new user with no token', async () => {
 			const userData = {
-				auth: [{ app: 'twitter', appId: 'newUserId', email: 'newuser@example.com' }]
+				auth: [{ app: 'test-app-name', appId: '1', email: 'newuser+1@example.com' }]
 			};
 			const user = await bjsReq({
 				url: `${ENDPOINT.REST}/api/v1/user`,
@@ -147,7 +147,29 @@ describe('User API', async () => {
 				body: JSON.stringify(userData)
 			}, testEnv.apps.app1.token);
 
-			assert.strictEqual(user.auth[0].appId, 'newUserId', 'User auth appId should match');
+			assert.strictEqual(user.auth[0].appId, userData.auth[0].appId, 'User auth appId should match');
+			assert.strictEqual(user.auth[0].email, userData.auth[0].email, 'User auth email should match');
+			assert.strictEqual(user.tokens.length, 0, 'User should not have any tokens');
+		});
+
+		it('Should create a user with a token', async () => {
+			const userData = {
+				auth: [{ app: 'test-app-name', appId: '2', email: 'newuser+2@example.com' }],
+				token: {
+					domains: ['example.com'],
+					policyProperties: { someProperty: 'value' }
+				}
+			};
+			const user = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(userData)
+			}, testEnv.apps.app1.token);
+
+			assert.strictEqual(user.auth[0].appId, userData.auth[0].appId, 'User auth appId should match');
+			assert.strictEqual(user.auth[0].email, userData.auth[0].email, 'User auth email should match');
+			assert.strictEqual(user.tokens.length, 1, 'User should have one token');
 		});
 	});
 
