@@ -234,4 +234,74 @@ describe('Schema', async () => {
 			});
 		});
 	});
+
+	describe('Types', async () => {
+		before(async function() {
+			testEnv.apps.app2 = await createApp(ENDPOINT.REST, 'Test Types App', 'test-type-app');
+		});
+
+		it('Should update the types app schema', async () => {
+			const schema = [{
+				name: 'spaceship',
+				type: 'collection',
+				properties: {
+					name: {
+						__type: 'string',
+						__default: null,
+						__required: true,
+						__allowUpdate: true,
+					},
+					engine: {
+						__type: 'array',
+						__allowUpdate: true,
+						__schema: {
+							position: {
+								__type: 'string',
+								__default: null,
+								__required: true,
+								__allowUpdate: true
+							},
+							items: {
+								__type: 'number',
+								__default: null,
+								__required: true,
+								__allowUpdate: true
+							}
+						}
+					},
+				},
+			}];
+
+			testEnv.apps.app2.schema = await updateSchema(ENDPOINT.REST, schema, testEnv.apps.app2.token);
+			assert.strictEqual(testEnv.apps.app2.schema.length, 1);
+			assert.strictEqual(testEnv.apps.app2.schema[0].name, 'spaceship');
+			assert.strictEqual(typeof testEnv.apps.app2.schema[0].properties.id, 'object');
+			assert.strictEqual(typeof testEnv.apps.app2.schema[0].properties.name, 'object');
+			assert.strictEqual(typeof testEnv.apps.app2.schema[0].properties.engine, 'object');
+			assert.strictEqual(typeof testEnv.apps.app2.schema[0].properties.sourceId, 'object');
+		});
+
+		it('Should make a POST request to add an item and check its types', async function() {
+			this.timeout(5000);
+			const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship?token=${testEnv.apps.app2.token}`, {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({
+					name: 'spaceship-1',
+					engine: [{
+						position: 'bottom',
+						items: 2,
+					}],
+				}),
+			});
+			assert.strictEqual(getResponse.status, 200);
+
+			const body = await getResponse.json();
+			const [item] = body;
+			assert.strictEqual(typeof item.name, 'string');
+			assert.strictEqual(Array.isArray(item.engine), true);
+			assert.strictEqual(typeof item.engine[0].position, 'string');
+			assert.strictEqual(typeof item.engine[0].items, 'number');
+		});
+	});
 });
