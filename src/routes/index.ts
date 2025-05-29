@@ -775,9 +775,9 @@ class Routes {
 	}
 
 	async __configureAppLambdaEndpoints(apiPath) {
-		this.app.get(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req, res) => {
+		this.app.get(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
 			const [endpoint] = Object.values(req.params);
-			const result: any = await this._validateLambdaAPIExecution(endpoint, 'GET', req.headers, req.query, null, req.token);
+			const result: any = await this._validateLambdaAPIExecution(endpoint, apiPath, 'GET', req.headers, req.query, null, req.token);
 			if (result.errCode && result.errMessage) {
 				res.status(result.errCode).send({message: result.errMessage});
 				return;
@@ -826,14 +826,14 @@ class Routes {
 			}
 		});
 
-		this.app.post(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req, res) => {
+		this.app.post(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
 			const [endpoint] = Object.values(req.params);
 			if (!req.body || Object.values(req.body).length < 1) {
 				res.status(400).send({message: 'missing_request_body'});
 				return;
 			}
 
-			const result: any = await this._validateLambdaAPIExecution(endpoint, 'POST', req.headers, null, req.body, req.token);
+			const result: any = await this._validateLambdaAPIExecution(endpoint, apiPath, 'POST', req.headers, null, req.body, req.token);
 			if (result.errCode && result.errMessage) {
 				res.status(result.errCode).send({message: result.errMessage});
 				return;
@@ -880,20 +880,25 @@ class Routes {
 		});
 	}
 
-	async _validateLambdaAPIExecution(endpoint, method, headers, query = null, body = null, token: any = null) {
+	async _validateLambdaAPIExecution(endpointOrId: string, apiPath, method, headers, query: any = null, body: any = null, token: any = null) {
 		const res: any = {};
 		let lambda: any = null;
 
-		const isEndPointId = ObjectId.isValid(endpoint);
-		if (isEndPointId) {
-			lambda = await Model.getModel('Lambda').findById(endpoint);
-		} else {
-			lambda = await Model.getModel('Lambda').findOne({
-				'trigger.apiEndpoint.url': {
-					$eq: endpoint,
+		const lambdaApp = await Model.getModel('App').findByApiPath(apiPath);
+		lambda = await Model.getModel('Lambda').findOne({
+			$or: [{
+				'id': {
+					$eq: endpointOrId,
 				},
-			});
-		}
+			}, {
+				'trigger.apiEndpoint.url': {
+					$eq: endpointOrId,
+				},
+			}],
+			'_appId': {
+				$eq: lambdaApp.id,
+			}
+		});
 
 		if (!lambda) {
 			res.errCode = 404;

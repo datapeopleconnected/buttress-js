@@ -222,6 +222,19 @@ export default class AppSchemaModel extends StandardModel {
 		}, appPolicyPropertiesList);
 	}
 
+	async findByApiPath(apiPath) {
+		Logging.logSilly(`Find by ApiPath ${apiPath}`);
+		const app = await super.findOne({ apiPath: apiPath });
+
+		if (!app) {
+			Logging.logSilly(`App not found for ApiPath ${apiPath}`);
+			return null;
+		}
+
+		Logging.logSilly(`Found app for ApiPath ${apiPath}`);
+		return app;
+	}
+
 	/**
 	 * @param {ObjectId} appId - app id which needs to be updated
 	 * @param {object} compiledSchema - schema object for the app
