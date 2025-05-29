@@ -93,24 +93,24 @@ class Routes {
 		this.app.get(['/', '/index.html'], (req, res, next) => res.sendFile(path.join(__dirname, '../static/index.html')));
 
 		this.app.use((req: any, res, next) => {
-			req.on('close', function() {
+			req.on('close', function () {
 				Logging.logSilly(`close`, req.id);
 			});
-			req.on('end', function() {
+			req.on('end', function () {
 				Logging.logSilly(`end`, req.id);
 			});
-			req.on('error', function(err) {
+			req.on('error', function (err) {
 				Logging.logError(`req onError`, req.id);
 				Logging.logError(err, req.id);
 			});
-			req.on('pause', function() {
+			req.on('pause', function () {
 				Logging.logSilly(`pause`, req.id);
 			});
-			req.on('resume', function() {
+			req.on('resume', function () {
 				Logging.logSilly(`resume`, req.id);
 			});
 
-			req.on('timeout', function() {
+			req.on('timeout', function () {
 				Logging.logError(`timeout`, req.id);
 			});
 
@@ -390,8 +390,8 @@ class Routes {
 
 		// Define some helper functions which allow us to send request metadata
 		// to the realtime process to feedback to subscrtibers.
-		req.bjsReqStatus = (data, nrp) => nrp.emit(`sock:worker:request-status`, JSON.stringify({id: req.id, ...data}));
-		req.bjsReqClose = (nrp) => nrp.emit(`sock:worker:request-end`, JSON.stringify({id: req.id, status: 'done'}));
+		req.bjsReqStatus = (data, nrp) => nrp.emit(`sock:worker:request-status`, JSON.stringify({ id: req.id, ...data }));
+		req.bjsReqClose = (nrp) => nrp.emit(`sock:worker:request-end`, JSON.stringify({ id: req.id, status: 'done' }));
 
 		const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
 
@@ -532,7 +532,7 @@ class Routes {
 
 			if (!req.authApp) {
 				if (req.apiPath) {
-					tokenApp = await Model.getModel('App').findOne({apiPath: req.apiPath});
+					tokenApp = await Model.getModel('App').findOne({ apiPath: req.apiPath });
 				} else if (req.token._appId) {
 					tokenApp = await Model.getModel('App').findById(req.token._appId);
 				}
@@ -656,7 +656,7 @@ class Routes {
 		req.timings.configCrossDomain = req.timer.interval;
 		Logging.logTimer('_configCrossDomain:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		if (!req.token) {
-			res.status(401).json({message: 'Auth token is required'});
+			res.status(401).json({ message: 'Auth token is required' });
 			Logging.logTimer('_configCrossDomain:end-no-auth', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
 		}
@@ -729,7 +729,7 @@ class Routes {
 	logErrors(err, req, res, next) {
 		Logging.logSilly(`logErrors ${err}`);
 		if (err instanceof Helpers.Errors.RequestError) {
-			res.status(err.code).json({statusMessage: err.message, message: err.message});
+			res.status(err.code).json({ statusMessage: err.message, message: err.message });
 		} else {
 			if (err) {
 				Logging.logError(err, req.id);
@@ -779,7 +779,7 @@ class Routes {
 			const [endpoint] = Object.values(req.params);
 			const result: any = await this._validateLambdaAPIExecution(endpoint, apiPath, 'GET', req.headers, req.query, null, req.token);
 			if (result.errCode && result.errMessage) {
-				res.status(result.errCode).send({message: result.errMessage});
+				res.status(result.errCode).send({ message: result.errMessage });
 				return;
 			}
 
@@ -829,13 +829,13 @@ class Routes {
 		this.app.post(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
 			const [endpoint] = Object.values(req.params);
 			if (!req.body || Object.values(req.body).length < 1) {
-				res.status(400).send({message: 'missing_request_body'});
+				res.status(400).send({ message: 'missing_request_body' });
 				return;
 			}
 
 			const result: any = await this._validateLambdaAPIExecution(endpoint, apiPath, 'POST', req.headers, null, req.body, req.token);
 			if (result.errCode && result.errMessage) {
-				res.status(result.errCode).send({message: result.errMessage});
+				res.status(result.errCode).send({ message: result.errMessage });
 				return;
 			}
 

@@ -392,7 +392,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 		if (!this.collection) throw new Error('No collection');
 
 		if (Logging.level === Logging.Constants.LogLevel.SILLY) {
-			Logging.logSilly(`find: ${this.collection.namespace} query: ${JSON.stringify(query)}, excludes: ${excludes}`+
+			Logging.logSilly(`find: ${this.collection.namespace} query: ${JSON.stringify(query)}, excludes: ${JSON.stringify(excludes)}`+
 				`limit: ${limit}, skip: ${skip}, sort: ${JSON.stringify(sort)}`);
 		}
 

@@ -16,7 +16,7 @@
 
 import ButtressExport from '@buttress/api';
 // TODO: Look into why the export from @buttress/api is not working as expected.
-const {default: ButtressAPI} = ButtressExport;
+const { default: ButtressAPI } = ButtressExport;
 
 import Schema from '../../schema.js';
 import Logging from '../../helpers/logging.js';
@@ -126,7 +126,7 @@ export default class AppSchemaModel extends StandardModel {
 	 * @param {Object} body - body passed through from a POST request
 	 * @return {Promise} - fulfilled with App Object when the database request is completed
 	 */
-	async add(body, internals?: {type? : string}) {
+	async add(body, internals?: { type?: string }) {
 		body.id = this.createId();
 
 		const isSuper = internals?.type === this.__modelManager.Token.Constants.Type.SYSTEM;
@@ -146,7 +146,7 @@ export default class AppSchemaModel extends StandardModel {
 
 		const token: any = await Helpers.streamFirst(rxsToken);
 
-		const rxsApp = await super.add(body, {_tokenId: token.id});
+		const rxsApp = await super.add(body, { _tokenId: token.id });
 		const app: any = await Helpers.streamFirst(rxsApp);
 
 		if (!isSuper) await this.__handleAddingNonSystemApp(body, token);
@@ -154,16 +154,16 @@ export default class AppSchemaModel extends StandardModel {
 		Logging.logSilly(`Emitting app-routes:bust-cache`);
 		this.__nrp?.emit('app-routes:bust-cache', '{}');
 		Logging.logSilly(`Emitting app:created ${app.id}`);
-		this.__nrp?.emit('app:created', JSON.stringify({appId: app.id}));
+		this.__nrp?.emit('app:created', JSON.stringify({ appId: app.id }));
 		Logging.logSilly(`Emitting app-schema:updated ${app.id}`);
-		this.__nrp?.emit('app-schema:updated', JSON.stringify({appId: app.id}));
+		this.__nrp?.emit('app-schema:updated', JSON.stringify({ appId: app.id }));
 
 		Logging.logSilly(`Emitting app-policy:bust-cache ${app.id}`);
 		this.__nrp?.emit('app-policy:bust-cache', JSON.stringify({
 			appId: app.id,
 		}));
 
-		return Promise.resolve({app: app, token: token});
+		return Promise.resolve({ app: app, token: token });
 	}
 
 	async __handleAddingNonSystemApp(body, token) {
@@ -177,7 +177,7 @@ export default class AppSchemaModel extends StandardModel {
 				list[key] = list[key].concat(appPolicyPropertiesList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
 			}
 		});
-		appPolicyPropertiesList = {...appPolicyPropertiesList, ...list};
+		appPolicyPropertiesList = { ...appPolicyPropertiesList, ...list };
 
 		await this.__modelManager.Policy.add({
 			name: `App Policy - ${body.name}`,
@@ -244,14 +244,14 @@ export default class AppSchemaModel extends StandardModel {
 	async updateSchema(appId, compiledSchema, rawSchema) {
 		Logging.logSilly(`Update Schema ${appId}`);
 
-		await super.updateById(appId, {$set: {__schema: Schema.encode(compiledSchema)}});
+		await super.updateById(appId, { $set: { __schema: Schema.encode(compiledSchema) } });
 
 		if (rawSchema) {
-			await super.updateById(appId, {$set: {__rawSchema: rawSchema}});
+			await super.updateById(appId, { $set: { __rawSchema: rawSchema } });
 		}
 
 		Logging.logSilly(`Emitting app-schema:updated ${appId}`);
-		this.__nrp?.emit('app-schema:updated', JSON.stringify({appId: appId}));
+		this.__nrp?.emit('app-schema:updated', JSON.stringify({ appId: appId }));
 		this.__nrp?.emit('app:update-schema', JSON.stringify({
 			appId: appId,
 			schemas: compiledSchema,
@@ -341,14 +341,14 @@ export default class AppSchemaModel extends StandardModel {
 	 * @return {Promise} - resolves when save operation is completed
 	 */
 	async setPolicyPropertiesList(query, appPolicyPropertiesList) {
-		return super.updateOne(query, {$set: {policyPropertiesList: appPolicyPropertiesList}});
+		return super.updateOne(query, { $set: { policyPropertiesList: appPolicyPropertiesList } });
 	}
 
 	/**
 	 * @return {Promise} - resolves to the token
 	 */
 	getToken(app) {
-		return this.__modelManager.Token.findOne({id: app._tokenId});
+		return this.__modelManager.Token.findOne({ id: app._tokenId });
 	}
 
 	/**
@@ -357,33 +357,33 @@ export default class AppSchemaModel extends StandardModel {
 	 */
 	async rm(entity) {
 		Logging.logSilly(`Deleting all app data sharing for app ${entity.id}`);
-		await this.__modelManager.AppDataSharing.rmAll({_appId: entity.id});
+		await this.__modelManager.AppDataSharing.rmAll({ _appId: entity.id });
 
 		Logging.logSilly(`Deleting all tokens for app ${entity.id}`);
-		await this.__modelManager.Token.rmAll({_appId: entity.id});
+		await this.__modelManager.Token.rmAll({ _appId: entity.id });
 
 		Logging.logSilly(`Deleting all users for app ${entity.id}`);
-		await this.__modelManager.User.rmAll({_appId: entity.id});
+		await this.__modelManager.User.rmAll({ _appId: entity.id });
 
 		// TODO: Delete all data sharing
 		Logging.logSilly(`Deleting all app data sharing for app ${entity.id}`);
-		await this.__modelManager.AppDataSharing.rmAll({_appId: entity.id});
+		await this.__modelManager.AppDataSharing.rmAll({ _appId: entity.id });
 
 		// TODO: Delete all lambdas
 		Logging.logSilly(`Deleting all lambdas for app ${entity.id}`);
-		await this.__modelManager.Lambda.rmAll({_appId: entity.id});
+		await this.__modelManager.Lambda.rmAll({ _appId: entity.id });
 
 		// TODO: Delete all deployments
 		Logging.logSilly(`Deleting all deployments for app ${entity.id}`);
-		await this.__modelManager.Deployment.rmAll({_appId: entity.id});
+		await this.__modelManager.Deployment.rmAll({ _appId: entity.id });
 
 		// TODO: Delete all lambda executions
 		Logging.logSilly(`Deleting all lambda executions for app ${entity.id}`);
-		await this.__modelManager.LambdaExecution.rmAll({_appId: entity.id});
+		await this.__modelManager.LambdaExecution.rmAll({ _appId: entity.id });
 
 		// TODO: Delete all policy
 		Logging.logSilly(`Deleting all policy for app ${entity.id}`);
-		await this.__modelManager.Policy.rmAll({_appId: entity.id});
+		await this.__modelManager.Policy.rmAll({ _appId: entity.id });
 
 		Logging.logSilly(`Deleting schema for app ${entity.id}`);
 		const appShortId = (entity) ? Helpers.shortId(entity.id) : null;
@@ -397,7 +397,7 @@ export default class AppSchemaModel extends StandardModel {
 			}
 		}
 
-		const payload = JSON.stringify({appId: entity.id, apiPath: entity.apiPath});
+		const payload = JSON.stringify({ appId: entity.id, apiPath: entity.apiPath });
 
 		// ? We don't know that his is being called within the rest worker...
 		this.__nrp?.emit('rest:worker:rebuild-path-mutation-cache', payload);
@@ -414,6 +414,6 @@ export default class AppSchemaModel extends StandardModel {
 	async updateOAuth(appId, oAuth) {
 		return super.update({
 			'id': this.createId(appId),
-		}, {$set: {'oAuth': oAuth}});
+		}, { $set: { 'oAuth': oAuth } });
 	}
 }
