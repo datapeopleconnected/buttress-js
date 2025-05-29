@@ -535,9 +535,19 @@ export default class MongodbAdapter extends AbstractAdapter {
 	 */
 	_getExpressionValue(value) {
 		if (Array.isArray(value)) {
-			return (value.length > 0) ? value.map((v) => new ObjectId(v)) : value;
+			return (value.length > 0) ? value.map((v) => {
+				try {
+					return new ObjectId(v)
+				} catch (err) {
+					return v;
+				}
+			}) : value;
 		} else {
-			return new ObjectId(value);
+			try {
+				return new ObjectId(value);
+			} catch (err) {
+				return value;
+			}
 		}
 	}
 };
