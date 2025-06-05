@@ -237,14 +237,6 @@ export default class BootstrapSocket extends Bootstrap {
 			Logging.logVerbose(`Primary Main SOCKET`);
 			await this.__registerNRPPrimaryListeners();
 
-			this.__namespace['stats'] = {
-				emitter: this.emitter.of(`/stats`),
-				sequence: {
-					super: 0,
-					global: 0,
-				},
-			};
-
 			// create app namespaces
 			const rxsApps = await Model.getModel('App').findAll();
 			for await (const app of rxsApps) {
@@ -530,7 +522,7 @@ export default class BootstrapSocket extends Bootstrap {
 
 		const { tokens, activity } = data;
 
-		this.__namespace['stats'].emitter.emit('activity', 1);
+		this.io.of(`/stats`).emit('activity', 1);
 		Logging.logTimer(`emitted stats activity`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 
 		if (activity.broadcast === false) {
