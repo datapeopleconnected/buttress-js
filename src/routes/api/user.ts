@@ -52,7 +52,7 @@ function getTokenQueryfromParams(req, userId) {
  */
 class GetUserList extends Route {
 	constructor(services) {
-		super('user', 'GET USER LIST', services);
+		super('user', 'GET USER LIST', services, Model.getModel('User'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -77,7 +77,7 @@ routes.push(GetUserList);
  */
 class GetUser extends Route {
 	constructor(services) {
-		super('user/:id', 'GET USER', services);
+		super('user/:id', 'GET USER', services, Model.getModel('User'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -156,7 +156,7 @@ routes.push(GetUser);
  */
 class FindUser extends Route {
 	constructor(services) {
-		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER', services);
+		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER', services, Model.getModel('User'));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -201,7 +201,7 @@ routes.push(FindUser);
  */
 class GetUserByToken extends Route {
 	constructor(services) {
-		super('user/get-by-token', 'GET USER BY TOKEN', services);
+		super('user/get-by-token', 'GET USER BY TOKEN', services, Model.getModel('User'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -383,7 +383,7 @@ routes.push(CreateUserAuthToken);
  */
 class AddUser extends Route {
 	constructor(services) {
-		super('user', 'ADD USER', services);
+		super('user', 'ADD USER', services, Model.getModel('User'));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -453,7 +453,7 @@ routes.push(AddUser);
  */
 class UpdateUser extends Route {
 	constructor(services) {
-		super('user/:id', 'UPDATE USER', services);
+		super('user/:id', 'UPDATE USER', services, Model.getModel('User'));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -784,7 +784,7 @@ routes.push(ClearUserPolicyProperties);
  */
 class DeleteAllUsers extends Route {
 	constructor(services) {
-		super('user', 'DELETE ALL USERS', services);
+		super('user', 'DELETE ALL USERS', services, Model.getModel('User'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -806,7 +806,7 @@ routes.push(DeleteAllUsers);
  */
 class DeleteUser extends Route {
 	constructor(services) {
-		super('user/:id', 'DELETE USER', services);
+		super('user/:id', 'DELETE USER', services, Model.getModel('User'));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -895,7 +895,7 @@ routes.push(clearUserLocalData);
  */
 class SearchUserList extends Route {
 	constructor(services) {
-		super('user', 'SEARCH USER LIST', services);
+		super('user', 'SEARCH USER LIST', services, Model.getModel('User'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -942,7 +942,7 @@ routes.push(SearchUserList);
  */
 class UserCount extends Route {
 	constructor(services) {
-		super(`user/count`, `COUNT USERS`, services);
+		super(`user/count`, `COUNT USERS`, services, Model.getModel('User'));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.SEARCH;
