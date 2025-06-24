@@ -122,4 +122,21 @@ describe('access-control/filter', () => {
       assert.deepStrictEqual(mergedFilter, { $and: [q1.$and[0], q2] });
     });
   });
+
+  describe('buildPolicyQuery', () => {
+    it('should pass through a basic query', async () => {
+      const result = await Filter.buildPolicyQuery({ userId: '12345' }, { }, false);
+      assert.deepStrictEqual(result, { userId: '12345' });
+    });
+
+    it('should handle a query with a simple env query', async () => {
+      const result = await Filter.buildPolicyQuery({ userId: '#env.test' }, { test: 'ABC' }, false);
+      assert.deepStrictEqual(result, { userId: 'ABC' });
+    });
+
+    it('should handle a query with a $and or $or operators', async () => {
+      const result = await Filter.buildPolicyQuery({ $and: [{ userId: '#env.test' }, { $or: [{ test: '#env.test2' }] }] }, { test: 'ABC', test2: 'CBA' }, false);
+      assert.deepStrictEqual(result, { $and: [{ userId: 'ABC' }, { $or: [{ test: 'CBA' }] }] });
+    });
+  });
 });

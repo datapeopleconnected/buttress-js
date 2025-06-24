@@ -62,4 +62,4 @@ export default {
   'env-user-condition': EnvUserCondition,
   'env-user-query': EnvUserQuery,
   'lambda-test-access': LambdaTestAccess,
-};;
+};

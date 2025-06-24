@@ -112,6 +112,22 @@ export class Filter {
 			if (stripAccessKeys && key === 'access' && this._queryAccess.includes(val)) continue;
 			if (Object.keys(val).length < 1) continue;
 
+			if (Filter.logicalOperator.includes(key)) { 
+				for (const queryObj of val) {
+					if (typeof queryObj !== 'object' || Array.isArray(queryObj)) {
+						throw new Error(`Invalid query object for logical operator ${key}: ${JSON.stringify(queryObj)}`);
+					}
+
+					// Recursively build the query for each object in the logical operator array.
+					const builtQuery = await this.buildPolicyQuery(queryObj, envVars, stripAccessKeys);
+					if (builtQuery) {
+						output[key] = output[key] || [];
+						output[key].push(builtQuery);
+					}
+				}
+				continue;
+			}
+
 			if (output[key]) {
 				if (Array.isArray(output[key]) && Array.isArray(val)) {
 					for await (const elem of val) {
