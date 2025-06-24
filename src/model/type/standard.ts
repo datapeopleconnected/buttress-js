@@ -233,10 +233,26 @@ export default class StandardModel {
 			}
 
 			if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {
-				operand = this.createId(operand);
+				try {
+					operand = this.createId(operand);
+				} catch (e) {
+					// If the operand is not a valid ID, we can ignore it or throw an error based on your requirements.
+					// For now, we will just log it.
+					Logging.logDebug(`Invalid ID format for property ${property}: ${operand} ${e}`);
+					operand = null;
+				}
 			}
 			if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
-				operand = operand.map((o) => this.createId(o));
+				operand = operand.map((o) => {
+					try {
+						return this.createId(o);
+					} catch (e) {
+						// If the operand is not a valid ID, we can ignore it or throw an error based on your requirements.
+						// For now, we will just log it.
+						Logging.logDebug(`Invalid ID format for property ${property}: ${o} ${e}`);
+						return null;
+					}
+				});
 			}
 		}
 
