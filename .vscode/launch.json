@@ -7,6 +7,15 @@
         "Mocha Unit Tests",
         "Mocha E2E Tests",
       ]
+    },
+    {
+      "name": "Debug",
+      "configurations": [
+        "Debug - REST App",
+        "Debug - SPR App",
+        "Debug - Lambda App",
+        "Debug - Socket App"
+      ]
     }
   ],
   "configurations": [
@@ -49,6 +58,50 @@
       "preLaunchTask": "Run E2E Setup",
       "console": "integratedTerminal",
       "internalConsoleOptions": "openOnSessionStart"
+    },
+    {
+      "name": "Debug - REST App",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceRoot}/dist/bin/app.js",
+      "cwd": "${workspaceRoot}",
+      "console": "integratedTerminal",
+      "runtimeExecutable": "${workspaceRoot}/.nvm-node",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+    },
+    {
+      "name": "Debug - SPR App",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceRoot}/dist/bin/app-spr.js",
+      "cwd": "${workspaceRoot}",
+      "console": "integratedTerminal",
+      "runtimeExecutable": "${workspaceRoot}/.nvm-node",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+    },
+    {
+      "name": "Debug - Lambda App",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceRoot}/dist/bin/app-lambda.js",
+      "cwd": "${workspaceRoot}",
+      "console": "integratedTerminal",
+      "runtimeExecutable": "${workspaceRoot}/.nvm-node",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
+    },
+    {
+      "name": "Debug - Socket App",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceRoot}/dist/bin/app-socket.js",
+      "cwd": "${workspaceRoot}",
+      "console": "integratedTerminal",
+      "runtimeExecutable": "${workspaceRoot}/.nvm-node",
+      "skipFiles": ["<node_internals>/**"],
+      "sourceMaps": true,
     }
   ]
 }
