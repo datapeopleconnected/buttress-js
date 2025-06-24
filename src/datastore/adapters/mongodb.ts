@@ -477,6 +477,11 @@ export default class MongodbAdapter extends AbstractAdapter {
 			transform: (doc, enc, cb) => cb(null, this._modifyDocument(doc)),
 		});
 
+		stream.on('error', (err) => {
+			Logging.logSilly(`Error in MongoDB stream: ${err.message}`);
+			transformStream.emit('error', err);
+		});
+
 		return stream.pipe(transformStream);
 	}
 
