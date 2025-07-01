@@ -64,6 +64,12 @@ export class PolicyEnv {
 		};
 	}
 
+	/**
+	 * Get the value of an environment variable.
+	 * @param key The key of the environment variable.
+	 * @param envVars The environment variables object - **Important:** This object will be modified to include the resolved environment variables.
+	 * @returns The value of the environment variable or the key itself if not found.
+	 */
 	async getEnvValue(key: string, envVars) {
 		if (!key || !key.startsWith(PolicyEnv.strPrefix)) return key;
 
@@ -96,7 +102,7 @@ export class PolicyEnv {
 
 		const isAppSchema = await this.__isAppSchema(root, envVars.appId);
 		if (isAppSchema) {
-			return this.__getAppSchemaEnvValue(queryValue, envVars);
+			return this.__queryAppSchemaEnvValue(queryValue, environmentKey, envVars);
 		}
 
 		return this._globalQueryEnv[queryValue];
@@ -108,11 +114,14 @@ export class PolicyEnv {
 		return (Model[`${appShortId}-${schema}`]) ? true : false;
 	}
 
-	async __getAppSchemaEnvValue(envObj, envVars) {
+	async __queryAppSchemaEnvValue(envObj, envKey, envVars) {
 		const schema = envObj.collection;
 		const query = Filter.convertQueryPrefixOperators(envObj.query);
 		const output = envObj.output;
 		const outputType = envObj.type;
+
+		// Check the envVar to see if
+		if (envVars[envKey]) return envVars[envKey];
 
 		const appShortId = Helpers.shortId(envVars.appId);
 		for await (const key of Object.keys(query)) {
@@ -123,13 +132,9 @@ export class PolicyEnv {
 			const dbQuery = query[key][operator];
 			if (typeof dbQuery !== 'string') continue;
 
-			const queryValue = dbQuery.split('.');
-			const [queryCollection] = queryValue;
-			if (queryCollection === 'env') {
-				const envVariable = dbQuery.replace(`${queryCollection}.`, '');
-				const envRes = await this.__getAppSchemaEnvValue(envVars[envVariable], envVars);
-				query[key][operator] = envRes;
-			}
+			if (!dbQuery.startsWith(PolicyEnv.strPrefix)) continue;
+
+			query[key][operator] = await this.getEnvValue(dbQuery, envVars);
 		}
 
 		const res = await (Model[`${appShortId}-${schema}`]).find(query);
@@ -164,7 +169,11 @@ export class PolicyEnv {
 			return result.every((obj) => obj[output.key]);
 		}
 
-		return (result.length > 0 && result[output]) ? result[output] : (outputType === 'array') ? [] : '';
+		const outputValue = (result.length > 0 && result[output]) ? result[output] : (outputType === 'array') ? [] : ''
+
+		envVars[envKey] = outputValue;
+
+		return outputValue;
 	}
 
 	__requestIPAddress(req) {
