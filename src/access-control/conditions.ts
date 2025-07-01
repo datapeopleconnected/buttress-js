@@ -130,30 +130,30 @@ export class Conditions {
 		return results.every((r) => r);
 	}
 
-	__buildDbConditionQuery(envVariables, conditions, varSchemaKey, query = {}) {
-		Object.keys(conditions).forEach((key) => {
-			const value = conditions[key];
-			const queryKey = key.replace(`${varSchemaKey}.`, '');
-			if (query[queryKey]) {
-				query[queryKey] = value;
-			}
+	// __buildDbConditionQuery(envVariables, conditions, varSchemaKey, query = {}) {
+	// 	Object.keys(conditions).forEach((key) => {
+	// 		const value = conditions[key];
+	// 		const queryKey = key.replace(`${varSchemaKey}.`, '');
+	// 		if (query[queryKey]) {
+	// 			query[queryKey] = value;
+	// 		}
 
-			if (!Array.isArray(value) && typeof value === 'object') {
-				this.__buildDbConditionQuery(envVariables, value, varSchemaKey, query);
-			} else {
-				const envQueryKeys = value.replace(Conditions.envStr, '').split('.');
-				envQueryKeys.reduce((res, key) => {
-					res = res[key];
-					if (query[key]) {
-						// TODO FIX THE KEY IN THE QUERY
-						query[key]['@eq'] = res;
-					}
+	// 		if (!Array.isArray(value) && typeof value === 'object') {
+	// 			this.__buildDbConditionQuery(envVariables, value, varSchemaKey, query);
+	// 		} else {
+	// 			const envQueryKeys = value.replace(Conditions.envStr, '').split('.');
+	// 			envQueryKeys.reduce((res, key) => {
+	// 				res = res[key];
+	// 				if (query[key]) {
+	// 					// TODO FIX THE KEY IN THE QUERY
+	// 					query[key]['@eq'] = res;
+	// 				}
 
-					return res;
-				}, envVariables);
-			}
-		});
-	}
+	// 				return res;
+	// 			}, envVariables);
+	// 		}
+	// 	});
+	// }
 
 	// async __getDbConditionQueryResult(query: any, schemaName: string, shortId?: string) {
 	// 	const collection = (shortId) ? `${shortId}-${schemaName}` : schemaName;
