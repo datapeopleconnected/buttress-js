@@ -119,7 +119,11 @@ class Projection {
 				return;
 			}
 
-			queryKeys = queryKeys.concat(Object.keys(path));
+			if (typeof path === 'object' && !Array.isArray(path)) {
+				queryKeys = queryKeys.concat(Object.keys(path));
+			} else {
+				queryKeys = queryKeys.concat(path);
+			}
 		});
 
 		return queryKeys.every((key) => projectionKeys.includes(key));
