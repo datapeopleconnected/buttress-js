@@ -112,7 +112,7 @@ export class Filter {
 			if (stripAccessKeys && key === 'access' && this._queryAccess.includes(val)) continue;
 			if (Object.keys(val).length < 1) continue;
 
-			if (Filter.logicalOperator.includes(key)) { 
+			if (Filter.logicalOperator.includes(key)) {
 				for (const queryObj of val) {
 					if (typeof queryObj !== 'object' || Array.isArray(queryObj)) {
 						throw new Error(`Invalid query object for logical operator ${key}: ${JSON.stringify(queryObj)}`);
