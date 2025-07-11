@@ -30,6 +30,14 @@ import NRP from "node-redis-pubsub";
 import StandardModel from '../model/type/standard.js';
 import RemoteCombinedModel from '../model/type/remote-combined.js';
 import { RESTActivity } from '../types/bjs-nrp-objects.js';
+import ActivitySchemaModel from '../model/core/activity.js';
+import TokenSchemaModel from '../model/core/token.js';
+
+export interface NotifyLambdaPathChangeMessage {
+	paths: string[];
+	values: any[];
+	collection: string;
+};
 
 /**
  */
@@ -107,7 +115,7 @@ export default class Route {
 
 	activity: boolean = true;
 	activityBroadcast: boolean = false;
-	activityVisibility: string = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+	activityVisibility: string = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 	activityTitle: string = 'Private Activity';
 	activityDescription: string = '';
 
@@ -122,7 +130,7 @@ export default class Route {
 
 	model: any;
 	schema: any;
-	
+
 	paths: string[];
 
 	name: string;
@@ -196,8 +204,8 @@ export default class Route {
 		if (result instanceof Stream.Readable && result.readable) {
 			result.on('bjs-stream-status', (data) => req.bjsReqStatus(data, this._nrp));
 
-			const resStream = new Stream.PassThrough({objectMode: true});
-			const broadcastStream = new Stream.PassThrough({objectMode: true});
+			const resStream = new Stream.PassThrough({ objectMode: true });
+			const broadcastStream = new Stream.PassThrough({ objectMode: true });
 
 			result.pipe(resStream);
 
@@ -213,7 +221,7 @@ export default class Route {
 
 			await this._boardcastData(req, res, broadcastStream);
 
-			req.bjsReqStatus({status: 'ready'}, this._nrp);
+			req.bjsReqStatus({ status: 'ready' }, this._nrp);
 		} else {
 			// await Plugins.do_action('route-add-many:_exec', this.schema, results);
 
@@ -304,7 +312,7 @@ export default class Route {
 	_addLogActivity(req, path, verb) {
 		Logging.logTimer('_addLogActivity:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		// TODO: activity should pass back a stripped version of the activity object.
-		return Model.getModel('Activity').add({
+		return Model.getCoreModel(ActivitySchemaModel).add({
 			activityTitle: this.activityTitle,
 			activityDescription: this.activityDescription,
 			activityVisibility: this.activityVisibility,
@@ -415,7 +423,7 @@ export default class Route {
 		if (!this.schema) return;
 
 		const schemaName = this.model?.schemaData.name;
-		const isLambdaChange = req.token.type === Model.getModel('Token').Constants.Type.LAMBDA;
+		const isLambdaChange = req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.LAMBDA;
 		if (isLambdaChange) {
 			// If the current lambda is a path mutation, we don't want to trigger other path mutations
 			// not great but we'll just block all lambdas that have a pathMutation trigger
@@ -471,12 +479,13 @@ export default class Route {
 
 		paths = paths.filter((v, idx, arr) => arr.indexOf(v) === idx);
 		if (paths.length > 0) {
-
-			this._nrp?.emit('notifyLambdaPathChange', JSON.stringify({
-				paths,
-				values,
+			const message: NotifyLambdaPathChangeMessage = {
+				paths: paths,
+				values: values,
 				collection: schemaName,
-			}));
+			};
+
+			this._nrp?.emit('rest:worker:notifyLambdaPathChange', JSON.stringify(message));
 		}
 	}
 

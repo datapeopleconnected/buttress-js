@@ -51,7 +51,7 @@ export default class GetMany extends Route {
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
 			const _ids = req.body.query.ids;
-			const project = (req.body && req.body.project)? req.body.project : false;
+			const project = (req.body && req.body.project) ? req.body.project : false;
 
 			if (!_ids) {
 				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
@@ -62,13 +62,13 @@ export default class GetMany extends Route {
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
 			}
 
-			resolve({ids: _ids, project: project});
+			resolve({ ids: _ids, project: project });
 		});
 	}
 
 	_exec(req, res, query) {
 		return this.model.find(
-			{id: {$in: query.ids.map((id) => this.model.createId(id))}},
+			{ id: { $in: query.ids.map((id) => this.model.createId(id)) } },
 			{}, 0, 0, null, query.project,
 		);
 	}

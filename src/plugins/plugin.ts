@@ -16,7 +16,7 @@
 
 import EventEmitter from 'node:events';
 
-import plugins from'./index.js';
+import plugins from './index.js';
 
 class ButtressPlugin extends EventEmitter {
 	appType?: string;
@@ -50,11 +50,11 @@ class ButtressPlugin extends EventEmitter {
 	}
 
 	addAction(name, callback, priority = 10) {
-		this.emit('add-action', {name, callback, priority});
+		this.emit('add-action', { name, callback, priority });
 	}
 
 	addFilter(name, callback, priority = 10) {
-		this.emit('add-filter', {name, callback, priority});
+		this.emit('add-filter', { name, callback, priority });
 	}
 }
 

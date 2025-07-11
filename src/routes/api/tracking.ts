@@ -17,6 +17,8 @@
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
+import TrackingSchemaModel from '../../model/core/tracking.js';
+import ActivitySchemaModel from '../../model/core/activity.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -25,7 +27,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetTrackingList extends Route {
 	constructor(services) {
-		super('tracking', 'GET TRACKING LIST', services, Model.getModel('Tracking'));
+		super('tracking', 'GET TRACKING LIST', services, Model.getCoreModel(TrackingSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -46,13 +48,13 @@ routes.push(GetTrackingList);
  */
 class AddTracking extends Route {
 	constructor(services) {
-		super('tracking', 'ADD TRACKING', services, Model.getModel('Tracking'));
+		super('tracking', 'ADD TRACKING', services, Model.getCoreModel(TrackingSchemaModel));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.ADD;
 
 		this.activity = false;
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = false;
 	}
 
@@ -85,19 +87,19 @@ routes.push(AddTracking);
 
 class UpdateTracking extends Route {
 	constructor(services) {
-		super('tracking/:id', 'UPDATE TRACKING', services, Model.getModel('Tracking'));
+		super('tracking/:id', 'UPDATE TRACKING', services, Model.getCoreModel(TrackingSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activity = false;
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	_validate(req) {
 		return new Promise((resolve, reject) => {
-			const {validation, body} = this.model.validateUpdate(req.body);
+			const { validation, body } = this.model.validateUpdate(req.body);
 			req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -121,7 +123,7 @@ class UpdateTracking extends Route {
 		});
 	}
 
-	_exec(req ) {
+	_exec(req) {
 		return this.model.updateByPath(req.body, req.params.id);
 	}
 }
@@ -132,7 +134,7 @@ routes.push(UpdateTracking);
  */
 class DeleteTracking extends Route {
 	constructor(services) {
-		super('tracking/:id', 'DELETE TRACKING', services, Model.getModel('Tracking'));
+		super('tracking/:id', 'DELETE TRACKING', services, Model.getCoreModel(TrackingSchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -149,7 +151,7 @@ class DeleteTracking extends Route {
 	}
 
 	async _exec(req, res, tracking) {
-		await Model.getModel('Tracking').rm(tracking.id);
+		await Model.getCoreModel(TrackingSchemaModel).rm(tracking.id);
 		return true;
 	}
 }
@@ -160,7 +162,7 @@ routes.push(DeleteTracking);
  */
 class DeleteAllTrackings extends Route {
 	constructor(services) {
-		super('tracking', 'DELETE ALL TRACKINGS', services, Model.getModel('Tracking'));
+		super('tracking', 'DELETE ALL TRACKINGS', services, Model.getCoreModel(TrackingSchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;

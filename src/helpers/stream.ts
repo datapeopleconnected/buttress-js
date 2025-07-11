@@ -39,7 +39,7 @@ export class SortedStreams extends Readable {
 	public limit: number;
 
 	constructor(sources: Readable[], compareFn?: (a: any, b: any) => number, limit: number = 0) {
-		super({objectMode: true});
+		super({ objectMode: true });
 
 		this._compareFn = compareFn || this._defaultCompare;
 
@@ -118,7 +118,7 @@ export class SortedStreams extends Readable {
 			return;
 		}
 
-		this.emit('chunkSent', {chunk: holder.chunk, sourceIdx: holder.sourceIdx});
+		this.emit('chunkSent', { chunk: holder.chunk, sourceIdx: holder.sourceIdx });
 
 		this._sources[holder.sourceIdx].queued--;
 		this.sent++;
@@ -131,7 +131,7 @@ export class SortedStreams extends Readable {
 
 	// Source event handlers
 	_handleSourceChunk(chunk: any, sourceIdx: number) {
-		this._enqueue({chunk, sourceIdx});
+		this._enqueue({ chunk, sourceIdx });
 		this._sources[sourceIdx].queued++;
 
 		this._tryToSendIt();

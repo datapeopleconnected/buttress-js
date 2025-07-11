@@ -18,6 +18,8 @@ import StandardModel from '../type/standard.js';
 import * as Helpers from '../../helpers/index.js';
 
 class SecureStoreSchemaModel extends StandardModel {
+	static name = 'SecureStore';
+
 	constructor(services) {
 		const schema = SecureStoreSchemaModel.Schema;
 		super(schema, null, services);

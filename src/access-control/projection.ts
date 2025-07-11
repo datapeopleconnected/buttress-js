@@ -55,7 +55,7 @@ class Projection {
 		return output;
 	}
 
-	async __applyPolicyProjection(req, projections, schema) : Promise<{ [key: string]: number } | false> {
+	async __applyPolicyProjection(req, projections, schema): Promise<{ [key: string]: number } | false> {
 		const requestMethod = req.method;
 		const flattenedSchema = Helpers.getFlattenedSchema(schema);
 		let requestBody = req.body;
@@ -94,7 +94,7 @@ class Projection {
 				.filter((updateKey) => projectionKeys.find((key) => new RegExp(`^${key}`).test(updateKey)) === undefined);
 
 			if (invalidPaths.length > 0) {
-				throw new PolicyError(401, `Can not access/edit properties (${invalidPaths.join (', ')}) of ${schema.name} without privileged access`);
+				throw new PolicyError(401, `Can not access/edit properties (${invalidPaths.join(', ')}) of ${schema.name} without privileged access`);
 			}
 
 		} else {

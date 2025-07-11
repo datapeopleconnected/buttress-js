@@ -61,7 +61,7 @@ export class NotYetImplemented extends Error {
 export class InvalidRequest extends Error {
 	code: number;
 
-	constructor (message: string, code: number) {
+	constructor(message: string, code: number) {
 		super(message);
 		this.name = 'InvalidRequest';
 		this.code = code;
@@ -72,7 +72,7 @@ export class Unauthenticated extends Error {
 	status: string;
 	code: number;
 
-	constructor (message: string, status: string, code: number) {
+	constructor(message: string, status: string, code: number) {
 		super(message);
 		this.name = 'Unauthenticated';
 		this.status = status;
@@ -83,7 +83,7 @@ export class Unauthenticated extends Error {
 export class InvalidToken extends Error {
 	code: number;
 
-	constructor (message: string, code: number) {
+	constructor(message: string, code: number) {
 		super(message);
 		this.name = 'InvalidToken';
 		this.code = code;
@@ -93,7 +93,7 @@ export class InvalidToken extends Error {
 export class CodedError extends Error {
 	code: number;
 
-	constructor (message: string, code: number) {
+	constructor(message: string, code: number) {
 		super(message);
 		this.name = 'GENERIC_LAMBDA_ERROR';
 		this.code = code;
@@ -107,8 +107,8 @@ export default {
 	RouteMissingModel,
 	UnsupportedDatastore,
 	NotYetImplemented,
-    InvalidRequest,
-    Unauthenticated,
-    InvalidToken,
-    CodedError
+	InvalidRequest,
+	Unauthenticated,
+	InvalidToken,
+	CodedError
 };

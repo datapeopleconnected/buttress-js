@@ -16,27 +16,27 @@
 
 export type BjsQuery<T extends object> = {
   [K in keyof T]?:
-    | T[K]
-    | {
-        $eq?: T[K];
-        $ne?: T[K];
-        $gt?: T[K];
-        $gte?: T[K];
-        $lt?: T[K];
-        $lte?: T[K];
-        $in?: T[K][];
-        $nin?: T[K][];
-        $exists?: boolean;
-        $type?: number;
-        $regex?: RegExp | string;
-        $options?: string;
-        $mod?: [number, number];
-        $size?: number;
-        $min?: T[K];
-        $max?: T[K];
-        $all?: T[K][];
-        $elemMatch?: BjsQuery<T[K] extends object ? T[K] : never>;
-      };
+  | T[K]
+  | {
+    $eq?: T[K];
+    $ne?: T[K];
+    $gt?: T[K];
+    $gte?: T[K];
+    $lt?: T[K];
+    $lte?: T[K];
+    $in?: T[K][];
+    $nin?: T[K][];
+    $exists?: boolean;
+    $type?: number;
+    $regex?: RegExp | string;
+    $options?: string;
+    $mod?: [number, number];
+    $size?: number;
+    $min?: T[K];
+    $max?: T[K];
+    $all?: T[K][];
+    $elemMatch?: BjsQuery<T[K] extends object ? T[K] : never>;
+  };
 } & {
   $and?: BjsQuery<T>[];
   $or?: BjsQuery<T>[];

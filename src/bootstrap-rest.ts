@@ -42,6 +42,8 @@ import DatastoreManager, { Datastore } from './datastore/index.js';
 import Plugins from './plugins/index.js';
 import AccessControl from './access-control/index.js';
 import { PolicyCache } from './services/policy-cache.js';
+import AppSchemaModel from './model/core/app.js';
+import TokenSchemaModel from './model/core/token.js';
 
 // morgan.token('id', (req) => req.id);
 
@@ -197,7 +199,7 @@ export default class BootstrapRest extends Bootstrap {
 		await Model.initCoreModels();
 
 		const localSchema = this._getLocalSchemas();
-		Model.getModel('App').setLocalSchema(localSchema);
+		Model.getCoreModel(AppSchemaModel).setLocalSchema(localSchema);
 
 		this.routes = new Routes(app);
 
@@ -232,7 +234,7 @@ export default class BootstrapRest extends Bootstrap {
 		let superApp: any = null;
 
 		try {
-			const appCount = await Model.getModel('App').count();
+			const appCount = await Model.getCoreModel(AppSchemaModel).count();
 			if (appCount > 0) {
 				Logging.log('Existing apps found - Skipping install.');
 
@@ -248,12 +250,12 @@ export default class BootstrapRest extends Bootstrap {
 				return;
 			}
 
-			superApp = await Model.getModel('App').add({
+			superApp = await Model.getCoreModel(AppSchemaModel).add({
 				name: `${Config.app.title} TEST`,
 				apiPath: 'bjs',
 				domain: '',
 			}, {
-				type: Model.getModel('Token').Constants.Type.SYSTEM,
+				type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
 			});
 
 			if (!superApp) {
@@ -316,10 +318,9 @@ export default class BootstrapRest extends Bootstrap {
 		// Load local defined schemas into super app
 		const localSchema = this._getLocalSchemas();
 
-		// Add local schema to Model.getModel('App')
-		Model.getModel('App').setLocalSchema(localSchema);
+		Model.getCoreModel(AppSchemaModel).setLocalSchema(localSchema);
 
-		const rxsApps = await Model.getModel('App').findAll();
+		const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
 		for await (const app of rxsApps) {
 			const appSchema: any[] = Schema.decode(app.__schema);
 			const appShortId = shortId(app.id);
@@ -334,7 +335,7 @@ export default class BootstrapRest extends Bootstrap {
 				appSchema[appSchemaIdx] = schema;
 			});
 
-			await Model.getModel('App').updateSchema(app.id, appSchema);
+			await Model.getCoreModel(AppSchemaModel).updateSchema(app.id, appSchema);
 		}
 	}
 }

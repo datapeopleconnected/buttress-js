@@ -2,86 +2,86 @@
 	"name": "person",
 	"type": "template",
 	"properties": {
-    "authId": {
-      "__type": "id",
-      "__required": true,
-      "__allowUpdate": true
-    },
+		"authId": {
+			"__type": "id",
+			"__required": true,
+			"__allowUpdate": true
+		},
 		"title": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "formalName": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "name": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "forename": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "initials": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "surname": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "suffix": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "emails": {
-      "__type": "array",
-      "__allowUpdate": true
-    },
-    "address": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "postcode": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "phone": {
-      "landline": {
-        "__type": "string",
-        "__default": "",
-        "__allowUpdate": true
-      },
-      "mobile": {
-        "__type": "string",
-        "__default": "",
-        "__allowUpdate": true
-      }
-    },
-    "avatar": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "company": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    },
-    "role": {
-      "__type": "string",
-      "__default": "",
-      "__allowUpdate": true
-    }
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"formalName": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"name": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"forename": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"initials": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"surname": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"suffix": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"emails": {
+			"__type": "array",
+			"__allowUpdate": true
+		},
+		"address": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"postcode": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"phone": {
+			"landline": {
+				"__type": "string",
+				"__default": "",
+				"__allowUpdate": true
+			},
+			"mobile": {
+				"__type": "string",
+				"__default": "",
+				"__allowUpdate": true
+			}
+		},
+		"avatar": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"company": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		},
+		"role": {
+			"__type": "string",
+			"__default": "",
+			"__allowUpdate": true
+		}
 	}
 }

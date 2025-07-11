@@ -121,7 +121,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 		}, Promise.resolve([]));
 
 		const ops = documents.map((c: BJSDocument) => {
-			return {insertOne: {document: c}};
+			return { insertOne: { document: c } };
 		});
 
 		if (ops.length < 1) return Promise.resolve([]);
@@ -129,8 +129,8 @@ export default class MongodbAdapter extends AbstractAdapter {
 		const res = await this.collection?.bulkWrite(ops);
 		if (!res) throw new Error('Unable to bulk write');
 
-		const readable = new Stream.Readable({objectMode: true});
-		readable._read = () => {};
+		const readable = new Stream.Readable({ objectMode: true });
+		readable._read = () => { };
 
 		// Lets merged the inserted ids back into the documents, previously we were
 		// looking them up in the database again which is a waste of time.
@@ -146,137 +146,137 @@ export default class MongodbAdapter extends AbstractAdapter {
 		return this._modifyDocumentStream(readable);
 	}
 
-	async batchUpdateProcess(id: string, body: {path: string, value: any}, context: Context, schemaConfig: SchemaConfig, model?: string) {
+	async batchUpdateProcess(id: string, body: { path: string, value: any }, context: Context, schemaConfig: SchemaConfig, model?: string) {
 		if (!context) throw new Error(`batchUpdateProcess called without context; ${id}`);
 
 		const updateType = context.type;
 		let response: any = null;
 
-		const ops: {updateOne: any}[] = [];
+		const ops: { updateOne: any }[] = [];
 
 		switch (updateType) {
-		default: {
-			throw new Error(`Invalid update type: ${updateType}`);
-		}
-		case 'vector-add': {
-			let value: any = null;
-			if (schemaConfig && schemaConfig.__schema) {
-				const fb = Helpers.Schema.getFlattenedBody(body.value);
-				value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
-			} else {
-				value = body.value;
+			default: {
+				throw new Error(`Invalid update type: ${updateType}`);
 			}
-
-			if (!schemaConfig && model) {
-				const entity = await Model.getModel(model).findById(id);
-				const objValue: {[key: string]: any} = {};
-				let updateValueExists = true;
-				let modifiedPath = '';
-				let basePath = body.path;
-				let obj = entity;
-
-				body.path.split('.').forEach((key) => {
-					modifiedPath = (modifiedPath) ? key : `${modifiedPath}.${key}`;
-					if (!obj[key]) {
-						basePath = basePath.replace(`.${key}`, '');
-						updateValueExists = false;
-						if (!Number(key) && Number(key) !== 0) {
-							objValue[key] = value;
-						}
-						return;
-					}
-
-					obj = obj[key];
-				}, entity);
-
-				if (!updateValueExists) {
-					body.path = basePath;
-					value = objValue;
+			case 'vector-add': {
+				let value: any = null;
+				if (schemaConfig && schemaConfig.__schema) {
+					const fb = Helpers.Schema.getFlattenedBody(body.value);
+					value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
+				} else {
+					value = body.value;
 				}
-			}
 
-			ops.push({
-				updateOne: {
-					filter: {_id: new ObjectId(id)},
-					update: {
-						$push: {
-							[body.path]: value,
+				if (!schemaConfig && model) {
+					const entity = await Model.getModel(model).findById(id);
+					const objValue: { [key: string]: any } = {};
+					let updateValueExists = true;
+					let modifiedPath = '';
+					let basePath = body.path;
+					let obj = entity;
+
+					body.path.split('.').forEach((key) => {
+						modifiedPath = (modifiedPath) ? key : `${modifiedPath}.${key}`;
+						if (!obj[key]) {
+							basePath = basePath.replace(`.${key}`, '');
+							updateValueExists = false;
+							if (!Number(key) && Number(key) !== 0) {
+								objValue[key] = value;
+							}
+							return;
+						}
+
+						obj = obj[key];
+					}, entity);
+
+					if (!updateValueExists) {
+						body.path = basePath;
+						value = objValue;
+					}
+				}
+
+				ops.push({
+					updateOne: {
+						filter: { _id: new ObjectId(id) },
+						update: {
+							$push: {
+								[body.path]: value,
+							},
 						},
 					},
-				},
-			});
-			response = value;
-		} break;
-		case 'vector-rm': {
-			const params = body.path.split('.');
-			params.splice(-1, 1);
-			const rmPath = params.join('.');
-			const index = params.pop();
-			body.path = params.join('.');
+				});
+				response = value;
+			} break;
+			case 'vector-rm': {
+				const params = body.path.split('.');
+				params.splice(-1, 1);
+				const rmPath = params.join('.');
+				const index = params.pop();
+				body.path = params.join('.');
 
-			ops.push({
-				updateOne: {
-					filter: {_id: new ObjectId(id)},
-					update: {
-						$unset: {
-							[rmPath]: null,
+				ops.push({
+					updateOne: {
+						filter: { _id: new ObjectId(id) },
+						update: {
+							$unset: {
+								[rmPath]: null,
+							},
 						},
 					},
-				},
-			});
-			ops.push({
-				updateOne: {
-					filter: {_id: new ObjectId(id)},
-					update: {
-						$pull: {
-							[body.path]: null,
+				});
+				ops.push({
+					updateOne: {
+						filter: { _id: new ObjectId(id) },
+						update: {
+							$pull: {
+								[body.path]: null,
+							},
 						},
 					},
-				},
-			});
+				});
 
-			response = {numRemoved: 1, index: index};
-		} break;
-		case 'scalar': {
-			let value: any = null;
-			if (schemaConfig && schemaConfig.__schema) {
-				const fb = Helpers.Schema.getFlattenedBody(body.value);
-				value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
-			} else {
-				value = body.value;
-			}
+				response = { numRemoved: 1, index: index };
+			} break;
+			case 'scalar': {
+				let value: any = null;
+				if (schemaConfig && schemaConfig.__schema) {
+					const fb = Helpers.Schema.getFlattenedBody(body.value);
+					value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
+				} else {
+					value = body.value;
+				}
 
-			ops.push({
-				updateOne: {
-					filter: {_id: new ObjectId(id)},
-					update: {
-						$set: {
-							[body.path]: value,
+				ops.push({
+					updateOne: {
+						filter: { _id: new ObjectId(id) },
+						update: {
+							$set: {
+								[body.path]: value,
+							},
 						},
 					},
-				},
-			});
+				});
 
-			response = value;
-		} break;
-		case 'scalar-increment': {
-			const params = body.path.split('.');
-			params.splice(-1, 1);
-			const path = params.join('.');
+				response = value;
+			} break;
+			case 'scalar-increment': {
+				const params = body.path.split('.');
+				params.splice(-1, 1);
+				const path = params.join('.');
 
-			ops.push({
-				updateOne: {
-					filter: {_id: new ObjectId(id)},
-					update: {
-						$inc: {
-							[path]: body.value,
+				ops.push({
+					updateOne: {
+						filter: { _id: new ObjectId(id) },
+						update: {
+							$inc: {
+								[path]: body.value,
+							},
 						},
 					},
-				},
-			});
+				});
 
-			response = body.value;
-		} break;
+				response = body.value;
+			} break;
 		}
 
 		const res = await this.collection?.bulkWrite(ops);
@@ -300,7 +300,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 	}
 
 	async updateById(id: string, query: any) {
-		const object = await this.collection?.updateOne({_id: new ObjectId(id)}, query);
+		const object = await this.collection?.updateOne({ _id: new ObjectId(id) }, query);
 
 		return this._modifyDocument(object);
 	}
@@ -338,7 +338,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	async rm(id: string) {
-		const cursor = this.collection?.deleteOne({_id: new ObjectId(id)});
+		const cursor = this.collection?.deleteOne({ _id: new ObjectId(id) });
 		if (!cursor) throw new Error('Unable to delete');
 
 		return cursor;
@@ -350,7 +350,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 	 */
 	rmBulk(ids: any) {
 		// Logging.log(`rmBulk: ${this.collection.namespace} ${ids}`, Logging.Constants.LogLevel.SILLY);
-		return this.rmAll({_id: {$in: ids}});
+		return this.rmAll({ _id: { $in: ids } });
 	}
 
 	/*
@@ -373,7 +373,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 	async findById(id: string) {
 		// Logging.logSilly(`Schema:findById: ${this.collection.namespace} ${id}`);
 
-		const document = await this.collection?.findOne({_id: new ObjectId(id)}, {});
+		const document = await this.collection?.findOne({ _id: new ObjectId(id) }, {});
 		if (!document) throw new Error('Unable to find document');
 
 		return this._modifyDocument(document);
@@ -392,7 +392,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 		if (!this.collection) throw new Error('No collection');
 
 		if (Logging.level === Logging.Constants.LogLevel.SILLY) {
-			Logging.logSilly(`find: ${this.collection.namespace} query: ${JSON.stringify(query)}, excludes: ${JSON.stringify(excludes)}`+
+			Logging.logSilly(`find: ${this.collection.namespace} query: ${JSON.stringify(query)}, excludes: ${JSON.stringify(excludes)}` +
 				`limit: ${limit}, skip: ${skip}, sort: ${JSON.stringify(sort)}`);
 		}
 
@@ -435,7 +435,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 	findAllById(ids: string[]) {
 		// Logging.logSilly(`update: ${this.collection.namespace} ${ids}`);
 
-		return this.find({_id: {$in: ids.map((id) => new ObjectId(id))}}, {});
+		return this.find({ _id: { $in: ids.map((id) => new ObjectId(id)) } }, {});
 	}
 
 	/**
@@ -521,7 +521,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 			if (keys.length === 1) {
 				const [key] = keys;
 				const value = this._getExpressionValue(expression[key]);
-				return {[key]: value};
+				return { [key]: value };
 			} else {
 				// Not sure what we've got here.
 				Logging.logDebug(JSON.stringify(expression));

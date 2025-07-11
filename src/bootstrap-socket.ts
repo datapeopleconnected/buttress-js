@@ -46,7 +46,10 @@ import { PolicyCache } from './services/policy-cache.js';
 
 import { RESTActivity, SPRActivity } from './types/bjs-nrp-objects.js';
 
-import { Token } from './model/core/token.js';
+import TokenSchemaModel, { Token } from './model/core/token.js';
+import AppSchemaModel from './model/core/app.js';
+import AppDataSharingSchemaModel from './model/core/app-data-sharing.js';
+import UserSchemaModel from './model/core/user.js';
 
 export default class BootstrapSocket extends Bootstrap {
 	private __namespace: any = {};
@@ -238,7 +241,7 @@ export default class BootstrapSocket extends Bootstrap {
 			await this.__registerNRPPrimaryListeners();
 
 			// create app namespaces
-			const rxsApps = await Model.getModel('App').findAll();
+			const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
 			for await (const app of rxsApps) {
 				if (!app._tokenId) {
 					Logging.logWarn(`App with no token`);
@@ -254,7 +257,7 @@ export default class BootstrapSocket extends Bootstrap {
 		// This should be distributed across instances
 		if (this.isPrimary) {
 			Logging.logSilly(`Setting up data sharing connections`);
-			const rxsDataShare = await Model.getModel('AppDataSharing').find({
+			const rxsDataShare = await Model.getCoreModel(AppDataSharingSchemaModel).find({
 				active: true,
 			});
 
@@ -338,7 +341,7 @@ export default class BootstrapSocket extends Bootstrap {
 		const rawToken = socket.handshake.auth.token || socket.handshake.query.token;
 
 		Logging.logDebug(`Fetching token with value: ${rawToken}`);
-		const token = await Model.getModel('Token').findOne({ value: rawToken }) as Token;
+		const token = await Model.getCoreModel(TokenSchemaModel).findOne({ value: rawToken }) as Token;
 		if (!token) {
 			Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
 			return next(new Error('invalid-token'));
@@ -348,7 +351,7 @@ export default class BootstrapSocket extends Bootstrap {
 		socket.data.tokenId = token.id.toString();
 
 		Logging.logDebug(`Fetching app with appId: ${token._appId}`);
-		const app = await Model.getModel('App').findOne({ id: token._appId });
+		const app = await Model.getCoreModel(AppSchemaModel).findOne({ id: token._appId });
 		if (!app) {
 			Logging.logWarn(`Invalid app, closing connection: ${socket.id}`);
 			return next(new Error('invalid-app'));
@@ -372,7 +375,7 @@ export default class BootstrapSocket extends Bootstrap {
 			}, {});
 
 			Logging.logDebug(`Fetching data share with tokenId: ${socket.data.tokenId}`);
-			const dataShare = await Model.getModel('AppDataSharing').findOne({
+			const dataShare = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
 				_tokenId: this._primaryDatastore.ID.new(socket.data.tokenId),
 				active: true,
 			});
@@ -404,7 +407,7 @@ export default class BootstrapSocket extends Bootstrap {
 			Logging.log(`[${apiPath}][DataShare] Connected ${socket.id} to room ${dataShare.name}`);
 		} else if (token.type === 'user') {
 			Logging.logDebug(`Fetching user with id: ${token._userId}`);
-			const user = await Model.getModel('User').findById(token._userId);
+			const user = await Model.getCoreModel(UserSchemaModel).findById(token._userId);
 			if (!user) {
 				Logging.logWarn(`Invalid token user ID, closing connection: ${socket.id}`);
 				return next(new Error('invalid-token-user-ID'));
@@ -448,13 +451,13 @@ export default class BootstrapSocket extends Bootstrap {
 		this.__nrp.on('clearUserLocalData', (data) => this.__primaryClearUserLocalData(data));
 		this.__nrp.on('dataShare:activated', async (data: any) => {
 			data = JSON.parse(data);
-			const dataShare = await Model.getModel('AppDataSharing').findById(data.appDataSharingId);
+			const dataShare = await Model.getCoreModel(AppDataSharingSchemaModel).findById(data.appDataSharingId);
 			await this.__primaryCreateDataShareConnection(dataShare);
 		});
 
 		this.__nrp.on('app:created', async (data: any) => {
 			data = JSON.parse(data);
-			const app = await Model.getModel('App').findById(data.appId);
+			const app = await Model.getCoreModel(AppSchemaModel).findById(data.appId);
 			await this.__createAppNamespace(app);
 		});
 
@@ -580,10 +583,10 @@ export default class BootstrapSocket extends Bootstrap {
 			return Logging.logDebug(`Namespace already created: ${app.name}`);
 		}
 
-		const token = await Model.getModel('Token').findOne({ id: app._tokenId });
+		const token = await Model.getCoreModel(TokenSchemaModel).findOne({ id: app._tokenId });
 		if (!token) return Logging.logWarn(`No Token found for ${app.name}`);
 
-		const isSuper = token.type === Model.getModel('Token').Constants.Type.SYSTEM;
+		const isSuper = token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
 
 		this.__namespace[app.apiPath] = {
 			emitter: this.emitter.of(`/${app.apiPath}`),

@@ -212,7 +212,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 		}
 
 		// Look up the token by ID
-		const token = await (Model.getModel('Token') as TokenSchemaModel).findOne({ _id: new ObjectId(tokenId) }) as Token;
+		const token = await Model.getCoreModel(TokenSchemaModel).findOne({ _id: new ObjectId(tokenId) }) as Token;
 		if (!token) {
 			Logging.logError(`Token not found: ${tokenId}`);
 			return;
@@ -260,7 +260,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
 		if (activity.isSuper) {
 			// TODO: Super tokens could be cached in redis, app tokens could be also be cached.
-			const tokenModel = (Model.getModel('Token') as TokenSchemaModel);
+			const tokenModel = Model.getCoreModel(TokenSchemaModel);
 			const systemTokens = await tokenModel.find({ type: 'system' });
 
 			for await (const systemToken of systemTokens) {
@@ -308,8 +308,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 				if (tokenLevelAssesment.env || tokenLevelAssesment.configEnv || tokenLevelAssesment.condition || tokenLevelAssesment.query) {
 					const tokenIds = await this._policyCache.getConnectedTokenIdsByPolicyId(applicablePolicy.id);
 
-					// const tokenModel = (Model.getModel('Token') as TokenSchemaModel);
-					// const userModel = (Model.getModel('User') as UserSchemaModel);
+					// const tokenModel = Model.getCoreModel(TokenSchemaModel);
+					// const userModel = Model.getCoreModel(UserSchemaModel);
 
 					for await (const tokenId of tokenIds) {
 						const env = CombineEnvGroups(applicablePolicy, await this.__constructTokenEnv(tokenId, activity.appId));
@@ -340,8 +340,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 	}
 
 	private async __constructTokenEnv(tokenId: string, appId: string): Promise<ACEnv> {
-		const tokenModel = (Model.getModel('Token') as TokenSchemaModel);
-		const userModel = (Model.getModel('User') as UserSchemaModel);
+		const tokenModel = Model.getCoreModel(TokenSchemaModel);
+		const userModel = Model.getCoreModel(UserSchemaModel);
 
 		const token = await tokenModel.findOne({ _id: tokenModel.createId(tokenId) }) as Token;
 		if (!token) {

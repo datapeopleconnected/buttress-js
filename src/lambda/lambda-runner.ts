@@ -40,13 +40,28 @@ import Logging from '../helpers/logging.js';
 import Model from '../model/index.js';
 import * as Helpers from '../helpers/index.js';
 import lambdaHelpers from '../lambda-helpers/helpers.js';
+import { ExecPriority, LambdaExecutionMessage } from './lambda-manager.js';
+import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
+import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
+import AppSchemaModel, { App } from '../model/core/app.js';
+import TokenSchemaModel from '../model/core/token.js';
+import UserSchemaModel from '../model/core/user.js';
+import DeploymentSchemaModel from '../model/core/deployment.js';
 
 export enum LambdaType {
 	API_ENDPOINT = 'API_ENDPOINT',
 	PATH_MUTATION = 'PATH_MUTATION',
 	CRON = 'CRON',
 	ALL = 'ALL',
-}
+};
+
+export interface ExecutionResultMessage {
+	code: number;
+	res?: any;
+	err?: any;
+	reqId: string;
+	executionId: string;
+};
 
 /**
  * Queue up pending Lambdas and execute them
@@ -135,7 +150,7 @@ export default class LambdasRunner {
 	 * @param {object} data
 	 * @return {Promise}
 	 */
-	async execute(lambda, execution, app, type, data) {
+	async execute(lambda: Lambda, execution: LambdaExecution, app: App, type: string, data: { body?: any, query?: any, headers?: any, reqId?: string }) {
 		if (!this._isolate) throw new Error('Isolate not initialised');
 		if (!this._jail) throw new Error('Isolate Jail not initialised');
 		if (!this._context) throw new Error('Isolate Context not initialised');
@@ -144,9 +159,13 @@ export default class LambdasRunner {
 			return Promise.reject(new Error(`Unable to find git repo for lambda ${lambda.name}`));
 		}
 
-		const rxsLambdaToken = await Model.getModel('Token').find({
-			_appId: Model.getModel('App').createId(app.id),
-			_lambdaId: Model.getModel('User').createId(lambda.id),
+		if (type === 'API_ENDPOINT' && !data.reqId) {
+			return Promise.reject(new Error(`Missing reqId for API_ENDPOINT lambda ${lambda.name}, execution ${execution.id}`));
+		}
+
+		const rxsLambdaToken = await Model.getCoreModel(TokenSchemaModel).find({
+			_appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
+			_lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
 		});
 		const lambdaToken: any = await Helpers.streamFirst(rxsLambdaToken);
 		if (!lambdaToken) {
@@ -156,8 +175,8 @@ export default class LambdasRunner {
 		let executionUserId = null;
 		let executionToken = lambdaToken;
 		if (execution._tokenId) {
-			const rxsExecToken = await Model.getModel('Token').find({
-				_id: Model.getModel('App').createId(execution._tokenId),
+			const rxsExecToken = await Model.getCoreModel(TokenSchemaModel).find({
+				_id: Model.getCoreModel(AppSchemaModel).createId(execution._tokenId),
 			});
 			const execToken: any = await Helpers.streamFirst(rxsExecToken);
 			if (!execToken) {
@@ -166,8 +185,8 @@ export default class LambdasRunner {
 			executionToken = execToken;
 
 			if (execToken.type === 'user') {
-				const rxsUser = await Model.getModel('User').find({
-					_id: Model.getModel('User').createId(execToken._userId),
+				const rxsUser = await Model.getCoreModel(UserSchemaModel).find({
+					_id: Model.getCoreModel(UserSchemaModel).createId(execToken._userId),
 				});
 				const user: any = await Helpers.streamFirst(rxsUser);
 				if (!user) {
@@ -179,8 +198,8 @@ export default class LambdasRunner {
 
 		const apiPath = app.apiPath;
 		// const appAllowList = app.allowList;
-		let trigger = lambda.trigger.find((t) => t.type === type);
-		trigger = trigger?.[Sugar.String.camelize(type, false)];
+		const trigger = lambda.trigger.find((t) => t.type === type);
+		// trigger = trigger?.[Sugar.String.camelize(type, false)];
 		const buttressOptions = {
 			buttressUrl: `${Config.app.protocol}://${Config.app.host}`,
 			appToken: executionToken.value,
@@ -280,23 +299,34 @@ export default class LambdasRunner {
 					throw new Error(lambdaHelpers.lambdaResult.errMessage);
 				}
 
-				if (trigger.redirect && lambdaHelpers.lambdaResult) lambdaHelpers.lambdaResult.redirect = true;
+				if (!data.reqId) {
+					throw new Error(`Missing reqId for API_ENDPOINT lambda ${lambda.name}, execution ${execution.id}`);
+				}
+
+				if (trigger && trigger.apiEndpoint.redirect && lambdaHelpers.lambdaResult) lambdaHelpers.lambdaResult.redirect = true;
 				const result = (lambdaHelpers.lambdaResult) ? lambdaHelpers.lambdaResult : 'success';
-				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({ code: 200, res: result, restWorkerId: data.restWorkerId }));
+
+				const message: ExecutionResultMessage = { code: 200, res: result, reqId: data.reqId, executionId: execution.id };
+				this.__nrp?.emit('lambda:worker:execution-result', JSON.stringify(message));
 			}
 		} catch (err: any) {
 			await this._updateDBLambdaErrorExecution(lambda);
 			Logging.logDebug(err);
 
 			if (type === 'API_ENDPOINT') {
-				let message = 'Unkown error occurred';
+				let errMessage = 'Unknown error occurred';
 				if (err instanceof Error) {
-					message = err.message;
+					errMessage = err.message;
 				} else if (err && Object.prototype.hasOwnProperty.call(err, 'errMessage')) {
-					message = err.errMessage;
+					errMessage = err.errMessage;
 				}
 
-				this.__nrp?.emit('lambda-execution-finish', JSON.stringify({ code: 400, err: message, restWorkerId: data.restWorkerId }));
+				if (data.reqId) {
+					const message: ExecutionResultMessage = { code: 400, err: errMessage, reqId: data.reqId, executionId: execution.id };
+					this.__nrp?.emit('lambda:worker:execution-result', JSON.stringify(message));
+				} else {
+					throw new Error(`Missing reqId for API_ENDPOINT lambda ${lambda.name}, execution ${execution.id}, error: ${errMessage}`);
+				}
 			}
 
 			return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));
@@ -308,37 +338,47 @@ export default class LambdasRunner {
 	 * @param {object} payload
 	 * @return {promise}
 	 */
-	async fetchExecuteLambda(payload) {
-		const lambdaId = payload.data.lambdaId;
-		const lambda = await Model.getModel('Lambda').findById(lambdaId);
+	async handleLambdaExecutionMessage(payload: LambdaExecutionMessage) {
+		const lambdaId = payload.lambdaId;
+		const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(lambdaId) as Lambda | null;
 		// TODO add a meaningful error message & notify manager
 		if (!lambda) return;
 
-		const app = await Model.getModel('App').findById(lambda._appId);
+		const app = await Model.getCoreModel(AppSchemaModel).findById(lambda._appId) as App | null;
 		// TODO add a meaningful error message & notify manager
 		if (!app) return;
 
-		const triggerType = payload.data.lambdaType;
+		const triggerType = payload.lambdaType;
 
-		const executionId = payload.data.executionId;
+		const executionId = payload.executionId;
 		if (!executionId) throw new Error('unable to fetch execute lambda, missing executionId');
 
-		const execution = await Model.getModel('LambdaExecution').findOne({
-			id: Model.getModel('LambdaExecution').createId(executionId),
+		const execution = await Model.getCoreModel(LambdaExecutionSchemaModel).findOne({
+			id: Model.getCoreModel(LambdaExecutionSchemaModel).createId(executionId),
 			status: 'PENDING',
-		});
+		}) as LambdaExecution | null;
 		if (!execution) throw new Error('Unable to find pending execution, with id: ' + executionId);
+
+		const body = execution.metadata.find((m) => m.key === 'BODY')?.value || undefined;
+		const query = execution.metadata.find((m) => m.key === 'QUERY')?.value || undefined;
+		const headers = execution.metadata.find((m) => m.key === 'HEADERS')?.value || undefined;
+		const reqId = execution.metadata.find((m) => m.key === 'REQ_ID')?.value || undefined;
 
 		try {
 			this._lambdaExecution = execution;
-			await this.execute(lambda, execution, app, triggerType, payload.data);
+			await this.execute(lambda, execution, app, triggerType, {
+				body,
+				query,
+				headers,
+				reqId,
+			});
 
 			this.working = false;
-			this.__nrp?.emit('lambda-worker-finished', JSON.stringify({
+			this.__nrp?.emit('lambda:worker:finished', JSON.stringify({
 				workerId: this.id,
 				lambdaId: lambdaId,
-				restWorkerId: payload.data.restWorkerId,
-				workerExecID: payload.data.workerExecID,
+				executionId: payload.executionId,
+				reqId: reqId,
 			}));
 		} catch (err: any) {
 			this.working = false;
@@ -347,10 +387,10 @@ export default class LambdasRunner {
 				message: err.message,
 				type: 'ERROR',
 			});
-			this.__nrp?.emit('lambda-worker-errored', JSON.stringify({
+			this.__nrp?.emit('lambda:worker:errored', JSON.stringify({
 				workerId: payload.workerId,
-				workerExecID: payload.data.workerExecID,
-				restWorkerId: payload.data.restWorkerId,
+				executionId: payload.executionId,
+				reqId: reqId,
 				lambdaId: lambdaId,
 				lambdaType: triggerType,
 				errMessage: err.message,
@@ -362,82 +402,88 @@ export default class LambdasRunner {
 	 * Communicate with main process via Redis
 	 */
 	_subscribeToLambdaManager() {
-		this.__nrp?.on('lambda:worker:announce', (payload: any) => {
+		this.__nrp?.on('lambda:worker:announce', (json: string) => {
 			if (this.working) return;
 
-			payload = JSON.parse(payload);
+			const message = JSON.parse(json) as LambdaExecutionMessage;
 
-			if (this.lambdaType && this.lambdaType !== LambdaType.ALL && payload.lambdaType !== this.lambdaType) {
-				Logging.logSilly(`Can not run a ${payload.lambdaType} on ${this.lambdaType} worker`);
+			if (this.lambdaType && this.lambdaType !== LambdaType.ALL && message.lambdaType !== this.lambdaType) {
+				Logging.logSilly(`Can not run a ${message.lambdaType} on ${this.lambdaType} worker`);
 				return;
 			}
 
-			Logging.logSilly(`[${this.name}] Manager called out ${payload.lambdaId}, attempting to acquire lambda`);
-			this.__nrp?.emit('lambda-worker-available', JSON.stringify({
-				workerId: this.id,
-				data: payload,
-			}));
+			message.workerId = this.id;
+
+			Logging.logSilly(`[${this.name}] Manager called out ${message.lambdaId}, attempting to acquire lambda`);
+			this.__nrp?.emit('lambda:worker:available', JSON.stringify(message));
 		});
 
-		this.__nrp?.on('lambda:worker:execute', (payload: any) => {
-			payload = JSON.parse(payload);
+		this.__nrp?.on('lambda:worker:execute', (json) => {
+			const message = JSON.parse(json) as LambdaExecutionMessage;
 
-			if (payload.workerId !== this.id) return;
+			if (message.workerId !== this.id) return;
 
-			Logging.logDebug(`[${this.name}] Manager has told me to take task ${payload.data.executionId}`);
+			Logging.logDebug(`[${this.name}] Manager has told me to take task ${message.executionId}`);
 
 			if (this.working) {
-				Logging.logWarn(`[${this.name}] I've taken on too much work, releasing ${payload.data.executionId}`);
-				this.__nrp?.emit('lambda-worker-overloaded', JSON.stringify(payload));
+				Logging.logWarn(`[${this.name}] I've taken on too much work, releasing ${message.executionId}`);
+				this.__nrp?.emit('lambda:worker:overloaded', JSON.stringify(message));
 				return;
 			}
 
 			this.working = true;
 
-			this.fetchExecuteLambda(payload);
+			this.handleLambdaExecutionMessage(message);
 		});
 	}
 
 	async _updateDBLambdaRunningExecution(execution) {
-		await Model.getModel('LambdaExecution').updateById(Model.getModel('LambdaExecution').createId(execution.id), {
-			$set: {
-				status: 'RUNNING',
-				startedAt: Sugar.Date.create('now'),
-			},
-		});
+		await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
+			Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
+			{
+				$set: {
+					status: 'RUNNING',
+					startedAt: Sugar.Date.create('now'),
+				},
+			}
+		);
 
 		// if (type === 'CRON') {
-		// 	await Model.getModel('Lambda').update({
-		// 		'id': Model.getModel('Lambda').createId(lambda.id),
+		// 	await Model.getCoreModel(LambdaSchemaModel).update({
+		// 		'id': Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
 		// 		'trigger.type': type,
 		// 	}, {$set: {'trigger.$.cron.status': 'RUNNING'}});
 		// }
 	}
 
 	async _updateDBLambdaFinishExecution(execution) {
-		await Model.getModel('LambdaExecution').updateById(Model.getModel('LambdaExecution').createId(execution.id), {
-			$set: {
-				status: 'COMPLETE',
-				endedAt: Sugar.Date.create('now'),
-			},
-		});
+		await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
+			Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
+			{
+				$set: {
+					status: 'COMPLETE',
+					endedAt: Sugar.Date.create('now'),
+				},
+			}
+		);
 
 		if (execution.nextCronExpression) {
-			await Model.getModel('LambdaExecution').add({
+			await Model.getCoreModel(LambdaExecutionSchemaModel).add({
 				triggerType: 'CRON',
-				lambdaId: Model.getModel('Lambda').createId(execution.lambdaId),
-				deploymentId: Model.getModel('Deployment').createId(execution.deploymentId),
+				priority: ExecPriority.CRON,
+				lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(execution.lambdaId),
+				deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(execution.deploymentId),
 				executeAfter: Sugar.Date.create(execution.nextCronExpression),
 				nextCronExpression: execution.nextCronExpression,
-				_tokenId: (execution._tokenId) ? Model.getModel('Lambda').createId(execution._tokenId) : null,
+				_tokenId: (execution._tokenId) ? Model.getCoreModel(LambdaSchemaModel).createId(execution._tokenId) : null,
 			}, execution._appId);
 
 			// const completeTriggerObj = {
 			// 	'trigger.$.cron.status': 'PENDING',
 			// 	'trigger.$.cron.executionTime': Sugar.Date.create(trigger.periodicExecution),
 			// };
-			// await Model.getModel('Lambda').update({
-			// 	'id': Model.getModel('Lambda').createId(lambda.id),
+			// await Model.getCoreModel(LambdaSchemaModel).update({
+			// 	'id': Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
 			// 	'trigger.type': type,
 			// }, {
 			// 	$set: completeTriggerObj,
@@ -446,21 +492,24 @@ export default class LambdasRunner {
 	}
 
 	async _updateDBLambdaErrorExecution(execution, log: any = null) {
-		await Model.getModel('LambdaExecution').updateById(Model.getModel('LambdaExecution').createId(execution.id), {
-			$set: {
-				status: 'ERROR',
-				endedAt: Sugar.Date.create('now'),
-			},
-		});
+		await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
+			Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
+			{
+				$set: {
+					status: 'ERROR',
+					endedAt: Sugar.Date.create('now'),
+				},
+			}
+		);
 		// if (type === 'CRON') {
-		// 	await Model.getModel('Lambda').update({
-		// 		'id': Model.getModel('Lambda').createId(lambda.id),
+		// 	await Model.getCoreModel(LambdaSchemaModel).update({
+		// 		'id': Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
 		// 		'trigger.type': type,
 		// 	}, {$set: {'trigger.$.cron.status': 'ERROR'}});
 		// }
 		if (log) {
-			await Model.getModel('LambdaExecution').update({
-				id: Model.getModel('LambdaExecution').createId(execution.id),
+			await Model.getCoreModel(LambdaExecutionSchemaModel).update({
+				id: Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
 			}, {
 				$push: {
 					logs: {

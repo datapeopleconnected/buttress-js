@@ -16,7 +16,34 @@
 import StandardModel from '../type/standard.js';
 import * as Helpers from '../../helpers/index.js';
 
+export interface LambdaExecution {
+	id: string;
+	lambdaId: string;
+	deploymentId: string;
+	triggerType: 'CRON' | 'PATH_MUTATION' | 'API_ENDPOINT';
+	priority: number;
+	status: 'PENDING' | 'RUNNING' | 'COMPLETE' | 'ERROR';
+	logs: Array<{
+		log: string | null;
+		type: string | null;
+	}>;
+	executeAfter: Date | null;
+	startedAt: Date | null;
+	endedAt: Date | null;
+	nextCronExpression: string | null;
+	_appId: string;
+	_tokenId: string;
+	metadata: Array<{
+		key: string | null;
+		value: string | null;
+	}>;
+	createdAt: Date;
+	updatedAt: Date;
+};
+
 class LambdaExecutionSchemaModel extends StandardModel {
+	static name = 'LambdaExecution';
+
 	constructor(services) {
 		const schema = LambdaExecutionSchemaModel.Schema;
 		super(schema, null, services);
@@ -41,7 +68,7 @@ class LambdaExecutionSchemaModel extends StandardModel {
 				},
 				triggerType: {
 					__type: 'string',
-					__default: null,
+					__default: 'CRON',
 					__enum: [
 						'CRON',
 						'PATH_MUTATION',
@@ -59,6 +86,12 @@ class LambdaExecutionSchemaModel extends StandardModel {
 						'COMPLETE',
 						'ERROR',
 					],
+					__required: true,
+					__allowUpdate: true,
+				},
+				priority: {
+					__type: 'number',
+					__default: 0,
 					__required: true,
 					__allowUpdate: true,
 				},
@@ -158,6 +191,7 @@ class LambdaExecutionSchemaModel extends StandardModel {
 			lambdaId: (body.lambdaId) ? body.lambdaId : null,
 			deploymentId: (body.deploymentId) ? body.deploymentId : null,
 			triggerType: (body.triggerType) ? body.triggerType : null,
+			priority: (body.priority) ? body.priority : 0,
 			logs: (body.logs) ? body.logs : [],
 			executeAfter: (body.executeAfter) ? body.executeAfter : null,
 			nextCronExpression: (body.nextCronExpression) ? body.nextCronExpression : null,

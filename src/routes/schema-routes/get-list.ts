@@ -60,7 +60,7 @@ export default class GetList extends Route {
 
 		const result = {
 			query: {},
-			project: (req.body && req.body.project)? req.body.project : false,
+			project: (req.body && req.body.project) ? req.body.project : false,
 		};
 
 		let query: any = {};

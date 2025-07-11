@@ -60,7 +60,7 @@ export class JSONStringifyStream extends Transform {
 	private prepare: (chunk: any) => any;
 
 	constructor(options, prepare) {
-		super(Object.assign(options || {}, {objectMode: true}));
+		super(Object.assign(options || {}, { objectMode: true }));
 
 		if (!prepare || typeof prepare !== 'function') throw new Error('JSONStringifyStream requires a prepare function');
 
@@ -164,10 +164,10 @@ const __flattenRoles = (data, path) => {
 };
 export const flattenRoles = __flattenRoles;
 
-export const flatternObject = (obj, output: {[index: string]: any} = {}, paths: string[] = []) => {
-	return Object.getOwnPropertyNames(obj).reduce(function(out, key) {
+export const flatternObject = (obj, output: { [index: string]: any } = {}, paths: string[] = []) => {
+	return Object.getOwnPropertyNames(obj).reduce(function (out, key) {
 		paths.push(key);
-		
+
 		if (typeof obj[key] === 'object' && obj[key] !== null && obj[key] === '[object Object]') {
 			flatternObject(obj[key], out, paths);
 		} else if (Array.isArray(obj[key])) {
@@ -215,7 +215,7 @@ export const getFlattenedSchema = (schema) => {
 				__buildFlattenedSchema(childProp, parent[property].__schema, path, flattened);
 			}
 
-			parent[property].__schema = getFlattenedSchema({properties: parent[property].__schema});
+			parent[property].__schema = getFlattenedSchema({ properties: parent[property].__schema });
 			flattened[path.join('.')] = parent[property];
 		} else if (typeof parent[property] === 'object' && !parent[property].__type) {
 			// Handle Object
@@ -343,7 +343,7 @@ export const updateCoreSchemaObject = (update, extendedPathContext) => {
 	const __updateObjectPath = (body) => {
 		const bodyPath = body.path.replace(pattern, '');
 		if (!Array.isArray(body) && body.value && typeof body.value === 'object' && !Array.isArray(body.value)) {
-			body = Object.keys(body.value).reduce((arr: {path: string, value: any}[], key) => {
+			body = Object.keys(body.value).reduce((arr: { path: string, value: any }[], key) => {
 				const extendedPath = `${bodyPath}.${key}`;
 				if (!extendedPathContextKeys.some((key) => key.includes(extendedPath))) return arr;
 
@@ -383,11 +383,11 @@ export const compareByProps = (compareProperties, a, b) => {
 	return 0;
 };
 
-export const get = function(path: string, root: any): any {
+export const get = function (path: string, root: any): any {
 	const parts = path.toString().split('.');
 	let prop: any = root;
 
-	for (let i=0; i < parts.length; i += 1) {
+	for (let i = 0; i < parts.length; i += 1) {
 		if (!prop) return undefined;
 		const part = parts[i];
 		prop = (prop instanceof Map) ? prop.get(part) : prop[part];

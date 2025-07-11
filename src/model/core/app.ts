@@ -24,7 +24,25 @@ import * as Helpers from '../../helpers/index.js';
 
 import StandardModel from '../type/standard.js';
 
+export interface App {
+	id: string;
+	name: string;
+	version: string;
+	apiPath: string;
+	policyPropertiesList: any;
+	adminActive: boolean;
+	oAuth: string[];
+	suspend: Date | null;
+	_tokenId: string;
+	__schema: string;
+	__rawSchema: string;
+	datastore: {
+		connectionString: string | null;
+	};
+};
+
 export default class AppSchemaModel extends StandardModel {
+	static name = 'App';
 
 	private _localSchema: any;
 
@@ -241,7 +259,7 @@ export default class AppSchemaModel extends StandardModel {
 	 * @param {object} rawSchema - encoded raw app schema
 	 * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
 	 */
-	async updateSchema(appId, compiledSchema, rawSchema) {
+	async updateSchema(appId, compiledSchema, rawSchema?) {
 		Logging.logSilly(`Update Schema ${appId}`);
 
 		await super.updateById(appId, { $set: { __schema: Schema.encode(compiledSchema) } });

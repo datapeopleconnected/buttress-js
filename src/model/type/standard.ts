@@ -27,10 +27,14 @@ import NRP from 'node-redis-pubsub';
  **********************************************************************************/
 
 export default class StandardModel {
+	static name = 'Model';
+
 	schemaData: any;
 	flatSchemaData: any;
 
 	app: any;
+
+	isCoreAPI: boolean = false;
 
 	appShortId: any;
 	collectionName: any;
@@ -46,6 +50,8 @@ export default class StandardModel {
 		this.flatSchemaData = (schemaData) ? Helpers.getFlattenedSchema(this.schemaData) : null;
 
 		this.app = app || null;
+
+		if (!this.app) this.isCoreAPI = true;
 
 		this.appShortId = (app) ? Helpers.shortId(app.id) : null;
 		this.collectionName = (schemaData) ? `${schemaData.name}` : null;
@@ -116,7 +122,7 @@ export default class StandardModel {
 		}
 		const validation = body.map((b) => this.__doValidation(b)).filter((v) => v.isValid === false);
 
-		return validation.length >= 1 ? validation[0] : {isValid: true};
+		return validation.length >= 1 ? validation[0] : { isValid: true };
 	}
 
 	/**
@@ -148,36 +154,36 @@ export default class StandardModel {
 					let operandOptions: string | undefined = undefined;
 
 					switch (operator) {
-					case '$not':
-						operator = '$ne';
-						break;
+						case '$not':
+							operator = '$ne';
+							break;
 
-					case '$elMatch':
-						operator = '$elemMatch';
-						break;
-					case '$gtDate':
-						operator = '$gt';
-						break;
-					case '$ltDate':
-						operator = '$lt';
-						break;
-					case '$gteDate':
-						operator = '$gte';
-						break;
-					case '$lteDate':
-						operator = '$lte';
-						break;
+						case '$elMatch':
+							operator = '$elemMatch';
+							break;
+						case '$gtDate':
+							operator = '$gt';
+							break;
+						case '$ltDate':
+							operator = '$lt';
+							break;
+						case '$gteDate':
+							operator = '$gte';
+							break;
+						case '$lteDate':
+							operator = '$lte';
+							break;
 
-					case '$rex':
-					case '$rexi':
-						operator = '$regex';
-						operandOptions = 'i';
-						break;
-					case '$inProp':
-						operator = '$regex';
-						break;
+						case '$rex':
+						case '$rexi':
+							operator = '$regex';
+							operandOptions = 'i';
+							break;
+						case '$inProp':
+							operator = '$regex';
+							break;
 
-					default:
+						default:
 						// TODO: Throw an error if operator isn't supported
 					}
 
@@ -341,7 +347,7 @@ export default class StandardModel {
 	 * @return {promise}
 	 */
 	// TODO: Model shouldn't be being passed through this way.
-	async updateByPath(body, id, sourceId = null, model = null) {
+	async updateByPath(body, id, sourceId = null, model: any = null) {
 		if (body instanceof Array === false) {
 			body = [body];
 		}
@@ -370,7 +376,7 @@ export default class StandardModel {
 			// update the whole property.
 			let context = extendedPathContext[update.contextPath];
 			if (context.type === 'vector-add' && Array.isArray(body.value)) {
-				context = {type: 'scalar', values: []};
+				context = { type: 'scalar', values: [] };
 			}
 
 			return arr.concat([
@@ -472,7 +478,7 @@ export default class StandardModel {
 	 * @param {Object} query - mongoDB query
 	 * @return {Promise} - resolves to an array of Companies
 	 */
-	count(query) {
+	count(query?: any) {
 		return this.adapter.count(query);
 	}
 

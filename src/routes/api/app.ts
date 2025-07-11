@@ -20,6 +20,9 @@ import Sugar from '../../helpers/sugar.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import Schema from '../../schema.js';
+import AppSchemaModel from '../../model/core/app.js';
+import TokenSchemaModel from '../../model/core/token.js';
+import ActivitySchemaModel from '../../model/core/activity.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -28,7 +31,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetAppList extends Route {
 	constructor(services) {
-		super('app', 'GET APP LIST', services, Model.getModel('App'));
+		super('app', 'GET APP LIST', services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -40,7 +43,7 @@ class GetAppList extends Route {
 
 	_exec(req, res, validate) {
 		if (req.token.type !== Route.Constants.Type.SYSTEM) {
-			return this.model.find({id: req.authApp.id});
+			return this.model.find({ id: req.authApp.id });
 		}
 
 		return this.model.findAll();
@@ -53,7 +56,7 @@ routes.push(GetAppList);
  */
 class SearchAppList extends Route {
 	constructor(services) {
-		super('app', 'GET APP LIST', services, Model.getModel('App'));
+		super('app', 'GET APP LIST', services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -78,8 +81,8 @@ class SearchAppList extends Route {
 	async _exec(req, res, validate) {
 		const appsDB = await Helpers.streamAll(await this.model.find(validate.query));
 
-		const tokenIds = appsDB.map((app) => Model.getModel('Token').createId(app._tokenId));
-		const appTokens = await Helpers.streamAll(await Model.getModel('Token').find({
+		const tokenIds = appsDB.map((app) => Model.getCoreModel(TokenSchemaModel).createId(app._tokenId));
+		const appTokens = await Helpers.streamAll(await Model.getCoreModel(TokenSchemaModel).find({
 			id: {
 				$in: tokenIds,
 			},
@@ -101,7 +104,7 @@ routes.push(SearchAppList);
 class GetApp extends Route {
 	constructor(services) {
 		// Should change to app apiPath instead of ID
-		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', services, Model.getModel('App'));
+		super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -123,7 +126,7 @@ class GetApp extends Route {
 	}
 
 	_exec(req, res, validate) {
-		const appToken = Model.getModel('Token').findById(Model.getModel('Token').createId(validate._tokenId));
+		const appToken = Model.getCoreModel(TokenSchemaModel).findById(Model.getCoreModel(TokenSchemaModel).createId(validate._tokenId));
 		validate.tokenValue = appToken.value;
 
 		return validate;
@@ -136,7 +139,7 @@ routes.push(GetApp);
  */
 class AddApp extends Route {
 	constructor(services) {
-		super('app', 'APP ADD', services, Model.getModel('App'));
+		super('app', 'APP ADD', services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -186,7 +189,7 @@ class AddApp extends Route {
 				.then((res) => {
 					this._nrp?.emit('app:configure-lambda-endpoints', res.app.apiPath);
 
-					return Object.assign(res.app, {token: res.token.value});
+					return Object.assign(res.app, { token: res.token.value });
 				})
 				.then(Logging.Promise.logProp('Added App', 'name', Route.LogLevel.INFO))
 				.then(resolve, reject);
@@ -200,7 +203,7 @@ routes.push(AddApp);
  */
 class DeleteApp extends Route {
 	constructor(services) {
-		super('app/:id', 'DELETE APP', services, Model.getModel('App'));
+		super('app/:id', 'DELETE APP', services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -233,7 +236,7 @@ routes.push(DeleteApp);
  */
 class DeleteAllApps extends Route {
 	constructor(services) {
-		super('app', 'DELETE ALL APPS', services, Model.getModel('App'));
+		super('app', 'DELETE ALL APPS', services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -245,12 +248,12 @@ class DeleteAllApps extends Route {
 
 	async _exec(req, res, validate) {
 		// Get a list of system tokens
-		const systemTokens = await Helpers.streamAll(await Model.getModel('Token').find({
-			type: Model.getModel('Token').Constants.Type.SYSTEM,
-		}, {}, 0, 0, {}, {_appId: 1}));
+		const systemTokens = await Helpers.streamAll(await Model.getCoreModel(TokenSchemaModel).find({
+			type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
+		}, {}, 0, 0, {}, { _appId: 1 }));
 
 		const systemApps = systemTokens.map((t) => t._appId.toString());
-		const appApps = await this.model.find({ id: { $nin: systemApps } }, {}, 0, 0, {}, {id: 1, _tokenId: 1});
+		const appApps = await this.model.find({ id: { $nin: systemApps } }, {}, 0, 0, {}, { id: 1, _tokenId: 1 });
 
 		for await (const app of appApps) {
 			if (systemApps.includes(app.id.toString())) continue;
@@ -269,7 +272,7 @@ routes.push(DeleteAllApps);
  */
 class GetAppSchema extends Route {
 	constructor(services) {
-		super('app/schema', 'GET APP SCHEMA', services, Model.getModel('App'));
+		super('app/schema', 'GET APP SCHEMA', services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.USER;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -302,8 +305,8 @@ class GetAppSchema extends Route {
 			const cores = req.query.core.split(',');
 
 			cores.forEach((core) => {
-				const coreModel = Model[Sugar.String.camelize(core)];
-				if (coreModel && coreModel.getModel('App').ShortId === null) {
+				const coreModel = Model.getModel(Sugar.String.camelize(core));
+				if (coreModel && coreModel.isCoreAPI) {
 					schema.push(coreModel.schemaData);
 				}
 			});
@@ -337,7 +340,7 @@ routes.push(GetAppSchema);
  */
 class UpdateAppSchema extends Route {
 	constructor(services) {
-		super('app/schema', 'UPDATE APP SCHEMA', services, Model.getModel('App'));
+		super('app/schema', 'UPDATE APP SCHEMA', services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -419,7 +422,7 @@ class UpdateAppSchema extends Route {
 		}
 	}
 
-	async _exec(req, res, {rawSchema, compiledSchema}) {
+	async _exec(req, res, { rawSchema, compiledSchema }) {
 		await this.model.updateSchema(req.authApp.id, compiledSchema, rawSchema);
 
 		const a = compiledSchema.filter((s) => s.type === 'collection').map((s) => {
@@ -437,7 +440,7 @@ routes.push(UpdateAppSchema);
  */
 class GetAppPolicyPropertyList extends Route {
 	constructor(services) {
-		super('app/policy-property-list/:apiPath?', 'GET APP POLICY PROPERTY LIST', services, Model.getModel('App'));
+		super('app/policy-property-list/:apiPath?', 'GET APP POLICY PROPERTY LIST', services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -451,7 +454,7 @@ class GetAppPolicyPropertyList extends Route {
 		}
 
 		const apiPath = req.params.apiPath;
-		const isSuper = token.type === Model.getModel('Token').Constants.Type.SYSTEM;
+		const isSuper = token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
 		if (apiPath && apiPath !== app.apiPath && !isSuper) {
 			this.log('ERROR: Cannot fetch policy properties list for another app', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `cannot_fetch_list_for_another_app`));
@@ -479,7 +482,7 @@ routes.push(GetAppPolicyPropertyList);
  */
 class SetAppPolicyPropertyList extends Route {
 	constructor(services) {
-		super('app/policy-property-list/:update/:appId?', 'SET APP POLICY PROPERTY LIST', services, Model.getModel('App'));
+		super('app/policy-property-list/:update/:appId?', 'SET APP POLICY PROPERTY LIST', services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -522,7 +525,7 @@ class SetAppPolicyPropertyList extends Route {
 					obj[key] = req.body[key];
 					return obj;
 				}, {});
-				req.body = {...req.authApp.policyPropertiesList, ...postedPropsList};
+				req.body = { ...req.authApp.policyPropertiesList, ...postedPropsList };
 			}
 
 			resolve(req.body);
@@ -557,7 +560,7 @@ routes.push(SetAppPolicyPropertyList);
  */
 class AppCount extends Route {
 	constructor(services) {
-		super(`app/count`, `COUNT APPS`, services, Model.getModel('App'));
+		super(`app/count`, `COUNT APPS`, services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -602,7 +605,7 @@ routes.push(AppCount);
  */
 class AppUpdateOAuth extends Route {
 	constructor(services) {
-		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, services, Model.getModel('App'));
+		super(`app/:id/oauth`, `UPDATE APPS OAUTH`, services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -640,17 +643,17 @@ routes.push(AppUpdateOAuth);
  */
 class AppUpdate extends Route {
 	constructor(services) {
-		super(`app/:id`, `UPDATE AN APP`, services, Model.getModel('App'));
+		super(`app/:id`, `UPDATE AN APP`, services, Model.getCoreModel(AppSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	async _validate(req, res, token) {
-		const {validation, body} = this.model.validateUpdate(req.body);
+		const { validation, body } = this.model.validateUpdate(req.body);
 		req.body = body;
 		if (!validation.isValid) {
 			if (validation.isPathValid === false) {

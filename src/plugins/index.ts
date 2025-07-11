@@ -37,8 +37,8 @@ const INFRASTRUCTURE_ROLE = {
 
 class Plugins extends EventEmitter {
 	plugins: any[] = [];
-	filters: {[key: string] : any};
-	actions: {[key: string] : any};
+	filters: { [key: string]: any };
+	actions: { [key: string]: any };
 
 	appType?: string;
 	processRole?: string;
@@ -130,7 +130,7 @@ class Plugins extends EventEmitter {
 			this.actions[name] = [];
 		}
 
-		this.actions[name].push({callback, priority});
+		this.actions[name].push({ callback, priority });
 	}
 
 	async do_action(name, ...args) {
@@ -150,7 +150,7 @@ class Plugins extends EventEmitter {
 			this.filters[name] = [];
 		}
 
-		this.filters[name].push({callback, priority});
+		this.filters[name].push({ callback, priority });
 	}
 
 	async apply_filters(name, value, ...args) {

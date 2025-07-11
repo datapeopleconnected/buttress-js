@@ -29,6 +29,8 @@ const Visibility = {
 };
 
 class ActivitySchemaModel extends StandardModel {
+	static name = 'Activity';
+
 	constructor(services) {
 		const schema = ActivitySchemaModel.Schema;
 		super(schema, null, services);
@@ -164,7 +166,7 @@ class ActivitySchemaModel extends StandardModel {
 		return Shared.sanitizeSchemaObject(ActivitySchemaModel.Schema, body);
 	}
 
-	add(body, internals) {
+	add(body) {
 		body.req.body = Schema.encode(body.req.body);
 
 		return super.add(body);

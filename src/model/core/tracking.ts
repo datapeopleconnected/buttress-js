@@ -27,6 +27,8 @@ const Type = {
 };
 
 class TrackingSchemaModel extends StandardModel {
+	static name = 'Tracking';
+
 	constructor(services) {
 		const schema = TrackingSchemaModel.Schema;
 		super(schema, null, services);
@@ -184,7 +186,7 @@ class TrackingSchemaModel extends StandardModel {
 		}
 		const validation = body.map(this.__doValidation).filter((v) => v.isValid === false);
 
-		return validation.length >= 1 ? validation[0] : {isValid: true};
+		return validation.length >= 1 ? validation[0] : { isValid: true };
 	}
 }
 

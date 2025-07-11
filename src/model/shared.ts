@@ -22,7 +22,7 @@ import * as Helpers from '../helpers/index.js';
 * APP-SPECIFIC SCHEMA
 *
 **********************************************************************************/
-export const validateSchemaObject = function(schema, body) {
+export const validateSchemaObject = function (schema, body) {
 	// const schema = __getCollectionSchema(collection);
 	if (schema === false) return {
 		isValid: true,
@@ -41,7 +41,7 @@ export const validateSchemaObject = function(schema, body) {
  * @param {Object} body - object containing properties to be applied
  * @return {Object} - returns an object with only validated properties
  */
-export const sanitizeSchemaObject = function(schema, body) {
+export const sanitizeSchemaObject = function (schema, body) {
 	// const schema = __getCollectionSchema(collection);
 	if (schema === false) return {};
 
@@ -62,7 +62,7 @@ export const sanitizeSchemaObject = function(schema, body) {
  * @param {Object} flattenedSchema - schema object keyed on path
  * @return {Object} - returns an object with validation context
  */
-export const doValidateUpdate = function(pathContext, flattenedSchema) {
+export const doValidateUpdate = function (pathContext, flattenedSchema) {
 	return (body) => {
 		Logging.logSilly(`doValidateUpdate: path: ${body.path}, value: ${body.value}`);
 		const res = {
@@ -135,8 +135,8 @@ export const doValidateUpdate = function(pathContext, flattenedSchema) {
 
 		res.isPathValid = true;
 		if (body.value !== null &&
-				pathContext[body.contextPath].values.length > 0 &&
-				pathContext[body.contextPath].values.indexOf(body.value) === -1) {
+			pathContext[body.contextPath].values.length > 0 &&
+			pathContext[body.contextPath].values.indexOf(body.value) === -1) {
 			res.invalidValue = `${body.value} <> ${pathContext[body.contextPath].values}`;
 			return res;
 		}
@@ -157,7 +157,7 @@ export const doValidateUpdate = function(pathContext, flattenedSchema) {
 					return res;
 				}
 			} else if (config.__type === 'array' && config.__itemtype) {
-				if (!Helpers.Schema.validateProp(body, {__type: config.__itemtype})) {
+				if (!Helpers.Schema.validateProp(body, { __type: config.__itemtype })) {
 					// Logging.logWarn(`Invalid ${property}.${idx}: ${prop.value} [${typeof prop.value}] expected [${config.__itemtype}]`);
 					res.invalidValue = `${fullPath}:${body.value}[${typeof body.value}] [${config.__itemtype}]`;
 					return res;
@@ -182,41 +182,41 @@ export const extendPathContext = (pathContext, schema, prefix) => {
 		const config = schema[property];
 		if (config.__allowUpdate === false) continue;
 		switch (config.__type) {
-		default:
-		case 'number':
-			extended[`^${prefix}${property}$`] = {type: 'scalar', values: []};
-			extended[`^${prefix}${property}\.__increment__$`] = {type: 'scalar-increment', values: []}; // eslint-disable-line no-useless-escape
-			break;
-		case 'object':
-		case 'date':
-			extended[`^${prefix}${property}$`] = {type: 'scalar', values: []};
-			break;
-		case 'string':
-		case 'text':
-			if (config.__enum) {
-				extended[`^${prefix}${property}$`] = {type: 'scalar', values: config.__enum};
-			} else {
-				extended[`^${prefix}${property}$`] = {type: 'scalar', values: []};
-			}
-			break;
-		case 'array':
-			extended[`^${prefix}${property}$`] = {type: 'vector-add', values: []};
-			extended[`^${prefix}${property}\.([0-9]{1,11})\.__remove__$`] = {type: 'vector-rm', values: []}; // eslint-disable-line no-useless-escape
-			extended[`^${prefix}${property}\.([0-9]{1,11})$`] = {type: 'scalar', values: []}; // eslint-disable-line no-useless-escape
-			if (config.__schema) {
-				// eslint-disable-next-line no-useless-escape
-				extended = extendPathContext(extended, config.__schema, `${prefix}${property}\.([0-9]{1,11})\.`);
-			} else if (config.__itemtype) {
-				extended[`^${prefix}${property}\.([0-9]{1,11})\.(.+)$`] = {type: 'scalar', values: []}; // eslint-disable-line no-useless-escape
-			}
-			break;
+			default:
+			case 'number':
+				extended[`^${prefix}${property}$`] = { type: 'scalar', values: [] };
+				extended[`^${prefix}${property}\.__increment__$`] = { type: 'scalar-increment', values: [] }; // eslint-disable-line no-useless-escape
+				break;
+			case 'object':
+			case 'date':
+				extended[`^${prefix}${property}$`] = { type: 'scalar', values: [] };
+				break;
+			case 'string':
+			case 'text':
+				if (config.__enum) {
+					extended[`^${prefix}${property}$`] = { type: 'scalar', values: config.__enum };
+				} else {
+					extended[`^${prefix}${property}$`] = { type: 'scalar', values: [] };
+				}
+				break;
+			case 'array':
+				extended[`^${prefix}${property}$`] = { type: 'vector-add', values: [] };
+				extended[`^${prefix}${property}\.([0-9]{1,11})\.__remove__$`] = { type: 'vector-rm', values: [] }; // eslint-disable-line no-useless-escape
+				extended[`^${prefix}${property}\.([0-9]{1,11})$`] = { type: 'scalar', values: [] }; // eslint-disable-line no-useless-escape
+				if (config.__schema) {
+					// eslint-disable-next-line no-useless-escape
+					extended = extendPathContext(extended, config.__schema, `${prefix}${property}\.([0-9]{1,11})\.`);
+				} else if (config.__itemtype) {
+					extended[`^${prefix}${property}\.([0-9]{1,11})\.(.+)$`] = { type: 'scalar', values: [] }; // eslint-disable-line no-useless-escape
+				}
+				break;
 		}
 	}
 	return Object.assign(extended, pathContext);
 };
 
-export const validateUpdate = function(pathContext, schema) {
-	return function(body) {
+export const validateUpdate = function (pathContext, schema) {
+	return function (body) {
 		Logging.logDebug(body instanceof Array);
 		// const schema = __getCollectionSchema(collection);
 		const flattenedSchema = schema ? Helpers.getFlattenedSchema(schema) : false;
@@ -233,7 +233,7 @@ export const validateUpdate = function(pathContext, schema) {
 		const validation = body.map(doValidateUpdate(extendedPathContext, flattenedSchema)).filter((v) => v.isValid === false);
 
 		return {
-			validation: validation.length >= 1 ? validation[0] : {isValid: true},
+			validation: validation.length >= 1 ? validation[0] : { isValid: true },
 			body: body,
 		};
 	};

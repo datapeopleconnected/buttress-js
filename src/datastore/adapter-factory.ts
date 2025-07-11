@@ -36,15 +36,15 @@ export default class Datastore {
 
 		const Adapter = (() => {
 			switch (uri.protocol) {
-			case 'mongodb:':
-				return MongoDB;
-			case 'butt:':
-			case 'butts:':
-				return Buttress;
-			case 'empty:':
-				return Empty;
-			default:
-				return null;
+				case 'mongodb:':
+					return MongoDB;
+				case 'butt:':
+				case 'butts:':
+					return Buttress;
+				case 'empty:':
+					return Empty;
+				default:
+					return null;
 			}
 		})();
 

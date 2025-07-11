@@ -19,6 +19,9 @@ import { ObjectId } from 'bson';
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
+import SecureStoreSchemaModel from '../../model/core/secure-store.js';
+import AppSchemaModel from '../../model/core/app.js';
+import ActivitySchemaModel from '../../model/core/activity.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -41,9 +44,9 @@ class AddSecureStore extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const secureStoreExist = await Model.getModel('SecureStore').findOne({
+		const secureStoreExist = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
 			name: req.body.name,
-			_appId: Model.getModel('App').createId(req.authApp.id),
+			_appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
 		});
 		if (secureStoreExist) {
 			this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);
@@ -54,7 +57,7 @@ class AddSecureStore extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.getModel('SecureStore').add(req, req.body);
+		return Model.getCoreModel(SecureStoreSchemaModel).add(req, req.body);
 	}
 }
 routes.push(AddSecureStore);
@@ -90,7 +93,7 @@ class AddManySecureStore extends Route {
 		}
 
 		for await (const secureStore of req.body) {
-			const secureStoreExist = await Model.getModel('SecureStore').findOne({name: secureStore.name});
+			const secureStoreExist = await Model.getCoreModel(SecureStoreSchemaModel).findOne({ name: secureStore.name });
 			if (secureStoreExist) {
 				this.log(`ERROR: Secure Store with this name ${secureStore.name} already exists`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
@@ -102,7 +105,7 @@ class AddManySecureStore extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const secureStore of req.body) {
-			await Model.getModel('SecureStore').add(req, secureStore);
+			await Model.getCoreModel(SecureStoreSchemaModel).add(req, secureStore);
 		}
 
 		return true;
@@ -132,7 +135,7 @@ class GetSecureStore extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
 		}
 
-		const secureStore = await Model.getModel('SecureStore').findById(id);
+		const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findById(id);
 		if (!secureStore) {
 			this.log(`[${this.name}] Cannot find a secure store with id ${id}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `secure_store_does_not_exist`));
@@ -165,7 +168,7 @@ class FindSecureStore extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const secureStore = await Model.getModel('SecureStore').findOne({
+		const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
 			name: {
 				$eq: name,
 			},
@@ -192,12 +195,12 @@ class UpdateSecureStore extends Route {
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	async _validate(req, res, token) {
-		const {validation, body} = Model.getModel('SecureStore').validateUpdate(req.body);
+		const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(req.body);
 		req.body = body;
 		if (!validation.isValid) {
 			if (validation.isPathValid === false) {
@@ -210,7 +213,7 @@ class UpdateSecureStore extends Route {
 			}
 		}
 
-		const exists = await Model.getModel('SecureStore').exists(req.params.id);
+		const exists = await Model.getCoreModel(SecureStoreSchemaModel).exists(req.params.id);
 		if (!exists) {
 			this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -219,7 +222,7 @@ class UpdateSecureStore extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.getModel('SecureStore').updateByPath(req.body, req.params.id, null, 'SecureStore');
+		return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, req.params.id, null, 'SecureStore');
 	}
 }
 routes.push(UpdateSecureStore);
@@ -237,7 +240,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const {validation, body} = Model.getModel('SecureStore').validateUpdate(item.body);
+			const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(item.body);
 			item.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -250,7 +253,7 @@ class BulkUpdateSecureStore extends Route {
 				}
 			}
 
-			const exists = await Model.getModel('SecureStore').exists(item.id);
+			const exists = await Model.getCoreModel(SecureStoreSchemaModel).exists(item.id);
 			if (!exists) {
 				this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -262,7 +265,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.getModel('SecureStore').updateByPath(item.body, item.id, null, 'SecureStore');
+			await Model.getCoreModel(SecureStoreSchemaModel).updateByPath(item.body, item.id, null, 'SecureStore');
 		}
 		return true;
 	}
@@ -294,7 +297,7 @@ class SearchSecureStoreList extends Route {
 			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
 			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
 			sort: (req.body && req.body.sort) ? req.body.sort : {},
-			project: (req.body && req.body.project)? req.body.project : false,
+			project: (req.body && req.body.project) ? req.body.project : false,
 		};
 
 		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
@@ -305,12 +308,12 @@ class SearchSecureStoreList extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.getModel('SecureStore').parseQuery(result.query, {}, Model.getModel('SecureStore').flatSchemaData);
+		result.query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(result.query, {}, Model.getCoreModel(SecureStoreSchemaModel).flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return Model.getModel('SecureStore').find(validate.query, {},
+		return Model.getCoreModel(SecureStoreSchemaModel).find(validate.query, {},
 			validate.limit, validate.skip, validate.sort, validate.project);
 	}
 }
@@ -333,7 +336,7 @@ class DeleteSecureStore extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
 		}
 
-		const secureStore = await Model.getModel('SecureStore').findById(req.params.id);
+		const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findById(req.params.id);
 		if (!secureStore) {
 			this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
@@ -343,7 +346,7 @@ class DeleteSecureStore extends Route {
 	}
 
 	async _exec(req, res, secureStore) {
-		await Model.getModel('SecureStore').rm(secureStore.id);
+		await Model.getCoreModel(SecureStoreSchemaModel).rm(secureStore.id);
 		return true;
 	}
 }
@@ -361,7 +364,7 @@ class SecureStoreCount extends Route {
 
 		this.activityBroadcast = false;
 
-		this.model = Model.getModel('SecureStore');
+		this.model = Model.getCoreModel(SecureStoreSchemaModel);
 	}
 
 	async _validate(req, res, token) {
@@ -388,7 +391,7 @@ class SecureStoreCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return Model.getModel('SecureStore').count(validateResult.query);
+		return Model.getCoreModel(SecureStoreSchemaModel).count(validateResult.query);
 	}
 }
 routes.push(SecureStoreCount);

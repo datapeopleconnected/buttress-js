@@ -36,7 +36,7 @@ export interface Token {
 	type: string;
 	value: string;
 	domains: string[];
-	permissions: {route: string; permission: string}[];
+	permissions: { route: string; permission: string }[];
 	tags: string[];
 	policyProperties: any;
 	_appId: string;
@@ -47,6 +47,7 @@ export interface Token {
 }
 
 class TokenSchemaModel extends StandardModel {
+	static name = 'Token';
 
 	__policyCache: PolicyCache;
 
@@ -211,7 +212,7 @@ class TokenSchemaModel extends StandardModel {
 
 		await super.update({
 			'id': this.createId(tokenId),
-		}, {$set: {'policyProperties': policyProperties}});
+		}, { $set: { 'policyProperties': policyProperties } });
 
 		this.__policyCache.setTokenIdAsStale(tokenId);
 		this.__nrp?.emit('app-routes:bust-cache', '{}');

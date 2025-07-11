@@ -119,8 +119,8 @@ export default class Schema {
 		schemas = await Plugins.apply_filters('before_schema_build', schemas);
 		schemas = schemas.map((schema) => {
 			schema.properties = schema.properties || {};
-			schema.properties.id = {__type: 'id', __default: 'new', __allowUpdate: false, __core: true};
-			schema.properties.sourceId = {__type: 'id', __allowUpdate: false, __core: true};
+			schema.properties.id = { __type: 'id', __default: 'new', __allowUpdate: false, __core: true };
+			schema.properties.sourceId = { __type: 'id', __allowUpdate: false, __core: true };
 			return Schema.extend(schemas, schema);
 		});
 		for await (const schema of schemas) {

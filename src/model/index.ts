@@ -34,32 +34,34 @@ import SecureStore from './core/secure-store.js';
 import Token from './core/token.js';
 import Tracking from './core/tracking.js';
 import User from './core/user.js';
+import AppSchemaModel from './core/app.js';
+
+type StandardModelExtended<T extends StandardModel> = new (...args: any[]) => T;
 
 const CoreModels = {
-  Activity,
-  App,
-  AppDataSharing,
-  Deployment,
-  Lambda,
-  LambdaExecution,
-  Policy,
-  SecureStore,
-  Token,
-  Tracking,
-  User,
+	Activity,
+	App,
+	AppDataSharing,
+	Deployment,
+	Lambda,
+	LambdaExecution,
+	Policy,
+	SecureStore,
+	Token,
+	Tracking,
+	User,
 };
 
 /**
  * @class Model
  */
 class Model {
-	models: {[key: string]: any};
-	Schema: {[key: string]: any};
+	models: { [key: string]: StandardModel };
+	Schema: { [key: string]: any };
 
-	Constants: {[key: string]: any};
+	Constants: { [key: string]: any };
 
 	app: any;
-	appMetadataChanged: boolean;
 
 	coreSchema: any[];
 
@@ -70,7 +72,6 @@ class Model {
 		this.Schema = {};
 		this.Constants = {};
 		this.app = false;
-		this.appMetadataChanged = false;
 
 		this.coreSchema = [];
 
@@ -88,7 +89,6 @@ class Model {
 		this.Schema = {};
 		this.Constants = {};
 		this.app = false;
-		this.appMetadataChanged = false;
 
 		this.coreSchema = [];
 	}
@@ -108,7 +108,7 @@ class Model {
 
 	async initSchema(appId = null) {
 		Logging.logSilly('Model:initSchema');
-		const rxsApps = await this.models.App.findAll();
+		const rxsApps = await this.getCoreModel(AppSchemaModel).findAll();
 
 		for await (const app of rxsApps) {
 			if (!app || !app.__schema) continue;
@@ -156,11 +156,17 @@ class Model {
 	 * @param {string} name
 	 * @return {Standard}
 	 */
-	getModel(name: string) {
-		return this.models[name];
+	getModel<T extends StandardModel>(name: string): T {
+		return this.models[name] as unknown as T;
 	}
-	getCoreModel(name: string) {
-		return CoreModels[name];
+	getCoreModel<T extends StandardModel>(modelClass: StandardModelExtended<T>): T {
+		const name = modelClass.name;
+
+		if (!this.models[name]) {
+			throw new Error(`Core model '${name}' has not been initialized.`);
+		}
+
+		return this.models[name] as unknown as T;
 	}
 
 	get CoreModels() {
@@ -177,7 +183,7 @@ class Model {
 	 * @deprecated
 	 */
 	__addModelGetter(name) {
-		Object.defineProperty(this, name, {get: () => this.models[name], configurable: true});
+		Object.defineProperty(this, name, { get: () => this.models[name], configurable: true });
 	}
 
 	/**
@@ -247,7 +253,7 @@ class Model {
 				}
 
 				const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
-				const remoteDatastore = Datastore.createInstance({connectionString});
+				const remoteDatastore = Datastore.createInstance({ connectionString });
 
 				// ? Datastore shouldn't really care about the data sharing ID.
 				remoteDatastore.dataSharingId = dataSharing.id;
@@ -258,7 +264,7 @@ class Model {
 			this.models[modelName] = new RemoteCombinedModel(schemaData, app, this._services);
 
 			try {
-				await this.models[modelName].initAdapter(mainDatastore, datastores);
+				await (this.models[modelName] as RemoteCombinedModel).initAdapter(mainDatastore, datastores);
 			} catch (err) {
 				// Skip defining this model, the error will get picked up later when route is defined ore accessed
 				if (err instanceof Errors.SchemaNotFound) return;

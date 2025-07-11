@@ -14,11 +14,13 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import {ObjectId} from 'bson';
+import { ObjectId } from 'bson';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
+import LambdaExecutionSchemaModel from '../../model/core/lambda-execution.js';
+import ActivitySchemaModel from '../../model/core/activity.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -27,7 +29,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetLambdaExecution extends Route {
 	constructor(services) {
-		super('lambda-execution/:id', 'GET LAMBDA EXECUTION', services, Model.getModel('LambdaExecution'));
+		super('lambda-execution/:id', 'GET LAMBDA EXECUTION', services, Model.getCoreModel(LambdaExecutionSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -64,7 +66,7 @@ routes.push(GetLambdaExecution);
  */
 class GetLambdaExecutionStatus extends Route {
 	constructor(services) {
-		super('lambda-execution/:id/status', 'GET LAMBDA EXECUTION STATUS', services, Model.getModel('LambdaExecution'));
+		super('lambda-execution/:id/status', 'GET LAMBDA EXECUTION STATUS', services, Model.getCoreModel(LambdaExecutionSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.USER;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -103,18 +105,18 @@ routes.push(GetLambdaExecutionStatus);
  */
 class UpdateLambdaExecution extends Route {
 	constructor(services) {
-		super('lambda-execution/:id', 'UPDATE LAMBDA EXECUTION', services, Model.getModel('LambdaExecution'));
+		super('lambda-execution/:id', 'UPDATE LAMBDA EXECUTION', services, Model.getCoreModel(LambdaExecutionSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const {validation, body} = this.model.validateUpdate(req.body);
+			const { validation, body } = this.model.validateUpdate(req.body);
 			req.body = body;
 
 			if (!validation.isValid) {
@@ -150,7 +152,7 @@ routes.push(UpdateLambdaExecution);
  */
 class SearchExecutionList extends Route {
 	constructor(services) {
-		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', services, Model.getModel('LambdaExecution'));
+		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', services, Model.getCoreModel(LambdaExecutionSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -185,7 +187,7 @@ routes.push(SearchExecutionList);
  */
 class LambdaExecutionCount extends Route {
 	constructor(services) {
-		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`, services, Model.getModel('LambdaExecution'));
+		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`, services, Model.getCoreModel(LambdaExecutionSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.SEARCH;

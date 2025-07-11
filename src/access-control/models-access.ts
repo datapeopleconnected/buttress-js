@@ -23,9 +23,9 @@ import { parsedPolicyConfig } from './index.js';
 
 import { BjsQuery, QueryParams } from '../types/bjs-query.js';
 
-export async function find(model, query: QueryParams<object>, ac: {policyConfigs: parsedPolicyConfig[]}) {
+export async function find(model, query: QueryParams<object>, ac: { policyConfigs: parsedPolicyConfig[] }) {
   if (ac.policyConfigs.length > 1) {
-    const resStream = new Stream.PassThrough({objectMode: true});
+    const resStream = new Stream.PassThrough({ objectMode: true });
 
     let openStreams = 0;
     // Using forEach here because we don't want to wait for each function to finish before calling the next.
@@ -51,7 +51,7 @@ export async function find(model, query: QueryParams<object>, ac: {policyConfigs
   return model.find(model.parseQuery(conbined.query), {}, conbined.limit, conbined.skip, conbined.sort, conbined.project);
 }
 
-export async function count(model, query: QueryParams<object>, ac: {policyConfigs: parsedPolicyConfig[]}, actualCount: boolean = false) {
+export async function count(model, query: QueryParams<object>, ac: { policyConfigs: parsedPolicyConfig[] }, actualCount: boolean = false) {
   if (ac.policyConfigs.length > 1) {
     if (actualCount) {
       let count = 0;
@@ -63,7 +63,7 @@ export async function count(model, query: QueryParams<object>, ac: {policyConfig
 
       return count;
     } else {
-      const queries: {$or: BjsQuery<object>[]} = {$or: []};
+      const queries: { $or: BjsQuery<object>[] } = { $or: [] };
       for (const policyConfig of ac.policyConfigs) {
         const conbined = await combineQueriesWithAc(query, policyConfig);
         queries.$or.push(conbined.query);
@@ -96,7 +96,7 @@ export async function combineQueriesWithAc(raw: QueryParams<object>, policyConfi
   if (policyConfig.projection !== null) {
     // TODO: We may need to do more in making sure the user isn't projection to something they don't have.
     if (query.project === null) query.project = {};
-    query.project = {...query.project, ...policyConfig.projection};
+    query.project = { ...query.project, ...policyConfig.projection };
   }
 
   return query;

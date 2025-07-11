@@ -52,6 +52,8 @@ const App = {
 };
 
 export default class UserSchemaModel extends StandardModel {
+	static name = 'User';
+
 	constructor(services) {
 		const schema = UserSchemaModel.Schema;
 		super(schema, null, services);
@@ -235,7 +237,7 @@ export default class UserSchemaModel extends StandardModel {
 				tokenSecret: string,
 				refreshToken: string,
 			}>
-		}= {
+		} = {
 			id: (body.id) ? this.createId(body.id) : this.createId(),
 			auth: [],
 		};
@@ -268,7 +270,7 @@ export default class UserSchemaModel extends StandardModel {
 		if (tokenBody && tokenBody.domains && tokenBody.policyProperties) {
 			const userToken = {
 				type: this.__modelManager.Token.Constants.Type.USER,
-				permissions: [{route: '*', permission: '*'}],
+				permissions: [{ route: '*', permission: '*' }],
 				domains: tokenBody.domains,
 				policyProperties: tokenBody.policyProperties,
 			};
@@ -353,7 +355,7 @@ export default class UserSchemaModel extends StandardModel {
 	 * @return {Promise} - resolves to a User object or null
 	 */
 	getByUsername(username) {
-		return super.findOne({username: username}, {id: 1});
+		return super.findOne({ username: username }, { id: 1 });
 	}
 
 	/**
@@ -366,7 +368,7 @@ export default class UserSchemaModel extends StandardModel {
 		return super.findOne({
 			'auth.app': authAppName,
 			'auth.appId': authAppUserId,
-			...(appId) ? {_appId: this.createId(appId)} : {},
+			...(appId) ? { _appId: this.createId(appId) } : {},
 		});
 	}
 

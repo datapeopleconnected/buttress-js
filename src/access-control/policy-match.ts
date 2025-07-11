@@ -23,7 +23,7 @@ import { Token } from '../model/core/token.js';
  * @class PolicyMatch
  */
 class PolicyMatch {
-	constructor() {}
+	constructor() { }
 
 	getTokenPolicies(policies: Policy[], token?: Token) {
 		return policies.reduce((arr: Policy[], p) => {

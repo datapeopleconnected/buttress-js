@@ -24,6 +24,8 @@ import StandardModel from '../type/standard.js';
  * @class AppDataSharingSchemaModel
  */
 export default class AppDataSharingSchemaModel extends StandardModel {
+	static name = 'AppDataSharing';
+
 	constructor(services) {
 		const schema = AppDataSharingSchemaModel.Schema;
 		super(schema, null, services);
@@ -139,7 +141,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 		});
 		const dataSharing = await Helpers.streamFirst(rxsDataShare);
 
-		return {dataSharing, token};
+		return { dataSharing, token };
 	}
 
 	async __createDataSharingPolicy(body, tokenId) {
@@ -167,7 +169,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 	updatePolicy(appId, appDataSharingId, type, policy) {
 		policy = Schema.encode(policy);
 
-		const update = {$set: {}};
+		const update = { $set: {} };
 
 		if (type === 'remote') {
 			update.$set['dataSharing.remoteApp'] = policy;
@@ -184,7 +186,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 	 * @return {Promise} - resolves when save operation is completed
 	 */
 	updateActivationToken(appDataSharingId, token) {
-		const update = {$set: {}};
+		const update = { $set: {} };
 
 		update.$set['remoteApp.token'] = token;
 		update.$set['remoteApp.active'] = false;
@@ -208,7 +210,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 			update.$set['remoteApp.token'] = newToken;
 		}
 
-		this.__nrp?.emit('dataShare:activated', JSON.stringify({appDataSharingId: appDataSharingId}));
+		this.__nrp?.emit('dataShare:activated', JSON.stringify({ appDataSharingId: appDataSharingId }));
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}
@@ -225,7 +227,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 		};
 
 		// TODO implement socket deactivation
-		this.__nrp?.emit('dataShare:deactivated', JSON.stringify({appDataSharingId: appDataSharingId}));
+		this.__nrp?.emit('dataShare:deactivated', JSON.stringify({ appDataSharingId: appDataSharingId }));
 
 		return this.updateById(this.createId(appDataSharingId), update);
 	}

@@ -56,7 +56,7 @@ export default class SearchList extends Route {
 			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
 			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
 			sort: (req.body && req.body.sort) ? req.body.sort : {},
-			project: (req.body && req.body.project)? req.body.project : false,
+			project: (req.body && req.body.project) ? req.body.project : false,
 		};
 
 		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);

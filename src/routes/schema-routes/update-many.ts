@@ -71,7 +71,7 @@ export default class UpdateMany extends Route {
 
 		return data.reduce((prev, update) => {
 			return prev.then(() => {
-				const {validation, body} = this.model.validateUpdate(update.body);
+				const { validation, body } = this.model.validateUpdate(update.body);
 				update.body = body;
 				if (!validation.isValid) {
 					if (validation.isPathValid === false) {
@@ -124,7 +124,7 @@ export default class UpdateMany extends Route {
 		return data.reduce(
 			(prev, body) => prev
 				.then(() => this.model.updateByPath(body.body, body.id, body.sourceId))
-				.then((result) => output.push({id: body.id, sourceId: body.sourceId, results: result})),
+				.then((result) => output.push({ id: body.id, sourceId: body.sourceId, results: result })),
 			Promise.resolve(),
 		)
 			.then(() => output);

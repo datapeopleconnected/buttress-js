@@ -17,6 +17,8 @@ import StandardModel from '../type/standard.js';
 import * as Helpers from '../../helpers/index.js';
 
 class DeploymentSchemaModel extends StandardModel {
+	static name = 'Deployment';
+
 	constructor(services) {
 		const schema = DeploymentSchemaModel.Schema;
 		super(schema, null, services);

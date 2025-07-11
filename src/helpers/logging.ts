@@ -94,7 +94,7 @@ class Logging {
 			format: winston.format.combine(
 				winston.format.colorize(),
 				winston.format.timestamp(),
-				winston.format.errors({stack: true}),
+				winston.format.errors({ stack: true }),
 				winston.format.printf((info) => {
 					if (info.stack) {
 						return `${info.timestamp} [${this._prefixes.string}] ${info.level}: ${info.message}\n${info.stack}`;

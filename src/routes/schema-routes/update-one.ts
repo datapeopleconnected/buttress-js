@@ -52,7 +52,7 @@ export default class UpdateOne extends Route {
 	}
 
 	async _validate(req, res, token) {
-		const {validation, body} = this.model.validateUpdate(req.body);
+		const { validation, body } = this.model.validateUpdate(req.body);
 		req.body = body;
 		if (!validation.isValid) {
 			if (validation.isPathValid === false) {

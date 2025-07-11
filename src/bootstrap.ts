@@ -18,7 +18,7 @@ import sourceMapSupport from 'source-map-support'
 sourceMapSupport.install();
 
 import os from 'node:os';
-import cluster, {Worker} from 'node:cluster';
+import cluster, { Worker } from 'node:cluster';
 import EventEmitter from 'node:events';
 import NRP from 'node-redis-pubsub';
 
@@ -49,7 +49,7 @@ export default class Bootstrap extends EventEmitter {
 	protected __shutdown: boolean = false;
 
 	private _resolveWorkersInitialised?: (value?: unknown) => void;
-	
+
 	protected __services: Map<string, unknown> = new Map();
 
 	constructor() {
@@ -98,7 +98,7 @@ export default class Bootstrap extends EventEmitter {
 		} else {
 			Logging.log(`Init Worker Process [${cluster.worker?.id}]`);
 			await this.__initWorker();
-			if(process.send) process.send({
+			if (process.send) process.send({
 				type: 'worker:initiated',
 				payload: null,
 			} as LocalProcessMessage);

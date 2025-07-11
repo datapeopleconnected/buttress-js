@@ -17,14 +17,18 @@ import Route from '../route.js';
 import Model from '../../model/index.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
-import Datastore from'../../datastore/index.js';
+import Datastore from '../../datastore/index.js';
+import TokenSchemaModel from '../../model/core/token.js';
+import UserSchemaModel from '../../model/core/user.js';
+import ActivitySchemaModel from '../../model/core/activity.js';
+import AppSchemaModel from '../../model/core/app.js';
 
 const routes: (typeof Route)[] = [];
 
 function getTokenQueryfromParams(req, userId) {
 	let tokenId = null;
 	try {
-		tokenId = Model.getModel('Token').createId(req.params.tokenId);
+		tokenId = Model.getCoreModel(TokenSchemaModel).createId(req.params.tokenId);
 	} catch (err) {
 		Logging.logSilly(err);
 	}
@@ -52,7 +56,7 @@ function getTokenQueryfromParams(req, userId) {
  */
 class GetUserList extends Route {
 	constructor(services) {
-		super('user', 'GET USER LIST', services, Model.getModel('User'));
+		super('user', 'GET USER LIST', services, Model.getCoreModel(UserSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -63,11 +67,11 @@ class GetUserList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
-			return Model.getModel('User').findAll();
+		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+			return Model.getCoreModel(UserSchemaModel).findAll();
 		}
 
-		return Model.getModel('User').find({ _appId: Model.getModel('User').createId(req.authApp.id) });
+		return Model.getCoreModel(UserSchemaModel).find({ _appId: Model.getCoreModel(UserSchemaModel).createId(req.authApp.id) });
 	}
 }
 routes.push(GetUserList);
@@ -77,7 +81,7 @@ routes.push(GetUserList);
  */
 class GetUser extends Route {
 	constructor(services) {
-		super('user/:id', 'GET USER', services, Model.getModel('User'));
+		super('user/:id', 'GET USER', services, Model.getCoreModel(UserSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -102,20 +106,20 @@ class GetUser extends Route {
 		let userId: string;
 
 		try {
-			userId = Model.getModel('User').createId(req.params.id);
+			userId = Model.getCoreModel(UserSchemaModel).createId(req.params.id);
 		} catch (err) {
 			throw new Helpers.Errors.RequestError(400, `inavlid_id`);
 		}
 
 
-		const isSystemToken = req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM;
-		user = await Model.getModel('User').findOne({
+		const isSystemToken = req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
+		user = await Model.getCoreModel(UserSchemaModel).findOne({
 			'$or': [{
 				'id': {
 					$eq: userId,
 				},
 			}],
-			...(req.authApp.id && !isSystemToken) ? { _appId: Model.getModel('App').createId(req.authApp.id) } : {},
+			...(req.authApp.id && !isSystemToken) ? { _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) } : {},
 		});
 
 		if (!user) {
@@ -124,7 +128,7 @@ class GetUser extends Route {
 		}
 
 		if (userTokens.length < 1 && user) {
-			userTokens = await Helpers.streamAll(await Model.getModel('Token').findUserAuthTokens(user.id, req.authApp.id));
+			userTokens = await Helpers.streamAll(await Model.getCoreModel(TokenSchemaModel).findUserAuthTokens(user.id, req.authApp.id));
 		}
 		if (userTokens.length < 1) {
 			this.log(`[${this.name}] User does not have a token yet ${userId}`, Route.LogLevel.ERR);
@@ -156,14 +160,14 @@ routes.push(GetUser);
  */
 class FindUser extends Route {
 	constructor(services) {
-		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER', services, Model.getModel('User'));
+		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER', services, Model.getCoreModel(UserSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
 	async _validate(req, res, token) {
-		const _user = await Model.getModel('User').getByAuthAppId(req.params.app, req.params.id, req.authApp.id);
+		const _user = await Model.getCoreModel(UserSchemaModel).getByAuthAppId(req.params.app, req.params.id, req.authApp.id);
 		if (!_user) {
 			this.log(`[${this.name}] Could not fetch user`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
@@ -179,7 +183,7 @@ class FindUser extends Route {
 			tokens: [],
 		};
 
-		const userTokens = await Helpers.streamAll(await Model.getModel('Token').findUserAuthTokens(_user.id, req.authApp.id));
+		const userTokens = await Helpers.streamAll(await Model.getCoreModel(TokenSchemaModel).findUserAuthTokens(_user.id, req.authApp.id));
 		output.tokens = (userTokens.length > 0) ? userTokens.map((t) => {
 			return {
 				value: t.value,
@@ -201,20 +205,20 @@ routes.push(FindUser);
  */
 class GetUserByToken extends Route {
 	constructor(services) {
-		super('user/get-by-token', 'GET USER BY TOKEN', services, Model.getModel('User'));
+		super('user/get-by-token', 'GET USER BY TOKEN', services, Model.getCoreModel(UserSchemaModel));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
 	}
 
 	async _validate(req) {
-		const {token} = req.body;
+		const { token } = req.body;
 		if (!token) {
 			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
 			throw new Helpers.Errors.RequestError(400, `missing_field`);
 		}
 
-		const userToken = await Model.getModel('Token').findOne({
+		const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({
 			value: {
 				$eq: token,
 			},
@@ -224,7 +228,7 @@ class GetUserByToken extends Route {
 			throw new Helpers.Errors.RequestError(400, `invalid_token`);
 		}
 
-		const user = await Model.getModel('User').findById(userToken._userId);
+		const user = await Model.getCoreModel(UserSchemaModel).findById(userToken._userId);
 		if (!user) {
 			this.log('ERROR: Can not find a user with the provided token', Route.LogLevel.ERR);
 			throw new Helpers.Errors.RequestError(404, `user_not_found`);
@@ -265,14 +269,14 @@ class CreateUserAuthToken extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		req.body.type = Model.getModel('Token').Constants.Type.USER;
+		req.body.type = Model.getCoreModel(TokenSchemaModel).Constants.Type.USER;
 
 		if (!req.params.id) {
 			this.log(`[${this.name}] Missing required field (id)`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const user = await Model.getModel('User').findById(req.params.id);
+		const user = await Model.getCoreModel(UserSchemaModel).findById(req.params.id);
 		if (!user) {
 			this.log(`[${this.name}] User not found`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
@@ -288,7 +292,7 @@ class CreateUserAuthToken extends Route {
 	}
 
 	async _exec(req, res, user) {
-		const rxsToken = await Model.getModel('Token').add(req.body, {
+		const rxsToken = await Model.getCoreModel(TokenSchemaModel).add(req.body, {
 			_appId: Datastore.getInstance('core').ID.new(req.authApp.id),
 			_userId: Datastore.getInstance('core').ID.new(user.id),
 		});
@@ -296,7 +300,7 @@ class CreateUserAuthToken extends Route {
 
 		// We'll make sure to add the user to the app
 		// if+ (user._appId !== req.authApp.id.toString()) {
-		// 	await Model.getModel('User').updateApps(user, req.authApp.id);
+		// 	await Model.getCoreModel(UserSchemaModel).updateApps(user, req.authApp.id);
 		// }
 
 		this._nrp?.emit('app-routes:bust-cache', '{}');
@@ -343,7 +347,7 @@ routes.push(CreateUserAuthToken);
 // 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 // 			}
 
-// 			req.body.auth.type = Model.getModel('Token').Constants.Type.USER;
+// 			req.body.auth.type = Model.getCoreModel(TokenSchemaModel).Constants.Type.USER;
 // 			req.body.auth.app = req.authApp.id;
 // 		} else {
 // 			this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
@@ -360,7 +364,7 @@ routes.push(CreateUserAuthToken);
 // 	}
 
 // 	async _exec(req, res, validate) {
-// 		const user = await Model.getModel('User').add(req.body.user, req.body.auth);
+// 		const user = await Model.getCoreModel(UserSchemaModel).add(req.body.user, req.body.auth);
 // 		// TODO: Strip back return data, should match find user
 // 		let policyProperties = null;
 // 		if (user._appMetadata) {
@@ -383,7 +387,7 @@ routes.push(CreateUserAuthToken);
  */
 class AddUser extends Route {
 	constructor(services) {
-		super('user', 'ADD USER', services, Model.getModel('User'));
+		super('user', 'ADD USER', services, Model.getCoreModel(UserSchemaModel));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -404,13 +408,13 @@ class AddUser extends Route {
 
 		const existingUsers: any[] = [];
 		for await (const auth of req.body.auth) {
-			const user = await Model.getModel('User').findOne({
+			const user = await Model.getCoreModel(UserSchemaModel).findOne({
 				'auth.app': auth.app,
 				$or: [
-					{'auth.appId': auth.appId},
-					{'auth.email': auth.email},
+					{ 'auth.appId': auth.appId },
+					{ 'auth.email': auth.email },
 				],
-				'_appId': Model.getModel('App').createId(req.authApp.id),
+				'_appId': Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
 			});
 			if (user) {
 				existingUsers.push(user);
@@ -435,8 +439,8 @@ class AddUser extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		const user = await Model.getModel('User').add(req.body, {
-			_appId: Model.getModel('App').createId(req.authApp.id),
+		const user = await Model.getCoreModel(UserSchemaModel).add(req.body, {
+			_appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
 		});
 
 		return {
@@ -453,18 +457,18 @@ routes.push(AddUser);
  */
 class UpdateUser extends Route {
 	constructor(services) {
-		super('user/:id', 'UPDATE USER', services, Model.getModel('User'));
+		super('user/:id', 'UPDATE USER', services, Model.getCoreModel(UserSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const {validation, body} = Model.getModel('User').validateUpdate(req.body);
+			const { validation, body } = Model.getCoreModel(UserSchemaModel).validateUpdate(req.body);
 			req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -477,7 +481,7 @@ class UpdateUser extends Route {
 				}
 			}
 
-			Model.getModel('User').exists(req.params.id)
+			Model.getCoreModel(UserSchemaModel).exists(req.params.id)
 				.then((exists) => {
 					if (!exists) {
 						this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
@@ -489,7 +493,7 @@ class UpdateUser extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.getModel('User').updateByPath(req.body, req.params.id);
+		return Model.getCoreModel(UserSchemaModel).updateByPath(req.body, req.params.id);
 	}
 }
 routes.push(UpdateUser);
@@ -504,7 +508,7 @@ class SetUserPolicyProperties extends Route {
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = false;
 	}
 
@@ -520,8 +524,8 @@ class SetUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const userId = Model.getModel('User').createId(req.params.id);
-		const exists = await Model.getModel('User').exists(userId);
+		const userId = Model.getCoreModel(UserSchemaModel).createId(req.params.id);
+		const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -533,7 +537,7 @@ class SetUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
 		}
 
-		const userToken = await Model.getModel('Token').findOne(tokenQuery);
+		const userToken = await Model.getCoreModel(TokenSchemaModel).findOne(tokenQuery);
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -548,7 +552,7 @@ class SetUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').setPolicyPropertiesById(validate.id.toString(), req.body);
+		await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(validate.id.toString(), req.body);
 
 		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 			userId: req.params.id,
@@ -588,7 +592,7 @@ class UpdateUserPolicyProperties extends Route {
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = false;
 	}
 
@@ -604,8 +608,8 @@ class UpdateUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const userId = Model.getModel('User').createId(req.params.id);
-		const exists = Model.getModel('User').exists(userId);
+		const userId = Model.getCoreModel(UserSchemaModel).createId(req.params.id);
+		const exists = Model.getCoreModel(UserSchemaModel).exists(userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -617,7 +621,7 @@ class UpdateUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
 		}
 
-		const userToken = await Model.getModel('Token').findOne(tokenQuery);
+		const userToken = await Model.getCoreModel(TokenSchemaModel).findOne(tokenQuery);
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_token_not_found`));
@@ -632,7 +636,7 @@ class UpdateUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').updatePolicyProperties(validate, req.body);
+		await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate, req.body);
 
 		// this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 		// 	userId: req.params.id,
@@ -672,7 +676,7 @@ class RemoveUserPolicyProperties extends Route {
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = false;
 	}
 
@@ -682,8 +686,8 @@ class RemoveUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const userId = Model.getModel('User').createId(req.params.id);
-		const exists = Model.getModel('User').exists(userId);
+		const userId = Model.getCoreModel(UserSchemaModel).createId(req.params.id);
+		const exists = Model.getCoreModel(UserSchemaModel).exists(userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -695,7 +699,7 @@ class RemoveUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
 		}
 
-		const userToken = await Model.getModel('Token').findOne(tokenQuery);
+		const userToken = await Model.getCoreModel(TokenSchemaModel).findOne(tokenQuery);
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -712,7 +716,7 @@ class RemoveUserPolicyProperties extends Route {
 				delete policyProps[key];
 			}
 		});
-		await Model.getModel('Token').updatePolicyProperties(validate, policyProps);
+		await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate, policyProps);
 
 		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 			userId: req.params.id,
@@ -734,7 +738,7 @@ class ClearUserPolicyProperties extends Route {
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = false;
 	}
 
@@ -744,8 +748,8 @@ class ClearUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const userId = Model.getModel('User').createId(req.params.id);
-		const exists = Model.getModel('User').exists(userId);
+		const userId = Model.getCoreModel(UserSchemaModel).createId(req.params.id);
+		const exists = Model.getCoreModel(UserSchemaModel).exists(userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -757,7 +761,7 @@ class ClearUserPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
 		}
 
-		const userToken = await Model.getModel('Token').findOne(tokenQuery);
+		const userToken = await Model.getCoreModel(TokenSchemaModel).findOne(tokenQuery);
 		if (!userToken) {
 			this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -767,7 +771,7 @@ class ClearUserPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').clearPolicyPropertiesById(validate.id);
+		await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.id);
 
 		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
 			userId: req.params.id,
@@ -784,7 +788,7 @@ routes.push(ClearUserPolicyProperties);
  */
 class DeleteAllUsers extends Route {
 	constructor(services) {
-		super('user', 'DELETE ALL USERS', services, Model.getModel('User'));
+		super('user', 'DELETE ALL USERS', services, Model.getCoreModel(UserSchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -796,7 +800,7 @@ class DeleteAllUsers extends Route {
 
 	_exec(req, res, validate) {
 		// ? Is this scoped to the app
-		return Model.getModel('User').rmAll().then(() => true);
+		return Model.getCoreModel(UserSchemaModel).rmAll().then(() => true);
 	}
 }
 routes.push(DeleteAllUsers);
@@ -806,7 +810,7 @@ routes.push(DeleteAllUsers);
  */
 class DeleteUser extends Route {
 	constructor(services) {
-		super('user/:id', 'DELETE USER', services, Model.getModel('User'));
+		super('user/:id', 'DELETE USER', services, Model.getCoreModel(UserSchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -818,13 +822,13 @@ class DeleteUser extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 		}
 
-		const user = await Model.getModel('User').findById(req.params.id);
+		const user = await Model.getCoreModel(UserSchemaModel).findById(req.params.id);
 		if (!user) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const userToken = await Model.getModel('Token').findOne({_userId: user.id});
+		const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ _userId: user.id });
 		if (token.value === userToken?.value) {
 			this.log(`ERROR: A user could not delete itself`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `user_can_not_delete_itself`));
@@ -837,10 +841,10 @@ class DeleteUser extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('User').rm(validate.user.id);
+		await Model.getCoreModel(UserSchemaModel).rm(validate.user.id);
 
 		if (validate.token) {
-			await Model.getModel('Token').rm(validate.token.id);
+			await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
 		}
 
 		return true;
@@ -866,7 +870,7 @@ class clearUserLocalData extends Route {
 				return reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
 
-			Model.getModel('User').findById(req.params.id)
+			Model.getCoreModel(UserSchemaModel).findById(req.params.id)
 				.then((user) => {
 					if (user) {
 						return resolve(user);
@@ -882,7 +886,7 @@ class clearUserLocalData extends Route {
 		this._nrp?.emit('clearUserLocalData', JSON.stringify({
 			appAPIPath: req.authApp ? req.authApp.apiPath : '',
 			userId: user.id,
-			collections: (req.body.collections)? req.body.collections : false,
+			collections: (req.body.collections) ? req.body.collections : false,
 		}));
 
 		return true;
@@ -895,7 +899,7 @@ routes.push(clearUserLocalData);
  */
 class SearchUserList extends Route {
 	constructor(services) {
-		super('user', 'SEARCH USER LIST', services, Model.getModel('User'));
+		super('user', 'SEARCH USER LIST', services, Model.getCoreModel(UserSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -915,7 +919,7 @@ class SearchUserList extends Route {
 			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
 			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
 			sort: (req.body && req.body.sort) ? req.body.sort : {},
-			project: (req.body && req.body.project)? req.body.project : false,
+			project: (req.body && req.body.project) ? req.body.project : false,
 		};
 
 		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
@@ -926,12 +930,12 @@ class SearchUserList extends Route {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = Model.getModel('User').parseQuery(result.query, {}, Model.getModel('User').flatSchemaData);
+		result.query = Model.getCoreModel(UserSchemaModel).parseQuery(result.query, {}, Model.getCoreModel(UserSchemaModel).flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return Model.getModel('User').find(validate.query, {},
+		return Model.getCoreModel(UserSchemaModel).find(validate.query, {},
 			validate.limit, validate.skip, validate.sort, validate.project);
 	}
 }
@@ -942,7 +946,7 @@ routes.push(SearchUserList);
  */
 class UserCount extends Route {
 	constructor(services) {
-		super(`user/count`, `COUNT USERS`, services, Model.getModel('User'));
+		super(`user/count`, `COUNT USERS`, services, Model.getCoreModel(UserSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -950,7 +954,7 @@ class UserCount extends Route {
 		this.activityDescription = `COUNT USERS`;
 		this.activityBroadcast = false;
 
-		this.model = Model.getModel('User');
+		this.model = Model.getCoreModel(UserSchemaModel);
 	}
 
 	async _validate(req, res, token) {
@@ -977,7 +981,7 @@ class UserCount extends Route {
 	}
 
 	_exec(req, res, validateResult) {
-		return Model.getModel('User').count(validateResult.query);
+		return Model.getCoreModel(UserSchemaModel).count(validateResult.query);
 	}
 }
 routes.push(UserCount);

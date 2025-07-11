@@ -29,6 +29,7 @@ import { Errors } from '../helpers/index.js';
 import IsolateBridge from './isolate-bridge.js';
 
 import createConfig from '@dpc/node-env-obj';
+import LambdaSchemaModel from '../model/core/lambda.js';
 const Config = createConfig() as unknown as Config;
 
 
@@ -101,20 +102,26 @@ class Helpers {
 				},
 				updateMetadata: async () => {
 					if (data.idx === -1) {
-						await Model.getModel('Lambda').updateById(Model.getModel('Lambda').createId(data.id), {
-							$push: {
-								metadata: {
-									key: data.key,
-									value: data.value,
+						await Model.getCoreModel(LambdaSchemaModel).updateById(
+							Model.getCoreModel(LambdaSchemaModel).createId(data.id),
+							{
+								$push: {
+									metadata: {
+										key: data.key,
+										value: data.value,
+									},
 								},
-							},
-						});
+							}
+						);
 					} else {
-						await Model.getModel('Lambda').updateById(Model.getModel('Lambda').createId(data.id), {
-							$set: {
-								[`metadata.${data.idx}.value`]: data.value,
-							},
-						});
+						await Model.getCoreModel(LambdaSchemaModel).updateById(
+							Model.getCoreModel(LambdaSchemaModel).createId(data.id),
+							{
+								$set: {
+									[`metadata.${data.idx}.value`]: data.value,
+								},
+							}
+						);
 					}
 				},
 			};
@@ -284,14 +291,14 @@ class Helpers {
 		jail.setSync('_generatePDF', new ivm.Reference(async (htmlString, resolve, reject) => {
 			try {
 				if (!htmlString) throw new Error(`Missing HTML string for pdf generation`);
-				const browser = await puppeteer.launch({headless: true});
+				const browser = await puppeteer.launch({ headless: true });
 				const page = await browser.newPage();
 
 				// Set the HTML content
-				await page.setContent(htmlString, {waitUntil: 'networkidle2'});
+				await page.setContent(htmlString, { waitUntil: 'networkidle2' });
 
 				// ! These lines should have tests written against them.
-				const pdfResult = await page.pdf({format: 'A4', printBackground: true});
+				const pdfResult = await page.pdf({ format: 'A4', printBackground: true });
 				await browser.close();
 				resolve.applyIgnored(undefined, [
 					new ivm.ExternalCopy(new ivm.Reference(Buffer.from(pdfResult).toString('base64')).copySync()).copyInto(),

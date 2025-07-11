@@ -85,8 +85,8 @@ export default class BootstrapLambda extends Bootstrap {
 		Logging.logDebug('BootstrapLambda:clean');
 
 		// Clean up lambda process.
-		if (this.__lambdaManagerProcess) this.__lambdaManagerProcess.clean();
-		if (this.__lambdaWorkerProcess) this.__lambdaWorkerProcess.clean();
+		if (this.__lambdaManagerProcess) await this.__lambdaManagerProcess.clean();
+		if (this.__lambdaWorkerProcess) await this.__lambdaWorkerProcess.clean();
 
 		if (this._redisClient) {
 			this._redisClient.quit();

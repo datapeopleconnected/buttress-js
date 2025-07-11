@@ -68,6 +68,8 @@ export interface Policy {
 }
 
 class PolicySchemaModel extends StandardModel {
+	static name = 'Policy';
+
 	constructor(services) {
 		const schema = PolicySchemaModel.Schema;
 		super(schema, null, services);

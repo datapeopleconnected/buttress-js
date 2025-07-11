@@ -267,7 +267,7 @@ export class PolicyCache {
         this._redisClient.zscore('connected-tokens', tokenId, (err, score) => (err) ? reject(err) : resolve(Number(score)));
       });
 
-      if (score !== null && !isNaN(score) && score > now){
+      if (score !== null && !isNaN(score) && score > now) {
         connectedPolicyTokens.push(tokenId);
       }
     }

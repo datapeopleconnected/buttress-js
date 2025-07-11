@@ -36,10 +36,21 @@ import SchemaRoutes from './schema-routes/index.js';
 
 import Datastore from '../datastore/index.js';
 
+import { ExecPriority, LambdaExecutionMessage } from '../lambda/lambda-manager.js';
+
+import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
+import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
+
 // Core Routes
 import { Routes as CoreRoutes } from './api/index.js';
 
 import { BjsRequest } from '../types/bjs-express.js';
+import { ExecutionResultMessage } from '../lambda/lambda-runner.js';
+import AppSchemaModel from '../model/core/app.js';
+import AppDataSharingSchemaModel from '../model/core/app-data-sharing.js';
+import UserSchemaModel from '../model/core/user.js';
+import TokenSchemaModel from '../model/core/token.js';
+import DeploymentSchemaModel from '../model/core/deployment.js';
 
 class Routes {
 	app: express.Application;
@@ -170,7 +181,7 @@ class Routes {
 	}
 
 	async initAppRoutes() {
-		const rxsApps = await Model.getModel('App').findAll();
+		const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
 		for await (const app of rxsApps) {
 			await this._generateAppRoutes(app);
 		}
@@ -253,7 +264,7 @@ class Routes {
 	 */
 	regenerateAppRoutes(appId) {
 		Logging.logSilly(`Routes:regenerateAppRoutes regenerating routes for ${appId}`);
-		return Model.getModel('App').findById(appId)
+		return Model.getCoreModel(AppSchemaModel).findById(appId)
 			.then((app) => this._generateAppRoutes(app));
 	}
 
@@ -266,7 +277,7 @@ class Routes {
 		if (!app.__schema) return;
 
 		// Get DS agreements
-		const appDSAs = await Helpers.streamAll(await Model.getModel('AppDataSharing').find({
+		const appDSAs = await Helpers.streamAll(await Model.getCoreModel(AppDataSharingSchemaModel).find({
 			'_appId': app.id,
 		}));
 
@@ -452,7 +463,7 @@ class Routes {
 				let apiPath: string = '';
 
 				[apiPath] = req.url.split('/lambda/v1/').join('').split('/');
-				apiLambdaApp = await Model.getModel('App').findOne({
+				apiLambdaApp = await Model.getCoreModel(AppSchemaModel).findOne({
 					apiPath: {
 						$eq: apiPath,
 					},
@@ -464,7 +475,7 @@ class Routes {
 				}
 
 				const [endpoint] = req.url.split(`/lambda/v1/${apiPath}/`).join('').split('?');
-				req.authLambda = await Model.getModel('Lambda').findOne({
+				req.authLambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
 					'trigger.apiEndpoint.url': {
 						$eq: endpoint,
 					},
@@ -491,7 +502,7 @@ class Routes {
 
 				useUserToken = (apiLambdaTrigger && apiLambdaTrigger.apiEndpoint.useCallerToken);
 				if (!useUserToken) {
-					const token = await Model.getModel('Token').findOne({
+					const token = await Model.getCoreModel(TokenSchemaModel).findOne({
 						_lambdaId: req.authLambda.id,
 					});
 					req.token = token;
@@ -514,7 +525,7 @@ class Routes {
 			// If not a lambda API call
 			if (!isLambdaAPICall && req.token?._lambdaId) {
 				// If we're not calling a lambda endpoint then look up the lambda via the token.
-				const lambda = await Model.getModel('Lambda').findById(req.token._lambdaId);
+				const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(req.token._lambdaId);
 				req.authLambda = lambda;
 				Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda.id : lambda}`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -532,9 +543,9 @@ class Routes {
 
 			if (!req.authApp) {
 				if (req.apiPath) {
-					tokenApp = await Model.getModel('App').findOne({ apiPath: req.apiPath });
+					tokenApp = await Model.getCoreModel(AppSchemaModel).findOne({ apiPath: req.apiPath });
 				} else if (req.token._appId) {
-					tokenApp = await Model.getModel('App').findById(req.token._appId);
+					tokenApp = await Model.getCoreModel(AppSchemaModel).findById(req.token._appId);
 				}
 
 				req.authApp = tokenApp;
@@ -544,7 +555,7 @@ class Routes {
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
 
-			const appDataSharing = (req.token._appDataSharingId) ? await Model.getModel('AppDataSharing').findById(req.token._appDataSharingId) : null;
+			const appDataSharing = (req.token._appDataSharingId) ? await Model.getCoreModel(AppDataSharingSchemaModel).findById(req.token._appDataSharingId) : null;
 			req.authAppDataSharing = appDataSharing;
 			Logging.logTimer(
 				`_authenticateToken:got-app-data-sharing-agreement ${(req.authAppDataSharing) ? req.authAppDataSharing.id : appDataSharing}`,
@@ -553,7 +564,7 @@ class Routes {
 
 			let user = null;
 			if (req.token._userId) {
-				user = await Model.getModel('User').findById(req.token._userId);
+				user = await Model.getCoreModel(UserSchemaModel).findById(req.token._userId);
 
 				if (!user) {
 					Logging.logSilly(`Request was made with a valid token but no user was found for token ${req.token.id}`);
@@ -602,7 +613,7 @@ class Routes {
 		Logging.logTimer('_getToken:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		let token = null;
 
-		if (this._tokens.length > 0 && !Model.getModel('App').MetadataChanged) {
+		if (this._tokens.length > 0) {
 			token = this._lookupToken(this._tokens, value);
 			if (token) {
 				Logging.logTimer('_getToken:end-cache', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
@@ -613,7 +624,6 @@ class Routes {
 		// TODO: This needs to be smarter
 		await this.loadTokens();
 
-		Model.getModel('App').MetadataChanged = false;
 		token = this._lookupToken(this._tokens, value);
 		Logging.logTimer('_getToken:end-lookup', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		return token;
@@ -636,7 +646,7 @@ class Routes {
 	 */
 	async loadTokens() {
 		const tokens: any[] = [];
-		const rxsToken = await Model.getModel('Token').findAll();
+		const rxsToken = await Model.getCoreModel(TokenSchemaModel).findAll();
 
 		for await (const token of rxsToken) {
 			tokens.push(token);
@@ -660,7 +670,7 @@ class Routes {
 			Logging.logTimer('_configCrossDomain:end-no-auth', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
 		}
-		if (req.token.type !== Model.getModel('Token').Constants.Type.USER) {
+		if (req.token.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.USER) {
 			res.header('Access-Control-Allow-Origin', '*');
 			res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,SEARCH,OPTIONS');
 			res.header('Access-Control-Allow-Headers', 'content-type');
@@ -750,15 +760,15 @@ class Routes {
 	}
 
 	async _setupLambdaEndpoints() {
-		const appsToken = await Helpers.streamAll(await Model.getModel('Token').find({
+		const appsToken = await Helpers.streamAll(await Model.getCoreModel(TokenSchemaModel).find({
 			$or: [{
-				type: Model.getModel('Token').Constants.Type.APP,
+				type: Model.getCoreModel(TokenSchemaModel).Constants.Type.APP,
 			}, {
-				type: Model.getModel('Token').Constants.Type.SYSTEM,
+				type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
 			}],
 		}));
 		const tokenIds = appsToken.map((t) => t.id);
-		const apps = await Helpers.streamAll(await Model.getModel('App').find({
+		const apps = await Helpers.streamAll(await Model.getCoreModel(AppSchemaModel).find({
 			_tokenId: {
 				$in: tokenIds,
 			},
@@ -775,31 +785,51 @@ class Routes {
 	}
 
 	async __configureAppLambdaEndpoints(apiPath) {
-		this.app.get(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
+		this.app.all(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
+			// TODO: Handle if the req is closed and the lambda hasn't been executed yet.
 			const [endpoint] = Object.values(req.params);
-			const result: any = await this._validateLambdaAPIExecution(endpoint, apiPath, 'GET', req.headers, req.query, null, req.token);
+
+			if (req.method === 'POST' && (!req.body || Object.values(req.body).length < 1)) {
+				res.status(400).send({ message: 'missing_request_body' });
+				return;
+			}
+
+			if (req.method !== 'POST' && req.method !== 'GET') {
+				res.status(405).send({ message: 'method_not_allowed' });
+				return;
+			}
+
+			const result = await this._queueLambdaAPIExecution(endpoint, apiPath, req);
 			if (result.errCode && result.errMessage) {
 				res.status(result.errCode).send({ message: result.errMessage });
+				return;
+			}
+
+			const lambdaExecutionId = result.lambdaExecution?.id;
+			if (!lambdaExecutionId) {
+				res.status(500).send({ message: 'lambda_execution_id_missing' });
 				return;
 			}
 
 			// Disable cache for all lambda endpoints
 			res.set('Cache-Control', 'no-store');
 
+			let lambdaResult: ExecutionResultMessage | null = null;
+
 			if (result.triggerAPIType === 'SYNC') {
-				result.lambdaOutput = await new Promise((resolve) => {
-					this._nrp?.on('lambda-execution-finish', (exec: any) => {
-						exec = JSON.parse(exec);
-						if (exec.restWorkerId === this.id) {
+				lambdaResult = await new Promise((resolve) => {
+					this._nrp?.on('lambda:worker:execution-result', (json) => {
+						const exec = JSON.parse(json) as ExecutionResultMessage;
+						if (exec.reqId === req.id?.toString()) {
 							resolve(exec);
 						}
 					});
 				});
 			}
 
-			if (result.lambdaOutput && result.lambdaOutput.res && result.lambdaOutput.res.redirect) {
-				const url = result.lambdaOutput.res.url;
-				const queryObj = result.lambdaOutput.res.query;
+			if (lambdaResult && lambdaResult.res && lambdaResult.res.redirect) {
+				const url = lambdaResult.res.url;
+				const queryObj = lambdaResult.res.query;
 				let query: string = '';
 				if (queryObj) {
 					query = Object.keys(queryObj).reduce((output, key) => {
@@ -813,79 +843,26 @@ class Routes {
 				}
 				const redirectURL = (query) ? `${url}?${query}` : url;
 				res.redirect(redirectURL);
-			} else if (result.lambdaOutput) {
-				res.status(result.lambdaOutput.code).send({
-					res: result.lambdaOutput.res,
-					err: result.lambdaOutput.err,
-					executionId: result.lambdaExecution.id,
+			} else if (lambdaResult) {
+				res.status(lambdaResult.code).send({
+					res: lambdaResult.res,
+					err: lambdaResult.err,
+					executionId: lambdaResult.executionId,
 				});
 			} else {
 				res.status(200).send({
-					executionId: result.lambdaExecution.id,
-				});
-			}
-		});
-
-		this.app.post(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
-			const [endpoint] = Object.values(req.params);
-			if (!req.body || Object.values(req.body).length < 1) {
-				res.status(400).send({ message: 'missing_request_body' });
-				return;
-			}
-
-			const result: any = await this._validateLambdaAPIExecution(endpoint, apiPath, 'POST', req.headers, null, req.body, req.token);
-			if (result.errCode && result.errMessage) {
-				res.status(result.errCode).send({ message: result.errMessage });
-				return;
-			}
-
-			if (result.triggerAPIType === 'SYNC') {
-				result.lambdaOutput = await new Promise((resolve) => {
-					this._nrp?.on('lambda-execution-finish', (exec: any) => {
-						exec = JSON.parse(exec);
-						if (exec.restWorkerId === this.id) {
-							resolve(exec);
-						}
-					});
-				});
-			}
-
-			if (result.lambdaOutput && result.lambdaOutput.res && result.lambdaOutput.res.redirect) {
-				const url = result.lambdaOutput.res.url;
-				const queryObj = result.lambdaOutput.res.query;
-				let query = '';
-				if (queryObj) {
-					query = Object.keys(queryObj).reduce((output, key) => {
-						if (!output) {
-							output = `${key}=${queryObj[key]}`;
-						} else {
-							output = `${output}&${key}=${queryObj[key]}`;
-						}
-						return output;
-					}, '');
-				}
-				const redirectURL = (query) ? `${url}?${query}` : url;
-				res.redirect(redirectURL);
-			} else if (result.lambdaOutput) {
-				res.status(result.lambdaOutput.code).send({
-					res: result.lambdaOutput.res,
-					err: result.lambdaOutput.err,
-					executionId: result.lambdaExecution.id,
-				});
-			} else {
-				res.status(200).send({
-					executionId: result.lambdaExecution.id,
+					executionId: lambdaExecutionId,
 				});
 			}
 		});
 	}
 
-	async _validateLambdaAPIExecution(endpointOrId: string, apiPath, method, headers, query: any = null, body: any = null, token: any = null) {
-		const res: any = {};
-		let lambda: any = null;
+	async _queueLambdaAPIExecution(endpointOrId: string, apiPath, req: BjsRequest) {
+		const res: { errCode?: number, errMessage?: string, triggerAPIType?: string, lambdaExecution?: LambdaExecution } = {};
+		let lambda: Lambda | null = null;
 
-		const lambdaApp = await Model.getModel('App').findByApiPath(apiPath);
-		lambda = await Model.getModel('Lambda').findOne({
+		const lambdaApp = await Model.getCoreModel(AppSchemaModel).findByApiPath(apiPath);
+		lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
 			$or: [{
 				'id': {
 					$eq: endpointOrId,
@@ -912,14 +889,14 @@ class Routes {
 		}
 
 		const triggerAPI = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
-		if (!triggerAPI || triggerAPI.apiEndpoint.method !== method) {
+		if (!triggerAPI || triggerAPI.apiEndpoint.method !== req.method) {
 			res.errCode = 404;
 			res.errMessage = 'api_method_not_found';
 			return res;
 		}
 
-		const deployment = await Model.getModel('Deployment').findOne({
-			lambdaId: Model.getModel('Lambda').createId(lambda.id),
+		const deployment = await Model.getCoreModel(DeploymentSchemaModel).findOne({
+			lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
 			hash: lambda.git.hash,
 		});
 		if (!deployment) {
@@ -928,38 +905,36 @@ class Routes {
 			return res;
 		}
 
-		const lambdaExecution = await Model.getModel('LambdaExecution').add({
+		const LambdaExecutionData = {
 			triggerType: 'API_ENDPOINT',
-			lambdaId: Model.getModel('Lambda').createId(lambda.id),
-			deploymentId: Model.getModel('Deployment').createId(deployment.id),
-		}, lambda._appId, (triggerAPI.apiEndpoint.useCallerToken) ? Model.getModel('Token').createId(token.id) : null);
+			priority: (triggerAPI.apiEndpoint.type === 'SYNC') ? ExecPriority.API_ENDPOINT_SYNC : ExecPriority.API_ENDPOINT,
+			lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
+			deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(deployment.id),
+			metadata: [
+				{ key: 'REQ_ID', value: req.id }
+			]
+		};
+
+		if (req.body) LambdaExecutionData.metadata.push({ key: 'BODY', value: JSON.stringify(req.body) });
+		if (req.query) LambdaExecutionData.metadata.push({ key: 'QUERY', value: JSON.stringify(req.query) });
+		if (req.headers) LambdaExecutionData.metadata.push({ key: 'HEADERS', value: JSON.stringify(req.headers) });
+
+		const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).add(
+			LambdaExecutionData,
+			lambda._appId,
+			(triggerAPI.apiEndpoint.useCallerToken) ? Model.getCoreModel(TokenSchemaModel).createId(req.token.id) : null
+		) as LambdaExecution;
 
 		res.lambdaExecution = lambdaExecution;
 		res.triggerAPIType = triggerAPI.apiEndpoint.type;
 
-		const data: {
-			id: string;
-			restWorkerId: string;
-			lambdaId: string;
-			triggerType: string;
-			lambdaExecBehavior: string;
-			headers: any;
-			body?: any;
-			query?: any;
-		} = {
-			id: lambdaExecution.id,
-			restWorkerId: this.id,
+		const data: LambdaExecutionMessage = {
+			executionId: lambdaExecution.id,
 			lambdaId: lambda.id,
+			lambdaType: 'API_ENDPOINT',
 			triggerType: triggerAPI.type,
 			lambdaExecBehavior: triggerAPI.apiEndpoint.type,
-			headers,
 		};
-		if (body) {
-			data.body = body;
-		}
-		if (query) {
-			data.query = query;
-		}
 
 		if (!res.errCode && !res.errMessage) {
 			this._nrp?.emit('rest:worker:exec-lambda-api', JSON.stringify(data));

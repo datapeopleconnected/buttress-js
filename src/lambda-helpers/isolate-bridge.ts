@@ -52,7 +52,7 @@ class IsolateBridge {
 
 			let items: fs.Dirent[];
 			try {
-				items = fs.readdirSync(dirName, {withFileTypes: true});
+				items = fs.readdirSync(dirName, { withFileTypes: true });
 			} catch (e: unknown) {
 				Logging.logError(`Error reading directory: ${dirName}`);
 				Logging.logError(e);
@@ -81,7 +81,7 @@ class IsolateBridge {
 			const className = p.constructor.name;
 
 			const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(p)).filter((n) => prot.indexOf(n) === -1 && /^_/.exec(n) === null);
-			this._plugins[className] = {plugin: p, methods: methods};
+			this._plugins[className] = { plugin: p, methods: methods };
 
 			Logging.logVerbose(`Plugin '${className}' Methods: ${methods.join(',')}`);
 			p.startUp();
@@ -307,8 +307,8 @@ class IsolateBridge {
 
 	_pushLambdaExecutionLog(log, type) {
 		throw new Error('Need to resolve where this.lambdaExecution.id is coming from');
-		// Model.getModel('LambdaExecution').update({
-		// 	id: Model.getModel('LambdaExecution').createId(this.lambdaExecution.id),
+		// Model.getCoreModel(LambdaSchemaModel).update({
+		// 	id: Model.getCoreModel(LambdaSchemaModel).createId(this.lambdaExecution.id),
 		// }, {
 		// 	$push: {
 		// 		logs: {

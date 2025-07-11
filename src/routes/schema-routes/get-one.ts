@@ -50,7 +50,7 @@ export default class GetOne extends Route {
 
 	async _validate(req, res, token) {
 		let objectId = null;
-		const project = (req.body && req.body.project)? req.body.project : false;
+		const project = (req.body && req.body.project) ? req.body.project : false;
 
 		try {
 			objectId = this.model.createId(req.params.id);
@@ -59,7 +59,7 @@ export default class GetOne extends Route {
 			throw new Helpers.Errors.RequestError(400, 'invalid_id');
 		}
 
-		let query = {id: objectId};
+		let query = { id: objectId };
 		if (req.body.query && Object.keys(req.body.query).length > 0) {
 			query = req.body.query;
 

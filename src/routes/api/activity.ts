@@ -17,6 +17,9 @@
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
+import ActivitySchemaModel from '../../model/core/activity.js';
+import TokenSchemaModel from '../../model/core/token.js';
+import AppSchemaModel from '../../model/core/app.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -25,7 +28,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetActivityList extends Route {
 	constructor(services) {
-		super('activity', 'GET ACTIVITY LIST', services, Model.getModel('Activity'));
+		super('activity', 'GET ACTIVITY LIST', services, Model.getCoreModel(ActivitySchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -36,12 +39,12 @@ class GetActivityList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
 			return this.model.findAll();
 		}
 
 		return this.model.find({
-			_appId: Model.getModel('App').createId(req.authApp.id),
+			_appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
 			visibility: this.model.Constants.Visibility.PUBLIC,
 		});
 	}
@@ -53,7 +56,7 @@ routes.push(GetActivityList);
  */
 class GetActivity extends Route {
 	constructor(services) {
-		super('activity/:id', 'GET ACTIVITY', services, Model.getModel('Activity'));
+		super('activity/:id', 'GET ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -66,7 +69,7 @@ class GetActivity extends Route {
 		}
 
 		const activity = await this.model.findById(req.params.id);
-	
+
 		if (!activity) {
 			this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR, req.id);
 			throw new Helpers.Errors.RequestError(400, `invalid_id`);
@@ -86,7 +89,7 @@ routes.push(GetActivity);
  */
 class DeleteAllActivity extends Route {
 	constructor(services) {
-		super('activity', 'DELETE ALL ACTIVITY', services, Model.getModel('Activity'));
+		super('activity', 'DELETE ALL ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -104,7 +107,7 @@ routes.push(DeleteAllActivity);
 
 // class AddActivityMetadata extends Route {
 // 	constructor(services) {
-// 		super('activity/:id/metadata/:key', 'ADD ACTIVITY METADATA', services, Model.getModel('Activity'));
+// 		super('activity/:id/metadata/:key', 'ADD ACTIVITY METADATA', services, Model.getCoreModel(ActivitySchemaModel));
 // 		this.verb = Route.Constants.Verbs.POST;
 // 		this.permissions = Route.Constants.Permissions.ADD;
 // 	}
@@ -141,7 +144,7 @@ routes.push(DeleteAllActivity);
  */
 // class UpdateActivityMetadata extends Route {
 // 	constructor(services) {
-// 		super('activity/:id/metadata/:key', 'UPDATE ACTIVITY METADATA', services, Model.getModel('Activity'));
+// 		super('activity/:id/metadata/:key', 'UPDATE ACTIVITY METADATA', services, Model.getCoreModel(ActivitySchemaModel));
 // 		this.verb = Route.Constants.Verbs.PUT;
 // 		this.permissions = Route.Constants.Permissions.ADD;
 
@@ -183,7 +186,7 @@ routes.push(DeleteAllActivity);
  */
 // class GetActivityMetadata extends Route {
 // 	constructor(services) {
-// 		super('activity/:id/metadata/:key', 'GET ACTIVITY METADATA', services, Model.getModel('Activity'));
+// 		super('activity/:id/metadata/:key', 'GET ACTIVITY METADATA', services, Model.getCoreModel(ActivitySchemaModel));
 // 		this.verb = Route.Constants.Verbs.GET;
 // 		this.permissions = Route.Constants.Permissions.GET;
 
@@ -220,7 +223,7 @@ routes.push(DeleteAllActivity);
  */
 // class DeleteActivityMetadata extends Route {
 // 	constructor(services) {
-// 		super('activity/:id/metadata/:key', 'DELETE ACTIVITY METADATA', services, Model.getModel('Activity'));
+// 		super('activity/:id/metadata/:key', 'DELETE ACTIVITY METADATA', services, Model.getCoreModel(ActivitySchemaModel));
 // 		this.verb = Route.Constants.Verbs.DEL;
 // 		this.permissions = Route.Constants.Permissions.DELETE;
 // 		this._activity = false;

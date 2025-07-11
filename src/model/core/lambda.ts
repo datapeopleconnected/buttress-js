@@ -28,15 +28,55 @@ import StandardModel from '../type/standard.js';
 import * as Helpers from '../../helpers/index.js';
 import Logging from '../../helpers/logging.js';
 
-export default class LambdaSchemaModel extends StandardModel {
-
+export interface Lambda {
+	id: string;
 	name: string;
+	type: 'PRIVATE' | 'PUBLIC';
+	executable: boolean;
+	deployments: Array<{
+		hash: string | null;
+		deployedAt: Date | null;
+	}>;
+	git: {
+		url: string | null;
+		hash: string | null;
+		branch: string | null;
+		entryFile: string | null;
+		entryPoint: string | null;
+	};
+	trigger: Array<{
+		type: 'CRON' | 'PATH_MUTATION' | 'API_ENDPOINT';
+		cron: {
+			executionTime: string | null;
+			periodicExecution: string | null;
+			status: 'PENDING' | 'RUNNING' | 'ERROR';
+		};
+		apiEndpoint: {
+			method: 'GET' | 'POST';
+			url: string | null;
+			type: 'ASYNC' | 'SYNC';
+			useCallerToken: boolean;
+			redirect: boolean;
+		};
+		pathMutation: {
+			paths: Array<string>;
+		};
+	}>;
+	metadata: Array<{
+		key: string | null;
+		value: string | null;
+	}>;
+	_appId: string;
+	createdAt: Date;
+	updatedAt: Date;
+};
+
+export default class LambdaModel extends StandardModel {
+	static name = 'Lambda';
 
 	constructor(services) {
-		const schema = LambdaSchemaModel.Schema;
+		const schema = LambdaModel.Schema;
 		super(schema, null, services);
-
-		this.name = 'LAMBDA';
 	}
 
 	static get Schema() {
@@ -329,7 +369,7 @@ export default class LambdaSchemaModel extends StandardModel {
 		try {
 			const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, auth.policyProperties);
 			if (!policyCheck.passed) {
-				Logging.logError(`[${this.name}] ${policyCheck.errMessage}`);
+				Logging.logError(`[${LambdaModel.name}] ${policyCheck.errMessage}`);
 				throw new Helpers.Errors.RequestError(400, `invalid_field`);
 			}
 
@@ -347,7 +387,7 @@ export default class LambdaSchemaModel extends StandardModel {
 			}
 
 			if (lambdaExists) {
-				Logging.logError(`[${this.name}] Lambda with the same API url already exists`);
+				Logging.logError(`[${LambdaModel.name}] Lambda with the same API url already exists`);
 				throw new Helpers.Errors.RequestError(400, `duplicate_item`);
 			}
 
@@ -358,7 +398,7 @@ export default class LambdaSchemaModel extends StandardModel {
 			}
 
 			if (err instanceof Error) {
-				Logging.logError(`[${this.name}] ${err.message}`);
+				Logging.logError(`[${LambdaModel.name}] ${err.message}`);
 			}
 			throw err;
 		}
@@ -373,7 +413,7 @@ export default class LambdaSchemaModel extends StandardModel {
 			if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
 				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
 			}
-			Logging.logError(`[${this.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
+			Logging.logError(`[${LambdaModel.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
 			throw new Helpers.Errors.RequestError(400, `missing_field`);
 		}
 
@@ -397,14 +437,14 @@ export default class LambdaSchemaModel extends StandardModel {
 				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git fetch`);
 				const checkoutRes = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${branch}`);
 				if (!checkoutRes.stdout) {
-					Logging.log(`[${this.name}] Lambda ${branch} does not exist`);
+					Logging.log(`[${LambdaModel.name}] Lambda ${branch} does not exist`);
 					return Promise.reject(new Helpers.Errors.RequestError(400, `branch_${branch}_does_not_exist_for_lambda`));
 				}
 
 				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git pull`);
 				const results = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git branch ${branch} --contains ${gitHash}`);
 				if (!results.stdout) {
-					Logging.log(`[${this.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
+					Logging.log(`[${LambdaModel.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
 					return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_${gitHash}_does_not_exist_on_branch_${branch}`));
 				}
 
@@ -415,7 +455,7 @@ export default class LambdaSchemaModel extends StandardModel {
 				const files = fs.readdirSync(lambdaDir);
 				const entryFile = entryFilePath.split('/').pop();
 				if (entryFilePath && !files.includes(entryFile)) {
-					Logging.log(`[${this.name}] No such file ${entryFile} - ${lambda.name} ${gitHash} ${branch}`);
+					Logging.log(`[${LambdaModel.name}] No such file ${entryFile} - ${lambda.name} ${gitHash} ${branch}`);
 					throw new Helpers.Errors.RequestError(404, `entry_file_not_found`);
 				}
 
@@ -424,7 +464,7 @@ export default class LambdaSchemaModel extends StandardModel {
 
 					const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
 					if (entryFile === file && entryPoint && !content.includes(entryPoint)) {
-						Logging.log(`[${this.name}] No such function ${entryPoint} - ${lambda.name}`);
+						Logging.log(`[${LambdaModel.name}] No such function ${entryPoint} - ${lambda.name}`);
 						throw new Helpers.Errors.RequestError(404, `entry_point_not_found`);
 					}
 				}
@@ -451,7 +491,7 @@ export default class LambdaSchemaModel extends StandardModel {
 			}
 
 			if (err instanceof Error) {
-				Logging.logError(`[${this.name}] ${err.message}`);
+				Logging.logError(`[${LambdaModel.name}] ${err.message}`);
 			}
 			throw err;
 		}

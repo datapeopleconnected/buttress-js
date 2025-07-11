@@ -22,8 +22,8 @@ import Model from '../model/index.js';
 import Logging from '../helpers/logging.js';
 import Schema from '../schema.js';
 
-import { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy.js';
-import { Token } from '../model/core/token.js';
+import PolicySchemaModel, { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy.js';
+import TokenSchemaModel, { Token } from '../model/core/token.js';
 
 import AccessControlConditions from './conditions.js';
 import AccessControlFilter from './filter.js';
@@ -33,6 +33,9 @@ import AccessControlPolicyMatch from './policy-match.js';
 import AccessControlHelpers, { filterPolicyConfigs } from './helpers.js';
 import { BjsRequest } from '../types/bjs-express.js';
 import { PolicyCache } from '../services/policy-cache.js';
+import LambdaSchemaModel from '../model/core/lambda.js';
+import UserSchemaModel from '../model/core/user.js';
+import AppSchemaModel from '../model/core/app.js';
 
 export class PolicyError extends Error {
 	statusCode: number;
@@ -57,7 +60,7 @@ export type ApplicablePolicyConfig = {
 };
 
 class AccessControl {
-	_schemas: {[key: string]: any};
+	_schemas: { [key: string]: any };
 	// _policies: {[key: string]: any};
 
 	_queuedLimitedPolicy: string[];
@@ -120,7 +123,7 @@ class AccessControl {
 			policyConfigs: []
 		};
 
-		const isSystemToken = req.token.type === Model.getModel('Token').Constants.Type.SYSTEM;
+		const isSystemToken = req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
 		if (isSystemToken) return next();
 
 		const token = req.token;
@@ -143,12 +146,12 @@ class AccessControl {
 
 		if (isLambdaCall) {
 			const lambdaURL = requestedURL.replace(`/lambda/v1/${req.authApp.apiPath}/`, '');
-			lambdaAPICall = await Model.getModel('Lambda').findOne({
+			lambdaAPICall = await Model.getCoreModel(LambdaSchemaModel).findOne({
 				'trigger.apiEndpoint.url': {
 					$eq: lambdaURL,
 				},
 				'_appId': {
-					$eq: Model.getModel('Lambda').createId(appId),
+					$eq: Model.getCoreModel(LambdaSchemaModel).createId(appId),
 				},
 			});
 		}
@@ -163,12 +166,12 @@ class AccessControl {
 		}
 
 		// if (user && this._coreSchemaNames.some((n) => n === schemaName)) {
-		// 	const userAppToken = await Model.getModel('Token').findOne({
+		// 	const userAppToken = await Model.getCoreModel(TokenSchemaModel).findOne({
 		// 		_appId: {
 		// 			$eq: user._appId,
 		// 		},
 		// 		type: {
-		// 			$eq: Model.getModel('Token').Constants.Type.SYSTEM,
+		// 			$eq: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
 		// 		},
 		// 	});
 		// 	if (!userAppToken) {
@@ -188,12 +191,12 @@ class AccessControl {
 			if (err instanceof PolicyError) {
 				Logging.logTimer(err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 				Logging.logError(err.message);
-				return res.status(err.statusCode).send({message: err.message});
+				return res.status(err.statusCode).send({ message: err.message });
 			}
 
 			Logging.logError(`Error in accessControlPolicyMiddleware: ${err.message}`);
 			console.error(err);
-			return res.status(500).send({message: 'Internal Server Error'});
+			return res.status(500).send({ message: 'Internal Server Error' });
 		}
 
 		if (user) {
@@ -247,7 +250,7 @@ class AccessControl {
 
 		// TODO: The following lines are now redundant, getOutcome no longer modifieds the req.body.
 		const projectionKeys = (req.body && req.body.project) ? Object.keys(req.body.project) : [];
-		structure.schema[schemaName].access.query = (req.body.query)? req.body.query : {};
+		structure.schema[schemaName].access.query = (req.body.query) ? req.body.query : {};
 
 		if (projectionKeys.length > 0) {
 			structure.schema[schemaName].access.projection = [];
@@ -258,7 +261,7 @@ class AccessControl {
 
 		Logging.logTimer(`_getSchemaRoomStructure::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 		// TODO: Add app id to hash
-		return {roomId: hash(outcome), structure};
+		return { roomId: hash(outcome), structure };
 	}
 
 	async getUserRoomStructures(user, appId, req: any = {}) {
@@ -278,16 +281,16 @@ class AccessControl {
 
 		const rooms = {};
 		// ! This isn't taking into account there could be mutiple user tokens.
-		const token = await Model.getModel('Token').findOne({
+		const token = await Model.getCoreModel(TokenSchemaModel).findOne({
 			_userId: {
-				$eq: Model.getModel('User').createId(user.id),
+				$eq: Model.getCoreModel(UserSchemaModel).createId(user.id),
 			},
 		});
 		const tokenPolicies = await this.__getTokenPolicies(token, appId);
 		for await (const schema of this._schemas[appId]) {
 			req.body = {};
 			// req.accessControlQuery = {};
-			const {roomId, structure} = await this._getSchemaRoomStructure(tokenPolicies, req, schema.name, appId);
+			const { roomId, structure } = await this._getSchemaRoomStructure(tokenPolicies, req, schema.name, appId);
 			if (!roomId) continue;
 
 			if (!rooms[roomId]) {
@@ -374,7 +377,7 @@ class AccessControl {
 		// }
 
 		const outcome: parsedPolicyConfig[] = [];
-		
+
 		// Merge down policies, this is really only for projections.
 		for (const policy of applicablePolicies) {
 			const policyConfig = {
@@ -424,7 +427,7 @@ class AccessControl {
 					if (outcome[existingPolicyConfig].projection === null) {
 						outcome[existingPolicyConfig].projection = policyConfig.projection;
 					} else {
-						outcome[existingPolicyConfig].projection = {...outcome[existingPolicyConfig].projection, ...policyConfig.projection};
+						outcome[existingPolicyConfig].projection = { ...outcome[existingPolicyConfig].projection, ...policyConfig.projection };
 					}
 				}
 
@@ -440,7 +443,7 @@ class AccessControl {
 
 
 	async __cacheAppSchema(appId) {
-		const app = await Model.getModel('App').findById(appId);
+		const app = await Model.getCoreModel(AppSchemaModel).findById(appId);
 		this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type.indexOf('collection') === 0);
 
 		Logging.logSilly(`Refreshed schema cache for app ${appId} got ${this._schemas[appId].length} schema`);
@@ -448,8 +451,8 @@ class AccessControl {
 
 	// async __cacheAppPolicies(appId) {
 	// 	const policies: any[] = [];
-	// 	const rxsPolicies = await Model.getModel('Policy').find({
-	// 		_appId: Model.getModel('Policy').createId(appId),
+	// 	const rxsPolicies = await Model.getCoreModel(PolicySchemaModel).find({
+	// 		_appId: Model.getCoreModel(PolicySchemaModel).createId(appId),
 	// 	});
 	// 	for await (const policy of rxsPolicies) {
 	// 		policies.push(policy);
@@ -492,14 +495,14 @@ class AccessControl {
 			const policyIdx = this._queuedLimitedPolicy.push(p.name);
 			setTimeout(async () => {
 				await this.__removeUserPropertiesPolicySelection(userToken, p);
-				await Model.getModel('Policy').rm(p.id);
+				await Model.getCoreModel(PolicySchemaModel).rm(p.id);
 
 				this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
 					appId,
 				}))
 
 				// this._nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
-				// 	userId: Model.getModel('User').create(userToken._userId),
+				// 	userId: Model.getCoreModel(UserSchemaModel).create(userToken._userId),
 				// 	appId,
 				// }));
 
@@ -515,13 +518,13 @@ class AccessControl {
 			delete tokenPolicyProps[key];
 		});
 
-		await Model.getModel('Token').setPolicyPropertiesById(userToken.id.toString(), tokenPolicyProps);
+		await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(userToken.id.toString(), tokenPolicyProps);
 	}
 
 	__getInnerObjectValue(originalObj) {
 		if (!originalObj) return null;
 
-		const {schema, ...rest} = originalObj;
+		const { schema, ...rest } = originalObj;
 		return rest;
 	}
 }

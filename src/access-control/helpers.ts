@@ -59,98 +59,98 @@ class Helpers {
 		}
 
 		switch (operator) {
-		case '$eq':
-		case '@eq': {
-			passed = lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
-		}
-			break;
-		case '$not':
-		case '@not': {
-			passed = lhs.toString().toUpperCase() !== rhs.toString().toUpperCase();
-		}
-			break;
-		case '$gt':
-		case '@gt': {
-			passed = lhs > rhs;
-		}
-			break;
-		case '$lt':
-		case '@lt': {
-			passed = lhs < rhs;
-		}
-			break;
-		case '$gte':
-		case '@gte': {
-			passed = lhs >= rhs;
-		}
-			break;
-		case '$lte':
-		case '@lte': {
-			passed = lhs <= rhs;
-		}
-			break;
-		case '$gtDate':
-		case '@gtDate': {
-			const lhsDate = wrangleDateType(lhs);
-			if (!lhsDate) return false;
-			passed = Sugar.Date.isAfter(lhsDate, rhs);
-		}
-			break;
-		case '$gteDate':
-		case '@gteDate': {
-			const lhsDate = wrangleDateType(lhs);
-			if (!lhsDate) return false;
-			passed = Sugar.Date.isAfter(lhsDate, lhs) || Sugar.Date.is(lhsDate, lhs);
-		}
-			break;
-		case '$ltDate':
-		case '@ltDate': {
-			const lhsDate = wrangleDateType(lhs);
-			if (!lhsDate) return false;
-			passed = Sugar.Date.isBefore(lhsDate, rhs);
-		}
-			break;
-		case '$lteDate':
-		case '@lteDate': {
-			const lhsDate = wrangleDateType(lhs);
-			if (!lhsDate) return false;
-			passed = Sugar.Date.isBefore(lhsDate, lhs) || Sugar.Date.is(lhsDate, lhs);
-		}
-			break;
-		case '$rex':
-		case '@rex': {
-			const regex = new RegExp(rhs);
-			passed = regex.test(lhs);
-		}
-			break;
-		case '$rexi':
-		case '@rexi': {
-			const regex = new RegExp(rhs, 'i');
-			passed = regex.test(lhs);
-		}
-			break;
-		case '$in':
-		case '@in': {
-			if (Array.isArray(lhs)) {
-				passed = lhs.every((i) => {
-					return rhs.some((j) => j.toString() === i.toString());
-				});
-			} else {
-				passed = lhs && rhs.some((i) => i.toString() === lhs.toString());
+			case '$eq':
+			case '@eq': {
+				passed = lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
 			}
-		}
-			break;
-		case '$nin':
-		case '@nin': {
-			passed = lhs.every((i) => i !== lhs);
-		}
-			break;
-		case '$exists':
-		case '@exists': {
-			passed = lhs.includes(rhs);
-		}
-			break;
-		default:
+				break;
+			case '$not':
+			case '@not': {
+				passed = lhs.toString().toUpperCase() !== rhs.toString().toUpperCase();
+			}
+				break;
+			case '$gt':
+			case '@gt': {
+				passed = lhs > rhs;
+			}
+				break;
+			case '$lt':
+			case '@lt': {
+				passed = lhs < rhs;
+			}
+				break;
+			case '$gte':
+			case '@gte': {
+				passed = lhs >= rhs;
+			}
+				break;
+			case '$lte':
+			case '@lte': {
+				passed = lhs <= rhs;
+			}
+				break;
+			case '$gtDate':
+			case '@gtDate': {
+				const lhsDate = wrangleDateType(lhs);
+				if (!lhsDate) return false;
+				passed = Sugar.Date.isAfter(lhsDate, rhs);
+			}
+				break;
+			case '$gteDate':
+			case '@gteDate': {
+				const lhsDate = wrangleDateType(lhs);
+				if (!lhsDate) return false;
+				passed = Sugar.Date.isAfter(lhsDate, lhs) || Sugar.Date.is(lhsDate, lhs);
+			}
+				break;
+			case '$ltDate':
+			case '@ltDate': {
+				const lhsDate = wrangleDateType(lhs);
+				if (!lhsDate) return false;
+				passed = Sugar.Date.isBefore(lhsDate, rhs);
+			}
+				break;
+			case '$lteDate':
+			case '@lteDate': {
+				const lhsDate = wrangleDateType(lhs);
+				if (!lhsDate) return false;
+				passed = Sugar.Date.isBefore(lhsDate, lhs) || Sugar.Date.is(lhsDate, lhs);
+			}
+				break;
+			case '$rex':
+			case '@rex': {
+				const regex = new RegExp(rhs);
+				passed = regex.test(lhs);
+			}
+				break;
+			case '$rexi':
+			case '@rexi': {
+				const regex = new RegExp(rhs, 'i');
+				passed = regex.test(lhs);
+			}
+				break;
+			case '$in':
+			case '@in': {
+				if (Array.isArray(lhs)) {
+					passed = lhs.every((i) => {
+						return rhs.some((j) => j.toString() === i.toString());
+					});
+				} else {
+					passed = lhs && rhs.some((i) => i.toString() === lhs.toString());
+				}
+			}
+				break;
+			case '$nin':
+			case '@nin': {
+				passed = lhs.every((i) => i !== lhs);
+			}
+				break;
+			case '$exists':
+			case '@exists': {
+				passed = lhs.includes(rhs);
+			}
+				break;
+			default:
 		}
 
 		return passed;
@@ -222,40 +222,40 @@ export function findPatternOccurrences(obj: any, pattern: string): { path: strin
 	return occurrences;
 }
 export function patternExists(obj: any, pattern: string): boolean {
-  const regex = new RegExp(pattern);
+	const regex = new RegExp(pattern);
 
-  function recurse(currentObj: any): boolean {
-    for (const key in currentObj) {
-      if (Object.prototype.hasOwnProperty.call(currentObj, key)) {
-        const value = currentObj[key];
+	function recurse(currentObj: any): boolean {
+		for (const key in currentObj) {
+			if (Object.prototype.hasOwnProperty.call(currentObj, key)) {
+				const value = currentObj[key];
 
-        if (typeof key === 'string' && regex.test(key)) {
-          return true;
-        }
+				if (typeof key === 'string' && regex.test(key)) {
+					return true;
+				}
 
-        if (typeof value === 'string' && regex.test(value)) {
-          return true;
-        } else if (typeof value === 'object' && value !== null) {
-          if (recurse(value)) {
-            return true;
-          }
-        } else if (Array.isArray(value)) {
-          for (const item of value) {
-            if (typeof item === 'string' && regex.test(item)) {
-              return true;
-            } else if (typeof item === 'object' && item !== null) {
-              if (recurse(item)) {
-                return true;
-              }
-            }
-          }
-        }
-      }
-    }
-    return false;
-  }
+				if (typeof value === 'string' && regex.test(value)) {
+					return true;
+				} else if (typeof value === 'object' && value !== null) {
+					if (recurse(value)) {
+						return true;
+					}
+				} else if (Array.isArray(value)) {
+					for (const item of value) {
+						if (typeof item === 'string' && regex.test(item)) {
+							return true;
+						} else if (typeof item === 'object' && item !== null) {
+							if (recurse(item)) {
+								return true;
+							}
+						}
+					}
+				}
+			}
+		}
+		return false;
+	}
 
-  return recurse(obj);
+	return recurse(obj);
 }
 
 export function containsTokenLevelRef(applicablePolicy: ApplicablePolicyConfig) {
@@ -271,7 +271,7 @@ export function containsTokenLevelRef(applicablePolicy: ApplicablePolicyConfig) 
 	outcome.env = patternExists(applicablePolicy.env, pattern);
 	outcome.configEnv = patternExists(applicablePolicy.config.env, pattern);
 	outcome.query = patternExists(applicablePolicy.config.query, pattern);
-	outcome.condition = patternExists(applicablePolicy.config.condition, pattern);	
+	outcome.condition = patternExists(applicablePolicy.config.condition, pattern);
 
 	return outcome;
 }

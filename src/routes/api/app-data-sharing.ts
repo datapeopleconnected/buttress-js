@@ -21,6 +21,10 @@ import Datastore from '../../datastore/index.js';
 import DatastoreFactory from '../../datastore/adapter-factory.js';
 
 import ButtressAdapater from '../../datastore/adapters/buttress.js';
+import TokenSchemaModel from '../../model/core/token.js';
+import AppDataSharingSchemaModel from '../../model/core/app-data-sharing.js';
+import Token from '@buttress/api/dist/token.js';
+import ActivitySchemaModel from '../../model/core/activity.js';
 
 /**
  * The data sharing agreement registration process should be as follows:
@@ -38,7 +42,7 @@ import ButtressAdapater from '../../datastore/adapters/buttress.js';
  */
 const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
 	// Create new token
-	const newToken = Model.getModel('Token').createTokenString();
+	const newToken = Model.getCoreModel(TokenSchemaModel).createTokenString();
 
 	let connectionString = Helpers.DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
 
@@ -55,11 +59,11 @@ const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
 	if (!activationResult || !activationResult.status) return dataSharing;
 
 	// Flag our data sharing agreement as active & update the remote app token with the new one.
-	await Model.getModel('AppDataSharing').activate(dataSharing.id, activationResult.token);
+	await Model.getCoreModel(AppDataSharingSchemaModel).activate(dataSharing.id, activationResult.token);
 	dataSharing.remoteApp.token = activationResult.token;
 
 	// Update our data sharing agreement token with the new value.
-	await Model.getModel('Token').update({'id': dataSharingTokenId}, {$set: {'value': newToken}});
+	await Model.getCoreModel(TokenSchemaModel).update({ 'id': dataSharingTokenId }, { $set: { 'value': newToken } });
 
 	// Rebuild the connection string with the new token
 	connectionString = Helpers.DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
@@ -69,7 +73,7 @@ const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
 
 	// Establish a connection using the datastore manager so it's ready for any future requests.
 	// TOOD: Handle errors with the new token here.
-	const datastore = Datastore.createInstance({connectionString});
+	const datastore = Datastore.createInstance({ connectionString });
 	await datastore.connect();
 
 	dataSharing.active = true;
@@ -97,7 +101,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/:id', 'GET APP DATA SHARING', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing/:id', 'GET APP DATA SHARING', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -134,7 +138,7 @@ routes.push(GetAppDataSharing);
 */
 class AddDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing', 'ADD APP DATA SHARING', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing', 'ADD APP DATA SHARING', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -162,7 +166,7 @@ class AddDataSharing extends Route {
 		}
 
 		// If we're not super then set the appId to be the current appId
-		if (token.type !== Model.getModel('Token').Constants.Type.SYSTEM || !req.body.appId) {
+		if (token.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM || !req.body.appId) {
 			req.body.appId = token._appId;
 		}
 
@@ -209,12 +213,12 @@ routes.push(AddDataSharing);
  */
 class UpdateAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/:dataSharingId', 'UPDATE APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing/:dataSharingId', 'UPDATE APP DATA SHARING AGREEMENT', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -225,7 +229,7 @@ class UpdateAppDataSharing extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const {validation, body} = this.model.validateUpdate(req.body);
+		const { validation, body } = this.model.validateUpdate(req.body);
 		req.body = body;
 		if (!validation.isValid) {
 			if (validation.isPathValid === false) {
@@ -253,12 +257,12 @@ routes.push(UpdateAppDataSharing);
  */
 class BulkUpdateAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/bulk/update', 'BULK UPDATE APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing/bulk/update', 'BULK UPDATE APP DATA SHARING AGREEMENT', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -270,7 +274,7 @@ class BulkUpdateAppDataSharing extends Route {
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 			}
 
-			const {validation, body} = this.model.validateUpdate(item.body);
+			const { validation, body } = this.model.validateUpdate(item.body);
 			item.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -303,7 +307,7 @@ routes.push(BulkUpdateAppDataSharing);
  */
 class UpdateAppDataSharingPolicy extends Route {
 	constructor(services) {
-		super('app-data-sharing/:dataSharingId/policy', 'UPDATE APP DATA SHARING AGREEMENT POLICY', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing/:dataSharingId/policy', 'UPDATE APP DATA SHARING AGREEMENT POLICY', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -352,7 +356,7 @@ routes.push(UpdateAppDataSharingPolicy);
  */
 class ActivateAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/activate', 'POST Activate App Data Sharing', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing/activate', 'POST Activate App Data Sharing', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.DATASHARING;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -364,7 +368,7 @@ class ActivateAppDataSharing extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
 		}
 
-		if (token.type !== Model.getModel('Token').Constants.Type.DATA_SHARING) {
+		if (token.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.DATA_SHARING) {
 			this.log(`ERROR: invalid token type, type was ${token.type}`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(401, `invalid_token_type`));
 		}
@@ -388,14 +392,14 @@ class ActivateAppDataSharing extends Route {
 	async _exec(req, res, dataSharing) {
 		if (dataSharing.active) return true;
 
-		const newLocalToken = Model.getModel('Token').createTokenString();
+		const newLocalToken = Model.getCoreModel(TokenSchemaModel).createTokenString();
 
-		const {newToken} = req.body;
+		const { newToken } = req.body;
 		await this.model.activate(dataSharing.id, newToken);
 
-		await Model.getModel('Token').update({
+		await Model.getCoreModel(TokenSchemaModel).update({
 			'id': req.token.id,
-		}, {$set: {'value': newLocalToken}});
+		}, { $set: { 'value': newLocalToken } });
 
 		return {
 			status: true,
@@ -413,7 +417,7 @@ routes.push(ActivateAppDataSharing);
  */
 class ReactivateAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/reactivate/:dataSharingId', 'UPDATE Reactivate App Data Sharing', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing/reactivate/:dataSharingId', 'UPDATE Reactivate App Data Sharing', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -453,7 +457,7 @@ routes.push(ReactivateAppDataSharing);
  */
 class DeactivateAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/deactivate/:dataSharingId', 'UPDATE Deactivate App Data Sharing', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing/deactivate/:dataSharingId', 'UPDATE Deactivate App Data Sharing', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -490,7 +494,7 @@ routes.push(DeactivateAppDataSharing);
 
 class StatusAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing/:dataSharingId/status', 'GET App Data Sharing Status', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing/:dataSharingId/status', 'GET App Data Sharing Status', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -531,7 +535,7 @@ routes.push(StatusAppDataSharing);
  */
 class GetAllAppDataSharing extends Route {
 	constructor(services) {
-		super('app-data-sharing', 'APP DATA SHARING AGREEMENT LIST', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing', 'APP DATA SHARING AGREEMENT LIST', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -552,7 +556,7 @@ routes.push(GetAllAppDataSharing);
  */
 class SearchAppDataSharingAgreement extends Route {
 	constructor(services) {
-		super('app-data-sharing', 'SEARCH APP DATA SHARING AGREEMENT LIST', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing', 'SEARCH APP DATA SHARING AGREEMENT LIST', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -572,7 +576,7 @@ class SearchAppDataSharingAgreement extends Route {
 			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
 			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
 			sort: (req.body && req.body.sort) ? req.body.sort : {},
-			project: (req.body && req.body.project)? req.body.project : false,
+			project: (req.body && req.body.project) ? req.body.project : false,
 		};
 
 		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
@@ -599,7 +603,7 @@ routes.push(SearchAppDataSharingAgreement);
  */
 class AppDataSharingAgreementCount extends Route {
 	constructor(services) {
-		super('app-data-sharing/count', 'COUNT APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing/count', 'COUNT APP DATA SHARING AGREEMENT', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -641,7 +645,7 @@ routes.push(AppDataSharingAgreementCount);
  */
 class DeleteDataSharingAgreement extends Route {
 	constructor(services) {
-		super('app-data-sharing/:id', 'DELETE APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing/:id', 'DELETE APP DATA SHARING AGREEMENT', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -661,7 +665,7 @@ class DeleteDataSharingAgreement extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const appDataSharingToken = await Model.getModel('Token').findById(appDataSharing._tokenId);
+		const appDataSharingToken = await Model.getCoreModel(TokenSchemaModel).findById(appDataSharing._tokenId);
 		if (!appDataSharingToken) {
 			this.log('ERROR: Could not fetch Data Sharing token', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `could_not_fetch_data_sharing_token`));
@@ -675,7 +679,7 @@ class DeleteDataSharingAgreement extends Route {
 
 	async _exec(req, res, validate) {
 		await this.model.rm(validate.appDataSharing.id);
-		await Model.getModel('Token').rm(validate.token.id);
+		await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
 		return true;
 	}
 }
@@ -686,19 +690,19 @@ routes.push(DeleteDataSharingAgreement);
  */
 class DeleteAllDataSharingAgreement extends Route {
 	constructor(services) {
-		super('app-data-sharing', 'DELETE ALL DATA SHARING', services, Model.getModel('AppDataSharing'));
+		super('app-data-sharing', 'DELETE ALL DATA SHARING', services, Model.getCoreModel(AppDataSharingSchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.WRITE;
 	}
 
 	async _validate(req) {
-		const dsFind = await this.model.find({}, {}, 0, 0, {}, {id: 1, _tokenId: 1});
+		const dsFind = await this.model.find({}, {}, 0, 0, {}, { id: 1, _tokenId: 1 });
 
 		return (await Helpers.streamAll(dsFind)).reduce((arr, ds) => {
 			arr.dsIds.push(ds.id);
 			arr.tokenIds.push(ds._tokenId);
-			return arr;	
+			return arr;
 		}, {
 			dsIds: [],
 			tokenIds: [],
@@ -707,7 +711,7 @@ class DeleteAllDataSharingAgreement extends Route {
 
 	async _exec(req, res, validate) {
 		await this.model.rmBulk(validate.dsIds);
-		await Model.getModel('Token').rmBulk(validate.tokenIds);
+		await Model.getCoreModel(TokenSchemaModel).rmBulk(validate.tokenIds);
 
 		return true;
 	}

@@ -20,7 +20,7 @@ import Sugar from './sugar.js';
 
 import Datastore from '../datastore/index.js';
 
-import {v4 as uuidv4} from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 
 /* ********************************************************************************
 *
@@ -77,70 +77,70 @@ export const getFlattenedBody = __getFlattenedBody;
 const __getPropDefault = (config) => {
 	let res;
 	switch (config.__type) {
-	default:
-	case 'boolean':
-		res = config.__default === undefined ? false : config.__default;
-		break;
-	case 'string':
-		if (config.__default !== null || config.__default !== undefined) {
-			if (config.__default === 'randomString') {
-				const length = 36;
-				const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-				const mask = 0x3d;
+		default:
+		case 'boolean':
+			res = config.__default === undefined ? false : config.__default;
+			break;
+		case 'string':
+			if (config.__default !== null || config.__default !== undefined) {
+				if (config.__default === 'randomString') {
+					const length = 36;
+					const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+					const mask = 0x3d;
 
-				const bytes = crypto.randomBytes(length);
-				res = '';
-				for (let x = 0; x < bytes.length; x++) {
-					const byte = bytes[x];
-					res += chars[byte & mask];
+					const bytes = crypto.randomBytes(length);
+					res = '';
+					for (let x = 0; x < bytes.length; x++) {
+						const byte = bytes[x];
+						res += chars[byte & mask];
+					}
+				} else {
+					res = config.__default;
+				}
+			}
+			break;
+		case 'text':
+			res = config.__default === undefined ? '' : config.__default;
+			break;
+		case 'number':
+			res = config.__default === undefined ? 0 : config.__default;
+			break;
+		case 'array':
+			res = config.__default === undefined ? [] : config.__default;
+			break;
+		case 'object':
+			res = config.__default === undefined ? {} : config.__default;
+			break;
+		case 'id':
+			if (config.__default) {
+				if (config.__default === 'new') {
+					res = Datastore.getInstance('core').ID.new();
+				} else {
+					res = config.__default;
 				}
 			} else {
-				res = config.__default;
+				res = null;
 			}
-		}
-		break;
-	case 'text':
-		res = config.__default === undefined ? '' : config.__default;
-		break;
-	case 'number':
-		res = config.__default === undefined ? 0 : config.__default;
-		break;
-	case 'array':
-		res = config.__default === undefined ? [] : config.__default;
-		break;
-	case 'object':
-		res = config.__default === undefined ? {} : config.__default;
-		break;
-	case 'id':
-		if (config.__default) {
-			if (config.__default === 'new') {
-				res = Datastore.getInstance('core').ID.new();
+			break;
+		case 'uuid':
+			if (config.__default) {
+				if (config.__default === 'new') {
+					res = uuidv4();
+				} else {
+					res = config.__default;
+				}
 			} else {
-				res = config.__default;
+				res = null;
 			}
-		} else {
-			res = null;
-		}
-		break;
-	case 'uuid':
-		if (config.__default) {
-			if (config.__default === 'new') {
-				res = uuidv4();
+			break;
+		case 'date':
+			if (config.__default === null) {
+				res = null;
+			} else if (config.__default) {
+				res = Sugar.Date.create(config.__default);
 			} else {
-				res = config.__default;
+				res = new Date();
 			}
-		} else {
-			res = null;
-		}
-		break;
-	case 'date':
-		if (config.__default === null) {
-			res = null;
-		} else if (config.__default) {
-			res = Sugar.Date.create(config.__default);
-		} else {
-			res = new Date();
-		}
 	}
 	return res;
 };
@@ -157,97 +157,97 @@ const __validateProp = (prop, config) => {
 	}
 
 	switch (config.__type) {
-	case 'boolean':
-		if (type === 'string') {
-			const bool = prop.value === 'true' || prop.value === 'yes';
-			prop.value = bool;
-			type = typeof prop.value;
-		}
-		if (type === 'number') {
-			const bool = prop.value === 1;
-			prop.value = bool;
-			type = typeof prop.value;
-		}
-		valid = type === config.__type;
-		break;
-	case 'number':
-		if (type === 'string') {
-			const number = Number(prop.value);
-			if (Number.isNaN(number) === false) {
-				prop.value = number;
+		case 'boolean':
+			if (type === 'string') {
+				const bool = prop.value === 'true' || prop.value === 'yes';
+				prop.value = bool;
 				type = typeof prop.value;
 			}
-		}
-		valid = type === config.__type;
-		break;
-	case 'id':
-		if (type === 'string') {
-			try {
-				prop.value = Datastore.getInstance('core').ID.new(prop.value);
-				valid = type === 'string';
-			} catch (e) {
-				valid = false;
+			if (type === 'number') {
+				const bool = prop.value === 1;
+				prop.value = bool;
+				type = typeof prop.value;
 			}
-		} else if (type === 'object') {
-			if (Datastore.getInstance('core').ID.isValid(prop.value)) {
+			valid = type === config.__type;
+			break;
+		case 'number':
+			if (type === 'string') {
+				const number = Number(prop.value);
+				if (Number.isNaN(number) === false) {
+					prop.value = number;
+					type = typeof prop.value;
+				}
+			}
+			valid = type === config.__type;
+			break;
+		case 'id':
+			if (type === 'string') {
 				try {
 					prop.value = Datastore.getInstance('core').ID.new(prop.value);
-					valid = true;
+					valid = type === 'string';
 				} catch (e) {
+					valid = false;
+				}
+			} else if (type === 'object') {
+				if (Datastore.getInstance('core').ID.isValid(prop.value)) {
+					try {
+						prop.value = Datastore.getInstance('core').ID.new(prop.value);
+						valid = true;
+					} catch (e) {
+						valid = false;
+					}
+				} else {
 					valid = false;
 				}
 			} else {
 				valid = false;
 			}
-		} else {
-			valid = false;
-		}
-		break;
-	case 'uuid':
-		if (type === 'string') {
-			try {
-				// TODO: FIX THIS!
-				// valid = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(prop.value);
-				valid = true;
-			} catch (e) {
-				Logging.logDebug(e);
+			break;
+		case 'uuid':
+			if (type === 'string') {
+				try {
+					// TODO: FIX THIS!
+					// valid = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(prop.value);
+					valid = true;
+				} catch (e) {
+					Logging.logDebug(e);
+					valid = false;
+				}
+			} else {
 				valid = false;
 			}
-		} else {
-			valid = false;
-		}
-		break;
-	case 'object':
-		valid = type === config.__type;
-		break;
-	case 'string':
-	case 'text':
-		if (type === 'number') {
-			prop.value = String(prop.value);
-			type = typeof prop.value;
-		}
-
-		valid = type === 'string';
-		if (config.__enum && Array.isArray(config.__enum)) {
-			valid = !prop.value || config.__enum.indexOf(prop.value) !== -1;
-		}
-		break;
-	case 'array':
-		valid = Array.isArray(prop.value);
-		break;
-	case 'date':
-		if (prop.value === null) {
-			valid = true;
-		} else {
-			const date = new Date(prop.value);
-			valid = Sugar.Date.isValid(date);
-			if (valid) {
-				prop.value = date;
+			break;
+		case 'object':
+			valid = type === config.__type;
+			break;
+		case 'string':
+		case 'text':
+			if (type === 'number') {
+				prop.value = String(prop.value);
+				type = typeof prop.value;
 			}
-		}
-		break;
-	default:
-		valid = false;
+
+			valid = type === 'string';
+			if (config.__enum && Array.isArray(config.__enum)) {
+				valid = !prop.value || config.__enum.indexOf(prop.value) !== -1;
+			}
+			break;
+		case 'array':
+			valid = Array.isArray(prop.value);
+			break;
+		case 'date':
+			if (prop.value === null) {
+				valid = true;
+			} else {
+				const date = new Date(prop.value);
+				valid = Sugar.Date.isValid(date);
+				if (valid) {
+					prop.value = date;
+				}
+			}
+			break;
+		default:
+			valid = false;
 	}
 
 	return valid;
@@ -275,7 +275,7 @@ const __validate = (schema, values, parentProperty, body?: any) => {
 		if (path.length > 1) {
 			path.reduce((prev, next, idx, arr) => {
 				const np = (idx !== 0) ? `${prev}.${next}` : next;
-				if (idx !== arr.length -1 && schema[np] && schema[np].__type === 'array') {
+				if (idx !== arr.length - 1 && schema[np] && schema[np].__type === 'array') {
 					isSubPropOfArray = true;
 				}
 				return np;
@@ -355,7 +355,7 @@ const __validate = (schema, values, parentProperty, body?: any) => {
 				const prop = {
 					value: propVal.value[idx],
 				};
-				if (!__validateProp(prop, {__type: config.__itemtype})) {
+				if (!__validateProp(prop, { __type: config.__itemtype })) {
 					Logging.logWarn(`Invalid ${property}.${idx}: ${prop.value} [${typeof prop.value}] expected [${config.__itemtype}]`);
 					res.isValid = false;
 					res.invalid.push(`${parentProperty}.${idx}:${prop.value}[${typeof prop.value}] [${config.__itemtype}]`);
@@ -436,7 +436,7 @@ function __unflattenObject(data) {
 	const result = {};
 	for (const i of Object.keys(data)) {
 		const keys = i.split('.');
-		keys.reduce(function(r, e, j) {
+		keys.reduce(function (r, e, j) {
 			return r[e] || (r[e] = isNaN(Number(keys[j + 1])) ? (keys.length - 1 == j ? data[i] : {}) : []);
 		}, result);
 	}
@@ -474,7 +474,7 @@ export const sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number
 		if (path.length > 1) {
 			path.reduce((prev, next, idx, arr) => {
 				const np = (idx !== 0) ? `${prev}.${next}` : next;
-				if (idx !== arr.length -1 && schemaFlat[np] && schemaFlat[np].__type === 'array') {
+				if (idx !== arr.length - 1 && schemaFlat[np] && schemaFlat[np].__type === 'array') {
 					isSubPropOfArray = true;
 				}
 				return np;

@@ -47,7 +47,7 @@ export class PolicyEnv {
 
 	private _globalQueryEnv: { [index: string]: string } = {};
 
-	generateBaseGlobalEnvs() : ACBaseEnv {
+	generateBaseGlobalEnvs(): ACBaseEnv {
 		return {
 			date: {
 				now: new Date().toISOString(),
@@ -55,7 +55,7 @@ export class PolicyEnv {
 		};
 	}
 
-	generateRequestGlobalEnvs(req, appId, authUser) : ACEnv {
+	generateRequestGlobalEnvs(req, appId, authUser): ACEnv {
 		return {
 			...this.generateBaseGlobalEnvs(),
 			ipAddress: null,

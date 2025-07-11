@@ -21,7 +21,7 @@ const require = createRequire(import.meta.url);
 
 const getClassesList = (dirName) => {
 	let files: NodeRequire[] = [];
-	const items = fs.readdirSync(dirName, {withFileTypes: true});
+	const items = fs.readdirSync(dirName, { withFileTypes: true });
 	for (const item of items) {
 		if (item.isDirectory()) {
 			files = [...files, ...getClassesList(`${dirName}/${item.name}`)];

@@ -30,6 +30,13 @@ import Sugar from '../../helpers/sugar.js';
 import * as Helpers from '../../helpers/index.js';
 
 import Datastore from '../../datastore/index.js';
+import LambdaSchemaModel from '../../model/core/lambda.js';
+import TokenSchemaModel from '../../model/core/token.js';
+import UserSchemaModel from '../../model/core/user.js';
+import AppSchemaModel from '../../model/core/app.js';
+import ActivitySchemaModel from '../../model/core/activity.js';
+import DeploymentSchemaModel from '../../model/core/deployment.js';
+import LambdaExecutionSchemaModel from '../../model/core/lambda-execution.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -38,7 +45,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetLambda extends Route {
 	constructor(services) {
-		super('lambda/:id', 'GET LAMBDA', services, Model.getModel('Lambda'));
+		super('lambda/:id', 'GET LAMBDA', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -75,7 +82,7 @@ routes.push(GetLambda);
  */
 class GetLambdaList extends Route {
 	constructor(services) {
-		super('lambda', 'GET LAMBDA LIST', services, Model.getModel('Lambda'));
+		super('lambda', 'GET LAMBDA LIST', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -103,8 +110,8 @@ class GetLambdaList extends Route {
 			return this.model.findByIds(ids);
 		}
 
-		return (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) ?
-			await this.model.findAll() : await this.model.find({_appId: this.model.adapter.ID.new(req.authApp.id)});
+		return (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) ?
+			await this.model.findAll() : await this.model.find({ _appId: this.model.adapter.ID.new(req.authApp.id) });
 	}
 }
 routes.push(GetLambdaList);
@@ -114,7 +121,7 @@ routes.push(GetLambdaList);
  */
 class SearchLambdaList extends Route {
 	constructor(services) {
-		super('lambda', 'SEARCH LAMBDA LIST', services, Model.getModel('Lambda'));
+		super('lambda', 'SEARCH LAMBDA LIST', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -149,7 +156,7 @@ routes.push(SearchLambdaList);
  */
 class AddLambda extends Route {
 	constructor(services) {
-		super('lambda', 'ADD LAMBDA', services, Model.getModel('Lambda'));
+		super('lambda', 'ADD LAMBDA', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -163,14 +170,14 @@ class AddLambda extends Route {
 			const gitHash = req.body?.lambda?.git?.hash;
 
 			if (!req.authApp ||
-					!req.body.lambda.trigger ||
-					!req.body.lambda.git ||
-					!req.body.lambda.git.entryFile ||
-					!req.body.lambda.git.entryPoint ||
-					!name ||
-					!url ||
-					!gitHash ||
-					!branch) {
+				!req.body.lambda.trigger ||
+				!req.body.lambda.git ||
+				!req.body.lambda.git.entryFile ||
+				!req.body.lambda.git.entryPoint ||
+				!name ||
+				!url ||
+				!gitHash ||
+				!branch) {
 				this.log(`[${this.name}] Missing required lambda field`, Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 			}
@@ -208,13 +215,13 @@ class AddLambda extends Route {
 				appId = lambda._appId;
 			}
 			if (token && token._userId) {
-				const user = await Model.getModel('User').findById(token._userId);
+				const user = await Model.getCoreModel(UserSchemaModel).findById(token._userId);
 				appId = user._appId;
 			}
 		}
 
-		const app = await Model.getModel('App').findById(appId);
-		const lambda = await this.model.add(req.body.lambda, {auth: req.body.auth, app});
+		const app = await Model.getCoreModel(AppSchemaModel).findById(appId);
+		const lambda = await this.model.add(req.body.lambda, { auth: req.body.auth, app });
 
 		const hasPathMutation = lambda.trigger.some((t) => t.type === 'PATH_MUTATION');
 		if (hasPathMutation) {
@@ -231,18 +238,18 @@ routes.push(AddLambda);
  */
 class UpdateLambda extends Route {
 	constructor(services) {
-		super('lambda/:id', 'UPDATE LAMBDA', services, Model.getModel('Lambda'));
+		super('lambda/:id', 'UPDATE LAMBDA', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const {validation, body} = this.model.validateUpdate(req.body);
+			const { validation, body } = this.model.validateUpdate(req.body);
 			req.body = body;
 
 			if (!validation.isValid) {
@@ -286,18 +293,18 @@ routes.push(UpdateLambda);
  */
 class BulkUpdateLambda extends Route {
 	constructor(services) {
-		super('lambda/bulk/update', 'BULK UPDATE LAMBDA', services, Model.getModel('Lambda'));
+		super('lambda/bulk/update', 'BULK UPDATE LAMBDA', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
 	async _validate(req, res, token) {
 		for await (const item of req.body) {
-			const {validation, body} = this.model.validateUpdate(item.body);
+			const { validation, body } = this.model.validateUpdate(item.body);
 			item.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -338,7 +345,7 @@ routes.push(BulkUpdateLambda);
  */
 class ScheduleLambdaExecution extends Route {
 	constructor(services) {
-		super('lambda/:id/schedule', 'SCHEDULE LAMBDA EXECUTION', services, Model.getModel('Lambda'));
+		super('lambda/:id/schedule', 'SCHEDULE LAMBDA EXECUTION', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -353,7 +360,7 @@ class ScheduleLambdaExecution extends Route {
 		// This should be auto scoped to the app id.
 		const lambda = await this.model.findOne({
 			id: this.model.createId(req.params.id),
-			...(req.authApp.id) ? {_appId: Model.getModel('App').createId(req.authApp.id)} : {},
+			...(req.authApp.id) ? { _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) } : {},
 		});
 		if (!lambda) {
 			this.log('ERROR: Lambda not found', Route.LogLevel.ERR);
@@ -368,10 +375,10 @@ class ScheduleLambdaExecution extends Route {
 			lambdaId: lambda.id,
 		};
 		if (req.body.deploymentId) {
-			deploymentQuery.id = Model.getModel('Deployment').createId(req.body.deploymentId);
+			deploymentQuery.id = Model.getCoreModel(DeploymentSchemaModel).createId(req.body.deploymentId);
 		}
 
-		const deployment = await Model.getModel('Deployment').findOne(deploymentQuery);
+		const deployment = await Model.getCoreModel(DeploymentSchemaModel).findOne(deploymentQuery);
 
 		const executeAfter = Sugar.Date.create(req.body.executeAfter);
 		if (!Sugar.Date.isValid(executeAfter)) {
@@ -392,7 +399,7 @@ class ScheduleLambdaExecution extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		return await Model.getModel('LambdaExecution').add(validate.execution, validate.appId);
+		return await Model.getCoreModel(LambdaExecutionSchemaModel).add(validate.execution, validate.appId);
 	}
 }
 routes.push(ScheduleLambdaExecution);
@@ -402,7 +409,7 @@ routes.push(ScheduleLambdaExecution);
  */
 class EditLambdaDeployment extends Route {
 	constructor(services) {
-		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', services, Model.getModel('Lambda'));
+		super('lambda/:id/deployment', 'EDIT LAMBDA DEPLOYMENT', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -466,12 +473,12 @@ routes.push(EditLambdaDeployment);
  */
 class SetLambdaPolicyProperties extends Route {
 	constructor(services) {
-		super('lambda/:id/policy-property', 'SET LAMBDA POLICY PROPERTY', services, Model.getModel('Lambda'));
+		super('lambda/:id/policy-property', 'SET LAMBDA POLICY PROPERTY', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -499,7 +506,7 @@ class SetLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 		}
 
-		const lambdaToken = await Model.getModel('Token').findOne({
+		const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
 			_lambdaId: this.model.createId(req.params.id),
 		});
 		if (!lambdaToken) {
@@ -511,7 +518,7 @@ class SetLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').setPolicyPropertiesById(validate.id.toString(), req.body);
+		await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(validate.id.toString(), req.body);
 		return true;
 	}
 }
@@ -522,12 +529,12 @@ routes.push(SetLambdaPolicyProperties);
  */
 class UpdateLambdaPolicyProperties extends Route {
 	constructor(services) {
-		super('lambda/:id/update-policy-property', 'UPDATE LAMBDA POLICY PROPERTY', services, Model.getModel('Lambda'));
+		super('lambda/:id/update-policy-property', 'UPDATE LAMBDA POLICY PROPERTY', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -555,7 +562,7 @@ class UpdateLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
 		}
 
-		const lambdaToken = await Model.getModel('Token').findOne({
+		const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
 			_lambdaId: this.model.createId(req.params.id),
 		});
 		if (!lambdaToken) {
@@ -569,7 +576,7 @@ class UpdateLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').updatePolicyProperties(validate.token, req.body);
+		await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate.token, req.body);
 		return true;
 	}
 }
@@ -580,12 +587,12 @@ routes.push(UpdateLambdaPolicyProperties);
  */
 class ClearLambdaPolicyProperties extends Route {
 	constructor(services) {
-		super('lambda/:id/clear-policy-property', 'REMOVE LAMBDA POLICY PROPERTY', services, Model.getModel('Lambda'));
+		super('lambda/:id/clear-policy-property', 'REMOVE LAMBDA POLICY PROPERTY', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
+		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
 		this.activityBroadcast = true;
 	}
 
@@ -601,7 +608,7 @@ class ClearLambdaPolicyProperties extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
 		}
 
-		const lambdaToken = await Model.getModel('Token').findOne({
+		const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
 			_lambdaId: this.model.createId(req.params.id),
 		});
 		if (!lambdaToken) {
@@ -615,7 +622,7 @@ class ClearLambdaPolicyProperties extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		await Model.getModel('Token').clearPolicyPropertiesById(validate.token);
+		await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.token);
 		return true;
 	}
 }
@@ -626,7 +633,7 @@ routes.push(ClearLambdaPolicyProperties);
  */
 class DeleteLambda extends Route {
 	constructor(services) {
-		super('lambda/:id', 'DELETE LAMBDA', services, Model.getModel('Lambda'));
+		super('lambda/:id', 'DELETE LAMBDA', services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -644,7 +651,7 @@ class DeleteLambda extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
 		}
 
-		const lambdaToken = await Model.getModel('Token').findOne({_lambdaId: lambda.id});
+		const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({ _lambdaId: lambda.id });
 		if (!lambdaToken) {
 			this.log(`ERROR: Could not fetch lambda's token`, Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `could_fetch_lambda_token`));
@@ -659,7 +666,7 @@ class DeleteLambda extends Route {
 	async _exec(req, res, validate) {
 		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${validate.lambda.id}`);
 		await this.model.rm(validate.lambda.id);
-		await Model.getModel('Token').rm(validate.token.id);
+		await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
 
 		if (validate.lambda.trigger.some((t) => t.type === 'PATH_MUTATION')) {
 			this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', JSON.stringify(validate.lambda));
@@ -675,7 +682,7 @@ routes.push(DeleteLambda);
  */
 class LambdaCount extends Route {
 	constructor(services) {
-		super(`lambda/count`, `COUNT LAMBDAS`, services, Model.getModel('Lambda'));
+		super(`lambda/count`, `COUNT LAMBDAS`, services, Model.getCoreModel(LambdaSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;

@@ -15,6 +15,7 @@
  */
 import Route from '../route.js';
 import Model from '../../model/index.js';
+import DeploymentSchemaModel from '../../model/core/deployment.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -23,7 +24,7 @@ const routes: (typeof Route)[] = [];
  */
 class SearchDeploymentList extends Route {
 	constructor(services) {
-		super('deployment', 'SEARCH DEPLOYMENT LIST', services, Model.getModel('Deployment'));
+		super('deployment', 'SEARCH DEPLOYMENT LIST', services, Model.getCoreModel(DeploymentSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -60,7 +61,7 @@ routes.push(SearchDeploymentList);
  */
 class DeploymentCount extends Route {
 	constructor(services) {
-		super(`deployment/count`, `COUNT DEPLOYMENTS`, services, Model.getModel('Deployment'));
+		super(`deployment/count`, `COUNT DEPLOYMENTS`, services, Model.getCoreModel(DeploymentSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;

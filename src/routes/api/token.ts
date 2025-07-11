@@ -19,9 +19,11 @@ import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
 
 import * as ACM from '../../access-control/models-access.js';
-import { Token } from '../../model/core/token.js';
+import TokenSchemaModel, { Token } from '../../model/core/token.js';
 
 import { QueryParams } from '../../types/bjs-query.js';
+import UserSchemaModel from '../../model/core/user.js';
+import AppSchemaModel from '../../model/core/app.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -30,7 +32,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetTokenList extends Route {
 	constructor(services) {
-		super('token', 'LIST TOKEN', services, Model.getModel('Token'));
+		super('token', 'LIST TOKEN', services, Model.getCoreModel(TokenSchemaModel));
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -41,7 +43,7 @@ class GetTokenList extends Route {
 	_validate(req, res, token) {
 		const queryParams: QueryParams<Token> = {
 			query: {
-				_appId: Model.getModel('App').createId(req.authApp.id)
+				_appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id)
 			},
 			project: {
 				id: 1,
@@ -50,7 +52,7 @@ class GetTokenList extends Route {
 			}
 		};
 
-		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
 			queryParams.query = {};
 			queryParams.project = {};
 		}
@@ -69,7 +71,7 @@ routes.push(GetTokenList);
  */
 class SearchTokenList extends Route {
 	constructor(services) {
-		super('token', 'SEARCH TOKEN', services, Model.getModel('Token'));
+		super('token', 'SEARCH TOKEN', services, Model.getCoreModel(TokenSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -80,7 +82,7 @@ class SearchTokenList extends Route {
 	async _validate(req, res, token) {
 		const queryParams: QueryParams<Token> = {
 			query: {
-				$and: [{_appId: Model.getModel('App').createId(req.authApp.id)}]
+				$and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }]
 			},
 			project: {
 				id: 1,
@@ -89,7 +91,7 @@ class SearchTokenList extends Route {
 			}
 		};
 
-		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
 			queryParams.query = {};
 			queryParams.project = {};
 		}
@@ -116,7 +118,7 @@ routes.push(SearchTokenList);
  */
 class DeleteAllTokens extends Route {
 	constructor(services) {
-		super('token/:type?', 'DELETE ALL TOKENS', services, Model.getModel('Token'));
+		super('token/:type?', 'DELETE ALL TOKENS', services, Model.getCoreModel(TokenSchemaModel));
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -129,22 +131,22 @@ class DeleteAllTokens extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		if (req.params.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+		if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
 			this.log('ERROR: Cannot delete system tokens', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
 		}
 
-		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
 			const query = (req.params.type) ? {
 				type: req.params.type
 			} : {
 				type: {
-					$ne: Model.getModel('Token').Constants.Type.SYSTEM
+					$ne: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM
 				}
 			};
 			await this.model.rmAll(query);
 		} else {
-			if (req.params.type === Model.getModel('Token').Constants.Type.APP){
+			if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.APP) {
 				this.log('ERROR: Cannot delete app tokens as app', Route.LogLevel.ERR);
 				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
 			}
@@ -153,13 +155,13 @@ class DeleteAllTokens extends Route {
 				type: req.params.type
 			} : {
 				type: {
-					$ne: Model.getModel('Token').Constants.Type.APP
+					$ne: Model.getCoreModel(TokenSchemaModel).Constants.Type.APP
 				}
 			};
 
 			await this.model.rmAll({
 				...query,
-				_appId: Model.getModel('App').createId(req.authApp.id),
+				_appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
 			});
 		}
 
@@ -173,7 +175,7 @@ routes.push(DeleteAllTokens);
  */
 class SearchUserToken extends Route {
 	constructor(services) {
-		super('token/:userId', 'SEARCH USER TOKEN', services, Model.getModel('Token'));
+		super('token/:userId', 'SEARCH USER TOKEN', services, Model.getCoreModel(TokenSchemaModel));
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -184,7 +186,7 @@ class SearchUserToken extends Route {
 	async _validate(req, res, token) {
 		const queryParams: QueryParams<Token> = {
 			query: {
-				$and: [{_appId: Model.getModel('App').createId(req.authApp.id)}]
+				$and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }]
 			},
 			project: {
 				id: 1,
@@ -193,12 +195,12 @@ class SearchUserToken extends Route {
 			}
 		};
 
-		if (req.token && req.token.type === Model.getModel('Token').Constants.Type.SYSTEM) {
+		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
 			queryParams.query = {};
 			queryParams.project = {};
 		}
 
-		const exists = Model.getModel('User').exists(req.params.userId);
+		const exists = Model.getCoreModel(UserSchemaModel).exists(req.params.userId);
 		if (!exists) {
 			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_id`));
@@ -207,7 +209,7 @@ class SearchUserToken extends Route {
 		if (!queryParams.query.$and) {
 			queryParams.query.$and = [];
 		}
-		
+
 		queryParams.query.$and.push({
 			_userId: req.params.userId,
 		});
