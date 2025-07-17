@@ -102,7 +102,9 @@ export default class LambdaManager {
 	private _maximumRetry: number = 500;
 	private _lambdaPathMutationTimeout: number = 1000;
 
-	private __haltQueue: boolean = false;
+	private _shutdownQueue: boolean = false;
+	private _isProcessing: boolean = false;
+	private _shouldReprocess: boolean = false;
 
 	private _queueBatchSize: number = 25;
 
@@ -140,11 +142,14 @@ export default class LambdaManager {
 		Logging.logDebug('LambdaManager:init');
 
 		this._loadLambdaPathsMutation();
-		this._manageLambdaFolders();
-		this._subscribeToLambdaWorkers();
-		this._handleLambdaAPIExecution();
-		this._notifyLambdaPathChange();
-		this._setTimeoutCheck();
+
+		this._setupLambdaFolders();
+
+		this._listenToLambdaWorkers();
+		this._listenLambdaAPIExecution();
+		this._listenLambdaPathChange();
+
+		this._setQueueTimeout();
 
 		this.__nrp?.on('rest:worker:rebuild-path-mutation-cache', async () => {
 			this._pathsMutation = [];
@@ -159,7 +164,7 @@ export default class LambdaManager {
 	async clean() {
 		Logging.logDebug('LambdaManager:clean');
 
-		this.__haltQueue = true;
+		this._shutdownQueue = true;
 
 		if (this._timeout) {
 			clearTimeout(this._timeout);
@@ -174,34 +179,41 @@ export default class LambdaManager {
 
 	/**
 	 * Call queue after a specified timeout
-	 * @param {Boolean} [force=false]
 	 */
-	_setTimeoutCheck(force = false) {
-		if (this.__haltQueue) {
-			Logging.logWarn(`[${this.name}]: Attempted to check lambda queue but queue is halted`);
-			return;
-		}
-
-		if (this._timeout && !force) {
-			Logging.logWarn(`[${this.name}]: Check is already queued`);
-			return;
-		}
-
-		Logging.logSilly(`[${this.name}]: Queueing Check ${LambdaManager.Constants.TIMEOUT}`);
-
+	_setQueueTimeout() {
 		if (!this._isPrimary) {
 			Logging.logWarn(`[${this.name}]: Lambda manager timeout was called but we're not primary, shutting down`);
 			return;
 		}
 
-		this._timeout = setTimeout(() => this.__checkQueue(), LambdaManager.Constants.TIMEOUT);
-	}
-
-	async __checkQueue() {
-		if (this.__haltQueue) {
+		if (this._shutdownQueue) {
 			Logging.logWarn(`[${this.name}]: Attempted to check lambda queue but queue is halted`);
 			return;
 		}
+
+		if (this._timeout) {
+			clearTimeout(this._timeout);
+			this._timeout = undefined;
+		}
+
+		Logging.logSilly(`[${this.name}]: Queueing Check ${LambdaManager.Constants.TIMEOUT}`);
+
+		this._timeout = setTimeout(() => this._processQueue(), LambdaManager.Constants.TIMEOUT);
+	}
+
+	private async _processQueue() {
+		if (this._shutdownQueue) {
+			Logging.logWarn(`[${this.name}]: Attempted to check lambda queue but queue is halted`);
+			return;
+		}
+
+		if (this._isProcessing) {
+			Logging.logSilly(`[${this.name}]: Lambda queue is already being processed`);
+			this._shouldReprocess = true;
+			return;
+		}
+
+		this._isProcessing = true;
 
 		try {
 			const lambdaExec = await this.__getPendingLambdaExec();
@@ -219,7 +231,16 @@ export default class LambdaManager {
 			}
 		}
 
-		this._setTimeoutCheck(true);
+		this._isProcessing = false;
+
+		if (this._shouldReprocess) {
+			Logging.logSilly(`[${this.name}]: Reprocessing lambda queue`);
+			this._shouldReprocess = false;
+			this._processQueue();
+			return;
+		} else {
+			this._setQueueTimeout();
+		}
 	}
 
 	/**
@@ -426,7 +447,7 @@ export default class LambdaManager {
 	/**
 	 * Communicate with worker processes via Redis
 	 */
-	_subscribeToLambdaWorkers() {
+	_listenToLambdaWorkers() {
 		Logging.logDebug(`[${this.name}] Subscribing to worker network`);
 
 		if (!this.__nrp) throw new Error('No NRP instance found');
@@ -476,7 +497,7 @@ export default class LambdaManager {
 		});
 	}
 
-	async _handleLambdaAPIExecution() {
+	async _listenLambdaAPIExecution() {
 		this.__nrp?.on('rest:worker:exec-lambda-api', async () => {
 			// const data = (JSON.parse(json)) as LambdaExecutionMessage;
 
@@ -490,7 +511,7 @@ export default class LambdaManager {
 
 			// this._lambdaAPI.splice(index, 0, data);
 			// Give the queue a nudge.
-			this.__checkQueue();
+			this._processQueue();
 			// this.__announcePendingExecutions(this._lambdaAPI);
 		});
 	}
@@ -498,7 +519,7 @@ export default class LambdaManager {
 	/**
 	 * Listening on redis event to handle the execution of the path mutations lambda
 	 */
-	_notifyLambdaPathChange() {
+	_listenLambdaPathChange() {
 		this.__nrp?.on('rest:worker:notifyLambdaPathChange', async (json) => {
 			const data = (JSON.parse(json)) as NotifyLambdaPathChangeMessage;
 
@@ -649,13 +670,13 @@ export default class LambdaManager {
 			throw new Error('Failed to create path mutation lambda execution');
 		}
 
-		this.__checkQueue();
+		this._processQueue();
 	}
 
 	/**
 	 * Manages lambda folders
 	 */
-	async _manageLambdaFolders() {
+	async _setupLambdaFolders() {
 		if (!fs.existsSync(Config.paths.lambda.code)) {
 			await exec(`mkdir -p ${Config.paths.lambda.code}`);
 		}
