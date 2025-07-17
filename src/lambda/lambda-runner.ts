@@ -150,7 +150,7 @@ export default class LambdasRunner {
 	 * @param {object} data
 	 * @return {Promise}
 	 */
-	async execute(lambda: Lambda, execution: LambdaExecution, app: App, type: string, data: { body?: any, query?: any, headers?: any, reqId?: string }) {
+	async execute(lambda: Lambda, execution: LambdaExecution, app: App, type: string, data: { body?: string, query?: string, headers?: string, reqId?: string }) {
 		if (!this._isolate) throw new Error('Isolate not initialised');
 		if (!this._jail) throw new Error('Isolate Jail not initialised');
 		if (!this._context) throw new Error('Isolate Context not initialised');
@@ -162,6 +162,10 @@ export default class LambdasRunner {
 		if (type === 'API_ENDPOINT' && !data.reqId) {
 			return Promise.reject(new Error(`Missing reqId for API_ENDPOINT lambda ${lambda.name}, execution ${execution.id}`));
 		}
+
+		const reqBody = (data.body) ? JSON.parse(data.body) : {};
+		const reqQuery = (data.query) ? JSON.parse(data.query) : {};
+		const reqHeaders = (data.headers) ? JSON.parse(data.headers) : {};
 
 		const rxsLambdaToken = await Model.getCoreModel(TokenSchemaModel).find({
 			_appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
@@ -176,7 +180,7 @@ export default class LambdasRunner {
 		let executionToken = lambdaToken;
 		if (execution._tokenId) {
 			const rxsExecToken = await Model.getCoreModel(TokenSchemaModel).find({
-				_id: Model.getCoreModel(AppSchemaModel).createId(execution._tokenId),
+				_id: Model.getCoreModel(TokenSchemaModel).createId(execution._tokenId),
 			});
 			const execToken: any = await Helpers.streamFirst(rxsExecToken);
 			if (!execToken) {
@@ -241,9 +245,9 @@ export default class LambdasRunner {
 			fileName: `lambda_${lambda.id}`,
 			entryPoint: lambda.git.entryPoint,
 		}).copyInto());
-		this._jail.setSync('lambdaData', new ivm.ExternalCopy(data.body).copyInto());
-		this._jail.setSync('lambdaQuery', new ivm.ExternalCopy(data.query).copyInto());
-		this._jail.setSync('lambdaRequestHeaders', new ivm.ExternalCopy(data.headers).copyInto());
+		this._jail.setSync('lambdaData', new ivm.ExternalCopy(reqBody).copyInto());
+		this._jail.setSync('lambdaQuery', new ivm.ExternalCopy(reqQuery).copyInto());
+		this._jail.setSync('lambdaRequestHeaders', new ivm.ExternalCopy(reqHeaders).copyInto());
 
 		// Just exposing a few properties of exeuction
 		this._jail.setSync('lambdaExecution', new ivm.ExternalCopy({
@@ -307,7 +311,9 @@ export default class LambdasRunner {
 				const result = (lambdaHelpers.lambdaResult) ? lambdaHelpers.lambdaResult : 'success';
 
 				const message: ExecutionResultMessage = { code: 200, res: result, reqId: data.reqId, executionId: execution.id };
-				this.__nrp?.emit('lambda:worker:execution-result', JSON.stringify(message));
+				const json = JSON.stringify(message);
+				this.__nrp?.emit('lambda:worker:execution-result', json);
+				Logging.logSilly(`[${this.name}] Lambda ${lambda.name} execution ${execution.id} completed successfully: ${json}`);
 			}
 		} catch (err: any) {
 			await this._updateDBLambdaErrorExecution(lambda);
@@ -323,7 +329,9 @@ export default class LambdasRunner {
 
 				if (data.reqId) {
 					const message: ExecutionResultMessage = { code: 400, err: errMessage, reqId: data.reqId, executionId: execution.id };
-					this.__nrp?.emit('lambda:worker:execution-result', JSON.stringify(message));
+					const json = JSON.stringify(message);
+					this.__nrp?.emit('lambda:worker:execution-result', json);
+					Logging.logSilly(`[${this.name}] Lambda ${lambda.name} execution ${execution.id} errored: ${json}`);
 				} else {
 					throw new Error(`Missing reqId for API_ENDPOINT lambda ${lambda.name}, execution ${execution.id}, error: ${errMessage}`);
 				}
