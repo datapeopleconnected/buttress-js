@@ -339,8 +339,12 @@ routes.push(GetAppSchema);
  * @class UpdateAppSchema
  */
 class UpdateAppSchema extends Route {
+	model: AppSchemaModel;
+
 	constructor(services) {
 		super('app/schema', 'UPDATE APP SCHEMA', services, Model.getCoreModel(AppSchemaModel));
+		this.model = Model.getCoreModel(AppSchemaModel);
+
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;

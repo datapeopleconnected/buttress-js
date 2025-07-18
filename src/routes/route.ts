@@ -26,9 +26,7 @@ import Schema from '../schema.js';
 
 import SchemaModelRemote from '../model/type/remote.js';
 
-import NRP from "node-redis-pubsub";
-import StandardModel from '../model/type/standard.js';
-import RemoteCombinedModel from '../model/type/remote-combined.js';
+import NodeRedisPubsub from "../services/nrp.js";
 import { RESTActivity } from '../types/bjs-nrp-objects.js';
 import ActivitySchemaModel from '../model/core/activity.js';
 import TokenSchemaModel from '../model/core/token.js';
@@ -135,7 +133,7 @@ export default class Route {
 
 	name: string;
 
-	_nrp?: NRP.NodeRedisPubSub;
+	_nrp?: NodeRedisPubsub;
 
 	_redisClient: any;
 
@@ -435,7 +433,14 @@ export default class Route {
 
 		let paths: string[] = [];
 		const values: any[] = [];
-		let body = JSON.parse(req.body);
+		let body: any = null;
+
+		try {
+			body = JSON.parse(req.body);
+		} catch (e) {
+			body = req.body;
+		}
+
 		const id = req.params.id;
 
 		if (this.verb === Constants.Verbs.POST) {

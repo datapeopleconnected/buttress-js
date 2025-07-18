@@ -19,7 +19,7 @@ import assert from 'assert';
 import { io } from 'socket.io-client';
 import { describe, it, before, after } from 'mocha';
 
-import NRP from 'node-redis-pubsub';
+import NRP from '../../../dist/services/nrp.js';
 
 import Config from '../../config.js';
 
@@ -154,23 +154,24 @@ describe('Processing', async () => {
 	const envAwaitPostedCar = async (ref, tokenId, userId, app) => {
 		let addedCar = null;
 
-		const subProm = new Promise((resolve) => {
-			subs[ref] = NRP_INSTANCE.subscribe('spr:activity', async (data) => {
-				// We've got an event too early.
-				if (!addedCar) return;
+		let resolve = null;
+		const futurePromise = new Promise((r) => resolve = r);
 
-				const json = JSON.parse(data);
-				if (json.activity.schemaName !== 'car' || json.activity.response.id !== addedCar.id) return;
+		subs[ref] = await NRP_INSTANCE.subscribe('spr:activity', async (data) => {
+			// We've got an event too early.
+			if (!addedCar) return;
 
-				const result = json.tokens.includes(tokenId);
-				// assert(result, 'Token not found in the list of tokens');
+			const json = JSON.parse(data);
+			if (json.activity.schemaName !== 'car' || json.activity.response.id !== addedCar.id) return;
 
-				if (result) {
-					await subs[ref]();
-					delete subs[ref];
-					resolve(json);
-				}
-			});
+			const result = json.tokens.includes(tokenId);
+			// assert(result, 'Token not found in the list of tokens');
+
+			if (result) {
+				await subs[ref]();
+				delete subs[ref];
+				resolve(json);
+			}
 		});
 
 		[addedCar] = await bjsReq({
@@ -180,7 +181,7 @@ describe('Processing', async () => {
 			body: JSON.stringify({ name: ref, userId: userId, colour: 'red' }),
 		}, app.token);
 
-		await subProm;
+		await futurePromise;
 	};
 
 	const populateTestEnvTokens = async () => {
@@ -222,7 +223,8 @@ describe('Processing', async () => {
 	before(async function () {
 		this.timeout(20000);
 
-		NRP_INSTANCE = NRP(Config.redis);
+		NRP_INSTANCE = new NRP(Config.redis);
+		await NRP_INSTANCE.connect();
 
 		REST_PROCESS = new BootstrapRest();
 		await REST_PROCESS.init();
@@ -292,7 +294,7 @@ describe('Processing', async () => {
 
 		Object.values(subs).forEach((fn) => fn());
 
-		NRP_INSTANCE.end();
+		await NRP_INSTANCE.quit();
 
 		if (REST_PROCESS) await REST_PROCESS.clean();
 		if (SPR_PROCESS) await SPR_PROCESS.clean();
@@ -304,13 +306,14 @@ describe('Processing', async () => {
 			this.timeout(5000);
 			const name = `name-${Math.floor(Math.random() * 100)}`;
 
+			let resolve = null;
+			const futurePromise = new Promise((r) => resolve = r);
+
 			// Subscribe to the NRP event and wait for it to be received.
-			const subProm = new Promise((resolve) => {
-				subs['test1'] = NRP_INSTANCE.subscribe('rest:activity', async (data) => {
-					await subs['test1']();
-					delete subs['test1'];
-					resolve(JSON.parse(data));
-				});
+			subs['test1'] = await NRP_INSTANCE.subscribe('rest:activity', async (data) => {
+				await subs['test1']();
+				delete subs['test1'];
+				resolve(JSON.parse(data));
 			});
 
 			// Make a request to REST to generate the event.
@@ -322,26 +325,27 @@ describe('Processing', async () => {
 			}, testEnv.apps.app1.token);
 
 			// Wait for the sub promise to resolve.
-			await subProm;
+			await futurePromise;
 		});
 
 		it('Should generate a `spr:activity` event after a REST post', async function () {
 			const name = `name-${Math.floor(Math.random() * 100)}`;
 
+			let resolve = null;
+			const futurePromise = new Promise((r) => resolve = r);
+
 			// Subscribe to the NRP event and wait for it to be received.
-			const subProm = new Promise((resolve) => {
-				subs['test2'] = NRP_INSTANCE.subscribe('spr:activity', async (dataRaw) => {
-					await subs['test2']();
-					delete subs['test2'];
-					const data = JSON.parse(dataRaw);
+			subs['test2'] = await NRP_INSTANCE.subscribe('spr:activity', async (dataRaw) => {
+				await subs['test2']();
+				delete subs['test2'];
+				const data = JSON.parse(dataRaw);
 
-					assert(Array.isArray(data.tokens), 'Tokens is not an array');
-					assert(data.tokens.length > 0, 'Tokens is empty');
+				assert(Array.isArray(data.tokens), 'Tokens is not an array');
+				assert(data.tokens.length > 0, 'Tokens is empty');
 
-					assert(data.activity.schemaName === 'car', 'Schema name is not car');
+				assert(data.activity.schemaName === 'car', 'Schema name is not car');
 
-					resolve();
-				});
+				resolve();
 			});
 
 			// Make a request to REST to generate the event.
@@ -353,7 +357,7 @@ describe('Processing', async () => {
 			}, testEnv.apps.app1.token);
 
 			// Wait for the sub promise to resolve.
-			await subProm;
+			await futurePromise;
 		});
 	});
 

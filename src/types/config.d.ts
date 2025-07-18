@@ -51,8 +51,7 @@ interface Config {
     lambdaManager: string;
   }
   redis: {
-    port: string;
-    host: string;
+    url: string;
     scope: string;
   }
   sio: {

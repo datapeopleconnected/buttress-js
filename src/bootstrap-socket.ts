@@ -20,7 +20,7 @@ import createConfig from '@dpc/node-env-obj';
 import hash from 'object-hash';
 import Express from 'express';
 import { ObjectId } from 'bson';
-import { createClient, RedisClient } from 'redis';
+import { createClient, RedisClientType } from '@redis/client';
 import { v4 as uuidv4 } from 'uuid';
 import Sugar from './helpers/sugar.js';
 
@@ -58,20 +58,18 @@ export default class BootstrapSocket extends Bootstrap {
 		[key: string]: sioClientSocket[]
 	} = {};
 
-	private __superApps: any[] = [];
-
 	private _policyCloseSocketEvents: any[] = [];
 
-	private _redisClient?: RedisClient;
-	private _redisClientEmitter: any;
-	private _redisClientIOPub: any;
-	private _redisClientIOSub: any;
+	private _redisClient?: RedisClientType;
+	private _redisClientEmitter?: RedisClientType;
+	private _redisClientIOPub?: RedisClientType;
+	private _redisClientIOSub?: RedisClientType;
 
 	private _processResQueue: any;
 
-	private _requestSockets: any;
+	private _requestSockets: Helpers.ExpireMap;
 
-	emitter: any;
+	emitter?: Emitter;
 	io?: sio;
 
 	isPrimary: boolean;
@@ -91,8 +89,6 @@ export default class BootstrapSocket extends Bootstrap {
 
 		this._dataShareSockets = {};
 
-		this.__superApps = [];
-
 		this._policyCloseSocketEvents = [];
 
 		this.isPrimary = Config.sio.app === 'primary';
@@ -101,14 +97,7 @@ export default class BootstrapSocket extends Bootstrap {
 
 		this._mainServer = null;
 
-		this._redisClientEmitter = null;
-		this.emitter = null;
-
 		this._processResQueue = {};
-
-		// This client is used by the emitter
-		this._redisClientIOPub = null;
-		this._redisClientIOSub = null;
 
 		this._primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
@@ -133,10 +122,9 @@ export default class BootstrapSocket extends Bootstrap {
 		this.__services.set('modelManager', Model);
 
 		this._redisClient = createClient({
-			host: Config.redis.host,
-			port: parseInt(Config.redis.port, 10) || 6379,
-			prefix: Config.redis.scope,
+			url: Config.redis.url
 		});
+		await this._redisClient.connect();
 
 		this.__services.set('policyCache', new PolicyCache(this._redisClient, Model));
 
@@ -156,29 +144,34 @@ export default class BootstrapSocket extends Bootstrap {
 
 		Logging.logSilly('BootstrapSocket:clean');
 
+		if (this.emitter) {
+			Logging.logSilly('Closing emitter');
+			this.emitter.disconnectSockets(true);
+			this.emitter = undefined;
+		}
+
 		if (this._redisClientEmitter) {
 			Logging.logSilly('Closing redisClientEmitter');
-			await new Promise((resolve) => this._redisClientEmitter.quit(resolve));
-			this._redisClientEmitter = null;
-			this.emitter = null;
+			await this._redisClientEmitter.quit();
+			this._redisClientEmitter = undefined;
 		}
 		if (this._redisClientIOPub) {
 			Logging.logSilly('Closing redisClientIOPub');
-			await new Promise((resolve) => this._redisClientIOPub.quit(resolve));
-			this._redisClientIOPub = null;
+			await this._redisClientIOPub.quit();
+			this._redisClientIOPub = undefined;
 		}
 		if (this._redisClientIOSub) {
 			Logging.logSilly('Closing redisClientIOSub');
-			await new Promise((resolve) => this._redisClientIOSub.quit(resolve));
-			this._redisClientIOSub = null;
+			await this._redisClientIOSub.quit();
+			this._redisClientIOSub = undefined;
 		}
 
 		if (this._redisClient) {
-			this._redisClient.quit();
+			await this._redisClient.quit();
 		}
 
-		this._requestSockets.destory();
-		this._requestSockets = null;
+		this._requestSockets.destroy();
+		// this._requestSockets = null;
 
 		// Close down all socket.io connections / handlers
 		if (this.io) {
@@ -206,7 +199,7 @@ export default class BootstrapSocket extends Bootstrap {
 			}
 		}
 
-		// Destory all models
+		// Destroy all models
 		await Model.clean();
 
 		// Close Datastore connections
@@ -230,10 +223,9 @@ export default class BootstrapSocket extends Bootstrap {
 
 	async __initMain() {
 		this._redisClientEmitter = createClient({
-			host: Config.redis.host,
-			port: parseInt(Config.redis.port, 10) || 6379,
-			prefix: Config.redis.scope,
+			url: Config.redis.url
 		});
+		await this._redisClientEmitter.connect();
 		this.emitter = new Emitter(this._redisClientEmitter);
 
 		if (this.isPrimary) {
@@ -241,15 +233,15 @@ export default class BootstrapSocket extends Bootstrap {
 			await this.__registerNRPPrimaryListeners();
 
 			// create app namespaces
-			const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
-			for await (const app of rxsApps) {
-				if (!app._tokenId) {
-					Logging.logWarn(`App with no token`);
-					continue;
-				}
+			// const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
+			// for await (const app of rxsApps) {
+			// 	if (!app._tokenId) {
+			// 		Logging.logWarn(`App with no token`);
+			// 		continue;
+			// 	}
 
-				await this.__createAppNamespace(app);
-			}
+			// 	await this.__createAppNamespace(app);
+			// }
 		} else {
 			Logging.logVerbose(`Secondary Main SOCKET`);
 		}
@@ -299,11 +291,13 @@ export default class BootstrapSocket extends Bootstrap {
 
 		// As of v7, the library will no longer create Redis clients on behalf of the user.
 		this._redisClientIOPub = createClient({
-			host: Config.redis.host,
-			port: parseInt(Config.redis.port, 10) || 6379,
-			prefix: Config.redis.scope,
+			url: Config.redis.url
 		});
 		this._redisClientIOSub = this._redisClientIOPub.duplicate();
+
+		await this._redisClientIOPub.connect();
+		await this._redisClientIOSub.connect();
+
 		this.io.adapter(createAdapter(this._redisClientIOPub, this._redisClientIOSub));
 
 		const stats = this.io.of(`/stats`);
@@ -448,21 +442,15 @@ export default class BootstrapSocket extends Bootstrap {
 		if (!this.__nrp) throw new Error('No NRP instance');
 
 		// this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
-		this.__nrp.on('clearUserLocalData', (data) => this.__primaryClearUserLocalData(data));
-		this.__nrp.on('dataShare:activated', async (data: any) => {
-			data = JSON.parse(data);
+		this.__nrp.on('clearUserLocalData', (json) => this.__primaryClearUserLocalData(json));
+		this.__nrp.on('dataShare:activated', async (json: string) => {
+			const data = JSON.parse(json);
 			const dataShare = await Model.getCoreModel(AppDataSharingSchemaModel).findById(data.appDataSharingId);
 			await this.__primaryCreateDataShareConnection(dataShare);
 		});
 
-		this.__nrp.on('app:created', async (data: any) => {
-			data = JSON.parse(data);
-			const app = await Model.getCoreModel(AppSchemaModel).findById(data.appId);
-			await this.__createAppNamespace(app);
-		});
-
-		this.__nrp.on('app-schema:updated', async (data: any) => {
-			data = JSON.parse(data);
+		this.__nrp.on('app-schema:updated', async (json: string) => {
+			const data = JSON.parse(json);
 			await Model.initSchema(data.appId);
 		});
 	}
@@ -558,7 +546,7 @@ export default class BootstrapSocket extends Bootstrap {
 		this.io.of(`/${data.activity.appAPIPath}`).to(tokens).emit('db-activity', packet);
 	}
 
-	__primaryClearUserLocalData(data) {
+	__primaryClearUserLocalData(json: string) {
 		throw new Error('DEPRECATED: call made to __primaryClearUserLocalData');
 		// const apiPath = data.appAPIPath;
 
@@ -576,31 +564,6 @@ export default class BootstrapSocket extends Bootstrap {
 		}
 
 		return Number(s) % spread;
-	}
-
-	async __createAppNamespace(app) {
-		if (this.__namespace[app.apiPath]) {
-			return Logging.logDebug(`Namespace already created: ${app.name}`);
-		}
-
-		const token = await Model.getCoreModel(TokenSchemaModel).findOne({ id: app._tokenId });
-		if (!token) return Logging.logWarn(`No Token found for ${app.name}`);
-
-		const isSuper = token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
-
-		this.__namespace[app.apiPath] = {
-			emitter: this.emitter.of(`/${app.apiPath}`),
-			sequence: {
-				super: 0,
-				global: 0,
-			},
-		};
-
-		if (isSuper) {
-			this.__superApps.push(app.apiPath);
-		}
-
-		Logging.log(`${(isSuper) ? 'SUPER' : 'APP'} Name: ${app.name}, App ID: ${app.id}, Path: /${app.apiPath}`);
 	}
 
 	async __primaryCreateDataShareConnection(dataShare) {

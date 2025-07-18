@@ -396,6 +396,12 @@ export const get = function (path: string, root: any): any {
 	return prop;
 }
 
+export function redisPrefix(prefix: string, key: string): string {
+	if (!prefix) return key;
+	if (prefix.endsWith(':')) return `${prefix}${key}`;
+	return `${prefix}:${key}`;
+}
+
 export class ExpireMap extends Map {
 	expireTime: number;
 	gcTimeout?: NodeJS.Timeout;
@@ -427,7 +433,7 @@ export class ExpireMap extends Map {
 	}
 
 	// This is dumb
-	destory() {
+	destroy() {
 		if (this.gcTimeout) clearTimeout(this.gcTimeout);
 		this.clear();
 	}

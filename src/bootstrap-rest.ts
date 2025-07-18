@@ -21,10 +21,9 @@ import cluster from 'node:cluster';
 import { fileURLToPath } from 'node:url';
 
 import Express from 'express';
-import { RedisClient, createClient } from 'redis';
+import { createClient, RedisClientType } from '@redis/client';
 import cors from 'cors';
 import methodOverride from 'method-override';
-import bodyParser from 'body-parser';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -73,13 +72,12 @@ export default class BootstrapRest extends Bootstrap {
 
 		// Register some services.
 		this.__services.set('redisClient', createClient({
-			port: parseInt(Config.redis.port, 10) || 6379,
-			host: Config.redis.host,
-			prefix: Config.redis.scope
+			url: Config.redis.url
 		}));
 
-		const redisClient = this.__services.get('redisClient') as RedisClient;
+		const redisClient = this.__services.get('redisClient') as RedisClientType;
 		if (redisClient === undefined) throw new Error('Redis client not found whilst trying to init BootstrapRest');
+		await redisClient.connect();
 
 		this.__services.set('policyCache', new PolicyCache(redisClient, Model))
 		const policyCache = this.__services.get('policyCache') as PolicyCache;
@@ -112,7 +110,7 @@ export default class BootstrapRest extends Bootstrap {
 
 		if (this.__services.has('redisClient') !== undefined) {
 			Logging.logSilly('Closing _redisClientRest client');
-			(this.__services.get('redisClient') as RedisClient).quit();
+			(this.__services.get('redisClient') as RedisClientType).quit();
 			this.__services.delete('redisClient');
 		}
 
@@ -140,8 +138,8 @@ export default class BootstrapRest extends Bootstrap {
 
 		if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');
 
-		this.__nrp.on('app-schema:updated', (data: any) => {
-			data = JSON.parse(data);
+		this.__nrp.on('app-schema:updated', (json) => {
+			const data = JSON.parse(json);
 			Logging.logDebug(`App Schema Updated: ${data.appId}`);
 			this.notifyWorkers({
 				type: 'app-schema:updated',
@@ -183,8 +181,8 @@ export default class BootstrapRest extends Bootstrap {
 		const app = Express();
 		// app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 		app.enable('trust proxy');
-		app.use(bodyParser.json({ limit: '20mb' }));
-		app.use(bodyParser.urlencoded({ extended: true }));
+		app.use(Express.json({ limit: '20mb' }));
+		app.use(Express.urlencoded({ extended: true }));
 		app.use(methodOverride());
 		app.use(cors({
 			origin: true,

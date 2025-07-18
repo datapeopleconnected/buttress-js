@@ -17,7 +17,7 @@
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
-import { createApp, bjsReq, createPolicyUser, deleteApp, BJSReqError, ENDPOINT } from '../../../helpers.js';
+import { createApp, bjsReq, createUser, createPolicyUser, deleteApp, BJSReqError, ENDPOINT } from '../../../helpers.js';
 
 import BootstrapRest from '../../../../dist/bootstrap-rest.js';
 
@@ -338,12 +338,14 @@ describe('User API', async () => {
 
 	describe('SearchUserList', () => {
 		it('Should search and return a list of users', async () => {
-			const query = { email: 'user@example.com' };
+			testEnv.users.user4 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'user-test-user4', {});
+
+			const query = { 'auth.email': testEnv.users.user4.auth[0].email };
 			const users = await bjsReq({
 				url: `${ENDPOINT.REST}/api/v1/user`,
 				method: 'SEARCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: { query }
+				body: JSON.stringify({ query })
 			}, testEnv.apps.app1.token);
 
 			assert.strictEqual(users.length, 1, 'Users length should be 1');
@@ -352,12 +354,12 @@ describe('User API', async () => {
 
 	describe('UserCount', () => {
 		it('Should return the count of users', async () => {
-			const query = { email: 'user@example.com' };
+			const query = { 'auth.email': testEnv.users.user4.auth[0].email };
 			const count = await bjsReq({
 				url: `${ENDPOINT.REST}/api/v1/user/count`,
 				method: 'SEARCH',
 				headers: { 'Content-Type': 'application/json' },
-				body: { query }
+				body: JSON.stringify({ query })
 			}, testEnv.apps.app1.token);
 
 			assert.strictEqual(count, 1, 'User count should be 1');

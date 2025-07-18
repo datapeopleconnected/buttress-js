@@ -15,7 +15,7 @@
  */
 
 import hash from 'object-hash';
-import NRP, { NodeRedisPubSub } from 'node-redis-pubsub';
+import NodeRedisPubsub from '../services/nrp.js';
 
 import Sugar from '../helpers/sugar.js';
 import Model from '../model/index.js';
@@ -72,7 +72,7 @@ class AccessControl {
 
 	_policyCache?: PolicyCache;
 
-	_nrp?: NodeRedisPubSub;
+	_nrp?: NodeRedisPubsub;
 
 	constructor() {
 		this._schemas = {};
@@ -85,7 +85,7 @@ class AccessControl {
 		this._coreSchemaNames = [];
 	}
 
-	async init(nrp: NodeRedisPubSub, policyCache: PolicyCache) {
+	async init(nrp: NodeRedisPubsub, policyCache: PolicyCache) {
 		if (!nrp) throw new Error('Unable to init access control, NRP not set');
 
 		this._nrp = nrp;
@@ -96,13 +96,9 @@ class AccessControl {
 
 	handleCacheListeners() {
 		if (!this._nrp) throw new Error('Unable to register listeners, NRP not set');
-		this._nrp.on('app-policy:bust-cache', async (data: any) => {
-			data = JSON.parse(data);
-			// TODO: Move to policy cache
-			// await this.__cacheAppPolicies(data.appId);
-		});
-		this._nrp.on('app-schema:updated', async (data: any) => {
-			data = JSON.parse(data);
+
+		this._nrp.on('app-schema:updated', async (json) => {
+			const data = JSON.parse(json);
 			await this.__cacheAppSchema(data.appId);
 		});
 	}
@@ -442,7 +438,7 @@ class AccessControl {
 	}
 
 
-	async __cacheAppSchema(appId) {
+	async __cacheAppSchema(appId: string) {
 		const app = await Model.getCoreModel(AppSchemaModel).findById(appId);
 		this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type.indexOf('collection') === 0);
 

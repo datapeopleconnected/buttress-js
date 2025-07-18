@@ -107,7 +107,6 @@ describe('Schema', async () => {
 	describe('Requests', async () => {
 		describe('Methods', async () => {
 			it('Should make a POST request to bulk add', async function() {
-				this.timeout(5000);
 				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add?token=${testEnv.apps.app1.token}`, {
 					method: 'POST',
 					headers: {'Content-Type': 'application/json'},

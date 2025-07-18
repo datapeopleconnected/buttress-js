@@ -18,7 +18,7 @@ import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 
 import * as Shared from '../shared.js';
-import NRP from 'node-redis-pubsub';
+import NodeRedisPubsub from '../../services/nrp.js';
 
 /* ********************************************************************************
  *
@@ -40,7 +40,7 @@ export default class StandardModel {
 	collectionName: any;
 
 	__services: any;
-	__nrp?: NRP.NodeRedisPubSub;
+	__nrp?: NodeRedisPubsub;
 	__modelManager: any;
 
 	adapter: any;

@@ -20,7 +20,7 @@ sourceMapSupport.install();
 import os from 'node:os';
 import cluster, { Worker } from 'node:cluster';
 import EventEmitter from 'node:events';
-import NRP from 'node-redis-pubsub';
+import NodeRedisPubsub from './services/nrp.js';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -44,7 +44,7 @@ export default class Bootstrap extends EventEmitter {
 
 	workers: WorkerHolder[] = [];
 
-	protected __nrp?: NRP.NodeRedisPubSub;
+	protected __nrp?: NodeRedisPubsub;
 
 	protected __shutdown: boolean = false;
 
@@ -64,9 +64,10 @@ export default class Bootstrap extends EventEmitter {
 	async init(): Promise<boolean> {
 		this.__shutdown = false;
 
-		this.__services.set('nrp', NRP(Config.redis));
-		this.__nrp = this.__services.get('nrp') as NRP.NodeRedisPubSub;
+		this.__services.set('nrp', new NodeRedisPubsub(Config.redis));
+		this.__nrp = this.__services.get('nrp') as NodeRedisPubsub;
 		this.__nrp.on('error', (data: string) => Logging.logError(data));
+		await this.__nrp.connect();
 
 		return true;
 	}
@@ -86,7 +87,7 @@ export default class Bootstrap extends EventEmitter {
 		// Close out the NRP connection
 		if (this.__nrp) {
 			Logging.logSilly('Closing node redis pubsub connection');
-			this.__nrp.quit();
+			this.__nrp.end();
 		}
 	}
 

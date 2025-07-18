@@ -33,10 +33,9 @@ describe('Token API', async () => {
 		REST_PROCESS = new BootstrapRest();
 
 		await REST_PROCESS.init();
-		
+
 		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test Token API', 'test-token-api-1');
 
-		// Create some users
 		testEnv.users.user1 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'token-test-user1', {});
 	});
 

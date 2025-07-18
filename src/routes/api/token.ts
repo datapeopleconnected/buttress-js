@@ -214,7 +214,7 @@ class SearchUserToken extends Route {
 			_userId: req.params.userId,
 		});
 
-		if (req.body.query) {
+		if (req.body?.query) {
 			queryParams.query.$and.push(req.body.query);
 		}
 

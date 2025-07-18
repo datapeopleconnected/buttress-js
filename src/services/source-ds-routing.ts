@@ -14,13 +14,13 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { RedisClient } from 'redis';
+import { RedisClientType } from '@redis/client';
 
 export class SourceDataSharingRouting {
   // This map is used to buffer incoming keys to check.
   private _tempCheckMap = new Map();
 
-  private _redisClient: RedisClient;
+  private _redisClient: RedisClientType;
 
   private _informCheckTimeout?: NodeJS.Timeout;
   private _informCheckTimeoutInterval = 100;
@@ -29,7 +29,7 @@ export class SourceDataSharingRouting {
   //       we can just get the information when a data sharing agreement is setup and store it
   //       in the main datastore. This can then be cached and kept in check.
 
-  constructor(redisClient: RedisClient) {
+  constructor(redisClient: RedisClientType) {
     this._redisClient = redisClient;
 
     this._proecssInformCheck();
@@ -64,12 +64,12 @@ export class SourceDataSharingRouting {
   private async _proecssInformCheck() {
     if (this._tempCheckMap.size < 1) return;
     for await (const [key, value] of this._tempCheckMap.entries()) {
-      const current = await new Promise((resolve, reject) => this._redisClient.get(`sds-route:${key}`, (err, res) => (err ? reject(err) : resolve(res))));
+      const current = await this._redisClient.get(`sds-route:${key}`);
       if (current === value) {
         continue;
       }
 
-      await new Promise((resolve, reject) => this._redisClient.set(`sds-route:${key}`, value, (err, res) => (err ? reject(err) : resolve(res))));
+      await this._redisClient.set(`sds-route:${key}`, value);
     }
 
     this._setInformCheckTimeout();

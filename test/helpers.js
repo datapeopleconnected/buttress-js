@@ -92,12 +92,16 @@ export const deleteApp = async (ENDPOINT, appId, token) => bjsReq({
 	method: 'DELETE',
 }, token);
 
-export const updateSchema = async (ENDPOINT, schema, token) => bjsReq({
-	url: `${ENDPOINT}/api/v1/app/schema`,
-	method: 'PUT',
-	headers: {'Content-Type': 'application/json'},
-	body: JSON.stringify(schema),
-}, token);
+export const updateSchema = async (ENDPOINT, schema, token) => {
+	const res = await bjsReq({
+		url: `${ENDPOINT}/api/v1/app/schema`,
+		method: 'PUT',
+		headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify(schema),
+	}, token);
+	await new Promise((resolve) => setTimeout(resolve, 100)); // Give the routes time to regen.
+	return res;
+};
 export const updatePolicyPropertyList = async (ENDPOINT, list, token) => bjsReq({
 	url: `${ENDPOINT}/api/v1/app/policy-property-list/true`,
 	method: 'PUT',

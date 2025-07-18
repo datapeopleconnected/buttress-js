@@ -16,7 +16,7 @@
 import createConfig from '@dpc/node-env-obj';
 
 import { ObjectId } from 'bson';
-import { createClient, RedisClient } from 'redis';
+import { createClient, RedisClientType } from '@redis/client';
 
 import Bootstrap from './bootstrap.js';
 
@@ -71,7 +71,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
 	isPrimary: boolean;
 
-	private _redisClient?: RedisClient;
+	private _redisClient?: RedisClientType;
 
 	private _primaryDatastore: any;
 
@@ -97,10 +97,9 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 		await this._primaryDatastore.connect();
 
 		this._redisClient = createClient({
-			host: Config.redis.host,
-			port: parseInt(Config.redis.port, 10) || 6379,
-			prefix: Config.redis.scope,
+			url: Config.redis.url
 		});
+		await this._redisClient.connect();
 
 		// Register some services.
 		this.__services.set('modelManager', Model);
@@ -126,7 +125,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 		Logging.logSilly('BootstrapSPR:clean');
 
 		if (this._redisClient) {
-			this._redisClient.quit();
+			await this._redisClient.quit();
 		}
 
 		// Destory all models
@@ -168,10 +167,10 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
 	// Use redis to store and cache a list of connected tokens and their associated policies
 	async storePolicy(policy: Policy) {
-		if (!this._redisClient) throw new Error('No Redis client');
+		if (!this._policyCache) throw new Error('No Policy Cache');
 
 		try {
-			await this._redisClient.hset('policies', `policy:${policy.id}`, JSON.stringify(policy));
+			this._policyCache?.storePolicy(policy);
 		} catch (error) {
 			Logging.logError(error);
 			throw error; // Re-throw the error to be handled by the caller
@@ -180,12 +179,11 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 		return policy.id;
 	}
 
-	async linkTokenToPolicy(token: string, policyId: string) {
-		if (!this._redisClient) throw new Error('No Redis client');
+	async linkTokenToPolicy(tokenId: string, policyId: string) {
+		if (!this._policyCache) throw new Error('No Policy Cache');
 
 		try {
-			await this._redisClient.sadd(`token:${token}`, policyId);
-			await this._redisClient.sadd(`policy:${policyId}:tokens`, token);
+			this._policyCache.connectTokenToPolicy(tokenId, policyId);
 		} catch (error) {
 			Logging.logError(error);
 			throw error;
@@ -197,13 +195,9 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 	// - Otherwise we need to fetch the relevant policies from MongoDB and store them in redis for quick access
 	// - Any time a policy is changed in MongoDB, we need to update the redis cache
 	private async _socketConnection(tokenId: string) {
-		if (!this._redisClient) throw new Error('No Redis client');
 		if (!this._policyCache) throw new Error('No Policy Cache');
 
-		const connected = await new Promise((resolve, reject) => this._redisClient ? this._redisClient.zscore('connected-tokens', tokenId, (err, res) => {
-			if (err) return reject(err);
-			resolve(res !== null);
-		}) : reject(new Error('No Redis client')));
+		const connected = await this._policyCache.isTokenConnected(tokenId);
 
 		// If we're already connected no need to do anything further
 		if (connected) {

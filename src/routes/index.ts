@@ -18,8 +18,7 @@ import path from 'node:path';
 import express, { Router, Request, Response, NextFunction } from 'express';
 import onFinished from 'on-finished';
 import { v4 as uuidv4 } from 'uuid';
-import { ObjectId } from 'bson';
-import NRP from 'node-redis-pubsub';
+import NRP from '../services/nrp.js';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -61,7 +60,7 @@ class Routes {
 
 	_services: any;
 
-	_nrp?: NRP.NodeRedisPubSub;
+	_nrp?: NRP;
 
 	_preRouteMiddleware: any[];
 

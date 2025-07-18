@@ -20,7 +20,7 @@ import { exec as cpExec } from 'node:child_process';
 
 import { v4 as uuidv4 } from 'uuid';
 import ObjectHash from 'object-hash';
-import NRP from 'node-redis-pubsub';
+import NodeRedisPubsub from '../services/nrp.js';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -91,7 +91,7 @@ export interface LambdaExecutionMessage {
 export default class LambdaManager {
 	name: string;
 
-	private __nrp?: NRP.NodeRedisPubSub;
+	private __nrp?: NodeRedisPubsub;
 
 	private _workerMap: { [key: string]: string } = {}; // workerId -> executionId
 	private _inflightExecutions: { [key: string]: LambdaExecutionMessage } = {};

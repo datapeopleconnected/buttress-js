@@ -26,8 +26,7 @@ The following table shows the configuration parameters available for Buttress.
 | BUTTRESS_SOCK_LISTEN_PORT | int | 6010 | |
 | BUTTRESS_DATASTORE_CONNECTION_STRING | string | |
 | BUTTRESS_DATASTORE_OPTIONS | string | appName=%BUTTRESS_APP_CODE%&maxPoolSize=100 | |
-| BUTTRESS_REDIS_PORT | int | 6379 | |
-| BUTTRESS_REDIS_HOST | string | localhost | |
+| BUTTRESS_REDIS_URL | string | redis://localhost:6379 | |
 | BUTTRESS_REST_APP | string | primary | |
 | BUTTRESS_SOCKET_APP | string | primary | |
 | BUTTRESS_LOGGING_LEVEL | string | info | |

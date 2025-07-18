@@ -22,7 +22,7 @@ import path from 'node:path';
 import util from 'node:util';
 import { exec as cpExec } from 'node:child_process';
 
-import NRP from 'node-redis-pubsub';
+import NodeRedisPubsub from '../services/nrp.js';
 
 const exec = util.promisify(cpExec);
 
@@ -85,7 +85,7 @@ export default class LambdasRunner {
 	_registeredBundles: string[] = [];
 	_compiledLambdas: any;
 
-	private __nrp?: NRP.NodeRedisPubSub;
+	private __nrp?: NodeRedisPubsub;
 
 	constructor(services, type) {
 		this.__nrp = services.get('nrp');

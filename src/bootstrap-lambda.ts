@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import morgan from 'morgan';
-import { createClient, RedisClient } from 'redis';
+import { createClient, RedisClientType } from '@redis/client';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -35,7 +35,7 @@ export default class BootstrapLambda extends Bootstrap {
 
 	primaryDatastore: any;
 
-	private _redisClient?: RedisClient;
+	private _redisClient?: RedisClientType;
 
 	__apiWorkers: number;
 	__pathMutationWorkers: number;
@@ -66,10 +66,9 @@ export default class BootstrapLambda extends Bootstrap {
 		this.__services.set('modelManager', Model);
 
 		this._redisClient = createClient({
-			host: Config.redis.host,
-			port: parseInt(Config.redis.port, 10) || 6379,
-			prefix: Config.redis.scope,
+			url: Config.redis.url
 		});
+		await this._redisClient.connect();
 
 		this.__services.set('policyCache', new PolicyCache(this._redisClient, Model));
 
@@ -130,10 +129,10 @@ export default class BootstrapLambda extends Bootstrap {
 
 					if (data.id !== this.id) return;
 					resolve(data.type);
-				}, () => {
-					this.__nrp?.emit('lambdaProcessWorker:worker-initiated', this.id);
 				});
 			});
+
+			this.__nrp?.emit('lambdaProcessWorker:worker-initiated', this.id);
 		}
 
 		this.__lambdaWorkerProcess = new LambdaRunner(this.__services, type);

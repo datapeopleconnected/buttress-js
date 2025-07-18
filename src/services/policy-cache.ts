@@ -14,9 +14,13 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { RedisClient } from 'redis';
+import { RedisClientType } from '@redis/client';
 
+import { redisPrefix } from '../helpers/index.js';
 import Logging from '../helpers/logging.js';
+
+import createConfig from '@dpc/node-env-obj';
+const Config = createConfig() as unknown as Config;
 
 import AccessControlPolicyMatch from '../access-control/policy-match.js';
 
@@ -28,7 +32,7 @@ import { User } from '../model/core/user.js';
 import * as Helpers from '../helpers/index.js';
 
 export class PolicyCache {
-  private _redisClient: RedisClient;
+  private _redisClient: RedisClientType;
   private _modelManager: typeof Model;
 
   private _connectedTokensTTL = 60; // 1min
@@ -36,7 +40,7 @@ export class PolicyCache {
 
   private _timeoutExpiredConnectedTokensInterval = 60000;
 
-  constructor(redisClient: RedisClient, modelManager: typeof Model) {
+  constructor(redisClient: RedisClientType, modelManager: typeof Model) {
     this._redisClient = redisClient;
     this._modelManager = modelManager;
   }
@@ -46,6 +50,10 @@ export class PolicyCache {
   }
   clean() {
     if (this._timeoutExpiredConnectedTokens) clearTimeout(this._timeoutExpiredConnectedTokens);
+  }
+
+  private _prefix(key: string): string {
+    return redisPrefix(Config.redis.scope, key);
   }
 
   private _processConnectedTokensExpiry() {
@@ -60,9 +68,14 @@ export class PolicyCache {
   }
 
   async getPolicies(policyIds: string[]) {
-    const policies = await new Promise<Policy[]>((resolve, reject) => {
-      this._redisClient.hmget('policies', policyIds, (err, policies) => (err) ? reject(err) : resolve(policies.map((policy) => JSON.parse(policy))));
-    });
+    if (!policyIds || policyIds.length < 1) {
+      Logging.logSilly(`No policy IDs provided, returning empty array.`);
+      return [];
+    }
+
+    const policies = (await this._redisClient.hmGet(this._prefix('policies'), policyIds))
+      .map((policy) => (policy) ? JSON.parse(policy) : false)
+      .filter((policy) => policy !== false);
 
     const missingPolicies = policyIds.filter((policyId) => !policies.find((policy) => policyId === policy.id));
 
@@ -72,9 +85,7 @@ export class PolicyCache {
       await newPolicies.reduce(async (prev, policy) => {
         await prev;
 
-        await new Promise<void>((resolve, reject) => {
-          this._redisClient.hset(`policies`, policy.id.toString(), JSON.stringify(policy), (err) => (err) ? reject(err) : resolve());
-        });
+        await this._redisClient.hSet(this._prefix(`policies`), policy.id.toString(), JSON.stringify(policy));
       }, Promise.resolve());
 
       return policies.concat(newPolicies);
@@ -83,48 +94,36 @@ export class PolicyCache {
     return policies;
   }
 
+  async storePolicy(policy: Policy) {
+    Logging.logSilly(`Storing policy: ${policy.id}`);
+    await this._redisClient.hSet(this._prefix('policies'), `policy:${policy.id}`, JSON.stringify(policy));
+  }
+
   async setTokenIdAsStale(tokenId: string) {
     Logging.logSilly(`Marking token as stale: ${tokenId}`);
 
     // Mark the cache as stale, to force requests to the cache to get fresh copies whilst we clean up.
-    await new Promise<void>((resolve, reject) => {
-      this._redisClient.sadd(`token:${tokenId}`, 'STALE', (err) => (err) ? reject(err) : resolve());
-    });
+    await this._redisClient.sAdd(this._prefix(`token:${tokenId}`), 'STALE');
 
-    // Remove the token from any policy:*:tokens
-    await new Promise<void>((resolve, reject) => {
-      this._redisClient.smembers(`token:${tokenId}`, async (err, policyIds) => {
-        if (err) return reject(err);
+    const policyIds = await this._redisClient.sMembers(this._prefix(`token:${tokenId}`));
 
-        await policyIds.reduce(async (prev, policyId) => {
-          await prev;
+    await policyIds.reduce(async (prev, policyId) => {
+      await prev;
 
-          await new Promise<void>((resolve, reject) => {
-            this._redisClient.srem(`policy:${policyId}:tokens`, tokenId, (err) => (err) ? reject(err) : resolve());
-          });
-        }, Promise.resolve());
-
-        resolve();
-      });
-    });
+      await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
+    }, Promise.resolve());
 
     // Remove the token from token:${tokenId}
-    await new Promise<void>((resolve, reject) => {
-      this._redisClient.del(`token:${tokenId}`, (err) => (err) ? reject(err) : resolve());
-    });
+    await this._redisClient.del(this._prefix(`token:${tokenId}`));
   }
 
   async clearPolicyById(policyId: string) {
-    await new Promise<void>((resolve, reject) => {
-      this._redisClient.hdel(`policies`, policyId, (err) => (err) ? reject(err) : resolve());
-    });
+    await this._redisClient.hDel(this._prefix(`policies`), policyId);
   }
 
   async getPoliciesByToken(token: Token): Promise<Policy[]> {
     let policies: Policy[] = [];
-    const policyIds = await new Promise<string[]>((resolve, reject) => {
-      this._redisClient.smembers(`token:${token.id}`, (err, policyIds) => (err) ? reject(err) : resolve(policyIds));
-    });
+    const policyIds = await this._redisClient.sMembers(this._prefix(`token:${token.id}`));
 
     // If the tokens are marked as stale, we're in the process of cleaning them up. we'll miss the cache and get fresh data.
     const isStale = policyIds.length > 0 && policyIds.includes('STALE');
@@ -136,15 +135,11 @@ export class PolicyCache {
         await policies.reduce(async (prev, policy) => {
           await prev;
 
-          await new Promise<void>((resolve, reject) => {
-            this._redisClient.sadd(`token:${token.id}`, policy.id.toString(), (err) => (err) ? reject(err) : resolve());
-          });
+          await this._redisClient.sAdd(this._prefix(`token:${token.id}`), policy.id.toString());
 
           await this.addPolicy(policy);
 
-          await new Promise<void>((resolve, reject) => {
-            this._redisClient.sadd(`policy:${policy.id}:tokens`, token.id.toString(), (err) => (err) ? reject(err) : resolve());
-          });
+          await this._redisClient.sAdd(this._prefix(`policy:${policy.id}:tokens`), token.id.toString());
         }, Promise.resolve());
       }
     } else {
@@ -162,17 +157,11 @@ export class PolicyCache {
     const schemaWildCard = (isCoreSchema) ? '%CORE_SCHEMA%' : '%APP_SCHEMA%';
 
     // The following code is stupid but will be refactored later.
-    const direct = await new Promise<string[]>((resolve, reject) => {
-      this._redisClient.smembers(`app:${event.appId}:schema:${event.schemaName}`, (err, policyIds) => (err) ? reject(err) : resolve(policyIds));
-    });
+    const direct = await this._redisClient.sMembers(this._prefix(`app:${event.appId}:schema:${event.schemaName}`));
 
-    const allWildcard = await new Promise<string[]>((resolve, reject) => {
-      this._redisClient.smembers(`app:${event.appId}:schema:%ALL%`, (err, policyIds) => (err) ? reject(err) : resolve(policyIds));
-    });
+    const allWildcard = await this._redisClient.sMembers(this._prefix(`app:${event.appId}:schema:%ALL%`));
 
-    const typedWildcard = await new Promise<string[]>((resolve, reject) => {
-      this._redisClient.smembers(`app:${event.appId}:schema:${schemaWildCard}`, (err, policyIds) => (err) ? reject(err) : resolve(policyIds));
-    });
+    const typedWildcard = await this._redisClient.sMembers(this._prefix(`app:${event.appId}:schema:${schemaWildCard}`));
 
     const policyIds = [...new Set(direct.concat(allWildcard).concat(typedWildcard))];
     // console.log(event.appId, policyIds);
@@ -182,11 +171,16 @@ export class PolicyCache {
     return this.getPolicies(policyIds);
   }
 
+  async isTokenConnected(tokenId: string): Promise<boolean> {
+    if (!tokenId) return false;
+    const score = await this._redisClient.zScore(this._prefix(`connected-tokens`), tokenId);
+    if (score === null || isNaN(score)) return false;
+    const now = Math.floor(Date.now() / 1000);
+    return score > now;
+  }
   async addConnectedToken(tokenId: string) {
     const expiryTime = Math.floor(Date.now() / 1000) + this._connectedTokensTTL; // Current time + 1 hour
-    await new Promise<void>((resolve, reject) => {
-      this._redisClient.zadd('connected-tokens', expiryTime, tokenId, (err) => (err) ? reject(err) : resolve());
-    });
+    await this._redisClient.zAdd(this._prefix(`connected-tokens`), [{ value: tokenId, score: expiryTime }]);
 
     // Make sure the user object is cached.
     // await this.cacheUser(user);
@@ -196,9 +190,7 @@ export class PolicyCache {
     // });
   }
   async removeConnectedToken(tokenId: string) {
-    await new Promise<void>((resolve, reject) => {
-      this._redisClient.zrem('connected-tokens', tokenId, (err) => (err) ? reject(err) : resolve());
-    });
+    await this._redisClient.zRem(this._prefix(`connected-tokens`), tokenId);
 
     // await new Promise<void>((resolve, reject) => {
     //   this._redisClient.hdel(`connected-tokens:userIds`, tokenId, (err) => (err) ? reject(err) : resolve());
@@ -206,29 +198,21 @@ export class PolicyCache {
   }
   async clearExpiredConnectedTokens() {
     const now = Math.floor(Date.now() / 1000);
-    await new Promise<void>((resolve, reject) => {
-      this._redisClient.zremrangebyscore('connected-tokens', 0, now, (err) => (err) ? reject(err) : resolve());
-    });
+    await this._redisClient.zRemRangeByScore(this._prefix(`connected-tokens`), 0, now);
 
     // TODO: Need to clean up cached users
   }
 
   async addPolicy(policy) {
-    const policyExists = await new Promise<boolean>((resolve, reject) => {
-      this._redisClient.hexists(`policies`, policy.id.toString(), (err, num) => (err) ? reject(err) : resolve(num === 1));
-    });
+    const policyExists = await this._redisClient.hExists(this._prefix(`policies`), policy.id.toString());
 
     // Early out.
     if (policyExists) return false;
 
-    await new Promise<void>((resolve, reject) => {
-      this._redisClient.hset(`policies`, policy.id.toString(), JSON.stringify(policy), (err) => (err) ? reject(err) : resolve());
-    });
+    await this._redisClient.hSet(this._prefix(`policies`), policy.id.toString(), JSON.stringify(policy));
 
     if (policy.appId) {
-      await new Promise<void>((resolve, reject) => {
-        this._redisClient.sadd(`app:${policy.appId}:policies`, policy.id.toString(), (err) => (err) ? reject(err) : resolve());
-      });
+      await this._redisClient.sAdd(this._prefix(`app:${policy.appId}:policies`), policy.id.toString());
     }
 
     const lookupKeys = policy.config.reduce((acc, config: PolicyConfig) => {
@@ -243,29 +227,30 @@ export class PolicyCache {
     }, []);
 
     for (const key of lookupKeys) {
-      await new Promise<void>((resolve, reject) => {
-        this._redisClient.sadd(key, policy.id.toString(), (err) => (err) ? reject(err) : resolve());
-      });
+      await this._redisClient.sAdd(this._prefix(key), policy.id.toString());
     }
+  }
+
+  async connectTokenToPolicy(tokenId: string, policyId: string) {
+    if (!tokenId || !policyId) {
+      throw new Error('Token ID and Policy ID are required to connect.');
+    }
+
+    Logging.logSilly(`Connecting token ${tokenId} to policy ${policyId}`);
+    await this._redisClient.sAdd(this._prefix(`token:${tokenId}`), policyId);
+    await this._redisClient.sAdd(this._prefix(`policy:${policyId}:tokens`), tokenId);
   }
 
   async getConnectedTokenIdsByPolicyId(policyId: string) {
     const now = Math.floor(Date.now() / 1000);
 
-    const tokenIds = await new Promise<string[]>((resolve, reject) => {
-      this._redisClient.smembers(`policy:${policyId}:tokens`, (err, tokens) => (err) ? reject(err) : resolve(tokens));
-    });
-
-    const connectedTokens = await new Promise<string[]>((resolve, reject) => {
-      this._redisClient.zrange('connected-tokens', 0, -1, (err, connectedTokens) => (err) ? reject(err) : resolve(connectedTokens));
-    });
+    const tokenIds = await this._redisClient.sMembers(this._prefix(`policy:${policyId}:tokens`));
+    const connectedTokens = await this._redisClient.zRange(this._prefix(`connected-tokens`), 0, -1);
     Logging.log(`Policy Tokens: ${JSON.stringify(tokenIds)} in ${JSON.stringify(connectedTokens.join(', '))}`);
 
     const connectedPolicyTokens: string[] = [];
     for await (const tokenId of tokenIds) {
-      const score = await new Promise<number>((resolve, reject) => {
-        this._redisClient.zscore('connected-tokens', tokenId, (err, score) => (err) ? reject(err) : resolve(Number(score)));
-      });
+      const score = await this._redisClient.zScore(this._prefix(`connected-tokens`), tokenId);
 
       if (score !== null && !isNaN(score) && score > now) {
         connectedPolicyTokens.push(tokenId);
@@ -276,24 +261,16 @@ export class PolicyCache {
   }
 
   async cacheUser(user: User) {
-    const userExists = await new Promise<boolean>((resolve, reject) => {
-      this._redisClient.hexists(`users`, user.id, (err, num) => (err) ? reject(err) : resolve(num === 1));
-    });
+    const userExists = await this._redisClient.hExists(this._prefix(`users`), user.id);
     if (userExists) return;
 
-    await new Promise<void>((resolve, reject) => {
-      this._redisClient.hset(`users`, user.id, JSON.stringify(user), (err) => (err) ? reject(err) : resolve());
-    });
+    await this._redisClient.hSet(this._prefix(`users`), user.id, JSON.stringify(user));
   }
   async getCachedUser(userId: string) {
-    return await new Promise<User>((resolve, reject) => {
-      this._redisClient.hget(`users`, userId, (err, user) => (err) ? reject(err) : resolve(JSON.parse(user)));
-    });
+    return await this._redisClient.hGet(this._prefix(`users`), userId);
   }
   async removeCachedUser(userId: string) {
-    await new Promise<void>((resolve, reject) => {
-      this._redisClient.hdel(`users`, userId, (err) => (err) ? reject(err) : resolve());
-    });
+    await this._redisClient.hDel(this._prefix(`users`), userId);
   }
 
   // I am the REST process, a user has sent a request to me, I need the policies that are associated with this token

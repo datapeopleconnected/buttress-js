@@ -4,7 +4,7 @@ variables:
   NODE_ENV: "test"
   BUTTRESS_DATASTORE_CONNECTION_STRING: "mongodb://mongo:27017"
   BUTTRESS_APP_WORKERS: "0"
-  BUTTRESS_REDIS_HOST: "redis"
+  BUTTRESS_REDIS_URL: "redis://redis:6379"
   BUTTRESS_HOST_URL: "http://localhost:8000"
   BUTTRESS_APP_PATH: ".."
 
