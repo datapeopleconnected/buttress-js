@@ -121,8 +121,6 @@ export default class LambdaManager {
 
 		// TODO: Check to see if there is already a lambda manager in the network
 		this._isPrimary = true;
-
-		this.init();
 	}
 
 	/**
@@ -268,10 +266,10 @@ export default class LambdaManager {
 		}, {}, Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData);
 
 		const rxLambdaExec = await Model.getCoreModel(LambdaExecutionSchemaModel).find(query, null, this._queueBatchSize, 0, { priority: 1, executeAfter: 1 });
-		const lambadExecs = await Helpers.streamAll(rxLambdaExec);
-		Logging.logSilly(`Got ${lambadExecs.length} pending cron lambdas`);
+		const lambdaExecs = await Helpers.streamAll(rxLambdaExec);
+		Logging.logSilly(`Got ${lambdaExecs.length} pending lambda executions`);
 
-		return lambadExecs;
+		return lambdaExecs;
 
 		// TODO: Optimise, we don't need to build an array here. We could just filter the items as and when we process them.
 		// that way the whole stream isn't dumped into memory.
@@ -353,10 +351,11 @@ export default class LambdaManager {
 			// }
 
 			this.__nrp?.emit('lambda:worker:announce', JSON.stringify(messagePayload));
+			console.log(`[${this.name}]: Announced lambda execution ${lambdaExec.id} for lambda ${lambdaExec.lambdaId} with type ${lambdaExec.triggerType}`);
 			count++;
 		}
 
-		if (count > 0) Logging.log(`[${this.name}]: announced ${count} lambda`);
+		if (count > 0) Logging.log(`[${this.name}]: announced ${count} lambda executions`);
 	}
 
 	async _createLambdaExecution(type: string, lambdaId: string, gitHash: string, appId: string, priority: ExecPriority, metadata: { key: string, value: string }[] = []) {

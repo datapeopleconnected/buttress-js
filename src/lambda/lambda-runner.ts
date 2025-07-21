@@ -66,9 +66,9 @@ export interface ExecutionResultMessage {
 /**
  * Queue up pending Lambdas and execute them
  *
- * @class LambdasRunner
+ * @class LambdaRunner
  */
-export default class LambdasRunner {
+export default class LambdaRunner {
 
 	id: string;
 	name: string;
@@ -99,8 +99,6 @@ export default class LambdasRunner {
 		this.working = false;
 
 		this._lambdaExecution = null;
-
-		this.init();
 	}
 
 	/**
@@ -117,7 +115,7 @@ export default class LambdasRunner {
 	}
 
 	async init() {
-		Logging.logDebug('LambdasRunner:init');
+		Logging.logDebug('LambdaRunner:init');
 
 		this._isolate = new ivm.Isolate({
 			inspector: false,
@@ -136,7 +134,7 @@ export default class LambdasRunner {
 	}
 
 	async clean() {
-		Logging.logDebug('LambdasRunner:clean');
+		Logging.logDebug('LambdaRunner:clean');
 
 		// Shutdown isolate
 	}
@@ -410,7 +408,9 @@ export default class LambdasRunner {
 	 * Communicate with main process via Redis
 	 */
 	_subscribeToLambdaManager() {
+		console.log(`Registering ${this.name} to listen for lambda execution messages`);
 		this.__nrp?.on('lambda:worker:announce', (json: string) => {
+			console.log(`[${this.name}] Received lambda execution message: ${json}, working status: ${this.working}`);
 			if (this.working) return;
 
 			const message = JSON.parse(json) as LambdaExecutionMessage;

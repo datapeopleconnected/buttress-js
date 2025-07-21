@@ -110,6 +110,7 @@ export default class BootstrapLambda extends Bootstrap {
 			});
 
 			this.__lambdaManagerProcess = new LambdaManager(this.__services);
+			await this.__lambdaManagerProcess.init();
 		} else {
 			Logging.logVerbose(`Secondary Main LAMBDA`);
 		}
@@ -123,7 +124,7 @@ export default class BootstrapLambda extends Bootstrap {
 		let type = LambdaType.ALL;
 
 		if (this.workerProcesses > 0) {
-			type = await new Promise((resolve) => {
+			const typeAssignment = new Promise((resolve) => {
 				this.__nrp?.on('lambdaProcessMain:worker-type', (data: any) => {
 					data = JSON.parse(data);
 
@@ -133,9 +134,12 @@ export default class BootstrapLambda extends Bootstrap {
 			});
 
 			this.__nrp?.emit('lambdaProcessWorker:worker-initiated', this.id);
+			type = await typeAssignment as LambdaType;
+			Logging.logDebug(`Worker [${this.id}] assigned type: ${type}`);
 		}
 
 		this.__lambdaWorkerProcess = new LambdaRunner(this.__services, type);
+		await this.__lambdaWorkerProcess.init();
 	}
 
 	__getLambdaWorkerType() {
