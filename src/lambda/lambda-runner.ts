@@ -610,7 +610,7 @@ export default class LambdaRunner {
 			};
 		});
 
-		// TODO: Fix error to do with require.
+		Logging.logDebug(`[${this.name}] Bundling lambda modules: ${Object.keys(entry).join(', ')}`);
 
 		return new Promise<void>((resolve, reject) => {
 			webpack({
