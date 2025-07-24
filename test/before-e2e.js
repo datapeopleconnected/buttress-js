@@ -13,8 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { MongoClient } from 'mongodb';
 import createConfig from '@dpc/node-env-obj';

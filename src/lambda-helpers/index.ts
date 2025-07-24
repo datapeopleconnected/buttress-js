@@ -14,7 +14,13 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import fs from 'node:fs';
-import { createRequire } from 'node:module';
+import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const require = createRequire(import.meta.url);
 
 // ? Why are we dynamically loading classes from the filesystem?

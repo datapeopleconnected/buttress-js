@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import express, { Router, Request, Response, NextFunction } from 'express';
 import onFinished from 'on-finished';
@@ -50,6 +51,9 @@ import AppDataSharingSchemaModel from '../model/core/app-data-sharing.js';
 import UserSchemaModel from '../model/core/user.js';
 import TokenSchemaModel from '../model/core/token.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 class Routes {
 	app: express.Application;
