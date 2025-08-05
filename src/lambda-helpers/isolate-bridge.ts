@@ -118,76 +118,33 @@ class IsolateBridge {
 	}
 
 	createHostIsolateBridge(isolate, context) {
-		const bootstrap = isolate.compileScriptSync(`new function() {
+		isolate.compileScriptSync(`new function() {
 			let ivm = _ivm;
 			delete _ivm;
 
 			${this._pluginBootstrap}
 
-			let log = _log;
-			delete _log;
-			let logSilly = _logSilly;
-			delete _logSilly;
-			let logDebug = _logDebug;
-			delete _logDebug;
-			let logVerbose = _logVerbose;
-			delete _logVerbose;
-			let logWarn = _logWarn;
-			delete _logWarn;
-			let logError = _logError;
-			delete _logError;
-
-			let setResult = _setResult;
-			delete _setResult;
-
-			let fetch = _fetch;
-			delete _fetch;
-
-			let cryptoRandomBytes = _cryptoRandomBytes;
-			delete _cryptoRandomBytes;
-
-			let getEmailTemplate = _getEmailTemplate;
-			delete _getEmailTemplate;
-
-			let lambdaAPI = _lambdaAPI;
-			delete _lambdaAPI;
-
-			let getCodeChallenge = _getCodeChallenge;
-			delete _getCodeChallenge;
-
-			let generatePDF = _generatePDF;
-			delete _generatePDF;
-
 			global.log = (...args) => {
-				log.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
+				_log.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
 			}
 			global.logSilly = (...args) => {
-				logSilly.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
+				_logSilly.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
 			}
 			global.logDebug = (...args) => {
-				logDebug.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
+				_logDebug.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
 			}
 			global.logVerbose = (...args) => {
-				logVerbose.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
+				_logVerbose.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
 			}
 			global.logWarn = (...args) => {
-				logWarn.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
+				_logWarn.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
 			}
 			global.logError = (...args) => {
-				logError.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
+				_logError.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
 			}
 
 			global.setResult = (...args) => {
-				setResult.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
-			}
-
-			global.lambdaAPI = (key, value) => {
-				return new Promise((resolve) => {
-					lambdaAPI.applyIgnored(
-						undefined,
-						[new ivm.ExternalCopy(key).copyInto(), new ivm.ExternalCopy(value).copyInto(), new ivm.Reference(resolve)],
-					);
-				});
+				_setResult.applyIgnored(undefined, args.map(arg => new ivm.ExternalCopy(arg).copyInto()));
 			}
 
 			global.fetch = (data, callback = null) => {
@@ -197,7 +154,7 @@ class IsolateBridge {
 					} else {
 						callback = new ivm.Reference(callback)
 					}
-					fetch.applyIgnored(
+					_fetch.applyIgnored(
 						undefined,
 						[
 							new ivm.ExternalCopy(data).copyInto(),
@@ -211,7 +168,33 @@ class IsolateBridge {
 
 			global.cryptoRandomBytes = (data) => {
 				return new Promise((resolve, reject) => {
-					cryptoRandomBytes.applyIgnored(
+					_cryptoRandomBytes.applyIgnored(
+						undefined,
+						[
+							new ivm.ExternalCopy(data).copyInto(),
+							new ivm.Reference(resolve),
+							new ivm.Reference(reject),
+						],
+					);
+				});
+			}
+			
+			global.cryptoCreateSign = (data) => {
+				return new Promise((resolve, reject) => {
+					_cryptoCreateSign.applyIgnored(
+						undefined,
+						[
+							new ivm.ExternalCopy(data).copyInto(),
+							new ivm.Reference(resolve),
+							new ivm.Reference(reject),
+						],
+					);
+				});
+			}
+
+			global.updateMetadata = (data) => {
+				return new Promise((resolve, reject) => {
+					_updateMetadata.applyIgnored(
 						undefined,
 						[
 							new ivm.ExternalCopy(data).copyInto(),
@@ -224,7 +207,7 @@ class IsolateBridge {
 
 			global.getEmailTemplate = (data) => {
 				return new Promise((resolve, reject) => {
-					getEmailTemplate.applyIgnored(
+					_getEmailTemplate.applyIgnored(
 						undefined,
 						[
 							new ivm.ExternalCopy(data).copyInto(),
@@ -237,7 +220,7 @@ class IsolateBridge {
 
 			global.getCodeChallenge = (data) => {
 				return new Promise((resolve, reject) => {
-					getCodeChallenge.applyIgnored(
+					_getCodeChallenge.applyIgnored(
 						undefined,
 						[new ivm.ExternalCopy(data).copyInto(), new ivm.Reference(resolve), new ivm.Reference(reject)],
 					);
@@ -246,7 +229,7 @@ class IsolateBridge {
 
 			global.generatePDF = (htmlString) => {
 				return new Promise((resolve, reject) => {
-					generatePDF.applyIgnored(
+					_generatePDF.applyIgnored(
 						undefined,
 						[
 							new ivm.ExternalCopy(htmlString).copyInto(),
@@ -260,16 +243,64 @@ class IsolateBridge {
 			return new ivm.Reference(function forwardMainPromise(mainFunc, resolve) {
 				const derefMainFunc = mainFunc.deref();
 
-				derefMainFunc().then((value) => {
-					resolve.applyIgnored(
+				derefMainFunc()
+					.then((value) => {
+						resolve.applyIgnored(
 							undefined,
 							[new ivm.ExternalCopy(value).copyInto()],
 						);
 					});
-				});
-			}`);
+			});
+		}
 
-		bootstrap.runSync(context);
+		const lambda = {
+			log: (...args) => log(...args),
+			logDebug: (...args) => logDebug(...args),
+			logSilly: (...args) => logSilly(...args),
+			logVerbose: (...args) => logVerbose(...args),
+			logWarn: (...args) => logWarn(...args),
+			logError: (...args) => logError(...args),
+			setResult: (...args) => setResult(...args),
+			fetch: async (...args) => fetch(...args),
+			cryptoRandomBytes: async (...args) => cryptoRandomBytes(...args),
+			cryptoCreateSign: async (...args) => cryptoCreateSign(...args),
+			getEmailTemplate: async(...args) => getEmailTemplate(...args),
+			getCodeChallenge: async (...args) => getCodeChallenge(...args),
+			generatePDF: async (...args) => generatePDF(...args),
+			req: {
+				body: {},
+				query: {},
+			},
+		};
+		console = {
+			log: lambda.log,
+			debug: lambda.logDebug,
+			silly: lambda.logSilly,
+			verbose: lambda.logVerbose,
+			warn: lambda.logWarn,
+			error: lambda.logError,
+			assert: (condition, ...data) => {
+				if (!condition) {
+					lambda.logError('Assertion failed:', ...data);
+				}
+			},
+			time: (label = 'default') => {
+				if (!console.timers) {
+					console.timers = {};
+				}
+				console.timers[label] = Date.now();
+			},
+			timeEnd: (label = 'default') => {
+				if (console.timers && console.timers[label]) {
+					const duration = Date.now() - console.timers[label];
+					lambda.log(\`\${label}: \${duration}ms\`);
+					delete console.timers[label];
+				}
+			},
+		};
+		`).runSync(context);
+
+		// bootstrap.runSync(context);
 	}
 
 
@@ -317,57 +348,6 @@ class IsolateBridge {
 		// 		},
 		// 	},
 		// });
-	}
-
-	createLambdaNameSpace(isolate, context) {
-		isolate.compileScriptSync(`
-			const lambda = {
-				log: (...args) => log(...args),
-				logDebug: (...args) => logDebug(...args),
-				logSilly: (...args) => logSilly(...args),
-				logVerbose: (...args) => logVerbose(...args),
-				logWarn: (...args) => logWarn(...args),
-				logError: (...args) => logError(...args),
-				setResult: (...args) => setResult(...args),
-				fetch: async (...args) => fetch(...args),
-				cryptoRandomBytes: async (...args) => cryptoRandomBytes(...args),
-				getEmailTemplate: async(...args) => getEmailTemplate(...args),
-				getCodeChallenge: async (...args) => getCodeChallenge(...args),
-				generatePDF: async (...args) => generatePDF(...args),
-				req: {
-					body: {},
-					query: {},
-				},
-				env: '${new ivm.Reference(Config.env.toUpperCase()).copySync()}',
-				developmentEmailAddress: '${new ivm.Reference(Config.lambda.developmentEmailAddress).copySync()}',
-			};
-			console = {
-				log: lambda.log,
-				debug: lambda.logDebug,
-				silly: lambda.logSilly,
-				verbose: lambda.logVerbose,
-				warn: lambda.logWarn,
-				error: lambda.logError,
-				assert: (condition, ...data) => {
-					if (!condition) {
-						lambda.logError('Assertion failed:', ...data);
-					}
-				},
-				time: (label = 'default') => {
-					if (!console.timers) {
-						console.timers = {};
-					}
-					console.timers[label] = Date.now();
-				},
-				timeEnd: (label = 'default') => {
-					if (console.timers && console.timers[label]) {
-						const duration = Date.now() - console.timers[label];
-						lambda.log(\`\${label}: \${duration}ms\`);
-						delete console.timers[label];
-					}
-				},
-			};
-		`).runSync(context);
 	}
 }
 export default new IsolateBridge();

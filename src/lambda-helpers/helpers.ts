@@ -90,47 +90,59 @@ class Helpers {
 				]);
 			}
 		}));
-		jail.setSync('_lambdaAPI', new ivm.Reference(async (api, data, resolve) => {
-			const lambdaAPIs = {
-				cryptoCreateSign: () => {
-					const signer = crypto.createSign(data.signature);
-					if (data.preSignature) {
-						signer.write(data.preSignature);
-						signer.end();
-					}
-					return signer.sign(data.key, data.encodingType);
-				},
-				updateMetadata: async () => {
-					if (data.idx === -1) {
-						await Model.getCoreModel(LambdaSchemaModel).updateById(
-							Model.getCoreModel(LambdaSchemaModel).createId(data.id),
-							{
-								$push: {
-									metadata: {
-										key: data.key,
-										value: data.value,
-									},
-								},
-							}
-						);
-					} else {
-						await Model.getCoreModel(LambdaSchemaModel).updateById(
-							Model.getCoreModel(LambdaSchemaModel).createId(data.id),
-							{
-								$set: {
-									[`metadata.${data.idx}.value`]: data.value,
-								},
-							}
-						);
-					}
-				},
-			};
+		jail.setSync('_cryptoCreateSign', new ivm.Reference(async (data, resolve, reject) => {
+			try {
+				Logging.logVerbose(`Creating crypto signature ${data.signature}`);
 
-			const outcome = await lambdaAPIs[api]();
+				const signer = crypto.createSign(data.signature);
+				if (data.preSignature) {
+					signer.write(data.preSignature);
+					signer.end();
+				}
+				const output = signer.sign(data.key, data.encodingType);
 
-			resolve.applyIgnored(undefined, [
-				new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto(),
-			]);
+				return resolve.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
+				]);
+			} catch (err) {
+				reject.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto(),
+				]);
+			}
+		}));
+		jail.setSync('_updateMetadata', new ivm.Reference(async (data, resolve, reject) => {
+			try {
+				Logging.logVerbose(`Updating metadata for ${data.id}:${data.idx} with key ${data.key} and value ${data.value}`);
+
+				if (data.idx === -1) {
+					await Model.getCoreModel(LambdaSchemaModel).updateById(
+						Model.getCoreModel(LambdaSchemaModel).createId(data.id),
+						{
+							$push: {
+								metadata: {
+									key: data.key,
+									value: data.value,
+								},
+							},
+						}
+					);
+				} else {
+					await Model.getCoreModel(LambdaSchemaModel).updateById(
+						Model.getCoreModel(LambdaSchemaModel).createId(data.id),
+						{
+							$set: {
+								[`metadata.${data.idx}.value`]: data.value,
+							},
+						}
+					);
+				}
+
+				return resolve.applyIgnored(undefined);
+			} catch (err) {
+				reject.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto(),
+				]);
+			}
 		}));
 		jail.setSync('_fetch', new ivm.Reference(async (data, callback, resolve, reject) => {
 			if (typeof data === 'string') {
@@ -143,7 +155,7 @@ class Helpers {
 			}
 			try {
 				if (data?.options?.body && data.options.headers && data.options.headers['Content-Type'] === 'application/x-www-form-urlencoded') {
-					data.options.body = this._encodeReqBody(data.options.body);
+					data.options.body = new URLSearchParams(data.options.body);
 				}
 				const response = await fetch(data.url, data.options);
 				const output: {
@@ -175,6 +187,8 @@ class Helpers {
 						}
 
 						if (json) {
+							Logging.logDebug(text);
+
 							if (json.error && json.error.status === 'UNAUTHENTICATED') {
 								throw new Errors.Unauthenticated(json.error.message, json.error.status, json.error.code);
 							}
@@ -314,20 +328,19 @@ class Helpers {
 		IsolateBridge.setupPlugins(jail);
 		IsolateBridge.setupLambdaLogs(jail);
 		IsolateBridge.createHostIsolateBridge(isolate, context);
-		IsolateBridge.createLambdaNameSpace(isolate, context);
 	}
 
-	_encodeReqBody(body) {
-		if (typeof body === 'string') return encodeURIComponent(body);
+	// _encodeReqBody(body) {
+	// 	if (typeof body === 'string') return encodeURIComponent(body);
 
-		const formBody: any[] = [];
-		Object.keys(body).forEach((key) => {
-			const encodedKey = encodeURIComponent(key);
-			const encodedValue = encodeURIComponent(body[key]);
-			formBody.push(encodedKey + '=' + encodedValue);
-		});
-		return formBody.join('&');
-	}
+	// 	const formBody: any[] = [];
+	// 	Object.keys(body).forEach((key) => {
+	// 		const encodedKey = encodeURIComponent(key);
+	// 		const encodedValue = encodeURIComponent(body[key]);
+	// 		formBody.push(encodedKey + '=' + encodedValue);
+	// 	});
+	// 	return formBody.join('&');
+	// }
 }
 
 export default new Helpers();

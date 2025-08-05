@@ -232,7 +232,7 @@ export default class LambdaRunner {
 		// * Would be better to just group these under one namespace "lambda". Unless we're going.
 		this._jail.setSync('lambdaModules', new ivm.ExternalCopy(lambdaModules).copyInto());
 		this._jail.setSync('lambdaInfo', new ivm.ExternalCopy({
-			env: Config.env,
+			env: Config.env.toUpperCase(),
 			lambdaId: lambda.id.toString(),
 			executionId: execution.id.toString(),
 			gitHash: lambda.git.hash,
@@ -242,6 +242,7 @@ export default class LambdaRunner {
 			appApiPath: apiPath,
 			fileName: `lambda_${lambda.id}`,
 			entryPoint: lambda.git.entryPoint,
+			developmentEmailAddress: Config.lambda.developmentEmailAddress,
 		}).copyInto());
 		this._jail.setSync('lambdaData', new ivm.ExternalCopy(reqBody).copyInto());
 		this._jail.setSync('lambdaQuery', new ivm.ExternalCopy(reqQuery).copyInto());
