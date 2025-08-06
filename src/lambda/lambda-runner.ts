@@ -140,6 +140,20 @@ export default class LambdaRunner {
 	}
 
 	/**
+	 * gets static values specific to the application
+	 * @param {Object} app
+	 */
+	async _getAppLambdaEnvironment(app): Promise<{[key: string]: unknown} | null> {
+		const secureStore = await Model.getModel('SecureStore').findOne({
+			name: 'environment',
+			_appId: Model.getModel('App').createId(app.id),
+		});
+		if (!secureStore) return null;
+
+		return secureStore.storeData;
+	}
+
+	/**
 	 * execute a single lambda
 	 * @param {object} lambda
 	 * @param {object} execution
@@ -165,6 +179,9 @@ export default class LambdaRunner {
 		const reqQuery = (data.query) ? JSON.parse(data.query) : {};
 		const reqHeaders = (data.headers) ? JSON.parse(data.headers) : {};
 
+		const appLambdaEnv = await this._getAppLambdaEnvironment(app);
+		let userToken: string | undefined = reqHeaders?.authorization || reqQuery?.token;
+		userToken = (userToken) ? userToken.replace('Bearer ', '') : userToken;
 		const rxsLambdaToken = await Model.getCoreModel(TokenSchemaModel).find({
 			_appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
 			_lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
@@ -232,7 +249,7 @@ export default class LambdaRunner {
 		// * Would be better to just group these under one namespace "lambda". Unless we're going.
 		this._jail.setSync('lambdaModules', new ivm.ExternalCopy(lambdaModules).copyInto());
 		this._jail.setSync('lambdaInfo', new ivm.ExternalCopy({
-			env: Config.env.toUpperCase(),
+			env: (appLambdaEnv) ? appLambdaEnv.env : null,
 			lambdaId: lambda.id.toString(),
 			executionId: execution.id.toString(),
 			gitHash: lambda.git.hash,
@@ -243,6 +260,7 @@ export default class LambdaRunner {
 			fileName: `lambda_${lambda.id}`,
 			entryPoint: lambda.git.entryPoint,
 			developmentEmailAddress: Config.lambda.developmentEmailAddress,
+			userToken: userToken,
 		}).copyInto());
 		this._jail.setSync('lambdaData', new ivm.ExternalCopy(reqBody).copyInto());
 		this._jail.setSync('lambdaQuery', new ivm.ExternalCopy(reqQuery).copyInto());
