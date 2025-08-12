@@ -1,0 +1,25 @@
+{
+  "name": "cache-test-2",
+  "version": 1,
+  "priority": 1,
+  "selection": {
+    "cacheTest": {
+      "@eq": 2
+    }
+  },
+  "config": [
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "car"
+      ],
+      "query": {
+        "colour": {
+          "@eq": "green"
+        }
+      }
+    }
+  ]
+}

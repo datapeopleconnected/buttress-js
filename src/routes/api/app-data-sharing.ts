@@ -40,7 +40,7 @@ import ActivitySchemaModel from '../../model/core/activity.js';
  * @param {string} dataSharingTokenId
  * @return {object} dataSharing
  */
-const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
+const activateDataSharing = async (dataSharing, dataSharingTokenId: string) => {
 	// Create new token
 	const newToken = Model.getCoreModel(TokenSchemaModel).createTokenString();
 
@@ -63,7 +63,7 @@ const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
 	dataSharing.remoteApp.token = activationResult.token;
 
 	// Update our data sharing agreement token with the new value.
-	await Model.getCoreModel(TokenSchemaModel).update({ 'id': dataSharingTokenId }, { $set: { 'value': newToken } });
+	await Model.getCoreModel(TokenSchemaModel).updateById(dataSharingTokenId, { $set: { 'value': newToken } });
 
 	// Rebuild the connection string with the new token
 	connectionString = Helpers.DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
@@ -397,9 +397,7 @@ class ActivateAppDataSharing extends Route {
 		const { newToken } = req.body;
 		await this.model.activate(dataSharing.id, newToken);
 
-		await Model.getCoreModel(TokenSchemaModel).update({
-			'id': req.token.id,
-		}, { $set: { 'value': newLocalToken } });
+		await Model.getCoreModel(TokenSchemaModel).updateById(req.token.id.toString(), { $set: { 'value': newLocalToken } });
 
 		return {
 			status: true,

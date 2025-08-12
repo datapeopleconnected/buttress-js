@@ -481,9 +481,8 @@ export default class LambdaModel extends StandardModel {
 					branch: branch,
 				}, lambda._appId);
 			} else {
-				await this.__modelManager.Deployment.update({
-					id: this.__modelManager.Deployment.createId(deployment.id),
-				}, {$set: {deployedAt: Sugar.Date.create('now')}});
+				await this.__modelManager.Deployment.updateById(this.__modelManager.Deployment.createId(deployment.id),
+					{$set: {deployedAt: Sugar.Date.create('now')}});
 			}
 		} catch (err) {
 			if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${lambda.name}`)) {

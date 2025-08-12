@@ -535,14 +535,14 @@ export default class LambdaRunner {
 		// 	}, {$set: {'trigger.$.cron.status': 'ERROR'}});
 		// }
 		if (log) {
-			await Model.getCoreModel(LambdaExecutionSchemaModel).update({
-				id: Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
-			}, {
-				$push: {
-					logs: {
-						log: log.message,
-						type: log.type,
-					},
+			await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
+				Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
+				{
+					$push: {
+						logs: {
+							log: log.message,
+							type: log.type,
+						},
 				},
 			});
 		}

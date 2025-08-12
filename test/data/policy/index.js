@@ -37,6 +37,9 @@ import EnvEntityCondition from './env-entity-condition.json' with { type: 'json'
 import EnvUserCondition from './env-user-condition.json' with { type: 'json' };
 import EnvUserQuery from './env-user-query.json' with { type: 'json' };
 
+import CacheTest1 from './cache-test-1.json' with { type: 'json' };
+import CacheTest2 from './cache-test-2.json' with { type: 'json' };
+
 import LambdaTestAccess from './lambda-test-access.json' with { type: 'json' };
 
 export default {
@@ -62,4 +65,7 @@ export default {
   'env-user-condition': EnvUserCondition,
   'env-user-query': EnvUserQuery,
   'lambda-test-access': LambdaTestAccess,
+
+  'cache-test-1': CacheTest1,
+  'cache-test-2': CacheTest2,
 };

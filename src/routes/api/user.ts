@@ -32,6 +32,8 @@ function getTokenQueryfromParams(req, userId) {
 	} catch (err) {
 		Logging.logSilly(err);
 	}
+
+	// If tokenId is not set, we will treat it as the token value.
 	const tokenValue = (tokenId === null) ? req.params.tokenId : null;
 
 	if (!tokenId && !tokenValue) {
@@ -554,10 +556,10 @@ class SetUserPolicyProperties extends Route {
 	async _exec(req, res, validate) {
 		await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(validate.id.toString(), req.body);
 
-		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
-			userId: req.params.id,
-			appId: req.authApp.id,
-		}));
+		// this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
+		// 	userId: req.params.id,
+		// 	appId: req.authApp.id,
+		// }));
 
 		// TODO: Do we really need to wait for the socket to respond?
 		// await new Promise((resolve) => {

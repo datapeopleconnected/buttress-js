@@ -210,9 +210,8 @@ class TokenSchemaModel extends StandardModel {
 			delete policyProperties.query; // What is this line for??
 		}
 
-		await super.update({
-			'id': this.createId(tokenId),
-		}, { $set: { 'policyProperties': policyProperties } });
+		await super.updateById(this.createId(tokenId),
+			{ $set: { 'policyProperties': policyProperties } });
 
 		this.__policyCache.setTokenIdAsStale(tokenId);
 		this.__nrp?.emit('app-routes:bust-cache', '{}');
@@ -234,9 +233,7 @@ class TokenSchemaModel extends StandardModel {
 			return obj;
 		}, []);
 
-		await super.update({
-			'id': this.createId(token.id),
-		}, {
+		await super.updateById(this.createId(token.id), {
 			$set: {
 				'policyProperties': {
 					...tokenPolicy,
@@ -254,9 +251,7 @@ class TokenSchemaModel extends StandardModel {
 	 * @return {Promise}
 	 */
 	async clearPolicyPropertiesById(tokenId) {
-		await super.update({
-			'id': this.createId(tokenId),
-		}, {
+		await super.updateById(this.createId(tokenId), {
 			$set: {
 				'policyProperties': {},
 			},

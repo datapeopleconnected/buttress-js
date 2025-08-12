@@ -257,6 +257,8 @@ class UpdatePolicy extends Route {
 	}
 
 	_exec(req, res, validate) {
+		// Update Policy cache
+
 		return Model.getCoreModel(PolicySchemaModel).updateByPath(req.body, req.params.id, null, Model.getCoreModel(PolicySchemaModel));
 	}
 }
@@ -433,7 +435,7 @@ class DeleteTransientPolicy extends Route {
 	async _exec(req, res, validate) {
 		if (!validate) return true;
 
-		await Model.getCoreModel(PolicySchemaModel).rm(validate.id);
+		await Model.getCoreModel(PolicySchemaModel).rm(validate.id.toString());
 
 		this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
 			appId: req.authApp.id,
@@ -476,7 +478,7 @@ class DeletePolicy extends Route {
 	}
 
 	async _exec(req, res, policy) {
-		await Model.getCoreModel(PolicySchemaModel).rm(policy.id);
+		await Model.getCoreModel(PolicySchemaModel).rm(policy.id.toString());
 
 		this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
 			appId: req.authApp.id,
@@ -507,10 +509,10 @@ class DeleteAppPolicies extends Route {
 			policies.push(policy);
 		}
 
-		return policies.map((p) => p.id);
+		return policies.map((p) => p.id.toString());
 	}
 
-	_exec(req, res, validate) {
+	_exec(req, res, validate: string[]) {
 		return new Promise((resolve, reject) => {
 			Model.getCoreModel(PolicySchemaModel).rmBulk(validate).then(() => true).then(resolve, reject);
 		});

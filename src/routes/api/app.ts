@@ -541,19 +541,7 @@ class SetAppPolicyPropertyList extends Route {
 		const update = Object.assign({}, validate);
 		if (update.query) delete update.query;
 
-		let query = {};
-		if (appId) {
-			query = {
-				id: {
-					$eq: appId,
-				},
-			};
-		}
-		if (validate.query && Object.keys(validate.query).length > 0) {
-			query = validate.query;
-		}
-
-		await this.model.setPolicyPropertiesList(query, update);
+		await this.model.setPolicyPropertiesList(appId.toString(), update);
 		return update;
 	}
 }

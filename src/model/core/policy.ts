@@ -15,6 +15,8 @@
  */
 import Sugar from '../../helpers/sugar.js';
 import StandardModel from '../type/standard.js';
+import { PolicyCache } from '../../services/policy-cache.js';
+
 import * as Helpers from '../../helpers/index.js';
 
 
@@ -70,9 +72,14 @@ export interface Policy {
 class PolicySchemaModel extends StandardModel {
 	static name = 'Policy';
 
+	__policyCache: PolicyCache;
+
 	constructor(services) {
 		const schema = PolicySchemaModel.Schema;
 		super(schema, null, services);
+
+		this.__policyCache = this.__services.get('policyCache') as PolicyCache;
+		if (!this.__policyCache) throw new Error('Unable to find policyCache in services');
 	}
 
 	static get Schema() {
@@ -209,10 +216,51 @@ class PolicySchemaModel extends StandardModel {
 		const rxsPolicy = await super.add(policyBody, {
 			_appId: appId,
 		});
-		const policy = await Helpers.streamFirst(rxsPolicy);
+		const policy = await Helpers.streamFirst(rxsPolicy) as Policy;
+
+		this.__policyCache.invalidatePolicyAndTokensBySelection(policy.id.toString());
 
 		return policy;
 	}
+
+	// update() {
+
+	// }
+	// updateOne() {
+
+	// }
+	async updateById(id, query) {
+		const policy = await super.updateById(this.createId(id), query);
+
+		this.__policyCache.invalidatePolicyAndTokensBySelection(policy.id.toString());
+
+		return policy;
+	}
+	updateByPath(body, id, sourceId = null, model: any = null) {
+		const policy = super.updateByPath(body, id, sourceId, model);
+
+		this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());
+
+		return policy;
+	}
+
+	rm(id: string) {
+		super.rm(id);
+		this.__policyCache.removePolicy(id);
+	}
+
+	rmBulk(ids: string[]) {
+		const out = super.rmBulk(ids);
+		for (const id of ids) {
+			this.__policyCache.removePolicy(id);
+		}
+		return out;
+	}
+
+	// Nuke from orbit.
+	// rmAll() {
+
+	// }
 }
 
 /**

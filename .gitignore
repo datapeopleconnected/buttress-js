@@ -57,5 +57,7 @@ app_data/*
 
 # Bundles
 bundles
-
 plugins
+
+# Personal files
+me.md

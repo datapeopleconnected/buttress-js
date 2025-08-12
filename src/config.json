@@ -70,7 +70,7 @@
 		},
 		"redis": {
 			"url": "%BUTTRESS_REDIS_URL%",
-			"scope": "%BUTTRESS_APP_CODE%-internal:"
+			"scope": "%BUTTRESS_APP_CODE%:"
 		},
 		"sio": {
 			"app": "%BUTTRESS_SOCKET_APP%"

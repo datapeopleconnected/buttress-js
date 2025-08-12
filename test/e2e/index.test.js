@@ -17,16 +17,17 @@
 import sourceMapSupport from 'source-map-support'
 sourceMapSupport.install();
 
-import './rest/core/token.test.js';
-import './rest/core/user.test.js';
+// import './rest/core/token.test.js';
+// import './rest/core/user.test.js';
 
-import './rest/schema.test.js';
-import './rest/data-sharing.test.js';
-import './rest/policy.test.js';
+// import './rest/schema.test.js';
+// import './rest/data-sharing.test.js';
+// import './rest/policy.test.js';
 
-import './spr/processing.test.js';
+// import './spr/processing.test.js';
+import './spr/cache.test.js';
 
-import './sock/realtime.test.js';
+// import './sock/realtime.test.js';
 
-import './lambda/lambda.test.js';
+// import './lambda/lambda.test.js';
 

@@ -233,11 +233,7 @@ export default class AppSchemaModel extends StandardModel {
 			role: 'APP',
 		});
 
-		await this.__modelManager.App.setPolicyPropertiesList({
-			id: {
-				$eq: body.id,
-			},
-		}, appPolicyPropertiesList);
+		await this.__modelManager.App.setPolicyPropertiesList(body.id.toString(), appPolicyPropertiesList);
 	}
 
 	async findByApiPath(apiPath) {
@@ -354,12 +350,12 @@ export default class AppSchemaModel extends StandardModel {
 	}
 
 	/**
-	 * @param {Object} query - query of which decides the app to be updated
+	 * @param {Object} appId - The App ID of the app to update
 	 * @param {Object} appPolicyPropertiesList - App policy property list
 	 * @return {Promise} - resolves when save operation is completed
 	 */
-	async setPolicyPropertiesList(query, appPolicyPropertiesList) {
-		return super.updateOne(query, { $set: { policyPropertiesList: appPolicyPropertiesList } });
+	async setPolicyPropertiesList(appId: string, appPolicyPropertiesList) {
+		return super.updateById(appId, { $set: { policyPropertiesList: appPolicyPropertiesList } });
 	}
 
 	/**
@@ -430,8 +426,6 @@ export default class AppSchemaModel extends StandardModel {
 	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
 	 */
 	async updateOAuth(appId, oAuth) {
-		return super.update({
-			'id': this.createId(appId),
-		}, { $set: { 'oAuth': oAuth } });
+		return super.updateById(this.createId(appId), { $set: { 'oAuth': oAuth } });
 	}
 }

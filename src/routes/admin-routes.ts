@@ -201,12 +201,7 @@ class AdminRoutes {
 			adminPolicyPropsList = { ...policyPropsList, ...adminPolicyPropsList };
 		}
 
-		const query = {
-			id: {
-				$eq: app.id,
-			},
-		};
-		await Model.getCoreModel(AppSchemaModel).setPolicyPropertiesList(query, adminPolicyPropsList);
+		await Model.getCoreModel(AppSchemaModel).setPolicyPropertiesList(app.id.toString(), adminPolicyPropsList);
 	}
 
 	/**

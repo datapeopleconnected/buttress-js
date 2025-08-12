@@ -25,7 +25,7 @@ const Config = createConfig() as unknown as Config;
 import AccessControlPolicyMatch from '../access-control/policy-match.js';
 
 import Model from '../model/index.js';
-import { Policy, PolicyConfig } from '../model/core/policy.js';
+import policy, { Policy, PolicyConfig } from '../model/core/policy.js';
 import { Token } from '../model/core/token.js';
 import { User } from '../model/core/user.js';
 
@@ -103,18 +103,7 @@ export class PolicyCache {
     Logging.logSilly(`Marking token as stale: ${tokenId}`);
 
     // Mark the cache as stale, to force requests to the cache to get fresh copies whilst we clean up.
-    await this._redisClient.sAdd(this._prefix(`token:${tokenId}`), 'STALE');
-
-    const policyIds = await this._redisClient.sMembers(this._prefix(`token:${tokenId}`));
-
-    await policyIds.reduce(async (prev, policyId) => {
-      await prev;
-
-      await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
-    }, Promise.resolve());
-
-    // Remove the token from token:${tokenId}
-    await this._redisClient.del(this._prefix(`token:${tokenId}`));
+    await this._redisClient.sAdd(this._prefix(`token:${tokenId}:policies`), 'STALE');
   }
 
   async clearPolicyById(policyId: string) {
@@ -123,19 +112,25 @@ export class PolicyCache {
 
   async getPoliciesByToken(token: Token): Promise<Policy[]> {
     let policies: Policy[] = [];
-    const policyIds = await this._redisClient.sMembers(this._prefix(`token:${token.id}`));
+    const policyIds = await this._redisClient.sMembers(this._prefix(`token:${token.id}:policies`));
 
     // If the tokens are marked as stale, we're in the process of cleaning them up. we'll miss the cache and get fresh data.
-    const isStale = policyIds.length > 0 && policyIds.includes('STALE');
+    const isStale = policyIds.includes('STALE');
     if (policyIds.length < 1 || isStale) {
       const appPolicies = await Helpers.streamAll(this._modelManager.getModel('Policy').find({ _appId: token._appId }));
       policies = AccessControlPolicyMatch.getTokenPolicies(appPolicies, token);
 
-      if (policies.length > 0 && !isStale) {
+      // Clear out old policies for the token
+      await this.clearTokenPolicies(token.id.toString());
+
+      // Index the token's policy properties
+      await this.indexTokenPolicyProperties(token.id.toString(), token.policyProperties);
+
+      if (policies.length > 0) {
         await policies.reduce(async (prev, policy) => {
           await prev;
 
-          await this._redisClient.sAdd(this._prefix(`token:${token.id}`), policy.id.toString());
+          await this._redisClient.sAdd(this._prefix(`token:${token.id}:policies`), policy.id.toString());
 
           await this.addPolicy(policy);
 
@@ -164,7 +159,6 @@ export class PolicyCache {
     const typedWildcard = await this._redisClient.sMembers(this._prefix(`app:${event.appId}:schema:${schemaWildCard}`));
 
     const policyIds = [...new Set(direct.concat(allWildcard).concat(typedWildcard))];
-    // console.log(event.appId, policyIds);
 
     if (policyIds.length < 1) return [];
 
@@ -181,41 +175,38 @@ export class PolicyCache {
   async addConnectedToken(tokenId: string) {
     const expiryTime = Math.floor(Date.now() / 1000) + this._connectedTokensTTL; // Current time + 1 hour
     await this._redisClient.zAdd(this._prefix(`connected-tokens`), [{ value: tokenId, score: expiryTime }]);
-
-    // Make sure the user object is cached.
-    // await this.cacheUser(user);
-
-    // await new Promise<void>((resolve, reject) => {
-    //   this._redisClient.hset(`connected-tokens:userIds`, tokenId, user.id, (err) => (err) ? reject(err) : resolve());
-    // });
   }
   async removeConnectedToken(tokenId: string) {
     await this._redisClient.zRem(this._prefix(`connected-tokens`), tokenId);
-
-    // await new Promise<void>((resolve, reject) => {
-    //   this._redisClient.hdel(`connected-tokens:userIds`, tokenId, (err) => (err) ? reject(err) : resolve());
-    // });
   }
   async clearExpiredConnectedTokens() {
     const now = Math.floor(Date.now() / 1000);
-    await this._redisClient.zRemRangeByScore(this._prefix(`connected-tokens`), 0, now);
 
-    // TODO: Need to clean up cached users
+    // Get all expired tokens
+    const expiredTokens = await this._redisClient.zRangeByScore(this._prefix(`connected-tokens`), 0, now);
+
+    if (expiredTokens.length > 0) {
+      Logging.logSilly(`Clearing expired connected tokens: ${expiredTokens.join(', ')}`);
+      await this._redisClient.zRemRangeByScore(this._prefix(`connected-tokens`), 0, now);
+
+      // Clean up the expired tokens from the cache
+      await expiredTokens.reduce(async (prev, tokenId) => {
+        await prev;
+
+        await this.clearTokenPolicies(tokenId);
+      }, Promise.resolve());
+    } else {
+      Logging.logSilly(`No expired connected tokens to clear.`);
+    }
   }
 
-  async addPolicy(policy) {
+  async addPolicy(policy: Policy) {
     const policyExists = await this._redisClient.hExists(this._prefix(`policies`), policy.id.toString());
-
-    // Early out.
     if (policyExists) return false;
 
     await this._redisClient.hSet(this._prefix(`policies`), policy.id.toString(), JSON.stringify(policy));
 
-    if (policy.appId) {
-      await this._redisClient.sAdd(this._prefix(`app:${policy.appId}:policies`), policy.id.toString());
-    }
-
-    const lookupKeys = policy.config.reduce((acc, config: PolicyConfig) => {
+    const lookupKeys = policy.config.reduce((acc: string[], config: PolicyConfig) => {
       for (const schema of config.schema) {
         for (const verb of config.verbs) {
           if (verb === '%ALL%' || verb === 'GET' || verb === 'SEARCH') {
@@ -231,14 +222,52 @@ export class PolicyCache {
     }
   }
 
+  async removePolicy(policyId: string) {
+    Logging.logSilly(`Removing policy: ${policyId}`);
+
+    // Delete the policy from policies
+    await this._redisClient.hDel(this._prefix(`policies`), policyId);
+  }
+
+  async clearTokenPolicies(tokenId: string) {
+    Logging.logSilly(`Clearing policies for token: ${tokenId}`);
+
+    // Remove the token from all policy tokens
+    const policyIds = await this._redisClient.sMembers(this._prefix(`token:${tokenId}:policies`));
+    if (policyIds.length > 0) {
+      await policyIds.reduce(async (prev, policyId) => {
+        await prev;
+        if (policyId === 'STALE') return;
+
+        await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
+      }, Promise.resolve());
+    }
+
+    // Clear out old policies for the token
+    await this._redisClient.del(this._prefix(`token:${tokenId}:policies`));
+
+    // Clear out the indexed properties for the token
+    await this.removeIndexedTokenPolicyProperties(tokenId);
+  }
+
   async connectTokenToPolicy(tokenId: string, policyId: string) {
     if (!tokenId || !policyId) {
       throw new Error('Token ID and Policy ID are required to connect.');
     }
 
     Logging.logSilly(`Connecting token ${tokenId} to policy ${policyId}`);
-    await this._redisClient.sAdd(this._prefix(`token:${tokenId}`), policyId);
+    await this._redisClient.sAdd(this._prefix(`token:${tokenId}:policies`), policyId);
     await this._redisClient.sAdd(this._prefix(`policy:${policyId}:tokens`), tokenId);
+  }
+
+  async disconnectTokenFromPolicy(tokenId: string, policyId: string) {
+    if (!tokenId || !policyId) {
+      throw new Error('Token ID and Policy ID are required to disconnect.');
+    }
+
+    Logging.logSilly(`Disconnecting token ${tokenId} from policy ${policyId}`);
+    await this._redisClient.sRem(this._prefix(`token:${tokenId}:policies`), policyId);
+    await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
   }
 
   async getConnectedTokenIdsByPolicyId(policyId: string) {
@@ -260,29 +289,98 @@ export class PolicyCache {
     return connectedPolicyTokens;
   }
 
-  async cacheUser(user: User) {
-    const userExists = await this._redisClient.hExists(this._prefix(`users`), user.id);
-    if (userExists) return;
+  // A new policy has been added but we need to check to see if it selects against any connected tokens.
+  // if it does then we can cache it otherwise we can ignore it.
+  async invalidatePolicyAndTokensBySelection(policyId: string) {
+    // Get the policy
+    const policy = await this._modelManager.getModel('Policy').findById(policyId) as Policy;
+    if (!policy) {
+      Logging.logSilly(`Policy not found: ${policyId}`);
+      return;
+    }
 
-    await this._redisClient.hSet(this._prefix(`users`), user.id, JSON.stringify(user));
+    if (policy.selection === null) return;
+
+    // ! We're asuming that the selection is just a simple object here and doesn't contain $and or $or.
+    const policySelectionProperties = Object.keys(policy.selection);
+    if (policySelectionProperties.length < 1) return;
+
+    // Get all tokenIds which have the policy properties indexed using sInter
+    const tokenIds = await this._redisClient.sInter(policySelectionProperties.map((prop) => this._prefix(`policy:propertyIndex:${prop}`)));
+    if (tokenIds.length < 1) {
+      Logging.logSilly(`No tokens found for policy properties: ${JSON.stringify(policySelectionProperties)}`);
+      return;
+    }
+
+    Logging.logSilly(`Found tokens for policy properties: ${tokenIds.length}}`);
+
+    // Now we need to mark these tokens as stale so that they can be re-evaluated on the next request.
+    await tokenIds.reduce(async (prev, tokenId) => {
+      await prev;
+
+      // Mark the token as stale so that it can be re-evaluated on the next request.
+      await this.setTokenIdAsStale(tokenId);
+    }, Promise.resolve());
+
+    // We remove the policy from the cache so it will be re-evaluated on the next request.
+    this.removePolicy(policyId);
   }
-  async getCachedUser(userId: string) {
-    return await this._redisClient.hGet(this._prefix(`users`), userId);
+
+  async indexTokenPolicyProperties(tokenId: string, policyProperties: Record<string, any> = {}) {
+    if (!tokenId) {
+      throw new Error('Token ID is required to index properties.');
+    }
+
+    const propertyKeys = Object.keys(policyProperties);
+
+    // Fetch the current properties
+    const existingProperties = await this._redisClient.sMembers(this._prefix(`token:${tokenId}:policyProperties`));
+
+    // Work out if any cached properties are missing and if they are remove them from the cache.
+    const missingProperties = propertyKeys.filter((key) => !existingProperties.includes(key));
+    if (missingProperties.length > 0) {
+      await this._redisClient.sRem(this._prefix(`token:${tokenId}:policyProperties`), missingProperties);
+      Logging.logSilly(`Removed missing policy properties for token: ${tokenId}, properties: ${JSON.stringify(missingProperties)}`);
+    }
+
+    const newProperties = propertyKeys.filter((key) => !existingProperties.includes(key));
+
+    // If we have no properties to index, we can early out.
+    if (newProperties.length < 1) {
+      Logging.logSilly(`No new policy properties to index for token: ${tokenId}`);
+      return;
+    }
+
+    await this._redisClient.sAdd(this._prefix(`token:${tokenId}:policyProperties`), newProperties);
+
+    Logging.logSilly(`Indexing policy properties for token: ${tokenId}, properties: ${JSON.stringify(newProperties)}`);
+
+    for (const key of newProperties) {
+      await this._redisClient.sAdd(this._prefix(`policy:propertyIndex:${key}`), tokenId);
+    }
   }
-  async removeCachedUser(userId: string) {
-    await this._redisClient.hDel(this._prefix(`users`), userId);
+
+  async removeIndexedTokenPolicyProperties(tokenId: string) {
+    if (!tokenId) {
+      throw new Error('Token ID is required to remove indexed properties.');
+    }
+
+    Logging.logSilly(`Removing indexed policy properties for token: ${tokenId}`);
+    // Get all properties for the token
+    const properties = await this._redisClient.sMembers(this._prefix(`token:${tokenId}:policyProperties`));
+    if (properties.length < 1) {
+      Logging.logSilly(`No indexed policy properties found for token: ${tokenId}`);
+      return;
+    }
+
+    await this._redisClient.del(this._prefix(`token:${tokenId}:policyProperties`));
+
+    // Remove the token from all indexed properties
+    await properties.reduce(async (prev, property) => {
+      await prev;
+
+      Logging.logSilly(`Removing token ${tokenId} from indexed property: ${property}`);
+      await this._redisClient.sRem(this._prefix(`policy:propertyIndex:${property}`), tokenId);
+    }, Promise.resolve());
   }
-
-  // I am the REST process, a user has sent a request to me, I need the policies that are associated with this token
-
-  // I am the SPR process, a activity event has come through, I need to work out which tokens should receive this event.
-  //   - I need to work out which policies apply to this event
-  //   - I need to work out which tokens are associated with these policies
-
-  // SELECTION
-  // - Selection can only change if the policy changes or policy properties change.
-
-  // Processing
-  // - When a policy is updated, we need to update the cache
-
 }

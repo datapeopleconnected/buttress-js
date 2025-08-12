@@ -253,7 +253,7 @@ export const streamFirst = (stream) => {
 
 	return new Promise((resolve, reject) => {
 		stream.on('error', (err) => reject(err));
-		stream.on('end', () => resolve(undefined));
+		stream.on('end', () => reject(new Error('Stream ended without data')));
 		stream.on('data', (item) => {
 			stream.destroy();
 			resolve(item);

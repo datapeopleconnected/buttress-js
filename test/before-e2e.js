@@ -19,6 +19,8 @@ import { fileURLToPath } from 'node:url';
 import { MongoClient } from 'mongodb';
 import createConfig from '@dpc/node-env-obj';
 
+import * as redis from '@redis/client';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -39,9 +41,19 @@ const Config = createConfig({
 
 	console.log(`🤝 Connected to the datastore: ${Config.datastore.connectionString}`);
 
+	// Make a connection to the redis cache.
+	const redisClient = redis.createClient({ url: Config.redis.url });
+	await redisClient.connect();
+	console.log(`🤝 Connected to the redis cache: ${Config.redis.url}`);
+
 	// Drop all collections
 	await _connection.dropDatabase();
 	console.log(`💥 Dropping all collections`);
+
+	// FLUSHDB the redis cache.
+	await redisClient.flushDb();
+	console.log(`💥 Flushing the redis cache`);
+
 
 	// Fetch all of the collections.
 	// this.collections = await _connection.collections();
@@ -77,10 +89,12 @@ const Config = createConfig({
 	// console.log(`✔️ Cleaning up tokens collection`);
 
 	// Close out and clean up.
+	await redisClient.quit();
 	await _client.close();
 	_client = null;
 	_connection = null;
 	// this.collections = null;
+	
 
 	console.log('Datastore clean up complete! 🥳🥳');
 	console.log('---------');
