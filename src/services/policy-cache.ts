@@ -326,12 +326,12 @@ export class PolicyCache {
     this.removePolicy(policyId);
   }
 
-  async indexTokenPolicyProperties(tokenId: string, policyProperties: Record<string, any> = {}) {
+  async indexTokenPolicyProperties(tokenId: string, policyProperties: Record<string, any> | null = null) {
     if (!tokenId) {
       throw new Error('Token ID is required to index properties.');
     }
 
-    const propertyKeys = Object.keys(policyProperties);
+    const propertyKeys = policyProperties ? Object.keys(policyProperties) : [];
 
     // Fetch the current properties
     const existingProperties = await this._redisClient.sMembers(this._prefix(`token:${tokenId}:policyProperties`));
