@@ -351,7 +351,7 @@ export default class LambdaManager {
 			// }
 
 			this.__nrp?.emit('lambda:worker:announce', JSON.stringify(messagePayload));
-			console.log(`[${this.name}]: Announced lambda execution ${lambdaExec.id} for lambda ${lambdaExec.lambdaId} with type ${lambdaExec.triggerType}`);
+			Logging.logDebug(`[${this.name}]: Announced lambda execution ${lambdaExec.id} for lambda ${lambdaExec.lambdaId} with type ${lambdaExec.triggerType}`);
 			count++;
 		}
 

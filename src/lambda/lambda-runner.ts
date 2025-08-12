@@ -427,9 +427,9 @@ export default class LambdaRunner {
 	 * Communicate with main process via Redis
 	 */
 	_subscribeToLambdaManager() {
-		console.log(`Registering ${this.name} to listen for lambda execution messages`);
+		Logging.logDebug(`Registering ${this.name} to listen for lambda execution messages`);
 		this.__nrp?.on('lambda:worker:announce', (json: string) => {
-			console.log(`[${this.name}] Received lambda execution message: ${json}, working status: ${this.working}`);
+			Logging.logDebug(`[${this.name}] Received lambda execution message: ${json}, working status: ${this.working}`);
 			if (this.working) return;
 
 			const message = JSON.parse(json) as LambdaExecutionMessage;
