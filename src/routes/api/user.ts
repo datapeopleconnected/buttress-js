@@ -800,9 +800,9 @@ class DeleteAllUsers extends Route {
 		return Promise.resolve(true);
 	}
 
-	_exec(req, res, validate) {
-		// ? Is this scoped to the app
-		return Model.getCoreModel(UserSchemaModel).rmAll().then(() => true);
+	async _exec(req, res, validate) {
+		await Model.getCoreModel(UserSchemaModel).rmAll({ _appId: req.authApp.id });
+		return true;
 	}
 }
 routes.push(DeleteAllUsers);

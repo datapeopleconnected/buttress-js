@@ -281,7 +281,7 @@ describe('User API', async () => {
 				url: `${ENDPOINT.REST}/api/v1/user`,
 				method: 'DELETE',
 				headers: { 'Content-Type': 'application/json' }
-			});
+			}, testEnv.apps.app1.token);
 
 			assert.strictEqual(response, true, 'Response should be true');
 
@@ -289,7 +289,7 @@ describe('User API', async () => {
 				url: `${ENDPOINT.REST}/api/v1/user`,
 				method: 'GET',
 				headers: { 'Content-Type': 'application/json' }
-			});
+			}, testEnv.apps.app1.token);
 
 			assert.strictEqual(users.length, 0, 'Users length should be 0 after deletion');
 		});
