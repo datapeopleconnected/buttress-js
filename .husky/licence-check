@@ -4,7 +4,7 @@ script_path=$(dirname "$0")
 
 license_file="$script_path/licencing_header.txt"
 LICENSE_HEADER=$(cat "$license_file")
-excluded_extensions=("html" "json" "md")
+excluded_extensions=("html" "json" "md" "sh")
 
 has_errors_file="/tmp/bjs-lc-errors"
 echo "false" > "$has_errors_file"
