@@ -13,11 +13,12 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import StandardModel from '../type/standard.js';
 
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
-
-import StandardModel from '../type/standard.js';
+import { Schema } from '../../helpers/schema.js';
+import TokenSchemaModel from './token.js';
 
 export interface User {
 	id: string,
@@ -68,7 +69,7 @@ export default class UserSchemaModel extends StandardModel {
 		return UserSchemaModel.Constants;
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'users',
 			type: 'collection',
@@ -269,13 +270,13 @@ export default class UserSchemaModel extends StandardModel {
 		const tokenBody = body.token;
 		if (tokenBody && tokenBody.domains && tokenBody.policyProperties) {
 			const userToken = {
-				type: this.__modelManager.Token.Constants.Type.USER,
+				type: TokenSchemaModel.Constants.Type.USER,
 				permissions: [{ route: '*', permission: '*' }],
 				domains: tokenBody.domains,
 				policyProperties: tokenBody.policyProperties,
 			};
 
-			const rxsToken = await this.__modelManager.Token.add(userToken, {
+			const rxsToken = await this.__modelManager.getCoreModel(TokenSchemaModel).add(userToken, {
 				_appId: internals._appId,
 				_userId: user.id,
 			});
@@ -370,11 +371,6 @@ export default class UserSchemaModel extends StandardModel {
 			'auth.appId': authAppUserId,
 			...(appId) ? { _appId: this.createId(appId) } : {},
 		});
-	}
-
-
-	rmAll() {
-		return super.rmAll({});
 	}
 
 	rm(userId: string) {

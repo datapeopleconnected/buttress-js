@@ -15,50 +15,40 @@
  */
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import Schema from '../../schema.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 
 /**
  * @class DeleteOne
  */
 export default class DeleteOne extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+	constructor(schema: Schema, app: App, services: Services) {
+		const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/:id`, `DELETE ${schema.name}`, services);
+		super(`${schemaRoutePath}/:id`, `DELETE ${schema.name}`, services, schema, app);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 
 		this.activityDescription = `DELETE ${schema.name}`;
 		this.activityBroadcast = true;
-
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
-
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
-
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
 	}
 
 	async _validate(req, res, token) {
-		const entity = await this.model.findById(req.params.id)
+		const entity = await (await this.routeModel()).findById(req.params.id)
 		if (!entity) {
-			throw new Helpers.Errors.RequestError(400, `${this.schema.name}: Invalid ID`);
+			throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
 		}
 
 		return entity;
 	}
 
 	async _exec(req, res, entity) {
-		await this.model.rm(entity.id);
+		await (await this.routeModel()).rm(entity.id);
 		return true;
 	}
 };

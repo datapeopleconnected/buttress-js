@@ -27,7 +27,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetTrackingList extends Route {
 	constructor(services) {
-		super('tracking', 'GET TRACKING LIST', services, Model.getCoreModel(TrackingSchemaModel));
+		super('tracking', 'GET TRACKING LIST', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -38,7 +38,7 @@ class GetTrackingList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return this.model.getAll();
+		return Model.getCoreModel(TrackingSchemaModel).findAll();
 	}
 }
 routes.push(GetTrackingList);
@@ -48,7 +48,7 @@ routes.push(GetTrackingList);
  */
 class AddTracking extends Route {
 	constructor(services) {
-		super('tracking', 'ADD TRACKING', services, Model.getCoreModel(TrackingSchemaModel));
+		super('tracking', 'ADD TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -60,7 +60,7 @@ class AddTracking extends Route {
 
 	_validate(req, res, token) {
 		return new Promise((resolve, reject) => {
-			const validation = this.model.validate(req.body);
+			const validation = Model.getCoreModel(TrackingSchemaModel).validate(req.body);
 			if (!validation.isValid) {
 				if (validation.missing.length > 0) {
 					this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR);
@@ -80,14 +80,14 @@ class AddTracking extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return this.model.add(req.body);
+		return Model.getCoreModel(TrackingSchemaModel).add(req.body);
 	}
 }
 routes.push(AddTracking);
 
 class UpdateTracking extends Route {
 	constructor(services) {
-		super('tracking/:id', 'UPDATE TRACKING', services, Model.getCoreModel(TrackingSchemaModel));
+		super('tracking/:id', 'UPDATE TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -99,7 +99,7 @@ class UpdateTracking extends Route {
 
 	_validate(req) {
 		return new Promise((resolve, reject) => {
-			const { validation, body } = this.model.validateUpdate(req.body);
+			const { validation, body } = Model.getCoreModel(TrackingSchemaModel).validateUpdate(req.body);
 			req.body = body;
 			if (!validation.isValid) {
 				if (validation.isPathValid === false) {
@@ -112,7 +112,7 @@ class UpdateTracking extends Route {
 				}
 			}
 
-			this.model.exists(req.params.id)
+			Model.getCoreModel(TrackingSchemaModel).exists(req.params.id)
 				.then((exists) => {
 					if (!exists) {
 						this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
@@ -124,7 +124,7 @@ class UpdateTracking extends Route {
 	}
 
 	_exec(req) {
-		return this.model.updateByPath(req.body, req.params.id);
+		return Model.getCoreModel(TrackingSchemaModel).updateByPath(req.body, req.params.id);
 	}
 }
 routes.push(UpdateTracking);
@@ -134,14 +134,14 @@ routes.push(UpdateTracking);
  */
 class DeleteTracking extends Route {
 	constructor(services) {
-		super('tracking/:id', 'DELETE TRACKING', services, Model.getCoreModel(TrackingSchemaModel));
+		super('tracking/:id', 'DELETE TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
 
 	async _validate(req, res, token) {
-		const tracking = await this.model.findById(req.params.id)
+		const tracking = await Model.getCoreModel(TrackingSchemaModel).findById(req.params.id)
 		if (!tracking) {
 			this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
 			throw new Helpers.Errors.RequestError(400, `invalid_id`);
@@ -162,18 +162,19 @@ routes.push(DeleteTracking);
  */
 class DeleteAllTrackings extends Route {
 	constructor(services) {
-		super('tracking', 'DELETE ALL TRACKINGS', services, Model.getCoreModel(TrackingSchemaModel));
+		super('tracking', 'DELETE ALL TRACKINGS', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
 
-	_validate(req, res, token) {
-		return Promise.resolve(true);
+	async _validate(req, res, token) {
+		return true;
 	}
 
-	_exec(req, res, validate) {
-		return this.model.rmAll().then(() => true);
+	async _exec(req, res, validate) {
+		await Model.getCoreModel(TrackingSchemaModel).rmAll({});
+		return true;
 	}
 }
 routes.push(DeleteAllTrackings);

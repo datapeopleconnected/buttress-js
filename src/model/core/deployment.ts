@@ -14,7 +14,18 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import StandardModel from '../type/standard.js';
+
+import { Schema } from '../../helpers/schema.js';
 import * as Helpers from '../../helpers/index.js';
+
+export interface Deployment {
+	id: string;
+	lambdaId: string;
+	hash: string;
+	branch: string;
+	deployedAt: Date;
+	_appId: string;
+}
 
 class DeploymentSchemaModel extends StandardModel {
 	static name = 'Deployment';
@@ -24,7 +35,7 @@ class DeploymentSchemaModel extends StandardModel {
 		super(schema, null, services);
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'deployment',
 			type: 'collection',
@@ -78,7 +89,7 @@ class DeploymentSchemaModel extends StandardModel {
 		const rxsDeployment = await super.add(deploymentBody, {
 			_appId: appId,
 		});
-		const deployment = await Helpers.streamFirst(rxsDeployment);
+		const deployment = await Helpers.streamFirst(rxsDeployment) as Deployment;
 
 		return deployment;
 	}

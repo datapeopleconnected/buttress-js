@@ -18,11 +18,18 @@ import ButtressExport from '@buttress/api';
 // TODO: Look into why the export from @buttress/api is not working as expected.
 const { default: ButtressAPI } = ButtressExport;
 
-import Schema from '../../schema.js';
+import { Schema } from '../../helpers/schema.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 
 import StandardModel from '../type/standard.js';
+import TokenSchemaModel from './token.js';
+import PolicySchemaModel from './policy.js';
+import AppDataSharingSchemaModel from './app-data-sharing.js';
+import UserSchemaModel from './user.js';
+import DeploymentSchemaModel from './deployment.js';
+import LambdaSchemaModel from './lambda.js';
+import LambdaExecutionSchemaModel from './lambda-execution.js';
 
 export interface App {
 	id: string;
@@ -62,7 +69,7 @@ export default class AppSchemaModel extends StandardModel {
 		return AppSchemaModel.Constants;
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'apps',
 			type: 'collection',
@@ -118,13 +125,13 @@ export default class AppSchemaModel extends StandardModel {
 					__allowUpdate: false,
 				},
 				__schema: {
-					__type: 'text',
+					__type: 'string',
 					__required: false,
 					__default: '[]',
 					__allowUpdate: true,
 				},
 				__rawSchema: {
-					__type: 'text',
+					__type: 'string',
 					__required: false,
 					__default: '[]',
 					__allowUpdate: true,
@@ -147,17 +154,17 @@ export default class AppSchemaModel extends StandardModel {
 	async add(body, internals?: { type?: string }) {
 		body.id = this.createId();
 
-		const isSuper = internals?.type === this.__modelManager.Token.Constants.Type.SYSTEM;
+		const isSuper = internals?.type === TokenSchemaModel.Constants.Type.SYSTEM;
 		if (isSuper) {
-			const adminToken = await this.__modelManager.Token.findOne({ type: { $eq: this.__modelManager.Token.Constants.Type.SYSTEM } });
+			const adminToken = await this.__modelManager.getCoreModel(TokenSchemaModel).findOne({ type: { $eq: TokenSchemaModel.Constants.Type.SYSTEM } });
 
 			if (adminToken) {
 				return Promise.reject(new Helpers.Errors.RequestError(400, `This Buttress instance already have a system app`));
 			}
 		}
 
-		const rxsToken = await this.__modelManager.Token.add({
-			type: (isSuper) ? this.__modelManager.Token.Constants.Type.SYSTEM : this.__modelManager.Token.Constants.Type.APP
+		const rxsToken = await this.__modelManager.getCoreModel(TokenSchemaModel).add({
+			type: (isSuper) ? TokenSchemaModel.Constants.Type.SYSTEM : TokenSchemaModel.Constants.Type.APP
 		}, {
 			_appId: body.id,
 		});
@@ -197,7 +204,7 @@ export default class AppSchemaModel extends StandardModel {
 		});
 		appPolicyPropertiesList = { ...appPolicyPropertiesList, ...list };
 
-		await this.__modelManager.Policy.add({
+		await this.__modelManager.getCoreModel(PolicySchemaModel).add({
 			name: `App Policy - ${body.name}`,
 			selection: {
 				role: {
@@ -229,11 +236,11 @@ export default class AppSchemaModel extends StandardModel {
 			}],
 		}, body.id);
 
-		await this.__modelManager.Token.setPolicyPropertiesById(token.id.toString(), {
+		await this.__modelManager.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(token.id.toString(), {
 			role: 'APP',
 		});
 
-		await this.__modelManager.App.setPolicyPropertiesList(body.id.toString(), appPolicyPropertiesList);
+		await this.__modelManager.getCoreModel(AppSchemaModel).setPolicyPropertiesList(body.id.toString(), appPolicyPropertiesList);
 	}
 
 	async findByApiPath(apiPath) {
@@ -258,7 +265,7 @@ export default class AppSchemaModel extends StandardModel {
 	async updateSchema(appId, compiledSchema, rawSchema?) {
 		Logging.logSilly(`Update Schema ${appId}`);
 
-		await super.updateById(appId, { $set: { __schema: Schema.encode(compiledSchema) } });
+		await super.updateById(appId, { $set: { __schema: Helpers.Schema.encode(compiledSchema) } });
 
 		if (rawSchema) {
 			await super.updateById(appId, { $set: { __rawSchema: rawSchema } });
@@ -289,10 +296,10 @@ export default class AppSchemaModel extends StandardModel {
 
 		// TODO: fetch app models & use schema data instead of doing the work here
 
-		// Load DSA for curent app
+		// Load DSA for current app
 		const requiredDSAs = Object.keys(dataSharingSchema);
 		if (requiredDSAs.length > 0) {
-			const appDSAs = await Helpers.streamAll(await this.__modelManager.AppDataSharing.find({
+			const appDSAs = await Helpers.streamAll(await this.__modelManager.getCoreModel(AppDataSharingSchemaModel).find({
 				'_appId': req.authApp.id,
 				'name': {
 					$in: requiredDSAs,
@@ -362,7 +369,7 @@ export default class AppSchemaModel extends StandardModel {
 	 * @return {Promise} - resolves to the token
 	 */
 	getToken(app) {
-		return this.__modelManager.Token.findOne({ id: app._tokenId });
+		return this.__modelManager.getCoreModel(TokenSchemaModel).findOne({ id: app._tokenId });
 	}
 
 	/**
@@ -371,45 +378,32 @@ export default class AppSchemaModel extends StandardModel {
 	 */
 	async rm(entity) {
 		Logging.logSilly(`Deleting all app data sharing for app ${entity.id}`);
-		await this.__modelManager.AppDataSharing.rmAll({ _appId: entity.id });
+		await this.__modelManager.getCoreModel(AppDataSharingSchemaModel).rmAll({ _appId: entity.id });
 
 		Logging.logSilly(`Deleting all tokens for app ${entity.id}`);
-		await this.__modelManager.Token.rmAll({ _appId: entity.id });
+		await this.__modelManager.getCoreModel(TokenSchemaModel).rmAll({ _appId: entity.id });
 
 		Logging.logSilly(`Deleting all users for app ${entity.id}`);
-		await this.__modelManager.User.rmAll({ _appId: entity.id });
-
-		// TODO: Delete all data sharing
-		Logging.logSilly(`Deleting all app data sharing for app ${entity.id}`);
-		await this.__modelManager.AppDataSharing.rmAll({ _appId: entity.id });
+		await this.__modelManager.getCoreModel(UserSchemaModel).rmAll({ _appId: entity.id });
 
 		// TODO: Delete all lambdas
 		Logging.logSilly(`Deleting all lambdas for app ${entity.id}`);
-		await this.__modelManager.Lambda.rmAll({ _appId: entity.id });
+		await this.__modelManager.getCoreModel(LambdaSchemaModel).rmAll({ _appId: entity.id });
 
 		// TODO: Delete all deployments
 		Logging.logSilly(`Deleting all deployments for app ${entity.id}`);
-		await this.__modelManager.Deployment.rmAll({ _appId: entity.id });
+		await this.__modelManager.getCoreModel(DeploymentSchemaModel).rmAll({ _appId: entity.id });
 
 		// TODO: Delete all lambda executions
 		Logging.logSilly(`Deleting all lambda executions for app ${entity.id}`);
-		await this.__modelManager.LambdaExecution.rmAll({ _appId: entity.id });
+		await this.__modelManager.getCoreModel(LambdaExecutionSchemaModel).rmAll({ _appId: entity.id });
 
 		// TODO: Delete all policy
 		Logging.logSilly(`Deleting all policy for app ${entity.id}`);
-		await this.__modelManager.Policy.rmAll({ _appId: entity.id });
+		await this.__modelManager.getCoreModel(PolicySchemaModel).rmAll({ _appId: entity.id });
 
 		Logging.logSilly(`Deleting schema for app ${entity.id}`);
-		const appShortId = (entity) ? Helpers.shortId(entity.id) : null;
-		if (appShortId) {
-			const appSchemaModels = Object.keys(this.__modelManager.models).filter((k) => k.indexOf(appShortId) !== -1);
-			for (let i = 0; i < appSchemaModels.length; i++) {
-				if (this.__modelManager[appSchemaModels[i]] && this.__modelManager[appSchemaModels[i]].drop) {
-					await this.__modelManager[appSchemaModels[i]].drop();
-					delete this.__modelManager[appSchemaModels[i]];
-				}
-			}
-		}
+		await this.__modelManager.dropAndCleanAppModels(entity.id);
 
 		const payload = JSON.stringify({ appId: entity.id, apiPath: entity.apiPath });
 

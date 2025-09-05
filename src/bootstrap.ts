@@ -27,6 +27,8 @@ const Config = createConfig() as unknown as Config;
 
 import Logging from './helpers/logging.js';
 
+export type Services = Map<string, unknown>;
+
 interface WorkerHolder {
 	initiated: boolean;
 	worker: Worker;
@@ -50,7 +52,7 @@ export default class Bootstrap extends EventEmitter {
 
 	private _resolveWorkersInitialised?: (value?: unknown) => void;
 
-	protected __services: Map<string, unknown> = new Map();
+	protected __services: Services = new Map();
 
 	constructor() {
 		super();

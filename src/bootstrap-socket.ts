@@ -39,7 +39,7 @@ import Logging from './helpers/logging.js';
 
 import AccessControl from './access-control/index.js';
 
-import Schema from './schema.js';
+import * as Schema from './helpers/schema.js';
 
 import Datastore from './datastore/index.js';
 import { PolicyCache } from './services/policy-cache.js';

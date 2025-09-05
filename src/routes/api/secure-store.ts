@@ -30,7 +30,7 @@ const routes: (typeof Route)[] = [];
  */
 class AddSecureStore extends Route {
 	constructor(services) {
-		super('secure-store', 'ADD SECURE STORE', services);
+		super('secure-store', 'ADD SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -67,7 +67,7 @@ routes.push(AddSecureStore);
  */
 class AddManySecureStore extends Route {
 	constructor(services) {
-		super('secure-store/bulk/add', 'ADD SECURE STORE', services);
+		super('secure-store/bulk/add', 'ADD SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -118,7 +118,7 @@ routes.push(AddManySecureStore);
  */
 class GetSecureStore extends Route {
 	constructor(services) {
-		super('secure-store/:id', 'GET SECURE STORE', services);
+		super('secure-store/:id', 'GET SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -155,7 +155,7 @@ routes.push(GetSecureStore);
  */
 class FindSecureStore extends Route {
 	constructor(services) {
-		super('secure-store/name/:name', 'FIND SECURE STORE BY NAME', services);
+		super('secure-store/name/:name', 'FIND SECURE STORE BY NAME', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -190,7 +190,7 @@ routes.push(FindSecureStore);
  */
 class UpdateSecureStore extends Route {
 	constructor(services) {
-		super('secure-store/:id', 'UPDATE SECURE STORE', services);
+		super('secure-store/:id', 'UPDATE SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -222,7 +222,7 @@ class UpdateSecureStore extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, req.params.id, null, 'SecureStore');
+		return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, req.params.id);
 	}
 }
 routes.push(UpdateSecureStore);
@@ -232,7 +232,7 @@ routes.push(UpdateSecureStore);
  */
 class BulkUpdateSecureStore extends Route {
 	constructor(services) {
-		super('secure-store/bulk/update', 'BULK UPDATE SECURE STORE', services);
+		super('secure-store/bulk/update', 'BULK UPDATE SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -265,7 +265,7 @@ class BulkUpdateSecureStore extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.getCoreModel(SecureStoreSchemaModel).updateByPath(item.body, item.id, null, 'SecureStore');
+			await Model.getCoreModel(SecureStoreSchemaModel).updateByPath(item.body, item.id, null);
 		}
 		return true;
 	}
@@ -277,7 +277,7 @@ routes.push(BulkUpdateSecureStore);
  */
 class SearchSecureStoreList extends Route {
 	constructor(services) {
-		super('secure-store', 'SEARCH SECURE STORE LIST', services);
+		super('secure-store', 'SEARCH SECURE STORE LIST', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -324,7 +324,7 @@ routes.push(SearchSecureStoreList);
  */
 class DeleteSecureStore extends Route {
 	constructor(services) {
-		super('secure-store/:id', 'DELETE SECURE STORE', services);
+		super('secure-store/:id', 'DELETE SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -357,14 +357,12 @@ routes.push(DeleteSecureStore);
  */
 class SecureStoreCount extends Route {
 	constructor(services) {
-		super('secure-store/count', 'COUNT SECURE STORES', services);
+		super('secure-store/count', 'COUNT SECURE STORES', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityBroadcast = false;
-
-		this.model = Model.getCoreModel(SecureStoreSchemaModel);
 	}
 
 	async _validate(req, res, token) {
@@ -385,7 +383,7 @@ class SecureStoreCount extends Route {
 			query.$and.push(req.body);
 		}
 
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(query, {}, Model.getCoreModel(SecureStoreSchemaModel).flatSchemaData);
 		result.query = query;
 		return result;
 	}

@@ -15,45 +15,34 @@
  */
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
-import * as Helpers from '../../helpers/index.js';
-import Schema from '../../schema.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 
 /**
  * @class DeleteAll
  */
 export default class DeleteAll extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+	constructor(schema: Schema, app: App, services: Services) {
+		const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `DELETE ALL ${schema.name}`, services);
+		super(`${schemaRoutePath}`, `DELETE ALL ${schema.name}`, services, schema, app);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.DEL;
 		this.permissions = Route.Constants.Permissions.DELETE;
 
 		this.activityDescription = `DELETE ALL ${schema.name}`;
 		this.activityBroadcast = true;
-
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
-
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
-
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
 	}
 
-	_validate(req, res, token) {
-		return Promise.resolve();
+	async _validate(req, res, token) {
+		return true;
 	}
 
-	_exec(req, res, validate) {
-		return this.model.rmAll()
-			.then(() => true);
+	async _exec(req, res, validate) {
+		await (await this.routeModel()).rmAll({});
+		return true;
 	}
 };

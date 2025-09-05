@@ -20,7 +20,7 @@ import NodeRedisPubsub from '../services/nrp.js';
 import Sugar from '../helpers/sugar.js';
 import Model from '../model/index.js';
 import Logging from '../helpers/logging.js';
-import Schema from '../schema.js';
+import * as Schema from '../helpers/schema.js';
 
 import PolicySchemaModel, { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy.js';
 import TokenSchemaModel, { Token } from '../model/core/token.js';

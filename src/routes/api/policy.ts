@@ -32,7 +32,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetPolicy extends Route {
 	constructor(services) {
-		super('policy/:id', 'GET POLICY', services);
+		super('policy/:id', 'GET POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -69,7 +69,7 @@ routes.push(GetPolicy);
  */
 class GetPolicyList extends Route {
 	constructor(services) {
-		super('policy', 'GET POLICY LIST', services);
+		super('policy', 'GET POLICY LIST', services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -111,7 +111,7 @@ routes.push(GetPolicyList);
  */
 class SearchPolicyList extends Route {
 	constructor(services) {
-		super('policy', 'SEARCH POLICY LIST', services);
+		super('policy', 'SEARCH POLICY LIST', services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -158,7 +158,7 @@ routes.push(SearchPolicyList);
  */
 class AddPolicy extends Route {
 	constructor(services) {
-		super('policy', 'ADD POLICY', services);
+		super('policy', 'ADD POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -221,7 +221,7 @@ routes.push(AddPolicy);
  */
 class UpdatePolicy extends Route {
 	constructor(services) {
-		super('policy/:id', 'UPDATE POLICY', services);
+		super('policy/:id', 'UPDATE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -259,7 +259,7 @@ class UpdatePolicy extends Route {
 	_exec(req, res, validate) {
 		// Update Policy cache
 
-		return Model.getCoreModel(PolicySchemaModel).updateByPath(req.body, req.params.id, null, Model.getCoreModel(PolicySchemaModel));
+		return Model.getCoreModel(PolicySchemaModel).updateByPath(req.body, req.params.id);
 	}
 }
 routes.push(UpdatePolicy);
@@ -269,7 +269,7 @@ routes.push(UpdatePolicy);
  */
 class BulkUpdatePolicy extends Route {
 	constructor(services) {
-		super('policy/bulk/update', 'UPDATE POLICY', services);
+		super('policy/bulk/update', 'UPDATE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -305,7 +305,7 @@ class BulkUpdatePolicy extends Route {
 
 	async _exec(req, res, validate) {
 		for await (const item of validate) {
-			await Model.getCoreModel(PolicySchemaModel).updateByPath(item.body, item.id, null, 'Policy');
+			await Model.getCoreModel(PolicySchemaModel).updateByPath(item.body, item.id);
 		}
 		return true;
 	}
@@ -317,7 +317,7 @@ routes.push(BulkUpdatePolicy);
  */
 class SyncPolicies extends Route {
 	constructor(services) {
-		super('policy/sync', 'SYNC POLICIES', services);
+		super('policy/sync', 'SYNC POLICIES', services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -369,15 +369,13 @@ class SyncPolicies extends Route {
  */
 class PolicyCount extends Route {
 	constructor(services) {
-		super(`policy/count`, `COUNT POLICIES`, services);
+		super(`policy/count`, `COUNT POLICIES`, services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT POLICIES`;
 		this.activityBroadcast = false;
-
-		this.model = Model.getCoreModel(PolicySchemaModel);
 	}
 
 	async _validate(req, res, token) {
@@ -398,7 +396,7 @@ class PolicyCount extends Route {
 			query.$and.push(req.body);
 		}
 
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		query = Model.getCoreModel(PolicySchemaModel).parseQuery(query, {}, Model.getCoreModel(PolicySchemaModel).flatSchemaData);
 		result.query = query;
 		return result;
 	}
@@ -417,7 +415,7 @@ routes.push(SyncPolicies);
  */
 class DeleteTransientPolicy extends Route {
 	constructor(services) {
-		super('policy/delete-transient-policy', 'DELETE POLICY BY NAME', services);
+		super('policy/delete-transient-policy', 'DELETE POLICY BY NAME', services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -456,7 +454,7 @@ routes.push(DeleteTransientPolicy);
  */
 class DeletePolicy extends Route {
 	constructor(services) {
-		super('policy/:id', 'DELETE POLICY', services);
+		super('policy/:id', 'DELETE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -494,7 +492,7 @@ routes.push(DeletePolicy);
  */
 class DeleteAppPolicies extends Route {
 	constructor(services) {
-		super('policy', 'DELETE ALL APP POLICIES', services);
+		super('policy', 'DELETE ALL APP POLICIES', services, Model.getCoreModel(PolicySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.WRITE;

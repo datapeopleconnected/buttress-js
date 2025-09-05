@@ -204,7 +204,7 @@ export const mergeDeep = (...objects) => {
 	}, {});
 };
 
-export const getFlattenedSchema = (schema) => {
+export const getFlattenedSchema = (schema): { [key: string]: unknown } => {
 	const __buildFlattenedSchema = (property, parent, path, flattened) => {
 		path.push(property);
 

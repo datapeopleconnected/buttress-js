@@ -15,37 +15,27 @@
  */
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import Schema from '../../schema.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 
 /**
  * @class GetMany
  */
 export default class GetMany extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+	constructor(schema: Schema, app: App, services: Services) {
+		const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/load`, `BULK GET ${schema.name}`, services);
+		super(`${schemaRoutePath}/bulk/load`, `BULK GET ${schema.name}`, services, schema, app);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.READ;
 
 		this.activityDescription = `BULK GET ${schema.name}`;
 		this.activityBroadcast = false;
-
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
-
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
-
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
 	}
 
 	_validate(req, res, token) {
@@ -54,11 +44,11 @@ export default class GetMany extends Route {
 			const project = (req.body && req.body.project) ? req.body.project : false;
 
 			if (!_ids) {
-				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
+				this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.id);
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
 			}
 			if (!_ids.length) {
-				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
+				this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.id);
 				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
 			}
 
@@ -66,9 +56,10 @@ export default class GetMany extends Route {
 		});
 	}
 
-	_exec(req, res, query) {
-		return this.model.find(
-			{ id: { $in: query.ids.map((id) => this.model.createId(id)) } },
+	async _exec(req, res, query) {
+		const model = await this.routeModel();
+		return model.find(
+			{ id: { $in: query.ids.map((id) => model.createId(id)) } },
 			{}, 0, 0, null, query.project,
 		);
 	}

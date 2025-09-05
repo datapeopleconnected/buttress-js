@@ -14,7 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import StandardModel from '../type/standard.js';
+
 import * as Helpers from '../../helpers/index.js';
+import { Schema } from '../../helpers/schema.js';
+
+import AppSchemaModel from './app.js';
+import TokenSchemaModel from './token.js';
 
 export interface LambdaExecution {
 	id: string;
@@ -49,7 +54,7 @@ class LambdaExecutionSchemaModel extends StandardModel {
 		super(schema, null, services);
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'lambdaExecution',
 			type: 'collection',
@@ -167,7 +172,7 @@ class LambdaExecutionSchemaModel extends StandardModel {
 				},
 				createdAt: {
 					__type: 'date',
-					__value: 'now',
+					__default: 'now',
 					__required: false,
 					__allowUpdate: false,
 				},
@@ -200,8 +205,8 @@ class LambdaExecutionSchemaModel extends StandardModel {
 
 		if (!appId) throw new Error('appId is required to create a lambda execution');
 
-		const internals: any = { _appId: this.__modelManager.getModel('App').createId(appId) };
-		if (tokenId) internals._tokenId = this.__modelManager.getModel('Token').createId(tokenId);
+		const internals: any = { _appId: this.__modelManager.getCoreModel(AppSchemaModel).createId(appId) };
+		if (tokenId) internals._tokenId = this.__modelManager.getCoreModel(TokenSchemaModel).createId(tokenId);
 
 		const rxsExecution = await super.add(executionBody, internals);
 		const execution = await Helpers.streamFirst(rxsExecution);

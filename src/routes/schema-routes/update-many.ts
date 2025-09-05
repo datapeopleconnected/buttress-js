@@ -15,43 +15,37 @@
  */
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import Schema from '../../schema.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import AppSchemaModel, { App } from '../../model/core/app.js';
+import Model from '../../model/index.js';
+import { ContractUpdateTransaction } from '@hashgraph/sdk';
 
 /**
  * @class UpdateMany
  */
 export default class UpdateMany extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+	constructor(schema: Schema, app: App, services: Services) {
+		const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/update`, `BULK UPDATE ${schema.name}`, services);
+		super(`${schemaRoutePath}/bulk/update`, `BULK UPDATE ${schema.name}`, services, schema, app);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.POST;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityDescription = `BULK UPDATE ${schema.name}`;
 		this.activityBroadcast = true;
-
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
-
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
-
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
 	}
 
-	_validate(req, res, token) {
+	async _validate(req, res, token) {
+		const model = await this.routeModel();
+
 		if (!Array.isArray(req.body)) {
-			this.log(`${this.schema.name}: Expected body to be an array of updates`, Route.LogLevel.ERR, req.id);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Expected body to be an array of updates`));
+			this.log(`${this.schemaName}: Expected body to be an array of updates`, Route.LogLevel.ERR, req.id);
+			throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Expected body to be an array of updates`);
 		}
 
 		// Reduce down duplicate entity updates into one object
@@ -69,64 +63,69 @@ export default class UpdateMany extends Route {
 			return reducedUpdates;
 		}, []);
 
-		return data.reduce((prev, update) => {
-			return prev.then(() => {
-				const { validation, body } = this.model.validateUpdate(update.body);
-				update.body = body;
-				if (!validation.isValid) {
-					if (validation.isPathValid === false) {
-						this.log(`${this.schema.name}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);
-						return update.validation = {
-							code: 400,
-							message: `${this.schema.name}: Update path is invalid: ${validation.invalidPath}`,
-						};
-					}
-					if (validation.isValueValid === false) {
-						this.log(`${this.schema.name}: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR, req.id);
-						if (validation.isMissingRequired) {
-							return update.validation = {
-								code: 400,
-								message: `${this.schema.name}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
-							};
-						}
+		for await (const update of data) {
+			const { validation, body } = model.validateUpdate(update.body);
+			update.body = body;
 
-						return update.validation = {
+			if (!validation.isValid) {
+				if (validation.isPathValid === false) {
+					this.log(`${this.schemaName}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);
+					update.validation = {
+						code: 400,
+						message: `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
+					};
+					continue;
+				}
+				if (validation.isValueValid === false) {
+					this.log(`${this.schemaName}: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR, req.id);
+					if (validation.isMissingRequired) {
+						update.validation = {
 							code: 400,
-							message: `${this.schema.name}: Update value is invalid for path ${req.body.path}: ${validation.invalidValue}`,
+							message: `${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
 						};
+						continue;
 					}
 				}
 
-				return this.model.exists(update.id, body.sourceId)
-					.then((exists) => {
-						if (!exists) {
-							this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.id);
-							return update.validation = {
-								code: 400,
-								message: `${this.schema.name}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
-							};
-						}
+				// ? I've moved outside isValidValue to be the default fallback if isValid is false.
+				update.validation = {
+					code: 400,
+					message: `${this.schemaName}: Update value is invalid for path ${req.body.path}: ${validation.invalidValue}`,
+				};
+				continue;
+			}
 
-						return update.validation = true;
-					});
-			});
-		}, Promise.resolve())
-			.then(() => data);
+			const exists = await model.exists(update.id, body.sourceId);
+
+			if (!exists) {
+				this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.id);
+				update.validation = {
+					code: 400,
+					message: `${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
+				};
+				continue;
+			}
+
+			update.validation = true;
+		}
+
+		return data;
 	}
 
-	_exec(req, res, data) {
+	async _exec(req, res, data) {
+		const model = await this.routeModel();
+
 		const output: {
 			id: string,
 			sourceId: string,
 			results: any,
 		}[] = [];
 
-		return data.reduce(
-			(prev, body) => prev
-				.then(() => this.model.updateByPath(body.body, body.id, body.sourceId))
-				.then((result) => output.push({ id: body.id, sourceId: body.sourceId, results: result })),
-			Promise.resolve(),
-		)
-			.then(() => output);
+		for await (const body of data) {
+			const result = await model.updateByPath(body.body, body.id, body.sourceId);
+			output.push({ id: body.id, sourceId: body.sourceId, results: result });
+		}
+
+		return output;
 	}
 };

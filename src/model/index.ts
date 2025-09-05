@@ -14,17 +14,16 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Schema from '../schema.js';
+import * as Helpers from '../helpers/index.js';
+import { Schema } from '../helpers/schema.js';
 import Logging from '../helpers/logging.js';
-import { shortId, Errors, DataSharing } from '../helpers/index.js';
 
-import Datastore from '../datastore/index.js';
+import Datastores, { Datastore } from '../datastore/index.js';
 
 import StandardModel from './type/standard.js';
 import RemoteCombinedModel from './type/remote-combined.js';
 
 import Activity from './core/activity.js';
-import App from './core/app.js';
 import AppDataSharing from './core/app-data-sharing.js';
 import Deployment from './core/deployment.js';
 import Lambda from './core/lambda.js';
@@ -34,13 +33,14 @@ import SecureStore from './core/secure-store.js';
 import Token from './core/token.js';
 import Tracking from './core/tracking.js';
 import User from './core/user.js';
-import AppSchemaModel from './core/app.js';
+import AppSchemaModel, { App } from './core/app.js';
+import AppDataSharingSchemaModel from './core/app-data-sharing.js';
 
 type StandardModelExtended<T extends StandardModel> = new (...args: any[]) => T;
 
 const CoreModels = {
 	Activity,
-	App,
+	App: AppSchemaModel,
 	AppDataSharing,
 	Deployment,
 	Lambda,
@@ -53,10 +53,18 @@ const CoreModels = {
 };
 
 /**
+ * Model manager class used for caching and accessing data models from within Buttress.
  * @class Model
  */
-class Model {
-	models: { [key: string]: StandardModel };
+export class ModelManager {
+	models: {
+		core: {
+			[key: string]: StandardModel
+		},
+		[key: string]: {
+			[key: string]: StandardModel
+		}
+	};
 	Schema: { [key: string]: any };
 
 	Constants: { [key: string]: any };
@@ -68,7 +76,9 @@ class Model {
 	_services: any;
 
 	constructor() {
-		this.models = {};
+		this.models = {
+			core: {}
+		};
 		this.Schema = {};
 		this.Constants = {};
 		this.app = false;
@@ -85,7 +95,9 @@ class Model {
 
 	async clean() {
 		Logging.logSilly('Model:clean');
-		this.models = {};
+		this.models = {
+			core: {}
+		};
 		this.Schema = {};
 		this.Constants = {};
 		this.app = false;
@@ -108,7 +120,7 @@ class Model {
 
 	async initSchema(appId = null) {
 		Logging.logSilly('Model:initSchema');
-		const rxsApps = await this.getCoreModel(AppSchemaModel).findAll();
+		const rxsApps = await this.getCoreModel(AppSchemaModel).findAll() as App[];
 
 		for await (const app of rxsApps) {
 			if (!app || !app.__schema) continue;
@@ -117,13 +129,13 @@ class Model {
 			Logging.logSilly(`Model:initSchema: ${app.id}`);
 
 			// Check for connection
-			let datastore: any = null;
+			let datastore: Datastore | null = null;
 			if (app.datastore && app.datastore.connectionString) {
 				try {
-					datastore = Datastore.createInstance(app.datastore);
+					datastore = Datastores.createInstance({ connectionString: app.datastore.connectionString });
 					await datastore.connect();
 				} catch (err) {
-					if (err instanceof Errors.UnsupportedDatastore) {
+					if (err instanceof Helpers.Errors.UnsupportedDatastore) {
 						Logging.logWarn(`${err} for ${app.id}`);
 						return;
 					}
@@ -131,14 +143,14 @@ class Model {
 					throw err;
 				}
 			} else {
-				datastore = Datastore.getInstance('core');
+				datastore = Datastores.getInstance('core');
 			}
 
 			let builtSchemas: any[];
 			try {
-				builtSchemas = await Schema.buildCollections(Schema.decode(app.__schema));
+				builtSchemas = await Helpers.Schema.buildCollections(Helpers.Schema.decode(app.__schema));
 			} catch (err) {
-				if (err instanceof Errors.SchemaInvalid) continue;
+				if (err instanceof Helpers.Errors.SchemaInvalid) continue;
 				else throw err;
 			}
 
@@ -150,40 +162,29 @@ class Model {
 		Logging.logSilly('Model:initSchema:end');
 	}
 
-	/**
-	 * Use to access a defined model, should be used in place of the
-	 * object property accessor.
-	 * @param {string} name
-	 * @return {Standard}
-	 */
-	getModel<T extends StandardModel>(name: string): T {
-		return this.models[name] as unknown as T;
-	}
 	getCoreModel<T extends StandardModel>(modelClass: StandardModelExtended<T>): T {
 		const name = modelClass.name;
 
-		if (!this.models[name]) {
+		if (!this.models.core[name]) {
 			throw new Error(`Core model '${name}' has not been initialized.`);
 		}
 
-		return this.models[name] as unknown as T;
+		return this.models.core[name] as unknown as T;
+	}
+	getCoreModelByName<T extends StandardModel>(name: string): T {
+		return this.models.core[name] as unknown as T;
 	}
 
 	get CoreModels() {
 		return CoreModels;
 	}
 
-	getAppModel(appId: string, name: string) {
-		return this.getModel(`${shortId(appId)}-${name}`);
-	}
-
 	/**
-	 * Used to define a object property accessor for a defined model.
-	 * @param {string} name
-	 * @deprecated
+	 * Unlike fetching the core models, app models might not be initialized yet, so this
+	 * is an async function.
 	 */
-	__addModelGetter(name) {
-		Object.defineProperty(this, name, { get: () => this.models[name], configurable: true });
+	async getAppModel<T extends StandardModel>(appId: string, name: string): Promise<T> {
+		return this.models[appId][name] as unknown as T;
 	}
 
 	/**
@@ -196,15 +197,13 @@ class Model {
 
 		this.coreSchema.push(name);
 
-		if (!this.models[name]) {
+		if (!this.models.core[name]) {
 			Logging.logSilly(`Creating core model: ${name}`);
-			this.models[name] = new CoreSchemaModel(this._services);
-			await this.models[name].initAdapter(Datastore.getInstance('core'));
-
-			this.__addModelGetter(name);
+			this.models.core[name] = new CoreSchemaModel(this._services);
+			await this.models.core[name].initAdapter(Datastores.getInstance('core'));
 		}
 
-		return this.models[name];
+		return this.models.core[name];
 	}
 
 	/**
@@ -214,16 +213,8 @@ class Model {
 	 * @return {object} SchemaModel - initiated schema model built from passed schema object
 	 * @private
 	 */
-	async _initSchemaModel(app, schemaData, mainDatastore) {
-		let modelName = `${schemaData.name}`;
-		const appShortId = (app) ? shortId(app.id) : null;
-
-		modelName = (appShortId) ? `${appShortId}-${schemaData.name}` : modelName;
-
-		// if (this.models[modelName]) {
-		// 	this.__addModelGetter(modelName);
-		// 	return this.models[modelName];
-		// }
+	async _initSchemaModel(app: App, schemaData: Schema, mainDatastore) {
+		const modelName = schemaData.name;
 
 		// Is data sharing
 		if (schemaData.remotes) {
@@ -237,7 +228,7 @@ class Model {
 					return;
 				}
 
-				const dataSharing = await this.getModel('AppDataSharing').findOne({
+				const dataSharing = await this.getCoreModel(AppDataSharingSchemaModel).findOne({
 					'name': remote.name,
 					'_appId': app.id,
 				});
@@ -252,8 +243,8 @@ class Model {
 					return;
 				}
 
-				const connectionString = DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
-				const remoteDatastore = Datastore.createInstance({ connectionString });
+				const connectionString = Helpers.DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
+				const remoteDatastore = Datastores.createInstance({ connectionString });
 
 				// ? Datastore shouldn't really care about the data sharing ID.
 				remoteDatastore.dataSharingId = dataSharing.id;
@@ -261,26 +252,45 @@ class Model {
 				datastores.push(remoteDatastore);
 			}
 
-			this.models[modelName] = new RemoteCombinedModel(schemaData, app, this._services);
+			this._setModel(app.id, modelName, new RemoteCombinedModel(schemaData, app, this._services));
 
 			try {
-				await (this.models[modelName] as RemoteCombinedModel).initAdapter(mainDatastore, datastores);
+				await (this.models[app.id][modelName] as RemoteCombinedModel).initAdapter(mainDatastore, datastores);
 			} catch (err) {
 				// Skip defining this model, the error will get picked up later when route is defined ore accessed
-				if (err instanceof Errors.SchemaNotFound) return;
+				if (err instanceof Helpers.Errors.SchemaNotFound) return;
 				else throw err;
 			}
-
-			this.__addModelGetter(modelName);
-			return this.models[modelName];
+			
+			return this.models[app.id][modelName];
 		} else {
-			this.models[modelName] = new StandardModel(schemaData, app, this._services);
-			await this.models[modelName].initAdapter(mainDatastore);
+			this._setModel(app.id, modelName, new StandardModel(schemaData, app, this._services));
+			await this.models[app.id][modelName].initAdapter(mainDatastore);
 		}
 
-		this.__addModelGetter(modelName);
-		return this.models[modelName];
+		return this.models[app.id][modelName];
+	}
+
+	private _setModel<T extends StandardModel>(appId: string, modelName: string, modelInstance: T) {
+		if (!this.models[appId]) this.models[appId] = {};
+		this.models[appId][modelName] = modelInstance;
+	}
+
+	async dropAndCleanAppModels(appId: string) {
+		if (!this.models[appId]) return;
+		
+		const modelNames = Object.keys(this.models[appId]);
+		for await (const modelName of modelNames) {
+			try {
+				await this.models[appId][modelName].drop();
+			} catch (err) {
+				Logging.logError(`Error dropping model ${modelName} for app ${appId}: ${err}`);
+			}
+			delete this.models[appId][modelName];
+		}
+		
+		delete this.models[appId];
 	}
 }
 
-export default new Model();
+export default new ModelManager();

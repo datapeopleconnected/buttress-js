@@ -22,11 +22,12 @@ import { PolicyConfig } from '../model/core/policy.js';
 import { parsedPolicyConfig } from './index.js';
 
 import { BjsQuery, QueryParams } from '../types/bjs-query.js';
+import StandardModel from '../model/type/standard.js';
 
-export async function find(model, query: QueryParams<object>, ac: { policyConfigs: parsedPolicyConfig[] }) {
+export async function find<T extends StandardModel>(model: T, query: QueryParams<object>, ac: { policyConfigs: parsedPolicyConfig[] }) {
   if (ac.policyConfigs.length > 1) {
     const resStream = new Stream.PassThrough({ objectMode: true });
-
+    
     let openStreams = 0;
     // Using forEach here because we don't want to wait for each function to finish before calling the next.
     ac.policyConfigs.forEach(async (policyConfig) => {
@@ -51,7 +52,7 @@ export async function find(model, query: QueryParams<object>, ac: { policyConfig
   return model.find(model.parseQuery(conbined.query), {}, conbined.limit, conbined.skip, conbined.sort, conbined.project);
 }
 
-export async function count(model, query: QueryParams<object>, ac: { policyConfigs: parsedPolicyConfig[] }, actualCount: boolean = false) {
+export async function count<T extends StandardModel>(model: T, query: QueryParams<object>, ac: { policyConfigs: parsedPolicyConfig[] }, actualCount: boolean = false) {
   if (ac.policyConfigs.length > 1) {
     if (actualCount) {
       let count = 0;

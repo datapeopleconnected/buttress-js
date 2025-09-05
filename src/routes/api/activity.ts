@@ -14,6 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { ExtendsRoute } from '../../types/routes.js';
+
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
@@ -28,7 +30,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetActivityList extends Route {
 	constructor(services) {
-		super('activity', 'GET ACTIVITY LIST', services, Model.getCoreModel(ActivitySchemaModel));
+		super('activity', 'GET ACTIVITY LIST', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -40,12 +42,12 @@ class GetActivityList extends Route {
 
 	_exec(req, res, validate) {
 		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-			return this.model.findAll();
+			return Model.getCoreModel(ActivitySchemaModel).findAll();
 		}
 
-		return this.model.find({
+		return Model.getCoreModel(ActivitySchemaModel).find({
 			_appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
-			visibility: this.model.Constants.Visibility.PUBLIC,
+			visibility: Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PUBLIC,
 		});
 	}
 }
@@ -56,7 +58,7 @@ routes.push(GetActivityList);
  */
 class GetActivity extends Route {
 	constructor(services) {
-		super('activity/:id', 'GET ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel));
+		super('activity/:id', 'GET ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -68,7 +70,7 @@ class GetActivity extends Route {
 			throw new Helpers.Errors.RequestError(400, `missing_required_fields`);
 		}
 
-		const activity = await this.model.findById(req.params.id);
+		const activity = await Model.getCoreModel(ActivitySchemaModel).findById(req.params.id);
 
 		if (!activity) {
 			this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR, req.id);
@@ -89,7 +91,7 @@ routes.push(GetActivity);
  */
 class DeleteAllActivity extends Route {
 	constructor(services) {
-		super('activity', 'DELETE ALL ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel));
+		super('activity', 'DELETE ALL ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.SYSTEM;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -100,7 +102,7 @@ class DeleteAllActivity extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return this.model.rmAll().then(() => true);
+		return Model.getCoreModel(ActivitySchemaModel).rmAll({}).then(() => true);
 	}
 }
 routes.push(DeleteAllActivity);

@@ -100,18 +100,20 @@ export class PolicyEnv {
 			root = queryValue.collection;
 		}
 
-		const isAppSchema = await this.__isAppSchema(root, envVars.appId);
-		if (isAppSchema) {
-			return this.__queryAppSchemaEnvValue(queryValue, environmentKey, envVars);
+		if (root) {
+			const isAppSchema = await this.__isAppSchema(root, envVars.appId);
+			if (isAppSchema) {
+				return this.__queryAppSchemaEnvValue(queryValue, environmentKey, envVars);
+			}
 		}
 
 		return this._globalQueryEnv[queryValue];
 	}
 
-	async __isAppSchema(schema, appId) {
+	async __isAppSchema(schema: string, appId: string) {
 		if (!schema || !appId) return false;
-		const appShortId = Helpers.shortId(appId);
-		return (Model[`${appShortId}-${schema}`]) ? true : false;
+		const model = await Model.getAppModel(appId, schema);
+		return (model) ? true : false;
 	}
 
 	async __queryAppSchemaEnvValue(envObj, envKey, envVars) {
@@ -123,7 +125,6 @@ export class PolicyEnv {
 		// Check the envVar to see if
 		if (envVars[envKey]) return envVars[envKey];
 
-		const appShortId = Helpers.shortId(envVars.appId);
 		for await (const key of Object.keys(query)) {
 			if (typeof query[key] !== 'object') throw new Error(`env query needs to be a query object ${query[key]}`);
 			const operator = Object.values(Filter.queryOperators).find((op) => Object.keys(query[key]).every((key) => key === op));
@@ -137,7 +138,8 @@ export class PolicyEnv {
 			query[key][operator] = await this.getEnvValue(dbQuery, envVars);
 		}
 
-		const res = await (Model[`${appShortId}-${schema}`]).find(query);
+		const model = await Model.getAppModel(envVars.appId, schema);
+		const res = await model.find(query);
 		const result = await Helpers.streamAll(res);
 		if (!result) return false;
 

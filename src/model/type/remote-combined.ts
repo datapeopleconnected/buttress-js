@@ -21,11 +21,15 @@ import StandardModel from './standard.js';
 import RemoteModel from './remote.js';
 
 import { SourceDataSharingRouting } from '../../services/source-ds-routing.js';
+import { App } from '../core/app.js';
+import { Schema } from '../../helpers/schema.js';
+import { Services } from '../../bootstrap.js';
 
 /**
  * @class RemoteCombinedModel
  */
 export default class RemoteCombinedModel extends StandardModel {
+	app: App;
 
 	localModel: any;
 
@@ -33,15 +37,19 @@ export default class RemoteCombinedModel extends StandardModel {
 
 	_sdsRouting: SourceDataSharingRouting;
 
-	constructor(schemaData, app, services) {
+	constructor(schemaData: Schema, app: App | null, services: Services) {
+		if (!app) throw new Error('App is required for RemoteCombinedModel');
+
 		super(schemaData, app, services);
+
+		this.app = app;
 
 		// This is reference to a copy of the model in our local datastore.
 		this.localModel = null;
 
 		this.remoteModels = [];
 
-		this._sdsRouting = services.get('sdsRouting');
+		this._sdsRouting = services.get('sdsRouting') as SourceDataSharingRouting;
 	}
 
 	async initAdapter(localDataStore, remoteDatastores?) {

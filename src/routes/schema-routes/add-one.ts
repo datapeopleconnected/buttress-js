@@ -15,19 +15,22 @@
  */
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import Schema from '../../schema.js';
 import Plugins from '../../plugins/index.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 
 /**
  * @class AddOne
  */
 export default class AddOne extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+	constructor(schema: Schema, app: App, services: Services) {
+		const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `ADD ${schema.name}`, services);
+		super(`${schemaRoutePath}`, `ADD ${schema.name}`, services, schema, app);
 		this.__configureSchemaRoute();
 
 		this.verb = Route.Constants.Verbs.POST;
@@ -35,51 +38,37 @@ export default class AddOne extends Route {
 
 		this.activityDescription = `ADD ${schema.name}`;
 		this.activityBroadcast = true;
-
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
-
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model.getModel(schemaCollection);
-
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			const validation = this.model.validate(req.body);
-			if (!validation.isValid) {
-				if (validation.missing.length > 0) {
-					this.log(`${this.schema.name}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
-					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Missing field: ${validation.missing[0]}`));
-				}
-				if (validation.invalid.length > 0) {
-					this.log(`${this.schema.name}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
-					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Invalid value: ${validation.invalid[0]}`));
-				}
-
-				this.log(`${this.schema.name}: Unhandled Error`, Route.LogLevel.ERR, req.id);
-				return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Unhandled error.`));
+	async _validate(req, res, token) {
+		const model = await this.routeModel();
+		const validation = model.validate(req.body);
+		if (!validation.isValid) {
+			if (validation.missing.length > 0) {
+				this.log(`${this.schemaName}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
+				throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`);
+			}
+			if (validation.invalid.length > 0) {
+				this.log(`${this.schemaName}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
+				throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`);
 			}
 
-			this.model.isDuplicate(req.body)
-				.then((res) => {
-					if (res === true) {
-						this.log(`${this.schema.name}: Duplicate entity`, Route.LogLevel.ERR, req.id);
-						return reject(new Helpers.Errors.RequestError(400, `duplicate`));
-					}
-					resolve(true);
-				});
-		});
+			this.log(`${this.schemaName}: Unhandled Error`, Route.LogLevel.ERR, req.id);
+			throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Unhandled error.`);
+		}
+
+		const isDuplicate = await model.isDuplicate(req.body)
+		if (isDuplicate === true) {
+			this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.id);
+			throw new Helpers.Errors.RequestError(400, `duplicate`);
+		}
+		
+		return true;
 	}
 
 	async _exec(req, res, validate) {
-		const result = await this.model.add(req.body);
-		return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, this.schema.data);
+		const model = await this.routeModel();
+		const result = await model.add(req.body);
+		return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, model.schemaData);
 	}
 };

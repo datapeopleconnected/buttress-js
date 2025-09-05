@@ -25,6 +25,7 @@ import Logging from '../../helpers/logging.js';
 import AbstractAdapter from '../abstract-adapter.js';
 
 import { BjsQuery } from '../../types/bjs-query.js';
+import StandardModel from '../../model/type/standard.js';
 
 class AdapterId {
 	static new(id: string) {
@@ -146,7 +147,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 		return this._modifyDocumentStream(readable);
 	}
 
-	async batchUpdateProcess(id: string, body: { path: string, value: any }, context: Context, schemaConfig: SchemaConfig, model?: string) {
+	async batchUpdateProcess<T extends StandardModel>(id: string, body: { path: string, value: any }, context: Context, schemaConfig: SchemaConfig, model?: T) {
 		if (!context) throw new Error(`batchUpdateProcess called without context; ${id}`);
 
 		const updateType = context.type;
@@ -168,7 +169,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 				}
 
 				if (!schemaConfig && model) {
-					const entity = await Model.getModel(model).findById(id);
+					const entity = await model.findById(id);
 					const objValue: { [key: string]: any } = {};
 					let updateValueExists = true;
 					let modifiedPath = '';

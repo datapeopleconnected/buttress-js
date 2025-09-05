@@ -15,18 +15,20 @@
  */
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import Schema from '../../schema.js';
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 
 /**
  * @class AddMany
  */
 export default class AddMany extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+	constructor(schema: Schema, app: App, services: Services) {
+		const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/add`, `BULK ADD ${schema.name}`, services);
+		super(`${schemaRoutePath}/bulk/add`, `BULK ADD ${schema.name}`, services, schema, app);
 		this.__configureSchemaRoute();
 
 		this.verb = Route.Constants.Verbs.POST;
@@ -34,52 +36,38 @@ export default class AddMany extends Route {
 
 		this.activityDescription = `BULK ADD ${schema.name}`;
 		this.activityBroadcast = true;
-
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
-
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
-
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
 	}
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			const entities = req.body;
-			if (entities instanceof Array === false) {
-				this.log(`ERROR: You need to supply an array of ${this.schema.name}`, Route.LogLevel.ERR, req.id);
-				return reject(new Helpers.Errors.RequestError(400, `array_required`));
-			}
-			// if (companies.length > 601) {
-			//   this.log(`ERROR: No more than 300`, Route.LogLevel.ERR);
-			//   reject({statusCode: 400, message: `Invalid data: send no more than 300 ${this.schema.name} at a time`});
-			//   return;
-			// }
+	async _validate(req, res, token) {
+		const model = await this.routeModel();
+		const entities = req.body;
+		if (entities instanceof Array === false) {
+			this.log(`ERROR: You need to supply an array of ${this.schemaName}`, Route.LogLevel.ERR, req.id);
+			throw new Helpers.Errors.RequestError(400, `array_required`);
+		}
+		// if (companies.length > 601) {
+		//   this.log(`ERROR: No more than 300`, Route.LogLevel.ERR);
+		//   reject({statusCode: 400, message: `Invalid data: send no more than 300 ${this.schemaName} at a time`});
+		//   return;
+		// }
 
-			const validation = this.model.validate(entities);
-			if (!validation.isValid) {
-				if (validation.missing.length > 0) {
-					this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
-					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Missing field: ${validation.missing[0]}`));
-				}
-				if (validation.invalid.length > 0) {
-					this.log(`ERROR: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
-					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Invalid value: ${validation.invalid[0]}`));
-				}
-
-				return reject(new Helpers.Errors.RequestError(400, `unknown_error`));
+		const validation = model.validate(entities);
+		if (!validation.isValid) {
+			if (validation.missing.length > 0) {
+				this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
+				throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`);
 			}
-			resolve(entities);
-		});
+			if (validation.invalid.length > 0) {
+				this.log(`ERROR: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
+				throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`);
+			}
+
+			throw new Helpers.Errors.RequestError(400, `unknown_error`);
+		}
+		return entities;
 	}
 
-	_exec(req, res, entities) {
-		return this.model.add(entities);
+	async _exec(req, res, entities) {
+		return (await this.routeModel()).add(entities);
 	}
 };

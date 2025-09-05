@@ -26,7 +26,13 @@ const Config = createConfig() as unknown as Config;
 import Sugar from '../../helpers/sugar.js';
 import StandardModel from '../type/standard.js';
 import * as Helpers from '../../helpers/index.js';
+import { Schema } from '../../helpers/schema.js';
 import Logging from '../../helpers/logging.js';
+
+import DeploymentSchemaModel from './deployment.js';
+import LambdaExecutionSchemaModel from './lambda-execution.js';
+import TokenSchemaModel from './token.js';
+import LambdaSchemaModel from './lambda.js';
 
 export interface Lambda {
 	id: string;
@@ -79,7 +85,7 @@ export default class LambdaModel extends StandardModel {
 		super(schema, null, services);
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'lambda',
 			type: 'collection',
@@ -319,7 +325,7 @@ export default class LambdaModel extends StandardModel {
 		});
 		const lambda: any = await Helpers.streamFirst(rxsLambda);
 
-		const deployment = await this.__modelManager.Deployment.add({
+		const deployment = await this.__modelManager.getCoreModel(DeploymentSchemaModel).add({
 			lambdaId: lambda.id,
 			hash: lambda.git.hash,
 			branch: lambda.git.branch,
@@ -330,7 +336,7 @@ export default class LambdaModel extends StandardModel {
 		const cronTrigger = lambda.trigger.filter((t) => t.type === 'CRON');
 		for await (const trigger of cronTrigger) {
 			if (trigger.cron.periodicExecution) {
-				await this.__modelManager.LambdaExecution.add({
+				await this.__modelManager.getCoreModel(LambdaExecutionSchemaModel).add({
 					triggerType: 'CRON',
 					lambdaId: lambda.id,
 					deploymentId: deployment.id,
@@ -340,8 +346,8 @@ export default class LambdaModel extends StandardModel {
 			}
 		}
 
-		auth.type = this.__modelManager.Token.Constants.Type.LAMBDA;
-		await this.__modelManager.Token.add(auth, {
+		auth.type = TokenSchemaModel.Constants.Type.LAMBDA;
+		await this.__modelManager.getCoreModel(TokenSchemaModel).add(auth, {
 			_appId: app.id,
 			_lambdaId: lambda.id,
 		});
@@ -376,7 +382,7 @@ export default class LambdaModel extends StandardModel {
 			const apiTrigger = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
 			let lambdaExists = null;
 			if (apiTrigger && apiTrigger.apiEndpoint.url) {
-				lambdaExists = await this.__modelManager.Lambda.findOne({
+				lambdaExists = await this.__modelManager.getCoreModel(LambdaSchemaModel).findOne({
 					'trigger.apiEndpoint.url': {
 						$eq: apiTrigger.apiEndpoint.url,
 					},
@@ -470,18 +476,18 @@ export default class LambdaModel extends StandardModel {
 				}
 			}
 
-			const deployment = await this.__modelManager.Deployment.findOne({
+			const deployment = await this.__modelManager.getCoreModel(DeploymentSchemaModel).findOne({
 				lambdaId: this.createId(lambda.id),
 				hash: gitHash,
 			});
 			if (!deployment) {
-				await this.__modelManager.Deployment.add({
+				await this.__modelManager.getCoreModel(DeploymentSchemaModel).add({
 					lambdaId: lambda.id,
 					hash: gitHash,
 					branch: branch,
 				}, lambda._appId);
 			} else {
-				await this.__modelManager.Deployment.updateById(this.__modelManager.Deployment.createId(deployment.id),
+				await this.__modelManager.getCoreModel(DeploymentSchemaModel).updateById(this.__modelManager.getCoreModel(DeploymentSchemaModel).createId(deployment.id),
 					{$set: {deployedAt: Sugar.Date.create('now')}});
 			}
 		} catch (err) {

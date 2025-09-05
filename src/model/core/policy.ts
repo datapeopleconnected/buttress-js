@@ -18,7 +18,7 @@ import StandardModel from '../type/standard.js';
 import { PolicyCache } from '../../services/policy-cache.js';
 
 import * as Helpers from '../../helpers/index.js';
-
+import { Schema } from '../../helpers/schema.js';
 
 export interface PolicyEnvQuery {
 	collection: string;
@@ -82,7 +82,7 @@ class PolicySchemaModel extends StandardModel {
 		if (!this.__policyCache) throw new Error('Unable to find policyCache in services');
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'policy',
 			type: 'collection',
@@ -236,8 +236,8 @@ class PolicySchemaModel extends StandardModel {
 
 		return policy;
 	}
-	updateByPath(body, id, sourceId = null, model: any = null) {
-		const policy = super.updateByPath(body, id, sourceId, model);
+	updateByPath(body, id, sourceId = null) {
+		const policy = super.updateByPath(body, id, sourceId);
 
 		this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());
 

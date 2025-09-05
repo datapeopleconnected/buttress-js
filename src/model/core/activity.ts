@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import Logging from '../../helpers/logging.js';
-import Schema from '../../schema.js';
+import { Schema, encode } from '../../helpers/schema.js';
 import * as Shared from '../shared.js';
 
 import StandardModel from '../type/standard.js';
@@ -45,7 +45,7 @@ class ActivitySchemaModel extends StandardModel {
 		return ActivitySchemaModel.Constants;
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'activities',
 			type: 'collection',
@@ -63,7 +63,7 @@ class ActivitySchemaModel extends StandardModel {
 					__allowUpdate: false,
 				},
 				description: {
-					__type: 'text',
+					__type: 'string',
 					__default: '',
 					__allowUpdate: false,
 				},
@@ -101,7 +101,7 @@ class ActivitySchemaModel extends StandardModel {
 					},
 				},
 				body: {
-					__type: 'text',
+					__type: 'string',
 					__default: '',
 					__allowUpdate: false,
 				},
@@ -149,7 +149,7 @@ class ActivitySchemaModel extends StandardModel {
 			authType: body.auth,
 			params: body.req.params,
 			query: q,
-			body: Schema.encode(body.req.body), // HACK - Due to schema update results.
+			body: encode(body.req.body), // HACK - Due to schema update results.
 			timestamp: new Date(),
 			_tokenId: body.req.token.id,
 			_userId: (body.req.authUser) ? body.req.authUser.id : null,
@@ -167,7 +167,7 @@ class ActivitySchemaModel extends StandardModel {
 	}
 
 	add(body) {
-		body.req.body = Schema.encode(body.req.body);
+		body.req.body = encode(body.req.body);
 
 		return super.add(body);
 	}

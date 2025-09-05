@@ -32,8 +32,7 @@ import Bootstrap, { LocalProcessMessage } from './bootstrap.js';
 import Model from './model/index.js';
 import Routes from './routes/index.js';
 import Logging from './helpers/logging.js';
-import Schema from './schema.js';
-import { shortId } from './helpers/index.js';
+import * as Schema from './helpers/schema.js';
 
 import { SourceDataSharingRouting } from './services/source-ds-routing.js';
 
@@ -321,8 +320,7 @@ export default class BootstrapRest extends Bootstrap {
 		const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
 		for await (const app of rxsApps) {
 			const appSchema: any[] = Schema.decode(app.__schema);
-			const appShortId = shortId(app.id);
-			Logging.log(`Adding ${localSchema.length} local schema for ${appShortId}:${app.name}:${appSchema.length}`);
+			Logging.log(`Adding ${localSchema.length} local schema for ${app.id}:${app.name}:${appSchema.length}`);
 			localSchema.forEach((cS) => {
 				const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);
 				const schema = appSchema[appSchemaIdx];

@@ -47,6 +47,7 @@ import AppSchemaModel, { App } from '../model/core/app.js';
 import TokenSchemaModel from '../model/core/token.js';
 import UserSchemaModel from '../model/core/user.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
+import SecureStoreSchemaModel from '../model/core/secure-store.js';
 
 export enum LambdaType {
 	API_ENDPOINT = 'API_ENDPOINT',
@@ -144,9 +145,9 @@ export default class LambdaRunner {
 	 * @param {Object} app
 	 */
 	async _getAppLambdaEnvironment(app): Promise<{[key: string]: unknown} | null> {
-		const secureStore = await Model.getModel('SecureStore').findOne({
+		const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
 			name: 'environment',
-			_appId: Model.getModel('App').createId(app.id),
+			_appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
 		});
 		if (!secureStore) return null;
 

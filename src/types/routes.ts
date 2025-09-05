@@ -13,44 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import os from 'node:os';
 
-import Route from '../route.js';
+import Route from '../routes/route.js';
 
-const routes: (typeof Route)[] = [];
-
-/**
- * @class GetTrackingList
- */
-class GetProcessStatus extends Route {
-	constructor(services) {
-		super('status', 'GET TRACKING LIST', services, null);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.USER;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
-
-	async _validate(req, res, token) {
-		return Promise.resolve(true);
-	}
-
-	async _exec(req, res, validate) {
-		const mem = process.memoryUsage().rss;
-		const memTotal = os.totalmem();
-
-		return {
-			uptime: process.uptime(),
-			memory: {
-				used: mem,
-				total: memTotal,
-				percent: Number((mem / memTotal) * 100).toFixed(2),
-			},
-		};
-	}
-}
-routes.push(GetProcessStatus);
-
-/**
- * @type {*[]}
- */
-export default routes;
+export type ExtendsRoute<T extends Route> = new (...args: any[]) => T;

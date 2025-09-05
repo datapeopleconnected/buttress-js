@@ -32,7 +32,7 @@ const routes: (typeof Route)[] = [];
  */
 class GetTokenList extends Route {
 	constructor(services) {
-		super('token', 'LIST TOKEN', services, Model.getCoreModel(TokenSchemaModel));
+		super('token', 'LIST TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -61,7 +61,7 @@ class GetTokenList extends Route {
 	}
 
 	async _exec(req, res, validate) {
-		return ACM.find(this.model, validate, req.ac);
+		return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
 	}
 }
 routes.push(GetTokenList);
@@ -71,7 +71,7 @@ routes.push(GetTokenList);
  */
 class SearchTokenList extends Route {
 	constructor(services) {
-		super('token', 'SEARCH TOKEN', services, Model.getCoreModel(TokenSchemaModel));
+		super('token', 'SEARCH TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -108,7 +108,7 @@ class SearchTokenList extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return ACM.find(this.model, validate, req.ac);
+		return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
 	}
 }
 routes.push(SearchTokenList);
@@ -118,7 +118,7 @@ routes.push(SearchTokenList);
  */
 class DeleteAllTokens extends Route {
 	constructor(services) {
-		super('token/:type?', 'DELETE ALL TOKENS', services, Model.getCoreModel(TokenSchemaModel));
+		super('token/:type?', 'DELETE ALL TOKENS', services, Model.getCoreModel(TokenSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -144,7 +144,7 @@ class DeleteAllTokens extends Route {
 					$ne: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM
 				}
 			};
-			await this.model.rmAll(query);
+			await Model.getCoreModel(TokenSchemaModel).rmAll(query);
 		} else {
 			if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.APP) {
 				this.log('ERROR: Cannot delete app tokens as app', Route.LogLevel.ERR);
@@ -159,7 +159,7 @@ class DeleteAllTokens extends Route {
 				}
 			};
 
-			await this.model.rmAll({
+			await Model.getCoreModel(TokenSchemaModel).rmAll({
 				...query,
 				_appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
 			});
@@ -175,7 +175,7 @@ routes.push(DeleteAllTokens);
  */
 class SearchUserToken extends Route {
 	constructor(services) {
-		super('token/:userId', 'SEARCH USER TOKEN', services, Model.getCoreModel(TokenSchemaModel));
+		super('token/:userId', 'SEARCH USER TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -222,7 +222,7 @@ class SearchUserToken extends Route {
 	}
 
 	_exec(req, res, validate) {
-		return ACM.find(this.model, validate, req.ac);
+		return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
 	}
 }
 routes.push(SearchUserToken);

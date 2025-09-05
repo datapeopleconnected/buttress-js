@@ -20,6 +20,11 @@ import * as Helpers from '../../helpers/index.js';
 import * as Shared from '../shared.js';
 import NodeRedisPubsub from '../../services/nrp.js';
 
+import { Schema } from '../../helpers/schema.js';
+import { App } from '../core/app.js';
+import { Services } from '../../bootstrap.js';
+import { ModelManager } from '../index.js';
+
 /* ********************************************************************************
  *
  * LOCALS
@@ -29,32 +34,32 @@ import NodeRedisPubsub from '../../services/nrp.js';
 export default class StandardModel {
 	static name = 'Model';
 
-	schemaData: any;
-	flatSchemaData: any;
+	schemaData: Schema;
+	flatSchemaData: { [key: string]: unknown };
 
-	app: any;
+	app: App | null;
 
 	isCoreAPI: boolean = false;
 
-	appShortId: any;
-	collectionName: any;
+	appShortId: string | null;
+	collectionName: string;
 
-	__services: any;
-	__nrp?: NodeRedisPubsub;
-	__modelManager: any;
+	protected __services: Services;
+	protected __nrp: NodeRedisPubsub;
+	protected __modelManager: ModelManager;
 
 	adapter: any;
 
-	constructor(schemaData, app, services) {
+	constructor(schemaData: Schema, app: App | null, services: Services) {
 		this.schemaData = schemaData;
-		this.flatSchemaData = (schemaData) ? Helpers.getFlattenedSchema(this.schemaData) : null;
+		this.flatSchemaData = (schemaData) ? Helpers.getFlattenedSchema(this.schemaData) : {};
 
-		this.app = app || null;
+		this.app = app;
 
 		if (!this.app) this.isCoreAPI = true;
 
 		this.appShortId = (app) ? Helpers.shortId(app.id) : null;
-		this.collectionName = (schemaData) ? `${schemaData.name}` : null;
+		this.collectionName = schemaData.name;
 
 		if (this.appShortId) {
 			this.collectionName = `${this.appShortId}-${this.collectionName}`;
@@ -62,24 +67,22 @@ export default class StandardModel {
 
 		this.__services = services;
 
-		this.__nrp = services.get('nrp');
+		this.__nrp = services.get('nrp') as NodeRedisPubsub;
 		if (!this.__nrp) throw new Error('Unable to find nrp in services');
 
-		this.__modelManager = this.__services.get('modelManager');
+		this.__modelManager = this.__services.get('modelManager') as ModelManager;
 		if (!this.__modelManager) throw new Error('Unable to find modelManager in services');
 
-		if (schemaData.core) {
-			this.__nrp.on('app:update-schema', (data: any) => {
-				data = JSON.parse(data);
-				if (!app || (app.id.toString() !== data.appId)) return;
+		this.__nrp.on('app:update-schema', (json: string) => {
+			const data = JSON.parse(json);
+			if (!app || (app.id.toString() !== data.appId)) return;
 
-				data.schemas.forEach((schema) => {
-					if (schema.name !== this.schemaData.name) return;
+			data.schemas.forEach((schema) => {
+				if (schema.name !== this.schemaData.name) return;
 
-					this.schemaData = schema;
-				});
+				this.schemaData = schema;
 			});
-		}
+		});
 	}
 
 	async initAdapter(datastore) {
@@ -198,7 +201,7 @@ export default class StandardModel {
 		return output;
 	}
 
-	parseQueryProperty(property, operator, operand, operandOptions?, output = {}, envFlat = {}, schemaFlat = {}) {
+	parseQueryProperty(property, operator, operand, operandOptions?, output = {}, envFlat = {}, schemaFlat: { [key: string]: unknown } = {}) {
 		// Check to see if operand is a path and fetch value
 		if (operand && operand.indexOf && operand.indexOf('.') !== -1) {
 			let path = operand.split('.');
@@ -347,7 +350,7 @@ export default class StandardModel {
 	 * @return {promise}
 	 */
 	// TODO: Model shouldn't be being passed through this way.
-	async updateByPath(body, id, sourceId = null, model: any = null) {
+	async updateByPath(body, id, sourceId = null) {
 		if (body instanceof Array === false) {
 			body = [body];
 		}
@@ -380,7 +383,7 @@ export default class StandardModel {
 			}
 
 			return arr.concat([
-				await this.adapter.batchUpdateProcess(id, update, context, config, model),
+				await this.adapter.batchUpdateProcess(id, update, context, config, this),
 			]);
 		}, Promise.resolve([]));
 	}

@@ -16,6 +16,8 @@
 
 import StandardModel from '../type/standard.js';
 
+import { Schema } from '../../helpers/schema.js';
+
 /**
  * Constants
  */
@@ -43,7 +45,7 @@ class TrackingSchemaModel extends StandardModel {
 		return TrackingSchemaModel.Constants;
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'trackings',
 			type: 'collection',

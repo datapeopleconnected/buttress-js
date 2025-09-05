@@ -15,42 +15,34 @@
  */
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import Schema from '../../schema.js';
 
 import * as ACM from '../../access-control/models-access.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 
 /**
  * @class SearchList
  */
 export default class SearchList extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+	constructor(schema: Schema, app: App, services: Services) {
+		const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `SEARCH ${schema.name} LIST`, services);
+		super(`${schemaRoutePath}`, `SEARCH ${schema.name} LIST`, services, schema, app);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.LIST;
 
 		this.activityDescription = `SEARCH ${schema.name} LIST`;
 		this.activityBroadcast = false;
-
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
-
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
-
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
 	}
 
 	async _validate(req, res, token) {
+		const model = await this.routeModel();
+
 		const result = {
 			query: {},
 			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
@@ -73,13 +65,15 @@ export default class SearchList extends Route {
 			query.$and.push(req.body.query);
 		}
 
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		query = model.parseQuery(query, {}, model.flatSchemaData);
 
 		result.query = query;
 		return result;
 	}
 
-	_exec(req, res, validateResult) {
-		return ACM.find(this.model, validateResult, req.ac);
+	async _exec(req, res, validateResult) {
+		const model = await this.routeModel();
+
+		return ACM.find(model, validateResult, req.ac);
 	}
 };

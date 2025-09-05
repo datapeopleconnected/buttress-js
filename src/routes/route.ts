@@ -20,16 +20,19 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import Logging from '../helpers/logging.js';
-import Model from '../model/index.js';
+import Model, { ModelManager } from '../model/index.js';
 import * as Helpers from '../helpers/index.js';
-import Schema from '../schema.js';
+import { Schema } from '../helpers/schema.js';
 
-import SchemaModelRemote from '../model/type/remote.js';
+import RemoteModel from '../model/type/remote.js';
 
 import NodeRedisPubsub from "../services/nrp.js";
 import { RESTActivity } from '../types/bjs-nrp-objects.js';
 import ActivitySchemaModel from '../model/core/activity.js';
 import TokenSchemaModel from '../model/core/token.js';
+import StandardModel from '../model/type/standard.js';
+import { App } from '../model/core/app.js';
+import { Services } from '../bootstrap.js';
 
 export interface NotifyLambdaPathChangeMessage {
 	paths: string[];
@@ -126,29 +129,35 @@ export default class Route {
 	redactResults: boolean = true;
 	addSourceId: boolean = false;
 
-	model: any;
-	schema: any;
+	// model: T;
+	appId?: string;
+	schemaName?: string;
 
 	paths: string[];
 
 	name: string;
 
-	_nrp?: NodeRedisPubsub;
+	protected _nrp?: NodeRedisPubsub;
+	protected _modelManager?: ModelManager;
 
 	_redisClient: any;
 
 	_timer?: Helpers.Timer;
 
-	constructor(paths: string | string[], name: string, services: any, model?: any) {
-		this.model = (model) ? model : null;
-		this.schema = (model) ? new Schema(model.schemaData) : null;
+	constructor(paths: string | string[], name: string, services: Services, schema: Schema | null, app?: App) {
+		// this.model = model;
+		this.schemaName = schema?.name;
+		this.appId = app?.id;
 
 		this.paths = Array.isArray(paths) ? paths : [paths];
 
 		this.name = name;
 
-		this._nrp = services.get('nrp');
+		this._nrp = services.get('nrp') as NodeRedisPubsub;
 		if (!this._nrp) throw new Error('Route: NRP not found in services');
+
+		this._modelManager = services.get('modelManager') as ModelManager;
+		if (!this._modelManager) throw new Error('Route: ModelManager not found in services');
 
 		this._redisClient = services.get('redisClient');
 	}
@@ -167,6 +176,16 @@ export default class Route {
 
 	async _exec(req, res, validate): Promise<unknown> {
 		throw new Error('Route:_exec not implemented');
+	}
+
+	async routeModel<T extends StandardModel>() {
+		if (!this.schemaName) throw new Error('Route:model called but no schemaName defined');
+
+		if (this.appId) {
+			return Model.getAppModel<T>(this.appId, this.schemaName);
+		} else {
+			return Model.getCoreModelByName<T>(this.schemaName);
+		}
 	}
 
 	/**
@@ -336,11 +355,6 @@ export default class Route {
 		req.timings._boardcastData = req.timer.interval;
 		Logging.logTimer('_boardcastData:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-		if (this.model && this.model instanceof SchemaModelRemote) {
-			Logging.logTimer('_boardcastData:end-is-dsa', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			return;
-		}
-
 		if (this.verb === Constants.Verbs.GET || this.verb === Constants.Verbs.SEARCH) {
 			Logging.logTimer('_boardcastData:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			return;
@@ -394,7 +408,7 @@ export default class Route {
 					appId: req.authApp ? req.authApp.id : '',
 					isSuper: isSuper,
 					isCoreSchema: this.core,
-					schemaName: this.schema.name,
+					schemaName: this.schemaName,
 				} as RESTActivity));
 			} else {
 				// Trigger the emit activity so we can update the stats namespace
@@ -418,9 +432,9 @@ export default class Route {
 	_checkBasedPathLambda(req) {
 		// NOTE: Do we not want to receive updates on core schema?
 		// TODO: There should be a restriction here to scope to the application.
-		if (!this.schema) return;
+		if (!this.schemaName) return;
 
-		const schemaName = this.model?.schemaData.name;
+		const schemaName = this.schemaName;
 		const isLambdaChange = req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.LAMBDA;
 		if (isLambdaChange) {
 			// If the current lambda is a path mutation, we don't want to trigger other path mutations

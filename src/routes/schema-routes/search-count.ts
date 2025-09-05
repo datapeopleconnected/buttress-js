@@ -15,9 +15,11 @@
  */
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
-import * as Helpers from '../../helpers/index.js';
-import Schema from '../../schema.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
 
@@ -32,32 +34,21 @@ interface validateResult {
  * @class Count
  */
 export default class SearchCount extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+	constructor(schema: Schema, app: App, services: Services) {
+		const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/count`, `COUNT ${schema.name}`, services);
+		super(`${schemaRoutePath}/count`, `COUNT ${schema.name}`, services, schema, app);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT ${schema.name}`;
 		this.activityBroadcast = false;
-
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
-
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
-
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
 	}
 
 	async _validate(req, res, token) {
+		const model = await this.routeModel();
+
 		const result: validateResult = {
 			queryParams: {
 				query: {},
@@ -82,12 +73,13 @@ export default class SearchCount extends Route {
 			query.$and.push(req.body);
 		}
 
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		query = model.parseQuery(query, {}, model.flatSchemaData);
 		result.queryParams.query = query;
 		return result;
 	}
 
-	_exec(req, res, validateResult: validateResult) {
-		return ACM.count(this.model, validateResult.queryParams, req.ac, validateResult.actualCount);
+	async _exec(req, res, validateResult: validateResult) {
+		const model = await this.routeModel();
+		return ACM.count(model, validateResult.queryParams, req.ac, validateResult.actualCount);
 	}
 };

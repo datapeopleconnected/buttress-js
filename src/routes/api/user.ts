@@ -58,7 +58,7 @@ function getTokenQueryfromParams(req, userId) {
  */
 class GetUserList extends Route {
 	constructor(services) {
-		super('user', 'GET USER LIST', services, Model.getCoreModel(UserSchemaModel));
+		super('user', 'GET USER LIST', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -83,7 +83,7 @@ routes.push(GetUserList);
  */
 class GetUser extends Route {
 	constructor(services) {
-		super('user/:id', 'GET USER', services, Model.getCoreModel(UserSchemaModel));
+		super('user/:id', 'GET USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -162,7 +162,7 @@ routes.push(GetUser);
  */
 class FindUser extends Route {
 	constructor(services) {
-		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER', services, Model.getCoreModel(UserSchemaModel));
+		super('user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id', 'FIND USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.GET;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -207,7 +207,7 @@ routes.push(FindUser);
  */
 class GetUserByToken extends Route {
 	constructor(services) {
-		super('user/get-by-token', 'GET USER BY TOKEN', services, Model.getCoreModel(UserSchemaModel));
+		super('user/get-by-token', 'GET USER BY TOKEN', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.READ;
@@ -255,7 +255,7 @@ routes.push(GetUserByToken);
  */
 class CreateUserAuthToken extends Route {
 	constructor(services) {
-		super('user/:id/token', 'CREATE USER AUTH TOKEN', services);
+		super('user/:id/token', 'CREATE USER AUTH TOKEN', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -389,7 +389,7 @@ routes.push(CreateUserAuthToken);
  */
 class AddUser extends Route {
 	constructor(services) {
-		super('user', 'ADD USER', services, Model.getCoreModel(UserSchemaModel));
+		super('user', 'ADD USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.ADD;
@@ -459,7 +459,7 @@ routes.push(AddUser);
  */
 class UpdateUser extends Route {
 	constructor(services) {
-		super('user/:id', 'UPDATE USER', services, Model.getCoreModel(UserSchemaModel));
+		super('user/:id', 'UPDATE USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -505,7 +505,7 @@ routes.push(UpdateUser);
  */
 class SetUserPolicyProperties extends Route {
 	constructor(services) {
-		super('user/:id/policy-property/:tokenId', 'SET USER POLICY PROPERTY', services);
+		super('user/:id/policy-property/:tokenId', 'SET USER POLICY PROPERTY', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -589,7 +589,7 @@ routes.push(SetUserPolicyProperties);
  */
 class UpdateUserPolicyProperties extends Route {
 	constructor(services) {
-		super('user/:id/update-policy-property/:tokenId', 'UPDATE USER POLICY PROPERTY', services);
+		super('user/:id/update-policy-property/:tokenId', 'UPDATE USER POLICY PROPERTY', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -673,7 +673,7 @@ routes.push(UpdateUserPolicyProperties);
  */
 class RemoveUserPolicyProperties extends Route {
 	constructor(services) {
-		super('user/:id/remove-policy-property/:tokenId', 'REMOVE USER POLICY PROPERTY', services);
+		super('user/:id/remove-policy-property/:tokenId', 'REMOVE USER POLICY PROPERTY', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -735,7 +735,7 @@ routes.push(RemoveUserPolicyProperties);
  */
 class ClearUserPolicyProperties extends Route {
 	constructor(services) {
-		super('user/:id/clear-policy-property/:tokenId', 'CLEAR USER POLICY PROPERTY', services);
+		super('user/:id/clear-policy-property/:tokenId', 'CLEAR USER POLICY PROPERTY', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.PUT;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -790,14 +790,14 @@ routes.push(ClearUserPolicyProperties);
  */
 class DeleteAllUsers extends Route {
 	constructor(services) {
-		super('user', 'DELETE ALL USERS', services, Model.getCoreModel(UserSchemaModel));
+		super('user', 'DELETE ALL USERS', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.DELETE;
 	}
 
-	_validate(req, res, token) {
-		return Promise.resolve(true);
+	async _validate(req, res, token) {
+		return;
 	}
 
 	async _exec(req, res, validate) {
@@ -812,7 +812,7 @@ routes.push(DeleteAllUsers);
  */
 class DeleteUser extends Route {
 	constructor(services) {
-		super('user/:id', 'DELETE USER', services, Model.getCoreModel(UserSchemaModel));
+		super('user/:id', 'DELETE USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.DEL;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.DELETE;
@@ -859,7 +859,7 @@ routes.push(DeleteUser);
  */
 class clearUserLocalData extends Route {
 	constructor(services) {
-		super('user/:id/clear-local-data', 'CLEAR USER LOCAL DATA', services);
+		super('user/:id/clear-local-data', 'CLEAR USER LOCAL DATA', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.POST;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.WRITE;
@@ -901,7 +901,7 @@ routes.push(clearUserLocalData);
  */
 class SearchUserList extends Route {
 	constructor(services) {
-		super('user', 'SEARCH USER LIST', services, Model.getCoreModel(UserSchemaModel));
+		super('user', 'SEARCH USER LIST', services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -948,15 +948,13 @@ routes.push(SearchUserList);
  */
 class UserCount extends Route {
 	constructor(services) {
-		super(`user/count`, `COUNT USERS`, services, Model.getCoreModel(UserSchemaModel));
+		super(`user/count`, `COUNT USERS`, services, Model.getCoreModel(UserSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT USERS`;
 		this.activityBroadcast = false;
-
-		this.model = Model.getCoreModel(UserSchemaModel);
 	}
 
 	async _validate(req, res, token) {
@@ -977,13 +975,13 @@ class UserCount extends Route {
 			query.$and.push(req.body);
 		}
 
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		query = Model.getCoreModel(UserSchemaModel).parseQuery(query, {}, Model.getCoreModel(UserSchemaModel).flatSchemaData);
 		result.query = query;
 		return result;
 	}
 
-	_exec(req, res, validateResult) {
-		return Model.getCoreModel(UserSchemaModel).count(validateResult.query);
+	async _exec(req, res, validateResult) {
+		return Model.getCoreModel(UserSchemaModel).count(validateResult.query)
 	}
 }
 routes.push(UserCount);

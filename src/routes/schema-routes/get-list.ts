@@ -15,10 +15,12 @@
  */
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
-import * as Helpers from '../../helpers/index.js';
 import Logging from '../../helpers/logging.js';
-import Schema from '../../schema.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
 
@@ -26,36 +28,20 @@ import * as ACM from '../../access-control/models-access.js';
  * @class GetList
  */
 export default class GetList extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+	constructor(schema: Schema, app: App, services: Services) {
+		const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `GET ${schema.name} LIST`, services);
+		super(`${schemaRoutePath}`, `GET ${schema.name} LIST`, services, schema, app);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.GET;
 		this.permissions = Route.Constants.Permissions.LIST;
 
 		this.activityDescription = `GET ${schema.name} LIST`;
 		this.activityBroadcast = false;
-
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
-
-		this.slowLogging = false;
-
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
-
-		Logging.logSilly(`Created route: ${this.name} for ${schemaCollection}`);
-
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
 	}
 
 	async _validate(req, res, token) {
+		const model = await this.routeModel();
 		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
 		const result = {
@@ -78,19 +64,20 @@ export default class GetList extends Route {
 		}
 
 		Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		query = model.parseQuery(query, {}, model.flatSchemaData);
 
 		result.query = query;
 		return result;
 	}
 
-	_exec(req, res, validateResult) {
+	async _exec(req, res, validateResult) {
+		const model = await this.routeModel();
 		// if (validateResult.query === false) {
 		// 	return Promise.resolve([]);
 		// }
 
 		Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		return ACM.find(this.model, validateResult, req.ac);
+		return ACM.find(model, validateResult, req.ac);
 		// return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
 	}
 };

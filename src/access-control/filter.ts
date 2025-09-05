@@ -243,7 +243,7 @@ export class Filter {
 
 	// TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
 	// TODO: This function needs a refactor, expecting the AC to be already applied to the queiries.
-	async evaluateManipulationActions(req, collection) {
+	async evaluateManipulationActions(req, collection: string) {
 		const coreSchema = await AccessControlHelpers.cacheCoreSchema();
 		const coreSchemNames = coreSchema.map((c) => Sugar.String.singularize(c.name));
 		const isCoreSchema = coreSchemNames.includes(collection);
@@ -252,29 +252,26 @@ export class Filter {
 		if (!this.manipulationVerbs.includes(verb)) return true;
 
 		const appId = req.authApp.id;
-		const appShortId = Helpers.shortId(appId);
+		// const appShortId = Helpers.shortId(appId);
 		const body = (Array.isArray(req.body)) ? req.body : [req.body];
 		let query = (req.body.query) ? req.body.query : {};
 		const baseURL = req.url.replace(/\?.*/, '');
-		const id = (baseURL) ? baseURL.split('/').pop() : undefined;
+		// const id = (baseURL) ? baseURL.split('/').pop() : undefined;
 		let passed = true;
 
-		if (isCoreSchema) {
-			collection = Sugar.String.capitalize(collection);
-		} else {
-			collection = `${appShortId}-${collection}`;
-		}
+		const model = (isCoreSchema) ? Model.getCoreModelByName(collection) :
+			await Model.getAppModel(appId, collection);
 
 		for await (const update of body) {
 			// TODO: Shouldn't be using object ID here, should be using the datstore's ID
 
 			if (query._id && typeof query._id !== 'object') {
-				query._id = await Model[collection].createId(query._id);
+				query._id = await model.createId(query._id);
 			}
 
-			const parsedQuery = await Model[collection].parseQuery(query, {}, Model[collection].flatSchemaData);
+			const parsedQuery = await model.parseQuery(query, {}, model.flatSchemaData);
 			query = { ...query, ...parsedQuery };
-			const res = await Model[collection].count(query);
+			const res = await model.count(query);
 			if (!res) {
 				passed = false;
 				delete query._id;

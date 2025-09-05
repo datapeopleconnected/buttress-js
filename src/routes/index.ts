@@ -25,11 +25,12 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import Logging from '../helpers/logging.js';
-import Schema from '../schema.js';
 import * as Helpers from '../helpers/index.js';
 import AccessControl from '../access-control/index.js';
 import Model from '../model/index.js';
 import Route from './route.js';
+
+import { Services } from '../bootstrap.js';
 
 import AdminRoutes from './admin-routes.js';
 import SchemaRoutes from './schema-routes/index.js';
@@ -46,11 +47,12 @@ import { Routes as CoreRoutes } from './api/index.js';
 
 import { BjsRequest } from '../types/bjs-express.js';
 import { ExecutionResultMessage } from '../lambda/lambda-runner.js';
-import AppSchemaModel from '../model/core/app.js';
+import AppSchemaModel, { App } from '../model/core/app.js';
 import AppDataSharingSchemaModel from '../model/core/app-data-sharing.js';
 import UserSchemaModel from '../model/core/user.js';
 import TokenSchemaModel from '../model/core/token.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
+import { Schema } from '../helpers/schema.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,7 +64,7 @@ class Routes {
 	_tokens: any[];
 	_routerMap: any;
 
-	_services: any;
+	_services: Services = new Map();
 
 	_nrp?: NRP;
 
@@ -74,8 +76,6 @@ class Routes {
 
 		this._tokens = [];
 		this._routerMap = {};
-
-		this._services = null;
 
 		this._preRouteMiddleware = [
 			(req: BjsRequest, res: Response, next: NextFunction) => this._timeRequest(req, res, next),
@@ -107,54 +107,36 @@ class Routes {
 		this.app.get(['/', '/index.html'], (req, res, next) => res.sendFile(path.join(__dirname, '../static/index.html')));
 
 		this.app.use((req: any, res, next) => {
-			req.on('close', function () {
-				Logging.logSilly(`close`, req.id);
-			});
-			req.on('end', function () {
-				Logging.logSilly(`end`, req.id);
-			});
-			req.on('error', function (err) {
-				Logging.logError(`req onError`, req.id);
-				Logging.logError(err, req.id);
-			});
-			req.on('pause', function () {
-				Logging.logSilly(`pause`, req.id);
-			});
-			req.on('resume', function () {
-				Logging.logSilly(`resume`, req.id);
-			});
-
-			req.on('timeout', function () {
-				Logging.logError(`timeout`, req.id);
-			});
-
-			if (req.socket) {
-				req.socket.on('close', (hadError) => {
-					Logging.logSilly(`socket onClose had_error:${hadError}`, req.id);
-				});
-				req.socket.on('connect', () => {
-					Logging.logSilly(`socket onConnect`, req.id);
-				});
-				req.socket.on('end', () => {
-					Logging.logSilly(`socket onEnd`, req.id);
-				});
-				req.socket.on('lookup', (err, address, family, host) => {
+			const logEvent = (event: string, err?: any) => {
 					if (err) {
-						Logging.logError(`socket onLookup`, req.id);
-						Logging.logError(err, req.id);
-						return;
+							Logging.logError(`${event}`, req.id);
+							Logging.logError(err, req.id);
+					} else {
+							Logging.logSilly(`${event}`, req.id);
 					}
+			};
 
-					Logging.logDebug(`socket onLookup address:${address} family:${family} host:${host}}`, req.id);
-				});
-				req.socket.on('timeout', () => {
-					Logging.logError(`socket onTimeout`, req.id);
-				});
-				req.socket.on('error', (err) => {
-					Logging.logError(`socket onError`, req.id);
-					Logging.logError(err, req.id);
-				});
-			}
+			req.on('close', () => logEvent('close'));
+			req.on('end', () => logEvent('end'));
+			req.on('error', (err) => logEvent('error', err));
+			req.on('pause', () => logEvent('pause'));
+			req.on('resume', () => logEvent('resume'));
+			req.on('timeout', () => logEvent('timeout'));
+
+			// if (req.socket) {
+			// 	req.socket.once('close', (hadError) => logEvent(`socket onClose had_error:${hadError}`));
+      //   req.socket.once('connect', () => logEvent('socket onConnect'));
+      //   req.socket.once('end', () => logEvent('socket onEnd'));
+      //   req.socket.once('lookup', (err, address, family, host) => {
+      //       if (err) {
+      //           logEvent('socket onLookup', err);
+      //           return;
+      //       }
+      //       Logging.logDebug(`socket onLookup address:${address} family:${family} host:${host}}`, req.id);
+      //   });
+      //   req.socket.once('timeout', () => logEvent('socket onTimeout'));
+      //   req.socket.once('error', (err) => logEvent('socket onError', err));
+			// }
 
 			next();
 		});
@@ -286,7 +268,7 @@ class Routes {
 
 		const appRouter = this._createRouter();
 
-		Schema.decode(app.__schema)
+		Helpers.Schema.decode(app.__schema)
 			.filter((schema) => schema.type.indexOf('collection') === 0)
 			.filter((schema) => {
 				if (!schema.remotes) return true;
@@ -351,14 +333,12 @@ class Routes {
 	 * @param  {Object} app - app data object
 	 * @param  {Object} schemaData - schema data object
 	 */
-	_initSchemaRoutes(express, app, schemaData) {
+	_initSchemaRoutes(express, app: App, schemaData: Schema) {
 		SchemaRoutes.forEach((SchemaRoute) => {
 			let route: Route;
 
-			const appShortId = Helpers.shortId(app.id);
-
 			try {
-				route = new SchemaRoute(schemaData, appShortId, this._services);
+				route = new SchemaRoute(schemaData, app, this._services);
 			} catch (err) {
 				if (err instanceof Helpers.Errors.RouteMissingModel) return Logging.logWarn(`${err.message} for ${app.name}`);
 
@@ -367,7 +347,7 @@ class Routes {
 
 			route.paths.forEach((pathSpec) => {
 				let routePath = path.join(...[
-					(app.apiPath) ? app.apiPath : appShortId,
+					app.apiPath,
 					Config.app.apiPrefix,
 					pathSpec,
 				]);
@@ -536,7 +516,7 @@ class Routes {
 
 			if (!req.token) {
 				Logging.logTimer(`_authenticateToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				throw new Helpers.Errors.RequestError(400, 'missing_token');
+				throw new Helpers.Errors.RequestError(401, 'missing_token');
 			}
 
 			Logging.logTimer(`_authenticateToken:got-token ${req.token.id}`,
@@ -553,8 +533,6 @@ class Routes {
 
 				req.authApp = tokenApp;
 				Logging.logTimer(`_authenticateToken:got-app ${(req.authApp) ? req.authApp.id : tokenApp}`,
-					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				Logging.logTimer(`_authenticateToken:got-app shortId: ${Helpers.shortId(tokenApp.id)}`,
 					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 			}
 
@@ -595,7 +573,7 @@ class Routes {
 
 		if (!tokenValue) {
 			Logging.logTimer(`_getProvidedToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			throw new Helpers.Errors.RequestError(400, 'missing_token');
+			throw new Helpers.Errors.RequestError(401, 'missing_token');
 		}
 
 		const token = await this._getToken(req, tokenValue);

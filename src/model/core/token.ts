@@ -19,6 +19,8 @@ import Crypto from 'node:crypto';
 import StandardModel from '../type/standard.js';
 import { PolicyCache } from '../../services/policy-cache.js';
 
+import { Schema } from '../../helpers/schema.js';
+
 /**
  * Constants
 */
@@ -68,7 +70,7 @@ class TokenSchemaModel extends StandardModel {
 		return TokenSchemaModel.Constants;
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'tokens',
 			type: 'collection',

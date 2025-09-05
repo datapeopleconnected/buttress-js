@@ -15,67 +15,59 @@
  */
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import Schema from '../../schema.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 
 /**
  * @class UpdateOne
  */
 export default class UpdateOne extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+	constructor(schema: Schema, app: App, services: Services) {
+		const schemaRoutePath = modelToRoute(schema.name);
 
 		super([
 			`${schemaRoutePath}/:id`,
 			`${schemaRoutePath}/:sourceId/:id`,
-		], `UPDATE ${schema.name}`, services);
+		], `UPDATE ${schema.name}`, services, schema, app);
 		this.__configureSchemaRoute();
 		this.verb = Route.Constants.Verbs.PUT;
 		this.permissions = Route.Constants.Permissions.WRITE;
 
 		this.activityDescription = `UPDATE ${schema.name}`;
 		this.activityBroadcast = true;
-
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
-
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
-
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
 	}
 
 	async _validate(req, res, token) {
-		const { validation, body } = this.model.validateUpdate(req.body);
+		const model = await this.routeModel();
+
+		const { validation, body } = model.validateUpdate(req.body);
 		req.body = body;
 		if (!validation.isValid) {
 			if (validation.isPathValid === false) {
-				this.log(`${this.schema.name}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);
-				throw new Helpers.Errors.RequestError(400, `${this.schema.name}: Update path is invalid: ${validation.invalidPath}`);
+				this.log(`${this.schemaName}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);
+				throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`);
 			}
 			if (validation.isValueValid === false) {
-				this.log(`${this.schema.name}: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR, req.id);
+				this.log(`${this.schemaName}: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR, req.id);
 				if (validation.isMissingRequired) {
 					throw new Helpers.Errors.RequestError(
 						400,
-						`${this.schema.name}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
+						`${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
 					);
 				}
 
 				throw new Helpers.Errors.RequestError(
 					400,
-					`${this.schema.name}: Update value is invalid for path ${req.body.path}: ${validation.invalidValue}`,
+					`${this.schemaName}: Update value is invalid for path ${req.body.path}: ${validation.invalidValue}`,
 				);
 			}
 		}
 
-		const exists = await this.model.exists(req.params.id, req.params.sourceId);
+		const exists = await model.exists(req.params.id, req.params.sourceId);
 		if (!exists) {
 			this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.id);
 			throw new Helpers.Errors.RequestError(400, `invalid_id`);
@@ -84,7 +76,7 @@ export default class UpdateOne extends Route {
 		return true;
 	}
 
-	_exec(req, res, validate) {
-		return this.model.updateByPath(req.body, req.params.id, req.params.sourceId, null);
+	async _exec(req, res, validate) {
+		return (await this.routeModel()).updateByPath(req.body, req.params.id, req.params.sourceId);
 	}
 };

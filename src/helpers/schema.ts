@@ -18,9 +18,46 @@ import crypto from 'node:crypto';
 import Logging from './logging.js';
 import Sugar from './sugar.js';
 
+import Errors from './errors.js';
+
+import Plugins from '../plugins/index.js';
+
 import Datastore from '../datastore/index.js';
 
 import { v4 as uuidv4 } from 'uuid';
+
+type PropertyDefinition = {
+  __type: 'string' | 'number' | 'object' | 'array' | 'boolean' | 'id' | 'date' | 'uuid';
+  __default?: unknown;
+  __required?: boolean;
+	__enum?: unknown[];
+	__itemtype?: string;
+  __allowUpdate?: boolean;
+};
+
+type ArraySchema = {
+  __type: 'array';
+  __allowUpdate?: boolean;
+  __schema: Properties;
+};
+
+type Remotes = {
+	name: string;
+	schema: string;
+};
+
+type Properties = {
+  [key: string]: PropertyDefinition | ArraySchema | { [key: string]: PropertyDefinition | ArraySchema };
+};
+
+export interface Schema {
+	name: string;
+	core?: boolean;
+	extends?: string[];
+	remotes?: Remotes | Remotes[];
+	type: 'collection' | 'template';
+	properties: Properties;
+}
 
 /* ********************************************************************************
 *
@@ -98,9 +135,6 @@ const __getPropDefault = (config) => {
 					res = config.__default;
 				}
 			}
-			break;
-		case 'text':
-			res = config.__default === undefined ? '' : config.__default;
 			break;
 		case 'number':
 			res = config.__default === undefined ? 0 : config.__default;
@@ -221,7 +255,6 @@ const __validateProp = (prop, config) => {
 			valid = type === config.__type;
 			break;
 		case 'string':
-		case 'text':
 			if (type === 'number') {
 				prop.value = String(prop.value);
 				type = typeof prop.value;
@@ -547,3 +580,138 @@ const __getSchemaKeys = (obj) => {
 	}, []);
 };
 export const getSchemaKeys = __getSchemaKeys;
+
+
+export const validTypes = [
+	'collection',
+	'template',
+];
+
+export const encode = (obj) => {
+	return JSON.stringify(obj);
+	// return JSON.parse(Schema.encodeKey(JSON.stringify(obj)));
+}
+
+export const decode = (obj) => {
+	return JSON.parse(obj);
+	// return JSON.parse(Schema.decodeKey(JSON.stringify(obj)));
+}
+
+export const encodeKey = (key) => {
+	return key.replace(/\\/g, '\\\\').replace(/\$/g, '\\u0024').replace(/\./g, '\\u002e');
+}
+
+export const decodeKey = (key) => {
+	return key.replace(/\\u002e/g, '.').replace(/\\u0024/g, '$').replace(/\\\\/g, '\\');
+}
+
+export const routeToModel = (name) => {
+	if (!name) return;
+
+	return name.split('/').map((part) => Sugar.String.camelize(part, false)).join('-');
+}
+
+export const modelToRoute = (name) => {
+	if (!name) return;
+
+	return name.split('-').map((part) => Sugar.String.dasherize(part)).join('/');
+}
+
+export const buildCollections = async (schemas): Promise<any[]> => {
+	const builtSchemas = await build(schemas);
+	return builtSchemas.filter((s) => s.type.indexOf('collection') === 0);
+}
+
+export const build = async (schemas) => {
+	schemas = await Plugins.apply_filters('before_schema_build', schemas);
+	schemas = schemas.map((schema) => {
+		schema.properties = schema.properties || {};
+		schema.properties.id = { __type: 'id', __default: 'new', __allowUpdate: false, __core: true };
+		schema.properties.sourceId = { __type: 'id', __allowUpdate: false, __core: true };
+		return extend(schemas, schema);
+	});
+	for await (const schema of schemas) {
+		const res = await createTimeSeriesSchema(schema.name, schema.properties);
+		if (!res) continue;
+		Object.keys(res).forEach((key) => {
+			schemas.push(res[key]);
+		});
+	}
+	schemas = await Plugins.apply_filters('after_schema_build', schemas);
+	return schemas;
+}
+
+export const merge = (schemasA, schemasB) => {
+	schemasB.forEach((cS) => {
+		const appSchemaIdx = schemasA.findIndex((s) => s.name === cS.name);
+		const schema = schemasA[appSchemaIdx];
+		if (!schema) {
+			return schemasA.push(cS);
+		}
+		schema.properties = Object.assign(schema.properties, cS.properties);
+		schemasA[appSchemaIdx] = schema;
+	});
+
+	return schemasA;
+}
+
+export const extend = (schemas, schema) => {
+	if (schema.extends) {
+		schema.extends
+			// We'll filter out any schema that's prefix with a plugin name
+			.filter((dependencyName) => dependencyName.indexOf(':') === -1)
+			.forEach((dependencyName) => {
+				const dependencyIdx = schemas.findIndex((s) => s.name === dependencyName);
+				// This should be thrown when the user adds or updates the schema.
+				if (dependencyIdx === -1) {
+					throw new Errors.SchemaInvalid(`Schema dependency ${dependencyName} for ${schema.name} missing.`);
+				}
+				const dependency = extend(schemas, schemas[dependencyIdx]);
+				if (!dependency.properties) return; // Skip if dependency has no properties
+				if (!schema.properties) schema.properties = {};
+				schema.properties = Object.assign(schema.properties, dependency.properties);
+			});
+	}
+
+	return schema;
+}
+
+export const createTimeSeriesSchema = async (schemaName, schemaProps, timeSeries = {}) => {
+	if (!schemaProps || Object.keys(schemaProps).length < 1) return false;
+
+	for await (const prop of Object.keys(schemaProps)) {
+		if (typeof schemaProps[prop] !== 'object') continue;
+		if (schemaProps[prop].__type && schemaProps[prop].__type === 'array') continue;
+
+		if (schemaProps[prop].__timeSeries) {
+			if (!timeSeries[schemaProps[prop].__timeSeries]) {
+				timeSeries[schemaProps[prop].__timeSeries] = {
+					name: `${schemaName}-${schemaProps[prop].__timeSeries}`,
+					type: 'collection',
+					extends: [
+						'timestamps',
+					],
+					properties: {
+						entityId: {
+							__type: 'string',
+							__default: null,
+							__required: true,
+							__allowUpdate: false,
+						},
+					},
+				};
+			}
+			const timesSeriesObj = Object.assign({}, schemaProps[prop]);
+			delete timesSeriesObj.__timeSeries;
+			timeSeries[schemaProps[prop].__timeSeries].properties[prop] = timesSeriesObj;
+			continue;
+		}
+
+		if (!schemaProps[prop].__type) {
+			await createTimeSeriesSchema(schemaName, schemaProps[prop], timeSeries);
+		}
+	}
+
+	if (Object.keys(timeSeries).length < 1) return false;
+	return timeSeries;
+}

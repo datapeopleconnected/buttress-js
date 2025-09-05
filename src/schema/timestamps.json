@@ -4,7 +4,7 @@
 	"properties": {
 		"createdAt": {
 			"__type": "date",
-			"__value": "now",
+			"__default": "now",
 			"__required": false,
 			"__allowUpdate": false
 		},

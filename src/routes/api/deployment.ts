@@ -24,7 +24,7 @@ const routes: (typeof Route)[] = [];
  */
 class SearchDeploymentList extends Route {
 	constructor(services) {
-		super('deployment', 'SEARCH DEPLOYMENT LIST', services, Model.getCoreModel(DeploymentSchemaModel));
+		super('deployment', 'SEARCH DEPLOYMENT LIST', services, Model.getCoreModel(DeploymentSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.LIST;
@@ -33,7 +33,7 @@ class SearchDeploymentList extends Route {
 	async _validate(req, res, token) {
 		const result: {
 			query: {
-				$and: any[],
+				$and?: any[],
 			},
 		} = {
 			query: {
@@ -41,17 +41,21 @@ class SearchDeploymentList extends Route {
 			},
 		};
 
+		if (!result.query.$and) {
+			result.query.$and = [];
+		}
+
 		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
 		if (req.body && req.body.query) {
 			result.query.$and.push(req.body.query);
 		}
 
-		result.query = this.model.parseQuery(result.query, {}, this.model.flatSchemaData);
+		result.query = Model.getCoreModel(DeploymentSchemaModel).parseQuery(result.query, {}, Model.getCoreModel(DeploymentSchemaModel).flatSchemaData);
 		return result;
 	}
 
 	_exec(req, res, validate) {
-		return this.model.find(validate.query);
+		return Model.getCoreModel(DeploymentSchemaModel).find(validate.query);
 	}
 }
 routes.push(SearchDeploymentList);
@@ -61,7 +65,7 @@ routes.push(SearchDeploymentList);
  */
 class DeploymentCount extends Route {
 	constructor(services) {
-		super(`deployment/count`, `COUNT DEPLOYMENTS`, services, Model.getCoreModel(DeploymentSchemaModel));
+		super(`deployment/count`, `COUNT DEPLOYMENTS`, services, Model.getCoreModel(DeploymentSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
 		this.authType = Route.Constants.Type.APP;
 		this.permissions = Route.Constants.Permissions.SEARCH;
@@ -90,13 +94,13 @@ class DeploymentCount extends Route {
 			query.$and.push(req.body);
 		}
 
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+		query = Model.getCoreModel(DeploymentSchemaModel).parseQuery(query, {}, Model.getCoreModel(DeploymentSchemaModel).flatSchemaData);
 		result.query = query;
 		return result;
 	}
 
 	_exec(req, res, validateResult) {
-		return this.model.count(validateResult.query);
+		return Model.getCoreModel(DeploymentSchemaModel).count(validateResult.query);
 	}
 }
 routes.push(DeploymentCount);

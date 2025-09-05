@@ -15,10 +15,28 @@
  */
 
 import * as Helpers from '../../helpers/index.js';
-import Schema from '../../schema.js';
+import { Schema } from '../../helpers/schema.js';
 import Logging from '../../helpers/logging.js';
 
 import StandardModel from '../type/standard.js';
+import TokenSchemaModel from './token.js';
+import PolicySchemaModel from './policy.js';
+
+export interface AppDataSharing {
+	id: string;
+	name: string;
+	
+	active: boolean;
+	remoteApp: {
+		endpoint: string;
+		ws: string;
+		apiPath: string;
+		token: string;
+	};
+	
+	_appId: string;
+	_tokenId: string;
+}
 
 /**
  * @class AppDataSharingSchemaModel
@@ -38,7 +56,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 		return AppDataSharingSchemaModel.Constants;
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'appDataSharing',
 			type: 'collection',
@@ -120,8 +138,8 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 			_tokenId: null,
 		};
 
-		const rxsToken = await this.__modelManager.Token.add({
-			type: this.__modelManager.Token.Constants.Type.DATA_SHARING,
+		const rxsToken = await this.__modelManager.getCoreModel(TokenSchemaModel).add({
+			type: TokenSchemaModel.Constants.Type.DATA_SHARING,
 		}, {
 			_appId: appDataSharingBody._appId,
 			_appDataSharingId: appDataSharingBody.id,
@@ -139,17 +157,17 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 			_appId: appDataSharingBody._appId,
 			_tokenId: token.id,
 		});
-		const dataSharing = await Helpers.streamFirst(rxsDataShare);
+		const dataSharing = await Helpers.streamFirst(rxsDataShare) as AppDataSharing;
 
 		return { dataSharing, token };
 	}
 
 	async __createDataSharingPolicy(body, tokenId) {
-		return await this.__modelManager.Policy.add({
+		return await this.__modelManager.getCoreModel(PolicySchemaModel).add({
 			name: `Data Sharing Policy - ${body.name}`,
 			selection: {
 				'#tokenType': {
-					'@eq': 'DATA_SHARING',
+					'@eq': 'DATA_SHARING',	
 				},
 				'id': {
 					'@eq': tokenId,
@@ -167,7 +185,7 @@ export default class AppDataSharingSchemaModel extends StandardModel {
 	 * @return {Promise} - resolves when save operation is completed
 	 */
 	updatePolicy(appId, appDataSharingId, type, policy) {
-		policy = Schema.encode(policy);
+		policy = Helpers.Schema.encode(policy);
 
 		const update = { $set: {} };
 

@@ -30,6 +30,7 @@ import { Token } from '../model/core/token.js';
 import { User } from '../model/core/user.js';
 
 import * as Helpers from '../helpers/index.js';
+import PolicySchemaModel from '../model/core/policy.js';
 
 export class PolicyCache {
   private _redisClient: RedisClientType;
@@ -80,7 +81,7 @@ export class PolicyCache {
     const missingPolicies = policyIds.filter((policyId) => !policies.find((policy) => policyId === policy.id));
 
     if (missingPolicies.length > 0) {
-      const newPolicies = await Helpers.streamAll(this._modelManager.getModel('Policy').find({ id: { $in: missingPolicies } }));
+      const newPolicies = await Helpers.streamAll(this._modelManager.getCoreModel(PolicySchemaModel).find({ id: { $in: missingPolicies } }));
 
       await newPolicies.reduce(async (prev, policy) => {
         await prev;
@@ -117,7 +118,7 @@ export class PolicyCache {
     // If the tokens are marked as stale, we're in the process of cleaning them up. we'll miss the cache and get fresh data.
     const isStale = policyIds.includes('STALE');
     if (policyIds.length < 1 || isStale) {
-      const appPolicies = await Helpers.streamAll(this._modelManager.getModel('Policy').find({ _appId: token._appId }));
+      const appPolicies = await Helpers.streamAll(this._modelManager.getCoreModel(PolicySchemaModel).find({ _appId: token._appId }));
       policies = AccessControlPolicyMatch.getTokenPolicies(appPolicies, token);
 
       // Clear out old policies for the token
@@ -293,7 +294,7 @@ export class PolicyCache {
   // if it does then we can cache it otherwise we can ignore it.
   async invalidatePolicyAndTokensBySelection(policyId: string) {
     // Get the policy
-    const policy = await this._modelManager.getModel('Policy').findById(policyId) as Policy;
+    const policy = await this._modelManager.getCoreModel(PolicySchemaModel).findById(policyId) as Policy;
     if (!policy) {
       Logging.logSilly(`Policy not found: ${policyId}`);
       return;

@@ -15,7 +15,12 @@
  */
 
 import StandardModel from '../type/standard.js';
+
 import * as Helpers from '../../helpers/index.js';
+import { Schema } from '../../helpers/schema.js';
+
+import LambdaSchemaModel from './lambda.js';
+import UserSchemaModel from './user.js';
 
 class SecureStoreSchemaModel extends StandardModel {
 	static name = 'SecureStore';
@@ -25,7 +30,7 @@ class SecureStoreSchemaModel extends StandardModel {
 		super(schema, null, services);
 	}
 
-	static get Schema() {
+	static get Schema(): Schema {
 		return {
 			name: 'secureStore',
 			type: 'collection',
@@ -34,7 +39,6 @@ class SecureStoreSchemaModel extends StandardModel {
 			properties: {
 				name: {
 					__type: 'string',
-					__itemtype: null,
 					__required: true,
 					__allowUpdate: true,
 				},
@@ -76,11 +80,11 @@ class SecureStoreSchemaModel extends StandardModel {
 				appId = token._appId;
 			}
 			if (token && token._lambdaId) {
-				const lambda = await this.__modelManager.Lambda.findById(token._lambdaId);
+				const lambda = await this.__modelManager.getCoreModel(LambdaSchemaModel).findById(token._lambdaId);
 				appId = lambda._appId;
 			}
 			if (token && token._userId) {
-				const user = await this.__modelManager.User.findById(token._userId);
+				const user = await this.__modelManager.getCoreModel(UserSchemaModel).findById(token._userId);
 				appId = user._appId;
 			}
 		}
