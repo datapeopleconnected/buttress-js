@@ -83,6 +83,7 @@ export interface LambdaExecutionMessage {
 	lambdaType: string;
 	triggerType?: string;
 	lambdaExecBehavior?: 'SYNC' | 'ASYNC';
+	currentExecutionId?: string;
 };
 
 /**
@@ -356,6 +357,9 @@ export default class LambdaManager {
 		}
 
 		if (count > 0) Logging.log(`[${this.name}]: announced ${count} lambda executions`);
+
+		console.log(JSON.stringify(this._workerMap, null, 2));
+		console.log(JSON.stringify(this._inflightExecutions, null, 2));
 	}
 
 	async _createLambdaExecution(type: string, lambdaId: string, gitHash: string, appId: string, priority: ExecPriority, metadata: { key: string, value: string }[] = []) {
@@ -454,19 +458,29 @@ export default class LambdaManager {
 		this.__nrp.on('lambda:worker:available', (json: string) => {
 			const payload = JSON.parse(json) as LambdaExecutionMessage;
 
+			if (!payload.workerId) {
+				throw new Error('Unable to assign Lamba worker without a workerId');
+			}
+
 			Logging.logSilly(`[${this.name}] ${payload.workerId} prepared to take on ${payload.executionId}`);
 			if (this._checkExecutionIsInFlight(payload.executionId)) {
 				// Another worker has already accepted this lambda so we'll just ignore it
-				Logging.logSilly(`[${this.name}] ${payload.executionId} is already registered in the lambda queue`);
+				Logging.logDebug(`[${this.name}] ${payload.executionId} is already registered in the lambda queue by ${this._inflightExecutions[payload.executionId].workerId}`);
+				return;
+			}
+
+			if (this._workerMap[payload.workerId]) {
+				Logging.logDebug(`[${this.name}] ${payload.executionId} is already registered working on ${this._workerMap[payload.workerId]}`);
 				return;
 			}
 
 			this.trackWorkerLambda(payload);
-			Logging.logDebug(`[${this.name}] ${payload.lambdaId} assigning to ${payload.workerId}`);
+			Logging.logDebug(`[${this.name}] execution ${payload.executionId} assigning to ${payload.workerId}`);
 			this.__nrp?.emit('lambda:worker:execute', JSON.stringify(payload));
 		});
 
 		this.__nrp.on('lambda:worker:overloaded', (json) => {
+			// We shouldn't ever hit this now that the manager is fully tracking whos doing what.
 			const payload = JSON.parse(json) as LambdaExecutionMessage;
 			Logging.logDebug(`[${this.name}] ${payload.workerId} was oversubscribed releasing ${payload.executionId}`);
 
@@ -474,10 +488,33 @@ export default class LambdaManager {
 				throw new Error(`Unable to untrack Lamba worker without a workerId for ${payload.executionId}`);
 			}
 
-			if (this._checkExecutionIsInFlightWithWorker(payload.executionId, payload.workerId)) {
-				Logging.logDebug(`[${this.name}] ${payload.workerId} was tracked for ${payload.executionId}, untracking`);
+			// Handle what the manager currently thinks is happening.
+			const currentWorkerMapExecId = this._workerMap[payload.workerId];
+			const currentInflightExec = this._inflightExecutions[currentWorkerMapExecId];
+
+			// if the overloaded execution matches what we think they're working on then we can safely untrack them.
+			if (currentInflightExec && currentInflightExec.executionId === payload.executionId) {
+				Logging.logDebug(`[${this.name}] Cleaning up tracking for overloaded worker ${payload.workerId} and execution ${payload.executionId} based on worker map`);
 				this.untrackWorkerLambda(payload);
-				return;
+			}
+
+			// Just in case the above didn't catch it, we'll also check the executionId directly.
+			if (this._inflightExecutions[payload.executionId] && this._inflightExecutions[payload.executionId].workerId === payload.workerId) {
+				Logging.logDebug(`[${this.name}] Cleaning up tracking for overloaded execution ${payload.executionId} on worker ${payload.workerId} based on exec map`);
+				this.untrackWorkerLambda(payload);
+			}
+
+			if (payload.currentExecutionId && this._inflightExecutions[payload.currentExecutionId]) {
+				const inflightExec = this._inflightExecutions[payload.currentExecutionId];
+
+				if (inflightExec.workerId !== payload.workerId) {
+					Logging.logWarn(`[${this.name}] Detected mismatched worker for execution ${payload.currentExecutionId}, expected ${inflightExec.workerId} got ${payload.workerId}`);
+				}
+
+				this._inflightExecutions[payload.currentExecutionId].workerId = payload.workerId;
+				this._workerMap[payload.workerId] = payload.currentExecutionId;
+
+				Logging.logDebug(`[${this.name}] Healed tracking for overloaded worker ${payload.workerId} to execution ${payload.currentExecutionId}`);
 			}
 		});
 

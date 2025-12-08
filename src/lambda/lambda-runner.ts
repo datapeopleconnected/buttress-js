@@ -442,7 +442,7 @@ export default class LambdaRunner {
 
 			message.workerId = this.id;
 
-			Logging.logSilly(`[${this.name}] Manager called out ${message.lambdaId}, attempting to acquire lambda`);
+			Logging.logSilly(`[${this.name}] Manager called out ${message.executionId}, announcing availability`);
 			this.__nrp?.emit('lambda:worker:available', JSON.stringify(message));
 		});
 
@@ -455,6 +455,9 @@ export default class LambdaRunner {
 
 			if (this.working) {
 				Logging.logWarn(`[${this.name}] I've taken on too much work, releasing ${message.executionId}`);
+
+				message.currentExecutionId = this._lambdaExecution ? this._lambdaExecution.id : null;
+
 				this.__nrp?.emit('lambda:worker:overloaded', JSON.stringify(message));
 				return;
 			}
