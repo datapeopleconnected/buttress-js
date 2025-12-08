@@ -357,9 +357,6 @@ export default class LambdaManager {
 		}
 
 		if (count > 0) Logging.log(`[${this.name}]: announced ${count} lambda executions`);
-
-		console.log(JSON.stringify(this._workerMap, null, 2));
-		console.log(JSON.stringify(this._inflightExecutions, null, 2));
 	}
 
 	async _createLambdaExecution(type: string, lambdaId: string, gitHash: string, appId: string, priority: ExecPriority, metadata: { key: string, value: string }[] = []) {
