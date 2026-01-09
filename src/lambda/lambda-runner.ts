@@ -176,6 +176,9 @@ export default class LambdaRunner {
 			return Promise.reject(new Error(`Missing reqId for API_ENDPOINT lambda ${lambda.name}, execution ${execution.id}`));
 		}
 
+		// Reset lambdaHelpers lambdaResult
+		lambdaHelpers.lambdaResult = null;
+
 		const reqBody = (data.body) ? JSON.parse(data.body) : {};
 		const reqQuery = (data.query) ? JSON.parse(data.query) : {};
 		const reqHeaders = (data.headers) ? JSON.parse(data.headers) : {};
@@ -278,7 +281,6 @@ export default class LambdaRunner {
 			status: execution.status,
 			startedAt: execution.startedAt,
 			endedAt: execution.endedAt,
-			// Can we copy arrays?
 			metadata: execution.metadata,
 		}).copyInto());
 
@@ -488,6 +490,7 @@ export default class LambdaRunner {
 	}
 
 	async _updateDBLambdaFinishExecution(execution) {
+		execution = await Model.getCoreModel(LambdaExecutionSchemaModel).findById(execution.id);
 		await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
 			Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
 			{
