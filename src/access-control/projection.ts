@@ -34,6 +34,7 @@ class Projection {
 		this._ignoredQueryKeys = [
 			'__crPath',
 			'project',
+			'id',
 		];
 	}
 
@@ -126,7 +127,7 @@ class Projection {
 			}
 		});
 
-		return queryKeys.every((key) => projectionKeys.includes(key));
+		return queryKeys.every((key) => projectionKeys.includes(key) || projectionKeys.some((k) => key.startsWith(k) && key[k.length] === '.'));
 	}
 }
 export default new Projection();

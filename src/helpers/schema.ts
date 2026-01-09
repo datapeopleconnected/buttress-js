@@ -111,6 +111,22 @@ const __getFlattenedBody = (body) => {
 };
 export const getFlattenedBody = __getFlattenedBody;
 
+const __getObjProperty = (obj, path) => {
+  const parts = path.split('.');
+
+  let current = obj;
+  parts.forEach((part) => {
+    if (!current) return;
+    if (current && typeof current === 'object' && current !== null && current[part]) {
+      current = current[part];
+    } else {
+      current = undefined;
+    }
+  });
+
+  return current;
+}
+
 const __getPropDefault = (config) => {
 	let res;
 	switch (config.__type) {
@@ -543,10 +559,14 @@ export const sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number
 
 		let value = propVal.value;
 		if (config.__type === 'array' && config.__schema) {
-			if (!body || !body[property]) {
+			if (!body || !__getObjProperty(body, property)) {
 				value = [];
 			} else {
-				value = value.map((v, idx) => sanitizeObject(config.__schema, __getFlattenedBody(v), body[property], idx));
+				value = value.map((v, idx) => sanitizeObject(config.__schema, __getFlattenedBody(v), __getObjProperty(body, property), idx));
+				if (root && property.split('.').length > 1) {
+					objects[root] = __inflateObject(objects[root], path, value);
+					value = objects[root];
+				}
 			}
 		} else if (root && path.length > 0 || schemaFlat[property].__type === 'object') {
 			if (!root) throw new Error('root is required but condition wasn\'t set to handle it being undefined');
