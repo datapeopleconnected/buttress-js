@@ -116,6 +116,50 @@ export class PolicyEnv {
 		return (model) ? true : false;
 	}
 
+	async __findAndReplaceValues(query, envVars) {
+		if (typeof query !== 'object' || query === null) {
+			return;
+		}
+
+		const paths = this.__findPaths(query);
+		for await (const path of paths) {
+			const dbQuery = path.reduce((current, key) => current && current[key], query);
+			const realValue = await this.getEnvValue(dbQuery, envVars);
+
+			this.__setObjectValueByPath(query, path, realValue);
+		}
+
+		return query;
+	}
+
+	__setObjectValueByPath(obj, path, value) {
+		const lastKey = path.pop();
+		const parent = path.reduce((current, key) => current[key], obj);
+		if (parent && lastKey) {
+			parent[lastKey] = value;
+		}
+	}
+
+	__findPaths(data, currentPath: any[] = [], paths: any[] = []) {
+		if (typeof data === 'object' && data !== null) {
+			if (Array.isArray(data)) {
+			data.forEach((item, index) => {
+				this.__findPaths(item, [...currentPath, index], paths);
+			});
+			} else {
+			for (const key in data) {
+				if (Object.prototype.hasOwnProperty.call(data, key)) {
+				this.__findPaths(data[key], [...currentPath, key], paths);
+				}
+			}
+			}
+		} else {
+			// This is an "end value," so we store its full path.
+			paths.push(currentPath);
+		}
+		return paths;
+	}
+
 	async __queryAppSchemaEnvValue(envObj, envKey, envVars) {
 		const schema = envObj.collection;
 		const query = Filter.convertQueryPrefixOperators(envObj.query);
@@ -124,19 +168,7 @@ export class PolicyEnv {
 
 		// Check the envVar to see if
 		if (envVars[envKey]) return envVars[envKey];
-
-		for await (const key of Object.keys(query)) {
-			if (typeof query[key] !== 'object') throw new Error(`env query needs to be a query object ${query[key]}`);
-			const operator = Object.values(Filter.queryOperators).find((op) => Object.keys(query[key]).every((key) => key === op));
-			if (!operator) throw new Error(`Can not find an operator for ${query[key]}`);
-
-			const dbQuery = query[key][operator];
-			if (typeof dbQuery !== 'string') continue;
-
-			if (!dbQuery.startsWith(PolicyEnv.strPrefix)) continue;
-
-			query[key][operator] = await this.getEnvValue(dbQuery, envVars);
-		}
+		await this.__findAndReplaceValues(query, envVars);
 
 		const model = await Model.getAppModel(envVars.appId, schema);
 		const res = await model.find(query);
@@ -148,7 +180,7 @@ export class PolicyEnv {
 				item = obj[output.key];
 				if (output.type === 'id') {
 					// TODO: Shouldn't be directly accessing ObjectId, this should go through an adapter.
-					item = new ObjectId(item);
+					item = (ObjectId.isValid(item)) ? new ObjectId(item) : item;
 				}
 
 				return item;
@@ -158,9 +190,10 @@ export class PolicyEnv {
 		if (outputType === 'array' && result.length > 0) {
 			return result.reduce((arr, obj) => {
 				if (output.type === 'id' && Array.isArray(obj[output.key])) {
-					obj[output.key] = obj[output.key].map((id) => new ObjectId(id));
-				} else if (output.type === 'id') {
-					obj[output.key] = new ObjectId(obj[output.key]);
+					obj[output.key] = obj[output.key].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
+				} else if (output.type === 'id' && ObjectId.isValid(obj[output.key])) {
+					// TODO: Shouldn't be directly accessing ObjectId, this should go through an adapter.
+					obj[output.key] = (ObjectId.isValid(obj[output.key])) ? new ObjectId(obj[output.key]) : obj[output.key];
 				}
 
 				arr = arr.concat(obj[output.key]);
