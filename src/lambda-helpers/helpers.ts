@@ -157,12 +157,21 @@ class Helpers {
 				if (data?.options?.body && data.options.headers && data.options.headers['Content-Type'] === 'application/x-www-form-urlencoded') {
 					data.options.body = new URLSearchParams(data.options.body);
 				}
-				const response = await fetch(data.url, data.options);
+				const response: {
+					ok?: boolean,
+					status?: number | null,
+					url?: string,
+					redirected?: boolean,
+					body?: any,
+					text?: Function,
+					json?: Function,
+					statusText?: string,
+				} = await fetch(data.url, data.options);
 				const output: {
-					ok: boolean,
-					status: number | null,
-					url: string,
-					redirected: boolean,
+					ok?: boolean,
+					status?: number | null,
+					url?: string,
+					redirected?: boolean,
 					body?: any,
 				} = {
 					ok: response.ok,
@@ -176,7 +185,7 @@ class Helpers {
 				}
 
 				if (output.status && !this.successfulHTTPScode.includes(output.status)) {
-					const text = await response.text();
+					const text = (response && response.text) ? await response.text() : null;
 					if (text && typeof text === 'string') {
 						let message = text;
 						let json: any = null;
@@ -208,12 +217,16 @@ class Helpers {
 								throw error;
 							}
 
-							message = (json.error) ? json.error : (json.message) ? json.message : json.statusMessage;
+							if (json.error) message = json.error;
+							if (json.error && json.error.message) message = json.error.message;
+							if (json.message) message = json.message;
+							if (json.statusMessage) message = json.statusMessage;
 						}
 
 						throw new Error(`${data.url.pathname} error is ${message}`);
 					} else {
-						throw new Errors.CodedError(`${data.url.pathname} error is ${response.statusText}`, response.status);
+						const responseStatus = (response.status) ? response.status : 520;
+						throw new Errors.CodedError(`${data.url.pathname} error is ${response.statusText}`, responseStatus);
 					}
 				}
 
@@ -237,14 +250,15 @@ class Helpers {
 							throw new Error(err);
 						});
 					} else {
-						const text = await response.text();
+						const text = (response && response.text) ? await response.text() : null;
 						callback.applyIgnored(undefined, [
 							new ivm.ExternalCopy(new ivm.Reference(text).copySync()).copyInto(),
 						]);
 						return _resolve(output);
 					}
 				} else {
-					output.body = (output.status === 200 || output.status === 201) ? await response.json() : null;
+					const body = (response && response.json) ? await response.json() : null;
+					output.body = (output.status === 200 || output.status === 201) ? body : null;
 					return _resolve(output);
 				}
 			} catch (err: any) {
@@ -273,7 +287,61 @@ class Helpers {
 		jail.setSync('_cryptoRandomBytes', new ivm.Reference(async (data, resolve, reject) => {
 			try {
 				return resolve.applyIgnored(undefined, [
-					new ivm.ExternalCopy(new ivm.Reference(crypto.randomBytes(data)).copySync()).copyInto(),
+					new ivm.ExternalCopy(new ivm.Reference(crypto.randomBytes(data).toString('hex')).copySync()).copyInto(),
+				]);
+			} catch (err) {
+				reject.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto(),
+				]);
+			}
+		}));
+		jail.setSync('_cryptoCreateHash', new ivm.Reference(async (data, resolve, reject) => {
+			try {
+				data.message = (typeof data.message === 'string') ? data.message : JSON.stringify(data.message);
+				const hash = crypto.createHash(data.algorithm);
+				hash.update(JSON.stringify(data.message), 'utf8');
+				const output = hash.digest('hex');
+				return resolve.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
+				]);
+			} catch (err) {
+				reject.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto(),
+				]);
+			}
+		}));
+		jail.setSync('_cryptoCreateCipheriv', new ivm.Reference(async (data, resolve, reject) => {
+			try {
+				const key = crypto.randomBytes(32) // 32 bytes
+				const iv = crypto.randomBytes(12); // Generate random 12 bytes IV
+				const cipher = crypto.createCipheriv(data.algorithm, key, iv);
+				const message = (typeof data.message === 'string') ? data.message : JSON.stringify(data.message);
+				let ciphertext = cipher.update(message, 'utf8', 'hex');
+				ciphertext += cipher.final('hex');
+				const authTag = cipher.getAuthTag();
+				const output = {
+					key: key.toString('hex'),
+					iv: iv.toString('hex'),
+					authTag: authTag.toString('hex'),
+					ciphertext,
+				};
+				return resolve.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
+				]);
+			} catch (err) {
+				reject.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto(),
+				]);
+			}
+		}));
+		jail.setSync('_cryptoCreateDecipheriv', new ivm.Reference(async (data, resolve, reject) => {
+			try {
+				const decipher = crypto.createDecipheriv(data.algorithm, Buffer.from(data.key, 'hex'), Buffer.from(data.iv, 'hex'));
+				decipher.setAuthTag(Buffer.from(data.authTag, 'hex'));
+				let message = decipher.update(data.message, 'hex', 'utf8');
+				message += decipher.final('utf8');
+				return resolve.applyIgnored(undefined, [
+					new ivm.ExternalCopy(new ivm.Reference(message).copySync()).copyInto(),
 				]);
 			} catch (err) {
 				reject.applyIgnored(undefined, [
