@@ -31,8 +31,8 @@ export async function find<T extends StandardModel>(model: T, query: QueryParams
     let openStreams = 0;
     // Using forEach here because we don't want to wait for each function to finish before calling the next.
     ac.policyConfigs.forEach(async (policyConfig) => {
-      const conbined = await combineQueriesWithAc(query, policyConfig);
-      const result = model.find(model.parseQuery(conbined.query), {}, conbined.limit, conbined.skip, conbined.sort, conbined.project);
+      const combined = await combineQueriesWithAc(query, policyConfig);
+      const result = model.find(model.parseQuery(combined.query, {}, model.flatSchemaData), {}, combined.limit, combined.skip, combined.sort, combined.project);
 
       result.pipe(resStream, { end: false });
       result.on('end', () => {
@@ -47,9 +47,8 @@ export async function find<T extends StandardModel>(model: T, query: QueryParams
   }
 
   const policyConfig = ac.policyConfigs[0] || {};
-  const conbined = await combineQueriesWithAc(query, policyConfig);
-
-  return model.find(model.parseQuery(conbined.query), {}, conbined.limit, conbined.skip, conbined.sort, conbined.project);
+  const combined = await combineQueriesWithAc(query, policyConfig);
+  return model.find(model.parseQuery(combined.query, {}, model.flatSchemaData), {}, combined.limit, combined.skip, combined.sort, combined.project);
 }
 
 export async function count<T extends StandardModel>(model: T, query: QueryParams<object>, ac: { policyConfigs: parsedPolicyConfig[] }, actualCount: boolean = false) {
@@ -58,16 +57,16 @@ export async function count<T extends StandardModel>(model: T, query: QueryParam
       let count = 0;
 
       for (const policyConfig of ac.policyConfigs) {
-        const conbined = await combineQueriesWithAc(query, policyConfig);
-        count += await model.count(model.parseQuery(conbined.query));
+        const combined = await combineQueriesWithAc(query, policyConfig);
+        count += await model.count(model.parseQuery(combined.query));
       }
 
       return count;
     } else {
       const queries: { $or: BjsQuery<object>[] } = { $or: [] };
       for (const policyConfig of ac.policyConfigs) {
-        const conbined = await combineQueriesWithAc(query, policyConfig);
-        queries.$or.push(conbined.query);
+        const combined = await combineQueriesWithAc(query, policyConfig);
+        queries.$or.push(combined.query);
       }
 
       return model.count(model.parseQuery(queries));
@@ -75,9 +74,9 @@ export async function count<T extends StandardModel>(model: T, query: QueryParam
   }
 
   const policyConfig = ac.policyConfigs[0] || {};
-  const conbined = await combineQueriesWithAc(query, policyConfig);
+  const combined = await combineQueriesWithAc(query, policyConfig);
 
-  return model.count(model.parseQuery(conbined.query));
+  return model.count(model.parseQuery(combined.query));
 }
 
 export async function combineQueriesWithAc(raw: QueryParams<object>, policyConfig: PolicyConfig & { appId: string }) {

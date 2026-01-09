@@ -296,7 +296,7 @@ export class Filter {
 
 		const newQuery: any = { [operator]: [] };
 
-		// Check to see if the base filter already has the operator, if it does then spread it 
+		// Check to see if the base filter already has the operator, if it does then spread it
 		if (baseFilter[operator]) {
 			newQuery[operator] = [...baseFilter[operator]];
 		} else {
