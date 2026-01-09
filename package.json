@@ -31,7 +31,7 @@
     "docker:run": "docker-compose -f .docker/docker-compose.yml up",
     "docker:run-full": "docker-compose -f .docker/docker-compose.full.yml up",
     "prepare": "husky install && [ -f ./.husky/nvm-fix ] && ./.husky/nvm-fix || true",
-    "nvm": "~/.nvm/nvm-exec which node | xargs -I {} bash -c 'ln -sf \"{}\" ./.nvm-node' && chmod +x ./.nvm-node"
+    "nvm": "~/.config/nvm/nvm-exec which node | xargs -I {} bash -c 'ln -sf \"{}\" ./.nvm-node' && chmod +x ./.nvm-node"
   },
   "repository": {
     "type": "git",
@@ -44,7 +44,7 @@
     "@buttress/api": "3.0.0-52",
     "@buttress/snippets": "1.0.0-29",
     "@dpc/node-env-obj": "npm:@jsr/dpc__node-env-obj@^0.3.2",
-    "@hashgraph/sdk": "^2.24.2",
+    "@hashgraph/sdk": "^2.63.0",
     "@redis/client": "^5.6.0",
     "@socket.io/redis-adapter": "~7.2.0",
     "@socket.io/redis-emitter": "~5.1.0",
