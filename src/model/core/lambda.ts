@@ -290,7 +290,6 @@ export default class LambdaModel extends StandardModel {
 	 */
 	async add(body, internals?: any) {
 		const {auth, app} = internals;
-
 		await this.gitCloneLambda(body, auth, app);
 
 		let deployments: any[] = [];
@@ -370,7 +369,6 @@ export default class LambdaModel extends StandardModel {
 		const url = lambda?.git?.url;
 		const branch = lambda?.git?.branch;
 		const gitHash = lambda?.git?.hash;
-		const entryFile = lambda?.git?.entryFile;
 
 		try {
 			const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, auth.policyProperties);
@@ -397,7 +395,7 @@ export default class LambdaModel extends StandardModel {
 				throw new Helpers.Errors.RequestError(400, `duplicate_item`);
 			}
 
-			await this.gitFolderClone(gitHash, branch, name, url, entryFile);
+			await this.gitFolderClone(gitHash, branch, name, url);
 		} catch (err) {
 			if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
 				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
@@ -410,7 +408,7 @@ export default class LambdaModel extends StandardModel {
 		}
 	}
 
-	async gitFolderClone(gitHash, branch, name, url, entryFile) {
+	async gitFolderClone(gitHash, branch, name, url) {
 		// Check to see if the requested git hash exists or just make sure the branch exists if we're using HEAD.
 		const exPramChkBranch = (gitHash !== 'HEAD') ? `git branch ${branch} --contains ${gitHash}` : `git ls-remote --heads origin ${branch}`;
 		const result = await exec(`cd ${Config.paths.lambda.code}; git clone --filter=blob:limit=1m ${url} lambda-${name};
@@ -437,7 +435,7 @@ export default class LambdaModel extends StandardModel {
 			// TODO: Refactor below code into a seperate file for handling managment of lambda deployments.
 			const lambdaFolderName = `lambda-${gitHash}`;
 			if (!fs.existsSync(`${Config.paths.lambda.code}/${lambdaFolderName}`)) {
-				await this.gitFolderClone(gitHash, branch, lambda.name, lambda.git.url, entryFilePath);
+				await this.gitFolderClone(gitHash, branch, lambda.name, lambda.git.url);
 				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.git.hash}; mv lambda-${lambda.name} lambda-${lambda.git.hash}`);
 			} else {
 				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git fetch`);

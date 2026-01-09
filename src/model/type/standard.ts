@@ -99,6 +99,14 @@ export default class StandardModel {
 		return this.adapter.ID.new(id);
 	}
 
+	isValidId(id: string) {
+		return this.adapter.ID.isValid(id);
+	}
+
+	convertStringToId(id?: string) {
+		return (id && this.isValidId(id)) ? this.adapter.ID.new(id) : id;
+	}
+
 	__doValidation(body) {
 		const res: {
 			isValid: boolean;
@@ -150,7 +158,7 @@ export default class StandardModel {
 				if (command.length > 0) {
 					output['$and'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
 				}
-			} else if (typeof command === 'object') {
+			} else if (typeof command === 'object' && !this.isValidId(command)) {
 				for (let operator in command) {
 					if (!{}.hasOwnProperty.call(command, operator)) continue;
 					const operand = command[operator];
@@ -231,7 +239,7 @@ export default class StandardModel {
 				Object.keys(operand).forEach((op) => {
 					if (propSchema.__schema[op].__type === 'id') {
 						Object.keys(operand[op]).forEach((key) => {
-							operand[op][key] = this.createId(operand[op][key]);
+							operand[op][key] = this.convertStringToId(operand[op][key]);
 						});
 					}
 				});
@@ -243,7 +251,7 @@ export default class StandardModel {
 
 			if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {
 				try {
-					operand = this.createId(operand);
+					operand = this.convertStringToId(operand);
 				} catch (e) {
 					// If the operand is not a valid ID, we can ignore it or throw an error based on your requirements.
 					// For now, we will just log it.
@@ -254,7 +262,7 @@ export default class StandardModel {
 			if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
 				operand = operand.map((o) => {
 					try {
-						return this.createId(o);
+						return this.convertStringToId(o);
 					} catch (e) {
 						// If the operand is not a valid ID, we can ignore it or throw an error based on your requirements.
 						// For now, we will just log it.

@@ -129,7 +129,7 @@ class SearchLambdaList extends Route {
 	constructor(services: Services) {
 		super('lambda', 'SEARCH LAMBDA LIST', services, Model.getCoreModel(LambdaSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.LIST;
 	}
 
@@ -393,15 +393,22 @@ class ScheduleLambdaExecution extends Route {
 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_execute_after_date`));
 		}
 
+		const execution = {
+			triggerType: 'CRON',
+			lambdaId: lambda.id,
+			deploymentId: deployment.id,
+			executeAfter: executeAfter.toString(),
+			nextCronExpression: null,
+			metadata: req.body.metadata,
+		}
+		const lambdaCronTrigger = lambda.trigger.find((t) => t.type === 'CRON');
+		if (lambdaCronTrigger) {
+			execution.nextCronExpression = lambdaCronTrigger.cron.periodicExecution;
+		}
+
 		return {
 			appId: lambda._appId,
-			execution: {
-				triggerType: 'CRON',
-				lambdaId: lambda.id,
-				deploymentId: deployment.id,
-				executeAfter: executeAfter.toString(),
-				metadata: req.body.metadata,
-			},
+			execution,
 		};
 	}
 
@@ -691,7 +698,7 @@ class LambdaCount extends Route {
 	constructor(services: Services) {
 		super(`lambda/count`, `COUNT LAMBDAS`, services, Model.getCoreModel(LambdaSchemaModel).schemaData);
 		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
+		this.authType = Route.Constants.Type.LAMBDA;
 		this.permissions = Route.Constants.Permissions.SEARCH;
 
 		this.activityDescription = `COUNT LAMBDAS`;

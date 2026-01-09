@@ -218,7 +218,7 @@ export default class AppSchemaModel extends StandardModel {
 					access: '%FULL_ACCESS%',
 				}
 			}, {
-				verbs: ['GET', 'PUT'],
+				verbs: ['GET', 'SEARCH', 'PUT'],
 				schema: ['app'],
 				query: {
 					_id: {
