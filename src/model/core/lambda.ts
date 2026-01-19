@@ -351,7 +351,9 @@ export default class LambdaModel extends StandardModel {
 			_lambdaId: lambda.id,
 		});
 
-		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.git.hash}; mv lambda-${lambda.name} lambda-${lambda.git.hash}`);
+		if (!fs.existsSync(`${Config.paths.lambda.code}/lambda-${lambda.git.hash}`)) {
+			await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.git.hash}; mv lambda-${lambda.name} lambda-${lambda.git.hash}`);
+		}
 
 		return lambda;
 	}
@@ -409,6 +411,8 @@ export default class LambdaModel extends StandardModel {
 	}
 
 	async gitFolderClone(gitHash, branch, name, url) {
+		if(fs.existsSync(`${Config.paths.lambda.code}/lambda-${gitHash}`)) return;
+
 		// Check to see if the requested git hash exists or just make sure the branch exists if we're using HEAD.
 		const exPramChkBranch = (gitHash !== 'HEAD') ? `git branch ${branch} --contains ${gitHash}` : `git ls-remote --heads origin ${branch}`;
 		const result = await exec(`cd ${Config.paths.lambda.code}; git clone --filter=blob:limit=1m ${url} lambda-${name};
