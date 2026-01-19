@@ -71,7 +71,7 @@ export class PolicyEnv {
 	 * @returns The value of the environment variable or the key itself if not found.
 	 */
 	async getEnvValue(key: string, envVars) {
-		if (!key || !key.startsWith(PolicyEnv.strPrefix)) return key;
+		if (!key || typeof key !== 'string' || !key.startsWith(PolicyEnv.strPrefix)) return key;
 
 		const path = key.replace(PolicyEnv.strPrefix, '');
 		const value = Helpers.get(path, envVars);
