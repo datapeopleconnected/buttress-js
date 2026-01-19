@@ -422,7 +422,7 @@ export default class LambdaModel extends StandardModel {
 				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
 			}
 			Logging.logError(`[${LambdaModel.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
-			throw new Helpers.Errors.RequestError(400, `missing_field`);
+			throw new Helpers.Errors.RequestError(400, `incorrect_lambda_hash_or_branch`);
 		}
 
 		// TODO it should only clone the lambda file from the repo

@@ -514,7 +514,7 @@ class SetAppPolicyPropertyList extends Route {
 			}
 
 			if (req.params.update === 'true') {
-				const currentAppListKeys = Object.keys(req.authApp.policyPropertiesList);
+				const currentAppListKeys = (req.authApp.policyPropertiesList !== null) ? Object.keys(req.authApp.policyPropertiesList) : [];
 				Object.keys(req.body).forEach((key) => {
 					if (currentAppListKeys.includes(key)) {
 						req.body[key] = req.body[key].concat(req.authApp.policyPropertiesList[key]).filter((v, idx, arr) => arr.indexOf(v) === idx);
