@@ -3,6 +3,8 @@ FROM node:20-bookworm-slim AS builder
 
 ENV APP_TYPE=all
 
+ENV BUTTRESS_APP_PATH=/opt/buttress
+
 WORKDIR /opt/buttress
 
 COPY . .
