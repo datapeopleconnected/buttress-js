@@ -1,3 +1,9 @@
 node_modules
 .git
 *.env
+coverage
+.nyc_output
+dist
+logs
+plugins
+me.md
