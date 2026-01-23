@@ -153,6 +153,9 @@ class Helpers {
 			} else if (data.url) {
 				data.url = (typeof data.url === 'string') ? new URL(data.url) : data.url;
 			}
+
+			Logging.logSilly(`Lambda Fetch - [${data.options?.method}] ${data.url.href} with options - ${JSON.stringify(data.options)}`);
+
 			try {
 				if (data?.options?.body && data.options.headers && data.options.headers['Content-Type'] === 'application/x-www-form-urlencoded') {
 					data.options.body = new URLSearchParams(data.options.body);
@@ -179,6 +182,8 @@ class Helpers {
 					url: response.url,
 					redirected: response.redirected
 				};
+
+				Logging.logDebug(`Lambda Fetch Response - [${data.options?.method}] ${data.url.href} - ${output.status}`);
 
 				if (output.status && !this.successfulHTTPScode.includes(output.status) && response.url && response.url !== data.url.href) {
 					return _resolve(output);

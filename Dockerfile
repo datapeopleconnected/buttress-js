@@ -15,6 +15,8 @@ RUN npm run build
 # Production stage
 FROM node:20-bookworm-slim
 
+RUN apt-get update && apt-get install -y git openssh-client && apt-get clean
+
 COPY --from=builder /opt/buttress/bin /opt/buttress/bin
 COPY --from=builder /opt/buttress/node_modules /opt/buttress/node_modules
 COPY --from=builder /opt/buttress/dist /opt/buttress/dist

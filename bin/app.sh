@@ -14,6 +14,14 @@
 # You should have received a copy of the GNU Affero General Public Licence along with
 # this program. If not, see <http://www.gnu.org/licenses/>.
 
+if [ -z "$SSH_AUTH_SOCK" ]; then
+    eval "$(ssh-agent -s)"
+
+    if [ -f /root/.ssh/id_buttress ]; then
+        ssh-add /root/.ssh/id_buttress
+    fi
+fi
+
 cd $( dirname -- "$0"; )
 
 FILE="../dist/bin/app.js"
