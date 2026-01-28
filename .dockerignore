@@ -1,9 +1,46 @@
-node_modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+jspm_packages/
+
 .git
 *.env
-coverage
-.nyc_output
-dist
-logs
-plugins
+.env.*
+
+coverage/
+.nyc_output/
+test/**/*.log
+test/**/*.tmp
+
+dist/
+build/
+logs/
+*.log
+
+app_data/
+plugins/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
 me.md
+
+# Misc
+*.swp
+*.swo
+*.bak
+*.tmp
+
+# Docker output
+*.tar
+
+# Compiled TypeScript
+*.tsbuildinfo
+
+# Nginx configs
+nginx/

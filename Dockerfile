@@ -27,6 +27,4 @@ RUN mkdir -p /opt/buttress/app_data
 
 WORKDIR /opt/buttress
 
-RUN ls -la
-
 CMD ["./bin/buttress.sh"]

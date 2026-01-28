@@ -31,7 +31,7 @@
     "docker:run": "docker-compose -f .docker/docker-compose.yml up",
     "docker:run-full": "docker-compose -f .docker/docker-compose.full.yml up",
     "prepare": "husky install && [ -f ./.husky/nvm-fix ] && ./.husky/nvm-fix || true",
-    "nvm": "~/.config/nvm/nvm-exec which node | xargs -I {} bash -c 'ln -sf \"{}\" ./.nvm-node' && chmod +x ./.nvm-node"
+    "nvm": "~/.nvm/nvm-exec which node | xargs -I {} bash -c 'ln -sf \"{}\" ./.nvm-node' && chmod +x ./.nvm-node"
   },
   "repository": {
     "type": "git",
