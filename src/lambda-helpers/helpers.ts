@@ -160,6 +160,13 @@ class Helpers {
 				if (data?.options?.body && data.options.headers && data.options.headers['Content-Type'] === 'application/x-www-form-urlencoded') {
 					data.options.body = new URLSearchParams(data.options.body);
 				}
+
+				// Prevent keep-alive connections due to TCP issues in docker environments
+				// Possibly due to the use of SEARCH method header.
+				data.options = data.options || {};
+				data.options.headers = data.options.headers || {};
+				data.options.headers['Connection'] = 'close';
+
 				const response: {
 					ok?: boolean,
 					status?: number | null,
