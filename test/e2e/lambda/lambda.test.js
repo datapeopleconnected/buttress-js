@@ -227,10 +227,14 @@ describe('Lambda', async () => {
 
 		describe('API Endpoint', async () => {
 			it('Should receive 200 from \'hello-world\' lambda', async function() {
-				await bjsReq({
+				const result = await bjsReq({
 					url: `${ENDPOINT.REST}/lambda/v1/${testEnv.apps.app1.apiPath}/hello/world`,
 					method: 'GET',
 				}, testEnv.apps.app1.token);
+
+				assert.strictEqual(result.res.code, 200);
+				assert.strictEqual(result.res.message, 'Hello World!');
+				assert.notEqual(result.executionId, undefined);
 			});
 		});
 	});
