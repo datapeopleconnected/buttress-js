@@ -242,7 +242,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 		const entityId = (activity.params.id) ? activity.params.id : activity.response.id;
 
 		if (entityId) {
-			const appModel = (isCoreSchema) ? await Model.getAppModel(activity.appId, activity.schemaName) : await Model.getCoreModelByName(activity.schemaName);
+			const appModel = (isCoreSchema) ? await Model.getCoreModelByName(activity.schemaName) : await Model.getAppModel(activity.appId, activity.schemaName);
 			if (!appModel) {
 				Logging.logWarn(`Unable to broadcast entity, can not find ${activity.schemaName} for ${activity.appId} in the database`);
 				return;
