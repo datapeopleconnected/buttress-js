@@ -77,6 +77,6 @@ jobs:
         BUTTRESS_APP_PROTOCOL: http
         BUTTRESS_HOST_URL: localhost:8000
         BUTTRESS_DATASTORE_CONNECTION_STRING: mongodb://localhost:27018
-        BUTTRESS_REDIS_PORT: 6380
+        BUTTRESS_REDIS_URL: redis://localhost:6380
         BUTTRESS_SOCK_URL: http://localhost:8010
       run: npm run test:e2e
