@@ -4,6 +4,6 @@ services:
       file: docker-compose.yml
       service: buttress
   mongodb:
-    image: mongo:5
+    image: mongo:8
   redis:
     image: "redis:alpine"
