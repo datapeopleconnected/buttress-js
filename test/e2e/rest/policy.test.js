@@ -101,6 +101,25 @@ const expectEventuallyDeniedRequest = async (requestFn, expectedMessage, attempt
   throw new Error('Request should have failed but didn\'t');
 };
 
+const expectEventually = async (assertionFn, attempts = 20, intervalMs = 100) => {
+  let lastError = null;
+
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await assertionFn();
+      return;
+    } catch (err) {
+      lastError = err;
+
+      if (i < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      }
+    }
+  }
+
+  throw lastError;
+};
+
 const TestDataOrganisations = [{
   name: 'A&A CLEANING LTD LTD',
   number: '1',
@@ -556,19 +575,21 @@ describe('Policy', async () => {
         policyProjection: 2,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      const res = await bjsReq({
-        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-        method: 'GET',
-      }, testEnv.users.basic1.tokens[0].value);
+      await expectEventually(async () => {
+        const res = await bjsReq({
+          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+          method: 'GET',
+        }, testEnv.users.basic1.tokens[0].value);
 
-      const companiesStatus = res.map((company) => company.status).filter((v) => v);
-      const companiesName = res.map((company) => company.name).filter((v) => v);
-      const companiesNumber = res.map((company) => company.number).filter((v) => v);
+        const companiesStatus = res.map((company) => company.status).filter((v) => v);
+        const companiesName = res.map((company) => company.name).filter((v) => v);
+        const companiesNumber = res.map((company) => company.number).filter((v) => v);
 
-      assert(res.length === 3, `Expected 3 but got ${res.length}`);
-      assert(companiesStatus.length === 2, `Property filter status, expected 2 but got ${companiesStatus.length}`);
-      assert(companiesName.length === 3, `Property filter name, expected 3 but got ${companiesName.length}`);
-      assert(companiesNumber.length === 0, `Property filter number, expected 0 but got ${companiesNumber.length}`);
+        assert(res.length === 3, `Expected 3 but got ${res.length}`);
+        assert(companiesStatus.length === 2, `Property filter status, expected 2 but got ${companiesStatus.length}`);
+        assert(companiesName.length === 3, `Property filter name, expected 3 but got ${companiesName.length}`);
+        assert(companiesNumber.length === 0, `Property filter number, expected 0 but got ${companiesNumber.length}`);
+      });
     });
 
     it ('should override policies query', async function() {
