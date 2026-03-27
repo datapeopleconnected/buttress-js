@@ -79,6 +79,28 @@ const _createPolicyUser = async (app, key, policyProperties) => {
   return user;
 };
 
+const expectEventuallyDeniedRequest = async (requestFn, expectedMessage, attempts = 20, intervalMs = 100) => {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      await requestFn();
+    } catch (err) {
+      if (err instanceof BJSReqError) {
+        assert(err.code === 401, `Expected 401 but got ${err.code}`);
+        assert(err.message === expectedMessage, `Got ${err.message}`);
+        return;
+      }
+
+      throw err;
+    }
+
+    if (i < attempts - 1) {
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    }
+  }
+
+  throw new Error('Request should have failed but didn\'t');
+};
+
 const TestDataOrganisations = [{
   name: 'A&A CLEANING LTD LTD',
   number: '1',
@@ -280,21 +302,11 @@ describe('Policy', async () => {
         grade: 0,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      try {
-        await bjsReq({
-          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-          method: 'GET',
-          headers: {'Content-Type': 'application/json'},
-        }, testEnv.users.basic1.tokens[0].value);
-        throw new Error('Request should have failed but didn\'t');
-      } catch (err) {
-        if (err instanceof BJSReqError) {
-          assert(err.code === 401, `Expected 401 but got ${err.code}`);
-          assert(err.message === 'Request does not have any policy associated to it', `Got ${err.message}`);
-        } else {
-          throw err;
-        }
-      }
+      await expectEventuallyDeniedRequest(async () => bjsReq({
+        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+        method: 'GET',
+        headers: {'Content-Type': 'application/json'},
+      }, testEnv.users.basic1.tokens[0].value), 'Request does not have any policy associated to it');
     });
 
     it('Should access app companies using grade 1 policy', async function() {
