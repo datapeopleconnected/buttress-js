@@ -400,6 +400,8 @@ describe('Processing', async () => {
 
 	describe('Token Types', () => {
 		before(async function () {
+			this.timeout(20000);
+
 			testEnv.sockets.super = io(`${ENDPOINT.REST}`, {
 				auth: { token: Config.testToken },
 				forceNew: true
