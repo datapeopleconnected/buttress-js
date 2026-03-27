@@ -215,7 +215,7 @@ class TokenSchemaModel extends StandardModel {
 		await super.updateById(this.createId(tokenId),
 			{ $set: { 'policyProperties': policyProperties } });
 
-		this.__policyCache.setTokenIdAsStale(tokenId);
+		await this.__policyCache.setTokenIdAsStale(tokenId);
 		this.__nrp?.emit('app-routes:bust-cache', '{}');
 	}
 
@@ -244,7 +244,7 @@ class TokenSchemaModel extends StandardModel {
 			},
 		});
 
-		this.__policyCache.setTokenIdAsStale(token.id.toString());
+		await this.__policyCache.setTokenIdAsStale(token.id.toString());
 		this.__nrp?.emit('app-routes:bust-cache', '{}');
 	}
 
