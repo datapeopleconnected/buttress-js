@@ -27,7 +27,7 @@ import StandardModel from '../model/type/standard.js';
 export async function find<T extends StandardModel>(model: T, query: QueryParams<object>, ac: { policyConfigs: parsedPolicyConfig[] }) {
   if (ac.policyConfigs.length > 1) {
     const resStream = new Stream.PassThrough({ objectMode: true });
-    
+
     let openStreams = 0;
     // Using forEach here because we don't want to wait for each function to finish before calling the next.
     ac.policyConfigs.forEach(async (policyConfig) => {

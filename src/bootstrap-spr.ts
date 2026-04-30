@@ -163,6 +163,11 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 		this.__nrp.on('rest:activity', (data) => this._handleIncomingMessage(JSON.parse(data)));
 		this.__nrp.on('worker:socket:connection', (tokenId) => this._socketConnection(tokenId));
 		this.__nrp.on('worker:socket:disconnect', (tokenId) => this._socketDisconnection(tokenId));
+
+		this.__nrp.on('app-schema:updated', async (json: string) => {
+			const data = JSON.parse(json);
+			await Model.initSchema(data.appId);
+		});
 	}
 
 	// Use redis to store and cache a list of connected tokens and their associated policies
