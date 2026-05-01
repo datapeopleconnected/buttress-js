@@ -32,7 +32,7 @@ export class SourceDataSharingRouting {
   constructor(redisClient: RedisClientType) {
     this._redisClient = redisClient;
 
-    this._proecssInformCheck();
+    this._processInformCheck();
   }
 
   getKey(appId: string, sourceId: string) {
@@ -61,7 +61,7 @@ export class SourceDataSharingRouting {
     this._tempCheckMap.clear();
   }
 
-  private async _proecssInformCheck() {
+  private async _processInformCheck() {
     if (this._tempCheckMap.size < 1) return;
     for await (const [key, value] of this._tempCheckMap.entries()) {
       const current = await this._redisClient.get(`sds-route:${key}`);
@@ -77,6 +77,6 @@ export class SourceDataSharingRouting {
 
   private _setInformCheckTimeout() {
     if (this._informCheckTimeout) clearTimeout(this._informCheckTimeout);
-    this._informCheckTimeout = setTimeout(() => this._proecssInformCheck(), this._informCheckTimeoutInterval);
+    this._informCheckTimeout = setTimeout(() => this._processInformCheck(), this._informCheckTimeoutInterval);
   }
 }
