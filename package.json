@@ -7,7 +7,7 @@
   "license": "AGPL-3.0-or-later",
   "private": true,
   "engines": {
-    "node": ">=20.18.2"
+    "node": ">=24.15"
   },
   "main": "deploy/app.js",
   "scripts": {
@@ -50,7 +50,7 @@
     "@socket.io/redis-emitter": "~5.1.0",
     "bson": "^6.8.0",
     "express": "~4.21.2",
-    "isolated-vm": "~5.0.4",
+    "isolated-vm": "~6.1.2",
     "method-override": "~3.0.0",
     "mongodb": "~4.17.1",
     "morgan": "~1.10.0",
