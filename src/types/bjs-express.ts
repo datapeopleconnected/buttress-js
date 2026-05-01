@@ -34,16 +34,16 @@ export interface BjsRequest extends Request {
     policyConfigs: parsedPolicyConfig[];
   };
   timings: {
-    authenticateToken: number | null,
-    configCrossDomain: number | null,
-    authenticate: number | null,
-    validate: number | null,
-    exec: number | null,
-    respond: number | null,
-    logActivity: number | null,
-    boardcastData: number | null,
-    close: number | null,
-    stream: [],
+    authenticateToken: number | null;
+    configCrossDomain: number | null;
+    authenticate: number | null;
+    validate: number | null;
+    exec: number | null;
+    respond: number | null;
+    logActivity: number | null;
+    boardcastData: number | null;
+    close: number | null;
+    stream: [];
   };
   bjsReqStatus: any;
   bjsReqClose: any;

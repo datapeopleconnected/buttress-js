@@ -1,15 +1,15 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <title>ButtressJS</title>
-    <link rel="stylesheet", href="https://fonts.googleapis.com/css?family=Fira+Sans"/>
+    <link rel="stylesheet" , href="https://fonts.googleapis.com/css?family=Fira+Sans" />
     <style>
-			:root {
-				--colorPrimary: #3c415e;
-				--colorSecondary: #738598;
-				--colorBackground: #dfe2e2;
-				--colorAccent: #1cb3c8;
-			}
+      :root {
+        --colorPrimary: #3c415e;
+        --colorSecondary: #738598;
+        --colorBackground: #dfe2e2;
+        --colorAccent: #1cb3c8;
+      }
 
       html {
         width: 100%;
@@ -64,29 +64,31 @@
         top: 0;
         left: 0;
       }
-		</style>
-	</head>
+    </style>
+  </head>
 
   <body>
     <div class="text">
       <header>
         <h1 class="title">Buttress<sub>JS</sub></h1>
-			</header>
-			<section>
-				<div>The federated real-time open data platform</div>
-			</section>
+      </header>
+      <section>
+        <div>The federated real-time open data platform</div>
+      </section>
       <footer>
-				<div>Proudly open source ❤️ Available on <a href="https://github.com/datapeopleconnected/buttress-js" target="_BLANK">Github</a></div>
-			</footer>
-		</div>
+        <div>
+          Proudly open source ❤️ Available on
+          <a href="https://github.com/datapeopleconnected/buttress-js" target="_BLANK">Github</a>
+        </div>
+      </footer>
+    </div>
 
     <canvas id="canvas"></canvas>
     <script src="/socket.io/socket.io.js"></script>
     <script type="text/javascript">
       class Stats {
         constructor(id) {
-          this.canvas = document.getElementById(id),
-          this.context = this.canvas.getContext("2d");
+          ((this.canvas = document.getElementById(id)), (this.context = this.canvas.getContext('2d')));
 
           this.width = window.innerWidth;
           this.height = window.innerWidth;
@@ -108,7 +110,7 @@
           this.resize();
           this._loop();
 
-          for (let i = 0; i < 50; i++){
+          for (let i = 0; i < 50; i++) {
             this.addParticle();
           }
         }
@@ -123,7 +125,7 @@
           window.requestAnimationFrame(() => this._loop());
 
           this.time = performance.now();
-          this.delta = (this.time - this.lastTime);
+          this.delta = this.time - this.lastTime;
 
           if (!this.paused) {
             this._update(this.delta);
@@ -150,7 +152,10 @@
           for (let a = 0; a < this.particles.length; a++) {
             for (let b = 0; b < this.particles.length; b++) {
               if (this.particles[a] === this.particles[b]) continue;
-              const distance = Math.sqrt(Math.pow(this.particles[b].x - this.particles[a].x, 2) + Math.pow(this.particles[b].y - this.particles[a].y, 2));
+              const distance = Math.sqrt(
+                Math.pow(this.particles[b].x - this.particles[a].x, 2) +
+                  Math.pow(this.particles[b].y - this.particles[a].y, 2),
+              );
               const opacity = 1 - distance / 350;
               if (opacity > 0) {
                 this.context.lineWidth = 0.5;
@@ -199,12 +204,12 @@
           this.y += this.vectorY * delta;
 
           this.life -= this.decay * delta;
-          this.opacity = (this.life < 1) ? 0 : this.life / 100;
+          this.opacity = this.life < 1 ? 0 : this.life / 100;
         }
 
         render(ctx) {
           ctx.beginPath();
-          ctx.arc(this.x, this.y, this.radius, 0, Math.PI*2);
+          ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
           ctx.closePath();
           ctx.fillStyle = `rgba(60,65,94, ${this.opacity})`;
           ctx.fill();
@@ -213,7 +218,7 @@
         _checkBounds() {
           if (this.x >= this.boundRight || this.x <= 0) this.vectorX *= -1;
           if (this.y >= this.boundBottom || this.y <= 0) this.vectorY *= -1;
-          if (this.x > this.boundRight) this.x = this.boundRight
+          if (this.x > this.boundRight) this.x = this.boundRight;
           if (this.y > this.boundBottom) this.y = this.boundBottom;
           if (this.x < 0) this.x = 0;
           if (this.y < 0) this.y = 0;
@@ -222,6 +227,6 @@
 
       const stats = new Stats('canvas');
       io('/stats').on('activity', () => stats.addParticle());
-		</script>
-	</body>
+    </script>
+  </body>
 </html>

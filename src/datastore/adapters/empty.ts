@@ -18,25 +18,25 @@ import { ObjectId } from 'bson';
 import AbstractAdapter from '../abstract-adapter.js';
 
 class AdapterId {
-	static new(id: string) {
-		return new ObjectId(id);
-	}
+  static new(id: string) {
+    return new ObjectId(id);
+  }
 
-	static isValid(id: string) {
-		return ObjectId.isValid(id);
-	}
+  static isValid(id: string) {
+    return ObjectId.isValid(id);
+  }
 
-	static instanceOf(id: string | ObjectId) {
-		return id instanceof ObjectId;
-	}
+  static instanceOf(id: string | ObjectId) {
+    return id instanceof ObjectId;
+  }
 }
 
 export default class EmptyAdapter extends AbstractAdapter {
-	get ID() {
-		return AdapterId;
-	}
+  get ID() {
+    return AdapterId;
+  }
 
-	async connect() {
-		return Promise.resolve();
-	}
-};
+  async connect() {
+    return Promise.resolve();
+  }
+}

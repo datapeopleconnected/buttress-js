@@ -1,17 +1,17 @@
 {
-	"name": "timestamps",
-	"type": "template",
-	"properties": {
-		"createdAt": {
-			"__type": "date",
-			"__default": "now",
-			"__required": false,
-			"__allowUpdate": false
-		},
-		"updatedAt": {
-			"__type": "date",
-			"__required": false,
-			"__allowUpdate": true
-		}
-	}
+  "name": "timestamps",
+  "type": "template",
+  "properties": {
+    "createdAt": {
+      "__type": "date",
+      "__default": "now",
+      "__required": false,
+      "__allowUpdate": false
+    },
+    "updatedAt": {
+      "__type": "date",
+      "__required": false,
+      "__allowUpdate": true
+    }
+  }
 }

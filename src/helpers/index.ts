@@ -28,423 +28,423 @@ export * as Schema from './schema.js';
 export * as Stream from './stream.js';
 
 export class Timer {
-	private _start: number;
-	private _last: number;
+  private _start: number;
+  private _last: number;
 
-	constructor() {
-		this._start = 0;
-		this._last = 0;
-	}
+  constructor() {
+    this._start = 0;
+    this._last = 0;
+  }
 
-	start() {
-		const hrTime = process.hrtime();
-		this._last = this._start = (hrTime[0] * 1000000) + (hrTime[1] / 1000);
-	}
+  start() {
+    const hrTime = process.hrtime();
+    this._last = this._start = hrTime[0] * 1000000 + hrTime[1] / 1000;
+  }
 
-	get lapTime() {
-		const hrTime = process.hrtime();
-		const time = (hrTime[0] * 1000000) + (hrTime[1] / 1000);
-		const lapTime = time - this._last;
-		this._last = time;
-		return (lapTime / 1000000);
-	}
-	get interval() {
-		const hrTime = process.hrtime();
-		const time = (hrTime[0] * 1000000) + (hrTime[1] / 1000);
-		return ((time - this._start) / 1000000);
-	}
+  get lapTime() {
+    const hrTime = process.hrtime();
+    const time = hrTime[0] * 1000000 + hrTime[1] / 1000;
+    const lapTime = time - this._last;
+    this._last = time;
+    return lapTime / 1000000;
+  }
+  get interval() {
+    const hrTime = process.hrtime();
+    const time = hrTime[0] * 1000000 + hrTime[1] / 1000;
+    return (time - this._start) / 1000000;
+  }
 }
 
 export class JSONStringifyStream extends Transform {
-	private _first: boolean;
-	private prepare: (chunk: any) => any;
+  private _first: boolean;
+  private prepare: (chunk: any) => any;
 
-	constructor(options, prepare) {
-		super(Object.assign(options || {}, { objectMode: true }));
+  constructor(options, prepare) {
+    super(Object.assign(options || {}, { objectMode: true }));
 
-		if (!prepare || typeof prepare !== 'function') throw new Error('JSONStringifyStream requires a prepare function');
+    if (!prepare || typeof prepare !== 'function') throw new Error('JSONStringifyStream requires a prepare function');
 
-		this._first = true;
-		this.prepare = prepare;
-	}
+    this._first = true;
+    this.prepare = prepare;
+  }
 
-	_transform(chunk, encoding, cb) {
-		chunk = this.prepare(chunk);
+  _transform(chunk, encoding, cb) {
+    chunk = this.prepare(chunk);
 
-		// Dont return any blank objects
-		if (chunk === null || typeof chunk === 'object' && Object.keys(chunk).length < 1) return cb();
+    // Dont return any blank objects
+    if (chunk === null || (typeof chunk === 'object' && Object.keys(chunk).length < 1)) return cb();
 
-		// Stringify the object thats come in and strip any keys/props which are prefixed with a underscore
-		const str = JSON.stringify(chunk);
+    // Stringify the object thats come in and strip any keys/props which are prefixed with a underscore
+    const str = JSON.stringify(chunk);
 
-		if (this._first) {
-			this._first = false;
-			this.push(`[`);
-			this.push(`${str}\n`);
-		} else {
-			this.push(`,${str}\n`);
-		}
+    if (this._first) {
+      this._first = false;
+      this.push(`[`);
+      this.push(`${str}\n`);
+    } else {
+      this.push(`,${str}\n`);
+    }
 
-		cb();
-	}
+    cb();
+  }
 
-	_flush(cb) {
-		if (this._first) {
-			this._first = false;
-			this.push('[');
-		}
+  _flush(cb) {
+    if (this._first) {
+      this._first = false;
+      this.push('[');
+    }
 
-		this.push(']');
-		cb();
-	}
+    this.push(']');
+    cb();
+  }
 }
 
 const PromiseHelpers = {
-	prop: (prop) => ((val) => val[prop]),
-	func: (func) => ((val) => val[func]()),
-	nop: () => (() => null),
-	inject: (value) => (() => value),
-	arrayProp: (prop) => ((arr) => arr.map((a) => a[prop])),
+  prop: (prop) => (val) => val[prop],
+  func: (func) => (val) => val[func](),
+  nop: () => () => null,
+  inject: (value) => () => value,
+  arrayProp: (prop) => (arr) => arr.map((a) => a[prop]),
 };
 export { PromiseHelpers as Promise };
 
 export const shortId = (id) => {
-	const toBase = (num, base) => {
-		const symbols = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-'.split('');
-		let decimal = num;
-		let temp;
-		let output = '';
+  const toBase = (num, base) => {
+    const symbols = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-'.split('');
+    let decimal = num;
+    let temp;
+    let output = '';
 
-		if (base > symbols.length || base <= 1) {
-			throw new RangeError(`Radix must be less than ${symbols.length} and greater than 1`);
-		}
+    if (base > symbols.length || base <= 1) {
+      throw new RangeError(`Radix must be less than ${symbols.length} and greater than 1`);
+    }
 
-		while (decimal > 0) {
-			temp = Math.floor(decimal / base);
-			output = symbols[(decimal - (base * temp))] + output;
-			decimal = temp;
-		}
+    while (decimal > 0) {
+      temp = Math.floor(decimal / base);
+      output = symbols[decimal - base * temp] + output;
+      decimal = temp;
+    }
 
-		return output;
-	};
+    return output;
+  };
 
-	let output = '';
-	if (!id) return output;
+  let output = '';
+  if (!id) return output;
 
-	// HACK: need to make sure the id is in the correct format to extract the timestamp
-	id = Datastore.getInstance('core').ID.new(id);
+  // HACK: need to make sure the id is in the correct format to extract the timestamp
+  id = Datastore.getInstance('core').ID.new(id);
 
-	const date = id.getTimestamp();
-	let time = date.getTime();
+  const date = id.getTimestamp();
+  let time = date.getTime();
 
-	let counter = parseInt(id.toHexString().slice(-6), 16);
-	counter = parseInt(counter.toString().slice(-3), 10);
+  let counter = parseInt(id.toHexString().slice(-6), 16);
+  counter = parseInt(counter.toString().slice(-3), 10);
 
-	time = counter + time;
-	output = toBase(time, 64);
-	output = output.slice(3);
+  time = counter + time;
+  output = toBase(time, 64);
+  output = output.slice(3);
 
-	return output;
+  return output;
 };
 
 const __flattenRoles = (data, path) => {
-	if (!path) path = [];
+  if (!path) path = [];
 
-	return data.reduce((_roles, role) => {
-		const _path = path.concat(`${role.name}`);
-		if (role.roles && role.roles.length > 0) {
-			return _roles.concat(__flattenRoles(role.roles, _path));
-		}
+  return data.reduce((_roles, role) => {
+    const _path = path.concat(`${role.name}`);
+    if (role.roles && role.roles.length > 0) {
+      return _roles.concat(__flattenRoles(role.roles, _path));
+    }
 
-		const flatRole = Object.assign({}, role);
-		flatRole.name = _path.join('.');
-		_roles.push(flatRole);
-		return _roles;
-	}, []);
+    const flatRole = Object.assign({}, role);
+    flatRole.name = _path.join('.');
+    _roles.push(flatRole);
+    return _roles;
+  }, []);
 };
 export const flattenRoles = __flattenRoles;
 
 export const flatternObject = (obj, output: { [index: string]: any } = {}, paths: string[] = []) => {
-	return Object.getOwnPropertyNames(obj).reduce(function (out, key) {
-		paths.push(key);
+  return Object.getOwnPropertyNames(obj).reduce(function (out, key) {
+    paths.push(key);
 
-		if (typeof obj[key] === 'object' && obj[key] !== null && obj[key] === '[object Object]') {
-			flatternObject(obj[key], out, paths);
-		} else if (Array.isArray(obj[key])) {
-			obj[key].forEach((item, index) => {
-				paths.push(index.toString());
-				flatternObject(item, out, paths);
-			});
-		} else {
-			out[paths.join('.')] = obj[key];
-		}
-		paths.pop();
-		return out;
-	}, output);
+    if (typeof obj[key] === 'object' && obj[key] !== null && obj[key] === '[object Object]') {
+      flatternObject(obj[key], out, paths);
+    } else if (Array.isArray(obj[key])) {
+      obj[key].forEach((item, index) => {
+        paths.push(index.toString());
+        flatternObject(item, out, paths);
+      });
+    } else {
+      out[paths.join('.')] = obj[key];
+    }
+    paths.pop();
+    return out;
+  }, output);
 };
 
 export const mergeDeep = (...objects) => {
-	const isObject = (obj) => obj && typeof obj === 'object';
+  const isObject = (obj) => obj && typeof obj === 'object';
 
-	return objects.reduce((prev, obj) => {
-		Object.keys(obj).forEach((key) => {
-			const pVal = prev[key];
-			const oVal = obj[key];
+  return objects.reduce((prev, obj) => {
+    Object.keys(obj).forEach((key) => {
+      const pVal = prev[key];
+      const oVal = obj[key];
 
-			if (Array.isArray(pVal) && Array.isArray(oVal)) {
-				prev[key] = pVal.concat(...oVal);
-			} else if (isObject(pVal) && isObject(oVal)) {
-				prev[key] = mergeDeep(pVal, oVal);
-			} else {
-				prev[key] = oVal;
-			}
-		});
+      if (Array.isArray(pVal) && Array.isArray(oVal)) {
+        prev[key] = pVal.concat(...oVal);
+      } else if (isObject(pVal) && isObject(oVal)) {
+        prev[key] = mergeDeep(pVal, oVal);
+      } else {
+        prev[key] = oVal;
+      }
+    });
 
-		return prev;
-	}, {});
+    return prev;
+  }, {});
 };
 
 export const getFlattenedSchema = (schema): { [key: string]: unknown } => {
-	const __buildFlattenedSchema = (property, parent, path, flattened) => {
-		path.push(property);
+  const __buildFlattenedSchema = (property, parent, path, flattened) => {
+    path.push(property);
 
-		if (parent[property].__type === 'array' && parent[property].__schema) {
-			// Handle Array
-			for (const childProp in parent[property].__schema) {
-				if (!{}.hasOwnProperty.call(parent[property].__schema, childProp)) continue;
-				__buildFlattenedSchema(childProp, parent[property].__schema, path, flattened);
-			}
+    if (parent[property].__type === 'array' && parent[property].__schema) {
+      // Handle Array
+      for (const childProp in parent[property].__schema) {
+        if (!{}.hasOwnProperty.call(parent[property].__schema, childProp)) continue;
+        __buildFlattenedSchema(childProp, parent[property].__schema, path, flattened);
+      }
 
-			parent[property].__schema = getFlattenedSchema({ properties: parent[property].__schema });
-			flattened[path.join('.')] = parent[property];
-		} else if (typeof parent[property] === 'object' && !parent[property].__type) {
-			// Handle Object
-			for (const childProp in parent[property]) {
-				if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;
-				if (childProp.indexOf('__') === 0) continue;
-				__buildFlattenedSchema(childProp, parent[property], path, flattened);
-			}
-		} else {
-			flattened[path.join('.')] = parent[property];
-		}
+      parent[property].__schema = getFlattenedSchema({ properties: parent[property].__schema });
+      flattened[path.join('.')] = parent[property];
+    } else if (typeof parent[property] === 'object' && !parent[property].__type) {
+      // Handle Object
+      for (const childProp in parent[property]) {
+        if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;
+        if (childProp.indexOf('__') === 0) continue;
+        __buildFlattenedSchema(childProp, parent[property], path, flattened);
+      }
+    } else {
+      flattened[path.join('.')] = parent[property];
+    }
 
-		path.pop();
-	};
+    path.pop();
+  };
 
-	const flattened: {
-		[key: string]: any;
-	} = {};
-	const path = [];
+  const flattened: {
+    [key: string]: any;
+  } = {};
+  const path = [];
 
-	if (schema.properties) {
-		for (const property in schema.properties) {
-			if (!{}.hasOwnProperty.call(schema.properties, property)) continue;
-			__buildFlattenedSchema(property, schema.properties, path, flattened);
-		}
-	}
+  if (schema.properties) {
+    for (const property in schema.properties) {
+      if (!{}.hasOwnProperty.call(schema.properties, property)) continue;
+      __buildFlattenedSchema(property, schema.properties, path, flattened);
+    }
+  }
 
-	return flattened;
+  return flattened;
 };
 
 export const streamFirst = (stream) => {
-	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
-		throw new Error(`Expected Stream but got '${stream}'`);
-	}
+  if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
+    throw new Error(`Expected Stream but got '${stream}'`);
+  }
 
-	return new Promise((resolve, reject) => {
-		stream.on('error', (err) => reject(err));
-		stream.on('end', () => reject(new Error('Stream ended without data')));
-		stream.on('data', (item) => {
-			stream.destroy();
-			resolve(item);
-		});
-	});
+  return new Promise((resolve, reject) => {
+    stream.on('error', (err) => reject(err));
+    stream.on('end', () => reject(new Error('Stream ended without data')));
+    stream.on('data', (item) => {
+      stream.destroy();
+      resolve(item);
+    });
+  });
 };
 export const streamAll = (stream): Promise<any[]> => {
-	if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
-		throw new Error(`Expected Stream but got '${stream}'`);
-	}
+  if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
+    throw new Error(`Expected Stream but got '${stream}'`);
+  }
 
-	return new Promise((resolve, reject) => {
-		const arr: any[] = [];
-		stream.on('error', (err) => reject(err));
-		stream.on('end', () => resolve(arr));
-		stream.on('data', (item) => arr.push(item));
-	});
+  return new Promise((resolve, reject) => {
+    const arr: any[] = [];
+    stream.on('error', (err) => reject(err));
+    stream.on('end', () => resolve(arr));
+    stream.on('data', (item) => arr.push(item));
+  });
 };
 
 export const trimSlashes = (str) => {
-	return (str) ? str.replace(/^\/+|\/+$/g, '') : str;
+  return str ? str.replace(/^\/+|\/+$/g, '') : str;
 };
 
 export const awaitAll = async (arr, handler) => await Promise.all(arr.map(async (item) => await handler(item)));
 export const awaitForEach = async (arr, handler) => {
-	await arr.reduce(async (prev, item) => {
-		await prev;
-		await handler(item);
-	}, Promise.resolve());
+  await arr.reduce(async (prev, item) => {
+    await prev;
+    await handler(item);
+  }, Promise.resolve());
 };
 
 export const checkAppPolicyProperty = async (appPolicyList, policyProperties) => {
-	const res: {
-		passed: boolean,
-		errMessage: string,
-	} = {
-		passed: true,
-		errMessage: '',
-	};
+  const res: {
+    passed: boolean;
+    errMessage: string;
+  } = {
+    passed: true,
+    errMessage: '',
+  };
 
-	if (!appPolicyList) {
-		res.passed = false;
-		res.errMessage = 'The app does not include a policy property list';
-		return res;
-	}
+  if (!appPolicyList) {
+    res.passed = false;
+    res.errMessage = 'The app does not include a policy property list';
+    return res;
+  }
 
-	const appPolicyPropertiesKeys = Object.keys(appPolicyList);
-	for await (const key of Object.keys(policyProperties)) {
-		if (!appPolicyPropertiesKeys.includes(key)) {
-			res.passed = false;
-			res.errMessage = 'Policy property key not listed';
-			continue;
-		}
+  const appPolicyPropertiesKeys = Object.keys(appPolicyList);
+  for await (const key of Object.keys(policyProperties)) {
+    if (!appPolicyPropertiesKeys.includes(key)) {
+      res.passed = false;
+      res.errMessage = 'Policy property key not listed';
+      continue;
+    }
 
-		let operator: string | null = null;
-		if (typeof policyProperties[key] === 'object') {
-			[operator] = Object.keys(policyProperties[key]);
-		}
-		const appPolicyPropertiesValues = appPolicyList[key];
-		const equalValue = (operator) ? policyProperties[key][operator] : policyProperties[key];
-		if (equalValue === null || equalValue === undefined) {
-			res.passed = false;
-			res.errMessage = 'Policy property value not listed';
-		}
+    let operator: string | null = null;
+    if (typeof policyProperties[key] === 'object') {
+      [operator] = Object.keys(policyProperties[key]);
+    }
+    const appPolicyPropertiesValues = appPolicyList[key];
+    const equalValue = operator ? policyProperties[key][operator] : policyProperties[key];
+    if (equalValue === null || equalValue === undefined) {
+      res.passed = false;
+      res.errMessage = 'Policy property value not listed';
+    }
 
-		const appContainsProp = appPolicyPropertiesValues.every((val) => {
-			if (typeof val === 'string') {
-				return val.toUpperCase() !== equalValue.toUpperCase();
-			}
-			if (typeof val === 'boolean') {
-				return val !== equalValue;
-			}
-			if (typeof val === 'number') {
-				return val < equalValue;
-			}
-		});
-		if (equalValue !== undefined && appContainsProp) {
-			res.passed = false;
-			res.errMessage = 'Policy property value not listed';
-		}
-	}
+    const appContainsProp = appPolicyPropertiesValues.every((val) => {
+      if (typeof val === 'string') {
+        return val.toUpperCase() !== equalValue.toUpperCase();
+      }
+      if (typeof val === 'boolean') {
+        return val !== equalValue;
+      }
+      if (typeof val === 'number') {
+        return val < equalValue;
+      }
+    });
+    if (equalValue !== undefined && appContainsProp) {
+      res.passed = false;
+      res.errMessage = 'Policy property value not listed';
+    }
+  }
 
-	return res;
+  return res;
 };
 
 export const updateCoreSchemaObject = (update, extendedPathContext) => {
-	const __updateObjectPath = (body) => {
-		const bodyPath = body.path.replace(pattern, '');
-		if (!Array.isArray(body) && body.value && typeof body.value === 'object' && !Array.isArray(body.value)) {
-			body = Object.keys(body.value).reduce((arr: { path: string, value: any }[], key) => {
-				const extendedPath = `${bodyPath}.${key}`;
-				if (!extendedPathContextKeys.some((key) => key.includes(extendedPath))) return arr;
+  const __updateObjectPath = (body) => {
+    const bodyPath = body.path.replace(pattern, '');
+    if (!Array.isArray(body) && body.value && typeof body.value === 'object' && !Array.isArray(body.value)) {
+      body = Object.keys(body.value).reduce((arr: { path: string; value: any }[], key) => {
+        const extendedPath = `${bodyPath}.${key}`;
+        if (!extendedPathContextKeys.some((key) => key.includes(extendedPath))) return arr;
 
-				arr.push({
-					path: `${body.path}.${key}`,
-					value: body.value[key],
-				});
+        arr.push({
+          path: `${body.path}.${key}`,
+          value: body.value[key],
+        });
 
-				return arr;
-			}, []);
-		}
-	};
+        return arr;
+      }, []);
+    }
+  };
 
-	const extendedPathContextKeys = Object.keys(extendedPathContext);
-	const pattern = /\.\d+/g;
-	if (Array.isArray(update)) {
-		update.forEach((item) => __updateObjectPath(item));
-	} else {
-		update = __updateObjectPath(update);
-	}
+  const extendedPathContextKeys = Object.keys(extendedPathContext);
+  const pattern = /\.\d+/g;
+  if (Array.isArray(update)) {
+    update.forEach((item) => __updateObjectPath(item));
+  } else {
+    update = __updateObjectPath(update);
+  }
 
-	return update;
+  return update;
 };
 
 export const compareByProps = (compareProperties, a, b) => {
-	for (const key of compareProperties.keys()) {
-		const sortOrder = compareProperties.get(key);
+  for (const key of compareProperties.keys()) {
+    const sortOrder = compareProperties.get(key);
 
-		// TODO: path resolution.
-		const valueA = (a && a[key]) ? a[key] : null;
-		const valueB = (b && b[key]) ? b[key] : null;
+    // TODO: path resolution.
+    const valueA = a && a[key] ? a[key] : null;
+    const valueB = b && b[key] ? b[key] : null;
 
-		if (valueA < valueB) return -1 * sortOrder;
-		if (valueA > valueB) return 1 * sortOrder;
-	}
+    if (valueA < valueB) return -1 * sortOrder;
+    if (valueA > valueB) return 1 * sortOrder;
+  }
 
-	return 0;
+  return 0;
 };
 
 export const get = function (path: string, root: any): any {
-	const parts = path.toString().split('.');
-	let prop: any = root;
+  const parts = path.toString().split('.');
+  let prop: any = root;
 
-	for (let i = 0; i < parts.length; i += 1) {
-		if (!prop) return undefined;
-		const part = parts[i];
-		prop = (prop instanceof Map) ? prop.get(part) : prop[part];
-	}
+  for (let i = 0; i < parts.length; i += 1) {
+    if (!prop) return undefined;
+    const part = parts[i];
+    prop = prop instanceof Map ? prop.get(part) : prop[part];
+  }
 
-	return prop;
-}
+  return prop;
+};
 
 export function redisPrefix(prefix: string, key: string): string {
-	if (!prefix) return key;
-	if (prefix.endsWith(':')) return `${prefix}${key}`;
-	return `${prefix}:${key}`;
+  if (!prefix) return key;
+  if (prefix.endsWith(':')) return `${prefix}${key}`;
+  return `${prefix}:${key}`;
 }
 
 export class ExpireMap extends Map {
-	expireTime: number;
-	gcTimeout?: NodeJS.Timeout;
+  expireTime: number;
+  gcTimeout?: NodeJS.Timeout;
 
-	constructor(expireTime) {
-		super();
-		this.expireTime = expireTime;
-	}
+  constructor(expireTime) {
+    super();
+    this.expireTime = expireTime;
+  }
 
-	set(key, value) {
-		super.set(key, {
-			value,
-			expire: Date.now() + this.expireTime,
-		});
+  set(key, value) {
+    super.set(key, {
+      value,
+      expire: Date.now() + this.expireTime,
+    });
 
-		return this;
-	}
+    return this;
+  }
 
-	get(key) {
-		const item = super.get(key);
-		if (!item) return undefined;
+  get(key) {
+    const item = super.get(key);
+    if (!item) return undefined;
 
-		if (item.expire < Date.now()) {
-			this.delete(key);
-			return undefined;
-		}
+    if (item.expire < Date.now()) {
+      this.delete(key);
+      return undefined;
+    }
 
-		return item.value;
-	}
+    return item.value;
+  }
 
-	// This is dumb
-	destroy() {
-		if (this.gcTimeout) clearTimeout(this.gcTimeout);
-		this.clear();
-	}
+  // This is dumb
+  destroy() {
+    if (this.gcTimeout) clearTimeout(this.gcTimeout);
+    this.clear();
+  }
 
-	_gc() {
-		this.gcTimeout = setTimeout(() => {
-			for (const key of this.keys()) {
-				this.get(key);
-			}
+  _gc() {
+    this.gcTimeout = setTimeout(() => {
+      for (const key of this.keys()) {
+        this.get(key);
+      }
 
-			this._gc();
-		}, this.expireTime);
-	}
-};
+      this._gc();
+    }, this.expireTime);
+  }
+}

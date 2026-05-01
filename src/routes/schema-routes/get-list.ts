@@ -28,56 +28,56 @@ import * as ACM from '../../access-control/models-access.js';
  * @class GetList
  */
 export default class GetList extends Route {
-	constructor(schema: Schema, app: App, services: Services) {
-		const schemaRoutePath = modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `GET ${schema.name} LIST`, services, schema, app);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.GET;
-		this.permissions = Route.Constants.Permissions.LIST;
+    super(`${schemaRoutePath}`, `GET ${schema.name} LIST`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.GET;
+    this.permissions = Route.Constants.Permissions.LIST;
 
-		this.activityDescription = `GET ${schema.name} LIST`;
-		this.activityBroadcast = false;
-	}
+    this.activityDescription = `GET ${schema.name} LIST`;
+    this.activityBroadcast = false;
+  }
 
-	async _validate(req, res, token) {
-		const model = await this.routeModel();
-		Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+  async _validate(req, res, token) {
+    const model = await this.routeModel();
+    Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
 
-		const result = {
-			query: {},
-			project: (req.body && req.body.project) ? req.body.project : false,
-		};
+    const result = {
+      query: {},
+      project: req.body && req.body.project ? req.body.project : false,
+    };
 
-		let query: any = {};
-		if (!query.$and) {
-			query.$and = [];
-		}
+    let query: any = {};
+    if (!query.$and) {
+      query.$and = [];
+    }
 
-		// access control query
-		if (req.body && req.body.query) {
-			query.$and.push(req.body.query);
-		}
+    // access control query
+    if (req.body && req.body.query) {
+      query.$and.push(req.body.query);
+    }
 
-		if (req.body && req.body.query && req.body.query.zeroResults) {
-			return false;
-		}
+    if (req.body && req.body.query && req.body.query.zeroResults) {
+      return false;
+    }
 
-		Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		query = model.parseQuery(query, {}, model.flatSchemaData);
+    Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    query = model.parseQuery(query, {}, model.flatSchemaData);
 
-		result.query = query;
-		return result;
-	}
+    result.query = query;
+    return result;
+  }
 
-	async _exec(req, res, validateResult) {
-		const model = await this.routeModel();
-		// if (validateResult.query === false) {
-		// 	return Promise.resolve([]);
-		// }
+  async _exec(req, res, validateResult) {
+    const model = await this.routeModel();
+    // if (validateResult.query === false) {
+    // 	return Promise.resolve([]);
+    // }
 
-		Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		return ACM.find(model, validateResult, req.ac);
-		// return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
-	}
-};
+    Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    return ACM.find(model, validateResult, req.ac);
+    // return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
+  }
+}

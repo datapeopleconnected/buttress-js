@@ -24,75 +24,75 @@ import Factory from './adapter-factory.js';
 import Logging from '../helpers/logging.js';
 
 const datastores: {
-	[key: string]: Datastore;
+  [key: string]: Datastore;
 } = {};
 
 interface DatastoreConfig {
-	connectionString: string;
-	options?: string;
+  connectionString: string;
+  options?: string;
 }
 
 /**
  * This class is used to manage the lifecycle of an adapter
  */
 export class Datastore {
-	private _adapter: any;
-	private _hash?: string;
+  private _adapter: any;
+  private _hash?: string;
 
-	dataSharingId?: string;
+  dataSharingId?: string;
 
-	constructor(config: DatastoreConfig) {
-		this.setAdapter(config);
-	}
+  constructor(config: DatastoreConfig) {
+    this.setAdapter(config);
+  }
 
-	setAdapter(config: DatastoreConfig) {
-		this._adapter = Factory.create(config.connectionString, config.options);
-	}
+  setAdapter(config: DatastoreConfig) {
+    this._adapter = Factory.create(config.connectionString, config.options);
+  }
 
-	setHash(hash) {
-		this._hash = hash;
-	}
+  setHash(hash) {
+    this._hash = hash;
+  }
 
-	connect() {
-		Logging.logSilly(`Attempting to connect to datastore ${this._adapter.uri}`);
-		return this.adapter.connect();
-	}
+  connect() {
+    Logging.logSilly(`Attempting to connect to datastore ${this._adapter.uri}`);
+    return this.adapter.connect();
+  }
 
-	get ID() {
-		return this.adapter.ID;
-	}
+  get ID() {
+    return this.adapter.ID;
+  }
 
-	get adapter() {
-		return this._adapter;
-	}
+  get adapter() {
+    return this._adapter;
+  }
 
-	get hash() {
-		return this._hash;
-	}
+  get hash() {
+    return this._hash;
+  }
 }
 
 export default {
-	hashConfig(config: DatastoreConfig) {
-		return createHash('sha1').update(Buffer.from(config.connectionString)).digest('base64');
-	},
-	createInstance(config: DatastoreConfig, core = false) {
-		const hash = (core) ? 'core' : this.hashConfig(config);
-		if (datastores[hash]) return datastores[hash];
+  hashConfig(config: DatastoreConfig) {
+    return createHash('sha1').update(Buffer.from(config.connectionString)).digest('base64');
+  },
+  createInstance(config: DatastoreConfig, core = false) {
+    const hash = core ? 'core' : this.hashConfig(config);
+    if (datastores[hash]) return datastores[hash];
 
-		datastores[hash] = new Datastore(config);
-		datastores[hash].setHash(hash);
-		return datastores[hash];
-	},
-	getInstance(hash) {
-		return datastores[hash];
-	},
-	clean: async () => {
-		for await (const key of Object.keys(datastores)) {
-			if (datastores[key] && datastores[key].adapter && datastores[key].adapter.close) {
-				await datastores[key].adapter.close();
-			}
-			delete datastores[key];
-		}
-	},
-	datastores,
+    datastores[hash] = new Datastore(config);
+    datastores[hash].setHash(hash);
+    return datastores[hash];
+  },
+  getInstance(hash) {
+    return datastores[hash];
+  },
+  clean: async () => {
+    for await (const key of Object.keys(datastores)) {
+      if (datastores[key] && datastores[key].adapter && datastores[key].adapter.close) {
+        await datastores[key].adapter.close();
+      }
+      delete datastores[key];
+    }
+  },
+  datastores,
 };

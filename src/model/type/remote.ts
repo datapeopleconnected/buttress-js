@@ -19,11 +19,11 @@ import StandardModel from './standard.js';
  * @class RemoteModel
  */
 export default class RemoteModel extends StandardModel {
-	dataSharingId: string;
+  dataSharingId: string;
 
-	constructor(schemaData, app, dataSharingId: string, services) {
-		super(schemaData, app, services);
+  constructor(schemaData, app, dataSharingId: string, services) {
+    super(schemaData, app, services);
 
-		this.dataSharingId = dataSharingId;
-	}
+    this.dataSharingId = dataSharingId;
+  }
 }

@@ -29,27 +29,27 @@ const routes: (typeof Route)[] = [];
  * @class GetActivityList
  */
 class GetActivityList extends Route {
-	constructor(services) {
-		super('activity', 'GET ACTIVITY LIST', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.SYSTEM;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
+  constructor(services) {
+    super('activity', 'GET ACTIVITY LIST', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.SYSTEM;
+    this.permissions = Route.Constants.Permissions.LIST;
+  }
 
-	_validate(req, res, token) {
-		return Promise.resolve(true);
-	}
+  _validate(req, res, token) {
+    return Promise.resolve(true);
+  }
 
-	_exec(req, res, validate) {
-		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-			return Model.getCoreModel(ActivitySchemaModel).findAll();
-		}
+  _exec(req, res, validate) {
+    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      return Model.getCoreModel(ActivitySchemaModel).findAll();
+    }
 
-		return Model.getCoreModel(ActivitySchemaModel).find({
-			_appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
-			visibility: Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PUBLIC,
-		});
-	}
+    return Model.getCoreModel(ActivitySchemaModel).find({
+      _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
+      visibility: Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PUBLIC,
+    });
+  }
 }
 routes.push(GetActivityList);
 
@@ -57,32 +57,32 @@ routes.push(GetActivityList);
  * @class GetActivity
  */
 class GetActivity extends Route {
-	constructor(services) {
-		super('activity/:id', 'GET ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.SYSTEM;
-		this.permissions = Route.Constants.Permissions.READ;
-	}
+  constructor(services) {
+    super('activity/:id', 'GET ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.SYSTEM;
+    this.permissions = Route.Constants.Permissions.READ;
+  }
 
-	async _validate(req, res, token) {
-		if (!req.params.id) {
-			this.log('ERROR: Missing required field', Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, `missing_required_fields`);
-		}
+  async _validate(req, res, token) {
+    if (!req.params.id) {
+      this.log('ERROR: Missing required field', Route.LogLevel.ERR, req.id);
+      throw new Helpers.Errors.RequestError(400, `missing_required_fields`);
+    }
 
-		const activity = await Model.getCoreModel(ActivitySchemaModel).findById(req.params.id);
+    const activity = await Model.getCoreModel(ActivitySchemaModel).findById(req.params.id);
 
-		if (!activity) {
-			this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, `invalid_id`);
-		}
+    if (!activity) {
+      this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR, req.id);
+      throw new Helpers.Errors.RequestError(400, `invalid_id`);
+    }
 
-		return activity;
-	}
+    return activity;
+  }
 
-	_exec(req, res, activity) {
-		return Promise.resolve(activity.details);
-	}
+  _exec(req, res, activity) {
+    return Promise.resolve(activity.details);
+  }
 }
 routes.push(GetActivity);
 
@@ -90,20 +90,22 @@ routes.push(GetActivity);
  * @class DeleteAllActivity
  */
 class DeleteAllActivity extends Route {
-	constructor(services) {
-		super('activity', 'DELETE ALL ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.SYSTEM;
-		this.permissions = Route.Constants.Permissions.DELETE;
-	}
+  constructor(services) {
+    super('activity', 'DELETE ALL ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.DEL;
+    this.authType = Route.Constants.Type.SYSTEM;
+    this.permissions = Route.Constants.Permissions.DELETE;
+  }
 
-	_validate(req, res, token) {
-		return Promise.resolve(true);
-	}
+  _validate(req, res, token) {
+    return Promise.resolve(true);
+  }
 
-	_exec(req, res, validate) {
-		return Model.getCoreModel(ActivitySchemaModel).rmAll({}).then(() => true);
-	}
+  _exec(req, res, validate) {
+    return Model.getCoreModel(ActivitySchemaModel)
+      .rmAll({})
+      .then(() => true);
+  }
 }
 routes.push(DeleteAllActivity);
 

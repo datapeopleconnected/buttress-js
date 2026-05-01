@@ -31,38 +31,38 @@ const routes: (typeof Route)[] = [];
  * @class GetTokenList
  */
 class GetTokenList extends Route {
-	constructor(services) {
-		super('token', 'LIST TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.LIST;
+  constructor(services) {
+    super('token', 'LIST TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.LIST;
 
-		this.redactResults = false;
-	}
+    this.redactResults = false;
+  }
 
-	_validate(req, res, token) {
-		const queryParams: QueryParams<Token> = {
-			query: {
-				_appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id)
-			},
-			project: {
-				id: 1,
-				type: 1,
-				policyProperties: 1
-			}
-		};
+  _validate(req, res, token) {
+    const queryParams: QueryParams<Token> = {
+      query: {
+        _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
+      },
+      project: {
+        id: 1,
+        type: 1,
+        policyProperties: 1,
+      },
+    };
 
-		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-			queryParams.query = {};
-			queryParams.project = {};
-		}
+    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      queryParams.query = {};
+      queryParams.project = {};
+    }
 
-		return Promise.resolve(queryParams);
-	}
+    return Promise.resolve(queryParams);
+  }
 
-	async _exec(req, res, validate) {
-		return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
-	}
+  async _exec(req, res, validate) {
+    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
+  }
 }
 routes.push(GetTokenList);
 
@@ -70,46 +70,46 @@ routes.push(GetTokenList);
  * @class GetTokenList
  */
 class SearchTokenList extends Route {
-	constructor(services) {
-		super('token', 'SEARCH TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.SEARCH;
+  constructor(services) {
+    super('token', 'SEARCH TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.SEARCH;
 
-		this.redactResults = false;
-	}
+    this.redactResults = false;
+  }
 
-	async _validate(req, res, token) {
-		const queryParams: QueryParams<Token> = {
-			query: {
-				$and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }]
-			},
-			project: {
-				id: 1,
-				type: 1,
-				policyProperties: 1
-			}
-		};
+  async _validate(req, res, token) {
+    const queryParams: QueryParams<Token> = {
+      query: {
+        $and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }],
+      },
+      project: {
+        id: 1,
+        type: 1,
+        policyProperties: 1,
+      },
+    };
 
-		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-			queryParams.query = {};
-			queryParams.project = {};
-		}
+    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      queryParams.query = {};
+      queryParams.project = {};
+    }
 
-		if (!queryParams.query.$and) {
-			queryParams.query.$and = [];
-		}
+    if (!queryParams.query.$and) {
+      queryParams.query.$and = [];
+    }
 
-		if (req.body.query) {
-			queryParams.query.$and.push(req.body.query);
-		}
+    if (req.body.query) {
+      queryParams.query.$and.push(req.body.query);
+    }
 
-		return queryParams;
-	}
+    return queryParams;
+  }
 
-	_exec(req, res, validate) {
-		return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
-	}
+  _exec(req, res, validate) {
+    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
+  }
 }
 routes.push(SearchTokenList);
 
@@ -117,56 +117,60 @@ routes.push(SearchTokenList);
  * @class DeleteAllTokens
  */
 class DeleteAllTokens extends Route {
-	constructor(services) {
-		super('token/:type?', 'DELETE ALL TOKENS', services, Model.getCoreModel(TokenSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.DELETE;
+  constructor(services) {
+    super('token/:type?', 'DELETE ALL TOKENS', services, Model.getCoreModel(TokenSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.DEL;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.DELETE;
 
-		this.redactResults = false;
-	}
+    this.redactResults = false;
+  }
 
-	_validate(req, res, token) {
-		return Promise.resolve();
-	}
+  _validate(req, res, token) {
+    return Promise.resolve();
+  }
 
-	async _exec(req, res, validate) {
-		if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-			this.log('ERROR: Cannot delete system tokens', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
-		}
+  async _exec(req, res, validate) {
+    if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      this.log('ERROR: Cannot delete system tokens', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
+    }
 
-		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-			const query = (req.params.type) ? {
-				type: req.params.type
-			} : {
-				type: {
-					$ne: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM
-				}
-			};
-			await Model.getCoreModel(TokenSchemaModel).rmAll(query);
-		} else {
-			if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.APP) {
-				this.log('ERROR: Cannot delete app tokens as app', Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
-			}
+    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      const query = req.params.type
+        ? {
+            type: req.params.type,
+          }
+        : {
+            type: {
+              $ne: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
+            },
+          };
+      await Model.getCoreModel(TokenSchemaModel).rmAll(query);
+    } else {
+      if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.APP) {
+        this.log('ERROR: Cannot delete app tokens as app', Route.LogLevel.ERR);
+        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
+      }
 
-			const query = (req.params.type) ? {
-				type: req.params.type
-			} : {
-				type: {
-					$ne: Model.getCoreModel(TokenSchemaModel).Constants.Type.APP
-				}
-			};
+      const query = req.params.type
+        ? {
+            type: req.params.type,
+          }
+        : {
+            type: {
+              $ne: Model.getCoreModel(TokenSchemaModel).Constants.Type.APP,
+            },
+          };
 
-			await Model.getCoreModel(TokenSchemaModel).rmAll({
-				...query,
-				_appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
-			});
-		}
+      await Model.getCoreModel(TokenSchemaModel).rmAll({
+        ...query,
+        _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
+      });
+    }
 
-		return true;
-	}
+    return true;
+  }
 }
 routes.push(DeleteAllTokens);
 
@@ -174,56 +178,56 @@ routes.push(DeleteAllTokens);
  * @class SearchUserToken
  */
 class SearchUserToken extends Route {
-	constructor(services) {
-		super('token/:userId', 'SEARCH USER TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.SEARCH;
+  constructor(services) {
+    super('token/:userId', 'SEARCH USER TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.SEARCH;
 
-		this.redactResults = false;
-	}
+    this.redactResults = false;
+  }
 
-	async _validate(req, res, token) {
-		const queryParams: QueryParams<Token> = {
-			query: {
-				$and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }]
-			},
-			project: {
-				id: 1,
-				type: 1,
-				policyProperties: 1
-			}
-		};
+  async _validate(req, res, token) {
+    const queryParams: QueryParams<Token> = {
+      query: {
+        $and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }],
+      },
+      project: {
+        id: 1,
+        type: 1,
+        policyProperties: 1,
+      },
+    };
 
-		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-			queryParams.query = {};
-			queryParams.project = {};
-		}
+    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      queryParams.query = {};
+      queryParams.project = {};
+    }
 
-		const exists = Model.getCoreModel(UserSchemaModel).exists(req.params.userId);
-		if (!exists) {
-			this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_id`));
-		}
+    const exists = Model.getCoreModel(UserSchemaModel).exists(req.params.userId);
+    if (!exists) {
+      this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_id`));
+    }
 
-		if (!queryParams.query.$and) {
-			queryParams.query.$and = [];
-		}
+    if (!queryParams.query.$and) {
+      queryParams.query.$and = [];
+    }
 
-		queryParams.query.$and.push({
-			_userId: req.params.userId,
-		});
+    queryParams.query.$and.push({
+      _userId: req.params.userId,
+    });
 
-		if (req.body?.query) {
-			queryParams.query.$and.push(req.body.query);
-		}
+    if (req.body?.query) {
+      queryParams.query.$and.push(req.body.query);
+    }
 
-		return queryParams;
-	}
+    return queryParams;
+  }
 
-	_exec(req, res, validate) {
-		return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
-	}
+  _exec(req, res, validate) {
+    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
+  }
 }
 routes.push(SearchUserToken);
 

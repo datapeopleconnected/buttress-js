@@ -26,20 +26,20 @@ const routes: (typeof Route)[] = [];
  * @class GetTrackingList
  */
 class GetTrackingList extends Route {
-	constructor(services) {
-		super('tracking', 'GET TRACKING LIST', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.SYSTEM;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
+  constructor(services) {
+    super('tracking', 'GET TRACKING LIST', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.SYSTEM;
+    this.permissions = Route.Constants.Permissions.LIST;
+  }
 
-	_validate(req, res, token) {
-		return Promise.resolve(true);
-	}
+  _validate(req, res, token) {
+    return Promise.resolve(true);
+  }
 
-	_exec(req, res, validate) {
-		return Model.getCoreModel(TrackingSchemaModel).findAll();
-	}
+  _exec(req, res, validate) {
+    return Model.getCoreModel(TrackingSchemaModel).findAll();
+  }
 }
 routes.push(GetTrackingList);
 
@@ -47,85 +47,90 @@ routes.push(GetTrackingList);
  * @class AddTracking
  */
 class AddTracking extends Route {
-	constructor(services) {
-		super('tracking', 'ADD TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.SYSTEM;
-		this.permissions = Route.Constants.Permissions.ADD;
+  constructor(services) {
+    super('tracking', 'ADD TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.POST;
+    this.authType = Route.Constants.Type.SYSTEM;
+    this.permissions = Route.Constants.Permissions.ADD;
 
-		this.activity = false;
-		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-		this.activityBroadcast = false;
-	}
+    this.activity = false;
+    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
+    this.activityBroadcast = false;
+  }
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			const validation = Model.getCoreModel(TrackingSchemaModel).validate(req.body);
-			if (!validation.isValid) {
-				if (validation.missing.length > 0) {
-					this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `TRACKING: Missing field: ${validation.missing[0]}`));
-				}
-				if (validation.invalid.length > 0) {
-					this.log(`ERROR: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `TRACKING: Invalid value: ${validation.invalid[0]}`));
-				}
+  _validate(req, res, token) {
+    return new Promise((resolve, reject) => {
+      const validation = Model.getCoreModel(TrackingSchemaModel).validate(req.body);
+      if (!validation.isValid) {
+        if (validation.missing.length > 0) {
+          this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR);
+          return reject(new Helpers.Errors.RequestError(400, `TRACKING: Missing field: ${validation.missing[0]}`));
+        }
+        if (validation.invalid.length > 0) {
+          this.log(`ERROR: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR);
+          return reject(new Helpers.Errors.RequestError(400, `TRACKING: Invalid value: ${validation.invalid[0]}`));
+        }
 
-				this.log(`ERROR: TRACKING: Unhandled Error`, Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `unknown_error`));
-			}
+        this.log(`ERROR: TRACKING: Unhandled Error`, Route.LogLevel.ERR);
+        return reject(new Helpers.Errors.RequestError(400, `unknown_error`));
+      }
 
-			resolve(true);
-		});
-	}
+      resolve(true);
+    });
+  }
 
-	_exec(req, res, validate) {
-		return Model.getCoreModel(TrackingSchemaModel).add(req.body);
-	}
+  _exec(req, res, validate) {
+    return Model.getCoreModel(TrackingSchemaModel).add(req.body);
+  }
 }
 routes.push(AddTracking);
 
 class UpdateTracking extends Route {
-	constructor(services) {
-		super('tracking/:id', 'UPDATE TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.SYSTEM;
-		this.permissions = Route.Constants.Permissions.WRITE;
+  constructor(services) {
+    super('tracking/:id', 'UPDATE TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.PUT;
+    this.authType = Route.Constants.Type.SYSTEM;
+    this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activity = false;
-		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
-	}
+    this.activity = false;
+    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
+    this.activityBroadcast = true;
+  }
 
-	_validate(req) {
-		return new Promise((resolve, reject) => {
-			const { validation, body } = Model.getCoreModel(TrackingSchemaModel).validateUpdate(req.body);
-			req.body = body;
-			if (!validation.isValid) {
-				if (validation.isPathValid === false) {
-					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `TRACKING: Update path is invalid: ${validation.invalidPath}`));
-				}
-				if (validation.isValueValid === false) {
-					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `TRACKING: Update value is invalid: ${validation.invalidValue}`));
-				}
-			}
+  _validate(req) {
+    return new Promise((resolve, reject) => {
+      const { validation, body } = Model.getCoreModel(TrackingSchemaModel).validateUpdate(req.body);
+      req.body = body;
+      if (!validation.isValid) {
+        if (validation.isPathValid === false) {
+          this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+          return reject(
+            new Helpers.Errors.RequestError(400, `TRACKING: Update path is invalid: ${validation.invalidPath}`),
+          );
+        }
+        if (validation.isValueValid === false) {
+          this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+          return reject(
+            new Helpers.Errors.RequestError(400, `TRACKING: Update value is invalid: ${validation.invalidValue}`),
+          );
+        }
+      }
 
-			Model.getCoreModel(TrackingSchemaModel).exists(req.params.id)
-				.then((exists) => {
-					if (!exists) {
-						this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
-						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-					}
-					resolve(true);
-				});
-		});
-	}
+      Model.getCoreModel(TrackingSchemaModel)
+        .exists(req.params.id)
+        .then((exists) => {
+          if (!exists) {
+            this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
+            return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+          }
+          resolve(true);
+        });
+    });
+  }
 
-	_exec(req) {
-		return Model.getCoreModel(TrackingSchemaModel).updateByPath(req.body, req.params.id);
-	}
+  _exec(req) {
+    return Model.getCoreModel(TrackingSchemaModel).updateByPath(req.body, req.params.id);
+  }
 }
 routes.push(UpdateTracking);
 
@@ -133,27 +138,27 @@ routes.push(UpdateTracking);
  * @class DeleteTracking
  */
 class DeleteTracking extends Route {
-	constructor(services) {
-		super('tracking/:id', 'DELETE TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.SYSTEM;
-		this.permissions = Route.Constants.Permissions.DELETE;
-	}
+  constructor(services) {
+    super('tracking/:id', 'DELETE TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.DEL;
+    this.authType = Route.Constants.Type.SYSTEM;
+    this.permissions = Route.Constants.Permissions.DELETE;
+  }
 
-	async _validate(req, res, token) {
-		const tracking = await Model.getCoreModel(TrackingSchemaModel).findById(req.params.id)
-		if (!tracking) {
-			this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
-			throw new Helpers.Errors.RequestError(400, `invalid_id`);
-		}
+  async _validate(req, res, token) {
+    const tracking = await Model.getCoreModel(TrackingSchemaModel).findById(req.params.id);
+    if (!tracking) {
+      this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `invalid_id`);
+    }
 
-		return tracking
-	}
+    return tracking;
+  }
 
-	async _exec(req, res, tracking) {
-		await Model.getCoreModel(TrackingSchemaModel).rm(tracking.id);
-		return true;
-	}
+  async _exec(req, res, tracking) {
+    await Model.getCoreModel(TrackingSchemaModel).rm(tracking.id);
+    return true;
+  }
 }
 routes.push(DeleteTracking);
 
@@ -161,21 +166,21 @@ routes.push(DeleteTracking);
  * @class DeleteAllTrackings
  */
 class DeleteAllTrackings extends Route {
-	constructor(services) {
-		super('tracking', 'DELETE ALL TRACKINGS', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.SYSTEM;
-		this.permissions = Route.Constants.Permissions.DELETE;
-	}
+  constructor(services) {
+    super('tracking', 'DELETE ALL TRACKINGS', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.DEL;
+    this.authType = Route.Constants.Type.SYSTEM;
+    this.permissions = Route.Constants.Permissions.DELETE;
+  }
 
-	async _validate(req, res, token) {
-		return true;
-	}
+  async _validate(req, res, token) {
+    return true;
+  }
 
-	async _exec(req, res, validate) {
-		await Model.getCoreModel(TrackingSchemaModel).rmAll({});
-		return true;
-	}
+  async _exec(req, res, validate) {
+    await Model.getCoreModel(TrackingSchemaModel).rmAll({});
+    return true;
+  }
 }
 routes.push(DeleteAllTrackings);
 

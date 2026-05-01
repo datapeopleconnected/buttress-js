@@ -31,36 +31,36 @@ const routes: (typeof Route)[] = [];
  * @class GetPolicy
  */
 class GetPolicy extends Route {
-	constructor(services) {
-		super('policy/:id', 'GET POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.READ;
-	}
+  constructor(services) {
+    super('policy/:id', 'GET POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.READ;
+  }
 
-	async _validate(req, res, token) {
-		const id = req.params.id;
-		if (!id) {
-			this.log(`[${this.name}] Missing required policy id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_id`));
-		}
-		if (!ObjectId.isValid(id)) {
-			this.log(`[${this.name}] Invalid policy id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_id`));
-		}
+  async _validate(req, res, token) {
+    const id = req.params.id;
+    if (!id) {
+      this.log(`[${this.name}] Missing required policy id`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_id`));
+    }
+    if (!ObjectId.isValid(id)) {
+      this.log(`[${this.name}] Invalid policy id`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_id`));
+    }
 
-		const policy = await Model.getCoreModel(PolicySchemaModel).findById(id);
-		if (!policy) {
-			this.log(`[${this.name}] Cannot find a policy with id id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `policy_does_not_exist`));
-		}
+    const policy = await Model.getCoreModel(PolicySchemaModel).findById(id);
+    if (!policy) {
+      this.log(`[${this.name}] Cannot find a policy with id id`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `policy_does_not_exist`));
+    }
 
-		return policy;
-	}
+    return policy;
+  }
 
-	_exec(req, res, policy) {
-		return policy;
-	}
+  _exec(req, res, policy) {
+    return policy;
+  }
 }
 routes.push(GetPolicy);
 
@@ -68,41 +68,41 @@ routes.push(GetPolicy);
  * @class GetPolicyList
  */
 class GetPolicyList extends Route {
-	constructor(services) {
-		super('policy', 'GET POLICY LIST', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
+  constructor(services) {
+    super('policy', 'GET POLICY LIST', services, Model.getCoreModel(PolicySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.LIST;
+  }
 
-	_validate(req, res, token) {
-		const ids = req.body.ids;
-		if (ids && ids.length > 0) {
-			ids.forEach((id) => {
-				try {
-					Datastore.getInstance('core').ID.new(id);
-				} catch (err) {
-					this.log(`POLICY: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-					throw new Helpers.Errors.RequestError(400, 'invalid_id');
-				}
-			});
-		}
+  _validate(req, res, token) {
+    const ids = req.body.ids;
+    if (ids && ids.length > 0) {
+      ids.forEach((id) => {
+        try {
+          Datastore.getInstance('core').ID.new(id);
+        } catch (err) {
+          this.log(`POLICY: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+          throw new Helpers.Errors.RequestError(400, 'invalid_id');
+        }
+      });
+    }
 
-		return Promise.resolve(true);
-	}
+    return Promise.resolve(true);
+  }
 
-	_exec(req, res, validate) {
-		const ids = req.body.ids;
-		if (ids && ids.length > 0) {
-			return Model.getCoreModel(PolicySchemaModel).findByIds(ids);
-		}
+  _exec(req, res, validate) {
+    const ids = req.body.ids;
+    if (ids && ids.length > 0) {
+      return Model.getCoreModel(PolicySchemaModel).findByIds(ids);
+    }
 
-		if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-			return Model.getCoreModel(PolicySchemaModel).findAll();
-		}
+    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      return Model.getCoreModel(PolicySchemaModel).findAll();
+    }
 
-		return Model.getCoreModel(PolicySchemaModel).find({ _appId: req.authApp.id });
-	}
+    return Model.getCoreModel(PolicySchemaModel).find({ _appId: req.authApp.id });
+  }
 }
 routes.push(GetPolicyList);
 
@@ -110,46 +110,56 @@ routes.push(GetPolicyList);
  * @class SearchPolicyList
  */
 class SearchPolicyList extends Route {
-	constructor(services) {
-		super('policy', 'SEARCH POLICY LIST', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
+  constructor(services) {
+    super('policy', 'SEARCH POLICY LIST', services, Model.getCoreModel(PolicySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.LIST;
+  }
 
-	async _validate(req, res, token) {
-		const result: {
-			query: any,
-			skip: number,
-			limit: number,
-			sort: any,
-			project: any,
-		} = {
-			query: {
-				$and: [],
-			},
-			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
-			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
-			sort: (req.body && req.body.sort) ? req.body.sort : {},
-			project: (req.body && req.body.project) ? req.body.project : false,
-		};
+  async _validate(req, res, token) {
+    const result: {
+      query: any;
+      skip: number;
+      limit: number;
+      sort: any;
+      project: any;
+    } = {
+      query: {
+        $and: [],
+      },
+      skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
+      limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
+      sort: req.body && req.body.sort ? req.body.sort : {},
+      project: req.body && req.body.project ? req.body.project : false,
+    };
 
-		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-		if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+    if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
 
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			result.query.$and.push(req.body.query);
-		}
+    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+    if (req.body && req.body.query) {
+      result.query.$and.push(req.body.query);
+    }
 
-		result.query = Model.getCoreModel(PolicySchemaModel).parseQuery(result.query, {}, Model.getCoreModel(PolicySchemaModel).flatSchemaData);
-		return result;
-	}
+    result.query = Model.getCoreModel(PolicySchemaModel).parseQuery(
+      result.query,
+      {},
+      Model.getCoreModel(PolicySchemaModel).flatSchemaData,
+    );
+    return result;
+  }
 
-	_exec(req, res, validate) {
-		return Model.getCoreModel(PolicySchemaModel).find(validate.query, {},
-			validate.limit, validate.skip, validate.sort, validate.project);
-	}
+  _exec(req, res, validate) {
+    return Model.getCoreModel(PolicySchemaModel).find(
+      validate.query,
+      {},
+      validate.limit,
+      validate.skip,
+      validate.sort,
+      validate.project,
+    );
+  }
 }
 routes.push(SearchPolicyList);
 
@@ -157,62 +167,62 @@ routes.push(SearchPolicyList);
  * @class AddPolicy
  */
 class AddPolicy extends Route {
-	constructor(services) {
-		super('policy', 'ADD POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.ADD;
-	}
+  constructor(services) {
+    super('policy', 'ADD POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.POST;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.ADD;
+  }
 
-	async _validate(req, res, token) {
-		const app = req.authApp;
-		try {
-			if (!app ||
-				!req.body.selection ||
-				!req.body.name ||
-				!req.body.config ||
-				req.body.config.length < 1) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
-			}
+  async _validate(req, res, token) {
+    const app = req.authApp;
+    try {
+      if (!app || !req.body.selection || !req.body.name || !req.body.config || req.body.config.length < 1) {
+        this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+        return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      }
 
-			const policyExist = await Model.getCoreModel(PolicySchemaModel).findOne({
-				name: {
-					$eq: req.body.name,
-				},
-				_appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
-			});
-			if (policyExist) {
-				this.log(`[${this.name}] Policy with name ${req.body.name} already exists`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `policy_with_name_already_exists`));
-			}
+      const policyExist = await Model.getCoreModel(PolicySchemaModel).findOne({
+        name: {
+          $eq: req.body.name,
+        },
+        _appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
+      });
+      if (policyExist) {
+        this.log(`[${this.name}] Policy with name ${req.body.name} already exists`, Route.LogLevel.ERR);
+        return Promise.reject(new Helpers.Errors.RequestError(400, `policy_with_name_already_exists`));
+      }
 
-			const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body.selection);
-			if (!policyCheck.passed) {
-				this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_selection`));
-			}
+      const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body.selection);
+      if (!policyCheck.passed) {
+        this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_selection`));
+      }
 
-			if (!req.body.version) {
-				this.log(`[${this.name}] a version property is required: ${req.body.name}`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_no_version`));
-			}
+      if (!req.body.version) {
+        this.log(`[${this.name}] a version property is required: ${req.body.name}`, Route.LogLevel.ERR);
+        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_no_version`));
+      }
 
-			return Promise.resolve(true);
-		} catch (err) {
-			return Promise.reject(err);
-		}
-	}
+      return Promise.resolve(true);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
 
-	_exec(req, res, validate) {
-		return Model.getCoreModel(PolicySchemaModel).add(req.body, req.authApp.id)
-			.then((policy) => {
-				this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
-					appId: req.authApp.id,
-				}));
-				return policy;
-			});
-	}
+  _exec(req, res, validate) {
+    return Model.getCoreModel(PolicySchemaModel)
+      .add(req.body, req.authApp.id)
+      .then((policy) => {
+        this._nrp?.emit(
+          'app-policy:bust-cache',
+          JSON.stringify({
+            appId: req.authApp.id,
+          }),
+        );
+        return policy;
+      });
+  }
 }
 routes.push(AddPolicy);
 
@@ -220,47 +230,52 @@ routes.push(AddPolicy);
  * @class UpdatePolicy
  */
 class UpdatePolicy extends Route {
-	constructor(services) {
-		super('policy/:id', 'UPDATE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
+  constructor(services) {
+    super('policy/:id', 'UPDATE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.PUT;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
-	}
+    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
+    this.activityBroadcast = true;
+  }
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(req.body);
-			req.body = body;
-			if (!validation.isValid) {
-				if (validation.isPathValid === false) {
-					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `POLICY: Update path is invalid: ${validation.invalidPath}`));
-				}
-				if (validation.isValueValid === false) {
-					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `POLICY: Update value is invalid: ${validation.invalidValue}`));
-				}
-			}
+  _validate(req, res, token) {
+    return new Promise((resolve, reject) => {
+      const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(req.body);
+      req.body = body;
+      if (!validation.isValid) {
+        if (validation.isPathValid === false) {
+          this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+          return reject(
+            new Helpers.Errors.RequestError(400, `POLICY: Update path is invalid: ${validation.invalidPath}`),
+          );
+        }
+        if (validation.isValueValid === false) {
+          this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+          return reject(
+            new Helpers.Errors.RequestError(400, `POLICY: Update value is invalid: ${validation.invalidValue}`),
+          );
+        }
+      }
 
-			Model.getCoreModel(PolicySchemaModel).exists(req.params.id)
-				.then((exists) => {
-					if (!exists) {
-						this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
-						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-					}
-					resolve(true);
-				});
-		});
-	}
+      Model.getCoreModel(PolicySchemaModel)
+        .exists(req.params.id)
+        .then((exists) => {
+          if (!exists) {
+            this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
+            return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+          }
+          resolve(true);
+        });
+    });
+  }
 
-	_exec(req, res, validate) {
-		// Update Policy cache
+  _exec(req, res, validate) {
+    // Update Policy cache
 
-		return Model.getCoreModel(PolicySchemaModel).updateByPath(req.body, req.params.id);
-	}
+    return Model.getCoreModel(PolicySchemaModel).updateByPath(req.body, req.params.id);
+  }
 }
 routes.push(UpdatePolicy);
 
@@ -268,47 +283,51 @@ routes.push(UpdatePolicy);
  * @class BulkUpdatePolicy
  */
 class BulkUpdatePolicy extends Route {
-	constructor(services) {
-		super('policy/bulk/update', 'UPDATE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
+  constructor(services) {
+    super('policy/bulk/update', 'UPDATE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.POST;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
-	}
+    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
+    this.activityBroadcast = true;
+  }
 
-	async _validate(req, res, token) {
-		for await (const item of req.body) {
-			const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(item.body);
-			item.body = body;
-			if (!validation.isValid) {
-				if (validation.isPathValid === false) {
-					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-					return Promise.reject(new Helpers.Errors.RequestError(400, `POLICY: Update path is invalid: ${validation.invalidPath}`));
-				}
-				if (validation.isValueValid === false) {
-					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-					return Promise.reject(new Helpers.Errors.RequestError(400, `POLICY: Update value is invalid: ${validation.invalidValue}`));
-				}
-			}
+  async _validate(req, res, token) {
+    for await (const item of req.body) {
+      const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(item.body);
+      item.body = body;
+      if (!validation.isValid) {
+        if (validation.isPathValid === false) {
+          this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+          return Promise.reject(
+            new Helpers.Errors.RequestError(400, `POLICY: Update path is invalid: ${validation.invalidPath}`),
+          );
+        }
+        if (validation.isValueValid === false) {
+          this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+          return Promise.reject(
+            new Helpers.Errors.RequestError(400, `POLICY: Update value is invalid: ${validation.invalidValue}`),
+          );
+        }
+      }
 
-			const exists = Model.getCoreModel(PolicySchemaModel).exists(item.id);
-			if (!exists) {
-				this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-			}
-		}
+      const exists = Model.getCoreModel(PolicySchemaModel).exists(item.id);
+      if (!exists) {
+        this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
+        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+      }
+    }
 
-		return req.body;
-	}
+    return req.body;
+  }
 
-	async _exec(req, res, validate) {
-		for await (const item of validate) {
-			await Model.getCoreModel(PolicySchemaModel).updateByPath(item.body, item.id);
-		}
-		return true;
-	}
+  async _exec(req, res, validate) {
+    for await (const item of validate) {
+      await Model.getCoreModel(PolicySchemaModel).updateByPath(item.body, item.id);
+    }
+    return true;
+  }
 }
 routes.push(BulkUpdatePolicy);
 
@@ -316,136 +335,152 @@ routes.push(BulkUpdatePolicy);
  * @class SyncPolicies
  */
 class SyncPolicies extends Route {
-	constructor(services) {
-		super('policy/sync', 'SYNC POLICIES', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.ADD;
-	}
+  constructor(services) {
+    super('policy/sync', 'SYNC POLICIES', services, Model.getCoreModel(PolicySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.POST;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.ADD;
+  }
 
-	async _validate(req, res, token) {
-		const app = req.authApp;
+  async _validate(req, res, token) {
+    const app = req.authApp;
 
-		if (!app || !req.body) {
-			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-			throw new Helpers.Errors.RequestError(400, `missing_field`);
-		}
+    if (!app || !req.body) {
+      this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `missing_field`);
+    }
 
-		if (!Array.isArray(req.body)) {
-			this.log(`[${this.name}] invalid field`, Route.LogLevel.ERR);
-			throw new Helpers.Errors.RequestError(400, `invalid_field`);
-		}
+    if (!Array.isArray(req.body)) {
+      this.log(`[${this.name}] invalid field`, Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `invalid_field`);
+    }
 
-		for (const policy of req.body) {
-			if (!policy.selection ||
-				!policy.name) {
-				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-				throw new Helpers.Errors.RequestError(400, `missing_field`);
-			}
-		}
+    for (const policy of req.body) {
+      if (!policy.selection || !policy.name) {
+        this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
+        throw new Helpers.Errors.RequestError(400, `missing_field`);
+      }
+    }
 
-		return true;
-	}
+    return true;
+  }
 
-	async _exec(req, res, validate) {
-		await Model.getCoreModel(PolicySchemaModel).rmAll({
-			_appId: req.authApp.id,
-		});
+  async _exec(req, res, validate) {
+    await Model.getCoreModel(PolicySchemaModel).rmAll({
+      _appId: req.authApp.id,
+    });
 
-		for await (const policy of req.body) {
-			await Model.getCoreModel(PolicySchemaModel).add(policy, req.authApp.id);
-		}
+    for await (const policy of req.body) {
+      await Model.getCoreModel(PolicySchemaModel).add(policy, req.authApp.id);
+    }
 
-		this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
-			appId: req.authApp.id,
-		}));
+    this._nrp?.emit(
+      'app-policy:bust-cache',
+      JSON.stringify({
+        appId: req.authApp.id,
+      }),
+    );
 
-		return true;
-	}
+    return true;
+  }
 }
 
 /**
  * @class PolicyCount
  */
 class PolicyCount extends Route {
-	constructor(services) {
-		super(`policy/count`, `COUNT POLICIES`, services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.SEARCH;
+  constructor(services) {
+    super(`policy/count`, `COUNT POLICIES`, services, Model.getCoreModel(PolicySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.SEARCH;
 
-		this.activityDescription = `COUNT POLICIES`;
-		this.activityBroadcast = false;
-	}
+    this.activityDescription = `COUNT POLICIES`;
+    this.activityBroadcast = false;
+  }
 
-	async _validate(req, res, token) {
-		const result = {
-			query: {},
-		};
+  async _validate(req, res, token) {
+    const result = {
+      query: {},
+    };
 
-		let query: any = {};
+    let query: any = {};
 
-		if (!query.$and) {
-			query.$and = [];
-		}
+    if (!query.$and) {
+      query.$and = [];
+    }
 
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			query.$and.push(req.body.query);
-		} else if (req.body && !req.body.query) {
-			query.$and.push(req.body);
-		}
+    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+    if (req.body && req.body.query) {
+      query.$and.push(req.body.query);
+    } else if (req.body && !req.body.query) {
+      query.$and.push(req.body);
+    }
 
-		query = Model.getCoreModel(PolicySchemaModel).parseQuery(query, {}, Model.getCoreModel(PolicySchemaModel).flatSchemaData);
-		result.query = query;
-		return result;
-	}
+    query = Model.getCoreModel(PolicySchemaModel).parseQuery(
+      query,
+      {},
+      Model.getCoreModel(PolicySchemaModel).flatSchemaData,
+    );
+    result.query = query;
+    return result;
+  }
 
-	_exec(req, res, validateResult) {
-		return Model.getCoreModel(PolicySchemaModel).count(validateResult.query);
-	}
+  _exec(req, res, validateResult) {
+    return Model.getCoreModel(PolicySchemaModel).count(validateResult.query);
+  }
 }
 routes.push(PolicyCount);
 
 routes.push(SyncPolicies);
 
-
 /**
  * @class DeleteTransientPolicy
  */
 class DeleteTransientPolicy extends Route {
-	constructor(services) {
-		super('policy/delete-transient-policy', 'DELETE POLICY BY NAME', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
+  constructor(services) {
+    super(
+      'policy/delete-transient-policy',
+      'DELETE POLICY BY NAME',
+      services,
+      Model.getCoreModel(PolicySchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.POST;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.LIST;
+  }
 
-	async _validate(req, res, token) {
-		if (!req.body || !req.body.name) {
-			this.log(`[${this.name}] Missing required policy transient name field`, Route.LogLevel.ERR);
-			throw new Helpers.Errors.RequestError(400, `missing_field`);
-		}
+  async _validate(req, res, token) {
+    if (!req.body || !req.body.name) {
+      this.log(`[${this.name}] Missing required policy transient name field`, Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `missing_field`);
+    }
 
-		return await Helpers.streamFirst(await Model.getCoreModel(PolicySchemaModel).find({ name: req.body.name }));
-	}
+    return await Helpers.streamFirst(await Model.getCoreModel(PolicySchemaModel).find({ name: req.body.name }));
+  }
 
-	async _exec(req, res, validate) {
-		if (!validate) return true;
+  async _exec(req, res, validate) {
+    if (!validate) return true;
 
-		await Model.getCoreModel(PolicySchemaModel).rm(validate.id.toString());
+    await Model.getCoreModel(PolicySchemaModel).rm(validate.id.toString());
 
-		this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
-			appId: req.authApp.id,
-		}));
+    this._nrp?.emit(
+      'app-policy:bust-cache',
+      JSON.stringify({
+        appId: req.authApp.id,
+      }),
+    );
 
-		// Trigger socket process to re-evaluate rooms
-		this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
-			appId: req.authApp.id,
-		}))
+    // Trigger socket process to re-evaluate rooms
+    this._nrp?.emit(
+      'worker:socket:evaluateUserRooms',
+      JSON.stringify({
+        appId: req.authApp.id,
+      }),
+    );
 
-		return true;
-	}
+    return true;
+  }
 }
 routes.push(DeleteTransientPolicy);
 
@@ -453,37 +488,40 @@ routes.push(DeleteTransientPolicy);
  * @class DeletePolicy
  */
 class DeletePolicy extends Route {
-	constructor(services) {
-		super('policy/:id', 'DELETE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
+  constructor(services) {
+    super('policy/:id', 'DELETE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.DEL;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.WRITE;
+  }
 
-	async _validate(req) {
-		if (!req.params.id) {
-			this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-			throw new Helpers.Errors.RequestError(400, `missing_field`);
-		}
+  async _validate(req) {
+    if (!req.params.id) {
+      this.log('ERROR: Missing required field', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `missing_field`);
+    }
 
-		const policy = await Model.getCoreModel(PolicySchemaModel).findById(req.params.id);
-		if (!policy) {
-			this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
-			throw new Helpers.Errors.RequestError(400, `invalid_id`);
-		}
+    const policy = await Model.getCoreModel(PolicySchemaModel).findById(req.params.id);
+    if (!policy) {
+      this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `invalid_id`);
+    }
 
-		return policy;
-	}
+    return policy;
+  }
 
-	async _exec(req, res, policy) {
-		await Model.getCoreModel(PolicySchemaModel).rm(policy.id.toString());
+  async _exec(req, res, policy) {
+    await Model.getCoreModel(PolicySchemaModel).rm(policy.id.toString());
 
-		this._nrp?.emit('app-policy:bust-cache', JSON.stringify({
-			appId: req.authApp.id,
-		}));
+    this._nrp?.emit(
+      'app-policy:bust-cache',
+      JSON.stringify({
+        appId: req.authApp.id,
+      }),
+    );
 
-		return true;
-	}
+    return true;
+  }
 }
 routes.push(DeletePolicy);
 
@@ -491,30 +529,37 @@ routes.push(DeletePolicy);
  * @class DeleteAppPolicies
  */
 class DeleteAppPolicies extends Route {
-	constructor(services) {
-		super('policy', 'DELETE ALL APP POLICIES', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
+  constructor(services) {
+    super('policy', 'DELETE ALL APP POLICIES', services, Model.getCoreModel(PolicySchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.DEL;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.WRITE;
+  }
 
-	async _validate(req) {
-		const rxsPolicies = (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) ?
-			await Model.getCoreModel(PolicySchemaModel).findAll() : await Model.getCoreModel(PolicySchemaModel).find({ _appId: Model.getCoreModel(AppSchemaModel).adapter.ID.new(req.authApp.id) });
+  async _validate(req) {
+    const rxsPolicies =
+      req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM
+        ? await Model.getCoreModel(PolicySchemaModel).findAll()
+        : await Model.getCoreModel(PolicySchemaModel).find({
+            _appId: Model.getCoreModel(AppSchemaModel).adapter.ID.new(req.authApp.id),
+          });
 
-		const policies: any[] = [];
-		for await (const policy of rxsPolicies) {
-			policies.push(policy);
-		}
+    const policies: any[] = [];
+    for await (const policy of rxsPolicies) {
+      policies.push(policy);
+    }
 
-		return policies.map((p) => p.id.toString());
-	}
+    return policies.map((p) => p.id.toString());
+  }
 
-	_exec(req, res, validate: string[]) {
-		return new Promise((resolve, reject) => {
-			Model.getCoreModel(PolicySchemaModel).rmBulk(validate).then(() => true).then(resolve, reject);
-		});
-	}
+  _exec(req, res, validate: string[]) {
+    return new Promise((resolve, reject) => {
+      Model.getCoreModel(PolicySchemaModel)
+        .rmBulk(validate)
+        .then(() => true)
+        .then(resolve, reject);
+    });
+  }
 }
 routes.push(DeleteAppPolicies);
 

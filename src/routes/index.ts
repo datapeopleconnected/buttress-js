@@ -58,73 +58,74 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 class Routes {
-	app: express.Application;
-	id: string;
+  app: express.Application;
+  id: string;
 
-	_tokens: any[];
-	_routerMap: any;
+  _tokens: any[];
+  _routerMap: any;
 
-	_services: Services = new Map();
+  _services: Services = new Map();
 
-	_nrp?: NRP;
+  _nrp?: NRP;
 
-	_preRouteMiddleware: any[];
+  _preRouteMiddleware: any[];
 
-	constructor(app) {
-		this.app = app;
-		this.id = uuidv4();
+  constructor(app) {
+    this.app = app;
+    this.id = uuidv4();
 
-		this._tokens = [];
-		this._routerMap = {};
+    this._tokens = [];
+    this._routerMap = {};
 
-		this._preRouteMiddleware = [
-			(req: BjsRequest, res: Response, next: NextFunction) => this._timeRequest(req, res, next),
-			(req: BjsRequest, res: Response, next: NextFunction) => this._authenticateToken(req, res, next),
-			(req: BjsRequest, res: Response, next: NextFunction) => AccessControl.accessControlPolicyMiddleware(req, res, next),
-			(req: BjsRequest, res: Response, next: NextFunction) => this._configCrossDomain(req, res, next),
-		];
-	}
+    this._preRouteMiddleware = [
+      (req: BjsRequest, res: Response, next: NextFunction) => this._timeRequest(req, res, next),
+      (req: BjsRequest, res: Response, next: NextFunction) => this._authenticateToken(req, res, next),
+      (req: BjsRequest, res: Response, next: NextFunction) =>
+        AccessControl.accessControlPolicyMiddleware(req, res, next),
+      (req: BjsRequest, res: Response, next: NextFunction) => this._configCrossDomain(req, res, next),
+    ];
+  }
 
-	async init(services) {
-		this._services = services;
+  async init(services) {
+    this._services = services;
 
-		this._nrp = services.get('nrp');
-		if (!this._nrp) throw new Error('Routes: NRP not found in services');
+    this._nrp = services.get('nrp');
+    if (!this._nrp) throw new Error('Routes: NRP not found in services');
 
-		this._nrp?.on('rest:worker:app-deleted', (exec: any) => {
-			exec = JSON.parse(exec);
-			if (!exec.apiPath) return;
-			this._deregisterRouter(exec.apiPath);
-		});
-	}
+    this._nrp?.on('rest:worker:app-deleted', (exec: any) => {
+      exec = JSON.parse(exec);
+      if (!exec.apiPath) return;
+      this._deregisterRouter(exec.apiPath);
+    });
+  }
 
-	/**
-	 * Init core routes & app schema
-	 * @return {promise}
-	 */
-	async initRoutes() {
-		this.app.get('/favicon.ico', (req, res, next) => res.sendStatus(404));
-		this.app.get(['/', '/index.html'], (req, res, next) => res.sendFile(path.join(__dirname, '../static/index.html')));
+  /**
+   * Init core routes & app schema
+   * @return {promise}
+   */
+  async initRoutes() {
+    this.app.get('/favicon.ico', (req, res, next) => res.sendStatus(404));
+    this.app.get(['/', '/index.html'], (req, res, next) => res.sendFile(path.join(__dirname, '../static/index.html')));
 
-		this.app.use((req: any, res, next) => {
-			const logEvent = (event: string, err?: any) => {
-					if (err) {
-							Logging.logError(`${event}`, req.id);
-							Logging.logError(err, req.id);
-					} else {
-							Logging.logSilly(`${event}`, req.id);
-					}
-			};
+    this.app.use((req: any, res, next) => {
+      const logEvent = (event: string, err?: any) => {
+        if (err) {
+          Logging.logError(`${event}`, req.id);
+          Logging.logError(err, req.id);
+        } else {
+          Logging.logSilly(`${event}`, req.id);
+        }
+      };
 
-			req.on('close', () => logEvent('close'));
-			req.on('end', () => logEvent('end'));
-			req.on('error', (err) => logEvent('error', err));
-			req.on('pause', () => logEvent('pause'));
-			req.on('resume', () => logEvent('resume'));
-			req.on('timeout', () => logEvent('timeout'));
+      req.on('close', () => logEvent('close'));
+      req.on('end', () => logEvent('end'));
+      req.on('error', (err) => logEvent('error', err));
+      req.on('pause', () => logEvent('pause'));
+      req.on('resume', () => logEvent('resume'));
+      req.on('timeout', () => logEvent('timeout'));
 
-			// if (req.socket) {
-			// 	req.socket.once('close', (hadError) => logEvent(`socket onClose had_error:${hadError}`));
+      // if (req.socket) {
+      // 	req.socket.once('close', (hadError) => logEvent(`socket onClose had_error:${hadError}`));
       //   req.socket.once('connect', () => logEvent('socket onConnect'));
       //   req.socket.once('end', () => logEvent('socket onEnd'));
       //   req.socket.once('lookup', (err, address, family, host) => {
@@ -136,793 +137,845 @@ class Routes {
       //   });
       //   req.socket.once('timeout', () => logEvent('socket onTimeout'));
       //   req.socket.once('error', (err) => logEvent('socket onError', err));
-			// }
-
-			next();
-		});
-		this.app.use((err, req, res, next) => {
-			if (err) Logging.logError(err, req.id);
-			next();
-		});
-
-		const coreRouter = this._createRouter();
-		const providers = this._getCoreRoutes();
-		for (let x = 0; x < providers.length; x++) {
-			const routes = providers[x];
-			for (let y = 0; y < routes.length; y++) {
-				const route = routes[y];
-				this._initRoute(coreRouter, route, true);
-			}
-		}
-
-		this._registerRouter('core', coreRouter);
-
-		await this.loadTokens();
-
-		await this._setupLambdaEndpoints();
-
-		await AdminRoutes.initAdminRoutes(this.app);
-		Logging.logSilly(`init:registered-routes`);
-	}
-
-	async initAppRoutes() {
-		const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
-		for await (const app of rxsApps) {
-			await this._generateAppRoutes(app);
-		}
-	}
-
-	/**
-	 * @return {object} - express router object
-	 */
-	_createRouter() {
-		const apiRouter = Router();
-
-		// We used to assign middleware to the router here. When a request comes in
-		// each defined router is called to see if it has matching routes, this resulted
-		// in the middleware being called mutliple times for each router defined.
-		// I've now moved the middleware to be called before each route.
-		// See: this._preRouteMiddleware
-
-		return apiRouter;
-	}
-
-	/**
-	 * Make sure the error handler catch is at the bottom of the stack.
-	 */
-	_repositionErrorHandler() {
-		const logErrors = (err, req, res, next) => this.logErrors(err, req, res, next);
-
-		let stackIndex = this.app._router.stack.findIndex((s) => s.name === 'logErrors');
-
-		// Remove middleware from stack if it's within
-		if (stackIndex !== -1 && stackIndex !== this.app._router.stack - 1) {
-			this.app._router.stack.splice(stackIndex, 1);
-			stackIndex = -1;
-		}
-
-		if (stackIndex === -1) {
-			Logging.logSilly(`Repositioned error handler on express stack`);
-			this.app.use(logErrors);
-		}
-	}
-
-	/**
-	 * Register a router in _routerMap
-	 * @param {string} key
-	 * @param {object} router - express router object
-	 */
-	_registerRouter(key, router) {
-		if (this._routerMap[key]) {
-			Logging.logSilly(`Routes:_registerRouter Reregister ${key}`);
-			this._routerMap[key] = router;
-			return;
-		}
-
-		Logging.logSilly(`Routes:_registerRouter Register ${key}`);
-		this._routerMap[key] = router;
-		this.app.use('', (...args) => this._getRouter(key)(...args));
-
-		this._repositionErrorHandler();
-	}
-
-	_deregisterRouter(key) {
-		if (!this._routerMap[key]) return;
-
-		Logging.logSilly(`Routes:_deregisterRouter Deregister ${key}`);
-		delete this._routerMap[key];
-	}
-
-	/**
-	 * Get router with key
-	 * @param {string} key
-	 * @return {object} - express router object
-	 */
-	_getRouter(key) {
-		return this._routerMap[key];
-	}
-
-	/**
-	 * Regenerate app routes for given app id
-	 * @param {string} appId - Buttress app id
-	 * @return {promise}
-	 */
-	regenerateAppRoutes(appId) {
-		Logging.logSilly(`Routes:regenerateAppRoutes regenerating routes for ${appId}`);
-		return Model.getCoreModel(AppSchemaModel).findById(appId)
-			.then((app) => this._generateAppRoutes(app));
-	}
-
-	/**
-	 * Genereate app routes & register for given app
-	 * @param {object} app - Buttress app object
-	 */
-	async _generateAppRoutes(app) {
-		if (!app) throw new Error(`Expected app object to be passed through to _generateAppRoutes, got ${app}`);
-		if (!app.__schema) return;
-
-		// Get DS agreements
-		const appDSAs = await Helpers.streamAll(await Model.getCoreModel(AppDataSharingSchemaModel).find({
-			'_appId': app.id,
-		}));
-
-		const appRouter = this._createRouter();
-
-		Helpers.Schema.decode(app.__schema)
-			.filter((schema) => schema.type.indexOf('collection') === 0)
-			.filter((schema) => {
-				if (!schema.remotes) return true;
-				const remotes = (Array.isArray(schema.remotes)) ? schema.remotes : [schema.remotes];
-
-				const nonActiveDSA = remotes.reduce((arr, remoteRef) => {
-					// if the data sharing agreement is not active, we'll make note of the name for debugging.
-					if (appDSAs.find((dsa) => dsa.active && dsa.name === remoteRef.name) === undefined) {
-						arr.push(remoteRef.name);
-					}
-					return arr;
-				}, []);
-
-				if (nonActiveDSA.length > 0) {
-					Logging.logWarn(`Routes:_generateAppRoutes ${app.id} skipping route /${app.apiPath} for ${schema.name}, DSA not active`);
-					return false;
-				}
-
-				return true;
-			})
-			.forEach((schema) => {
-				Logging.logSilly(`Routes:_generateAppRoutes ${app.id} init routes /${app.apiPath} for ${schema.name}`);
-				return this._initSchemaRoutes(appRouter, app, schema);
-			});
-
-		this._registerRouter(app.apiPath, appRouter);
-	}
-
-	createPluginRoutes(pluginName, routes) {
-		if (routes.length === 0) return;
-
-		Logging.logDebug(`Routes:createPluginRoutes ${pluginName} has ${routes.length} routes`);
-
-		const pluginRouter = this._createRouter();
-
-		for (let y = 0; y < routes.length; y++) {
-			const route = routes[y];
-			this._initRoute(pluginRouter, route, false, pluginName);
-		}
-
-		this._registerRouter(`plugin-${pluginName}`, pluginRouter);
-	}
-
-	_initRoute(app: Router, routeClass: any, core: boolean, pathPrefix: string = '') {
-		const route = (core) ? new routeClass(this._services) : new routeClass(null, null, this._services);
-		route.paths.forEach((pathSpec) => {
-			const routePath = path.join(...[
-				Config.app.apiPrefix,
-				pathPrefix,
-				pathSpec,
-			]);
-			Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
-			app[route.verb](routePath, this._preRouteMiddleware, (req, res, next) => {
-				req.pathSpec = pathSpec;
-				return route.exec(req, res).catch(next);
-			});
-		});
-	}
-
-	/**
-	 * @param  {Object} express - express applcation container
-	 * @param  {Object} app - app data object
-	 * @param  {Object} schemaData - schema data object
-	 */
-	_initSchemaRoutes(express, app: App, schemaData: Schema) {
-		SchemaRoutes.forEach((SchemaRoute) => {
-			let route: Route;
-
-			try {
-				route = new SchemaRoute(schemaData, app, this._services);
-			} catch (err) {
-				if (err instanceof Helpers.Errors.RouteMissingModel) return Logging.logWarn(`${err.message} for ${app.name}`);
-
-				throw err;
-			}
-
-			route.paths.forEach((pathSpec) => {
-				let routePath = path.join(...[
-					app.apiPath,
-					Config.app.apiPrefix,
-					pathSpec,
-				]);
-				if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
-				Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
-				express[route.verb](routePath, this._preRouteMiddleware, (req, res, next) => {
-					req.pathSpec = pathSpec;
-					return route.exec(req, res).catch(next);
-				});
-			});
-		});
-	}
-
-	_timeRequest(req: BjsRequest, res, next) {
-		// Just assign a arbitrary id to the request to help identify it in the logs
-		req.id = Datastore.getInstance('core').ID.new();
-		res.set('x-bjs-request-id', req.id);
-
-		req.timer = new Helpers.Timer();
-		req.timer.start();
-
-		req.timings = {
-			authenticateToken: null,
-			configCrossDomain: null,
-			authenticate: null,
-			validate: null,
-			exec: null,
-			respond: null,
-			logActivity: null,
-			boardcastData: null,
-			close: null,
-			stream: [],
-		};
-
-		// Define some helper functions which allow us to send request metadata
-		// to the realtime process to feedback to subscrtibers.
-		req.bjsReqStatus = (data, nrp) => nrp.emit(`sock:worker:request-status`, JSON.stringify({ id: req.id, ...data }));
-		req.bjsReqClose = (nrp) => nrp.emit(`sock:worker:request-end`, JSON.stringify({ id: req.id, status: 'done' }));
-
-		const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
-
-		Logging.logDebug(`[${req.method.toUpperCase()}] ${req.path} - ${ip}`, req.id);
-		Logging.logTimer(`_timeRequest:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
-		// onFinished
-		onFinished(res, () => {
-			Logging.logInfo(`[${req.method.toUpperCase()}] ${req.path} ${res.statusCode} - ${ip}`, req.id);
-			Logging.logTimer(`res finished`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		});
-
-		next();
-	}
-
-	/**
-	 * @param {Object} req - Request object
-	 * @param {Object} res - Response object
-	 * @param {Function} next - next handler function
-	 * @private
-	 */
-	async _authenticateToken(req: BjsRequest, res, next) {
-		req.timings.authenticateToken = req.timer?.interval || 0;
-		Logging.logTimer(`_authenticateToken:start ${req.token}`,
-			req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
-		req.isPluginPath = Object.keys(this._routerMap)
-			.filter((key) => key.indexOf('plugin-') === 0)
-			.map((key) => key.replace('plugin-', ''))
-			.some((key) => req.path.indexOf(`${Config.app.apiPrefix}/${key}`) === 0);
-
-		try {
-			// Admin route call
-			const adminRoutecall = await AdminRoutes.checkAdminCall(req);
-			if (adminRoutecall.adminToken && adminRoutecall.adminApp) {
-				req.token = adminRoutecall.adminToken;
-				Logging.logTimer(`_authenticateAdminToken:got-admin-token`,
-					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
-				req.authApp = adminRoutecall.adminApp;
-				Logging.logTimer(`_authenticateAdminApp:got-admin-app`,
-					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
-				Logging.logTimer('_authenticateAdminCall:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				return next();
-			}
-
-			let reqToken: any = null;
-			let tokenApp: any = null;
-			let useUserToken: any = true;
-
-			req.authLambda = null;
-
-			const isLambdaAPICall = req.url.includes('/lambda/v1/');
-			if (isLambdaAPICall) {
-				let apiLambdaTrigger: any = null;
-				let apiLambdaApp: any = null;
-				let apiPath: string = '';
-
-				[apiPath] = req.url.split('/lambda/v1/').join('').split('/');
-				apiLambdaApp = await Model.getCoreModel(AppSchemaModel).findOne({
-					apiPath: {
-						$eq: apiPath,
-					},
-				});
-
-				if (!apiLambdaApp) {
-					Logging.logTimer(`_authenticateToken:end-unknown-lambda-app-endpoint`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-					throw new Helpers.Errors.RequestError(404, 'unknown_lambda_endpoint');
-				}
-
-				const [endpoint] = req.url.split(`/lambda/v1/${apiPath}/`).join('').split('?');
-				req.authLambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
-					'trigger.apiEndpoint.url': {
-						$eq: endpoint,
-					},
-					'_appId': {
-						$eq: apiLambdaApp.id,
-					},
-				});
-
-				if (!req.authLambda) {
-					Logging.logTimer(`_authenticateToken:end-unknown-lambda-endpoint`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-					throw new Helpers.Errors.RequestError(404, 'unknown_lambda_endpoint');
-				}
-
-				// For now make sure that the private lambdas are called by an existing token
-				if (req.authLambda.type === 'PRIVATE' && !reqToken) {
-					reqToken = await this._getProvidedToken(req);
-					// TODO: Lambda is private and we should prob do something here?
-				}
-
-				Logging.logTimer(`_authenticateAPILambdaToken:got-lambda ${req.authLambda.id}`,
-					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
-				apiLambdaTrigger = req.authLambda.trigger.find((t) => t.type === 'API_ENDPOINT' && t.apiEndpoint.url === endpoint);
-
-				useUserToken = (apiLambdaTrigger && apiLambdaTrigger.apiEndpoint.useCallerToken);
-				if (!useUserToken) {
-					const token = await Model.getCoreModel(TokenSchemaModel).findOne({
-						_lambdaId: req.authLambda.id,
-					});
-					req.token = token;
-					req.authApp = apiLambdaApp;
-					// Logging.logTimer(`_authenticateAPILambdaToken:got-app ${req.authApp.id}`,
-					// 	req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
-					// Logging.logTimer('_authenticateAPILambdaToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-					// return next();
-				}
-			}
-
-			req.apiPath = (typeof req.query.apiPath === 'string') ? req.query.apiPath : '';
-
-			// Parse the token from the req headers / params
-			if (useUserToken) {
-				req.token = (reqToken) ? reqToken : await this._getProvidedToken(req);
-			}
-
-			// If not a lambda API call
-			if (!isLambdaAPICall && req.token?._lambdaId) {
-				// If we're not calling a lambda endpoint then look up the lambda via the token.
-				const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(req.token._lambdaId);
-				req.authLambda = lambda;
-				Logging.logTimer(`_authenticateToken:got-lambda ${(req.authLambda) ? req.authLambda.id : lambda}`,
-					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			}
-
-			if (!req.token) {
-				Logging.logTimer(`_authenticateToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				throw new Helpers.Errors.RequestError(401, 'missing_token');
-			}
-
-			Logging.logTimer(`_authenticateToken:got-token ${req.token.id}`,
-				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			Logging.logTimer(`_authenticateToken:got-token type ${req.token.type}`,
-				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
-			if (!req.authApp) {
-				if (req.apiPath) {
-					tokenApp = await Model.getCoreModel(AppSchemaModel).findOne({ apiPath: req.apiPath });
-				} else if (req.token._appId) {
-					tokenApp = await Model.getCoreModel(AppSchemaModel).findById(req.token._appId);
-				}
-
-				req.authApp = tokenApp;
-				Logging.logTimer(`_authenticateToken:got-app ${(req.authApp) ? req.authApp.id : tokenApp}`,
-					req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			}
-
-			const appDataSharing = (req.token._appDataSharingId) ? await Model.getCoreModel(AppDataSharingSchemaModel).findById(req.token._appDataSharingId) : null;
-			req.authAppDataSharing = appDataSharing;
-			Logging.logTimer(
-				`_authenticateToken:got-app-data-sharing-agreement ${(req.authAppDataSharing) ? req.authAppDataSharing.id : appDataSharing}`,
-				req.timer, Logging.Constants.LogLevel.SILLY, req.id,
-			);
-
-			let user = null;
-			if (req.token._userId) {
-				user = await Model.getCoreModel(UserSchemaModel).findById(req.token._userId);
-
-				if (!user) {
-					Logging.logSilly(`Request was made with a valid token but no user was found for token ${req.token.id}`);
-					throw new Helpers.Errors.RequestError(400, 'invalid_token');
-				}
-			}
-
-			req.authUser = user;
-			Logging.logTimer(`_authenticateToken:got-user ${(req.authUser) ? req.authUser.id : user}`,
-				req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-
-			Logging.logTimer('_authenticateToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			next();
-		} catch (err) {
-			next(err);
-		}
-	}
-
-	async _getProvidedToken(req) {
-		// Get the bearer token from the Authorization header or query string
-		let tokenValue: string | undefined = req.headers['authorization'] || req.query.token;
-		if (tokenValue) tokenValue = tokenValue.replace('Bearer ', '');
-
-		Logging.logSilly(`_getProvidedToken:start ${tokenValue}`, req.id);
-
-		if (!tokenValue) {
-			Logging.logTimer(`_getProvidedToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			throw new Helpers.Errors.RequestError(401, 'missing_token');
-		}
-
-		const token = await this._getToken(req, tokenValue);
-		if (token === null) {
-			Logging.logTimer(`_getProvidedToken:end-cant-find-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			throw new Helpers.Errors.RequestError(401, 'invalid_token');
-		}
-
-		return token;
-	}
-
-	/**
-	 * @param  {String} req - request object
-	 * @param  {String} value - token value
-	 * @return {Promise} - resolves with the matching token if any
-	 */
-	async _getToken(req, value) {
-		Logging.logTimer('_getToken:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		let token = null;
-
-		if (this._tokens.length > 0) {
-			token = this._lookupToken(this._tokens, value);
-			if (token) {
-				Logging.logTimer('_getToken:end-cache', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				return token;
-			}
-		}
-
-		// TODO: This needs to be smarter
-		await this.loadTokens();
-
-		token = this._lookupToken(this._tokens, value);
-		Logging.logTimer('_getToken:end-lookup', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		return token;
-	}
-
-	/**
-	 * @param {array} tokens - cached tokens
-	 * @param {string} value - token string to look for
-	 * @return {*} - false if not found, Token (native) if found
-	 * @private
-	 */
-	_lookupToken(tokens, value) {
-		const token = tokens.filter((t) => t.value === value);
-		return token.length === 0 ? null : token[0];
-	}
-
-	/**
-	 * @return {Promise} - resolves with tokens
-	 * @private
-	 */
-	async loadTokens() {
-		const tokens: any[] = [];
-		const rxsToken = await Model.getCoreModel(TokenSchemaModel).findAll();
-
-		for await (const token of rxsToken) {
-			tokens.push(token);
-		}
-
-		this._tokens = tokens;
-	}
-
-	/**
-	 *
-	 * @param {Object} req - Request object
-	 * @param {Object} res - Response object
-	 * @param {Function} next - next handler function
-	 * @private
-	 */
-	_configCrossDomain(req, res, next) {
-		req.timings.configCrossDomain = req.timer.interval;
-		Logging.logTimer('_configCrossDomain:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		if (!req.token) {
-			res.status(401).json({ message: 'Auth token is required' });
-			Logging.logTimer('_configCrossDomain:end-no-auth', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			return;
-		}
-		if (req.token.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.USER) {
-			res.header('Access-Control-Allow-Origin', '*');
-			res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,SEARCH,OPTIONS');
-			res.header('Access-Control-Allow-Headers', 'content-type');
-			Logging.logTimer('_configCrossDomain:end-app-token', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			next();
-			return;
-		}
-
-		const rex = /https?:\/\/(.+)$/;
-		let origin = req.header('Origin');
-
-		if (!origin) {
-			origin = req.header('Host');
-		}
-
-		let matches = rex.exec(origin);
-		if (matches) {
-			origin = matches[1];
-		}
-
-		const domains = req.token.domains.map((d) => {
-			matches = rex.exec(d);
-			return matches ? matches[1] : d;
-		});
-
-		// Pushing in the current buttress domain to allow calls to itself, this is
-		// mainly for lambda calls.
-		domains.push(Config.app.host);
-
-		Logging.logSilly(`_configCrossDomain:origin ${origin}`, req.id);
-		Logging.logSilly(`_configCrossDomain:domains ${domains}`, req.id);
-
-		// Early out of a full wildcard is found within domains, if not then check for a match
-		// for origin within the domains array.
-		const hasFullWildcard = domains.includes('*');
-		if (!hasFullWildcard) {
-			const domainIdx = domains.findIndex((d) => {
-				if (d.indexOf('*') === -1) return d === origin;
-
-				const rex = new RegExp(d.replace(/\./g, '\\.').replace(/\*/g, '.*'));
-				return rex.test(origin);
-			});
-
-			if (domainIdx === -1) {
-				Logging.logError(new Error(`Invalid Domain: ${origin}`));
-				res.sendStatus(403);
-				Logging.logTimer('_configCrossDomain:end-invalid-domain', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-				return;
-			}
-		}
-
-		res.header('Access-Control-Allow-Origin', req.header('Origin'));
-		res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,SEARCH,OPTIONS');
-		res.header('Access-Control-Allow-Headers', 'content-type');
-
-		if (req.method === 'OPTIONS') {
-			res.sendStatus(200);
-			Logging.logTimer('_configCrossDomain:end-options-req', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-			return;
-		}
-
-		Logging.logTimer('_configCrossDomain:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-		next();
-	}
-
-	logErrors(err, req, res, next) {
-		Logging.logSilly(`logErrors ${err}`);
-		if (err instanceof Helpers.Errors.RequestError) {
-			res.status(err.code).json({ statusMessage: err.message, message: err.message });
-		} else {
-			if (err) {
-				Logging.logError(err, req.id);
-			}
-			res.status(500);
-		}
-
-		res.end();
-		next(err);
-	}
-
-	/**
-	 * @return {Array} - returns an array of Route handlers
-	 * @private
-	 */
-	_getCoreRoutes() {
-		return CoreRoutes;
-	}
-
-	async _setupLambdaEndpoints() {
-		const appsToken = await Helpers.streamAll(await Model.getCoreModel(TokenSchemaModel).find({
-			$or: [{
-				type: Model.getCoreModel(TokenSchemaModel).Constants.Type.APP,
-			}, {
-				type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
-			}],
-		}));
-		const tokenIds = appsToken.map((t) => t.id);
-		const apps = await Helpers.streamAll(await Model.getCoreModel(AppSchemaModel).find({
-			_tokenId: {
-				$in: tokenIds,
-			},
-		}));
-		const appApiPaths = apps.map((app) => app.apiPath);
-
-		appApiPaths.forEach((apiPath) => {
-			this.__configureAppLambdaEndpoints(apiPath);
-		});
-
-		this._nrp?.on('app:configure-lambda-endpoints', (apiPath) => {
-			this.__configureAppLambdaEndpoints(apiPath);
-		});
-	}
-
-	async __configureAppLambdaEndpoints(apiPath) {
-		this.app.all(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
-			// TODO: Handle if the req is closed and the lambda hasn't been executed yet.
-			const [endpoint] = Object.values(req.params);
-
-			if (req.method === 'POST' && (!req.body || Object.values(req.body).length < 1)) {
-				res.status(400).send({ message: 'missing_request_body' });
-				return;
-			}
-
-			if (req.method !== 'POST' && req.method !== 'GET') {
-				res.status(405).send({ message: 'method_not_allowed' });
-				return;
-			}
-
-			const result = await this._queueLambdaAPIExecution(endpoint, apiPath, req);
-			if (result.errCode && result.errMessage) {
-				res.status(result.errCode).send({ message: result.errMessage });
-				return;
-			}
-
-			const lambdaExecutionId = result.lambdaExecution?.id;
-			if (!lambdaExecutionId) {
-				res.status(500).send({ message: 'lambda_execution_id_missing' });
-				return;
-			}
-
-			// Disable cache for all lambda endpoints
-			res.set('Cache-Control', 'no-store');
-
-			let lambdaResult: ExecutionResultMessage | null = null;
-
-			if (result.triggerAPIType === 'SYNC') {
-				lambdaResult = await new Promise((resolve) => {
-					this._nrp?.on('lambda:worker:execution-result', (json) => {
-						const exec = JSON.parse(json) as ExecutionResultMessage;
-						if (exec.reqId === req.id?.toString()) {
-							resolve(exec);
-						}
-					});
-				});
-			}
-
-			if (lambdaResult && lambdaResult.res && lambdaResult.res.redirect) {
-				const url = lambdaResult.res.url;
-				const queryObj = lambdaResult.res.query;
-				let query: string = '';
-				if (queryObj) {
-					query = Object.keys(queryObj).reduce((output, key) => {
-						if (!output) {
-							output = `${key}=${queryObj[key]}`;
-						} else {
-							output = `${output}&${key}=${queryObj[key]}`;
-						}
-						return output;
-					}, '');
-				}
-				const redirectURL = (query) ? `${url}?${query}` : url;
-				res.redirect(redirectURL);
-			} else if (lambdaResult) {
-				res.status(lambdaResult.code).send({
-					res: lambdaResult.res,
-					err: lambdaResult.err,
-					executionId: lambdaResult.executionId,
-				});
-			} else {
-				res.status(200).send({
-					executionId: lambdaExecutionId,
-				});
-			}
-		});
-	}
-
-	async _queueLambdaAPIExecution(endpointOrId: string, apiPath, req: BjsRequest) {
-		const res: { errCode?: number, errMessage?: string, triggerAPIType?: string, lambdaExecution?: LambdaExecution } = {};
-		let lambda: Lambda | null = null;
-
-		const lambdaApp = await Model.getCoreModel(AppSchemaModel).findByApiPath(apiPath);
-		lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
-			$or: [{
-				'id': {
-					$eq: endpointOrId,
-				},
-			}, {
-				'trigger.apiEndpoint.url': {
-					$eq: endpointOrId,
-				},
-			}],
-			'_appId': {
-				$eq: lambdaApp.id,
-			}
-		});
-
-		if (!lambda) {
-			res.errCode = 404;
-			res.errMessage = 'lambda_not_found';
-			return res;
-		}
-		if (!lambda.executable) {
-			res.errCode = 400;
-			res.errMessage = 'lambda_is_not_executable';
-			return res;
-		}
-
-		const triggerAPI = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
-		if (!triggerAPI || triggerAPI.apiEndpoint.method !== req.method) {
-			res.errCode = 404;
-			res.errMessage = 'api_method_not_found';
-			return res;
-		}
-
-		const deployment = await Model.getCoreModel(DeploymentSchemaModel).findOne({
-			lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
-			hash: lambda.git.hash,
-		});
-		if (!deployment) {
-			res.errCode = 404;
-			res.errMessage = 'deployment_not_found';
-			return res;
-		}
-
-		const LambdaExecutionData = {
-			triggerType: 'API_ENDPOINT',
-			priority: (triggerAPI.apiEndpoint.type === 'SYNC') ? ExecPriority.API_ENDPOINT_SYNC : ExecPriority.API_ENDPOINT,
-			lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
-			deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(deployment.id),
-			metadata: [
-				{ key: 'REQ_ID', value: req.id }
-			]
-		};
-
-		if (req.body) LambdaExecutionData.metadata.push({ key: 'BODY', value: JSON.stringify(req.body) });
-		if (req.query) LambdaExecutionData.metadata.push({ key: 'QUERY', value: JSON.stringify(req.query) });
-		if (req.headers) LambdaExecutionData.metadata.push({ key: 'HEADERS', value: JSON.stringify(req.headers) });
-
-		const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).add(
-			LambdaExecutionData,
-			lambda._appId,
-			(triggerAPI.apiEndpoint.useCallerToken) ? Model.getCoreModel(TokenSchemaModel).createId(req.token.id) : null
-		) as LambdaExecution;
-
-		res.lambdaExecution = lambdaExecution;
-		res.triggerAPIType = triggerAPI.apiEndpoint.type;
-
-		const data: LambdaExecutionMessage = {
-			executionId: lambdaExecution.id,
-			lambdaId: lambda.id,
-			lambdaType: 'API_ENDPOINT',
-			triggerType: triggerAPI.type,
-			lambdaExecBehavior: triggerAPI.apiEndpoint.type,
-		};
-
-		if (!res.errCode && !res.errMessage) {
-			this._nrp?.emit('rest:worker:exec-lambda-api', JSON.stringify(data));
-		}
-
-		return res;
-	}
+      // }
+
+      next();
+    });
+    this.app.use((err, req, res, next) => {
+      if (err) Logging.logError(err, req.id);
+      next();
+    });
+
+    const coreRouter = this._createRouter();
+    const providers = this._getCoreRoutes();
+    for (let x = 0; x < providers.length; x++) {
+      const routes = providers[x];
+      for (let y = 0; y < routes.length; y++) {
+        const route = routes[y];
+        this._initRoute(coreRouter, route, true);
+      }
+    }
+
+    this._registerRouter('core', coreRouter);
+
+    await this.loadTokens();
+
+    await this._setupLambdaEndpoints();
+
+    await AdminRoutes.initAdminRoutes(this.app);
+    Logging.logSilly(`init:registered-routes`);
+  }
+
+  async initAppRoutes() {
+    const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
+    for await (const app of rxsApps) {
+      await this._generateAppRoutes(app);
+    }
+  }
+
+  /**
+   * @return {object} - express router object
+   */
+  _createRouter() {
+    const apiRouter = Router();
+
+    // We used to assign middleware to the router here. When a request comes in
+    // each defined router is called to see if it has matching routes, this resulted
+    // in the middleware being called mutliple times for each router defined.
+    // I've now moved the middleware to be called before each route.
+    // See: this._preRouteMiddleware
+
+    return apiRouter;
+  }
+
+  /**
+   * Make sure the error handler catch is at the bottom of the stack.
+   */
+  _repositionErrorHandler() {
+    const logErrors = (err, req, res, next) => this.logErrors(err, req, res, next);
+
+    let stackIndex = this.app._router.stack.findIndex((s) => s.name === 'logErrors');
+
+    // Remove middleware from stack if it's within
+    if (stackIndex !== -1 && stackIndex !== this.app._router.stack - 1) {
+      this.app._router.stack.splice(stackIndex, 1);
+      stackIndex = -1;
+    }
+
+    if (stackIndex === -1) {
+      Logging.logSilly(`Repositioned error handler on express stack`);
+      this.app.use(logErrors);
+    }
+  }
+
+  /**
+   * Register a router in _routerMap
+   * @param {string} key
+   * @param {object} router - express router object
+   */
+  _registerRouter(key, router) {
+    if (this._routerMap[key]) {
+      Logging.logSilly(`Routes:_registerRouter Reregister ${key}`);
+      this._routerMap[key] = router;
+      return;
+    }
+
+    Logging.logSilly(`Routes:_registerRouter Register ${key}`);
+    this._routerMap[key] = router;
+    this.app.use('', (...args) => this._getRouter(key)(...args));
+
+    this._repositionErrorHandler();
+  }
+
+  _deregisterRouter(key) {
+    if (!this._routerMap[key]) return;
+
+    Logging.logSilly(`Routes:_deregisterRouter Deregister ${key}`);
+    delete this._routerMap[key];
+  }
+
+  /**
+   * Get router with key
+   * @param {string} key
+   * @return {object} - express router object
+   */
+  _getRouter(key) {
+    return this._routerMap[key];
+  }
+
+  /**
+   * Regenerate app routes for given app id
+   * @param {string} appId - Buttress app id
+   * @return {promise}
+   */
+  regenerateAppRoutes(appId) {
+    Logging.logSilly(`Routes:regenerateAppRoutes regenerating routes for ${appId}`);
+    return Model.getCoreModel(AppSchemaModel)
+      .findById(appId)
+      .then((app) => this._generateAppRoutes(app));
+  }
+
+  /**
+   * Genereate app routes & register for given app
+   * @param {object} app - Buttress app object
+   */
+  async _generateAppRoutes(app) {
+    if (!app) throw new Error(`Expected app object to be passed through to _generateAppRoutes, got ${app}`);
+    if (!app.__schema) return;
+
+    // Get DS agreements
+    const appDSAs = await Helpers.streamAll(
+      await Model.getCoreModel(AppDataSharingSchemaModel).find({
+        _appId: app.id,
+      }),
+    );
+
+    const appRouter = this._createRouter();
+
+    Helpers.Schema.decode(app.__schema)
+      .filter((schema) => schema.type.indexOf('collection') === 0)
+      .filter((schema) => {
+        if (!schema.remotes) return true;
+        const remotes = Array.isArray(schema.remotes) ? schema.remotes : [schema.remotes];
+
+        const nonActiveDSA = remotes.reduce((arr, remoteRef) => {
+          // if the data sharing agreement is not active, we'll make note of the name for debugging.
+          if (appDSAs.find((dsa) => dsa.active && dsa.name === remoteRef.name) === undefined) {
+            arr.push(remoteRef.name);
+          }
+          return arr;
+        }, []);
+
+        if (nonActiveDSA.length > 0) {
+          Logging.logWarn(
+            `Routes:_generateAppRoutes ${app.id} skipping route /${app.apiPath} for ${schema.name}, DSA not active`,
+          );
+          return false;
+        }
+
+        return true;
+      })
+      .forEach((schema) => {
+        Logging.logSilly(`Routes:_generateAppRoutes ${app.id} init routes /${app.apiPath} for ${schema.name}`);
+        return this._initSchemaRoutes(appRouter, app, schema);
+      });
+
+    this._registerRouter(app.apiPath, appRouter);
+  }
+
+  createPluginRoutes(pluginName, routes) {
+    if (routes.length === 0) return;
+
+    Logging.logDebug(`Routes:createPluginRoutes ${pluginName} has ${routes.length} routes`);
+
+    const pluginRouter = this._createRouter();
+
+    for (let y = 0; y < routes.length; y++) {
+      const route = routes[y];
+      this._initRoute(pluginRouter, route, false, pluginName);
+    }
+
+    this._registerRouter(`plugin-${pluginName}`, pluginRouter);
+  }
+
+  _initRoute(app: Router, routeClass: any, core: boolean, pathPrefix: string = '') {
+    const route = core ? new routeClass(this._services) : new routeClass(null, null, this._services);
+    route.paths.forEach((pathSpec) => {
+      const routePath = path.join(...[Config.app.apiPrefix, pathPrefix, pathSpec]);
+      Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
+      app[route.verb](routePath, this._preRouteMiddleware, (req, res, next) => {
+        req.pathSpec = pathSpec;
+        return route.exec(req, res).catch(next);
+      });
+    });
+  }
+
+  /**
+   * @param  {Object} express - express applcation container
+   * @param  {Object} app - app data object
+   * @param  {Object} schemaData - schema data object
+   */
+  _initSchemaRoutes(express, app: App, schemaData: Schema) {
+    SchemaRoutes.forEach((SchemaRoute) => {
+      let route: Route;
+
+      try {
+        route = new SchemaRoute(schemaData, app, this._services);
+      } catch (err) {
+        if (err instanceof Helpers.Errors.RouteMissingModel) return Logging.logWarn(`${err.message} for ${app.name}`);
+
+        throw err;
+      }
+
+      route.paths.forEach((pathSpec) => {
+        let routePath = path.join(...[app.apiPath, Config.app.apiPrefix, pathSpec]);
+        if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
+        Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
+        express[route.verb](routePath, this._preRouteMiddleware, (req, res, next) => {
+          req.pathSpec = pathSpec;
+          return route.exec(req, res).catch(next);
+        });
+      });
+    });
+  }
+
+  _timeRequest(req: BjsRequest, res, next) {
+    // Just assign a arbitrary id to the request to help identify it in the logs
+    req.id = Datastore.getInstance('core').ID.new();
+    res.set('x-bjs-request-id', req.id);
+
+    req.timer = new Helpers.Timer();
+    req.timer.start();
+
+    req.timings = {
+      authenticateToken: null,
+      configCrossDomain: null,
+      authenticate: null,
+      validate: null,
+      exec: null,
+      respond: null,
+      logActivity: null,
+      boardcastData: null,
+      close: null,
+      stream: [],
+    };
+
+    // Define some helper functions which allow us to send request metadata
+    // to the realtime process to feedback to subscrtibers.
+    req.bjsReqStatus = (data, nrp) => nrp.emit(`sock:worker:request-status`, JSON.stringify({ id: req.id, ...data }));
+    req.bjsReqClose = (nrp) => nrp.emit(`sock:worker:request-end`, JSON.stringify({ id: req.id, status: 'done' }));
+
+    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+
+    Logging.logDebug(`[${req.method.toUpperCase()}] ${req.path} - ${ip}`, req.id);
+    Logging.logTimer(`_timeRequest:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+    // onFinished
+    onFinished(res, () => {
+      Logging.logInfo(`[${req.method.toUpperCase()}] ${req.path} ${res.statusCode} - ${ip}`, req.id);
+      Logging.logTimer(`res finished`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    });
+
+    next();
+  }
+
+  /**
+   * @param {Object} req - Request object
+   * @param {Object} res - Response object
+   * @param {Function} next - next handler function
+   * @private
+   */
+  async _authenticateToken(req: BjsRequest, res, next) {
+    req.timings.authenticateToken = req.timer?.interval || 0;
+    Logging.logTimer(`_authenticateToken:start ${req.token}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+    req.isPluginPath = Object.keys(this._routerMap)
+      .filter((key) => key.indexOf('plugin-') === 0)
+      .map((key) => key.replace('plugin-', ''))
+      .some((key) => req.path.indexOf(`${Config.app.apiPrefix}/${key}`) === 0);
+
+    try {
+      // Admin route call
+      const adminRoutecall = await AdminRoutes.checkAdminCall(req);
+      if (adminRoutecall.adminToken && adminRoutecall.adminApp) {
+        req.token = adminRoutecall.adminToken;
+        Logging.logTimer(
+          `_authenticateAdminToken:got-admin-token`,
+          req.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.id,
+        );
+
+        req.authApp = adminRoutecall.adminApp;
+        Logging.logTimer(`_authenticateAdminApp:got-admin-app`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+        Logging.logTimer('_authenticateAdminCall:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+        return next();
+      }
+
+      let reqToken: any = null;
+      let tokenApp: any = null;
+      let useUserToken: any = true;
+
+      req.authLambda = null;
+
+      const isLambdaAPICall = req.url.includes('/lambda/v1/');
+      if (isLambdaAPICall) {
+        let apiLambdaTrigger: any = null;
+        let apiLambdaApp: any = null;
+        let apiPath: string = '';
+
+        [apiPath] = req.url.split('/lambda/v1/').join('').split('/');
+        apiLambdaApp = await Model.getCoreModel(AppSchemaModel).findOne({
+          apiPath: {
+            $eq: apiPath,
+          },
+        });
+
+        if (!apiLambdaApp) {
+          Logging.logTimer(
+            `_authenticateToken:end-unknown-lambda-app-endpoint`,
+            req.timer,
+            Logging.Constants.LogLevel.SILLY,
+            req.id,
+          );
+          throw new Helpers.Errors.RequestError(404, 'unknown_lambda_endpoint');
+        }
+
+        const [endpoint] = req.url.split(`/lambda/v1/${apiPath}/`).join('').split('?');
+        req.authLambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
+          'trigger.apiEndpoint.url': {
+            $eq: endpoint,
+          },
+          _appId: {
+            $eq: apiLambdaApp.id,
+          },
+        });
+
+        if (!req.authLambda) {
+          Logging.logTimer(
+            `_authenticateToken:end-unknown-lambda-endpoint`,
+            req.timer,
+            Logging.Constants.LogLevel.SILLY,
+            req.id,
+          );
+          throw new Helpers.Errors.RequestError(404, 'unknown_lambda_endpoint');
+        }
+
+        // For now make sure that the private lambdas are called by an existing token
+        if (req.authLambda.type === 'PRIVATE' && !reqToken) {
+          reqToken = await this._getProvidedToken(req);
+          // TODO: Lambda is private and we should prob do something here?
+        }
+
+        Logging.logTimer(
+          `_authenticateAPILambdaToken:got-lambda ${req.authLambda.id}`,
+          req.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.id,
+        );
+
+        apiLambdaTrigger = req.authLambda.trigger.find(
+          (t) => t.type === 'API_ENDPOINT' && t.apiEndpoint.url === endpoint,
+        );
+
+        useUserToken = apiLambdaTrigger && apiLambdaTrigger.apiEndpoint.useCallerToken;
+        if (!useUserToken) {
+          const token = await Model.getCoreModel(TokenSchemaModel).findOne({
+            _lambdaId: req.authLambda.id,
+          });
+          req.token = token;
+          req.authApp = apiLambdaApp;
+          // Logging.logTimer(`_authenticateAPILambdaToken:got-app ${req.authApp.id}`,
+          // 	req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+
+          // Logging.logTimer('_authenticateAPILambdaToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+          // return next();
+        }
+      }
+
+      req.apiPath = typeof req.query.apiPath === 'string' ? req.query.apiPath : '';
+
+      // Parse the token from the req headers / params
+      if (useUserToken) {
+        req.token = reqToken ? reqToken : await this._getProvidedToken(req);
+      }
+
+      // If not a lambda API call
+      if (!isLambdaAPICall && req.token?._lambdaId) {
+        // If we're not calling a lambda endpoint then look up the lambda via the token.
+        const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(req.token._lambdaId);
+        req.authLambda = lambda;
+        Logging.logTimer(
+          `_authenticateToken:got-lambda ${req.authLambda ? req.authLambda.id : lambda}`,
+          req.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.id,
+        );
+      }
+
+      if (!req.token) {
+        Logging.logTimer(`_authenticateToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+        throw new Helpers.Errors.RequestError(401, 'missing_token');
+      }
+
+      Logging.logTimer(
+        `_authenticateToken:got-token ${req.token.id}`,
+        req.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.id,
+      );
+      Logging.logTimer(
+        `_authenticateToken:got-token type ${req.token.type}`,
+        req.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.id,
+      );
+
+      if (!req.authApp) {
+        if (req.apiPath) {
+          tokenApp = await Model.getCoreModel(AppSchemaModel).findOne({ apiPath: req.apiPath });
+        } else if (req.token._appId) {
+          tokenApp = await Model.getCoreModel(AppSchemaModel).findById(req.token._appId);
+        }
+
+        req.authApp = tokenApp;
+        Logging.logTimer(
+          `_authenticateToken:got-app ${req.authApp ? req.authApp.id : tokenApp}`,
+          req.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.id,
+        );
+      }
+
+      const appDataSharing = req.token._appDataSharingId
+        ? await Model.getCoreModel(AppDataSharingSchemaModel).findById(req.token._appDataSharingId)
+        : null;
+      req.authAppDataSharing = appDataSharing;
+      Logging.logTimer(
+        `_authenticateToken:got-app-data-sharing-agreement ${req.authAppDataSharing ? req.authAppDataSharing.id : appDataSharing}`,
+        req.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.id,
+      );
+
+      let user = null;
+      if (req.token._userId) {
+        user = await Model.getCoreModel(UserSchemaModel).findById(req.token._userId);
+
+        if (!user) {
+          Logging.logSilly(`Request was made with a valid token but no user was found for token ${req.token.id}`);
+          throw new Helpers.Errors.RequestError(400, 'invalid_token');
+        }
+      }
+
+      req.authUser = user;
+      Logging.logTimer(
+        `_authenticateToken:got-user ${req.authUser ? req.authUser.id : user}`,
+        req.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.id,
+      );
+
+      Logging.logTimer('_authenticateToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      next();
+    } catch (err) {
+      next(err);
+    }
+  }
+
+  async _getProvidedToken(req) {
+    // Get the bearer token from the Authorization header or query string
+    let tokenValue: string | undefined = req.headers['authorization'] || req.query.token;
+    if (tokenValue) tokenValue = tokenValue.replace('Bearer ', '');
+
+    Logging.logSilly(`_getProvidedToken:start ${tokenValue}`, req.id);
+
+    if (!tokenValue) {
+      Logging.logTimer(`_getProvidedToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      throw new Helpers.Errors.RequestError(401, 'missing_token');
+    }
+
+    const token = await this._getToken(req, tokenValue);
+    if (token === null) {
+      Logging.logTimer(`_getProvidedToken:end-cant-find-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      throw new Helpers.Errors.RequestError(401, 'invalid_token');
+    }
+
+    return token;
+  }
+
+  /**
+   * @param  {String} req - request object
+   * @param  {String} value - token value
+   * @return {Promise} - resolves with the matching token if any
+   */
+  async _getToken(req, value) {
+    Logging.logTimer('_getToken:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    let token = null;
+
+    if (this._tokens.length > 0) {
+      token = this._lookupToken(this._tokens, value);
+      if (token) {
+        Logging.logTimer('_getToken:end-cache', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+        return token;
+      }
+    }
+
+    // TODO: This needs to be smarter
+    await this.loadTokens();
+
+    token = this._lookupToken(this._tokens, value);
+    Logging.logTimer('_getToken:end-lookup', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    return token;
+  }
+
+  /**
+   * @param {array} tokens - cached tokens
+   * @param {string} value - token string to look for
+   * @return {*} - false if not found, Token (native) if found
+   * @private
+   */
+  _lookupToken(tokens, value) {
+    const token = tokens.filter((t) => t.value === value);
+    return token.length === 0 ? null : token[0];
+  }
+
+  /**
+   * @return {Promise} - resolves with tokens
+   * @private
+   */
+  async loadTokens() {
+    const tokens: any[] = [];
+    const rxsToken = await Model.getCoreModel(TokenSchemaModel).findAll();
+
+    for await (const token of rxsToken) {
+      tokens.push(token);
+    }
+
+    this._tokens = tokens;
+  }
+
+  /**
+   *
+   * @param {Object} req - Request object
+   * @param {Object} res - Response object
+   * @param {Function} next - next handler function
+   * @private
+   */
+  _configCrossDomain(req, res, next) {
+    req.timings.configCrossDomain = req.timer.interval;
+    Logging.logTimer('_configCrossDomain:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    if (!req.token) {
+      res.status(401).json({ message: 'Auth token is required' });
+      Logging.logTimer('_configCrossDomain:end-no-auth', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      return;
+    }
+    if (req.token.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.USER) {
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,SEARCH,OPTIONS');
+      res.header('Access-Control-Allow-Headers', 'content-type');
+      Logging.logTimer('_configCrossDomain:end-app-token', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      next();
+      return;
+    }
+
+    const rex = /https?:\/\/(.+)$/;
+    let origin = req.header('Origin');
+
+    if (!origin) {
+      origin = req.header('Host');
+    }
+
+    let matches = rex.exec(origin);
+    if (matches) {
+      origin = matches[1];
+    }
+
+    const domains = req.token.domains.map((d) => {
+      matches = rex.exec(d);
+      return matches ? matches[1] : d;
+    });
+
+    // Pushing in the current buttress domain to allow calls to itself, this is
+    // mainly for lambda calls.
+    domains.push(Config.app.host);
+
+    Logging.logSilly(`_configCrossDomain:origin ${origin}`, req.id);
+    Logging.logSilly(`_configCrossDomain:domains ${domains}`, req.id);
+
+    // Early out of a full wildcard is found within domains, if not then check for a match
+    // for origin within the domains array.
+    const hasFullWildcard = domains.includes('*');
+    if (!hasFullWildcard) {
+      const domainIdx = domains.findIndex((d) => {
+        if (d.indexOf('*') === -1) return d === origin;
+
+        const rex = new RegExp(d.replace(/\./g, '\\.').replace(/\*/g, '.*'));
+        return rex.test(origin);
+      });
+
+      if (domainIdx === -1) {
+        Logging.logError(new Error(`Invalid Domain: ${origin}`));
+        res.sendStatus(403);
+        Logging.logTimer('_configCrossDomain:end-invalid-domain', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+        return;
+      }
+    }
+
+    res.header('Access-Control-Allow-Origin', req.header('Origin'));
+    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,SEARCH,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'content-type');
+
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(200);
+      Logging.logTimer('_configCrossDomain:end-options-req', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      return;
+    }
+
+    Logging.logTimer('_configCrossDomain:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    next();
+  }
+
+  logErrors(err, req, res, next) {
+    Logging.logSilly(`logErrors ${err}`);
+    if (err instanceof Helpers.Errors.RequestError) {
+      res.status(err.code).json({ statusMessage: err.message, message: err.message });
+    } else {
+      if (err) {
+        Logging.logError(err, req.id);
+      }
+      res.status(500);
+    }
+
+    res.end();
+    next(err);
+  }
+
+  /**
+   * @return {Array} - returns an array of Route handlers
+   * @private
+   */
+  _getCoreRoutes() {
+    return CoreRoutes;
+  }
+
+  async _setupLambdaEndpoints() {
+    const appsToken = await Helpers.streamAll(
+      await Model.getCoreModel(TokenSchemaModel).find({
+        $or: [
+          {
+            type: Model.getCoreModel(TokenSchemaModel).Constants.Type.APP,
+          },
+          {
+            type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
+          },
+        ],
+      }),
+    );
+    const tokenIds = appsToken.map((t) => t.id);
+    const apps = await Helpers.streamAll(
+      await Model.getCoreModel(AppSchemaModel).find({
+        _tokenId: {
+          $in: tokenIds,
+        },
+      }),
+    );
+    const appApiPaths = apps.map((app) => app.apiPath);
+
+    appApiPaths.forEach((apiPath) => {
+      this.__configureAppLambdaEndpoints(apiPath);
+    });
+
+    this._nrp?.on('app:configure-lambda-endpoints', (apiPath) => {
+      this.__configureAppLambdaEndpoints(apiPath);
+    });
+  }
+
+  async __configureAppLambdaEndpoints(apiPath) {
+    this.app.all(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
+      // TODO: Handle if the req is closed and the lambda hasn't been executed yet.
+      const [endpoint] = Object.values(req.params);
+
+      if (req.method === 'POST' && (!req.body || Object.values(req.body).length < 1)) {
+        res.status(400).send({ message: 'missing_request_body' });
+        return;
+      }
+
+      if (req.method !== 'POST' && req.method !== 'GET') {
+        res.status(405).send({ message: 'method_not_allowed' });
+        return;
+      }
+
+      const result = await this._queueLambdaAPIExecution(endpoint, apiPath, req);
+      if (result.errCode && result.errMessage) {
+        res.status(result.errCode).send({ message: result.errMessage });
+        return;
+      }
+
+      const lambdaExecutionId = result.lambdaExecution?.id;
+      if (!lambdaExecutionId) {
+        res.status(500).send({ message: 'lambda_execution_id_missing' });
+        return;
+      }
+
+      // Disable cache for all lambda endpoints
+      res.set('Cache-Control', 'no-store');
+
+      let lambdaResult: ExecutionResultMessage | null = null;
+
+      if (result.triggerAPIType === 'SYNC') {
+        lambdaResult = await new Promise((resolve) => {
+          this._nrp?.on('lambda:worker:execution-result', (json) => {
+            const exec = JSON.parse(json) as ExecutionResultMessage;
+            if (exec.reqId === req.id?.toString()) {
+              resolve(exec);
+            }
+          });
+        });
+      }
+
+      if (lambdaResult && lambdaResult.res && lambdaResult.res.redirect) {
+        const url = lambdaResult.res.url;
+        const queryObj = lambdaResult.res.query;
+        let query: string = '';
+        if (queryObj) {
+          query = Object.keys(queryObj).reduce((output, key) => {
+            if (!output) {
+              output = `${key}=${queryObj[key]}`;
+            } else {
+              output = `${output}&${key}=${queryObj[key]}`;
+            }
+            return output;
+          }, '');
+        }
+        const redirectURL = query ? `${url}?${query}` : url;
+        res.redirect(redirectURL);
+      } else if (lambdaResult) {
+        res.status(lambdaResult.code).send({
+          res: lambdaResult.res,
+          err: lambdaResult.err,
+          executionId: lambdaResult.executionId,
+        });
+      } else {
+        res.status(200).send({
+          executionId: lambdaExecutionId,
+        });
+      }
+    });
+  }
+
+  async _queueLambdaAPIExecution(endpointOrId: string, apiPath, req: BjsRequest) {
+    const res: {
+      errCode?: number;
+      errMessage?: string;
+      triggerAPIType?: string;
+      lambdaExecution?: LambdaExecution;
+    } = {};
+    let lambda: Lambda | null = null;
+
+    const lambdaApp = await Model.getCoreModel(AppSchemaModel).findByApiPath(apiPath);
+    lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
+      $or: [
+        {
+          id: {
+            $eq: endpointOrId,
+          },
+        },
+        {
+          'trigger.apiEndpoint.url': {
+            $eq: endpointOrId,
+          },
+        },
+      ],
+      _appId: {
+        $eq: lambdaApp.id,
+      },
+    });
+
+    if (!lambda) {
+      res.errCode = 404;
+      res.errMessage = 'lambda_not_found';
+      return res;
+    }
+    if (!lambda.executable) {
+      res.errCode = 400;
+      res.errMessage = 'lambda_is_not_executable';
+      return res;
+    }
+
+    const triggerAPI = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
+    if (!triggerAPI || triggerAPI.apiEndpoint.method !== req.method) {
+      res.errCode = 404;
+      res.errMessage = 'api_method_not_found';
+      return res;
+    }
+
+    const deployment = await Model.getCoreModel(DeploymentSchemaModel).findOne({
+      lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
+      hash: lambda.git.hash,
+    });
+    if (!deployment) {
+      res.errCode = 404;
+      res.errMessage = 'deployment_not_found';
+      return res;
+    }
+
+    const LambdaExecutionData = {
+      triggerType: 'API_ENDPOINT',
+      priority: triggerAPI.apiEndpoint.type === 'SYNC' ? ExecPriority.API_ENDPOINT_SYNC : ExecPriority.API_ENDPOINT,
+      lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
+      deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(deployment.id),
+      metadata: [{ key: 'REQ_ID', value: req.id }],
+    };
+
+    if (req.body) LambdaExecutionData.metadata.push({ key: 'BODY', value: JSON.stringify(req.body) });
+    if (req.query) LambdaExecutionData.metadata.push({ key: 'QUERY', value: JSON.stringify(req.query) });
+    if (req.headers) LambdaExecutionData.metadata.push({ key: 'HEADERS', value: JSON.stringify(req.headers) });
+
+    const lambdaExecution = (await Model.getCoreModel(LambdaExecutionSchemaModel).add(
+      LambdaExecutionData,
+      lambda._appId,
+      triggerAPI.apiEndpoint.useCallerToken ? Model.getCoreModel(TokenSchemaModel).createId(req.token.id) : null,
+    )) as LambdaExecution;
+
+    res.lambdaExecution = lambdaExecution;
+    res.triggerAPIType = triggerAPI.apiEndpoint.type;
+
+    const data: LambdaExecutionMessage = {
+      executionId: lambdaExecution.id,
+      lambdaId: lambda.id,
+      lambdaType: 'API_ENDPOINT',
+      triggerType: triggerAPI.type,
+      lambdaExecBehavior: triggerAPI.apiEndpoint.type,
+    };
+
+    if (!res.errCode && !res.errMessage) {
+      this._nrp?.emit('rest:worker:exec-lambda-api', JSON.stringify(data));
+    }
+
+    return res;
+  }
 }
 
 export default Routes;

@@ -24,7 +24,11 @@ import { parsedPolicyConfig } from './index.js';
 import { BjsQuery, QueryParams } from '../types/bjs-query.js';
 import StandardModel from '../model/type/standard.js';
 
-export async function find<T extends StandardModel>(model: T, query: QueryParams<object>, ac: { policyConfigs: parsedPolicyConfig[] }) {
+export async function find<T extends StandardModel>(
+  model: T,
+  query: QueryParams<object>,
+  ac: { policyConfigs: parsedPolicyConfig[] },
+) {
   if (ac.policyConfigs.length > 1) {
     const resStream = new Stream.PassThrough({ objectMode: true });
 
@@ -32,7 +36,14 @@ export async function find<T extends StandardModel>(model: T, query: QueryParams
     // Using forEach here because we don't want to wait for each function to finish before calling the next.
     ac.policyConfigs.forEach(async (policyConfig) => {
       const combined = await combineQueriesWithAc(query, policyConfig);
-      const result = model.find(model.parseQuery(combined.query, {}, model.flatSchemaData), {}, combined.limit, combined.skip, combined.sort, combined.project);
+      const result = model.find(
+        model.parseQuery(combined.query, {}, model.flatSchemaData),
+        {},
+        combined.limit,
+        combined.skip,
+        combined.sort,
+        combined.project,
+      );
 
       result.pipe(resStream, { end: false });
       result.on('end', () => {
@@ -48,10 +59,22 @@ export async function find<T extends StandardModel>(model: T, query: QueryParams
 
   const policyConfig = ac.policyConfigs[0] || {};
   const combined = await combineQueriesWithAc(query, policyConfig);
-  return model.find(model.parseQuery(combined.query, {}, model.flatSchemaData), {}, combined.limit, combined.skip, combined.sort, combined.project);
+  return model.find(
+    model.parseQuery(combined.query, {}, model.flatSchemaData),
+    {},
+    combined.limit,
+    combined.skip,
+    combined.sort,
+    combined.project,
+  );
 }
 
-export async function count<T extends StandardModel>(model: T, query: QueryParams<object>, ac: { policyConfigs: parsedPolicyConfig[] }, actualCount: boolean = false) {
+export async function count<T extends StandardModel>(
+  model: T,
+  query: QueryParams<object>,
+  ac: { policyConfigs: parsedPolicyConfig[] },
+  actualCount: boolean = false,
+) {
   if (ac.policyConfigs.length > 1) {
     if (actualCount) {
       let count = 0;
@@ -85,7 +108,7 @@ export async function combineQueriesWithAc(raw: QueryParams<object>, policyConfi
     skip: raw.skip,
     limit: raw.limit,
     sort: raw.sort,
-    project: raw.project
+    project: raw.project,
   };
 
   // Combine the user request query with the access control query we're trying to run.

@@ -1,105 +1,105 @@
 {
-	"environment": {
-		"NODE_ENV": "production",
-		"BUTTRESS_APP_TITLE": "ButtressJS",
-		"BUTTRESS_APP_CODE": "buttressjs",
-		"BUTTRESS_APP_PROTOCOL": "https",
-		"BUTTRESS_APP_PATH": "",
-		"BUTTRESS_APP_WORKERS": "FALSE",
-		"BUTTRESS_HOST_URL": "",
-		"BUTTRESS_REST_LISTEN_PORT": "8000",
-		"BUTTRESS_SOCK_LISTEN_PORT": "8010",
+  "environment": {
+    "NODE_ENV": "production",
+    "BUTTRESS_APP_TITLE": "ButtressJS",
+    "BUTTRESS_APP_CODE": "buttressjs",
+    "BUTTRESS_APP_PROTOCOL": "https",
+    "BUTTRESS_APP_PATH": "",
+    "BUTTRESS_APP_WORKERS": "FALSE",
+    "BUTTRESS_HOST_URL": "",
+    "BUTTRESS_REST_LISTEN_PORT": "8000",
+    "BUTTRESS_SOCK_LISTEN_PORT": "8010",
 
-		"BUTTRESS_REST_URL": "%BUTTRESS_APP_PROTOCOL%://%BUTTRESS_HOST_URL%",
-		"BUTTRESS_SOCK_URL": "%BUTTRESS_APP_PROTOCOL%://%BUTTRESS_HOST_URL%",
+    "BUTTRESS_REST_URL": "%BUTTRESS_APP_PROTOCOL%://%BUTTRESS_HOST_URL%",
+    "BUTTRESS_SOCK_URL": "%BUTTRESS_APP_PROTOCOL%://%BUTTRESS_HOST_URL%",
 
-		"BUTTRESS_DATASTORE_CONNECTION_STRING": "mongodb://localhost:27017",
-		"BUTTRESS_DATASTORE_OPTIONS": "appName=%BUTTRESS_APP_CODE%&maxPoolSize=100",
+    "BUTTRESS_DATASTORE_CONNECTION_STRING": "mongodb://localhost:27017",
+    "BUTTRESS_DATASTORE_OPTIONS": "appName=%BUTTRESS_APP_CODE%&maxPoolSize=100",
 
-		"BUTTRESS_REDIS_URL": "redis://localhost:6379",
+    "BUTTRESS_REDIS_URL": "redis://localhost:6379",
 
-		"BUTTRESS_REST_APP": "primary",
-		"BUTTRESS_SOCKET_APP": "primary",
-		"BUTTRESS_LOGGING_LEVEL": "info",
-		"BUTTRESS_LOGGING_SLOW": "TRUE",
-		"BUTTRESS_LOGGING_SLOW_TIME": 2,
+    "BUTTRESS_REST_APP": "primary",
+    "BUTTRESS_SOCKET_APP": "primary",
+    "BUTTRESS_LOGGING_LEVEL": "info",
+    "BUTTRESS_LOGGING_SLOW": "TRUE",
+    "BUTTRESS_LOGGING_SLOW_TIME": 2,
 
-		"BUTTRESS_TIMEOUT_LAMBDA": 5,
-		"BUTTRESS_TIMEOUT_LAMBDAS_RUNNER": 10,
+    "BUTTRESS_TIMEOUT_LAMBDA": 5,
+    "BUTTRESS_TIMEOUT_LAMBDAS_RUNNER": 10,
 
-		"LAMBDA_API_WORKERS": "%LAMBDA_API_WORKERS%",
-		"LAMBDA_PATH_MUTATION_WORKERS": "%LAMBDA_PATH_MUTATION_WORKERS%",
-		"LAMBDA_CRON_WORKERS": "%LAMBDA_CRON_WORKERS%",
+    "LAMBDA_API_WORKERS": "%LAMBDA_API_WORKERS%",
+    "LAMBDA_PATH_MUTATION_WORKERS": "%LAMBDA_PATH_MUTATION_WORKERS%",
+    "LAMBDA_CRON_WORKERS": "%LAMBDA_CRON_WORKERS%",
 
-		"LAMBDA_DEVELOPMENT_EMAIL_ADDRESS": ""
-	},
-	"global": {
-		"env": "%NODE_ENV%",
-		"app": {
-			"title": "%BUTTRESS_APP_TITLE%",
-			"description": "The federated real-time open data platform",
-			"code": "%BUTTRESS_APP_CODE%",
-			"version": "2.4.0",
-			"protocol": "%BUTTRESS_APP_PROTOCOL%",
-			"host": "%BUTTRESS_HOST_URL%",
-			"apiPrefix": "/api/v1",
-			"workers": "%BUTTRESS_APP_WORKERS%"
-		},
-		"lambda": {
-			"apiWorkers": "%LAMBDA_API_WORKERS%",
-			"pathMutationWorkers": "%LAMBDA_PATH_MUTATION_WORKERS%",
-			"cronWorkers": "%LAMBDA_CRON_WORKERS%",
-			"developmentEmailAddress": "%LAMBDA_DEVELOPMENT_EMAIL_ADDRESS%"
-		},
-		"logging": {
-			"level": "%BUTTRESS_LOGGING_LEVEL%",
-			"slow": "%BUTTRESS_LOGGING_SLOW%",
-			"slowTime": "%BUTTRESS_LOGGING_SLOW_TIME%"
-		},
-		"listenPorts": {
-			"rest": "%BUTTRESS_REST_LISTEN_PORT%",
-			"sock": "%BUTTRESS_SOCK_LISTEN_PORT%"
-		},
-		"datastore": {
-			"connectionString": "%BUTTRESS_DATASTORE_CONNECTION_STRING%",
-			"options": "%BUTTRESS_DATASTORE_OPTIONS%"
-		},
-		"timeout": {
-			"lambdaManager": "%BUTTRESS_TIMEOUT_LAMBDA%",
-			"lambdasRunner": "%BUTTRESS_TIMEOUT_LAMBDAS_RUNNER%"
-		},
-		"redis": {
-			"url": "%BUTTRESS_REDIS_URL%",
-			"scope": "%BUTTRESS_APP_CODE%:"
-		},
-		"sio": {
-			"app": "%BUTTRESS_SOCKET_APP%"
-		},
-		"rest": {
-			"app": "%BUTTRESS_REST_APP%"
-		},
-		"url": {
-			"rest": "%BUTTRESS_REST_URL%",
-			"ws": "%BUTTRESS_SOCK_URL%"
-		},
-		"paths": {
-			"root": "%BUTTRESS_APP_PATH%",
-			"logs": {
-				"dev":"%BUTTRESS_APP_PATH%/logs/dev",
-				"prod":"%BUTTRESS_APP_PATH%/logs/prod",
-				"test":"%BUTTRESS_APP_PATH%/logs/test"
-			},
-			"appData": {
-				"dev": "%BUTTRESS_APP_PATH%/app_data",
-				"prod": "%BUTTRESS_APP_PATH%/app_data",
-				"test": "%BUTTRESS_APP_PATH%/app_data/test"
-			},
-			"plugins": "%BUTTRESS_APP_PATH%/plugins",
-			"lambda": {
-				"code": "%BUTTRESS_APP_PATH%/app_data/lambda/code",
-				"plugins": "%BUTTRESS_APP_PATH%/app_data/lambda/plugins",
-				"bundles": "%BUTTRESS_APP_PATH%/app_data/lambda/bundles"
-			}
-		}
-	}
+    "LAMBDA_DEVELOPMENT_EMAIL_ADDRESS": ""
+  },
+  "global": {
+    "env": "%NODE_ENV%",
+    "app": {
+      "title": "%BUTTRESS_APP_TITLE%",
+      "description": "The federated real-time open data platform",
+      "code": "%BUTTRESS_APP_CODE%",
+      "version": "2.4.0",
+      "protocol": "%BUTTRESS_APP_PROTOCOL%",
+      "host": "%BUTTRESS_HOST_URL%",
+      "apiPrefix": "/api/v1",
+      "workers": "%BUTTRESS_APP_WORKERS%"
+    },
+    "lambda": {
+      "apiWorkers": "%LAMBDA_API_WORKERS%",
+      "pathMutationWorkers": "%LAMBDA_PATH_MUTATION_WORKERS%",
+      "cronWorkers": "%LAMBDA_CRON_WORKERS%",
+      "developmentEmailAddress": "%LAMBDA_DEVELOPMENT_EMAIL_ADDRESS%"
+    },
+    "logging": {
+      "level": "%BUTTRESS_LOGGING_LEVEL%",
+      "slow": "%BUTTRESS_LOGGING_SLOW%",
+      "slowTime": "%BUTTRESS_LOGGING_SLOW_TIME%"
+    },
+    "listenPorts": {
+      "rest": "%BUTTRESS_REST_LISTEN_PORT%",
+      "sock": "%BUTTRESS_SOCK_LISTEN_PORT%"
+    },
+    "datastore": {
+      "connectionString": "%BUTTRESS_DATASTORE_CONNECTION_STRING%",
+      "options": "%BUTTRESS_DATASTORE_OPTIONS%"
+    },
+    "timeout": {
+      "lambdaManager": "%BUTTRESS_TIMEOUT_LAMBDA%",
+      "lambdasRunner": "%BUTTRESS_TIMEOUT_LAMBDAS_RUNNER%"
+    },
+    "redis": {
+      "url": "%BUTTRESS_REDIS_URL%",
+      "scope": "%BUTTRESS_APP_CODE%:"
+    },
+    "sio": {
+      "app": "%BUTTRESS_SOCKET_APP%"
+    },
+    "rest": {
+      "app": "%BUTTRESS_REST_APP%"
+    },
+    "url": {
+      "rest": "%BUTTRESS_REST_URL%",
+      "ws": "%BUTTRESS_SOCK_URL%"
+    },
+    "paths": {
+      "root": "%BUTTRESS_APP_PATH%",
+      "logs": {
+        "dev": "%BUTTRESS_APP_PATH%/logs/dev",
+        "prod": "%BUTTRESS_APP_PATH%/logs/prod",
+        "test": "%BUTTRESS_APP_PATH%/logs/test"
+      },
+      "appData": {
+        "dev": "%BUTTRESS_APP_PATH%/app_data",
+        "prod": "%BUTTRESS_APP_PATH%/app_data",
+        "test": "%BUTTRESS_APP_PATH%/app_data/test"
+      },
+      "plugins": "%BUTTRESS_APP_PATH%/plugins",
+      "lambda": {
+        "code": "%BUTTRESS_APP_PATH%/app_data/lambda/code",
+        "plugins": "%BUTTRESS_APP_PATH%/app_data/lambda/plugins",
+        "bundles": "%BUTTRESS_APP_PATH%/app_data/lambda/bundles"
+      }
+    }
+  }
 }

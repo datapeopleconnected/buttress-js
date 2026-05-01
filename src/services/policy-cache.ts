@@ -65,7 +65,10 @@ export class PolicyCache {
   }
   private _setConnectedTokensExpiryTimeout() {
     if (this._timeoutExpiredConnectedTokens) clearTimeout(this._timeoutExpiredConnectedTokens);
-    this._timeoutExpiredConnectedTokens = setTimeout(() => this._processConnectedTokensExpiry(), this._timeoutExpiredConnectedTokensInterval);
+    this._timeoutExpiredConnectedTokens = setTimeout(
+      () => this._processConnectedTokensExpiry(),
+      this._timeoutExpiredConnectedTokensInterval,
+    );
   }
 
   async getPolicies(policyIds: string[]) {
@@ -75,13 +78,15 @@ export class PolicyCache {
     }
 
     const policies = (await this._redisClient.hmGet(this._prefix('policies'), policyIds))
-      .map((policy) => (policy) ? JSON.parse(policy) : false)
+      .map((policy) => (policy ? JSON.parse(policy) : false))
       .filter((policy) => policy !== false);
 
     const missingPolicies = policyIds.filter((policyId) => !policies.find((policy) => policyId === policy.id));
 
     if (missingPolicies.length > 0) {
-      const newPolicies = await Helpers.streamAll(this._modelManager.getCoreModel(PolicySchemaModel).find({ id: { $in: missingPolicies } }));
+      const newPolicies = await Helpers.streamAll(
+        this._modelManager.getCoreModel(PolicySchemaModel).find({ id: { $in: missingPolicies } }),
+      );
 
       await newPolicies.reduce(async (prev, policy) => {
         await prev;
@@ -118,7 +123,9 @@ export class PolicyCache {
     // If the tokens are marked as stale, we're in the process of cleaning them up. we'll miss the cache and get fresh data.
     const isStale = policyIds.includes('STALE');
     if (policyIds.length < 1 || isStale) {
-      const appPolicies = await Helpers.streamAll(this._modelManager.getCoreModel(PolicySchemaModel).find({ _appId: token._appId }));
+      const appPolicies = await Helpers.streamAll(
+        this._modelManager.getCoreModel(PolicySchemaModel).find({ _appId: token._appId }),
+      );
       policies = AccessControlPolicyMatch.getTokenPolicies(appPolicies, token);
 
       // Clear out old policies for the token
@@ -149,8 +156,8 @@ export class PolicyCache {
   }
 
   async getPoliciesByEvent(event: any) {
-    const isCoreSchema = false
-    const schemaWildCard = (isCoreSchema) ? '%CORE_SCHEMA%' : '%APP_SCHEMA%';
+    const isCoreSchema = false;
+    const schemaWildCard = isCoreSchema ? '%CORE_SCHEMA%' : '%APP_SCHEMA%';
 
     // The following code is stupid but will be refactored later.
     const direct = await this._redisClient.sMembers(this._prefix(`app:${event.appId}:schema:${event.schemaName}`));
@@ -294,7 +301,7 @@ export class PolicyCache {
   // if it does then we can cache it otherwise we can ignore it.
   async invalidatePolicyAndTokensBySelection(policyId: string) {
     // Get the policy
-    const policy = await this._modelManager.getCoreModel(PolicySchemaModel).findById(policyId) as Policy;
+    const policy = (await this._modelManager.getCoreModel(PolicySchemaModel).findById(policyId)) as Policy;
     if (!policy) {
       Logging.logSilly(`Policy not found: ${policyId}`);
       return;
@@ -307,7 +314,9 @@ export class PolicyCache {
     if (policySelectionProperties.length < 1) return;
 
     // Get all tokenIds which have the policy properties indexed using sInter
-    const tokenIds = await this._redisClient.sInter(policySelectionProperties.map((prop) => this._prefix(`policy:propertyIndex:${prop}`)));
+    const tokenIds = await this._redisClient.sInter(
+      policySelectionProperties.map((prop) => this._prefix(`policy:propertyIndex:${prop}`)),
+    );
     if (tokenIds.length < 1) {
       Logging.logSilly(`No tokens found for policy properties: ${JSON.stringify(policySelectionProperties)}`);
       return;
@@ -341,7 +350,9 @@ export class PolicyCache {
     const missingProperties = propertyKeys.filter((key) => !existingProperties.includes(key));
     if (missingProperties.length > 0) {
       await this._redisClient.sRem(this._prefix(`token:${tokenId}:policyProperties`), missingProperties);
-      Logging.logSilly(`Removed missing policy properties for token: ${tokenId}, properties: ${JSON.stringify(missingProperties)}`);
+      Logging.logSilly(
+        `Removed missing policy properties for token: ${tokenId}, properties: ${JSON.stringify(missingProperties)}`,
+      );
     }
 
     const newProperties = propertyKeys.filter((key) => !existingProperties.includes(key));

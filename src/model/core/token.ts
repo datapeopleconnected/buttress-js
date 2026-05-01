@@ -23,244 +23,243 @@ import { Schema } from '../../helpers/schema.js';
 
 /**
  * Constants
-*/
+ */
 const type = ['system', 'app', 'user', 'dataSharing', 'lambda'];
 const Type = {
-	SYSTEM: type[0],
-	APP: type[1],
-	USER: type[2],
-	DATA_SHARING: type[3],
-	LAMBDA: type[4],
+  SYSTEM: type[0],
+  APP: type[1],
+  USER: type[2],
+  DATA_SHARING: type[3],
+  LAMBDA: type[4],
 };
 
 export interface Token {
-	id: string
-	type: string;
-	value: string;
-	domains: string[];
-	permissions: { route: string; permission: string }[];
-	tags: string[];
-	policyProperties: any;
-	_appId: string;
-	_lambdaId: string;
-	_userId: string;
-	_entityId: string;
-	_appDataSharingId: string;
+  id: string;
+  type: string;
+  value: string;
+  domains: string[];
+  permissions: { route: string; permission: string }[];
+  tags: string[];
+  policyProperties: any;
+  _appId: string;
+  _lambdaId: string;
+  _userId: string;
+  _entityId: string;
+  _appDataSharingId: string;
 }
 
 class TokenSchemaModel extends StandardModel {
-	static name = 'Token';
+  static name = 'Token';
 
-	__policyCache: PolicyCache;
+  __policyCache: PolicyCache;
 
-	constructor(services) {
-		const schema = TokenSchemaModel.Schema;
-		super(schema, null, services);
+  constructor(services) {
+    const schema = TokenSchemaModel.Schema;
+    super(schema, null, services);
 
-		this.__policyCache = this.__services.get('policyCache') as PolicyCache;
-		if (!this.__policyCache) throw new Error('Unable to find policyCache in services');
-	}
+    this.__policyCache = this.__services.get('policyCache') as PolicyCache;
+    if (!this.__policyCache) throw new Error('Unable to find policyCache in services');
+  }
 
-	static get Constants() {
-		return {
-			Type: Type,
-		};
-	}
-	get Constants() {
-		return TokenSchemaModel.Constants;
-	}
+  static get Constants() {
+    return {
+      Type: Type,
+    };
+  }
+  get Constants() {
+    return TokenSchemaModel.Constants;
+  }
 
-	static get Schema(): Schema {
-		return {
-			name: 'tokens',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				type: {
-					__type: 'string',
-					__default: 'user',
-					__enum: type,
-					__allowUpdate: true,
-				},
-				value: {
-					__type: 'string',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				domains: {
-					__type: 'array',
-					__required: true,
-					__allowUpdate: true,
-				},
-				permissions: {
-					__type: 'array',
-					__required: true,
-					__allowUpdate: true,
-					__schema: {
-						route: {
-							__type: 'string',
-							__required: true,
-							__allowUpdate: true,
-						},
-						permission: {
-							__type: 'string',
-							__required: true,
-							__allowUpdate: true,
-						},
-					},
-				},
-				tags: {
-					__type: 'array',
-					__itemtype: 'string',
-					__required: true,
-					__allowUpdate: true,
-				},
-				policyProperties: {
-					__type: 'object',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				_appId: {
-					__type: 'id',
-					__default: null,
-					__required: true,
-					__allowUpdate: false,
-				},
-				_lambdaId: {
-					__type: 'id',
-					__default: null,
-					__required: true,
-					__allowUpdate: false,
-				},
-				_userId: {
-					__type: 'id',
-					__default: null,
-					__required: true,
-					__allowUpdate: false,
-				},
-				_entityId: {
-					__type: 'id',
-					__default: null,
-					__required: true,
-					__allowUpdate: false,
-				},
-				_appDataSharingId: {
-					__type: 'id',
-					__default: null,
-					__required: true,
-					__allowUpdate: false,
-				},
-			},
-		};
-	}
+  static get Schema(): Schema {
+    return {
+      name: 'tokens',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        type: {
+          __type: 'string',
+          __default: 'user',
+          __enum: type,
+          __allowUpdate: true,
+        },
+        value: {
+          __type: 'string',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        domains: {
+          __type: 'array',
+          __required: true,
+          __allowUpdate: true,
+        },
+        permissions: {
+          __type: 'array',
+          __required: true,
+          __allowUpdate: true,
+          __schema: {
+            route: {
+              __type: 'string',
+              __required: true,
+              __allowUpdate: true,
+            },
+            permission: {
+              __type: 'string',
+              __required: true,
+              __allowUpdate: true,
+            },
+          },
+        },
+        tags: {
+          __type: 'array',
+          __itemtype: 'string',
+          __required: true,
+          __allowUpdate: true,
+        },
+        policyProperties: {
+          __type: 'object',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        _appId: {
+          __type: 'id',
+          __default: null,
+          __required: true,
+          __allowUpdate: false,
+        },
+        _lambdaId: {
+          __type: 'id',
+          __default: null,
+          __required: true,
+          __allowUpdate: false,
+        },
+        _userId: {
+          __type: 'id',
+          __default: null,
+          __required: true,
+          __allowUpdate: false,
+        },
+        _entityId: {
+          __type: 'id',
+          __default: null,
+          __required: true,
+          __allowUpdate: false,
+        },
+        _appDataSharingId: {
+          __type: 'id',
+          __default: null,
+          __required: true,
+          __allowUpdate: false,
+        },
+      },
+    };
+  }
 
-	/**
-	 * @return {string} - cryptographically secure token string
-	 */
-	createTokenString() {
-		const length = 36;
-		const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-		const mask = 0x3d;
-		let string = '';
+  /**
+   * @return {string} - cryptographically secure token string
+   */
+  createTokenString() {
+    const length = 36;
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const mask = 0x3d;
+    let string = '';
 
-		const bytes = Crypto.randomBytes(length);
-		for (let x = 0; x < bytes.length; x++) {
-			const byte = bytes[x];
-			string += chars[byte & mask];
-		}
+    const bytes = Crypto.randomBytes(length);
+    for (let x = 0; x < bytes.length; x++) {
+      const byte = bytes[x];
+      string += chars[byte & mask];
+    }
 
-		return string;
-	}
+    return string;
+  }
 
-	/*
-		* @param {Object} body - body passed through from a POST request
-		* @return {Promise} - returns a promise that is fulfilled when the database request is completed
-		*/
-	add(body, internals) {
-		body.value = this.createTokenString();
-		return super.add(body, internals);
-	}
+  /*
+   * @param {Object} body - body passed through from a POST request
+   * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+   */
+  add(body, internals) {
+    body.value = this.createTokenString();
+    return super.add(body, internals);
+  }
 
-	/**
-	 * @param {String} userId - DB id for the user
-	 * @param {String} appId - DB id for the app
-	 * @return {Promise} - resolves to an array of Tokens
-	 */
-	findUserAuthTokens(userId, appId) {
-		return this.find({
-			_appId: this.createId(appId),
-			_userId: this.createId(userId),
-		});
-	}
+  /**
+   * @param {String} userId - DB id for the user
+   * @param {String} appId - DB id for the app
+   * @return {Promise} - resolves to an array of Tokens
+   */
+  findUserAuthTokens(userId, appId) {
+    return this.find({
+      _appId: this.createId(appId),
+      _userId: this.createId(userId),
+    });
+  }
 
-	findByValue(value) {
-		return this.findOne({
-			value: value,
-		});
-	}
+  findByValue(value) {
+    return this.findOne({
+      value: value,
+    });
+  }
 
-	/**
-	 * @param {String} tokenId - id of the token
-	 * @param {Object} policyProperties - Policy properties
-	 * @return {Promise} - resolves after updating token policy properties
-	 */
-	async setPolicyPropertiesById(tokenId: string, policyProperties) {
-		if (policyProperties.query) {
-			delete policyProperties.query; // What is this line for??
-		}
+  /**
+   * @param {String} tokenId - id of the token
+   * @param {Object} policyProperties - Policy properties
+   * @return {Promise} - resolves after updating token policy properties
+   */
+  async setPolicyPropertiesById(tokenId: string, policyProperties) {
+    if (policyProperties.query) {
+      delete policyProperties.query; // What is this line for??
+    }
 
-		await super.updateById(this.createId(tokenId),
-			{ $set: { 'policyProperties': policyProperties } });
+    await super.updateById(this.createId(tokenId), { $set: { policyProperties: policyProperties } });
 
-		await this.__policyCache.setTokenIdAsStale(tokenId);
-		this.__nrp?.emit('app-routes:bust-cache', '{}');
-	}
+    await this.__policyCache.setTokenIdAsStale(tokenId);
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+  }
 
-	/**
-	 * @param {String} token - token object
-	 * @param {Object} policyProperties - Policy properties
-	 * @return {Promise} - resolves to an array of Apps
-	 */
-	async updatePolicyProperties(token: Token, policyProperties) {
-		if (policyProperties.query) {
-			delete policyProperties.query; // Again, what is this line for??
-		}
+  /**
+   * @param {String} token - token object
+   * @param {Object} policyProperties - Policy properties
+   * @return {Promise} - resolves to an array of Apps
+   */
+  async updatePolicyProperties(token: Token, policyProperties) {
+    if (policyProperties.query) {
+      delete policyProperties.query; // Again, what is this line for??
+    }
 
-		const tokenPolicy = (token.policyProperties || {});
-		const policy = Object.keys(policyProperties).reduce((obj, key) => {
-			obj[key] = policyProperties[key];
-			return obj;
-		}, []);
+    const tokenPolicy = token.policyProperties || {};
+    const policy = Object.keys(policyProperties).reduce((obj, key) => {
+      obj[key] = policyProperties[key];
+      return obj;
+    }, []);
 
-		await super.updateById(this.createId(token.id), {
-			$set: {
-				'policyProperties': {
-					...tokenPolicy,
-					...policy,
-				},
-			},
-		});
+    await super.updateById(this.createId(token.id), {
+      $set: {
+        policyProperties: {
+          ...tokenPolicy,
+          ...policy,
+        },
+      },
+    });
 
-		await this.__policyCache.setTokenIdAsStale(token.id.toString());
-		this.__nrp?.emit('app-routes:bust-cache', '{}');
-	}
+    await this.__policyCache.setTokenIdAsStale(token.id.toString());
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+  }
 
-	/**
-	 * @param {String} tokenId - tokenId
-	 * @return {Promise}
-	 */
-	async clearPolicyPropertiesById(tokenId) {
-		await super.updateById(this.createId(tokenId), {
-			$set: {
-				'policyProperties': {},
-			},
-		});
+  /**
+   * @param {String} tokenId - tokenId
+   * @return {Promise}
+   */
+  async clearPolicyPropertiesById(tokenId) {
+    await super.updateById(this.createId(tokenId), {
+      $set: {
+        policyProperties: {},
+      },
+    });
 
-		this.__nrp?.emit('app-routes:bust-cache', '{}');
-	}
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+  }
 }
 
 /**

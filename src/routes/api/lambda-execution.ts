@@ -28,36 +28,41 @@ const routes: (typeof Route)[] = [];
  * @class GetLambdaExecution
  */
 class GetLambdaExecution extends Route {
-	constructor(services) {
-		super('lambda-execution/:id', 'GET LAMBDA EXECUTION', services, Model.getCoreModel(LambdaExecutionSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.LAMBDA;
-		this.permissions = Route.Constants.Permissions.READ;
-	}
+  constructor(services) {
+    super(
+      'lambda-execution/:id',
+      'GET LAMBDA EXECUTION',
+      services,
+      Model.getCoreModel(LambdaExecutionSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.LAMBDA;
+    this.permissions = Route.Constants.Permissions.READ;
+  }
 
-	async _validate(req, res, token) {
-		const id = req.params.id;
-		if (!id) {
-			this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
-		}
-		if (!ObjectId.isValid(id)) {
-			this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
-		}
+  async _validate(req, res, token) {
+    const id = req.params.id;
+    if (!id) {
+      this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
+    }
+    if (!ObjectId.isValid(id)) {
+      this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
+    }
 
-		const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).findById(id);
-		if (!lambdaExecution) {
-			this.log(`[${this.name}] Cannot find a lambda execution with id id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_execution_does_not_exist`));
-		}
+    const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).findById(id);
+    if (!lambdaExecution) {
+      this.log(`[${this.name}] Cannot find a lambda execution with id id`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_execution_does_not_exist`));
+    }
 
-		return lambdaExecution;
-	}
+    return lambdaExecution;
+  }
 
-	_exec(req, res, lambdaExecution) {
-		return lambdaExecution;
-	}
+  _exec(req, res, lambdaExecution) {
+    return lambdaExecution;
+  }
 }
 routes.push(GetLambdaExecution);
 
@@ -65,38 +70,43 @@ routes.push(GetLambdaExecution);
  * @class GetLambdaExecution
  */
 class GetLambdaExecutionStatus extends Route {
-	constructor(services) {
-		super('lambda-execution/:id/status', 'GET LAMBDA EXECUTION STATUS', services, Model.getCoreModel(LambdaExecutionSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.USER;
-		this.permissions = Route.Constants.Permissions.READ;
-	}
+  constructor(services) {
+    super(
+      'lambda-execution/:id/status',
+      'GET LAMBDA EXECUTION STATUS',
+      services,
+      Model.getCoreModel(LambdaExecutionSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.USER;
+    this.permissions = Route.Constants.Permissions.READ;
+  }
 
-	async _validate(req, res, token) {
-		const id = req.params.id;
-		if (!id) {
-			this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
-		}
-		if (!ObjectId.isValid(id)) {
-			this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
-		}
+  async _validate(req, res, token) {
+    const id = req.params.id;
+    if (!id) {
+      this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
+    }
+    if (!ObjectId.isValid(id)) {
+      this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
+    }
 
-		const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).findById(id);
-		if (!lambdaExecution) {
-			this.log(`[${this.name}] Cannot find a lambda execution with id id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_execution_does_not_exist`));
-		}
+    const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).findById(id);
+    if (!lambdaExecution) {
+      this.log(`[${this.name}] Cannot find a lambda execution with id id`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_execution_does_not_exist`));
+    }
 
-		return lambdaExecution.status;
-	}
+    return lambdaExecution.status;
+  }
 
-	async _exec(req, res, status) {
-		return {
-			status,
-		};
-	}
+  async _exec(req, res, status) {
+    return {
+      status,
+    };
+  }
 }
 routes.push(GetLambdaExecutionStatus);
 
@@ -104,46 +114,59 @@ routes.push(GetLambdaExecutionStatus);
  * @class UpdateLambdaExecution
  */
 class UpdateLambdaExecution extends Route {
-	constructor(services) {
-		super('lambda-execution/:id', 'UPDATE LAMBDA EXECUTION', services, Model.getCoreModel(LambdaExecutionSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.LAMBDA;
-		this.permissions = Route.Constants.Permissions.WRITE;
+  constructor(services) {
+    super(
+      'lambda-execution/:id',
+      'UPDATE LAMBDA EXECUTION',
+      services,
+      Model.getCoreModel(LambdaExecutionSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.PUT;
+    this.authType = Route.Constants.Type.LAMBDA;
+    this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
-	}
+    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
+    this.activityBroadcast = true;
+  }
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			const { validation, body } = Model.getCoreModel(LambdaExecutionSchemaModel).validateUpdate(req.body);
-			req.body = body;
+  _validate(req, res, token) {
+    return new Promise((resolve, reject) => {
+      const { validation, body } = Model.getCoreModel(LambdaExecutionSchemaModel).validateUpdate(req.body);
+      req.body = body;
 
-			if (!validation.isValid) {
-				if (validation.isPathValid === false) {
-					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `LAMBDA EXECUTION: Update path is invalid: ${validation.invalidPath}`));
-				}
-				if (validation.isValueValid === false) {
-					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-					return reject(new Helpers.Errors.RequestError(400, `LAMBDA EXECUTION: Update value is invalid: ${validation.invalidValue}`));
-				}
-			}
+      if (!validation.isValid) {
+        if (validation.isPathValid === false) {
+          this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
+          return reject(
+            new Helpers.Errors.RequestError(400, `LAMBDA EXECUTION: Update path is invalid: ${validation.invalidPath}`),
+          );
+        }
+        if (validation.isValueValid === false) {
+          this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
+          return reject(
+            new Helpers.Errors.RequestError(
+              400,
+              `LAMBDA EXECUTION: Update value is invalid: ${validation.invalidValue}`,
+            ),
+          );
+        }
+      }
 
-			Model.getCoreModel(LambdaExecutionSchemaModel).exists(req.params.id)
-				.then((exists) => {
-					if (!exists) {
-						this.log('ERROR: Invalid LAMBDA EXECUTION ID', Route.LogLevel.ERR);
-						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-					}
-					resolve(true);
-				});
-		});
-	}
+      Model.getCoreModel(LambdaExecutionSchemaModel)
+        .exists(req.params.id)
+        .then((exists) => {
+          if (!exists) {
+            this.log('ERROR: Invalid LAMBDA EXECUTION ID', Route.LogLevel.ERR);
+            return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+          }
+          resolve(true);
+        });
+    });
+  }
 
-	async _exec(req, res, validate) {
-		return Model.getCoreModel(LambdaExecutionSchemaModel).updateByPath(req.body, req.params.id);
-	}
+  async _exec(req, res, validate) {
+    return Model.getCoreModel(LambdaExecutionSchemaModel).updateByPath(req.body, req.params.id);
+  }
 }
 routes.push(UpdateLambdaExecution);
 
@@ -151,34 +174,43 @@ routes.push(UpdateLambdaExecution);
  * @class SearchExecutionList
  */
 class SearchExecutionList extends Route {
-	constructor(services) {
-		super('lambda-execution', 'SEARCH LAMBDA EXECUTION LIST', services, Model.getCoreModel(LambdaExecutionSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.LAMBDA;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
+  constructor(services) {
+    super(
+      'lambda-execution',
+      'SEARCH LAMBDA EXECUTION LIST',
+      services,
+      Model.getCoreModel(LambdaExecutionSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.authType = Route.Constants.Type.LAMBDA;
+    this.permissions = Route.Constants.Permissions.LIST;
+  }
 
-	async _validate(req, res, token) {
-		const result: {
-			query: any
-		} = {
-			query: {
-				$and: [],
-			},
-		};
+  async _validate(req, res, token) {
+    const result: {
+      query: any;
+    } = {
+      query: {
+        $and: [],
+      },
+    };
 
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			result.query.$and.push(req.body.query);
-		}
+    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+    if (req.body && req.body.query) {
+      result.query.$and.push(req.body.query);
+    }
 
-		result.query = Model.getCoreModel(LambdaExecutionSchemaModel).parseQuery(result.query, {}, Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData);
-		return result;
-	}
+    result.query = Model.getCoreModel(LambdaExecutionSchemaModel).parseQuery(
+      result.query,
+      {},
+      Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData,
+    );
+    return result;
+  }
 
-	_exec(req, res, validate) {
-		return Model.getCoreModel(LambdaExecutionSchemaModel).find(validate.query);
-	}
+  _exec(req, res, validate) {
+    return Model.getCoreModel(LambdaExecutionSchemaModel).find(validate.query);
+  }
 }
 routes.push(SearchExecutionList);
 
@@ -186,42 +218,51 @@ routes.push(SearchExecutionList);
  * @class LambdaExecutionCount
  */
 class LambdaExecutionCount extends Route {
-	constructor(services) {
-		super(`lambda-execution/count`, `COUNT LAMBDA EXECUTION`, services, Model.getCoreModel(LambdaExecutionSchemaModel).schemaData);
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.LAMBDA;
-		this.permissions = Route.Constants.Permissions.SEARCH;
+  constructor(services) {
+    super(
+      `lambda-execution/count`,
+      `COUNT LAMBDA EXECUTION`,
+      services,
+      Model.getCoreModel(LambdaExecutionSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.authType = Route.Constants.Type.LAMBDA;
+    this.permissions = Route.Constants.Permissions.SEARCH;
 
-		this.activityDescription = `COUNT LAMBDA EXECUTION`;
-		this.activityBroadcast = false;
-	}
+    this.activityDescription = `COUNT LAMBDA EXECUTION`;
+    this.activityBroadcast = false;
+  }
 
-	async _validate(req, res, token) {
-		const result = {
-			query: {},
-		};
+  async _validate(req, res, token) {
+    const result = {
+      query: {},
+    };
 
-		let query: any = {};
+    let query: any = {};
 
-		if (!query.$and) {
-			query.$and = [];
-		}
+    if (!query.$and) {
+      query.$and = [];
+    }
 
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			query.$and.push(req.body.query);
-		} else if (req.body && !req.body.query) {
-			query.$and.push(req.body);
-		}
+    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+    if (req.body && req.body.query) {
+      query.$and.push(req.body.query);
+    } else if (req.body && !req.body.query) {
+      query.$and.push(req.body);
+    }
 
-		query = Model.getCoreModel(LambdaExecutionSchemaModel).parseQuery(query, {}, Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData);
-		result.query = query;
-		return result;
-	}
+    query = Model.getCoreModel(LambdaExecutionSchemaModel).parseQuery(
+      query,
+      {},
+      Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData,
+    );
+    result.query = query;
+    return result;
+  }
 
-	_exec(req, res, validateResult) {
-		return Model.getCoreModel(LambdaExecutionSchemaModel).count(validateResult.query);
-	}
+  _exec(req, res, validateResult) {
+    return Model.getCoreModel(LambdaExecutionSchemaModel).count(validateResult.query);
+  }
 }
 routes.push(LambdaExecutionCount);
 

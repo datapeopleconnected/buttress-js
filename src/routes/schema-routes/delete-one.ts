@@ -26,29 +26,29 @@ import { App } from '../../model/core/app.js';
  * @class DeleteOne
  */
 export default class DeleteOne extends Route {
-	constructor(schema: Schema, app: App, services: Services) {
-		const schemaRoutePath = modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/:id`, `DELETE ${schema.name}`, services, schema, app);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.DEL;
-		this.permissions = Route.Constants.Permissions.DELETE;
+    super(`${schemaRoutePath}/:id`, `DELETE ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.DEL;
+    this.permissions = Route.Constants.Permissions.DELETE;
 
-		this.activityDescription = `DELETE ${schema.name}`;
-		this.activityBroadcast = true;
-	}
+    this.activityDescription = `DELETE ${schema.name}`;
+    this.activityBroadcast = true;
+  }
 
-	async _validate(req, res, token) {
-		const entity = await (await this.routeModel()).findById(req.params.id)
-		if (!entity) {
-			throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
-		}
+  async _validate(req, res, token) {
+    const entity = await (await this.routeModel()).findById(req.params.id);
+    if (!entity) {
+      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
+    }
 
-		return entity;
-	}
+    return entity;
+  }
 
-	async _exec(req, res, entity) {
-		await (await this.routeModel()).rm(entity.id);
-		return true;
-	}
-};
+  async _exec(req, res, entity) {
+    await (await this.routeModel()).rm(entity.id);
+    return true;
+  }
+}

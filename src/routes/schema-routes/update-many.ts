@@ -28,104 +28,108 @@ import { ContractUpdateTransaction } from '@hashgraph/sdk';
  * @class UpdateMany
  */
 export default class UpdateMany extends Route {
-	constructor(schema: Schema, app: App, services: Services) {
-		const schemaRoutePath = modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/update`, `BULK UPDATE ${schema.name}`, services, schema, app);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.POST;
-		this.permissions = Route.Constants.Permissions.WRITE;
+    super(`${schemaRoutePath}/bulk/update`, `BULK UPDATE ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.POST;
+    this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityDescription = `BULK UPDATE ${schema.name}`;
-		this.activityBroadcast = true;
-	}
+    this.activityDescription = `BULK UPDATE ${schema.name}`;
+    this.activityBroadcast = true;
+  }
 
-	async _validate(req, res, token) {
-		const model = await this.routeModel();
+  async _validate(req, res, token) {
+    const model = await this.routeModel();
 
-		if (!Array.isArray(req.body)) {
-			this.log(`${this.schemaName}: Expected body to be an array of updates`, Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Expected body to be an array of updates`);
-		}
+    if (!Array.isArray(req.body)) {
+      this.log(`${this.schemaName}: Expected body to be an array of updates`, Route.LogLevel.ERR, req.id);
+      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Expected body to be an array of updates`);
+    }
 
-		// Reduce down duplicate entity updates into one object
-		const data = req.body.reduce((reducedUpdates, update) => {
-			const existing = reducedUpdates.find((u) => u.id === update.id);
+    // Reduce down duplicate entity updates into one object
+    const data = req.body.reduce((reducedUpdates, update) => {
+      const existing = reducedUpdates.find((u) => u.id === update.id);
 
-			if (!existing) {
-				reducedUpdates.push(update);
-			} else {
-				if (!Array.isArray(existing.body)) existing.body = [existing.body];
-				if (!Array.isArray(update.body)) update.body = [update.body];
-				existing.body = [...existing.body, ...update.body];
-			}
+      if (!existing) {
+        reducedUpdates.push(update);
+      } else {
+        if (!Array.isArray(existing.body)) existing.body = [existing.body];
+        if (!Array.isArray(update.body)) update.body = [update.body];
+        existing.body = [...existing.body, ...update.body];
+      }
 
-			return reducedUpdates;
-		}, []);
+      return reducedUpdates;
+    }, []);
 
-		for await (const update of data) {
-			const { validation, body } = model.validateUpdate(update.body);
-			update.body = body;
+    for await (const update of data) {
+      const { validation, body } = model.validateUpdate(update.body);
+      update.body = body;
 
-			if (!validation.isValid) {
-				if (validation.isPathValid === false) {
-					this.log(`${this.schemaName}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);
-					update.validation = {
-						code: 400,
-						message: `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
-					};
-					continue;
-				}
-				if (validation.isValueValid === false) {
-					this.log(`${this.schemaName}: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR, req.id);
-					if (validation.isMissingRequired) {
-						update.validation = {
-							code: 400,
-							message: `${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
-						};
-						continue;
-					}
-				}
+      if (!validation.isValid) {
+        if (validation.isPathValid === false) {
+          this.log(`${this.schemaName}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);
+          update.validation = {
+            code: 400,
+            message: `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
+          };
+          continue;
+        }
+        if (validation.isValueValid === false) {
+          this.log(
+            `${this.schemaName}: Update value is invalid: ${validation.invalidValue}`,
+            Route.LogLevel.ERR,
+            req.id,
+          );
+          if (validation.isMissingRequired) {
+            update.validation = {
+              code: 400,
+              message: `${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
+            };
+            continue;
+          }
+        }
 
-				// ? I've moved outside isValidValue to be the default fallback if isValid is false.
-				update.validation = {
-					code: 400,
-					message: `${this.schemaName}: Update value is invalid for path ${req.body.path}: ${validation.invalidValue}`,
-				};
-				continue;
-			}
+        // ? I've moved outside isValidValue to be the default fallback if isValid is false.
+        update.validation = {
+          code: 400,
+          message: `${this.schemaName}: Update value is invalid for path ${req.body.path}: ${validation.invalidValue}`,
+        };
+        continue;
+      }
 
-			const exists = await model.exists(update.id, body.sourceId);
+      const exists = await model.exists(update.id, body.sourceId);
 
-			if (!exists) {
-				this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.id);
-				update.validation = {
-					code: 400,
-					message: `${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
-				};
-				continue;
-			}
+      if (!exists) {
+        this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.id);
+        update.validation = {
+          code: 400,
+          message: `${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
+        };
+        continue;
+      }
 
-			update.validation = true;
-		}
+      update.validation = true;
+    }
 
-		return data;
-	}
+    return data;
+  }
 
-	async _exec(req, res, data) {
-		const model = await this.routeModel();
+  async _exec(req, res, data) {
+    const model = await this.routeModel();
 
-		const output: {
-			id: string,
-			sourceId: string,
-			results: any,
-		}[] = [];
+    const output: {
+      id: string;
+      sourceId: string;
+      results: any;
+    }[] = [];
 
-		for await (const body of data) {
-			const result = await model.updateByPath(body.body, body.id, body.sourceId);
-			output.push({ id: body.id, sourceId: body.sourceId, results: result });
-		}
+    for await (const body of data) {
+      const result = await model.updateByPath(body.body, body.id, body.sourceId);
+      output.push({ id: body.id, sourceId: body.sourceId, results: result });
+    }
 
-		return output;
-	}
-};
+    return output;
+  }
+}

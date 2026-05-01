@@ -23,40 +23,38 @@ import MongoDB from './adapters/mongodb.js';
 import Buttress from './adapters/buttress.js';
 import Empty from './adapters/empty.js';
 
-
 export default class Datastore {
-	static create(connectionString: string, optsString?: string) {
-		const uri = new URL(connectionString);
+  static create(connectionString: string, optsString?: string) {
+    const uri = new URL(connectionString);
 
-		if (!uri.pathname) {
-			uri.pathname = `${Config.app.code}-${Config.env}`;
-		}
+    if (!uri.pathname) {
+      uri.pathname = `${Config.app.code}-${Config.env}`;
+    }
 
-		const options = new URLSearchParams(optsString);
+    const options = new URLSearchParams(optsString);
 
-		const Adapter = (() => {
-			switch (uri.protocol) {
-				case 'mongodb:':
-					return MongoDB;
-				case 'butt:':
-				case 'butts:':
-					return Buttress;
-				case 'empty:':
-					return Empty;
-				default:
-					return null;
-			}
-		})();
+    const Adapter = (() => {
+      switch (uri.protocol) {
+        case 'mongodb:':
+          return MongoDB;
+        case 'butt:':
+        case 'butts:':
+          return Buttress;
+        case 'empty:':
+          return Empty;
+        default:
+          return null;
+      }
+    })();
 
-		if (Adapter === null) throw new Errors.UnsupportedDatastore(`Unknown datastore '${uri.protocol}'`);
+    if (Adapter === null) throw new Errors.UnsupportedDatastore(`Unknown datastore '${uri.protocol}'`);
 
-		return new Adapter(uri, options);
-	}
+    return new Adapter(uri, options);
+  }
 
-	static connect(connectionString: string, options: string) {
-		const adatper = this.create(connectionString, options);
+  static connect(connectionString: string, options: string) {
+    const adatper = this.create(connectionString, options);
 
-		return adatper.connect()
-			.then(() => adatper);
-	}
-};
+    return adatper.connect().then(() => adatper);
+  }
+}

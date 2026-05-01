@@ -31,134 +31,134 @@ import LambdaRunner, { LambdaType } from './lambda/lambda-runner.js';
 
 morgan.token('id', (req) => req.id);
 export default class BootstrapLambda extends Bootstrap {
-	routes: any;
+  routes: any;
 
-	primaryDatastore: any;
+  primaryDatastore: any;
 
-	private _redisClient?: RedisClientType;
+  private _redisClient?: RedisClientType;
 
-	__apiWorkers: number;
-	__pathMutationWorkers: number;
-	__cronWorkers: number;
+  __apiWorkers: number;
+  __pathMutationWorkers: number;
+  __cronWorkers: number;
 
-	__lambdaManagerProcess?: LambdaManager;
-	__lambdaWorkerProcess?: LambdaRunner;
+  __lambdaManagerProcess?: LambdaManager;
+  __lambdaWorkerProcess?: LambdaRunner;
 
-	constructor() {
-		super();
+  constructor() {
+    super();
 
-		this.routes = null;
+    this.routes = null;
 
-		this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
+    this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
-		this.__apiWorkers = 0;
-		this.__pathMutationWorkers = 0;
-		this.__cronWorkers = 0;
-	}
+    this.__apiWorkers = 0;
+    this.__pathMutationWorkers = 0;
+    this.__cronWorkers = 0;
+  }
 
-	async init() {
-		await super.init();
+  async init() {
+    await super.init();
 
-		Logging.log(`Connecting to primary datastore...`);
-		await this.primaryDatastore.connect();
+    Logging.log(`Connecting to primary datastore...`);
+    await this.primaryDatastore.connect();
 
-		// Register some services.
-		this.__services.set('modelManager', Model);
+    // Register some services.
+    this.__services.set('modelManager', Model);
 
-		this._redisClient = createClient({
-			url: Config.redis.url
-		});
-		await this._redisClient.connect();
+    this._redisClient = createClient({
+      url: Config.redis.url,
+    });
+    await this._redisClient.connect();
 
-		this.__services.set('policyCache', new PolicyCache(this._redisClient, Model));
+    this.__services.set('policyCache', new PolicyCache(this._redisClient, Model));
 
-		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
-		await Model.init(this.__services);
+    // Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
+    await Model.init(this.__services);
 
-		return await this.__createCluster();
-	}
+    return await this.__createCluster();
+  }
 
-	async clean() {
-		await super.clean();
+  async clean() {
+    await super.clean();
 
-		Logging.logDebug('BootstrapLambda:clean');
+    Logging.logDebug('BootstrapLambda:clean');
 
-		// Clean up lambda process.
-		if (this.__lambdaManagerProcess) await this.__lambdaManagerProcess.clean();
-		if (this.__lambdaWorkerProcess) await this.__lambdaWorkerProcess.clean();
+    // Clean up lambda process.
+    if (this.__lambdaManagerProcess) await this.__lambdaManagerProcess.clean();
+    if (this.__lambdaWorkerProcess) await this.__lambdaWorkerProcess.clean();
 
-		if (this._redisClient) {
-			this._redisClient.quit();
-		}
+    if (this._redisClient) {
+      this._redisClient.quit();
+    }
 
-		// Close Datastore connections
-		Logging.logSilly('Closing down all datastore connections');
-		Datastore.clean();
-	}
+    // Close Datastore connections
+    Logging.logSilly('Closing down all datastore connections');
+    Datastore.clean();
+  }
 
-	async __initMain() {
-		// Lambda workers config
-		const isPrimary = Config.rest.app === 'primary';
+  async __initMain() {
+    // Lambda workers config
+    const isPrimary = Config.rest.app === 'primary';
 
-		if (isPrimary) {
-			Logging.logVerbose(`Primary Main LAMBDA`);
-			await Model.initCoreModels();
+    if (isPrimary) {
+      Logging.logVerbose(`Primary Main LAMBDA`);
+      await Model.initCoreModels();
 
-			this.__nrp?.on('lambdaProcessWorker:worker-initiated', (id) => {
-				const type = this.__getLambdaWorkerType();
-				this.__nrp?.emit('lambdaProcessMain:worker-type', JSON.stringify({ id, type }));
-			});
+      this.__nrp?.on('lambdaProcessWorker:worker-initiated', (id) => {
+        const type = this.__getLambdaWorkerType();
+        this.__nrp?.emit('lambdaProcessMain:worker-type', JSON.stringify({ id, type }));
+      });
 
-			this.__lambdaManagerProcess = new LambdaManager(this.__services);
-			await this.__lambdaManagerProcess.init();
-		} else {
-			Logging.logVerbose(`Secondary Main LAMBDA`);
-		}
+      this.__lambdaManagerProcess = new LambdaManager(this.__services);
+      await this.__lambdaManagerProcess.init();
+    } else {
+      Logging.logVerbose(`Secondary Main LAMBDA`);
+    }
 
-		await this.__spawnWorkers();
-	}
+    await this.__spawnWorkers();
+  }
 
-	async __initWorker() {
-		await Model.initCoreModels();
+  async __initWorker() {
+    await Model.initCoreModels();
 
-		let type = LambdaType.ALL;
+    let type = LambdaType.ALL;
 
-		if (this.workerProcesses > 0) {
-			const typeAssignment = new Promise((resolve) => {
-				this.__nrp?.on('lambdaProcessMain:worker-type', (data: any) => {
-					data = JSON.parse(data);
+    if (this.workerProcesses > 0) {
+      const typeAssignment = new Promise((resolve) => {
+        this.__nrp?.on('lambdaProcessMain:worker-type', (data: any) => {
+          data = JSON.parse(data);
 
-					if (data.id !== this.id) return;
-					resolve(data.type);
-				});
-			});
+          if (data.id !== this.id) return;
+          resolve(data.type);
+        });
+      });
 
-			this.__nrp?.emit('lambdaProcessWorker:worker-initiated', this.id);
-			type = await typeAssignment as LambdaType;
-			Logging.logDebug(`Worker [${this.id}] assigned type: ${type}`);
-		}
+      this.__nrp?.emit('lambdaProcessWorker:worker-initiated', this.id);
+      type = (await typeAssignment) as LambdaType;
+      Logging.logDebug(`Worker [${this.id}] assigned type: ${type}`);
+    }
 
-		this.__lambdaWorkerProcess = new LambdaRunner(this.__services, type);
-		await this.__lambdaWorkerProcess.init();
-	}
+    this.__lambdaWorkerProcess = new LambdaRunner(this.__services, type);
+    await this.__lambdaWorkerProcess.init();
+  }
 
-	__getLambdaWorkerType() {
-		const APIWorkers = Number(Config.lambda.apiWorkers);
-		const pathMutationWorkers = Number(Config.lambda.pathMutationWorkers);
-		const cronWorkers = Number(Config.lambda.cronWorkers);
+  __getLambdaWorkerType() {
+    const APIWorkers = Number(Config.lambda.apiWorkers);
+    const pathMutationWorkers = Number(Config.lambda.pathMutationWorkers);
+    const cronWorkers = Number(Config.lambda.cronWorkers);
 
-		let type = LambdaType.ALL;
-		if (this.__apiWorkers < APIWorkers) {
-			type = LambdaType.API_ENDPOINT;
-			this.__apiWorkers++;
-		} else if (this.__pathMutationWorkers < pathMutationWorkers) {
-			type = LambdaType.PATH_MUTATION;
-			this.__pathMutationWorkers++;
-		} else if (this.__cronWorkers < cronWorkers) {
-			type = LambdaType.CRON;
-			this.__cronWorkers++;
-		}
+    let type = LambdaType.ALL;
+    if (this.__apiWorkers < APIWorkers) {
+      type = LambdaType.API_ENDPOINT;
+      this.__apiWorkers++;
+    } else if (this.__pathMutationWorkers < pathMutationWorkers) {
+      type = LambdaType.PATH_MUTATION;
+      this.__pathMutationWorkers++;
+    } else if (this.__cronWorkers < cronWorkers) {
+      type = LambdaType.CRON;
+      this.__cronWorkers++;
+    }
 
-		return type;
-	}
+    return type;
+  }
 }

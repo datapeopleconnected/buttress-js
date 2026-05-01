@@ -41,685 +41,736 @@ const exec = util.promisify(cpExec);
 
 // Exec Priority for now are static as such, but we could make them dynamic in the future.
 export enum ExecPriority {
-	CRON = 0, // CRON
-	PATH_MUTATION = 50, // PATH_MUTATION
-	API_ENDPOINT = 55, // API_ENDPOINT
-	API_ENDPOINT_SYNC = 90, // SYNC - API_ENDPOINT
-	URGENT = 100
-};
+  CRON = 0, // CRON
+  PATH_MUTATION = 50, // PATH_MUTATION
+  API_ENDPOINT = 55, // API_ENDPOINT
+  API_ENDPOINT_SYNC = 90, // SYNC - API_ENDPOINT
+  URGENT = 100,
+}
 
 interface PathMutation {
-	id: string;
-	gitHash: string;
-	type: string;
-	paths: string[];
-	appId: string;
-};
+  id: string;
+  gitHash: string;
+  type: string;
+  paths: string[];
+  appId: string;
+}
 
 interface PathMutationCR {
-	paths: string[];
-	values: any[];
-	schema: string;
-};
+  paths: string[];
+  values: any[];
+  schema: string;
+}
 
 interface PathMutationDebounce {
-	id: string;
-	timer?: NodeJS.Timeout;
-	pathMutation: boolean;
-	triggerType: string;
-	lambdaId: string;
-	executionId?: string;
-	gitHash: string;
-	appId: string;
-	CRs: PathMutationCR[];
-	crHash: string;
-	retry: number;
-};
+  id: string;
+  timer?: NodeJS.Timeout;
+  pathMutation: boolean;
+  triggerType: string;
+  lambdaId: string;
+  executionId?: string;
+  gitHash: string;
+  appId: string;
+  CRs: PathMutationCR[];
+  crHash: string;
+  retry: number;
+}
 
 export interface LambdaExecutionMessage {
-	executionId: string;
-	lambdaId: string;
-	workerId?: string;
-	lambdaType: string;
-	triggerType?: string;
-	lambdaExecBehavior?: 'SYNC' | 'ASYNC';
-	currentExecutionId?: string;
-};
+  executionId: string;
+  lambdaId: string;
+  workerId?: string;
+  lambdaType: string;
+  triggerType?: string;
+  lambdaExecBehavior?: 'SYNC' | 'ASYNC';
+  currentExecutionId?: string;
+}
 
 /**
  * @class LambdaManager
  */
 export default class LambdaManager {
-	name: string;
+  name: string;
 
-	private __nrp?: NodeRedisPubsub;
+  private __nrp?: NodeRedisPubsub;
 
-	private _workerMap: { [key: string]: string } = {}; // workerId -> executionId
-	private _inflightExecutions: { [key: string]: LambdaExecutionMessage } = {};
+  private _workerMap: { [key: string]: string } = {}; // workerId -> executionId
+  private _inflightExecutions: { [key: string]: LambdaExecutionMessage } = {};
 
-	private _pathsMutation: PathMutation[] = [];
-	private _debouncedPathMutations: PathMutationDebounce[] = [];
+  private _pathsMutation: PathMutation[] = [];
+  private _debouncedPathMutations: PathMutationDebounce[] = [];
 
-	private _maximumRetry: number = 500;
-	private _lambdaPathMutationTimeout: number = 1000;
+  private _maximumRetry: number = 500;
+  private _lambdaPathMutationTimeout: number = 1000;
 
-	private _shutdownQueue: boolean = false;
-	private _isProcessing: boolean = false;
-	private _shouldReprocess: boolean = false;
+  private _shutdownQueue: boolean = false;
+  private _isProcessing: boolean = false;
+  private _shouldReprocess: boolean = false;
 
-	private _queueBatchSize: number = 25;
+  private _queueBatchSize: number = 25;
 
-	private _isPrimary: boolean;
+  private _isPrimary: boolean;
 
-	private _timeout?: NodeJS.Timeout;
+  private _timeout?: NodeJS.Timeout;
 
-	constructor(services) {
-		this.name = 'LAMBDA MANAGER';
+  constructor(services) {
+    this.name = 'LAMBDA MANAGER';
 
-		this.__nrp = services.get('nrp');
+    this.__nrp = services.get('nrp');
 
-		Logging.logDebug(`[${this.name}] Created instance`);
+    Logging.logDebug(`[${this.name}] Created instance`);
 
-		// TODO: Check to see if there is already a lambda manager in the network
-		this._isPrimary = true;
-	}
+    // TODO: Check to see if there is already a lambda manager in the network
+    this._isPrimary = true;
+  }
 
-	/**
-	 * @readonly
-	 * @static
-	 */
-	static get Constants() {
-		let timeout = parseInt(Config.timeout.lambdaManager);
-		if (!timeout) timeout = 10;
+  /**
+   * @readonly
+   * @static
+   */
+  static get Constants() {
+    let timeout = parseInt(Config.timeout.lambdaManager);
+    if (!timeout) timeout = 10;
 
-		return {
-			TIMEOUT: (timeout * 1000),
-		};
-	}
+    return {
+      TIMEOUT: timeout * 1000,
+    };
+  }
 
-	async init() {
-		Logging.logDebug('LambdaManager:init');
-
-		this._loadLambdaPathsMutation();
-
-		this._setupLambdaFolders();
-
-		this._listenToLambdaWorkers();
-		this._listenLambdaAPIExecution();
-		this._listenLambdaPathChange();
-
-		this._setQueueTimeout();
-
-		this.__nrp?.on('rest:worker:rebuild-path-mutation-cache', async () => {
-			this._pathsMutation = [];
-			await this._loadLambdaPathsMutation();
-		});
-		this.__nrp?.on('rest:worker:add-path-mutation', async (lambda) => {
-			lambda = JSON.parse(lambda);
-			this.__populateLambdaPathsMutation(lambda);
-		});
-	}
-
-	async clean() {
-		Logging.logDebug('LambdaManager:clean');
-
-		this._shutdownQueue = true;
-
-		if (this._timeout) {
-			clearTimeout(this._timeout);
-			Logging.logDebug(`[${this.name}]: Cleared timeout`);
-		}
-
-		this._timeout = undefined;
-
-		// TODO: Could do stuff here with dumping queue to cache.
-		// TODO: Could hold until current task is completed.
-	}
-
-	/**
-	 * Call queue after a specified timeout
-	 */
-	_setQueueTimeout() {
-		if (!this._isPrimary) {
-			Logging.logWarn(`[${this.name}]: Lambda manager timeout was called but we're not primary, shutting down`);
-			return;
-		}
-
-		if (this._shutdownQueue) {
-			Logging.logWarn(`[${this.name}]: Attempted to check lambda queue but queue is halted`);
-			return;
-		}
-
-		if (this._timeout) {
-			clearTimeout(this._timeout);
-			this._timeout = undefined;
-		}
-
-		Logging.logSilly(`[${this.name}]: Queueing Check ${LambdaManager.Constants.TIMEOUT}`);
-
-		this._timeout = setTimeout(() => this._processQueue(), LambdaManager.Constants.TIMEOUT);
-	}
-
-	private async _processQueue() {
-		if (this._shutdownQueue) {
-			Logging.logWarn(`[${this.name}]: Attempted to check lambda queue but queue is halted`);
-			return;
-		}
-
-		if (this._isProcessing) {
-			Logging.logSilly(`[${this.name}]: Lambda queue is already being processed`);
-			this._shouldReprocess = true;
-			return;
-		}
-
-		this._isProcessing = true;
-
-		try {
-			const lambdaExec = await this.__getPendingLambdaExec();
-			// TODO: Handle pausing lambdas due to READ / WRITE access
-			await this.__announcePendingExecutions(lambdaExec);
-		} catch (err: any) {
-			let message = err;
-			if (err.statusMessage) message = err.statusMessage;
-			if (err.message) message = err.message;
-			Logging.logError(`[${this.name}]: Error: ${message}`);
-			if (err.stack) console.error(err.stack);
-
-			if (err.response && err.response.data) {
-				console.error(err.response.data);
-			}
-		}
-
-		this._isProcessing = false;
-
-		if (this._shouldReprocess) {
-			Logging.logSilly(`[${this.name}]: Reprocessing lambda queue`);
-			this._shouldReprocess = false;
-			this._processQueue();
-			return;
-		} else {
-			this._setQueueTimeout();
-		}
-	}
-
-	/**
-	 * Check to see if there are any pending cron lambda
-	 * @return {Promise}
-	 */
-	async __getPendingLambdaExec() {
-		// We need to unify the way we check for lambdas
-		//  - Get transient executions (API, Path Mutation)
-		//  - Get pending executions (Scheduled / Cron)
-		//  - Mix the priorities, pick and announce.
-
-		// The announcement process should be optimised to only to stop the announcements if nobody is listening.
-		// Instead of look at the lambda triggers witn the Lambda model we should look at the executions for anything that is scheduled and PENDING.
-
-		// TODO: Could just return the lambda id, instead of the whole lambda object
-		// TODO: Move the date filter to the query if possible?
-		// Not sure why this isn't happening inside the model.
-		const query = Model.getCoreModel(LambdaSchemaModel).parseQuery({
-			'status': { '$eq': 'PENDING' },
-			'$or': [
-				{ 'executeAfter': { '$lte': new Date().toISOString() } },
-				{ 'executeAfter': { '$eq': null } }
-			]
-		}, {}, Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData);
-
-		const rxLambdaExec = await Model.getCoreModel(LambdaExecutionSchemaModel).find(query, null, this._queueBatchSize, 0, { priority: 1, executeAfter: 1 });
-		const lambdaExecs = await Helpers.streamAll(rxLambdaExec);
-		Logging.logSilly(`Got ${lambdaExecs.length} pending lambda executions`);
-
-		return lambdaExecs;
-
-		// TODO: Optimise, we don't need to build an array here. We could just filter the items as and when we process them.
-		// that way the whole stream isn't dumped into memory.
-		// return lambdas.filter((lambda) => {
-		// 	const now = Sugar.Date.create();
-		// 	const cronTrigger = lambda.trigger.find((t) => t.type === 'CRON');
-		// 	const cronExecutionTime = Sugar.Date.create(cronTrigger.cron.executionTime);
-		// 	return cronTrigger && (cronTrigger.cron.executionTime === 'now' || Sugar.Date.isAfter(now, cronExecutionTime));
-		// });
-	}
-
-	/**
-	 * Populate paths mutations array to trigger lambdas accordingly
-	 * @return {Promise}
-	 */
-	async _loadLambdaPathsMutation() {
-		const rxsLambdas = await Model.getCoreModel(LambdaSchemaModel).find({
-			'executable': {
-				$eq: true,
-			},
-			'trigger.type': {
-				$eq: 'PATH_MUTATION',
-			},
-		});
-
-		const lambdas = await Helpers.streamAll(rxsLambdas);
-
-		if (lambdas.length < 1) return;
-
-		for await (const lambda of lambdas) {
-			await this.__populateLambdaPathsMutation(lambda);
-		}
-	}
-
-	__populateLambdaPathsMutation(lambda) {
-		const trigger = lambda.trigger.find((t) => t.type === 'PATH_MUTATION');
-		if (!trigger) return;
-
-		const gitHash = (lambda.git && lambda.git.hash) ? lambda.git.hash : null;
-		if (!gitHash) {
-			Logging.logError(`Lambda ${lambda.id} does not have a git hash, skipping path mutation trigger`);
-			return;
-		}
-
-		Logging.logSilly(`Pushing a new path mutation lambda (${lambda.name}) into the path mutation cached array`);
-		this._pathsMutation.push({
-			id: (typeof lambda.id === 'object') ? lambda.id.toString() : lambda.id,
-			gitHash,
-			type: trigger.type,
-			paths: trigger.pathMutation.paths,
-			appId: (typeof lambda._appId === 'object') ? lambda._appId.toString() : lambda._appId,
-		});
-	}
-
-	/**
-	 * Annouce to workers that the manager has some lambdas
-	 * @param {Array} lambdaExecs
-	 * @return {Promise}
-	 */
-	async __announcePendingExecutions(lambdaExecs: LambdaExecution[] & { body?: any, query?: any, headers?: any }[]) {
-		let count = 0;
-		Logging.logSilly(`[${this.name}]: Announcing ${lambdaExecs.length} lambda exec`);
-		for await (const lambdaExec of lambdaExecs) {
-			const messagePayload: LambdaExecutionMessage = {
-				executionId: lambdaExec.id,
-				lambdaId: lambdaExec.lambdaId,
-				lambdaType: lambdaExec.triggerType,
-			};
-
-			// const isAPILambda = lambdaExec.triggerType === 'API_ENDPOINT';
-			// const isPathMutation = lambdaExec.triggerType === 'PATH_MUTATION';
-			// if (isAPILambda || isPathMutation) {
-			// 	messagePayload.body = lambdaExec.body;
-			// }
-
-			// if (isAPILambda) {
-			// 	messagePayload.query = lambdaExec.query;
-			// 	messagePayload.headers = lambdaExec.headers;
-			// }
-
-			this.__nrp?.emit('lambda:worker:announce', JSON.stringify(messagePayload));
-			Logging.logDebug(`[${this.name}]: Announced lambda execution ${lambdaExec.id} for lambda ${lambdaExec.lambdaId} with type ${lambdaExec.triggerType}`);
-			count++;
-		}
-
-		if (count > 0) Logging.log(`[${this.name}]: announced ${count} lambda executions`);
-	}
-
-	async _createLambdaExecution(type: string, lambdaId: string, gitHash: string, appId: string, priority: ExecPriority, metadata: { key: string, value: string }[] = []) {
-		const deployment = await Model.getCoreModel(DeploymentSchemaModel).findOne({
-			lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambdaId),
-			hash: gitHash,
-		});
-
-		// TODO: add a meaningful error message
-		if (!deployment) {
-			throw new Error('Unable to find deployment whilst creating lambda execution');
-		}
-
-		const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).add({
-			triggerType: type,
-			priority,
-			lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambdaId),
-			deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(deployment.id),
-			metadata: metadata,
-		}, appId);
-
-		return lambdaExecution;
-	}
-
-	private _checkExecutionIsInFlight(executionId: string): boolean {
-		if (this._inflightExecutions[executionId]) {
-			Logging.logSilly(`[${this.name}] Execution ${executionId} is already in flight`);
-			return true;
-		}
-
-		return false;
-	}
-
-	private _checkExecutionIsInFlightWithWorker(executionId: string, workerId: string): boolean {
-		if (this._workerMap[workerId] && this._workerMap[workerId] === executionId) {
-			Logging.logSilly(`[${this.name}] Execution ${executionId} is already in flight`);
-			return true;
-		}
-
-		return false;
-	}
-
-	/**
-	 * Track a worker lambda
-	 * @param {Object} message
-	 */
-	trackWorkerLambda(message: LambdaExecutionMessage) {
-		if (!message.workerId) {
-			throw new Error('Unable to track Lamba worker without a workerId');
-		}
-
-		this._workerMap[message.workerId] = message.executionId;
-		this._inflightExecutions[message.executionId] = message;
-	}
-
-	/**
-	 * Untrack a worker lambda
-	 * @param {string} workerId
-	 * @param {string} lambdaId
-	 * @param {string} workerExecID
-	 */
-	untrackWorkerLambda(message: LambdaExecutionMessage) {
-		if (!message.workerId) {
-			throw new Error('Unable to track Lamba worker without a workerId');
-		}
-
-		delete this._workerMap[message.workerId];
-		delete this._inflightExecutions[message.executionId];
-
-		// if (!message.workerExecID) return;
-
-		// const apiLambdaIdx = this._lambdaAPI.findIndex((l) => l.lambdaId.toString() === lambdaId.toString() && l.workerExecID === workerExecID);
-		// if (apiLambdaIdx !== -1) {
-		// 	this._lambdaAPI.splice(apiLambdaIdx, 1);
-		// 	return;
-		// }
-
-		// const pathMutationLambdaIdx = this._debouncedPathMutations.findIndex((l) => {
-		// 	return l.lambdaId.toString() === lambdaId.toString() && l.workerExecID === workerExecID;
-		// });
-		// if (pathMutationLambdaIdx === -1) {
-		// 	throw new Error(`Lambda worker exec ID: ${workerExecID} is not found on api or path mutation queue`);
-		// }
-
-		// this._debouncedPathMutations.splice(pathMutationLambdaIdx, 1);
-	}
-
-	/**
-	 * Communicate with worker processes via Redis
-	 */
-	_listenToLambdaWorkers() {
-		Logging.logDebug(`[${this.name}] Subscribing to worker network`);
-
-		if (!this.__nrp) throw new Error('No NRP instance found');
-
-		this.__nrp.on('lambda:worker:available', (json: string) => {
-			const payload = JSON.parse(json) as LambdaExecutionMessage;
-
-			if (!payload.workerId) {
-				throw new Error('Unable to assign Lamba worker without a workerId');
-			}
-
-			Logging.logSilly(`[${this.name}] ${payload.workerId} prepared to take on ${payload.executionId}`);
-			if (this._checkExecutionIsInFlight(payload.executionId)) {
-				// Another worker has already accepted this lambda so we'll just ignore it
-				Logging.logDebug(`[${this.name}] ${payload.executionId} is already registered in the lambda queue by ${this._inflightExecutions[payload.executionId].workerId}`);
-				return;
-			}
-
-			if (this._workerMap[payload.workerId]) {
-				Logging.logDebug(`[${this.name}] ${payload.executionId} is already registered working on ${this._workerMap[payload.workerId]}`);
-				return;
-			}
-
-			this.trackWorkerLambda(payload);
-			Logging.logDebug(`[${this.name}] execution ${payload.executionId} assigning to ${payload.workerId}`);
-			this.__nrp?.emit('lambda:worker:execute', JSON.stringify(payload));
-		});
-
-		this.__nrp.on('lambda:worker:overloaded', (json) => {
-			// We shouldn't ever hit this now that the manager is fully tracking whos doing what.
-			const payload = JSON.parse(json) as LambdaExecutionMessage;
-			Logging.logDebug(`[${this.name}] ${payload.workerId} was oversubscribed releasing ${payload.executionId}`);
-
-			if (!payload.workerId) {
-				throw new Error(`Unable to untrack Lamba worker without a workerId for ${payload.executionId}`);
-			}
-
-			// Handle what the manager currently thinks is happening.
-			const currentWorkerMapExecId = this._workerMap[payload.workerId];
-			const currentInflightExec = this._inflightExecutions[currentWorkerMapExecId];
-
-			// if the overloaded execution matches what we think they're working on then we can safely untrack them.
-			if (currentInflightExec && currentInflightExec.executionId === payload.executionId) {
-				Logging.logDebug(`[${this.name}] Cleaning up tracking for overloaded worker ${payload.workerId} and execution ${payload.executionId} based on worker map`);
-				this.untrackWorkerLambda(payload);
-			}
-
-			// Just in case the above didn't catch it, we'll also check the executionId directly.
-			if (this._inflightExecutions[payload.executionId] && this._inflightExecutions[payload.executionId].workerId === payload.workerId) {
-				Logging.logDebug(`[${this.name}] Cleaning up tracking for overloaded execution ${payload.executionId} on worker ${payload.workerId} based on exec map`);
-				this.untrackWorkerLambda(payload);
-			}
-
-			if (payload.currentExecutionId && this._inflightExecutions[payload.currentExecutionId]) {
-				const inflightExec = this._inflightExecutions[payload.currentExecutionId];
-
-				if (inflightExec.workerId !== payload.workerId) {
-					Logging.logWarn(`[${this.name}] Detected mismatched worker for execution ${payload.currentExecutionId}, expected ${inflightExec.workerId} got ${payload.workerId}`);
-				}
-
-				this._inflightExecutions[payload.currentExecutionId].workerId = payload.workerId;
-				this._workerMap[payload.workerId] = payload.currentExecutionId;
-
-				Logging.logDebug(`[${this.name}] Healed tracking for overloaded worker ${payload.workerId} to execution ${payload.currentExecutionId}`);
-			}
-		});
-
-		this.__nrp.on('lambda:worker:errored', (json) => {
-			const payload = JSON.parse(json) as LambdaExecutionMessage;
-			Logging.logError(`[${this.name}] ${payload.executionId} errored while running on ${payload.workerId}`);
-			this.untrackWorkerLambda(payload);
-			// this._checkAPIAndPathMutationQueue();
-		});
-
-		this.__nrp.on('lambda:worker:finished', (json) => {
-			const payload = JSON.parse(json) as LambdaExecutionMessage;
-			Logging.logDebug(`[${this.name}] ${payload.executionId} was completed by ${payload.workerId}`);
-			this.untrackWorkerLambda(payload);
-			// this._checkAPIAndPathMutationQueue();
-		});
-	}
-
-	async _listenLambdaAPIExecution() {
-		this.__nrp?.on('rest:worker:exec-lambda-api', async () => {
-			// const data = (JSON.parse(json)) as LambdaExecutionMessage;
-
-			// data.workerExecID = uuidv4();
-			// Logging.log(`Manager is queuing API lambda ${data.lambdaId} to be executed`);
-			// let index = this._lambdaAPI.length;
-			// if (data.lambdaExecBehavior === 'SYNC' && index > 0) {
-			// 	const lambdaIdx = index = this._lambdaAPI.findIndex((item) => item.lambdaExecBehavior !== 'SYNC') - 1;
-			// 	index = (lambdaIdx !== -1) ? lambdaIdx : index;
-			// }
-
-			// this._lambdaAPI.splice(index, 0, data);
-			// Give the queue a nudge.
-			this._processQueue();
-			// this.__announcePendingExecutions(this._lambdaAPI);
-		});
-	}
-
-	/**
-	 * Listening on redis event to handle the execution of the path mutations lambda
-	 */
-	_listenLambdaPathChange() {
-		this.__nrp?.on('rest:worker:notifyLambdaPathChange', async (json) => {
-			const data = (JSON.parse(json)) as NotifyLambdaPathChangeMessage;
-
-			const paths = data.paths;
-			const schema = data.collection;
-			const values = data.values;
-
-			Logging.logDebug(`Manager is announcing path mutation lambda to be executed for ${schema} on paths ${paths}`);
-			const lambdaPathMutation = this._pathsMutation.filter((item) => {
-				return item.paths.some((itemPath) => paths.some((path) => this._checkMatchingPaths(path, itemPath, schema)));
-			});
-
-			const cr: PathMutationCR = { paths, values, schema };
-
-			this._debounceLambdaTriggers(lambdaPathMutation, cr);
-		});
-	}
-
-	/**
-	 * Checking matching root paths and absolute paths
-	 * @param {String} path
-	 * @param {String} itemPath
-	 * @param {String} schema
-	 * @return {Boolean}
-	 */
-	_checkMatchingPaths(path, itemPath, schema) {
-		const isWildedCardRootPath = itemPath.split(`${schema}.*`).join('');
-		if (!isWildedCardRootPath || (isWildedCardRootPath !== itemPath && path === schema)) return true;
-
-		const lambdaPathId = itemPath.split(`${schema}.`).filter((v) => v).join('').split('.').shift();
-		const crPathId = path.split(`${schema}.`).filter((v) => v).join('').split('.').shift();
-		if (lambdaPathId !== crPathId && lambdaPathId !== '*') return false;
-
-		const lambdaRelativePath = itemPath.split(`${schema}.${lambdaPathId}`).pop();
-		const crRelativePath = path.split(`${crPathId}`).pop();
-		return this._checkMatchingRelativePaths(lambdaRelativePath, crRelativePath);
-	}
-
-	/**
-	 * Checking matching relative paths
-	 * @param {String} lambdaPath
-	 * @param {String} crPath
-	 * @return {Boolean}
-	 */
-	_checkMatchingRelativePaths(lambdaPath, crPath) {
-		lambdaPath = lambdaPath.replace('.length', '');
-		if (lambdaPath === '*' || lambdaPath === crPath || !crPath) return true;
-		if (lambdaPath.includes('*')) {
-			const wildCardedPath = lambdaPath.split('.*').shift();
-			if (!wildCardedPath) return true;
-			if (!crPath.includes(wildCardedPath)) return false;
-			const lambdaObservedPath = lambdaPath.split(`${wildCardedPath}.*`).pop();
-			const crObservedPath = crPath.split(`${wildCardedPath}`).pop();
-
-			if (!lambdaObservedPath && crObservedPath) return true;
-			if (lambdaObservedPath.includes('*')) {
-				return this._checkMatchingRelativePaths(lambdaObservedPath, crObservedPath);
-			}
-
-			const isSamePath = crObservedPath.split(lambdaObservedPath).pop();
-			if (!isSamePath) return true;
-		}
-
-		return false;
-	}
-
-	/**
-	 * Debounces checks for based path lambdas
-	 * @param {Array} lambdas
-	 * @param {Array} body
-	 * @param {Boolean} addExecution
-	 * @param {string} executionId
-	 */
-	async _debounceLambdaTriggers(lambdaPathMutation: PathMutation[], cr: PathMutationCR) {
-		// We'll make a hash of the body so we can use it to compare in the debouncer
-		const crHash = ObjectHash(cr);
-
-		for await (const pathMutation of lambdaPathMutation) {
-			// Check to see if there is a path mutation for the same lambda & body
-			let debouncedLambdaIdx = this._debouncedPathMutations.findIndex(
-				(item) => (item.lambdaId.toString() === pathMutation.id && item.crHash === crHash));
-
-			const retry = this._debouncedPathMutations[debouncedLambdaIdx]?.retry || 0;
-
-			if (retry > this._maximumRetry) {
-				// TODO: Clean up exec records
-				Logging.logError(`[${this.name}] Lambda ${pathMutation.id} has reached the maximum retry of ${this._maximumRetry}`);
-				return;
-			}
-
-			if (debouncedLambdaIdx === -1) {
-				const execID = uuidv4();
-				const debouncer: PathMutationDebounce = {
-					id: execID,
-					timer: setTimeout(() => {
-						this._createLambdaPathMutationExecution(execID);
-					}, this._lambdaPathMutationTimeout),
-					pathMutation: true,
-					triggerType: pathMutation.type,
-					lambdaId: pathMutation.id,
-					gitHash: pathMutation.gitHash,
-					appId: pathMutation.appId,
-					CRs: [cr],
-					crHash,
-					retry: 0,
-				};
-
-				debouncedLambdaIdx = this._debouncedPathMutations.push(debouncer) - 1;
-				return;
-			}
-
-			const pmExecRecord = this._debouncedPathMutations[debouncedLambdaIdx];
-
-			clearTimeout(pmExecRecord?.timer);
-			pmExecRecord.timer = setTimeout(() => {
-				this._createLambdaPathMutationExecution(pmExecRecord.id)
-			}, this._lambdaPathMutationTimeout);
-			pmExecRecord.CRs = pmExecRecord.CRs.concat(cr);
-			pmExecRecord.retry = pmExecRecord.retry + 1;
-			return;
-		}
-	}
-
-	/**
-	 * announce path mutation lambda
-	 * @param {String} execID
-	 */
-	async _createLambdaPathMutationExecution(id: string) {
-		const pathMutationLambdaIdx = this._debouncedPathMutations.findIndex((item) => item.id.toString() === id);
-		if (pathMutationLambdaIdx === -1) {
-			Logging.logError(`[${this.name}] Unable to find path mutation lambda with exec ID ${id}`);
-			return;
-		}
-
-		const pathMutationLambda = this._debouncedPathMutations[pathMutationLambdaIdx];
-		delete this._debouncedPathMutations[pathMutationLambdaIdx].timer;
-
-		if (!pathMutationLambda.executionId) {
-			const lambdaExecMetadata = [{ key: 'CR', value: JSON.stringify(pathMutationLambda.CRs) }];
-			const execution = await this._createLambdaExecution(
-				pathMutationLambda.triggerType, pathMutationLambda.lambdaId, pathMutationLambda.gitHash, pathMutationLambda.appId,
-				ExecPriority.PATH_MUTATION,
-				lambdaExecMetadata) as LambdaExecution;
-			pathMutationLambda.executionId = execution.id.toString();
-		}
-
-		if (!pathMutationLambda || !pathMutationLambda.executionId) {
-			throw new Error('Failed to create path mutation lambda execution');
-		}
-
-		this._processQueue();
-	}
-
-	/**
-	 * Manages lambda folders
-	 */
-	async _setupLambdaFolders() {
-		if (!fs.existsSync(Config.paths.lambda.code)) {
-			await exec(`mkdir -p ${Config.paths.lambda.code}`);
-		}
-
-		if (!fs.existsSync(Config.paths.lambda.plugins)) {
-			await exec(`mkdir -p ${Config.paths.lambda.plugins}`);
-		}
-
-		if (fs.existsSync(Config.paths.lambda.bundles)) {
-			await exec(`rm -rf ${Config.paths.lambda.bundles}`);
-		}
-	}
+  async init() {
+    Logging.logDebug('LambdaManager:init');
+
+    this._loadLambdaPathsMutation();
+
+    this._setupLambdaFolders();
+
+    this._listenToLambdaWorkers();
+    this._listenLambdaAPIExecution();
+    this._listenLambdaPathChange();
+
+    this._setQueueTimeout();
+
+    this.__nrp?.on('rest:worker:rebuild-path-mutation-cache', async () => {
+      this._pathsMutation = [];
+      await this._loadLambdaPathsMutation();
+    });
+    this.__nrp?.on('rest:worker:add-path-mutation', async (lambda) => {
+      lambda = JSON.parse(lambda);
+      this.__populateLambdaPathsMutation(lambda);
+    });
+  }
+
+  async clean() {
+    Logging.logDebug('LambdaManager:clean');
+
+    this._shutdownQueue = true;
+
+    if (this._timeout) {
+      clearTimeout(this._timeout);
+      Logging.logDebug(`[${this.name}]: Cleared timeout`);
+    }
+
+    this._timeout = undefined;
+
+    // TODO: Could do stuff here with dumping queue to cache.
+    // TODO: Could hold until current task is completed.
+  }
+
+  /**
+   * Call queue after a specified timeout
+   */
+  _setQueueTimeout() {
+    if (!this._isPrimary) {
+      Logging.logWarn(`[${this.name}]: Lambda manager timeout was called but we're not primary, shutting down`);
+      return;
+    }
+
+    if (this._shutdownQueue) {
+      Logging.logWarn(`[${this.name}]: Attempted to check lambda queue but queue is halted`);
+      return;
+    }
+
+    if (this._timeout) {
+      clearTimeout(this._timeout);
+      this._timeout = undefined;
+    }
+
+    Logging.logSilly(`[${this.name}]: Queueing Check ${LambdaManager.Constants.TIMEOUT}`);
+
+    this._timeout = setTimeout(() => this._processQueue(), LambdaManager.Constants.TIMEOUT);
+  }
+
+  private async _processQueue() {
+    if (this._shutdownQueue) {
+      Logging.logWarn(`[${this.name}]: Attempted to check lambda queue but queue is halted`);
+      return;
+    }
+
+    if (this._isProcessing) {
+      Logging.logSilly(`[${this.name}]: Lambda queue is already being processed`);
+      this._shouldReprocess = true;
+      return;
+    }
+
+    this._isProcessing = true;
+
+    try {
+      const lambdaExec = await this.__getPendingLambdaExec();
+      // TODO: Handle pausing lambdas due to READ / WRITE access
+      await this.__announcePendingExecutions(lambdaExec);
+    } catch (err: any) {
+      let message = err;
+      if (err.statusMessage) message = err.statusMessage;
+      if (err.message) message = err.message;
+      Logging.logError(`[${this.name}]: Error: ${message}`);
+      if (err.stack) console.error(err.stack);
+
+      if (err.response && err.response.data) {
+        console.error(err.response.data);
+      }
+    }
+
+    this._isProcessing = false;
+
+    if (this._shouldReprocess) {
+      Logging.logSilly(`[${this.name}]: Reprocessing lambda queue`);
+      this._shouldReprocess = false;
+      this._processQueue();
+      return;
+    } else {
+      this._setQueueTimeout();
+    }
+  }
+
+  /**
+   * Check to see if there are any pending cron lambda
+   * @return {Promise}
+   */
+  async __getPendingLambdaExec() {
+    // We need to unify the way we check for lambdas
+    //  - Get transient executions (API, Path Mutation)
+    //  - Get pending executions (Scheduled / Cron)
+    //  - Mix the priorities, pick and announce.
+
+    // The announcement process should be optimised to only to stop the announcements if nobody is listening.
+    // Instead of look at the lambda triggers witn the Lambda model we should look at the executions for anything that is scheduled and PENDING.
+
+    // TODO: Could just return the lambda id, instead of the whole lambda object
+    // TODO: Move the date filter to the query if possible?
+    // Not sure why this isn't happening inside the model.
+    const query = Model.getCoreModel(LambdaSchemaModel).parseQuery(
+      {
+        status: { $eq: 'PENDING' },
+        $or: [{ executeAfter: { $lte: new Date().toISOString() } }, { executeAfter: { $eq: null } }],
+      },
+      {},
+      Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData,
+    );
+
+    const rxLambdaExec = await Model.getCoreModel(LambdaExecutionSchemaModel).find(
+      query,
+      null,
+      this._queueBatchSize,
+      0,
+      { priority: 1, executeAfter: 1 },
+    );
+    const lambdaExecs = await Helpers.streamAll(rxLambdaExec);
+    Logging.logSilly(`Got ${lambdaExecs.length} pending lambda executions`);
+
+    return lambdaExecs;
+
+    // TODO: Optimise, we don't need to build an array here. We could just filter the items as and when we process them.
+    // that way the whole stream isn't dumped into memory.
+    // return lambdas.filter((lambda) => {
+    // 	const now = Sugar.Date.create();
+    // 	const cronTrigger = lambda.trigger.find((t) => t.type === 'CRON');
+    // 	const cronExecutionTime = Sugar.Date.create(cronTrigger.cron.executionTime);
+    // 	return cronTrigger && (cronTrigger.cron.executionTime === 'now' || Sugar.Date.isAfter(now, cronExecutionTime));
+    // });
+  }
+
+  /**
+   * Populate paths mutations array to trigger lambdas accordingly
+   * @return {Promise}
+   */
+  async _loadLambdaPathsMutation() {
+    const rxsLambdas = await Model.getCoreModel(LambdaSchemaModel).find({
+      executable: {
+        $eq: true,
+      },
+      'trigger.type': {
+        $eq: 'PATH_MUTATION',
+      },
+    });
+
+    const lambdas = await Helpers.streamAll(rxsLambdas);
+
+    if (lambdas.length < 1) return;
+
+    for await (const lambda of lambdas) {
+      await this.__populateLambdaPathsMutation(lambda);
+    }
+  }
+
+  __populateLambdaPathsMutation(lambda) {
+    const trigger = lambda.trigger.find((t) => t.type === 'PATH_MUTATION');
+    if (!trigger) return;
+
+    const gitHash = lambda.git && lambda.git.hash ? lambda.git.hash : null;
+    if (!gitHash) {
+      Logging.logError(`Lambda ${lambda.id} does not have a git hash, skipping path mutation trigger`);
+      return;
+    }
+
+    Logging.logSilly(`Pushing a new path mutation lambda (${lambda.name}) into the path mutation cached array`);
+    this._pathsMutation.push({
+      id: typeof lambda.id === 'object' ? lambda.id.toString() : lambda.id,
+      gitHash,
+      type: trigger.type,
+      paths: trigger.pathMutation.paths,
+      appId: typeof lambda._appId === 'object' ? lambda._appId.toString() : lambda._appId,
+    });
+  }
+
+  /**
+   * Annouce to workers that the manager has some lambdas
+   * @param {Array} lambdaExecs
+   * @return {Promise}
+   */
+  async __announcePendingExecutions(lambdaExecs: LambdaExecution[] & { body?: any; query?: any; headers?: any }[]) {
+    let count = 0;
+    Logging.logSilly(`[${this.name}]: Announcing ${lambdaExecs.length} lambda exec`);
+    for await (const lambdaExec of lambdaExecs) {
+      const messagePayload: LambdaExecutionMessage = {
+        executionId: lambdaExec.id,
+        lambdaId: lambdaExec.lambdaId,
+        lambdaType: lambdaExec.triggerType,
+      };
+
+      // const isAPILambda = lambdaExec.triggerType === 'API_ENDPOINT';
+      // const isPathMutation = lambdaExec.triggerType === 'PATH_MUTATION';
+      // if (isAPILambda || isPathMutation) {
+      // 	messagePayload.body = lambdaExec.body;
+      // }
+
+      // if (isAPILambda) {
+      // 	messagePayload.query = lambdaExec.query;
+      // 	messagePayload.headers = lambdaExec.headers;
+      // }
+
+      this.__nrp?.emit('lambda:worker:announce', JSON.stringify(messagePayload));
+      Logging.logDebug(
+        `[${this.name}]: Announced lambda execution ${lambdaExec.id} for lambda ${lambdaExec.lambdaId} with type ${lambdaExec.triggerType}`,
+      );
+      count++;
+    }
+
+    if (count > 0) Logging.log(`[${this.name}]: announced ${count} lambda executions`);
+  }
+
+  async _createLambdaExecution(
+    type: string,
+    lambdaId: string,
+    gitHash: string,
+    appId: string,
+    priority: ExecPriority,
+    metadata: { key: string; value: string }[] = [],
+  ) {
+    const deployment = await Model.getCoreModel(DeploymentSchemaModel).findOne({
+      lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambdaId),
+      hash: gitHash,
+    });
+
+    // TODO: add a meaningful error message
+    if (!deployment) {
+      throw new Error('Unable to find deployment whilst creating lambda execution');
+    }
+
+    const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).add(
+      {
+        triggerType: type,
+        priority,
+        lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambdaId),
+        deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(deployment.id),
+        metadata: metadata,
+      },
+      appId,
+    );
+
+    return lambdaExecution;
+  }
+
+  private _checkExecutionIsInFlight(executionId: string): boolean {
+    if (this._inflightExecutions[executionId]) {
+      Logging.logSilly(`[${this.name}] Execution ${executionId} is already in flight`);
+      return true;
+    }
+
+    return false;
+  }
+
+  private _checkExecutionIsInFlightWithWorker(executionId: string, workerId: string): boolean {
+    if (this._workerMap[workerId] && this._workerMap[workerId] === executionId) {
+      Logging.logSilly(`[${this.name}] Execution ${executionId} is already in flight`);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Track a worker lambda
+   * @param {Object} message
+   */
+  trackWorkerLambda(message: LambdaExecutionMessage) {
+    if (!message.workerId) {
+      throw new Error('Unable to track Lamba worker without a workerId');
+    }
+
+    this._workerMap[message.workerId] = message.executionId;
+    this._inflightExecutions[message.executionId] = message;
+  }
+
+  /**
+   * Untrack a worker lambda
+   * @param {string} workerId
+   * @param {string} lambdaId
+   * @param {string} workerExecID
+   */
+  untrackWorkerLambda(message: LambdaExecutionMessage) {
+    if (!message.workerId) {
+      throw new Error('Unable to track Lamba worker without a workerId');
+    }
+
+    delete this._workerMap[message.workerId];
+    delete this._inflightExecutions[message.executionId];
+
+    // if (!message.workerExecID) return;
+
+    // const apiLambdaIdx = this._lambdaAPI.findIndex((l) => l.lambdaId.toString() === lambdaId.toString() && l.workerExecID === workerExecID);
+    // if (apiLambdaIdx !== -1) {
+    // 	this._lambdaAPI.splice(apiLambdaIdx, 1);
+    // 	return;
+    // }
+
+    // const pathMutationLambdaIdx = this._debouncedPathMutations.findIndex((l) => {
+    // 	return l.lambdaId.toString() === lambdaId.toString() && l.workerExecID === workerExecID;
+    // });
+    // if (pathMutationLambdaIdx === -1) {
+    // 	throw new Error(`Lambda worker exec ID: ${workerExecID} is not found on api or path mutation queue`);
+    // }
+
+    // this._debouncedPathMutations.splice(pathMutationLambdaIdx, 1);
+  }
+
+  /**
+   * Communicate with worker processes via Redis
+   */
+  _listenToLambdaWorkers() {
+    Logging.logDebug(`[${this.name}] Subscribing to worker network`);
+
+    if (!this.__nrp) throw new Error('No NRP instance found');
+
+    this.__nrp.on('lambda:worker:available', (json: string) => {
+      const payload = JSON.parse(json) as LambdaExecutionMessage;
+
+      if (!payload.workerId) {
+        throw new Error('Unable to assign Lamba worker without a workerId');
+      }
+
+      Logging.logSilly(`[${this.name}] ${payload.workerId} prepared to take on ${payload.executionId}`);
+      if (this._checkExecutionIsInFlight(payload.executionId)) {
+        // Another worker has already accepted this lambda so we'll just ignore it
+        Logging.logDebug(
+          `[${this.name}] ${payload.executionId} is already registered in the lambda queue by ${this._inflightExecutions[payload.executionId].workerId}`,
+        );
+        return;
+      }
+
+      if (this._workerMap[payload.workerId]) {
+        Logging.logDebug(
+          `[${this.name}] ${payload.executionId} is already registered working on ${this._workerMap[payload.workerId]}`,
+        );
+        return;
+      }
+
+      this.trackWorkerLambda(payload);
+      Logging.logDebug(`[${this.name}] execution ${payload.executionId} assigning to ${payload.workerId}`);
+      this.__nrp?.emit('lambda:worker:execute', JSON.stringify(payload));
+    });
+
+    this.__nrp.on('lambda:worker:overloaded', (json) => {
+      // We shouldn't ever hit this now that the manager is fully tracking whos doing what.
+      const payload = JSON.parse(json) as LambdaExecutionMessage;
+      Logging.logDebug(`[${this.name}] ${payload.workerId} was oversubscribed releasing ${payload.executionId}`);
+
+      if (!payload.workerId) {
+        throw new Error(`Unable to untrack Lamba worker without a workerId for ${payload.executionId}`);
+      }
+
+      // Handle what the manager currently thinks is happening.
+      const currentWorkerMapExecId = this._workerMap[payload.workerId];
+      const currentInflightExec = this._inflightExecutions[currentWorkerMapExecId];
+
+      // if the overloaded execution matches what we think they're working on then we can safely untrack them.
+      if (currentInflightExec && currentInflightExec.executionId === payload.executionId) {
+        Logging.logDebug(
+          `[${this.name}] Cleaning up tracking for overloaded worker ${payload.workerId} and execution ${payload.executionId} based on worker map`,
+        );
+        this.untrackWorkerLambda(payload);
+      }
+
+      // Just in case the above didn't catch it, we'll also check the executionId directly.
+      if (
+        this._inflightExecutions[payload.executionId] &&
+        this._inflightExecutions[payload.executionId].workerId === payload.workerId
+      ) {
+        Logging.logDebug(
+          `[${this.name}] Cleaning up tracking for overloaded execution ${payload.executionId} on worker ${payload.workerId} based on exec map`,
+        );
+        this.untrackWorkerLambda(payload);
+      }
+
+      if (payload.currentExecutionId && this._inflightExecutions[payload.currentExecutionId]) {
+        const inflightExec = this._inflightExecutions[payload.currentExecutionId];
+
+        if (inflightExec.workerId !== payload.workerId) {
+          Logging.logWarn(
+            `[${this.name}] Detected mismatched worker for execution ${payload.currentExecutionId}, expected ${inflightExec.workerId} got ${payload.workerId}`,
+          );
+        }
+
+        this._inflightExecutions[payload.currentExecutionId].workerId = payload.workerId;
+        this._workerMap[payload.workerId] = payload.currentExecutionId;
+
+        Logging.logDebug(
+          `[${this.name}] Healed tracking for overloaded worker ${payload.workerId} to execution ${payload.currentExecutionId}`,
+        );
+      }
+    });
+
+    this.__nrp.on('lambda:worker:errored', (json) => {
+      const payload = JSON.parse(json) as LambdaExecutionMessage;
+      Logging.logError(`[${this.name}] ${payload.executionId} errored while running on ${payload.workerId}`);
+      this.untrackWorkerLambda(payload);
+      // this._checkAPIAndPathMutationQueue();
+    });
+
+    this.__nrp.on('lambda:worker:finished', (json) => {
+      const payload = JSON.parse(json) as LambdaExecutionMessage;
+      Logging.logDebug(`[${this.name}] ${payload.executionId} was completed by ${payload.workerId}`);
+      this.untrackWorkerLambda(payload);
+      // this._checkAPIAndPathMutationQueue();
+    });
+  }
+
+  async _listenLambdaAPIExecution() {
+    this.__nrp?.on('rest:worker:exec-lambda-api', async () => {
+      // const data = (JSON.parse(json)) as LambdaExecutionMessage;
+
+      // data.workerExecID = uuidv4();
+      // Logging.log(`Manager is queuing API lambda ${data.lambdaId} to be executed`);
+      // let index = this._lambdaAPI.length;
+      // if (data.lambdaExecBehavior === 'SYNC' && index > 0) {
+      // 	const lambdaIdx = index = this._lambdaAPI.findIndex((item) => item.lambdaExecBehavior !== 'SYNC') - 1;
+      // 	index = (lambdaIdx !== -1) ? lambdaIdx : index;
+      // }
+
+      // this._lambdaAPI.splice(index, 0, data);
+      // Give the queue a nudge.
+      this._processQueue();
+      // this.__announcePendingExecutions(this._lambdaAPI);
+    });
+  }
+
+  /**
+   * Listening on redis event to handle the execution of the path mutations lambda
+   */
+  _listenLambdaPathChange() {
+    this.__nrp?.on('rest:worker:notifyLambdaPathChange', async (json) => {
+      const data = JSON.parse(json) as NotifyLambdaPathChangeMessage;
+
+      const paths = data.paths;
+      const schema = data.collection;
+      const values = data.values;
+
+      Logging.logDebug(`Manager is announcing path mutation lambda to be executed for ${schema} on paths ${paths}`);
+      const lambdaPathMutation = this._pathsMutation.filter((item) => {
+        return item.paths.some((itemPath) => paths.some((path) => this._checkMatchingPaths(path, itemPath, schema)));
+      });
+
+      const cr: PathMutationCR = { paths, values, schema };
+
+      this._debounceLambdaTriggers(lambdaPathMutation, cr);
+    });
+  }
+
+  /**
+   * Checking matching root paths and absolute paths
+   * @param {String} path
+   * @param {String} itemPath
+   * @param {String} schema
+   * @return {Boolean}
+   */
+  _checkMatchingPaths(path, itemPath, schema) {
+    const isWildedCardRootPath = itemPath.split(`${schema}.*`).join('');
+    if (!isWildedCardRootPath || (isWildedCardRootPath !== itemPath && path === schema)) return true;
+
+    const lambdaPathId = itemPath
+      .split(`${schema}.`)
+      .filter((v) => v)
+      .join('')
+      .split('.')
+      .shift();
+    const crPathId = path
+      .split(`${schema}.`)
+      .filter((v) => v)
+      .join('')
+      .split('.')
+      .shift();
+    if (lambdaPathId !== crPathId && lambdaPathId !== '*') return false;
+
+    const lambdaRelativePath = itemPath.split(`${schema}.${lambdaPathId}`).pop();
+    const crRelativePath = path.split(`${crPathId}`).pop();
+    return this._checkMatchingRelativePaths(lambdaRelativePath, crRelativePath);
+  }
+
+  /**
+   * Checking matching relative paths
+   * @param {String} lambdaPath
+   * @param {String} crPath
+   * @return {Boolean}
+   */
+  _checkMatchingRelativePaths(lambdaPath, crPath) {
+    lambdaPath = lambdaPath.replace('.length', '');
+    if (lambdaPath === '*' || lambdaPath === crPath || !crPath) return true;
+    if (lambdaPath.includes('*')) {
+      const wildCardedPath = lambdaPath.split('.*').shift();
+      if (!wildCardedPath) return true;
+      if (!crPath.includes(wildCardedPath)) return false;
+      const lambdaObservedPath = lambdaPath.split(`${wildCardedPath}.*`).pop();
+      const crObservedPath = crPath.split(`${wildCardedPath}`).pop();
+
+      if (!lambdaObservedPath && crObservedPath) return true;
+      if (lambdaObservedPath.includes('*')) {
+        return this._checkMatchingRelativePaths(lambdaObservedPath, crObservedPath);
+      }
+
+      const isSamePath = crObservedPath.split(lambdaObservedPath).pop();
+      if (!isSamePath) return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Debounces checks for based path lambdas
+   * @param {Array} lambdas
+   * @param {Array} body
+   * @param {Boolean} addExecution
+   * @param {string} executionId
+   */
+  async _debounceLambdaTriggers(lambdaPathMutation: PathMutation[], cr: PathMutationCR) {
+    // We'll make a hash of the body so we can use it to compare in the debouncer
+    const crHash = ObjectHash(cr);
+
+    for await (const pathMutation of lambdaPathMutation) {
+      // Check to see if there is a path mutation for the same lambda & body
+      let debouncedLambdaIdx = this._debouncedPathMutations.findIndex(
+        (item) => item.lambdaId.toString() === pathMutation.id && item.crHash === crHash,
+      );
+
+      const retry = this._debouncedPathMutations[debouncedLambdaIdx]?.retry || 0;
+
+      if (retry > this._maximumRetry) {
+        // TODO: Clean up exec records
+        Logging.logError(
+          `[${this.name}] Lambda ${pathMutation.id} has reached the maximum retry of ${this._maximumRetry}`,
+        );
+        return;
+      }
+
+      if (debouncedLambdaIdx === -1) {
+        const execID = uuidv4();
+        const debouncer: PathMutationDebounce = {
+          id: execID,
+          timer: setTimeout(() => {
+            this._createLambdaPathMutationExecution(execID);
+          }, this._lambdaPathMutationTimeout),
+          pathMutation: true,
+          triggerType: pathMutation.type,
+          lambdaId: pathMutation.id,
+          gitHash: pathMutation.gitHash,
+          appId: pathMutation.appId,
+          CRs: [cr],
+          crHash,
+          retry: 0,
+        };
+
+        debouncedLambdaIdx = this._debouncedPathMutations.push(debouncer) - 1;
+        return;
+      }
+
+      const pmExecRecord = this._debouncedPathMutations[debouncedLambdaIdx];
+
+      clearTimeout(pmExecRecord?.timer);
+      pmExecRecord.timer = setTimeout(() => {
+        this._createLambdaPathMutationExecution(pmExecRecord.id);
+      }, this._lambdaPathMutationTimeout);
+      pmExecRecord.CRs = pmExecRecord.CRs.concat(cr);
+      pmExecRecord.retry = pmExecRecord.retry + 1;
+      return;
+    }
+  }
+
+  /**
+   * announce path mutation lambda
+   * @param {String} execID
+   */
+  async _createLambdaPathMutationExecution(id: string) {
+    const pathMutationLambdaIdx = this._debouncedPathMutations.findIndex((item) => item.id.toString() === id);
+    if (pathMutationLambdaIdx === -1) {
+      Logging.logError(`[${this.name}] Unable to find path mutation lambda with exec ID ${id}`);
+      return;
+    }
+
+    const pathMutationLambda = this._debouncedPathMutations[pathMutationLambdaIdx];
+    delete this._debouncedPathMutations[pathMutationLambdaIdx].timer;
+
+    if (!pathMutationLambda.executionId) {
+      const lambdaExecMetadata = [{ key: 'CR', value: JSON.stringify(pathMutationLambda.CRs) }];
+      const execution = (await this._createLambdaExecution(
+        pathMutationLambda.triggerType,
+        pathMutationLambda.lambdaId,
+        pathMutationLambda.gitHash,
+        pathMutationLambda.appId,
+        ExecPriority.PATH_MUTATION,
+        lambdaExecMetadata,
+      )) as LambdaExecution;
+      pathMutationLambda.executionId = execution.id.toString();
+    }
+
+    if (!pathMutationLambda || !pathMutationLambda.executionId) {
+      throw new Error('Failed to create path mutation lambda execution');
+    }
+
+    this._processQueue();
+  }
+
+  /**
+   * Manages lambda folders
+   */
+  async _setupLambdaFolders() {
+    if (!fs.existsSync(Config.paths.lambda.code)) {
+      await exec(`mkdir -p ${Config.paths.lambda.code}`);
+    }
+
+    if (!fs.existsSync(Config.paths.lambda.plugins)) {
+      await exec(`mkdir -p ${Config.paths.lambda.plugins}`);
+    }
+
+    if (fs.existsSync(Config.paths.lambda.bundles)) {
+      await exec(`rm -rf ${Config.paths.lambda.bundles}`);
+    }
+  }
 }

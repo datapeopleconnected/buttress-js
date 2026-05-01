@@ -24,77 +24,78 @@ import Logging from '../helpers/logging.js';
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-
 /**
  * IsolateBridge
  * @class
  */
 class IsolateBridge {
-	_plugins: {
-		[key: string]: {
-			plugin: any;
-			methods: string[];
-		};
-	};
-	_pluginBootstrap: string;
+  _plugins: {
+    [key: string]: {
+      plugin: any;
+      methods: string[];
+    };
+  };
+  _pluginBootstrap: string;
 
-	/**
-	 * Constructor for Helpers
-	 */
-	constructor() {
-		this._plugins = {};
-		this._pluginBootstrap = '';
-	}
+  /**
+   * Constructor for Helpers
+   */
+  constructor() {
+    this._plugins = {};
+    this._pluginBootstrap = '';
+  }
 
-	registerPlugins() {
-		const getClassesList = (dirName) => {
-			let files: NodeJS.Require[] = [];
+  registerPlugins() {
+    const getClassesList = (dirName) => {
+      let files: NodeJS.Require[] = [];
 
-			let items: fs.Dirent[];
-			try {
-				items = fs.readdirSync(dirName, { withFileTypes: true });
-			} catch (e: unknown) {
-				Logging.logError(`Error reading directory: ${dirName}`);
-				Logging.logError(e);
-				return [];
-			}
+      let items: fs.Dirent[];
+      try {
+        items = fs.readdirSync(dirName, { withFileTypes: true });
+      } catch (e: unknown) {
+        Logging.logError(`Error reading directory: ${dirName}`);
+        Logging.logError(e);
+        return [];
+      }
 
-			for (const item of items) {
-				if (item.name === '.git') continue;
+      for (const item of items) {
+        if (item.name === '.git') continue;
 
-				if (item.isDirectory()) {
-					files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
-				} else {
-					files.push(require(`${dirName}/${item.name}`).default);
-				}
-			}
+        if (item.isDirectory()) {
+          files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
+        } else {
+          files.push(require(`${dirName}/${item.name}`).default);
+        }
+      }
 
-			return files;
-		};
+      return files;
+    };
 
-		this._plugins = {};
-		const classes: any = getClassesList(Config.paths.lambda.plugins);
-		const plugins = classes.filter((c) => c.startUp);
-		const prot = ['constructor', 'startUp'];
-		Logging.logSilly('Plugins to register:', plugins.map((p) => p.constructor.name).join(','));
-		plugins.forEach((p) => {
-			const className = p.constructor.name;
+    this._plugins = {};
+    const classes: any = getClassesList(Config.paths.lambda.plugins);
+    const plugins = classes.filter((c) => c.startUp);
+    const prot = ['constructor', 'startUp'];
+    Logging.logSilly('Plugins to register:', plugins.map((p) => p.constructor.name).join(','));
+    plugins.forEach((p) => {
+      const className = p.constructor.name;
 
-			const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(p)).filter((n) => prot.indexOf(n) === -1 && /^_/.exec(n) === null);
-			this._plugins[className] = { plugin: p, methods: methods };
+      const methods = Object.getOwnPropertyNames(Object.getPrototypeOf(p)).filter(
+        (n) => prot.indexOf(n) === -1 && /^_/.exec(n) === null,
+      );
+      this._plugins[className] = { plugin: p, methods: methods };
 
-			Logging.logVerbose(`Plugin '${className}' Methods: ${methods.join(',')}`);
-			p.startUp();
-		});
-		Logging.log(`Registered: ${Object.keys(this._plugins).length} lambda plugins`);
-	}
+      Logging.logVerbose(`Plugin '${className}' Methods: ${methods.join(',')}`);
+      p.startUp();
+    });
+    Logging.log(`Registered: ${Object.keys(this._plugins).length} lambda plugins`);
+  }
 
-	async setupPlugins(jail) {
-		this._pluginBootstrap = '';
+  async setupPlugins(jail) {
+    this._pluginBootstrap = '';
 
-		for (const [pluginName, pluginMeta] of Object.entries(this._plugins)) {
-			for (const method of pluginMeta.methods) {
-				this._pluginBootstrap += `
+    for (const [pluginName, pluginMeta] of Object.entries(this._plugins)) {
+      for (const method of pluginMeta.methods) {
+        this._pluginBootstrap += `
 					let ${pluginName}_${method} = _${pluginName}_${method};
 					delete _${pluginName}_${method};
 					global.${pluginName}_${method} = (...args) => {
@@ -106,19 +107,22 @@ class IsolateBridge {
 						});
 					}
 				`;
-				jail.setSync(`_${pluginName}_${method}`, new ivm.Reference(async (resolve, reject, ...args) => {
-					Logging.logVerbose(`${pluginName}_${method}`);
-					const outcome = await pluginMeta.plugin[method](...args);
-					resolve.applyIgnored(undefined, [
-						new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto(),
-					]);
-				}));
-			}
-		}
-	}
+        jail.setSync(
+          `_${pluginName}_${method}`,
+          new ivm.Reference(async (resolve, reject, ...args) => {
+            Logging.logVerbose(`${pluginName}_${method}`);
+            const outcome = await pluginMeta.plugin[method](...args);
+            resolve.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto()]);
+          }),
+        );
+      }
+    }
+  }
 
-	createHostIsolateBridge(isolate, context) {
-		isolate.compileScriptSync(`new function() {
+  createHostIsolateBridge(isolate, context) {
+    isolate
+      .compileScriptSync(
+        `new function() {
 			let ivm = _ivm;
 			delete _ivm;
 
@@ -298,56 +302,75 @@ class IsolateBridge {
 				}
 			},
 		};
-		`).runSync(context);
+		`,
+      )
+      .runSync(context);
 
-		// bootstrap.runSync(context);
-	}
+    // bootstrap.runSync(context);
+  }
 
+  async setupLambdaLogs(jail) {
+    jail.setSync(
+      '_log',
+      new ivm.Reference((...args) => {
+        Logging.log(args[0], args[2], args[3]);
+        this._pushLambdaExecutionLog(args[0], 'log');
+      }),
+    );
 
-	async setupLambdaLogs(jail) {
-		jail.setSync('_log', new ivm.Reference((...args) => {
-			Logging.log(args[0], args[2], args[3]);
-			this._pushLambdaExecutionLog(args[0], 'log');
-		}));
+    jail.setSync(
+      '_logDebug',
+      new ivm.Reference((...args) => {
+        Logging.logDebug(args[0], args[2]);
+        this._pushLambdaExecutionLog(args[0], 'debug');
+      }),
+    );
 
-		jail.setSync('_logDebug', new ivm.Reference((...args) => {
-			Logging.logDebug(args[0], args[2]);
-			this._pushLambdaExecutionLog(args[0], 'debug');
-		}));
+    jail.setSync(
+      '_logSilly',
+      new ivm.Reference((...args) => {
+        Logging.logSilly(args[0], args[2]);
+        this._pushLambdaExecutionLog(args[0], 'silly');
+      }),
+    );
 
-		jail.setSync('_logSilly', new ivm.Reference((...args) => {
-			Logging.logSilly(args[0], args[2]);
-			this._pushLambdaExecutionLog(args[0], 'silly');
-		}));
+    jail.setSync(
+      '_logVerbose',
+      new ivm.Reference((...args) => {
+        Logging.logVerbose(args[0], args[2]);
+        this._pushLambdaExecutionLog(args[0], 'verbose');
+      }),
+    );
 
-		jail.setSync('_logVerbose', new ivm.Reference((...args) => {
-			Logging.logVerbose(args[0], args[2]);
-			this._pushLambdaExecutionLog(args[0], 'verbose');
-		}));
+    jail.setSync(
+      '_logWarn',
+      new ivm.Reference((...args) => {
+        Logging.logWarn(args[0], args[2]);
+        this._pushLambdaExecutionLog(args[0], 'warn');
+      }),
+    );
 
-		jail.setSync('_logWarn', new ivm.Reference((...args) => {
-			Logging.logWarn(args[0], args[2]);
-			this._pushLambdaExecutionLog(args[0], 'warn');
-		}));
+    jail.setSync(
+      '_logError',
+      new ivm.Reference((...args) => {
+        Logging.logError(args[0], args[2]);
+        this._pushLambdaExecutionLog(args[0], 'error');
+      }),
+    );
+  }
 
-		jail.setSync('_logError', new ivm.Reference((...args) => {
-			Logging.logError(args[0], args[2]);
-			this._pushLambdaExecutionLog(args[0], 'error');
-		}));
-	}
-
-	_pushLambdaExecutionLog(log, type) {
-		throw new Error('Need to resolve where this.lambdaExecution.id is coming from');
-		// Model.getCoreModel(LambdaSchemaModel).update({
-		// 	id: Model.getCoreModel(LambdaSchemaModel).createId(this.lambdaExecution.id),
-		// }, {
-		// 	$push: {
-		// 		logs: {
-		// 			log,
-		// 			type,
-		// 		},
-		// 	},
-		// });
-	}
+  _pushLambdaExecutionLog(log, type) {
+    throw new Error('Need to resolve where this.lambdaExecution.id is coming from');
+    // Model.getCoreModel(LambdaSchemaModel).update({
+    // 	id: Model.getCoreModel(LambdaSchemaModel).createId(this.lambdaExecution.id),
+    // }, {
+    // 	$push: {
+    // 		logs: {
+    // 			log,
+    // 			type,
+    // 		},
+    // 	},
+    // });
+  }
 }
 export default new IsolateBridge();

@@ -22,112 +22,110 @@ import { ApplicablePolicyConfig, PolicyError } from './index.js';
  * @class Projection
  */
 class Projection {
-	private logicalOperator: string[];
-	private _ignoredQueryKeys: string[];
+  private logicalOperator: string[];
+  private _ignoredQueryKeys: string[];
 
-	constructor() {
-		this.logicalOperator = [
-			'$and',
-			'$or',
-		];
+  constructor() {
+    this.logicalOperator = ['$and', '$or'];
 
-		this._ignoredQueryKeys = [
-			'__crPath',
-			'project',
-			'id',
-		];
-	}
+    this._ignoredQueryKeys = ['__crPath', 'project', 'id'];
+  }
 
-	async filterPoliciesByPolicyProjection(req, applicablePolicies: ApplicablePolicyConfig[], schema) {
-		const output: ApplicablePolicyConfig[] = [];
+  async filterPoliciesByPolicyProjection(req, applicablePolicies: ApplicablePolicyConfig[], schema) {
+    const output: ApplicablePolicyConfig[] = [];
 
-		for await (const policy of applicablePolicies) {
-			if (policy.config.projection === null) {
-				output.push(policy);
-			} else {
-				const result = await this.__applyPolicyProjection(req, policy.config.projection, schema);
-				if (result !== false) {
-					policy.config.projection = result;
-					output.push(policy);
-				}
-			}
-		}
+    for await (const policy of applicablePolicies) {
+      if (policy.config.projection === null) {
+        output.push(policy);
+      } else {
+        const result = await this.__applyPolicyProjection(req, policy.config.projection, schema);
+        if (result !== false) {
+          policy.config.projection = result;
+          output.push(policy);
+        }
+      }
+    }
 
-		return output;
-	}
+    return output;
+  }
 
-	async __applyPolicyProjection(req, projections, schema): Promise<{ [key: string]: number } | false> {
-		const requestMethod = req.method;
-		const flattenedSchema = Helpers.getFlattenedSchema(schema);
-		let requestBody = req.body;
+  async __applyPolicyProjection(req, projections, schema): Promise<{ [key: string]: number } | false> {
+    const requestMethod = req.method;
+    const flattenedSchema = Helpers.getFlattenedSchema(schema);
+    let requestBody = req.body;
 
-		const projectionKeys = projections.keys;
-		const projection = {};
+    const projectionKeys = projections.keys;
+    const projection = {};
 
-		if (projectionKeys && projectionKeys.length > 0) {
-			projectionKeys.forEach((key) => {
-				projection[key] = 1;
-			});
-		}
+    if (projectionKeys && projectionKeys.length > 0) {
+      projectionKeys.forEach((key) => {
+        projection[key] = 1;
+      });
+    }
 
-		if (requestMethod === 'POST') {
-			const updatePaths = Object.keys(requestBody).map((key) => key);
+    if (requestMethod === 'POST') {
+      const updatePaths = Object.keys(requestBody).map((key) => key);
 
-			if (projectionKeys.length > 0) {
-				const removedPaths = updatePaths
-					.filter((key) => projectionKeys.every((updateKey) => updateKey !== key))
-					.filter((path) => flattenedSchema[path]);
+      if (projectionKeys.length > 0) {
+        const removedPaths = updatePaths
+          .filter((key) => projectionKeys.every((updateKey) => updateKey !== key))
+          .filter((path) => flattenedSchema[path]);
 
-				removedPaths.forEach((i) => {
-					// ? There maybe a required field here but the user does not have access to it.
-					const config = flattenedSchema[i];
-					requestBody[i] = Helpers.Schema.getPropDefault(config);
-				});
-			}
-		} else if (requestMethod === 'PUT') {
-			if (!Array.isArray(requestBody) && typeof requestBody === 'object') {
-				requestBody = [requestBody];
-			}
+        removedPaths.forEach((i) => {
+          // ? There maybe a required field here but the user does not have access to it.
+          const config = flattenedSchema[i];
+          requestBody[i] = Helpers.Schema.getPropDefault(config);
+        });
+      }
+    } else if (requestMethod === 'PUT') {
+      if (!Array.isArray(requestBody) && typeof requestBody === 'object') {
+        requestBody = [requestBody];
+      }
 
-			// Check to see if the any of the update paths don't exists within the projection keys,
-			// if they don't then we want to throw as the user doesn't have access.
-			const invalidPaths = requestBody.map((elem) => elem.path)
-				.filter((updateKey) => projectionKeys.find((key) => new RegExp(`^${key}`).test(updateKey)) === undefined);
+      // Check to see if the any of the update paths don't exists within the projection keys,
+      // if they don't then we want to throw as the user doesn't have access.
+      const invalidPaths = requestBody
+        .map((elem) => elem.path)
+        .filter((updateKey) => projectionKeys.find((key) => new RegExp(`^${key}`).test(updateKey)) === undefined);
 
-			if (invalidPaths.length > 0) {
-				throw new PolicyError(401, `Can not access/edit properties (${invalidPaths.join(', ')}) of ${schema.name} without privileged access`);
-			}
+      if (invalidPaths.length > 0) {
+        throw new PolicyError(
+          401,
+          `Can not access/edit properties (${invalidPaths.join(', ')}) of ${schema.name} without privileged access`,
+        );
+      }
+    } else {
+      if (projectionKeys.length > 0 && !this.__checkProjectionPath(requestBody, projectionKeys)) {
+        return false;
+      }
+    }
 
-		} else {
-			if (projectionKeys.length > 0 && !this.__checkProjectionPath(requestBody, projectionKeys)) {
-				return false;
-			}
-		}
+    return projection;
+  }
 
-		return projection;
-	}
+  __checkProjectionPath(requestBody, projectionKeys) {
+    const query = requestBody.query ? requestBody.query : requestBody;
+    const paths = Object.keys(query).filter((key) => key && !this._ignoredQueryKeys.includes(key));
+    let queryKeys: string[] = [];
 
-	__checkProjectionPath(requestBody, projectionKeys) {
-		const query = (requestBody.query) ? requestBody.query : requestBody;
-		const paths = Object.keys(query).filter((key) => key && !this._ignoredQueryKeys.includes(key));
-		let queryKeys: string[] = [];
+    paths.forEach((path) => {
+      if (this.logicalOperator.includes(path)) {
+        query[path].forEach((p) => {
+          queryKeys = queryKeys.concat(Object.keys(p));
+        });
+        return;
+      }
 
-		paths.forEach((path) => {
-			if (this.logicalOperator.includes(path)) {
-				query[path].forEach((p) => {
-					queryKeys = queryKeys.concat(Object.keys(p));
-				});
-				return;
-			}
+      if (typeof path === 'object' && !Array.isArray(path)) {
+        queryKeys = queryKeys.concat(Object.keys(path));
+      } else {
+        queryKeys = queryKeys.concat(path);
+      }
+    });
 
-			if (typeof path === 'object' && !Array.isArray(path)) {
-				queryKeys = queryKeys.concat(Object.keys(path));
-			} else {
-				queryKeys = queryKeys.concat(path);
-			}
-		});
-
-		return queryKeys.every((key) => projectionKeys.includes(key) || projectionKeys.some((k) => key.startsWith(k) && key[k.length] === '.'));
-	}
+    return queryKeys.every(
+      (key) => projectionKeys.includes(key) || projectionKeys.some((k) => key.startsWith(k) && key[k.length] === '.'),
+    );
+  }
 }
 export default new Projection();

@@ -22,197 +22,188 @@ import AppSchemaModel from './app.js';
 import TokenSchemaModel from './token.js';
 
 export interface LambdaExecution {
-	id: string;
-	lambdaId: string;
-	deploymentId: string;
-	triggerType: 'CRON' | 'PATH_MUTATION' | 'API_ENDPOINT';
-	priority: number;
-	status: 'PENDING' | 'RUNNING' | 'COMPLETE' | 'ERROR';
-	logs: Array<{
-		log: string | null;
-		type: string | null;
-	}>;
-	executeAfter: Date | null;
-	startedAt: Date | null;
-	endedAt: Date | null;
-	nextCronExpression: string | null;
-	_appId: string;
-	_tokenId: string;
-	metadata: Array<{
-		key: string | null;
-		value: string | null;
-	}>;
-	createdAt: Date;
-	updatedAt: Date;
-};
+  id: string;
+  lambdaId: string;
+  deploymentId: string;
+  triggerType: 'CRON' | 'PATH_MUTATION' | 'API_ENDPOINT';
+  priority: number;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETE' | 'ERROR';
+  logs: Array<{
+    log: string | null;
+    type: string | null;
+  }>;
+  executeAfter: Date | null;
+  startedAt: Date | null;
+  endedAt: Date | null;
+  nextCronExpression: string | null;
+  _appId: string;
+  _tokenId: string;
+  metadata: Array<{
+    key: string | null;
+    value: string | null;
+  }>;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
 class LambdaExecutionSchemaModel extends StandardModel {
-	static name = 'LambdaExecution';
+  static name = 'LambdaExecution';
 
-	constructor(services) {
-		const schema = LambdaExecutionSchemaModel.Schema;
-		super(schema, null, services);
-	}
+  constructor(services) {
+    const schema = LambdaExecutionSchemaModel.Schema;
+    super(schema, null, services);
+  }
 
-	static get Schema(): Schema {
-		return {
-			name: 'lambdaExecution',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				lambdaId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-				deploymentId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-				triggerType: {
-					__type: 'string',
-					__default: 'CRON',
-					__enum: [
-						'CRON',
-						'PATH_MUTATION',
-						'API_ENDPOINT',
-					],
-					__required: true,
-					__allowUpdate: true,
-				},
-				status: {
-					__type: 'string',
-					__default: 'PENDING',
-					__enum: [
-						'PENDING',
-						'RUNNING',
-						'COMPLETE',
-						'ERROR',
-					],
-					__required: true,
-					__allowUpdate: true,
-				},
-				priority: {
-					__type: 'number',
-					__default: 0,
-					__required: true,
-					__allowUpdate: true,
-				},
-				logs: {
-					__type: 'array',
-					__allowUpdate: true,
-					__schema: {
-						log: {
-							__type: 'string',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-						type: {
-							__type: 'string',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-					},
-				},
-				executeAfter: {
-					__type: 'date',
-					__default: null,
-					__required: false,
-					__allowUpdate: true,
-				},
-				startedAt: {
-					__type: 'date',
-					__default: null,
-					__required: false,
-					__allowUpdate: true,
-				},
-				endedAt: {
-					__type: 'date',
-					__default: null,
-					__required: false,
-					__allowUpdate: true,
-				},
-				nextCronExpression: {
-					__type: 'string',
-					__default: null,
-					__required: false,
-					__allowUpdate: true,
-				},
-				_appId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-				_tokenId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-				metadata: {
-					__type: 'array',
-					__allowUpdate: true,
-					__schema: {
-						key: {
-							__type: 'string',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-						value: {
-							__type: 'string',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-					},
-				},
-				createdAt: {
-					__type: 'date',
-					__default: 'now',
-					__required: false,
-					__allowUpdate: false,
-				},
-				updatedAt: {
-					__type: 'date',
-					__required: false,
-					__allowUpdate: true,
-				},
-			},
-		};
-	}
+  static get Schema(): Schema {
+    return {
+      name: 'lambdaExecution',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        lambdaId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+        deploymentId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+        triggerType: {
+          __type: 'string',
+          __default: 'CRON',
+          __enum: ['CRON', 'PATH_MUTATION', 'API_ENDPOINT'],
+          __required: true,
+          __allowUpdate: true,
+        },
+        status: {
+          __type: 'string',
+          __default: 'PENDING',
+          __enum: ['PENDING', 'RUNNING', 'COMPLETE', 'ERROR'],
+          __required: true,
+          __allowUpdate: true,
+        },
+        priority: {
+          __type: 'number',
+          __default: 0,
+          __required: true,
+          __allowUpdate: true,
+        },
+        logs: {
+          __type: 'array',
+          __allowUpdate: true,
+          __schema: {
+            log: {
+              __type: 'string',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+            type: {
+              __type: 'string',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+          },
+        },
+        executeAfter: {
+          __type: 'date',
+          __default: null,
+          __required: false,
+          __allowUpdate: true,
+        },
+        startedAt: {
+          __type: 'date',
+          __default: null,
+          __required: false,
+          __allowUpdate: true,
+        },
+        endedAt: {
+          __type: 'date',
+          __default: null,
+          __required: false,
+          __allowUpdate: true,
+        },
+        nextCronExpression: {
+          __type: 'string',
+          __default: null,
+          __required: false,
+          __allowUpdate: true,
+        },
+        _appId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+        _tokenId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+        metadata: {
+          __type: 'array',
+          __allowUpdate: true,
+          __schema: {
+            key: {
+              __type: 'string',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+            value: {
+              __type: 'string',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+          },
+        },
+        createdAt: {
+          __type: 'date',
+          __default: 'now',
+          __required: false,
+          __allowUpdate: false,
+        },
+        updatedAt: {
+          __type: 'date',
+          __required: false,
+          __allowUpdate: true,
+        },
+      },
+    };
+  }
 
-	/**
-	 * @param {Object} body - body passed through from a POST request
-	 * @param {string} appId - the appId the lambda execution blongs to
-	 * @param {string} tokenId - the tokenId that should be used to exeucte the lambda
-	 * @return {Promise} - fulfilled with lambda execution Object when the database request is completed
-	 */
-	async add(body, appId: string, tokenId: string | null = null) {
-		const executionBody = {
-			lambdaId: (body.lambdaId) ? body.lambdaId : null,
-			deploymentId: (body.deploymentId) ? body.deploymentId : null,
-			triggerType: (body.triggerType) ? body.triggerType : null,
-			priority: (body.priority) ? body.priority : 0,
-			logs: (body.logs) ? body.logs : [],
-			executeAfter: (body.executeAfter) ? body.executeAfter : null,
-			nextCronExpression: (body.nextCronExpression) ? body.nextCronExpression : null,
-			metadata: (body.metadata) ? body.metadata : [],
-		};
+  /**
+   * @param {Object} body - body passed through from a POST request
+   * @param {string} appId - the appId the lambda execution blongs to
+   * @param {string} tokenId - the tokenId that should be used to exeucte the lambda
+   * @return {Promise} - fulfilled with lambda execution Object when the database request is completed
+   */
+  async add(body, appId: string, tokenId: string | null = null) {
+    const executionBody = {
+      lambdaId: body.lambdaId ? body.lambdaId : null,
+      deploymentId: body.deploymentId ? body.deploymentId : null,
+      triggerType: body.triggerType ? body.triggerType : null,
+      priority: body.priority ? body.priority : 0,
+      logs: body.logs ? body.logs : [],
+      executeAfter: body.executeAfter ? body.executeAfter : null,
+      nextCronExpression: body.nextCronExpression ? body.nextCronExpression : null,
+      metadata: body.metadata ? body.metadata : [],
+    };
 
-		if (!appId) throw new Error('appId is required to create a lambda execution');
+    if (!appId) throw new Error('appId is required to create a lambda execution');
 
-		const internals: any = { _appId: this.__modelManager.getCoreModel(AppSchemaModel).createId(appId) };
-		if (tokenId) internals._tokenId = this.__modelManager.getCoreModel(TokenSchemaModel).createId(tokenId);
+    const internals: any = { _appId: this.__modelManager.getCoreModel(AppSchemaModel).createId(appId) };
+    if (tokenId) internals._tokenId = this.__modelManager.getCoreModel(TokenSchemaModel).createId(tokenId);
 
-		const rxsExecution = await super.add(executionBody, internals);
-		const execution = await Helpers.streamFirst(rxsExecution);
+    const rxsExecution = await super.add(executionBody, internals);
+    const execution = await Helpers.streamFirst(rxsExecution);
 
-		return execution;
-	}
+    return execution;
+  }
 }
 
 /**

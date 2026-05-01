@@ -23,230 +23,239 @@ import TokenSchemaModel from './token.js';
 import PolicySchemaModel from './policy.js';
 
 export interface AppDataSharing {
-	id: string;
-	name: string;
-	
-	active: boolean;
-	remoteApp: {
-		endpoint: string;
-		ws: string;
-		apiPath: string;
-		token: string;
-	};
-	
-	_appId: string;
-	_tokenId: string;
+  id: string;
+  name: string;
+
+  active: boolean;
+  remoteApp: {
+    endpoint: string;
+    ws: string;
+    apiPath: string;
+    token: string;
+  };
+
+  _appId: string;
+  _tokenId: string;
 }
 
 /**
  * @class AppDataSharingSchemaModel
  */
 export default class AppDataSharingSchemaModel extends StandardModel {
-	static name = 'AppDataSharing';
+  static name = 'AppDataSharing';
 
-	constructor(services) {
-		const schema = AppDataSharingSchemaModel.Schema;
-		super(schema, null, services);
-	}
+  constructor(services) {
+    const schema = AppDataSharingSchemaModel.Schema;
+    super(schema, null, services);
+  }
 
-	static get Constants() {
-		return {};
-	}
-	get Constants() {
-		return AppDataSharingSchemaModel.Constants;
-	}
+  static get Constants() {
+    return {};
+  }
+  get Constants() {
+    return AppDataSharingSchemaModel.Constants;
+  }
 
-	static get Schema(): Schema {
-		return {
-			name: 'appDataSharing',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				name: {
-					__type: 'string',
-					__required: true,
-					__allowUpdate: true,
-				},
-				active: {
-					__type: 'boolean',
-					__default: false,
-					__required: false,
-					__allowUpdate: true,
-				},
-				remoteApp: {
-					endpoint: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-					ws: {
-						__type: 'string',
-						__default: null,
-						__required: false,
-						__allowUpdate: true,
-					},
-					apiPath: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-					token: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-				},
-				_appId: {
-					__type: 'id',
-					__required: false,
-					__allowUpdate: false,
-				},
-				_tokenId: {
-					__type: 'id',
-					__required: false,
-					__allowUpdate: false,
-				},
-			},
-		};
-	}
+  static get Schema(): Schema {
+    return {
+      name: 'appDataSharing',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        name: {
+          __type: 'string',
+          __required: true,
+          __allowUpdate: true,
+        },
+        active: {
+          __type: 'boolean',
+          __default: false,
+          __required: false,
+          __allowUpdate: true,
+        },
+        remoteApp: {
+          endpoint: {
+            __type: 'string',
+            __default: null,
+            __required: true,
+            __allowUpdate: true,
+          },
+          ws: {
+            __type: 'string',
+            __default: null,
+            __required: false,
+            __allowUpdate: true,
+          },
+          apiPath: {
+            __type: 'string',
+            __default: null,
+            __required: true,
+            __allowUpdate: true,
+          },
+          token: {
+            __type: 'string',
+            __default: null,
+            __required: true,
+            __allowUpdate: true,
+          },
+        },
+        _appId: {
+          __type: 'id',
+          __required: false,
+          __allowUpdate: false,
+        },
+        _tokenId: {
+          __type: 'id',
+          __required: false,
+          __allowUpdate: false,
+        },
+      },
+    };
+  }
 
-	/**
-	 * @param {Object} body - body passed through from a POST request
-	 * @return {Promise} - fulfilled with App Object when the database request is completed
-	 */
-	async add(body) {
-		const appDataSharingBody = {
-			id: (body.id) ? this.createId(body.id) : this.createId(),
-			name: body.name,
+  /**
+   * @param {Object} body - body passed through from a POST request
+   * @return {Promise} - fulfilled with App Object when the database request is completed
+   */
+  async add(body) {
+    const appDataSharingBody = {
+      id: body.id ? this.createId(body.id) : this.createId(),
+      name: body.name,
 
-			active: false,
+      active: false,
 
-			remoteApp: {
-				endpoint: Helpers.trimSlashes(body.remoteApp.endpoint),
-				ws: (body.remoteApp.ws) ? Helpers.trimSlashes(body.remoteApp.ws) : null,
-				apiPath: Helpers.trimSlashes(body.remoteApp.apiPath),
-				token: body.remoteApp.token,
-			},
+      remoteApp: {
+        endpoint: Helpers.trimSlashes(body.remoteApp.endpoint),
+        ws: body.remoteApp.ws ? Helpers.trimSlashes(body.remoteApp.ws) : null,
+        apiPath: Helpers.trimSlashes(body.remoteApp.apiPath),
+        token: body.remoteApp.token,
+      },
 
-			policyConfig: (body.policyConfig) ? body.policyConfig : [],
+      policyConfig: body.policyConfig ? body.policyConfig : [],
 
-			_appId: this.createId(body.appId),
-			_tokenId: null,
-		};
+      _appId: this.createId(body.appId),
+      _tokenId: null,
+    };
 
-		const rxsToken = await this.__modelManager.getCoreModel(TokenSchemaModel).add({
-			type: TokenSchemaModel.Constants.Type.DATA_SHARING,
-		}, {
-			_appId: appDataSharingBody._appId,
-			_appDataSharingId: appDataSharingBody.id,
-		});
-		const token: any = await Helpers.streamFirst(rxsToken);
+    const rxsToken = await this.__modelManager.getCoreModel(TokenSchemaModel).add(
+      {
+        type: TokenSchemaModel.Constants.Type.DATA_SHARING,
+      },
+      {
+        _appId: appDataSharingBody._appId,
+        _appDataSharingId: appDataSharingBody.id,
+      },
+    );
+    const token: any = await Helpers.streamFirst(rxsToken);
 
-		await this.__createDataSharingPolicy(appDataSharingBody, token.id);
+    await this.__createDataSharingPolicy(appDataSharingBody, token.id);
 
-		Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
-		this.__nrp?.emit('app-policy:bust-cache', JSON.stringify({
-			appId: appDataSharingBody._appId,
-		}));
+    Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
+    this.__nrp?.emit(
+      'app-policy:bust-cache',
+      JSON.stringify({
+        appId: appDataSharingBody._appId,
+      }),
+    );
 
-		const rxsDataShare = await super.add(appDataSharingBody, {
-			_appId: appDataSharingBody._appId,
-			_tokenId: token.id,
-		});
-		const dataSharing = await Helpers.streamFirst(rxsDataShare) as AppDataSharing;
+    const rxsDataShare = await super.add(appDataSharingBody, {
+      _appId: appDataSharingBody._appId,
+      _tokenId: token.id,
+    });
+    const dataSharing = (await Helpers.streamFirst(rxsDataShare)) as AppDataSharing;
 
-		return { dataSharing, token };
-	}
+    return { dataSharing, token };
+  }
 
-	async __createDataSharingPolicy(body, tokenId) {
-		return await this.__modelManager.getCoreModel(PolicySchemaModel).add({
-			name: `Data Sharing Policy - ${body.name}`,
-			selection: {
-				'#tokenType': {
-					'@eq': 'DATA_SHARING',	
-				},
-				'id': {
-					'@eq': tokenId,
-				},
-			},
-			config: body.policyConfig,
-		}, body._appId);
-	}
+  async __createDataSharingPolicy(body, tokenId) {
+    return await this.__modelManager.getCoreModel(PolicySchemaModel).add(
+      {
+        name: `Data Sharing Policy - ${body.name}`,
+        selection: {
+          '#tokenType': {
+            '@eq': 'DATA_SHARING',
+          },
+          id: {
+            '@eq': tokenId,
+          },
+        },
+        config: body.policyConfig,
+      },
+      body._appId,
+    );
+  }
 
-	/**
-	 * @param {ObjectId} appId - app id which needs to be updated
-	 * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
-	 * @param {String} type - data sharing type
-	 * @param {Object} policy - policy object for the app
-	 * @return {Promise} - resolves when save operation is completed
-	 */
-	updatePolicy(appId, appDataSharingId, type, policy) {
-		policy = Helpers.Schema.encode(policy);
+  /**
+   * @param {ObjectId} appId - app id which needs to be updated
+   * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
+   * @param {String} type - data sharing type
+   * @param {Object} policy - policy object for the app
+   * @return {Promise} - resolves when save operation is completed
+   */
+  updatePolicy(appId, appDataSharingId, type, policy) {
+    policy = Helpers.Schema.encode(policy);
 
-		const update = { $set: {} };
+    const update = { $set: {} };
 
-		if (type === 'remote') {
-			update.$set['dataSharing.remoteApp'] = policy;
-		} else {
-			update.$set['dataSharing.localApp'] = policy;
-		}
+    if (type === 'remote') {
+      update.$set['dataSharing.remoteApp'] = policy;
+    } else {
+      update.$set['dataSharing.localApp'] = policy;
+    }
 
-		return this.updateById(this.createId(appDataSharingId), update);
-	}
+    return this.updateById(this.createId(appDataSharingId), update);
+  }
 
-	/**
-	 * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
-	 * @param {String} token - activation token for remote app
-	 * @return {Promise} - resolves when save operation is completed
-	 */
-	updateActivationToken(appDataSharingId, token) {
-		const update = { $set: {} };
+  /**
+   * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
+   * @param {String} token - activation token for remote app
+   * @return {Promise} - resolves when save operation is completed
+   */
+  updateActivationToken(appDataSharingId, token) {
+    const update = { $set: {} };
 
-		update.$set['remoteApp.token'] = token;
-		update.$set['remoteApp.active'] = false;
+    update.$set['remoteApp.token'] = token;
+    update.$set['remoteApp.active'] = false;
 
-		return this.updateById(this.createId(appDataSharingId), update);
-	}
+    return this.updateById(this.createId(appDataSharingId), update);
+  }
 
-	/**
-	 * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
-	 * @param {String} newToken - The new token which will be used to talk to the remote app
-	 * @return {Promise} - resolves when save operation is completed
-	 */
-	activate(appDataSharingId, newToken = null) {
-		const update = {
-			$set: {
-				active: true,
-			},
-		};
+  /**
+   * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
+   * @param {String} newToken - The new token which will be used to talk to the remote app
+   * @return {Promise} - resolves when save operation is completed
+   */
+  activate(appDataSharingId, newToken = null) {
+    const update = {
+      $set: {
+        active: true,
+      },
+    };
 
-		if (newToken) {
-			update.$set['remoteApp.token'] = newToken;
-		}
+    if (newToken) {
+      update.$set['remoteApp.token'] = newToken;
+    }
 
-		this.__nrp?.emit('dataShare:activated', JSON.stringify({ appDataSharingId: appDataSharingId }));
+    this.__nrp?.emit('dataShare:activated', JSON.stringify({ appDataSharingId: appDataSharingId }));
 
-		return this.updateById(this.createId(appDataSharingId), update);
-	}
+    return this.updateById(this.createId(appDataSharingId), update);
+  }
 
-	/**
-	 * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
-	 * @return {Promise} - resolves when save operation is completed
-	 */
-	deactivate(appDataSharingId) {
-		const update = {
-			$set: {
-				active: false,
-			},
-		};
+  /**
+   * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
+   * @return {Promise} - resolves when save operation is completed
+   */
+  deactivate(appDataSharingId) {
+    const update = {
+      $set: {
+        active: false,
+      },
+    };
 
-		// TODO implement socket deactivation
-		this.__nrp?.emit('dataShare:deactivated', JSON.stringify({ appDataSharingId: appDataSharingId }));
+    // TODO implement socket deactivation
+    this.__nrp?.emit('dataShare:deactivated', JSON.stringify({ appDataSharingId: appDataSharingId }));
 
-		return this.updateById(this.createId(appDataSharingId), update);
-	}
+    return this.updateById(this.createId(appDataSharingId), update);
+  }
 }

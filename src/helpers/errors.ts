@@ -15,100 +15,100 @@
  */
 
 export class RequestError extends Error {
-	code: number;
-	constructor(code: number, message: string) {
-		super(message);
-		this.code = code;
-		this.name = 'RequestError';
-	}
-};
+  code: number;
+  constructor(code: number, message: string) {
+    super(message);
+    this.code = code;
+    this.name = 'RequestError';
+  }
+}
 
 export class SchemaNotFound extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'SchemaNotFound';
-	}
-};
+  constructor(message: string) {
+    super(message);
+    this.name = 'SchemaNotFound';
+  }
+}
 
 export class SchemaInvalid extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'SchemaInvalid';
-	}
-};
+  constructor(message: string) {
+    super(message);
+    this.name = 'SchemaInvalid';
+  }
+}
 
 export class RouteMissingModel extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'RouteMissingModel';
-	}
-};
+  constructor(message: string) {
+    super(message);
+    this.name = 'RouteMissingModel';
+  }
+}
 
 export class UnsupportedDatastore extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'UnsupportedDatastore';
-	}
-};
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnsupportedDatastore';
+  }
+}
 
 export class NotYetImplemented extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'NotYetImplemented';
-	}
-};
+  constructor(message: string) {
+    super(message);
+    this.name = 'NotYetImplemented';
+  }
+}
 
 export class InvalidRequest extends Error {
-	code: number;
+  code: number;
 
-	constructor(message: string, code: number) {
-		super(message);
-		this.name = 'InvalidRequest';
-		this.code = code;
-	}
+  constructor(message: string, code: number) {
+    super(message);
+    this.name = 'InvalidRequest';
+    this.code = code;
+  }
 }
 
 export class Unauthenticated extends Error {
-	status: string;
-	code: number;
+  status: string;
+  code: number;
 
-	constructor(message: string, status: string, code: number) {
-		super(message);
-		this.name = 'Unauthenticated';
-		this.status = status;
-		this.code = code;
-	}
+  constructor(message: string, status: string, code: number) {
+    super(message);
+    this.name = 'Unauthenticated';
+    this.status = status;
+    this.code = code;
+  }
 }
 
 export class InvalidToken extends Error {
-	code: number;
+  code: number;
 
-	constructor(message: string, code: number) {
-		super(message);
-		this.name = 'InvalidToken';
-		this.code = code;
-	}
+  constructor(message: string, code: number) {
+    super(message);
+    this.name = 'InvalidToken';
+    this.code = code;
+  }
 }
 
 export class CodedError extends Error {
-	code: number;
+  code: number;
 
-	constructor(message: string, code: number) {
-		super(message);
-		this.name = 'GENERIC_LAMBDA_ERROR';
-		this.code = code;
-	}
+  constructor(message: string, code: number) {
+    super(message);
+    this.name = 'GENERIC_LAMBDA_ERROR';
+    this.code = code;
+  }
 }
 
 export default {
-	RequestError,
-	SchemaNotFound,
-	SchemaInvalid,
-	RouteMissingModel,
-	UnsupportedDatastore,
-	NotYetImplemented,
-	InvalidRequest,
-	Unauthenticated,
-	InvalidToken,
-	CodedError
+  RequestError,
+  SchemaNotFound,
+  SchemaInvalid,
+  RouteMissingModel,
+  UnsupportedDatastore,
+  NotYetImplemented,
+  InvalidRequest,
+  Unauthenticated,
+  InvalidToken,
+  CodedError,
 };

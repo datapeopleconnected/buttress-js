@@ -92,11 +92,14 @@ export class NodeRedisPubsub {
    * @param callback Optional callback to call once the handler is registered.
    * @returns Function to remove the listener
    */
-  async subscribe(channel: string, handler: (message: string, originalChannel?: string) => void): Promise<() => Promise<void>> {
-    if (channel === "error") {
+  async subscribe(
+    channel: string,
+    handler: (message: string, originalChannel?: string) => void,
+  ): Promise<() => Promise<void>> {
+    if (channel === 'error') {
       this.errorHandler = handler as (error: string) => void;
-      this.emitter.on("error", handler);
-      this.receiver.on("error", handler);
+      this.emitter.on('error', handler);
+      this.receiver.on('error', handler);
       return () => Promise.resolve();
     }
 
@@ -133,10 +136,7 @@ export class NodeRedisPubsub {
    * Safely close the redis connections 'soon'
    */
   quit() {
-    return Promise.all([
-      this.emitter.close(),
-      this.receiver.close(),
-    ]);
+    return Promise.all([this.emitter.close(), this.receiver.close()]);
   }
 
   /**

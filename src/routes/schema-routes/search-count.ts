@@ -26,60 +26,60 @@ import * as ACM from '../../access-control/models-access.js';
 import { QueryParams } from '../../types/bjs-query.js';
 
 interface validateResult {
-	queryParams: QueryParams<object>,
-	actualCount: boolean
+  queryParams: QueryParams<object>;
+  actualCount: boolean;
 }
 
 /**
  * @class Count
  */
 export default class SearchCount extends Route {
-	constructor(schema: Schema, app: App, services: Services) {
-		const schemaRoutePath = modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/count`, `COUNT ${schema.name}`, services, schema, app);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.permissions = Route.Constants.Permissions.SEARCH;
+    super(`${schemaRoutePath}/count`, `COUNT ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.permissions = Route.Constants.Permissions.SEARCH;
 
-		this.activityDescription = `COUNT ${schema.name}`;
-		this.activityBroadcast = false;
-	}
+    this.activityDescription = `COUNT ${schema.name}`;
+    this.activityBroadcast = false;
+  }
 
-	async _validate(req, res, token) {
-		const model = await this.routeModel();
+  async _validate(req, res, token) {
+    const model = await this.routeModel();
 
-		const result: validateResult = {
-			queryParams: {
-				query: {},
-			},
-			actualCount: false
-		};
+    const result: validateResult = {
+      queryParams: {
+        query: {},
+      },
+      actualCount: false,
+    };
 
-		let query: any = {};
+    let query: any = {};
 
-		if (!query.$and) {
-			query.$and = [];
-		}
+    if (!query.$and) {
+      query.$and = [];
+    }
 
-		if (req.body.actualCount) {
-			result.actualCount = true;
-		}
+    if (req.body.actualCount) {
+      result.actualCount = true;
+    }
 
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			query.$and.push(req.body.query);
-		} else if (req.body && !req.body.query) {
-			query.$and.push(req.body);
-		}
+    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+    if (req.body && req.body.query) {
+      query.$and.push(req.body.query);
+    } else if (req.body && !req.body.query) {
+      query.$and.push(req.body);
+    }
 
-		query = model.parseQuery(query, {}, model.flatSchemaData);
-		result.queryParams.query = query;
-		return result;
-	}
+    query = model.parseQuery(query, {}, model.flatSchemaData);
+    result.queryParams.query = query;
+    return result;
+  }
 
-	async _exec(req, res, validateResult: validateResult) {
-		const model = await this.routeModel();
-		return ACM.count(model, validateResult.queryParams, req.ac, validateResult.actualCount);
-	}
-};
+  async _exec(req, res, validateResult: validateResult) {
+    const model = await this.routeModel();
+    return ACM.count(model, validateResult.queryParams, req.ac, validateResult.actualCount);
+  }
+}

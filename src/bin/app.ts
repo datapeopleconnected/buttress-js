@@ -27,25 +27,28 @@ Logging.init('REST');
 if (cluster.isPrimary) Logging.startupMessage();
 
 (async () => {
-	try {
-		const app = new BootstrapRest();
-		const isMain = await app.init();
+  try {
+    const app = new BootstrapRest();
+    const isMain = await app.init();
 
-		if (isMain) {
-			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Main v${Config.app.version} listening on port ` +
-				`${Config.listenPorts.rest} in ${Config.env} mode.`);
-			Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
-		} else {
-			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Worker v${Config.app.version} ` +
-				`in ${Config.env} mode.`);
-		}
-	} catch (err) {
-		if (err instanceof Error || typeof err === 'string') {
-			Logging.logError(err);
-		} else {
-			console.error(err);
-		}
+    if (isMain) {
+      Logging.log(
+        `${Config.app.title}:${Config.app.code} REST Server Main v${Config.app.version} listening on port ` +
+          `${Config.listenPorts.rest} in ${Config.env} mode.`,
+      );
+      Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
+    } else {
+      Logging.log(
+        `${Config.app.title}:${Config.app.code} REST Server Worker v${Config.app.version} ` + `in ${Config.env} mode.`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof Error || typeof err === 'string') {
+      Logging.logError(err);
+    } else {
+      console.error(err);
+    }
 
-		process.exit(1);
-	}
+    process.exit(1);
+  }
 })();

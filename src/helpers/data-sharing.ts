@@ -14,18 +14,18 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 interface DataSharingConfig {
-  endpoint: string,
-  apiPath: string,
-  token: string | null
+  endpoint: string;
+  apiPath: string;
+  token: string | null;
 }
 
 export function createDataSharingConnectionString(remoteApp: DataSharingConfig) {
   const { apiPath, token } = remoteApp;
   let { endpoint } = remoteApp;
 
-  const secure = (endpoint.match(/https:\/\//ig));
+  const secure = endpoint.match(/https:\/\//gi);
   const portocol = secure ? 'butts' : 'butt';
 
-  if (endpoint) endpoint = endpoint.replace(/(https|http):\/\//ig, '');
+  if (endpoint) endpoint = endpoint.replace(/(https|http):\/\//gi, '');
   return `${portocol}://${endpoint}/${apiPath}?token=${token || ''}`;
 }

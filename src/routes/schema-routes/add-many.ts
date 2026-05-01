@@ -25,49 +25,49 @@ import { App } from '../../model/core/app.js';
  * @class AddMany
  */
 export default class AddMany extends Route {
-	constructor(schema: Schema, app: App, services: Services) {
-		const schemaRoutePath = modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/add`, `BULK ADD ${schema.name}`, services, schema, app);
-		this.__configureSchemaRoute();
+    super(`${schemaRoutePath}/bulk/add`, `BULK ADD ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
 
-		this.verb = Route.Constants.Verbs.POST;
-		this.permissions = Route.Constants.Permissions.ADD;
+    this.verb = Route.Constants.Verbs.POST;
+    this.permissions = Route.Constants.Permissions.ADD;
 
-		this.activityDescription = `BULK ADD ${schema.name}`;
-		this.activityBroadcast = true;
-	}
+    this.activityDescription = `BULK ADD ${schema.name}`;
+    this.activityBroadcast = true;
+  }
 
-	async _validate(req, res, token) {
-		const model = await this.routeModel();
-		const entities = req.body;
-		if (entities instanceof Array === false) {
-			this.log(`ERROR: You need to supply an array of ${this.schemaName}`, Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, `array_required`);
-		}
-		// if (companies.length > 601) {
-		//   this.log(`ERROR: No more than 300`, Route.LogLevel.ERR);
-		//   reject({statusCode: 400, message: `Invalid data: send no more than 300 ${this.schemaName} at a time`});
-		//   return;
-		// }
+  async _validate(req, res, token) {
+    const model = await this.routeModel();
+    const entities = req.body;
+    if (entities instanceof Array === false) {
+      this.log(`ERROR: You need to supply an array of ${this.schemaName}`, Route.LogLevel.ERR, req.id);
+      throw new Helpers.Errors.RequestError(400, `array_required`);
+    }
+    // if (companies.length > 601) {
+    //   this.log(`ERROR: No more than 300`, Route.LogLevel.ERR);
+    //   reject({statusCode: 400, message: `Invalid data: send no more than 300 ${this.schemaName} at a time`});
+    //   return;
+    // }
 
-		const validation = model.validate(entities);
-		if (!validation.isValid) {
-			if (validation.missing.length > 0) {
-				this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
-				throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`);
-			}
-			if (validation.invalid.length > 0) {
-				this.log(`ERROR: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
-				throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`);
-			}
+    const validation = model.validate(entities);
+    if (!validation.isValid) {
+      if (validation.missing.length > 0) {
+        this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
+        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`);
+      }
+      if (validation.invalid.length > 0) {
+        this.log(`ERROR: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
+        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`);
+      }
 
-			throw new Helpers.Errors.RequestError(400, `unknown_error`);
-		}
-		return entities;
-	}
+      throw new Helpers.Errors.RequestError(400, `unknown_error`);
+    }
+    return entities;
+  }
 
-	async _exec(req, res, entities) {
-		return (await this.routeModel()).add(entities);
-	}
-};
+  async _exec(req, res, entities) {
+    return (await this.routeModel()).add(entities);
+  }
+}

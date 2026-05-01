@@ -19,80 +19,80 @@ import { Schema } from '../../helpers/schema.js';
 import * as Helpers from '../../helpers/index.js';
 
 export interface Deployment {
-	id: string;
-	lambdaId: string;
-	hash: string;
-	branch: string;
-	deployedAt: Date;
-	_appId: string;
+  id: string;
+  lambdaId: string;
+  hash: string;
+  branch: string;
+  deployedAt: Date;
+  _appId: string;
 }
 
 class DeploymentSchemaModel extends StandardModel {
-	static name = 'Deployment';
+  static name = 'Deployment';
 
-	constructor(services) {
-		const schema = DeploymentSchemaModel.Schema;
-		super(schema, null, services);
-	}
+  constructor(services) {
+    const schema = DeploymentSchemaModel.Schema;
+    super(schema, null, services);
+  }
 
-	static get Schema(): Schema {
-		return {
-			name: 'deployment',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				lambdaId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-				hash: {
-					__type: 'string',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				branch: {
-					__type: 'string',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				deployedAt: {
-					__type: 'date',
-					__default: 'now',
-					__required: true,
-					__allowUpdate: true,
-				},
-				_appId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-			},
-		};
-	}
+  static get Schema(): Schema {
+    return {
+      name: 'deployment',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        lambdaId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+        hash: {
+          __type: 'string',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        branch: {
+          __type: 'string',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        deployedAt: {
+          __type: 'date',
+          __default: 'now',
+          __required: true,
+          __allowUpdate: true,
+        },
+        _appId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+      },
+    };
+  }
 
-	/**
-	 * @param {Object} body - body passed through from a POST request
-	 * @param {string} appId - the appId the deployment blongs to
-	 * @return {Promise} - fulfilled with lambda Object when the database request is completed
-	 */
-	async add(body, appId) {
-		const deploymentBody = {
-			lambdaId: (body.lambdaId) ? body.lambdaId : null,
-			hash: (body.hash) ? body.hash : null,
-			branch: (body.branch) ? body.branch : null,
-		};
+  /**
+   * @param {Object} body - body passed through from a POST request
+   * @param {string} appId - the appId the deployment blongs to
+   * @return {Promise} - fulfilled with lambda Object when the database request is completed
+   */
+  async add(body, appId) {
+    const deploymentBody = {
+      lambdaId: body.lambdaId ? body.lambdaId : null,
+      hash: body.hash ? body.hash : null,
+      branch: body.branch ? body.branch : null,
+    };
 
-		const rxsDeployment = await super.add(deploymentBody, {
-			_appId: appId,
-		});
-		const deployment = await Helpers.streamFirst(rxsDeployment) as Deployment;
+    const rxsDeployment = await super.add(deploymentBody, {
+      _appId: appId,
+    });
+    const deployment = (await Helpers.streamFirst(rxsDeployment)) as Deployment;
 
-		return deployment;
-	}
+    return deployment;
+  }
 }
 
 /**

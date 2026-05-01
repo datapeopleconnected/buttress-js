@@ -27,48 +27,48 @@ import { App } from '../../model/core/app.js';
  * @class AddOne
  */
 export default class AddOne extends Route {
-	constructor(schema: Schema, app: App, services: Services) {
-		const schemaRoutePath = modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `ADD ${schema.name}`, services, schema, app);
-		this.__configureSchemaRoute();
+    super(`${schemaRoutePath}`, `ADD ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
 
-		this.verb = Route.Constants.Verbs.POST;
-		this.permissions = Route.Constants.Permissions.ADD;
+    this.verb = Route.Constants.Verbs.POST;
+    this.permissions = Route.Constants.Permissions.ADD;
 
-		this.activityDescription = `ADD ${schema.name}`;
-		this.activityBroadcast = true;
-	}
+    this.activityDescription = `ADD ${schema.name}`;
+    this.activityBroadcast = true;
+  }
 
-	async _validate(req, res, token) {
-		const model = await this.routeModel();
-		const validation = model.validate(req.body);
-		if (!validation.isValid) {
-			if (validation.missing.length > 0) {
-				this.log(`${this.schemaName}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
-				throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`);
-			}
-			if (validation.invalid.length > 0) {
-				this.log(`${this.schemaName}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
-				throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`);
-			}
+  async _validate(req, res, token) {
+    const model = await this.routeModel();
+    const validation = model.validate(req.body);
+    if (!validation.isValid) {
+      if (validation.missing.length > 0) {
+        this.log(`${this.schemaName}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
+        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`);
+      }
+      if (validation.invalid.length > 0) {
+        this.log(`${this.schemaName}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
+        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`);
+      }
 
-			this.log(`${this.schemaName}: Unhandled Error`, Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Unhandled error.`);
-		}
+      this.log(`${this.schemaName}: Unhandled Error`, Route.LogLevel.ERR, req.id);
+      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Unhandled error.`);
+    }
 
-		const isDuplicate = await model.isDuplicate(req.body)
-		if (isDuplicate === true) {
-			this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, `duplicate`);
-		}
-		
-		return true;
-	}
+    const isDuplicate = await model.isDuplicate(req.body);
+    if (isDuplicate === true) {
+      this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.id);
+      throw new Helpers.Errors.RequestError(400, `duplicate`);
+    }
 
-	async _exec(req, res, validate) {
-		const model = await this.routeModel();
-		const result = await model.add(req.body);
-		return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, model.schemaData);
-	}
-};
+    return true;
+  }
+
+  async _exec(req, res, validate) {
+    const model = await this.routeModel();
+    const result = await model.add(req.body);
+    return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, model.schemaData);
+  }
+}

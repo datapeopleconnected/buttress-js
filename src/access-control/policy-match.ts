@@ -23,55 +23,57 @@ import { Token } from '../model/core/token.js';
  * @class PolicyMatch
  */
 class PolicyMatch {
-	constructor() { }
+  constructor() {}
 
-	getTokenPolicies(policies: Policy[], token?: Token) {
-		return policies.reduce((arr: Policy[], p) => {
-			if (!p.selection) return arr;
+  getTokenPolicies(policies: Policy[], token?: Token) {
+    return policies.reduce((arr: Policy[], p) => {
+      if (!p.selection) return arr;
 
-			const match = this.__checkPolicySelection(p, token);
-			if (!match) return arr;
+      const match = this.__checkPolicySelection(p, token);
+      if (!match) return arr;
 
-			arr = arr.concat(p);
-			return arr;
-		}, []);
-	}
+      arr = arr.concat(p);
+      return arr;
+    }, []);
+  }
 
-	__checkPolicySelection(p: Policy, token?: Token): boolean {
-		const selection = p.selection;
+  __checkPolicySelection(p: Policy, token?: Token): boolean {
+    const selection = p.selection;
 
-		if (!token || selection === null) return false;
+    if (!token || selection === null) return false;
 
-		if (token.type === 'dataSharing') {
-			const eq = (part, value) => part && part['@eq'] && part['@eq'].toString() === value.toString();
-			return eq(selection['#tokenType'], 'DATA_SHARING') && eq(selection['id'], token.id);
-		}
+    if (token.type === 'dataSharing') {
+      const eq = (part, value) => part && part['@eq'] && part['@eq'].toString() === value.toString();
+      return eq(selection['#tokenType'], 'DATA_SHARING') && eq(selection['id'], token.id);
+    }
 
-		if (!token.policyProperties) return false;
+    if (!token.policyProperties) return false;
 
-		const policyProperties = token.policyProperties;
-		const matches = Object.keys(selection).reduce((arr: boolean[], key) => {
-			if (!(key in policyProperties)) return arr;
-			const [selectionCriterionKey] = Object.keys(selection[key]);
-			let [rhs] = Object.values(selection[key]);
-			let lhs = policyProperties[key];
-			lhs = (!Array.isArray(lhs)) ? [lhs] : lhs;
-			if (typeof rhs === 'string') rhs = rhs.toUpperCase();
-			lhs = lhs.map((s) => {
-				if (typeof lhs === 'string') s = s.toUpperCase();
-				return s;
-			});
+    const policyProperties = token.policyProperties;
+    const matches = Object.keys(selection)
+      .reduce((arr: boolean[], key) => {
+        if (!(key in policyProperties)) return arr;
+        const [selectionCriterionKey] = Object.keys(selection[key]);
+        let [rhs] = Object.values(selection[key]);
+        let lhs = policyProperties[key];
+        lhs = !Array.isArray(lhs) ? [lhs] : lhs;
+        if (typeof rhs === 'string') rhs = rhs.toUpperCase();
+        lhs = lhs.map((s) => {
+          if (typeof lhs === 'string') s = s.toUpperCase();
+          return s;
+        });
 
-			const selectionMatches = lhs.reduce((acc: Array<boolean>, val) => {
-				acc.push(AccessControlHelpers.evaluateOperation(val, rhs, selectionCriterionKey));
-				return acc;
-			}, []);
-			arr.push(selectionMatches);
+        const selectionMatches = lhs.reduce((acc: Array<boolean>, val) => {
+          acc.push(AccessControlHelpers.evaluateOperation(val, rhs, selectionCriterionKey));
+          return acc;
+        }, []);
+        arr.push(selectionMatches);
 
-			return arr;
-		}, []).flat();
+        return arr;
+      }, [])
+      .flat();
 
-		return (matches.length > 0) ? matches.some((v) => v) : false;
-	}
+    return matches.length > 0 ? matches.some((v) => v) : false;
+  }
 }
 export default new PolicyMatch();

@@ -15,7 +15,7 @@
  */
 import createConfig from '@dpc/node-env-obj';
 
-const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
+const env = process.env.ENV_FILE ? process.env.ENV_FILE : process.env.NODE_ENV;
 
 const Config = createConfig({
   envFile: `.${env}.env`,

@@ -19,12 +19,12 @@
 import cluster from 'node:cluster';
 import createConfig from '@dpc/node-env-obj';
 
-const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
+const env = process.env.ENV_FILE ? process.env.ENV_FILE : process.env.NODE_ENV;
 
 const Config = createConfig({
-	envFile: `.${env}.env`,
-	envPath: '../../',
-	configPath: '../',
+  envFile: `.${env}.env`,
+  envPath: '../../',
+  configPath: '../',
 }) as unknown as Config;
 
 import Logging from '../helpers/logging.js';
@@ -35,24 +35,28 @@ Logging.init('LAMBDA');
 if (cluster.isPrimary) Logging.startupMessage();
 
 (async () => {
-	try {
-		const app = new BootstrapLambda();
-		const isMain = await app.init();
+  try {
+    const app = new BootstrapLambda();
+    const isMain = await app.init();
 
-		if (isMain) {
-			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Main v${Config.app.version} in ${Config.env} mode.`);
-			Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
-		} else {
-			Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Worker v${Config.app.version} ` +
-				`in ${Config.env} mode.`);
-		}
-	} catch (err) {
-		if (err instanceof Error || typeof err === 'string') {
-			Logging.logError(err);
-		} else {
-			console.error(err);
-		}
+    if (isMain) {
+      Logging.log(
+        `${Config.app.title}:${Config.app.code} Lambda Server Main v${Config.app.version} in ${Config.env} mode.`,
+      );
+      Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
+    } else {
+      Logging.log(
+        `${Config.app.title}:${Config.app.code} Lambda Server Worker v${Config.app.version} ` +
+          `in ${Config.env} mode.`,
+      );
+    }
+  } catch (err) {
+    if (err instanceof Error || typeof err === 'string') {
+      Logging.logError(err);
+    } else {
+      console.error(err);
+    }
 
-		process.exit(1);
-	}
+    process.exit(1);
+  }
 })();

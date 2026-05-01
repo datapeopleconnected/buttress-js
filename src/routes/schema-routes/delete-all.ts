@@ -25,24 +25,24 @@ import { App } from '../../model/core/app.js';
  * @class DeleteAll
  */
 export default class DeleteAll extends Route {
-	constructor(schema: Schema, app: App, services: Services) {
-		const schemaRoutePath = modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `DELETE ALL ${schema.name}`, services, schema, app);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.DEL;
-		this.permissions = Route.Constants.Permissions.DELETE;
+    super(`${schemaRoutePath}`, `DELETE ALL ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.DEL;
+    this.permissions = Route.Constants.Permissions.DELETE;
 
-		this.activityDescription = `DELETE ALL ${schema.name}`;
-		this.activityBroadcast = true;
-	}
+    this.activityDescription = `DELETE ALL ${schema.name}`;
+    this.activityBroadcast = true;
+  }
 
-	async _validate(req, res, token) {
-		return true;
-	}
+  async _validate(req, res, token) {
+    return true;
+  }
 
-	async _exec(req, res, validate) {
-		await (await this.routeModel()).rmAll({});
-		return true;
-	}
-};
+  async _exec(req, res, validate) {
+    await (await this.routeModel()).rmAll({});
+    return true;
+  }
+}

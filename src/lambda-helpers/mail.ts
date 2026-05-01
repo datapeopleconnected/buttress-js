@@ -21,31 +21,31 @@ import pug from 'pug';
  * @class
  */
 class Mail {
-	_templates: {
-		[key: string]: pug.compileTemplate;
-	};
+  _templates: {
+    [key: string]: pug.compileTemplate;
+  };
 
-	/**
-	 * Constructor for Mail
-	 */
-	constructor() {
-		this._templates = {};
-	}
+  /**
+   * Constructor for Mail
+   */
+  constructor() {
+    this._templates = {};
+  }
 
-	/**
-	 * Returns the render function for a given template
-	 * @param {String} path - template path
-	 * @param {String} key - template key
-	 * @return {Object} template - pug render function for the given template
-	 */
-	getEmailTemplate(path, key) {
-		if (this._templates[key]) return this._templates[key];
+  /**
+   * Returns the render function for a given template
+   * @param {String} path - template path
+   * @param {String} key - template key
+   * @return {Object} template - pug render function for the given template
+   */
+  getEmailTemplate(path, key) {
+    if (this._templates[key]) return this._templates[key];
 
-		this._templates[key] = pug.compileFile(path, {
-			test: 'I am here',
-		});
+    this._templates[key] = pug.compileFile(path, {
+      test: 'I am here',
+    });
 
-		return this._templates[key];
-	}
+    return this._templates[key];
+  }
 }
 export default new Mail();

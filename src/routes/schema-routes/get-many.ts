@@ -26,41 +26,38 @@ import { App } from '../../model/core/app.js';
  * @class GetMany
  */
 export default class GetMany extends Route {
-	constructor(schema: Schema, app: App, services: Services) {
-		const schemaRoutePath = modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/load`, `BULK GET ${schema.name}`, services, schema, app);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.permissions = Route.Constants.Permissions.READ;
+    super(`${schemaRoutePath}/bulk/load`, `BULK GET ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.permissions = Route.Constants.Permissions.READ;
 
-		this.activityDescription = `BULK GET ${schema.name}`;
-		this.activityBroadcast = false;
-	}
+    this.activityDescription = `BULK GET ${schema.name}`;
+    this.activityBroadcast = false;
+  }
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			const _ids = req.body.query.ids;
-			const project = (req.body && req.body.project) ? req.body.project : false;
+  _validate(req, res, token) {
+    return new Promise((resolve, reject) => {
+      const _ids = req.body.query.ids;
+      const project = req.body && req.body.project ? req.body.project : false;
 
-			if (!_ids) {
-				this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.id);
-				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
-			}
-			if (!_ids.length) {
-				this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.id);
-				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
-			}
+      if (!_ids) {
+        this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.id);
+        return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
+      }
+      if (!_ids.length) {
+        this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.id);
+        return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
+      }
 
-			resolve({ ids: _ids, project: project });
-		});
-	}
+      resolve({ ids: _ids, project: project });
+    });
+  }
 
-	async _exec(req, res, query) {
-		const model = await this.routeModel();
-		return model.find(
-			{ id: { $in: query.ids.map((id) => model.createId(id)) } },
-			{}, 0, 0, null, query.project,
-		);
-	}
-};
+  async _exec(req, res, query) {
+    const model = await this.routeModel();
+    return model.find({ id: { $in: query.ids.map((id) => model.createId(id)) } }, {}, 0, 0, null, query.project);
+  }
+}

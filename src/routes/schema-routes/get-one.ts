@@ -28,54 +28,54 @@ import { App } from '../../model/core/app.js';
  * @class GetOne
  */
 export default class GetOne extends Route {
-	constructor(schema: Schema, app: App, services: Services) {
-		const schemaRoutePath = modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/:id`, `GET ${schema.name}`, services, schema, app);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.GET;
-		this.permissions = Route.Constants.Permissions.READ;
+    super(`${schemaRoutePath}/:id`, `GET ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.GET;
+    this.permissions = Route.Constants.Permissions.READ;
 
-		this.activityDescription = `GET ${schema.name}`;
-		this.activityBroadcast = false;
-	}
+    this.activityDescription = `GET ${schema.name}`;
+    this.activityBroadcast = false;
+  }
 
-	async _validate(req, res, token) {
-		const model = await this.routeModel();
+  async _validate(req, res, token) {
+    const model = await this.routeModel();
 
-		let objectId = null;
-		const project = (req.body && req.body.project) ? req.body.project : false;
+    let objectId = null;
+    const project = req.body && req.body.project ? req.body.project : false;
 
-		try {
-			objectId = model.createId(req.params.id);
-		} catch (err) {
-			this.log(`${this.schemaName}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, 'invalid_id');
-		}
+    try {
+      objectId = model.createId(req.params.id);
+    } catch (err) {
+      this.log(`${this.schemaName}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+      throw new Helpers.Errors.RequestError(400, 'invalid_id');
+    }
 
-		let query: BjsQuery<{ id: string | null }> = { id: objectId };
-		if (req.body.query && Object.keys(req.body.query).length > 0) {
-			query = model.parseQuery(req.body.query, {}, model.flatSchemaData);
-			query.id = objectId;
-		}
+    let query: BjsQuery<{ id: string | null }> = { id: objectId };
+    if (req.body.query && Object.keys(req.body.query).length > 0) {
+      query = model.parseQuery(req.body.query, {}, model.flatSchemaData);
+      query.id = objectId;
+    }
 
-		return {
-			query,
-			project,
-		};
-	}
+    return {
+      query,
+      project,
+    };
+  }
 
-	async _exec(req, res, validate) {
-		const model = await this.routeModel();
+  async _exec(req, res, validate) {
+    const model = await this.routeModel();
 
-		const rxsEntity = await model.find(validate.query, {}, 1, 0, null, validate.project);
-		const entity = await Helpers.streamFirst(rxsEntity);
+    const rxsEntity = await model.find(validate.query, {}, 1, 0, null, validate.project);
+    const entity = await Helpers.streamFirst(rxsEntity);
 
-		if (!entity) {
-			this.log(`${this.schemaName}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, 'invalid_id or access_control_not_fullfilled');
-		}
+    if (!entity) {
+      this.log(`${this.schemaName}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+      throw new Helpers.Errors.RequestError(400, 'invalid_id or access_control_not_fullfilled');
+    }
 
-		return entity;
-	}
-};
+    return entity;
+  }
+}

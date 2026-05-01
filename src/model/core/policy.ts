@@ -21,246 +21,245 @@ import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 
 export interface PolicyEnvQuery {
-	collection: string;
-	type: string;
-	query: any;
-	output: {
-		key: string;
-		type: string;
-	}
+  collection: string;
+  type: string;
+  query: any;
+  output: {
+    key: string;
+    type: string;
+  };
 }
 export interface PolicyEnv {
-	[key: string]: string | PolicyEnvQuery;
+  [key: string]: string | PolicyEnvQuery;
 }
 
 export interface PolicySelection {
-	[key: string]: {[key: string]: string};
+  [key: string]: { [key: string]: string };
 }
 
 export interface PolicyQuery {
-	[key: string]: any;
+  [key: string]: any;
 }
 
 export interface PolicyCondition {
-	[key: string]: any;
+  [key: string]: any;
 }
 
 export interface PolicyProjection {
-	[key: string]: any;
+  [key: string]: any;
 }
 
 export interface PolicyConfig {
-	verbs: string[];
-	endpoints: string[];
-	schema: string[]
-	env: PolicyEnv | null;
-	condition: PolicyCondition | null;
-	query: PolicyQuery | null;
-	projection: PolicyProjection | null;
+  verbs: string[];
+  endpoints: string[];
+  schema: string[];
+  env: PolicyEnv | null;
+  condition: PolicyCondition | null;
+  query: PolicyQuery | null;
+  projection: PolicyProjection | null;
 }
 export interface Policy {
-	id: string;
-	name: string;
-	priority: number;
-	selection: PolicySelection | null;
-	env: PolicyEnv | null;
-	config: PolicyConfig[];
-	limit: Date | null;
-	_appId: string;
+  id: string;
+  name: string;
+  priority: number;
+  selection: PolicySelection | null;
+  env: PolicyEnv | null;
+  config: PolicyConfig[];
+  limit: Date | null;
+  _appId: string;
 }
 
 class PolicySchemaModel extends StandardModel {
-	static name = 'Policy';
+  static name = 'Policy';
 
-	__policyCache: PolicyCache;
+  __policyCache: PolicyCache;
 
-	constructor(services) {
-		const schema = PolicySchemaModel.Schema;
-		super(schema, null, services);
+  constructor(services) {
+    const schema = PolicySchemaModel.Schema;
+    super(schema, null, services);
 
-		this.__policyCache = this.__services.get('policyCache') as PolicyCache;
-		if (!this.__policyCache) throw new Error('Unable to find policyCache in services');
-	}
+    this.__policyCache = this.__services.get('policyCache') as PolicyCache;
+    if (!this.__policyCache) throw new Error('Unable to find policyCache in services');
+  }
 
-	static get Schema(): Schema {
-		return {
-			name: 'policy',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				name: {
-					__type: 'string',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				version: {
-					__type: 'string',
-					__required: true,
-					__allowUpdate: true,
-				},
-				priority: {
-					__type: 'number',
-					__default: 0,
-					__required: false,
-					__allowUpdate: true,
-				},
-				selection: {
-					__type: 'object',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				env: {
-					__type: 'object',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				config: {
-					__type: 'array',
-					__allowUpdate: true,
-					__schema: {
-						verbs: {
-							__type: 'array',
-							__itemtype: 'string',
-							__required: true,
-							__allowUpdate: true,
-						},
-						endpoints: {
-							__type: 'array',
-							__itemtype: 'string',
-							__required: true,
-							__allowUpdate: true,
-						},
-						schema: {
-							__type: 'array',
-							__itemtype: 'string',
-							__required: true,
-							__allowUpdate: true,
-						},
-						env: {
-							__type: 'object',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-						condition: {
-							__type: 'object',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-						projection: {
-							__type: 'object',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-						query: {
-							__type: 'object',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-					},
-				},
-				limit: {
-					__type: 'date',
-					__default: null,
-					__required: false,
-					__allowUpdate: true,
-				},
-				_appId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-			},
-		};
-	}
+  static get Schema(): Schema {
+    return {
+      name: 'policy',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        name: {
+          __type: 'string',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        version: {
+          __type: 'string',
+          __required: true,
+          __allowUpdate: true,
+        },
+        priority: {
+          __type: 'number',
+          __default: 0,
+          __required: false,
+          __allowUpdate: true,
+        },
+        selection: {
+          __type: 'object',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        env: {
+          __type: 'object',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        config: {
+          __type: 'array',
+          __allowUpdate: true,
+          __schema: {
+            verbs: {
+              __type: 'array',
+              __itemtype: 'string',
+              __required: true,
+              __allowUpdate: true,
+            },
+            endpoints: {
+              __type: 'array',
+              __itemtype: 'string',
+              __required: true,
+              __allowUpdate: true,
+            },
+            schema: {
+              __type: 'array',
+              __itemtype: 'string',
+              __required: true,
+              __allowUpdate: true,
+            },
+            env: {
+              __type: 'object',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+            condition: {
+              __type: 'object',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+            projection: {
+              __type: 'object',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+            query: {
+              __type: 'object',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+          },
+        },
+        limit: {
+          __type: 'date',
+          __default: null,
+          __required: false,
+          __allowUpdate: true,
+        },
+        _appId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+      },
+    };
+  }
 
+  /**
+   * @param {Object} body - policy object
+   * @param {String} appId - app id
+   * @return {Promise} - fulfilled with policy Object when the database request is completed
+   */
+  async add(body, appId) {
+    const policyConfig: any[] = [];
+    if (body.config) {
+      body.config.forEach((item) => {
+        policyConfig.push({
+          verbs: item.verbs ? item.verbs : [],
+          endpoints: item.endpoints ? item.endpoints : [],
+          schema: item.schema ? item.schema : [],
+          env: item.env ? item.env : null,
+          condition: item.condition ? item.condition : null,
+          projection: item.projection ? item.projection : null,
+          query: item.query ? item.query : null,
+        });
+      });
+    }
 
-	/**
-	 * @param {Object} body - policy object
-	 * @param {String} appId - app id
-	 * @return {Promise} - fulfilled with policy Object when the database request is completed
-	 */
-	async add(body, appId) {
-		const policyConfig: any[] = [];
-		if (body.config) {
-			body.config.forEach((item) => {
-				policyConfig.push({
-					verbs: (item.verbs) ? item.verbs : [],
-					endpoints: (item.endpoints) ? item.endpoints : [],
-					schema: (item.schema) ? item.schema : [],
-					env: (item.env) ? item.env : null,
-					condition: (item.condition) ? item.condition : null,
-					projection: (item.projection) ? item.projection : null,
-					query: (item.query) ? item.query : null,
-				});
-			});
-		}
+    const policyBody = {
+      id: body.id ? this.createId(body.id) : this.createId(),
+      name: body.name ? body.name : null,
+      priority: body.priority ? body.priority : 0,
+      selection: body.selection ? body.selection : {},
+      env: body.env ? body.env : {},
+      config: policyConfig,
+      limit: body.limit ? Sugar.Date.create(body.limit) : null,
+    };
 
-		const policyBody = {
-			id: (body.id) ? this.createId(body.id) : this.createId(),
-			name: (body.name) ? body.name : null,
-			priority: (body.priority) ? body.priority : 0,
-			selection: (body.selection) ? body.selection : {},
-			env: (body.env) ? body.env : {},
-			config: policyConfig,
-			limit: (body.limit) ? Sugar.Date.create(body.limit) : null,
-		};
+    const rxsPolicy = await super.add(policyBody, {
+      _appId: appId,
+    });
+    const policy = (await Helpers.streamFirst(rxsPolicy)) as Policy;
 
-		const rxsPolicy = await super.add(policyBody, {
-			_appId: appId,
-		});
-		const policy = await Helpers.streamFirst(rxsPolicy) as Policy;
+    this.__policyCache.invalidatePolicyAndTokensBySelection(policy.id.toString());
 
-		this.__policyCache.invalidatePolicyAndTokensBySelection(policy.id.toString());
+    return policy;
+  }
 
-		return policy;
-	}
+  // update() {
 
-	// update() {
+  // }
+  // updateOne() {
 
-	// }
-	// updateOne() {
+  // }
+  async updateById(id, query) {
+    const policy = await super.updateById(this.createId(id), query);
 
-	// }
-	async updateById(id, query) {
-		const policy = await super.updateById(this.createId(id), query);
+    this.__policyCache.invalidatePolicyAndTokensBySelection(policy.id.toString());
 
-		this.__policyCache.invalidatePolicyAndTokensBySelection(policy.id.toString());
+    return policy;
+  }
+  updateByPath(body, id, sourceId = null) {
+    const policy = super.updateByPath(body, id, sourceId);
 
-		return policy;
-	}
-	updateByPath(body, id, sourceId = null) {
-		const policy = super.updateByPath(body, id, sourceId);
+    this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());
 
-		this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());
+    return policy;
+  }
 
-		return policy;
-	}
+  rm(id: string) {
+    super.rm(id);
+    this.__policyCache.removePolicy(id);
+  }
 
-	rm(id: string) {
-		super.rm(id);
-		this.__policyCache.removePolicy(id);
-	}
+  rmBulk(ids: string[]) {
+    const out = super.rmBulk(ids);
+    for (const id of ids) {
+      this.__policyCache.removePolicy(id);
+    }
+    return out;
+  }
 
-	rmBulk(ids: string[]) {
-		const out = super.rmBulk(ids);
-		for (const id of ids) {
-			this.__policyCache.removePolicy(id);
-		}
-		return out;
-	}
+  // Nuke from orbit.
+  // rmAll() {
 
-	// Nuke from orbit.
-	// rmAll() {
-
-	// }
+  // }
 }
 
 /**

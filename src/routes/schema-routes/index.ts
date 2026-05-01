@@ -28,16 +28,16 @@ import updateMany from './update-many.js';
 import updateOne from './update-one.js';
 
 export default [
-	addMany,
-	addOne,
-	deleteAll,
-	deleteMany,
-	deleteOne,
-	getList,
-	getMany,
-	getOne,
-	searchCount,
-	searchList,
-	updateMany,
-	updateOne
+  addMany,
+  addOne,
+  deleteAll,
+  deleteMany,
+  deleteOne,
+  getList,
+  getMany,
+  getOne,
+  searchCount,
+  searchList,
+  updateMany,
+  updateOne,
 ];

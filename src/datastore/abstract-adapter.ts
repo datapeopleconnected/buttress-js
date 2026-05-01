@@ -18,140 +18,140 @@ import { URL } from 'node:url';
 import { Errors } from '../helpers/index.js';
 
 export default class AbstractAdapter {
-	uri: URL;
-	options?: unknown;
-	requiresFormalSchema: boolean;
-	protected __connection?: unknown;
-	collection?: unknown;
+  uri: URL;
+  options?: unknown;
+  requiresFormalSchema: boolean;
+  protected __connection?: unknown;
+  collection?: unknown;
 
-	constructor(uri: URL, options: unknown, connection?: unknown) {
-		this.uri = uri;
-		this.options = options;
+  constructor(uri: URL, options: unknown, connection?: unknown) {
+    this.uri = uri;
+    this.options = options;
 
-		this.requiresFormalSchema = false;
+    this.requiresFormalSchema = false;
 
-		this.__connection = connection;
+    this.__connection = connection;
 
-		this.collection = null;
-	}
+    this.collection = null;
+  }
 
-	cloneAdapterConnection() {
-		throw new Errors.NotYetImplemented('cloneAdapterConnection');
-	}
+  cloneAdapterConnection() {
+    throw new Errors.NotYetImplemented('cloneAdapterConnection');
+  }
 
-	setCollection(collectionName: string) {
-		throw new Errors.NotYetImplemented('setCollection');
-	}
+  setCollection(collectionName: string) {
+    throw new Errors.NotYetImplemented('setCollection');
+  }
 
-	updateSchema(schemaData: unknown) {
-		if (!this.requiresFormalSchema) return;
+  updateSchema(schemaData: unknown) {
+    if (!this.requiresFormalSchema) return;
 
-		throw new Errors.NotYetImplemented('updateSchema');
-	}
+    throw new Errors.NotYetImplemented('updateSchema');
+  }
 
-	get ID(): unknown {
-		throw new Errors.NotYetImplemented('get ID');
-	}
+  get ID(): unknown {
+    throw new Errors.NotYetImplemented('get ID');
+  }
 
-	add(body: unknown, modifier: unknown) {
-		throw new Errors.NotYetImplemented('add');
-	}
+  add(body: unknown, modifier: unknown) {
+    throw new Errors.NotYetImplemented('add');
+  }
 
-	async batchUpdateProcess(id: string, body: unknown, context: unknown, schemaConfig: unknown): Promise<unknown> {
-		throw new Errors.NotYetImplemented('batchUpdateProcess');
-	}
+  async batchUpdateProcess(id: string, body: unknown, context: unknown, schemaConfig: unknown): Promise<unknown> {
+    throw new Errors.NotYetImplemented('batchUpdateProcess');
+  }
 
-	updateById(id: string, query: unknown) {
-		throw new Errors.NotYetImplemented('updateById');
-	}
+  updateById(id: string, query: unknown) {
+    throw new Errors.NotYetImplemented('updateById');
+  }
 
-	updateOne(query: unknown, update: unknown) {
-		throw new Errors.NotYetImplemented('updateOne');
-	}
+  updateOne(query: unknown, update: unknown) {
+    throw new Errors.NotYetImplemented('updateOne');
+  }
 
-	exists(id: string, extra = {}) {
-		throw new Errors.NotYetImplemented('exists');
-	}
+  exists(id: string, extra = {}) {
+    throw new Errors.NotYetImplemented('exists');
+  }
 
-	/*
-	* @return {Promise} - returns a promise that is fulfilled when the database request is completed
-	*/
-	isDuplicate(details: unknown) {
-		throw new Errors.NotYetImplemented('isDuplicate');
-	}
+  /*
+   * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+   */
+  isDuplicate(details: unknown) {
+    throw new Errors.NotYetImplemented('isDuplicate');
+  }
 
-	/**
-	 * @param {App} id - id of the object to be deleted
-	 */
-	rm(id: unknown) {
-		throw new Errors.NotYetImplemented('rm');
-	}
+  /**
+   * @param {App} id - id of the object to be deleted
+   */
+  rm(id: unknown) {
+    throw new Errors.NotYetImplemented('rm');
+  }
 
-	/**
-	 * @param {Array} ids - Array of entity ids to delete
-	 */
-	rmBulk(ids: unknown) {
-		throw new Errors.NotYetImplemented('rmBulk');
-	}
+  /**
+   * @param {Array} ids - Array of entity ids to delete
+   */
+  rmBulk(ids: unknown) {
+    throw new Errors.NotYetImplemented('rmBulk');
+  }
 
-	/*
-	 * @param {Object} query - mongoDB query
-	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
-	 */
-	rmAll(query: unknown) {
-		throw new Errors.NotYetImplemented('rmAll');
-	}
+  /*
+   * @param {Object} query - mongoDB query
+   * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+   */
+  rmAll(query: unknown) {
+    throw new Errors.NotYetImplemented('rmAll');
+  }
 
-	/**
-	 * @param {String} id - entity id to get
-	 */
-	findById(id: unknown) {
-		throw new Errors.NotYetImplemented('findById');
-	}
+  /**
+   * @param {String} id - entity id to get
+   */
+  findById(id: unknown) {
+    throw new Errors.NotYetImplemented('findById');
+  }
 
-	/**
-	 * @param {Object} query - mongoDB query
-	 * @param {Object} excludes - mongoDB query excludes
-	 * @param {Int} limit - should return a stream
-	 * @param {Int} skip - should return a stream
-	 * @param {Object} sort - mongoDB sort object
-	 * @param {Boolean} project - mongoDB project ids
-	 */
-	find(query: unknown, excludes = {}, limit = 0, skip = 0, sort = null, project = null) {
-		throw new Errors.NotYetImplemented('find');
-	}
+  /**
+   * @param {Object} query - mongoDB query
+   * @param {Object} excludes - mongoDB query excludes
+   * @param {Int} limit - should return a stream
+   * @param {Int} skip - should return a stream
+   * @param {Object} sort - mongoDB sort object
+   * @param {Boolean} project - mongoDB project ids
+   */
+  find(query: unknown, excludes = {}, limit = 0, skip = 0, sort = null, project = null) {
+    throw new Errors.NotYetImplemented('find');
+  }
 
-	/**
-	 * @param {Object} query - mongoDB query
-	 * @param {Object} excludes - mongoDB query excludes
-	 */
-	findOne(query: unknown, excludes = {}) {
-		throw new Errors.NotYetImplemented('findOnedd');
-	}
+  /**
+   * @param {Object} query - mongoDB query
+   * @param {Object} excludes - mongoDB query excludes
+   */
+  findOne(query: unknown, excludes = {}) {
+    throw new Errors.NotYetImplemented('findOnedd');
+  }
 
-	/**
-	 */
-	findAll() {
-		throw new Errors.NotYetImplemented('findAll');
-	}
+  /**
+   */
+  findAll() {
+    throw new Errors.NotYetImplemented('findAll');
+  }
 
-	/**
-	 * @param {Array} ids - Array of entities ids to get
-	 */
-	findAllById(ids: string[]) {
-		throw new Errors.NotYetImplemented('findAllById');
-	}
+  /**
+   * @param {Array} ids - Array of entities ids to get
+   */
+  findAllById(ids: string[]) {
+    throw new Errors.NotYetImplemented('findAllById');
+  }
 
-	/**
-	 * @param {Object} query - mongoDB query
-	 */
-	count(query: unknown) {
-		throw new Errors.NotYetImplemented('count');
-	}
+  /**
+   * @param {Object} query - mongoDB query
+   */
+  count(query: unknown) {
+    throw new Errors.NotYetImplemented('count');
+  }
 
-	/**
-	 */
-	drop() {
-		throw new Errors.NotYetImplemented('drop');
-	}
-};
+  /**
+   */
+  drop() {
+    throw new Errors.NotYetImplemented('drop');
+  }
+}
