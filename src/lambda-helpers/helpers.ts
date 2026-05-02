@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2025 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -191,8 +191,8 @@ class Helpers {
             url?: string;
             redirected?: boolean;
             body?: any;
-            text?: Function;
-            json?: Function;
+            text?: any;
+            json?: any;
             statusText?: string;
           } = await fetch(data.url, data.options);
           const output: {

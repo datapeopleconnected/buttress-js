@@ -29,6 +29,7 @@
     "coverage": "npx nyc --reporter text npm run test",
     "start": "bin/buttress.sh",
     "licence-check": "./.husky/licence-check",
+    "check": "npm run lint && npm run format && npm run licence-check",
     "docker:build": "docker build -t buttress .",
     "docker:build-token": "npm run docker:build -- --build-arg NPM_TOKEN=${NPM_TOKEN}",
     "docker:run": "docker-compose -f .docker/docker-compose.yml up",
