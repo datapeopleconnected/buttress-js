@@ -10,6 +10,8 @@ on:
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
+    env:
+      MOCHA_UNIT_TIMEOUT: 10000
 
     steps:
     - name: Checkout code
@@ -31,6 +33,8 @@ jobs:
 
   e2e-tests:
     runs-on: ubuntu-latest
+    env:
+      MOCHA_E2E_TIMEOUT: 20000
 
     services:
       mongodb:
