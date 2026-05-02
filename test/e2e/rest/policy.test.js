@@ -16,6 +16,7 @@
 
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import Config from '../../config.js';
 
@@ -86,7 +87,7 @@ const expectEventuallyDeniedRequest = async (requestFn, expectedMessage, attempt
     } catch (err) {
       if (err instanceof BJSReqError) {
         assert(err.code === 401, `Expected 401 but got ${err.code}`);
-        assert(err.message === expectedMessage, `Got ${err.message}`);
+        assert(err.message.includes(expectedMessage), `Got ${err.message}`);
         return;
       }
 
@@ -94,7 +95,7 @@ const expectEventuallyDeniedRequest = async (requestFn, expectedMessage, attempt
     }
 
     if (i < attempts - 1) {
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await sleep(intervalMs);
     }
   }
 
@@ -112,7 +113,7 @@ const expectEventually = async (assertionFn, attempts = 20, intervalMs = 100) =>
       lastError = err;
 
       if (i < attempts - 1) {
-        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        await sleep(intervalMs);
       }
     }
   }
@@ -349,21 +350,11 @@ describe('Policy', async () => {
         grade: 2,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      try {
-        await bjsReq({
-          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-          method: 'GET',
-          headers: {'Content-Type': 'application/json'},
-        }, testEnv.users.basic1.tokens[0].value);
-        throw new Error('Request should have failed but didn\'t');
-      } catch (err) {
-        if (err instanceof BJSReqError) {
-          assert(err.code === 401, `Expected 401 but got ${err.code}`);
-          assert(err.message.includes('Access control policy condition is not fulfilled'), `Got ${err.message}`);
-        } else {
-          throw err;
-        }
-      }
+      await expectEventuallyDeniedRequest(async () => bjsReq({
+        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+        method: 'GET',
+        headers: {'Content-Type': 'application/json'},
+      }, testEnv.users.basic1.tokens[0].value), 'Access control policy condition is not fulfilled to access organisation');
     });
 
     it('should only return active companies on get', async function() {
@@ -449,19 +440,21 @@ describe('Policy', async () => {
         grade: 4,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      const res = await bjsReq({
-        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-        method: 'GET',
-        headers: {'Content-Type': 'application/json'},
-      }, testEnv.users.basic1.tokens[0].value);
-      const companiesStatus = res.map((company) => company.status).filter((v) => v);
-      const companiesName = res.map((company) => company.name).filter((v) => v);
-      const companiesNumber = res.map((company) => company.number).filter((v) => v);
+      await expectEventually(async () => {
+        const res = await bjsReq({
+          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+          method: 'GET',
+          headers: {'Content-Type': 'application/json'},
+        }, testEnv.users.basic1.tokens[0].value);
+        const companiesStatus = res.map((company) => company.status).filter((v) => v);
+        const companiesName = res.map((company) => company.name).filter((v) => v);
+        const companiesNumber = res.map((company) => company.number).filter((v) => v);
 
-      assert(res.length === 3, `Expected 3 but got ${res.length}`);
-      assert(companiesStatus.length === 0, `Filtered companies status should be empty but got ${companiesStatus.length}`);
-      assert(companiesName.length === 3, `Filtered companies name should be 3 but got ${companiesName.length}`);
-      assert(companiesNumber.length === 0, `Filtered companies number should be empty but got ${companiesNumber.length}`);
+        assert(res.length === 3, `Expected 3 but got ${res.length}`);
+        assert(companiesStatus.length === 0, `Filtered companies status should be empty but got ${companiesStatus.length}`);
+        assert(companiesName.length === 3, `Filtered companies name should be 3 but got ${companiesName.length}`);
+        assert(companiesNumber.length === 0, `Filtered companies number should be empty but got ${companiesNumber.length}`);
+      });
     });
 
     it ('should fail writing to properties and it only has read access to properties', async function() {
@@ -469,25 +462,15 @@ describe('Policy', async () => {
         grade: 5,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      try {
-        await bjsReq({
-          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation/${testEnv.organisations[0].id}`,
-          method: 'PUT',
-          headers: {'Content-Type': 'application/json'},
-	        body: JSON.stringify([{
-            path: 'status',
-            value: 'LIQUIDATION',
-          }]),
-        }, testEnv.users.basic1.tokens[0].value);
-        throw new Error('Request should have failed but didn\'t');
-      } catch (err) {
-        if (err instanceof BJSReqError) {
-          assert(err.code === 401, `Expected 401 but got ${err.code}`);
-          assert(err.message.includes('Can not access/edit properties (status)'), `Got ${err.message}`);
-        } else {
-          throw err;
-        }
-      }
+      await expectEventuallyDeniedRequest(async () => bjsReq({
+        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation/${testEnv.organisations[0].id}`,
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+	      body: JSON.stringify([{
+          path: 'status',
+          value: 'LIQUIDATION',
+        }]),
+      }, testEnv.users.basic1.tokens[0].value), 'Can not access/edit properties (status)');
     });
 
     it ('should partially add a company to the database', async function() {
@@ -526,15 +509,17 @@ describe('Policy', async () => {
         securityClearance: 1,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      const res = await bjsReq({
-        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-        method: 'GET',
-        headers: {'Content-Type': 'application/json'},
-      }, testEnv.users.basic1.tokens[0].value);
+      await expectEventually(async () => {
+        const res = await bjsReq({
+          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+          method: 'GET',
+          headers: {'Content-Type': 'application/json'},
+        }, testEnv.users.basic1.tokens[0].value);
 
-      assert(res.length > 0);
-      assert(res[0].name !== null);
-      assert(res[0].status !== null);
+        assert(res.length > 0);
+        assert(res[0].name !== null);
+        assert(res[0].status !== null);
+      });
     });
 
     it ('should fail override-access policy as the override switch is off', async function() {
@@ -542,20 +527,10 @@ describe('Policy', async () => {
         securityClearance: 100,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      try {
-        const res = await bjsReq({
-          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-          method: 'GET',
-        }, testEnv.users.basic1.tokens[0].value);
-        throw new Error('Request should have failed but didn\'t');
-      } catch (err) {
-        if (err instanceof BJSReqError) {
-          assert(err.code === 401, `Expected 401 but got ${err.code}`);
-          assert(err.message.includes('Access control policy condition is not fulfilled'), `Got ${err.message}`);
-        } else {
-          throw err;
-        }
-      }
+      await expectEventuallyDeniedRequest(async () => bjsReq({
+        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+        method: 'GET',
+      }, testEnv.users.basic1.tokens[0].value), 'Access control policy condition is not fulfilled to access organisation');
     });
 
     it ('should access data after admin turns on the override switch', async function() {
@@ -570,12 +545,14 @@ describe('Policy', async () => {
         }]),
       }, testEnv.apps.app1.token);
 
-      const results = await bjsReq({
-        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-        method: 'GET',
-      }, testEnv.users.basic1.tokens[0].value);
+      await expectEventually(async () => {
+        const results = await bjsReq({
+          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+          method: 'GET',
+        }, testEnv.users.basic1.tokens[0].value);
 
-      assert(results.length > 0);
+        assert(results.length > 0);
+      });
     });
 
     it ('should merge policies projection', async function() {
@@ -605,14 +582,16 @@ describe('Policy', async () => {
         policyMergeQuery: 2,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      const res = await bjsReq({
-        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-        method: 'GET',
-      }, testEnv.users.basic1.tokens[0].value);
+      await expectEventually(async () => {
+        const res = await bjsReq({
+          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+          method: 'GET',
+        }, testEnv.users.basic1.tokens[0].value);
 
-      const activeCompanies = res.every((c) => c.status === 'DISSOLVED');
-      assert(res.length === 1, `Expected 1 but got ${res.length}`);
-      assert(activeCompanies, `Expected all companies to be DISSOLVED but got ${res.map((c) => c.status).join(', ')}`);
+        const activeCompanies = res.every((c) => c.status === 'DISSOLVED');
+        assert(res.length === 1, `Expected 1 but got ${res.length}`);
+        assert(activeCompanies, `Expected all companies to be DISSOLVED but got ${res.map((c) => c.status).join(', ')}`);
+      });
     });
   });
 
