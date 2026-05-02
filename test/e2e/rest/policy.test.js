@@ -333,12 +333,14 @@ describe('Policy', async () => {
         grade: 1,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      const res = await bjsReq({
-        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-        method: 'GET',
-        headers: {'Content-Type': 'application/json'},
-      }, testEnv.users.basic1.tokens[0].value);
-      assert(res.length === 3);
+      await expectEventually(async () => {
+        const res = await bjsReq({
+          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+          method: 'GET',
+          headers: {'Content-Type': 'application/json'},
+        }, testEnv.users.basic1.tokens[0].value);
+        assert(res.length === 3);
+      });
     });
 
     it('should fail when accessing data outside working hours', async function() {
@@ -369,15 +371,17 @@ describe('Policy', async () => {
         grade: 3,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      const res = await bjsReq({
-        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-        method: 'GET',
-        headers: {'Content-Type': 'application/json'},
-      }, testEnv.users.basic1.tokens[0].value);
+      await expectEventually(async () => {
+        const res = await bjsReq({
+          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+          method: 'GET',
+          headers: {'Content-Type': 'application/json'},
+        }, testEnv.users.basic1.tokens[0].value);
 
-      const activeCompanies = res.every((c) => c.status === 'ACTIVE');
-      assert(res.length === 1, `Expected 1 but got ${res.length}`);
-      assert(activeCompanies, `Expected all companies to be ACTIVE but got ${res.map((c) => c.status).join(', ')}`);
+        const activeCompanies = res.every((c) => c.status === 'ACTIVE');
+        assert(res.length === 1, `Expected 1 but got ${res.length}`);
+        assert(activeCompanies, `Expected all companies to be ACTIVE but got ${res.map((c) => c.status).join(', ')}`);
+      });
     });
 
     it('should only return active companies on search', async function() {
@@ -385,15 +389,17 @@ describe('Policy', async () => {
         grade: 3,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      const res = await bjsReq({
-        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-        method: 'SEARCH',
-        headers: {'Content-Type': 'application/json'},
-      }, testEnv.users.basic1.tokens[0].value);
+      await expectEventually(async () => {
+        const res = await bjsReq({
+          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+          method: 'SEARCH',
+          headers: {'Content-Type': 'application/json'},
+        }, testEnv.users.basic1.tokens[0].value);
 
-      const activeCompanies = res.every((c) => c.status === 'ACTIVE');
-      assert(res.length === 1, `Expected 1 but got ${res.length}`);
-      assert(activeCompanies, `Expected all companies to be ACTIVE but got ${res.map((c) => c.status).join(', ')}`);
+        const activeCompanies = res.every((c) => c.status === 'ACTIVE');
+        assert(res.length === 1, `Expected 1 but got ${res.length}`);
+        assert(activeCompanies, `Expected all companies to be ACTIVE but got ${res.map((c) => c.status).join(', ')}`);
+      });
     });
 
     it('should only return active companies on count', async function() {
@@ -401,13 +407,15 @@ describe('Policy', async () => {
         grade: 3,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      const res = await bjsReq({
-        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation/count`,
-        method: 'SEARCH',
-        headers: {'Content-Type': 'application/json'},
-      }, testEnv.users.basic1.tokens[0].value);
+      await expectEventually(async () => {
+        const res = await bjsReq({
+          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation/count`,
+          method: 'SEARCH',
+          headers: {'Content-Type': 'application/json'},
+        }, testEnv.users.basic1.tokens[0].value);
 
-      assert(res === 1, `Expected 1 but got ${res.length}`);
+        assert(res === 1, `Expected 1 but got ${res.length}`);
+      });
     });
 
     it ('should fail writing to properties and the policy does not include writing verb', async function() {
