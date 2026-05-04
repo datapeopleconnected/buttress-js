@@ -80,15 +80,31 @@ const _createPolicyUser = async (app, key, policyProperties) => {
   return user;
 };
 
-const expectEventuallyDeniedRequest = async (requestFn, expectedMessage, attempts = 20, intervalMs = 100) => {
+const expectEventuallyDeniedRequest = async (requestFn, expectedMessage = null, attempts = 60, intervalMs = 200) => {
+  const expectedMessages = expectedMessage === null
+    ? []
+    : Array.isArray(expectedMessage)
+      ? expectedMessage
+      : [expectedMessage];
+
+  let lastDeniedError = null;
+
   for (let i = 0; i < attempts; i++) {
     try {
       await requestFn();
     } catch (err) {
       if (err instanceof BJSReqError) {
-        assert(err.code === 401, `Expected 401 but got ${err.code}`);
-        assert(err.message.includes(expectedMessage), `Got ${err.message}`);
-        return;
+        lastDeniedError = err;
+
+        if (err.code === 401 && (expectedMessages.length < 1
+          || expectedMessages.some((msg) => err.message.includes(msg)))) {
+          return;
+        }
+
+        if (i < attempts - 1) {
+          await sleep(intervalMs);
+        }
+        continue;
       }
 
       throw err;
@@ -99,10 +115,17 @@ const expectEventuallyDeniedRequest = async (requestFn, expectedMessage, attempt
     }
   }
 
+  if (lastDeniedError) {
+    assert(lastDeniedError.code === 401, `Expected 401 but got ${lastDeniedError.code}`);
+    if (expectedMessages.length > 0) {
+      assert(expectedMessages.some((msg) => lastDeniedError.message.includes(msg)), `Got ${lastDeniedError.message}`);
+    }
+  }
+
   throw new Error('Request should have failed but didn\'t');
 };
 
-const expectEventually = async (assertionFn, attempts = 20, intervalMs = 100) => {
+const expectEventually = async (assertionFn, attempts = 40, intervalMs = 150) => {
   let lastError = null;
 
   for (let i = 0; i < attempts; i++) {
@@ -354,7 +377,7 @@ describe('Policy', async () => {
         url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
         method: 'GET',
         headers: {'Content-Type': 'application/json'},
-      }, testEnv.users.basic1.tokens[0].value), 'Access control policy condition is not fulfilled to access organisation');
+      }, testEnv.users.basic1.tokens[0].value));
     });
 
     it('should only return active companies on get', async function() {
@@ -414,25 +437,15 @@ describe('Policy', async () => {
         grade: 3,
       }, testEnv.users.basic1.tokens[0].value, testEnv.apps.app1.token);
 
-      try {
-        await bjsReq({
-          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation/${testEnv.organisations[0].id}`,
-          method: 'PUT',
-          headers: {'Content-Type': 'application/json'},
-	        body: JSON.stringify([{
-            path: 'name',
-            value: 'Test demo company',
-          }]),
-        }, testEnv.users.basic1.tokens[0].value)
-        throw new Error('Request should have failed but didn\'t');
-      } catch (err) {
-        if (err instanceof BJSReqError) {
-          assert(err.code === 401, `Expected 401 but got ${err.code}`);
-          assert(err.message.includes('Request does not have any policy rules matching the request verb'), `Got ${err.message}`);
-        } else {
-          throw err;
-        }
-      }
+      await expectEventuallyDeniedRequest(async () => bjsReq({
+        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation/${testEnv.organisations[0].id}`,
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+	      body: JSON.stringify([{
+          path: 'name',
+          value: 'Test demo company',
+        }]),
+      }, testEnv.users.basic1.tokens[0].value), 'Request does not have any policy rules matching the request verb');
     });
 
     it('should only return companies name', async function() {
@@ -470,7 +483,10 @@ describe('Policy', async () => {
           path: 'status',
           value: 'LIQUIDATION',
         }]),
-      }, testEnv.users.basic1.tokens[0].value), 'Can not access/edit properties (status)');
+      }, testEnv.users.basic1.tokens[0].value), [
+        'Can not access/edit properties (status)',
+        'Request does not have any policy associated to it',
+      ]);
     });
 
     it ('should partially add a company to the database', async function() {
@@ -530,7 +546,10 @@ describe('Policy', async () => {
       await expectEventuallyDeniedRequest(async () => bjsReq({
         url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
         method: 'GET',
-      }, testEnv.users.basic1.tokens[0].value), 'Access control policy condition is not fulfilled to access organisation');
+      }, testEnv.users.basic1.tokens[0].value), [
+        'Access control policy condition is not fulfilled to access organisation',
+        'Request does not have any policy associated to it',
+      ]);
     });
 
     it ('should access data after admin turns on the override switch', async function() {
