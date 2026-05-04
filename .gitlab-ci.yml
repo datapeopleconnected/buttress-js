@@ -1,4 +1,4 @@
-image: node:14
+image: node:24
 
 variables:
   NODE_ENV: "test"
@@ -32,7 +32,7 @@ test-job:   # This job runs in the test stage.
   script:
     - npm run coverage
   services:
-    - mongo:6
+    - mongo:8
     - redis:latest
 
 lint-test-job:   # This job also runs in the test stage.
