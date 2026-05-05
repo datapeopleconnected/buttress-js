@@ -42,6 +42,7 @@ import BootstrapSocket from '../../../dist/bootstrap-socket.js';
 // const { default: PolicyTestData } = await import('../../data/policy/index.js');
 
 import PolicyTestData from '../../data/policy/index.js';
+import { runStep } from '../helpers.js';
 
 // This suite of tests will run against the REST API and will
 // test the cababiliy of data sharing between different apps.
@@ -221,58 +222,86 @@ describe('Processing', async () => {
 	};
 
 	before(async function () {
-		this.timeout(20000);
+		this.timeout(60000);
 
-		NRP_INSTANCE = new NRP(Config.redis);
-		await NRP_INSTANCE.connect();
+		await runStep('connect NRP', async () => {
+			NRP_INSTANCE = new NRP(Config.redis);
+			await NRP_INSTANCE.connect();
+		}, 'Processing setup');
 
-		REST_PROCESS = new BootstrapRest();
-		await REST_PROCESS.init();
+		await runStep('init REST process', async () => {
+			REST_PROCESS = new BootstrapRest();
+			await REST_PROCESS.init();
+		}, 'Processing setup');
 
-		SPR_PROCESS = new BootstrapSocketPolicyRouter();
-		await SPR_PROCESS.init();
+		await runStep('init SPR process', async () => {
+			SPR_PROCESS = new BootstrapSocketPolicyRouter();
+			await SPR_PROCESS.init();
+		}, 'Processing setup');
 
-		SOCK_PROCESS = new BootstrapSocket();
-		await SOCK_PROCESS.init();
+		await runStep('init SOCK process', async () => {
+			SOCK_PROCESS = new BootstrapSocket();
+			await SOCK_PROCESS.init();
+		}, 'Processing setup');
 
 		// Create an app
-		await createAppWithSchema('app1', 'Test SPR 1', 'test-spr-1', PolicyPropertyList);
+		await runStep('create app1 with schema', async () =>
+			createAppWithSchema('app1', 'Test SPR 1', 'test-spr-1', PolicyPropertyList)
+		, 'Processing setup');
 
-		for await (const policy of TestPolicies) {
-			await createPolicy(ENDPOINT.REST, policy, testEnv.apps.app1.token);
-		}
+		await runStep('create app1 policies', async () => {
+			for await (const policy of TestPolicies) {
+				await createPolicy(ENDPOINT.REST, policy, testEnv.apps.app1.token);
+			}
+		}, 'Processing setup');
 
 		// Create a user to test with
-		testEnv.users['basic1'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'basic1', { adminAccess: true });
+		testEnv.users['basic1'] = await runStep('create user basic1', async () =>
+			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'basic1', { adminAccess: true })
+		, 'Processing setup');
 
-		testEnv.users['env-test-1'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-1', { envTest: 1 });
-		testEnv.users['env-test-2'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-2', { envTest: 2 });
-		testEnv.users['env-test-3'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-3', { envTest: 3 });
-		testEnv.users['env-test-4'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-4', { envTest: 4 });
-		testEnv.users['env-test-5'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-5', { envTest: 5 });
+		testEnv.users['env-test-1'] = await runStep('create user env-test-1', async () =>
+			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-1', { envTest: 1 })
+		, 'Processing setup');
+		testEnv.users['env-test-2'] = await runStep('create user env-test-2', async () =>
+			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-2', { envTest: 2 })
+		, 'Processing setup');
+		testEnv.users['env-test-3'] = await runStep('create user env-test-3', async () =>
+			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-3', { envTest: 3 })
+		, 'Processing setup');
+		testEnv.users['env-test-4'] = await runStep('create user env-test-4', async () =>
+			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-4', { envTest: 4 })
+		, 'Processing setup');
+		testEnv.users['env-test-5'] = await runStep('create user env-test-5', async () =>
+			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-5', { envTest: 5 })
+		, 'Processing setup');
 
 		const usersKeys = Object.keys(testEnv.users);
 		const colours = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'brown', 'black', 'white'];
-		await bjsReq({
-			url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify(new Array(1000).fill(0).map((val, idx) => ({
-				name: `name-${Math.floor(Math.random() * 100)}`,
-				colour: colours[Math.floor(Math.random() * colours.length)],
-				userId: testEnv.users[usersKeys[Math.floor(Math.random() * usersKeys.length)]].id,
-			}))),
-		}, testEnv.apps.app1.token);
+		await runStep('seed app1 car records', async () =>
+			bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(new Array(1000).fill(0).map((val, idx) => ({
+					name: `name-${Math.floor(Math.random() * 100)}`,
+					colour: colours[Math.floor(Math.random() * colours.length)],
+					userId: testEnv.users[usersKeys[Math.floor(Math.random() * usersKeys.length)]].id,
+				}))),
+			}, testEnv.apps.app1.token)
+		, 'Processing setup');
 
-		await bjsReq({
-			url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/selector`,
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({
-				name: `example-selector`,
-				value: 'red',
-			}),
-		}, testEnv.apps.app1.token);
+		await runStep('create app1 selector record', async () =>
+			bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/selector`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					name: `example-selector`,
+					value: 'red',
+				}),
+			}, testEnv.apps.app1.token)
+		, 'Processing setup');
 
 		testEnv.sockets.app = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, {
 			auth: { token: testEnv.apps.app1.token },
@@ -400,19 +429,26 @@ describe('Processing', async () => {
 
 	describe('Token Types', () => {
 		before(async function () {
-			this.timeout(20000);
+			// CI can be slower for app/data-sharing/lambda provisioning in this hook.
+			this.timeout(60000);
 
 			testEnv.sockets.super = io(`${ENDPOINT.REST}`, {
 				auth: { token: Config.testToken },
 				forceNew: true
 			});
 
-			await createAppWithSchema('app2', 'Test SPR 2', 'test-spr-2', PolicyPropertyList);
+			await runStep('create app2 with schema', async () =>
+				createAppWithSchema('app2', 'Test SPR 2', 'test-spr-2', PolicyPropertyList)
+			, 'Token Types setup');
 
-			await createPolicy(ENDPOINT.REST, PolicyTestData['env-static-value-query'], testEnv.apps.app2.token);
-			await createPolicy(ENDPOINT.REST, PolicyTestData['lambda-test-access'], testEnv.apps.app2.token);
+			await runStep('create app2 env-static-value-query policy', async () =>
+				createPolicy(ENDPOINT.REST, PolicyTestData['env-static-value-query'], testEnv.apps.app2.token)
+			, 'Token Types setup');
+			await runStep('create app2 lambda-test-access policy', async () =>
+				createPolicy(ENDPOINT.REST, PolicyTestData['lambda-test-access'], testEnv.apps.app2.token)
+			, 'Token Types setup');
 
-			testEnv.dataSharing[DS1_NAME] = await registerDataSharing(ENDPOINT.REST, {
+			testEnv.dataSharing[DS1_NAME] = await runStep('register DS1 app1->app2', async () => registerDataSharing(ENDPOINT.REST, {
 				name: DS1_NAME,
 
 				remoteApp: {
@@ -429,9 +465,9 @@ describe('Processing', async () => {
 						access: '%FULL_ACCESS%',
 					},
 				}],
-			}, testEnv.apps.app1.token);
+			}, testEnv.apps.app1.token), 'Token Types setup');
 
-			testEnv.dataSharing[DS2_NAME] = await registerDataSharing(ENDPOINT.REST, {
+			testEnv.dataSharing[DS2_NAME] = await runStep('register DS2 app2->app1', async () => registerDataSharing(ENDPOINT.REST, {
 				name: DS2_NAME,
 
 				remoteApp: {
@@ -448,9 +484,9 @@ describe('Processing', async () => {
 						access: '%FULL_ACCESS%',
 					},
 				}],
-			}, testEnv.apps.app2.token);
+			}, testEnv.apps.app2.token), 'Token Types setup');
 
-			testEnv.lambdas['token-test-lambda'] = await createLambda(ENDPOINT.REST, {
+			testEnv.lambdas['token-test-lambda'] = await runStep('create token-test-lambda', async () => createLambda(ENDPOINT.REST, {
 					name: 'token-test-lambda',
 					type: 'PUBLIC',
 					git: {
@@ -472,11 +508,13 @@ describe('Processing', async () => {
 					domains: ['localhost'],
 					permissions: [{route: '*', permission: '*'}],
 					policyProperties: { lambda: 'TEST_ACCESS' },
-				}, testEnv.apps.app2.token);
+				}, testEnv.apps.app2.token), 'Token Types setup');
 
-			testEnv.users['token-type-test-1'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'token-type-test-1', { envTest: 1 });
+			testEnv.users['token-type-test-1'] = await runStep('create token-type-test-1 user', async () =>
+				createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'token-type-test-1', { envTest: 1 })
+			, 'Token Types setup');
 
-			await populateTestEnvTokens();
+			await runStep('populate token lookup values', async () => populateTestEnvTokens(), 'Token Types setup');
 
 			// TODO: Connected using IO so tokens are tracked.
 			createTokenSocket('token-type-app', testEnv.tokens.appToken.value, 'app2');

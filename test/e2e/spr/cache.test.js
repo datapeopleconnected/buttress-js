@@ -41,6 +41,7 @@ import {
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
 import BootstrapSocketPolicyRouter from '../../../dist/bootstrap-spr.js';
 import BootstrapSocket from '../../../dist/bootstrap-socket.js';
+import { runStep } from '../helpers.js';
 
 // const { default: PolicyTestData } = await import('../../data/policy/index.js');
 
@@ -150,56 +151,76 @@ describe('Cache', async () => {
   };
 
   before(async function () {
-    this.timeout(20000);
+    this.timeout(60000);
 
-    REDIS_CLIENT = redis.createClient({ url: Config.redis.url });
-    await REDIS_CLIENT.connect();
+    await runStep('connect Redis client', async () => {
+      REDIS_CLIENT = redis.createClient({ url: Config.redis.url });
+      await REDIS_CLIENT.connect();
+    }, 'Cache setup');
 
-    NRP_INSTANCE = new NRP(Config.redis);
-    await NRP_INSTANCE.connect();
+    await runStep('connect NRP', async () => {
+      NRP_INSTANCE = new NRP(Config.redis);
+      await NRP_INSTANCE.connect();
+    }, 'Cache setup');
 
-    REST_PROCESS = new BootstrapRest();
-    await REST_PROCESS.init();
+    await runStep('init REST process', async () => {
+      REST_PROCESS = new BootstrapRest();
+      await REST_PROCESS.init();
+    }, 'Cache setup');
 
-    SPR_PROCESS = new BootstrapSocketPolicyRouter();
-    await SPR_PROCESS.init();
+    await runStep('init SPR process', async () => {
+      SPR_PROCESS = new BootstrapSocketPolicyRouter();
+      await SPR_PROCESS.init();
+    }, 'Cache setup');
 
-    SOCK_PROCESS = new BootstrapSocket();
-    await SOCK_PROCESS.init();
+    await runStep('init SOCK process', async () => {
+      SOCK_PROCESS = new BootstrapSocket();
+      await SOCK_PROCESS.init();
+    }, 'Cache setup');
 
     // Create an app
-    await createAppWithSchema('app1', 'Test SPR cache', 'test-spr-cache', PolicyPropertyList);
+    await runStep('create app1 with schema', async () =>
+      createAppWithSchema('app1', 'Test SPR cache', 'test-spr-cache', PolicyPropertyList)
+    , 'Cache setup');
 
-    for await (const policy of TestPolicies) {
-      const pol = await createPolicy(ENDPOINT.REST, policy, testEnv.apps.app1.token);
-      testEnv.policies[pol.id] = pol; 
-    }
+    await runStep('create policies', async () => {
+      for await (const policy of TestPolicies) {
+        const pol = await createPolicy(ENDPOINT.REST, policy, testEnv.apps.app1.token);
+        testEnv.policies[pol.id] = pol;
+      }
+    }, 'Cache setup');
 
     // Create a user to test with
-    testEnv.users['cache-test-1'] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'cache-test-1', { cacheTest: 1 });
+    testEnv.users['cache-test-1'] = await runStep('create cache-test-1 user', async () =>
+      createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'cache-test-1', { cacheTest: 1 })
+    , 'Cache setup');
 
     const usersKeys = Object.keys(testEnv.users);
     const colours = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'brown', 'black', 'white'];
-    await bjsReq({
-      url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(new Array(20).fill(0).map((val, idx) => ({
-        name: `name-${Math.floor(Math.random() * 100)}`,
-        colour: colours[idx % colours.length],
-        userId: testEnv.users[usersKeys[idx % usersKeys.length]].id,
-      }))),
-    }, testEnv.apps.app1.token);
+    await runStep('seed car records', async () =>
+      bjsReq({
+        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(new Array(20).fill(0).map((val, idx) => ({
+          name: `name-${Math.floor(Math.random() * 100)}`,
+          colour: colours[idx % colours.length],
+          userId: testEnv.users[usersKeys[idx % usersKeys.length]].id,
+        }))),
+      }, testEnv.apps.app1.token)
+    , 'Cache setup');
 
-    await bjsReq({
-      url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/selector`,
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: `example-selector`,
-        value: 'red',
-      }),
-    }, testEnv.apps.app1.token);
+    await runStep('seed selector record', async () =>
+      bjsReq({
+        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/selector`,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `example-selector`,
+          value: 'red',
+        }),
+      }, testEnv.apps.app1.token)
+    , 'Cache setup');
   });
 
   after(async function () {

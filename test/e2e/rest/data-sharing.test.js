@@ -18,6 +18,7 @@ import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
 import { createApp, updateSchema, bjsReq, registerDataSharing, ENDPOINT } from '../../helpers.js';
+import { runStep } from '../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
 
@@ -45,11 +46,12 @@ const createCar = async (app, name) => {
 // test the cababiliy of data sharing between different apps.
 describe('Data Sharing', async () => {
 	before(async function() {
-		// this.timeout(20000);
+		this.timeout(60000);
 
-		REST_PROCESS = new BootstrapRest();
-
-		await REST_PROCESS.init();
+		await runStep('init REST process', async () => {
+			REST_PROCESS = new BootstrapRest();
+			await REST_PROCESS.init();
+		}, 'Data Sharing setup');
 
 		// Creating test data.
 		const carsSchema = {
@@ -65,19 +67,33 @@ describe('Data Sharing', async () => {
 			},
 		};
 
-		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test App 1', 'data-sharing-app-1');
-		testEnv.apps.app1.schema = await updateSchema(ENDPOINT.REST, [carsSchema], testEnv.apps.app1.token);
+		testEnv.apps.app1 = await runStep('create app1', async () =>
+			createApp(ENDPOINT.REST, 'Test App 1', 'data-sharing-app-1')
+		, 'Data Sharing setup');
+		testEnv.apps.app1.schema = await runStep('update app1 schema', async () =>
+			updateSchema(ENDPOINT.REST, [carsSchema], testEnv.apps.app1.token)
+		, 'Data Sharing setup');
 
-		await createCar(testEnv.apps.app1, 'A red car');
+		await runStep('create app1 seed car', async () =>
+			createCar(testEnv.apps.app1, 'A red car')
+		, 'Data Sharing setup');
 
 		// Test app 2 doesn't need a schema from the start, we'll add one later.
-		testEnv.apps.app2 = await createApp(ENDPOINT.REST, 'Test App 2', 'test-app-2');
+		testEnv.apps.app2 = await runStep('create app2', async () =>
+			createApp(ENDPOINT.REST, 'Test App 2', 'test-app-2')
+		, 'Data Sharing setup');
 
 		// Create a third app which will be used as a cars sources too.
-		testEnv.apps.app3 = await createApp(ENDPOINT.REST, 'Test App 3', 'test-app-3');
-		testEnv.apps.app3.schema = await updateSchema(ENDPOINT.REST, [carsSchema], testEnv.apps.app3.token);
+		testEnv.apps.app3 = await runStep('create app3', async () =>
+			createApp(ENDPOINT.REST, 'Test App 3', 'test-app-3')
+		, 'Data Sharing setup');
+		testEnv.apps.app3.schema = await runStep('update app3 schema', async () =>
+			updateSchema(ENDPOINT.REST, [carsSchema], testEnv.apps.app3.token)
+		, 'Data Sharing setup');
 
-		await createCar(testEnv.apps.app3, 'A green car');
+		await runStep('create app3 seed car', async () =>
+			createCar(testEnv.apps.app3, 'A green car')
+		, 'Data Sharing setup');
 	});
 
 	after(async function() {

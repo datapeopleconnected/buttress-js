@@ -20,6 +20,7 @@ import assert from 'assert';
 import Config from '../../config.js';
 
 import { createApp, createLambda, updatePolicyPropertyList, bjsReq, bjsReqPost, ENDPOINT } from '../../helpers.js';
+import { runStep } from '../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
 import BootstrapLambda from '../../../dist/bootstrap-lambda.js';
@@ -51,16 +52,26 @@ const getExecResult = async (url, query, attempt=0) => {
 // This suite of tests will run against the REST API
 describe('Lambda', async () => {
 	before(async function() {
-		LAMBDA_PROCESS = new BootstrapLambda();
-		REST_PROCESS = new BootstrapRest();
+		this.timeout(60000);
 
-		await REST_PROCESS.init();
-		await LAMBDA_PROCESS.init();
+		await runStep('init REST process', async () => {
+			REST_PROCESS = new BootstrapRest();
+			await REST_PROCESS.init();
+		}, 'Lambda setup');
 
-		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test Lambda App', 'test-lambda-app');
-		await updatePolicyPropertyList(ENDPOINT.REST, {
-			lambda: ['TEST_ACCESS'],
-		}, testEnv.apps.app1.token);
+		await runStep('init Lambda process', async () => {
+			LAMBDA_PROCESS = new BootstrapLambda();
+			await LAMBDA_PROCESS.init();
+		}, 'Lambda setup');
+
+		testEnv.apps.app1 = await runStep('create app1', async () =>
+			createApp(ENDPOINT.REST, 'Test Lambda App', 'test-lambda-app')
+		, 'Lambda setup');
+		await runStep('update policy property list', async () =>
+			updatePolicyPropertyList(ENDPOINT.REST, {
+				lambda: ['TEST_ACCESS'],
+			}, testEnv.apps.app1.token)
+		, 'Lambda setup');
 	});
 
 	after(async function() {

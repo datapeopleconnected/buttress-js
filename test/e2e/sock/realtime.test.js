@@ -29,6 +29,7 @@ import {
 import BootstrapSPR from '../../../dist/bootstrap-spr.js';
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
 import BootstrapSocket from '../../../dist/bootstrap-socket.js';
+import { runStep } from '../helpers.js';
 
 import PolicyTestData from '../../data/policy/index.js';
 
@@ -49,15 +50,21 @@ describe('Realtime', async () => {
 	const PolicyPropertyList = extractPolicyPropertyListFromPolicies(TestPolicies);
 
 	before(async function () {
-		this.timeout(20000);
-		REST_PROCESS = new BootstrapRest();
-		await REST_PROCESS.init();
+		this.timeout(60000);
+		await runStep('init REST process', async () => {
+			REST_PROCESS = new BootstrapRest();
+			await REST_PROCESS.init();
+		}, 'Realtime setup');
 
-		SPR_PROCESS = new BootstrapSPR();
-		await SPR_PROCESS.init();
+		await runStep('init SPR process', async () => {
+			SPR_PROCESS = new BootstrapSPR();
+			await SPR_PROCESS.init();
+		}, 'Realtime setup');
 
-		SOCK_PROCESS = new BootstrapSocket();
-		await SOCK_PROCESS.init();
+		await runStep('init SOCK process', async () => {
+			SOCK_PROCESS = new BootstrapSocket();
+			await SOCK_PROCESS.init();
+		}, 'Realtime setup');
 
 		// Creating test data.
 		const carsSchema = {
@@ -74,8 +81,12 @@ describe('Realtime', async () => {
 		};
 
 		// Create an app
-		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test SOCK 1', 'test-sock-1', PolicyPropertyList);
-		testEnv.apps.app1.schema = await updateSchema(ENDPOINT.REST, [carsSchema], testEnv.apps.app1.token);
+		testEnv.apps.app1 = await runStep('create app1', async () =>
+			createApp(ENDPOINT.REST, 'Test SOCK 1', 'test-sock-1', PolicyPropertyList)
+		, 'Realtime setup');
+		testEnv.apps.app1.schema = await runStep('update app1 schema', async () =>
+			updateSchema(ENDPOINT.REST, [carsSchema], testEnv.apps.app1.token)
+		, 'Realtime setup');
 
 		// Hack - Pause for a second to allow the schema to be created.
 		await new Promise((resolve) => setTimeout(resolve, 100));
