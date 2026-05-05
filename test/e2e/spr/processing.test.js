@@ -14,7 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import assert from 'assert';
+import fs from 'node:fs';
+import assert from 'node:assert';
 
 import { io } from 'socket.io-client';
 import { describe, it, before, after } from 'mocha';
@@ -485,6 +486,16 @@ describe('Processing', async () => {
 					},
 				}],
 			}, testEnv.apps.app2.token), 'Token Types setup');
+
+			// Pre-create expected lambda dir to skip gitFolderClone
+			await runStep('pre-create lambda-HEAD stub', async () => {
+				const dir = `${Config.paths.lambda.code}/lambda-HEAD/test/data/lambda`;
+				if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+
+				const src = `${Config.paths.root}/test/data/lambda/hello-world.cjs`;
+				const dest = `${dir}/hello-world.cjs`;
+				if (!fs.existsSync(dest)) fs.copyFileSync(src, dest);
+			}, 'Token Types setup');
 
 			testEnv.lambdas['token-test-lambda'] = await runStep('create token-test-lambda', async () => createLambda(ENDPOINT.REST, {
 					name: 'token-test-lambda',
