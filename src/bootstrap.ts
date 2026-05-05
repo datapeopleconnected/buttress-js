@@ -40,6 +40,9 @@ export interface LocalProcessMessage {
 }
 
 export default class Bootstrap extends EventEmitter {
+  private static __unhandledRejectionHandlerRegistered = false;
+  private static __onUnhandledRejection = (error: unknown) => Logging.logError(error);
+
   id: string;
 
   workerProcesses: number;
@@ -94,10 +97,14 @@ export default class Bootstrap extends EventEmitter {
   }
 
   protected async __createCluster() {
+    if (!Bootstrap.__unhandledRejectionHandlerRegistered) {
+      process.on('unhandledRejection', Bootstrap.__onUnhandledRejection);
+      Bootstrap.__unhandledRejectionHandlerRegistered = true;
+    }
+
     if (cluster.isPrimary) {
       Logging.log(`Init Main Process`);
       await this.__initMain();
-      process.on('unhandledRejection', (error) => Logging.logError(error));
     } else {
       Logging.log(`Init Worker Process [${cluster.worker?.id}]`);
       await this.__initWorker();
@@ -108,7 +115,6 @@ export default class Bootstrap extends EventEmitter {
         } as LocalProcessMessage);
 
       process.on('message', (message: LocalProcessMessage) => this._handleMessageFromMain(message));
-      process.on('unhandledRejection', (error) => Logging.logError(error));
     }
 
     return cluster.isPrimary;
