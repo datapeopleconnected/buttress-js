@@ -16,8 +16,12 @@
 
 export const runStep = async (name, fn, scope = 'Setup') => {
   const start = Date.now();
+  console.log(`  [${scope}] Working on ${name}`);
   try {
-    return await fn();
+    const result = await fn();
+    const elapsed = Date.now() - start;
+    console.log(`  [${scope}] ${name} completed (${elapsed}ms)`);
+    return result;
   } catch (err) {
     const elapsed = Date.now() - start;
     throw new Error(`${scope} failed at "${name}" after ${elapsed}ms: ${err?.message || err}`);
