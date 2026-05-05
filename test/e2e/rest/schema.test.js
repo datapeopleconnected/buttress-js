@@ -18,6 +18,7 @@ import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
 import { createApp, updateSchema, ENDPOINT } from '../../helpers.js';
+import { runStep } from '../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
 
@@ -31,11 +32,16 @@ const testEnv = {
 // This suite of tests will run against the REST API
 describe('Schema', async () => {
 	before(async function() {
-		REST_PROCESS = new BootstrapRest();
+		this.timeout(60000);
 
-		await REST_PROCESS.init();
+		await runStep('init REST process', async () => {
+			REST_PROCESS = new BootstrapRest();
+			await REST_PROCESS.init();
+		}, 'Schema setup');
 
-		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test Req App', 'test-req-app');
+		testEnv.apps.app1 = await runStep('create app1', async () =>
+			createApp(ENDPOINT.REST, 'Test Req App', 'test-req-app')
+		, 'Schema setup');
 	});
 
 	after(async function() {
@@ -236,7 +242,9 @@ describe('Schema', async () => {
 
 	describe('Types', async () => {
 		before(async function() {
-			testEnv.apps.app2 = await createApp(ENDPOINT.REST, 'Test Types App', 'test-type-app');
+			testEnv.apps.app2 = await runStep('create app2', async () =>
+				createApp(ENDPOINT.REST, 'Test Types App', 'test-type-app')
+			, 'Schema types setup');
 		});
 
 		it('Should update the types app schema', async () => {

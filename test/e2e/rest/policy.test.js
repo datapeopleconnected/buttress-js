@@ -33,6 +33,7 @@ import {
   extractPolicyPropertyListFromPolicies,
   ENDPOINT,
 } from '../../helpers.js';
+import { runStep } from '../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
 
@@ -237,44 +238,57 @@ const schema = [{
 // test the cababiliy of data sharing between different apps.
 describe('Policy', async () => {
   before(async function() {
-    // this.timeout(20000);
+    this.timeout(60000);
 
-    REST_PROCESS = new BootstrapRest();
+    await runStep('init REST process', async () => {
+      REST_PROCESS = new BootstrapRest();
+      await REST_PROCESS.init();
+    }, 'Policy setup');
 
-    await REST_PROCESS.init();
-
-    testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test App 1', 'test-policy-app-1', PolicyPropertyList);
-    testEnv.apps.app1.schema = await updateSchema(ENDPOINT.REST, schema, testEnv.apps.app1.token);
+    testEnv.apps.app1 = await runStep('create app1', async () =>
+      createApp(ENDPOINT.REST, 'Test App 1', 'test-policy-app-1', PolicyPropertyList)
+    , 'Policy setup');
+    testEnv.apps.app1.schema = await runStep('update app1 schema', async () =>
+      updateSchema(ENDPOINT.REST, schema, testEnv.apps.app1.token)
+    , 'Policy setup');
 
     // Populate the schema with some data.
-    for (let i = 0; i < 10; i++) {
-      await createCar(testEnv.apps.app1, `Car ${i}`, `r${Math.floor(Math.random() * 255)}`, Math.random() * 100);
-    }
+    await runStep('seed car data', async () => {
+      for (let i = 0; i < 10; i++) {
+        await createCar(testEnv.apps.app1, `Car ${i}`, `r${Math.floor(Math.random() * 255)}`, Math.random() * 100);
+      }
+    }, 'Policy setup');
 
     // Create the organisations
-    for await (const org of TestDataOrganisations) {
-      const [bjsOrg]= await bjsReq({
-        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify(org),
-      }, testEnv.apps.app1.token);
+    await runStep('seed organisations', async () => {
+      for await (const org of TestDataOrganisations) {
+        const [bjsOrg]= await bjsReq({
+          url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(org),
+        }, testEnv.apps.app1.token);
 
-      testEnv.organisations.push(bjsOrg);
-    }
+        testEnv.organisations.push(bjsOrg);
+      }
+    }, 'Policy setup');
 
     // Create the switch
-    const [bjsSwitch] = await bjsReq({
-      url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/switch`,
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(TestDataSwitch),
-    }, testEnv.apps.app1.token);
+    const [bjsSwitch] = await runStep('create switch', async () =>
+      bjsReq({
+        url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/switch`,
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(TestDataSwitch),
+      }, testEnv.apps.app1.token)
+    , 'Policy setup');
     testEnv.switches.push(bjsSwitch);
 
-    await _createPolicyUser(testEnv.apps.app1, 'basic1', {
-      adminAccess: true,
-    });
+    await runStep('create user basic1', async () =>
+      _createPolicyUser(testEnv.apps.app1, 'basic1', {
+        adminAccess: true,
+      })
+    , 'Policy setup');
   });
 
   after(async function() {
@@ -308,13 +322,17 @@ describe('Policy', async () => {
     // Test the basic functionality of the policy system
     before(async function() {
       // Create a user to test with.
-      await _createPolicyUser(testEnv.apps.app1, 'selection-basic', {
-        policySelection: 'basic',
-      });
+      await runStep('create user selection-basic', async () =>
+        _createPolicyUser(testEnv.apps.app1, 'selection-basic', {
+          policySelection: 'basic',
+        })
+      , 'Policy selection setup');
 
-      await _createPolicyUser(testEnv.apps.app1, 'selection-array', {
-        policySelection: ['array', 'none'],
-      });
+      await runStep('create user selection-array', async () =>
+        _createPolicyUser(testEnv.apps.app1, 'selection-array', {
+          policySelection: ['array', 'none'],
+        })
+      , 'Policy selection setup');
     });
 
     it('Should allow user selection-basic to do access organisations', async function() {
@@ -618,16 +636,18 @@ describe('Policy', async () => {
   describe('Multi-Policy results', async () => {
     before(async function() {
       // Create a user to test with.
-      testEnv.users.multiPol1 = await createUser(ENDPOINT.REST, {
-        app: 'test-app',
-        appId: `test-1234`,
-        email: 'test-1234@buttressjs.com',
-      }, {
-        domains: [Config.app.host],
-        policyProperties: {
-          role: 'test1',
-        },
-      }, testEnv.apps.app1.token);
+      testEnv.users.multiPol1 = await runStep('create user multiPol1', async () =>
+        createUser(ENDPOINT.REST, {
+          app: 'test-app',
+          appId: `test-1234`,
+          email: 'test-1234@buttressjs.com',
+        }, {
+          domains: [Config.app.host],
+          policyProperties: {
+            role: 'test1',
+          },
+        }, testEnv.apps.app1.token)
+      , 'Policy multi setup');
     });
     after(async function() {
       // Delete the user

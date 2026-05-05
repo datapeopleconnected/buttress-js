@@ -18,6 +18,7 @@ import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
 import { createApp, bjsReq, createPolicyUser, deleteApp, ENDPOINT } from '../../../helpers.js';
+import { runStep } from '../../helpers.js';
 
 import BootstrapRest from '../../../../dist/bootstrap-rest.js';
 
@@ -30,13 +31,20 @@ const testEnv = {
 
 describe('Token API', async () => {
 	before(async function () {
-		REST_PROCESS = new BootstrapRest();
+		this.timeout(60000);
 
-		await REST_PROCESS.init();
+		await runStep('init REST process', async () => {
+			REST_PROCESS = new BootstrapRest();
+			await REST_PROCESS.init();
+		}, 'Token API setup');
 
-		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test Token API', 'test-token-api-1');
+		testEnv.apps.app1 = await runStep('create app1', async () =>
+			createApp(ENDPOINT.REST, 'Test Token API', 'test-token-api-1')
+		, 'Token API setup');
 
-		testEnv.users.user1 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'token-test-user1', {});
+		testEnv.users.user1 = await runStep('create token-test-user1', async () =>
+			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'token-test-user1', {})
+		, 'Token API setup');
 	});
 
 	after(async function () {
@@ -114,7 +122,9 @@ describe('Token API', async () => {
 
 	describe('SearchUserToken', () => {
 		before(async function () {
-			testEnv.users.user1 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'token-test-user1', {});
+			testEnv.users.user1 = await runStep('recreate token-test-user1', async () =>
+				createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'token-test-user1', {})
+			, 'Token API search setup');
 		});
 
 		it('Should search and return tokens for a specific user with a system token', async () => {

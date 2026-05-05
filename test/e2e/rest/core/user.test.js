@@ -18,6 +18,7 @@ import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
 import { createApp, bjsReq, createUser, createPolicyUser, deleteApp, BJSReqError, ENDPOINT } from '../../../helpers.js';
+import { runStep } from '../../helpers.js';
 
 import BootstrapRest from '../../../../dist/bootstrap-rest.js';
 
@@ -31,14 +32,21 @@ describe('User API', async () => {
 	let REST_PROCESS = null;
 
 	before(async function () {
-		REST_PROCESS = new BootstrapRest();
+		this.timeout(60000);
 
-		await REST_PROCESS.init();
+		await runStep('init REST process', async () => {
+			REST_PROCESS = new BootstrapRest();
+			await REST_PROCESS.init();
+		}, 'User API setup');
 
-		testEnv.apps.app1 = await createApp(ENDPOINT.REST, 'Test User API', 'test-user-api-1', { someProperty: [ 'value', 'newValue' ] });
+		testEnv.apps.app1 = await runStep('create app1', async () =>
+			createApp(ENDPOINT.REST, 'Test User API', 'test-user-api-1', { someProperty: [ 'value', 'newValue' ] })
+		, 'User API setup');
 
 		// Create some users
-		testEnv.users.user1 = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'user-test-user1', {});
+		testEnv.users.user1 = await runStep('create user-test-user1', async () =>
+			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'user-test-user1', {})
+		, 'User API setup');
 	});
 
 	after(async function () {
