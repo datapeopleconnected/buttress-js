@@ -117,39 +117,47 @@ export class PolicyCache {
   }
 
   async getPoliciesByToken(token: Token): Promise<Policy[]> {
-    let policies: Policy[] = [];
     const policyIds = await this._redisClient.sMembers(this._prefix(`token:${token.id}:policies`));
 
     // If the tokens are marked as stale, we're in the process of cleaning them up. we'll miss the cache and get fresh data.
     const isStale = policyIds.includes('STALE');
     if (policyIds.length < 1 || isStale) {
-      const appPolicies = await Helpers.streamAll(
-        this._modelManager.getCoreModel(PolicySchemaModel).find({ _appId: token._appId }),
-      );
-      policies = AccessControlPolicyMatch.getTokenPolicies(appPolicies, token);
+      return this.rehydrateToken(token);
+    }
 
-      // Clear out old policies for the token
-      await this.clearTokenPolicies(token.id.toString());
+    // HACK: Re-run selection
+    const policies = await this.getPolicies(policyIds);
+    return AccessControlPolicyMatch.getTokenPolicies(policies, token);
+  }
 
-      // Index the token's policy properties
-      await this.indexTokenPolicyProperties(token.id.toString(), token.policyProperties);
+  async rehydrateToken(token: Token): Promise<Policy[]> {
+    // Always rebuild policies using the latest token state from storage.
+    // The request token can be stale right after policy property updates.
+    const tokenModel = this._modelManager.getCoreModelByName('Token');
+    const freshToken = (await tokenModel.findById(token.id)) as Token | null;
+    const tokenState = freshToken || token;
 
-      if (policies.length > 0) {
-        await policies.reduce(async (prev, policy) => {
-          await prev;
+    const appPolicies = await Helpers.streamAll(
+      this._modelManager.getCoreModel(PolicySchemaModel).find({ _appId: tokenState._appId }),
+    );
+    const policies = AccessControlPolicyMatch.getTokenPolicies(appPolicies, tokenState);
 
-          await this._redisClient.sAdd(this._prefix(`token:${token.id}:policies`), policy.id.toString());
+    // Clear out old policies for the token
+    await this.clearTokenPolicies(tokenState.id.toString());
 
-          await this.addPolicy(policy);
+    // Index the token's policy properties
+    await this.indexTokenPolicyProperties(tokenState.id.toString(), tokenState.policyProperties);
 
-          await this._redisClient.sAdd(this._prefix(`policy:${policy.id}:tokens`), token.id.toString());
-        }, Promise.resolve());
-      }
-    } else {
-      policies = await this.getPolicies(policyIds);
+    if (policies.length > 0) {
+      await policies.reduce(async (prev, policy) => {
+        await prev;
 
-      // HACK: Re-run selection
-      policies = AccessControlPolicyMatch.getTokenPolicies(policies, token);
+        await this._redisClient.sAdd(this._prefix(`token:${tokenState.id}:policies`), policy.id.toString());
+
+        await this.addPolicy(policy);
+
+        await this._redisClient.sAdd(this._prefix(`policy:${policy.id}:tokens`), tokenState.id.toString());
+      }, Promise.resolve());
     }
 
     return policies;
