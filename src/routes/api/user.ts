@@ -172,18 +172,19 @@ routes.push(GetUser);
  */
 class FindUser extends Route {
   constructor(services) {
-    super(
-      'user/:app(twitter|facebook|google|linkedin|microsoft|app-*)/:id',
-      'FIND USER',
-      services,
-      Model.getCoreModel(UserSchemaModel).schemaData,
-    );
+    super('user/:app/:id', 'FIND USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.LAMBDA;
     this.permissions = Route.Constants.Permissions.READ;
   }
 
   async _validate(req, res, token) {
+    const authApp = req.params.app;
+    const validAuthApps = ['twitter', 'facebook', 'google', 'linkedin', 'microsoft'];
+    if (!validAuthApps.includes(authApp) && !authApp.startsWith('app-')) {
+      return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
+    }
+
     const _user = await Model.getCoreModel(UserSchemaModel).getByAuthAppId(
       req.params.app,
       req.params.id,

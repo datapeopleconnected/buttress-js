@@ -125,7 +125,7 @@ export default class Route {
 
   timingChunkSample: number = 250;
 
-  core: boolean = false;
+  core: boolean = true;
   redactResults: boolean = true;
   addSourceId: boolean = false;
 

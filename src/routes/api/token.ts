@@ -118,7 +118,7 @@ routes.push(SearchTokenList);
  */
 class DeleteAllTokens extends Route {
   constructor(services) {
-    super('token/:type?', 'DELETE ALL TOKENS', services, Model.getCoreModel(TokenSchemaModel).schemaData);
+    super('token{/:type}', 'DELETE ALL TOKENS', services, Model.getCoreModel(TokenSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.DELETE;

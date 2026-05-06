@@ -63,6 +63,9 @@ class Routes {
 
   _tokens: any[];
   _routerMap: any;
+  _routerOrder: string[];
+  _dispatcherMounted: boolean;
+  _errorHandlerMounted: boolean;
 
   _services: Services = new Map();
 
@@ -76,6 +79,9 @@ class Routes {
 
     this._tokens = [];
     this._routerMap = {};
+    this._routerOrder = [];
+    this._dispatcherMounted = false;
+    this._errorHandlerMounted = false;
 
     this._preRouteMiddleware = [
       (req: BjsRequest, res: Response, next: NextFunction) => this._timeRequest(req, res, next),
@@ -163,6 +169,8 @@ class Routes {
     await this._setupLambdaEndpoints();
 
     await AdminRoutes.initAdminRoutes(this.app);
+
+    this._mountErrorHandler();
     Logging.logSilly(`init:registered-routes`);
   }
 
@@ -188,24 +196,39 @@ class Routes {
     return apiRouter;
   }
 
-  /**
-   * Make sure the error handler catch is at the bottom of the stack.
-   */
-  _repositionErrorHandler() {
+  _mountRouterDispatcher() {
+    if (this._dispatcherMounted) return;
+
+    this.app.use('', (req, res, next) => this._dispatchRouters(req, res, next));
+    this._dispatcherMounted = true;
+  }
+
+  _mountErrorHandler() {
+    if (this._errorHandlerMounted) return;
+
     const logErrors = (err, req, res, next) => this.logErrors(err, req, res, next);
+    this.app.use(logErrors);
+    this._errorHandlerMounted = true;
+  }
 
-    let stackIndex = this.app._router.stack.findIndex((s) => s.name === 'logErrors');
+  _dispatchRouters(req, res, next) {
+    const keys = [...this._routerOrder];
+    let idx = 0;
 
-    // Remove middleware from stack if it's within
-    if (stackIndex !== -1 && stackIndex !== this.app._router.stack - 1) {
-      this.app._router.stack.splice(stackIndex, 1);
-      stackIndex = -1;
-    }
+    const run = (err?) => {
+      if (err) return next(err);
+      if (res.headersSent || res.writableEnded) return;
 
-    if (stackIndex === -1) {
-      Logging.logSilly(`Repositioned error handler on express stack`);
-      this.app.use(logErrors);
-    }
+      const key = keys[idx++];
+      if (!key) return next();
+
+      const router = this._routerMap[key];
+      if (!router) return run();
+
+      return router(req, res, run);
+    };
+
+    return run();
   }
 
   /**
@@ -222,9 +245,9 @@ class Routes {
 
     Logging.logSilly(`Routes:_registerRouter Register ${key}`);
     this._routerMap[key] = router;
-    this.app.use('', (...args) => this._getRouter(key)(...args));
+    this._routerOrder.push(key);
 
-    this._repositionErrorHandler();
+    this._mountRouterDispatcher();
   }
 
   _deregisterRouter(key) {
@@ -232,6 +255,7 @@ class Routes {
 
     Logging.logSilly(`Routes:_deregisterRouter Deregister ${key}`);
     delete this._routerMap[key];
+    this._routerOrder = this._routerOrder.filter((k) => k !== key);
   }
 
   /**
@@ -813,9 +837,10 @@ class Routes {
   }
 
   async __configureAppLambdaEndpoints(apiPath) {
-    this.app.all(`/lambda/v1/${apiPath}/*`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
+    this.app.all(`/lambda/v1/${apiPath}/*endpoint`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
       // TODO: Handle if the req is closed and the lambda hasn't been executed yet.
-      const [endpoint] = Object.values(req.params);
+      const endpointParam = req.params.endpoint;
+      const endpoint = Array.isArray(endpointParam) ? endpointParam.join('/') : endpointParam;
 
       if (req.method === 'POST' && (!req.body || Object.values(req.body).length < 1)) {
         res.status(400).send({ message: 'missing_request_body' });

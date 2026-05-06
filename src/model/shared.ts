@@ -191,7 +191,7 @@ export const extendPathContext = (pathContext, schema, prefix) => {
       default:
       case 'number':
         extended[`^${prefix}${property}$`] = { type: 'scalar', values: [] };
-        extended[`^${prefix}${property}\.__increment__$`] = { type: 'scalar-increment', values: [] }; // eslint-disable-line no-useless-escape
+        extended[`^${prefix}${property}\.__increment__$`] = { type: 'scalar-increment', values: [] };
         break;
       case 'object':
       case 'date':
@@ -206,13 +206,12 @@ export const extendPathContext = (pathContext, schema, prefix) => {
         break;
       case 'array':
         extended[`^${prefix}${property}$`] = { type: 'vector-add', values: [] };
-        extended[`^${prefix}${property}\.([0-9]{1,11})\.__remove__$`] = { type: 'vector-rm', values: [] }; // eslint-disable-line no-useless-escape
-        extended[`^${prefix}${property}\.([0-9]{1,11})$`] = { type: 'scalar', values: [] }; // eslint-disable-line no-useless-escape
+        extended[`^${prefix}${property}\.([0-9]{1,11})\.__remove__$`] = { type: 'vector-rm', values: [] };
+        extended[`^${prefix}${property}\.([0-9]{1,11})$`] = { type: 'scalar', values: [] };
         if (config.__schema) {
-          // eslint-disable-next-line no-useless-escape
           extended = extendPathContext(extended, config.__schema, `${prefix}${property}\.([0-9]{1,11})\.`);
         } else if (config.__itemtype) {
-          extended[`^${prefix}${property}\.([0-9]{1,11})\.(.+)$`] = { type: 'scalar', values: [] }; // eslint-disable-line no-useless-escape
+          extended[`^${prefix}${property}\.([0-9]{1,11})\.(.+)$`] = { type: 'scalar', values: [] };
         }
         break;
     }

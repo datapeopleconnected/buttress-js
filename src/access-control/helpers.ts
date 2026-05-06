@@ -293,7 +293,6 @@ export function containsTokenLevelRef(applicablePolicy: ApplicablePolicyConfig) 
     query: false,
   };
 
-  // eslint-disable-next-line no-useless-escape
   const pattern = '(#env\.user)';
   outcome.env = patternExists(applicablePolicy.env, pattern);
   outcome.configEnv = patternExists(applicablePolicy.config.env, pattern);
