@@ -24,6 +24,7 @@ export const runStep = async (name, fn, scope = 'Setup') => {
     return result;
   } catch (err) {
     const elapsed = Date.now() - start;
-    throw new Error(`${scope} failed at "${name}" after ${elapsed}ms: ${err?.message || err}`);
+    console.log(`  [${scope}] ${name} errored (${elapsed}ms)`);
+    throw err;
   }
 };
