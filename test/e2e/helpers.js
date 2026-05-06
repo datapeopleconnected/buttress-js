@@ -14,17 +14,33 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { recordTiming } from '../perf/timing-collector.js';
+
 export const runStep = async (name, fn, scope = 'Setup') => {
-  const start = Date.now();
+  const start = process.hrtime.bigint();
   console.log(`  [${scope}] Working on ${name}`);
+
+  const getElapsedMs = () => Number(process.hrtime.bigint() - start) / 1_000_000;
+
+  const recordStep = (status, elapsedMs) =>
+    recordTiming({
+      kind: 'step',
+      name,
+      scope,
+      status,
+      elapsedMs,
+    });
+
   try {
     const result = await fn();
-    const elapsed = Date.now() - start;
-    console.log(`  [${scope}] ${name} completed (${elapsed}ms)`);
+    const elapsedMs = getElapsedMs();
+    recordStep('completed', elapsedMs);
+    console.log(`  [${scope}] ${name} completed (${elapsedMs.toFixed(2)}ms)`);
     return result;
   } catch (err) {
-    const elapsed = Date.now() - start;
-    console.log(`  [${scope}] ${name} errored (${elapsed}ms)`);
+    const elapsedMs = getElapsedMs();
+    recordStep('errored', elapsedMs);
+    console.log(`  [${scope}] ${name} errored (${elapsedMs.toFixed(2)}ms)`);
     throw err;
   }
 };
