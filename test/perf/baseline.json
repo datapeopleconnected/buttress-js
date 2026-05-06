@@ -1,0 +1,3553 @@
+{
+  "metadata": {
+    "generatedAt": "2026-05-06T16:37:47.889Z",
+    "nodeVersion": "v24.15.0",
+    "expressVersion": "unknown",
+    "runMode": "e2e",
+    "totalRecords": 177
+  },
+  "summary": [
+    {
+      "key": "Cache setup::connect NRP",
+      "kind": "step",
+      "scope": "Cache setup",
+      "name": "connect NRP",
+      "samples": 1,
+      "minMs": 0.477017,
+      "maxMs": 0.477017,
+      "meanMs": 0.477017,
+      "medianMs": 0.477017,
+      "p95Ms": 0.477017
+    },
+    {
+      "key": "Cache setup::connect Redis client",
+      "kind": "step",
+      "scope": "Cache setup",
+      "name": "connect Redis client",
+      "samples": 1,
+      "minMs": 0.643603,
+      "maxMs": 0.643603,
+      "meanMs": 0.643603,
+      "medianMs": 0.643603,
+      "p95Ms": 0.643603
+    },
+    {
+      "key": "Cache setup::create app1 with schema",
+      "kind": "step",
+      "scope": "Cache setup",
+      "name": "create app1 with schema",
+      "samples": 1,
+      "minMs": 145.824689,
+      "maxMs": 145.824689,
+      "meanMs": 145.824689,
+      "medianMs": 145.824689,
+      "p95Ms": 145.824689
+    },
+    {
+      "key": "Cache setup::create cache-test-1 user",
+      "kind": "step",
+      "scope": "Cache setup",
+      "name": "create cache-test-1 user",
+      "samples": 1,
+      "minMs": 17.227413,
+      "maxMs": 17.227413,
+      "meanMs": 17.227413,
+      "medianMs": 17.227413,
+      "p95Ms": 17.227413
+    },
+    {
+      "key": "Cache setup::create policies",
+      "kind": "step",
+      "scope": "Cache setup",
+      "name": "create policies",
+      "samples": 1,
+      "minMs": 43.957767,
+      "maxMs": 43.957767,
+      "meanMs": 43.957767,
+      "medianMs": 43.957767,
+      "p95Ms": 43.957767
+    },
+    {
+      "key": "Cache setup::init REST process",
+      "kind": "step",
+      "scope": "Cache setup",
+      "name": "init REST process",
+      "samples": 1,
+      "minMs": 28.334785,
+      "maxMs": 28.334785,
+      "meanMs": 28.334785,
+      "medianMs": 28.334785,
+      "p95Ms": 28.334785
+    },
+    {
+      "key": "Cache setup::init SOCK process",
+      "kind": "step",
+      "scope": "Cache setup",
+      "name": "init SOCK process",
+      "samples": 1,
+      "minMs": 15.985036,
+      "maxMs": 15.985036,
+      "meanMs": 15.985036,
+      "medianMs": 15.985036,
+      "p95Ms": 15.985036
+    },
+    {
+      "key": "Cache setup::init SPR process",
+      "kind": "step",
+      "scope": "Cache setup",
+      "name": "init SPR process",
+      "samples": 1,
+      "minMs": 10.570422,
+      "maxMs": 10.570422,
+      "meanMs": 10.570422,
+      "medianMs": 10.570422,
+      "p95Ms": 10.570422
+    },
+    {
+      "key": "Cache setup::seed car records",
+      "kind": "step",
+      "scope": "Cache setup",
+      "name": "seed car records",
+      "samples": 1,
+      "minMs": 49.612428,
+      "maxMs": 49.612428,
+      "meanMs": 49.612428,
+      "medianMs": 49.612428,
+      "p95Ms": 49.612428
+    },
+    {
+      "key": "Cache setup::seed selector record",
+      "kind": "step",
+      "scope": "Cache setup",
+      "name": "seed selector record",
+      "samples": 1,
+      "minMs": 22.836424,
+      "maxMs": 22.836424,
+      "meanMs": 22.836424,
+      "medianMs": 22.836424,
+      "p95Ms": 22.836424
+    },
+    {
+      "key": "Data Sharing setup::create app1",
+      "kind": "step",
+      "scope": "Data Sharing setup",
+      "name": "create app1",
+      "samples": 1,
+      "minMs": 8.875563,
+      "maxMs": 8.875563,
+      "meanMs": 8.875563,
+      "medianMs": 8.875563,
+      "p95Ms": 8.875563
+    },
+    {
+      "key": "Data Sharing setup::create app1 seed car",
+      "kind": "step",
+      "scope": "Data Sharing setup",
+      "name": "create app1 seed car",
+      "samples": 1,
+      "minMs": 29.834718,
+      "maxMs": 29.834718,
+      "meanMs": 29.834718,
+      "medianMs": 29.834718,
+      "p95Ms": 29.834718
+    },
+    {
+      "key": "Data Sharing setup::create app2",
+      "kind": "step",
+      "scope": "Data Sharing setup",
+      "name": "create app2",
+      "samples": 1,
+      "minMs": 7.269869,
+      "maxMs": 7.269869,
+      "meanMs": 7.269869,
+      "medianMs": 7.269869,
+      "p95Ms": 7.269869
+    },
+    {
+      "key": "Data Sharing setup::create app3",
+      "kind": "step",
+      "scope": "Data Sharing setup",
+      "name": "create app3",
+      "samples": 1,
+      "minMs": 9.358991,
+      "maxMs": 9.358991,
+      "meanMs": 9.358991,
+      "medianMs": 9.358991,
+      "p95Ms": 9.358991
+    },
+    {
+      "key": "Data Sharing setup::create app3 seed car",
+      "kind": "step",
+      "scope": "Data Sharing setup",
+      "name": "create app3 seed car",
+      "samples": 1,
+      "minMs": 15.555234,
+      "maxMs": 15.555234,
+      "meanMs": 15.555234,
+      "medianMs": 15.555234,
+      "p95Ms": 15.555234
+    },
+    {
+      "key": "Data Sharing setup::init REST process",
+      "kind": "step",
+      "scope": "Data Sharing setup",
+      "name": "init REST process",
+      "samples": 1,
+      "minMs": 20.730615,
+      "maxMs": 20.730615,
+      "meanMs": 20.730615,
+      "medianMs": 20.730615,
+      "p95Ms": 20.730615
+    },
+    {
+      "key": "Data Sharing setup::update app1 schema",
+      "kind": "step",
+      "scope": "Data Sharing setup",
+      "name": "update app1 schema",
+      "samples": 1,
+      "minMs": 107.507093,
+      "maxMs": 107.507093,
+      "meanMs": 107.507093,
+      "medianMs": 107.507093,
+      "p95Ms": 107.507093
+    },
+    {
+      "key": "Data Sharing setup::update app3 schema",
+      "kind": "step",
+      "scope": "Data Sharing setup",
+      "name": "update app3 schema",
+      "samples": 1,
+      "minMs": 108.894611,
+      "maxMs": 108.894611,
+      "meanMs": 108.894611,
+      "medianMs": 108.894611,
+      "p95Ms": 108.894611
+    },
+    {
+      "key": "Lambda setup::create app1",
+      "kind": "step",
+      "scope": "Lambda setup",
+      "name": "create app1",
+      "samples": 1,
+      "minMs": 17.909725,
+      "maxMs": 17.909725,
+      "meanMs": 17.909725,
+      "medianMs": 17.909725,
+      "p95Ms": 17.909725
+    },
+    {
+      "key": "Lambda setup::init Lambda process",
+      "kind": "step",
+      "scope": "Lambda setup",
+      "name": "init Lambda process",
+      "samples": 1,
+      "minMs": 15.063816,
+      "maxMs": 15.063816,
+      "meanMs": 15.063816,
+      "medianMs": 15.063816,
+      "p95Ms": 15.063816
+    },
+    {
+      "key": "Lambda setup::init REST process",
+      "kind": "step",
+      "scope": "Lambda setup",
+      "name": "init REST process",
+      "samples": 1,
+      "minMs": 38.545634,
+      "maxMs": 38.545634,
+      "meanMs": 38.545634,
+      "medianMs": 38.545634,
+      "p95Ms": 38.545634
+    },
+    {
+      "key": "Lambda setup::update policy property list",
+      "kind": "step",
+      "scope": "Lambda setup",
+      "name": "update policy property list",
+      "samples": 1,
+      "minMs": 5.281452,
+      "maxMs": 5.281452,
+      "meanMs": 5.281452,
+      "medianMs": 5.281452,
+      "p95Ms": 5.281452
+    },
+    {
+      "key": "Policy multi setup::create user multiPol1",
+      "kind": "step",
+      "scope": "Policy multi setup",
+      "name": "create user multiPol1",
+      "samples": 1,
+      "minMs": 5.641006,
+      "maxMs": 5.641006,
+      "meanMs": 5.641006,
+      "medianMs": 5.641006,
+      "p95Ms": 5.641006
+    },
+    {
+      "key": "Policy selection setup::create user selection-array",
+      "kind": "step",
+      "scope": "Policy selection setup",
+      "name": "create user selection-array",
+      "samples": 1,
+      "minMs": 6.590517,
+      "maxMs": 6.590517,
+      "meanMs": 6.590517,
+      "medianMs": 6.590517,
+      "p95Ms": 6.590517
+    },
+    {
+      "key": "Policy selection setup::create user selection-basic",
+      "kind": "step",
+      "scope": "Policy selection setup",
+      "name": "create user selection-basic",
+      "samples": 1,
+      "minMs": 7.71411,
+      "maxMs": 7.71411,
+      "meanMs": 7.71411,
+      "medianMs": 7.71411,
+      "p95Ms": 7.71411
+    },
+    {
+      "key": "Policy setup::create app1",
+      "kind": "step",
+      "scope": "Policy setup",
+      "name": "create app1",
+      "samples": 1,
+      "minMs": 13.458306,
+      "maxMs": 13.458306,
+      "meanMs": 13.458306,
+      "medianMs": 13.458306,
+      "p95Ms": 13.458306
+    },
+    {
+      "key": "Policy setup::create switch",
+      "kind": "step",
+      "scope": "Policy setup",
+      "name": "create switch",
+      "samples": 1,
+      "minMs": 14.143575,
+      "maxMs": 14.143575,
+      "meanMs": 14.143575,
+      "medianMs": 14.143575,
+      "p95Ms": 14.143575
+    },
+    {
+      "key": "Policy setup::create user basic1",
+      "kind": "step",
+      "scope": "Policy setup",
+      "name": "create user basic1",
+      "samples": 1,
+      "minMs": 8.336959,
+      "maxMs": 8.336959,
+      "meanMs": 8.336959,
+      "medianMs": 8.336959,
+      "p95Ms": 8.336959
+    },
+    {
+      "key": "Policy setup::init REST process",
+      "kind": "step",
+      "scope": "Policy setup",
+      "name": "init REST process",
+      "samples": 1,
+      "minMs": 29.252165,
+      "maxMs": 29.252165,
+      "meanMs": 29.252165,
+      "medianMs": 29.252165,
+      "p95Ms": 29.252165
+    },
+    {
+      "key": "Policy setup::seed car data",
+      "kind": "step",
+      "scope": "Policy setup",
+      "name": "seed car data",
+      "samples": 1,
+      "minMs": 74.689729,
+      "maxMs": 74.689729,
+      "meanMs": 74.689729,
+      "medianMs": 74.689729,
+      "p95Ms": 74.689729
+    },
+    {
+      "key": "Policy setup::seed organisations",
+      "kind": "step",
+      "scope": "Policy setup",
+      "name": "seed organisations",
+      "samples": 1,
+      "minMs": 30.043529,
+      "maxMs": 30.043529,
+      "meanMs": 30.043529,
+      "medianMs": 30.043529,
+      "p95Ms": 30.043529
+    },
+    {
+      "key": "Policy setup::update app1 schema",
+      "kind": "step",
+      "scope": "Policy setup",
+      "name": "update app1 schema",
+      "samples": 1,
+      "minMs": 106.658507,
+      "maxMs": 106.658507,
+      "meanMs": 106.658507,
+      "medianMs": 106.658507,
+      "p95Ms": 106.658507
+    },
+    {
+      "key": "Processing setup::connect NRP",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "connect NRP",
+      "samples": 1,
+      "minMs": 0.519914,
+      "maxMs": 0.519914,
+      "meanMs": 0.519914,
+      "medianMs": 0.519914,
+      "p95Ms": 0.519914
+    },
+    {
+      "key": "Processing setup::create app1 policies",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "create app1 policies",
+      "samples": 1,
+      "minMs": 55.577817,
+      "maxMs": 55.577817,
+      "meanMs": 55.577817,
+      "medianMs": 55.577817,
+      "p95Ms": 55.577817
+    },
+    {
+      "key": "Processing setup::create app1 selector record",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "create app1 selector record",
+      "samples": 1,
+      "minMs": 317.878422,
+      "maxMs": 317.878422,
+      "meanMs": 317.878422,
+      "medianMs": 317.878422,
+      "p95Ms": 317.878422
+    },
+    {
+      "key": "Processing setup::create app1 with schema",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "create app1 with schema",
+      "samples": 1,
+      "minMs": 151.749638,
+      "maxMs": 151.749638,
+      "meanMs": 151.749638,
+      "medianMs": 151.749638,
+      "p95Ms": 151.749638
+    },
+    {
+      "key": "Processing setup::create user basic1",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "create user basic1",
+      "samples": 1,
+      "minMs": 5.517827,
+      "maxMs": 5.517827,
+      "meanMs": 5.517827,
+      "medianMs": 5.517827,
+      "p95Ms": 5.517827
+    },
+    {
+      "key": "Processing setup::create user env-test-1",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "create user env-test-1",
+      "samples": 1,
+      "minMs": 5.5189,
+      "maxMs": 5.5189,
+      "meanMs": 5.5189,
+      "medianMs": 5.5189,
+      "p95Ms": 5.5189
+    },
+    {
+      "key": "Processing setup::create user env-test-2",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "create user env-test-2",
+      "samples": 1,
+      "minMs": 5.488316,
+      "maxMs": 5.488316,
+      "meanMs": 5.488316,
+      "medianMs": 5.488316,
+      "p95Ms": 5.488316
+    },
+    {
+      "key": "Processing setup::create user env-test-3",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "create user env-test-3",
+      "samples": 1,
+      "minMs": 5.874876,
+      "maxMs": 5.874876,
+      "meanMs": 5.874876,
+      "medianMs": 5.874876,
+      "p95Ms": 5.874876
+    },
+    {
+      "key": "Processing setup::create user env-test-4",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "create user env-test-4",
+      "samples": 1,
+      "minMs": 5.769588,
+      "maxMs": 5.769588,
+      "meanMs": 5.769588,
+      "medianMs": 5.769588,
+      "p95Ms": 5.769588
+    },
+    {
+      "key": "Processing setup::create user env-test-5",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "create user env-test-5",
+      "samples": 1,
+      "minMs": 5.743618,
+      "maxMs": 5.743618,
+      "meanMs": 5.743618,
+      "medianMs": 5.743618,
+      "p95Ms": 5.743618
+    },
+    {
+      "key": "Processing setup::init REST process",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "init REST process",
+      "samples": 1,
+      "minMs": 24.697401,
+      "maxMs": 24.697401,
+      "meanMs": 24.697401,
+      "medianMs": 24.697401,
+      "p95Ms": 24.697401
+    },
+    {
+      "key": "Processing setup::init SOCK process",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "init SOCK process",
+      "samples": 1,
+      "minMs": 18.406982,
+      "maxMs": 18.406982,
+      "meanMs": 18.406982,
+      "medianMs": 18.406982,
+      "p95Ms": 18.406982
+    },
+    {
+      "key": "Processing setup::init SPR process",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "init SPR process",
+      "samples": 1,
+      "minMs": 9.375739,
+      "maxMs": 9.375739,
+      "meanMs": 9.375739,
+      "medianMs": 9.375739,
+      "p95Ms": 9.375739
+    },
+    {
+      "key": "Processing setup::seed app1 car records",
+      "kind": "step",
+      "scope": "Processing setup",
+      "name": "seed app1 car records",
+      "samples": 1,
+      "minMs": 205.044056,
+      "maxMs": 205.044056,
+      "meanMs": 205.044056,
+      "medianMs": 205.044056,
+      "p95Ms": 205.044056
+    },
+    {
+      "key": "Realtime setup::create app1",
+      "kind": "step",
+      "scope": "Realtime setup",
+      "name": "create app1",
+      "samples": 1,
+      "minMs": 32.419721,
+      "maxMs": 32.419721,
+      "meanMs": 32.419721,
+      "medianMs": 32.419721,
+      "p95Ms": 32.419721
+    },
+    {
+      "key": "Realtime setup::init REST process",
+      "kind": "step",
+      "scope": "Realtime setup",
+      "name": "init REST process",
+      "samples": 1,
+      "minMs": 53.375405,
+      "maxMs": 53.375405,
+      "meanMs": 53.375405,
+      "medianMs": 53.375405,
+      "p95Ms": 53.375405
+    },
+    {
+      "key": "Realtime setup::init SOCK process",
+      "kind": "step",
+      "scope": "Realtime setup",
+      "name": "init SOCK process",
+      "samples": 1,
+      "minMs": 12.967146,
+      "maxMs": 12.967146,
+      "meanMs": 12.967146,
+      "medianMs": 12.967146,
+      "p95Ms": 12.967146
+    },
+    {
+      "key": "Realtime setup::init SPR process",
+      "kind": "step",
+      "scope": "Realtime setup",
+      "name": "init SPR process",
+      "samples": 1,
+      "minMs": 14.619243,
+      "maxMs": 14.619243,
+      "meanMs": 14.619243,
+      "medianMs": 14.619243,
+      "p95Ms": 14.619243
+    },
+    {
+      "key": "Realtime setup::update app1 schema",
+      "kind": "step",
+      "scope": "Realtime setup",
+      "name": "update app1 schema",
+      "samples": 1,
+      "minMs": 115.290818,
+      "maxMs": 115.290818,
+      "meanMs": 115.290818,
+      "medianMs": 115.290818,
+      "p95Ms": 115.290818
+    },
+    {
+      "key": "Schema setup::create app1",
+      "kind": "step",
+      "scope": "Schema setup",
+      "name": "create app1",
+      "samples": 1,
+      "minMs": 10.303364,
+      "maxMs": 10.303364,
+      "meanMs": 10.303364,
+      "medianMs": 10.303364,
+      "p95Ms": 10.303364
+    },
+    {
+      "key": "Schema setup::init REST process",
+      "kind": "step",
+      "scope": "Schema setup",
+      "name": "init REST process",
+      "samples": 1,
+      "minMs": 14.758302,
+      "maxMs": 14.758302,
+      "meanMs": 14.758302,
+      "medianMs": 14.758302,
+      "p95Ms": 14.758302
+    },
+    {
+      "key": "Schema types setup::create app2",
+      "kind": "step",
+      "scope": "Schema types setup",
+      "name": "create app2",
+      "samples": 1,
+      "minMs": 9.334234,
+      "maxMs": 9.334234,
+      "meanMs": 9.334234,
+      "medianMs": 9.334234,
+      "p95Ms": 9.334234
+    },
+    {
+      "key": "test::AddUser::User API AddUser Should add a new user with no token",
+      "kind": "test",
+      "scope": "AddUser",
+      "name": "User API AddUser Should add a new user with no token",
+      "samples": 1,
+      "minMs": 4.986955,
+      "maxMs": 4.986955,
+      "meanMs": 4.986955,
+      "medianMs": 4.986955,
+      "p95Ms": 4.986955
+    },
+    {
+      "key": "test::AddUser::User API AddUser Should create a user with a token",
+      "kind": "test",
+      "scope": "AddUser",
+      "name": "User API AddUser Should create a user with a token",
+      "samples": 1,
+      "minMs": 6.85818,
+      "maxMs": 6.85818,
+      "meanMs": 6.85818,
+      "medianMs": 6.85818,
+      "p95Ms": 6.85818
+    },
+    {
+      "key": "test::API Endpoint::Lambda Trigger API Endpoint Should receive 200 from 'hello-world' lambda",
+      "kind": "test",
+      "scope": "API Endpoint",
+      "name": "Lambda Trigger API Endpoint Should receive 200 from 'hello-world' lambda",
+      "samples": 1,
+      "minMs": 59.653851,
+      "maxMs": 59.653851,
+      "meanMs": 59.653851,
+      "medianMs": 59.653851,
+      "p95Ms": 59.653851
+    },
+    {
+      "key": "test::Basic::Cache Basic Should cache a token, policy and the link if a token is connected",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Cache Basic Should cache a token, policy and the link if a token is connected",
+      "samples": 1,
+      "minMs": 116.971361,
+      "maxMs": 116.971361,
+      "meanMs": 116.971361,
+      "medianMs": 116.971361,
+      "p95Ms": 116.971361
+    },
+    {
+      "key": "test::Basic::Cache Basic Should clean up the old cache / index references if policy properties are changed.",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Cache Basic Should clean up the old cache / index references if policy properties are changed.",
+      "samples": 1,
+      "minMs": 139.962181,
+      "maxMs": 139.962181,
+      "meanMs": 139.962181,
+      "medianMs": 139.962181,
+      "p95Ms": 139.962181
+    },
+    {
+      "key": "test::Basic::Cache Basic Should link tokens to a new policy, if a new policy is added",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Cache Basic Should link tokens to a new policy, if a new policy is added",
+      "samples": 1,
+      "minMs": 128.549916,
+      "maxMs": 128.549916,
+      "meanMs": 128.549916,
+      "medianMs": 128.549916,
+      "p95Ms": 128.549916
+    },
+    {
+      "key": "test::Basic::Cache Basic Should mark a Token as STALE if the policy properties change",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Cache Basic Should mark a Token as STALE if the policy properties change",
+      "samples": 1,
+      "minMs": 29.732754,
+      "maxMs": 29.732754,
+      "meanMs": 29.732754,
+      "medianMs": 29.732754,
+      "p95Ms": 29.732754
+    },
+    {
+      "key": "test::Basic::Cache Basic Should remove a policy from the cache if deleted",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Cache Basic Should remove a policy from the cache if deleted",
+      "samples": 1,
+      "minMs": 8.032167,
+      "maxMs": 8.032167,
+      "meanMs": 8.032167,
+      "medianMs": 8.032167,
+      "p95Ms": 8.032167
+    },
+    {
+      "key": "test::Basic::Lambda Basic Should create a lambda 'hello-world' in the test app",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Lambda Basic Should create a lambda 'hello-world' in the test app",
+      "samples": 1,
+      "minMs": 6.695762,
+      "maxMs": 6.695762,
+      "meanMs": 6.695762,
+      "medianMs": 6.695762,
+      "p95Ms": 6.695762
+    },
+    {
+      "key": "test::Basic::Policy Basic Should access app companies using admin access policy",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Policy Basic Should access app companies using admin access policy",
+      "samples": 1,
+      "minMs": 3.95932,
+      "maxMs": 3.95932,
+      "meanMs": 3.95932,
+      "medianMs": 3.95932,
+      "p95Ms": 3.95932
+    },
+    {
+      "key": "test::Basic::Policy Basic Should create policies on the app",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Policy Basic Should create policies on the app",
+      "samples": 1,
+      "minMs": 118.518905,
+      "maxMs": 118.518905,
+      "meanMs": 118.518905,
+      "medianMs": 118.518905,
+      "p95Ms": 118.518905
+    },
+    {
+      "key": "test::Basic::Processing Basic Should generate a `spr:activity` event after a REST post",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Processing Basic Should generate a `spr:activity` event after a REST post",
+      "samples": 1,
+      "minMs": 23.835735,
+      "maxMs": 23.835735,
+      "meanMs": 23.835735,
+      "medianMs": 23.835735,
+      "p95Ms": 23.835735
+    },
+    {
+      "key": "test::Basic::Processing Basic Should receive a `rest:activity` event after a REST post",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Processing Basic Should receive a `rest:activity` event after a REST post",
+      "samples": 1,
+      "minMs": 55.730618,
+      "maxMs": 55.730618,
+      "meanMs": 55.730618,
+      "medianMs": 55.730618,
+      "p95Ms": 55.730618
+    },
+    {
+      "key": "test::Basic::Schema Basic Should be able to fetch only the requested schema",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Schema Basic Should be able to fetch only the requested schema",
+      "samples": 1,
+      "minMs": 5.507575,
+      "maxMs": 5.507575,
+      "meanMs": 5.507575,
+      "medianMs": 5.507575,
+      "p95Ms": 5.507575
+    },
+    {
+      "key": "test::Basic::Schema Basic Should be able to fetch the schema",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Schema Basic Should be able to fetch the schema",
+      "samples": 1,
+      "minMs": 12.190034,
+      "maxMs": 12.190034,
+      "meanMs": 12.190034,
+      "medianMs": 12.190034,
+      "p95Ms": 12.190034
+    },
+    {
+      "key": "test::Basic::Schema Basic Should have added id to the schema even though it wasn't provided",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Schema Basic Should have added id to the schema even though it wasn't provided",
+      "samples": 1,
+      "minMs": 0.424872,
+      "maxMs": 0.424872,
+      "meanMs": 0.424872,
+      "medianMs": 0.424872,
+      "p95Ms": 0.424872
+    },
+    {
+      "key": "test::Basic::Schema Basic Should have added source to the schema even though it wasn't provided",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Schema Basic Should have added source to the schema even though it wasn't provided",
+      "samples": 1,
+      "minMs": 0.441621,
+      "maxMs": 0.441621,
+      "meanMs": 0.441621,
+      "medianMs": 0.441621,
+      "p95Ms": 0.441621
+    },
+    {
+      "key": "test::Basic::Schema Basic Should update the app schema",
+      "kind": "test",
+      "scope": "Basic",
+      "name": "Schema Basic Should update the app schema",
+      "samples": 1,
+      "minMs": 108.620352,
+      "maxMs": 108.620352,
+      "meanMs": 108.620352,
+      "medianMs": 108.620352,
+      "p95Ms": 108.620352
+    },
+    {
+      "key": "test::Basics::Data Sharing Basics Should register an agreement with the correct data fields",
+      "kind": "test",
+      "scope": "Basics",
+      "name": "Data Sharing Basics Should register an agreement with the correct data fields",
+      "samples": 1,
+      "minMs": 29.300673,
+      "maxMs": 29.300673,
+      "meanMs": 29.300673,
+      "medianMs": 29.300673,
+      "p95Ms": 29.300673
+    },
+    {
+      "key": "test::bjs-request-* events::Realtime bjs-request-* events Should handle a message from the user and subscribe them to a request room",
+      "kind": "test",
+      "scope": "bjs-request-* events",
+      "name": "Realtime bjs-request-* events Should handle a message from the user and subscribe them to a request room",
+      "samples": 1,
+      "minMs": 1.670358,
+      "maxMs": 1.670358,
+      "meanMs": 1.670358,
+      "medianMs": 1.670358,
+      "p95Ms": 1.670358
+    },
+    {
+      "key": "test::bjs-request-* events::Realtime bjs-request-* events Should make a request to /cars, responce should contain a x-bjs-request-id header",
+      "kind": "test",
+      "scope": "bjs-request-* events",
+      "name": "Realtime bjs-request-* events Should make a request to /cars, responce should contain a x-bjs-request-id header",
+      "samples": 1,
+      "minMs": 7.352008,
+      "maxMs": 7.352008,
+      "meanMs": 7.352008,
+      "medianMs": 7.352008,
+      "p95Ms": 7.352008
+    },
+    {
+      "key": "test::bjs-request-* events::Realtime bjs-request-* events Should receive an event with the state of the request stream",
+      "kind": "test",
+      "scope": "bjs-request-* events",
+      "name": "Realtime bjs-request-* events Should receive an event with the state of the request stream",
+      "samples": 1,
+      "minMs": 0.186455,
+      "maxMs": 0.186455,
+      "meanMs": 0.186455,
+      "medianMs": 0.186455,
+      "p95Ms": 0.186455
+    },
+    {
+      "key": "test::clearUserLocalData::User API clearUserLocalData Should clear user local data",
+      "kind": "test",
+      "scope": "clearUserLocalData",
+      "name": "User API clearUserLocalData Should clear user local data",
+      "samples": 1,
+      "minMs": 8.936411,
+      "maxMs": 8.936411,
+      "meanMs": 8.936411,
+      "medianMs": 8.936411,
+      "p95Ms": 8.936411
+    },
+    {
+      "key": "test::ClearUserPolicyProperties::User API ClearUserPolicyProperties Should clear user policy properties",
+      "kind": "test",
+      "scope": "ClearUserPolicyProperties",
+      "name": "User API ClearUserPolicyProperties Should clear user policy properties",
+      "samples": 1,
+      "minMs": 3.379143,
+      "maxMs": 3.379143,
+      "meanMs": 3.379143,
+      "medianMs": 3.379143,
+      "p95Ms": 3.379143
+    },
+    {
+      "key": "test::Connections::Realtime Connections Should be able to connect to Buttress using socket.io",
+      "kind": "test",
+      "scope": "Connections",
+      "name": "Realtime Connections Should be able to connect to Buttress using socket.io",
+      "samples": 1,
+      "minMs": 29.73477,
+      "maxMs": 29.73477,
+      "meanMs": 29.73477,
+      "medianMs": 29.73477,
+      "p95Ms": 29.73477
+    },
+    {
+      "key": "test::Connections::Realtime Connections Should close down the socket.io connection",
+      "kind": "test",
+      "scope": "Connections",
+      "name": "Realtime Connections Should close down the socket.io connection",
+      "samples": 1,
+      "minMs": 0.729812,
+      "maxMs": 0.729812,
+      "meanMs": 0.729812,
+      "medianMs": 0.729812,
+      "p95Ms": 0.729812
+    },
+    {
+      "key": "test::CreateUserAuthToken::User API CreateUserAuthToken Should create a user auth token",
+      "kind": "test",
+      "scope": "CreateUserAuthToken",
+      "name": "User API CreateUserAuthToken Should create a user auth token",
+      "samples": 1,
+      "minMs": 5.321266,
+      "maxMs": 5.321266,
+      "meanMs": 5.321266,
+      "medianMs": 5.321266,
+      "p95Ms": 5.321266
+    },
+    {
+      "key": "test::Creating a agreement::Data Sharing Creating a agreement Should be able to GET cars from App2 which will use data sharing to retrive data from App1",
+      "kind": "test",
+      "scope": "Creating a agreement",
+      "name": "Data Sharing Creating a agreement Should be able to GET cars from App2 which will use data sharing to retrive data from App1",
+      "samples": 1,
+      "minMs": 29.793084,
+      "maxMs": 29.793084,
+      "meanMs": 29.793084,
+      "medianMs": 29.793084,
+      "p95Ms": 29.793084
+    },
+    {
+      "key": "test::Creating a agreement::Data Sharing Creating a agreement Should be able to POST cars from App2 which will save the data against App1 because a source is provided",
+      "kind": "test",
+      "scope": "Creating a agreement",
+      "name": "Data Sharing Creating a agreement Should be able to POST cars from App2 which will save the data against App1 because a source is provided",
+      "samples": 1,
+      "minMs": 14.520581,
+      "maxMs": 14.520581,
+      "meanMs": 14.520581,
+      "medianMs": 14.520581,
+      "p95Ms": 14.520581
+    },
+    {
+      "key": "test::Creating a agreement::Data Sharing Creating a agreement Should be able to POST cars from App2 which will save the data against App2 because no source is provided",
+      "kind": "test",
+      "scope": "Creating a agreement",
+      "name": "Data Sharing Creating a agreement Should be able to POST cars from App2 which will save the data against App2 because no source is provided",
+      "samples": 1,
+      "minMs": 50.782076,
+      "maxMs": 50.782076,
+      "meanMs": 50.782076,
+      "medianMs": 50.782076,
+      "p95Ms": 50.782076
+    },
+    {
+      "key": "test::Creating a agreement::Data Sharing Creating a agreement Should register a data sharing agreement between app1 and app2",
+      "kind": "test",
+      "scope": "Creating a agreement",
+      "name": "Data Sharing Creating a agreement Should register a data sharing agreement between app1 and app2",
+      "samples": 1,
+      "minMs": 7.516448,
+      "maxMs": 7.516448,
+      "meanMs": 7.516448,
+      "medianMs": 7.516448,
+      "p95Ms": 7.516448
+    },
+    {
+      "key": "test::Creating a agreement::Data Sharing Creating a agreement Should register a data sharing agreement between app2 and app1 & activate it",
+      "kind": "test",
+      "scope": "Creating a agreement",
+      "name": "Data Sharing Creating a agreement Should register a data sharing agreement between app2 and app1 & activate it",
+      "samples": 1,
+      "minMs": 32.749554,
+      "maxMs": 32.749554,
+      "meanMs": 32.749554,
+      "medianMs": 32.749554,
+      "p95Ms": 32.749554
+    },
+    {
+      "key": "test::Creating a agreement::Data Sharing Creating a agreement Should update app2 schema to reference cars collection from app1",
+      "kind": "test",
+      "scope": "Creating a agreement",
+      "name": "Data Sharing Creating a agreement Should update app2 schema to reference cars collection from app1",
+      "samples": 1,
+      "minMs": 610.248146,
+      "maxMs": 610.248146,
+      "meanMs": 610.248146,
+      "medianMs": 610.248146,
+      "p95Ms": 610.248146
+    },
+    {
+      "key": "test::Cron::Lambda Trigger Cron Should change the cron execution status from pending to complete.",
+      "kind": "test",
+      "scope": "Cron",
+      "name": "Lambda Trigger Cron Should change the cron execution status from pending to complete.",
+      "samples": 1,
+      "minMs": 2013.372402,
+      "maxMs": 2013.372402,
+      "meanMs": 2013.372402,
+      "medianMs": 2013.372402,
+      "p95Ms": 2013.372402
+    },
+    {
+      "key": "test::Cron::Lambda Trigger Cron Should change the scheduled execution status from pending to complete.",
+      "kind": "test",
+      "scope": "Cron",
+      "name": "Lambda Trigger Cron Should change the scheduled execution status from pending to complete.",
+      "samples": 1,
+      "minMs": 2023.426459,
+      "maxMs": 2023.426459,
+      "meanMs": 2023.426459,
+      "medianMs": 2023.426459,
+      "p95Ms": 2023.426459
+    },
+    {
+      "key": "test::Cron::Lambda Trigger Cron Should create a cron lambda",
+      "kind": "test",
+      "scope": "Cron",
+      "name": "Lambda Trigger Cron Should create a cron lambda",
+      "samples": 1,
+      "minMs": 21.055176,
+      "maxMs": 21.055176,
+      "meanMs": 21.055176,
+      "medianMs": 21.055176,
+      "p95Ms": 21.055176
+    },
+    {
+      "key": "test::Cron::Lambda Trigger Cron Should create a single lambda exeuction.",
+      "kind": "test",
+      "scope": "Cron",
+      "name": "Lambda Trigger Cron Should create a single lambda exeuction.",
+      "samples": 1,
+      "minMs": 6.104304,
+      "maxMs": 6.104304,
+      "meanMs": 6.104304,
+      "medianMs": 6.104304,
+      "p95Ms": 6.104304
+    },
+    {
+      "key": "test::db-activity::Realtime db-activity Should be able to connect to Buttress using the app token",
+      "kind": "test",
+      "scope": "db-activity",
+      "name": "Realtime db-activity Should be able to connect to Buttress using the app token",
+      "samples": 1,
+      "minMs": 14.429145,
+      "maxMs": 14.429145,
+      "meanMs": 14.429145,
+      "medianMs": 14.429145,
+      "p95Ms": 14.429145
+    },
+    {
+      "key": "test::db-activity::Realtime db-activity Should make a POST request to buttress and see a realtime activity generated",
+      "kind": "test",
+      "scope": "db-activity",
+      "name": "Realtime db-activity Should make a POST request to buttress and see a realtime activity generated",
+      "samples": 1,
+      "minMs": 42.279038,
+      "maxMs": 42.279038,
+      "meanMs": 42.279038,
+      "medianMs": 42.279038,
+      "p95Ms": 42.279038
+    },
+    {
+      "key": "test::DeleteAllTokens::Token API DeleteAllTokens Should delete all tokens for an app with an app token",
+      "kind": "test",
+      "scope": "DeleteAllTokens",
+      "name": "Token API DeleteAllTokens Should delete all tokens for an app with an app token",
+      "samples": 1,
+      "minMs": 6.212325,
+      "maxMs": 6.212325,
+      "meanMs": 6.212325,
+      "medianMs": 6.212325,
+      "p95Ms": 6.212325
+    },
+    {
+      "key": "test::DeleteAllTokens::Token API DeleteAllTokens Should delete all tokens in the system with a system token",
+      "kind": "test",
+      "scope": "DeleteAllTokens",
+      "name": "Token API DeleteAllTokens Should delete all tokens in the system with a system token",
+      "samples": 1,
+      "minMs": 31.484374,
+      "maxMs": 31.484374,
+      "meanMs": 31.484374,
+      "medianMs": 31.484374,
+      "p95Ms": 31.484374
+    },
+    {
+      "key": "test::DeleteAllUsers::User API DeleteAllUsers Should delete all users",
+      "kind": "test",
+      "scope": "DeleteAllUsers",
+      "name": "User API DeleteAllUsers Should delete all users",
+      "samples": 1,
+      "minMs": 5.046302,
+      "maxMs": 5.046302,
+      "meanMs": 5.046302,
+      "medianMs": 5.046302,
+      "p95Ms": 5.046302
+    },
+    {
+      "key": "test::DeleteUser::User API DeleteUser Should delete a user",
+      "kind": "test",
+      "scope": "DeleteUser",
+      "name": "User API DeleteUser Should delete a user",
+      "samples": 1,
+      "minMs": 11.976507,
+      "maxMs": 11.976507,
+      "meanMs": 11.976507,
+      "medianMs": 11.976507,
+      "p95Ms": 11.976507
+    },
+    {
+      "key": "test::Env::Processing Env Should handle a policy with a env inlcuding a date based query",
+      "kind": "test",
+      "scope": "Env",
+      "name": "Processing Env Should handle a policy with a env inlcuding a date based query",
+      "samples": 1,
+      "minMs": 6.794809,
+      "maxMs": 6.794809,
+      "meanMs": 6.794809,
+      "medianMs": 6.794809,
+      "p95Ms": 6.794809
+    },
+    {
+      "key": "test::Env::Processing Env Should handle a policy with a env inlcuding a entity based query",
+      "kind": "test",
+      "scope": "Env",
+      "name": "Processing Env Should handle a policy with a env inlcuding a entity based query",
+      "samples": 1,
+      "minMs": 8.908816,
+      "maxMs": 8.908816,
+      "meanMs": 8.908816,
+      "medianMs": 8.908816,
+      "p95Ms": 8.908816
+    },
+    {
+      "key": "test::Env::Processing Env Should handle a policy with a env inlcuding a static value query",
+      "kind": "test",
+      "scope": "Env",
+      "name": "Processing Env Should handle a policy with a env inlcuding a static value query",
+      "samples": 1,
+      "minMs": 7.712565,
+      "maxMs": 7.712565,
+      "meanMs": 7.712565,
+      "medianMs": 7.712565,
+      "p95Ms": 7.712565
+    },
+    {
+      "key": "test::Env::Processing Env Should handle a policy with a env inlcuding a user base condition",
+      "kind": "test",
+      "scope": "Env",
+      "name": "Processing Env Should handle a policy with a env inlcuding a user base condition",
+      "samples": 1,
+      "minMs": 11.766301,
+      "maxMs": 11.766301,
+      "meanMs": 11.766301,
+      "medianMs": 11.766301,
+      "p95Ms": 11.766301
+    },
+    {
+      "key": "test::Env::Processing Env Should handle a policy with a env inlcuding a user base query",
+      "kind": "test",
+      "scope": "Env",
+      "name": "Processing Env Should handle a policy with a env inlcuding a user base query",
+      "samples": 1,
+      "minMs": 12.371762,
+      "maxMs": 12.371762,
+      "meanMs": 12.371762,
+      "medianMs": 12.371762,
+      "p95Ms": 12.371762
+    },
+    {
+      "key": "test::FindUser::User API FindUser Should find a user by auth app ID with a app token",
+      "kind": "test",
+      "scope": "FindUser",
+      "name": "User API FindUser Should find a user by auth app ID with a app token",
+      "samples": 1,
+      "minMs": 2.988374,
+      "maxMs": 2.988374,
+      "meanMs": 2.988374,
+      "medianMs": 2.988374,
+      "p95Ms": 2.988374
+    },
+    {
+      "key": "test::GetTokenList::Token API GetTokenList Should list all tokens in the system after a GET with a app token",
+      "kind": "test",
+      "scope": "GetTokenList",
+      "name": "Token API GetTokenList Should list all tokens in the system after a GET with a app token",
+      "samples": 1,
+      "minMs": 3.668307,
+      "maxMs": 3.668307,
+      "meanMs": 3.668307,
+      "medianMs": 3.668307,
+      "p95Ms": 3.668307
+    },
+    {
+      "key": "test::GetTokenList::Token API GetTokenList Should list all tokens in the system after a GET with a system token",
+      "kind": "test",
+      "scope": "GetTokenList",
+      "name": "Token API GetTokenList Should list all tokens in the system after a GET with a system token",
+      "samples": 1,
+      "minMs": 4.996629,
+      "maxMs": 4.996629,
+      "meanMs": 4.996629,
+      "medianMs": 4.996629,
+      "p95Ms": 4.996629
+    },
+    {
+      "key": "test::GetUser::User API GetUser Should get a user by ID with a system token",
+      "kind": "test",
+      "scope": "GetUser",
+      "name": "User API GetUser Should get a user by ID with a system token",
+      "samples": 1,
+      "minMs": 2.824234,
+      "maxMs": 2.824234,
+      "meanMs": 2.824234,
+      "medianMs": 2.824234,
+      "p95Ms": 2.824234
+    },
+    {
+      "key": "test::GetUserByToken::User API GetUserByToken Should get a user by token",
+      "kind": "test",
+      "scope": "GetUserByToken",
+      "name": "User API GetUserByToken Should get a user by token",
+      "samples": 1,
+      "minMs": 3.340631,
+      "maxMs": 3.340631,
+      "meanMs": 3.340631,
+      "medianMs": 3.340631,
+      "p95Ms": 3.340631
+    },
+    {
+      "key": "test::GetUserList::User API GetUserList Should list all users with a system token",
+      "kind": "test",
+      "scope": "GetUserList",
+      "name": "User API GetUserList Should list all users with a system token",
+      "samples": 1,
+      "minMs": 2.952808,
+      "maxMs": 2.952808,
+      "meanMs": 2.952808,
+      "medianMs": 2.952808,
+      "p95Ms": 2.952808
+    },
+    {
+      "key": "test::GetUserList::User API GetUserList Should list users for a specific app with an app token",
+      "kind": "test",
+      "scope": "GetUserList",
+      "name": "User API GetUserList Should list users for a specific app with an app token",
+      "samples": 1,
+      "minMs": 2.817331,
+      "maxMs": 2.817331,
+      "meanMs": 2.817331,
+      "medianMs": 2.817331,
+      "p95Ms": 2.817331
+    },
+    {
+      "key": "test::Handling mutiple agreement sources::Data Sharing Handling mutiple agreement sources Should be able to GET cars from App2 which will use data sharing to retrive data from App1 & App3 combined",
+      "kind": "test",
+      "scope": "Handling mutiple agreement sources",
+      "name": "Data Sharing Handling mutiple agreement sources Should be able to GET cars from App2 which will use data sharing to retrive data from App1 & App3 combined",
+      "samples": 1,
+      "minMs": 14.69285,
+      "maxMs": 14.69285,
+      "meanMs": 14.69285,
+      "medianMs": 14.69285,
+      "p95Ms": 14.69285
+    },
+    {
+      "key": "test::Handling mutiple agreement sources::Data Sharing Handling mutiple agreement sources Should register a data sharing agreement between app2 and app1 & activate it",
+      "kind": "test",
+      "scope": "Handling mutiple agreement sources",
+      "name": "Data Sharing Handling mutiple agreement sources Should register a data sharing agreement between app2 and app1 & activate it",
+      "samples": 1,
+      "minMs": 19.170946,
+      "maxMs": 19.170946,
+      "meanMs": 19.170946,
+      "medianMs": 19.170946,
+      "p95Ms": 19.170946
+    },
+    {
+      "key": "test::Handling mutiple agreement sources::Data Sharing Handling mutiple agreement sources Should register a data sharing agreement between app3 and app2",
+      "kind": "test",
+      "scope": "Handling mutiple agreement sources",
+      "name": "Data Sharing Handling mutiple agreement sources Should register a data sharing agreement between app3 and app2",
+      "samples": 1,
+      "minMs": 6.834329,
+      "maxMs": 6.834329,
+      "meanMs": 6.834329,
+      "medianMs": 6.834329,
+      "p95Ms": 6.834329
+    },
+    {
+      "key": "test::Handling mutiple agreement sources::Data Sharing Handling mutiple agreement sources Should update app2 schema to reference cars collection from app1 & app2",
+      "kind": "test",
+      "scope": "Handling mutiple agreement sources",
+      "name": "Data Sharing Handling mutiple agreement sources Should update app2 schema to reference cars collection from app1 & app2",
+      "samples": 1,
+      "minMs": 620.536206,
+      "maxMs": 620.536206,
+      "meanMs": 620.536206,
+      "medianMs": 620.536206,
+      "p95Ms": 620.536206
+    },
+    {
+      "key": "test::Methods::Schema Requests Methods Should make a DELETE request for a single Id",
+      "kind": "test",
+      "scope": "Methods",
+      "name": "Schema Requests Methods Should make a DELETE request for a single Id",
+      "samples": 1,
+      "minMs": 2.906868,
+      "maxMs": 2.906868,
+      "meanMs": 2.906868,
+      "medianMs": 2.906868,
+      "p95Ms": 2.906868
+    },
+    {
+      "key": "test::Methods::Schema Requests Methods Should make a DELETE request with no params (Delete all)",
+      "kind": "test",
+      "scope": "Methods",
+      "name": "Schema Requests Methods Should make a DELETE request with no params (Delete all)",
+      "samples": 1,
+      "minMs": 19.198062,
+      "maxMs": 19.198062,
+      "meanMs": 19.198062,
+      "medianMs": 19.198062,
+      "p95Ms": 19.198062
+    },
+    {
+      "key": "test::Methods::Schema Requests Methods Should make a GET request for an entity by it's id",
+      "kind": "test",
+      "scope": "Methods",
+      "name": "Schema Requests Methods Should make a GET request for an entity by it's id",
+      "samples": 1,
+      "minMs": 2.746834,
+      "maxMs": 2.746834,
+      "meanMs": 2.746834,
+      "medianMs": 2.746834,
+      "p95Ms": 2.746834
+    },
+    {
+      "key": "test::Methods::Schema Requests Methods Should make a GET request without providing params (LIST)",
+      "kind": "test",
+      "scope": "Methods",
+      "name": "Schema Requests Methods Should make a GET request without providing params (LIST)",
+      "samples": 1,
+      "minMs": 1402.462409,
+      "maxMs": 1402.462409,
+      "meanMs": 1402.462409,
+      "medianMs": 1402.462409,
+      "p95Ms": 1402.462409
+    },
+    {
+      "key": "test::Methods::Schema Requests Methods Should make a POST request",
+      "kind": "test",
+      "scope": "Methods",
+      "name": "Schema Requests Methods Should make a POST request",
+      "samples": 1,
+      "minMs": 3.899548,
+      "maxMs": 3.899548,
+      "meanMs": 3.899548,
+      "medianMs": 3.899548,
+      "p95Ms": 3.899548
+    },
+    {
+      "key": "test::Methods::Schema Requests Methods Should make a POST request to bulk add",
+      "kind": "test",
+      "scope": "Methods",
+      "name": "Schema Requests Methods Should make a POST request to bulk add",
+      "samples": 1,
+      "minMs": 593.701208,
+      "maxMs": 593.701208,
+      "meanMs": 593.701208,
+      "medianMs": 593.701208,
+      "p95Ms": 593.701208
+    },
+    {
+      "key": "test::Methods::Schema Requests Methods Should make a PUT request to get the count of the results",
+      "kind": "test",
+      "scope": "Methods",
+      "name": "Schema Requests Methods Should make a PUT request to get the count of the results",
+      "samples": 1,
+      "minMs": 5.152882,
+      "maxMs": 5.152882,
+      "meanMs": 5.152882,
+      "medianMs": 5.152882,
+      "p95Ms": 5.152882
+    },
+    {
+      "key": "test::Methods::Schema Requests Methods Should make a PUT request with a sourceId",
+      "kind": "test",
+      "scope": "Methods",
+      "name": "Schema Requests Methods Should make a PUT request with a sourceId",
+      "samples": 1,
+      "minMs": 4.923303,
+      "maxMs": 4.923303,
+      "meanMs": 4.923303,
+      "medianMs": 4.923303,
+      "p95Ms": 4.923303
+    },
+    {
+      "key": "test::Methods::Schema Requests Methods Should make a SEARCH request for car with name 'name-test'",
+      "kind": "test",
+      "scope": "Methods",
+      "name": "Schema Requests Methods Should make a SEARCH request for car with name 'name-test'",
+      "samples": 1,
+      "minMs": 4.19282,
+      "maxMs": 4.19282,
+      "meanMs": 4.19282,
+      "medianMs": 4.19282,
+      "p95Ms": 4.19282
+    },
+    {
+      "key": "test::Methods::Schema Requests Methods Should make a SEARCH request to get the count of the results",
+      "kind": "test",
+      "scope": "Methods",
+      "name": "Schema Requests Methods Should make a SEARCH request to get the count of the results",
+      "samples": 1,
+      "minMs": 4.689953,
+      "maxMs": 4.689953,
+      "meanMs": 4.689953,
+      "medianMs": 4.689953,
+      "p95Ms": 4.689953
+    },
+    {
+      "key": "test::Multi-Policy results::Policy Multi-Policy results Should return multiple results",
+      "kind": "test",
+      "scope": "Multi-Policy results",
+      "name": "Policy Multi-Policy results Should return multiple results",
+      "samples": 1,
+      "minMs": 6.005199,
+      "maxMs": 6.005199,
+      "meanMs": 6.005199,
+      "medianMs": 6.005199,
+      "p95Ms": 6.005199
+    },
+    {
+      "key": "test::Path Mutation::Lambda Trigger Path Mutation Should create a path mutation lambda",
+      "kind": "test",
+      "scope": "Path Mutation",
+      "name": "Lambda Trigger Path Mutation Should create a path mutation lambda",
+      "samples": 1,
+      "minMs": 12.14785,
+      "maxMs": 12.14785,
+      "meanMs": 12.14785,
+      "medianMs": 12.14785,
+      "p95Ms": 12.14785
+    },
+    {
+      "key": "test::Path Mutation::Lambda Trigger Path Mutation Should trigger the path mutation lambda when the app name is changed",
+      "kind": "test",
+      "scope": "Path Mutation",
+      "name": "Lambda Trigger Path Mutation Should trigger the path mutation lambda when the app name is changed",
+      "samples": 1,
+      "minMs": 2031.665319,
+      "maxMs": 2031.665319,
+      "meanMs": 2031.665319,
+      "medianMs": 2031.665319,
+      "p95Ms": 2031.665319
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests Should access app companies using grade 1 policy",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests Should access app companies using grade 1 policy",
+      "samples": 1,
+      "minMs": 19.543164,
+      "maxMs": 19.543164,
+      "meanMs": 19.543164,
+      "medianMs": 19.543164,
+      "p95Ms": 19.543164
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should access data after admin turns on the override switch",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should access data after admin turns on the override switch",
+      "samples": 1,
+      "minMs": 8.98672,
+      "maxMs": 8.98672,
+      "meanMs": 8.98672,
+      "medianMs": 8.98672,
+      "p95Ms": 8.98672
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should delete a company from the database",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should delete a company from the database",
+      "samples": 1,
+      "minMs": 7.725359,
+      "maxMs": 7.725359,
+      "meanMs": 7.725359,
+      "medianMs": 7.725359,
+      "p95Ms": 7.725359
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests Should fail accessing app companies using grade 0 policy",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests Should fail accessing app companies using grade 0 policy",
+      "samples": 1,
+      "minMs": 7.597858,
+      "maxMs": 7.597858,
+      "meanMs": 7.597858,
+      "medianMs": 7.597858,
+      "p95Ms": 7.597858
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should fail override-access policy as the override switch is off",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should fail override-access policy as the override switch is off",
+      "samples": 1,
+      "minMs": 7.883384,
+      "maxMs": 7.883384,
+      "meanMs": 7.883384,
+      "medianMs": 7.883384,
+      "p95Ms": 7.883384
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should fail when accessing data outside working hours",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should fail when accessing data outside working hours",
+      "samples": 1,
+      "minMs": 9.467984,
+      "maxMs": 9.467984,
+      "meanMs": 9.467984,
+      "medianMs": 9.467984,
+      "p95Ms": 9.467984
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should fail writing to properties and it only has read access to properties",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should fail writing to properties and it only has read access to properties",
+      "samples": 1,
+      "minMs": 11.540275,
+      "maxMs": 11.540275,
+      "meanMs": 11.540275,
+      "medianMs": 11.540275,
+      "p95Ms": 11.540275
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should fail writing to properties and the policy does not include writing verb",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should fail writing to properties and the policy does not include writing verb",
+      "samples": 1,
+      "minMs": 10.596496,
+      "maxMs": 10.596496,
+      "meanMs": 10.596496,
+      "medianMs": 10.596496,
+      "p95Ms": 10.596496
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should ignore summer-working-hours policy as its condition is not fulfilled",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should ignore summer-working-hours policy as its condition is not fulfilled",
+      "samples": 1,
+      "minMs": 10.700404,
+      "maxMs": 10.700404,
+      "meanMs": 10.700404,
+      "medianMs": 10.700404,
+      "p95Ms": 10.700404
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should merge policies projection",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should merge policies projection",
+      "samples": 1,
+      "minMs": 8.055725,
+      "maxMs": 8.055725,
+      "meanMs": 8.055725,
+      "medianMs": 8.055725,
+      "p95Ms": 8.055725
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should only return active companies on count",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should only return active companies on count",
+      "samples": 1,
+      "minMs": 9.993322,
+      "maxMs": 9.993322,
+      "meanMs": 9.993322,
+      "medianMs": 9.993322,
+      "p95Ms": 9.993322
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should only return active companies on get",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should only return active companies on get",
+      "samples": 1,
+      "minMs": 9.236226,
+      "maxMs": 9.236226,
+      "meanMs": 9.236226,
+      "medianMs": 9.236226,
+      "p95Ms": 9.236226
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should only return active companies on search",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should only return active companies on search",
+      "samples": 1,
+      "minMs": 10.138244,
+      "maxMs": 10.138244,
+      "meanMs": 10.138244,
+      "medianMs": 10.138244,
+      "p95Ms": 10.138244
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should only return companies name",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should only return companies name",
+      "samples": 1,
+      "minMs": 13.457203,
+      "maxMs": 13.457203,
+      "meanMs": 13.457203,
+      "medianMs": 13.457203,
+      "p95Ms": 13.457203
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should override policies query",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should override policies query",
+      "samples": 1,
+      "minMs": 11.815226,
+      "maxMs": 11.815226,
+      "meanMs": 11.815226,
+      "medianMs": 11.815226,
+      "p95Ms": 11.815226
+    },
+    {
+      "key": "test::Ported API tests::Policy Ported API tests should partially add a company to the database",
+      "kind": "test",
+      "scope": "Ported API tests",
+      "name": "Policy Ported API tests should partially add a company to the database",
+      "samples": 1,
+      "minMs": 10.93882,
+      "maxMs": 10.93882,
+      "meanMs": 10.93882,
+      "medianMs": 10.93882,
+      "p95Ms": 10.93882
+    },
+    {
+      "key": "test::RemoveUserPolicyProperties::User API RemoveUserPolicyProperties Should remove user policy properties",
+      "kind": "test",
+      "scope": "RemoveUserPolicyProperties",
+      "name": "User API RemoveUserPolicyProperties Should remove user policy properties",
+      "samples": 1,
+      "minMs": 3.949979,
+      "maxMs": 3.949979,
+      "meanMs": 3.949979,
+      "medianMs": 3.949979,
+      "p95Ms": 3.949979
+    },
+    {
+      "key": "test::SearchUserList::User API SearchUserList Should search and return a list of users",
+      "kind": "test",
+      "scope": "SearchUserList",
+      "name": "User API SearchUserList Should search and return a list of users",
+      "samples": 1,
+      "minMs": 10.405004,
+      "maxMs": 10.405004,
+      "meanMs": 10.405004,
+      "medianMs": 10.405004,
+      "p95Ms": 10.405004
+    },
+    {
+      "key": "test::SearchUserToken::Token API SearchUserToken Should search and return tokens for a specific user with a system token",
+      "kind": "test",
+      "scope": "SearchUserToken",
+      "name": "Token API SearchUserToken Should search and return tokens for a specific user with a system token",
+      "samples": 1,
+      "minMs": 2.741141,
+      "maxMs": 2.741141,
+      "meanMs": 2.741141,
+      "medianMs": 2.741141,
+      "p95Ms": 2.741141
+    },
+    {
+      "key": "test::SearchUserToken::Token API SearchUserToken Should search and return tokens for a specific user with an app token",
+      "kind": "test",
+      "scope": "SearchUserToken",
+      "name": "Token API SearchUserToken Should search and return tokens for a specific user with an app token",
+      "samples": 1,
+      "minMs": 2.577678,
+      "maxMs": 2.577678,
+      "meanMs": 2.577678,
+      "medianMs": 2.577678,
+      "p95Ms": 2.577678
+    },
+    {
+      "key": "test::Selection::Policy Selection Should allow user selection-array to do access organisations",
+      "kind": "test",
+      "scope": "Selection",
+      "name": "Policy Selection Should allow user selection-array to do access organisations",
+      "samples": 1,
+      "minMs": 5.291363,
+      "maxMs": 5.291363,
+      "meanMs": 5.291363,
+      "medianMs": 5.291363,
+      "p95Ms": 5.291363
+    },
+    {
+      "key": "test::Selection::Policy Selection Should allow user selection-basic to do access organisations",
+      "kind": "test",
+      "scope": "Selection",
+      "name": "Policy Selection Should allow user selection-basic to do access organisations",
+      "samples": 1,
+      "minMs": 7.638734,
+      "maxMs": 7.638734,
+      "meanMs": 7.638734,
+      "medianMs": 7.638734,
+      "p95Ms": 7.638734
+    },
+    {
+      "key": "test::SetUserPolicyProperties::User API SetUserPolicyProperties Should not set user policy properties if the policy property doesn't exist",
+      "kind": "test",
+      "scope": "SetUserPolicyProperties",
+      "name": "User API SetUserPolicyProperties Should not set user policy properties if the policy property doesn't exist",
+      "samples": 1,
+      "minMs": 12.504053,
+      "maxMs": 12.504053,
+      "meanMs": 12.504053,
+      "medianMs": 12.504053,
+      "p95Ms": 12.504053
+    },
+    {
+      "key": "test::SetUserPolicyProperties::User API SetUserPolicyProperties Should set user policy properties",
+      "kind": "test",
+      "scope": "SetUserPolicyProperties",
+      "name": "User API SetUserPolicyProperties Should set user policy properties",
+      "samples": 1,
+      "minMs": 4.103387,
+      "maxMs": 4.103387,
+      "meanMs": 4.103387,
+      "medianMs": 4.103387,
+      "p95Ms": 4.103387
+    },
+    {
+      "key": "test::Token Types::Processing Token Types Should handle dealing with a token type app",
+      "kind": "test",
+      "scope": "Token Types",
+      "name": "Processing Token Types Should handle dealing with a token type app",
+      "samples": 1,
+      "minMs": 7.330679,
+      "maxMs": 7.330679,
+      "meanMs": 7.330679,
+      "medianMs": 7.330679,
+      "p95Ms": 7.330679
+    },
+    {
+      "key": "test::Token Types::Processing Token Types Should handle dealing with a token type dataSharing",
+      "kind": "test",
+      "scope": "Token Types",
+      "name": "Processing Token Types Should handle dealing with a token type dataSharing",
+      "samples": 1,
+      "minMs": 5.168813,
+      "maxMs": 5.168813,
+      "meanMs": 5.168813,
+      "medianMs": 5.168813,
+      "p95Ms": 5.168813
+    },
+    {
+      "key": "test::Token Types::Processing Token Types Should handle dealing with a token type lambda",
+      "kind": "test",
+      "scope": "Token Types",
+      "name": "Processing Token Types Should handle dealing with a token type lambda",
+      "samples": 1,
+      "minMs": 6.455047,
+      "maxMs": 6.455047,
+      "meanMs": 6.455047,
+      "medianMs": 6.455047,
+      "p95Ms": 6.455047
+    },
+    {
+      "key": "test::Token Types::Processing Token Types Should handle dealing with a token type super",
+      "kind": "test",
+      "scope": "Token Types",
+      "name": "Processing Token Types Should handle dealing with a token type super",
+      "samples": 1,
+      "minMs": 22.443538,
+      "maxMs": 22.443538,
+      "meanMs": 22.443538,
+      "medianMs": 22.443538,
+      "p95Ms": 22.443538
+    },
+    {
+      "key": "test::Token Types::Processing Token Types Should handle dealing with a token type user",
+      "kind": "test",
+      "scope": "Token Types",
+      "name": "Processing Token Types Should handle dealing with a token type user",
+      "samples": 1,
+      "minMs": 4.844452,
+      "maxMs": 4.844452,
+      "meanMs": 4.844452,
+      "medianMs": 4.844452,
+      "p95Ms": 4.844452
+    },
+    {
+      "key": "test::Types::Schema Types Should make a POST request to add an item and check its types",
+      "kind": "test",
+      "scope": "Types",
+      "name": "Schema Types Should make a POST request to add an item and check its types",
+      "samples": 1,
+      "minMs": 32.210082,
+      "maxMs": 32.210082,
+      "meanMs": 32.210082,
+      "medianMs": 32.210082,
+      "p95Ms": 32.210082
+    },
+    {
+      "key": "test::Types::Schema Types Should update the types app schema",
+      "kind": "test",
+      "scope": "Types",
+      "name": "Schema Types Should update the types app schema",
+      "samples": 1,
+      "minMs": 107.79917,
+      "maxMs": 107.79917,
+      "meanMs": 107.79917,
+      "medianMs": 107.79917,
+      "p95Ms": 107.79917
+    },
+    {
+      "key": "test::UpdateUser::User API UpdateUser Should update a user",
+      "kind": "test",
+      "scope": "UpdateUser",
+      "name": "User API UpdateUser Should update a user",
+      "samples": 1,
+      "minMs": 5.130096,
+      "maxMs": 5.130096,
+      "meanMs": 5.130096,
+      "medianMs": 5.130096,
+      "p95Ms": 5.130096
+    },
+    {
+      "key": "test::UpdateUserPolicyProperties::User API UpdateUserPolicyProperties Should not update the policy properties if the policy property doesn't exist",
+      "kind": "test",
+      "scope": "UpdateUserPolicyProperties",
+      "name": "User API UpdateUserPolicyProperties Should not update the policy properties if the policy property doesn't exist",
+      "samples": 1,
+      "minMs": 2.714616,
+      "maxMs": 2.714616,
+      "meanMs": 2.714616,
+      "medianMs": 2.714616,
+      "p95Ms": 2.714616
+    },
+    {
+      "key": "test::UpdateUserPolicyProperties::User API UpdateUserPolicyProperties Should update user policy properties",
+      "kind": "test",
+      "scope": "UpdateUserPolicyProperties",
+      "name": "User API UpdateUserPolicyProperties Should update user policy properties",
+      "samples": 1,
+      "minMs": 4.454935,
+      "maxMs": 4.454935,
+      "meanMs": 4.454935,
+      "medianMs": 4.454935,
+      "p95Ms": 4.454935
+    },
+    {
+      "key": "test::UserCount::User API UserCount Should return the count of users",
+      "kind": "test",
+      "scope": "UserCount",
+      "name": "User API UserCount Should return the count of users",
+      "samples": 1,
+      "minMs": 3.867346,
+      "maxMs": 3.867346,
+      "meanMs": 3.867346,
+      "medianMs": 3.867346,
+      "p95Ms": 3.867346
+    },
+    {
+      "key": "Token API search setup::recreate token-test-user1",
+      "kind": "step",
+      "scope": "Token API search setup",
+      "name": "recreate token-test-user1",
+      "samples": 1,
+      "minMs": 6.49881,
+      "maxMs": 6.49881,
+      "meanMs": 6.49881,
+      "medianMs": 6.49881,
+      "p95Ms": 6.49881
+    },
+    {
+      "key": "Token API setup::create app1",
+      "kind": "step",
+      "scope": "Token API setup",
+      "name": "create app1",
+      "samples": 1,
+      "minMs": 57.258042,
+      "maxMs": 57.258042,
+      "meanMs": 57.258042,
+      "medianMs": 57.258042,
+      "p95Ms": 57.258042
+    },
+    {
+      "key": "Token API setup::create token-test-user1",
+      "kind": "step",
+      "scope": "Token API setup",
+      "name": "create token-test-user1",
+      "samples": 1,
+      "minMs": 24.581524,
+      "maxMs": 24.581524,
+      "meanMs": 24.581524,
+      "medianMs": 24.581524,
+      "p95Ms": 24.581524
+    },
+    {
+      "key": "Token API setup::init REST process",
+      "kind": "step",
+      "scope": "Token API setup",
+      "name": "init REST process",
+      "samples": 1,
+      "minMs": 62.996822,
+      "maxMs": 62.996822,
+      "meanMs": 62.996822,
+      "medianMs": 62.996822,
+      "p95Ms": 62.996822
+    },
+    {
+      "key": "Token Types setup::create app2 env-static-value-query policy",
+      "kind": "step",
+      "scope": "Token Types setup",
+      "name": "create app2 env-static-value-query policy",
+      "samples": 1,
+      "minMs": 17.902916,
+      "maxMs": 17.902916,
+      "meanMs": 17.902916,
+      "medianMs": 17.902916,
+      "p95Ms": 17.902916
+    },
+    {
+      "key": "Token Types setup::create app2 lambda-test-access policy",
+      "kind": "step",
+      "scope": "Token Types setup",
+      "name": "create app2 lambda-test-access policy",
+      "samples": 1,
+      "minMs": 13.73612,
+      "maxMs": 13.73612,
+      "meanMs": 13.73612,
+      "medianMs": 13.73612,
+      "p95Ms": 13.73612
+    },
+    {
+      "key": "Token Types setup::create app2 with schema",
+      "kind": "step",
+      "scope": "Token Types setup",
+      "name": "create app2 with schema",
+      "samples": 1,
+      "minMs": 124.775568,
+      "maxMs": 124.775568,
+      "meanMs": 124.775568,
+      "medianMs": 124.775568,
+      "p95Ms": 124.775568
+    },
+    {
+      "key": "Token Types setup::create token-test-lambda",
+      "kind": "step",
+      "scope": "Token Types setup",
+      "name": "create token-test-lambda",
+      "samples": 1,
+      "minMs": 27.474511,
+      "maxMs": 27.474511,
+      "meanMs": 27.474511,
+      "medianMs": 27.474511,
+      "p95Ms": 27.474511
+    },
+    {
+      "key": "Token Types setup::create token-type-test-1 user",
+      "kind": "step",
+      "scope": "Token Types setup",
+      "name": "create token-type-test-1 user",
+      "samples": 1,
+      "minMs": 7.046362,
+      "maxMs": 7.046362,
+      "meanMs": 7.046362,
+      "medianMs": 7.046362,
+      "p95Ms": 7.046362
+    },
+    {
+      "key": "Token Types setup::populate token lookup values",
+      "kind": "step",
+      "scope": "Token Types setup",
+      "name": "populate token lookup values",
+      "samples": 1,
+      "minMs": 18.486766,
+      "maxMs": 18.486766,
+      "meanMs": 18.486766,
+      "medianMs": 18.486766,
+      "p95Ms": 18.486766
+    },
+    {
+      "key": "Token Types setup::pre-create lambda-HEAD stub",
+      "kind": "step",
+      "scope": "Token Types setup",
+      "name": "pre-create lambda-HEAD stub",
+      "samples": 1,
+      "minMs": 0.086451,
+      "maxMs": 0.086451,
+      "meanMs": 0.086451,
+      "medianMs": 0.086451,
+      "p95Ms": 0.086451
+    },
+    {
+      "key": "Token Types setup::register DS1 app1->app2",
+      "kind": "step",
+      "scope": "Token Types setup",
+      "name": "register DS1 app1->app2",
+      "samples": 1,
+      "minMs": 19.027337,
+      "maxMs": 19.027337,
+      "meanMs": 19.027337,
+      "medianMs": 19.027337,
+      "p95Ms": 19.027337
+    },
+    {
+      "key": "Token Types setup::register DS2 app2->app1",
+      "kind": "step",
+      "scope": "Token Types setup",
+      "name": "register DS2 app2->app1",
+      "samples": 1,
+      "minMs": 45.028176,
+      "maxMs": 45.028176,
+      "meanMs": 45.028176,
+      "medianMs": 45.028176,
+      "p95Ms": 45.028176
+    },
+    {
+      "key": "User API setup::create app1",
+      "kind": "step",
+      "scope": "User API setup",
+      "name": "create app1",
+      "samples": 1,
+      "minMs": 9.591581,
+      "maxMs": 9.591581,
+      "meanMs": 9.591581,
+      "medianMs": 9.591581,
+      "p95Ms": 9.591581
+    },
+    {
+      "key": "User API setup::create user-test-user1",
+      "kind": "step",
+      "scope": "User API setup",
+      "name": "create user-test-user1",
+      "samples": 1,
+      "minMs": 8.864276,
+      "maxMs": 8.864276,
+      "meanMs": 8.864276,
+      "medianMs": 8.864276,
+      "p95Ms": 8.864276
+    },
+    {
+      "key": "User API setup::init REST process",
+      "kind": "step",
+      "scope": "User API setup",
+      "name": "init REST process",
+      "samples": 1,
+      "minMs": 11.835682,
+      "maxMs": 11.835682,
+      "meanMs": 11.835682,
+      "medianMs": 11.835682,
+      "p95Ms": 11.835682
+    }
+  ],
+  "records": [
+    {
+      "kind": "step",
+      "name": "init REST process",
+      "scope": "Token API setup",
+      "status": "completed",
+      "elapsedMs": 62.996822,
+      "at": "2026-05-06T16:37:34.113Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1",
+      "scope": "Token API setup",
+      "status": "completed",
+      "elapsedMs": 57.258042,
+      "at": "2026-05-06T16:37:34.170Z"
+    },
+    {
+      "kind": "step",
+      "name": "create token-test-user1",
+      "scope": "Token API setup",
+      "status": "completed",
+      "elapsedMs": 24.581524,
+      "at": "2026-05-06T16:37:34.195Z"
+    },
+    {
+      "kind": "test",
+      "name": "Token API GetTokenList Should list all tokens in the system after a GET with a system token",
+      "scope": "GetTokenList",
+      "status": "passed",
+      "elapsedMs": 4.996629,
+      "at": "2026-05-06T16:37:34.201Z"
+    },
+    {
+      "kind": "test",
+      "name": "Token API GetTokenList Should list all tokens in the system after a GET with a app token",
+      "scope": "GetTokenList",
+      "status": "passed",
+      "elapsedMs": 3.668307,
+      "at": "2026-05-06T16:37:34.204Z"
+    },
+    {
+      "kind": "test",
+      "name": "Token API DeleteAllTokens Should delete all tokens in the system with a system token",
+      "scope": "DeleteAllTokens",
+      "status": "passed",
+      "elapsedMs": 31.484374,
+      "at": "2026-05-06T16:37:34.236Z"
+    },
+    {
+      "kind": "test",
+      "name": "Token API DeleteAllTokens Should delete all tokens for an app with an app token",
+      "scope": "DeleteAllTokens",
+      "status": "passed",
+      "elapsedMs": 6.212325,
+      "at": "2026-05-06T16:37:34.242Z"
+    },
+    {
+      "kind": "step",
+      "name": "recreate token-test-user1",
+      "scope": "Token API search setup",
+      "status": "completed",
+      "elapsedMs": 6.49881,
+      "at": "2026-05-06T16:37:34.249Z"
+    },
+    {
+      "kind": "test",
+      "name": "Token API SearchUserToken Should search and return tokens for a specific user with a system token",
+      "scope": "SearchUserToken",
+      "status": "passed",
+      "elapsedMs": 2.741141,
+      "at": "2026-05-06T16:37:34.252Z"
+    },
+    {
+      "kind": "test",
+      "name": "Token API SearchUserToken Should search and return tokens for a specific user with an app token",
+      "scope": "SearchUserToken",
+      "status": "passed",
+      "elapsedMs": 2.577678,
+      "at": "2026-05-06T16:37:34.255Z"
+    },
+    {
+      "kind": "step",
+      "name": "init REST process",
+      "scope": "User API setup",
+      "status": "completed",
+      "elapsedMs": 11.835682,
+      "at": "2026-05-06T16:37:34.273Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1",
+      "scope": "User API setup",
+      "status": "completed",
+      "elapsedMs": 9.591581,
+      "at": "2026-05-06T16:37:34.283Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user-test-user1",
+      "scope": "User API setup",
+      "status": "completed",
+      "elapsedMs": 8.864276,
+      "at": "2026-05-06T16:37:34.292Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API GetUserList Should list all users with a system token",
+      "scope": "GetUserList",
+      "status": "passed",
+      "elapsedMs": 2.952808,
+      "at": "2026-05-06T16:37:34.295Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API GetUserList Should list users for a specific app with an app token",
+      "scope": "GetUserList",
+      "status": "passed",
+      "elapsedMs": 2.817331,
+      "at": "2026-05-06T16:37:34.298Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API GetUser Should get a user by ID with a system token",
+      "scope": "GetUser",
+      "status": "passed",
+      "elapsedMs": 2.824234,
+      "at": "2026-05-06T16:37:34.301Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API FindUser Should find a user by auth app ID with a app token",
+      "scope": "FindUser",
+      "status": "passed",
+      "elapsedMs": 2.988374,
+      "at": "2026-05-06T16:37:34.304Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API GetUserByToken Should get a user by token",
+      "scope": "GetUserByToken",
+      "status": "passed",
+      "elapsedMs": 3.340631,
+      "at": "2026-05-06T16:37:34.308Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API CreateUserAuthToken Should create a user auth token",
+      "scope": "CreateUserAuthToken",
+      "status": "passed",
+      "elapsedMs": 5.321266,
+      "at": "2026-05-06T16:37:34.313Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API AddUser Should add a new user with no token",
+      "scope": "AddUser",
+      "status": "passed",
+      "elapsedMs": 4.986955,
+      "at": "2026-05-06T16:37:34.318Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API AddUser Should create a user with a token",
+      "scope": "AddUser",
+      "status": "passed",
+      "elapsedMs": 6.85818,
+      "at": "2026-05-06T16:37:34.325Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API UpdateUser Should update a user",
+      "scope": "UpdateUser",
+      "status": "passed",
+      "elapsedMs": 5.130096,
+      "at": "2026-05-06T16:37:34.330Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API SetUserPolicyProperties Should set user policy properties",
+      "scope": "SetUserPolicyProperties",
+      "status": "passed",
+      "elapsedMs": 4.103387,
+      "at": "2026-05-06T16:37:34.334Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API SetUserPolicyProperties Should not set user policy properties if the policy property doesn't exist",
+      "scope": "SetUserPolicyProperties",
+      "status": "passed",
+      "elapsedMs": 12.504053,
+      "at": "2026-05-06T16:37:34.347Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API UpdateUserPolicyProperties Should update user policy properties",
+      "scope": "UpdateUserPolicyProperties",
+      "status": "passed",
+      "elapsedMs": 4.454935,
+      "at": "2026-05-06T16:37:34.352Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API UpdateUserPolicyProperties Should not update the policy properties if the policy property doesn't exist",
+      "scope": "UpdateUserPolicyProperties",
+      "status": "passed",
+      "elapsedMs": 2.714616,
+      "at": "2026-05-06T16:37:34.354Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API RemoveUserPolicyProperties Should remove user policy properties",
+      "scope": "RemoveUserPolicyProperties",
+      "status": "passed",
+      "elapsedMs": 3.949979,
+      "at": "2026-05-06T16:37:34.358Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API ClearUserPolicyProperties Should clear user policy properties",
+      "scope": "ClearUserPolicyProperties",
+      "status": "passed",
+      "elapsedMs": 3.379143,
+      "at": "2026-05-06T16:37:34.362Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API DeleteAllUsers Should delete all users",
+      "scope": "DeleteAllUsers",
+      "status": "passed",
+      "elapsedMs": 5.046302,
+      "at": "2026-05-06T16:37:34.367Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API DeleteUser Should delete a user",
+      "scope": "DeleteUser",
+      "status": "passed",
+      "elapsedMs": 11.976507,
+      "at": "2026-05-06T16:37:34.379Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API clearUserLocalData Should clear user local data",
+      "scope": "clearUserLocalData",
+      "status": "passed",
+      "elapsedMs": 8.936411,
+      "at": "2026-05-06T16:37:34.388Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API SearchUserList Should search and return a list of users",
+      "scope": "SearchUserList",
+      "status": "passed",
+      "elapsedMs": 10.405004,
+      "at": "2026-05-06T16:37:34.399Z"
+    },
+    {
+      "kind": "test",
+      "name": "User API UserCount Should return the count of users",
+      "scope": "UserCount",
+      "status": "passed",
+      "elapsedMs": 3.867346,
+      "at": "2026-05-06T16:37:34.402Z"
+    },
+    {
+      "kind": "step",
+      "name": "init REST process",
+      "scope": "Schema setup",
+      "status": "completed",
+      "elapsedMs": 14.758302,
+      "at": "2026-05-06T16:37:34.418Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1",
+      "scope": "Schema setup",
+      "status": "completed",
+      "elapsedMs": 10.303364,
+      "at": "2026-05-06T16:37:34.429Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Basic Should update the app schema",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 108.620352,
+      "at": "2026-05-06T16:37:34.538Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Basic Should have added id to the schema even though it wasn't provided",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 0.424872,
+      "at": "2026-05-06T16:37:34.539Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Basic Should have added source to the schema even though it wasn't provided",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 0.441621,
+      "at": "2026-05-06T16:37:34.539Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Basic Should be able to fetch the schema",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 12.190034,
+      "at": "2026-05-06T16:37:34.552Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Basic Should be able to fetch only the requested schema",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 5.507575,
+      "at": "2026-05-06T16:37:34.557Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Requests Methods Should make a POST request to bulk add",
+      "scope": "Methods",
+      "status": "passed",
+      "elapsedMs": 593.701208,
+      "at": "2026-05-06T16:37:35.151Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Requests Methods Should make a GET request without providing params (LIST)",
+      "scope": "Methods",
+      "status": "passed",
+      "elapsedMs": 1402.462409,
+      "at": "2026-05-06T16:37:36.554Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Requests Methods Should make a POST request",
+      "scope": "Methods",
+      "status": "passed",
+      "elapsedMs": 3.899548,
+      "at": "2026-05-06T16:37:36.558Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Requests Methods Should make a GET request for an entity by it's id",
+      "scope": "Methods",
+      "status": "passed",
+      "elapsedMs": 2.746834,
+      "at": "2026-05-06T16:37:36.561Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Requests Methods Should make a SEARCH request for car with name 'name-test'",
+      "scope": "Methods",
+      "status": "passed",
+      "elapsedMs": 4.19282,
+      "at": "2026-05-06T16:37:36.565Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Requests Methods Should make a SEARCH request to get the count of the results",
+      "scope": "Methods",
+      "status": "passed",
+      "elapsedMs": 4.689953,
+      "at": "2026-05-06T16:37:36.570Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Requests Methods Should make a PUT request to get the count of the results",
+      "scope": "Methods",
+      "status": "passed",
+      "elapsedMs": 5.152882,
+      "at": "2026-05-06T16:37:36.575Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Requests Methods Should make a PUT request with a sourceId",
+      "scope": "Methods",
+      "status": "passed",
+      "elapsedMs": 4.923303,
+      "at": "2026-05-06T16:37:36.580Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Requests Methods Should make a DELETE request for a single Id",
+      "scope": "Methods",
+      "status": "passed",
+      "elapsedMs": 2.906868,
+      "at": "2026-05-06T16:37:36.583Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Requests Methods Should make a DELETE request with no params (Delete all)",
+      "scope": "Methods",
+      "status": "passed",
+      "elapsedMs": 19.198062,
+      "at": "2026-05-06T16:37:36.602Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app2",
+      "scope": "Schema types setup",
+      "status": "completed",
+      "elapsedMs": 9.334234,
+      "at": "2026-05-06T16:37:36.612Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Types Should update the types app schema",
+      "scope": "Types",
+      "status": "passed",
+      "elapsedMs": 107.79917,
+      "at": "2026-05-06T16:37:36.720Z"
+    },
+    {
+      "kind": "test",
+      "name": "Schema Types Should make a POST request to add an item and check its types",
+      "scope": "Types",
+      "status": "passed",
+      "elapsedMs": 32.210082,
+      "at": "2026-05-06T16:37:36.752Z"
+    },
+    {
+      "kind": "step",
+      "name": "init REST process",
+      "scope": "Data Sharing setup",
+      "status": "completed",
+      "elapsedMs": 20.730615,
+      "at": "2026-05-06T16:37:36.778Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1",
+      "scope": "Data Sharing setup",
+      "status": "completed",
+      "elapsedMs": 8.875563,
+      "at": "2026-05-06T16:37:36.787Z"
+    },
+    {
+      "kind": "step",
+      "name": "update app1 schema",
+      "scope": "Data Sharing setup",
+      "status": "completed",
+      "elapsedMs": 107.507093,
+      "at": "2026-05-06T16:37:36.894Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1 seed car",
+      "scope": "Data Sharing setup",
+      "status": "completed",
+      "elapsedMs": 29.834718,
+      "at": "2026-05-06T16:37:36.924Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app2",
+      "scope": "Data Sharing setup",
+      "status": "completed",
+      "elapsedMs": 7.269869,
+      "at": "2026-05-06T16:37:36.932Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app3",
+      "scope": "Data Sharing setup",
+      "status": "completed",
+      "elapsedMs": 9.358991,
+      "at": "2026-05-06T16:37:36.941Z"
+    },
+    {
+      "kind": "step",
+      "name": "update app3 schema",
+      "scope": "Data Sharing setup",
+      "status": "completed",
+      "elapsedMs": 108.894611,
+      "at": "2026-05-06T16:37:37.050Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app3 seed car",
+      "scope": "Data Sharing setup",
+      "status": "completed",
+      "elapsedMs": 15.555234,
+      "at": "2026-05-06T16:37:37.066Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Basics Should register an agreement with the correct data fields",
+      "scope": "Basics",
+      "status": "passed",
+      "elapsedMs": 29.300673,
+      "at": "2026-05-06T16:37:37.095Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Creating a agreement Should register a data sharing agreement between app1 and app2",
+      "scope": "Creating a agreement",
+      "status": "passed",
+      "elapsedMs": 7.516448,
+      "at": "2026-05-06T16:37:37.103Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Creating a agreement Should register a data sharing agreement between app2 and app1 & activate it",
+      "scope": "Creating a agreement",
+      "status": "passed",
+      "elapsedMs": 32.749554,
+      "at": "2026-05-06T16:37:37.136Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Creating a agreement Should update app2 schema to reference cars collection from app1",
+      "scope": "Creating a agreement",
+      "status": "passed",
+      "elapsedMs": 610.248146,
+      "at": "2026-05-06T16:37:37.746Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Creating a agreement Should be able to GET cars from App2 which will use data sharing to retrive data from App1",
+      "scope": "Creating a agreement",
+      "status": "passed",
+      "elapsedMs": 29.793084,
+      "at": "2026-05-06T16:37:37.776Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Creating a agreement Should be able to POST cars from App2 which will save the data against App2 because no source is provided",
+      "scope": "Creating a agreement",
+      "status": "passed",
+      "elapsedMs": 50.782076,
+      "at": "2026-05-06T16:37:37.827Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Creating a agreement Should be able to POST cars from App2 which will save the data against App1 because a source is provided",
+      "scope": "Creating a agreement",
+      "status": "passed",
+      "elapsedMs": 14.520581,
+      "at": "2026-05-06T16:37:37.841Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Handling mutiple agreement sources Should register a data sharing agreement between app3 and app2",
+      "scope": "Handling mutiple agreement sources",
+      "status": "passed",
+      "elapsedMs": 6.834329,
+      "at": "2026-05-06T16:37:37.848Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Handling mutiple agreement sources Should register a data sharing agreement between app2 and app1 & activate it",
+      "scope": "Handling mutiple agreement sources",
+      "status": "passed",
+      "elapsedMs": 19.170946,
+      "at": "2026-05-06T16:37:37.868Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Handling mutiple agreement sources Should update app2 schema to reference cars collection from app1 & app2",
+      "scope": "Handling mutiple agreement sources",
+      "status": "passed",
+      "elapsedMs": 620.536206,
+      "at": "2026-05-06T16:37:38.488Z"
+    },
+    {
+      "kind": "test",
+      "name": "Data Sharing Handling mutiple agreement sources Should be able to GET cars from App2 which will use data sharing to retrive data from App1 & App3 combined",
+      "scope": "Handling mutiple agreement sources",
+      "status": "passed",
+      "elapsedMs": 14.69285,
+      "at": "2026-05-06T16:37:38.503Z"
+    },
+    {
+      "kind": "step",
+      "name": "init REST process",
+      "scope": "Policy setup",
+      "status": "completed",
+      "elapsedMs": 29.252165,
+      "at": "2026-05-06T16:37:38.533Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1",
+      "scope": "Policy setup",
+      "status": "completed",
+      "elapsedMs": 13.458306,
+      "at": "2026-05-06T16:37:38.547Z"
+    },
+    {
+      "kind": "step",
+      "name": "update app1 schema",
+      "scope": "Policy setup",
+      "status": "completed",
+      "elapsedMs": 106.658507,
+      "at": "2026-05-06T16:37:38.654Z"
+    },
+    {
+      "kind": "step",
+      "name": "seed car data",
+      "scope": "Policy setup",
+      "status": "completed",
+      "elapsedMs": 74.689729,
+      "at": "2026-05-06T16:37:38.728Z"
+    },
+    {
+      "kind": "step",
+      "name": "seed organisations",
+      "scope": "Policy setup",
+      "status": "completed",
+      "elapsedMs": 30.043529,
+      "at": "2026-05-06T16:37:38.758Z"
+    },
+    {
+      "kind": "step",
+      "name": "create switch",
+      "scope": "Policy setup",
+      "status": "completed",
+      "elapsedMs": 14.143575,
+      "at": "2026-05-06T16:37:38.773Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user basic1",
+      "scope": "Policy setup",
+      "status": "completed",
+      "elapsedMs": 8.336959,
+      "at": "2026-05-06T16:37:38.781Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Basic Should create policies on the app",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 118.518905,
+      "at": "2026-05-06T16:37:38.900Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Basic Should access app companies using admin access policy",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 3.95932,
+      "at": "2026-05-06T16:37:38.904Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user selection-basic",
+      "scope": "Policy selection setup",
+      "status": "completed",
+      "elapsedMs": 7.71411,
+      "at": "2026-05-06T16:37:38.912Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user selection-array",
+      "scope": "Policy selection setup",
+      "status": "completed",
+      "elapsedMs": 6.590517,
+      "at": "2026-05-06T16:37:38.918Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Selection Should allow user selection-basic to do access organisations",
+      "scope": "Selection",
+      "status": "passed",
+      "elapsedMs": 7.638734,
+      "at": "2026-05-06T16:37:38.926Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Selection Should allow user selection-array to do access organisations",
+      "scope": "Selection",
+      "status": "passed",
+      "elapsedMs": 5.291363,
+      "at": "2026-05-06T16:37:38.932Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests Should fail accessing app companies using grade 0 policy",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 7.597858,
+      "at": "2026-05-06T16:37:38.939Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests Should access app companies using grade 1 policy",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 19.543164,
+      "at": "2026-05-06T16:37:38.959Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should fail when accessing data outside working hours",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 9.467984,
+      "at": "2026-05-06T16:37:38.968Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should only return active companies on get",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 9.236226,
+      "at": "2026-05-06T16:37:38.978Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should only return active companies on search",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 10.138244,
+      "at": "2026-05-06T16:37:38.988Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should only return active companies on count",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 9.993322,
+      "at": "2026-05-06T16:37:38.998Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should fail writing to properties and the policy does not include writing verb",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 10.596496,
+      "at": "2026-05-06T16:37:39.009Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should only return companies name",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 13.457203,
+      "at": "2026-05-06T16:37:39.022Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should fail writing to properties and it only has read access to properties",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 11.540275,
+      "at": "2026-05-06T16:37:39.034Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should partially add a company to the database",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 10.93882,
+      "at": "2026-05-06T16:37:39.045Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should delete a company from the database",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 7.725359,
+      "at": "2026-05-06T16:37:39.052Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should ignore summer-working-hours policy as its condition is not fulfilled",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 10.700404,
+      "at": "2026-05-06T16:37:39.063Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should fail override-access policy as the override switch is off",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 7.883384,
+      "at": "2026-05-06T16:37:39.071Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should access data after admin turns on the override switch",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 8.98672,
+      "at": "2026-05-06T16:37:39.080Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should merge policies projection",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 8.055725,
+      "at": "2026-05-06T16:37:39.088Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Ported API tests should override policies query",
+      "scope": "Ported API tests",
+      "status": "passed",
+      "elapsedMs": 11.815226,
+      "at": "2026-05-06T16:37:39.100Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user multiPol1",
+      "scope": "Policy multi setup",
+      "status": "completed",
+      "elapsedMs": 5.641006,
+      "at": "2026-05-06T16:37:39.106Z"
+    },
+    {
+      "kind": "test",
+      "name": "Policy Multi-Policy results Should return multiple results",
+      "scope": "Multi-Policy results",
+      "status": "passed",
+      "elapsedMs": 6.005199,
+      "at": "2026-05-06T16:37:39.112Z"
+    },
+    {
+      "kind": "step",
+      "name": "connect NRP",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 0.519914,
+      "at": "2026-05-06T16:37:39.114Z"
+    },
+    {
+      "kind": "step",
+      "name": "init REST process",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 24.697401,
+      "at": "2026-05-06T16:37:39.138Z"
+    },
+    {
+      "kind": "step",
+      "name": "init SPR process",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 9.375739,
+      "at": "2026-05-06T16:37:39.148Z"
+    },
+    {
+      "kind": "step",
+      "name": "init SOCK process",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 18.406982,
+      "at": "2026-05-06T16:37:39.166Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1 with schema",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 151.749638,
+      "at": "2026-05-06T16:37:39.318Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1 policies",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 55.577817,
+      "at": "2026-05-06T16:37:39.374Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user basic1",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 5.517827,
+      "at": "2026-05-06T16:37:39.379Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user env-test-1",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 5.5189,
+      "at": "2026-05-06T16:37:39.385Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user env-test-2",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 5.488316,
+      "at": "2026-05-06T16:37:39.390Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user env-test-3",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 5.874876,
+      "at": "2026-05-06T16:37:39.396Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user env-test-4",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 5.769588,
+      "at": "2026-05-06T16:37:39.402Z"
+    },
+    {
+      "kind": "step",
+      "name": "create user env-test-5",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 5.743618,
+      "at": "2026-05-06T16:37:39.408Z"
+    },
+    {
+      "kind": "step",
+      "name": "seed app1 car records",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 205.044056,
+      "at": "2026-05-06T16:37:39.613Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1 selector record",
+      "scope": "Processing setup",
+      "status": "completed",
+      "elapsedMs": 317.878422,
+      "at": "2026-05-06T16:37:39.931Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Basic Should receive a `rest:activity` event after a REST post",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 55.730618,
+      "at": "2026-05-06T16:37:39.993Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Basic Should generate a `spr:activity` event after a REST post",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 23.835735,
+      "at": "2026-05-06T16:37:40.020Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Env Should handle a policy with a env inlcuding a static value query",
+      "scope": "Env",
+      "status": "passed",
+      "elapsedMs": 7.712565,
+      "at": "2026-05-06T16:37:40.029Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Env Should handle a policy with a env inlcuding a date based query",
+      "scope": "Env",
+      "status": "passed",
+      "elapsedMs": 6.794809,
+      "at": "2026-05-06T16:37:40.036Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Env Should handle a policy with a env inlcuding a entity based query",
+      "scope": "Env",
+      "status": "passed",
+      "elapsedMs": 8.908816,
+      "at": "2026-05-06T16:37:40.045Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Env Should handle a policy with a env inlcuding a user base query",
+      "scope": "Env",
+      "status": "passed",
+      "elapsedMs": 12.371762,
+      "at": "2026-05-06T16:37:40.057Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Env Should handle a policy with a env inlcuding a user base condition",
+      "scope": "Env",
+      "status": "passed",
+      "elapsedMs": 11.766301,
+      "at": "2026-05-06T16:37:40.069Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app2 with schema",
+      "scope": "Token Types setup",
+      "status": "completed",
+      "elapsedMs": 124.775568,
+      "at": "2026-05-06T16:37:40.195Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app2 env-static-value-query policy",
+      "scope": "Token Types setup",
+      "status": "completed",
+      "elapsedMs": 17.902916,
+      "at": "2026-05-06T16:37:40.213Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app2 lambda-test-access policy",
+      "scope": "Token Types setup",
+      "status": "completed",
+      "elapsedMs": 13.73612,
+      "at": "2026-05-06T16:37:40.227Z"
+    },
+    {
+      "kind": "step",
+      "name": "register DS1 app1->app2",
+      "scope": "Token Types setup",
+      "status": "completed",
+      "elapsedMs": 19.027337,
+      "at": "2026-05-06T16:37:40.246Z"
+    },
+    {
+      "kind": "step",
+      "name": "register DS2 app2->app1",
+      "scope": "Token Types setup",
+      "status": "completed",
+      "elapsedMs": 45.028176,
+      "at": "2026-05-06T16:37:40.291Z"
+    },
+    {
+      "kind": "step",
+      "name": "pre-create lambda-HEAD stub",
+      "scope": "Token Types setup",
+      "status": "completed",
+      "elapsedMs": 0.086451,
+      "at": "2026-05-06T16:37:40.292Z"
+    },
+    {
+      "kind": "step",
+      "name": "create token-test-lambda",
+      "scope": "Token Types setup",
+      "status": "completed",
+      "elapsedMs": 27.474511,
+      "at": "2026-05-06T16:37:40.319Z"
+    },
+    {
+      "kind": "step",
+      "name": "create token-type-test-1 user",
+      "scope": "Token Types setup",
+      "status": "completed",
+      "elapsedMs": 7.046362,
+      "at": "2026-05-06T16:37:40.326Z"
+    },
+    {
+      "kind": "step",
+      "name": "populate token lookup values",
+      "scope": "Token Types setup",
+      "status": "completed",
+      "elapsedMs": 18.486766,
+      "at": "2026-05-06T16:37:40.345Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Token Types Should handle dealing with a token type super",
+      "scope": "Token Types",
+      "status": "passed",
+      "elapsedMs": 22.443538,
+      "at": "2026-05-06T16:37:40.368Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Token Types Should handle dealing with a token type app",
+      "scope": "Token Types",
+      "status": "passed",
+      "elapsedMs": 7.330679,
+      "at": "2026-05-06T16:37:40.376Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Token Types Should handle dealing with a token type dataSharing",
+      "scope": "Token Types",
+      "status": "passed",
+      "elapsedMs": 5.168813,
+      "at": "2026-05-06T16:37:40.381Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Token Types Should handle dealing with a token type lambda",
+      "scope": "Token Types",
+      "status": "passed",
+      "elapsedMs": 6.455047,
+      "at": "2026-05-06T16:37:40.388Z"
+    },
+    {
+      "kind": "test",
+      "name": "Processing Token Types Should handle dealing with a token type user",
+      "scope": "Token Types",
+      "status": "passed",
+      "elapsedMs": 4.844452,
+      "at": "2026-05-06T16:37:40.393Z"
+    },
+    {
+      "kind": "step",
+      "name": "connect Redis client",
+      "scope": "Cache setup",
+      "status": "completed",
+      "elapsedMs": 0.643603,
+      "at": "2026-05-06T16:37:40.420Z"
+    },
+    {
+      "kind": "step",
+      "name": "connect NRP",
+      "scope": "Cache setup",
+      "status": "completed",
+      "elapsedMs": 0.477017,
+      "at": "2026-05-06T16:37:40.421Z"
+    },
+    {
+      "kind": "step",
+      "name": "init REST process",
+      "scope": "Cache setup",
+      "status": "completed",
+      "elapsedMs": 28.334785,
+      "at": "2026-05-06T16:37:40.449Z"
+    },
+    {
+      "kind": "step",
+      "name": "init SPR process",
+      "scope": "Cache setup",
+      "status": "completed",
+      "elapsedMs": 10.570422,
+      "at": "2026-05-06T16:37:40.460Z"
+    },
+    {
+      "kind": "step",
+      "name": "init SOCK process",
+      "scope": "Cache setup",
+      "status": "completed",
+      "elapsedMs": 15.985036,
+      "at": "2026-05-06T16:37:40.476Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1 with schema",
+      "scope": "Cache setup",
+      "status": "completed",
+      "elapsedMs": 145.824689,
+      "at": "2026-05-06T16:37:40.621Z"
+    },
+    {
+      "kind": "step",
+      "name": "create policies",
+      "scope": "Cache setup",
+      "status": "completed",
+      "elapsedMs": 43.957767,
+      "at": "2026-05-06T16:37:40.666Z"
+    },
+    {
+      "kind": "step",
+      "name": "create cache-test-1 user",
+      "scope": "Cache setup",
+      "status": "completed",
+      "elapsedMs": 17.227413,
+      "at": "2026-05-06T16:37:40.683Z"
+    },
+    {
+      "kind": "step",
+      "name": "seed car records",
+      "scope": "Cache setup",
+      "status": "completed",
+      "elapsedMs": 49.612428,
+      "at": "2026-05-06T16:37:40.733Z"
+    },
+    {
+      "kind": "step",
+      "name": "seed selector record",
+      "scope": "Cache setup",
+      "status": "completed",
+      "elapsedMs": 22.836424,
+      "at": "2026-05-06T16:37:40.756Z"
+    },
+    {
+      "kind": "test",
+      "name": "Cache Basic Should cache a token, policy and the link if a token is connected",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 116.971361,
+      "at": "2026-05-06T16:37:40.873Z"
+    },
+    {
+      "kind": "test",
+      "name": "Cache Basic Should mark a Token as STALE if the policy properties change",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 29.732754,
+      "at": "2026-05-06T16:37:40.903Z"
+    },
+    {
+      "kind": "test",
+      "name": "Cache Basic Should remove a policy from the cache if deleted",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 8.032167,
+      "at": "2026-05-06T16:37:40.911Z"
+    },
+    {
+      "kind": "test",
+      "name": "Cache Basic Should link tokens to a new policy, if a new policy is added",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 128.549916,
+      "at": "2026-05-06T16:37:41.039Z"
+    },
+    {
+      "kind": "test",
+      "name": "Cache Basic Should clean up the old cache / index references if policy properties are changed.",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 139.962181,
+      "at": "2026-05-06T16:37:41.180Z"
+    },
+    {
+      "kind": "step",
+      "name": "init REST process",
+      "scope": "Realtime setup",
+      "status": "completed",
+      "elapsedMs": 53.375405,
+      "at": "2026-05-06T16:37:41.242Z"
+    },
+    {
+      "kind": "step",
+      "name": "init SPR process",
+      "scope": "Realtime setup",
+      "status": "completed",
+      "elapsedMs": 14.619243,
+      "at": "2026-05-06T16:37:41.256Z"
+    },
+    {
+      "kind": "step",
+      "name": "init SOCK process",
+      "scope": "Realtime setup",
+      "status": "completed",
+      "elapsedMs": 12.967146,
+      "at": "2026-05-06T16:37:41.269Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1",
+      "scope": "Realtime setup",
+      "status": "completed",
+      "elapsedMs": 32.419721,
+      "at": "2026-05-06T16:37:41.302Z"
+    },
+    {
+      "kind": "step",
+      "name": "update app1 schema",
+      "scope": "Realtime setup",
+      "status": "completed",
+      "elapsedMs": 115.290818,
+      "at": "2026-05-06T16:37:41.417Z"
+    },
+    {
+      "kind": "test",
+      "name": "Realtime Connections Should be able to connect to Buttress using socket.io",
+      "scope": "Connections",
+      "status": "passed",
+      "elapsedMs": 29.73477,
+      "at": "2026-05-06T16:37:41.548Z"
+    },
+    {
+      "kind": "test",
+      "name": "Realtime Connections Should close down the socket.io connection",
+      "scope": "Connections",
+      "status": "passed",
+      "elapsedMs": 0.729812,
+      "at": "2026-05-06T16:37:41.549Z"
+    },
+    {
+      "kind": "test",
+      "name": "Realtime db-activity Should be able to connect to Buttress using the app token",
+      "scope": "db-activity",
+      "status": "passed",
+      "elapsedMs": 14.429145,
+      "at": "2026-05-06T16:37:41.564Z"
+    },
+    {
+      "kind": "test",
+      "name": "Realtime db-activity Should make a POST request to buttress and see a realtime activity generated",
+      "scope": "db-activity",
+      "status": "passed",
+      "elapsedMs": 42.279038,
+      "at": "2026-05-06T16:37:41.606Z"
+    },
+    {
+      "kind": "test",
+      "name": "Realtime bjs-request-* events Should make a request to /cars, responce should contain a x-bjs-request-id header",
+      "scope": "bjs-request-* events",
+      "status": "passed",
+      "elapsedMs": 7.352008,
+      "at": "2026-05-06T16:37:41.614Z"
+    },
+    {
+      "kind": "test",
+      "name": "Realtime bjs-request-* events Should handle a message from the user and subscribe them to a request room",
+      "scope": "bjs-request-* events",
+      "status": "passed",
+      "elapsedMs": 1.670358,
+      "at": "2026-05-06T16:37:41.615Z"
+    },
+    {
+      "kind": "test",
+      "name": "Realtime bjs-request-* events Should receive an event with the state of the request stream",
+      "scope": "bjs-request-* events",
+      "status": "passed",
+      "elapsedMs": 0.186455,
+      "at": "2026-05-06T16:37:41.616Z"
+    },
+    {
+      "kind": "step",
+      "name": "init REST process",
+      "scope": "Lambda setup",
+      "status": "completed",
+      "elapsedMs": 38.545634,
+      "at": "2026-05-06T16:37:41.665Z"
+    },
+    {
+      "kind": "step",
+      "name": "init Lambda process",
+      "scope": "Lambda setup",
+      "status": "completed",
+      "elapsedMs": 15.063816,
+      "at": "2026-05-06T16:37:41.681Z"
+    },
+    {
+      "kind": "step",
+      "name": "create app1",
+      "scope": "Lambda setup",
+      "status": "completed",
+      "elapsedMs": 17.909725,
+      "at": "2026-05-06T16:37:41.699Z"
+    },
+    {
+      "kind": "step",
+      "name": "update policy property list",
+      "scope": "Lambda setup",
+      "status": "completed",
+      "elapsedMs": 5.281452,
+      "at": "2026-05-06T16:37:41.704Z"
+    },
+    {
+      "kind": "test",
+      "name": "Lambda Basic Should create a lambda 'hello-world' in the test app",
+      "scope": "Basic",
+      "status": "passed",
+      "elapsedMs": 6.695762,
+      "at": "2026-05-06T16:37:41.711Z"
+    },
+    {
+      "kind": "test",
+      "name": "Lambda Trigger Cron Should create a cron lambda",
+      "scope": "Cron",
+      "status": "passed",
+      "elapsedMs": 21.055176,
+      "at": "2026-05-06T16:37:41.732Z"
+    },
+    {
+      "kind": "test",
+      "name": "Lambda Trigger Cron Should change the cron execution status from pending to complete.",
+      "scope": "Cron",
+      "status": "passed",
+      "elapsedMs": 2013.372402,
+      "at": "2026-05-06T16:37:43.746Z"
+    },
+    {
+      "kind": "test",
+      "name": "Lambda Trigger Cron Should create a single lambda exeuction.",
+      "scope": "Cron",
+      "status": "passed",
+      "elapsedMs": 6.104304,
+      "at": "2026-05-06T16:37:43.752Z"
+    },
+    {
+      "kind": "test",
+      "name": "Lambda Trigger Cron Should change the scheduled execution status from pending to complete.",
+      "scope": "Cron",
+      "status": "passed",
+      "elapsedMs": 2023.426459,
+      "at": "2026-05-06T16:37:45.775Z"
+    },
+    {
+      "kind": "test",
+      "name": "Lambda Trigger Path Mutation Should create a path mutation lambda",
+      "scope": "Path Mutation",
+      "status": "passed",
+      "elapsedMs": 12.14785,
+      "at": "2026-05-06T16:37:45.788Z"
+    },
+    {
+      "kind": "test",
+      "name": "Lambda Trigger Path Mutation Should trigger the path mutation lambda when the app name is changed",
+      "scope": "Path Mutation",
+      "status": "passed",
+      "elapsedMs": 2031.665319,
+      "at": "2026-05-06T16:37:47.819Z"
+    },
+    {
+      "kind": "test",
+      "name": "Lambda Trigger API Endpoint Should receive 200 from 'hello-world' lambda",
+      "scope": "API Endpoint",
+      "status": "passed",
+      "elapsedMs": 59.653851,
+      "at": "2026-05-06T16:37:47.879Z"
+    }
+  ]
+}

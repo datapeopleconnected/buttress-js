@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import process from 'node:process';
 
 import Config from './config.js';
+import { isTimingEnabled, recordTiming } from './perf/timing-collector.js';
 
 import Logging from '../dist/helpers/logging.js';
 
@@ -52,8 +53,22 @@ export const mochaHooks = {
 	},
 	beforeEach() {
 		Logging.clean();
+		if (isTimingEnabled()) {
+			this.currentTest.__perfStart = process.hrtime.bigint();
+		}
 	},
 	afterEach() {
+		if (isTimingEnabled() && this.currentTest?.__perfStart) {
+			const elapsedMs = Number(process.hrtime.bigint() - this.currentTest.__perfStart) / 1_000_000;
+			recordTiming({
+				kind: 'test',
+				name: this.currentTest.fullTitle(),
+				scope: this.currentTest.parent?.title || 'test',
+				status: this.currentTest.state || 'unknown',
+				elapsedMs,
+			});
+		}
+
 		if (this.currentTest.state !== 'passed') Logging.flush();
 	},
 };
