@@ -3,17 +3,22 @@
 * Getting started
   * [Quick Start](getting-started/quick-start.md)
   * [Configuration](getting-started/configuration.md)
-  * [Create an Application](/getting-started/create-an-application.md)
-  * [Client Libraries](/getting-started/client-libraries.md)
-  * [CLI](todo.md)
-  * [Admin](todo.md)
+  * [Create an Application](getting-started/create-an-application.md)
+  * [Client Libraries](getting-started/client-libraries.md)
+  * [CLI](getting-started/cli.md)
+  * [Admin](getting-started/admin.md)
 
 * Deployment
-  * [Standalone](todo.md)
-  * [Docker](todo.md)
-  * [GCP](todo.md)
-  * [Azure](todo.md)
-  * [AWS](todo.md)
+  * [Standalone](deployment/standalone.md)
+  * [Docker](docker.md)
+  * [GCP](deployment/gcp.md)
+  * [Azure](deployment/azure.md)
+  * [AWS](deployment/aws.md)
+
+* Core Concepts
+  * [Architecture](core/architecture.md)
+  * [Access Control](core/access-control.md)
+  * [Runtime Requirements](core/runtime-requirements.md)
 
 * Applications
   * [Introduction](applications/)
@@ -24,10 +29,10 @@
 
 * Federation
   * [Introduction](federation/)
-  * [Data Sharing](todo.md)
+  * [Data Sharing](federation/data-sharing.md)
 
 * Development
-  * [Building](todo.md)
-  * [Testing](todo.md)
+  * [Building](development/building.md)
+  * [Testing](development/testing.md)
 
-* [Changelog](todo.md)
+* [Changelog](changelog.md)
