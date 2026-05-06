@@ -630,7 +630,7 @@ class Routes {
 
   async _getProvidedToken(req) {
     // Get the bearer token from the Authorization header or query string
-    let tokenValue: string | undefined = req.headers['authorization'] || req.query.token;
+    let tokenValue: string | undefined = req.headers['authorization'];
     if (tokenValue) tokenValue = tokenValue.replace('Bearer ', '');
 
     Logging.logSilly(`_getProvidedToken:start ${tokenValue}`, req.id);
