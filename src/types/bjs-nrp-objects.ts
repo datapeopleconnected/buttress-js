@@ -52,5 +52,11 @@ export interface SPRActivity {
   appId: string;
   isSuper: boolean;
   isSameApp?: boolean;
+  isCoreSchema?: boolean;
   schemaName?: string;
+}
+
+export interface DataShareSocketSharePayload {
+  tokens: string[];
+  activity: SPRActivity;
 }

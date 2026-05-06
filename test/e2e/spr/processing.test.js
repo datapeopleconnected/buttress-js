@@ -222,6 +222,28 @@ describe('Processing', async () => {
 		testEnv.tokens.lambdaToken = lambdaToken;
 	};
 
+	const captureNextRestActivityForApp = async (appApiPath, timeoutMs = 5000) => {
+		let unsubscribe = null;
+
+		return await new Promise((resolve) => {
+			const timeout = setTimeout(async () => {
+				if (unsubscribe) await unsubscribe();
+				resolve(null);
+			}, timeoutMs);
+
+			NRP_INSTANCE.subscribe('rest:activity', async (raw) => {
+				const json = JSON.parse(raw);
+				if (json.appAPIPath !== appApiPath) return;
+
+				clearTimeout(timeout);
+				if (unsubscribe) await unsubscribe();
+				resolve(json);
+			}).then((fn) => {
+				unsubscribe = fn;
+			});
+		});
+	};
+
 	before(async function () {
 		this.timeout(60000);
 
@@ -542,7 +564,12 @@ describe('Processing', async () => {
 		});
 		
 		it('Should handle dealing with a token type dataSharing', async function () {
+			const relayPromise = captureNextRestActivityForApp(testEnv.apps.app2.apiPath);
 			await envAwaitPostedCar('token-dataSharing', testEnv.tokens.dataSharingToken.id, null, testEnv.apps.app2);
+
+			const relay = await relayPromise;
+			assert(relay, 'Expected to observe a relayed rest:activity for app2');
+			assert(relay.schemaName === 'car', `Expected relayed schemaName car, got ${relay?.schemaName}`);
 		});
 
 		it('Should handle dealing with a token type lambda', async function () {

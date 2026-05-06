@@ -44,7 +44,7 @@ import * as Schema from './helpers/schema.js';
 import Datastore from './datastore/index.js';
 import { PolicyCache } from './services/policy-cache.js';
 
-import { RESTActivity, SPRActivity } from './types/bjs-nrp-objects.js';
+import { DataShareSocketSharePayload, RESTActivity } from './types/bjs-nrp-objects.js';
 
 import TokenSchemaModel, { Token } from './model/core/token.js';
 import AppSchemaModel from './model/core/app.js';
@@ -381,19 +381,24 @@ export default class BootstrapSocket extends Bootstrap {
 
       // Emit this activity to our instance.
       // This would result in the event being mutiplied
-      socket.on('share', (data) => {
-        if (!data.schemaName || !remoteSchemas[`${dataShare.name}.${data.schemaName}`]) {
+      socket.on('dataShareSocket:share', (data: DataShareSocketSharePayload) => {
+        const remoteActivity = data.activity;
+        if (!remoteActivity?.schemaName || !remoteSchemas[`${dataShare.name}.${remoteActivity.schemaName}`]) {
           Logging.log(
-            `Skipping data sharing app doesn't use schema ${app.apiPath} ${dataShare.name}.${data.schemaName}, ${socket.id}`,
+            `Skipping data sharing app doesn't use schema ${app.apiPath} ${dataShare.name}.${remoteActivity?.schemaName}, ${socket.id}`,
           );
           return;
         }
 
+        const schemaName = remoteActivity.schemaName;
+
         const activity: RESTActivity = {
-          ...data,
+          ...remoteActivity,
           appId: app.id,
           appAPIPath: app.apiPath,
-          isSameApp: app.apiPath === data.appAPIPath,
+          isSameApp: app.apiPath === remoteActivity.appAPIPath,
+          isCoreSchema: Boolean(remoteActivity.isCoreSchema),
+          schemaName,
         };
 
         this.__nrp?.emit('rest:activity', JSON.stringify(activity));
@@ -495,7 +500,7 @@ export default class BootstrapSocket extends Bootstrap {
     });
   }
 
-  private async _workerOnSPRActivity(data: { tokens: string[]; activity: SPRActivity }) {
+  private async _workerOnSPRActivity(data: DataShareSocketSharePayload) {
     if (!this.io) throw new Error('No socket.io instance');
 
     if (!data.tokens || data.tokens.length < 1) {
@@ -518,7 +523,7 @@ export default class BootstrapSocket extends Bootstrap {
       container.id,
     );
 
-    const { tokens, activity } = data;
+    const { tokens, activity }: DataShareSocketSharePayload = data;
 
     this.io.of(`/stats`).emit('activity', 1);
     Logging.logTimer(`emitted stats activity`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
@@ -538,7 +543,7 @@ export default class BootstrapSocket extends Bootstrap {
         Logging.Constants.LogLevel.SILLY,
         container.id,
       );
-      this._dataShareSockets[activity.appId].forEach((sock) => sock.emit('share', data));
+      this._dataShareSockets[activity.appId].forEach((sock) => sock.emit('dataShareSocket:share', data));
     }
 
     const packet = {

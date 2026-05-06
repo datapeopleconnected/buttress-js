@@ -32,7 +32,7 @@ import AccessControlEnv, { ACEnv, ACPolicyEnvCombined } from './access-control/e
 import AccessControlFilters from './access-control/filter.js';
 
 import Datastore from './datastore/index.js';
-import { RESTActivity } from './types/bjs-nrp-objects.js';
+import { DataShareSocketSharePayload, RESTActivity } from './types/bjs-nrp-objects.js';
 import { Policy, PolicyEnv } from './model/core/policy.js';
 import TokenSchemaModel, { Token } from './model/core/token.js';
 
@@ -482,7 +482,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         JSON.stringify({
           tokens: tokenIds.slice(i, i + this._broadcastTokenBatchSize),
           activity,
-        }),
+        } as DataShareSocketSharePayload),
       );
     }
   }
@@ -494,7 +494,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       JSON.stringify({
         tokens: [tokenId],
         activity,
-      }),
+      } as DataShareSocketSharePayload),
     );
   }
 }
