@@ -43,6 +43,7 @@ class AdapterId {
 export default class Buttress extends AbstractAdapter {
   init: boolean;
   initPendingResolve: ((value?: unknown) => void)[];
+  collectionName?: string;
 
   protected __connection: any;
 
@@ -65,13 +66,17 @@ export default class Buttress extends AbstractAdapter {
     const token = this.uri.searchParams.get('token');
     if (!token) throw new Error('Missing token in Buttress connection string');
 
-    await this.__connection.init({
-      buttressUrl: `${protocol}://${this.uri.host}`,
-      appToken: token,
-      apiPath: this.uri.pathname,
-      version: 1,
-    });
-    Logging.logDebug(`connected to: ${this.uri.host}${this.uri.pathname}`);
+    const buttressUrl = `${protocol}://${this.uri.host}`;
+    const apiPath = this.uri.pathname.replace(/^\/+/, '');
+    await this._apiCall('connect', () =>
+      this.__connection.init({
+        buttressUrl,
+        appToken: token,
+        apiPath,
+        version: 1,
+      }),
+    );
+    Logging.logDebug(`connected to: ${this.uri.host}/${apiPath}`);
 
     // this.collection = this.buttress.getCollection(collection);
     // this.setCollection(this.uri.pathname.replace(/\//g, ''));
@@ -92,7 +97,10 @@ export default class Buttress extends AbstractAdapter {
 
   async setCollection(collectionName: string) {
     try {
-      this.collection = this.__connection.getCollection(collectionName);
+      this.collectionName = collectionName;
+      this.collection = await this._apiCall('setCollection', () =>
+        Promise.resolve(this.__connection.getCollection(collectionName)),
+      );
     } catch (err: unknown) {
       if (err instanceof BAPIErrors.SchemaNotFound) throw new Errors.SchemaNotFound(err.message);
       else throw err;
@@ -100,12 +108,13 @@ export default class Buttress extends AbstractAdapter {
   }
 
   async getSchema(rawSchema = false, only = []) {
-    await this.resolveAfterInit();
-    return await this.__connection.App.getSchema(rawSchema, {
-      params: {
-        only: only.join(','),
-      },
-    });
+    return this._resolvedApiCall('getSchema', () =>
+      this.__connection.App.getSchema(rawSchema, {
+        params: {
+          only: only.join(','),
+        },
+      }),
+    );
   }
 
   async activateDataSharing(registrationToken, newToken) {
@@ -122,6 +131,23 @@ export default class Buttress extends AbstractAdapter {
     return new Promise((resolve) => {
       this.initPendingResolve.push(resolve);
     });
+  }
+
+  private async _apiCall<T>(operation: string, call: () => Promise<T>) {
+    try {
+      return await call();
+    } catch (err) {
+      Logging.logError(
+        `[ButtressAdapter.${operation}] target:${this.uri.host}${this.uri.pathname} collection:${this.collectionName || 'unknown'}`,
+      );
+      Logging.logError(err);
+      throw err;
+    }
+  }
+
+  private async _resolvedApiCall<T>(operation: string, call: () => Promise<T>) {
+    await this.resolveAfterInit();
+    return this._apiCall(operation, call);
   }
 
   convertBSONObjects(target) {
@@ -148,8 +174,7 @@ export default class Buttress extends AbstractAdapter {
   }
 
   async batchUpdateProcess(id, body) {
-    await this.resolveAfterInit();
-    const result = await this.collection.update(id, body);
+    const result = await this._resolvedApiCall('batchUpdateProcess', () => this.collection.update(id, body));
     return this.handleResult(result);
   }
 
@@ -159,11 +184,11 @@ export default class Buttress extends AbstractAdapter {
    */
   async add(body) {
     body = this.convertBSONObjects(body);
-    await this.resolveAfterInit();
-
-    const result = Array.isArray(body)
-      ? await this.collection.bulkSave(body, { stream: true })
-      : await this.collection.save(body, { stream: true });
+    const result = await this._resolvedApiCall('add', () =>
+      Array.isArray(body)
+        ? this.collection.bulkSave(body, { stream: true })
+        : this.collection.save(body, { stream: true }),
+    );
 
     return this.handleResult(result);
   }
@@ -174,8 +199,7 @@ export default class Buttress extends AbstractAdapter {
    */
   async exists(id) {
     id = this.convertBSONObjects(id);
-    await this.resolveAfterInit();
-    const result = await this.collection.get(id);
+    const result = await this._resolvedApiCall('exists', () => this.collection.get(id));
     return result ? true : false;
   }
 
@@ -193,8 +217,7 @@ export default class Buttress extends AbstractAdapter {
    */
   async rm(id: string) {
     // entity = this.convertBSONObjects(entity);
-    await this.resolveAfterInit();
-    const result = await this.collection.remove(id);
+    const result = await this._resolvedApiCall('rm', () => this.collection.remove(id));
     return this.handleResult(result);
   }
 
@@ -204,8 +227,7 @@ export default class Buttress extends AbstractAdapter {
    */
   async rmBulk(ids) {
     ids = this.convertBSONObjects(ids);
-    await this.resolveAfterInit();
-    const result = await this.collection.bulkRemove(ids);
+    const result = await this._resolvedApiCall('rmBulk', () => this.collection.bulkRemove(ids));
     return this.handleResult(result);
   }
 
@@ -214,8 +236,7 @@ export default class Buttress extends AbstractAdapter {
    * @return {Promise}
    */
   async rmAll(query) {
-    await this.resolveAfterInit();
-    const result = await this.collection.removeAll(query);
+    const result = await this._resolvedApiCall('rmAll', () => this.collection.removeAll(query));
     return this.handleResult(result);
   }
 
@@ -225,8 +246,7 @@ export default class Buttress extends AbstractAdapter {
    */
   async findById(id) {
     id = this.convertBSONObjects(id);
-    await this.resolveAfterInit();
-    const result = await this.collection.get(id);
+    const result = await this._resolvedApiCall('findById', () => this.collection.get(id));
     return this.handleResult(result);
   }
 
@@ -243,12 +263,12 @@ export default class Buttress extends AbstractAdapter {
     // Logging.logSilly(`find: ${this.collectionName} ${query}`);
     query = this.convertBSONObjects(query);
 
-    // Stream this?
-    await this.resolveAfterInit();
-    const result = await this.collection.search(query, limit, skip, sort, {
-      project,
-      stream: true,
-    });
+    const result = await this._resolvedApiCall('find', () =>
+      this.collection.search(query, limit, skip, sort, {
+        project,
+        stream: true,
+      }),
+    );
 
     return this.handleResult(result);
   }
@@ -257,8 +277,7 @@ export default class Buttress extends AbstractAdapter {
    * @return {Promise}
    */
   async findAll() {
-    await this.resolveAfterInit();
-    const result = await this.collection.getAll();
+    const result = await this._resolvedApiCall('findAll', () => this.collection.getAll());
     return this.handleResult(result);
   }
 
@@ -268,8 +287,7 @@ export default class Buttress extends AbstractAdapter {
    */
   async findAllById(ids) {
     ids = this.convertBSONObjects(ids);
-    await this.resolveAfterInit();
-    const result = await this.collection.bulkGet(ids);
+    const result = await this._resolvedApiCall('findAllById', () => this.collection.bulkGet(ids));
     return this.handleResult(result);
   }
 
@@ -279,8 +297,7 @@ export default class Buttress extends AbstractAdapter {
    */
   async count(query) {
     query = this.convertBSONObjects(query);
-    await this.resolveAfterInit();
-    const result = await this.collection.count(query);
+    const result = await this._resolvedApiCall('count', () => this.collection.count(query));
     return this.handleResult(result);
   }
 
@@ -288,8 +305,7 @@ export default class Buttress extends AbstractAdapter {
    * @return {Promise}
    */
   async drop() {
-    await this.resolveAfterInit();
-    const result = await this.collection.removeAll();
+    const result = await this._resolvedApiCall('drop', () => this.collection.removeAll());
     return this.handleResult(result);
   }
 }
