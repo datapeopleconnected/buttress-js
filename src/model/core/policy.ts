@@ -243,16 +243,14 @@ class PolicySchemaModel extends StandardModel {
     return policy;
   }
 
-  rm(id: string) {
-    super.rm(id);
-    this.__policyCache.removePolicy(id);
+  async rm(id: string) {
+    await super.rm(id);
+    await this.__policyCache.removePolicy(id);
   }
 
-  rmBulk(ids: string[]) {
-    const out = super.rmBulk(ids);
-    for (const id of ids) {
-      this.__policyCache.removePolicy(id);
-    }
+  async rmBulk(ids: string[]) {
+    const out = await super.rmBulk(ids);
+    await Promise.all(ids.map((id) => this.__policyCache.removePolicy(id)));
     return out;
   }
 
