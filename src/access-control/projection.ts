@@ -15,6 +15,8 @@
  */
 
 import * as Helpers from '../helpers/index.js';
+import { PolicyProjection } from '../model/core/policy.js';
+import { BjsRequest } from '../types/bjs-express.js';
 
 import { ApplicablePolicyConfig, PolicyError } from './index.js';
 
@@ -31,7 +33,7 @@ class Projection {
     this._ignoredQueryKeys = ['__crPath', 'project', 'id'];
   }
 
-  async filterPoliciesByPolicyProjection(req, applicablePolicies: ApplicablePolicyConfig[], schema) {
+  async filterPoliciesByPolicyProjection(req: BjsRequest, applicablePolicies: ApplicablePolicyConfig[], schema) {
     const output: ApplicablePolicyConfig[] = [];
 
     for await (const policy of applicablePolicies) {
@@ -49,12 +51,16 @@ class Projection {
     return output;
   }
 
-  async __applyPolicyProjection(req, projections, schema): Promise<{ [key: string]: number } | false> {
+  async __applyPolicyProjection(
+    req: BjsRequest,
+    projections: PolicyProjection | null,
+    schema,
+  ): Promise<{ [key: string]: number } | false> {
     const requestMethod = req.method;
     const flattenedSchema = Helpers.getFlattenedSchema(schema);
-    let requestBody = req.body;
+    let requestBody = req.body ?? {};
 
-    const projectionKeys = projections.keys;
+    const projectionKeys = projections?.keys;
     const projection = {};
 
     if (projectionKeys && projectionKeys.length > 0) {

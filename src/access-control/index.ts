@@ -307,7 +307,7 @@ class AccessControl {
    */
   async __getOutcome(
     tokenPolicies: Policy[],
-    req,
+    req: BjsRequest,
     schemaName: string,
     appId: string | null = null,
   ): Promise<parsedPolicyConfig[]> {

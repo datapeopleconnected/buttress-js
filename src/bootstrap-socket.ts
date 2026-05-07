@@ -331,7 +331,7 @@ export default class BootstrapSocket extends Bootstrap {
 
   private async _workerHandleSocketConnection(socket: sioSocket, next: (err?: Error) => void) {
     // DEPRECATED: We should phase out accepting token via query and only use the auth headers.
-    const rawToken = socket.handshake.auth.token || socket.handshake.query.token;
+    const rawToken = socket.handshake.auth.token;
 
     Logging.logDebug(`Fetching token with value: ${rawToken}`);
     const token = (await Model.getCoreModel(TokenSchemaModel).findOne({ value: rawToken })) as Token;

@@ -17,7 +17,7 @@
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
-import { createApp, updateSchema, ENDPOINT } from '../../helpers.js';
+import { createApp, updateSchema, ENDPOINT, bjsReq } from '../../helpers.js';
 import { runStep } from '../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
@@ -91,20 +91,20 @@ describe('Schema', async () => {
 		});
 
 		it('Should be able to fetch the schema', async () => {
-			const getResponse = await fetch(`${ENDPOINT.REST}/api/v1/app/schema?token=${testEnv.apps.app1.token}`);
-			assert.strictEqual(getResponse.status, 200);
+			const body = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/app/schema`,
+			}, testEnv.apps.app1.token);
 
-			const body = await getResponse.json();
 			assert.strictEqual(body.length, 2);
 			assert.strictEqual(body[0].name, 'car');
 			assert.strictEqual(body[1].name, 'colours');
 		});
 
 		it('Should be able to fetch only the requested schema', async () => {
-			const getResponse = await fetch(`${ENDPOINT.REST}/api/v1/app/schema?token=${testEnv.apps.app1.token}&only=colours`);
-			assert.strictEqual(getResponse.status, 200);
+			const body = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/app/schema?only=colours`,
+			}, testEnv.apps.app1.token);
 
-			const body = await getResponse.json();
 			assert.strictEqual(body.length, 1);
 			assert.strictEqual(body[0].name, 'colours');
 		});
@@ -113,129 +113,111 @@ describe('Schema', async () => {
 	describe('Requests', async () => {
 		describe('Methods', async () => {
 			it('Should make a POST request to bulk add', async function() {
-				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add?token=${testEnv.apps.app1.token}`, {
+				const body = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
 					method: 'POST',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify(new Array(5000).fill(0).map(() => ({name: `name-${Math.floor(Math.random()*100)}`}))),
-				});
-				assert.strictEqual(getResponse.status, 200);
+				}, testEnv.apps.app1.token);
 
-				const body = await getResponse.json();
 				assert.strictEqual(body.length, 5000);
 			});
 
 			it('Should make a GET request without providing params (LIST)', async () => {
-				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${testEnv.apps.app1.token}`);
-				assert.strictEqual(getResponse.status, 200);
+				const body = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+				}, testEnv.apps.app1.token);
 
-				const body = await getResponse.json();
 				assert.strictEqual(body.length, 5000);
 			});
 
 			it('Should make a POST request', async () => {
-				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${testEnv.apps.app1.token}`, {
+				const body = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
 					method: 'POST',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify({name: `name-test`}),
-				});
-				assert.strictEqual(getResponse.status, 200);
+				}, testEnv.apps.app1.token);
 
-				const body = await getResponse.json();
 				assert.strictEqual(body.length, 1);
 				testEnv.cars.push(body[0]);
 			});
 
 			it('Should make a GET request for an entity by it\'s id', async () => {
-				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}` +
-					`?token=${testEnv.apps.app1.token}`);
-				assert.strictEqual(getResponse.status, 200);
+				const entity = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}`,
+				}, testEnv.apps.app1.token);
 
-				const entity = await getResponse.json();
 				assert.strictEqual(entity.id, testEnv.cars[0].id);
 				assert.strictEqual(entity.name, 'name-test');
 			});
 
 			it(`Should make a SEARCH request for car with name 'name-test'`, async () => {
-				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${testEnv.apps.app1.token}`, {
+				const body = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
 					method: 'SEARCH',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify({query: {name: `name-test`}}),
-				});
-				assert.strictEqual(getResponse.status, 200);
-
-				const body = await getResponse.json();
+				}, testEnv.apps.app1.token);
 				assert.strictEqual(body.length, 1);
 			});
 
 			it('Should make a SEARCH request to get the count of the results', async () => {
-				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/count?token=${testEnv.apps.app1.token}`, {
+				const body = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/count`,
 					method: 'SEARCH',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify({name: `name-test`}),
-				});
-				assert.strictEqual(getResponse.status, 200);
-
-				const count = await getResponse.json();
-				assert.strictEqual(count, 1);
+				}, testEnv.apps.app1.token);
+				assert.strictEqual(body, 1);
 			});
 
 			it('Should make a PUT request to get the count of the results', async () => {
-				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}` +
-					`?token=${testEnv.apps.app1.token}`, {
+				const body = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}`,
 					method: 'PUT',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify({
 						path: 'name',
 						value: 'name-test-updated',
 					}),
-				});
-				assert.strictEqual(getResponse.status, 200);
+				}, testEnv.apps.app1.token);
 
-				const updates = await getResponse.json();
-				assert.strictEqual(updates.length, 1);
+				assert.strictEqual(body.length, 1);
 			});
 
 			it('Should make a PUT request with a sourceId', async () => {
-				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/` +
-					`car/${testEnv.cars[0].sourceId}/${testEnv.cars[0].id}` +
-					`?token=${testEnv.apps.app1.token}`, {
+				const body = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/` +
+						`car/${testEnv.cars[0].sourceId}/${testEnv.cars[0].id}`,
 					method: 'PUT',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify({
 						path: 'name',
 						value: 'name-test-updated2',
 					}),
-				});
-				assert.strictEqual(getResponse.status, 200);
-
-				const updates = await getResponse.json();
-				assert.strictEqual(updates.length, 1);
+				}, testEnv.apps.app1.token);
+				assert.strictEqual(body.length, 1);
 			});
 
 			// TODO: Update Many
 
 			it('Should make a DELETE request for a single Id', async () => {
-				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}` +
-					`?token=${testEnv.apps.app1.token}`, {
-					method: 'delete',
-				});
-				assert.strictEqual(getResponse.status, 200);
-
-				const isDeleted = await getResponse.json();
-				assert.strictEqual(isDeleted, true);
+				const body = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${testEnv.cars[0].id}`,
+					method: 'DELETE',
+				}, testEnv.apps.app1.token);
+				assert.strictEqual(body, true);
 			});
 
 			// TODO: Delete Many
 
 			it('Should make a DELETE request with no params (Delete all)', async () => {
-				const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car` +
-					`?token=${testEnv.apps.app1.token}`, {
-					method: 'delete',
-				});
-				assert.strictEqual(getResponse.status, 200);
-
-				const isDeleted = await getResponse.json();
-				assert.strictEqual(isDeleted, true);
+				const body = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+					method: 'DELETE',
+				}, testEnv.apps.app1.token);
+				assert.strictEqual(body, true);
 			});
 		});
 	});
@@ -290,7 +272,8 @@ describe('Schema', async () => {
 
 		it('Should make a POST request to add an item and check its types', async function() {
 			this.timeout(5000);
-			const getResponse = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship?token=${testEnv.apps.app2.token}`, {
+			const [item] = await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship`,
 				method: 'POST',
 				headers: {'Content-Type': 'application/json'},
 				body: JSON.stringify({
@@ -300,11 +283,7 @@ describe('Schema', async () => {
 						items: 2,
 					}],
 				}),
-			});
-			assert.strictEqual(getResponse.status, 200);
-
-			const body = await getResponse.json();
-			const [item] = body;
+			}, testEnv.apps.app2.token);
 			assert.strictEqual(typeof item.name, 'string');
 			assert.strictEqual(Array.isArray(item.engine), true);
 			assert.strictEqual(typeof item.engine[0].position, 'string');

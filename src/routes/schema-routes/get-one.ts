@@ -44,7 +44,7 @@ export default class GetOne extends Route {
     const model = await this.routeModel();
 
     let objectId = null;
-    const project = req.body && req.body.project ? req.body.project : false;
+    // const project = req.body && req.body.project ? req.body.project : false;
 
     try {
       objectId = model.createId(req.params.id);
@@ -53,15 +53,15 @@ export default class GetOne extends Route {
       throw new Helpers.Errors.RequestError(400, 'invalid_id');
     }
 
-    let query: BjsQuery<{ id: string | null }> = { id: objectId };
-    if (req.body.query && Object.keys(req.body.query).length > 0) {
-      query = model.parseQuery(req.body.query, {}, model.flatSchemaData);
-      query.id = objectId;
-    }
+    const query: BjsQuery<{ id: string | null }> = { id: objectId };
+    // if (req.body.query && Object.keys(req.body.query).length > 0) {
+    //   query = model.parseQuery(req.body.query, {}, model.flatSchemaData);
+    //   query.id = objectId;
+    // }
 
     return {
       query,
-      project,
+      project: false,
     };
   }
 

@@ -23,8 +23,6 @@ import AppSchemaModel from '../../model/core/app.js';
 import TokenSchemaModel from '../../model/core/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 
-const routes: (typeof Route)[] = [];
-
 /**
  * @class GetAppList
  */
@@ -48,7 +46,6 @@ class GetAppList extends Route {
     return Model.getCoreModel(AppSchemaModel).findAll();
   }
 }
-routes.push(GetAppList);
 
 /**
  * @class SearchAppList
@@ -101,7 +98,6 @@ class SearchAppList extends Route {
     }, []);
   }
 }
-routes.push(SearchAppList);
 
 /**
  * @class GetApp
@@ -109,7 +105,7 @@ routes.push(SearchAppList);
 class GetApp extends Route {
   constructor(services) {
     // Should change to app apiPath instead of ID
-    super('app/:id([0-9|a-f|A-F]{24})', 'GET APP', services, Model.getCoreModel(AppSchemaModel).schemaData);
+    super('app/:id', 'GET APP', services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.SYSTEM;
     this.permissions = Route.Constants.Permissions.READ;
@@ -119,6 +115,11 @@ class GetApp extends Route {
     if (!req.params.id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_fields`));
+    }
+
+    if (!Model.getCoreModel(AppSchemaModel).isValidId(req.params.id)) {
+      this.log('ERROR: Invalid App ID format', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
 
     const app = await Model.getCoreModel(AppSchemaModel).findById(req.params.id);
@@ -139,7 +140,6 @@ class GetApp extends Route {
     return validate;
   }
 }
-routes.push(GetApp);
 
 /**
  * @class AddApp
@@ -211,7 +211,6 @@ class AddApp extends Route {
     });
   }
 }
-routes.push(AddApp);
 
 /**
  * @class DeleteApp
@@ -244,7 +243,6 @@ class DeleteApp extends Route {
     return true;
   }
 }
-routes.push(DeleteApp);
 
 /**
  * @class DeleteAppPolicies
@@ -296,7 +294,6 @@ class DeleteAllApps extends Route {
     return true;
   }
 }
-routes.push(DeleteAllApps);
 
 /**
  * @class GetAppSchema
@@ -369,7 +366,6 @@ class GetAppSchema extends Route {
     return mergedSchema;
   }
 }
-routes.push(GetAppSchema);
 
 /**
  * @class UpdateAppSchema
@@ -477,7 +473,6 @@ class UpdateAppSchema extends Route {
     return a;
   }
 }
-routes.push(UpdateAppSchema);
 
 /**
  * @class GetAppPolicyPropertyList
@@ -485,7 +480,7 @@ routes.push(UpdateAppSchema);
 class GetAppPolicyPropertyList extends Route {
   constructor(services) {
     super(
-      'app/policy-property-list/:apiPath?',
+      'app/policy-property-list{/:apiPath}',
       'GET APP POLICY PROPERTY LIST',
       services,
       Model.getCoreModel(AppSchemaModel).schemaData,
@@ -524,7 +519,6 @@ class GetAppPolicyPropertyList extends Route {
     return app.policyPropertiesList;
   }
 }
-routes.push(GetAppPolicyPropertyList);
 
 /**
  * @class SetAppPolicyPropertyList
@@ -532,7 +526,7 @@ routes.push(GetAppPolicyPropertyList);
 class SetAppPolicyPropertyList extends Route {
   constructor(services) {
     super(
-      'app/policy-property-list/:update/:appId?',
+      'app/policy-property-list/:update{/:appId}',
       'SET APP POLICY PROPERTY LIST',
       services,
       Model.getCoreModel(AppSchemaModel).schemaData,
@@ -598,7 +592,6 @@ class SetAppPolicyPropertyList extends Route {
     return update;
   }
 }
-routes.push(SetAppPolicyPropertyList);
 
 /**
  * @class AppCount
@@ -643,7 +636,6 @@ class AppCount extends Route {
     return Model.getCoreModel(AppSchemaModel).count(validateResult.query);
   }
 }
-routes.push(AppCount);
 
 /**
  * @class AppUpdateOAuth
@@ -679,7 +671,6 @@ class AppUpdateOAuth extends Route {
     return true;
   }
 }
-routes.push(AppUpdateOAuth);
 
 // TODO remove all the other endpoints and use this generic endpoint
 /**
@@ -726,9 +717,24 @@ class AppUpdate extends Route {
     return Model.getCoreModel(AppSchemaModel).updateByPath(req.body, req.params.id);
   }
 }
-routes.push(AppUpdate);
 
 /**
  * @type {*[]}
  */
-export default routes;
+export default [
+  GetAppList,
+  SearchAppList,
+  AddApp,
+  DeleteApp,
+  DeleteAllApps,
+  GetAppSchema,
+  UpdateAppSchema,
+  GetAppPolicyPropertyList,
+  SetAppPolicyPropertyList,
+  AppCount,
+  AppUpdateOAuth,
+  AppUpdate,
+
+  // Register get app at the end to avoid conflicts with app list endpoint
+  GetApp,
+];

@@ -62,12 +62,12 @@ export default class SearchCount extends Route {
       query.$and = [];
     }
 
-    if (req.body.actualCount) {
+    if (req.body?.actualCount) {
       result.actualCount = true;
     }
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
+    if (req.body?.query) {
       query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
       query.$and.push(req.body);
