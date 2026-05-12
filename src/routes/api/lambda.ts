@@ -42,6 +42,8 @@ import LambdaExecutionSchemaModel from '../../model/core/lambda-execution.js';
 
 import { Services } from '../../bootstrap.js';
 
+import { BjsRequest } from '../../types/bjs-express.js';
+
 // Should should contain a list of routes that extend the Route class but have different constructors
 const routes: ExtendsRoute<Route>[] = [];
 
@@ -93,26 +95,28 @@ class GetLambdaList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(req, res, token) {
-    const ids = req.body.ids;
-    if (ids && ids.length > 0) {
+  _validate(req: BjsRequest, res, token) {
+    const rawIds = req.query.ids;
+    const ids = Array.isArray(rawIds) ? rawIds : typeof rawIds === 'string' ? rawIds.split(',').filter(Boolean) : [];
+
+    if (ids.length > 0) {
       ids.forEach((id) => {
         try {
           Datastore.getInstance('core').ID.new(id);
         } catch (err) {
-          this.log(`POLICY: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+          this.log(`LAMBDA: Invalid ID: ${id}`, Route.LogLevel.ERR, req.id);
           throw new Helpers.Errors.RequestError(400, 'invalid_id');
         }
       });
     }
 
-    return Promise.resolve(true);
+    return Promise.resolve(ids);
   }
 
-  async _exec(req, res, validate) {
-    const ids = req.body.ids;
-    if (ids && ids.length > 0) {
-      return Model.getCoreModel(LambdaSchemaModel).findByIds(ids);
+  async _exec(req, res, ids) {
+    if (ids.length > 0) {
+      // TODO: needs to be scoped by appId - Disabled until fixed.
+      // return Model.getCoreModel(LambdaSchemaModel).findByIds(ids);
     }
 
     return req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM

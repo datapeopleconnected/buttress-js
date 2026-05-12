@@ -25,6 +25,8 @@ import TokenSchemaModel from '../../model/core/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import AppSchemaModel from '../../model/core/app.js';
 
+import { BjsRequest } from '../../types/bjs-express.js';
+
 const routes: (typeof Route)[] = [];
 
 /**
@@ -38,7 +40,7 @@ class GetPolicy extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: BjsRequest, res, token) {
     const id = req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required policy id`, Route.LogLevel.ERR);
@@ -75,26 +77,28 @@ class GetPolicyList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(req, res, token) {
-    const ids = req.body.ids;
-    if (ids && ids.length > 0) {
+  _validate(req: BjsRequest, res, token) {
+    const rawIds = req.query.ids;
+    const ids = Array.isArray(rawIds) ? rawIds : typeof rawIds === 'string' ? rawIds.split(',').filter(Boolean) : [];
+
+    if (ids.length > 0) {
       ids.forEach((id) => {
         try {
           Datastore.getInstance('core').ID.new(id);
         } catch (err) {
-          this.log(`POLICY: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+          this.log(`POLICY: Invalid ID: ${id}`, Route.LogLevel.ERR, req.id);
           throw new Helpers.Errors.RequestError(400, 'invalid_id');
         }
       });
     }
 
-    return Promise.resolve(true);
+    return Promise.resolve(ids);
   }
 
-  _exec(req, res, validate) {
-    const ids = req.body.ids;
-    if (ids && ids.length > 0) {
-      return Model.getCoreModel(PolicySchemaModel).findByIds(ids);
+  _exec(req: BjsRequest, res, ids) {
+    if (ids.length > 0) {
+      // TODO: needs to be scoped by appId - Disabled until fixed.
+      // return Model.getCoreModel(PolicySchemaModel).findByIds(ids);
     }
 
     if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
