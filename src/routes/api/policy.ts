@@ -41,7 +41,8 @@ class GetPolicy extends Route {
   }
 
   async _validate(req: BjsRequest, res, token) {
-    const id = req.params.id;
+    const rawId = req.params.id;
+    const id = Array.isArray(rawId) ? rawId[0] : rawId;
     if (!id) {
       this.log(`[${this.name}] Missing required policy id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_id`));

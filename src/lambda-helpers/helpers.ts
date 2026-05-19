@@ -416,8 +416,8 @@ class Helpers {
           const browser = await puppeteer.launch({ headless: true });
           const page = await browser.newPage();
 
-          // Set the HTML content
-          await page.setContent(htmlString, { waitUntil: 'networkidle2' });
+          // Set the HTML content and wait for initial document load.
+          await page.setContent(htmlString, { waitUntil: 'load' });
 
           // ! These lines should have tests written against them.
           const pdfResult = await page.pdf({ format: 'A4', printBackground: true });
