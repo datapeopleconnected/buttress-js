@@ -401,7 +401,10 @@ class AccessControl {
     // const passedEvalutaion = await AccessControlFilter.evaluateManipulationActions(req, schemaName);
     // console.log('passedEvalutaion', passedEvalutaion, schemaName);
     // if (!passedEvalutaion) {
-    // 	throw new PolicyError(401, `Accessed data from ${schemaName} can not be manipulated with your restricted policy`, '_accessControlPolicy:access-control-query-permission-error');
+    // 	throw new PolicyError(
+    // 401,
+    // `Accessed data from ${schemaName} can not be manipulated with your restricted policy`,
+    // '_accessControlPolicy:access-control-query-permission-error');
     // }
 
     const outcome: parsedPolicyConfig[] = [];

@@ -57,7 +57,8 @@ interface ActivityMetadata {
  * - A SDR process claims the activity. (Conflict resolution?)
  * - SDR process consults list of connected policies (Policies that are accocated with currently connected tokens).
  * - SDR checks activity against each policy, condition is checked, query is run against activity to check it's releivent, projection is applied.
- * - SDR Broadcasts (Redis Pub) activity along with the list of tokens which need to be notified. Socket processes will just discard activity if none of the tokens match.
+ * - SDR Broadcasts (Redis Pub) activity along with the list of tokens which need to be notified.
+ *   Socket processes will just discard activity if none of the tokens match.
  *
  * Complexities:
  * - Maintining a list of connected tokens to applicable policies ready for parsing.
