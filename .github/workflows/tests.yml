@@ -1,0 +1,86 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    env:
+      MOCHA_UNIT_TIMEOUT: 10000
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build
+      run: npm run build
+
+    - name: Run Unit Tests
+      run: npm run test:unit
+
+  e2e-tests:
+    runs-on: ubuntu-latest
+    env:
+      MOCHA_E2E_TIMEOUT: 20000
+
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27018:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand({ ping: 1 })' --quiet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:latest
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build
+      run: npm run build
+
+    - name: Run E2E Tests
+      env:
+        NODE_ENV: test
+        BUTTRESS_APP_TITLE: ButtressJS TEST
+        BUTTRESS_APP_CODE: bjs
+        BUTTRESS_APP_PATH: ${{ github.workspace }}
+        BUTTRESS_APP_WORKERS: 0
+        BUTTRESS_APP_PROTOCOL: http
+        BUTTRESS_HOST_URL: localhost:8000
+        BUTTRESS_DATASTORE_CONNECTION_STRING: mongodb://localhost:27018
+        BUTTRESS_REDIS_URL: redis://localhost:6380
+        BUTTRESS_SOCK_URL: http://localhost:8010
+      run: npm run test:e2e
