@@ -1,107 +1,254 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex, nocache" />
     <title>ButtressJS</title>
-    <link rel="stylesheet" , href="https://fonts.googleapis.com/css?family=Fira+Sans" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+    />
     <style>
       :root {
-        --colorPrimary: #3c415e;
-        --colorSecondary: #738598;
-        --colorBackground: #dfe2e2;
-        --colorAccent: #1cb3c8;
+        --bg-top: #071a2f;
+        --bg-bottom: #12395d;
+        --surface: rgba(255, 255, 255, 0.14);
+        --surface-border: rgba(255, 255, 255, 0.32);
+        --text-main: #f4fbff;
+        --text-muted: #b8d1e3;
+        --accent: #58d3c5;
+        --accent-strong: #3ebeb0;
+        --halo: rgba(88, 211, 197, 0.45);
       }
 
-      html {
-        width: 100%;
-        height: 100%;
-        font-family: 'Fira Sans', sans-serif;
-        text-align: center;
-
-        font-size: 1.1rem;
-
+      html,
+      body {
         margin: 0;
         padding: 0;
-
-        background: var(--colorBackground);
-        color: var(--colorSecondary);
+        width: 100%;
+        min-height: 100%;
       }
 
-      a,
-      a:hover,
-      a:visited {
-        color: var(--colorAccent);
+      body {
+        position: relative;
+        overflow: hidden;
+        color: var(--text-main);
+        font-family: 'Space Grotesk', sans-serif;
+        background:
+          radial-gradient(circle at 18% 24%, rgba(88, 211, 197, 0.2), transparent 28%),
+          radial-gradient(circle at 82% 72%, rgba(130, 186, 255, 0.23), transparent 34%),
+          linear-gradient(155deg, var(--bg-top), var(--bg-bottom));
       }
 
-      .text {
-        position: absolute;
-        display: block;
-        top: 0;
-        left: 0;
-        min-height: 100vh;
-        width: 100vw;
+      .scene {
+        position: relative;
         z-index: 1;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 2rem;
+      }
+
+      .noise {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        opacity: 0.12;
+        pointer-events: none;
+        background-image: radial-gradient(rgba(255, 255, 255, 0.4) 0.6px, transparent 0.6px);
+        background-size: 3px 3px;
+      }
+
+      .card {
+        width: min(680px, 100%);
+        border-radius: 24px;
+        border: 1px solid var(--surface-border);
+        background: var(--surface);
+        backdrop-filter: blur(8px);
+        box-shadow: 0 18px 65px rgba(0, 0, 0, 0.28);
+        padding: clamp(1.4rem, 3vw, 2.2rem);
+        text-align: left;
+        animation: card-in 800ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+      }
+
+      .kicker {
+        margin: 0;
+        font-size: 0.82rem;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+        font-family: 'IBM Plex Mono', monospace;
+      }
+
+      .title {
+        margin: 0.4rem 0 0;
+        font-size: clamp(2.2rem, 9vw, 5rem);
+        line-height: 0.95;
+        font-weight: 700;
+        color: var(--text-main);
+      }
+
+      .title sub {
+        vertical-align: baseline;
+        font-size: clamp(1rem, 3.6vw, 1.9rem);
+        font-weight: 500;
+        color: var(--accent);
+        margin-left: 0.25rem;
+      }
+
+      .lead {
+        margin: 1rem 0 0;
+        max-width: 42ch;
+        color: var(--text-muted);
+        line-height: 1.55;
+        font-size: clamp(0.98rem, 2.2vw, 1.1rem);
+      }
+
+      .cta-row {
+        margin-top: 1.5rem;
         display: flex;
-        flex-direction: column;
+        flex-wrap: wrap;
+        gap: 0.8rem;
+      }
+
+      .button-link {
+        display: inline-flex;
         align-items: center;
         justify-content: center;
-        text-align: center;
-        text-shadow: 0px 0 8px #dfe2e2;
+        border-radius: 999px;
+        text-decoration: none;
+        font-weight: 600;
+        transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
       }
-      .title {
-        font-size: 4rem;
-        margin: 0.4rem 0;
-        color: var(--colorPrimary);
+
+      .button-link.primary {
+        padding: 0.7rem 1rem;
+        color: #02232a;
+        background: var(--accent);
+        box-shadow: 0 0 0 0 var(--halo);
       }
-      .title sub {
-        vertical-align: super;
-        font-size: 40px;
-        color: var(--colorAccent);
+
+      .button-link.secondary {
+        padding: 0.66rem 0.98rem;
+        color: var(--text-main);
+        border: 1px solid rgba(255, 255, 255, 0.35);
+      }
+
+      .button-link:hover {
+        transform: translateY(-1px);
+      }
+
+      .button-link.primary:hover {
+        background: var(--accent-strong);
+        box-shadow: 0 0 0 10px rgba(88, 211, 197, 0.18);
+      }
+
+      .button-link.secondary:hover {
+        border-color: rgba(255, 255, 255, 0.58);
+      }
+
+      .meta {
+        margin-top: 1.25rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(255, 255, 255, 0.25);
+        color: var(--text-muted);
+        font-size: 0.92rem;
+      }
+
+      .meta a,
+      .meta a:hover,
+      .meta a:visited {
+        color: var(--accent);
       }
 
       #canvas {
         position: absolute;
-        display: block;
-        top: 0;
-        left: 0;
+        inset: 0;
+        z-index: 0;
+      }
+
+      @keyframes card-in {
+        0% {
+          opacity: 0;
+          transform: translateY(20px) scale(0.985);
+        }
+
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
+        }
+      }
+
+      @media (max-width: 760px) {
+        .scene {
+          padding: 1.2rem;
+        }
+
+        .card {
+          border-radius: 18px;
+        }
+
+        .cta-row {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .button-link {
+          width: 100%;
+        }
       }
     </style>
   </head>
 
   <body>
-    <div class="text">
-      <header>
-        <h1 class="title">Buttress<sub>JS</sub></h1>
-      </header>
-      <section>
-        <div>The federated real-time open data platform</div>
-      </section>
-      <footer>
-        <div>
-          Proudly open source ❤️ Available on
-          <a href="https://github.com/datapeopleconnected/buttress-js" target="_BLANK">Github</a>
+    <div class="noise" aria-hidden="true"></div>
+    <main class="scene">
+      <section class="card" aria-label="ButtressJS introduction">
+        <p class="kicker">Federated data platform</p>
+        <header>
+          <h1 class="title">Buttress<sub>JS</sub></h1>
+        </header>
+        <p class="lead">
+          The open source engine for secure real-time data collaboration across teams, environments,
+          and applications.
+        </p>
+        <div class="cta-row">
+          <a class="button-link primary" href="https://github.com/datapeopleconnected/buttress-js" target="_blank" rel="noopener noreferrer"
+            >View on GitHub</a
+          >
+          <a class="button-link secondary" href="https://datapeopleconnected.github.io/buttress-js/#/" target="_blank" rel="noopener noreferrer">Read the docs</a>
         </div>
-      </footer>
-    </div>
+        <footer class="meta">
+          Built in the open. Self-host friendly. Ready for production data flows.
+        </footer>
+      </section>
+    </main>
 
-    <canvas id="canvas"></canvas>
-    <script src="/socket.io/socket.io.js"></script>
-    <script type="text/javascript">
+    <canvas id="canvas" aria-hidden="true"></canvas>
+    <script src="/socket.io/socket.io.js" defer></script>
+    <script>
+      'use strict';
+
+      const MAX_PARTICLES = 200;
+
+      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
       class Stats {
         constructor(id) {
-          ((this.canvas = document.getElementById(id)), (this.context = this.canvas.getContext('2d')));
+          this.canvas = document.getElementById(id);
+          this.context = this.canvas.getContext('2d');
 
           this.width = window.innerWidth;
-          this.height = window.innerWidth;
+          this.height = window.innerHeight;
 
-          this.paused = true;
-
+          this.paused = false;
           this.time = 0;
           this.lastTime = 0;
           this.delta = 0;
-
           this.particles = [];
-
-          this.paused = false;
 
           this.init();
         }
@@ -116,7 +263,7 @@
         }
 
         addParticle() {
-          if (this.particles.length < 200) {
+          if (this.particles.length < MAX_PARTICLES) {
             this.particles.push(new Particle(this.width, this.height));
           }
         }
@@ -136,7 +283,7 @@
         }
 
         _update(delta) {
-          for (let i = 0; i < this.particles.length; i++) {
+          for (let i = this.particles.length - 1; i >= 0; i--) {
             this.particles[i].update(delta);
 
             if (this.particles[i].life < 1) {
@@ -146,30 +293,28 @@
         }
 
         _render() {
-          // Clear main canvas
           this.context.clearRect(0, 0, this.width, this.height);
 
           for (let a = 0; a < this.particles.length; a++) {
-            for (let b = 0; b < this.particles.length; b++) {
-              if (this.particles[a] === this.particles[b]) continue;
-              const distance = Math.sqrt(
-                Math.pow(this.particles[b].x - this.particles[a].x, 2) +
-                  Math.pow(this.particles[b].y - this.particles[a].y, 2),
-              );
-              const opacity = 1 - distance / 350;
+            for (let b = a + 1; b < this.particles.length; b++) {
+              const dx = this.particles[b].x - this.particles[a].x;
+              const dy = this.particles[b].y - this.particles[a].y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              const opacity = clamp(1 - distance / 300, 0, 1);
+
               if (opacity > 0) {
-                this.context.lineWidth = 0.5;
-                this.context.strokeStyle = `rgba(255, 255, 255, ${opacity})`;
+                this.context.lineWidth = 0.55;
+                this.context.strokeStyle = `rgba(244, 251, 255, ${opacity})`;
                 this.context.beginPath();
                 this.context.moveTo(this.particles[a].x, this.particles[a].y);
                 this.context.lineTo(this.particles[b].x, this.particles[b].y);
-                this.context.closePath();
                 this.context.stroke();
               }
             }
           }
-          for (let a = 0; a < this.particles.length; a++) {
-            this.particles[a].render(this.context);
+
+          for (let i = 0; i < this.particles.length; i++) {
+            this.particles[i].render(this.context);
           }
         }
 
@@ -187,15 +332,16 @@
           this.boundRight = width;
           this.boundBottom = height;
 
-          this.speed = (Math.random() * 1 + 1) / 100;
-          this.directionAngle = Math.floor(Math.random() * 360);
-          this.radius = Math.random() * 2 + 2;
+          this.speed = (Math.random() * 1 + 0.7) / 100;
+          this.directionAngle = Math.random() * Math.PI * 2;
+          this.radius = Math.random() * 1.8 + 1.6;
 
           this.life = 100;
-          this.decay = (Math.random() * 20 + 1) / 5000;
+          this.decay = (Math.random() * 16 + 2) / 5000;
 
           this.vectorX = Math.cos(this.directionAngle) * this.speed;
           this.vectorY = Math.sin(this.directionAngle) * this.speed;
+          this.opacity = this.life / 100;
         }
 
         update(delta) {
@@ -211,8 +357,11 @@
           ctx.beginPath();
           ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
           ctx.closePath();
-          ctx.fillStyle = `rgba(60,65,94, ${this.opacity})`;
+          ctx.fillStyle = `rgba(244, 251, 255, ${this.opacity})`;
+          ctx.shadowColor = 'rgba(88, 211, 197, 0.35)';
+          ctx.shadowBlur = 8;
           ctx.fill();
+          ctx.shadowBlur = 0;
         }
 
         _checkBounds() {
@@ -226,7 +375,11 @@
       }
 
       const stats = new Stats('canvas');
-      io('/stats').on('activity', () => stats.addParticle());
+      window.addEventListener('resize', () => stats.resize());
+
+      if (typeof io === 'function') {
+        io('/stats').on('activity', () => stats.addParticle());
+      }
     </script>
   </body>
 </html>
