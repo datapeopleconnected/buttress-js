@@ -5,6 +5,8 @@ ENV APP_TYPE=all
 
 ENV BUTTRESS_APP_PATH=/opt/buttress
 
+RUN apt-get update && apt-get install -y unzip && apt-get clean
+
 WORKDIR /opt/buttress
 
 COPY . .
