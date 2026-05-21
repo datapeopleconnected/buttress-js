@@ -13,6 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
+
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import Logging from '../../helpers/logging.js';
@@ -64,11 +66,11 @@ class GetUserList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, res: Response) {
     return Promise.resolve(true);
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       return Model.getCoreModel(UserSchemaModel).findAll();
     }
@@ -91,7 +93,7 @@ class GetUser extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     if (!req.params.id) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `missing_field`);
@@ -161,7 +163,7 @@ class GetUser extends Route {
     return output;
   }
 
-  _exec(req, res, user) {
+  _exec(req: Request, res: Response, user) {
     return user;
   }
 }
@@ -178,7 +180,7 @@ class FindUser extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const authApp = req.params.app;
     const validAuthApps = ['twitter', 'facebook', 'google', 'linkedin', 'microsoft'];
     if (!validAuthApps.includes(authApp) && !authApp.startsWith('app-')) {
@@ -221,7 +223,7 @@ class FindUser extends Route {
     return Promise.resolve(output);
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return Promise.resolve(validate);
   }
 }
@@ -269,7 +271,7 @@ class GetUserByToken extends Route {
     };
   }
 
-  _exec(req, res, user) {
+  _exec(req: Request, res: Response, user) {
     return user;
   }
 }
@@ -288,7 +290,7 @@ class CreateUserAuthToken extends Route {
     this.redactResults = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     if (!req.body || !req.body.policyProperties || !req.body.domains) {
       this.log(`[${this.name}] Missing required field (policyProperties or domains)`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
@@ -319,7 +321,7 @@ class CreateUserAuthToken extends Route {
     return Promise.resolve(user);
   }
 
-  async _exec(req, res, user) {
+  async _exec(req: Request, res: Response, user) {
     const rxsToken = await Model.getCoreModel(TokenSchemaModel).add(req.body, {
       _appId: Datastore.getInstance('core').ID.new(req.authApp.id),
       _userId: Datastore.getInstance('core').ID.new(user.id),
@@ -353,7 +355,7 @@ routes.push(CreateUserAuthToken);
 // 		this.permissions = Route.Constants.Permissions.ADD;
 // 	}
 
-// 	async _validate(req, res, token) {
+// 	async _validate(req: Request, res: Response) {
 // 		Logging.log(req.body.user, Logging.Constants.LogLevel.DEBUG);
 // 		const app = req.body.user.app ? req.body.user.app : req.params.app;
 
@@ -391,7 +393,7 @@ routes.push(CreateUserAuthToken);
 // 		return Promise.resolve(true);
 // 	}
 
-// 	async _exec(req, res, validate) {
+// 	async _exec(req: Request, res: Response, validate) {
 // 		const user = await Model.getCoreModel(UserSchemaModel).add(req.body.user, req.body.auth);
 // 		// TODO: Strip back return data, should match find user
 // 		let policyProperties = null;
@@ -421,7 +423,7 @@ class AddUser extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     Logging.log(req.body, Logging.Constants.LogLevel.DEBUG);
 
     if (!req.body.auth) {
@@ -466,7 +468,7 @@ class AddUser extends Route {
     return Promise.resolve(true);
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     const user = await Model.getCoreModel(UserSchemaModel).add(req.body, {
       _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
     });
@@ -494,7 +496,7 @@ class UpdateUser extends Route {
     this.activityBroadcast = true;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, res: Response) {
     return new Promise((resolve, reject) => {
       const { validation, body } = Model.getCoreModel(UserSchemaModel).validateUpdate(req.body);
       req.body = body;
@@ -525,7 +527,7 @@ class UpdateUser extends Route {
     });
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(UserSchemaModel).updateByPath(req.body, req.params.id);
   }
 }
@@ -550,7 +552,7 @@ class SetUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const app = req.authApp;
     if (!app) {
       this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
@@ -589,7 +591,7 @@ class SetUserPolicyProperties extends Route {
     return Promise.resolve(userToken);
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(validate.id.toString(), req.body);
 
     // this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
@@ -639,7 +641,7 @@ class UpdateUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const app = req.authApp;
     if (!app) {
       this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
@@ -678,7 +680,7 @@ class UpdateUserPolicyProperties extends Route {
     return Promise.resolve(userToken);
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate, req.body);
 
     // this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
@@ -728,7 +730,7 @@ class RemoveUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
@@ -756,7 +758,7 @@ class RemoveUserPolicyProperties extends Route {
     return Promise.resolve(userToken);
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     const reqPolicyProps = req.body;
     const policyProps = validate.policyProperties;
     Object.keys(reqPolicyProps).forEach((key) => {
@@ -798,7 +800,7 @@ class ClearUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
@@ -826,7 +828,7 @@ class ClearUserPolicyProperties extends Route {
     return Promise.resolve(userToken);
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.id);
 
     this._nrp?.emit(
@@ -853,11 +855,11 @@ class DeleteAllUsers extends Route {
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     return;
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     await Model.getCoreModel(UserSchemaModel).rmAll({ _appId: req.authApp.id });
     return true;
   }
@@ -875,7 +877,7 @@ class DeleteUser extends Route {
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     if (!req.params.id) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
@@ -899,7 +901,7 @@ class DeleteUser extends Route {
     };
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     await Model.getCoreModel(UserSchemaModel).rm(validate.user.id);
 
     if (validate.token) {
@@ -927,7 +929,7 @@ class clearUserLocalData extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, res: Response) {
     return new Promise((resolve, reject) => {
       if (!req.params.id) {
         this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
@@ -947,7 +949,7 @@ class clearUserLocalData extends Route {
     });
   }
 
-  async _exec(req, res, user) {
+  async _exec(req: Request, res: Response, user) {
     this._nrp?.emit(
       'clearUserLocalData',
       JSON.stringify({
@@ -973,7 +975,7 @@ class SearchUserList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const result: {
       query: any;
       skip: number;
@@ -1006,7 +1008,7 @@ class SearchUserList extends Route {
     return result;
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(UserSchemaModel).find(
       validate.query,
       {},
@@ -1033,7 +1035,7 @@ class UserCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const result = {
       query: {},
     };
@@ -1060,7 +1062,7 @@ class UserCount extends Route {
     return result;
   }
 
-  async _exec(req, res, validateResult) {
+  async _exec(req: Request, res: Response, validateResult) {
     return Model.getCoreModel(UserSchemaModel).count(validateResult.query);
   }
 }

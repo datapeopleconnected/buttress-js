@@ -42,7 +42,7 @@ import { PolicyCache } from './services/policy-cache.js';
 import AppSchemaModel from './model/core/app.js';
 import TokenSchemaModel from './model/core/token.js';
 
-// morgan.token('id', (req) => req.id);
+// morgan.token('id', (req) => req.context.id);
 
 Error.stackTraceLimit = Infinity;
 export default class BootstrapRest extends Bootstrap {

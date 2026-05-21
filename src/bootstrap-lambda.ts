@@ -29,7 +29,7 @@ import { PolicyCache } from './services/policy-cache.js';
 import LambdaManager from './lambda/lambda-manager.js';
 import LambdaRunner, { LambdaType } from './lambda/lambda-runner.js';
 
-morgan.token('id', (req) => req.id);
+morgan.token('id', (req) => req.context.id);
 export default class BootstrapLambda extends Bootstrap {
   routes: any;
 

@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -44,21 +45,21 @@ export default class UpdateOne extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
 
     const { validation, body } = model.validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {
       if (validation.isPathValid === false) {
-        this.log(`${this.schemaName}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);
+        this.log(`${this.schemaName}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.context.id);
         throw new Helpers.Errors.RequestError(
           400,
           `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
         );
       }
       if (validation.isValueValid === false) {
-        this.log(`${this.schemaName}: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR, req.id);
+        this.log(`${this.schemaName}: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR, req.context.id);
         if (validation.isMissingRequired) {
           throw new Helpers.Errors.RequestError(
             400,
@@ -73,16 +74,31 @@ export default class UpdateOne extends Route {
       }
     }
 
-    const exists = await model.exists(req.params.id, req.params.sourceId);
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      this.log(`${this.schemaName}: Invalid ID`, Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
+    }
+
+    const sourceId = Array.isArray(req.params.sourceId) ? req.params.sourceId[0] : req.params.sourceId;
+    if (!sourceId) {
+      this.log(`${this.schemaName}: Invalid source ID`, Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid source ID`);
+    }
+
+    const exists = await model.exists(id, sourceId);
     if (!exists) {
-      this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.id);
+      this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `invalid_id`);
     }
 
-    return true;
+    return {
+      id,
+      sourceId
+    };
   }
 
-  async _exec(req, res, validate) {
-    return (await this.routeModel()).updateByPath(req.body, req.params.id, req.params.sourceId);
+  async _exec(req: Request, _res: Response, validate: { id: string, sourceId: string }) {
+    return (await this.routeModel()).updateByPath(req.body, validate.id, validate.sourceId);
   }
 }

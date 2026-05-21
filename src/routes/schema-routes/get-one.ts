@@ -13,7 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
+import { Request, Response } from 'express';
 import { BjsQuery } from '../../types/bjs-query.js';
 
 import Route from '../route.js';
@@ -40,16 +40,22 @@ export default class GetOne extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      this.log(`${this.schemaName}: Missing ID`, Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, 'missing_id');
+    }
+
     const model = await this.routeModel();
 
     let objectId = null;
     // const project = req.body && req.body.project ? req.body.project : false;
 
     try {
-      objectId = model.createId(req.params.id);
+      objectId = model.createId(id);
     } catch (err) {
-      this.log(`${this.schemaName}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+      this.log(`${this.schemaName}: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, 'invalid_id');
     }
 
@@ -65,14 +71,14 @@ export default class GetOne extends Route {
     };
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, _res: Response, validate: { query: BjsQuery<{ id: string | null }>; project: boolean }) {
     const model = await this.routeModel();
 
     const rxsEntity = await model.find(validate.query, {}, 1, 0, null, validate.project);
     const entity = await Helpers.streamFirst(rxsEntity);
 
     if (!entity) {
-      this.log(`${this.schemaName}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
+      this.log(`${this.schemaName}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, 'invalid_id or access_control_not_fullfilled');
     }
 

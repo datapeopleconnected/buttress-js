@@ -49,16 +49,16 @@ export class RoutesTokens {
     let tokenValue: string | undefined = req.headers['authorization'];
     if (tokenValue) tokenValue = tokenValue.replace('Bearer ', '');
 
-    Logging.logSilly(`_getProvidedToken:start ${tokenValue}`, req.id);
+    Logging.logSilly(`_getProvidedToken:start ${tokenValue}`, req.context.id);
 
     if (!tokenValue) {
-      Logging.logTimer(`_getProvidedToken:end-missing-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      Logging.logTimer(`_getProvidedToken:end-missing-token`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       throw new Helpers.Errors.RequestError(401, 'missing_token');
     }
 
     const token = await this._getToken(req, tokenValue);
     if (token === null) {
-      Logging.logTimer(`_getProvidedToken:end-cant-find-token`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      Logging.logTimer(`_getProvidedToken:end-cant-find-token`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       throw new Helpers.Errors.RequestError(401, 'invalid_token');
     }
 
@@ -66,13 +66,13 @@ export class RoutesTokens {
   }
 
   async _getToken(req: any, value: string): Promise<any> {
-    Logging.logTimer('_getToken:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer('_getToken:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     let token = null;
 
     if (this._tokens.length > 0) {
       token = this._lookupToken(this._tokens, value);
       if (token) {
-        Logging.logTimer('_getToken:end-cache', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+        Logging.logTimer('_getToken:end-cache', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
         return token;
       }
     }
@@ -80,7 +80,7 @@ export class RoutesTokens {
     await this.loadTokens();
 
     token = this._lookupToken(this._tokens, value);
-    Logging.logTimer('_getToken:end-lookup', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer('_getToken:end-lookup', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     return token;
   }
 }

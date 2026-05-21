@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -38,16 +39,16 @@ export default class DeleteMany extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
     let ids = req.body;
 
     if (!ids) {
-      this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.id);
+      this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `Requires ids`);
     }
     if (!ids.length) {
-      this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.id);
+      this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `Expecting array of ids`);
     }
 
@@ -65,7 +66,7 @@ export default class DeleteMany extends Route {
     return ids;
   }
 
-  async _exec(req, res, ids) {
+  async _exec(_req: Request, _res: Response, ids: string[]) {
     await (await this.routeModel()).rmBulk(ids);
     return true;
   }

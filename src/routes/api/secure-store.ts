@@ -13,8 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
 import { ObjectId } from 'bson';
+import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
@@ -36,8 +36,8 @@ class AddSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req, res, token) {
-    const app = req.authApp;
+  async _validate(req: Request, _res: Response) {
+    const app = req.context.authApp;
 
     if (!app || !req.body.name) {
       this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
@@ -46,7 +46,7 @@ class AddSecureStore extends Route {
 
     const secureStoreExist = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
       name: req.body.name,
-      _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
+      _appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
     });
     if (secureStoreExist) {
       this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);
@@ -56,7 +56,7 @@ class AddSecureStore extends Route {
     return Promise.resolve(true);
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, _res: Response, _validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).add(req, req.body);
   }
 }
@@ -73,8 +73,8 @@ class AddManySecureStore extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req, res, token) {
-    const app = req.authApp;
+  async _validate(req: Request, _res: Response) {
+    const app = req.context.authApp;
 
     if (!app) {
       this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
@@ -105,7 +105,7 @@ class AddManySecureStore extends Route {
     return Promise.resolve(true);
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     for await (const secureStore of req.body) {
       await Model.getCoreModel(SecureStoreSchemaModel).add(req, secureStore);
     }
@@ -126,8 +126,8 @@ class GetSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req, res, token) {
-    const id = req.params.id;
+  async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required secure store id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
@@ -146,7 +146,7 @@ class GetSecureStore extends Route {
     return secureStore;
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return validate;
   }
 }
@@ -168,7 +168,7 @@ class FindSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const name = req.params.name;
     if (!name) {
       this.log(`[${this.name}] Missing request parameter`, Route.LogLevel.ERR);
@@ -186,7 +186,7 @@ class FindSecureStore extends Route {
     return Promise.resolve(secureStore);
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return validate;
   }
 }
@@ -206,7 +206,7 @@ class UpdateSecureStore extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {
@@ -232,7 +232,7 @@ class UpdateSecureStore extends Route {
     return true;
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, req.params.id);
   }
 }
@@ -254,7 +254,7 @@ class BulkUpdateSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(item.body);
       item.body = body;
@@ -283,7 +283,7 @@ class BulkUpdateSecureStore extends Route {
     return req.body;
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     for await (const item of validate) {
       await Model.getCoreModel(SecureStoreSchemaModel).updateByPath(item.body, item.id, null);
     }
@@ -303,7 +303,7 @@ class SearchSecureStoreList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const result: {
       query: any;
       skip: number;
@@ -336,7 +336,7 @@ class SearchSecureStoreList extends Route {
     return result;
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).find(
       validate.query,
       {},
@@ -375,7 +375,7 @@ class DeleteSecureStore extends Route {
     return secureStore;
   }
 
-  async _exec(req, res, secureStore) {
+  async _exec(req: Request, res: Response, secureStore) {
     await Model.getCoreModel(SecureStoreSchemaModel).rm(secureStore.id);
     return true;
   }
@@ -395,7 +395,7 @@ class SecureStoreCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const result = {
       query: {},
     };
@@ -422,7 +422,7 @@ class SecureStoreCount extends Route {
     return result;
   }
 
-  _exec(req, res, validateResult) {
+  _exec(req: Request, res: Response, validateResult) {
     return Model.getCoreModel(SecureStoreSchemaModel).count(validateResult.query);
   }
 }

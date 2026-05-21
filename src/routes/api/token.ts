@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
@@ -40,7 +41,7 @@ class GetTokenList extends Route {
     this.redactResults = false;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, res: Response) {
     const queryParams: QueryParams<Token> = {
       query: {
         _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
@@ -60,7 +61,7 @@ class GetTokenList extends Route {
     return Promise.resolve(queryParams);
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
   }
 }
@@ -79,7 +80,7 @@ class SearchTokenList extends Route {
     this.redactResults = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const queryParams: QueryParams<Token> = {
       query: {
         $and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }],
@@ -107,7 +108,7 @@ class SearchTokenList extends Route {
     return queryParams;
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
   }
 }
@@ -126,11 +127,11 @@ class DeleteAllTokens extends Route {
     this.redactResults = false;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, res: Response) {
     return Promise.resolve();
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       this.log('ERROR: Cannot delete system tokens', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
@@ -187,7 +188,7 @@ class SearchUserToken extends Route {
     this.redactResults = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const queryParams: QueryParams<Token> = {
       query: {
         $and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }],
@@ -225,7 +226,7 @@ class SearchUserToken extends Route {
     return queryParams;
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
   }
 }

@@ -14,6 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { Request, Response } from 'express';
+
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import Sugar from '../../helpers/sugar.js';
@@ -22,6 +24,7 @@ import * as Helpers from '../../helpers/index.js';
 import AppSchemaModel from '../../model/core/app.js';
 import TokenSchemaModel from '../../model/core/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
+import { Schema } from '../../helpers/schema.js';
 
 /**
  * @class GetAppList
@@ -34,13 +37,19 @@ class GetAppList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(req, res, token) {
+  _validate(_req: Request, _res: Response) {
     return Promise.resolve(true);
   }
 
-  _exec(req, res, validate) {
-    if (req.token.type !== Route.Constants.Type.SYSTEM) {
-      return Model.getCoreModel(AppSchemaModel).find({ id: req.authApp.id });
+  _exec(req: Request, _res: Response, _validate: boolean) {
+    const appId = req.context.authApp?.id;
+    if (!appId) {
+      this.log('ERROR: No App ID in token', Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, `invalid_token`);
+    }
+
+    if (req.context.token?.type !== Route.Constants.Type.SYSTEM) {
+      return Model.getCoreModel(AppSchemaModel).find({ id: appId });
     }
 
     return Model.getCoreModel(AppSchemaModel).findAll();
@@ -58,7 +67,7 @@ class SearchAppList extends Route {
     this.permissions = Route.Constants.Permissions.SEARCH;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const result: {
       query: any;
     } = {
@@ -78,7 +87,7 @@ class SearchAppList extends Route {
     return result;
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     const appsDB = await Helpers.streamAll(await Model.getCoreModel(AppSchemaModel).find(validate.query));
 
     const tokenIds = appsDB.map((app) => Model.getCoreModel(TokenSchemaModel).createId(app._tokenId));
@@ -111,18 +120,19 @@ class GetApp extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req, res, token) {
-    if (!req.params.id) {
+  async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_fields`));
     }
 
-    if (!Model.getCoreModel(AppSchemaModel).isValidId(req.params.id)) {
+    if (!Model.getCoreModel(AppSchemaModel).isValidId(id)) {
       this.log('ERROR: Invalid App ID format', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
 
-    const app = await Model.getCoreModel(AppSchemaModel).findById(req.params.id);
+    const app = await Model.getCoreModel(AppSchemaModel).findById(id);
     if (!app) {
       this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -131,7 +141,7 @@ class GetApp extends Route {
     return app;
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     const appToken = Model.getCoreModel(TokenSchemaModel).findById(
       Model.getCoreModel(TokenSchemaModel).createId(validate._tokenId),
     );
@@ -152,24 +162,24 @@ class AddApp extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const validation = Model.getCoreModel(AppSchemaModel).validate(req.body);
       if (!validation.isValid) {
         if (validation.missing.length > 0) {
-          this.log(`${this.schemaName}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
+          this.log(`${this.schemaName}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.context.id);
           return reject(
             new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`),
           );
         }
         if (validation.invalid.length > 0) {
-          this.log(`${this.schemaName}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
+          this.log(`${this.schemaName}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.context.id);
           return reject(
             new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`),
           );
         }
 
-        this.log(`${this.schemaName}: Unhandled Error`, Route.LogLevel.ERR, req.id);
+        this.log(`${this.schemaName}: Unhandled Error`, Route.LogLevel.ERR, req.context.id);
         return reject(new Helpers.Errors.RequestError(400, `${this.schemaName}: Unhandled error.`));
       }
 
@@ -189,7 +199,7 @@ class AddApp extends Route {
         .isDuplicate(req.body)
         .then((res) => {
           if (res === true) {
-            this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.id);
+            this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
             return reject(new Helpers.Errors.RequestError(400, `duplicate`));
           }
           resolve(true);
@@ -197,7 +207,7 @@ class AddApp extends Route {
     });
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, _res: Response, _validate) {
     return new Promise((resolve, reject) => {
       Model.getCoreModel(AppSchemaModel)
         .add(req.body)
@@ -223,13 +233,15 @@ class DeleteApp extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req, res, token) {
-    if (!req.params.id) {
+  async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `missing_field`);
     }
 
-    const app = await Model.getCoreModel(AppSchemaModel).findById(req.params.id);
+    const app = await Model.getCoreModel(AppSchemaModel).findById(id);
     if (!app) {
       this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `invalid_id`);
@@ -238,7 +250,7 @@ class DeleteApp extends Route {
     return app;
   }
 
-  async _exec(req, res, app) {
+  async _exec(req: Request, res: Response, app) {
     await Model.getCoreModel(AppSchemaModel).rm(app);
     return true;
   }
@@ -255,11 +267,11 @@ class DeleteAllApps extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req) {
+  async _validate(_req: Request, _res: Response) {
     return true;
   }
 
-  async _exec(req, res, validate) {
+  async _exec(_req: Request, _res: Response, _validate) {
     // Get a list of system tokens
     const systemTokens = await Helpers.streamAll(
       await Model.getCoreModel(TokenSchemaModel).find(
@@ -309,13 +321,13 @@ class GetAppSchema extends Route {
     this.addSourceId = false;
   }
 
-  async _validate(req, res, token) {
-    if (!req.authApp) {
+  async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `no_authenticated_app`);
     }
 
-    if (!req.authApp.__schema) {
+    if (!req.context.authApp.__schema) {
       this.log('ERROR: No app schema defined', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `no_authenticated_schema`);
     }
@@ -323,16 +335,16 @@ class GetAppSchema extends Route {
     let schema;
     try {
       schema =
-        req.query.rawSchema && req.authApp.__rawSchema
-          ? Helpers.Schema.decode(req.authApp.__rawSchema)
-          : await Helpers.Schema.buildCollections(Helpers.Schema.decode(req.authApp.__schema));
+        req.query.rawSchema && req.context.authApp.__rawSchema
+          ? Helpers.Schema.decode(req.context.authApp.__rawSchema)
+          : await Helpers.Schema.buildCollections(Helpers.Schema.decode(req.context.authApp.__schema));
     } catch (err) {
       if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
       else throw err;
     }
 
     if (req.query.core) {
-      const cores = req.query.core.split(',');
+      const cores = req.query.core.toString().split(',');
 
       cores.forEach((core) => {
         // Get model.
@@ -344,14 +356,14 @@ class GetAppSchema extends Route {
     }
 
     if (req.query.only) {
-      const only = req.query.only.split(',');
+      const only = req.query.only.toString().split(',');
       schema = schema.filter((s) => only.includes(s.name));
     }
 
     return schema;
   }
 
-  async _exec(req, res, collections) {
+  async _exec(req: Request, res: Response, collections) {
     const mergedSchema = req.query.rawSchema
       ? collections
       : await Model.getCoreModel(AppSchemaModel).mergeRemoteSchema(req, collections);
@@ -382,8 +394,8 @@ class UpdateAppSchema extends Route {
     this.addSourceId = false;
   }
 
-  async _validate(req, res, token) {
-    if (!req.authApp) {
+  async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
     }
@@ -451,6 +463,7 @@ class UpdateAppSchema extends Route {
       compiledSchema = Helpers.Schema.merge(compiledSchema, Model.getCoreModel(AppSchemaModel).localSchema);
 
       return {
+        appId: req.context.authApp.id,
         rawSchema: JSON.stringify(rawSchema),
         compiledSchema,
       };
@@ -460,8 +473,9 @@ class UpdateAppSchema extends Route {
     }
   }
 
-  async _exec(req, res, { rawSchema, compiledSchema }) {
-    await Model.getCoreModel(AppSchemaModel).updateSchema(req.authApp.id, compiledSchema, rawSchema);
+  async _exec(req: Request, res: Response, { appId, rawSchema, compiledSchema }: { appId: string; rawSchema: string; compiledSchema: unknown }) {
+
+    await Model.getCoreModel(AppSchemaModel).updateSchema(appId, compiledSchema, rawSchema);
 
     const a = compiledSchema
       .filter((s) => s.type === 'collection')
@@ -490,15 +504,15 @@ class GetAppPolicyPropertyList extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req, res, token) {
-    let app = req.authApp;
+  async _validate(req: Request, _res: Response) {
+    let app = req.context.authApp;
     if (!app) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
     }
 
     const apiPath = req.params.apiPath;
-    const isSuper = token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
+    const isSuper = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
     if (apiPath && apiPath !== app.apiPath && !isSuper) {
       this.log('ERROR: Cannot fetch policy properties list for another app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `cannot_fetch_list_for_another_app`));
@@ -515,7 +529,7 @@ class GetAppPolicyPropertyList extends Route {
     return app;
   }
 
-  async _exec(req, res, app) {
+  async _exec(req: Request, res: Response, app) {
     return app.policyPropertiesList;
   }
 }
@@ -536,9 +550,9 @@ class SetAppPolicyPropertyList extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
-      if (!req.authApp) {
+      if (!req.context.authApp) {
         this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
         return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
       }
@@ -560,13 +574,15 @@ class SetAppPolicyPropertyList extends Route {
         return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
       }
 
+      const app = req.context.authApp;
+
       if (req.params.update === 'true') {
         const currentAppListKeys =
-          req.authApp.policyPropertiesList !== null ? Object.keys(req.authApp.policyPropertiesList) : [];
+          app.policyPropertiesList !== null ? Object.keys(app.policyPropertiesList) : [];
         Object.keys(req.body).forEach((key) => {
           if (currentAppListKeys.includes(key)) {
             req.body[key] = req.body[key]
-              .concat(req.authApp.policyPropertiesList[key])
+              .concat(app.policyPropertiesList[key])
               .filter((v, idx, arr) => arr.indexOf(v) === idx);
           }
         });
@@ -576,16 +592,17 @@ class SetAppPolicyPropertyList extends Route {
           obj[key] = req.body[key];
           return obj;
         }, {});
-        req.body = { ...req.authApp.policyPropertiesList, ...postedPropsList };
+        req.body = { ...app.policyPropertiesList, ...postedPropsList };
       }
 
-      resolve(req.body);
+      resolve({
+        appId: app.id,
+      });
     });
   }
 
-  async _exec(req, res, validate) {
-    const appId = req.authApp.id;
-    const update = Object.assign({}, validate);
+  async _exec(req: Request, res: Response, { appId }: { appId: string }) {
+    const update = Object.assign({}, req.body);
     if (update.query) delete update.query;
 
     await Model.getCoreModel(AppSchemaModel).setPolicyPropertiesList(appId.toString(), update);
@@ -607,7 +624,7 @@ class AppCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const result = {
       query: {},
     };
@@ -632,7 +649,7 @@ class AppCount extends Route {
     return result;
   }
 
-  _exec(req, res, validateResult) {
+  _exec(_req: Request, _res: Response, validateResult) {
     return Model.getCoreModel(AppSchemaModel).count(validateResult.query);
   }
 }
@@ -651,7 +668,7 @@ class AppUpdateOAuth extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
@@ -665,7 +682,7 @@ class AppUpdateOAuth extends Route {
     return Promise.resolve(true);
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, _res: Response, _validate) {
     const oAuth = Array.isArray(req.body.value) ? req.body.value : [req.body.value];
     await Model.getCoreModel(AppSchemaModel).updateOAuth(req.params.id, oAuth);
     return true;
@@ -687,7 +704,7 @@ class AppUpdate extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const { validation, body } = Model.getCoreModel(AppSchemaModel).validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {
@@ -713,7 +730,7 @@ class AppUpdate extends Route {
     return true;
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, _res: Response, _validate) {
     return Model.getCoreModel(AppSchemaModel).updateByPath(req.body, req.params.id);
   }
 }

@@ -13,8 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
-import { ExtendsRoute } from '../../types/routes.js';
+import { Request, Response } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
@@ -36,17 +35,23 @@ class GetActivityList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(req, res, token) {
+  _validate(_req: Request, _res: Response) {
     return Promise.resolve(true);
   }
 
-  _exec(req, res, validate) {
-    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+  _exec(req: Request, _res: Response, _validate: boolean) {
+    if (req.context.token && req.context.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       return Model.getCoreModel(ActivitySchemaModel).findAll();
     }
 
+    const appId = req.context.authApp?.id;
+    if (!appId) {
+      this.log('ERROR: No App ID in token', Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, `invalid_token`);
+    }
+
     return Model.getCoreModel(ActivitySchemaModel).find({
-      _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
+      _appId: Model.getCoreModel(AppSchemaModel).createId(appId),
       visibility: Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PUBLIC,
     });
   }
@@ -64,23 +69,23 @@ class GetActivity extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     if (!req.params.id) {
-      this.log('ERROR: Missing required field', Route.LogLevel.ERR, req.id);
+      this.log('ERROR: Missing required field', Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `missing_required_fields`);
     }
 
     const activity = await Model.getCoreModel(ActivitySchemaModel).findById(req.params.id);
 
     if (!activity) {
-      this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR, req.id);
+      this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `invalid_id`);
     }
 
     return activity;
   }
 
-  _exec(req, res, activity) {
+  _exec(req: Request, res: Response, activity: any) {
     return Promise.resolve(activity.details);
   }
 }
@@ -97,11 +102,11 @@ class DeleteAllActivity extends Route {
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  _validate(req, res, token) {
-    return Promise.resolve(true);
+  async _validate(_req: Request, _res: Response) {
+    return true;
   }
 
-  _exec(req, res, validate) {
+  _exec(_req: Request, _res: Response, _validate: boolean) {
     return Model.getCoreModel(ActivitySchemaModel)
       .rmAll({})
       .then(() => true);
@@ -116,7 +121,7 @@ routes.push(DeleteAllActivity);
 // 		this.permissions = Route.Constants.Permissions.ADD;
 // 	}
 
-// 	async _validate(req, res, token) {
+// 	async _validate(req: Request, res: Response) {
 // 		const activity = await this.model.findById(req.params.id);
 
 // 		if (!activity) {
@@ -137,7 +142,7 @@ routes.push(DeleteAllActivity);
 // 		return activity;
 // 	}
 
-// 	_exec(req, res, activity) {
+// 	_exec(req: Request, res: Response, activity) {
 // 		return this._activity.addOrUpdateMetadata(req.params.key, req.body.value);
 // 	}
 // }
@@ -155,7 +160,7 @@ routes.push(DeleteAllActivity);
 // 		this._activity = false;
 // 	}
 
-// 	_validate(req, res, token) {
+// 	_validate(req: Request, res: Response) {
 // 		return new Promise((resolve, reject) => {
 // 			this.model.findById(req.params.id).then((activity) => {
 // 				if (!activity) {
@@ -179,7 +184,7 @@ routes.push(DeleteAllActivity);
 // 		});
 // 	}
 
-// 	_exec(req, res, validate) {
+// 	_exec(req: Request, res: Response, validate) {
 // 		return this._activity.addOrUpdateMetadata(req.params.key, req.body.value);
 // 	}
 // }
@@ -197,7 +202,7 @@ routes.push(DeleteAllActivity);
 // 		this._metadata = false;
 // 	}
 
-// 	_validate(req, res, token) {
+// 	_validate(req: Request, res: Response) {
 // 		return new Promise((resolve, reject) => {
 // 			this.model.findById(req.params.id).then((activity) => {
 // 				if (!activity) {
@@ -216,7 +221,7 @@ routes.push(DeleteAllActivity);
 // 		});
 // 	}
 
-// 	_exec(req, res, validate) {
+// 	_exec(req: Request, res: Response, validate) {
 // 		return this._metadata.value;
 // 	}
 // }
@@ -233,7 +238,7 @@ routes.push(DeleteAllActivity);
 // 		this._activity = false;
 // 	}
 
-// 	_validate(req, res, token) {
+// 	_validate(req: Request, res: Response) {
 // 		return new Promise((resolve, reject) => {
 // 			this.model
 // 				.findById(req.params.id).select('id')
@@ -248,7 +253,7 @@ routes.push(DeleteAllActivity);
 // 		});
 // 	}
 
-// 	_exec(req, res, validate) {
+// 	_exec(req: Request, res: Response, validate) {
 // 		return this._activity.rmMetadata(req.params.key);
 // 	}
 // }

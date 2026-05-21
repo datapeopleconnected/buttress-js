@@ -22,7 +22,14 @@ import { Schema } from '../../helpers/schema.js';
 import LambdaSchemaModel from './lambda.js';
 import UserSchemaModel from './user.js';
 
-class SecureStoreSchemaModel extends StandardModel {
+interface SecureStore {
+  id: string;
+  name: string;
+  storeData: Record<string, unknown>;
+  _appId: string;
+}
+
+class SecureStoreSchemaModel extends StandardModel<SecureStore> {
   static name = 'SecureStore';
 
   constructor(services) {

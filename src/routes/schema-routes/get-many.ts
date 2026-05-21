@@ -14,6 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { Response, Request } from 'express';
+
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
 
@@ -38,17 +40,17 @@ export default class GetMany extends Route {
     this.activityBroadcast = false;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const _ids = req.body.query.ids;
       const project = req.body && req.body.project ? req.body.project : false;
 
       if (!_ids) {
-        this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.id);
+        this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
         return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
       }
       if (!_ids.length) {
-        this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.id);
+        this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
         return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
       }
 
@@ -56,7 +58,7 @@ export default class GetMany extends Route {
     });
   }
 
-  async _exec(req, res, query) {
+  async _exec(req: Request, _res: Response, query: { ids: string[]; project: boolean }) {
     const model = await this.routeModel();
     return model.find({ id: { $in: query.ids.map((id) => model.createId(id)) } }, {}, 0, 0, null, query.project);
   }

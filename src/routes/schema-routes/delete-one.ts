@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -38,7 +39,7 @@ export default class DeleteOne extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const entity = await (await this.routeModel()).findById(req.params.id);
     if (!entity) {
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
@@ -47,7 +48,7 @@ export default class DeleteOne extends Route {
     return entity;
   }
 
-  async _exec(req, res, entity) {
+  async _exec(_req: Request, _res: Response, entity) {
     await (await this.routeModel()).rm(entity.id);
     return true;
   }

@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Request, Response } from 'express';
 
 import Stream from 'node:stream';
 
@@ -170,11 +171,11 @@ export default class Route {
     this.addSourceId = true;
   }
 
-  async _validate(req, res, token): Promise<unknown> {
+  async _validate(req: Request, res: Response): Promise<unknown> {
     throw new Error('Route:_validate not implemented');
   }
 
-  async _exec(req, res, validate): Promise<unknown> {
+  async _exec(req: Request, res: Response, validate: unknown): Promise<unknown> {
     throw new Error('Route:_exec not implemented');
   }
 
@@ -197,34 +198,34 @@ export default class Route {
     const ip = req.ip || req._remoteAddress || (req.connection && req.connection.remoteAddress) || undefined;
     Logging.logTimer(
       `${req.method} ${req.originalUrl || req.url} ${ip}`,
-      req.timer,
+      req.context.timer,
       Logging.Constants.LogLevel.DEBUG,
-      req.id,
+      req.context.id,
     );
-    Logging.logTimer('Route:exec:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-    this._timer = req.timer;
+    Logging.logTimer('Route:exec:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    this._timer = req.context.timer;
 
     if (!this._exec) {
-      Logging.logTimer('Route:exec:end-no-exec-defined', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      Logging.logTimer('Route:exec:end-no-exec-defined', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       throw new Helpers.Errors.RequestError(500, 'Tried to exec route but no exec function defined');
     }
 
-    const token = await this._authenticate(req, res);
+    await this._authenticate(req, res);
 
-    req.timings.validate = req.timer.interval;
-    Logging.logTimer('Route:exec:validate:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-    const validate = await this._validate(req, res, token);
-    Logging.logTimer('Route:exec:validate:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    req.context.timings.validate = req.context.timer.interval;
+    Logging.logTimer('Route:exec:validate:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    const validate = await this._validate(req, res);
+    Logging.logTimer('Route:exec:validate:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
-    req.timings.exec = req.timer.interval;
-    Logging.logTimer('Route:exec:exec:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    req.context.timings.exec = req.context.timer.interval;
+    Logging.logTimer('Route:exec:exec:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     const result = await this._exec(req, res, validate);
-    Logging.logTimer('Route:exec:exec:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer('Route:exec:exec:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
     // Send the result back to the client and resolve the request from
     // this point onward you should treat the request as furfilled.
     if (result instanceof Stream.Readable && result.readable) {
-      result.on('bjs-stream-status', (data) => req.bjsReqStatus(data, this._nrp));
+      result.on('bjs-stream-status', (data) => req.context.bjsReqStatus(data, this._nrp));
 
       const resStream = new Stream.PassThrough({ objectMode: true });
       const broadcastStream = new Stream.PassThrough({ objectMode: true });
@@ -254,7 +255,7 @@ export default class Route {
       await this._boardcastData(req, res, result);
     }
 
-    Logging.logTimer(`Route:exec:end ${res.statusCode}`, this._timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer(`Route:exec:end ${res.statusCode}`, this._timer, Logging.Constants.LogLevel.SILLY, req.context.id);
   }
 
   /**
@@ -264,16 +265,16 @@ export default class Route {
    * @param {*} result
    * @return {*} result
    */
-  async _respond(req, res, result) {
-    req.timings.respond = req.timer.interval;
+  async _respond(req: Request, res: Response, result) {
+    req.context.timings.respond = req.context.timer.interval;
 
     const isReadStream = result instanceof Stream.Readable && result.readable;
 
     Logging.logTimer(
       `_respond:start isReadStream:${isReadStream} redactResults:${this.redactResults}`,
-      req.timer,
+      req.context.timer,
       Logging.Constants.LogLevel.SILLY,
-      req.id,
+      req.context.id,
     );
 
     if (isReadStream) {
@@ -281,25 +282,25 @@ export default class Route {
       const stringifyStream = new Helpers.JSONStringifyStream({}, (chunk) => {
         chunkCount++;
 
-        if (chunkCount % this.timingChunkSample === 0) req.timings.stream.push(req.timer.interval);
+        if (chunkCount % this.timingChunkSample === 0) req.context.timings.stream.push(req.context.timer.interval);
         return this.redactResults
-          ? Helpers.Schema.prepareSchemaResult(chunk, this.addSourceId ? req.authApp.id : null)
+          ? Helpers.Schema.prepareSchemaResult(chunk, this.addSourceId ? req.context.authApp?.id : null)
           : chunk;
       });
 
       res.set('Content-Type', 'application/json');
 
-      Logging.logTimer(`_respond:start-stream`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      Logging.logTimer(`_respond:start-stream`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
       result.once('end', () => {
-        // Logging.logTimerException(`PERF: STREAM DONE: ${req.pathSpec}`, req.timer, 0.05, req.id);
+        // Logging.logTimerException(`PERF: STREAM DONE: ${req.pathSpec}`, req.context.timer, 0.05, req.context.id);
         Logging.logTimer(
           `_respond:end-stream chunks:${chunkCount}`,
-          req.timer,
+          req.context.timer,
           Logging.Constants.LogLevel.SILLY,
-          req.id,
+          req.context.id,
         );
-        req.bjsReqClose(this._nrp);
+        req.context.bjsReqClose(this._nrp);
         this._close(req);
       });
 
@@ -309,28 +310,28 @@ export default class Route {
     }
 
     if (this.redactResults) {
-      res.json(Helpers.Schema.prepareSchemaResult(result, this.addSourceId ? req.authApp.id : null));
+      res.json(Helpers.Schema.prepareSchemaResult(result, this.addSourceId ? req.context.authApp?.id : null));
     } else {
       res.json(result);
     }
 
     this._close(req);
 
-    Logging.logTimer(`_respond:end ${req.pathSpec}`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-    // Logging.logTimerException(`PERF: DONE: ${req.pathSpec}`, req.timer, 0.05, req.id);
+    Logging.logTimer(`_respond:end ${req.pathSpec}`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    // Logging.logTimerException(`PERF: DONE: ${req.pathSpec}`, req.context.timer, 0.05, req.context.id);
 
     return result;
   }
 
   _logActivity(req, res) {
-    req.timings.logActivity = req.timer.interval;
-    Logging.logTimer('_logActivity:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    req.context.timings.logActivity = req.context.timer.interval;
+    Logging.logTimer('_logActivity:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     if (this.verb === Constants.Verbs.GET) {
-      Logging.logTimer('_logActivity:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      Logging.logTimer('_logActivity:end-get', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
     if (this.verb === Constants.Verbs.SEARCH) {
-      Logging.logTimer('_logActivity:end-search', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      Logging.logTimer('_logActivity:end-search', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
 
@@ -339,11 +340,11 @@ export default class Route {
       this._addLogActivity(req, req.pathSpec, this.verb);
     }
 
-    Logging.logTimer('_logActivity:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer('_logActivity:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
   }
 
   _addLogActivity(req, path, verb) {
-    Logging.logTimer('_addLogActivity:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer('_addLogActivity:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     // TODO: activity should pass back a stripped version of the activity object.
     return Model.getCoreModel(ActivitySchemaModel)
       .add({
@@ -358,8 +359,8 @@ export default class Route {
         req: req,
         res: {},
       })
-      .then(Logging.Promise.logTimer('_addLogActivity:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id))
-      .catch((e) => Logging.logError(e, req.id));
+      .then(Logging.Promise.logTimer('_addLogActivity:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id))
+      .catch((e) => Logging.logError(e, req.context.id));
   }
 
   /**
@@ -368,12 +369,12 @@ export default class Route {
    * @param {Object} res
    * @param {*} result
    */
-  async _boardcastData(req, res, result) {
-    req.timings._boardcastData = req.timer.interval;
-    Logging.logTimer('_boardcastData:start', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+  async _boardcastData(req: Request, res: Response, result) {
+    req.context.timings._boardcastData = req.context.timer.interval;
+    Logging.logTimer('_boardcastData:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
     if (this.verb === Constants.Verbs.GET || this.verb === Constants.Verbs.SEARCH) {
-      Logging.logTimer('_boardcastData:end-get', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      Logging.logTimer('_boardcastData:end-get', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
 
@@ -391,7 +392,7 @@ export default class Route {
 
     await this._checkBasedPathLambda(req);
 
-    Logging.logTimer('_boardcastData:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer('_boardcastData:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
   }
 
   /**
@@ -402,13 +403,13 @@ export default class Route {
    * @param {*} path
    * @param {boolean} isSuper
    */
-  async _broadcast(req, res, result, path, isSuper = false) {
+  async _broadcast(req: Request, _res: Response, result, path, isSuper = false) {
     const isReadStream = result instanceof Stream.Readable && result.readable;
     Logging.logTimer(
       `_broadcast:start isReadStream:${isReadStream} path:${path} isSuper:${isSuper}`,
-      req.timer,
+      req.context.timer,
       Logging.Constants.LogLevel.SILLY,
-      req.id,
+      req.context.id,
     );
 
     const emit = (_result) => {
@@ -442,12 +443,12 @@ export default class Route {
 
     if (isReadStream) {
       result.on('data', (data) => emit(Helpers.Schema.prepareSchemaResult(data, req.authApp.id)));
-      Logging.logTimer('_broadcast:end-stream', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      Logging.logTimer('_broadcast:end-stream', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
 
     emit(Helpers.Schema.prepareSchemaResult(result, req.authApp.id));
-    Logging.logTimer('_broadcast:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer('_broadcast:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
   }
 
   /**
@@ -540,11 +541,11 @@ export default class Route {
    * @private
    */
   _authenticate(req, res) {
-    req.timings.authenticate = req.timer.interval;
+    req.context.timings.authenticate = req.context.timer.interval;
     return new Promise((resolve, reject) => {
       if (!req.token) {
-        this.log('EAUTH: INVALID TOKEN', Logging.Constants.LogLevel.ERR, req.id);
-        Logging.logTimer('_authenticate:end-invalid-token', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+        this.log('EAUTH: INVALID TOKEN', Logging.Constants.LogLevel.ERR, req.context.id);
+        Logging.logTimer('_authenticate:end-invalid-token', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
         return reject(new Helpers.Errors.RequestError(401, 'invalid_token'));
       }
 
@@ -552,13 +553,13 @@ export default class Route {
         this.log(
           `EAUTH: INSUFFICIENT AUTHORITY ${req.token.type} is not equal to ${this.authType}`,
           Logging.Constants.LogLevel.ERR,
-          req.id,
+          req.context.id,
         );
         Logging.logTimer(
           '_authenticate:end-insufficient-authority',
-          req.timer,
+          req.context.timer,
           Logging.Constants.LogLevel.SILLY,
-          req.id,
+          req.context.id,
         );
         return reject(new Helpers.Errors.RequestError(401, 'insufficient_authority'));
       }
@@ -571,23 +572,23 @@ export default class Route {
        * @TODO Improve the pattern matching granularity ie like Glob
        * @TODO Support Regex in specific ie match routes like app/:id/permission
        */
-      Logging.logTimer(`_authenticate:start-app-routes`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      Logging.logTimer(`_authenticate:start-app-routes`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
       // BYPASS schema checks for app tokens
       if (req.token.type === 'app') {
-        Logging.logTimer('_authenticate:end-app-token', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+        Logging.logTimer('_authenticate:end-app-token', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
         resolve(req.token);
         return;
       }
 
       // NOT GOOD
       if (req.token.type === 'dataSharing') {
-        Logging.logTimer('_authenticate:end-app-token', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+        Logging.logTimer('_authenticate:end-app-token', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
         resolve(req.token);
         return;
       }
 
-      Logging.logTimer(`_authenticate:end-app-routes`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+      Logging.logTimer(`_authenticate:end-app-routes`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
       resolve(req.token);
     });
@@ -621,9 +622,9 @@ export default class Route {
    * @private
    */
   _close(req) {
-    req.timings.close = req.timer.interval;
-    if (this.slowLogging && req.timings.close > this.slowLoggingTime) {
-      Logging.logError(`${req.method} ${req.url} SLOW REQUEST ${JSON.stringify(req.timings)}`, req.id);
+    req.context.timings.close = req.context.timer.interval;
+    if (this.slowLogging && req.context.timings.close > this.slowLoggingTime) {
+      Logging.logError(`${req.method} ${req.url} SLOW REQUEST ${JSON.stringify(req.context.timings)}`, req.context.id);
     }
   }
 

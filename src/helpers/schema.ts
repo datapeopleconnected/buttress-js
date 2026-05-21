@@ -426,7 +426,7 @@ const __validate = (schema, values, parentProperty, body?: any) => {
 };
 export const validate = __validate;
 
-const __prepareSchemaResult = (result, sourceId = null, projection = false) => {
+const __prepareSchemaResult = (result, sourceId: string | null = null, projection: boolean = false) => {
   const _prepare = (chunk, path) => {
     if (!chunk) return chunk;
 

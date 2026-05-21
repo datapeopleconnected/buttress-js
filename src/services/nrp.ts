@@ -24,7 +24,7 @@ interface RedisOptions {
   scope?: string;
   emitter?: redis.RedisClientType;
   receiver?: redis.RedisClientType;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**

@@ -14,9 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { Request } from 'express';
+
 import * as Helpers from '../helpers/index.js';
 import { PolicyProjection } from '../model/core/policy.js';
-import { BjsRequest } from '../types/bjs-express.js';
 
 import { ApplicablePolicyConfig, PolicyError } from './index.js';
 
@@ -33,7 +34,7 @@ class Projection {
     this._ignoredQueryKeys = ['__crPath', 'project', 'id'];
   }
 
-  async filterPoliciesByPolicyProjection(req: BjsRequest, applicablePolicies: ApplicablePolicyConfig[], schema) {
+  async filterPoliciesByPolicyProjection(req: Request, applicablePolicies: ApplicablePolicyConfig[], schema) {
     const output: ApplicablePolicyConfig[] = [];
 
     for await (const policy of applicablePolicies) {
@@ -52,7 +53,7 @@ class Projection {
   }
 
   async __applyPolicyProjection(
-    req: BjsRequest,
+    req: Request,
     projections: PolicyProjection | null,
     schema,
   ): Promise<{ [key: string]: number } | false> {

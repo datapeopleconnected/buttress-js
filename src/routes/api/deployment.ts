@@ -13,6 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Request, Response } from 'express';
+
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import DeploymentSchemaModel from '../../model/core/deployment.js';
@@ -30,7 +32,7 @@ class SearchDeploymentList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const result: {
       query: {
         $and?: any[];
@@ -58,7 +60,7 @@ class SearchDeploymentList extends Route {
     return result;
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(DeploymentSchemaModel).find(validate.query);
   }
 }
@@ -78,7 +80,7 @@ class DeploymentCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const result = {
       query: {},
     };
@@ -107,7 +109,7 @@ class DeploymentCount extends Route {
     return result;
   }
 
-  _exec(req, res, validateResult) {
+  _exec(req: Request, res: Response, validateResult) {
     return Model.getCoreModel(DeploymentSchemaModel).count(validateResult.query);
   }
 }

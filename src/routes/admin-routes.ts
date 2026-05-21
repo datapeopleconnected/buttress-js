@@ -22,8 +22,8 @@ import * as Helpers from '../helpers/index.js';
 
 import adminPolicy from '../admin-policy.json' with { type: 'json' };
 import adminLambda from '../admin-lambda.json' with { type: 'json' };
-import TokenSchemaModel from '../model/core/token.js';
-import AppSchemaModel from '../model/core/app.js';
+import TokenSchemaModel, { Token } from '../model/core/token.js';
+import AppSchemaModel, { App } from '../model/core/app.js';
 import PolicySchemaModel from '../model/core/policy.js';
 import LambdaSchemaModel from '../model/core/lambda.js';
 
@@ -76,12 +76,17 @@ class AdminRoutes {
 
       if (!superToken) {
         Logging.logError('The used token does not exist');
-        return res.status(404).send({ message: 'Please enter a valid admin token to activate your admin app' });
+        return res.status(404).send({ message: 'invalid_token' });
       }
 
       const superApp = await Model.getCoreModel(AppSchemaModel).findOne({
         _tokenId: Model.getCoreModel(TokenSchemaModel).createId(superToken.id),
       });
+
+      if (!superApp) {
+        Logging.logError('Buttress admin activate can not find super app');
+        return res.status(404).send({ message: 'admin_app_not_found' });
+        }
 
       await this._updateAppPolicySelectorList(superApp);
 
@@ -115,6 +120,11 @@ class AdminRoutes {
           _tokenId: Model.getCoreModel(TokenSchemaModel).createId(adminToken.id),
         });
 
+        if (!adminApp) {
+          Logging.logError('Buttress admin install lambda can not find admin app');
+          return res.status(404).send({ message: 'admin_app_not_found' });
+        }
+
         await this._createAdminPolicy(adminApp.id);
         for await (const lambdaKey of lambdaToInstall) {
           await this._createAdminLambda(adminLambda[lambdaKey]);
@@ -145,8 +155,8 @@ class AdminRoutes {
   }
 
   async checkAdminCall(req) {
-    let adminToken: any = null;
-    let adminApp = null;
+    let adminToken: Token | null = null;
+    let adminApp: App | null = null;
     const isAdminRouteCall = this._routes.some((r) => {
       let reqURL = req.url;
       if (r.includes(':')) {
@@ -180,7 +190,7 @@ class AdminRoutes {
    * Update admin app policy selectors list
    * @param {Object} app
    */
-  async _updateAppPolicySelectorList(app) {
+  async _updateAppPolicySelectorList(app: App) {
     let adminPolicyPropsList = {
       role: ['ADMIN', 'ADMIN_LAMBDA'],
     };
@@ -204,7 +214,7 @@ class AdminRoutes {
    * Create Buttress pre-defined policy
    * @param {String} appId
    */
-  async _createAdminPolicy(appId) {
+  async _createAdminPolicy(appId: string) {
     for await (const policy of adminPolicy as any) {
       const policyDB = await Model.getCoreModel(PolicySchemaModel).findOne({
         name: {

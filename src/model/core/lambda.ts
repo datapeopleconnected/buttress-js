@@ -77,7 +77,7 @@ export interface Lambda {
   updatedAt: Date;
 }
 
-export default class LambdaModel extends StandardModel {
+export default class LambdaModel extends StandardModel<Lambda> {
   static name = 'Lambda';
 
   constructor(services) {
@@ -369,7 +369,7 @@ export default class LambdaModel extends StandardModel {
       }
 
       const apiTrigger = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
-      let lambdaExists = null;
+      let lambdaExists: Lambda | null = null;
       if (apiTrigger && apiTrigger.apiEndpoint.url) {
         lambdaExists = await this.__modelManager.getCoreModel(LambdaSchemaModel).findOne({
           'trigger.apiEndpoint.url': {

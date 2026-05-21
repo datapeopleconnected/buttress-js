@@ -40,7 +40,7 @@ export interface Token {
   domains: string[];
   permissions: { route: string; permission: string }[];
   tags: string[];
-  policyProperties: any;
+  policyProperties: Record<string, unknown> | null;
   _appId: string;
   _lambdaId: string;
   _userId: string;
@@ -48,7 +48,7 @@ export interface Token {
   _appDataSharingId: string;
 }
 
-class TokenSchemaModel extends StandardModel {
+class TokenSchemaModel extends StandardModel<Token> {
   static name = 'Token';
 
   __policyCache: PolicyCache;

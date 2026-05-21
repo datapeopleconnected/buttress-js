@@ -58,8 +58,9 @@ class PolicyMatch {
         let lhs = policyProperties[key];
         lhs = !Array.isArray(lhs) ? [lhs] : lhs;
         if (typeof rhs === 'string') rhs = rhs.toUpperCase();
+
         lhs = lhs.map((s) => {
-          if (typeof lhs === 'string') s = s.toUpperCase();
+          if (typeof s === 'string') s = s.toUpperCase();
           return s;
         });
 

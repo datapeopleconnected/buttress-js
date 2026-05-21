@@ -48,7 +48,7 @@ export interface App {
   };
 }
 
-export default class AppSchemaModel extends StandardModel {
+export default class AppSchemaModel extends StandardModel<App> {
   static name = 'App';
 
   private _localSchema: any;
@@ -284,7 +284,7 @@ export default class AppSchemaModel extends StandardModel {
    * @param {object} rawSchema - encoded raw app schema
    * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
    */
-  async updateSchema(appId, compiledSchema, rawSchema?) {
+  async updateSchema(appId: string, compiledSchema, rawSchema?) {
     Logging.logSilly(`Update Schema ${appId}`);
 
     await super.updateById(appId, { $set: { __schema: Helpers.Schema.encode(compiledSchema) } });

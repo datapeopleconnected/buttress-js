@@ -14,6 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { Request, Response } from 'express';
+
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
 import { Schema, modelToRoute } from '../../helpers/schema.js';
@@ -38,11 +40,11 @@ export default class AddMany extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
     const entities = req.body;
     if (entities instanceof Array === false) {
-      this.log(`ERROR: You need to supply an array of ${this.schemaName}`, Route.LogLevel.ERR, req.id);
+      this.log(`ERROR: You need to supply an array of ${this.schemaName}`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `array_required`);
     }
     // if (companies.length > 601) {
@@ -54,11 +56,11 @@ export default class AddMany extends Route {
     const validation = model.validate(entities);
     if (!validation.isValid) {
       if (validation.missing.length > 0) {
-        this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
+        this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.context.id);
         throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`);
       }
       if (validation.invalid.length > 0) {
-        this.log(`ERROR: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
+        this.log(`ERROR: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.context.id);
         throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`);
       }
 
@@ -67,7 +69,7 @@ export default class AddMany extends Route {
     return entities;
   }
 
-  async _exec(req, res, entities) {
+  async _exec(_req: Request, _res: Response, entities: unknown) {
     return (await this.routeModel()).add(entities);
   }
 }

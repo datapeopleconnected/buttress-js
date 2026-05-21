@@ -52,7 +52,7 @@ const App = {
   MICROSOFT: apps[4],
 };
 
-export default class UserSchemaModel extends StandardModel {
+export default class UserSchemaModel extends StandardModel<User> {
   static name = 'User';
 
   constructor(services) {

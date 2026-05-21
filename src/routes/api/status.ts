@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import os from 'node:os';
+import { Response, Request } from 'express';
 
 import Route from '../route.js';
 
@@ -30,11 +31,11 @@ class GetProcessStatus extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     return Promise.resolve(true);
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     const mem = process.memoryUsage().rss;
     const memTotal = os.totalmem();
 

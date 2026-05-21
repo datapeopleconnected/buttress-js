@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
@@ -33,11 +34,11 @@ class GetTrackingList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, res: Response) {
     return Promise.resolve(true);
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(TrackingSchemaModel).findAll();
   }
 }
@@ -58,7 +59,7 @@ class AddTracking extends Route {
     this.activityBroadcast = false;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, res: Response) {
     return new Promise((resolve, reject) => {
       const validation = Model.getCoreModel(TrackingSchemaModel).validate(req.body);
       if (!validation.isValid) {
@@ -79,7 +80,7 @@ class AddTracking extends Route {
     });
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(TrackingSchemaModel).add(req.body);
   }
 }
@@ -145,7 +146,7 @@ class DeleteTracking extends Route {
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     const tracking = await Model.getCoreModel(TrackingSchemaModel).findById(req.params.id);
     if (!tracking) {
       this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
@@ -155,7 +156,7 @@ class DeleteTracking extends Route {
     return tracking;
   }
 
-  async _exec(req, res, tracking) {
+  async _exec(req: Request, res: Response, tracking) {
     await Model.getCoreModel(TrackingSchemaModel).rm(tracking.id);
     return true;
   }
@@ -173,11 +174,11 @@ class DeleteAllTrackings extends Route {
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, res: Response) {
     return true;
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, res: Response, validate) {
     await Model.getCoreModel(TrackingSchemaModel).rmAll({});
     return true;
   }

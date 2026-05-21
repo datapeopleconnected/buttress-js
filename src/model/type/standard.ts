@@ -31,7 +31,7 @@ import { ModelManager } from '../index.js';
  *
  **********************************************************************************/
 
-export default class StandardModel {
+export default class StandardModel<TDocument = unknown> {
   static name = 'Model';
 
   schemaData: Schema;
@@ -366,7 +366,7 @@ export default class StandardModel {
    * @return {promise}
    */
   // TODO: Model shouldn't be being passed through this way.
-  async updateByPath(body, id, sourceId = null) {
+  async updateByPath(body, id: string, _sourceId: string | null = null) {
     if (body instanceof Array === false) {
       body = [body];
     }
@@ -408,7 +408,7 @@ export default class StandardModel {
    * @param {object} extra
    * @return {Promise}
    */
-  exists(id, sourceId = null, extra = {}) {
+  exists(id, sourceId: string | null = null, extra = {}) {
     return this.adapter.exists(id, extra);
   }
 
@@ -469,9 +469,9 @@ export default class StandardModel {
   /**
    * @param {Object} query - mongoDB query
    * @param {Object} excludes - mongoDB query excludes
-   * @return {Promise} - resolves to an array of docs
+   * @return {Promise} - resolves to a single doc or null
    */
-  findOne(query, excludes = {}) {
+  findOne(query, excludes = {}): Promise<TDocument | null> {
     return this.adapter.findOne(query, excludes);
   }
 

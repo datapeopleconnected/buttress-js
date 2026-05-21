@@ -15,12 +15,16 @@
  */
 
 import { ObjectId } from 'bson';
+import { Request } from 'express';
+
+
 import * as Helpers from '../helpers/index.js';
 
 import { PolicyEnvQuery } from '../model/core/policy.js';
 
 import Model from '../model/index.js';
 import { Filter } from './filter.js';
+import { User } from '../model/core/user.js';
 
 export interface ACBaseEnv {
   date: {
@@ -56,7 +60,7 @@ export class PolicyEnv {
     };
   }
 
-  generateRequestGlobalEnvs(req, appId, authUser): ACEnv {
+  generateRequestGlobalEnvs(_req: Request | null, appId: string, authUser: User | null): ACEnv {
     return {
       ...this.generateBaseGlobalEnvs(),
       ipAddress: null,

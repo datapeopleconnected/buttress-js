@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -40,11 +41,11 @@ export default class UpdateMany extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
 
     if (!Array.isArray(req.body)) {
-      this.log(`${this.schemaName}: Expected body to be an array of updates`, Route.LogLevel.ERR, req.id);
+      this.log(`${this.schemaName}: Expected body to be an array of updates`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Expected body to be an array of updates`);
     }
 
@@ -69,7 +70,7 @@ export default class UpdateMany extends Route {
 
       if (!validation.isValid) {
         if (validation.isPathValid === false) {
-          this.log(`${this.schemaName}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);
+          this.log(`${this.schemaName}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.context.id);
           update.validation = {
             code: 400,
             message: `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
@@ -80,12 +81,12 @@ export default class UpdateMany extends Route {
           this.log(
             `${this.schemaName}: Update value is invalid: ${validation.invalidValue}`,
             Route.LogLevel.ERR,
-            req.id,
+            req.context.id,
           );
           if (validation.isMissingRequired) {
             update.validation = {
               code: 400,
-              message: `${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
+              message: `${this.schemaName}: Missing required property updating ${body.path}: ${validation.missingRequired}`,
             };
             continue;
           }
@@ -94,7 +95,7 @@ export default class UpdateMany extends Route {
         // ? I've moved outside isValidValue to be the default fallback if isValid is false.
         update.validation = {
           code: 400,
-          message: `${this.schemaName}: Update value is invalid for path ${req.body.path}: ${validation.invalidValue}`,
+          message: `${this.schemaName}: Update value is invalid for path ${body.path}: ${validation.invalidValue}`,
         };
         continue;
       }
@@ -102,10 +103,10 @@ export default class UpdateMany extends Route {
       const exists = await model.exists(update.id, body.sourceId);
 
       if (!exists) {
-        this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.id);
+        this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
         update.validation = {
           code: 400,
-          message: `${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
+          message: `${this.schemaName}: Missing required property updating ${body.path}: ${validation.missingRequired}`,
         };
         continue;
       }
@@ -116,7 +117,7 @@ export default class UpdateMany extends Route {
     return data;
   }
 
-  async _exec(req, res, data) {
+  async _exec(_req: Request, _res: Response, _data: unknown) {
     const model = await this.routeModel();
 
     const output: {
@@ -125,7 +126,7 @@ export default class UpdateMany extends Route {
       results: any;
     }[] = [];
 
-    for await (const body of data) {
+    for await (const body of _data as any[]) {
       const result = await model.updateByPath(body.body, body.id, body.sourceId);
       output.push({ id: body.id, sourceId: body.sourceId, results: result });
     }
