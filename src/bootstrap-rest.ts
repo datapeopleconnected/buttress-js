@@ -23,7 +23,6 @@ import { fileURLToPath } from 'node:url';
 import Express from 'express';
 import { createClient, RedisClientType } from '@redis/client';
 import cors from 'cors';
-import methodOverride from 'method-override';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -185,7 +184,6 @@ export default class BootstrapRest extends Bootstrap {
     app.enable('trust proxy');
     app.use(Express.json({ limit: '20mb' }));
     app.use(Express.urlencoded({ extended: true }));
-    app.use(methodOverride());
     app.use(
       cors({
         origin: true,
