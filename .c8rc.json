@@ -1,0 +1,20 @@
+{
+  "all": true,
+  "src": [
+    "dist"
+  ],
+  "exclude": [
+    "test/**",
+    "node_modules/**",
+    "**/*.d.ts",
+    "src/types/**",
+    "dist/types/**",
+    "dist/**/*.test.js",
+    "dist/**/*.spec.js"
+  ],
+  "reporter": [
+    "text",
+    "lcov",
+    "json-summary"
+  ]
+}
