@@ -28,6 +28,8 @@ const Config = createConfig() as unknown as Config;
 import AdminRoutes from './admin-routes.js';
 import { BjsRequest } from '../types/bjs-express.js';
 import AppSchemaModel from '../model/core/app.js';
+import AppDataSharingSchemaModel from '../model/core/app-data-sharing.js';
+import UserSchemaModel from '../model/core/user.js';
 import LambdaSchemaModel from '../model/core/lambda.js';
 import TokenSchemaModelCore from '../model/core/token.js';
 
@@ -234,6 +236,37 @@ export class RoutesMiddleware {
           req.id,
         );
       }
+
+      if (!req.authAppDataSharing) {
+        const appDataSharing = req.token._appDataSharingId
+          ? await Model.getCoreModel(AppDataSharingSchemaModel).findById(req.token._appDataSharingId)
+          : null;
+        req.authAppDataSharing = appDataSharing;
+        Logging.logTimer(
+          `_authenticateToken:got-app-data-sharing-agreement ${req.authAppDataSharing ? req.authAppDataSharing.id : appDataSharing}`,
+          req.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.id,
+        );
+      }
+
+      let user = null;
+      if (req.token._userId) {
+        user = await Model.getCoreModel(UserSchemaModel).findById(req.token._userId);
+
+        if (!user) {
+          Logging.logSilly(`Request was made with a valid token but no user was found for token ${req.token.id}`);
+          throw new Helpers.Errors.RequestError(400, 'invalid_token');
+        }
+      }
+
+      req.authUser = user;
+      Logging.logTimer(
+        `_authenticateToken:got-user ${req.authUser ? req.authUser.id : user}`,
+        req.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.id,
+      );
 
       Logging.logTimer('_authenticateToken:end', req.timer, Logging.Constants.LogLevel.SILLY, req.id);
       next();
