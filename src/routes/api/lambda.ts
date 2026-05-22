@@ -273,6 +273,7 @@ class UpdateLambda extends Route {
 
   _validate(req: Request, res: Response) {
     return new Promise((resolve, reject) => {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { validation, body } = Model.getCoreModel(LambdaSchemaModel).validateUpdate(req.body);
       req.body = body;
 
@@ -292,23 +293,25 @@ class UpdateLambda extends Route {
       }
 
       Model.getCoreModel(LambdaSchemaModel)
-        .exists(req.params.id)
+        .exists(id)
         .then((exists) => {
           if (!exists) {
             this.log('ERROR: Invalid LAMBDA ID', Route.LogLevel.ERR);
             return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
           }
-          resolve(true);
+          resolve({
+            id,
+          });
         });
     });
   }
 
-  async _exec(req: Request, res: Response, validate) {
-    const updated = await Model.getCoreModel(LambdaSchemaModel).updateByPath(req.body, req.params.id);
+  async _exec(req: Request, _res: Response, validate) {
+    const updated = await Model.getCoreModel(LambdaSchemaModel).updateByPath(req.body, validate.id);
 
     // TODO: Check to see if the updated involved the triggers or path mutations.
 
-    const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(req.params.id);
+    const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(validate.id);
     if (req.body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
       await Model.getCoreModel(LambdaSchemaModel).pullLambdaCode(lambda);
     }
@@ -732,7 +735,7 @@ class DeleteLambda extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req) {
+  async _validate(req: Request, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));

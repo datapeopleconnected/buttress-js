@@ -69,7 +69,7 @@ class SecureStoreSchemaModel extends StandardModel<SecureStore> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with secure store value Object when the database request is completed
    */
-  async add(req, body) {
+  async add(req: Request, body) {
     const data = {
       id: body.id ? body.id : null,
       name: body.name ? body.name : null,

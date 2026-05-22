@@ -20,14 +20,14 @@ import Model from '../../model/index.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import Datastore from '../../datastore/index.js';
-import TokenSchemaModel from '../../model/core/token.js';
-import UserSchemaModel from '../../model/core/user.js';
+import TokenSchemaModel, { Token } from '../../model/core/token.js';
+import UserSchemaModel, { User } from '../../model/core/user.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import AppSchemaModel from '../../model/core/app.js';
 
 const routes: (typeof Route)[] = [];
 
-function getTokenQueryfromParams(req, userId) {
+function getTokenQueryfromParams(req: Request, userId: string) {
   let tokenId = null;
   try {
     tokenId = Model.getCoreModel(TokenSchemaModel).createId(req.params.tokenId);
@@ -66,17 +66,24 @@ class GetUserList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(req: Request, res: Response) {
-    return Promise.resolve(true);
+  _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+    }
+
+    return Promise.resolve({
+      appId: req.context.authApp.id,
+    });
   }
 
-  _exec(req: Request, res: Response, validate) {
-    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+  _exec(req: Request, _res: Response, validate: { appId: string }) {
+    if (req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       return Model.getCoreModel(UserSchemaModel).findAll();
     }
 
     return Model.getCoreModel(UserSchemaModel).find({
-      _appId: Model.getCoreModel(UserSchemaModel).createId(req.authApp.id),
+      _appId: Model.getCoreModel(UserSchemaModel).createId(validate.appId),
     });
   }
 }
@@ -93,18 +100,24 @@ class GetUser extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, res: Response) {
-    if (!req.params.id) {
+  async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+    }
+
+    let id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `missing_field`);
     }
 
-    if (req.params.id === 'me') {
-      if (!token) {
+    if (id === 'me') {
+      if (!req.context.token) {
         this.log(`[${this.name}] Missing token`, Route.LogLevel.ERR);
         throw new Helpers.Errors.RequestError(400, `missing_token`);
       }
-      req.params.id = token._userId;
+      id = req.context.token._userId;
     }
 
     let user: any = null;
@@ -112,12 +125,12 @@ class GetUser extends Route {
     let userId: string;
 
     try {
-      userId = Model.getCoreModel(UserSchemaModel).createId(req.params.id);
+      userId = Model.getCoreModel(UserSchemaModel).createId(id);
     } catch (err) {
       throw new Helpers.Errors.RequestError(400, `inavlid_id`);
     }
 
-    const isSystemToken = req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
+    const isSystemToken = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
     user = await Model.getCoreModel(UserSchemaModel).findOne({
       $or: [
         {
@@ -126,8 +139,8 @@ class GetUser extends Route {
           },
         },
       ],
-      ...(req.authApp.id && !isSystemToken
-        ? { _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }
+      ...(req.context.authApp.id && !isSystemToken
+        ? { _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id) }
         : {}),
     });
 
@@ -138,7 +151,7 @@ class GetUser extends Route {
 
     if (userTokens.length < 1 && user) {
       userTokens = await Helpers.streamAll(
-        await Model.getCoreModel(TokenSchemaModel).findUserAuthTokens(user.id, req.authApp.id),
+        await Model.getCoreModel(TokenSchemaModel).findUserAuthTokens(user.id, req.context.authApp.id),
       );
     }
     if (userTokens.length < 1) {
@@ -181,16 +194,21 @@ class FindUser extends Route {
   }
 
   async _validate(req: Request, res: Response) {
-    const authApp = req.params.app;
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+    }
+
+    const authApp = Array.isArray(req.params.app) ? req.params.app[0] : req.params.app;
     const validAuthApps = ['twitter', 'facebook', 'google', 'linkedin', 'microsoft'];
     if (!validAuthApps.includes(authApp) && !authApp.startsWith('app-')) {
       return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
     }
 
     const _user = await Model.getCoreModel(UserSchemaModel).getByAuthAppId(
-      req.params.app,
+      authApp,
       req.params.id,
-      req.authApp.id,
+      req.context.authApp.id,
     );
     if (!_user) {
       this.log(`[${this.name}] Could not fetch user`, Route.LogLevel.ERR);
@@ -208,7 +226,7 @@ class FindUser extends Route {
     };
 
     const userTokens = await Helpers.streamAll(
-      await Model.getCoreModel(TokenSchemaModel).findUserAuthTokens(_user.id, req.authApp.id),
+      await Model.getCoreModel(TokenSchemaModel).findUserAuthTokens(_user.id, req.context.authApp.id),
     );
     output.tokens =
       userTokens.length > 0
@@ -240,7 +258,7 @@ class GetUserByToken extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req) {
+  async _validate(req: Request, _res: Response) {
     const { token } = req.body;
     if (!token) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
@@ -291,6 +309,11 @@ class CreateUserAuthToken extends Route {
   }
 
   async _validate(req: Request, res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+    }
+
     if (!req.body || !req.body.policyProperties || !req.body.domains) {
       this.log(`[${this.name}] Missing required field (policyProperties or domains)`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
@@ -310,7 +333,7 @@ class CreateUserAuthToken extends Route {
     }
 
     const policyCheck = await Helpers.checkAppPolicyProperty(
-      req.authApp.policyPropertiesList,
+      req.context.authApp.policyPropertiesList,
       req.body.policyProperties,
     );
     if (!policyCheck.passed) {
@@ -318,19 +341,22 @@ class CreateUserAuthToken extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
     }
 
-    return Promise.resolve(user);
+    return Promise.resolve({
+      appId: req.context.authApp.id,
+      user,
+    });
   }
 
-  async _exec(req: Request, res: Response, user) {
+  async _exec(req: Request, res: Response, validate: { appId: string; user: any }) {
     const rxsToken = await Model.getCoreModel(TokenSchemaModel).add(req.body, {
-      _appId: Datastore.getInstance('core').ID.new(req.authApp.id),
-      _userId: Datastore.getInstance('core').ID.new(user.id),
+      _appId: Datastore.getInstance('core').ID.new(validate.appId),
+      _userId: Datastore.getInstance('core').ID.new(validate.user.id),
     });
     const token: any = await Helpers.streamFirst(rxsToken);
 
     // We'll make sure to add the user to the app
-    // if+ (user._appId !== req.authApp.id.toString()) {
-    // 	await Model.getCoreModel(UserSchemaModel).updateApps(user, req.authApp.id);
+    // if+ (user._appId !== req.context.authApp.id.toString()) {
+    // 	await Model.getCoreModel(UserSchemaModel).updateApps(user, req.context.authApp.id);
     // }
 
     this._nrp?.emit('app-routes:bust-cache', '{}');
@@ -378,7 +404,7 @@ routes.push(CreateUserAuthToken);
 // 			}
 
 // 			req.body.auth.type = Model.getCoreModel(TokenSchemaModel).Constants.Type.USER;
-// 			req.body.auth.app = req.authApp.id;
+// 			req.body.auth.app = req.context.authApp.id;
 // 		} else {
 // 			this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
 // 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
@@ -398,7 +424,7 @@ routes.push(CreateUserAuthToken);
 // 		// TODO: Strip back return data, should match find user
 // 		let policyProperties = null;
 // 		if (user._appMetadata) {
-// 			const _appMetadata = user._appMetadata.find((md) => md.appId.toString() === req.authApp.id.toString());
+// 			const _appMetadata = user._appMetadata.find((md) => md.appId.toString() === req.context.authApp.id.toString());
 // 			policyProperties = (_appMetadata) ? _appMetadata.policyProperties : null;
 // 		}
 
@@ -424,7 +450,10 @@ class AddUser extends Route {
   }
 
   async _validate(req: Request, res: Response) {
-    Logging.log(req.body, Logging.Constants.LogLevel.DEBUG);
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+    }
 
     if (!req.body.auth) {
       this.log(`[${this.name}] Missing required user auth block`, Route.LogLevel.ERR);
@@ -441,7 +470,7 @@ class AddUser extends Route {
       const user = await Model.getCoreModel(UserSchemaModel).findOne({
         'auth.app': auth.app,
         $or: [{ 'auth.appId': auth.appId }, { 'auth.email': auth.email }],
-        _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
+        _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
       });
       if (user) {
         existingUsers.push(user);
@@ -456,7 +485,7 @@ class AddUser extends Route {
 
     if (req.body.token && req.body.token.policyProperties) {
       const policyCheck = await Helpers.checkAppPolicyProperty(
-        req.authApp.policyPropertiesList,
+        req.context.authApp.policyPropertiesList,
         req.body.token.policyProperties,
       );
       if (!policyCheck.passed) {
@@ -465,12 +494,14 @@ class AddUser extends Route {
       }
     }
 
-    return Promise.resolve(true);
+    return Promise.resolve({
+      appId: req.context.authApp.id,
+    });
   }
 
-  async _exec(req: Request, res: Response, validate) {
+  async _exec(req: Request, _res: Response, validate: { appId: string }) {
     const user = await Model.getCoreModel(UserSchemaModel).add(req.body, {
-      _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
+      _appId: Model.getCoreModel(AppSchemaModel).createId(validate.appId),
     });
 
     return {
@@ -498,6 +529,12 @@ class UpdateUser extends Route {
 
   _validate(req: Request, res: Response) {
     return new Promise((resolve, reject) => {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
+        return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      }
+
       const { validation, body } = Model.getCoreModel(UserSchemaModel).validateUpdate(req.body);
       req.body = body;
       if (!validation.isValid) {
@@ -516,19 +553,21 @@ class UpdateUser extends Route {
       }
 
       Model.getCoreModel(UserSchemaModel)
-        .exists(req.params.id)
+        .exists(id)
         .then((exists) => {
           if (!exists) {
             this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
             return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
           }
-          resolve(true);
+          resolve({
+            id
+          });
         });
     });
   }
 
-  _exec(req: Request, res: Response, validate) {
-    return Model.getCoreModel(UserSchemaModel).updateByPath(req.body, req.params.id);
+  _exec(req: Request, _res: Response, validate: { id: string }) {
+    return Model.getCoreModel(UserSchemaModel).updateByPath(req.body, validate.id);
   }
 }
 routes.push(UpdateUser);
@@ -552,8 +591,14 @@ class SetUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, res: Response) {
-    const app = req.authApp;
+  async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+    }
+
+    const app = req.context.authApp;
     if (!app) {
       this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
@@ -564,7 +609,7 @@ class SetUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const userId = Model.getCoreModel(UserSchemaModel).createId(req.params.id);
+    const userId = Model.getCoreModel(UserSchemaModel).createId(id);
     const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
@@ -588,15 +633,17 @@ class SetUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
     }
 
-    return Promise.resolve(userToken);
+    return Promise.resolve({
+      tokenId: userToken.id,
+    });
   }
 
-  async _exec(req: Request, res: Response, validate) {
-    await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(validate.id.toString(), req.body);
+  async _exec(req: Request, res: Response, validate: { tokenId: string }) {
+    await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(validate.tokenId, req.body);
 
     // this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
     // 	userId: req.params.id,
-    // 	appId: req.authApp.id,
+    // 	appId: req.context.authApp.id,
     // }));
 
     // TODO: Do we really need to wait for the socket to respond?
@@ -606,7 +653,7 @@ class SetUserPolicyProperties extends Route {
     // 	this._nrp.emit('worker:socket:evaluateUserRooms', {
     // 		id,
     // 		userId: req.params.id,
-    // 		appId: req.authApp.id,
+    // 		appId: req.context.authApp.id,
     // 	});
 
     // 	let unsubscribe = null;
@@ -641,10 +688,16 @@ class UpdateUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, res: Response) {
-    const app = req.authApp;
+  async _validate(req: Request, _res: Response) {
+    const app = req.context.authApp;
     if (!app) {
       this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
@@ -653,7 +706,7 @@ class UpdateUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const userId = Model.getCoreModel(UserSchemaModel).createId(req.params.id);
+    const userId = Model.getCoreModel(UserSchemaModel).createId(id);
     const exists = Model.getCoreModel(UserSchemaModel).exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
@@ -685,7 +738,7 @@ class UpdateUserPolicyProperties extends Route {
 
     // this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
     // 	userId: req.params.id,
-    // 	appId: req.authApp.id,
+    // 	appId: req.context.authApp.id,
     // }));
 
     // TODO: Do we really need to wait for the socket to respond?
@@ -695,7 +748,7 @@ class UpdateUserPolicyProperties extends Route {
     // 	this._nrp.emit('worker:socket:evaluateUserRooms', {
     // 		id,
     // 		userId: req.params.id,
-    // 		appId: req.authApp.id,
+    // 		appId: req.context.authApp.id,
     // 	});
 
     // 	let unsubscribe = null;
@@ -730,13 +783,24 @@ class RemoveUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+    }
+
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const userId = Model.getCoreModel(UserSchemaModel).createId(req.params.id);
+    const userId = Model.getCoreModel(UserSchemaModel).createId(id);
     const exists = Model.getCoreModel(UserSchemaModel).exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
@@ -755,24 +819,27 @@ class RemoveUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
     }
 
-    return Promise.resolve(userToken);
+    return Promise.resolve({
+      appId: req.context.authApp.id,
+      userToken
+    });
   }
 
-  async _exec(req: Request, res: Response, validate) {
+  async _exec(req: Request, res: Response, validate: { appId: string; userToken: any }) {
     const reqPolicyProps = req.body;
-    const policyProps = validate.policyProperties;
+    const policyProps = validate.userToken.policyProperties;
     Object.keys(reqPolicyProps).forEach((key) => {
       if (policyProps[key] && policyProps[key] === reqPolicyProps[key]) {
         delete policyProps[key];
       }
     });
-    await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate, policyProps);
+    await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate.userToken, policyProps);
 
     this._nrp?.emit(
       'worker:socket:evaluateUserRooms',
       JSON.stringify({
         userId: req.params.id,
-        appId: req.authApp.id,
+        appId: validate.appId,
       }),
     );
 
@@ -800,13 +867,24 @@ class ClearUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+    }
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+    }
+
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const userId = Model.getCoreModel(UserSchemaModel).createId(req.params.id);
+    const userId = Model.getCoreModel(UserSchemaModel).createId(id);
     const exists = Model.getCoreModel(UserSchemaModel).exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
@@ -825,17 +903,21 @@ class ClearUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
     }
 
-    return Promise.resolve(userToken);
+    return Promise.resolve({
+      userId, 
+      appId: req.context.authApp.id,
+      userToken
+    });
   }
 
-  async _exec(req: Request, res: Response, validate) {
-    await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.id);
+  async _exec(req: Request, res: Response, validate: { userId: string; appId: string; userToken: any }) {
+    await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.userToken.id);
 
     this._nrp?.emit(
       'worker:socket:evaluateUserRooms',
       JSON.stringify({
-        userId: req.params.id,
-        appId: req.authApp.id,
+        userId: validate.userId,
+        appId: validate.appId,
       }),
     );
 
@@ -855,12 +937,19 @@ class DeleteAllUsers extends Route {
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  async _validate(req: Request, res: Response) {
-    return;
+  async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+    }
+
+    return {
+      appId: req.context.authApp.id,
+    }
   }
 
-  async _exec(req: Request, res: Response, validate) {
-    await Model.getCoreModel(UserSchemaModel).rmAll({ _appId: req.authApp.id });
+  async _exec(req: Request, _res: Response, validate: { appId: string }) {
+    await Model.getCoreModel(UserSchemaModel).rmAll({ _appId: validate.appId });
     return true;
   }
 }
@@ -877,20 +966,31 @@ class DeleteUser extends Route {
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  async _validate(req: Request, res: Response) {
-    if (!req.params.id) {
+  async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const user = await Model.getCoreModel(UserSchemaModel).findById(req.params.id);
+    if (!req.context.token) {
+      this.log('ERROR: No authenticated token', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_token`));
+    }
+
+    const user = await Model.getCoreModel(UserSchemaModel).findById(id);
     if (!user) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
 
     const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ _userId: user.id });
-    if (token.value === userToken?.value) {
+    if (!userToken) {
+      this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
+    }
+
+    if (req.context.token.value === userToken.value) {
       this.log(`ERROR: A user could not delete itself`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_can_not_delete_itself`));
     }
@@ -901,9 +1001,9 @@ class DeleteUser extends Route {
     };
   }
 
-  async _exec(req: Request, res: Response, validate) {
+  async _exec(req: Request, res: Response, validate: { user: User; token: Token }) {
     await Model.getCoreModel(UserSchemaModel).rm(validate.user.id);
-
+    
     if (validate.token) {
       await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
     }
@@ -953,7 +1053,7 @@ class clearUserLocalData extends Route {
     this._nrp?.emit(
       'clearUserLocalData',
       JSON.stringify({
-        appAPIPath: req.authApp ? req.authApp.apiPath : '',
+        appAPIPath: req.context.authApp ? req.context.authApp.apiPath : '',
         userId: user.id,
         collections: req.body.collections ? req.body.collections : false,
       }),

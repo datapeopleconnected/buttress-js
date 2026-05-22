@@ -13,6 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Request, Response } from 'express';
+
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
@@ -42,7 +44,7 @@ class AdminRoutes {
    * @return {promise}
    */
   async initAdminRoutes(app) {
-    app.get('/api/v1/check/admin', async (req, res) => {
+    app.get('/api/v1/check/admin', async (req: Request, res: Response) => {
       const superToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
       });
@@ -67,7 +69,7 @@ class AdminRoutes {
       });
     });
 
-    app.get('/api/v1/admin/activate/:superToken', async (req, res) => {
+    app.get('/api/v1/admin/activate/:superToken', async (req: Request, res: Response) => {
       const tokenValue = req.params.superToken;
       const superToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         value: tokenValue,
@@ -93,7 +95,7 @@ class AdminRoutes {
       res.status(200).send({ appId: superApp.id });
     });
 
-    app.post('/api/v1/admin/install-lambda', async (req, res) => {
+    app.post('/api/v1/admin/install-lambda', async (req: Request, res: Response) => {
       const tokenValue = req.query.token;
       const lambdaToInstall = req.body.installLambda;
       const refreshAdminToken = req.body.refreshAdminToken;
@@ -154,7 +156,7 @@ class AdminRoutes {
     });
   }
 
-  async checkAdminCall(req) {
+  async checkAdminCall(req: Request) {
     let adminToken: Token | null = null;
     let adminApp: App | null = null;
     const isAdminRouteCall = this._routes.some((r) => {
@@ -249,7 +251,7 @@ class AdminRoutes {
    * Create Buttress pre-defined lambda
    * @param {Array} lambdas
    */
-  async _createAdminLambda(lambdas) {
+  async _createAdminLambda(lambdas: any[]) {
     try {
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
@@ -300,7 +302,7 @@ class AdminRoutes {
    * @param {Object} token
    * @param {Object} app
    */
-  async _refreshAdminAppToken(token, app) {
+  async _refreshAdminAppToken(token: Token, app: App) {
     const rxsNewToken = await Model.getCoreModel(TokenSchemaModel).add(
       {
         type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,

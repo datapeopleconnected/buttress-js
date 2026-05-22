@@ -41,10 +41,15 @@ class GetTokenList extends Route {
     this.redactResults = false;
   }
 
-  _validate(req: Request, res: Response) {
+  _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
+    }
+
     const queryParams: QueryParams<Token> = {
       query: {
-        _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
+        _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
       },
       project: {
         id: 1,
@@ -53,7 +58,7 @@ class GetTokenList extends Route {
       },
     };
 
-    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+    if (req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       queryParams.query = {};
       queryParams.project = {};
     }
@@ -62,7 +67,7 @@ class GetTokenList extends Route {
   }
 
   async _exec(req: Request, res: Response, validate) {
-    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
+    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
   }
 }
 routes.push(GetTokenList);
@@ -80,10 +85,15 @@ class SearchTokenList extends Route {
     this.redactResults = false;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
+    }
+
     const queryParams: QueryParams<Token> = {
       query: {
-        $and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }],
+        $and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id) }],
       },
       project: {
         id: 1,
@@ -92,7 +102,7 @@ class SearchTokenList extends Route {
       },
     };
 
-    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+    if (req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       queryParams.query = {};
       queryParams.project = {};
     }
@@ -109,7 +119,7 @@ class SearchTokenList extends Route {
   }
 
   _exec(req: Request, res: Response, validate) {
-    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
+    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
   }
 }
 routes.push(SearchTokenList);
@@ -127,17 +137,22 @@ class DeleteAllTokens extends Route {
     this.redactResults = false;
   }
 
-  _validate(req: Request, res: Response) {
+  _validate(_req: Request, _res: Response) {
     return Promise.resolve();
   }
 
-  async _exec(req: Request, res: Response, validate) {
+  async _exec(req: Request, _res: Response, _validate) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
+    }
+
     if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       this.log('ERROR: Cannot delete system tokens', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
     }
 
-    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+    if (req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       const query = req.params.type
         ? {
             type: req.params.type,
@@ -166,7 +181,7 @@ class DeleteAllTokens extends Route {
 
       await Model.getCoreModel(TokenSchemaModel).rmAll({
         ...query,
-        _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id),
+        _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
       });
     }
 
@@ -189,9 +204,20 @@ class SearchUserToken extends Route {
   }
 
   async _validate(req: Request, res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
+    }
+
+    const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
+    if (!userId) {
+      this.log('ERROR: No user ID in request params', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_param_userId`));
+    }
+
     const queryParams: QueryParams<Token> = {
       query: {
-        $and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.authApp.id) }],
+        $and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id) }],
       },
       project: {
         id: 1,
@@ -200,12 +226,12 @@ class SearchUserToken extends Route {
       },
     };
 
-    if (req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+    if (req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       queryParams.query = {};
       queryParams.project = {};
     }
 
-    const exists = Model.getCoreModel(UserSchemaModel).exists(req.params.userId);
+    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_id`));
@@ -216,7 +242,9 @@ class SearchUserToken extends Route {
     }
 
     queryParams.query.$and.push({
-      _userId: req.params.userId,
+      _userId: {
+        $eq: Model.getCoreModel(UserSchemaModel).createId(userId),
+      },
     });
 
     if (req.body?.query) {
@@ -227,7 +255,7 @@ class SearchUserToken extends Route {
   }
 
   _exec(req: Request, res: Response, validate) {
-    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.ac);
+    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
   }
 }
 routes.push(SearchUserToken);

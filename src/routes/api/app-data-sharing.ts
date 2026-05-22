@@ -245,10 +245,16 @@ class UpdateAppDataSharing extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
-    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).exists(req.params.dataSharingId);
+    const dataSharingId = Array.isArray(req.params.dataSharingId) ? req.params.dataSharingId[0] : req.params.dataSharingId;
+    if (!dataSharingId) {
+      this.log('ERROR: missing data sharing id', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `missing_data_sharing_id`);
+    }
+
+    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).exists(dataSharingId);
     if (!exists) {
       this.log('ERROR: Invalid App Data Sharing ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+      throw new Helpers.Errors.RequestError(400, `invalid_id`);
     }
 
     const { validation, body } = Model.getCoreModel(AppDataSharingSchemaModel).validateUpdate(req.body);
@@ -256,24 +262,22 @@ class UpdateAppDataSharing extends Route {
     if (!validation.isValid) {
       if (validation.isPathValid === false) {
         this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-        return Promise.reject(
-          new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`),
-        );
+        throw new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`);
       }
       if (validation.isValueValid === false) {
         this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-        return Promise.reject(
-          new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`),
-        );
+        throw new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`);
       }
     }
 
-    return true;
+    return {
+      dataSharingId
+    };
   }
 
-  async _exec(req: Request, _res: Response, _validate) {
+  async _exec(req: Request, _res: Response, validate: { dataSharingId: string }) {
     // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-    return Model.getCoreModel(AppDataSharingSchemaModel).updateByPath(req.body, req.params.dataSharingId);
+    return Model.getCoreModel(AppDataSharingSchemaModel).updateByPath(req.body, validate.dataSharingId);
   }
 }
 routes.push(UpdateAppDataSharing);
@@ -814,7 +818,7 @@ class DeleteAllDataSharingAgreement extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req) {
+  async _validate(_req: Request, _res: Response) {
     const dsFind = await Model.getCoreModel(AppDataSharingSchemaModel).find({}, {}, 0, 0, {}, { id: 1, _tokenId: 1 });
 
     return (await Helpers.streamAll(dsFind)).reduce(

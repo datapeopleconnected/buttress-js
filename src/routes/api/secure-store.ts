@@ -206,7 +206,13 @@ class UpdateSecureStore extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      this.log(`[${this.name}] Missing required secure store ID`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
+    }
+
     const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {
@@ -224,16 +230,18 @@ class UpdateSecureStore extends Route {
       }
     }
 
-    const exists = await Model.getCoreModel(SecureStoreSchemaModel).exists(req.params.id);
+    const exists = await Model.getCoreModel(SecureStoreSchemaModel).exists(id);
     if (!exists) {
       this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
-    return true;
+    return {
+      id,
+    };
   }
 
   _exec(req: Request, res: Response, validate) {
-    return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, req.params.id);
+    return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, validate.id);
   }
 }
 routes.push(UpdateSecureStore);
@@ -360,7 +368,7 @@ class DeleteSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req) {
+  async _validate(req: Request, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required secure store ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));

@@ -171,11 +171,11 @@ export default class Route {
     this.addSourceId = true;
   }
 
-  async _validate(req: Request, res: Response): Promise<unknown> {
+  async _validate(_req: Request, _res: Response): Promise<unknown> {
     throw new Error('Route:_validate not implemented');
   }
 
-  async _exec(req: Request, res: Response, validate: unknown): Promise<unknown> {
+  async _exec(_req: Request, _res: Response, _validate: unknown): Promise<unknown> {
     throw new Error('Route:_exec not implemented');
   }
 
@@ -194,7 +194,7 @@ export default class Route {
    * @param {Object} res - ExpresJS response object
    * @return {Promise} - Promise is fulfilled once execution has completed
    */
-  async exec(req, res) {
+  async exec(req: Request, res: Response) {
     const ip = req.ip || req._remoteAddress || (req.connection && req.connection.remoteAddress) || undefined;
     Logging.logTimer(
       `${req.method} ${req.originalUrl || req.url} ${ip}`,
@@ -293,14 +293,14 @@ export default class Route {
       Logging.logTimer(`_respond:start-stream`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
       result.once('end', () => {
-        // Logging.logTimerException(`PERF: STREAM DONE: ${req.pathSpec}`, req.context.timer, 0.05, req.context.id);
+        // Logging.logTimerException(`PERF: STREAM DONE: ${req.context.pathSpec}`, req.context.timer, 0.05, req.context.id);
         Logging.logTimer(
           `_respond:end-stream chunks:${chunkCount}`,
           req.context.timer,
           Logging.Constants.LogLevel.SILLY,
           req.context.id,
         );
-        req.context.bjsReqClose(this._nrp);
+        if (this._nrp) req.context.bjsReqClose(this._nrp);
         this._close(req);
       });
 
@@ -317,8 +317,8 @@ export default class Route {
 
     this._close(req);
 
-    Logging.logTimer(`_respond:end ${req.pathSpec}`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
-    // Logging.logTimerException(`PERF: DONE: ${req.pathSpec}`, req.context.timer, 0.05, req.context.id);
+    Logging.logTimer(`_respond:end ${req.context.pathSpec}`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    // Logging.logTimerException(`PERF: DONE: ${req.context.pathSpec}`, req.context.timer, 0.05, req.context.id);
 
     return result;
   }
@@ -337,13 +337,13 @@ export default class Route {
 
     // Fire and forget
     if (this.activity) {
-      this._addLogActivity(req, req.pathSpec, this.verb);
+      this._addLogActivity(req, req.context.pathSpec, this.verb);
     }
 
     Logging.logTimer('_logActivity:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
   }
 
-  _addLogActivity(req, path, verb) {
+  _addLogActivity(req: Request, path: string, verb: string) {
     Logging.logTimer('_addLogActivity:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     // TODO: activity should pass back a stripped version of the activity object.
     return Model.getCoreModel(ActivitySchemaModel)
@@ -370,7 +370,7 @@ export default class Route {
    * @param {*} result
    */
   async _boardcastData(req: Request, res: Response, result) {
-    req.context.timings._boardcastData = req.context.timer.interval;
+    req.context.timings.boardcastData = req.context.timer.interval;
     Logging.logTimer('_boardcastData:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
     if (this.verb === Constants.Verbs.GET || this.verb === Constants.Verbs.SEARCH) {
@@ -378,13 +378,14 @@ export default class Route {
       return;
     }
 
-    let path = req.path.split('/');
-    if (path[0] === '') path.shift();
-    if (req.authApp && req.authApp.apiPath && path.indexOf(req.authApp.apiPath) === 0) {
-      path.shift();
+    const pathArr = req.path.split('/');
+    if (pathArr[0] === '') pathArr.shift();
+    if (req.context.authApp?.apiPath && pathArr.indexOf(req.context.authApp.apiPath) === 0) {
+      pathArr.shift();
     }
+
     // Replace API version prefix
-    path = `/${path.join('/')}`.replace(Config.app.apiPrefix, '');
+    const path = `/${pathArr.join('/')}`.replace(Config.app.apiPrefix, '');
 
     this._broadcast(req, res, result, path, true);
 
@@ -403,7 +404,7 @@ export default class Route {
    * @param {*} path
    * @param {boolean} isSuper
    */
-  async _broadcast(req: Request, _res: Response, result, path, isSuper = false) {
+  async _broadcast(req: Request, _res: Response, result, path: string, isSuper = false) {
     const isReadStream = result instanceof Stream.Readable && result.readable;
     Logging.logTimer(
       `_broadcast:start isReadStream:${isReadStream} path:${path} isSuper:${isSuper}`,
@@ -422,15 +423,15 @@ export default class Route {
             visibility: this.activityVisibility,
             broadcast: this.activityBroadcast,
             path: path,
-            pathSpec: req.pathSpec,
+            pathSpec: req.context.pathSpec,
             verb: this.verb,
             permissions: this.permissions,
             params: req.params,
             timestamp: new Date(),
             response: _result,
-            user: req.authUser ? req.authUser.id : '',
-            appAPIPath: req.authApp ? req.authApp.apiPath : '',
-            appId: req.authApp ? req.authApp.id : '',
+            user: req.context.authUser ? req.context.authUser.id : '',
+            appAPIPath: req.context.authApp ? req.context.authApp.apiPath : '',
+            appId: req.context.authApp ? req.context.authApp.id : '',
             isSuper: isSuper,
             isCoreSchema: this.core,
             schemaName: this.schemaName,
@@ -442,12 +443,12 @@ export default class Route {
     };
 
     if (isReadStream) {
-      result.on('data', (data) => emit(Helpers.Schema.prepareSchemaResult(data, req.authApp.id)));
+      result.on('data', (data) => emit(Helpers.Schema.prepareSchemaResult(data, req.context.authApp?.id)));
       Logging.logTimer('_broadcast:end-stream', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
 
-    emit(Helpers.Schema.prepareSchemaResult(result, req.authApp.id));
+    emit(Helpers.Schema.prepareSchemaResult(result, req.context.authApp?.id));
     Logging.logTimer('_broadcast:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
   }
 
@@ -455,18 +456,18 @@ export default class Route {
    * Triggers path based lambdas
    * @param {Object} req
    */
-  _checkBasedPathLambda(req) {
+  _checkBasedPathLambda(req: Request) {
     // NOTE: Do we not want to receive updates on core schema?
     // TODO: There should be a restriction here to scope to the application.
     if (!this.schemaName) return;
 
     const schemaName = this.schemaName;
-    const isLambdaChange = req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.LAMBDA;
+    const isLambdaChange = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.LAMBDA;
     if (isLambdaChange) {
       // If the current lambda is a path mutation, we don't want to trigger other path mutations
       // not great but we'll just block all lambdas that have a pathMutation trigger
-      if (req.authLambda && req.authLambda.trigger.find((t) => t.type === 'PATH_MUTATION')) {
-        Logging.logDebug(`Blocked path mutation lambda ${req.authLambda.name} from triggering other path mutations`);
+      if (req.context.authLambda?.trigger.find((t) => t.type === 'PATH_MUTATION')) {
+        Logging.logDebug(`Blocked path mutation lambda ${req.context.authLambda.name} from triggering other path mutations`);
         return;
       }
     }
@@ -484,7 +485,7 @@ export default class Route {
     const id = req.params.id;
 
     if (this.verb === Constants.Verbs.POST) {
-      if (req.pathSpec.includes(Constants.BulkRequests.BULK_PUT)) {
+      if (req.context.pathSpec?.includes(Constants.BulkRequests.BULK_PUT)) {
         body.forEach((item) => {
           if (Array.isArray(item.body)) {
             item.body.forEach((obj) => {
@@ -496,7 +497,7 @@ export default class Route {
             values.push(item.body.value);
           }
         });
-      } else if (req.pathSpec.includes(Constants.BulkRequests.BULK_DEL)) {
+      } else if (req.context.pathSpec?.includes(Constants.BulkRequests.BULK_DEL)) {
         body.forEach((id) => paths.push(`${schemaName}.${id}`));
       } else {
         paths.push(schemaName);
@@ -540,7 +541,7 @@ export default class Route {
    * @return {Promise} - Promise is fulfilled once the authentication is completed
    * @private
    */
-  _authenticate(req, res) {
+  _authenticate(req: Request, _res: Response) {
     req.context.timings.authenticate = req.context.timer.interval;
     return new Promise((resolve, reject) => {
       if (!req.token) {

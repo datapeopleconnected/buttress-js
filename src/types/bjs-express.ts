@@ -35,6 +35,7 @@ export interface RequestContext {
   authApp: App | null;
   token: Token | null;
   apiPath?: string;
+  pathSpec?: string;
   isPluginPath: boolean;
   ac: {
     policyConfigs: parsedPolicyConfig[];
@@ -49,7 +50,7 @@ export interface RequestContext {
     logActivity: number | null;
     boardcastData: number | null;
     close: number | null;
-    stream: [];
+    stream: number[];
   };
   bjsReqStatus: RequestStatusEmitter;
   bjsReqClose: RequestCloseEmitter;

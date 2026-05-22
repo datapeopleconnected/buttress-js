@@ -223,7 +223,7 @@ class AccessControl {
     next();
   }
 
-  async _getSchemaRoomStructure(tokenPolicies, req, schemaName, appId) {
+  async _getSchemaRoomStructure(tokenPolicies, req: Request, schemaName: string, appId: string) {
     Logging.logTimer(`_getSchemaRoomStructure::start`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
     let outcome: parsedPolicyConfig[];
@@ -522,7 +522,7 @@ class AccessControl {
     // return AccessControlPolicyMatch.getTokenPolicies(this._policies[appId], token);
   }
 
-  async _checkAccessControlDBBasedQueryCondition(req, params) {
+  async _checkAccessControlDBBasedQueryCondition(req: Request, params) {
     const requestMethod = req.method;
     if (requestMethod !== 'PUT') return;
 

@@ -306,7 +306,7 @@ export default class AppSchemaModel extends StandardModel<App> {
     return updatedSchema;
   }
 
-  async mergeRemoteSchema(req, collections) {
+  async mergeRemoteSchema(req: Request, collections) {
     const schemaWithRemoteRef = collections.filter((s) => s.remotes);
 
     // TODO: Check params for any core scheam thats been requested.

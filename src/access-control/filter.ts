@@ -234,7 +234,7 @@ export class Filter {
 
   // TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
   // TODO: This function needs a refactor, expecting the AC to be already applied to the queiries.
-  async evaluateManipulationActions(req, collection: string) {
+  async evaluateManipulationActions(req: Request, collection: string) {
     const coreSchema = await AccessControlHelpers.cacheCoreSchema();
     const coreSchemNames = coreSchema.map((c) => Sugar.String.singularize(c.name));
     const isCoreSchema = coreSchemNames.includes(collection);

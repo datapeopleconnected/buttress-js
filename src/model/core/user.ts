@@ -365,7 +365,7 @@ export default class UserSchemaModel extends StandardModel<User> {
    * @param {string} appId - Buttress App Id of the user
    * @return {Promise} - resolves to an array of Apps
    */
-  getByAuthAppId(authAppName, authAppUserId, appId = undefined) {
+  getByAuthAppId(authAppName, authAppUserId, appId?: string) {
     return super.findOne({
       'auth.app': authAppName,
       'auth.appId': authAppUserId,

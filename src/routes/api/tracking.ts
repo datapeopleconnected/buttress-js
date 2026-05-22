@@ -34,11 +34,11 @@ class GetTrackingList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(req: Request, res: Response) {
+  _validate(_req: Request, _res: Response) {
     return Promise.resolve(true);
   }
 
-  _exec(req: Request, res: Response, validate) {
+  _exec(_req: Request, _res: Response, _validate: any) {
     return Model.getCoreModel(TrackingSchemaModel).findAll();
   }
 }
@@ -98,8 +98,14 @@ class UpdateTracking extends Route {
     this.activityBroadcast = true;
   }
 
-  _validate(req) {
+  _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+      if (!id) {
+        this.log('ERROR: Missing required Tracking ID', Route.LogLevel.ERR);
+        return reject(new Helpers.Errors.RequestError(400, `missing_required_tracking_id`));
+      }
+
       const { validation, body } = Model.getCoreModel(TrackingSchemaModel).validateUpdate(req.body);
       req.body = body;
       if (!validation.isValid) {
@@ -118,19 +124,21 @@ class UpdateTracking extends Route {
       }
 
       Model.getCoreModel(TrackingSchemaModel)
-        .exists(req.params.id)
+        .exists(id)
         .then((exists) => {
           if (!exists) {
             this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
             return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
           }
-          resolve(true);
+          resolve({
+            id,
+          });
         });
     });
   }
 
-  _exec(req) {
-    return Model.getCoreModel(TrackingSchemaModel).updateByPath(req.body, req.params.id);
+  _exec(req: Request, _res: Response, validate: { id: string }) {
+    return Model.getCoreModel(TrackingSchemaModel).updateByPath(req.body, validate.id);
   }
 }
 routes.push(UpdateTracking);

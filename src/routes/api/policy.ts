@@ -527,7 +527,7 @@ class DeletePolicy extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req) {
+  async _validate(req: Request, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `missing_field`);
@@ -577,7 +577,7 @@ class DeleteAppPolicies extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req) {
+  async _validate(req: Request, _res: Response) {
     const rxsPolicies =
       req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM
         ? await Model.getCoreModel(PolicySchemaModel).findAll()

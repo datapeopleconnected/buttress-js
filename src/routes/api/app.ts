@@ -473,7 +473,7 @@ class UpdateAppSchema extends Route {
     }
   }
 
-  async _exec(req: Request, res: Response, { appId, rawSchema, compiledSchema }: { appId: string; rawSchema: string; compiledSchema: unknown }) {
+  async _exec(_req: Request, _res: Response, { appId, rawSchema, compiledSchema }: { appId: string; rawSchema: string; compiledSchema: unknown }) {
 
     await Model.getCoreModel(AppSchemaModel).updateSchema(appId, compiledSchema, rawSchema);
 
@@ -705,6 +705,12 @@ class AppUpdate extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      this.log('ERROR: Missing required field', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+    }
+
     const { validation, body } = Model.getCoreModel(AppSchemaModel).validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {
@@ -722,16 +728,18 @@ class AppUpdate extends Route {
       }
     }
 
-    const exists = await Model.getCoreModel(AppSchemaModel).exists(req.params.id);
+    const exists = await Model.getCoreModel(AppSchemaModel).exists(id);
     if (!exists) {
       this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
-    return true;
+    return {
+      id,
+    };
   }
 
-  _exec(req: Request, _res: Response, _validate) {
-    return Model.getCoreModel(AppSchemaModel).updateByPath(req.body, req.params.id);
+  _exec(req: Request, _res: Response, validate: { id: string }) {
+    return Model.getCoreModel(AppSchemaModel).updateByPath(req.body, validate.id);
   }
 }
 

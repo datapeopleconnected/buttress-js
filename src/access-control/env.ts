@@ -13,10 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
 import { ObjectId } from 'bson';
 import { Request } from 'express';
-
 
 import * as Helpers from '../helpers/index.js';
 
@@ -219,7 +217,7 @@ export class PolicyEnv {
     return outputValue;
   }
 
-  __requestIPAddress(req) {
+  __requestIPAddress(req: Request) {
     const requestIPAddress = {};
     const proxyIPAddress = {};
 
