@@ -41,7 +41,7 @@ export interface AppDataSharing {
 /**
  * @class AppDataSharingSchemaModel
  */
-export default class AppDataSharingSchemaModel extends StandardModel {
+export default class AppDataSharingSchemaModel extends StandardModel<AppDataSharing> {
   static name = 'AppDataSharing';
 
   constructor(services) {

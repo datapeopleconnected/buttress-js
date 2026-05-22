@@ -19,10 +19,14 @@ import StandardModel from '../type/standard.js';
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 
-import LambdaSchemaModel from './lambda.js';
-import UserSchemaModel from './user.js';
+interface SecureStore {
+  id: string;
+  name: string;
+  storeData: Record<string, unknown>;
+  _appId: string;
+}
 
-class SecureStoreSchemaModel extends StandardModel {
+class SecureStoreSchemaModel extends StandardModel<SecureStore> {
   static name = 'SecureStore';
 
   constructor(services) {
@@ -62,32 +66,12 @@ class SecureStoreSchemaModel extends StandardModel {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with secure store value Object when the database request is completed
    */
-  async add(req, body) {
+  async add(body, appId: string) {
     const data = {
       id: body.id ? body.id : null,
       name: body.name ? body.name : null,
       storeData: body.storeData ? body.storeData : {},
     };
-
-    // TODO This logic should be moved out to the route, to keep req logic
-    // with the http handling. appId should just be passed through with the
-    // body.
-    let appId = req.authApp.id;
-    if (!appId) {
-      // const token = await this._getToken(req);
-      const token = req.token;
-      if (token && token._appId) {
-        appId = token._appId;
-      }
-      if (token && token._lambdaId) {
-        const lambda = await this.__modelManager.getCoreModel(LambdaSchemaModel).findById(token._lambdaId);
-        appId = lambda._appId;
-      }
-      if (token && token._userId) {
-        const user = await this.__modelManager.getCoreModel(UserSchemaModel).findById(token._userId);
-        appId = user._appId;
-      }
-    }
 
     const rxsSecureStore = await super.add(data, {
       _appId: appId,

@@ -69,7 +69,7 @@ export interface Policy {
   _appId: string;
 }
 
-class PolicySchemaModel extends StandardModel {
+class PolicySchemaModel extends StandardModel<Policy> {
   static name = 'Policy';
 
   __policyCache: PolicyCache;

@@ -13,14 +13,16 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
 import { ObjectId } from 'bson';
+import { Request } from 'express';
+
 import * as Helpers from '../helpers/index.js';
 
 import { PolicyEnvQuery } from '../model/core/policy.js';
 
 import Model from '../model/index.js';
 import { Filter } from './filter.js';
+import { User } from '../model/core/user.js';
 
 export interface ACBaseEnv {
   date: {
@@ -56,7 +58,7 @@ export class PolicyEnv {
     };
   }
 
-  generateRequestGlobalEnvs(req, appId, authUser): ACEnv {
+  generateRequestGlobalEnvs(_req: Request | null, appId: string, authUser: User | null): ACEnv {
     return {
       ...this.generateBaseGlobalEnvs(),
       ipAddress: null,
@@ -215,88 +217,10 @@ export class PolicyEnv {
     return outputValue;
   }
 
-  __requestIPAddress(req) {
-    const requestIPAddress = {};
-    const proxyIPAddress = {};
-
-    if (req['x-client-ip']) {
-      requestIPAddress['x-client-ip'] = req['x-client-ip'];
-    }
-
-    if (req['x-forwarded-for']) {
-      proxyIPAddress['x-forwarded-for'] = req['x-forwarded-for'];
-    }
-
-    if (req['cf-connecting-ip']) {
-      requestIPAddress['cf-connecting-ip'] = req['cf-connecting-ip'];
-    }
-
-    if (req['fastly-client-ip']) {
-      requestIPAddress['fastly-client-ip'] = req['fastly-client-ip'];
-    }
-
-    if (req['true-client-ip']) {
-      requestIPAddress['true-client-ip'] = req['true-client-ip'];
-    }
-
-    if (req['x-real-ip']) {
-      requestIPAddress['x-real-ip'] = req['x-real-ip'];
-    }
-
-    if (req['x-cluster-client-ip']) {
-      requestIPAddress['x-cluster-client-ip'] = req['x-cluster-client-ip'];
-    }
-
-    if (req['x-forwarded'] || req['forwarded-for'] || req['forwarded']) {
-      proxyIPAddress['x-forwarded'] = req['x-forwarded'] || req['forwarded-for'] || req['forwarded'];
-    }
-
-    if (req.connection && req.connection.remoteAddress) {
-      requestIPAddress['connectionRemoteAddress'] = req.connection.remoteAddress;
-    }
-
-    if (req.socket && req.socket.remoteAddress) {
-      requestIPAddress['socketRemoteAddress'] = req.socket.remoteAddress;
-    }
-
-    if (req.connection && req.connection.socket && req.connection.socket.remoteAddress) {
-      requestIPAddress['connectionSocketRemoteAddress'] = req.connection.socket.remoteAddress;
-    }
-
-    if (req.info && req.info.remoteAddress) {
-      requestIPAddress['infoRemoteAddress'] = req.info.remoteAddress;
-    }
-
-    const proxyClientIP = Object.keys(proxyIPAddress).reduce((arr: string[], key) => {
-      const ipAddress = this.__getClientIpFromXForwardedFor(key);
-      if (ipAddress) {
-        arr.push(ipAddress);
-      }
-
-      return arr;
-    }, []);
-
-    if (proxyClientIP.length > 0) {
-      return proxyClientIP.shift();
-    }
-
-    const clientIP = Object.keys(requestIPAddress).reduce((arr: string[], key) => {
-      let IPv4 = requestIPAddress[key].match(PolicyEnv.IPv4Regex);
-      IPv4 = IPv4 ? IPv4.pop() : null;
-      let IPv6 = requestIPAddress[key].match(PolicyEnv.IPv6Regex);
-      IPv6 = IPv6 ? IPv6.pop() : null;
-      arr.push(IPv4 ? IPv4 : IPv6);
-
-      return arr;
-    }, []);
-
-    const firstClientIP = clientIP.slice().pop();
-    const isDiffIPs = clientIP.every((ipAddress) => ipAddress === firstClientIP);
-    if (isDiffIPs) {
-      // should throw an error?
-    }
-
-    return firstClientIP;
+  __requestIPAddress(req: Request) {
+    // express already has everything to handle this, we needs to make sure we
+    // trust the proxy settings in express for this to work correctly
+    return req.ip;
   }
 
   __getClientIpFromXForwardedFor(str: string) {

@@ -15,6 +15,8 @@
  */
 
 import hash from 'object-hash';
+import { Request, Response, NextFunction } from 'express';
+
 import NodeRedisPubsub from '../services/nrp.js';
 
 import Sugar from '../helpers/sugar.js';
@@ -29,11 +31,9 @@ import AccessControlConditions from './conditions.js';
 import AccessControlFilter from './filter.js';
 import AccessControlEnv from './env.js';
 import AccessControlProjection from './projection.js';
-import AccessControlPolicyMatch from './policy-match.js';
 import AccessControlHelpers, { filterPolicyConfigs } from './helpers.js';
-import { BjsRequest } from '../types/bjs-express.js';
 import { PolicyCache } from '../services/policy-cache.js';
-import LambdaSchemaModel from '../model/core/lambda.js';
+import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import UserSchemaModel from '../model/core/user.js';
 import AppSchemaModel from '../model/core/app.js';
 
@@ -111,29 +111,34 @@ class AccessControl {
    * @return {Void}
    * @private
    */
-  async accessControlPolicyMiddleware(req: BjsRequest, res, next) {
-    Logging.logTimer(`accessControlPolicyMiddleware::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+  async accessControlPolicyMiddleware(req: Request, res: Response, next: NextFunction) {
+    Logging.logTimer(
+      `accessControlPolicyMiddleware::start`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
 
     // Define a property on the request that we'll use for the access control
-    req.ac = {
+    req.context.ac = {
       policyConfigs: [],
     };
 
-    const isSystemToken = req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
+    const isSystemToken = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
     if (isSystemToken) return next();
 
-    const token = req.token;
+    const token = req.context.token;
     if (!token) {
       throw new Error(`Can not find a token for the requester`);
     }
 
     // Skip if we're hitting a plugin
-    if (req.isPluginPath) return next();
+    if (req.context.isPluginPath) return next();
 
-    const user = req.authUser;
+    const user = req.context.authUser;
     const appId = token._appId.toString();
-    const requestVerb = req.method || req.originalMethod;
-    let lambdaAPICall = false;
+    const requestVerb = req.method;
+    let lambdaAPICall: Lambda | null = null;
     let requestedURL = req.originalUrl || req.url;
     requestedURL = requestedURL.split('?').shift() || '';
     const isLambdaCall = requestedURL.indexOf('/lambda/v1') === 0;
@@ -141,7 +146,11 @@ class AccessControl {
     if (requestedURL === '/api/v1/app/schema' && requestVerb === 'GET') return next();
 
     if (isLambdaCall) {
-      const lambdaURL = requestedURL.replace(`/lambda/v1/${req.authApp.apiPath}/`, '');
+      if (!req.context.authApp) {
+        throw new Error(`Unable to determine app for lambda API call to ${requestedURL}`);
+      }
+
+      const lambdaURL = requestedURL.replace(`/lambda/v1/${req.context.authApp.apiPath}/`, '');
       lambdaAPICall = await Model.getCoreModel(LambdaSchemaModel).findOne({
         'trigger.apiEndpoint.url': {
           $eq: lambdaURL,
@@ -178,14 +187,17 @@ class AccessControl {
     if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
     // if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
 
-    const tokenPolicies = await this.__getTokenPolicies(token, appId);
-    Logging.logSilly(`Got ${tokenPolicies.length} matching policies for token ${token.type}:${token.id}`, req.id);
+    const tokenPolicies = await this.__getTokenPolicies(token);
+    Logging.logSilly(
+      `Got ${tokenPolicies.length} matching policies for token ${token.type}:${token.id}`,
+      req.context.id,
+    );
 
     try {
-      req.ac.policyConfigs = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
+      req.context.ac.policyConfigs = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
     } catch (err: any) {
       if (err instanceof PolicyError) {
-        Logging.logTimer(err.logTimerMsg, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+        Logging.logTimer(err.logTimerMsg, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
         Logging.logError(err.message);
         return res.status(err.statusCode).send({ message: err.message });
       }
@@ -197,9 +209,9 @@ class AccessControl {
 
     if (user) {
       // const params = {
-      // 	policies: req.ac.policyConfigs,
+      // 	policies: req.context.ac.policyConfigs,
       // 	appId: appId,
-      // 	apiPath: req.authApp.apiPath,
+      // 	apiPath: req.context.authApp.apiPath,
       // 	userId: user.id,
       // 	schemaNames: [...this._coreSchema, ...this._schemas[appId]].map((s) => s.name),
       // 	schemaName: schemaName,
@@ -214,12 +226,22 @@ class AccessControl {
     // TODO: This doesn't need to happen here, move to sock
     // await this._checkAccessControlDBBasedQueryCondition(req, params);
 
-    Logging.logTimer(`accessControlPolicyMiddleware::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer(
+      `accessControlPolicyMiddleware::end`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
     next();
   }
 
-  async _getSchemaRoomStructure(tokenPolicies, req, schemaName, appId) {
-    Logging.logTimer(`_getSchemaRoomStructure::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+  async _getSchemaRoomStructure(tokenPolicies, req: Request, schemaName: string, appId: string) {
+    Logging.logTimer(
+      `_getSchemaRoomStructure::start`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
 
     let outcome: parsedPolicyConfig[];
     try {
@@ -255,12 +277,22 @@ class AccessControl {
       });
     }
 
-    Logging.logTimer(`_getSchemaRoomStructure::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer(
+      `_getSchemaRoomStructure::end`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
     return { roomId: hash(outcome), structure };
   }
 
   async getUserRoomStructures(user, appId, req: any = {}) {
-    Logging.logTimer(`getUserRoomStructures::start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer(
+      `getUserRoomStructures::start`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
 
     // if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
     if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
@@ -281,7 +313,18 @@ class AccessControl {
         $eq: Model.getCoreModel(UserSchemaModel).createId(user.id),
       },
     });
-    const tokenPolicies = await this.__getTokenPolicies(token, appId);
+
+    if (!token) {
+      Logging.logTimer(
+        `getUserRoomStructures::end - no token found for user`,
+        req.context.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.context.id,
+      );
+      return rooms;
+    }
+
+    const tokenPolicies = await this.__getTokenPolicies(token);
     for await (const schema of this._schemas[appId]) {
       req.body = {};
       // req.accessControlQuery = {};
@@ -296,7 +339,7 @@ class AccessControl {
       }
     }
 
-    Logging.logTimer(`getUserRoomStructures::end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer(`getUserRoomStructures::end`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     return rooms;
   }
 
@@ -307,21 +350,21 @@ class AccessControl {
    */
   async __getOutcome(
     tokenPolicies: Policy[],
-    req: BjsRequest,
+    req: Request,
     schemaName: string,
     appId: string | null = null,
   ): Promise<parsedPolicyConfig[]> {
     Logging.logTimer(
       `__getOutcome::start - policies:${tokenPolicies.length}`,
-      req.timer,
+      req.context.timer,
       Logging.Constants.LogLevel.SILLY,
-      req.id,
+      req.context.id,
     );
 
-    appId = !appId && req.authApp && req.authApp.id ? req.authApp.id : appId;
+    appId = !appId && req.context.authApp && req.context.authApp.id ? req.context.authApp.id : appId;
     if (!appId) throw new Error('Trying to combine core with app schema but appId is not defined');
 
-    const requestVerb = req.method || req.originalMethod;
+    const requestVerb = req.method;
     const isCoreSchema = this._coreSchemaNames.some((n) => n === schemaName);
 
     tokenPolicies = tokenPolicies.sort((a, b) => a.priority - b.priority);
@@ -371,7 +414,7 @@ class AccessControl {
       );
     }
 
-    const reqEnv = AccessControlEnv.generateRequestGlobalEnvs(req, appId, req.authUser);
+    const reqEnv = AccessControlEnv.generateRequestGlobalEnvs(req, appId, req.context.authUser);
 
     applicablePolicies = await AccessControlConditions.filterPoliciesByPolicyConditions(applicablePolicies, reqEnv);
     if (applicablePolicies.length < 1) {
@@ -476,9 +519,9 @@ class AccessControl {
     }
     Logging.logTimer(
       `__getOutcome::end Policy Configs: ${Object.keys(outcome).length}`,
-      req.timer,
+      req.context.timer,
       Logging.Constants.LogLevel.SILLY,
-      req.id,
+      req.context.id,
     );
 
     return outcome;
@@ -505,13 +548,13 @@ class AccessControl {
   // 	this._policies[appId] = policies;
   // }
 
-  async __getTokenPolicies(token: Token, appId: string) {
+  async __getTokenPolicies(token: Token) {
     if (!this._policyCache) throw new Error('Unable to get token policies, policy cache not set');
     return this._policyCache.getPoliciesByToken(token);
     // return AccessControlPolicyMatch.getTokenPolicies(this._policies[appId], token);
   }
 
-  async _checkAccessControlDBBasedQueryCondition(req, params) {
+  async _checkAccessControlDBBasedQueryCondition(req: Request) {
     const requestMethod = req.method;
     if (requestMethod !== 'PUT') return;
 
@@ -569,7 +612,7 @@ class AccessControl {
   __getInnerObjectValue(originalObj) {
     if (!originalObj) return null;
 
-    const { schema, ...rest } = originalObj;
+    const { _schema, ...rest } = originalObj;
     return rest;
   }
 }

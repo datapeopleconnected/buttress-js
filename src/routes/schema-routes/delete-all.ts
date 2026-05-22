@@ -14,6 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { Response, Request } from 'express';
+
 import Route from '../route.js';
 
 import { Schema, modelToRoute } from '../../helpers/schema.js';
@@ -37,11 +39,11 @@ export default class DeleteAll extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req, res, token) {
+  async _validate(_req: Request, _res: Response) {
     return true;
   }
 
-  async _exec(req, res, validate) {
+  async _exec(_req: Request, _res: Response, _validate: unknown) {
     await (await this.routeModel()).rmAll({});
     return true;
   }

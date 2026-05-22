@@ -33,7 +33,6 @@ import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambd
 import { NotifyLambdaPathChangeMessage } from '../routes/route.js';
 import LambdaSchemaModel from '../model/core/lambda.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
-import path from 'node:path';
 
 const exec = util.promisify(cpExec);
 

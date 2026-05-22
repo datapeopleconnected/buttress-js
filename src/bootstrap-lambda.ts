@@ -15,6 +15,7 @@
  */
 import morgan from 'morgan';
 import { createClient, RedisClientType } from '@redis/client';
+import { Request } from 'express';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -29,7 +30,7 @@ import { PolicyCache } from './services/policy-cache.js';
 import LambdaManager from './lambda/lambda-manager.js';
 import LambdaRunner, { LambdaType } from './lambda/lambda-runner.js';
 
-morgan.token('id', (req) => req.id);
+morgan.token('id', (req: Request) => req.context.id);
 export default class BootstrapLambda extends Bootstrap {
   routes: any;
 

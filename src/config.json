@@ -10,6 +10,8 @@
     "BUTTRESS_REST_LISTEN_PORT": "8000",
     "BUTTRESS_SOCK_LISTEN_PORT": "8010",
 
+    "BUTTRESS_TRUST_PROXY": 1,
+
     "BUTTRESS_REST_URL": "%BUTTRESS_APP_PROTOCOL%://%BUTTRESS_HOST_URL%",
     "BUTTRESS_SOCK_URL": "%BUTTRESS_APP_PROTOCOL%://%BUTTRESS_HOST_URL%",
 
@@ -43,7 +45,8 @@
       "protocol": "%BUTTRESS_APP_PROTOCOL%",
       "host": "%BUTTRESS_HOST_URL%",
       "apiPrefix": "/api/v1",
-      "workers": "%BUTTRESS_APP_WORKERS%"
+      "workers": "%BUTTRESS_APP_WORKERS%",
+      "trustProxy": "%BUTTRESS_TRUST_PROXY%"
     },
     "lambda": {
       "apiWorkers": "%LAMBDA_API_WORKERS%",

@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Logging from '../../helpers/logging.js';
@@ -40,9 +41,14 @@ export default class GetList extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
-    Logging.logTimer(`${this.name}:_validate:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer(
+      `${this.name}:_validate:start`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
 
     const result = {
       query: {},
@@ -63,21 +69,21 @@ export default class GetList extends Route {
       return false;
     }
 
-    Logging.logTimer(`${this.name}:_validate:end`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
+    Logging.logTimer(`${this.name}:_validate:end`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     query = model.parseQuery(query, {}, model.flatSchemaData);
 
     result.query = query;
     return result;
   }
 
-  async _exec(req, res, validateResult) {
+  async _exec(req: Request, _res: Response, validateResult: { query: any; project: any }) {
     const model = await this.routeModel();
     // if (validateResult.query === false) {
     // 	return Promise.resolve([]);
     // }
 
-    Logging.logTimer(`${this.name}:_exec:start`, req.timer, Logging.Constants.LogLevel.SILLY, req.id);
-    return ACM.find(model, validateResult, req.ac);
+    Logging.logTimer(`${this.name}:_exec:start`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    return ACM.find(model, validateResult, req.context.ac);
     // return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
   }
 }

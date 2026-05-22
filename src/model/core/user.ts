@@ -52,7 +52,7 @@ const App = {
   MICROSOFT: apps[4],
 };
 
-export default class UserSchemaModel extends StandardModel {
+export default class UserSchemaModel extends StandardModel<User> {
   static name = 'User';
 
   constructor(services) {
@@ -365,7 +365,7 @@ export default class UserSchemaModel extends StandardModel {
    * @param {string} appId - Buttress App Id of the user
    * @return {Promise} - resolves to an array of Apps
    */
-  getByAuthAppId(authAppName, authAppUserId, appId = undefined) {
+  getByAuthAppId(authAppName, authAppUserId, appId?: string) {
     return super.findOne({
       'auth.app': authAppName,
       'auth.appId': authAppUserId,

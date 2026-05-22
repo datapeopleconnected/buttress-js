@@ -31,15 +31,10 @@ import { Services } from '../bootstrap.js';
 import AdminRoutes from './admin-routes.js';
 import SchemaRoutes from './schema-routes/index.js';
 
-import Datastore from '../datastore/index.js';
-
 import { Routes as CoreRoutes } from './api/index.js';
 
-import { BjsRequest } from '../types/bjs-express.js';
 import AppSchemaModel, { App } from '../model/core/app.js';
 import AppDataSharingSchemaModel from '../model/core/app-data-sharing.js';
-import UserSchemaModel from '../model/core/user.js';
-import TokenSchemaModel from '../model/core/token.js';
 import { Schema } from '../helpers/schema.js';
 
 import RoutesTokens from './tokens.js';
@@ -71,7 +66,7 @@ class Routes {
   _lambdaSetupHelper: RoutesLambdaSetup;
   _middlewareHelper: RoutesMiddleware;
 
-  constructor(app) {
+  constructor(app: express.Application) {
     this.app = app;
     this.id = uuidv4();
 
@@ -85,11 +80,11 @@ class Routes {
     this._middlewareHelper = new RoutesMiddleware(this._routerMap, this._tokensHelper);
 
     this._preRouteMiddleware = [
-      (req: BjsRequest, res: Response, next: NextFunction) => this._middlewareHelper._timeRequest(req, res, next),
-      (req: BjsRequest, res: Response, next: NextFunction) => this._authenticateToken(req, res, next),
-      (req: BjsRequest, res: Response, next: NextFunction) =>
-        AccessControl.accessControlPolicyMiddleware(req, res, next),
-      (req: BjsRequest, res: Response, next: NextFunction) => this._configCrossDomain(req, res, next),
+      (req: Request, res: Response, next: NextFunction) => this._middlewareHelper._createContext(req, res, next),
+      (req: Request, res: Response, next: NextFunction) => this._middlewareHelper._timeRequest(req, res, next),
+      (req: Request, res: Response, next: NextFunction) => this._authenticateToken(req, res, next),
+      (req: Request, res: Response, next: NextFunction) => AccessControl.accessControlPolicyMiddleware(req, res, next),
+      (req: Request, res: Response, next: NextFunction) => this._configCrossDomain(req, res, next),
     ];
   }
 
@@ -114,16 +109,18 @@ class Routes {
    * @return {promise}
    */
   async initRoutes() {
-    this.app.get('/favicon.ico', (req, res, next) => res.sendStatus(404));
-    this.app.get(['/', '/index.html'], (req, res, next) => res.sendFile(path.join(__dirname, '../static/index.html')));
+    this.app.get('/favicon.ico', (req: Request, res: Response) => res.sendStatus(404));
+    this.app.get(['/', '/index.html'], (req: Request, res: Response) =>
+      res.sendFile(path.join(__dirname, '../static/index.html')),
+    );
 
-    this.app.use((req: any, res, next) => {
+    this.app.use((req: Request, _res: Response, next: NextFunction) => {
       const logEvent = (event: string, err?: any) => {
         if (err) {
-          Logging.logError(`${event}`, req.id);
-          Logging.logError(err, req.id);
+          Logging.logError(`${event}`, req.context?.id);
+          Logging.logError(err, req.context?.id);
         } else {
-          Logging.logSilly(`${event}`, req.id);
+          Logging.logSilly(`${event}`, req.context?.id);
         }
       };
 
@@ -143,7 +140,7 @@ class Routes {
       //           logEvent('socket onLookup', err);
       //           return;
       //       }
-      //       Logging.logDebug(`socket onLookup address:${address} family:${family} host:${host}}`, req.id);
+      //       Logging.logDebug(`socket onLookup address:${address} family:${family} host:${host}}`, req.context.id);
       //   });
       //   req.socket.once('timeout', () => logEvent('socket onTimeout'));
       //   req.socket.once('error', (err) => logEvent('socket onError', err));
@@ -151,8 +148,8 @@ class Routes {
 
       next();
     });
-    this.app.use((err, req, res, next) => {
-      if (err) Logging.logError(err, req.id);
+    this.app.use((err, req: Request, res: Response, next: NextFunction) => {
+      if (err) Logging.logError(err, req.context.id);
       next();
     });
 
@@ -203,23 +200,24 @@ class Routes {
   _mountRouterDispatcher() {
     if (this._dispatcherMounted) return;
 
-    this.app.use('', (req, res, next) => this._dispatchRouters(req, res, next));
+    this.app.use('', (req: Request, res: Response, next: NextFunction) => this._dispatchRouters(req, res, next));
     this._dispatcherMounted = true;
   }
 
   _mountErrorHandler() {
     if (this._errorHandlerMounted) return;
 
-    const logErrors = (err, req, res, next) => this.logErrors(err, req, res, next);
+    const logErrors = (err: any, req: Request, res: Response, next: NextFunction) =>
+      this.logErrors(err, req, res, next);
     this.app.use(logErrors);
     this._errorHandlerMounted = true;
   }
 
-  _dispatchRouters(req, res, next) {
+  _dispatchRouters(req: Request, res: Response, next: NextFunction) {
     const keys = [...this._routerOrder];
     let idx = 0;
 
-    const run = (err?) => {
+    const run = (err?: any) => {
       if (err) return next(err);
       if (res.headersSent || res.writableEnded) return;
 
@@ -351,8 +349,8 @@ class Routes {
     route.paths.forEach((pathSpec) => {
       const routePath = path.join(...[Config.app.apiPrefix, pathPrefix, pathSpec]);
       Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
-      app[route.verb](routePath, this._preRouteMiddleware, (req, res, next) => {
-        req.pathSpec = pathSpec;
+      app[route.verb](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
+        req.context.pathSpec = pathSpec;
         return route.exec(req, res).catch(next);
       });
     });
@@ -379,23 +377,23 @@ class Routes {
         let routePath = path.join(...[app.apiPath, Config.app.apiPrefix, pathSpec]);
         if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
         Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
-        express[route.verb](routePath, this._preRouteMiddleware, (req, res, next) => {
-          req.pathSpec = pathSpec;
+        express[route.verb](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
+          req.context.pathSpec = pathSpec;
           return route.exec(req, res).catch(next);
         });
       });
     });
   }
 
-  async _authenticateToken(req: BjsRequest, res, next) {
+  async _authenticateToken(req: Request, res: Response, next: NextFunction) {
     await this._middlewareHelper._authenticateToken(req, res, next);
   }
 
-  _configCrossDomain(req: BjsRequest, res, next) {
+  _configCrossDomain(req: Request, res: Response, next: NextFunction) {
     this._middlewareHelper._configCrossDomain(req, res, next);
   }
 
-  logErrors(err, req, res, next) {
+  logErrors(err, req: Request, res: Response, next: NextFunction) {
     this._middlewareHelper.logErrors(err, req, res, next);
   }
 
@@ -407,7 +405,7 @@ class Routes {
     await this._lambdaSetupHelper._setupLambdaEndpoints();
   }
 
-  async _queueLambdaAPIExecution(endpointOrId: string, apiPath, req: BjsRequest) {
+  async _queueLambdaAPIExecution(endpointOrId: string, apiPath, req: Request) {
     return await this._lambdaSetupHelper._queueLambdaAPIExecution(endpointOrId, apiPath, req);
   }
 
@@ -415,7 +413,7 @@ class Routes {
     await this._tokensHelper.loadTokens();
   }
 
-  async _getProvidedToken(req: BjsRequest) {
+  async _getProvidedToken(req: Request) {
     return await this._tokensHelper._getProvidedToken(req);
   }
 

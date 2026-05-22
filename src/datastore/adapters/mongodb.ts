@@ -17,8 +17,6 @@ import Stream from 'node:stream';
 
 import { ObjectId, MongoClient, MongoClientOptions, Db, Collection } from 'mongodb';
 
-// The adapter shouldn't be making calls back out to the model, we're too deep.
-import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
 import Logging from '../../helpers/logging.js';
 
@@ -327,7 +325,7 @@ export default class MongodbAdapter extends AbstractAdapter {
     let _id: ObjectId | null = null;
     try {
       _id = new ObjectId(id);
-    } catch (err) {
+    } catch (_err) {
       return false;
     }
 
@@ -344,7 +342,8 @@ export default class MongodbAdapter extends AbstractAdapter {
   /*
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  isDuplicate(details) {
+  isDuplicate(_details) {
+    // TODO: Implment this method
     return Promise.resolve(false);
   }
 
@@ -558,7 +557,7 @@ export default class MongodbAdapter extends AbstractAdapter {
         ? value.map((v) => {
             try {
               return new ObjectId(v);
-            } catch (err) {
+            } catch (_err) {
               return v;
             }
           })
@@ -566,7 +565,7 @@ export default class MongodbAdapter extends AbstractAdapter {
     } else {
       try {
         return new ObjectId(value);
-      } catch (err) {
+      } catch (_err) {
         return value;
       }
     }

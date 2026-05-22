@@ -13,8 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
 import { ObjectId } from 'bson';
+import { Request, Response } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
@@ -40,8 +40,8 @@ class GetLambdaExecution extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req, res, token) {
-    const id = req.params.id;
+  async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
@@ -60,7 +60,7 @@ class GetLambdaExecution extends Route {
     return lambdaExecution;
   }
 
-  _exec(req, res, lambdaExecution) {
+  _exec(req: Request, res: Response, lambdaExecution) {
     return lambdaExecution;
   }
 }
@@ -82,8 +82,8 @@ class GetLambdaExecutionStatus extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req, res, token) {
-    const id = req.params.id;
+  async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
@@ -102,7 +102,7 @@ class GetLambdaExecutionStatus extends Route {
     return lambdaExecution.status;
   }
 
-  async _exec(req, res, status) {
+  async _exec(req: Request, res: Response, status) {
     return {
       status,
     };
@@ -129,8 +129,9 @@ class UpdateLambdaExecution extends Route {
     this.activityBroadcast = true;
   }
 
-  _validate(req, res, token) {
+  _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
+      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { validation, body } = Model.getCoreModel(LambdaExecutionSchemaModel).validateUpdate(req.body);
       req.body = body;
 
@@ -153,19 +154,21 @@ class UpdateLambdaExecution extends Route {
       }
 
       Model.getCoreModel(LambdaExecutionSchemaModel)
-        .exists(req.params.id)
+        .exists(id)
         .then((exists) => {
           if (!exists) {
             this.log('ERROR: Invalid LAMBDA EXECUTION ID', Route.LogLevel.ERR);
             return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
           }
-          resolve(true);
+          resolve({
+            id,
+          });
         });
     });
   }
 
-  async _exec(req, res, validate) {
-    return Model.getCoreModel(LambdaExecutionSchemaModel).updateByPath(req.body, req.params.id);
+  async _exec(req: Request, _res: Response, validate) {
+    return Model.getCoreModel(LambdaExecutionSchemaModel).updateByPath(req.body, validate.id);
   }
 }
 routes.push(UpdateLambdaExecution);
@@ -186,7 +189,7 @@ class SearchExecutionList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const result: {
       query: any;
     } = {
@@ -208,7 +211,7 @@ class SearchExecutionList extends Route {
     return result;
   }
 
-  _exec(req, res, validate) {
+  _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).find(validate.query);
   }
 }
@@ -233,7 +236,7 @@ class LambdaExecutionCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const result = {
       query: {},
     };
@@ -260,7 +263,7 @@ class LambdaExecutionCount extends Route {
     return result;
   }
 
-  _exec(req, res, validateResult) {
+  _exec(req: Request, res: Response, validateResult) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).count(validateResult.query);
   }
 }

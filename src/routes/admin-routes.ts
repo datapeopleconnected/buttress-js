@@ -13,6 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Request, Response } from 'express';
+
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
@@ -22,8 +24,8 @@ import * as Helpers from '../helpers/index.js';
 
 import adminPolicy from '../admin-policy.json' with { type: 'json' };
 import adminLambda from '../admin-lambda.json' with { type: 'json' };
-import TokenSchemaModel from '../model/core/token.js';
-import AppSchemaModel from '../model/core/app.js';
+import TokenSchemaModel, { Token } from '../model/core/token.js';
+import AppSchemaModel, { App } from '../model/core/app.js';
 import PolicySchemaModel from '../model/core/policy.js';
 import LambdaSchemaModel from '../model/core/lambda.js';
 
@@ -42,7 +44,7 @@ class AdminRoutes {
    * @return {promise}
    */
   async initAdminRoutes(app) {
-    app.get('/api/v1/check/admin', async (req, res) => {
+    app.get('/api/v1/check/admin', async (req: Request, res: Response) => {
       const superToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
       });
@@ -67,7 +69,7 @@ class AdminRoutes {
       });
     });
 
-    app.get('/api/v1/admin/activate/:superToken', async (req, res) => {
+    app.get('/api/v1/admin/activate/:superToken', async (req: Request, res: Response) => {
       const tokenValue = req.params.superToken;
       const superToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         value: tokenValue,
@@ -76,19 +78,24 @@ class AdminRoutes {
 
       if (!superToken) {
         Logging.logError('The used token does not exist');
-        return res.status(404).send({ message: 'Please enter a valid admin token to activate your admin app' });
+        return res.status(404).send({ message: 'invalid_token' });
       }
 
       const superApp = await Model.getCoreModel(AppSchemaModel).findOne({
         _tokenId: Model.getCoreModel(TokenSchemaModel).createId(superToken.id),
       });
 
+      if (!superApp) {
+        Logging.logError('Buttress admin activate can not find super app');
+        return res.status(404).send({ message: 'admin_app_not_found' });
+      }
+
       await this._updateAppPolicySelectorList(superApp);
 
       res.status(200).send({ appId: superApp.id });
     });
 
-    app.post('/api/v1/admin/install-lambda', async (req, res) => {
+    app.post('/api/v1/admin/install-lambda', async (req: Request, res: Response) => {
       const tokenValue = req.query.token;
       const lambdaToInstall = req.body.installLambda;
       const refreshAdminToken = req.body.refreshAdminToken;
@@ -114,6 +121,11 @@ class AdminRoutes {
         const adminApp = await Model.getCoreModel(AppSchemaModel).findOne({
           _tokenId: Model.getCoreModel(TokenSchemaModel).createId(adminToken.id),
         });
+
+        if (!adminApp) {
+          Logging.logError('Buttress admin install lambda can not find admin app');
+          return res.status(404).send({ message: 'admin_app_not_found' });
+        }
 
         await this._createAdminPolicy(adminApp.id);
         for await (const lambdaKey of lambdaToInstall) {
@@ -144,9 +156,9 @@ class AdminRoutes {
     });
   }
 
-  async checkAdminCall(req) {
-    let adminToken: any = null;
-    let adminApp = null;
+  async checkAdminCall(req: Request) {
+    let adminToken: Token | null = null;
+    let adminApp: App | null = null;
     const isAdminRouteCall = this._routes.some((r) => {
       let reqURL = req.url;
       if (r.includes(':')) {
@@ -180,7 +192,7 @@ class AdminRoutes {
    * Update admin app policy selectors list
    * @param {Object} app
    */
-  async _updateAppPolicySelectorList(app) {
+  async _updateAppPolicySelectorList(app: App) {
     let adminPolicyPropsList = {
       role: ['ADMIN', 'ADMIN_LAMBDA'],
     };
@@ -204,7 +216,7 @@ class AdminRoutes {
    * Create Buttress pre-defined policy
    * @param {String} appId
    */
-  async _createAdminPolicy(appId) {
+  async _createAdminPolicy(appId: string) {
     for await (const policy of adminPolicy as any) {
       const policyDB = await Model.getCoreModel(PolicySchemaModel).findOne({
         name: {
@@ -239,7 +251,7 @@ class AdminRoutes {
    * Create Buttress pre-defined lambda
    * @param {Array} lambdas
    */
-  async _createAdminLambda(lambdas) {
+  async _createAdminLambda(lambdas: any[]) {
     try {
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
@@ -290,7 +302,7 @@ class AdminRoutes {
    * @param {Object} token
    * @param {Object} app
    */
-  async _refreshAdminAppToken(token, app) {
+  async _refreshAdminAppToken(token: Token, app: App) {
     const rxsNewToken = await Model.getCoreModel(TokenSchemaModel).add(
       {
         type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,

@@ -13,12 +13,13 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Logging from '../helpers/logging.js';
+
+import express, { Request, Response } from 'express';
+
 import * as Helpers from '../helpers/index.js';
 import Model from '../model/index.js';
 
 import NRP from '../services/nrp.js';
-import { BjsRequest } from '../types/bjs-express.js';
 import { ExecutionResultMessage } from '../lambda/lambda-runner.js';
 import { ExecPriority, LambdaExecutionMessage } from '../lambda/lambda-manager.js';
 
@@ -28,15 +29,12 @@ import TokenSchemaModel from '../model/core/token.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
 
-import createConfig from '@dpc/node-env-obj';
-const Config = createConfig() as unknown as Config;
-
 export class RoutesLambdaSetup {
-  app: any;
+  app: express.Application;
   _nrp?: NRP;
   _preRouteMiddleware: any[];
 
-  constructor(app: any, nrp: NRP | undefined, preRouteMiddleware: any[]) {
+  constructor(app: express.Application, nrp: NRP | undefined, preRouteMiddleware: any[]) {
     this.app = app;
     this._nrp = nrp;
     this._preRouteMiddleware = preRouteMiddleware;
@@ -75,7 +73,7 @@ export class RoutesLambdaSetup {
   }
 
   async __configureAppLambdaEndpoints(apiPath: string) {
-    this.app.all(`/lambda/v1/${apiPath}/*endpoint`, this._preRouteMiddleware, async (req: BjsRequest, res) => {
+    this.app.all(`/lambda/v1/${apiPath}/*endpoint`, this._preRouteMiddleware, async (req: Request, res: Response) => {
       const endpointParam = req.params.endpoint;
       const endpoint = Array.isArray(endpointParam) ? endpointParam.join('/') : endpointParam;
 
@@ -109,7 +107,7 @@ export class RoutesLambdaSetup {
         lambdaResult = await new Promise((resolve) => {
           this._nrp?.on('lambda:worker:execution-result', (json) => {
             const exec = JSON.parse(json) as ExecutionResultMessage;
-            if (exec.reqId === req.id?.toString()) {
+            if (exec.reqId === req.context.id?.toString()) {
               resolve(exec);
             }
           });
@@ -146,7 +144,7 @@ export class RoutesLambdaSetup {
     });
   }
 
-  async _queueLambdaAPIExecution(endpointOrId: string, apiPath: string, req: BjsRequest) {
+  async _queueLambdaAPIExecution(endpointOrId: string, apiPath: string, req: Request) {
     const res: {
       errCode?: number;
       errMessage?: string;
@@ -156,6 +154,12 @@ export class RoutesLambdaSetup {
     let lambda: Lambda | null = null;
 
     const lambdaApp = await Model.getCoreModel(AppSchemaModel).findByApiPath(apiPath);
+    if (!lambdaApp) {
+      res.errCode = 404;
+      res.errMessage = 'app_not_found';
+      return res;
+    }
+
     lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
       $or: [
         {
@@ -207,17 +211,22 @@ export class RoutesLambdaSetup {
       priority: triggerAPI.apiEndpoint.type === 'SYNC' ? ExecPriority.API_ENDPOINT_SYNC : ExecPriority.API_ENDPOINT,
       lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
       deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(deployment.id),
-      metadata: [{ key: 'REQ_ID', value: req.id }],
+      metadata: [{ key: 'REQ_ID', value: req.context.id }],
     };
 
     if (req.body) LambdaExecutionData.metadata.push({ key: 'BODY', value: JSON.stringify(req.body) });
     if (req.query) LambdaExecutionData.metadata.push({ key: 'QUERY', value: JSON.stringify(req.query) });
     if (req.headers) LambdaExecutionData.metadata.push({ key: 'HEADERS', value: JSON.stringify(req.headers) });
 
+    const callerTokenId =
+      triggerAPI.apiEndpoint.useCallerToken && req.context.token
+        ? Model.getCoreModel(TokenSchemaModel).createId(req.context.token.id)
+        : null;
+
     const lambdaExecution = (await Model.getCoreModel(LambdaExecutionSchemaModel).add(
       LambdaExecutionData,
       lambda._appId,
-      triggerAPI.apiEndpoint.useCallerToken ? Model.getCoreModel(TokenSchemaModel).createId(req.token.id) : null,
+      callerTokenId,
     )) as LambdaExecution;
 
     res.lambdaExecution = lambdaExecution;

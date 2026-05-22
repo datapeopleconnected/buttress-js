@@ -259,7 +259,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {Boolean} project - mongoDB project ids
    * @return {Promise} - resolves to an array of docs
    */
-  async find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
+  async find(query, _excludes = {}, limit = 0, skip = 0, sort, project = null) {
     // Logging.logSilly(`find: ${this.collectionName} ${query}`);
     query = this.convertBSONObjects(query);
 

@@ -33,6 +33,8 @@ const Type = {
   LAMBDA: type[4],
 };
 
+type PolicyProperty = string | number;
+
 export interface Token {
   id: string;
   type: string;
@@ -40,7 +42,7 @@ export interface Token {
   domains: string[];
   permissions: { route: string; permission: string }[];
   tags: string[];
-  policyProperties: any;
+  policyProperties: Record<string, PolicyProperty | PolicyProperty[]> | null;
   _appId: string;
   _lambdaId: string;
   _userId: string;
@@ -48,7 +50,7 @@ export interface Token {
   _appDataSharingId: string;
 }
 
-class TokenSchemaModel extends StandardModel {
+class TokenSchemaModel extends StandardModel<Token> {
   static name = 'Token';
 
   __policyCache: PolicyCache;

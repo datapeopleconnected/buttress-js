@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -40,33 +41,33 @@ export default class AddOne extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
     const validation = model.validate(req.body);
     if (!validation.isValid) {
       if (validation.missing.length > 0) {
-        this.log(`${this.schemaName}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
+        this.log(`${this.schemaName}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.context.id);
         throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`);
       }
       if (validation.invalid.length > 0) {
-        this.log(`${this.schemaName}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
+        this.log(`${this.schemaName}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.context.id);
         throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`);
       }
 
-      this.log(`${this.schemaName}: Unhandled Error`, Route.LogLevel.ERR, req.id);
+      this.log(`${this.schemaName}: Unhandled Error`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Unhandled error.`);
     }
 
     const isDuplicate = await model.isDuplicate(req.body);
     if (isDuplicate === true) {
-      this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.id);
+      this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `duplicate`);
     }
 
     return true;
   }
 
-  async _exec(req, res, validate) {
+  async _exec(req: Request, _res: Response, _validate: unknown) {
     const model = await this.routeModel();
     const result = await model.add(req.body);
     return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, model.schemaData);

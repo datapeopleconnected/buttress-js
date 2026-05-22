@@ -27,7 +27,7 @@ export interface Deployment {
   _appId: string;
 }
 
-class DeploymentSchemaModel extends StandardModel {
+class DeploymentSchemaModel extends StandardModel<Deployment> {
   static name = 'Deployment';
 
   constructor(services) {

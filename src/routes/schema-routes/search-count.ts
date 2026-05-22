@@ -14,6 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { Response, Request } from 'express';
+
 import Route from '../route.js';
 
 import { Schema, modelToRoute } from '../../helpers/schema.js';
@@ -23,7 +25,7 @@ import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
 
-import { QueryParams } from '../../types/bjs-query.js';
+import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
 
 interface validateResult {
   queryParams: QueryParams<object>;
@@ -46,7 +48,7 @@ export default class SearchCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req, res, token) {
+  async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
 
     const result: validateResult = {
@@ -56,7 +58,7 @@ export default class SearchCount extends Route {
       actualCount: false,
     };
 
-    let query: any = {};
+    let query: BjsQuery<object> = {};
 
     if (!query.$and) {
       query.$and = [];
@@ -78,8 +80,8 @@ export default class SearchCount extends Route {
     return result;
   }
 
-  async _exec(req, res, validateResult: validateResult) {
+  async _exec(req: Request, _res: Response, validateResult: validateResult) {
     const model = await this.routeModel();
-    return ACM.count(model, validateResult.queryParams, req.ac, validateResult.actualCount);
+    return ACM.count(model, validateResult.queryParams, req.context.ac, validateResult.actualCount);
   }
 }

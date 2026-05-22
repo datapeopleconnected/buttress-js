@@ -14,22 +14,32 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { Request } from 'express';
-
 import { Timer } from '../helpers/index.js';
 import { parsedPolicyConfig } from '../access-control/index.js';
 
-export interface BjsRequest extends Request {
-  id?: string;
-  timer?: Timer;
-  authAppDataSharing: any;
-  authLambda: any;
-  authUser: any;
-  authApp: any;
-  token: any;
+import type { App } from '../model/core/app.js';
+import type { AppDataSharing } from '../model/core/app-data-sharing.js';
+import type { Lambda } from '../model/core/lambda.js';
+import type { Token } from '../model/core/token.js';
+import type { User } from '../model/core/user.js';
+
+export type RequestStatusEmitter = (
+  data: Record<string, unknown>,
+  nrp: { emit: (event: string, payload: string) => void },
+) => void;
+export type RequestCloseEmitter = (nrp: { emit: (event: string, payload: string) => void }) => void;
+
+export interface RequestContext {
+  id: string;
+  timer: Timer;
+  authAppDataSharing: AppDataSharing | null;
+  authLambda: Lambda | null;
+  authUser: User | null;
+  authApp: App | null;
+  token: Token | null;
   apiPath?: string;
+  pathSpec?: string;
   isPluginPath: boolean;
-  originalMethod: string;
   ac: {
     policyConfigs: parsedPolicyConfig[];
   };
@@ -43,8 +53,14 @@ export interface BjsRequest extends Request {
     logActivity: number | null;
     boardcastData: number | null;
     close: number | null;
-    stream: [];
+    stream: number[];
   };
-  bjsReqStatus: any;
-  bjsReqClose: any;
+  bjsReqStatus: RequestStatusEmitter;
+  bjsReqClose: RequestCloseEmitter;
+}
+
+declare module 'express-serve-static-core' {
+  interface Request {
+    context: RequestContext;
+  }
 }
