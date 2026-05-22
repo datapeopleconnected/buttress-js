@@ -226,7 +226,7 @@ class Helpers {
               let json: any = null;
               try {
                 json = JSON.parse(text);
-              } catch (err) {
+              } catch (_err) {
                 // If we failed to parse the json we'll just treat it as a string.
               }
 

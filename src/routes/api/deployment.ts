@@ -32,7 +32,7 @@ class SearchDeploymentList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const result: {
       query: {
         $and?: any[];
@@ -80,7 +80,7 @@ class DeploymentCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const result = {
       query: {},
     };

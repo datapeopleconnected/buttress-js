@@ -181,7 +181,12 @@ export default class BootstrapRest extends Bootstrap {
 
     const app = Express();
     // app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
-    app.enable('trust proxy');
+
+    if (Config.app.trustProxy) {
+      app.set('trust proxy', Config.app.trustProxy);
+      Logging.logVerbose(`Trust proxy enabled for REST server, ${Config.app.trustProxy}`);
+    }
+
     app.use(Express.json({ limit: '20mb' }));
     app.use(Express.urlencoded({ extended: true }));
     app.use(

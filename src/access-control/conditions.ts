@@ -13,17 +13,11 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
-import Sugar from '../helpers/sugar.js';
-
 import AccessControlHelpers, { CombineEnvGroups } from './helpers.js';
-import Filter from './filter.js';
 import Env, { ACPolicyEnvCombined } from './env.js';
-import * as Helpers from '../helpers/index.js';
-import Model from '../model/index.js';
 
 import { ApplicablePolicyConfig } from './index.js';
-import { PolicyCondition, PolicyConfig, PolicyEnv } from '../model/core/policy.js';
+import { PolicyCondition } from '../model/core/policy.js';
 
 /**
  * @class Conditoins

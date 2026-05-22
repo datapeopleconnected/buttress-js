@@ -12,7 +12,8 @@ export default tseslint.config(
           "caughtErrorsIgnorePattern": "^_"
         }
       ],
-      "@typescript-eslint/no-explicit-any": "warn",
+      // "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-explicit-any": "off",
       "max-len": ["error", { "code": 150, "ignoreStrings": true, "ignoreTemplateLiterals": true }],
     },
     ignores: ["dist/", "node_modules/", "deploy/"]

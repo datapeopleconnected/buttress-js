@@ -114,13 +114,13 @@ class Routes {
       res.sendFile(path.join(__dirname, '../static/index.html')),
     );
 
-    this.app.use((req: Request, res: Response, next: NextFunction) => {
+    this.app.use((req: Request, _res: Response, next: NextFunction) => {
       const logEvent = (event: string, err?: any) => {
         if (err) {
-          Logging.logError(`${event}`, req.context.id);
-          Logging.logError(err, req.context.id);
+          Logging.logError(`${event}`, req.context?.id);
+          Logging.logError(err, req.context?.id);
         } else {
-          Logging.logSilly(`${event}`, req.context.id);
+          Logging.logSilly(`${event}`, req.context?.id);
         }
       };
 

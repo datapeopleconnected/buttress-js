@@ -88,10 +88,14 @@ export default class UpdateOne extends Route {
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
     }
 
-    const sourceId = Array.isArray(req.params.sourceId) ? req.params.sourceId[0] : req.params.sourceId;
-    if (!sourceId) {
-      this.log(`${this.schemaName}: Invalid source ID`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid source ID`);
+    let sourceId: string | undefined;
+    if (req.params.sourceId) {
+      sourceId = Array.isArray(req.params.sourceId) ? req.params.sourceId[0] : req.params.sourceId;
+
+      if (!sourceId) {
+        this.log(`${this.schemaName}: Invalid source ID`, Route.LogLevel.ERR, req.context.id);
+        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid source ID`);
+      }
     }
 
     const exists = await model.exists(id, sourceId);
@@ -106,7 +110,7 @@ export default class UpdateOne extends Route {
     };
   }
 
-  async _exec(req: Request, _res: Response, validate: { id: string; sourceId: string }) {
+  async _exec(req: Request, _res: Response, validate: { id: string; sourceId: string | undefined }) {
     return (await this.routeModel()).updateByPath(req.body, validate.id, validate.sourceId);
   }
 }

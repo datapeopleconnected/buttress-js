@@ -91,7 +91,7 @@ class GetPolicyList extends Route {
       ids.forEach((id) => {
         try {
           Datastore.getInstance('core').ID.new(id);
-        } catch (err) {
+        } catch (_err) {
           this.log(`POLICY: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
           throw new Helpers.Errors.RequestError(400, 'invalid_id');
         }
@@ -130,7 +130,7 @@ class SearchPolicyList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const result: {
       query: any;
       skip: number;
@@ -187,7 +187,7 @@ class AddPolicy extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const app = req.context.authApp;
     try {
       if (!app || !req.body.selection || !req.body.name || !req.body.config || req.body.config.length < 1) {
@@ -255,7 +255,7 @@ class UpdatePolicy extends Route {
     this.activityBroadcast = true;
   }
 
-  _validate(req: Request, res: Response) {
+  _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(req.body);
       req.body = body;
@@ -286,7 +286,7 @@ class UpdatePolicy extends Route {
     });
   }
 
-  _exec(req: Request, res: Response, validate) {
+  _exec(req: Request, _res: Response, _validate) {
     // Update Policy cache
 
     return Model.getCoreModel(PolicySchemaModel).updateByPath(req.body, req.params.id);
@@ -308,7 +308,7 @@ class BulkUpdatePolicy extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(item.body);
       item.body = body;
@@ -416,7 +416,7 @@ class PolicyCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const result = {
       query: {},
     };
@@ -578,11 +578,16 @@ class DeleteAppPolicies extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: Missing app id', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `missing_app_id`);
+    }
+
     const rxsPolicies =
-      req.token && req.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM
+      req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM
         ? await Model.getCoreModel(PolicySchemaModel).findAll()
         : await Model.getCoreModel(PolicySchemaModel).find({
-            _appId: Model.getCoreModel(AppSchemaModel).adapter.ID.new(req.authApp.id),
+            _appId: Model.getCoreModel(AppSchemaModel).adapter.ID.new(req.context.authApp.id),
           });
 
     const policies: any[] = [];

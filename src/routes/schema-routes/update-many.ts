@@ -21,9 +21,7 @@ import * as Helpers from '../../helpers/index.js';
 import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
-import AppSchemaModel, { App } from '../../model/core/app.js';
-import Model from '../../model/index.js';
-import { ContractUpdateTransaction } from '@hashgraph/sdk';
+import { App } from '../../model/core/app.js';
 
 /**
  * @class UpdateMany

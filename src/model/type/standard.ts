@@ -408,7 +408,7 @@ export default class StandardModel<TDocument = unknown> {
    * @param {object} extra
    * @return {Promise}
    */
-  exists(id, sourceId: string | null = null, extra = {}) {
+  exists(id, _sourceId: string | null = null, extra = {}) {
     return this.adapter.exists(id, extra);
   }
 

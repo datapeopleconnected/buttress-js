@@ -14,9 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import express, { Router, Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 
-import Logging from '../helpers/logging.js';
 import * as Helpers from '../helpers/index.js';
 import Model from '../model/index.js';
 
@@ -29,9 +28,6 @@ import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import TokenSchemaModel from '../model/core/token.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
-
-import createConfig from '@dpc/node-env-obj';
-const Config = createConfig() as unknown as Config;
 
 export class RoutesLambdaSetup {
   app: express.Application;

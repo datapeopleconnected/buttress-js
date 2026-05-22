@@ -29,9 +29,9 @@ const Config = createConfig() as unknown as Config;
 
 import AdminRoutes from './admin-routes.js';
 import AppSchemaModel, { App } from '../model/core/app.js';
-import AppDataSharingSchemaModel, { AppDataSharing } from '../model/core/app-data-sharing.js';
+import AppDataSharingSchemaModel from '../model/core/app-data-sharing.js';
 import UserSchemaModel, { User } from '../model/core/user.js';
-import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
+import LambdaSchemaModel from '../model/core/lambda.js';
 import TokenSchemaModelCore, { Token } from '../model/core/token.js';
 
 export class RoutesMiddleware {

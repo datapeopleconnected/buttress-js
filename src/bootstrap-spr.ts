@@ -33,12 +33,11 @@ import AccessControlFilters from './access-control/filter.js';
 
 import Datastore from './datastore/index.js';
 import { DataShareSocketSharePayload, RESTActivity } from './types/bjs-nrp-objects.js';
-import { Policy, PolicyEnv } from './model/core/policy.js';
+import { Policy } from './model/core/policy.js';
 import TokenSchemaModel, { Token } from './model/core/token.js';
 
 import { PolicyCache } from './services/policy-cache.js';
 import UserSchemaModel, { User } from './model/core/user.js';
-import projection from './access-control/projection.js';
 
 // Abstract policy cache
 

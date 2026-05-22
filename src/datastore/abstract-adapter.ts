@@ -39,11 +39,11 @@ export default class AbstractAdapter {
     throw new Errors.NotYetImplemented('cloneAdapterConnection');
   }
 
-  setCollection(collectionName: string) {
+  setCollection(_collectionName: string) {
     throw new Errors.NotYetImplemented('setCollection');
   }
 
-  updateSchema(schemaData: unknown) {
+  updateSchema(_schemaData: unknown) {
     if (!this.requiresFormalSchema) return;
 
     throw new Errors.NotYetImplemented('updateSchema');
@@ -53,44 +53,44 @@ export default class AbstractAdapter {
     throw new Errors.NotYetImplemented('get ID');
   }
 
-  add(body: unknown, modifier: unknown) {
+  add(_body: unknown, _modifier: unknown) {
     throw new Errors.NotYetImplemented('add');
   }
 
-  async batchUpdateProcess(id: string, body: unknown, context: unknown, schemaConfig: unknown): Promise<unknown> {
+  async batchUpdateProcess(_id: string, _body: unknown, _context: unknown, _schemaConfig: unknown): Promise<unknown> {
     throw new Errors.NotYetImplemented('batchUpdateProcess');
   }
 
-  updateById(id: string, query: unknown) {
+  updateById(_id: string, _query: unknown) {
     throw new Errors.NotYetImplemented('updateById');
   }
 
-  updateOne(query: unknown, update: unknown) {
+  updateOne(_query: unknown, _update: unknown) {
     throw new Errors.NotYetImplemented('updateOne');
   }
 
-  exists(id: string, extra = {}) {
+  exists(id: string, _extra = {}) {
     throw new Errors.NotYetImplemented('exists');
   }
 
   /*
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  isDuplicate(details: unknown) {
+  isDuplicate(_details: unknown) {
     throw new Errors.NotYetImplemented('isDuplicate');
   }
 
   /**
    * @param {App} id - id of the object to be deleted
    */
-  rm(id: unknown) {
+  rm(_id: unknown) {
     throw new Errors.NotYetImplemented('rm');
   }
 
   /**
    * @param {Array} ids - Array of entity ids to delete
    */
-  rmBulk(ids: unknown) {
+  rmBulk(_ids: unknown) {
     throw new Errors.NotYetImplemented('rmBulk');
   }
 
@@ -98,14 +98,14 @@ export default class AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  rmAll(query: unknown) {
+  rmAll(_query: unknown) {
     throw new Errors.NotYetImplemented('rmAll');
   }
 
   /**
    * @param {String} id - entity id to get
    */
-  findById(id: unknown) {
+  findById(_id: unknown) {
     throw new Errors.NotYetImplemented('findById');
   }
 
@@ -117,7 +117,7 @@ export default class AbstractAdapter {
    * @param {Object} sort - mongoDB sort object
    * @param {Boolean} project - mongoDB project ids
    */
-  find(query: unknown, excludes = {}, limit = 0, skip = 0, sort = null, project = null) {
+  find(_query: unknown, _excludes = {}, _limit = 0, _skip = 0, _sort = null, _project = null) {
     throw new Errors.NotYetImplemented('find');
   }
 
@@ -125,8 +125,8 @@ export default class AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @param {Object} excludes - mongoDB query excludes
    */
-  findOne(query: unknown, excludes = {}) {
-    throw new Errors.NotYetImplemented('findOnedd');
+  findOne(_query: unknown, _excludes = {}) {
+    throw new Errors.NotYetImplemented('findOne');
   }
 
   /**
@@ -138,14 +138,14 @@ export default class AbstractAdapter {
   /**
    * @param {Array} ids - Array of entities ids to get
    */
-  findAllById(ids: string[]) {
+  findAllById(_ids: string[]) {
     throw new Errors.NotYetImplemented('findAllById');
   }
 
   /**
    * @param {Object} query - mongoDB query
    */
-  count(query: unknown) {
+  count(_query: unknown) {
     throw new Errors.NotYetImplemented('count');
   }
 

@@ -17,12 +17,9 @@ import net from 'node:net';
 
 import createConfig from '@dpc/node-env-obj';
 
-import hash from 'object-hash';
 import Express from 'express';
-import { ObjectId } from 'bson';
 import { createClient, RedisClientType } from '@redis/client';
 import { v4 as uuidv4 } from 'uuid';
-import Sugar from './helpers/sugar.js';
 
 import { Server as sio, Socket as sioSocket } from 'socket.io';
 import sioClient, { Socket as sioClientSocket } from 'socket.io-client';
@@ -449,7 +446,7 @@ export default class BootstrapSocket extends Bootstrap {
     if (!this.__nrp) throw new Error('No NRP instance');
 
     // this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
-    this.__nrp.on('clearUserLocalData', (json) => this.__primaryClearUserLocalData(json));
+    // this.__nrp.on('clearUserLocalData', (json) => this.__primaryClearUserLocalData(json));
     this.__nrp.on('dataShare:activated', async (json: string) => {
       const data = JSON.parse(json);
       const dataShare = await Model.getCoreModel(AppDataSharingSchemaModel).findById(data.appDataSharingId);
@@ -564,7 +561,7 @@ export default class BootstrapSocket extends Bootstrap {
     this.io.of(`/${data.activity.appAPIPath}`).to(tokens).emit('db-activity', packet);
   }
 
-  __primaryClearUserLocalData(json: string) {
+  __primaryClearUserLocalData() {
     throw new Error('DEPRECATED: call made to __primaryClearUserLocalData');
     // const apiPath = data.appAPIPath;
 

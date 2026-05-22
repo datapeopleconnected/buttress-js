@@ -13,6 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Request } from 'express';
 
 import ButtressExport from '@buttress/api';
 // TODO: Look into why the export from @buttress/api is not working as expected.
@@ -306,27 +307,39 @@ export default class AppSchemaModel extends StandardModel<App> {
     return updatedSchema;
   }
 
-  async mergeRemoteSchema(req: Request, collections) {
+  async mergeRemoteSchema(req: Request, collections: Schema[]) {
     const schemaWithRemoteRef = collections.filter((s) => s.remotes);
 
     // TODO: Check params for any core scheam thats been requested.
     // TODO: Handle mutiple remotes
     const dataSharingSchema = schemaWithRemoteRef.reduce((map, collection) => {
+      if (!collection.remotes) return map;
+
+      if (!Array.isArray(collection.remotes)) {
+        map[collection.remotes.name] = [collection.remotes.schema];
+        return map;
+      }
+
       collection.remotes.forEach((remote) => {
         if (!map[remote.name]) map[remote.name] = [];
         map[remote.name].push(remote.schema);
       });
+
       return map;
     }, {});
 
     // TODO: fetch app models & use schema data instead of doing the work here
+
+    if (!req.context.authApp) {
+      throw new Error('Unable to load DSA due to missing app context');
+    }
 
     // Load DSA for current app
     const requiredDSAs = Object.keys(dataSharingSchema);
     if (requiredDSAs.length > 0) {
       const appDSAs = await Helpers.streamAll(
         await this.__modelManager.getCoreModel(AppDataSharingSchemaModel).find({
-          _appId: req.authApp.id,
+          _appId: req.context.authApp.id,
           name: {
             $in: requiredDSAs,
           },
@@ -361,7 +374,14 @@ export default class AppSchemaModel extends StandardModel<App> {
 
         remoteSchema.forEach((rs) => {
           schemaWithRemoteRef
-            .filter((s) => s.remotes && s.remotes.some((r) => r.name === DSAName && r.schema === rs.name))
+            .filter((s) => {
+              if (!s.remotes) return false;
+              if (!Array.isArray(s.remotes)) {
+                return s.remotes.name === DSAName && s.remotes.schema === rs.name;
+              }
+
+              return s.remotes.some((r) => r.name === DSAName && r.schema === rs.name);
+            })
             .forEach((s) => {
               // Merge RS into schema
               const collectionIdx = collections.findIndex((s) => s.name === rs.name);

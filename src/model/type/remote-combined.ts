@@ -267,7 +267,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @return {Promise}
    * @deprecated - use find
    */
-  findAllById(ids) {
+  findAllById(_ids) {
     throw new Error('Not yet implemented');
     // return this.remote.findAllById(ids);
   }

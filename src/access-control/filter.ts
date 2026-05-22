@@ -13,10 +13,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { ObjectId } from 'bson';
+import { Request } from 'express';
 
 import Sugar from '../helpers/sugar.js';
-
-import { ObjectId } from 'bson';
 
 import AccessControlHelpers, { CombineEnvGroups } from './helpers.js';
 
@@ -27,7 +27,7 @@ import Model from '../model/index.js';
 
 import { ApplicablePolicyConfig } from './index.js';
 
-import { PolicyEnv, PolicyQuery } from '../model/core/policy.js';
+import { PolicyQuery } from '../model/core/policy.js';
 
 /**
  * @class Filter
@@ -242,19 +242,22 @@ export class Filter {
     const verb = req.method;
     if (!this.manipulationVerbs.includes(verb)) return true;
 
-    const appId = req.authApp.id;
+    if (!req.context.authApp) {
+      throw new Error('No auth app found in request context');
+    }
+
+    const appId = req.context.authApp.id;
     // const appShortId = Helpers.shortId(appId);
     const body = Array.isArray(req.body) ? req.body : [req.body];
     let query = req.body.query ? req.body.query : {};
-    const baseURL = req.url.replace(/\?.*/, '');
+    // const baseURL = req.url.replace(/\?.*/, '');
     // const id = (baseURL) ? baseURL.split('/').pop() : undefined;
     let passed = true;
 
     const model = isCoreSchema ? Model.getCoreModelByName(collection) : await Model.getAppModel(appId, collection);
 
-    for await (const update of body) {
-      // TODO: Shouldn't be using object ID here, should be using the datstore's ID
-
+    // ! This looks weird
+    for await (const _update of body) {
       if (query._id && typeof query._id !== 'object') {
         query._id = await model.createId(query._id);
       }

@@ -68,7 +68,7 @@ class PolicyMatch {
           acc.push(AccessControlHelpers.evaluateOperation(val, rhs, selectionCriterionKey));
           return acc;
         }, []);
-        arr.push(selectionMatches);
+        arr.push(...selectionMatches);
 
         return arr;
       }, [])

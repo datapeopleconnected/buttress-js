@@ -54,7 +54,7 @@ export default class GetOne extends Route {
 
     try {
       objectId = model.createId(id);
-    } catch (err) {
+    } catch (_err) {
       this.log(`${this.schemaName}: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, 'invalid_id');
     }

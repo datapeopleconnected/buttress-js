@@ -102,7 +102,7 @@ class GetLambdaList extends Route {
       ids.forEach((id) => {
         try {
           Datastore.getInstance('core').ID.new(id);
-        } catch (err) {
+        } catch (_err) {
           this.log(`LAMBDA: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
           throw new Helpers.Errors.RequestError(400, 'invalid_id');
         }
@@ -144,7 +144,7 @@ class SearchLambdaList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const result: {
       query: any;
     } = {
@@ -225,7 +225,7 @@ class AddLambda extends Route {
     }
   }
 
-  async _exec(req: Request, res: Response, validate) {
+  async _exec(req: Request, _res: Response, _validate) {
     let appId = req.context.authApp?.id;
     if (!appId) {
       // const token = await this._getToken(req);
@@ -271,7 +271,7 @@ class UpdateLambda extends Route {
     this.activityBroadcast = true;
   }
 
-  _validate(req: Request, res: Response) {
+  _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { validation, body } = Model.getCoreModel(LambdaSchemaModel).validateUpdate(req.body);
@@ -334,7 +334,7 @@ class BulkUpdateLambda extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(LambdaSchemaModel).validateUpdate(item.body);
       item.body = body;
@@ -392,7 +392,7 @@ class ScheduleLambdaExecution extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
@@ -480,7 +480,7 @@ class EditLambdaDeployment extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     try {
       const branch = req.body?.branch ? req.body.branch : null;
       const hash = req.body?.hash ? req.body.hash : null;
@@ -552,7 +552,7 @@ class SetLambdaPolicyProperties extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
@@ -619,7 +619,7 @@ class UpdateLambdaPolicyProperties extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
@@ -789,7 +789,7 @@ class LambdaCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const result = {
       query: {},
     };

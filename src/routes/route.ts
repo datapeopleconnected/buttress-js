@@ -25,8 +25,6 @@ import Model, { ModelManager } from '../model/index.js';
 import * as Helpers from '../helpers/index.js';
 import { Schema } from '../helpers/schema.js';
 
-import RemoteModel from '../model/type/remote.js';
-
 import NodeRedisPubsub from '../services/nrp.js';
 import { RESTActivity } from '../types/bjs-nrp-objects.js';
 import ActivitySchemaModel from '../model/core/activity.js';
@@ -195,9 +193,8 @@ export default class Route {
    * @return {Promise} - Promise is fulfilled once execution has completed
    */
   async exec(req: Request, res: Response) {
-    const ip = req.ip || req._remoteAddress || (req.connection && req.connection.remoteAddress) || undefined;
     Logging.logTimer(
-      `${req.method} ${req.originalUrl || req.url} ${ip}`,
+      `${req.method} ${req.originalUrl || req.url} ${req.ip}`,
       req.context.timer,
       Logging.Constants.LogLevel.DEBUG,
       req.context.id,
@@ -230,7 +227,7 @@ export default class Route {
     // Send the result back to the client and resolve the request from
     // this point onward you should treat the request as furfilled.
     if (result instanceof Stream.Readable && result.readable) {
-      result.on('bjs-stream-status', (data) => req.context.bjsReqStatus(data, this._nrp));
+      result.on('bjs-stream-status', (data) => (this._nrp ? req.context.bjsReqStatus(data, this._nrp) : null));
 
       const resStream = new Stream.PassThrough({ objectMode: true });
       const broadcastStream = new Stream.PassThrough({ objectMode: true });
@@ -249,7 +246,7 @@ export default class Route {
 
       await this._boardcastData(req, res, broadcastStream);
 
-      req.bjsReqStatus({ status: 'ready' }, this._nrp);
+      if (this._nrp) req.context.bjsReqStatus({ status: 'ready' }, this._nrp);
     } else {
       // await Plugins.do_action('route-add-many:_exec', this.schema, results);
 
@@ -333,7 +330,7 @@ export default class Route {
     return result;
   }
 
-  _logActivity(req, res) {
+  _logActivity(req, _res) {
     req.context.timings.logActivity = req.context.timer.interval;
     Logging.logTimer('_logActivity:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     if (this.verb === Constants.Verbs.GET) {
@@ -497,7 +494,7 @@ export default class Route {
 
     try {
       body = JSON.parse(req.body);
-    } catch (e) {
+    } catch (_err) {
       body = req.body;
     }
 
@@ -563,7 +560,7 @@ export default class Route {
   _authenticate(req: Request, _res: Response) {
     req.context.timings.authenticate = req.context.timer.interval;
     return new Promise((resolve, reject) => {
-      if (!req.token) {
+      if (!req.context.token) {
         this.log('EAUTH: INVALID TOKEN', Logging.Constants.LogLevel.ERR, req.context.id);
         Logging.logTimer(
           '_authenticate:end-invalid-token',
@@ -574,9 +571,9 @@ export default class Route {
         return reject(new Helpers.Errors.RequestError(401, 'invalid_token'));
       }
 
-      if (this.authType && authTypeIdx(req.token.type) < authTypeIdx(this.authType)) {
+      if (this.authType && authTypeIdx(req.context.token.type) < authTypeIdx(this.authType)) {
         this.log(
-          `EAUTH: INSUFFICIENT AUTHORITY ${req.token.type} is not equal to ${this.authType}`,
+          `EAUTH: INSUFFICIENT AUTHORITY ${req.context.token.type} is not equal to ${this.authType}`,
           Logging.Constants.LogLevel.ERR,
           req.context.id,
         );
@@ -605,26 +602,26 @@ export default class Route {
       );
 
       // BYPASS schema checks for app tokens
-      if (req.token.type === 'app') {
+      if (req.context.token.type === 'app') {
         Logging.logTimer(
           '_authenticate:end-app-token',
           req.context.timer,
           Logging.Constants.LogLevel.SILLY,
           req.context.id,
         );
-        resolve(req.token);
+        resolve(req.context.token);
         return;
       }
 
       // NOT GOOD
-      if (req.token.type === 'dataSharing') {
+      if (req.context.token.type === 'dataSharing') {
         Logging.logTimer(
           '_authenticate:end-app-token',
           req.context.timer,
           Logging.Constants.LogLevel.SILLY,
           req.context.id,
         );
-        resolve(req.token);
+        resolve(req.context.token);
         return;
       }
 
@@ -635,7 +632,7 @@ export default class Route {
         req.context.id,
       );
 
-      resolve(req.token);
+      resolve(req.context.token);
     });
   }
 

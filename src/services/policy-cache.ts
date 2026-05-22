@@ -25,9 +25,8 @@ const Config = createConfig() as unknown as Config;
 import AccessControlPolicyMatch from '../access-control/policy-match.js';
 
 import Model from '../model/index.js';
-import policy, { Policy, PolicyConfig } from '../model/core/policy.js';
+import { Policy, PolicyConfig } from '../model/core/policy.js';
 import { Token } from '../model/core/token.js';
-import { User } from '../model/core/user.js';
 
 import * as Helpers from '../helpers/index.js';
 import PolicySchemaModel from '../model/core/policy.js';

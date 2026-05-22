@@ -31,7 +31,6 @@ import AccessControlConditions from './conditions.js';
 import AccessControlFilter from './filter.js';
 import AccessControlEnv from './env.js';
 import AccessControlProjection from './projection.js';
-import AccessControlPolicyMatch from './policy-match.js';
 import AccessControlHelpers, { filterPolicyConfigs } from './helpers.js';
 import { PolicyCache } from '../services/policy-cache.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
@@ -188,7 +187,7 @@ class AccessControl {
     if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
     // if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
 
-    const tokenPolicies = await this.__getTokenPolicies(token, appId);
+    const tokenPolicies = await this.__getTokenPolicies(token);
     Logging.logSilly(
       `Got ${tokenPolicies.length} matching policies for token ${token.type}:${token.id}`,
       req.context.id,
@@ -325,7 +324,7 @@ class AccessControl {
       return rooms;
     }
 
-    const tokenPolicies = await this.__getTokenPolicies(token, appId);
+    const tokenPolicies = await this.__getTokenPolicies(token);
     for await (const schema of this._schemas[appId]) {
       req.body = {};
       // req.accessControlQuery = {};
@@ -549,13 +548,13 @@ class AccessControl {
   // 	this._policies[appId] = policies;
   // }
 
-  async __getTokenPolicies(token: Token, appId: string) {
+  async __getTokenPolicies(token: Token) {
     if (!this._policyCache) throw new Error('Unable to get token policies, policy cache not set');
     return this._policyCache.getPoliciesByToken(token);
     // return AccessControlPolicyMatch.getTokenPolicies(this._policies[appId], token);
   }
 
-  async _checkAccessControlDBBasedQueryCondition(req: Request, params) {
+  async _checkAccessControlDBBasedQueryCondition(req: Request) {
     const requestMethod = req.method;
     if (requestMethod !== 'PUT') return;
 
@@ -613,7 +612,7 @@ class AccessControl {
   __getInnerObjectValue(originalObj) {
     if (!originalObj) return null;
 
-    const { schema, ...rest } = originalObj;
+    const { _schema, ...rest } = originalObj;
     return rest;
   }
 }

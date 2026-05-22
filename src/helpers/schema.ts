@@ -239,7 +239,7 @@ const __validateProp = (prop, config) => {
         try {
           prop.value = Datastore.getInstance('core').ID.new(prop.value);
           valid = type === 'string';
-        } catch (e) {
+        } catch (_err) {
           valid = false;
         }
       } else if (type === 'object') {
@@ -247,7 +247,7 @@ const __validateProp = (prop, config) => {
           try {
             prop.value = Datastore.getInstance('core').ID.new(prop.value);
             valid = true;
-          } catch (e) {
+          } catch (_err) {
             valid = false;
           }
         } else {

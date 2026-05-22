@@ -54,7 +54,7 @@ export default class DeleteMany extends Route {
 
     try {
       ids = ids.map((id) => model.createId(id));
-    } catch (err) {
+    } catch (_err) {
       throw new Helpers.Errors.RequestError(400, `All ids must be string of 12 bytes or a string of 24 hex characters`);
     }
 

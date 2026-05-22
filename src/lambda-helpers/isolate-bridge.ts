@@ -359,7 +359,8 @@ class IsolateBridge {
     );
   }
 
-  _pushLambdaExecutionLog(log, type) {
+  // ! Need to look into this method
+  _pushLambdaExecutionLog(_log, _type) {
     throw new Error('Need to resolve where this.lambdaExecution.id is coming from');
     // Model.getCoreModel(LambdaSchemaModel).update({
     // 	id: Model.getCoreModel(LambdaSchemaModel).createId(this.lambdaExecution.id),

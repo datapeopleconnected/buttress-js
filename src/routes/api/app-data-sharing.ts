@@ -25,8 +25,8 @@ import DatastoreFactory from '../../datastore/adapter-factory.js';
 import ButtressAdapater from '../../datastore/adapters/buttress.js';
 import TokenSchemaModel from '../../model/core/token.js';
 import AppDataSharingSchemaModel, { AppDataSharing } from '../../model/core/app-data-sharing.js';
-import Token from '@buttress/api/dist/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
+import { QueryParams } from '../../types/bjs-query.js';
 
 /**
  * The data sharing agreement registration process should be as follows:
@@ -114,7 +114,7 @@ class GetAppDataSharing extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const id = req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required app data sharing id`, Route.LogLevel.ERR);
@@ -419,7 +419,7 @@ class ActivateAppDataSharing extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
@@ -670,13 +670,7 @@ class SearchAppDataSharingAgreement extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
-    const result: {
-      query: any;
-      skip: number;
-      limit: number;
-      sort: any;
-      project: any;
-    } = {
+    const result: QueryParams<object> = {
       query: {
         $and: [],
       },
@@ -686,12 +680,12 @@ class SearchAppDataSharingAgreement extends Route {
       project: req.body && req.body.project ? req.body.project : false,
     };
 
-    if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-    if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (result.skip && isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+    if (result.limit && isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
+      result.query.$and?.push(req.body.query);
     }
 
     result.query = Model.getCoreModel(AppDataSharingSchemaModel).parseQuery(

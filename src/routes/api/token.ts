@@ -203,7 +203,7 @@ class SearchUserToken extends Route {
     this.redactResults = false;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));

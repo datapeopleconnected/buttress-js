@@ -28,15 +28,20 @@ import AppSchemaModel from '../../model/core/app.js';
 const routes: (typeof Route)[] = [];
 
 function getTokenQueryfromParams(req: Request, userId: string) {
+  const id = Array.isArray(req.params.tokenId) ? req.params.tokenId[0] : req.params.tokenId;
+  if (!id) {
+    return null;
+  }
+
   let tokenId = null;
   try {
-    tokenId = Model.getCoreModel(TokenSchemaModel).createId(req.params.tokenId);
+    tokenId = Model.getCoreModel(TokenSchemaModel).createId(id);
   } catch (err) {
     Logging.logSilly(err);
   }
 
   // If tokenId is not set, we will treat it as the token value.
-  const tokenValue = tokenId === null ? req.params.tokenId : null;
+  const tokenValue = tokenId === null ? id : null;
 
   if (!tokenId && !tokenValue) {
     return null;
@@ -126,7 +131,7 @@ class GetUser extends Route {
 
     try {
       userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    } catch (err) {
+    } catch (_err) {
       throw new Helpers.Errors.RequestError(400, `inavlid_id`);
     }
 
@@ -193,7 +198,7 @@ class FindUser extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -308,7 +313,7 @@ class CreateUserAuthToken extends Route {
     this.redactResults = false;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -449,7 +454,7 @@ class AddUser extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
@@ -527,7 +532,7 @@ class UpdateUser extends Route {
     this.activityBroadcast = true;
   }
 
-  _validate(req: Request, res: Response) {
+  _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
@@ -1029,7 +1034,7 @@ class clearUserLocalData extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  _validate(req: Request, res: Response) {
+  _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       if (!req.params.id) {
         this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
@@ -1075,7 +1080,7 @@ class SearchUserList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const result: {
       query: any;
       skip: number;
@@ -1135,7 +1140,7 @@ class UserCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const result = {
       query: {},
     };

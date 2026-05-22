@@ -67,7 +67,7 @@ class SearchAppList extends Route {
     this.permissions = Route.Constants.Permissions.SEARCH;
   }
 
-  async _validate(req: Request, res: Response) {
+  async _validate(req: Request, _res: Response) {
     const result: {
       query: any;
     } = {
@@ -410,10 +410,11 @@ class UpdateAppSchema extends Route {
 
     const rawSchema = req.body;
 
+    const checkedSchema: Schema[] = [];
     // Check the validatiry of the rawSchema
     try {
       for (let i = 0; i < rawSchema.length; i++) {
-        const schema = rawSchema[i];
+        const schema = rawSchema[i] as Schema;
         if (!schema.name) {
           this.log(`ERROR: Missing name for schema at index ${i}`, Route.LogLevel.ERR);
           return Promise.reject(new Helpers.Errors.RequestError(400, `schema_missing_name`));
@@ -439,6 +440,8 @@ class UpdateAppSchema extends Route {
           this.log(`ERROR: Invalid schema type (${schema.type})`, Route.LogLevel.ERR);
           return Promise.reject(new Helpers.Errors.RequestError(400, `schema_invalid_type`));
         }
+
+        checkedSchema.push(schema);
       }
     } catch (err) {
       Logging.logError(err);
@@ -446,7 +449,7 @@ class UpdateAppSchema extends Route {
     }
 
     // Sort templates
-    let compiledSchema = rawSchema.sort((a, b) =>
+    let compiledSchema = checkedSchema.sort((a, b) =>
       a.type.indexOf('collection') === 0 ? 1 : b.type.indexOf('collection') === 0 ? -1 : 0,
     );
 
@@ -476,7 +479,7 @@ class UpdateAppSchema extends Route {
   async _exec(
     _req: Request,
     _res: Response,
-    { appId, rawSchema, compiledSchema }: { appId: string; rawSchema: string; compiledSchema: unknown },
+    { appId, rawSchema, compiledSchema }: { appId: string; rawSchema: string; compiledSchema: Schema[] },
   ) {
     await Model.getCoreModel(AppSchemaModel).updateSchema(appId, compiledSchema, rawSchema);
 

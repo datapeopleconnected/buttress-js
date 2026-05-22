@@ -25,7 +25,7 @@ import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
 
-import { QueryParams } from '../../types/bjs-query.js';
+import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
 
 interface validateResult {
   queryParams: QueryParams<object>;
@@ -58,7 +58,7 @@ export default class SearchCount extends Route {
       actualCount: false,
     };
 
-    let query: any = {};
+    let query: BjsQuery<object> = {};
 
     if (!query.$and) {
       query.$and = [];

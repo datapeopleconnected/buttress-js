@@ -13,7 +13,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Logging from '../../helpers/logging.js';
 import { Schema, encode } from '../../helpers/schema.js';
 import * as Shared from '../shared.js';
 
