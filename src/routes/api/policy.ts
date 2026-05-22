@@ -39,7 +39,7 @@ class GetPolicy extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const rawId = req.params.id;
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
     if (!id) {
@@ -60,7 +60,7 @@ class GetPolicy extends Route {
     return policy;
   }
 
-  _exec(req: Request, res: Response, policy) {
+  override _exec(req: Request, res: Response, policy) {
     return policy;
   }
 }
@@ -77,7 +77,7 @@ class GetPolicyList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(req: Request, _res: Response) {
+  override _validate(req: Request, _res: Response) {
     const rawIds = req.query.ids;
     const ids = Array.isArray(rawIds) ? rawIds : typeof rawIds === 'string' ? rawIds.split(',').filter(Boolean) : [];
 
@@ -104,7 +104,7 @@ class GetPolicyList extends Route {
     });
   }
 
-  _exec(req: Request, res: Response, validate: { appId: string; ids: string[] }) {
+  override _exec(req: Request, res: Response, validate: { appId: string; ids: string[] }) {
     if (validate.ids.length > 0) {
       // TODO: needs to be scoped by appId - Disabled until fixed.
       // return Model.getCoreModel(PolicySchemaModel).findByIds(validate.ids);
@@ -130,7 +130,7 @@ class SearchPolicyList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const result: {
       query: any;
       skip: number;
@@ -163,7 +163,7 @@ class SearchPolicyList extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(PolicySchemaModel).find(
       validate.query,
       {},
@@ -187,7 +187,7 @@ class AddPolicy extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const app = req.context.authApp;
     try {
       if (!app || !req.body.selection || !req.body.name || !req.body.config || req.body.config.length < 1) {
@@ -225,7 +225,7 @@ class AddPolicy extends Route {
     }
   }
 
-  _exec(req: Request, res: Response, validate: { appId: string }) {
+  override _exec(req: Request, res: Response, validate: { appId: string }) {
     return Model.getCoreModel(PolicySchemaModel)
       .add(req.body, validate.appId)
       .then((policy) => {
@@ -255,7 +255,7 @@ class UpdatePolicy extends Route {
     this.activityBroadcast = true;
   }
 
-  _validate(req: Request, _res: Response) {
+  override _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(req.body);
       req.body = body;
@@ -286,7 +286,7 @@ class UpdatePolicy extends Route {
     });
   }
 
-  _exec(req: Request, _res: Response, _validate) {
+  override _exec(req: Request, _res: Response, _validate) {
     // Update Policy cache
 
     return Model.getCoreModel(PolicySchemaModel).updateByPath(req.body, req.params.id);
@@ -308,7 +308,7 @@ class BulkUpdatePolicy extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(item.body);
       item.body = body;
@@ -337,7 +337,7 @@ class BulkUpdatePolicy extends Route {
     return req.body;
   }
 
-  async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate) {
     for await (const item of validate) {
       await Model.getCoreModel(PolicySchemaModel).updateByPath(item.body, item.id);
     }
@@ -357,7 +357,7 @@ class SyncPolicies extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const app = req.context.authApp;
 
     if (!app || !req.body) {
@@ -382,7 +382,7 @@ class SyncPolicies extends Route {
     };
   }
 
-  async _exec(req: Request, res: Response, validate: { appId: string }) {
+  override async _exec(req: Request, res: Response, validate: { appId: string }) {
     await Model.getCoreModel(PolicySchemaModel).rmAll({
       _appId: validate.appId,
     });
@@ -416,7 +416,7 @@ class PolicyCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const result = {
       query: {},
     };
@@ -443,7 +443,7 @@ class PolicyCount extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult) {
     return Model.getCoreModel(PolicySchemaModel).count(validateResult.query);
   }
 }
@@ -467,7 +467,7 @@ class DeleteTransientPolicy extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const appId = req.context.authApp?.id;
     if (!appId) {
       this.log(`[${this.name}] Missing app id`, Route.LogLevel.ERR);
@@ -491,7 +491,7 @@ class DeleteTransientPolicy extends Route {
     };
   }
 
-  async _exec(_req: Request, _res: Response, validate: { appId: string; policy: Policy }) {
+  override async _exec(_req: Request, _res: Response, validate: { appId: string; policy: Policy }) {
     if (!validate) return true;
 
     await Model.getCoreModel(PolicySchemaModel).rm(validate.policy.id.toString());
@@ -527,7 +527,7 @@ class DeletePolicy extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `missing_field`);
@@ -551,7 +551,7 @@ class DeletePolicy extends Route {
     };
   }
 
-  async _exec(req: Request, res: Response, validate: { appId: string; policy: Policy }) {
+  override async _exec(req: Request, res: Response, validate: { appId: string; policy: Policy }) {
     await Model.getCoreModel(PolicySchemaModel).rm(validate.policy.id.toString());
 
     this._nrp?.emit(
@@ -577,7 +577,7 @@ class DeleteAppPolicies extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: Missing app id', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `missing_app_id`);
@@ -598,7 +598,7 @@ class DeleteAppPolicies extends Route {
     return policies.map((p) => p.id.toString());
   }
 
-  _exec(req: Request, res: Response, validate: string[]) {
+  override _exec(req: Request, res: Response, validate: string[]) {
     return new Promise((resolve, reject) => {
       Model.getCoreModel(PolicySchemaModel)
         .rmBulk(validate)

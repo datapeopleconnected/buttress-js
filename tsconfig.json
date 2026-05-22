@@ -1,9 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES2023",
-    "module": "node18",
-    "lib": ["ES2023", "ESNext.AsyncIterable", "DOM.Iterable"],
-    "moduleResolution": "node16",
+    "target": "ES2024",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "lib": ["ES2024"],
     "resolveJsonModule": true,
     "noImplicitAny": false,
     "noEmitOnError": true,
@@ -16,7 +16,9 @@
     "rootDir": "./src",
     "allowJs": true,
     "checkJs": false,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    // "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true
   },
   "include": ["./src/**/*"],
   "exclude": ["node_modules"]

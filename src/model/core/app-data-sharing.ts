@@ -42,7 +42,7 @@ export interface AppDataSharing {
  * @class AppDataSharingSchemaModel
  */
 export default class AppDataSharingSchemaModel extends StandardModel<AppDataSharing> {
-  static name = 'AppDataSharing';
+  static override name = 'AppDataSharing';
 
   constructor(services) {
     const schema = AppDataSharingSchemaModel.Schema;
@@ -118,7 +118,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with App Object when the database request is completed
    */
-  async add(body) {
+  override async add(body) {
     const appDataSharingBody = {
       id: body.id ? this.createId(body.id) : this.createId(),
       name: body.name,

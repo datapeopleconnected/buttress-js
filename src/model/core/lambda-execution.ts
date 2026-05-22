@@ -47,7 +47,7 @@ export interface LambdaExecution {
 }
 
 class LambdaExecutionSchemaModel extends StandardModel {
-  static name = 'LambdaExecution';
+  static override name = 'LambdaExecution';
 
   constructor(services) {
     const schema = LambdaExecutionSchemaModel.Schema;
@@ -182,7 +182,7 @@ class LambdaExecutionSchemaModel extends StandardModel {
    * @param {string} tokenId - the tokenId that should be used to exeucte the lambda
    * @return {Promise} - fulfilled with lambda execution Object when the database request is completed
    */
-  async add(body, appId: string, tokenId: string | null = null) {
+  override async add(body, appId: string, tokenId: string | null = null) {
     const executionBody = {
       lambdaId: body.lambdaId ? body.lambdaId : null,
       deploymentId: body.deploymentId ? body.deploymentId : null,

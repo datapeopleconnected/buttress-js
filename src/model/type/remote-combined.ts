@@ -29,7 +29,7 @@ import { Services } from '../../bootstrap.js';
  * @class RemoteCombinedModel
  */
 export default class RemoteCombinedModel extends StandardModel {
-  app: App;
+  override app: App;
 
   localModel: any;
 
@@ -52,7 +52,7 @@ export default class RemoteCombinedModel extends StandardModel {
     this._sdsRouting = services.get('sdsRouting') as SourceDataSharingRouting;
   }
 
-  async initAdapter(localDataStore, remoteDatastores?) {
+  override async initAdapter(localDataStore, remoteDatastores?) {
     if (!remoteDatastores) throw new Error('Remote datastores are required');
 
     if (localDataStore) {
@@ -90,7 +90,7 @@ export default class RemoteCombinedModel extends StandardModel {
     }
   }
 
-  createId(id) {
+  override createId(id) {
     // NOTE: This could be linked to the add problem, the Id will want to be created based
     // on the remote.
     return this.localModel.adapter.ID.new(id);
@@ -114,11 +114,11 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {object} body
    * @return {Promise}
    */
-  async add(body) {
+  override async add(body) {
     return (await this._getTargetModel(body.sourceId)).add(body);
   }
 
-  async update(details, id, sourceId?) {
+  override async update(details, id, sourceId?) {
     if (!sourceId) throw new Error('SourceId is required for update');
 
     return (await this._getTargetModel(sourceId)).updateById(id, details);
@@ -130,7 +130,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {promise}
    */
-  async updateByPath(body, id, sourceId) {
+  override async updateByPath(body, id, sourceId) {
     return (await this._getTargetModel(sourceId)).updateByPath(body, id);
   }
 
@@ -139,7 +139,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Boolean}
    */
-  async exists(id, sourceId) {
+  override async exists(id, sourceId) {
     return (await this._getTargetModel(sourceId)).exists(id);
   }
 
@@ -148,7 +148,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Boolean}
    */
-  async isDuplicate(details, sourceId?) {
+  override async isDuplicate(details, sourceId?) {
     return (await this._getTargetModel(sourceId)).isDuplicate(details);
     // // Make a call to each api, if any return true then return true.
     // const calls = this.remoteModels.map((remoteModel) => remoteModel.isDuplicate(details));
@@ -161,7 +161,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Promise}
    */
-  async rm(entity, sourceId?) {
+  override async rm(entity, sourceId?) {
     if (!sourceId) throw new Error('SourceId is required for rm');
 
     return (await this._getTargetModel(sourceId)).rm(entity.id);
@@ -171,7 +171,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {array} ids
    * @return {Promise}
    */
-  async rmBulk(ids) {
+  override async rmBulk(ids) {
     return this.localModel.rmBulk(ids);
   }
 
@@ -179,7 +179,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {array} query
    * @return {Promise}
    */
-  async rmAll(query) {
+  override async rmAll(query) {
     return this.localModel.rmAll(query);
   }
 
@@ -188,7 +188,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Promise}
    */
-  async findById(id, sourceId?) {
+  override async findById(id, sourceId?) {
     if (!sourceId) throw new Error('SourceId is required for findById');
 
     return (await this._getTargetModel(sourceId)).findById(id);
@@ -203,7 +203,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {Boolean} project - mongoDB project ids
    * @return {Promise} - resolves to an array of docs
    */
-  async find(query, excludes = {}, limit = 0, skip = 0, sort = {}, project = null) {
+  override async find(query, excludes = {}, limit = 0, skip = 0, sort = {}, project = null) {
     const sortMap = new Map(Object.entries(sort));
     if (sortMap.size < 1) sortMap.set('id', 1);
 
@@ -240,7 +240,7 @@ export default class RemoteCombinedModel extends StandardModel {
   /**
    * @return {Promise}
    */
-  async findAll() {
+  override async findAll() {
     // Make a call out to each of the remotes, and merge the streams into on single stream.
     const sources: Stream.Readable[] = [];
 
@@ -276,7 +276,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {Object} query - mongoDB query
    * @return {Promise}
    */
-  async count(query) {
+  override async count(query) {
     // Make a call out to each of the remotes, and merge the streams into on single stream.
     const sourceReqs: Promise<number>[] = [];
 
@@ -290,7 +290,7 @@ export default class RemoteCombinedModel extends StandardModel {
   /**
    * @return {Promise}
    */
-  async drop() {
+  override async drop() {
     return await this.localModel.drop();
   }
 }

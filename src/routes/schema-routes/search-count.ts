@@ -48,7 +48,7 @@ export default class SearchCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
 
     const result: validateResult = {
@@ -80,7 +80,7 @@ export default class SearchCount extends Route {
     return result;
   }
 
-  async _exec(req: Request, _res: Response, validateResult: validateResult) {
+  override async _exec(req: Request, _res: Response, validateResult: validateResult) {
     const model = await this.routeModel();
     return ACM.count(model, validateResult.queryParams, req.context.ac, validateResult.actualCount);
   }

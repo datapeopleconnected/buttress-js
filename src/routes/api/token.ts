@@ -41,7 +41,7 @@ class GetTokenList extends Route {
     this.redactResults = false;
   }
 
-  _validate(req: Request, _res: Response) {
+  override _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
@@ -66,7 +66,7 @@ class GetTokenList extends Route {
     return Promise.resolve(queryParams);
   }
 
-  async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate) {
     return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
   }
 }
@@ -85,7 +85,7 @@ class SearchTokenList extends Route {
     this.redactResults = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
@@ -118,7 +118,7 @@ class SearchTokenList extends Route {
     return queryParams;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
   }
 }
@@ -137,11 +137,11 @@ class DeleteAllTokens extends Route {
     this.redactResults = false;
   }
 
-  _validate(_req: Request, _res: Response) {
+  override _validate(_req: Request, _res: Response) {
     return Promise.resolve();
   }
 
-  async _exec(req: Request, _res: Response, _validate) {
+  override async _exec(req: Request, _res: Response, _validate) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
@@ -203,7 +203,7 @@ class SearchUserToken extends Route {
     this.redactResults = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
@@ -254,7 +254,7 @@ class SearchUserToken extends Route {
     return queryParams;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
   }
 }

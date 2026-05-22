@@ -28,7 +28,7 @@ const Visibility = {
 };
 
 class ActivitySchemaModel extends StandardModel {
-  static name = 'Activity';
+  static override name = 'Activity';
 
   constructor(services) {
     const schema = ActivitySchemaModel.Schema;
@@ -127,7 +127,7 @@ class ActivitySchemaModel extends StandardModel {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with App Object when the database request is completed
    */
-  __parseAddBody(body) {
+  override __parseAddBody(body) {
     const user = body.req.authUser;
     const userName = user ? `${user.id}` : 'App';
 
@@ -165,7 +165,7 @@ class ActivitySchemaModel extends StandardModel {
     return Shared.sanitizeSchemaObject(ActivitySchemaModel.Schema, body);
   }
 
-  add(body) {
+  override add(body) {
     body.req.body = encode(body.req.body);
 
     return super.add(body);

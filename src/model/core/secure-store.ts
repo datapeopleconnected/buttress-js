@@ -27,7 +27,7 @@ interface SecureStore {
 }
 
 class SecureStoreSchemaModel extends StandardModel<SecureStore> {
-  static name = 'SecureStore';
+  static override name = 'SecureStore';
 
   constructor(services) {
     const schema = SecureStoreSchemaModel.Schema;
@@ -66,7 +66,7 @@ class SecureStoreSchemaModel extends StandardModel<SecureStore> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with secure store value Object when the database request is completed
    */
-  async add(body, appId: string) {
+  override async add(body, appId: string) {
     const data = {
       id: body.id ? body.id : null,
       name: body.name ? body.name : null,

@@ -41,7 +41,7 @@ export default class GetList extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
     Logging.logTimer(
       `${this.name}:_validate:start`,
@@ -76,7 +76,7 @@ export default class GetList extends Route {
     return result;
   }
 
-  async _exec(req: Request, _res: Response, validateResult: { query: any; project: any }) {
+  override async _exec(req: Request, _res: Response, validateResult: { query: any; project: any }) {
     const model = await this.routeModel();
     // if (validateResult.query === false) {
     // 	return Promise.resolve([]);

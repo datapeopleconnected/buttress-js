@@ -39,7 +39,7 @@ class AddSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const app = req.context.authApp;
 
     if (!app || !req.body.name) {
@@ -77,7 +77,7 @@ class AddSecureStore extends Route {
     });
   }
 
-  _exec(req: Request, _res: Response, validate) {
+  override _exec(req: Request, _res: Response, validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).add(req.body, validate.appId);
   }
 }
@@ -94,7 +94,7 @@ class AddManySecureStore extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const app = req.context.authApp;
 
     if (!app) {
@@ -126,7 +126,7 @@ class AddManySecureStore extends Route {
     return Promise.resolve(true);
   }
 
-  async _exec(req: Request, _res: Response, _validate) {
+  override async _exec(req: Request, _res: Response, _validate) {
     for await (const secureStore of req.body) {
       await Model.getCoreModel(SecureStoreSchemaModel).add(req, secureStore);
     }
@@ -147,7 +147,7 @@ class GetSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required secure store id`, Route.LogLevel.ERR);
@@ -167,7 +167,7 @@ class GetSecureStore extends Route {
     return secureStore;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return validate;
   }
 }
@@ -189,7 +189,7 @@ class FindSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const name = req.params.name;
     if (!name) {
       this.log(`[${this.name}] Missing request parameter`, Route.LogLevel.ERR);
@@ -207,7 +207,7 @@ class FindSecureStore extends Route {
     return Promise.resolve(secureStore);
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return validate;
   }
 }
@@ -227,7 +227,7 @@ class UpdateSecureStore extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required secure store ID`, Route.LogLevel.ERR);
@@ -261,7 +261,7 @@ class UpdateSecureStore extends Route {
     };
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, validate.id);
   }
 }
@@ -283,7 +283,7 @@ class BulkUpdateSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(item.body);
       item.body = body;
@@ -312,7 +312,7 @@ class BulkUpdateSecureStore extends Route {
     return req.body;
   }
 
-  async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate) {
     for await (const item of validate) {
       await Model.getCoreModel(SecureStoreSchemaModel).updateByPath(item.body, item.id, null);
     }
@@ -332,7 +332,7 @@ class SearchSecureStoreList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const result: {
       query: any;
       skip: number;
@@ -365,7 +365,7 @@ class SearchSecureStoreList extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).find(
       validate.query,
       {},
@@ -389,7 +389,7 @@ class DeleteSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required secure store ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
@@ -404,7 +404,7 @@ class DeleteSecureStore extends Route {
     return secureStore;
   }
 
-  async _exec(req: Request, res: Response, secureStore) {
+  override async _exec(req: Request, res: Response, secureStore) {
     await Model.getCoreModel(SecureStoreSchemaModel).rm(secureStore.id);
     return true;
   }
@@ -424,7 +424,7 @@ class SecureStoreCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const result = {
       query: {},
     };
@@ -451,7 +451,7 @@ class SecureStoreCount extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult) {
     return Model.getCoreModel(SecureStoreSchemaModel).count(validateResult.query);
   }
 }

@@ -105,7 +105,7 @@ export default class BootstrapSocket extends Bootstrap {
     this.logicalOperator = ['$or', '$and'];
   }
 
-  async init() {
+  override async init() {
     await super.init();
 
     await this._primaryDatastore.connect();
@@ -133,7 +133,7 @@ export default class BootstrapSocket extends Bootstrap {
     return await this.__createCluster();
   }
 
-  async clean() {
+  override async clean() {
     await super.clean();
 
     Logging.logSilly('BootstrapSocket:clean');
@@ -215,7 +215,7 @@ export default class BootstrapSocket extends Bootstrap {
     return await new Promise((resolve, reject) => (this._processResQueue[id] = { resolve, reject }));
   }
 
-  async __initMain() {
+  override async __initMain() {
     this._redisClientEmitter = createClient({
       url: Config.redis.url,
     });
@@ -269,7 +269,7 @@ export default class BootstrapSocket extends Bootstrap {
     }
   }
 
-  async __initWorker() {
+  override async __initWorker() {
     const app = Express();
     this._socketExpressServer =
       this.workerProcesses > 0 ? app.listen(0, 'localhost') : app.listen(Config.listenPorts.sock);

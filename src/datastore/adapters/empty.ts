@@ -32,7 +32,7 @@ class AdapterId {
 }
 
 export default class EmptyAdapter extends AbstractAdapter {
-  get ID() {
+  override get ID() {
     return AdapterId;
   }
 

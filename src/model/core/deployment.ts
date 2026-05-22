@@ -28,7 +28,7 @@ export interface Deployment {
 }
 
 class DeploymentSchemaModel extends StandardModel<Deployment> {
-  static name = 'Deployment';
+  static override name = 'Deployment';
 
   constructor(services) {
     const schema = DeploymentSchemaModel.Schema;
@@ -79,7 +79,7 @@ class DeploymentSchemaModel extends StandardModel<Deployment> {
    * @param {string} appId - the appId the deployment blongs to
    * @return {Promise} - fulfilled with lambda Object when the database request is completed
    */
-  async add(body, appId) {
+  override async add(body, appId) {
     const deploymentBody = {
       lambdaId: body.lambdaId ? body.lambdaId : null,
       hash: body.hash ? body.hash : null,

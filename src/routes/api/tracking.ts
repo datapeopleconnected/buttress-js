@@ -34,11 +34,11 @@ class GetTrackingList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(_req: Request, _res: Response) {
+  override _validate(_req: Request, _res: Response) {
     return Promise.resolve(true);
   }
 
-  _exec(_req: Request, _res: Response, _validate: any) {
+  override _exec(_req: Request, _res: Response, _validate: any) {
     return Model.getCoreModel(TrackingSchemaModel).findAll();
   }
 }
@@ -59,7 +59,7 @@ class AddTracking extends Route {
     this.activityBroadcast = false;
   }
 
-  _validate(req: Request, _res: Response) {
+  override _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const validation = Model.getCoreModel(TrackingSchemaModel).validate(req.body);
       if (!validation.isValid) {
@@ -80,7 +80,7 @@ class AddTracking extends Route {
     });
   }
 
-  _exec(req: Request, _res: Response, _validate) {
+  override _exec(req: Request, _res: Response, _validate) {
     return Model.getCoreModel(TrackingSchemaModel).add(req.body);
   }
 }
@@ -98,7 +98,7 @@ class UpdateTracking extends Route {
     this.activityBroadcast = true;
   }
 
-  _validate(req: Request, _res: Response) {
+  override _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
@@ -137,7 +137,7 @@ class UpdateTracking extends Route {
     });
   }
 
-  _exec(req: Request, _res: Response, validate: { id: string }) {
+  override _exec(req: Request, _res: Response, validate: { id: string }) {
     return Model.getCoreModel(TrackingSchemaModel).updateByPath(req.body, validate.id);
   }
 }
@@ -154,7 +154,7 @@ class DeleteTracking extends Route {
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const tracking = await Model.getCoreModel(TrackingSchemaModel).findById(req.params.id);
     if (!tracking) {
       this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
@@ -164,7 +164,7 @@ class DeleteTracking extends Route {
     return tracking;
   }
 
-  async _exec(req: Request, res: Response, tracking) {
+  override async _exec(req: Request, res: Response, tracking) {
     await Model.getCoreModel(TrackingSchemaModel).rm(tracking.id);
     return true;
   }
@@ -182,11 +182,11 @@ class DeleteAllTrackings extends Route {
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  async _validate(_req: Request, _res: Response) {
+  override async _validate(_req: Request, _res: Response) {
     return true;
   }
 
-  async _exec(_req: Request, _res: Response, _validate) {
+  override async _exec(_req: Request, _res: Response, _validate) {
     await Model.getCoreModel(TrackingSchemaModel).rmAll({});
     return true;
   }

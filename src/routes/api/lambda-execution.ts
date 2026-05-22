@@ -40,7 +40,7 @@ class GetLambdaExecution extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
@@ -60,7 +60,7 @@ class GetLambdaExecution extends Route {
     return lambdaExecution;
   }
 
-  _exec(req: Request, res: Response, lambdaExecution) {
+  override _exec(req: Request, res: Response, lambdaExecution) {
     return lambdaExecution;
   }
 }
@@ -82,7 +82,7 @@ class GetLambdaExecutionStatus extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
@@ -102,7 +102,7 @@ class GetLambdaExecutionStatus extends Route {
     return lambdaExecution.status;
   }
 
-  async _exec(req: Request, res: Response, status) {
+  override async _exec(req: Request, res: Response, status) {
     return {
       status,
     };
@@ -129,7 +129,7 @@ class UpdateLambdaExecution extends Route {
     this.activityBroadcast = true;
   }
 
-  _validate(req: Request, _res: Response) {
+  override _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { validation, body } = Model.getCoreModel(LambdaExecutionSchemaModel).validateUpdate(req.body);
@@ -167,7 +167,7 @@ class UpdateLambdaExecution extends Route {
     });
   }
 
-  async _exec(req: Request, _res: Response, validate) {
+  override async _exec(req: Request, _res: Response, validate) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).updateByPath(req.body, validate.id);
   }
 }
@@ -189,7 +189,7 @@ class SearchExecutionList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const result: {
       query: any;
     } = {
@@ -211,7 +211,7 @@ class SearchExecutionList extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).find(validate.query);
   }
 }
@@ -236,7 +236,7 @@ class LambdaExecutionCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const result = {
       query: {},
     };
@@ -263,7 +263,7 @@ class LambdaExecutionCount extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).count(validateResult.query);
   }
 }

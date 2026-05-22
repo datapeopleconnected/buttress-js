@@ -68,7 +68,7 @@ export class JSONStringifyStream extends Transform {
     this.prepare = prepare;
   }
 
-  _transform(chunk, encoding, cb) {
+  override _transform(chunk, encoding, cb) {
     chunk = this.prepare(chunk);
 
     // Dont return any blank objects
@@ -88,7 +88,7 @@ export class JSONStringifyStream extends Transform {
     cb();
   }
 
-  _flush(cb) {
+  override _flush(cb) {
     if (this._first) {
       this._first = false;
       this.push('[');
@@ -411,7 +411,7 @@ export class ExpireMap extends Map {
     this.expireTime = expireTime;
   }
 
-  set(key, value) {
+  override set(key, value) {
     super.set(key, {
       value,
       expire: Date.now() + this.expireTime,
@@ -420,7 +420,7 @@ export class ExpireMap extends Map {
     return this;
   }
 
-  get(key) {
+  override get(key) {
     const item = super.get(key);
     if (!item) return undefined;
 

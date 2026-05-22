@@ -35,11 +35,11 @@ class GetActivityList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  _validate(_req: Request, _res: Response) {
+  override _validate(_req: Request, _res: Response) {
     return Promise.resolve(true);
   }
 
-  _exec(req: Request, _res: Response, _validate: boolean) {
+  override _exec(req: Request, _res: Response, _validate: boolean) {
     if (req.context.token && req.context.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       return Model.getCoreModel(ActivitySchemaModel).findAll();
     }
@@ -69,7 +69,7 @@ class GetActivity extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `missing_required_fields`);
@@ -85,7 +85,7 @@ class GetActivity extends Route {
     return activity;
   }
 
-  _exec(req: Request, res: Response, activity: any) {
+  override _exec(req: Request, res: Response, activity: any) {
     return Promise.resolve(activity.details);
   }
 }
@@ -102,11 +102,11 @@ class DeleteAllActivity extends Route {
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  async _validate(_req: Request, _res: Response) {
+  override async _validate(_req: Request, _res: Response) {
     return true;
   }
 
-  _exec(_req: Request, _res: Response, _validate: boolean) {
+  override _exec(_req: Request, _res: Response, _validate: boolean) {
     return Model.getCoreModel(ActivitySchemaModel)
       .rmAll({})
       .then(() => true);

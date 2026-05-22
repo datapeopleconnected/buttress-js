@@ -40,7 +40,7 @@ export default class AddMany extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
     const entities = req.body;
     if (entities instanceof Array === false) {
@@ -69,7 +69,7 @@ export default class AddMany extends Route {
     return entities;
   }
 
-  async _exec(_req: Request, _res: Response, entities: unknown) {
+  override async _exec(_req: Request, _res: Response, entities: unknown) {
     return (await this.routeModel()).add(entities);
   }
 }

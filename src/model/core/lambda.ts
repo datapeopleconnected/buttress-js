@@ -78,7 +78,7 @@ export interface Lambda {
 }
 
 export default class LambdaModel extends StandardModel<Lambda> {
-  static name = 'Lambda';
+  static override name = 'Lambda';
 
   constructor(services) {
     const schema = LambdaModel.Schema;
@@ -270,7 +270,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
    * @param {Object} app - Lambda app
    * @return {Promise} - fulfilled with lambda Object when the database request is completed
    */
-  async add(body, internals?: any) {
+  override async add(body, internals?: any) {
     const { auth, app } = internals;
     await this.gitCloneLambda(body, auth, app);
 

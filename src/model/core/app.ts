@@ -50,7 +50,7 @@ export interface App {
 }
 
 export default class AppSchemaModel extends StandardModel<App> {
-  static name = 'App';
+  static override name = 'App';
 
   private _localSchema: any;
 
@@ -148,7 +148,7 @@ export default class AppSchemaModel extends StandardModel<App> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with App Object when the database request is completed
    */
-  async add(body, internals?: { type?: string }) {
+  override async add(body, internals?: { type?: string }) {
     body.id = this.createId();
 
     const isSuper = internals?.type === TokenSchemaModel.Constants.Type.SYSTEM;
@@ -423,7 +423,7 @@ export default class AppSchemaModel extends StandardModel<App> {
    * @param {App} entity - entity object to be deleted
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  async rm(entity) {
+  override async rm(entity) {
     Logging.logSilly(`Deleting all app data sharing for app ${entity.id}`);
     await this.__modelManager.getCoreModel(AppDataSharingSchemaModel).rmAll({ _appId: entity.id });
 
