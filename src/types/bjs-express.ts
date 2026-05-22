@@ -23,7 +23,10 @@ import type { Lambda } from '../model/core/lambda.js';
 import type { Token } from '../model/core/token.js';
 import type { User } from '../model/core/user.js';
 
-export type RequestStatusEmitter = (data: Record<string, unknown>, nrp: { emit: (event: string, payload: string) => void }) => void;
+export type RequestStatusEmitter = (
+  data: Record<string, unknown>,
+  nrp: { emit: (event: string, payload: string) => void },
+) => void;
 export type RequestCloseEmitter = (nrp: { emit: (event: string, payload: string) => void }) => void;
 
 export interface RequestContext {

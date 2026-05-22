@@ -73,7 +73,7 @@ class GetLambda extends Route {
       this.log(`[${this.name}] Cannot find a lambda with id ${id}`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_does_not_exist`));
     }
-    
+
     return lambda;
   }
 
@@ -407,7 +407,9 @@ class ScheduleLambdaExecution extends Route {
     // This should be auto scoped to the app id.
     const lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
       id: Model.getCoreModel(LambdaSchemaModel).createId(id),
-      ...(req.context.authApp?.id ? { _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id) } : {}),
+      ...(req.context.authApp?.id
+        ? { _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id) }
+        : {}),
     });
     if (!lambda) {
       this.log('ERROR: Lambda not found', Route.LogLevel.ERR);

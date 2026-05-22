@@ -560,7 +560,7 @@ class UpdateUser extends Route {
             return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
           }
           resolve({
-            id
+            id,
           });
         });
     });
@@ -821,7 +821,7 @@ class RemoveUserPolicyProperties extends Route {
 
     return Promise.resolve({
       appId: req.context.authApp.id,
-      userToken
+      userToken,
     });
   }
 
@@ -904,9 +904,9 @@ class ClearUserPolicyProperties extends Route {
     }
 
     return Promise.resolve({
-      userId, 
+      userId,
       appId: req.context.authApp.id,
-      userToken
+      userToken,
     });
   }
 
@@ -945,7 +945,7 @@ class DeleteAllUsers extends Route {
 
     return {
       appId: req.context.authApp.id,
-    }
+    };
   }
 
   async _exec(req: Request, _res: Response, validate: { appId: string }) {
@@ -1003,7 +1003,7 @@ class DeleteUser extends Route {
 
   async _exec(req: Request, res: Response, validate: { user: User; token: Token }) {
     await Model.getCoreModel(UserSchemaModel).rm(validate.user.id);
-    
+
     if (validate.token) {
       await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
     }

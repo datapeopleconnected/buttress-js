@@ -113,7 +113,12 @@ class AccessControl {
    * @private
    */
   async accessControlPolicyMiddleware(req: Request, res: Response, next: NextFunction) {
-    Logging.logTimer(`accessControlPolicyMiddleware::start`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    Logging.logTimer(
+      `accessControlPolicyMiddleware::start`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
 
     // Define a property on the request that we'll use for the access control
     req.context.ac = {
@@ -184,7 +189,10 @@ class AccessControl {
     // if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
 
     const tokenPolicies = await this.__getTokenPolicies(token, appId);
-    Logging.logSilly(`Got ${tokenPolicies.length} matching policies for token ${token.type}:${token.id}`, req.context.id);
+    Logging.logSilly(
+      `Got ${tokenPolicies.length} matching policies for token ${token.type}:${token.id}`,
+      req.context.id,
+    );
 
     try {
       req.context.ac.policyConfigs = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
@@ -219,12 +227,22 @@ class AccessControl {
     // TODO: This doesn't need to happen here, move to sock
     // await this._checkAccessControlDBBasedQueryCondition(req, params);
 
-    Logging.logTimer(`accessControlPolicyMiddleware::end`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    Logging.logTimer(
+      `accessControlPolicyMiddleware::end`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
     next();
   }
 
   async _getSchemaRoomStructure(tokenPolicies, req: Request, schemaName: string, appId: string) {
-    Logging.logTimer(`_getSchemaRoomStructure::start`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    Logging.logTimer(
+      `_getSchemaRoomStructure::start`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
 
     let outcome: parsedPolicyConfig[];
     try {
@@ -260,12 +278,22 @@ class AccessControl {
       });
     }
 
-    Logging.logTimer(`_getSchemaRoomStructure::end`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    Logging.logTimer(
+      `_getSchemaRoomStructure::end`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
     return { roomId: hash(outcome), structure };
   }
 
   async getUserRoomStructures(user, appId, req: any = {}) {
-    Logging.logTimer(`getUserRoomStructures::start`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    Logging.logTimer(
+      `getUserRoomStructures::start`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
 
     // if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
     if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
@@ -288,7 +316,12 @@ class AccessControl {
     });
 
     if (!token) {
-      Logging.logTimer(`getUserRoomStructures::end - no token found for user`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+      Logging.logTimer(
+        `getUserRoomStructures::end - no token found for user`,
+        req.context.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.context.id,
+      );
       return rooms;
     }
 

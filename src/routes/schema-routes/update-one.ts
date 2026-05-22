@@ -52,14 +52,22 @@ export default class UpdateOne extends Route {
     req.body = body;
     if (!validation.isValid) {
       if (validation.isPathValid === false) {
-        this.log(`${this.schemaName}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.context.id);
+        this.log(
+          `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
+          Route.LogLevel.ERR,
+          req.context.id,
+        );
         throw new Helpers.Errors.RequestError(
           400,
           `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
         );
       }
       if (validation.isValueValid === false) {
-        this.log(`${this.schemaName}: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR, req.context.id);
+        this.log(
+          `${this.schemaName}: Update value is invalid: ${validation.invalidValue}`,
+          Route.LogLevel.ERR,
+          req.context.id,
+        );
         if (validation.isMissingRequired) {
           throw new Helpers.Errors.RequestError(
             400,
@@ -94,11 +102,11 @@ export default class UpdateOne extends Route {
 
     return {
       id,
-      sourceId
+      sourceId,
     };
   }
 
-  async _exec(req: Request, _res: Response, validate: { id: string, sourceId: string }) {
+  async _exec(req: Request, _res: Response, validate: { id: string; sourceId: string }) {
     return (await this.routeModel()).updateByPath(req.body, validate.id, validate.sourceId);
   }
 }

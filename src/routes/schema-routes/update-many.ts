@@ -70,7 +70,11 @@ export default class UpdateMany extends Route {
 
       if (!validation.isValid) {
         if (validation.isPathValid === false) {
-          this.log(`${this.schemaName}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.context.id);
+          this.log(
+            `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
+            Route.LogLevel.ERR,
+            req.context.id,
+          );
           update.validation = {
             code: 400,
             message: `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,

@@ -22,9 +22,7 @@ import Model from '../model/index.js';
 import Datastore from '../datastore/index.js';
 import TokenSchemaModel from '../model/core/token.js';
 
-import {
-  RequestContext
-} from '../types/bjs-express.js';
+import { RequestContext } from '../types/bjs-express.js';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -80,10 +78,11 @@ export class RoutesMiddleware {
       token: null,
       isPluginPath: false,
       ac: {
-        policyConfigs: []
+        policyConfigs: [],
       },
-      bjsReqStatus: (data, nrp) => nrp.emit(`sock:worker:request-status`, JSON.stringify({ id: req.context.id, ...data })),
-      bjsReqClose: (nrp) => nrp.emit(`sock:worker:request-end`, JSON.stringify({ id: req.context.id, status: 'done' }))
+      bjsReqStatus: (data, nrp) =>
+        nrp.emit(`sock:worker:request-status`, JSON.stringify({ id: req.context.id, ...data })),
+      bjsReqClose: (nrp) => nrp.emit(`sock:worker:request-end`, JSON.stringify({ id: req.context.id, status: 'done' })),
     };
 
     req.context = context;
@@ -111,7 +110,12 @@ export class RoutesMiddleware {
 
   async _authenticateToken(req: Request, res: Response, next: NextFunction) {
     req.context.timings.authenticateToken = req.context.timer?.interval || 0;
-    Logging.logTimer(`_authenticateToken:start ${req.context.token}`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    Logging.logTimer(
+      `_authenticateToken:start ${req.context.token}`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
 
     req.context.isPluginPath = Object.keys(this._routerMap)
       .filter((key) => key.indexOf('plugin-') === 0)
@@ -130,9 +134,19 @@ export class RoutesMiddleware {
         );
 
         req.context.authApp = adminRoutecall.adminApp;
-        Logging.logTimer(`_authenticateAdminApp:got-admin-app`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+        Logging.logTimer(
+          `_authenticateAdminApp:got-admin-app`,
+          req.context.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.context.id,
+        );
 
-        Logging.logTimer('_authenticateAdminCall:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+        Logging.logTimer(
+          '_authenticateAdminCall:end',
+          req.context.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.context.id,
+        );
         return next();
       }
 
@@ -227,7 +241,12 @@ export class RoutesMiddleware {
       }
 
       if (!req.context.token) {
-        Logging.logTimer(`_authenticateToken:end-missing-token`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+        Logging.logTimer(
+          `_authenticateToken:end-missing-token`,
+          req.context.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.context.id,
+        );
         throw new Helpers.Errors.RequestError(401, 'missing_token');
       }
 
@@ -258,7 +277,12 @@ export class RoutesMiddleware {
 
         tokenApp = await getApp();
         if (!tokenApp) {
-          Logging.logTimer('_authenticateToken:end-app-not-found', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+          Logging.logTimer(
+            '_authenticateToken:end-app-not-found',
+            req.context.timer,
+            Logging.Constants.LogLevel.SILLY,
+            req.context.id,
+          );
           throw new Helpers.Errors.RequestError(401, 'app_not_found');
         }
         req.context.authApp = tokenApp;
@@ -372,7 +396,12 @@ export class RoutesMiddleware {
       if (domainIdx === -1) {
         Logging.logError(new Error(`Invalid Domain: ${origin}`));
         res.sendStatus(403);
-        Logging.logTimer('_configCrossDomain:end-invalid-domain', context.timer, Logging.Constants.LogLevel.SILLY, context.id);
+        Logging.logTimer(
+          '_configCrossDomain:end-invalid-domain',
+          context.timer,
+          Logging.Constants.LogLevel.SILLY,
+          context.id,
+        );
         return;
       }
     }
@@ -383,7 +412,12 @@ export class RoutesMiddleware {
 
     if (req.method === 'OPTIONS') {
       res.sendStatus(200);
-      Logging.logTimer('_configCrossDomain:end-options-req', context.timer, Logging.Constants.LogLevel.SILLY, context.id);
+      Logging.logTimer(
+        '_configCrossDomain:end-options-req',
+        context.timer,
+        Logging.Constants.LogLevel.SILLY,
+        context.id,
+      );
       return;
     }
 

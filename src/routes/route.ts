@@ -206,7 +206,12 @@ export default class Route {
     this._timer = req.context.timer;
 
     if (!this._exec) {
-      Logging.logTimer('Route:exec:end-no-exec-defined', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+      Logging.logTimer(
+        'Route:exec:end-no-exec-defined',
+        req.context.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.context.id,
+      );
       throw new Helpers.Errors.RequestError(500, 'Tried to exec route but no exec function defined');
     }
 
@@ -317,7 +322,12 @@ export default class Route {
 
     this._close(req);
 
-    Logging.logTimer(`_respond:end ${req.context.pathSpec}`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    Logging.logTimer(
+      `_respond:end ${req.context.pathSpec}`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
     // Logging.logTimerException(`PERF: DONE: ${req.context.pathSpec}`, req.context.timer, 0.05, req.context.id);
 
     return result;
@@ -359,7 +369,14 @@ export default class Route {
         req: req,
         res: {},
       })
-      .then(Logging.Promise.logTimer('_addLogActivity:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id))
+      .then(
+        Logging.Promise.logTimer(
+          '_addLogActivity:end',
+          req.context.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.context.id,
+        ),
+      )
       .catch((e) => Logging.logError(e, req.context.id));
   }
 
@@ -467,7 +484,9 @@ export default class Route {
       // If the current lambda is a path mutation, we don't want to trigger other path mutations
       // not great but we'll just block all lambdas that have a pathMutation trigger
       if (req.context.authLambda?.trigger.find((t) => t.type === 'PATH_MUTATION')) {
-        Logging.logDebug(`Blocked path mutation lambda ${req.context.authLambda.name} from triggering other path mutations`);
+        Logging.logDebug(
+          `Blocked path mutation lambda ${req.context.authLambda.name} from triggering other path mutations`,
+        );
         return;
       }
     }
@@ -546,7 +565,12 @@ export default class Route {
     return new Promise((resolve, reject) => {
       if (!req.token) {
         this.log('EAUTH: INVALID TOKEN', Logging.Constants.LogLevel.ERR, req.context.id);
-        Logging.logTimer('_authenticate:end-invalid-token', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+        Logging.logTimer(
+          '_authenticate:end-invalid-token',
+          req.context.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.context.id,
+        );
         return reject(new Helpers.Errors.RequestError(401, 'invalid_token'));
       }
 
@@ -573,23 +597,43 @@ export default class Route {
        * @TODO Improve the pattern matching granularity ie like Glob
        * @TODO Support Regex in specific ie match routes like app/:id/permission
        */
-      Logging.logTimer(`_authenticate:start-app-routes`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+      Logging.logTimer(
+        `_authenticate:start-app-routes`,
+        req.context.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.context.id,
+      );
 
       // BYPASS schema checks for app tokens
       if (req.token.type === 'app') {
-        Logging.logTimer('_authenticate:end-app-token', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+        Logging.logTimer(
+          '_authenticate:end-app-token',
+          req.context.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.context.id,
+        );
         resolve(req.token);
         return;
       }
 
       // NOT GOOD
       if (req.token.type === 'dataSharing') {
-        Logging.logTimer('_authenticate:end-app-token', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+        Logging.logTimer(
+          '_authenticate:end-app-token',
+          req.context.timer,
+          Logging.Constants.LogLevel.SILLY,
+          req.context.id,
+        );
         resolve(req.token);
         return;
       }
 
-      Logging.logTimer(`_authenticate:end-app-routes`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+      Logging.logTimer(
+        `_authenticate:end-app-routes`,
+        req.context.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.context.id,
+      );
 
       resolve(req.token);
     });

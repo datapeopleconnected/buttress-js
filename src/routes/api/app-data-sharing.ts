@@ -245,7 +245,9 @@ class UpdateAppDataSharing extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
-    const dataSharingId = Array.isArray(req.params.dataSharingId) ? req.params.dataSharingId[0] : req.params.dataSharingId;
+    const dataSharingId = Array.isArray(req.params.dataSharingId)
+      ? req.params.dataSharingId[0]
+      : req.params.dataSharingId;
     if (!dataSharingId) {
       this.log('ERROR: missing data sharing id', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `missing_data_sharing_id`);
@@ -271,7 +273,7 @@ class UpdateAppDataSharing extends Route {
     }
 
     return {
-      dataSharingId
+      dataSharingId,
     };
   }
 
@@ -509,7 +511,11 @@ class ReactivateAppDataSharing extends Route {
     const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findById(dataSharingId);
 
     if (!exists) {
-      this.log(`ERROR: Unable to find dataSharing with token ${req.context.token?.id}`, Route.LogLevel.ERR, req.context.id);
+      this.log(
+        `ERROR: Unable to find dataSharing with token ${req.context.token?.id}`,
+        Route.LogLevel.ERR,
+        req.context.id,
+      );
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_datasharing`));
     }
 
@@ -555,7 +561,11 @@ class DeactivateAppDataSharing extends Route {
     const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findById(dataSharingId);
 
     if (!exists) {
-      this.log(`ERROR: Unable to find dataSharing with token ${req.context.token?.id}`, Route.LogLevel.ERR, req.context.id);
+      this.log(
+        `ERROR: Unable to find dataSharing with token ${req.context.token?.id}`,
+        Route.LogLevel.ERR,
+        req.context.id,
+      );
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_datasharing`));
     }
 
@@ -598,7 +608,11 @@ class StatusAppDataSharing extends Route {
     const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findById(dataSharingId);
 
     if (!exists) {
-      this.log(`ERROR: Unable to find dataSharing with token ${req.context.token?.id}`, Route.LogLevel.ERR, req.context.id);
+      this.log(
+        `ERROR: Unable to find dataSharing with token ${req.context.token?.id}`,
+        Route.LogLevel.ERR,
+        req.context.id,
+      );
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_datasharing`));
     }
 

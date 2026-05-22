@@ -222,8 +222,10 @@ export class RoutesLambdaSetup {
     if (req.query) LambdaExecutionData.metadata.push({ key: 'QUERY', value: JSON.stringify(req.query) });
     if (req.headers) LambdaExecutionData.metadata.push({ key: 'HEADERS', value: JSON.stringify(req.headers) });
 
-    const callerTokenId = (triggerAPI.apiEndpoint.useCallerToken && req.context.token)
-      ? Model.getCoreModel(TokenSchemaModel).createId(req.context.token.id) : null;
+    const callerTokenId =
+      triggerAPI.apiEndpoint.useCallerToken && req.context.token
+        ? Model.getCoreModel(TokenSchemaModel).createId(req.context.token.id)
+        : null;
 
     const lambdaExecution = (await Model.getCoreModel(LambdaExecutionSchemaModel).add(
       LambdaExecutionData,

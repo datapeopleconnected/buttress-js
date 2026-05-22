@@ -42,7 +42,7 @@ export default class SearchList extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response,) {
+  async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
 
     const result = {

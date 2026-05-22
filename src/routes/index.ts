@@ -83,8 +83,7 @@ class Routes {
       (req: Request, res: Response, next: NextFunction) => this._middlewareHelper._createContext(req, res, next),
       (req: Request, res: Response, next: NextFunction) => this._middlewareHelper._timeRequest(req, res, next),
       (req: Request, res: Response, next: NextFunction) => this._authenticateToken(req, res, next),
-      (req: Request, res: Response, next: NextFunction) =>
-        AccessControl.accessControlPolicyMiddleware(req, res, next),
+      (req: Request, res: Response, next: NextFunction) => AccessControl.accessControlPolicyMiddleware(req, res, next),
       (req: Request, res: Response, next: NextFunction) => this._configCrossDomain(req, res, next),
     ];
   }
@@ -111,7 +110,9 @@ class Routes {
    */
   async initRoutes() {
     this.app.get('/favicon.ico', (req: Request, res: Response) => res.sendStatus(404));
-    this.app.get(['/', '/index.html'], (req: Request, res: Response) => res.sendFile(path.join(__dirname, '../static/index.html')));
+    this.app.get(['/', '/index.html'], (req: Request, res: Response) =>
+      res.sendFile(path.join(__dirname, '../static/index.html')),
+    );
 
     this.app.use((req: Request, res: Response, next: NextFunction) => {
       const logEvent = (event: string, err?: any) => {
@@ -206,7 +207,8 @@ class Routes {
   _mountErrorHandler() {
     if (this._errorHandlerMounted) return;
 
-    const logErrors = (err: any, req: Request, res: Response, next: NextFunction) => this.logErrors(err, req, res, next);
+    const logErrors = (err: any, req: Request, res: Response, next: NextFunction) =>
+      this.logErrors(err, req, res, next);
     this.app.use(logErrors);
     this._errorHandlerMounted = true;
   }

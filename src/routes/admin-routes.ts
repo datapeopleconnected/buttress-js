@@ -88,7 +88,7 @@ class AdminRoutes {
       if (!superApp) {
         Logging.logError('Buttress admin activate can not find super app');
         return res.status(404).send({ message: 'admin_app_not_found' });
-        }
+      }
 
       await this._updateAppPolicySelectorList(superApp);
 

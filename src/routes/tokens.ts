@@ -52,13 +52,23 @@ export class RoutesTokens {
     Logging.logSilly(`_getProvidedToken:start ${tokenValue}`, req.context.id);
 
     if (!tokenValue) {
-      Logging.logTimer(`_getProvidedToken:end-missing-token`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+      Logging.logTimer(
+        `_getProvidedToken:end-missing-token`,
+        req.context.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.context.id,
+      );
       throw new Helpers.Errors.RequestError(401, 'missing_token');
     }
 
     const token = await this._getToken(req, tokenValue);
     if (token === null) {
-      Logging.logTimer(`_getProvidedToken:end-cant-find-token`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+      Logging.logTimer(
+        `_getProvidedToken:end-cant-find-token`,
+        req.context.timer,
+        Logging.Constants.LogLevel.SILLY,
+        req.context.id,
+      );
       throw new Helpers.Errors.RequestError(401, 'invalid_token');
     }
 

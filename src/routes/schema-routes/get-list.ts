@@ -43,7 +43,12 @@ export default class GetList extends Route {
 
   async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
-    Logging.logTimer(`${this.name}:_validate:start`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    Logging.logTimer(
+      `${this.name}:_validate:start`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
 
     const result = {
       query: {},

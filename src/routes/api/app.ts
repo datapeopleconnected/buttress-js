@@ -473,8 +473,11 @@ class UpdateAppSchema extends Route {
     }
   }
 
-  async _exec(_req: Request, _res: Response, { appId, rawSchema, compiledSchema }: { appId: string; rawSchema: string; compiledSchema: unknown }) {
-
+  async _exec(
+    _req: Request,
+    _res: Response,
+    { appId, rawSchema, compiledSchema }: { appId: string; rawSchema: string; compiledSchema: unknown },
+  ) {
     await Model.getCoreModel(AppSchemaModel).updateSchema(appId, compiledSchema, rawSchema);
 
     const a = compiledSchema
@@ -577,8 +580,7 @@ class SetAppPolicyPropertyList extends Route {
       const app = req.context.authApp;
 
       if (req.params.update === 'true') {
-        const currentAppListKeys =
-          app.policyPropertiesList !== null ? Object.keys(app.policyPropertiesList) : [];
+        const currentAppListKeys = app.policyPropertiesList !== null ? Object.keys(app.policyPropertiesList) : [];
         Object.keys(req.body).forEach((key) => {
           if (currentAppListKeys.includes(key)) {
             req.body[key] = req.body[key]
