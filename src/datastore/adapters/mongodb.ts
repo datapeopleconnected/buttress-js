@@ -89,20 +89,20 @@ export default class MongodbAdapter extends AbstractAdapter {
     }
   }
 
-  cloneAdapterConnection() {
+  override cloneAdapterConnection() {
     return new MongodbAdapter(this.uri, this.options, this.__connection);
   }
 
-  async setCollection(collectionName: string) {
+  override async setCollection(collectionName: string) {
     if (!this.__connection) throw new Error('No connection');
     this.collection = this.__connection.collection(collectionName);
   }
 
-  get ID() {
+  override get ID() {
     return AdapterId;
   }
 
-  add(body, modifier) {
+  override add(body, modifier) {
     return this.__batchAddProcess(body, modifier);
   }
 
@@ -144,7 +144,7 @@ export default class MongodbAdapter extends AbstractAdapter {
     return this._modifyDocumentStream(readable);
   }
 
-  async batchUpdateProcess<T extends StandardModel>(
+  override async batchUpdateProcess<T extends StandardModel>(
     id: string,
     body: { path: string; value: any },
     context: Context,
@@ -306,18 +306,18 @@ export default class MongodbAdapter extends AbstractAdapter {
     return this._modifyDocument(object);
   }
 
-  async updateOne(query: any, update: any) {
+  override async updateOne(query: any, update: any) {
     const object = await this.collection?.updateOne(this._prepareQueryForMongo(query), update);
     return this._modifyDocument(object);
   }
 
-  async updateById(id: string, query: any) {
+  override async updateById(id: string, query: any) {
     const object = await this.collection?.updateOne({ _id: new ObjectId(id) }, query);
 
     return this._modifyDocument(object);
   }
 
-  exists(id: string, extra = {}) {
+  override exists(id: string, extra = {}) {
     if (!this.collection) throw new Error('No collection');
 
     Logging.logSilly(`exists: ${this.collection.namespace} ${id}`);
@@ -342,7 +342,7 @@ export default class MongodbAdapter extends AbstractAdapter {
   /*
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  isDuplicate(_details) {
+  override isDuplicate(_details) {
     // TODO: Implment this method
     return Promise.resolve(false);
   }
@@ -351,7 +351,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {string} id - id to be deleted
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  async rm(id: string) {
+  override async rm(id: string) {
     const cursor = this.collection?.deleteOne({ _id: new ObjectId(id) });
     if (!cursor) throw new Error('Unable to delete');
 
@@ -362,7 +362,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Array} ids - Array of entity ids to delete
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  rmBulk(ids: any) {
+  override rmBulk(ids: any) {
     // Logging.log(`rmBulk: ${this.collection.namespace} ${ids}`, Logging.Constants.LogLevel.SILLY);
     return this.rmAll({ _id: { $in: ids } });
   }
@@ -371,7 +371,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  async rmAll(query: any) {
+  override async rmAll(query: any) {
     if (!query) query = {};
 
     const doc = await this.collection?.deleteMany(this._prepareQueryForMongo(query));
@@ -384,7 +384,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {String} id - entity id to get
    * @return {Promise} - resolves to an array of Companies
    */
-  async findById(id: string) {
+  override async findById(id: string) {
     // Logging.logSilly(`Schema:findById: ${this.collection.namespace} ${id}`);
 
     const document = await this.collection?.findOne({ _id: new ObjectId(id) }, {});
@@ -402,7 +402,14 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Boolean} project - mongoDB project ids
    * @return {ReadableStream} - stream
    */
-  find<T extends object>(query: BjsQuery<T>, excludes = {}, limit = 0, skip = 0, sort: any = null, project = null) {
+  override find<T extends object>(
+    query: BjsQuery<T>,
+    excludes = {},
+    limit = 0,
+    skip = 0,
+    sort: any = null,
+    project = null,
+  ) {
     if (!this.collection) throw new Error('No collection');
 
     if (Logging.level === Logging.Constants.LogLevel.SILLY) {
@@ -426,7 +433,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Object} excludes - mongoDB query excludes
    * @return {Promise} - resolves to an array of docs
    */
-  async findOne<T extends object>(query: BjsQuery<T>, excludes = {}) {
+  override async findOne<T extends object>(query: BjsQuery<T>, excludes = {}) {
     const doc = await this.collection?.findOne(this._prepareQueryForMongo(query), this._prepareQueryForMongo(excludes));
 
     return doc ? this._modifyDocument(doc) : null;
@@ -435,7 +442,7 @@ export default class MongodbAdapter extends AbstractAdapter {
   /**
    * @return {Promise} - resolves to an array of Companies
    */
-  findAll() {
+  override findAll() {
     // Logging.logSilly(`findAll: ${this.collection.namespace}`);
 
     return this.find({});
@@ -445,7 +452,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Array} ids - Array of entities ids to get
    * @return {Promise} - resolves to an array of Companies
    */
-  findAllById(ids: string[]) {
+  override findAllById(ids: string[]) {
     // Logging.logSilly(`update: ${this.collection.namespace} ${ids}`);
 
     return this.find({ _id: { $in: ids.map((id) => new ObjectId(id)) } }, {});
@@ -455,14 +462,14 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @return {Promise} - resolves to an array of Companies
    */
-  count(query: any) {
+  override count(query: any) {
     return this.collection?.countDocuments(this._prepareQueryForMongo(query));
   }
 
   /**
    * @return {Promise}
    */
-  async drop() {
+  override async drop() {
     try {
       const res = await this.collection?.drop();
       if (!res) throw new Error('Unable to drop');

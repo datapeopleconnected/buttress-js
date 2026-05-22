@@ -45,7 +45,7 @@ export default class UpdateOne extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
 
     const { validation, body } = model.validateUpdate(req.body);
@@ -110,7 +110,7 @@ export default class UpdateOne extends Route {
     };
   }
 
-  async _exec(req: Request, _res: Response, validate: { id: string; sourceId: string | undefined }) {
+  override async _exec(req: Request, _res: Response, validate: { id: string; sourceId: string | undefined }) {
     return (await this.routeModel()).updateByPath(req.body, validate.id, validate.sourceId);
   }
 }

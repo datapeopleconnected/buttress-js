@@ -40,7 +40,7 @@ export default class GetOne extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`${this.schemaName}: Missing ID`, Route.LogLevel.ERR, req.context.id);
@@ -71,7 +71,11 @@ export default class GetOne extends Route {
     };
   }
 
-  async _exec(req: Request, _res: Response, validate: { query: BjsQuery<{ id: string | null }>; project: boolean }) {
+  override async _exec(
+    req: Request,
+    _res: Response,
+    validate: { query: BjsQuery<{ id: string | null }>; project: boolean },
+  ) {
     const model = await this.routeModel();
 
     const rxsEntity = await model.find(validate.query, {}, 1, 0, null, validate.project);

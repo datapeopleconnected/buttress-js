@@ -60,7 +60,7 @@ export default class BootstrapRest extends Bootstrap {
     this._installMode = process.env.INSTALL_MODE === 'true' || installMode || false;
   }
 
-  async init(): Promise<boolean> {
+  override async init(): Promise<boolean> {
     await super.init();
 
     Logging.logDebug(`Connecting to primary datastore...`);
@@ -100,7 +100,7 @@ export default class BootstrapRest extends Bootstrap {
     return await this.__createCluster();
   }
 
-  async clean() {
+  override async clean() {
     await super.clean();
     Logging.logDebug('Shutting down all connections');
     Logging.logSilly('BootstrapRest:clean');
@@ -134,7 +134,7 @@ export default class BootstrapRest extends Bootstrap {
     await DatastoreManager.clean();
   }
 
-  async __initMain() {
+  override async __initMain() {
     const isPrimary = Config.rest.app === 'primary';
 
     if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');
@@ -176,7 +176,7 @@ export default class BootstrapRest extends Bootstrap {
     await this.__spawnWorkers();
   }
 
-  async __initWorker() {
+  override async __initWorker() {
     Plugins.initRoutes(this.routes);
 
     const app = Express();
@@ -217,7 +217,7 @@ export default class BootstrapRest extends Bootstrap {
     await this.routes.initAppRoutes();
   }
 
-  async __handleMessageFromMain(message: LocalProcessMessage) {
+  override async __handleMessageFromMain(message: LocalProcessMessage) {
     if (message.type === 'app-schema:updated') {
       if (!this.routes) return Logging.logDebug(`Skipping app schema update, router not created yet`);
       Logging.logDebug(`App Schema Updated: ${message.payload.appId}`);

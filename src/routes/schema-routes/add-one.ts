@@ -41,7 +41,7 @@ export default class AddOne extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
     const validation = model.validate(req.body);
     if (!validation.isValid) {
@@ -67,7 +67,7 @@ export default class AddOne extends Route {
     return true;
   }
 
-  async _exec(req: Request, _res: Response, _validate: unknown) {
+  override async _exec(req: Request, _res: Response, _validate: unknown) {
     const model = await this.routeModel();
     const result = await model.add(req.body);
     return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, model.schemaData);

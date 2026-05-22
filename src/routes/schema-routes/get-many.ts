@@ -40,7 +40,7 @@ export default class GetMany extends Route {
     this.activityBroadcast = false;
   }
 
-  _validate(req: Request, _res: Response) {
+  override _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const _ids = req.body.query.ids;
       const project = req.body && req.body.project ? req.body.project : false;
@@ -58,7 +58,7 @@ export default class GetMany extends Route {
     });
   }
 
-  async _exec(req: Request, _res: Response, query: { ids: string[]; project: boolean }) {
+  override async _exec(req: Request, _res: Response, query: { ids: string[]; project: boolean }) {
     const model = await this.routeModel();
     return model.find({ id: { $in: query.ids.map((id) => model.createId(id)) } }, {}, 0, 0, null, query.project);
   }

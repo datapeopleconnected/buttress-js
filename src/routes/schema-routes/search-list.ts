@@ -42,7 +42,7 @@ export default class SearchList extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
 
     const result = {
@@ -73,7 +73,7 @@ export default class SearchList extends Route {
     return result;
   }
 
-  async _exec(req: Request, _res: Response, validateResult: QueryParams<object>) {
+  override async _exec(req: Request, _res: Response, validateResult: QueryParams<object>) {
     const model = await this.routeModel();
 
     return ACM.find(model, validateResult, req.context.ac);

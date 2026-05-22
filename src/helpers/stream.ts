@@ -75,13 +75,13 @@ export class SortedStreams extends Readable {
   }
 
   // Readable stream event handlers
-  _read() {
+  override _read() {
     this._pauseUntilRead = false;
 
     this._tryToSendIt();
   }
 
-  _destroy() {
+  override _destroy() {
     this._sources.forEach((holder) => {
       holder.source.destroy();
     });

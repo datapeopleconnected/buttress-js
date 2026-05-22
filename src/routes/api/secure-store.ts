@@ -39,7 +39,7 @@ class AddSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const app = req.context.authApp;
 
     if (!app || !req.body.name) {
@@ -77,7 +77,7 @@ class AddSecureStore extends Route {
     });
   }
 
-  _exec(req: Request, _res: Response, validate) {
+  override _exec(req: Request, _res: Response, validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).add(req.body, validate.appId);
   }
 }
@@ -94,7 +94,7 @@ class AddManySecureStore extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const app = req.context.authApp;
 
     if (!app) {
@@ -126,7 +126,7 @@ class AddManySecureStore extends Route {
     return Promise.resolve(true);
   }
 
-  async _exec(req: Request, _res: Response, _validate) {
+  override async _exec(req: Request, _res: Response, _validate) {
     for await (const secureStore of req.body) {
       await Model.getCoreModel(SecureStoreSchemaModel).add(req, secureStore);
     }
@@ -177,7 +177,7 @@ class GetSecureStore extends Route {
     return secureStore;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return validate;
   }
 }
@@ -228,7 +228,7 @@ class FindSecureStore extends Route {
     return secureStore;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return validate;
   }
 }
@@ -291,7 +291,7 @@ class UpdateSecureStore extends Route {
     };
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, validate.id);
   }
 }
@@ -350,7 +350,7 @@ class BulkUpdateSecureStore extends Route {
     return req.body;
   }
 
-  async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate) {
     for await (const item of validate) {
       await Model.getCoreModel(SecureStoreSchemaModel).updateByPath(item.body, item.id, null);
     }
@@ -412,7 +412,7 @@ class SearchSecureStoreList extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).find(
       validate.query,
       {},
@@ -463,7 +463,7 @@ class DeleteSecureStore extends Route {
     return secureStore;
   }
 
-  async _exec(req: Request, res: Response, secureStore) {
+  override async _exec(req: Request, res: Response, secureStore) {
     await Model.getCoreModel(SecureStoreSchemaModel).rm(secureStore.id);
     return true;
   }
@@ -520,7 +520,7 @@ class SecureStoreCount extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult) {
     return Model.getCoreModel(SecureStoreSchemaModel).count(validateResult.query);
   }
 }

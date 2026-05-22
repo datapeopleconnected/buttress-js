@@ -88,7 +88,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     this.isPrimary = Config.sio.app === 'primary';
   }
 
-  async init() {
+  override async init() {
     await super.init();
 
     Logging.logSilly('BootstrapSPR:init');
@@ -116,7 +116,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     return await this.__createCluster();
   }
 
-  async clean() {
+  override async clean() {
     this._shutdown = true;
 
     await super.clean();
@@ -139,7 +139,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     await Datastore.clean();
   }
 
-  async __initMain() {
+  override async __initMain() {
     if (this.isPrimary) {
       Logging.logVerbose(`Primary Main SPR`);
       await this.__registerNRPPrimaryListeners();
@@ -151,7 +151,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     await this.__spawnWorkers();
   }
 
-  async __initWorker() {}
+  override async __initWorker() {}
 
   async __registerNRPPrimaryListeners() {
     Logging.logDebug(`Primary Main`);
