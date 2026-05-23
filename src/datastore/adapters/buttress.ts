@@ -21,6 +21,7 @@ import ButtressExport, { Errors as BAPIErrors } from '@buttress/api';
 const { default: ButtressAPI } = ButtressExport;
 
 import Errors from '../../helpers/errors.js';
+import * as Helpers from '../../helpers/index.js';
 import { parseJsonArrayStream } from '../../helpers/stream.js';
 import Logging from '../../helpers/logging.js';
 
@@ -136,11 +137,11 @@ export default class Buttress extends AbstractAdapter {
   private async _apiCall<T>(operation: string, call: () => Promise<T>) {
     try {
       return await call();
-    } catch (err) {
+    } catch (err: unknown) {
       Logging.logError(
         `[ButtressAdapter.${operation}] target:${this.uri.host}${this.uri.pathname} collection:${this.collectionName || 'unknown'}`,
       );
-      Logging.logError(err);
+      Logging.logError(Helpers.getThrownErrorMessage(err));
       throw err;
     }
   }

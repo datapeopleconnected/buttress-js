@@ -220,7 +220,7 @@ class AddLambda extends Route {
       }
 
       return Promise.resolve(true);
-    } catch (err) {
+    } catch (err: unknown) {
       return Promise.reject(err);
     }
   }
@@ -518,9 +518,10 @@ class EditLambdaDeployment extends Route {
         branch: req.body.body,
         lambda,
       });
-    } catch (err: any) {
-      this.log(`[${this.name}] ${err.message}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, err.message));
+    } catch (err: unknown) {
+      const errMessage = Helpers.getThrownErrorMessage(err);
+      this.log(`[${this.name}] ${errMessage}`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, errMessage));
     }
   }
 

@@ -327,7 +327,7 @@ export class RoutesMiddleware {
 
       Logging.logTimer('_authenticateToken:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       next();
-    } catch (err) {
+    } catch (err: unknown) {
       next(err);
     }
   }

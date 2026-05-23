@@ -25,23 +25,23 @@ import { ExecPriority, LambdaExecutionMessage } from '../lambda/lambda-manager.j
 
 import AppSchemaModel from '../model/core/app.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
-import TokenSchemaModel from '../model/core/token.js';
+import TokenSchemaModel, { Token } from '../model/core/token.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
 
 export class RoutesLambdaSetup {
   app: express.Application;
   _nrp?: NRP;
-  _preRouteMiddleware: any[];
+  _preRouteMiddleware: express.RequestHandler[];
 
-  constructor(app: express.Application, nrp: NRP | undefined, preRouteMiddleware: any[]) {
+  constructor(app: express.Application, nrp: NRP | undefined, preRouteMiddleware: express.RequestHandler[]) {
     this.app = app;
     this._nrp = nrp;
     this._preRouteMiddleware = preRouteMiddleware;
   }
 
   async _setupLambdaEndpoints() {
-    const appsToken = await Helpers.streamAll(
+    const appsToken = await Helpers.streamAll<Token>(
       await Model.getCoreModel(TokenSchemaModel).find({
         $or: [
           {
@@ -54,7 +54,7 @@ export class RoutesLambdaSetup {
       }),
     );
     const tokenIds = appsToken.map((t) => t.id);
-    const apps = await Helpers.streamAll(
+    const apps = await Helpers.streamAll<{ apiPath: string }>(
       await Model.getCoreModel(AppSchemaModel).find({
         _tokenId: {
           $in: tokenIds,
@@ -114,9 +114,17 @@ export class RoutesLambdaSetup {
         });
       }
 
-      if (lambdaResult && lambdaResult.res && lambdaResult.res.redirect) {
-        const url = lambdaResult.res.url;
-        const queryObj = lambdaResult.res.query;
+      const lambdaResultPayload =
+        lambdaResult && typeof lambdaResult.res === 'object' && lambdaResult.res !== null
+          ? (lambdaResult.res as Record<string, unknown>)
+          : null;
+
+      if (lambdaResultPayload && lambdaResultPayload.redirect) {
+        const url = typeof lambdaResultPayload.url === 'string' ? lambdaResultPayload.url : '';
+        const queryObj =
+          typeof lambdaResultPayload.query === 'object' && lambdaResultPayload.query !== null
+            ? (lambdaResultPayload.query as Record<string, unknown>)
+            : null;
         let query: string = '';
         if (queryObj) {
           query = Object.keys(queryObj).reduce((output, key) => {

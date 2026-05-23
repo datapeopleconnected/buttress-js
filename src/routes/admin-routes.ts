@@ -146,10 +146,8 @@ class AdminRoutes {
         }
 
         res.status(200).send({ message: 'done' });
-      } catch (err) {
-        if (err instanceof Error) {
-          res.status(404).send({ message: err.message });
-        }
+      } catch (err: unknown) {
+        res.status(404).send({ message: Helpers.getThrownErrorMessage(err) });
 
         throw err;
       }
@@ -287,13 +285,10 @@ class AdminRoutes {
 
       // ? This normally get's attached the request and not the model manager
       // delete Model.authApp;
-    } catch (err) {
-      if (err instanceof Error) {
-        Logging.logError(`Lambda Manager failed to clone required lambdas for installation due to ${err.message}`);
-        throw err;
-      } else {
-        throw new Error(`Uncaught error in Lambda Manager: ${err}`);
-      }
+    } catch (err: unknown) {
+      const errMessage = Helpers.getThrownErrorMessage(err);
+      Logging.logError(`Lambda Manager failed to clone required lambdas for installation due to ${errMessage}`);
+      throw err;
     }
   }
 
@@ -312,7 +307,7 @@ class AdminRoutes {
         _appId: app.id,
       },
     );
-    const newToken: any = await Helpers.streamFirst(rxsNewToken);
+    const newToken = await Helpers.streamFirst<Token>(rxsNewToken);
     await Model.getCoreModel(AppSchemaModel).updateById(Model.getCoreModel(AppSchemaModel).createId(app.id), {
       $set: {
         _tokenId: Model.getCoreModel(TokenSchemaModel).createId(newToken.id),

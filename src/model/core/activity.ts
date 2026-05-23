@@ -27,6 +27,23 @@ const Visibility = {
   PRIVATE: visibility[1],
 };
 
+export interface Activity {
+  id: string;
+  timestamp: Date;
+  title: string;
+  description: string;
+  visibility: string;
+  path: string;
+  verb: string;
+  authType: string;
+  permissions: string;
+  params: Record<string, any>;
+  body: string;
+  _tokenId: string;
+  _appId: string;
+  _userId: string;
+}
+
 class ActivitySchemaModel extends StandardModel {
   static override name = 'Activity';
 

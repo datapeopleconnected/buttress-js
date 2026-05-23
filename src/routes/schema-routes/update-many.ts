@@ -125,10 +125,12 @@ export default class UpdateMany extends Route {
     const output: {
       id: string;
       sourceId: string;
-      results: any;
+      results: unknown;
     }[] = [];
 
-    for await (const body of _data as any[]) {
+    type UpdateManyBody = { id: string; sourceId: string; body: unknown };
+
+    for await (const body of _data as UpdateManyBody[]) {
       const result = await model.updateByPath(body.body, body.id, body.sourceId);
       output.push({ id: body.id, sourceId: body.sourceId, results: result });
     }

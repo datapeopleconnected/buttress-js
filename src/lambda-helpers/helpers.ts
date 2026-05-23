@@ -91,7 +91,7 @@ class Helpers {
           return resolve.applyIgnored(undefined, [
             new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
           ]);
-        } catch (err) {
+        } catch (err: unknown) {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
         }
       }),
@@ -112,7 +112,7 @@ class Helpers {
           return resolve.applyIgnored(undefined, [
             new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
           ]);
-        } catch (err) {
+        } catch (err: unknown) {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
         }
       }),
@@ -149,7 +149,7 @@ class Helpers {
           }
 
           return resolve.applyIgnored(undefined);
-        } catch (err) {
+        } catch (err: unknown) {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
         }
       }),
@@ -294,16 +294,19 @@ class Helpers {
             output.body = output.status === 200 || output.status === 201 ? body : null;
             return _resolve(output);
           }
-        } catch (err: any) {
-          const error: any = {};
-          if (err.message) {
-            error.message = err.message;
-          }
-          if (err.code) {
-            error.code = err.code;
-          }
-          if (err.status) {
-            error.status = err.status;
+        } catch (err: unknown) {
+          const error: Record<string, unknown> = {};
+          if (err && typeof err === 'object') {
+            const unknownErr = err as Record<string, unknown>;
+            if (unknownErr.message) {
+              error.message = unknownErr.message;
+            }
+            if (unknownErr.code) {
+              error.code = unknownErr.code;
+            }
+            if (unknownErr.status) {
+              error.status = unknownErr.status;
+            }
           }
           const reference =
             Object.keys(error).length > 0 ? new ivm.Reference(error).copySync() : new ivm.Reference(err).copySync();
@@ -322,7 +325,7 @@ class Helpers {
           return resolve.applyIgnored(undefined, [
             new ivm.ExternalCopy(new ivm.Reference(crypto.randomBytes(data).toString('hex')).copySync()).copyInto(),
           ]);
-        } catch (err) {
+        } catch (err: unknown) {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
         }
       }),
@@ -338,7 +341,7 @@ class Helpers {
           return resolve.applyIgnored(undefined, [
             new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
           ]);
-        } catch (err) {
+        } catch (err: unknown) {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
         }
       }),
@@ -363,7 +366,7 @@ class Helpers {
           return resolve.applyIgnored(undefined, [
             new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
           ]);
-        } catch (err) {
+        } catch (err: unknown) {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
         }
       }),
@@ -383,7 +386,7 @@ class Helpers {
           return resolve.applyIgnored(undefined, [
             new ivm.ExternalCopy(new ivm.Reference(message).copySync()).copyInto(),
           ]);
-        } catch (err) {
+        } catch (err: unknown) {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
         }
       }),
@@ -399,7 +402,7 @@ class Helpers {
             codeVerifier,
             codeChallenge,
           });
-        } catch (err) {
+        } catch (err: unknown) {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
         }
 
@@ -425,7 +428,7 @@ class Helpers {
           resolve.applyIgnored(undefined, [
             new ivm.ExternalCopy(new ivm.Reference(Buffer.from(pdfResult).toString('base64')).copySync()).copyInto(),
           ]);
-        } catch (err) {
+        } catch (err: unknown) {
           const reference = new ivm.Reference(err).copySync();
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(reference).copyInto()]);
         }

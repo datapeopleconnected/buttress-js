@@ -31,6 +31,7 @@ import Bootstrap, { LocalProcessMessage } from './bootstrap.js';
 import Model from './model/index.js';
 import Routes from './routes/index.js';
 import Logging from './helpers/logging.js';
+import { getThrownErrorMessage } from './helpers/index.js';
 import * as Schema from './helpers/schema.js';
 
 import { SourceDataSharingRouting } from './services/source-ds-routing.js';
@@ -236,8 +237,6 @@ export default class BootstrapRest extends Bootstrap {
     Logging.log('Checking for existing apps.');
     const pathName = path.join(Config.paths.appData, 'super.json');
 
-    let superApp: any = null;
-
     try {
       const appCount = await Model.getCoreModel(AppSchemaModel).count();
       if (appCount > 0) {
@@ -255,7 +254,7 @@ export default class BootstrapRest extends Bootstrap {
         return;
       }
 
-      superApp = await Model.getCoreModel(AppSchemaModel).add(
+      const superApp = await Model.getCoreModel(AppSchemaModel).add(
         {
           name: `${Config.app.title} TEST`,
           apiPath: 'bjs',
@@ -266,35 +265,30 @@ export default class BootstrapRest extends Bootstrap {
         },
       );
 
-      if (!superApp) {
-        Logging.logError('Failed to create super app.');
-        throw new Error('Failed to create super app.');
-      }
-    } catch (err) {
-      Logging.logError(err);
+      await new Promise<void>((resolve, reject) => {
+        const appData = Object.assign(superApp.app, { token: superApp.token.value });
+
+        if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, { recursive: true });
+
+        fs.writeFile(pathName, JSON.stringify(appData), (err) => {
+          if (err) return reject(err);
+          Logging.log(`--------------------------------------------------------`);
+          Logging.log(` SUPER APP CREATED: ${superApp.app.id}`);
+          Logging.log(``);
+          Logging.log(` Token can be found at the following path:`);
+          Logging.log(` ${pathName}`);
+          Logging.log(``);
+          Logging.log(` IMPORTANT:`);
+          Logging.log(` Please delete this file once you've captured the token`);
+          Logging.log(`--------------------------------------------------------`);
+          resolve();
+        });
+      });
+    } catch (err: unknown) {
+      Logging.logError(getThrownErrorMessage(err));
       Logging.logError('Failed to create super app.');
       throw err;
     }
-
-    await new Promise<void>((resolve, reject) => {
-      const app = Object.assign(superApp.app, { token: superApp.token.value });
-
-      if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, { recursive: true });
-
-      fs.writeFile(pathName, JSON.stringify(app), (err) => {
-        if (err) return reject(err);
-        Logging.log(`--------------------------------------------------------`);
-        Logging.log(` SUPER APP CREATED: ${superApp.app.id}`);
-        Logging.log(``);
-        Logging.log(` Token can be found at the following path:`);
-        Logging.log(` ${pathName}`);
-        Logging.log(``);
-        Logging.log(` IMPORTANT:`);
-        Logging.log(` Please delete this file once you've captured the token`);
-        Logging.log(`--------------------------------------------------------`);
-        resolve();
-      });
-    });
   }
 
   /**

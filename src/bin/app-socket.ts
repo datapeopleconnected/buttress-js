@@ -17,6 +17,7 @@
  */
 
 import cluster from 'node:cluster';
+import { getThrownErrorMessage } from '../helpers/index.js';
 
 import createConfig from '@dpc/node-env-obj';
 
@@ -48,12 +49,8 @@ if (cluster.isPrimary) Logging.startupMessage();
     } else {
       Logging.log(`${Config.app.title} Socket Worker v${Config.app.version} in ${Config.env} mode.`);
     }
-  } catch (err) {
-    if (err instanceof Error || typeof err === 'string') {
-      Logging.logError(err);
-    } else {
-      console.error(err);
-    }
+  } catch (err: unknown) {
+    Logging.logError(getThrownErrorMessage(err));
 
     process.exit(1);
   }

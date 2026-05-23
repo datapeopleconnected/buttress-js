@@ -134,7 +134,7 @@ export class ModelManager {
         try {
           datastore = Datastores.createInstance({ connectionString: app.datastore.connectionString });
           await datastore.connect();
-        } catch (err) {
+        } catch (err: unknown) {
           if (err instanceof Helpers.Errors.UnsupportedDatastore) {
             Logging.logWarn(`${err} for ${app.id}`);
             return;
@@ -149,7 +149,7 @@ export class ModelManager {
       let builtSchemas: any[];
       try {
         builtSchemas = await Helpers.Schema.buildCollections(Helpers.Schema.decode(app.__schema));
-      } catch (err) {
+      } catch (err: unknown) {
         if (err instanceof Helpers.Errors.SchemaInvalid) continue;
         else throw err;
       }
@@ -256,7 +256,7 @@ export class ModelManager {
 
       try {
         await (this.models[app.id][modelName] as RemoteCombinedModel).initAdapter(mainDatastore, datastores);
-      } catch (err) {
+      } catch (err: unknown) {
         // Skip defining this model, the error will get picked up later when route is defined ore accessed
         if (err instanceof Helpers.Errors.SchemaNotFound) return;
         else throw err;
@@ -283,8 +283,8 @@ export class ModelManager {
     for await (const modelName of modelNames) {
       try {
         await this.models[appId][modelName].drop();
-      } catch (err) {
-        Logging.logError(`Error dropping model ${modelName} for app ${appId}: ${err}`);
+      } catch (err: unknown) {
+        Logging.logError(`Error dropping model ${modelName} for app ${appId}: ${Helpers.getThrownErrorMessage(err)}`);
       }
       delete this.models[appId][modelName];
     }

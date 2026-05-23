@@ -21,12 +21,12 @@ import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 
 export interface PolicyEnvQuery {
+  type: 'string' | 'id' | 'array' | 'boolean';
   collection: string;
-  type: string;
-  query: any;
+  query: Record<string, unknown>;
   output: {
     key: string;
-    type: string;
+    type: 'string' | 'id';
   };
 }
 export interface PolicyEnv {
@@ -38,15 +38,15 @@ export interface PolicySelection {
 }
 
 export interface PolicyQuery {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface PolicyCondition {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface PolicyProjection {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface PolicyConfig {
@@ -187,7 +187,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
    * @return {Promise} - fulfilled with policy Object when the database request is completed
    */
   override async add(body, appId) {
-    const policyConfig: any[] = [];
+    const policyConfig: PolicyConfig[] = [];
     if (body.config) {
       body.config.forEach((item) => {
         policyConfig.push({

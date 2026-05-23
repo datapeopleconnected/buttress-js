@@ -26,10 +26,11 @@ import AccessControlPolicyMatch from '../access-control/policy-match.js';
 
 import Model from '../model/index.js';
 import { Policy, PolicyConfig } from '../model/core/policy.js';
-import { Token } from '../model/core/token.js';
+import { PolicyProperties, Token } from '../model/core/token.js';
 
 import * as Helpers from '../helpers/index.js';
 import PolicySchemaModel from '../model/core/policy.js';
+import { RESTActivity } from '../types/bjs-nrp-objects.js';
 
 export class PolicyCache {
   private _redisClient: RedisClientType;
@@ -83,7 +84,7 @@ export class PolicyCache {
     const missingPolicies = policyIds.filter((policyId) => !policies.find((policy) => policyId === policy.id));
 
     if (missingPolicies.length > 0) {
-      const newPolicies = await Helpers.streamAll(
+      const newPolicies = await Helpers.streamAll<Policy>(
         this._modelManager.getCoreModel(PolicySchemaModel).find({ id: { $in: missingPolicies } }),
       );
 
@@ -136,7 +137,7 @@ export class PolicyCache {
     const freshToken = (await tokenModel.findById(token.id)) as Token | null;
     const tokenState = freshToken || token;
 
-    const appPolicies = await Helpers.streamAll(
+    const appPolicies = await Helpers.streamAll<Policy>(
       this._modelManager.getCoreModel(PolicySchemaModel).find({ _appId: tokenState._appId }),
     );
     const policies = AccessControlPolicyMatch.getTokenPolicies(appPolicies, tokenState);
@@ -162,16 +163,20 @@ export class PolicyCache {
     return policies;
   }
 
-  async getPoliciesByEvent(event: any) {
+  async getPoliciesByRestActivity(activity: RESTActivity): Promise<Policy[]> {
     const isCoreSchema = false;
     const schemaWildCard = isCoreSchema ? '%CORE_SCHEMA%' : '%APP_SCHEMA%';
 
     // The following code is stupid but will be refactored later.
-    const direct = await this._redisClient.sMembers(this._prefix(`app:${event.appId}:schema:${event.schemaName}`));
+    const direct = await this._redisClient.sMembers(
+      this._prefix(`app:${activity.appId}:schema:${activity.schemaName}`),
+    );
 
-    const allWildcard = await this._redisClient.sMembers(this._prefix(`app:${event.appId}:schema:%ALL%`));
+    const allWildcard = await this._redisClient.sMembers(this._prefix(`app:${activity.appId}:schema:%ALL%`));
 
-    const typedWildcard = await this._redisClient.sMembers(this._prefix(`app:${event.appId}:schema:${schemaWildCard}`));
+    const typedWildcard = await this._redisClient.sMembers(
+      this._prefix(`app:${activity.appId}:schema:${schemaWildCard}`),
+    );
 
     const policyIds = [...new Set(direct.concat(allWildcard).concat(typedWildcard))];
 
@@ -343,7 +348,7 @@ export class PolicyCache {
     this.removePolicy(policyId);
   }
 
-  async indexTokenPolicyProperties(tokenId: string, policyProperties: Record<string, any> | null = null) {
+  async indexTokenPolicyProperties(tokenId: string, policyProperties: PolicyProperties = null) {
     if (!tokenId) {
       throw new Error('Token ID is required to index properties.');
     }

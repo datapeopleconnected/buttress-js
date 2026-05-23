@@ -31,7 +31,7 @@ import * as Helpers from '../helpers/index.js';
 
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
 import { NotifyLambdaPathChangeMessage } from '../routes/route.js';
-import LambdaSchemaModel from '../model/core/lambda.js';
+import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
 
 const exec = util.promisify(cpExec);
@@ -217,15 +217,16 @@ export default class LambdaManager {
       const lambdaExec = await this.__getPendingLambdaExec();
       // TODO: Handle pausing lambdas due to READ / WRITE access
       await this.__announcePendingExecutions(lambdaExec);
-    } catch (err: any) {
-      let message = err;
-      if (err.statusMessage) message = err.statusMessage;
-      if (err.message) message = err.message;
+    } catch (err: unknown) {
+      const unknownErr = err && typeof err === 'object' ? (err as Record<string, unknown>) : null;
+      let message = Helpers.getThrownErrorMessage(err);
+      if (unknownErr && typeof unknownErr.statusMessage === 'string') message = unknownErr.statusMessage;
       Logging.logError(`[${this.name}]: Error: ${message}`);
-      if (err.stack) console.error(err.stack);
+      if (unknownErr && typeof unknownErr.stack === 'string') console.error(unknownErr.stack);
 
-      if (err.response && err.response.data) {
-        console.error(err.response.data);
+      const response = unknownErr?.response;
+      if (response && typeof response === 'object' && 'data' in response) {
+        console.error((response as { data: unknown }).data);
       }
     }
 
@@ -273,7 +274,9 @@ export default class LambdaManager {
       0,
       { priority: 1, executeAfter: 1 },
     );
-    const lambdaExecs = await Helpers.streamAll(rxLambdaExec);
+    const lambdaExecs = await Helpers.streamAll<
+      LambdaExecution & { body?: unknown; query?: unknown; headers?: unknown }
+    >(rxLambdaExec);
     Logging.logSilly(`Got ${lambdaExecs.length} pending lambda executions`);
 
     return lambdaExecs;
@@ -302,7 +305,7 @@ export default class LambdaManager {
       },
     });
 
-    const lambdas = await Helpers.streamAll(rxsLambdas);
+    const lambdas = await Helpers.streamAll<Lambda>(rxsLambdas);
 
     if (lambdas.length < 1) return;
 

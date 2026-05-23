@@ -21,8 +21,8 @@ import Model from '../../model/index.js';
 import Sugar from '../../helpers/sugar.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
-import AppSchemaModel from '../../model/core/app.js';
-import TokenSchemaModel from '../../model/core/token.js';
+import AppSchemaModel, { App } from '../../model/core/app.js';
+import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import { Schema } from '../../helpers/schema.js';
 
@@ -88,10 +88,10 @@ class SearchAppList extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate) {
-    const appsDB = await Helpers.streamAll(await Model.getCoreModel(AppSchemaModel).find(validate.query));
+    const appsDB = await Helpers.streamAll<App>(await Model.getCoreModel(AppSchemaModel).find(validate.query));
 
     const tokenIds = appsDB.map((app) => Model.getCoreModel(TokenSchemaModel).createId(app._tokenId));
-    const appTokens = await Helpers.streamAll(
+    const appTokens = await Helpers.streamAll<Token>(
       await Model.getCoreModel(TokenSchemaModel).find({
         id: {
           $in: tokenIds,
@@ -99,10 +99,12 @@ class SearchAppList extends Route {
       }),
     );
 
-    return appsDB.reduce((arr, app) => {
+    return appsDB.reduce<Array<App & { tokenValue?: string }>>((arr, app) => {
       const appToken = appTokens.find((t) => t.id.toString() === app._tokenId.toString());
-      app.tokenValue = appToken.value;
-      arr.push(app);
+      arr.push({
+        ...app,
+        tokenValue: appToken?.value,
+      });
       return arr;
     }, []);
   }
@@ -273,7 +275,7 @@ class DeleteAllApps extends Route {
 
   override async _exec(_req: Request, _res: Response, _validate) {
     // Get a list of system tokens
-    const systemTokens = await Helpers.streamAll(
+    const systemTokens = await Helpers.streamAll<Token>(
       await Model.getCoreModel(TokenSchemaModel).find(
         {
           type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
@@ -338,7 +340,7 @@ class GetAppSchema extends Route {
         req.query.rawSchema && req.context.authApp.__rawSchema
           ? Helpers.Schema.decode(req.context.authApp.__rawSchema)
           : await Helpers.Schema.buildCollections(Helpers.Schema.decode(req.context.authApp.__schema));
-    } catch (err) {
+    } catch (err: unknown) {
       if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
       else throw err;
     }
@@ -443,8 +445,8 @@ class UpdateAppSchema extends Route {
 
         checkedSchema.push(schema);
       }
-    } catch (err) {
-      Logging.logError(err);
+    } catch (err: unknown) {
+      Logging.logError(Helpers.getThrownErrorMessage(err));
       throw err;
     }
 
@@ -470,8 +472,8 @@ class UpdateAppSchema extends Route {
         rawSchema: JSON.stringify(rawSchema),
         compiledSchema,
       };
-    } catch (err) {
-      Logging.logError(err);
+    } catch (err: unknown) {
+      Logging.logError(Helpers.getThrownErrorMessage(err));
       throw new Helpers.Errors.RequestError(400, `invalid_body_type`);
     }
   }

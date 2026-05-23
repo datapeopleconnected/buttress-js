@@ -36,8 +36,8 @@ function getTokenQueryfromParams(req: Request, userId: string) {
   let tokenId = null;
   try {
     tokenId = Model.getCoreModel(TokenSchemaModel).createId(id);
-  } catch (err) {
-    Logging.logSilly(err);
+  } catch (err: unknown) {
+    Logging.logSilly(Helpers.getThrownErrorMessage(err));
   }
 
   // If tokenId is not set, we will treat it as the token value.
@@ -230,7 +230,7 @@ class FindUser extends Route {
       tokens: [],
     };
 
-    const userTokens = await Helpers.streamAll(
+    const userTokens = await Helpers.streamAll<Token>(
       await Model.getCoreModel(TokenSchemaModel).findUserAuthTokens(_user.id, req.context.authApp.id),
     );
     output.tokens =
@@ -372,7 +372,6 @@ class CreateUserAuthToken extends Route {
     };
   }
 }
-routes.push(CreateUserAuthToken);
 
 // Pre-lambda user addition
 // /**
@@ -395,7 +394,6 @@ routes.push(CreateUserAuthToken);
 // 				!req.body.user.token ||
 // 				req.body.user.policyProperties === undefined) {
 // 			this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-// 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
 // 		}
 
 // 		if (req.body.auth) {

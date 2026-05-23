@@ -204,7 +204,9 @@ export default class RemoteCombinedModel extends StandardModel {
    * @return {Promise} - resolves to an array of docs
    */
   override async find(query, excludes = {}, limit = 0, skip = 0, sort = {}, project = null) {
-    const sortMap = new Map(Object.entries(sort));
+    const sortMap = new Map<string, number>(
+      Object.entries(sort as Record<string, unknown>).map(([key, value]) => [key, Number(value)]),
+    );
     if (sortMap.size < 1) sortMap.set('id', 1);
 
     // Make a call out to each of the remotes, and merge the streams into on single stream.
