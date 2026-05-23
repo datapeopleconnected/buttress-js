@@ -381,7 +381,7 @@ export default class StandardModel<TDocument = unknown> {
 
     // const schema = __getCollectionSchema(collectionName);
     const flattenedSchema = this.schemaData ? Helpers.getFlattenedSchema(this.schemaData) : false;
-    const extendedPathContext = Shared.extendPathContext({}, flattenedSchema, '');
+    const extendedPathContext = Shared.extendPathContext({}, flattenedSchema || {}, '');
 
     // TODO: This isn't processing updates in a batch
     return await body.reduce(async (prev, update) => {

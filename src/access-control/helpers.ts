@@ -23,6 +23,21 @@ import { ApplicablePolicyConfig } from './index.js';
 import { ACEnv, ACPolicyEnvCombined } from './env.js';
 
 import { Policy, PolicyConfig } from '../model/core/policy.js';
+import { Schema } from '../helpers/schema.js';
+
+type AccessControlScalar = string | number | boolean | Date;
+type AccessControlValue = AccessControlScalar | AccessControlScalar[] | null;
+
+function toComparableValue(value: AccessControlScalar): number | string {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'boolean') return Number(value);
+  return value;
+}
+
+function toDateComparableValue(value: AccessControlValue): string | number | Date | null {
+  if (value === null || Array.isArray(value) || typeof value === 'boolean') return null;
+  return value;
+}
 
 export function CombineEnvGroups(policy: ApplicablePolicyConfig, reqEnv: ACEnv): ACPolicyEnvCombined {
   let env: ACPolicyEnvCombined = { ...reqEnv };
@@ -36,7 +51,7 @@ export function CombineEnvGroups(policy: ApplicablePolicyConfig, reqEnv: ACEnv):
  * @class Conditoins
  */
 class Helpers {
-  private __coreSchema?: any[];
+  private __coreSchema?: Schema[];
 
   async cacheCoreSchema() {
     if (this.__coreSchema) return this.__coreSchema;
@@ -48,7 +63,7 @@ class Helpers {
     return this.__coreSchema;
   }
 
-  evaluateOperation(lhs, rhs, operator): boolean {
+  evaluateOperation(lhs: AccessControlValue, rhs: AccessControlValue, operator: string): boolean {
     let passed = false;
 
     if (rhs === null || lhs === null) {
@@ -74,95 +89,114 @@ class Helpers {
       case '$gt':
       case '@gt':
         {
-          passed = lhs > rhs;
+          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
+          passed = toComparableValue(lhs) > toComparableValue(rhs);
         }
         break;
       case '$lt':
       case '@lt':
         {
-          passed = lhs < rhs;
+          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
+          passed = toComparableValue(lhs) < toComparableValue(rhs);
         }
         break;
       case '$gte':
       case '@gte':
         {
-          passed = lhs >= rhs;
+          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
+          passed = toComparableValue(lhs) >= toComparableValue(rhs);
         }
         break;
       case '$lte':
       case '@lte':
         {
-          passed = lhs <= rhs;
+          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
+          passed = toComparableValue(lhs) <= toComparableValue(rhs);
         }
         break;
       case '$gtDate':
       case '@gtDate':
         {
           const lhsDate = wrangleDateType(lhs);
+          const rhsDate = toDateComparableValue(rhs);
           if (!lhsDate) return false;
-          passed = Sugar.Date.isAfter(lhsDate, rhs);
+          if (!rhsDate) return false;
+          passed = Sugar.Date.isAfter(lhsDate, rhsDate);
         }
         break;
       case '$gteDate':
       case '@gteDate':
         {
           const lhsDate = wrangleDateType(lhs);
+          const lhsDateInput = toDateComparableValue(lhs);
           if (!lhsDate) return false;
-          passed = Sugar.Date.isAfter(lhsDate, lhs) || Sugar.Date.is(lhsDate, lhs);
+          if (!lhsDateInput) return false;
+          passed = Sugar.Date.isAfter(lhsDate, lhsDateInput) || Sugar.Date.is(lhsDate, lhsDateInput);
         }
         break;
       case '$ltDate':
       case '@ltDate':
         {
           const lhsDate = wrangleDateType(lhs);
+          const rhsDate = toDateComparableValue(rhs);
           if (!lhsDate) return false;
-          passed = Sugar.Date.isBefore(lhsDate, rhs);
+          if (!rhsDate) return false;
+          passed = Sugar.Date.isBefore(lhsDate, rhsDate);
         }
         break;
       case '$lteDate':
       case '@lteDate':
         {
           const lhsDate = wrangleDateType(lhs);
+          const lhsDateInput = toDateComparableValue(lhs);
           if (!lhsDate) return false;
-          passed = Sugar.Date.isBefore(lhsDate, lhs) || Sugar.Date.is(lhsDate, lhs);
+          if (!lhsDateInput) return false;
+          passed = Sugar.Date.isBefore(lhsDate, lhsDateInput) || Sugar.Date.is(lhsDate, lhsDateInput);
         }
         break;
       case '$rex':
       case '@rex':
         {
-          const regex = new RegExp(rhs);
-          passed = regex.test(lhs);
+          const regex = new RegExp(rhs.toString());
+          passed = regex.test(lhs.toString());
         }
         break;
       case '$rexi':
       case '@rexi':
         {
-          const regex = new RegExp(rhs, 'i');
-          passed = regex.test(lhs);
+          const regex = new RegExp(rhs.toString(), 'i');
+          passed = regex.test(lhs.toString());
         }
         break;
       case '$in':
       case '@in':
         {
+          if (!Array.isArray(rhs)) return false;
+
           if (Array.isArray(lhs)) {
             passed = lhs.every((i) => {
               return rhs.some((j) => j.toString() === i.toString());
             });
           } else {
-            passed = lhs && rhs.some((i) => i.toString() === lhs.toString());
+            passed = Boolean(lhs) && rhs.some((i) => i.toString() === lhs.toString());
           }
         }
         break;
       case '$nin':
       case '@nin':
         {
-          passed = lhs.every((i) => i !== lhs);
+          if (!Array.isArray(lhs)) return false;
+          passed = lhs.every((i) => i !== rhs);
         }
         break;
       case '$exists':
       case '@exists':
         {
-          passed = lhs.includes(rhs);
+          if (Array.isArray(lhs)) {
+            passed = lhs.includes(rhs as AccessControlScalar);
+          } else {
+            passed = lhs.toString().includes(rhs.toString());
+          }
         }
         break;
       default:
@@ -211,74 +245,78 @@ export function filterPolicyConfigs(
 }
 
 export function findPatternOccurrences(
-  obj: any,
+  obj: unknown,
   pattern: string,
 ): { path: string[]; type: 'key' | 'value'; value: string }[] {
   const occurrences: { path: string[]; type: 'key' | 'value'; value: string }[] = [];
   const regex = new RegExp(pattern);
 
-  function recurse(currentObj: any, path: string[] = []): void {
+  function recurse(currentObj: unknown, path: string[] = []): void {
+    if (currentObj === null || currentObj === undefined) return;
+
+    if (Array.isArray(currentObj)) {
+      currentObj.forEach((item, index) => {
+        const arrayPath = [...path, index.toString()];
+        if (typeof item === 'string' && regex.test(item)) {
+          occurrences.push({ path: arrayPath, type: 'value', value: item });
+          return;
+        }
+
+        if (typeof item === 'object' && item !== null) recurse(item, arrayPath);
+      });
+      return;
+    }
+
+    if (typeof currentObj !== 'object') return;
+
     for (const key in currentObj) {
-      if (Object.prototype.hasOwnProperty.call(currentObj, key)) {
-        const currentPath = [...path, key];
-        const value = currentObj[key];
+      if (!Object.prototype.hasOwnProperty.call(currentObj, key)) continue;
 
-        if (typeof key === 'string' && regex.test(key)) {
-          occurrences.push({ path: currentPath, type: 'key', value: key });
-        }
+      const currentPath = [...path, key];
+      const value = (currentObj as Record<string, unknown>)[key];
 
-        if (typeof value === 'string' && regex.test(value)) {
-          occurrences.push({ path: currentPath, type: 'value', value: value });
-        } else if (typeof value === 'object' && value !== null) {
-          recurse(value, currentPath);
-        } else if (Array.isArray(value)) {
-          value.forEach((item, index) => {
-            const arrayPath = [...currentPath, index.toString()]; // Convert index to string
-            if (typeof item === 'string' && regex.test(item)) {
-              occurrences.push({ path: arrayPath, type: 'value', value: item });
-            } else if (typeof item === 'object' && item !== null) {
-              recurse(item, arrayPath);
-            }
-          });
-        }
+      if (regex.test(key)) {
+        occurrences.push({ path: currentPath, type: 'key', value: key });
       }
+
+      if (typeof value === 'string' && regex.test(value)) {
+        occurrences.push({ path: currentPath, type: 'value', value });
+        continue;
+      }
+
+      if (typeof value === 'object' && value !== null) recurse(value, currentPath);
     }
   }
 
   recurse(obj);
   return occurrences;
 }
-export function patternExists(obj: any, pattern: string): boolean {
+export function patternExists(obj: unknown, pattern: string): boolean {
   const regex = new RegExp(pattern);
 
-  function recurse(currentObj: any): boolean {
-    for (const key in currentObj) {
-      if (Object.prototype.hasOwnProperty.call(currentObj, key)) {
-        const value = currentObj[key];
+  function recurse(currentObj: unknown): boolean {
+    if (currentObj === null || currentObj === undefined) return false;
 
-        if (typeof key === 'string' && regex.test(key)) {
-          return true;
-        }
-
-        if (typeof value === 'string' && regex.test(value)) {
-          return true;
-        } else if (typeof value === 'object' && value !== null) {
-          if (recurse(value)) {
-            return true;
-          }
-        } else if (Array.isArray(value)) {
-          for (const item of value) {
-            if (typeof item === 'string' && regex.test(item)) {
-              return true;
-            } else if (typeof item === 'object' && item !== null) {
-              if (recurse(item)) {
-                return true;
-              }
-            }
-          }
-        }
+    if (Array.isArray(currentObj)) {
+      for (const item of currentObj) {
+        if (typeof item === 'string' && regex.test(item)) return true;
+        if (typeof item === 'object' && item !== null && recurse(item)) return true;
       }
+      return false;
     }
+
+    if (typeof currentObj !== 'object') return false;
+
+    for (const key in currentObj) {
+      if (!Object.prototype.hasOwnProperty.call(currentObj, key)) continue;
+
+      const value = (currentObj as Record<string, unknown>)[key];
+
+      if (regex.test(key)) return true;
+      if (typeof value === 'string' && regex.test(value)) return true;
+      if (typeof value === 'object' && value !== null && recurse(value)) return true;
+    }
+
     return false;
   }
 

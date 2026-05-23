@@ -18,7 +18,7 @@ import StandardModel from '../type/standard.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
-import TokenSchemaModel from './token.js';
+import TokenSchemaModel, { Token } from './token.js';
 
 export interface User {
   id: string;
@@ -39,6 +39,14 @@ export interface User {
   }>;
   _appId: string;
 }
+
+type UserWithTokens = User & {
+  tokens: Array<{
+    id: string;
+    value: string;
+    policyProperties: Token['policyProperties'];
+  }>;
+};
 
 /**
  * Constants
@@ -263,7 +271,7 @@ export default class UserSchemaModel extends StandardModel<User> {
     const rxsUser = await super.add(userBody, {
       _appId: internals._appId,
     });
-    const user: any = await Helpers.streamFirst(rxsUser);
+    const user = (await Helpers.streamFirst<User>(rxsUser)) as UserWithTokens;
 
     user.tokens = [];
 
@@ -280,7 +288,7 @@ export default class UserSchemaModel extends StandardModel<User> {
         _appId: internals._appId,
         _userId: user.id,
       });
-      const token: any = await Helpers.streamFirst(rxsToken);
+      const token = await Helpers.streamFirst<Token>(rxsToken);
 
       if (token) {
         user.tokens.push({

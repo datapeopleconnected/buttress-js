@@ -18,6 +18,7 @@
 
 import cluster from 'node:cluster';
 import Config from '../helpers/config.js';
+import { getThrownErrorMessage } from '../helpers/index.js';
 
 import Logging from '../helpers/logging.js';
 import BootstrapRest from '../bootstrap-rest.js';
@@ -42,12 +43,8 @@ if (cluster.isPrimary) Logging.startupMessage();
         `${Config.app.title}:${Config.app.code} REST Server Worker v${Config.app.version} ` + `in ${Config.env} mode.`,
       );
     }
-  } catch (err) {
-    if (err instanceof Error || typeof err === 'string') {
-      Logging.logError(err);
-    } else {
-      console.error(err);
-    }
+  } catch (err: unknown) {
+    Logging.logError(getThrownErrorMessage(err));
 
     process.exit(1);
   }

@@ -61,10 +61,12 @@ class Projection {
     const flattenedSchema = Helpers.getFlattenedSchema(schema);
     let requestBody = req.body ?? {};
 
-    const projectionKeys = projections?.keys;
+    const projectionKeys = Array.isArray(projections?.keys)
+      ? projections.keys.filter((key): key is string => typeof key === 'string')
+      : [];
     const projection = {};
 
-    if (projectionKeys && projectionKeys.length > 0) {
+    if (projectionKeys.length > 0) {
       projectionKeys.forEach((key) => {
         projection[key] = 1;
       });

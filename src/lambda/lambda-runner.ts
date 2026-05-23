@@ -44,8 +44,8 @@ import { ExecPriority, LambdaExecutionMessage } from './lambda-manager.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
 import AppSchemaModel, { App } from '../model/core/app.js';
-import TokenSchemaModel from '../model/core/token.js';
-import UserSchemaModel from '../model/core/user.js';
+import TokenSchemaModel, { Token } from '../model/core/token.js';
+import UserSchemaModel, { User } from '../model/core/user.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
 import SecureStoreSchemaModel from '../model/core/secure-store.js';
 
@@ -58,8 +58,8 @@ export enum LambdaType {
 
 export interface ExecutionResultMessage {
   code: number;
-  res?: any;
-  err?: any;
+  res?: unknown;
+  err?: unknown;
   reqId: string;
   executionId: string;
 }
@@ -77,13 +77,13 @@ export default class LambdaRunner {
   working: boolean;
 
   _timeout?: NodeJS.Timeout;
-  _lambdaExecution: any;
+  _lambdaExecution: LambdaExecution | null;
 
   _isolate?: ivm.Isolate;
   _context?: ivm.Context;
   _jail?: ivm.Reference;
   _registeredBundles: string[] = [];
-  _compiledLambdas: any;
+  _compiledLambdas: unknown[] = [];
 
   private __nrp?: NodeRedisPubsub;
 
@@ -199,20 +199,20 @@ export default class LambdaRunner {
       _appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
       _lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
     });
-    const lambdaToken: any = await Helpers.streamFirst(rxsLambdaToken);
+    const lambdaToken = await Helpers.streamFirst<Token>(rxsLambdaToken);
     if (!lambdaToken) {
       return Promise.reject(
         new Error(`Unable to find lambda token for lambda ${lambda.name}, execution ${execution.id}`),
       );
     }
 
-    let executionUserId = null;
+    let executionUserId: string | null = null;
     let executionToken = lambdaToken;
     if (execution._tokenId) {
       const rxsExecToken = await Model.getCoreModel(TokenSchemaModel).find({
         _id: Model.getCoreModel(TokenSchemaModel).createId(execution._tokenId),
       });
-      const execToken: any = await Helpers.streamFirst(rxsExecToken);
+      const execToken = await Helpers.streamFirst<Token>(rxsExecToken);
       if (!execToken) {
         return Promise.reject(
           new Error(`Unable to find lambda token for lambda ${lambda.name}, execution ${execution.id}`),
@@ -224,7 +224,7 @@ export default class LambdaRunner {
         const rxsUser = await Model.getCoreModel(UserSchemaModel).find({
           _id: Model.getCoreModel(UserSchemaModel).createId(execToken._userId),
         });
-        const user: any = await Helpers.streamFirst(rxsUser);
+        const user = await Helpers.streamFirst<User>(rxsUser);
         if (!user) {
           return Promise.reject(new Error(`Unable to find user for token ${execToken.id}`));
         }
@@ -242,7 +242,7 @@ export default class LambdaRunner {
       apiPath: apiPath,
       allowUnauthorized: true,
     };
-    const lambdaModules = {};
+    const lambdaModules: Record<string, string> = {};
 
     // ? This doesn't seem right
     lambdaHelpers.lambdaExecution = execution;
@@ -257,7 +257,7 @@ export default class LambdaRunner {
     const modulesNames = this._getLambdaModulesName(lambda);
     await this.bundleLambdaModules(modulesNames);
     await this._registerLambdaModules(modulesNames);
-    modulesNames.forEach((m: any) => {
+    modulesNames.forEach((m: { name: string }) => {
       lambdaModules[m.name] = m.name;
     });
 
@@ -362,17 +362,12 @@ export default class LambdaRunner {
           `[${this.name}] Lambda ${lambda.name} execution ${execution.id} completed successfully: ${json}`,
         );
       }
-    } catch (err: any) {
-      await this._updateDBLambdaErrorExecution(lambda);
+    } catch (err: unknown) {
+      await this._updateDBLambdaErrorExecution(execution);
       Logging.logDebug(err);
 
       if (type === 'API_ENDPOINT') {
-        let errMessage = 'Unknown error occurred';
-        if (err instanceof Error) {
-          errMessage = err.message;
-        } else if (err && Object.prototype.hasOwnProperty.call(err, 'errMessage')) {
-          errMessage = err.errMessage;
-        }
+        const errMessage = Helpers.getThrownErrorMessage(err);
 
         if (data.reqId) {
           const message: ExecutionResultMessage = {
@@ -391,7 +386,8 @@ export default class LambdaRunner {
         }
       }
 
-      return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${err}`));
+      const errMessage = Helpers.getThrownErrorMessage(err);
+      return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${errMessage}`));
     }
   }
 
@@ -445,11 +441,12 @@ export default class LambdaRunner {
           reqId: reqId,
         }),
       );
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.working = false;
-      Logging.logError(err.message);
+      const errMessage = Helpers.getThrownErrorMessage(err);
+      Logging.logError(errMessage);
       await this._updateDBLambdaErrorExecution(execution, {
-        message: err.message,
+        message: errMessage,
         type: 'ERROR',
       });
       this.__nrp?.emit(
@@ -460,7 +457,7 @@ export default class LambdaRunner {
           reqId: reqId,
           lambdaId: lambdaId,
           lambdaType: triggerType,
-          errMessage: err.message,
+          errMessage,
         }),
       );
     }
@@ -498,7 +495,7 @@ export default class LambdaRunner {
       if (this.working) {
         Logging.logWarn(`[${this.name}] I've taken on too much work, releasing ${message.executionId}`);
 
-        message.currentExecutionId = this._lambdaExecution ? this._lambdaExecution.id : null;
+        message.currentExecutionId = this._lambdaExecution ? this._lambdaExecution.id : undefined;
 
         this.__nrp?.emit('lambda:worker:overloaded', JSON.stringify(message));
         return;
@@ -568,7 +565,10 @@ export default class LambdaRunner {
     }
   }
 
-  async _updateDBLambdaErrorExecution(execution, log: any = null) {
+  async _updateDBLambdaErrorExecution(
+    execution: LambdaExecution,
+    log: { message: string; type: string } | null = null,
+  ) {
     await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
       Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
       {
@@ -601,14 +601,14 @@ export default class LambdaRunner {
 
   async installLambdaPackages(lambda, packageAllowList) {
     const packagePath = `${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`;
-    const modules: any[] = [];
+    const modules: Array<{ name: string }> = [];
     if (!fs.existsSync(packagePath)) return modules;
 
     const packages = require(`${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`);
     for await (const packageKey of Object.keys(packages.dependencies)) {
       try {
         await exec(`npm ls ${packageKey}`);
-      } catch (err: any) {
+      } catch (err: unknown) {
         let packageVersion = packages.dependencies[packageKey];
         const matchedPattern = packageVersion.match(/(^\D)/);
         const [removedPattern] = matchedPattern ? matchedPattern : [];
@@ -617,15 +617,15 @@ export default class LambdaRunner {
           return item.packageName === packageKey && packageVersion === item.packageVersion;
         });
 
-        if (err.code === 1 && packageIsInAllowList) {
+        if (err && typeof err === 'object' && 'code' in err && err.code === 1 && packageIsInAllowList) {
           try {
             Logging.log(`Installing ${packageKey}@${packageVersion} for lambda ${lambda.name}`);
             await exec(`npm install ${packageKey}@${packageVersion}`);
             modules.push({
               name: packageKey,
             });
-          } catch (err) {
-            Logging.logError(err);
+          } catch (err: unknown) {
+            Logging.logError(Helpers.getThrownErrorMessage(err));
           }
 
           continue;
@@ -643,7 +643,7 @@ export default class LambdaRunner {
   }
 
   _getLambdaModulesName(lambda) {
-    const modules: any[] = [];
+    const modules: Array<{ packageName?: string; name: string; import?: string }> = [];
     const entryDir = path.dirname(lambda.git.entryFile);
     const entryFile = path.basename(lambda.git.entryFile);
     const lambdaDir = `${Config.paths.lambda.code}/lambda-${lambda.git.hash}/./${entryDir}`; // Again ugly /./ because... indolence
@@ -704,9 +704,9 @@ export default class LambdaRunner {
             chunkFormat: 'commonjs',
           },
         },
-        function (err: any, stats) {
-          if (err && err.details) {
-            reject(err.details);
+        function (err: unknown, stats) {
+          if (err && typeof err === 'object' && 'details' in err) {
+            reject((err as { details: unknown }).details);
           }
 
           if (stats) {
@@ -723,16 +723,14 @@ export default class LambdaRunner {
           resolve();
         },
       );
-    }).catch((error: any) => {
+    }).catch((error: unknown) => {
       Logging.logError('Error whilst bundling lambda modules');
       if (Array.isArray(error)) {
         error.forEach((err) => {
-          Logging.logError(err.message);
+          Logging.logError(Helpers.getThrownErrorMessage(err));
         });
-      } else if (typeof error === 'string') {
-        Logging.logError(error);
       } else {
-        Logging.logError(error.message);
+        Logging.logError(Helpers.getThrownErrorMessage(error));
       }
     });
   }
@@ -756,7 +754,7 @@ export default class LambdaRunner {
         this._isolate
           .compileScriptSync(fs.readFileSync(`${Config.paths.lambda.bundles}/${file}.js`, 'utf8'))
           .runSync(this._context);
-      } catch (err) {
+      } catch (err: unknown) {
         Logging.logError(`Error registering lambda module ${mod.name}`);
         throw err;
       }

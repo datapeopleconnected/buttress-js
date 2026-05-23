@@ -16,6 +16,7 @@
 
 import Logging from '../helpers/logging.js';
 import * as Helpers from '../helpers/index.js';
+import { FlattenedSchema, Schema } from '../types/schema.js';
 
 /* ********************************************************************************
  *
@@ -180,7 +181,7 @@ export const doValidateUpdate = function (pathContext, flattenedSchema) {
   };
 };
 
-export const extendPathContext = (pathContext, schema, prefix) => {
+export const extendPathContext = (pathContext, schema: FlattenedSchema, prefix: string) => {
   if (!schema) return pathContext;
   let extended = {};
   for (const property in schema) {
@@ -219,12 +220,12 @@ export const extendPathContext = (pathContext, schema, prefix) => {
   return Object.assign(extended, pathContext);
 };
 
-export const validateUpdate = function (pathContext, schema) {
+export const validateUpdate = function (pathContext, schema: Schema) {
   return function (body) {
     Logging.logDebug(body instanceof Array);
     // const schema = __getCollectionSchema(collection);
     const flattenedSchema = schema ? Helpers.getFlattenedSchema(schema) : false;
-    const extendedPathContext = extendPathContext(pathContext, flattenedSchema, '');
+    const extendedPathContext = extendPathContext(pathContext, flattenedSchema || {}, '');
 
     if (schema.core) {
       body = Helpers.updateCoreSchemaObject(body, extendedPathContext);

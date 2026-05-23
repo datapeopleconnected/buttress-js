@@ -13,11 +13,12 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { Transform } from 'node:stream';
+import { Transform, TransformCallback, TransformOptions } from 'node:stream';
 
 import * as DataSharingHelpers from './data-sharing.js';
 
 import Datastore from '../datastore/index.js';
+import { Properties, Schema, FlattenedSchema } from '../types/schema.js';
 
 export const DataSharing = DataSharingHelpers;
 
@@ -57,9 +58,9 @@ export class Timer {
 
 export class JSONStringifyStream extends Transform {
   private _first: boolean;
-  private prepare: (chunk: any) => any;
+  private prepare: (chunk: unknown) => unknown;
 
-  constructor(options, prepare) {
+  constructor(options: TransformOptions, prepare: (chunk: unknown) => unknown) {
     super(Object.assign(options || {}, { objectMode: true }));
 
     if (!prepare || typeof prepare !== 'function') throw new Error('JSONStringifyStream requires a prepare function');
@@ -68,7 +69,8 @@ export class JSONStringifyStream extends Transform {
     this.prepare = prepare;
   }
 
-  override _transform(chunk, encoding, cb) {
+  override _transform(chunk: unknown, encoding: BufferEncoding, cb: TransformCallback) {
+    void encoding;
     chunk = this.prepare(chunk);
 
     // Dont return any blank objects
@@ -88,7 +90,7 @@ export class JSONStringifyStream extends Transform {
     cb();
   }
 
-  override _flush(cb) {
+  override _flush(cb: TransformCallback) {
     if (this._first) {
       this._first = false;
       this.push('[');
@@ -164,12 +166,20 @@ const __flattenRoles = (data, path) => {
 };
 export const flattenRoles = __flattenRoles;
 
-export const flatternObject = (obj, output: { [index: string]: any } = {}, paths: string[] = []) => {
+export const flatternObject = (
+  obj: Record<string, unknown>,
+  output: { [index: string]: unknown } = {},
+  paths: string[] = [],
+) => {
   return Object.getOwnPropertyNames(obj).reduce(function (out, key) {
     paths.push(key);
 
-    if (typeof obj[key] === 'object' && obj[key] !== null && obj[key] === '[object Object]') {
-      flatternObject(obj[key], out, paths);
+    if (
+      typeof obj[key] === 'object' &&
+      obj[key] !== null &&
+      Object.prototype.toString.call(obj[key]) === '[object Object]'
+    ) {
+      flatternObject(obj[key] as Record<string, unknown>, out, paths);
     } else if (Array.isArray(obj[key])) {
       obj[key].forEach((item, index) => {
         paths.push(index.toString());
@@ -204,7 +214,7 @@ export const mergeDeep = (...objects) => {
   }, {});
 };
 
-export const getFlattenedSchema = (schema): { [key: string]: unknown } => {
+export const getFlattenedSchema = (schema: Schema | Properties) => {
   const __buildFlattenedSchema = (property, parent, path, flattened) => {
     path.push(property);
 
@@ -231,9 +241,7 @@ export const getFlattenedSchema = (schema): { [key: string]: unknown } => {
     path.pop();
   };
 
-  const flattened: {
-    [key: string]: any;
-  } = {};
+  const flattened: FlattenedSchema = {};
   const path = [];
 
   if (schema.properties) {
@@ -246,7 +254,7 @@ export const getFlattenedSchema = (schema): { [key: string]: unknown } => {
   return flattened;
 };
 
-export const streamFirst = (stream) => {
+export const streamFirst = <T>(stream): Promise<T> => {
   if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
     throw new Error(`Expected Stream but got '${stream}'`);
   }
@@ -254,31 +262,33 @@ export const streamFirst = (stream) => {
   return new Promise((resolve, reject) => {
     stream.on('error', (err) => reject(err));
     stream.on('end', () => reject(new Error('Stream ended without data')));
-    stream.on('data', (item) => {
+    stream.on('data', (item: T) => {
       stream.destroy();
       resolve(item);
     });
   });
 };
-export const streamAll = (stream): Promise<any[]> => {
+export const streamAll = <T>(stream): Promise<T[]> => {
   if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
     throw new Error(`Expected Stream but got '${stream}'`);
   }
 
   return new Promise((resolve, reject) => {
-    const arr: any[] = [];
+    const arr: T[] = [];
     stream.on('error', (err) => reject(err));
     stream.on('end', () => resolve(arr));
-    stream.on('data', (item) => arr.push(item));
+    stream.on('data', (item: T) => arr.push(item));
   });
 };
 
-export const trimSlashes = (str) => {
+export const trimSlashes = (str: string) => {
   return str ? str.replace(/^\/+|\/+$/g, '') : str;
 };
 
-export const awaitAll = async (arr, handler) => await Promise.all(arr.map(async (item) => await handler(item)));
-export const awaitForEach = async (arr, handler) => {
+export const awaitAll = async <T>(arr: T[], handler: (item: T) => Promise<unknown>) => {
+  return await Promise.all(arr.map(async (item) => await handler(item)));
+};
+export const awaitForEach = async <T>(arr: T[], handler: (item: T) => Promise<void>) => {
   await arr.reduce(async (prev, item) => {
     await prev;
     await handler(item);
@@ -343,7 +353,7 @@ export const updateCoreSchemaObject = (update, extendedPathContext) => {
   const __updateObjectPath = (body) => {
     const bodyPath = body.path.replace(pattern, '');
     if (!Array.isArray(body) && body.value && typeof body.value === 'object' && !Array.isArray(body.value)) {
-      body = Object.keys(body.value).reduce((arr: { path: string; value: any }[], key) => {
+      body = Object.keys(body.value).reduce((arr: { path: string; value: unknown }[], key) => {
         const extendedPath = `${bodyPath}.${key}`;
         if (!extendedPathContextKeys.some((key) => key.includes(extendedPath))) return arr;
 
@@ -368,32 +378,114 @@ export const updateCoreSchemaObject = (update, extendedPathContext) => {
   return update;
 };
 
-export const compareByProps = (compareProperties, a, b) => {
+export const compareByProps = (
+  compareProperties: Map<string, number>,
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+) => {
   for (const key of compareProperties.keys()) {
-    const sortOrder = compareProperties.get(key);
+    const sortOrder = compareProperties.get(key) || 1;
 
     // TODO: path resolution.
     const valueA = a && a[key] ? a[key] : null;
     const valueB = b && b[key] ? b[key] : null;
 
-    if (valueA < valueB) return -1 * sortOrder;
-    if (valueA > valueB) return 1 * sortOrder;
+    const left = valueA instanceof Date ? valueA.getTime() : valueA;
+    const right = valueB instanceof Date ? valueB.getTime() : valueB;
+
+    if (typeof left === 'string' && typeof right === 'string') {
+      if (left < right) return -1 * sortOrder;
+      if (left > right) return 1 * sortOrder;
+      continue;
+    }
+
+    if (typeof left === 'number' && typeof right === 'number') {
+      if (left < right) return -1 * sortOrder;
+      if (left > right) return 1 * sortOrder;
+    }
   }
 
   return 0;
 };
 
-export const get = function (path: string, root: any): any {
+export const get = function (path: string, root: unknown): unknown {
   const parts = path.toString().split('.');
-  let prop: any = root;
+  let prop: unknown = root;
 
   for (let i = 0; i < parts.length; i += 1) {
     if (!prop) return undefined;
     const part = parts[i];
-    prop = prop instanceof Map ? prop.get(part) : prop[part];
+    if (prop instanceof Map) {
+      prop = prop.get(part);
+      continue;
+    }
+
+    if (typeof prop === 'object' && prop !== null) {
+      prop = (prop as Record<string, unknown>)[part];
+      continue;
+    }
+
+    return undefined;
   }
 
   return prop;
+};
+
+export interface NormalizedThrownError {
+  message: string;
+  name?: string;
+  stack?: string;
+  raw?: unknown;
+}
+
+const getStringProperty = (value: unknown, key: string): string | undefined => {
+  if (!value || typeof value !== 'object') return undefined;
+  const prop = (value as Record<string, unknown>)[key];
+  return typeof prop === 'string' ? prop : undefined;
+};
+
+export const normalizeThrownError = (err: unknown): NormalizedThrownError => {
+  if (err instanceof Error) {
+    return {
+      message: err.message || 'Unknown error',
+      name: err.name,
+      stack: err.stack,
+      raw: err,
+    };
+  }
+
+  const objectMessage = getStringProperty(err, 'errMessage') || getStringProperty(err, 'message');
+  if (objectMessage) {
+    return {
+      message: objectMessage,
+      name: getStringProperty(err, 'name'),
+      stack: getStringProperty(err, 'stack'),
+      raw: err,
+    };
+  }
+
+  if (typeof err === 'string') {
+    return {
+      message: err,
+      raw: err,
+    };
+  }
+
+  if (typeof err === 'number' || typeof err === 'boolean' || typeof err === 'bigint') {
+    return {
+      message: String(err),
+      raw: err,
+    };
+  }
+
+  return {
+    message: 'Unknown error',
+    raw: err,
+  };
+};
+
+export const getThrownErrorMessage = (err: unknown): string => {
+  return normalizeThrownError(err).message;
 };
 
 export function redisPrefix(prefix: string, key: string): string {

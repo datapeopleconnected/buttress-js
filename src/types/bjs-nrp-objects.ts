@@ -13,7 +13,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
 export interface RESTActivity {
   title: string;
   description: string;
@@ -23,9 +22,9 @@ export interface RESTActivity {
   pathSpec: string;
   verb: string;
   permissions: string;
-  params: any;
+  params: Record<string, unknown>;
   timestamp: Date;
-  response: any;
+  response: unknown;
   user: string;
   appAPIPath: string;
   appId: string;
@@ -44,9 +43,9 @@ export interface SPRActivity {
   pathSpec: string;
   verb: string;
   permissions: string;
-  params: any;
+  params: Record<string, unknown>;
   timestamp: Date;
-  response: any;
+  response: unknown;
   user: string;
   appAPIPath: string;
   appId: string;

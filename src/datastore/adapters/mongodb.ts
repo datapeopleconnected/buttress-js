@@ -78,11 +78,12 @@ export default class MongodbAdapter extends AbstractAdapter {
     if (!this._client) return;
     try {
       await this._client.close();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const errMessage = Helpers.getThrownErrorMessage(err);
       // Ignore it, bug is within mongodb driver
-      if (err.message.includes("undefined (reading 'close')")) return;
-      console.error('Caught error while closing mongo connection');
-      console.error(err);
+      if (errMessage.includes("undefined (reading 'close')")) return;
+      Logging.logError('Caught error while closing mongo connection');
+      Logging.logError(errMessage);
     } finally {
       delete this.__connection;
       delete this._client;
@@ -475,8 +476,8 @@ export default class MongodbAdapter extends AbstractAdapter {
       if (!res) throw new Error('Unable to drop');
 
       return true;
-    } catch (err: any) {
-      if (err.code === 26) return true; // NamespaceNotFound
+    } catch (err: unknown) {
+      if (err && typeof err === 'object' && (err as { code?: unknown }).code === 26) return true; // NamespaceNotFound
 
       throw err;
     }

@@ -29,6 +29,19 @@ import { ApplicablePolicyConfig } from './index.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
 
+type AccessControlScalar = string | number | boolean | Date;
+type AccessControlValue = AccessControlScalar | AccessControlScalar[] | null;
+
+function isAccessControlScalar(value: unknown): value is AccessControlScalar {
+  return value instanceof Date || ['string', 'number', 'boolean'].includes(typeof value);
+}
+
+function isAccessControlValue(value: unknown): value is AccessControlValue {
+  if (value === null) return true;
+  if (isAccessControlScalar(value)) return true;
+  return Array.isArray(value) && value.every((item) => isAccessControlScalar(item));
+}
+
 /**
  * @class Filter
  */
@@ -92,13 +105,16 @@ export class Filter {
     // ? This should really be handled by the mongo adapter and internally we should use the @ prefix.
     const translatedQuery = Filter.convertQueryPrefixOperators(policyQuery);
     const output: PolicyQuery = {};
+    const outputRecord = output as Record<string, unknown>;
 
     for await (const key of Object.keys(translatedQuery)) {
-      const val = translatedQuery[key];
-      if (stripAccessKeys && key === 'access' && this._queryAccess.includes(val)) continue;
+      const val = translatedQuery[key] as unknown;
+      if (stripAccessKeys && key === 'access' && typeof val === 'string' && this._queryAccess.includes(val)) continue;
+      if (typeof val !== 'object' || val === null) continue;
       if (Object.keys(val).length < 1) continue;
 
       if (Filter.logicalOperator.includes(key)) {
+        if (!Array.isArray(val)) continue;
         for (const queryObj of val) {
           if (typeof queryObj !== 'object' || Array.isArray(queryObj)) {
             throw new Error(`Invalid query object for logical operator ${key}: ${JSON.stringify(queryObj)}`);
@@ -107,29 +123,39 @@ export class Filter {
           // Recursively build the query for each object in the logical operator array.
           const builtQuery = await this.buildPolicyQuery(queryObj, envVars, stripAccessKeys);
           if (builtQuery) {
-            output[key] = output[key] || [];
-            output[key].push(builtQuery);
+            const existing = outputRecord[key];
+            if (!Array.isArray(existing)) outputRecord[key] = [];
+            (outputRecord[key] as unknown[]).push(builtQuery);
           }
         }
         continue;
       }
 
-      if (output[key]) {
-        if (Array.isArray(output[key]) && Array.isArray(val)) {
+      if (outputRecord[key]) {
+        if (Array.isArray(outputRecord[key]) && Array.isArray(val)) {
           for await (const elem of val) {
-            const elementExist = output[key].findIndex((el) => JSON.stringify(el) === JSON.stringify(elem));
+            const elementExist = (outputRecord[key] as unknown[]).findIndex(
+              (el) => JSON.stringify(el) === JSON.stringify(elem),
+            );
 
             if (elementExist !== -1) continue;
-            output[key].push(elem);
+            (outputRecord[key] as unknown[]).push(elem);
           }
 
           continue;
-        } else if (!Array.isArray(output[key]) && !Array.isArray(val)) {
-          Object.keys(output[key]).forEach((k) => {
+        } else if (!Array.isArray(outputRecord[key]) && !Array.isArray(val)) {
+          const outputByKey = outputRecord[key] as Record<string, unknown>;
+          const valRecord = val as Record<string, unknown>;
+
+          Object.keys(outputByKey).forEach((k) => {
             if (this.arrayOperators.includes(k)) {
-              output[key][k] = output[key][k].concat(val[k]).filter((v, idx, arr) => arr.indexOf(v) === idx);
+              const existing = outputByKey[k];
+              const next = valRecord[k];
+              if (Array.isArray(existing) && Array.isArray(next)) {
+                outputByKey[k] = existing.concat(next).filter((v, idx, arr) => arr.indexOf(v) === idx);
+              }
             } else {
-              output[key][k] = val[k];
+              outputByKey[k] = valRecord[k];
             }
           });
 
@@ -138,17 +164,17 @@ export class Filter {
       }
 
       if (typeof val === 'string') {
-        output[key] = await Env.getEnvValue(val, envVars);
+        outputRecord[key] = await Env.getEnvValue(val, envVars);
         continue;
       }
 
       const operator = Object.keys(val)[0];
-      const value = val[operator];
+      const value = (val as Record<string, unknown>)[operator];
 
       // if (!Filter.queryOperators[operator]) continue;
 
-      output[key] = {};
-      output[key][operator] = await Env.getEnvValue(value, envVars);
+      outputRecord[key] = {};
+      (outputRecord[key] as Record<string, unknown>)[operator] = await Env.getEnvValue(value as string, envVars);
     }
 
     return output;
@@ -170,19 +196,23 @@ export class Filter {
     testEntity?: any,
   ): boolean {
     if (!flatEntity) return false;
+    const queryRecord = query as Record<string, unknown>;
 
     // TODO: Object will need to be flatterned.
-    if (query['access'] && query['access'] === '%FULL_ACCESS%') return true;
+    if (queryRecord['access'] && queryRecord['access'] === '%FULL_ACCESS%') return true;
 
     const results: Array<boolean> = [];
 
-    for (const key of Object.keys(query)) {
+    for (const key of Object.keys(queryRecord)) {
       if (Filter.logicalOperator.includes(key)) {
         const innerPartialPass = key === '@or' || key === '$or' ? true : false;
 
         const innerResults: Array<boolean> = [];
         // TODO: Add check as this is expected to be an array.
-        for (const queryObj of query[key]) {
+        const nestedQuery = queryRecord[key];
+        if (!Array.isArray(nestedQuery)) continue;
+        for (const queryObj of nestedQuery) {
+          if (typeof queryObj !== 'object' || queryObj === null) continue;
           innerResults.push(this.__evaluateQueryAgainstEntity(queryObj, flatEntity, innerPartialPass, testEntity));
         }
 
@@ -195,10 +225,12 @@ export class Filter {
         continue;
       }
 
-      for (const field of Object.keys(query)) {
+      for (const field of Object.keys(queryRecord)) {
         const fieldResults: boolean[] = [];
+        const queryField = queryRecord[field];
+        if (typeof queryField !== 'object' || queryField === null || Array.isArray(queryField)) continue;
 
-        for (const operator of Object.keys(query[field])) {
+        for (const operator of Object.keys(queryField)) {
           let evaluationRes = false;
 
           // if (!Filter.queryOperators[operator]) {
@@ -208,10 +240,14 @@ export class Filter {
           // * We don't need to perform a env replacment here as the query should have already
           // * gone through the query builder which will have replaced the values.
           const lhs = flatEntity[field];
-          const rhs = query[field][operator];
+          const rhs = (queryField as Record<string, unknown>)[operator];
 
           if (lhs === undefined || rhs === undefined) {
             // ? Maybe throw an error for incomplete operation sides
+            return evaluationRes;
+          }
+
+          if (!isAccessControlValue(lhs) || !isAccessControlValue(rhs)) {
             return evaluationRes;
           }
 

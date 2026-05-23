@@ -387,14 +387,12 @@ export default class LambdaModel extends StandardModel<Lambda> {
       }
 
       await this.gitFolderClone(gitHash, branch, name, url);
-    } catch (err) {
+    } catch (err: unknown) {
       if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
         await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
       }
 
-      if (err instanceof Error) {
-        Logging.logError(`[${LambdaModel.name}] ${err.message}`);
-      }
+      Logging.logError(`[${LambdaModel.name}] ${Helpers.getThrownErrorMessage(err)}`);
       throw err;
     }
   }
@@ -494,14 +492,12 @@ export default class LambdaModel extends StandardModel<Lambda> {
             $set: { deployedAt: Sugar.Date.create('now') },
           });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${lambda.name}`)) {
         await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.name}`);
       }
 
-      if (err instanceof Error) {
-        Logging.logError(`[${LambdaModel.name}] ${err.message}`);
-      }
+      Logging.logError(`[${LambdaModel.name}] ${Helpers.getThrownErrorMessage(err)}`);
       throw err;
     }
   }

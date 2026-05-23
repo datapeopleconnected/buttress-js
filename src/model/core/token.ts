@@ -33,7 +33,8 @@ const Type = {
   LAMBDA: type[4],
 };
 
-type PolicyProperty = string | number;
+export type PolicyProperty = string | number;
+export type PolicyProperties = Record<string, PolicyProperty | PolicyProperty[]> | null;
 
 export interface Token {
   id: string;
@@ -42,7 +43,7 @@ export interface Token {
   domains: string[];
   permissions: { route: string; permission: string }[];
   tags: string[];
-  policyProperties: Record<string, PolicyProperty | PolicyProperty[]> | null;
+  policyProperties: PolicyProperties;
   _appId: string;
   _lambdaId: string;
   _userId: string;

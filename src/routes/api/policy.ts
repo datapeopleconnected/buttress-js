@@ -220,7 +220,7 @@ class AddPolicy extends Route {
       return Promise.resolve({
         appId: app.id,
       });
-    } catch (err) {
+    } catch (err: unknown) {
       return Promise.reject(err);
     }
   }

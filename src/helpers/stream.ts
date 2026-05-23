@@ -191,7 +191,7 @@ export const parseJsonArrayStream = () =>
           try {
             const obj = JSON.parse(trimmedLine);
             this.push(obj);
-          } catch (err) {
+          } catch (err: unknown) {
             console.error(err);
           }
         }

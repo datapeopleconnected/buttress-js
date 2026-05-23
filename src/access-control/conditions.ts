@@ -69,15 +69,19 @@ export class Conditions {
   }
 
   async __checkCondition(condition: PolicyCondition, envVariables: ACPolicyEnvCombined, partialPass: boolean = false) {
+    const conditionRecord = condition as Record<string, unknown>;
     const results: Array<boolean> = [];
 
-    for await (const key of Object.keys(condition)) {
+    for await (const key of Object.keys(conditionRecord)) {
       if (Conditions.logicalOperator.includes(key)) {
         const innerPartialPass = key === '@or' || key === '$or' ? true : false;
 
         const innerResults: Array<boolean> = [];
         // TODO: Add check as this is expected to be an array.
-        for await (const conditionObj of condition[key]) {
+        const nestedConditions = conditionRecord[key];
+        if (!Array.isArray(nestedConditions)) continue;
+        for await (const conditionObj of nestedConditions) {
+          if (typeof conditionObj !== 'object' || conditionObj === null) continue;
           innerResults.push(await this.__checkCondition(conditionObj, envVariables, innerPartialPass));
         }
 
@@ -90,8 +94,8 @@ export class Conditions {
         continue;
       }
 
-      for await (const key of Object.keys(condition)) {
-        results.push(await this.__checkInnerConditions(condition, envVariables, key, partialPass));
+      for await (const key of Object.keys(conditionRecord)) {
+        results.push(await this.__checkInnerConditions(conditionRecord, envVariables, key, partialPass));
       }
     }
 
@@ -101,13 +105,16 @@ export class Conditions {
   }
 
   async __checkInnerConditions(
-    conditionObj,
+    conditionObj: Record<string, unknown>,
     envVariables: ACPolicyEnvCombined | null,
-    key,
+    key: string,
     partialPass: boolean = false,
   ): Promise<boolean> {
     const results: boolean[] = [];
-    for await (const operator of Object.keys(conditionObj[key])) {
+    const conditionEntry = conditionObj[key];
+    if (typeof conditionEntry !== 'object' || conditionEntry === null || Array.isArray(conditionEntry)) return false;
+
+    for await (const operator of Object.keys(conditionEntry)) {
       results.push(await this.__checkConditionQuery(envVariables, operator, conditionObj, key));
     }
 
@@ -157,14 +164,20 @@ export class Conditions {
   // 	return await model.count(query) > 0;
   // }
 
-  async __checkConditionQuery(envVariables, operator, conditionObj, key) {
+  async __checkConditionQuery(
+    envVariables: ACPolicyEnvCombined | null,
+    operator: string,
+    conditionObj: Record<string, unknown>,
+    key: string,
+  ) {
     let evaluationRes = false;
 
     if (!Conditions.queryOperator.includes(operator)) {
       throw new Error(`Invalid policy condition operator: ${operator}`);
     }
 
-    const lhs = await Env.getEnvValue(conditionObj[key][operator], envVariables);
+    const conditionEntry = conditionObj[key] as Record<string, unknown>;
+    const lhs = await Env.getEnvValue(conditionEntry[operator] as string, envVariables);
     const rhs = await Env.getEnvValue(key, envVariables);
 
     if (lhs === undefined || rhs === undefined) {

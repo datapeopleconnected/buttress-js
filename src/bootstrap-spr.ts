@@ -32,6 +32,7 @@ import AccessControlEnv, { ACEnv, ACPolicyEnvCombined } from './access-control/e
 import AccessControlFilters from './access-control/filter.js';
 
 import Datastore from './datastore/index.js';
+import { Datastore as DatastoreInstance } from './datastore/index.js';
 import { DataShareSocketSharePayload, RESTActivity } from './types/bjs-nrp-objects.js';
 import { Policy } from './model/core/policy.js';
 import TokenSchemaModel, { Token } from './model/core/token.js';
@@ -72,7 +73,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
   private _redisClient?: RedisClientType;
 
-  private _primaryDatastore: any;
+  private _primaryDatastore: DatastoreInstance;
 
   private _policyCache?: PolicyCache;
 
@@ -175,8 +176,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     try {
       this._policyCache?.storePolicy(policy);
-    } catch (error) {
-      Logging.logError(error);
+    } catch (error: unknown) {
+      Logging.logError(Helpers.getThrownErrorMessage(error));
       throw error; // Re-throw the error to be handled by the caller
     }
 
@@ -188,8 +189,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     try {
       this._policyCache.connectTokenToPolicy(tokenId, policyId);
-    } catch (error) {
-      Logging.logError(error);
+    } catch (error: unknown) {
+      Logging.logError(Helpers.getThrownErrorMessage(error));
       throw error;
     }
   }
@@ -243,7 +244,12 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     const isCoreSchema = activity.isCoreSchema;
 
     let entity = null;
-    const entityId = activity.params.id ? activity.params.id : activity.response.id;
+    const activityParams = activity.params as Record<string, unknown>;
+    const activityResponse =
+      typeof activity.response === 'object' && activity.response !== null
+        ? (activity.response as Record<string, unknown>)
+        : {};
+    const entityId = activityParams.id ? activityParams.id : activityResponse.id;
 
     if (entityId) {
       const appModel = isCoreSchema
@@ -283,8 +289,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       return;
     }
 
-    // Get all policies from the cache that are relevant to the event.
-    const policies = await this._policyCache.getPoliciesByEvent(activity);
+    const policies = await this._policyCache.getPoliciesByRestActivity(activity);
     if (policies.length < 0) {
       Logging.logSilly('Skipping message broadcast, no relevant policies found');
       return;
@@ -397,10 +402,15 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
   private async __checkActivityAgainstApplicablePolicy(
     applicablePolicy: ApplicablePolicyConfig,
     activity: RESTActivity,
-    entity: any,
+    entity: Record<string, unknown> | null,
     env: ACPolicyEnvCombined,
     activityMetadata: ActivityMetadata,
   ): Promise<false | RESTActivity> {
+    const activityResponse =
+      typeof activity.response === 'object' && activity.response !== null
+        ? (activity.response as Record<string, unknown>)
+        : {};
+
     if (!entity && activity.verb === 'delete') {
       this.__broadcastDataByPolicyId(applicablePolicy.id, activity);
       Logging.logTimer(
@@ -447,11 +457,13 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     const broadcastActivity = JSON.parse(JSON.stringify(activity)) as RESTActivity;
 
     // TODO: Is this a flatterned object at this point? because this is only taking into account keys are the the root.
-    const roomProjectionKeys = applicablePolicy.config.projection ? applicablePolicy.config.projection : [];
+    const roomProjectionKeys = Array.isArray(applicablePolicy.config.projection)
+      ? applicablePolicy.config.projection
+      : [];
     if (roomProjectionKeys.length > 0) {
-      const projectedData = roomProjectionKeys.reduce((obj, key) => {
-        if (activity.response[key]) {
-          obj[key] = activity.response[key];
+      const projectedData = roomProjectionKeys.reduce((obj: Record<string, unknown>, key) => {
+        if (typeof key === 'string' && activityResponse[key] !== undefined) {
+          obj[key] = activityResponse[key];
         }
 
         return obj;

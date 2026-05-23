@@ -24,6 +24,14 @@ import Model from '../model/index.js';
 import { Filter } from './filter.js';
 import { User } from '../model/core/user.js';
 
+type DynamicRow = Record<string, unknown>;
+
+function toObjectIdIfValid(value: unknown): unknown {
+  if (value instanceof ObjectId) return value;
+  if (typeof value === 'string' && ObjectId.isValid(value)) return new ObjectId(value);
+  return value;
+}
+
 export interface ACBaseEnv {
   date: {
     now: string;
@@ -32,12 +40,12 @@ export interface ACBaseEnv {
 
 export interface ACEnv extends ACBaseEnv {
   ipAddress: string | null;
-  user: any | null;
+  user: User | null;
   appId: string | null;
 }
 
 export interface ACPolicyEnvCombined extends ACEnv {
-  [custom: string]: string | PolicyEnvQuery | { now: string } | null;
+  [custom: string]: string | PolicyEnvQuery | User | { now: string } | null;
 }
 
 export class PolicyEnv {
@@ -79,7 +87,7 @@ export class PolicyEnv {
     const path = key.replace(PolicyEnv.strPrefix, '');
     const value = Helpers.get(path, envVars);
 
-    if (typeof value === 'object' && 'collection' in value) {
+    if (typeof value === 'object' && value !== null && 'collection' in value) {
       return this.getQueryEnvironmentVar(key, envVars);
     }
 
@@ -146,7 +154,7 @@ export class PolicyEnv {
     }
   }
 
-  __findPaths(data, currentPath: any[] = [], paths: any[] = []) {
+  __findPaths(data, currentPath: (string | number)[] = [], paths: (string | number)[][] = []) {
     if (typeof data === 'object' && data !== null) {
       if (Array.isArray(data)) {
         data.forEach((item, index) => {
@@ -178,15 +186,15 @@ export class PolicyEnv {
 
     const model = await Model.getAppModel(envVars.appId, schema);
     const res = await model.find(query);
-    const result = await Helpers.streamAll(res);
+    const result = await Helpers.streamAll<DynamicRow>(res);
     if (!result) return false;
 
     if (outputType === 'string' || outputType === 'id') {
-      return result.reduce((item, obj) => {
+      return result.reduce<unknown>((item, obj) => {
         item = obj[output.key];
         if (output.type === 'id') {
           // TODO: Shouldn't be directly accessing ObjectId, this should go through an adapter.
-          item = ObjectId.isValid(item) ? new ObjectId(item) : item;
+          item = toObjectIdIfValid(item);
         }
 
         return item;
@@ -194,23 +202,28 @@ export class PolicyEnv {
     }
 
     if (outputType === 'array' && result.length > 0) {
-      return result.reduce((arr, obj) => {
-        if (output.type === 'id' && Array.isArray(obj[output.key])) {
-          obj[output.key] = obj[output.key].filter((id) => ObjectId.isValid(id)).map((id) => new ObjectId(id));
-        } else if (output.type === 'id' && ObjectId.isValid(obj[output.key])) {
-          // TODO: Shouldn't be directly accessing ObjectId, this should go through an adapter.
-          obj[output.key] = ObjectId.isValid(obj[output.key]) ? new ObjectId(obj[output.key]) : obj[output.key];
+      return result.reduce<unknown[]>((arr, obj) => {
+        const outputValue = obj[output.key];
+
+        if (output.type === 'id' && Array.isArray(outputValue)) {
+          arr = arr.concat(outputValue.map(toObjectIdIfValid).filter((id) => id instanceof ObjectId));
+          return arr;
         }
 
-        arr = arr.concat(obj[output.key]);
+        if (output.type === 'id') {
+          arr = arr.concat(toObjectIdIfValid(outputValue));
+          return arr;
+        }
+
+        arr = arr.concat(outputValue);
         return arr;
       }, []);
     }
     if (outputType === 'boolean' && result.length > 0) {
-      return result.every((obj) => obj[output.key]);
+      return result.every((obj) => Boolean(obj[output.key]));
     }
 
-    const outputValue = result.length > 0 && result[output] ? result[output] : outputType === 'array' ? [] : '';
+    const outputValue = result.length > 0 ? result[0][output.key] : outputType === 'array' ? [] : '';
 
     envVars[envKey] = outputValue;
 

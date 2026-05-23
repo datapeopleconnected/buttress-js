@@ -24,9 +24,9 @@ import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 
 import StandardModel from '../type/standard.js';
-import TokenSchemaModel from './token.js';
+import TokenSchemaModel, { Token } from './token.js';
 import PolicySchemaModel from './policy.js';
-import AppDataSharingSchemaModel from './app-data-sharing.js';
+import AppDataSharingSchemaModel, { AppDataSharing } from './app-data-sharing.js';
 import UserSchemaModel from './user.js';
 import DeploymentSchemaModel from './deployment.js';
 import LambdaSchemaModel from './lambda.js';
@@ -171,10 +171,10 @@ export default class AppSchemaModel extends StandardModel<App> {
       },
     );
 
-    const token: any = await Helpers.streamFirst(rxsToken);
+    const token = await Helpers.streamFirst<Token>(rxsToken);
 
     const rxsApp = await super.add(body, { _tokenId: token.id });
-    const app: any = await Helpers.streamFirst(rxsApp);
+    const app = await Helpers.streamFirst<App>(rxsApp);
 
     if (!isSuper) await this.__handleAddingNonSystemApp(body, token);
 
@@ -337,7 +337,7 @@ export default class AppSchemaModel extends StandardModel<App> {
     // Load DSA for current app
     const requiredDSAs = Object.keys(dataSharingSchema);
     if (requiredDSAs.length > 0) {
-      const appDSAs = await Helpers.streamAll(
+      const appDSAs = await Helpers.streamAll<AppDataSharing>(
         await this.__modelManager.getCoreModel(AppDataSharingSchemaModel).find({
           _appId: req.context.authApp.id,
           name: {

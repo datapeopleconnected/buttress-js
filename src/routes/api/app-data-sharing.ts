@@ -829,8 +829,8 @@ class DeleteAllDataSharingAgreement extends Route {
   override async _validate(_req: Request, _res: Response) {
     const dsFind = await Model.getCoreModel(AppDataSharingSchemaModel).find({}, {}, 0, 0, {}, { id: 1, _tokenId: 1 });
 
-    return (await Helpers.streamAll(dsFind)).reduce(
-      (arr, ds) => {
+    return (await Helpers.streamAll<AppDataSharing>(dsFind)).reduce(
+      (arr: { dsIds: string[]; tokenIds: string[] }, ds) => {
         arr.dsIds.push(ds.id);
         arr.tokenIds.push(ds._tokenId);
         return arr;

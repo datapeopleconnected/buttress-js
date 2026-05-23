@@ -20,6 +20,7 @@ import { Request, Response, NextFunction } from 'express';
 import NodeRedisPubsub from '../services/nrp.js';
 
 import Sugar from '../helpers/sugar.js';
+import { getThrownErrorMessage } from '../helpers/index.js';
 import Model from '../model/index.js';
 import Logging from '../helpers/logging.js';
 import * as Schema from '../helpers/schema.js';
@@ -195,15 +196,16 @@ class AccessControl {
 
     try {
       req.context.ac.policyConfigs = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof PolicyError) {
         Logging.logTimer(err.logTimerMsg, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
         Logging.logError(err.message);
         return res.status(err.statusCode).send({ message: err.message });
       }
 
-      Logging.logError(`Error in accessControlPolicyMiddleware: ${err.message}`);
-      console.error(err);
+      const errMessage = getThrownErrorMessage(err);
+      Logging.logError(`Error in accessControlPolicyMiddleware: ${errMessage}`);
+      Logging.logError(errMessage);
       return res.status(500).send({ message: 'Internal Server Error' });
     }
 
@@ -246,14 +248,15 @@ class AccessControl {
     let outcome: parsedPolicyConfig[];
     try {
       outcome = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof PolicyError) {
         Logging.logError(`getRoomStructure statusCode:${err.statusCode} message:${err.message}`);
         return {};
       }
 
-      Logging.logError(`Error in accessControlPolicyMiddleware: ${err.message}`);
-      console.error(err);
+      const errMessage = getThrownErrorMessage(err);
+      Logging.logError(`Error in accessControlPolicyMiddleware: ${errMessage}`);
+      Logging.logError(errMessage);
       return {};
     }
 
