@@ -17,6 +17,7 @@
 import sourceMapSupport from 'source-map-support'
 sourceMapSupport.install();
 
+import './rest/core/secureStore.test.js';
 import './rest/core/token.test.js';
 import './rest/core/user.test.js';
 

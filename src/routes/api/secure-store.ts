@@ -148,6 +148,11 @@ class GetSecureStore extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp?.id) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+    }
+
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required secure store id`, Route.LogLevel.ERR);
@@ -158,7 +163,12 @@ class GetSecureStore extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
     }
 
-    const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findById(id);
+    const query = {
+      _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
+      _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+    };
+
+    const secureStore = await Helpers.streamFirst(await Model.getCoreModel(SecureStoreSchemaModel).find(query));
     if (!secureStore) {
       this.log(`[${this.name}] Cannot find a secure store with id ${id}`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `secure_store_does_not_exist`));
@@ -190,21 +200,32 @@ class FindSecureStore extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+    }
+
+    const appId = req.context.authApp.id;
+
     const name = req.params.name;
     if (!name) {
       this.log(`[${this.name}] Missing request parameter`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      throw new Helpers.Errors.RequestError(400, `missing_field`);
     }
 
     const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
       name: {
         $eq: name,
       },
+      _appId: Model.getCoreModel(AppSchemaModel).createId(appId),
     });
 
-    if (!secureStore) return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
+    if (!secureStore) {
+      this.log(`[${this.name}] Cannot find a secure store with name ${name}`, Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(404, `not_found`);
+    }
 
-    return Promise.resolve(secureStore);
+    return secureStore;
   }
 
   _exec(req: Request, res: Response, validate) {
@@ -228,6 +249,11 @@ class UpdateSecureStore extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp?.id) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+    }
+
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required secure store ID`, Route.LogLevel.ERR);
@@ -251,11 +277,15 @@ class UpdateSecureStore extends Route {
       }
     }
 
-    const exists = await Model.getCoreModel(SecureStoreSchemaModel).exists(id);
-    if (!exists) {
+    const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
+      _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
+      _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+    });
+    if (!secureStore) {
       this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
+
     return {
       id,
     };
@@ -284,6 +314,11 @@ class BulkUpdateSecureStore extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp?.id) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+    }
+
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(item.body);
       item.body = body;
@@ -302,8 +337,11 @@ class BulkUpdateSecureStore extends Route {
         }
       }
 
-      const exists = await Model.getCoreModel(SecureStoreSchemaModel).exists(item.id);
-      if (!exists) {
+      const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
+        _id: Model.getCoreModel(SecureStoreSchemaModel).createId(item.id),
+        _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+      });
+      if (!secureStore) {
         this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
       }
@@ -333,6 +371,11 @@ class SearchSecureStoreList extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp?.id) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+    }
+
     const result: {
       query: any;
       skip: number;
@@ -356,6 +399,10 @@ class SearchSecureStoreList extends Route {
     if (req.body && req.body.query) {
       result.query.$and.push(req.body.query);
     }
+
+    result.query.$and.push({
+      _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+    });
 
     result.query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(
       result.query,
@@ -390,15 +437,27 @@ class DeleteSecureStore extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
-    if (!req.params.id) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+    }
+
+    const appId = req.context.authApp.id;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+
+    if (!id) {
       this.log('ERROR: Missing required secure store ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
     }
 
-    const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findById(req.params.id);
+    const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
+      _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
+      _appId: Model.getCoreModel(AppSchemaModel).createId(appId),
+    });
+
     if (!secureStore) {
-      this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
+      this.log(`[${this.name}] Cannot find a secure store with ID ${id}`, Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(404, `not_found`);
     }
 
     return secureStore;
@@ -425,8 +484,14 @@ class SecureStoreCount extends Route {
   }
 
   async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+    }
+
     const result = {
-      query: {},
+      query: {
+      },
     };
 
     let query: any = {};
@@ -442,11 +507,16 @@ class SecureStoreCount extends Route {
       query.$and.push(req.body);
     }
 
+    query.$and.push({
+      _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+    });
+
     query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(
       query,
       {},
       Model.getCoreModel(SecureStoreSchemaModel).flatSchemaData,
     );
+
     result.query = query;
     return result;
   }
