@@ -31,6 +31,7 @@ import UserSchemaModel from './user.js';
 import DeploymentSchemaModel from './deployment.js';
 import LambdaSchemaModel from './lambda.js';
 import LambdaExecutionSchemaModel from './lambda-execution.js';
+import SecureStoreSchemaModel from './secure-store.js';
 
 export interface App {
   id: string;
@@ -433,19 +434,18 @@ export default class AppSchemaModel extends StandardModel<App> {
     Logging.logSilly(`Deleting all users for app ${entity.id}`);
     await this.__modelManager.getCoreModel(UserSchemaModel).rmAll({ _appId: entity.id });
 
-    // TODO: Delete all lambdas
     Logging.logSilly(`Deleting all lambdas for app ${entity.id}`);
     await this.__modelManager.getCoreModel(LambdaSchemaModel).rmAll({ _appId: entity.id });
 
-    // TODO: Delete all deployments
     Logging.logSilly(`Deleting all deployments for app ${entity.id}`);
     await this.__modelManager.getCoreModel(DeploymentSchemaModel).rmAll({ _appId: entity.id });
 
-    // TODO: Delete all lambda executions
     Logging.logSilly(`Deleting all lambda executions for app ${entity.id}`);
     await this.__modelManager.getCoreModel(LambdaExecutionSchemaModel).rmAll({ _appId: entity.id });
 
-    // TODO: Delete all policy
+    Logging.logSilly(`Deleting all secure stores for app ${entity.id}`);
+    await this.__modelManager.getCoreModel(SecureStoreSchemaModel).rmAll({ _appId: entity.id });
+
     Logging.logSilly(`Deleting all policy for app ${entity.id}`);
     await this.__modelManager.getCoreModel(PolicySchemaModel).rmAll({ _appId: entity.id });
 
