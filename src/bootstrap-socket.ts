@@ -26,7 +26,7 @@ import sioClient, { Socket as sioClientSocket } from 'socket.io-client';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Emitter } from '@socket.io/redis-emitter';
 
-import Bootstrap from './bootstrap.js';
+import Bootstrap, { LocalProcessMessage } from './bootstrap.js';
 
 const Config = createConfig() as unknown as Config;
 
@@ -262,8 +262,14 @@ export default class BootstrapSocket extends Bootstrap {
     if (this.workerProcesses > 0) {
       this._mainServer = net
         .createServer({ pauseOnConnect: true }, (connection) => {
-          const worker = this.workers[this.__indexFromIP(connection.remoteAddress, this.workerProcesses)];
-          worker.worker.send('buttress:connection', connection);
+          this.notifyWorker(
+            this.__indexFromIP(connection.remoteAddress, this.workerProcesses),
+            {
+              type: 'buttress:connection',
+              payload: null,
+            } as LocalProcessMessage,
+            connection,
+          );
         })
         .listen(Config.listenPorts.sock);
     }
@@ -314,16 +320,20 @@ export default class BootstrapSocket extends Bootstrap {
     await this.__registerNRPWorkerListeners();
     await this.__registerNRPProcessListeners();
 
-    process.on('message', (message: string, input: net.Socket) => {
-      if (message === 'buttress:connection') {
-        const connection = input;
-        this._socketExpressServer.emit('connection', connection);
-        connection.resume();
+    Logging.logSilly(`Worker ready`);
+  }
+
+  protected async __handleMessageFromMain(message: LocalProcessMessage, handle?: unknown) {
+    if (message.type === 'buttress:connection') {
+      const connection = handle as net.Socket;
+      if (!connection || typeof (connection as any).on !== 'function') {
+        Logging.logError('Invalid socket handle received in worker for buttress:connection');
         return;
       }
-    });
-
-    Logging.logSilly(`Worker ready`);
+      this._socketExpressServer.emit('connection', connection);
+      connection.resume();
+      return;
+    }
   }
 
   private async _workerHandleSocketConnection(socket: sioSocket, next: (err?: Error) => void) {

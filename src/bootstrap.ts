@@ -114,7 +114,9 @@ export default class Bootstrap extends EventEmitter {
           payload: null,
         } as LocalProcessMessage);
 
-      process.on('message', (message: LocalProcessMessage) => this._handleMessageFromMain(message));
+      process.on('message', (message: LocalProcessMessage, handle: unknown) =>
+        this._handleMessageFromMain(message, handle),
+      );
     }
 
     return cluster.isPrimary;
@@ -129,8 +131,8 @@ export default class Bootstrap extends EventEmitter {
   }
 
   // Handle any logic needed for bootstrap before calling the main handler
-  private async _handleMessageFromMain(message: LocalProcessMessage) {
-    await this.__handleMessageFromMain(message);
+  private async _handleMessageFromMain(message: LocalProcessMessage, handle?: unknown) {
+    await this.__handleMessageFromMain(message, handle);
   }
   private async _handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
     if (message.type === 'worker:initiated') {
@@ -141,20 +143,29 @@ export default class Bootstrap extends EventEmitter {
     await this.__handleMessageFromWorker(idx, message);
   }
 
-  protected async __handleMessageFromMain(message: LocalProcessMessage) {
+  protected async __handleMessageFromMain(message: LocalProcessMessage, _handle?: unknown) {
     Logging.logSilly(`Unhandled message from Main: ${JSON.stringify(message)}`);
   }
   protected async __handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
     Logging.logSilly(`Unhandled message from Worker [${idx}]: ${JSON.stringify(message)}`);
   }
 
-  async notifyWorkers(payload: LocalProcessMessage) {
+  async notifyWorker(idx: number, payload: LocalProcessMessage, handle?: unknown) {
+    if (this.workers[idx]) {
+      Logging.logDebug(`notifying Worker ${idx} of ${payload.type}`);
+      this.workers[idx].worker.send(payload, handle as any);
+    } else {
+      Logging.logWarn(`Attempted to notify Worker ${idx} of ${payload.type}, but it does not exist`);
+    }
+  }
+
+  async notifyWorkers(payload: LocalProcessMessage, handle?: unknown) {
     if (this.workerProcesses > 0) {
       Logging.logDebug(`notifying ${this.workers.length} Workers of ${payload.type}`);
-      this.workers.forEach((w) => w.worker.send(payload));
+      this.workers.forEach((w) => w.worker.send(payload, handle as any));
     } else {
       Logging.logSilly(`single instance mode notification`);
-      await this._handleMessageFromMain(payload);
+      await this._handleMessageFromMain(payload, handle);
     }
   }
 
