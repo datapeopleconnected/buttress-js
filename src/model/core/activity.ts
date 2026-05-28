@@ -128,7 +128,7 @@ class ActivitySchemaModel extends StandardModel {
    * @return {Promise} - fulfilled with App Object when the database request is completed
    */
   __parseAddBody(body) {
-    const user = body.req.authUser;
+    const user = body.req.context.authUser;
     const userName = user ? `${user.id}` : 'App';
 
     body.activityTitle = body.activityTitle.replace('%USER_NAME%', userName);
@@ -150,9 +150,9 @@ class ActivitySchemaModel extends StandardModel {
       query: q,
       body: encode(body.req.body), // HACK - Due to schema update results.
       timestamp: new Date(),
-      _tokenId: body.req.token.id,
-      _userId: body.req.authUser ? body.req.authUser.id : null,
-      _appId: body.req.authApp.id,
+      _tokenId: body.req.context.token.id,
+      _userId: body.req.context.authUser ? body.req.context.authUser.id : null,
+      _appId: body.req.context.authApp.id,
     };
 
     if (body.id) {
