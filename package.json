@@ -49,7 +49,7 @@
   },
   "dependencies": {
     "@buttress/api": "3.0.0-52",
-    "@buttress/snippets": "1.0.0-31",
+    "@buttress/snippets": "1.0.0-32",
     "@dpc/node-env-obj": "npm:@jsr/dpc__node-env-obj@^0.3.3",
     "@hashgraph/sdk": "^2.81.0",
     "@redis/client": "^5.12.1",
