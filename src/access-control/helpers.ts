@@ -156,7 +156,11 @@ class Helpers {
       case '$nin':
       case '@nin':
         {
-          passed = lhs.every((i) => i !== lhs);
+          if (Array.isArray(lhs)) {
+            passed = lhs.every((i) => !rhs.some((j) => j.toString() === i.toString()));
+          } else {
+            passed = lhs && !rhs.some((i) => i.toString() === lhs.toString());
+          }
         }
         break;
       case '$exists':
