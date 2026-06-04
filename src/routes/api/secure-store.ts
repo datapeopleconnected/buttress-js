@@ -490,8 +490,7 @@ class SecureStoreCount extends Route {
     }
 
     const result = {
-      query: {
-      },
+      query: {},
     };
 
     let query: any = {};
