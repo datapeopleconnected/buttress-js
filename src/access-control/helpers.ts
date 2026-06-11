@@ -14,6 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { ObjectId } from 'bson';
+
 import Sugar from '../helpers/sugar.js';
 
 import Model from '../model/index.js';
@@ -25,17 +27,23 @@ import { ACEnv, ACPolicyEnvCombined } from './env.js';
 import { Policy, PolicyConfig } from '../model/core/policy.js';
 import { Schema } from '../helpers/schema.js';
 
-type AccessControlScalar = string | number | boolean | Date;
+function isObjectId(value: unknown): value is ObjectId {
+  return value?.constructor?.name === 'ObjectId';
+}
+
+type AccessControlScalar = string | number | boolean | Date | ObjectId;
 type AccessControlValue = AccessControlScalar | AccessControlScalar[] | null;
 
 function toComparableValue(value: AccessControlScalar): number | string {
   if (value instanceof Date) return value.getTime();
   if (typeof value === 'boolean') return Number(value);
+  if (isObjectId(value)) return value.toString();
   return value;
 }
 
 function toDateComparableValue(value: AccessControlValue): string | number | Date | null {
   if (value === null || Array.isArray(value) || typeof value === 'boolean') return null;
+  if (isObjectId(value)) return value.toString();
   return value;
 }
 

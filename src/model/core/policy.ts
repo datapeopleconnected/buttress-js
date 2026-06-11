@@ -53,10 +53,10 @@ export interface PolicyConfig {
   verbs: string[];
   endpoints: string[];
   schema: string[];
-  env: PolicyEnv | null;
-  condition: PolicyCondition | null;
-  query: PolicyQuery | null;
-  projection: PolicyProjection | null;
+  env?: PolicyEnv | null;
+  condition?: PolicyCondition | null;
+  query?: PolicyQuery | null;
+  projection?: PolicyProjection | null;
 }
 export interface Policy {
   id: string;

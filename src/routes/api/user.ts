@@ -372,6 +372,7 @@ class CreateUserAuthToken extends Route {
     };
   }
 }
+routes.push(CreateUserAuthToken);
 
 // Pre-lambda user addition
 // /**

@@ -422,6 +422,10 @@ export const compareByProps = (
     const left = valueA instanceof Date ? valueA.getTime() : valueA;
     const right = valueB instanceof Date ? valueB.getTime() : valueB;
 
+    if (left === null && right === null) continue;
+    if (left === null) return -1 * sortOrder;
+    if (right === null) return 1 * sortOrder;
+
     if (typeof left === 'string' && typeof right === 'string') {
       if (left < right) return -1 * sortOrder;
       if (left > right) return 1 * sortOrder;

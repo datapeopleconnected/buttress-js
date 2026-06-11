@@ -95,6 +95,7 @@ export class PolicyEnv {
       return this.getEnvValue(value, envVars);
     }
 
+    if (value?.constructor?.name === 'ObjectId') return value.toString();
     return value;
   }
 

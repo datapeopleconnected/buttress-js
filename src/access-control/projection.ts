@@ -38,7 +38,7 @@ class Projection {
     const output: ApplicablePolicyConfig[] = [];
 
     for await (const policy of applicablePolicies) {
-      if (policy.config.projection === null) {
+      if (!policy.config.projection) {
         output.push(policy);
       } else {
         const result = await this.__applyPolicyProjection(req, policy.config.projection, schema);

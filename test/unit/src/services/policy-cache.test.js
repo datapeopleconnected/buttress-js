@@ -316,23 +316,23 @@ describe('services/policy-cache', () => {
     });
   });
 
-  describe('getPoliciesByEvent', () => {
+  describe('getPoliciesByRestActivity', () => {
     it('should return empty array when no policies match', async () => {
-      const result = await cache.getPoliciesByEvent({ appId: 'app1', schemaName: 'unknown' });
+      const result = await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'unknown' });
       assert.deepStrictEqual(result, []);
     });
 
     it('should return policies matching the schema', async () => {
       await Redis.sAdd(K('app:app1:schema:user'), 'p1');
       await Redis.hSet(K('policies'), 'p1', JSON.stringify(policy1));
-      const result = await cache.getPoliciesByEvent({ appId: 'app1', schemaName: 'user' });
+      const result = await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'user' });
       assert.strictEqual(result.length, 1);
     });
 
     it('should include %ALL% schema policies', async () => {
       await Redis.sAdd(K('app:app1:schema:%ALL%'), 'p2');
       await Redis.hSet(K('policies'), 'p2', JSON.stringify(policy2));
-      const result = await cache.getPoliciesByEvent({ appId: 'app1', schemaName: 'car' });
+      const result = await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'car' });
       assert.strictEqual(result.length, 1);
     });
 
@@ -340,7 +340,7 @@ describe('services/policy-cache', () => {
       await Redis.sAdd(K('app:app1:schema:user'), 'p1');
       await Redis.sAdd(K('app:app1:schema:%ALL%'), 'p1');
       await Redis.hSet(K('policies'), 'p1', JSON.stringify(policy1));
-      const result = await cache.getPoliciesByEvent({ appId: 'app1', schemaName: 'user' });
+      const result = await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'user' });
       assert.strictEqual(result.length, 1);
     });
   });

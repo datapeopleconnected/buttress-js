@@ -62,7 +62,7 @@ export class Conditions {
   }
 
   async __checkPolicyConditions(policy: ApplicablePolicyConfig, reqEnv) {
-    if (policy.config.condition === null) return false;
+    if (!policy.config.condition) return false;
 
     const env = CombineEnvGroups(policy, reqEnv);
     return await this.__checkCondition(policy.config.condition, env);

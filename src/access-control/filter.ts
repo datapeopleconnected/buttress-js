@@ -29,11 +29,15 @@ import { ApplicablePolicyConfig } from './index.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
 
-type AccessControlScalar = string | number | boolean | Date;
+function isObjectId(value: unknown): value is ObjectId {
+  return value?.constructor?.name === 'ObjectId';
+}
+
+type AccessControlScalar = string | number | boolean | Date | ObjectId;
 type AccessControlValue = AccessControlScalar | AccessControlScalar[] | null;
 
 function isAccessControlScalar(value: unknown): value is AccessControlScalar {
-  return value instanceof Date || ['string', 'number', 'boolean'].includes(typeof value);
+  return value instanceof Date || isObjectId(value) || ['string', 'number', 'boolean'].includes(typeof value);
 }
 
 function isAccessControlValue(value: unknown): value is AccessControlValue {
@@ -86,6 +90,10 @@ export class Filter {
     const output: ApplicablePolicyConfig[] = [];
 
     for await (const policy of policies) {
+      if (!policy.config.query) {
+        continue;
+      }
+
       const p = Object.assign({}, policy);
       const env = CombineEnvGroups(policy, reqEnv);
       p.config.query = await this.buildPolicyQuery(policy.config.query, env);
@@ -98,8 +106,8 @@ export class Filter {
   /**
    * Walk over a query object and replace any env variables with their values.
    */
-  async buildPolicyQuery(policyQuery: PolicyQuery | null, envVars: ACPolicyEnvCombined, stripAccessKeys = true) {
-    if (policyQuery === null) return null;
+  async buildPolicyQuery(policyQuery: PolicyQuery | null | undefined, envVars: ACPolicyEnvCombined, stripAccessKeys = true) {
+    if (!policyQuery) return null;
 
     // Change @ prefixes over to $ for mongo queries.
     // ? This should really be handled by the mongo adapter and internally we should use the @ prefix.
@@ -110,7 +118,15 @@ export class Filter {
     for await (const key of Object.keys(translatedQuery)) {
       const val = translatedQuery[key] as unknown;
       if (stripAccessKeys && key === 'access' && typeof val === 'string' && this._queryAccess.includes(val)) continue;
-      if (typeof val !== 'object' || val === null) continue;
+
+      if (typeof val === 'string') {
+        outputRecord[key] = await Env.getEnvValue(val, envVars);
+        continue;
+      }
+      if (typeof val !== 'object' || val === null) {
+        outputRecord[key] = val;
+        continue;
+      }
       if (Object.keys(val).length < 1) continue;
 
       if (Filter.logicalOperator.includes(key)) {

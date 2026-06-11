@@ -116,10 +116,10 @@ export async function combineQueriesWithAc(raw: QueryParams<object>, policyConfi
     query.query = await AccessControlFilter.mergeQueryFiltersWithAccessControl(query.query, policyConfig.query);
   }
 
-  if (policyConfig.projection !== null) {
+  if (policyConfig.projection) {
     // TODO: We may need to do more in making sure the user isn't projection to something they don't have.
     if (query.project === null) query.project = {};
-    const projection = Object.entries(policyConfig.projection as Record<string, unknown>).reduce(
+    const projection = Object.entries(policyConfig.projection).reduce(
       (acc: Record<string, 1 | -1>, [key, value]) => {
         if (value === 1 || value === -1) {
           acc[key] = value;
