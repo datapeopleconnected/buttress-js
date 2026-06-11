@@ -206,6 +206,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     // If we're already connected no need to do anything further
     if (connected) {
       Logging.logDebug(`Token already connected: ${tokenId}`);
+      await this._policyCache.addConnectedToken(tokenId);
       return;
     }
 

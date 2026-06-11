@@ -35,7 +35,7 @@ export class PolicyCache {
   private _redisClient: RedisClientType;
   private _modelManager: typeof Model;
 
-  private _connectedTokensTTL = 3 * 3600; // 3 hours but needs to be 1 hour
+  private _connectedTokensTTL = 1 * 3600; // 1 hour
   private _timeoutExpiredConnectedTokens?: NodeJS.Timeout;
 
   private _timeoutExpiredConnectedTokensInterval = 60000;
