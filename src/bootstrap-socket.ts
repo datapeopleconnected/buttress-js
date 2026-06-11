@@ -323,7 +323,7 @@ export default class BootstrapSocket extends Bootstrap {
     Logging.logSilly(`Worker ready`);
   }
 
-  protected async __handleMessageFromMain(message: LocalProcessMessage, handle?: unknown) {
+  protected override async __handleMessageFromMain(message: LocalProcessMessage, handle?: unknown) {
     if (message.type === 'buttress:connection') {
       const connection = handle as net.Socket;
       if (!connection || typeof (connection as any).on !== 'function') {

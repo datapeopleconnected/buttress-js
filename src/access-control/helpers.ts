@@ -185,10 +185,12 @@ class Helpers {
       case '$nin':
       case '@nin':
         {
+          if (!Array.isArray(rhs)) return false;
+
           if (Array.isArray(lhs)) {
             passed = lhs.every((i) => !rhs.some((j) => j.toString() === i.toString()));
           } else {
-            passed = lhs && !rhs.some((i) => i.toString() === lhs.toString());
+            passed = Boolean(lhs) && !rhs.some((i) => i.toString() === lhs.toString());
           }
         }
         break;

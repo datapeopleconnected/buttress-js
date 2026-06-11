@@ -147,7 +147,7 @@ class GetSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -199,7 +199,7 @@ class FindSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -248,7 +248,7 @@ class UpdateSecureStore extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -313,7 +313,7 @@ class BulkUpdateSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -370,7 +370,7 @@ class SearchSecureStoreList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -436,7 +436,7 @@ class DeleteSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -483,7 +483,7 @@ class SecureStoreCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
