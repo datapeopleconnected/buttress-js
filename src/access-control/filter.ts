@@ -159,8 +159,8 @@ export class Filter {
    * The function will return true if it selects the entity, false if it doesn't.
    */
   evaluateQueryAgainstEntity(query: PolicyQuery, entity: { [index: string]: any }, partialPass?: boolean): boolean {
-    const flatterned = Helpers.flatternObject(entity);
-    return this.__evaluateQueryAgainstEntity(query, flatterned, partialPass, entity);
+    const flattened = Helpers.flattenedObject(entity);
+    return this.__evaluateQueryAgainstEntity(query, flattened, partialPass, entity);
   }
 
   __evaluateQueryAgainstEntity(
@@ -207,7 +207,7 @@ export class Filter {
 
           // * We don't need to perform a env replacment here as the query should have already
           // * gone through the query builder which will have replaced the values.
-          const lhs = flatEntity[field];
+          const lhs = this.__getValueByPath(flatEntity, field);
           const rhs = query[field][operator];
 
           if (lhs === undefined || rhs === undefined) {
@@ -230,6 +230,30 @@ export class Filter {
     if (partialPass) return results.some((r) => r);
 
     return results.length > 0 ? results.every((r) => r) : false;
+  }
+
+  /**
+   * Get path value from a flattened object
+   * @param {Object} flattenedObj
+   * @param {string} targetPath
+   */
+  __getValueByPath(flattenedObj, targetPath) {
+    if (targetPath in flattenedObj) {
+      return flattenedObj[targetPath];
+    }
+
+    const pattern = /\.\d/;
+    const keys = Object.keys(flattenedObj);
+    let value: any = null;
+
+    for (const key of keys) {
+      const modifiedKey = key.replace(/^\d+\.|\.\d+/g, '');
+      if (modifiedKey === targetPath && pattern.test(key)) {
+        value = (value && Array.isArray(value)) ? [...value, flattenedObj[key]] : [flattenedObj[key]];
+      }
+      if (key === targetPath) value = flattenedObj[key];
+    }
+    return value;
   }
 
   // TODO needs to be removed and added to the adapters - TEMPORARY HACK!!

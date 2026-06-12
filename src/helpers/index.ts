@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Transform } from 'node:stream';
+import { ObjectId } from 'bson';
 
 import * as DataSharingHelpers from './data-sharing.js';
 
@@ -164,24 +165,60 @@ const __flattenRoles = (data, path) => {
 };
 export const flattenRoles = __flattenRoles;
 
-export const flatternObject = (obj, output: { [index: string]: any } = {}, paths: string[] = []) => {
-  return Object.getOwnPropertyNames(obj).reduce(function (out, key) {
-    paths.push(key);
+export const flattenedObject = (obj, output: { [index: string]: any } = {}, paths: string[] = []) => {
+  if (obj === null || typeof obj !== 'object') {
+    return output;
+  }
 
-    if (typeof obj[key] === 'object' && obj[key] !== null && obj[key] === '[object Object]') {
-      flatternObject(obj[key], out, paths);
-    } else if (Array.isArray(obj[key])) {
-      obj[key].forEach((item, index) => {
-        paths.push(index.toString());
-        flatternObject(item, out, paths);
-      });
+  if (obj instanceof Date || ObjectId.isValid(obj)) {
+    return output[paths.join('.')] = obj;
+  }
+
+  Object.getOwnPropertyNames(obj).forEach((key) => {
+    const value = obj[key];
+    const currentPath = [...paths, key];
+
+    if (Array.isArray(value)) {
+      if (value.length < 1) {
+        output[currentPath.join('.')] = value;
+      } else {
+        value.forEach((item, index) => {
+          const arrayPath = [...currentPath, index.toString()];
+          if (!item || typeof item !== 'object' || item instanceof Date || ObjectId.isValid(obj)) {
+            output[arrayPath.join('.')] = item;
+          } else {
+            flattenedObject(item, output, arrayPath);
+          }
+        });
+      }
+    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
+      flattenedObject(value, output, currentPath);
     } else {
-      out[paths.join('.')] = obj[key];
+      output[currentPath.join('.')] = value;
     }
-    paths.pop();
-    return out;
-  }, output);
+  });
+
+  return output;
 };
+
+// export const flattenedObject = (obj, output: { [index: string]: any } = {}, paths: string[] = []) => {
+//   return Object.getOwnPropertyNames(obj).reduce(function (out, key) {
+//     paths.push(key);
+
+//     if (typeof obj[key] === 'object' && obj[key] !== null && obj[key] === '[object Object]') {
+//       flattenedObject(obj[key], out, paths);
+//     } else if (Array.isArray(obj[key])) {
+//       obj[key].forEach((item, index) => {
+//         paths.push(index.toString());
+//         flattenedObject(item, out, paths);
+//       });
+//     } else {
+//       out[paths.join('.')] = obj[key];
+//     }
+//     paths.pop();
+//     return out;
+//   }, output);
+// };
 
 export const mergeDeep = (...objects) => {
   const isObject = (obj) => obj && typeof obj === 'object';
