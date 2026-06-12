@@ -24,6 +24,7 @@ import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
+import { QueryParams } from '../../types/bjs-query.js';
 
 /**
  * @class GetList
@@ -50,19 +51,15 @@ export default class GetList extends Route {
       req.context.id,
     );
 
-    const result = {
-      query: {},
+    const result: QueryParams<object> = {
+      query: { },
       project: req.body && req.body.project ? req.body.project : false,
     };
-
-    let query: any = {};
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // access control query
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     }
 
     if (req.body && req.body.query && req.body.query.zeroResults) {
@@ -70,13 +67,12 @@ export default class GetList extends Route {
     }
 
     Logging.logTimer(`${this.name}:_validate:end`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
-    query = model.parseQuery(query, {}, model.flatSchemaData);
+    result.query = model.parseQuery(result.query, {}, model.flatSchemaData);
 
-    result.query = query;
     return result;
   }
 
-  override async _exec(req: Request, _res: Response, validateResult: { query: any; project: any }) {
+  override async _exec(req: Request, _res: Response, validateResult: QueryParams<object>) {
     const model = await this.routeModel();
     // if (validateResult.query === false) {
     // 	return Promise.resolve([]);

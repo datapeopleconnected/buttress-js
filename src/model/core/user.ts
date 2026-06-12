@@ -228,7 +228,7 @@ export default class UserSchemaModel extends StandardModel<User> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override async add(body, internals?: any) {
+  override async add(body, internals: { _appId: string }) {
     const userBody: {
       id: string;
       auth: Array<{

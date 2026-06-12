@@ -221,10 +221,16 @@ export default class BootstrapRest extends Bootstrap {
   override async __handleMessageFromMain(message: LocalProcessMessage) {
     if (message.type === 'app-schema:updated') {
       if (!this.routes) return Logging.logDebug(`Skipping app schema update, router not created yet`);
-      Logging.logDebug(`App Schema Updated: ${message.payload.appId}`);
-      await Model.initSchema(message.payload.appId);
-      await this.routes.regenerateAppRoutes(message.payload.appId);
-      Logging.logDebug(`Models & Routes regenereated: ${message.payload.appId}`);
+      const payload = message.payload as { appId: string };
+
+      if (!payload || !payload.appId) {
+        return Logging.logWarn(`Skipping app schema update, no appId provided`);
+      }
+
+      Logging.logDebug(`App Schema Updated: ${payload.appId}`);
+      await Model.initSchema(payload.appId);
+      await this.routes.regenerateAppRoutes(payload.appId);
+      Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
     } else if (message.type === 'app-routes:bust-cache') {
       if (!this.routes) return Logging.logDebug(`Skipping token cache bust, router not created yet`);
       // TODO: Maybe do this better than

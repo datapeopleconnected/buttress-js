@@ -200,16 +200,16 @@ export class Filter {
    * Function is used to evaluate a query against an entity, ensuring that the query isn't going to filter out this entity.
    * The function will return true if it selects the entity, false if it doesn't.
    */
-  evaluateQueryAgainstEntity(query: PolicyQuery, entity: { [index: string]: any }, partialPass?: boolean): boolean {
+  evaluateQueryAgainstEntity(query: PolicyQuery, entity: { [index: string]: unknown }, partialPass?: boolean): boolean {
     const flattened = Helpers.flattenedObject(entity);
     return this.__evaluateQueryAgainstEntity(query, flattened, partialPass, entity);
   }
 
   __evaluateQueryAgainstEntity(
     query: PolicyQuery,
-    flatEntity: { [index: string]: any },
+    flatEntity: { [index: string]: unknown },
     partialPass?: boolean,
-    testEntity?: any,
+    testEntity?: { [index: string]: unknown },
   ): boolean {
     if (!flatEntity) return false;
     const queryRecord = query as Record<string, unknown>;
@@ -289,14 +289,14 @@ export class Filter {
    * @param {Object} flattenedObj
    * @param {string} targetPath
    */
-  __getValueByPath(flattenedObj, targetPath) {
+  __getValueByPath(flattenedObj: { [index: string]: unknown }, targetPath: string) {
     if (targetPath in flattenedObj) {
       return flattenedObj[targetPath];
     }
 
     const pattern = /\.\d/;
     const keys = Object.keys(flattenedObj);
-    let value: any = null;
+    let value: unknown = null;
 
     for (const key of keys) {
       const modifiedKey = key.replace(/^\d+\.|\.\d+/g, '');
@@ -305,6 +305,7 @@ export class Filter {
       }
       if (key === targetPath) value = flattenedObj[key];
     }
+
     return value;
   }
 

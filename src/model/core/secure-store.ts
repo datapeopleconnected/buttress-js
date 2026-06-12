@@ -19,7 +19,7 @@ import StandardModel from '../type/standard.js';
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 
-interface SecureStore {
+export interface SecureStore {
   id: string;
   name: string;
   storeData: Record<string, unknown>;

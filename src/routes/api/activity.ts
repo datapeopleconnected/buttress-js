@@ -18,7 +18,7 @@ import { Request, Response } from 'express';
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import ActivitySchemaModel from '../../model/core/activity.js';
+import ActivitySchemaModel, { Activity } from '../../model/core/activity.js';
 import TokenSchemaModel from '../../model/core/token.js';
 import AppSchemaModel from '../../model/core/app.js';
 
@@ -85,8 +85,8 @@ class GetActivity extends Route {
     return activity;
   }
 
-  override _exec(req: Request, res: Response, activity: any) {
-    return Promise.resolve(activity.details);
+  override _exec(req: Request, res: Response, activity: Activity) {
+    return Promise.resolve(activity.body);
   }
 }
 routes.push(GetActivity);

@@ -318,7 +318,7 @@ export default class StandardModel<TDocument = unknown> {
 
     return Object.assign(Shared.sanitizeSchemaObject(this.schemaData, body), entity);
   }
-  add(body, internals?: any) {
+  add(body, internals?: unknown) {
     return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
   }
 

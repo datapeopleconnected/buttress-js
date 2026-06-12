@@ -24,10 +24,10 @@ import * as Helpers from '../helpers/index.js';
 
 import adminPolicy from '../admin-policy.json' with { type: 'json' };
 import adminLambda from '../admin-lambda.json' with { type: 'json' };
-import TokenSchemaModel, { Token } from '../model/core/token.js';
+import TokenSchemaModel, { PolicyProperties, Token } from '../model/core/token.js';
 import AppSchemaModel, { App } from '../model/core/app.js';
 import PolicySchemaModel from '../model/core/policy.js';
-import LambdaSchemaModel from '../model/core/lambda.js';
+import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 
 // TODO: This file might be able to be rolled into routes.
 
@@ -215,26 +215,29 @@ class AdminRoutes {
    * @param {String} appId
    */
   async _createAdminPolicy(appId: string) {
-    for await (const policy of adminPolicy as any) {
+    for await (const policy of adminPolicy) {
       const policyDB = await Model.getCoreModel(PolicySchemaModel).findOne({
         name: {
           $eq: policy.name,
         },
       });
+
       if (policyDB) continue;
 
       const name = policy.name.replace(/[\s-]+/g, '_').toUpperCase();
       if (name.toUpperCase() === 'ADMIN_LAMBDA_ACCESS') {
-        policy.config.forEach((conf, idx) => {
-          const appQueryIdx = policy.config[idx].query.findIndex((q) => q.schema.includes('app'));
-          const userQueryIdx = policy.config[idx].query.findIndex((q) => q.schema.includes('user'));
-          if (appQueryIdx !== -1 && policy.config[idx].query[appQueryIdx].id) {
-            policy.config[idx].query[appQueryIdx].id = {
+        policy.config.forEach((conf) => {
+          if (!conf.query || !Array.isArray(conf.query)) return;
+
+          const appQueryIdx = conf.query.findIndex((q) => q.schema.includes('app'));
+          const userQueryIdx = conf.query.findIndex((q) => q.schema.includes('user'));
+          if (appQueryIdx !== -1 && conf.query[appQueryIdx].id) {
+            conf.query[appQueryIdx].id = {
               '@eq': appId,
             };
           }
           if (userQueryIdx !== -1) {
-            policy.config[idx].query[userQueryIdx]._appId = {
+            conf.query[userQueryIdx]._appId = {
               '@eq': appId,
             };
           }
@@ -249,7 +252,7 @@ class AdminRoutes {
    * Create Buttress pre-defined lambda
    * @param {Array} lambdas
    */
-  async _createAdminLambda(lambdas: any[]) {
+  async _createAdminLambda(lambdas: (Lambda & PolicyProperties)[]) {
     try {
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,

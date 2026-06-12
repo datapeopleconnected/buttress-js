@@ -17,6 +17,7 @@
 import sourceMapSupport from 'source-map-support';
 sourceMapSupport.install();
 
+import net from 'node:net';
 import os from 'node:os';
 import cluster, { Worker } from 'node:cluster';
 import EventEmitter from 'node:events';
@@ -36,7 +37,7 @@ interface WorkerHolder {
 
 export interface LocalProcessMessage {
   type: string;
-  payload: any;
+  payload: unknown;
 }
 
 export default class Bootstrap extends EventEmitter {
@@ -150,19 +151,19 @@ export default class Bootstrap extends EventEmitter {
     Logging.logSilly(`Unhandled message from Worker [${idx}]: ${JSON.stringify(message)}`);
   }
 
-  async notifyWorker(idx: number, payload: LocalProcessMessage, handle?: unknown) {
+  async notifyWorker(idx: number, payload: LocalProcessMessage, handle?: net.Socket) {
     if (this.workers[idx]) {
       Logging.logDebug(`notifying Worker ${idx} of ${payload.type}`);
-      this.workers[idx].worker.send(payload, handle as any);
+      this.workers[idx].worker.send(payload, handle);
     } else {
       Logging.logWarn(`Attempted to notify Worker ${idx} of ${payload.type}, but it does not exist`);
     }
   }
 
-  async notifyWorkers(payload: LocalProcessMessage, handle?: unknown) {
+  async notifyWorkers(payload: LocalProcessMessage, handle?: net.Socket) {
     if (this.workerProcesses > 0) {
       Logging.logDebug(`notifying ${this.workers.length} Workers of ${payload.type}`);
-      this.workers.forEach((w) => w.worker.send(payload, handle as any));
+      this.workers.forEach((w) => w.worker.send(payload, handle));
     } else {
       Logging.logSilly(`single instance mode notification`);
       await this._handleMessageFromMain(payload, handle);

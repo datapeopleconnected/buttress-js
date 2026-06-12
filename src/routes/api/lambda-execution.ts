@@ -19,8 +19,9 @@ import { Request, Response } from 'express';
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import LambdaExecutionSchemaModel from '../../model/core/lambda-execution.js';
+import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
+import { QueryParams } from '../../types/bjs-query.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -190,13 +191,10 @@ class SearchExecutionList extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result: {
-      query: any;
-    } = {
-      query: {
-        $and: [],
-      },
+    const result: QueryParams<LambdaExecution> = {
+      query: { },
     };
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
@@ -211,7 +209,7 @@ class SearchExecutionList extends Route {
     return result;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<LambdaExecution>) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).find(validate.query);
   }
 }
@@ -237,33 +235,28 @@ class LambdaExecutionCount extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result = {
-      query: {},
+    const result: QueryParams<LambdaExecution> = {
+      query: { },
     };
-
-    let query: any = {};
-
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      result.query.$and.push(req.body);
     }
 
-    query = Model.getCoreModel(LambdaExecutionSchemaModel).parseQuery(
-      query,
+    result.query = Model.getCoreModel(LambdaExecutionSchemaModel).parseQuery(
+      result.query,
       {},
       Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData,
     );
-    result.query = query;
+
     return result;
   }
 
-  override _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult: QueryParams<LambdaExecution>) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).count(validateResult.query);
   }
 }

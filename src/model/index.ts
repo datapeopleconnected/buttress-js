@@ -118,7 +118,7 @@ export class ModelManager {
     }
   }
 
-  async initSchema(appId = null) {
+  async initSchema(appId?: string) {
     Logging.logSilly('Model:initSchema');
     const rxsApps = (await this.getCoreModel(AppSchemaModel).findAll()) as App[];
 

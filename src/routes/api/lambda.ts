@@ -25,15 +25,13 @@ const exec = util.promisify(cpExec);
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import { ExtendsRoute } from '../../types/routes.js';
-
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import Sugar from '../../helpers/sugar.js';
 import * as Helpers from '../../helpers/index.js';
 
 import Datastore from '../../datastore/index.js';
-import LambdaSchemaModel from '../../model/core/lambda.js';
+import LambdaSchemaModel, { Lambda } from '../../model/core/lambda.js';
 import TokenSchemaModel from '../../model/core/token.js';
 import UserSchemaModel from '../../model/core/user.js';
 import AppSchemaModel from '../../model/core/app.js';
@@ -43,8 +41,11 @@ import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/la
 
 import { Services } from '../../bootstrap.js';
 
-// Should should contain a list of routes that extend the Route class but have different constructors
-const routes: ExtendsRoute<Route>[] = [];
+import { QueryParams } from '../../types/bjs-query.js';
+
+// Should contain a list of route classes that extend Route.
+type LambdaRouteConstructor = new (services: Services) => Route;
+const routes: LambdaRouteConstructor[] = [];
 
 /**
  * @class GetLambda
@@ -77,7 +78,7 @@ class GetLambda extends Route {
     return lambda;
   }
 
-  override _exec(_req: Request, _res: Response, lambda: any) {
+  override async _exec(_req: Request, _res: Response, lambda: Lambda) {
     return lambda;
   }
 }
@@ -145,13 +146,10 @@ class SearchLambdaList extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result: {
-      query: any;
-    } = {
-      query: {
-        $and: [],
-      },
+    const result: QueryParams<Lambda> = {
+      query: { },
     };
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
@@ -163,6 +161,7 @@ class SearchLambdaList extends Route {
       {},
       Model.getCoreModel(LambdaSchemaModel).flatSchemaData,
     );
+
     return result;
   }
 
@@ -791,29 +790,24 @@ class LambdaCount extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result = {
-      query: {},
+    const result: QueryParams<Lambda> = {
+      query: { },
     };
-
-    let query: any = {};
-
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      result.query.$and.push(req.body);
     }
 
-    query = Model.getCoreModel(LambdaSchemaModel).parseQuery(
-      query,
+    result.query = Model.getCoreModel(LambdaSchemaModel).parseQuery(
+      result.query,
       {},
       Model.getCoreModel(LambdaSchemaModel).flatSchemaData,
     );
-    result.query = query;
+
     return result;
   }
 

@@ -19,7 +19,7 @@ import { Schema } from '../../helpers/schema.js';
 import Logging from '../../helpers/logging.js';
 
 import StandardModel from '../type/standard.js';
-import TokenSchemaModel from './token.js';
+import TokenSchemaModel, { Token } from './token.js';
 import PolicySchemaModel from './policy.js';
 
 export interface AppDataSharing {
@@ -147,7 +147,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
         _appDataSharingId: appDataSharingBody.id,
       },
     );
-    const token: any = await Helpers.streamFirst(rxsToken);
+    const token: Token = await Helpers.streamFirst(rxsToken);
 
     await this.__createDataSharingPolicy(appDataSharingBody, token.id);
 

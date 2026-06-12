@@ -38,7 +38,7 @@ class GetTrackingList extends Route {
     return Promise.resolve(true);
   }
 
-  override _exec(_req: Request, _res: Response, _validate: any) {
+  override _exec(_req: Request, _res: Response, _validate: boolean) {
     return Model.getCoreModel(TrackingSchemaModel).findAll();
   }
 }
@@ -80,7 +80,7 @@ class AddTracking extends Route {
     });
   }
 
-  override _exec(req: Request, _res: Response, _validate) {
+  override _exec(req: Request, _res: Response, _validate: boolean) {
     return Model.getCoreModel(TrackingSchemaModel).add(req.body);
   }
 }

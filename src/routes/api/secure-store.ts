@@ -20,11 +20,12 @@ import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
 
-import SecureStoreSchemaModel from '../../model/core/secure-store.js';
+import SecureStoreSchemaModel, { SecureStore } from '../../model/core/secure-store.js';
 import AppSchemaModel from '../../model/core/app.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import LambdaSchemaModel from '../../model/core/lambda.js';
 import UserSchemaModel from '../../model/core/user.js';
+import { QueryParams } from '../../types/bjs-query.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -376,24 +377,17 @@ class SearchSecureStoreList extends Route {
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
     }
 
-    const result: {
-      query: any;
-      skip: number;
-      limit: number;
-      sort: any;
-      project: any;
-    } = {
-      query: {
-        $and: [],
-      },
+    const result: QueryParams<SecureStore> = {
+      query: { },
       skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
       limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
       sort: req.body && req.body.sort ? req.body.sort : {},
       project: req.body && req.body.project ? req.body.project : false,
     };
+    result.query.$and = [];
 
-    if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-    if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (result.skip && isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+    if (result.limit && isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
@@ -412,7 +406,7 @@ class SearchSecureStoreList extends Route {
     return result;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<SecureStore>) {
     return Model.getCoreModel(SecureStoreSchemaModel).find(
       validate.query,
       {},
@@ -489,29 +483,24 @@ class SecureStoreCount extends Route {
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
     }
 
-    const result = {
-      query: {},
+    const result: QueryParams<SecureStore> = {
+      query: { },
     };
-
-    let query: any = {};
-
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      result.query.$and.push(req.body);
     }
 
-    query.$and.push({
+    result.query.$and.push({
       _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
     });
 
-    query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(
-      query,
+    const query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(
+      result.query,
       {},
       Model.getCoreModel(SecureStoreSchemaModel).flatSchemaData,
     );
@@ -520,7 +509,7 @@ class SecureStoreCount extends Route {
     return result;
   }
 
-  override _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult: QueryParams<SecureStore>) {
     return Model.getCoreModel(SecureStoreSchemaModel).count(validateResult.query);
   }
 }

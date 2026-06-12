@@ -38,7 +38,7 @@ export interface App {
   name: string;
   version: string;
   apiPath: string;
-  policyPropertiesList: any;
+  policyPropertiesList: { [key: string]: string | number | boolean | null | (string | number | boolean | null)[] };
   adminActive: boolean;
   oAuth: string[];
   suspend: Date | null;

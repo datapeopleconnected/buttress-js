@@ -16,4 +16,4 @@
 
 import Route from '../routes/route.js';
 
-export type ExtendsRoute<T extends Route> = new (...args: any[]) => T;
+export type ExtendsRoute<T extends Route> = new (...args: unknown[]) => T;

@@ -167,7 +167,7 @@ const __flattenRoles = (data, path) => {
 };
 export const flattenRoles = __flattenRoles;
 
-export const flattenedObject = (obj, output: { [index: string]: any } = {}, paths: string[] = []) => {
+export const flattenedObject = (obj, output: { [index: string]: unknown } = {}, paths: string[] = []) => {
   if (obj === null || typeof obj !== 'object') {
     return output;
   }
