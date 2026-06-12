@@ -47,7 +47,9 @@ describe('helpers.compareByProps', () => {
 		const b = { name: 'Jordan', age: 5 };
 		assert.strictEqual(Helpers.compareByProps(new Map([['age', -1]]), a, b), -1);
 	});
+});
 
+describe('helpers.flattenedObject', () => {
 	it ('should return a flattened object', () => {
 		const invitation = {
 			"_id" : new ObjectId("6a2ac4c20a35c2d9335147cf"),
@@ -160,7 +162,7 @@ describe('helpers.compareByProps', () => {
 
 			return passed;
 		}, true);
-		const secondObjCheck = Object.values(firstFlattenedObj).reduce((passed, value) => {
+		const secondObjCheck = Object.values(secondFlattenedObj).reduce((passed, value) => {
 			if (value instanceof Date || ObjectId.isValid(value)) return passed;
 
 			if (value && typeof value === 'object' && Array.isArray(value) && value.length > 0) passed = false;
