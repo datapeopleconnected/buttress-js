@@ -27,6 +27,8 @@ import { RequestContext } from '../types/bjs-express.js';
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
+import { validate as uuidValidate, version as uuidVersion } from 'uuid';
+
 import AdminRoutes from './admin-routes.js';
 import AppSchemaModel, { App } from '../model/core/app.js';
 import AppDataSharingSchemaModel from '../model/core/app-data-sharing.js';
@@ -76,6 +78,7 @@ export class RoutesMiddleware {
       authUser: null,
       authApp: null,
       token: null,
+      clientSessionId: null,
       isPluginPath: false,
       ac: {
         policyConfigs: [],
@@ -121,6 +124,13 @@ export class RoutesMiddleware {
       .filter((key) => key.indexOf('plugin-') === 0)
       .map((key) => key.replace('plugin-', ''))
       .some((key) => req.path.indexOf(`${Config.app.apiPrefix}/${key}`) === 0);
+
+    const clientSessionId = req.headers['x-client-session-id']?.toString() || null;
+    if (clientSessionId && !(uuidValidate(clientSessionId) && uuidVersion(clientSessionId) === 4)) {
+      throw new Helpers.Errors.RequestError(400, 'invalid_client_session_id');
+    }
+
+    req.context.clientSessionId = clientSessionId;
 
     try {
       const adminRoutecall = await AdminRoutes.checkAdminCall(req);

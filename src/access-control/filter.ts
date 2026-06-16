@@ -106,7 +106,11 @@ export class Filter {
   /**
    * Walk over a query object and replace any env variables with their values.
    */
-  async buildPolicyQuery(policyQuery: PolicyQuery | null | undefined, envVars: ACPolicyEnvCombined, stripAccessKeys = true) {
+  async buildPolicyQuery(
+    policyQuery: PolicyQuery | null | undefined,
+    envVars: ACPolicyEnvCombined,
+    stripAccessKeys = true,
+  ) {
     if (!policyQuery) return null;
 
     // Change @ prefixes over to $ for mongo queries.
@@ -301,7 +305,7 @@ export class Filter {
     for (const key of keys) {
       const modifiedKey = key.replace(/^\d+\.|\.\d+/g, '');
       if (modifiedKey === targetPath && pattern.test(key)) {
-        value = (value && Array.isArray(value)) ? [...value, flattenedObj[key]] : [flattenedObj[key]];
+        value = value && Array.isArray(value) ? [...value, flattenedObj[key]] : [flattenedObj[key]];
       }
       if (key === targetPath) value = flattenedObj[key];
     }

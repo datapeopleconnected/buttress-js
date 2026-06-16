@@ -378,7 +378,7 @@ class SearchSecureStoreList extends Route {
     }
 
     const result: QueryParams<SecureStore> = {
-      query: { },
+      query: {},
       skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
       limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
       sort: req.body && req.body.sort ? req.body.sort : {},
@@ -484,7 +484,7 @@ class SecureStoreCount extends Route {
     }
 
     const result: QueryParams<SecureStore> = {
-      query: { },
+      query: {},
     };
     result.query.$and = [];
 

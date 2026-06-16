@@ -450,19 +450,20 @@ export default class Route {
             visibility: this.activityVisibility,
             broadcast: this.activityBroadcast,
             path: path,
-            pathSpec: req.context.pathSpec,
+            pathSpec: req.context.pathSpec || '',
             verb: this.verb,
             permissions: this.permissions,
             params: req.params,
             timestamp: new Date(),
             response: _result,
+            clientSessionId: req.context.clientSessionId,
             user: req.context.authUser ? req.context.authUser.id : '',
             appAPIPath: req.context.authApp ? req.context.authApp.apiPath : '',
             appId: req.context.authApp ? req.context.authApp.id : '',
             isSuper: isSuper,
             isCoreSchema: this.core,
-            schemaName: this.schemaName,
-          } as RESTActivity),
+            schemaName: this.schemaName || '',
+          } satisfies RESTActivity),
         );
       } else {
         // Trigger the emit activity so we can update the stats namespace

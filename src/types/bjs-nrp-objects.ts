@@ -26,6 +26,7 @@ export interface RESTActivity {
   timestamp: Date;
   response: unknown;
   user: string;
+  clientSessionId: string | null;
   appAPIPath: string;
   appId: string;
   isSuper: boolean;
@@ -47,6 +48,7 @@ export interface SPRActivity {
   timestamp: Date;
   response: unknown;
   user: string;
+  clientSessionId: string | null;
   appAPIPath: string;
   appId: string;
   isSuper: boolean;

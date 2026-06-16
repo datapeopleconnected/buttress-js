@@ -388,6 +388,50 @@ describe('Processing', async () => {
 			await futurePromise;
 		});
 
+			it('Should preserve clientSessionId from REST to SPR', async function () {
+				this.timeout(5000);
+				const name = `name-${Math.floor(Math.random() * 100)}`;
+				const clientSessionId = '11111111-1111-4111-8111-111111111111';
+
+				let restResolve = null;
+				let sprResolve = null;
+				const restPromise = new Promise((resolve) => (restResolve = resolve));
+				const sprPromise = new Promise((resolve) => (sprResolve = resolve));
+
+				const restSubscription = await NRP_INSTANCE.subscribe('rest:activity', async (dataRaw) => {
+					const data = JSON.parse(dataRaw);
+					if (data.appAPIPath !== testEnv.apps.app1.apiPath) return;
+					if (data.response?.name !== name) return;
+
+					await restSubscription();
+					assert.equal(data.clientSessionId, clientSessionId);
+					restResolve();
+				});
+
+				const sprSubscription = await NRP_INSTANCE.subscribe('spr:activity', async (dataRaw) => {
+					const data = JSON.parse(dataRaw);
+					if (data.activity.appAPIPath !== testEnv.apps.app1.apiPath) return;
+					if (data.activity.response?.name !== name) return;
+
+					await sprSubscription();
+					assert.equal(data.activity.clientSessionId, clientSessionId);
+					sprResolve();
+				});
+
+				await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'x-client-session-id': clientSessionId,
+					},
+					body: JSON.stringify({ name, userId: testEnv.users.basic1.id }),
+				}, testEnv.apps.app1.token);
+
+				await restPromise;
+				await sprPromise;
+			});
+
 		it('Should generate a `spr:activity` event after a REST post', async function () {
 			const name = `name-${Math.floor(Math.random() * 100)}`;
 

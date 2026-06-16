@@ -495,7 +495,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         JSON.stringify({
           tokens: tokenIds.slice(i, i + this._broadcastTokenBatchSize),
           activity,
-        } as DataShareSocketSharePayload),
+        } satisfies DataShareSocketSharePayload),
       );
     }
   }
@@ -507,7 +507,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       JSON.stringify({
         tokens: [tokenId],
         activity,
-      } as DataShareSocketSharePayload),
+      } satisfies DataShareSocketSharePayload),
     );
   }
 }

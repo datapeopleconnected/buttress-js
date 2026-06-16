@@ -142,6 +142,70 @@ describe('Realtime', async () => {
 			});
 		});
 
+			it('Should include clientSessionId in the db-activity payload when provided', function (done) {
+				this.timeout(20000);
+
+				(async () => {
+					const clientSessionId = '11111111-1111-4111-8111-111111111111';
+					const name = `name-${Math.floor(Math.random() * 100)}`;
+					let cars = null;
+					const listener = new Promise((resolve) => {
+						testEnv.socket.once('db-activity', async (ev) => {
+							assert.equal(typeof ev.data, 'object');
+							assert.equal(ev.data.clientSessionId, clientSessionId);
+							assert.equal(ev.data.verb, 'post');
+							assert.equal(ev.data.schemaName, 'car');
+							assert.equal(ev.data.response.name, name);
+							assert.equal(typeof ev.data.response.id, 'string');
+							assert.equal(cars[0].id, ev.data.response.id);
+
+							const time = new Date(ev.time);
+							assert(time instanceof Date);
+							assert(!isNaN(time.getTime()));
+
+							resolve();
+						});
+					});
+
+					cars = await bjsReq({
+						url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'x-client-session-id': clientSessionId,
+						},
+						body: JSON.stringify({ name }),
+					}, testEnv.apps.app1.token);
+
+					assert.equal(cars.length, 1);
+					assert.equal(cars[0].name, name);
+
+					await listener;
+
+					done();
+				})();
+			});
+
+			it('Should reject an invalid clientSessionId header value', async function () {
+				this.timeout(20000);
+
+				await assert.rejects(
+					bjsReq(
+						{
+							url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'x-client-session-id': '11111111-1111-1111-8111-111111111111',
+							},
+							body: JSON.stringify({ name: `name-${Math.floor(Math.random() * 100)}` }),
+						},
+						testEnv.apps.app1.token,
+					),
+					(error) => error.code === 400 && error.message === 'invalid_client_session_id',
+				);
+			});
+
 		it('Should make a POST request to buttress and see a realtime activity generated', function (done) {
 			this.timeout(20000);
 
@@ -151,6 +215,7 @@ describe('Realtime', async () => {
 				const listener = new Promise((resolve) => {
 					testEnv.socket.once('db-activity', async (ev) => {
 						assert.equal(typeof ev.data, 'object');
+						assert.equal(ev.data.clientSessionId, null);
 						assert.equal(ev.data.verb, 'post');
 						assert.equal(ev.data.schemaName, 'car');
 						assert.equal(ev.data.response.name, name);

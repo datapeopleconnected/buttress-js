@@ -147,7 +147,7 @@ class SearchLambdaList extends Route {
 
   override async _validate(req: Request, _res: Response) {
     const result: QueryParams<Lambda> = {
-      query: { },
+      query: {},
     };
     result.query.$and = [];
 
@@ -791,7 +791,7 @@ class LambdaCount extends Route {
 
   override async _validate(req: Request, _res: Response) {
     const result: QueryParams<Lambda> = {
-      query: { },
+      query: {},
     };
     result.query.$and = [];
 

@@ -265,7 +265,7 @@ export default class BootstrapSocket extends Bootstrap {
             {
               type: 'buttress:connection',
               payload: null,
-            } as LocalProcessMessage,
+            } satisfies LocalProcessMessage,
             connection,
           );
         })
@@ -561,6 +561,7 @@ export default class BootstrapSocket extends Bootstrap {
         path: activity.path,
         pathSpec: activity.pathSpec,
         user: activity.user,
+        clientSessionId: activity.clientSessionId,
         verb: activity.verb,
         params: activity.params,
         schemaName: activity.schemaName,

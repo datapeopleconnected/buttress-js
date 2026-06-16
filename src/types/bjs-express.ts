@@ -37,6 +37,7 @@ export interface RequestContext {
   authUser: User | null;
   authApp: App | null;
   token: Token | null;
+  clientSessionId: string | null;
   apiPath?: string;
   pathSpec?: string;
   isPluginPath: boolean;

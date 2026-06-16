@@ -339,7 +339,9 @@ export default class LambdaManager {
    * @param {Array} lambdaExecs
    * @return {Promise}
    */
-  async __announcePendingExecutions(lambdaExecs: LambdaExecution[] & { body?: unknown; query?: unknown; headers?: unknown }[]) {
+  async __announcePendingExecutions(
+    lambdaExecs: LambdaExecution[] & { body?: unknown; query?: unknown; headers?: unknown }[],
+  ) {
     let count = 0;
     Logging.logSilly(`[${this.name}]: Announcing ${lambdaExecs.length} lambda exec`);
     for await (const lambdaExec of lambdaExecs) {

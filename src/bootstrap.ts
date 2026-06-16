@@ -113,7 +113,7 @@ export default class Bootstrap extends EventEmitter {
         process.send({
           type: 'worker:initiated',
           payload: null,
-        } as LocalProcessMessage);
+        } satisfies LocalProcessMessage);
 
       process.on('message', (message: LocalProcessMessage, handle: unknown) =>
         this._handleMessageFromMain(message, handle),

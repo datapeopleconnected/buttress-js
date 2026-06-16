@@ -52,7 +52,7 @@ export default class GetList extends Route {
     );
 
     const result: QueryParams<object> = {
-      query: { },
+      query: {},
       project: req.body && req.body.project ? req.body.project : false,
     };
     result.query.$and = [];

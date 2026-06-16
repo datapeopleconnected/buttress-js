@@ -192,7 +192,7 @@ class SearchExecutionList extends Route {
 
   override async _validate(req: Request, _res: Response) {
     const result: QueryParams<LambdaExecution> = {
-      query: { },
+      query: {},
     };
     result.query.$and = [];
 
@@ -236,7 +236,7 @@ class LambdaExecutionCount extends Route {
 
   override async _validate(req: Request, _res: Response) {
     const result: QueryParams<LambdaExecution> = {
-      query: { },
+      query: {},
     };
     result.query.$and = [];
 

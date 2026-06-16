@@ -173,7 +173,7 @@ export const flattenedObject = (obj, output: { [index: string]: unknown } = {}, 
   }
 
   if (obj instanceof Date || ObjectId.isValid(obj)) {
-    return output[paths.join('.')] = obj;
+    return (output[paths.join('.')] = obj);
   }
 
   Object.getOwnPropertyNames(obj).forEach((key) => {
