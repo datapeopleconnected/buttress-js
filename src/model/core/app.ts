@@ -24,9 +24,9 @@ import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 
 import StandardModel from '../type/standard.js';
-import TokenSchemaModel from './token.js';
+import TokenSchemaModel, { Token } from './token.js';
 import PolicySchemaModel from './policy.js';
-import AppDataSharingSchemaModel from './app-data-sharing.js';
+import AppDataSharingSchemaModel, { AppDataSharing } from './app-data-sharing.js';
 import UserSchemaModel from './user.js';
 import DeploymentSchemaModel from './deployment.js';
 import LambdaSchemaModel from './lambda.js';
@@ -38,7 +38,7 @@ export interface App {
   name: string;
   version: string;
   apiPath: string;
-  policyPropertiesList: any;
+  policyPropertiesList: { [key: string]: string | number | boolean | null | (string | number | boolean | null)[] };
   adminActive: boolean;
   oAuth: string[];
   suspend: Date | null;
@@ -51,7 +51,7 @@ export interface App {
 }
 
 export default class AppSchemaModel extends StandardModel<App> {
-  static name = 'App';
+  static override name = 'App';
 
   private _localSchema: any;
 
@@ -149,7 +149,7 @@ export default class AppSchemaModel extends StandardModel<App> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with App Object when the database request is completed
    */
-  async add(body, internals?: { type?: string }) {
+  override async add(body, internals?: { type?: string }) {
     body.id = this.createId();
 
     const isSuper = internals?.type === TokenSchemaModel.Constants.Type.SYSTEM;
@@ -172,10 +172,10 @@ export default class AppSchemaModel extends StandardModel<App> {
       },
     );
 
-    const token: any = await Helpers.streamFirst(rxsToken);
+    const token = await Helpers.streamFirst<Token>(rxsToken);
 
     const rxsApp = await super.add(body, { _tokenId: token.id });
-    const app: any = await Helpers.streamFirst(rxsApp);
+    const app = await Helpers.streamFirst<App>(rxsApp);
 
     if (!isSuper) await this.__handleAddingNonSystemApp(body, token);
 
@@ -338,7 +338,7 @@ export default class AppSchemaModel extends StandardModel<App> {
     // Load DSA for current app
     const requiredDSAs = Object.keys(dataSharingSchema);
     if (requiredDSAs.length > 0) {
-      const appDSAs = await Helpers.streamAll(
+      const appDSAs = await Helpers.streamAll<AppDataSharing>(
         await this.__modelManager.getCoreModel(AppDataSharingSchemaModel).find({
           _appId: req.context.authApp.id,
           name: {
@@ -424,7 +424,7 @@ export default class AppSchemaModel extends StandardModel<App> {
    * @param {App} entity - entity object to be deleted
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  async rm(entity) {
+  override async rm(entity) {
     Logging.logSilly(`Deleting all app data sharing for app ${entity.id}`);
     await this.__modelManager.getCoreModel(AppDataSharingSchemaModel).rmAll({ _appId: entity.id });
 

@@ -57,7 +57,7 @@ export default class BootstrapLambda extends Bootstrap {
     this.__cronWorkers = 0;
   }
 
-  async init() {
+  override async init() {
     await super.init();
 
     Logging.log(`Connecting to primary datastore...`);
@@ -79,7 +79,7 @@ export default class BootstrapLambda extends Bootstrap {
     return await this.__createCluster();
   }
 
-  async clean() {
+  override async clean() {
     await super.clean();
 
     Logging.logDebug('BootstrapLambda:clean');
@@ -97,7 +97,7 @@ export default class BootstrapLambda extends Bootstrap {
     Datastore.clean();
   }
 
-  async __initMain() {
+  override async __initMain() {
     // Lambda workers config
     const isPrimary = Config.rest.app === 'primary';
 
@@ -119,7 +119,7 @@ export default class BootstrapLambda extends Bootstrap {
     await this.__spawnWorkers();
   }
 
-  async __initWorker() {
+  override async __initWorker() {
     await Model.initCoreModels();
 
     let type = LambdaType.ALL;

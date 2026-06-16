@@ -13,16 +13,18 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Request } from 'express';
+
 import Logging from '../helpers/logging.js';
 import * as Helpers from '../helpers/index.js';
 import Model from '../model/index.js';
-import TokenSchemaModel from '../model/core/token.js';
+import TokenSchemaModel, { Token } from '../model/core/token.js';
 
 export class RoutesTokens {
-  private _tokens: any[] = [];
+  private _tokens: Token[] = [];
 
   async loadTokens() {
-    const tokens: any[] = [];
+    const tokens: Token[] = [];
     const rxsToken = await Model.getCoreModel(TokenSchemaModel).findAll();
 
     for await (const token of rxsToken) {
@@ -32,20 +34,20 @@ export class RoutesTokens {
     this._tokens = tokens;
   }
 
-  get tokens(): any[] {
+  get tokens(): Token[] {
     return this._tokens;
   }
 
-  set tokens(value: any[]) {
+  set tokens(value: Token[]) {
     this._tokens = value;
   }
 
-  _lookupToken(tokens: any[], value: string): any {
+  _lookupToken(tokens: Token[], value: string): Token | null {
     const token = tokens.filter((t) => t.value === value);
     return token.length === 0 ? null : token[0];
   }
 
-  async _getProvidedToken(req: any): Promise<any> {
+  async _getProvidedToken(req: Request): Promise<Token> {
     let tokenValue: string | undefined = req.headers['authorization'];
     if (tokenValue) tokenValue = tokenValue.replace('Bearer ', '');
 
@@ -75,9 +77,9 @@ export class RoutesTokens {
     return token;
   }
 
-  async _getToken(req: any, value: string): Promise<any> {
+  async _getToken(req: Request, value: string): Promise<Token | null> {
     Logging.logTimer('_getToken:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
-    let token = null;
+    let token: Token | null = null;
 
     if (this._tokens.length > 0) {
       token = this._lookupToken(this._tokens, value);

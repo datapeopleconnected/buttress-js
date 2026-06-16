@@ -38,7 +38,7 @@ class Projection {
     const output: ApplicablePolicyConfig[] = [];
 
     for await (const policy of applicablePolicies) {
-      if (policy.config.projection === null) {
+      if (!policy.config.projection) {
         output.push(policy);
       } else {
         const result = await this.__applyPolicyProjection(req, policy.config.projection, schema);
@@ -61,10 +61,12 @@ class Projection {
     const flattenedSchema = Helpers.getFlattenedSchema(schema);
     let requestBody = req.body ?? {};
 
-    const projectionKeys = projections?.keys;
+    const projectionKeys = Array.isArray(projections?.keys)
+      ? projections.keys.filter((key): key is string => typeof key === 'string')
+      : [];
     const projection = {};
 
-    if (projectionKeys && projectionKeys.length > 0) {
+    if (projectionKeys.length > 0) {
       projectionKeys.forEach((key) => {
         projection[key] = 1;
       });

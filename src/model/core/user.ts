@@ -18,7 +18,7 @@ import StandardModel from '../type/standard.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
-import TokenSchemaModel from './token.js';
+import TokenSchemaModel, { Token } from './token.js';
 
 export interface User {
   id: string;
@@ -40,6 +40,14 @@ export interface User {
   _appId: string;
 }
 
+type UserWithTokens = User & {
+  tokens: Array<{
+    id: string;
+    value: string;
+    policyProperties: Token['policyProperties'];
+  }>;
+};
+
 /**
  * Constants
  */
@@ -53,7 +61,7 @@ const App = {
 };
 
 export default class UserSchemaModel extends StandardModel<User> {
-  static name = 'User';
+  static override name = 'User';
 
   constructor(services) {
     const schema = UserSchemaModel.Schema;
@@ -220,7 +228,7 @@ export default class UserSchemaModel extends StandardModel<User> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  async add(body, internals?: any) {
+  override async add(body, internals: { _appId: string }) {
     const userBody: {
       id: string;
       auth: Array<{
@@ -263,7 +271,7 @@ export default class UserSchemaModel extends StandardModel<User> {
     const rxsUser = await super.add(userBody, {
       _appId: internals._appId,
     });
-    const user: any = await Helpers.streamFirst(rxsUser);
+    const user = (await Helpers.streamFirst<User>(rxsUser)) as UserWithTokens;
 
     user.tokens = [];
 
@@ -280,7 +288,7 @@ export default class UserSchemaModel extends StandardModel<User> {
         _appId: internals._appId,
         _userId: user.id,
       });
-      const token: any = await Helpers.streamFirst(rxsToken);
+      const token = await Helpers.streamFirst<Token>(rxsToken);
 
       if (token) {
         user.tokens.push({
@@ -373,7 +381,7 @@ export default class UserSchemaModel extends StandardModel<User> {
     });
   }
 
-  rm(userId: string) {
+  override rm(userId: string) {
     return super.rm(userId);
   }
 }

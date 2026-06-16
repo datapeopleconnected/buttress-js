@@ -39,7 +39,7 @@ export default class DeleteMany extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
     let ids = req.body;
 
@@ -66,7 +66,7 @@ export default class DeleteMany extends Route {
     return ids;
   }
 
-  async _exec(_req: Request, _res: Response, ids: string[]) {
+  override async _exec(_req: Request, _res: Response, ids: string[]) {
     await (await this.routeModel()).rmBulk(ids);
     return true;
   }

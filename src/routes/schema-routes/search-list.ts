@@ -24,7 +24,7 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
-import { QueryParams } from '../../types/bjs-query.js';
+import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
 
 /**
  * @class SearchList
@@ -42,10 +42,10 @@ export default class SearchList extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
 
-    const result = {
+    const result: QueryParams<object> = {
       query: {},
       skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
       limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
@@ -53,10 +53,10 @@ export default class SearchList extends Route {
       project: req.body && req.body.project ? req.body.project : false,
     };
 
-    if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-    if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (result.skip && isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+    if (result.limit && isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
 
-    let query: any = {};
+    let query: BjsQuery<object> = {};
 
     if (!query.$and) {
       query.$and = [];
@@ -73,7 +73,7 @@ export default class SearchList extends Route {
     return result;
   }
 
-  async _exec(req: Request, _res: Response, validateResult: QueryParams<object>) {
+  override async _exec(req: Request, _res: Response, validateResult: QueryParams<object>) {
     const model = await this.routeModel();
 
     return ACM.find(model, validateResult, req.context.ac);

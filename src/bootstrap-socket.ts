@@ -14,12 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import net from 'node:net';
+import http from 'node:http';
 
 import createConfig from '@dpc/node-env-obj';
 
 import Express from 'express';
 import { createClient, RedisClientType } from '@redis/client';
-import { v4 as uuidv4 } from 'uuid';
 
 import { Server as sio, Socket as sioSocket } from 'socket.io';
 import sioClient, { Socket as sioClientSocket } from 'socket.io-client';
@@ -39,6 +39,7 @@ import AccessControl from './access-control/index.js';
 import * as Schema from './helpers/schema.js';
 
 import Datastore from './datastore/index.js';
+import { Datastore as DatastoreInstance } from './datastore/index.js';
 import { PolicyCache } from './services/policy-cache.js';
 
 import { DataShareSocketSharePayload, RESTActivity } from './types/bjs-nrp-objects.js';
@@ -47,22 +48,25 @@ import TokenSchemaModel, { Token } from './model/core/token.js';
 import AppSchemaModel from './model/core/app.js';
 import AppDataSharingSchemaModel from './model/core/app-data-sharing.js';
 import UserSchemaModel from './model/core/user.js';
+interface RequestStatusMessage {
+  id: string;
+  status: 'started' | 'completed' | 'failed';
+}
+interface RequestEndMessage {
+  id: string;
+}
 
 export default class BootstrapSocket extends Bootstrap {
-  private __namespace: any = {};
-
   private _dataShareSockets: {
     [key: string]: sioClientSocket[];
   } = {};
-
-  private _policyCloseSocketEvents: any[] = [];
 
   private _redisClient?: RedisClientType;
   private _redisClientEmitter?: RedisClientType;
   private _redisClientIOPub?: RedisClientType;
   private _redisClientIOSub?: RedisClientType;
 
-  private _processResQueue: any;
+  // private _processResQueue: any;
 
   private _requestSockets: Helpers.ExpireMap;
 
@@ -73,28 +77,22 @@ export default class BootstrapSocket extends Bootstrap {
 
   logicalOperator: string[];
 
-  private _socketExpressServer: any;
+  private _socketExpressServer: http.Server | null;
 
-  private _mainServer: any;
+  private _mainServer: net.Server | null;
 
-  private _primaryDatastore: any;
+  private _primaryDatastore: DatastoreInstance;
 
   constructor() {
     super();
 
-    this.__namespace = {};
-
     this._dataShareSockets = {};
-
-    this._policyCloseSocketEvents = [];
 
     this.isPrimary = Config.sio.app === 'primary';
 
     this._socketExpressServer = null;
 
     this._mainServer = null;
-
-    this._processResQueue = {};
 
     this._primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
@@ -105,7 +103,7 @@ export default class BootstrapSocket extends Bootstrap {
     this.logicalOperator = ['$or', '$and'];
   }
 
-  async init() {
+  override async init() {
     await super.init();
 
     await this._primaryDatastore.connect();
@@ -133,7 +131,7 @@ export default class BootstrapSocket extends Bootstrap {
     return await this.__createCluster();
   }
 
-  async clean() {
+  override async clean() {
     await super.clean();
 
     Logging.logSilly('BootstrapSocket:clean');
@@ -176,13 +174,13 @@ export default class BootstrapSocket extends Bootstrap {
     }
     if (this._socketExpressServer) {
       Logging.logSilly('Closing socket.io express proxy');
-      await new Promise((resolve) => this._socketExpressServer.close(resolve));
+      await new Promise((resolve) => this._socketExpressServer?.close(resolve));
       this._socketExpressServer = null;
     }
     if (this._mainServer) {
       Logging.logSilly('Closing main server');
-      this._mainServer.closeAllConnections();
-      await new Promise((resolve) => this._mainServer.close(resolve));
+      // this._mainServer.closeAllConnections();
+      await new Promise((resolve) => this._mainServer?.close(resolve));
       this._mainServer = null;
     }
     for await (const sockets of Object.values(this._dataShareSockets)) {
@@ -206,16 +204,16 @@ export default class BootstrapSocket extends Bootstrap {
    * @param {*} channel
    * @param {*} message
    */
-  async _messagePrimary(channel: string, message?: any): Promise<any> {
-    // Generate an identifier for message
-    const id = uuidv4();
-    // Notify the primary with our payload
-    this.__nrp?.emit(`primary:${channel}`, JSON.stringify({ id, message, date: new Date() }));
-    // Await a response from the primary
-    return await new Promise((resolve, reject) => (this._processResQueue[id] = { resolve, reject }));
-  }
+  // async _messagePrimary(channel: string, message?: unknown): Promise<void> {
+  //   // Generate an identifier for message
+  //   const id = uuidv4();
+  //   // Notify the primary with our payload
+  //   this.__nrp?.emit(`primary:${channel}`, JSON.stringify({ id, message, date: new Date() }));
+  //   // Await a response from the primary
+  //   return await new Promise((resolve, reject) => (this._processResQueue[id] = { resolve, reject }));
+  // }
 
-  async __initMain() {
+  override async __initMain() {
     this._redisClientEmitter = createClient({
       url: Config.redis.url,
     });
@@ -253,7 +251,7 @@ export default class BootstrapSocket extends Bootstrap {
     }
 
     await this.__registerNRPMainListeners();
-    await this.__registerNRPProcessListeners();
+    // await this.__registerNRPProcessListeners();
 
     await this.__spawnWorkers();
 
@@ -261,7 +259,7 @@ export default class BootstrapSocket extends Bootstrap {
     // express should be handling this like we do on the rest.
     if (this.workerProcesses > 0) {
       this._mainServer = net
-        .createServer({ pauseOnConnect: true }, (connection) => {
+        .createServer({ pauseOnConnect: true }, (connection: net.Socket) => {
           this.notifyWorker(
             this.__indexFromIP(connection.remoteAddress, this.workerProcesses),
             {
@@ -275,7 +273,7 @@ export default class BootstrapSocket extends Bootstrap {
     }
   }
 
-  async __initWorker() {
+  override async __initWorker() {
     const app = Express();
     this._socketExpressServer =
       this.workerProcesses > 0 ? app.listen(0, 'localhost') : app.listen(Config.listenPorts.sock);
@@ -318,18 +316,21 @@ export default class BootstrapSocket extends Bootstrap {
     });
 
     await this.__registerNRPWorkerListeners();
-    await this.__registerNRPProcessListeners();
+    // await this.__registerNRPProcessListeners();
 
     Logging.logSilly(`Worker ready`);
   }
 
-  protected async __handleMessageFromMain(message: LocalProcessMessage, handle?: unknown) {
+  protected override async __handleMessageFromMain(message: LocalProcessMessage, handle?: net.Socket) {
     if (message.type === 'buttress:connection') {
-      const connection = handle as net.Socket;
-      if (!connection || typeof (connection as any).on !== 'function') {
+      const connection = handle;
+      if (!connection || typeof connection.on !== 'function') {
         Logging.logError('Invalid socket handle received in worker for buttress:connection');
         return;
       }
+
+      if (!this._socketExpressServer) throw new Error('No socket express server in worker');
+
       this._socketExpressServer.emit('connection', connection);
       connection.resume();
       return;
@@ -476,8 +477,8 @@ export default class BootstrapSocket extends Bootstrap {
 
     this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
 
-    this.__nrp.on('sock:worker:request-status', async (data: any) => {
-      data = JSON.parse(data);
+    this.__nrp.on('sock:worker:request-status', async (json: string) => {
+      const data = JSON.parse(json) as RequestStatusMessage;
       if (!data.id) return;
 
       const socket = this._requestSockets.get(data.id);
@@ -485,8 +486,8 @@ export default class BootstrapSocket extends Bootstrap {
 
       socket.emit('bjs-request-status', data);
     });
-    this.__nrp.on('sock:worker:request-end', async (data: any) => {
-      data = JSON.parse(data);
+    this.__nrp.on('sock:worker:request-end', async (json: string) => {
+      const data = JSON.parse(json) as RequestEndMessage;
       if (!data.id) return;
 
       const socket = this._requestSockets.get(data.id);
@@ -497,15 +498,15 @@ export default class BootstrapSocket extends Bootstrap {
     });
   }
 
-  async __registerNRPProcessListeners() {
-    this.__nrp?.on('process:messageQueueResponse', (data: any) => {
-      data = JSON.parse(data);
+  // async __registerNRPProcessListeners() {
+  //   this.__nrp?.on('process:messageQueueResponse', (json: string) => {
+  //     const data = JSON.parse(json) as messageQueueResponse;
 
-      if (!this._processResQueue[data.id]) return;
-      Logging.logSilly(`process:messageQueueResponse ${data.id}`);
-      this._processResQueue[data.id].resolve(data.response);
-    });
-  }
+  //     if (!this._processResQueue[data.id]) return;
+  //     Logging.logSilly(`process:messageQueueResponse ${data.id}`);
+  //     this._processResQueue[data.id].resolve(data.response);
+  //   });
+  // }
 
   private async _workerOnSPRActivity(data: DataShareSocketSharePayload) {
     if (!this.io) throw new Error('No socket.io instance');

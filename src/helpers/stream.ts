@@ -75,13 +75,13 @@ export class SortedStreams extends Readable {
   }
 
   // Readable stream event handlers
-  _read() {
+  override _read() {
     this._pauseUntilRead = false;
 
     this._tryToSendIt();
   }
 
-  _destroy() {
+  override _destroy() {
     this._sources.forEach((holder) => {
       holder.source.destroy();
     });
@@ -191,7 +191,7 @@ export const parseJsonArrayStream = () =>
           try {
             const obj = JSON.parse(trimmedLine);
             this.push(obj);
-          } catch (err) {
+          } catch (err: unknown) {
             console.error(err);
           }
         }

@@ -21,43 +21,13 @@ import Sugar from './sugar.js';
 import Errors from './errors.js';
 
 import Plugins from '../plugins/index.js';
-
 import Datastore from '../datastore/index.js';
+
+import { Schema } from '../types/schema.js';
 
 import { v4 as uuidv4 } from 'uuid';
 
-type PropertyDefinition = {
-  __type: 'string' | 'number' | 'object' | 'array' | 'boolean' | 'id' | 'date' | 'uuid';
-  __default?: unknown;
-  __required?: boolean;
-  __enum?: unknown[];
-  __itemtype?: string;
-  __allowUpdate?: boolean;
-};
-
-type ArraySchema = {
-  __type: 'array';
-  __allowUpdate?: boolean;
-  __schema: Properties;
-};
-
-type Remotes = {
-  name: string;
-  schema: string;
-};
-
-type Properties = {
-  [key: string]: PropertyDefinition | ArraySchema | { [key: string]: PropertyDefinition | ArraySchema };
-};
-
-export interface Schema {
-  name: string;
-  core?: boolean;
-  extends?: string[];
-  remotes?: Remotes | Remotes[];
-  type: 'collection' | 'template';
-  properties: Properties;
-}
+export type { Schema };
 
 /* ********************************************************************************
  *

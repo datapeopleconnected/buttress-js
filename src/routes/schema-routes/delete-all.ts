@@ -39,11 +39,11 @@ export default class DeleteAll extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(_req: Request, _res: Response) {
+  override async _validate(_req: Request, _res: Response) {
     return true;
   }
 
-  async _exec(_req: Request, _res: Response, _validate: unknown) {
+  override async _exec(_req: Request, _res: Response, _validate: unknown) {
     await (await this.routeModel()).rmAll({});
     return true;
   }

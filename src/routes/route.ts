@@ -13,9 +13,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { Request, Response } from 'express';
-
 import Stream from 'node:stream';
+
+import { Request, Response } from 'express';
+import { RedisClientType } from '@redis/client';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -35,9 +36,21 @@ import { Services } from '../bootstrap.js';
 
 export interface NotifyLambdaPathChangeMessage {
   paths: string[];
-  values: any[];
+  values: unknown[];
   collection: string;
 }
+
+interface PathMutationItem {
+  path?: string;
+  value?: unknown;
+}
+
+interface BulkPathMutationItem {
+  id: string;
+  body: PathMutationItem | PathMutationItem[];
+}
+
+type PathLambdaBody = PathMutationItem | PathMutationItem[] | BulkPathMutationItem[] | string[] | unknown;
 
 /**
  */
@@ -139,7 +152,7 @@ export default class Route {
   protected _nrp?: NodeRedisPubsub;
   protected _modelManager?: ModelManager;
 
-  _redisClient: any;
+  _redisClient: RedisClientType;
 
   _timer?: Helpers.Timer;
 
@@ -158,7 +171,7 @@ export default class Route {
     this._modelManager = services.get('modelManager') as ModelManager;
     if (!this._modelManager) throw new Error('Route: ModelManager not found in services');
 
-    this._redisClient = services.get('redisClient');
+    this._redisClient = services.get('redisClient') as RedisClientType;
   }
 
   // Quickly apply some common schemaRoute configurations, will typically be called
@@ -267,7 +280,7 @@ export default class Route {
    * @param {*} result
    * @return {*} result
    */
-  async _respond(req: Request, res: Response, result) {
+  async _respond(req: Request, res: Response, result: unknown) {
     req.context.timings.respond = req.context.timer.interval;
 
     const isReadStream = result instanceof Stream.Readable && result.readable;
@@ -383,7 +396,7 @@ export default class Route {
    * @param {Object} res
    * @param {*} result
    */
-  async _boardcastData(req: Request, res: Response, result) {
+  async _boardcastData(req: Request, res: Response, result: unknown) {
     req.context.timings.boardcastData = req.context.timer.interval;
     Logging.logTimer('_boardcastData:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
@@ -412,13 +425,13 @@ export default class Route {
 
   /**
    * Handle result based on the collection and broadcast
-   * @param {*} req
-   * @param {*} res
-   * @param {*} result
-   * @param {*} path
+   * @param {Request} req
+   * @param {Response} res
+   * @param {unknown} result
+   * @param {string} path
    * @param {boolean} isSuper
    */
-  async _broadcast(req: Request, _res: Response, result, path: string, isSuper = false) {
+  async _broadcast(req: Request, _res: Response, result: unknown, path: string, isSuper = false) {
     const isReadStream = result instanceof Stream.Readable && result.readable;
     Logging.logTimer(
       `_broadcast:start isReadStream:${isReadStream} path:${path} isSuper:${isSuper}`,
@@ -427,7 +440,7 @@ export default class Route {
       req.context.id,
     );
 
-    const emit = (_result) => {
+    const emit = (_result: unknown) => {
       if (this.activityBroadcast === true) {
         this._nrp?.emit(
           'rest:activity',
@@ -489,32 +502,54 @@ export default class Route {
     }
 
     let paths: string[] = [];
-    const values: any[] = [];
-    let body: any = null;
+    const values: unknown[] = [];
+    let body: PathLambdaBody = null;
+
+    const isPathMutationItem = (value: unknown): value is PathMutationItem =>
+      !!value && typeof value === 'object' && ('path' in value || 'value' in value);
+
+    const isBulkPathMutationItem = (value: unknown): value is BulkPathMutationItem =>
+      !!value && typeof value === 'object' && 'id' in value && 'body' in value;
 
     try {
-      body = JSON.parse(req.body);
+      if (typeof req.body === 'string') {
+        body = JSON.parse(req.body) as PathLambdaBody;
+      } else {
+        body = req.body as PathLambdaBody;
+      }
     } catch (_err) {
-      body = req.body;
+      body = req.body as PathLambdaBody;
     }
 
     const id = req.params.id;
 
     if (this.verb === Constants.Verbs.POST) {
       if (req.context.pathSpec?.includes(Constants.BulkRequests.BULK_PUT)) {
-        body.forEach((item) => {
-          if (Array.isArray(item.body)) {
-            item.body.forEach((obj) => {
-              paths.push(`${schemaName}.${item.id}.${obj.path}`);
-              item.body.forEach((i) => values.push(i.value));
-            });
-          } else {
-            paths.push(`${schemaName}.${item.id}.${item.body.path}`);
-            values.push(item.body.value);
-          }
-        });
+        if (Array.isArray(body)) {
+          body.forEach((item) => {
+            if (!isBulkPathMutationItem(item)) return;
+
+            if (Array.isArray(item.body)) {
+              const bodyItems = item.body;
+              bodyItems.forEach((obj) => {
+                if (!isPathMutationItem(obj) || !obj.path) return;
+                paths.push(`${schemaName}.${item.id}.${obj.path}`);
+                bodyItems.forEach((i) => values.push(i.value));
+              });
+            } else if (isPathMutationItem(item.body) && item.body.path) {
+              paths.push(`${schemaName}.${item.id}.${item.body.path}`);
+              values.push(item.body.value);
+            }
+          });
+        }
       } else if (req.context.pathSpec?.includes(Constants.BulkRequests.BULK_DEL)) {
-        body.forEach((id) => paths.push(`${schemaName}.${id}`));
+        if (Array.isArray(body)) {
+          body.forEach((deleteId) => {
+            if (typeof deleteId === 'string') {
+              paths.push(`${schemaName}.${deleteId}`);
+            }
+          });
+        }
       } else {
         paths.push(schemaName);
         values.push(body);
@@ -525,15 +560,19 @@ export default class Route {
       if (id) {
         paths.push(`${schemaName}.${id}`);
       } else if (Array.isArray(body)) {
-        body.forEach((item) => paths.push(`${schemaName}.${item.path}`));
+        body.forEach((item) => {
+          if (isPathMutationItem(item) && item.path) {
+            paths.push(`${schemaName}.${item.path}`);
+          }
+        });
       } else {
         paths.push(schemaName);
       }
     }
     if (this.verb === Constants.Verbs.PUT) {
-      if (!Array.isArray(body)) body = [body];
-      body.forEach((item) => {
-        if (!item.path) return;
+      const putBody = Array.isArray(body) ? body : [body];
+      putBody.forEach((item) => {
+        if (!isPathMutationItem(item) || !item.path) return;
         paths.push(`${schemaName}.${id}.${item.path}`);
         values.push(item.value);
       });

@@ -21,6 +21,7 @@ import ButtressExport, { Errors as BAPIErrors } from '@buttress/api';
 const { default: ButtressAPI } = ButtressExport;
 
 import Errors from '../../helpers/errors.js';
+import * as Helpers from '../../helpers/index.js';
 import { parseJsonArrayStream } from '../../helpers/stream.js';
 import Logging from '../../helpers/logging.js';
 
@@ -45,7 +46,7 @@ export default class Buttress extends AbstractAdapter {
   initPendingResolve: ((value?: unknown) => void)[];
   collectionName?: string;
 
-  protected __connection: any;
+  protected override __connection: any;
 
   declare collection: any;
 
@@ -84,7 +85,7 @@ export default class Buttress extends AbstractAdapter {
     this.initPendingResolve.forEach((r) => r());
   }
 
-  cloneAdapterConnection() {
+  override cloneAdapterConnection() {
     return new Buttress(this.uri, this.options, this.__connection);
   }
 
@@ -95,7 +96,7 @@ export default class Buttress extends AbstractAdapter {
     this.initPendingResolve = [];
   }
 
-  async setCollection(collectionName: string) {
+  override async setCollection(collectionName: string) {
     try {
       this.collectionName = collectionName;
       this.collection = await this._apiCall('setCollection', () =>
@@ -122,7 +123,7 @@ export default class Buttress extends AbstractAdapter {
     return await this.__connection.AppDataSharing.activate(registrationToken, newToken);
   }
 
-  get ID() {
+  override get ID() {
     return AdapterId;
   }
 
@@ -136,11 +137,11 @@ export default class Buttress extends AbstractAdapter {
   private async _apiCall<T>(operation: string, call: () => Promise<T>) {
     try {
       return await call();
-    } catch (err) {
+    } catch (err: unknown) {
       Logging.logError(
         `[ButtressAdapter.${operation}] target:${this.uri.host}${this.uri.pathname} collection:${this.collectionName || 'unknown'}`,
       );
-      Logging.logError(err);
+      Logging.logError(Helpers.getThrownErrorMessage(err));
       throw err;
     }
   }
@@ -173,7 +174,7 @@ export default class Buttress extends AbstractAdapter {
     return result;
   }
 
-  async batchUpdateProcess(id, body) {
+  override async batchUpdateProcess(id, body) {
     const result = await this._resolvedApiCall('batchUpdateProcess', () => this.collection.update(id, body));
     return this.handleResult(result);
   }
@@ -182,7 +183,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {object} body
    * @return {Promise}
    */
-  async add(body) {
+  override async add(body) {
     body = this.convertBSONObjects(body);
     const result = await this._resolvedApiCall('add', () =>
       Array.isArray(body)
@@ -197,7 +198,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {string} id
    * @return {Boolean}
    */
-  async exists(id) {
+  override async exists(id) {
     id = this.convertBSONObjects(id);
     const result = await this._resolvedApiCall('exists', () => this.collection.get(id));
     return result ? true : false;
@@ -207,7 +208,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {object} details
    * @return {Promise}
    */
-  isDuplicate() {
+  override isDuplicate() {
     return Promise.resolve(false);
   }
 
@@ -215,7 +216,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {string} id
    * @return {Promise}
    */
-  async rm(id: string) {
+  override async rm(id: string) {
     // entity = this.convertBSONObjects(entity);
     const result = await this._resolvedApiCall('rm', () => this.collection.remove(id));
     return this.handleResult(result);
@@ -225,7 +226,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {array} ids
    * @return {Promise}
    */
-  async rmBulk(ids) {
+  override async rmBulk(ids) {
     ids = this.convertBSONObjects(ids);
     const result = await this._resolvedApiCall('rmBulk', () => this.collection.bulkRemove(ids));
     return this.handleResult(result);
@@ -235,7 +236,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {object} query
    * @return {Promise}
    */
-  async rmAll(query) {
+  override async rmAll(query) {
     const result = await this._resolvedApiCall('rmAll', () => this.collection.removeAll(query));
     return this.handleResult(result);
   }
@@ -244,7 +245,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {string} id
    * @return {Promise}
    */
-  async findById(id) {
+  override async findById(id) {
     id = this.convertBSONObjects(id);
     const result = await this._resolvedApiCall('findById', () => this.collection.get(id));
     return this.handleResult(result);
@@ -259,7 +260,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {Boolean} project - mongoDB project ids
    * @return {Promise} - resolves to an array of docs
    */
-  async find(query, _excludes = {}, limit = 0, skip = 0, sort, project = null) {
+  override async find(query, _excludes = {}, limit = 0, skip = 0, sort, project = null) {
     // Logging.logSilly(`find: ${this.collectionName} ${query}`);
     query = this.convertBSONObjects(query);
 
@@ -276,7 +277,7 @@ export default class Buttress extends AbstractAdapter {
   /**
    * @return {Promise}
    */
-  async findAll() {
+  override async findAll() {
     const result = await this._resolvedApiCall('findAll', () => this.collection.getAll());
     return this.handleResult(result);
   }
@@ -285,7 +286,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {Array} ids - mongoDB query
    * @return {Promise}
    */
-  async findAllById(ids) {
+  override async findAllById(ids) {
     ids = this.convertBSONObjects(ids);
     const result = await this._resolvedApiCall('findAllById', () => this.collection.bulkGet(ids));
     return this.handleResult(result);
@@ -295,7 +296,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @return {Promise}
    */
-  async count(query) {
+  override async count(query) {
     query = this.convertBSONObjects(query);
     const result = await this._resolvedApiCall('count', () => this.collection.count(query));
     return this.handleResult(result);
@@ -304,7 +305,7 @@ export default class Buttress extends AbstractAdapter {
   /**
    * @return {Promise}
    */
-  async drop() {
+  override async drop() {
     const result = await this._resolvedApiCall('drop', () => this.collection.removeAll());
     return this.handleResult(result);
   }

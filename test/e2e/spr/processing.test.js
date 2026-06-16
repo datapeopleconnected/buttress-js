@@ -117,15 +117,17 @@ describe('Processing', async () => {
 		},
 	};
 
-	const createUserSocket = (name, app = 'app1') => {
-		createTokenSocket(name, testEnv.users[name].tokens[0].value, app);
+	const createUserSocket = async (name, app = 'app1') => {
+		await createTokenSocket(name, testEnv.users[name].tokens[0].value, app);
 	};
 
-	const createTokenSocket = (name, token, app = 'app1') => {
-		testEnv.sockets[name] = io(`${ENDPOINT.SOCK}/${testEnv.apps[app].apiPath}`, {
+	const createTokenSocket = async (name, token, app = 'app1') => {
+		const socket = io(`${ENDPOINT.SOCK}/${testEnv.apps[app].apiPath}`, {
 			auth: { token: token },
 			forceNew: true
 		});
+		await new Promise((resolve) => socket.on('connect', resolve));
+		testEnv.sockets[name] = socket;
 	};
 
 	const createAppWithSchema = async (ref, name, path, policyProps) => {
@@ -326,19 +328,25 @@ describe('Processing', async () => {
 			}, testEnv.apps.app1.token)
 		, 'Processing setup');
 
-		testEnv.sockets.app = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, {
-			auth: { token: testEnv.apps.app1.token },
-			forceNew: true
+		testEnv.sockets.app = await new Promise((resolve) => {
+			const socket = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, {
+				auth: { token: testEnv.apps.app1.token },
+				forceNew: true
+			});
+			socket.on('connect', () => resolve(socket));
 		});
 
 		// Open up some sockets for the users.
-		createUserSocket('basic1');
+		await createUserSocket('basic1');
 
-		createUserSocket('env-test-1');
-		createUserSocket('env-test-2');
-		createUserSocket('env-test-3');
-		createUserSocket('env-test-4');
-		createUserSocket('env-test-5');
+		await createUserSocket('env-test-1');
+		await createUserSocket('env-test-2');
+		await createUserSocket('env-test-3');
+		await createUserSocket('env-test-4');
+		await createUserSocket('env-test-5');
+
+		// Allow time for the server to process socket connections and rehydrate tokens
+		await new Promise((r) => setTimeout(r, 1000));
 	});
 
 	after(async function () {

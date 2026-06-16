@@ -34,7 +34,7 @@ import SchemaRoutes from './schema-routes/index.js';
 import { Routes as CoreRoutes } from './api/index.js';
 
 import AppSchemaModel, { App } from '../model/core/app.js';
-import AppDataSharingSchemaModel from '../model/core/app-data-sharing.js';
+import AppDataSharingSchemaModel, { AppDataSharing } from '../model/core/app-data-sharing.js';
 import { Schema } from '../helpers/schema.js';
 
 import RoutesTokens from './tokens.js';
@@ -290,7 +290,7 @@ class Routes {
     if (!app.__schema) return;
 
     // Get DS agreements
-    const appDSAs = await Helpers.streamAll(
+    const appDSAs = await Helpers.streamAll<AppDataSharing>(
       await Model.getCoreModel(AppDataSharingSchemaModel).find({
         _appId: app.id,
       }),
@@ -367,7 +367,7 @@ class Routes {
 
       try {
         route = new SchemaRoute(schemaData, app, this._services);
-      } catch (err) {
+      } catch (err: unknown) {
         if (err instanceof Helpers.Errors.RouteMissingModel) return Logging.logWarn(`${err.message} for ${app.name}`);
 
         throw err;

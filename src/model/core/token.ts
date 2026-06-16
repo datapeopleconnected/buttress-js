@@ -33,7 +33,8 @@ const Type = {
   LAMBDA: type[4],
 };
 
-type PolicyProperty = string | number;
+export type PolicyProperty = string | number;
+export type PolicyProperties = Record<string, PolicyProperty | PolicyProperty[]> | null;
 
 export interface Token {
   id: string;
@@ -42,7 +43,7 @@ export interface Token {
   domains: string[];
   permissions: { route: string; permission: string }[];
   tags: string[];
-  policyProperties: Record<string, PolicyProperty | PolicyProperty[]> | null;
+  policyProperties: PolicyProperties;
   _appId: string;
   _lambdaId: string;
   _userId: string;
@@ -51,7 +52,7 @@ export interface Token {
 }
 
 class TokenSchemaModel extends StandardModel<Token> {
-  static name = 'Token';
+  static override name = 'Token';
 
   __policyCache: PolicyCache;
 
@@ -181,7 +182,7 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  add(body, internals) {
+  override add(body, internals) {
     body.value = this.createTokenString();
     return super.add(body, internals);
   }

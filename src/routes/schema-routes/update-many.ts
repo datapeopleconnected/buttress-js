@@ -39,7 +39,7 @@ export default class UpdateMany extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
 
     if (!Array.isArray(req.body)) {
@@ -119,16 +119,18 @@ export default class UpdateMany extends Route {
     return data;
   }
 
-  async _exec(_req: Request, _res: Response, _data: unknown) {
+  override async _exec(_req: Request, _res: Response, _data: unknown) {
     const model = await this.routeModel();
 
     const output: {
       id: string;
       sourceId: string;
-      results: any;
+      results: unknown;
     }[] = [];
 
-    for await (const body of _data as any[]) {
+    type UpdateManyBody = { id: string; sourceId: string; body: unknown };
+
+    for await (const body of _data as UpdateManyBody[]) {
       const result = await model.updateByPath(body.body, body.id, body.sourceId);
       output.push({ id: body.id, sourceId: body.sourceId, results: result });
     }

@@ -13,6 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Request, Response } from 'express';
+
 import { Schema, encode } from '../../helpers/schema.js';
 import * as Shared from '../shared.js';
 
@@ -27,8 +29,39 @@ const Visibility = {
   PRIVATE: visibility[1],
 };
 
+export interface Activity {
+  id: string;
+  timestamp: Date;
+  title: string;
+  description: string;
+  visibility: string;
+  path: string;
+  verb: string;
+  authType: string;
+  permissions: string;
+  params: Record<string, unknown>;
+  query: string;
+  body: string;
+  _tokenId: string | null;
+  _appId: string | null;
+  _userId: string | null;
+}
+
+export interface ActivityAddBody {
+  req: Request;
+  res: Response;
+  activityTitle: string;
+  activityDescription: string;
+  activityVisibility: string;
+  path: string;
+  verb: string;
+  auth: string;
+  permissions: string;
+  id?: string;
+}
+
 class ActivitySchemaModel extends StandardModel {
-  static name = 'Activity';
+  static override name = 'Activity';
 
   constructor(services) {
     const schema = ActivitySchemaModel.Schema;
@@ -93,11 +126,13 @@ class ActivitySchemaModel extends StandardModel {
           __allowUpdate: false,
         },
         params: {
-          id: {
-            __type: 'id',
-            __default: null,
-            __allowUpdate: false,
-          },
+          __type: 'object',
+          __default: {},
+          __allowUpdate: false,
+        },
+        query: {
+          __type: 'string',
+          __allowUpdate: false,
         },
         body: {
           __type: 'string',
@@ -127,18 +162,19 @@ class ActivitySchemaModel extends StandardModel {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with App Object when the database request is completed
    */
-  __parseAddBody(body) {
+  override __parseAddBody(body: ActivityAddBody) {
     const user = body.req.context.authUser;
     const userName = user ? `${user.id}` : 'App';
 
     body.activityTitle = body.activityTitle.replace('%USER_NAME%', userName);
     body.activityDescription = body.activityDescription.replace('%USER_NAME%', userName);
 
-    const q = Object.assign({}, body.req.query);
+    const q = { ...body.req.query };
     delete q.token;
     delete q.urq;
 
-    const md: any = {
+    const md: Partial<Activity> = {
+      id: body.id,
       title: body.activityTitle,
       description: body.activityDescription,
       visibility: body.activityVisibility,
@@ -147,25 +183,18 @@ class ActivitySchemaModel extends StandardModel {
       permissions: body.permissions,
       authType: body.auth,
       params: body.req.params,
-      query: q,
+      query: JSON.stringify(q),
       body: encode(body.req.body), // HACK - Due to schema update results.
       timestamp: new Date(),
-      _tokenId: body.req.context.token.id,
+      _tokenId: body.req.context.token ? body.req.context.token.id : null,
       _userId: body.req.context.authUser ? body.req.context.authUser.id : null,
-      _appId: body.req.context.authApp.id,
+      _appId: body.req.context.authApp ? body.req.context.authApp.id : null,
     };
 
-    if (body.id) {
-      md.id = this.adapter.ID.new(body.id);
-    }
-
-    delete body.req;
-    delete body.res;
-
-    return Shared.sanitizeSchemaObject(ActivitySchemaModel.Schema, body);
+    return Shared.sanitizeSchemaObject(ActivitySchemaModel.Schema, md);
   }
 
-  add(body) {
+  override add(body) {
     body.req.body = encode(body.req.body);
 
     return super.add(body);

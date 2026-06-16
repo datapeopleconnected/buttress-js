@@ -78,7 +78,7 @@ export interface Lambda {
 }
 
 export default class LambdaModel extends StandardModel<Lambda> {
-  static name = 'Lambda';
+  static override name = 'Lambda';
 
   constructor(services) {
     const schema = LambdaModel.Schema;
@@ -270,7 +270,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
    * @param {Object} app - Lambda app
    * @return {Promise} - fulfilled with lambda Object when the database request is completed
    */
-  async add(body, internals?: any) {
+  override async add(body, internals?: any) {
     const { auth, app } = internals;
     await this.gitCloneLambda(body, auth, app);
 
@@ -387,14 +387,12 @@ export default class LambdaModel extends StandardModel<Lambda> {
       }
 
       await this.gitFolderClone(gitHash, branch, name, url);
-    } catch (err) {
+    } catch (err: unknown) {
       if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
         await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
       }
 
-      if (err instanceof Error) {
-        Logging.logError(`[${LambdaModel.name}] ${err.message}`);
-      }
+      Logging.logError(`[${LambdaModel.name}] ${Helpers.getThrownErrorMessage(err)}`);
       throw err;
     }
   }
@@ -494,14 +492,12 @@ export default class LambdaModel extends StandardModel<Lambda> {
             $set: { deployedAt: Sugar.Date.create('now') },
           });
       }
-    } catch (err) {
+    } catch (err: unknown) {
       if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${lambda.name}`)) {
         await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.name}`);
       }
 
-      if (err instanceof Error) {
-        Logging.logError(`[${LambdaModel.name}] ${err.message}`);
-      }
+      Logging.logError(`[${LambdaModel.name}] ${Helpers.getThrownErrorMessage(err)}`);
       throw err;
     }
   }

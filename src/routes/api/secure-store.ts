@@ -20,11 +20,12 @@ import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
 
-import SecureStoreSchemaModel from '../../model/core/secure-store.js';
+import SecureStoreSchemaModel, { SecureStore } from '../../model/core/secure-store.js';
 import AppSchemaModel from '../../model/core/app.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import LambdaSchemaModel from '../../model/core/lambda.js';
 import UserSchemaModel from '../../model/core/user.js';
+import { QueryParams } from '../../types/bjs-query.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -39,7 +40,7 @@ class AddSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const app = req.context.authApp;
 
     if (!app || !req.body.name) {
@@ -77,7 +78,7 @@ class AddSecureStore extends Route {
     });
   }
 
-  _exec(req: Request, _res: Response, validate) {
+  override _exec(req: Request, _res: Response, validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).add(req.body, validate.appId);
   }
 }
@@ -94,7 +95,7 @@ class AddManySecureStore extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const app = req.context.authApp;
 
     if (!app) {
@@ -126,7 +127,7 @@ class AddManySecureStore extends Route {
     return Promise.resolve(true);
   }
 
-  async _exec(req: Request, _res: Response, _validate) {
+  override async _exec(req: Request, _res: Response, _validate) {
     for await (const secureStore of req.body) {
       await Model.getCoreModel(SecureStoreSchemaModel).add(req, secureStore);
     }
@@ -147,7 +148,7 @@ class GetSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -177,7 +178,7 @@ class GetSecureStore extends Route {
     return secureStore;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return validate;
   }
 }
@@ -199,7 +200,7 @@ class FindSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -228,7 +229,7 @@ class FindSecureStore extends Route {
     return secureStore;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return validate;
   }
 }
@@ -248,7 +249,7 @@ class UpdateSecureStore extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -291,7 +292,7 @@ class UpdateSecureStore extends Route {
     };
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate) {
     return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, validate.id);
   }
 }
@@ -313,7 +314,7 @@ class BulkUpdateSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -350,7 +351,7 @@ class BulkUpdateSecureStore extends Route {
     return req.body;
   }
 
-  async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate) {
     for await (const item of validate) {
       await Model.getCoreModel(SecureStoreSchemaModel).updateByPath(item.body, item.id, null);
     }
@@ -370,30 +371,23 @@ class SearchSecureStoreList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
     }
 
-    const result: {
-      query: any;
-      skip: number;
-      limit: number;
-      sort: any;
-      project: any;
-    } = {
-      query: {
-        $and: [],
-      },
+    const result: QueryParams<SecureStore> = {
+      query: { },
       skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
       limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
       sort: req.body && req.body.sort ? req.body.sort : {},
       project: req.body && req.body.project ? req.body.project : false,
     };
+    result.query.$and = [];
 
-    if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-    if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (result.skip && isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+    if (result.limit && isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
@@ -412,7 +406,7 @@ class SearchSecureStoreList extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<SecureStore>) {
     return Model.getCoreModel(SecureStoreSchemaModel).find(
       validate.query,
       {},
@@ -436,7 +430,7 @@ class DeleteSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -463,7 +457,7 @@ class DeleteSecureStore extends Route {
     return secureStore;
   }
 
-  async _exec(req: Request, res: Response, secureStore) {
+  override async _exec(req: Request, res: Response, secureStore) {
     await Model.getCoreModel(SecureStoreSchemaModel).rm(secureStore.id);
     return true;
   }
@@ -483,35 +477,30 @@ class SecureStoreCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
     }
 
-    const result = {
-      query: {},
+    const result: QueryParams<SecureStore> = {
+      query: { },
     };
-
-    let query: any = {};
-
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      result.query.$and.push(req.body);
     }
 
-    query.$and.push({
+    result.query.$and.push({
       _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
     });
 
-    query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(
-      query,
+    const query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(
+      result.query,
       {},
       Model.getCoreModel(SecureStoreSchemaModel).flatSchemaData,
     );
@@ -520,7 +509,7 @@ class SecureStoreCount extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult: QueryParams<SecureStore>) {
     return Model.getCoreModel(SecureStoreSchemaModel).count(validateResult.query);
   }
 }

@@ -19,8 +19,9 @@ import { Request, Response } from 'express';
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import LambdaExecutionSchemaModel from '../../model/core/lambda-execution.js';
+import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
+import { QueryParams } from '../../types/bjs-query.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -40,7 +41,7 @@ class GetLambdaExecution extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
@@ -60,7 +61,7 @@ class GetLambdaExecution extends Route {
     return lambdaExecution;
   }
 
-  _exec(req: Request, res: Response, lambdaExecution) {
+  override _exec(req: Request, res: Response, lambdaExecution) {
     return lambdaExecution;
   }
 }
@@ -82,7 +83,7 @@ class GetLambdaExecutionStatus extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
@@ -102,7 +103,7 @@ class GetLambdaExecutionStatus extends Route {
     return lambdaExecution.status;
   }
 
-  async _exec(req: Request, res: Response, status) {
+  override async _exec(req: Request, res: Response, status) {
     return {
       status,
     };
@@ -129,7 +130,7 @@ class UpdateLambdaExecution extends Route {
     this.activityBroadcast = true;
   }
 
-  _validate(req: Request, _res: Response) {
+  override _validate(req: Request, _res: Response) {
     return new Promise((resolve, reject) => {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { validation, body } = Model.getCoreModel(LambdaExecutionSchemaModel).validateUpdate(req.body);
@@ -167,7 +168,7 @@ class UpdateLambdaExecution extends Route {
     });
   }
 
-  async _exec(req: Request, _res: Response, validate) {
+  override async _exec(req: Request, _res: Response, validate) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).updateByPath(req.body, validate.id);
   }
 }
@@ -189,14 +190,11 @@ class SearchExecutionList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  async _validate(req: Request, _res: Response) {
-    const result: {
-      query: any;
-    } = {
-      query: {
-        $and: [],
-      },
+  override async _validate(req: Request, _res: Response) {
+    const result: QueryParams<LambdaExecution> = {
+      query: { },
     };
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
@@ -211,7 +209,7 @@ class SearchExecutionList extends Route {
     return result;
   }
 
-  _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<LambdaExecution>) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).find(validate.query);
   }
 }
@@ -236,34 +234,29 @@ class LambdaExecutionCount extends Route {
     this.activityBroadcast = false;
   }
 
-  async _validate(req: Request, _res: Response) {
-    const result = {
-      query: {},
+  override async _validate(req: Request, _res: Response) {
+    const result: QueryParams<LambdaExecution> = {
+      query: { },
     };
-
-    let query: any = {};
-
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      result.query.$and.push(req.body);
     }
 
-    query = Model.getCoreModel(LambdaExecutionSchemaModel).parseQuery(
-      query,
+    result.query = Model.getCoreModel(LambdaExecutionSchemaModel).parseQuery(
+      result.query,
       {},
       Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData,
     );
-    result.query = query;
+
     return result;
   }
 
-  _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult: QueryParams<LambdaExecution>) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).count(validateResult.query);
   }
 }

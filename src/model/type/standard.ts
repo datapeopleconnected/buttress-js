@@ -318,7 +318,7 @@ export default class StandardModel<TDocument = unknown> {
 
     return Object.assign(Shared.sanitizeSchemaObject(this.schemaData, body), entity);
   }
-  add(body, internals?: any) {
+  add(body, internals?: unknown) {
     return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
   }
 
@@ -381,7 +381,7 @@ export default class StandardModel<TDocument = unknown> {
 
     // const schema = __getCollectionSchema(collectionName);
     const flattenedSchema = this.schemaData ? Helpers.getFlattenedSchema(this.schemaData) : false;
-    const extendedPathContext = Shared.extendPathContext({}, flattenedSchema, '');
+    const extendedPathContext = Shared.extendPathContext({}, flattenedSchema || {}, '');
 
     // TODO: This isn't processing updates in a batch
     return await body.reduce(async (prev, update) => {

@@ -29,7 +29,7 @@ const Type = {
 };
 
 class TrackingSchemaModel extends StandardModel {
-  static name = 'Tracking';
+  static override name = 'Tracking';
 
   constructor(services) {
     const schema = TrackingSchemaModel.Schema;
@@ -159,7 +159,7 @@ class TrackingSchemaModel extends StandardModel {
    * @param {Object} body - body passed through from a POST request to be validated
    * @return {Object} - returns an object with validation context
    */
-  __doValidation(body) {
+  override __doValidation(body) {
     const res: {
       isValid: boolean;
       missing: string[];
@@ -182,7 +182,7 @@ class TrackingSchemaModel extends StandardModel {
     return res;
   }
 
-  validate(body) {
+  override validate(body) {
     if (body instanceof Array === false) {
       body = [body];
     }

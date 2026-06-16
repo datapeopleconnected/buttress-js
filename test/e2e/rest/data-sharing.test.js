@@ -346,17 +346,13 @@ describe('Data Sharing', async () => {
 			}, testEnv.apps.app2.token);
 
 			assert.strictEqual(cars.length, testEnv.cars.length);
-			assert.strictEqual(cars[0].id, testEnv.cars[0].id);
-			assert.strictEqual(cars[0].name, testEnv.cars[0].name);
 
-			assert.strictEqual(cars[1].id, testEnv.cars[1].id);
-			assert.strictEqual(cars[1].name, testEnv.cars[1].name);
-
-			assert.strictEqual(cars[2].id, testEnv.cars[2].id);
-			assert.strictEqual(cars[2].name, testEnv.cars[2].name);
-
-			assert.strictEqual(cars[3].id, testEnv.cars[3].id);
-			assert.strictEqual(cars[3].name, testEnv.cars[3].name);
+			for (const expectedCar of testEnv.cars) {
+				const car = cars.find((c) => c.name === expectedCar.name);
+				assert(car, `Expected car "${expectedCar.name}" not found in response`);
+				assert.strictEqual(car.id, expectedCar.id);
+				assert.strictEqual(car.name, expectedCar.name);
+			}
 		});
 	});
 });

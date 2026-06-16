@@ -39,7 +39,7 @@ export default class DeleteOne extends Route {
     this.activityBroadcast = true;
   }
 
-  async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request, _res: Response) {
     const entity = await (await this.routeModel()).findById(req.params.id);
     if (!entity) {
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
@@ -48,7 +48,7 @@ export default class DeleteOne extends Route {
     return entity;
   }
 
-  async _exec(_req: Request, _res: Response, entity) {
+  override async _exec(_req: Request, _res: Response, entity) {
     await (await this.routeModel()).rm(entity.id);
     return true;
   }

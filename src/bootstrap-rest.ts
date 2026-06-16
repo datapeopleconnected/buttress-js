@@ -31,6 +31,7 @@ import Bootstrap, { LocalProcessMessage } from './bootstrap.js';
 import Model from './model/index.js';
 import Routes from './routes/index.js';
 import Logging from './helpers/logging.js';
+import { getThrownErrorMessage } from './helpers/index.js';
 import * as Schema from './helpers/schema.js';
 
 import { SourceDataSharingRouting } from './services/source-ds-routing.js';
@@ -60,7 +61,7 @@ export default class BootstrapRest extends Bootstrap {
     this._installMode = process.env.INSTALL_MODE === 'true' || installMode || false;
   }
 
-  async init(): Promise<boolean> {
+  override async init(): Promise<boolean> {
     await super.init();
 
     Logging.logDebug(`Connecting to primary datastore...`);
@@ -100,7 +101,7 @@ export default class BootstrapRest extends Bootstrap {
     return await this.__createCluster();
   }
 
-  async clean() {
+  override async clean() {
     await super.clean();
     Logging.logDebug('Shutting down all connections');
     Logging.logSilly('BootstrapRest:clean');
@@ -134,7 +135,7 @@ export default class BootstrapRest extends Bootstrap {
     await DatastoreManager.clean();
   }
 
-  async __initMain() {
+  override async __initMain() {
     const isPrimary = Config.rest.app === 'primary';
 
     if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');
@@ -176,7 +177,7 @@ export default class BootstrapRest extends Bootstrap {
     await this.__spawnWorkers();
   }
 
-  async __initWorker() {
+  override async __initWorker() {
     Plugins.initRoutes(this.routes);
 
     const app = Express();
@@ -217,13 +218,19 @@ export default class BootstrapRest extends Bootstrap {
     await this.routes.initAppRoutes();
   }
 
-  async __handleMessageFromMain(message: LocalProcessMessage) {
+  override async __handleMessageFromMain(message: LocalProcessMessage) {
     if (message.type === 'app-schema:updated') {
       if (!this.routes) return Logging.logDebug(`Skipping app schema update, router not created yet`);
-      Logging.logDebug(`App Schema Updated: ${message.payload.appId}`);
-      await Model.initSchema(message.payload.appId);
-      await this.routes.regenerateAppRoutes(message.payload.appId);
-      Logging.logDebug(`Models & Routes regenereated: ${message.payload.appId}`);
+      const payload = message.payload as { appId: string };
+
+      if (!payload || !payload.appId) {
+        return Logging.logWarn(`Skipping app schema update, no appId provided`);
+      }
+
+      Logging.logDebug(`App Schema Updated: ${payload.appId}`);
+      await Model.initSchema(payload.appId);
+      await this.routes.regenerateAppRoutes(payload.appId);
+      Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
     } else if (message.type === 'app-routes:bust-cache') {
       if (!this.routes) return Logging.logDebug(`Skipping token cache bust, router not created yet`);
       // TODO: Maybe do this better than
@@ -235,8 +242,6 @@ export default class BootstrapRest extends Bootstrap {
   async __systemInstall() {
     Logging.log('Checking for existing apps.');
     const pathName = path.join(Config.paths.appData, 'super.json');
-
-    let superApp: any = null;
 
     try {
       const appCount = await Model.getCoreModel(AppSchemaModel).count();
@@ -255,7 +260,7 @@ export default class BootstrapRest extends Bootstrap {
         return;
       }
 
-      superApp = await Model.getCoreModel(AppSchemaModel).add(
+      const superApp = await Model.getCoreModel(AppSchemaModel).add(
         {
           name: `${Config.app.title} TEST`,
           apiPath: 'bjs',
@@ -266,35 +271,30 @@ export default class BootstrapRest extends Bootstrap {
         },
       );
 
-      if (!superApp) {
-        Logging.logError('Failed to create super app.');
-        throw new Error('Failed to create super app.');
-      }
-    } catch (err) {
-      Logging.logError(err);
+      await new Promise<void>((resolve, reject) => {
+        const appData = Object.assign(superApp.app, { token: superApp.token.value });
+
+        if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, { recursive: true });
+
+        fs.writeFile(pathName, JSON.stringify(appData), (err) => {
+          if (err) return reject(err);
+          Logging.log(`--------------------------------------------------------`);
+          Logging.log(` SUPER APP CREATED: ${superApp.app.id}`);
+          Logging.log(``);
+          Logging.log(` Token can be found at the following path:`);
+          Logging.log(` ${pathName}`);
+          Logging.log(``);
+          Logging.log(` IMPORTANT:`);
+          Logging.log(` Please delete this file once you've captured the token`);
+          Logging.log(`--------------------------------------------------------`);
+          resolve();
+        });
+      });
+    } catch (err: unknown) {
+      Logging.logError(getThrownErrorMessage(err));
       Logging.logError('Failed to create super app.');
       throw err;
     }
-
-    await new Promise<void>((resolve, reject) => {
-      const app = Object.assign(superApp.app, { token: superApp.token.value });
-
-      if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, { recursive: true });
-
-      fs.writeFile(pathName, JSON.stringify(app), (err) => {
-        if (err) return reject(err);
-        Logging.log(`--------------------------------------------------------`);
-        Logging.log(` SUPER APP CREATED: ${superApp.app.id}`);
-        Logging.log(``);
-        Logging.log(` Token can be found at the following path:`);
-        Logging.log(` ${pathName}`);
-        Logging.log(``);
-        Logging.log(` IMPORTANT:`);
-        Logging.log(` Please delete this file once you've captured the token`);
-        Logging.log(`--------------------------------------------------------`);
-        resolve();
-      });
-    });
   }
 
   /**

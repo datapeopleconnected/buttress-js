@@ -21,12 +21,12 @@ import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 
 export interface PolicyEnvQuery {
+  type: 'string' | 'id' | 'array' | 'boolean';
   collection: string;
-  type: string;
-  query: any;
+  query: Record<string, unknown>;
   output: {
     key: string;
-    type: string;
+    type: 'string' | 'id';
   };
 }
 export interface PolicyEnv {
@@ -38,25 +38,25 @@ export interface PolicySelection {
 }
 
 export interface PolicyQuery {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface PolicyCondition {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface PolicyProjection {
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 export interface PolicyConfig {
   verbs: string[];
   endpoints: string[];
   schema: string[];
-  env: PolicyEnv | null;
-  condition: PolicyCondition | null;
-  query: PolicyQuery | null;
-  projection: PolicyProjection | null;
+  env?: PolicyEnv | null;
+  condition?: PolicyCondition | null;
+  query?: PolicyQuery | null;
+  projection?: PolicyProjection | null;
 }
 export interface Policy {
   id: string;
@@ -70,7 +70,7 @@ export interface Policy {
 }
 
 class PolicySchemaModel extends StandardModel<Policy> {
-  static name = 'Policy';
+  static override name = 'Policy';
 
   __policyCache: PolicyCache;
 
@@ -186,8 +186,8 @@ class PolicySchemaModel extends StandardModel<Policy> {
    * @param {String} appId - app id
    * @return {Promise} - fulfilled with policy Object when the database request is completed
    */
-  async add(body, appId) {
-    const policyConfig: any[] = [];
+  override async add(body, appId) {
+    const policyConfig: PolicyConfig[] = [];
     if (body.config) {
       body.config.forEach((item) => {
         policyConfig.push({
@@ -228,14 +228,14 @@ class PolicySchemaModel extends StandardModel<Policy> {
   // updateOne() {
 
   // }
-  async updateById(id, query) {
+  override async updateById(id, query) {
     const policy = await super.updateById(this.createId(id), query);
 
     this.__policyCache.invalidatePolicyAndTokensBySelection(policy.id.toString());
 
     return policy;
   }
-  updateByPath(body, id, sourceId = null) {
+  override updateByPath(body, id, sourceId = null) {
     const policy = super.updateByPath(body, id, sourceId);
 
     this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());
@@ -243,12 +243,12 @@ class PolicySchemaModel extends StandardModel<Policy> {
     return policy;
   }
 
-  async rm(id: string) {
+  override async rm(id: string) {
     await super.rm(id);
     await this.__policyCache.removePolicy(id);
   }
 
-  async rmBulk(ids: string[]) {
+  override async rmBulk(ids: string[]) {
     const out = await super.rmBulk(ids);
     await Promise.all(ids.map((id) => this.__policyCache.removePolicy(id)));
     return out;
