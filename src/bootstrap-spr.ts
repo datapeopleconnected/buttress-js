@@ -285,7 +285,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     }
 
     // Get all policies from the cache that are relevant to the event.
-    const policies = await this._policyCache.getPoliciesByEvent(activity);
+    const policies = await this._policyCache.getPoliciesByEvent(activity) as Policy[];
     if (policies.length < 0) {
       Logging.logSilly('Skipping message broadcast, no relevant policies found');
       return;
@@ -302,7 +302,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         const applicablePolicy: ApplicablePolicyConfig = {
           id: policy.id,
           name: policy.name,
-          appId: 'test',
+          appId: policy._appId,
           env: policy.env,
           config,
         };
