@@ -22,6 +22,7 @@ import * as Helpers from '../../helpers/index.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import { QueryParams } from '../../types/bjs-query.js';
+import TokenSchemaModel from '../../model/core/token.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -187,7 +188,7 @@ class SearchExecutionList extends Route {
     );
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.LIST;
+    this.permissions = Route.Constants.Permissions.SEARCH;
   }
 
   override async _validate(req: Request, _res: Response) {
@@ -206,6 +207,13 @@ class SearchExecutionList extends Route {
       {},
       Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData,
     );
+
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        _appId: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 
