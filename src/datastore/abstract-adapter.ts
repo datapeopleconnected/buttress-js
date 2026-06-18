@@ -35,7 +35,15 @@ export default class AbstractAdapter {
     this.collection = null;
   }
 
-  cloneAdapterConnection() {
+  async connect(): Promise<unknown> {
+    throw new Errors.NotYetImplemented('connect');
+  }
+
+  async close(): Promise<void> {
+    throw new Errors.NotYetImplemented('close');
+  }
+
+  cloneAdapterConnection(): unknown {
     throw new Errors.NotYetImplemented('cloneAdapterConnection');
   }
 

@@ -35,8 +35,9 @@ import AccessControlProjection from './projection.js';
 import AccessControlHelpers, { filterPolicyConfigs } from './helpers.js';
 import { PolicyCache } from '../services/policy-cache.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
-import UserSchemaModel from '../model/core/user.js';
 import AppSchemaModel from '../model/core/app.js';
+
+import { Schema as SchemaDefinition } from '../types/schema.js';
 
 export class PolicyError extends Error {
   statusCode: number;
@@ -61,14 +62,14 @@ export type ApplicablePolicyConfig = {
 };
 
 class AccessControl {
-  _schemas: { [key: string]: any };
+  _schemas: { [key: string]: SchemaDefinition[] };
   // _policies: {[key: string]: any};
 
   _queuedLimitedPolicy: string[];
 
   _oneWeekMilliseconds: number;
 
-  _coreSchema: any[];
+  _coreSchema: SchemaDefinition[];
   _coreSchemaNames: string[];
 
   _policyCache?: PolicyCache;
@@ -164,7 +165,10 @@ class AccessControl {
     if (lambdaAPICall) return next();
 
     const schemaPath = (requestedURL.split('v1/').pop() || '').split('/');
-    const schemaName = Schema.routeToModel(schemaPath.shift());
+    const schemaName = Schema.routeToModel(schemaPath.shift() || '');
+    if (!schemaName) {
+      throw new Error(`Unable to determine schema for request to ${requestedURL}`);
+    }
 
     if (this._coreSchema.length < 1) {
       this._coreSchema = await AccessControlHelpers.cacheCoreSchema();
@@ -289,62 +293,62 @@ class AccessControl {
     return { roomId: hash(outcome), structure };
   }
 
-  async getUserRoomStructures(user, appId, req: any = {}) {
-    Logging.logTimer(
-      `getUserRoomStructures::start`,
-      req.context.timer,
-      Logging.Constants.LogLevel.SILLY,
-      req.context.id,
-    );
+  // async getUserRoomStructures(user, appId, req) {
+  //   Logging.logTimer(
+  //     `getUserRoomStructures::start`,
+  //     req.context.timer,
+  //     Logging.Constants.LogLevel.SILLY,
+  //     req.context.id,
+  //   );
 
-    // if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
-    if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
+  //   // if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
+  //   if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
 
-    if (!req.authApp) {
-      req.authApp = {
-        id: appId,
-      };
-    }
-    if (!req.authUser) {
-      req.authUser = user;
-    }
+  //   if (!req.authApp) {
+  //     req.authApp = {
+  //       id: appId,
+  //     };
+  //   }
+  //   if (!req.authUser) {
+  //     req.authUser = user;
+  //   }
 
-    const rooms = {};
-    // ! This isn't taking into account there could be mutiple user tokens.
-    const token = await Model.getCoreModel(TokenSchemaModel).findOne({
-      _userId: {
-        $eq: Model.getCoreModel(UserSchemaModel).createId(user.id),
-      },
-    });
+  //   const rooms = {};
+  //   // ! This isn't taking into account there could be mutiple user tokens.
+  //   const token = await Model.getCoreModel(TokenSchemaModel).findOne({
+  //     _userId: {
+  //       $eq: Model.getCoreModel(UserSchemaModel).createId(user.id),
+  //     },
+  //   });
 
-    if (!token) {
-      Logging.logTimer(
-        `getUserRoomStructures::end - no token found for user`,
-        req.context.timer,
-        Logging.Constants.LogLevel.SILLY,
-        req.context.id,
-      );
-      return rooms;
-    }
+  //   if (!token) {
+  //     Logging.logTimer(
+  //       `getUserRoomStructures::end - no token found for user`,
+  //       req.context.timer,
+  //       Logging.Constants.LogLevel.SILLY,
+  //       req.context.id,
+  //     );
+  //     return rooms;
+  //   }
 
-    const tokenPolicies = await this.__getTokenPolicies(token);
-    for await (const schema of this._schemas[appId]) {
-      req.body = {};
-      // req.accessControlQuery = {};
-      const { roomId, structure } = await this._getSchemaRoomStructure(tokenPolicies, req, schema.name, appId);
-      if (!roomId) continue;
+  //   const tokenPolicies = await this.__getTokenPolicies(token);
+  //   for await (const schema of this._schemas[appId]) {
+  //     req.body = {};
+  //     // req.accessControlQuery = {};
+  //     const { roomId, structure } = await this._getSchemaRoomStructure(tokenPolicies, req, schema.name, appId);
+  //     if (!roomId) continue;
 
-      if (!rooms[roomId]) {
-        rooms[roomId] = structure;
-      } else {
-        if (!structure) throw new Error('getUserRoomStructures - structure is not defined');
-        rooms[roomId].schema[schema.name] = structure.schema[schema.name];
-      }
-    }
+  //     if (!rooms[roomId]) {
+  //       rooms[roomId] = structure;
+  //     } else {
+  //       if (!structure) throw new Error('getUserRoomStructures - structure is not defined');
+  //       rooms[roomId].schema[schema.name] = structure.schema[schema.name];
+  //     }
+  //   }
 
-    Logging.logTimer(`getUserRoomStructures::end`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
-    return rooms;
-  }
+  //   Logging.logTimer(`getUserRoomStructures::end`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+  //   return rooms;
+  // }
 
   /**
    * This is the main processing part of the policy engine, policies which have matched on the token are fed into this

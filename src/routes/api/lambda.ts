@@ -102,7 +102,7 @@ class GetLambdaList extends Route {
     if (ids.length > 0) {
       ids.forEach((id) => {
         try {
-          Datastore.getInstance('core').ID.new(id);
+          Datastore.getInstance('core').ID.new(id.toString());
         } catch (_err) {
           this.log(`LAMBDA: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
           throw new Helpers.Errors.RequestError(400, 'invalid_id');
@@ -773,7 +773,7 @@ class DeleteLambda extends Route {
     await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
 
     if (validate.lambda.trigger.some((t) => t.type === 'PATH_MUTATION')) {
-      this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', JSON.stringify(validate.lambda));
+      this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
     }
 
     return true;

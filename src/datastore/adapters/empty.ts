@@ -18,7 +18,7 @@ import { ObjectId } from 'bson';
 import AbstractAdapter from '../abstract-adapter.js';
 
 class AdapterId {
-  static new(id: string) {
+  static new(id?: string) {
     return new ObjectId(id);
   }
 
@@ -36,7 +36,11 @@ export default class EmptyAdapter extends AbstractAdapter {
     return AdapterId;
   }
 
-  async connect() {
-    return Promise.resolve();
+  override async connect() {
+    return;
+  }
+
+  override async close() {
+    return;
   }
 }

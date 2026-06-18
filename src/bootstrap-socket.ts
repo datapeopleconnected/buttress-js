@@ -369,9 +369,16 @@ export default class BootstrapSocket extends Bootstrap {
     if (token.type === 'dataSharing') {
       const remoteSchemas = Schema.decode(app.__schema).reduce((obj, item) => {
         if (!item.remotes) return obj;
+
+        if (!Array.isArray(item.remotes)) {
+          obj[`${item.remotes.name}.${item.remotes.schema}`] = item;
+          return obj;
+        }
+
         item.remotes.forEach((remote) => {
           obj[`${remote.name}.${remote.schema}`] = item;
         });
+
         return obj;
       }, {});
 
@@ -520,7 +527,7 @@ export default class BootstrapSocket extends Bootstrap {
     }
 
     const container = {
-      id: Datastore.getInstance('core').ID.new(),
+      id: Datastore.getInstance('core').ID.new().toString(),
       timer: new Helpers.Timer(),
     };
     container.timer.start();

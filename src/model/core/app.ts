@@ -32,6 +32,7 @@ import DeploymentSchemaModel from './deployment.js';
 import LambdaSchemaModel from './lambda.js';
 import LambdaExecutionSchemaModel from './lambda-execution.js';
 import SecureStoreSchemaModel from './secure-store.js';
+import { AppDeletedMessage } from '../../routes/index.js';
 
 export interface App {
   id: string;
@@ -53,13 +54,11 @@ export interface App {
 export default class AppSchemaModel extends StandardModel<App> {
   static override name = 'App';
 
-  private _localSchema: any;
+  private _localSchema?: Schema[];
 
   constructor(services) {
     const schema = AppSchemaModel.Schema;
     super(schema, null, services);
-
-    this._localSchema = null;
   }
 
   static get Constants() {
@@ -396,7 +395,7 @@ export default class AppSchemaModel extends StandardModel<App> {
     return collections;
   }
 
-  setLocalSchema(schema) {
+  setLocalSchema(schema: Schema[]) {
     this._localSchema = schema;
   }
 
@@ -452,10 +451,10 @@ export default class AppSchemaModel extends StandardModel<App> {
     Logging.logSilly(`Deleting schema for app ${entity.id}`);
     await this.__modelManager.dropAndCleanAppModels(entity.id);
 
-    const payload = JSON.stringify({ appId: entity.id, apiPath: entity.apiPath });
+    const payload = JSON.stringify({ appId: entity.id, apiPath: entity.apiPath } satisfies AppDeletedMessage);
 
     // ? We don't know that his is being called within the rest worker...
-    this.__nrp?.emit('rest:worker:rebuild-path-mutation-cache', payload);
+    this.__nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
     this.__nrp?.emit('rest:worker:app-deleted', payload);
 
     return super.rm(entity.id.toString());

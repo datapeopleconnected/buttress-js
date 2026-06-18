@@ -26,7 +26,7 @@ import { BjsQuery } from '../../types/bjs-query.js';
 import StandardModel from '../../model/type/standard.js';
 
 class AdapterId {
-  static new(id: string) {
+  static new(id?: string) {
     return new ObjectId(id);
   }
 
@@ -61,7 +61,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 
   declare collection?: Collection;
 
-  async connect() {
+  override async connect() {
     if (this.__connection) return this.__connection;
 
     // Remove the pathname as we'll selected the db using the client method
@@ -74,7 +74,7 @@ export default class MongodbAdapter extends AbstractAdapter {
     return this.__connection;
   }
 
-  async close() {
+  override async close() {
     if (!this._client) return;
     try {
       await this._client.close();

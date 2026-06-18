@@ -25,6 +25,7 @@ import AppSchemaModel, { App } from '../../model/core/app.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import { Schema } from '../../helpers/schema.js';
+import { QueryParams } from '../../types/bjs-query.js';
 
 /**
  * @class GetAppList
@@ -68,13 +69,11 @@ class SearchAppList extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result: {
-      query: any;
-    } = {
-      query: {
-        $and: [],
-      },
+    const result: QueryParams<App> = {
+      query: {},
     };
+    result.query.$and = [];
+
     if (req.body && req.body.query) {
       result.query.$and.push(req.body.query);
     }
@@ -84,6 +83,13 @@ class SearchAppList extends Route {
       {},
       Model.getCoreModel(AppSchemaModel).flatSchemaData,
     );
+
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        id: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 
@@ -459,13 +465,13 @@ class UpdateAppSchema extends Route {
       compiledSchema = await Model.getCoreModel(AppSchemaModel).mergeRemoteSchema(req, compiledSchema);
 
       // Merge any schema extends
-      compiledSchema = Helpers.Schema.merge(compiledSchema, Model.getCoreModel(AppSchemaModel).localSchema);
+      compiledSchema = Helpers.Schema.merge(compiledSchema, Model.getCoreModel(AppSchemaModel).localSchema || []);
 
       // building the schema to check for any timeseries
       compiledSchema = await Helpers.Schema.buildCollections(compiledSchema);
 
       // merging the built timeseries to get the extends schemas
-      compiledSchema = Helpers.Schema.merge(compiledSchema, Model.getCoreModel(AppSchemaModel).localSchema);
+      compiledSchema = Helpers.Schema.merge(compiledSchema, Model.getCoreModel(AppSchemaModel).localSchema || []);
 
       return {
         appId: req.context.authApp.id,
@@ -632,27 +638,30 @@ class AppCount extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result = {
+    const result: QueryParams<App> = {
       query: {},
     };
-
-    let query: {
-      $and?: any;
-    } = {};
-
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      result.query.$and.push(req.body);
     }
 
-    query = Model.getCoreModel(AppSchemaModel).parseQuery(query, {}, Model.getCoreModel(AppSchemaModel).flatSchemaData);
-    result.query = query;
+    result.query = Model.getCoreModel(AppSchemaModel).parseQuery(
+      result.query,
+      {},
+      Model.getCoreModel(AppSchemaModel).flatSchemaData,
+    );
+
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        id: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 

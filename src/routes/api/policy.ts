@@ -25,6 +25,7 @@ import PolicySchemaModel, { Policy } from '../../model/core/policy.js';
 import TokenSchemaModel from '../../model/core/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import AppSchemaModel from '../../model/core/app.js';
+import { QueryParams } from '../../types/bjs-query.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -90,7 +91,7 @@ class GetPolicyList extends Route {
     if (ids.length > 0) {
       ids.forEach((id) => {
         try {
-          Datastore.getInstance('core').ID.new(id);
+          Datastore.getInstance('core').ID.new(id.toString());
         } catch (_err) {
           this.log(`POLICY: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
           throw new Helpers.Errors.RequestError(400, 'invalid_id');
@@ -131,24 +132,17 @@ class SearchPolicyList extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result: {
-      query: any;
-      skip: number;
-      limit: number;
-      sort: any;
-      project: any;
-    } = {
-      query: {
-        $and: [],
-      },
+    const result: QueryParams<Policy> = {
+      query: {},
       skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
       limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
       sort: req.body && req.body.sort ? req.body.sort : {},
       project: req.body && req.body.project ? req.body.project : false,
     };
+    result.query.$and = [];
 
-    if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-    if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (result.skip && isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+    if (result.limit && isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
@@ -417,29 +411,30 @@ class PolicyCount extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result = {
+    const result: QueryParams<Policy> = {
       query: {},
     };
-
-    let query: any = {};
-
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      result.query.$and.push(req.body);
     }
 
-    query = Model.getCoreModel(PolicySchemaModel).parseQuery(
-      query,
+    result.query = Model.getCoreModel(PolicySchemaModel).parseQuery(
+      result.query,
       {},
       Model.getCoreModel(PolicySchemaModel).flatSchemaData,
     );
-    result.query = query;
+
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        id: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 
@@ -590,10 +585,7 @@ class DeleteAppPolicies extends Route {
             _appId: Model.getCoreModel(AppSchemaModel).adapter.ID.new(req.context.authApp.id),
           });
 
-    const policies: any[] = [];
-    for await (const policy of rxsPolicies) {
-      policies.push(policy);
-    }
+    const policies = await Helpers.streamAll<Policy>(rxsPolicies);
 
     return policies.map((p) => p.id.toString());
   }

@@ -33,6 +33,7 @@ import Routes from './routes/index.js';
 import Logging from './helpers/logging.js';
 import { getThrownErrorMessage } from './helpers/index.js';
 import * as Schema from './helpers/schema.js';
+import type { Schema as SchemaDefinition } from './types/schema.js';
 
 import { SourceDataSharingRouting } from './services/source-ds-routing.js';
 
@@ -300,20 +301,20 @@ export default class BootstrapRest extends Bootstrap {
   /**
    * @return {Array} - content of json files loaded from local system
    */
-  _getLocalSchemas() {
+  _getLocalSchemas(): SchemaDefinition[] {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
 
     const filenames = fs.readdirSync(`${__dirname}/schema`);
 
-    const files: any[] = [];
+    const files: SchemaDefinition[] = [];
     for (let x = 0; x < filenames.length; x++) {
       const file = filenames[x];
       if (path.extname(file) === '.json') {
         // Load the file using fs
         const filePath = path.join(__dirname, 'schema', file);
         const fileContent = fs.readFileSync(filePath, 'utf8');
-        const jsonData = JSON.parse(fileContent);
+        const jsonData = JSON.parse(fileContent) as SchemaDefinition;
         files.push(jsonData);
       }
     }
@@ -329,7 +330,7 @@ export default class BootstrapRest extends Bootstrap {
 
     const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
     for await (const app of rxsApps) {
-      const appSchema: any[] = Schema.decode(app.__schema);
+      const appSchema = Schema.decode(app.__schema);
       Logging.log(`Adding ${localSchema.length} local schema for ${app.id}:${app.name}:${appSchema.length}`);
       localSchema.forEach((cS) => {
         const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);

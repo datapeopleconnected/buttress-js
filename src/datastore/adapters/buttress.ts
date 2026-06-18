@@ -28,7 +28,7 @@ import Logging from '../../helpers/logging.js';
 import AbstractAdapter from '../abstract-adapter.js';
 
 class AdapterId {
-  static new(id: string) {
+  static new(id?: string) {
     return new ObjectId(id);
   }
 
@@ -59,7 +59,7 @@ export default class Buttress extends AbstractAdapter {
     this.initPendingResolve = [];
   }
 
-  async connect() {
+  override async connect() {
     if (this.init) return this.__connection;
 
     const protocol = this.uri.protocol === 'butts:' ? 'https' : 'http';
@@ -89,7 +89,7 @@ export default class Buttress extends AbstractAdapter {
     return new Buttress(this.uri, this.options, this.__connection);
   }
 
-  async close() {
+  override async close() {
     // TODO: Handle closing down socket connections??
     this.__connection = null;
     this.init = false;

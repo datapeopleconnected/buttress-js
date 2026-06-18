@@ -17,7 +17,9 @@ import { Request, Response } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import DeploymentSchemaModel from '../../model/core/deployment.js';
+import DeploymentSchemaModel, { Deployment } from '../../model/core/deployment.js';
+import { QueryParams } from '../../types/bjs-query.js';
+import TokenSchemaModel from '../../model/core/token.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -33,19 +35,10 @@ class SearchDeploymentList extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result: {
-      query: {
-        $and?: any[];
-      };
-    } = {
-      query: {
-        $and: [],
-      },
+    const result: QueryParams<Deployment> = {
+      query: {},
     };
-
-    if (!result.query.$and) {
-      result.query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
@@ -57,6 +50,13 @@ class SearchDeploymentList extends Route {
       {},
       Model.getCoreModel(DeploymentSchemaModel).flatSchemaData,
     );
+
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        _appId: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 
@@ -81,31 +81,30 @@ class DeploymentCount extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result = {
+    const result: QueryParams<Deployment> = {
       query: {},
     };
-
-    let query: {
-      $and?: any[];
-    } = {};
-
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      result.query.$and.push(req.body);
     }
 
-    query = Model.getCoreModel(DeploymentSchemaModel).parseQuery(
-      query,
+    result.query = Model.getCoreModel(DeploymentSchemaModel).parseQuery(
+      result.query,
       {},
       Model.getCoreModel(DeploymentSchemaModel).flatSchemaData,
     );
-    result.query = query;
+
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        _appId: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 

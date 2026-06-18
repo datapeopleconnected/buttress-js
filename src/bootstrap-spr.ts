@@ -238,7 +238,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     // Create a container that will be used to track the message event within the SPR and a timer.
     const activityMetadata: ActivityMetadata = {
-      id: Datastore.getInstance('core').ID.new(),
+      id: Datastore.getInstance('core').ID.new().toString(),
       timer: new Helpers.Timer(),
     };
 

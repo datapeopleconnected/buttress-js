@@ -23,6 +23,10 @@ import Factory from './adapter-factory.js';
 
 import Logging from '../helpers/logging.js';
 
+import EmptyAdapter from './adapters/empty.js';
+import MongodbAdapter from './adapters/mongodb.js';
+import ButtressAdapter from './adapters/buttress.js';
+
 const datastores: {
   [key: string]: Datastore;
 } = {};
@@ -36,13 +40,13 @@ interface DatastoreConfig {
  * This class is used to manage the lifecycle of an adapter
  */
 export class Datastore {
-  private _adapter: any;
+  private _adapter: MongodbAdapter | ButtressAdapter | EmptyAdapter;
   private _hash?: string;
 
   dataSharingId?: string;
 
   constructor(config: DatastoreConfig) {
-    this.setAdapter(config);
+    this._adapter = Factory.create(config.connectionString, config.options);
   }
 
   setAdapter(config: DatastoreConfig) {
@@ -88,7 +92,7 @@ export default {
   },
   clean: async () => {
     for await (const key of Object.keys(datastores)) {
-      if (datastores[key] && datastores[key].adapter && datastores[key].adapter.close) {
+      if (datastores[key] && datastores[key].adapter) {
         await datastores[key].adapter.close();
       }
       delete datastores[key];

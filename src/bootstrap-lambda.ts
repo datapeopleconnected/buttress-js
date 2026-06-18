@@ -21,20 +21,25 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import Bootstrap from './bootstrap.js';
-import Datastore from './datastore/index.js';
 import Logging from './helpers/logging.js';
 import Model from './model/index.js';
+import Routes from './routes/index.js';
+import DatastoreManager, { Datastore } from './datastore/index.js';
 
 import { PolicyCache } from './services/policy-cache.js';
 
 import LambdaManager from './lambda/lambda-manager.js';
 import LambdaRunner, { LambdaType } from './lambda/lambda-runner.js';
 
+export interface WorkerTypeMessage {
+  id: string;
+  type: string;
+}
+
 morgan.token('id', (req: Request) => req.context.id);
 export default class BootstrapLambda extends Bootstrap {
-  routes: any;
-
-  primaryDatastore: any;
+  routes?: Routes;
+  primaryDatastore: Datastore;
 
   private _redisClient?: RedisClientType;
 
@@ -48,9 +53,7 @@ export default class BootstrapLambda extends Bootstrap {
   constructor() {
     super();
 
-    this.routes = null;
-
-    this.primaryDatastore = Datastore.createInstance(Config.datastore, true);
+    this.primaryDatastore = DatastoreManager.createInstance(Config.datastore, true);
 
     this.__apiWorkers = 0;
     this.__pathMutationWorkers = 0;
@@ -94,7 +97,7 @@ export default class BootstrapLambda extends Bootstrap {
 
     // Close Datastore connections
     Logging.logSilly('Closing down all datastore connections');
-    Datastore.clean();
+    await DatastoreManager.clean();
   }
 
   override async __initMain() {
@@ -107,7 +110,7 @@ export default class BootstrapLambda extends Bootstrap {
 
       this.__nrp?.on('lambdaProcessWorker:worker-initiated', (id) => {
         const type = this.__getLambdaWorkerType();
-        this.__nrp?.emit('lambdaProcessMain:worker-type', JSON.stringify({ id, type }));
+        this.__nrp?.emit('lambdaProcessMain:worker-type', JSON.stringify({ id, type } satisfies WorkerTypeMessage));
       });
 
       this.__lambdaManagerProcess = new LambdaManager(this.__services);
@@ -126,8 +129,8 @@ export default class BootstrapLambda extends Bootstrap {
 
     if (this.workerProcesses > 0) {
       const typeAssignment = new Promise((resolve) => {
-        this.__nrp?.on('lambdaProcessMain:worker-type', (data: any) => {
-          data = JSON.parse(data);
+        this.__nrp?.on('lambdaProcessMain:worker-type', (json: string) => {
+          const data = JSON.parse(json) as WorkerTypeMessage;
 
           if (data.id !== this.id) return;
           resolve(data.type);

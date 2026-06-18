@@ -57,7 +57,7 @@ export class RoutesMiddleware {
   }
 
   _createContext(req: Request, _res: Response, next: NextFunction) {
-    const id = Datastore.getInstance('core').ID.new();
+    const id = Datastore.getInstance('core').ID.new().toString();
     const context: RequestContext = {
       id: id,
       timer: new Helpers.Timer(),

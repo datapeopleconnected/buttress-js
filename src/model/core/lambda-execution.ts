@@ -196,7 +196,9 @@ class LambdaExecutionSchemaModel extends StandardModel {
 
     if (!appId) throw new Error('appId is required to create a lambda execution');
 
-    const internals: any = { _appId: this.__modelManager.getCoreModel(AppSchemaModel).createId(appId) };
+    const internals: { _appId: string; _tokenId?: string } = {
+      _appId: this.__modelManager.getCoreModel(AppSchemaModel).createId(appId),
+    };
     if (tokenId) internals._tokenId = this.__modelManager.getCoreModel(TokenSchemaModel).createId(tokenId);
 
     const rxsExecution = await super.add(executionBody, internals);

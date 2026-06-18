@@ -115,7 +115,7 @@ class GetAppDataSharing extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const id = req.params.id;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required app data sharing id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_app_data_sharing_id`));
@@ -647,7 +647,13 @@ class GetAllAppDataSharing extends Route {
     return true;
   }
 
-  override _exec() {
+  override _exec(req: Request, _res: Response) {
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      return Model.getCoreModel(AppDataSharingSchemaModel).find({
+        _appId: req.context.authApp?.id,
+      });
+    }
+
     return Model.getCoreModel(AppDataSharingSchemaModel).findAll();
   }
 }
@@ -670,7 +676,7 @@ class SearchAppDataSharingAgreement extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result: QueryParams<object> = {
+    const result: QueryParams<AppDataSharing> = {
       query: {
         $and: [],
       },
@@ -693,10 +699,17 @@ class SearchAppDataSharingAgreement extends Route {
       {},
       Model.getCoreModel(AppDataSharingSchemaModel).flatSchemaData,
     );
+
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        _appId: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<AppDataSharing>) {
     return Model.getCoreModel(AppDataSharingSchemaModel).find(
       validate.query,
       {},
@@ -728,29 +741,30 @@ class AppDataSharingAgreementCount extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result = {
+    const result: QueryParams<AppDataSharing> = {
       query: {},
     };
-
-    let query: any = {};
-
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      result.query.$and.push(req.body);
     }
 
-    query = Model.getCoreModel(AppDataSharingSchemaModel).parseQuery(
-      query,
+    result.query = Model.getCoreModel(AppDataSharingSchemaModel).parseQuery(
+      result.query,
       {},
       Model.getCoreModel(AppDataSharingSchemaModel).flatSchemaData,
     );
-    result.query = query;
+
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        _appId: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 

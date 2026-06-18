@@ -47,11 +47,16 @@ const Config = createConfig() as unknown as Config;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+export interface AppDeletedMessage {
+  appId: string;
+  apiPath: string;
+}
+
 class Routes {
   app: express.Application;
   id: string;
 
-  _routerMap: any;
+  _routerMap: Record<string, Router>;
   _routerOrder: string[];
   _dispatcherMounted: boolean;
   _errorHandlerMounted: boolean;
@@ -60,7 +65,7 @@ class Routes {
 
   _nrp?: NRP;
 
-  _preRouteMiddleware: any[];
+  _preRouteMiddleware: Array<(req: Request, res: Response, next: NextFunction) => void>;
 
   _tokensHelper: RoutesTokens;
   _lambdaSetupHelper: RoutesLambdaSetup;
@@ -88,17 +93,17 @@ class Routes {
     ];
   }
 
-  async init(services) {
+  async init(services: Services) {
     this._services = services;
 
-    this._nrp = services.get('nrp');
+    this._nrp = services.get('nrp') as NRP;
     if (!this._nrp) throw new Error('Routes: NRP not found in services');
 
     this._lambdaSetupHelper = new RoutesLambdaSetup(this.app, this._nrp, this._preRouteMiddleware);
     this._middlewareHelper = new RoutesMiddleware(this._routerMap, this._tokensHelper);
 
-    this._nrp?.on('rest:worker:app-deleted', (exec: any) => {
-      exec = JSON.parse(exec);
+    this._nrp?.on('rest:worker:app-deleted', (json: string) => {
+      const exec: AppDeletedMessage = JSON.parse(json);
       if (!exec.apiPath) return;
       this._deregisterRouter(exec.apiPath);
     });
@@ -238,7 +243,7 @@ class Routes {
    * @param {string} key
    * @param {object} router - express router object
    */
-  _registerRouter(key, router) {
+  _registerRouter(key, router: Router) {
     if (this._routerMap[key]) {
       Logging.logSilly(`Routes:_registerRouter Reregister ${key}`);
       this._routerMap[key] = router;
@@ -304,7 +309,7 @@ class Routes {
         if (!schema.remotes) return true;
         const remotes = Array.isArray(schema.remotes) ? schema.remotes : [schema.remotes];
 
-        const nonActiveDSA = remotes.reduce((arr, remoteRef) => {
+        const nonActiveDSA = remotes.reduce((arr: string[], remoteRef) => {
           // if the data sharing agreement is not active, we'll make note of the name for debugging.
           if (appDSAs.find((dsa) => dsa.active && dsa.name === remoteRef.name) === undefined) {
             arr.push(remoteRef.name);

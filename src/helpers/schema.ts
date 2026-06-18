@@ -277,7 +277,7 @@ const __validateProp = (prop, config) => {
 };
 export const validateProp = __validateProp;
 
-const __validate = (schema, values, parentProperty, body?: any) => {
+const __validate = (schema, values, parentProperty, body?: unknown) => {
   const res: {
     isValid: boolean;
     missing: string[];
@@ -587,28 +587,28 @@ export const getSchemaKeys = __getSchemaKeys;
 
 export const validTypes = ['collection', 'template'];
 
-export const encode = (obj) => {
+export const encode = (obj: unknown) => {
   return JSON.stringify(obj);
   // return JSON.parse(Schema.encodeKey(JSON.stringify(obj)));
 };
 
-export const decode = (obj) => {
+export const decode = (obj: string): Schema[] => {
   return JSON.parse(obj);
   // return JSON.parse(Schema.decodeKey(JSON.stringify(obj)));
 };
 
-export const encodeKey = (key) => {
+export const encodeKey = (key: string) => {
   return key.replace(/\\/g, '\\\\').replace(/\$/g, '\\u0024').replace(/\./g, '\\u002e');
 };
 
-export const decodeKey = (key) => {
+export const decodeKey = (key: string) => {
   return key
     .replace(/\\u002e/g, '.')
     .replace(/\\u0024/g, '$')
     .replace(/\\\\/g, '\\');
 };
 
-export const routeToModel = (name) => {
+export const routeToModel = (name: string) => {
   if (!name) return;
 
   return name
@@ -617,7 +617,7 @@ export const routeToModel = (name) => {
     .join('-');
 };
 
-export const modelToRoute = (name) => {
+export const modelToRoute = (name: string) => {
   if (!name) return;
 
   return name
@@ -626,17 +626,17 @@ export const modelToRoute = (name) => {
     .join('/');
 };
 
-export const buildCollections = async (schemas): Promise<any[]> => {
+export const buildCollections = async (schemas: Schema[]): Promise<Schema[]> => {
   const builtSchemas = await build(schemas);
   return builtSchemas.filter((s) => s.type.indexOf('collection') === 0);
 };
 
-export const build = async (schemas) => {
+export const build = async (schemas: Schema[]): Promise<Schema[]> => {
   schemas = await Plugins.apply_filters('before_schema_build', schemas);
   schemas = schemas.map((schema) => {
     schema.properties = schema.properties || {};
-    schema.properties.id = { __type: 'id', __default: 'new', __allowUpdate: false, __core: true };
-    schema.properties.sourceId = { __type: 'id', __allowUpdate: false, __core: true };
+    schema.properties.id = { __type: 'id', __default: 'new', __allowUpdate: false };
+    schema.properties.sourceId = { __type: 'id', __allowUpdate: false };
     return extend(schemas, schema);
   });
   for await (const schema of schemas) {
@@ -650,7 +650,7 @@ export const build = async (schemas) => {
   return schemas;
 };
 
-export const merge = (schemasA, schemasB) => {
+export const merge = (schemasA: Schema[], schemasB: Schema[]): Schema[] => {
   schemasB.forEach((cS) => {
     const appSchemaIdx = schemasA.findIndex((s) => s.name === cS.name);
     const schema = schemasA[appSchemaIdx];
@@ -664,7 +664,7 @@ export const merge = (schemasA, schemasB) => {
   return schemasA;
 };
 
-export const extend = (schemas, schema) => {
+export const extend = (schemas: Schema[], schema: Schema): Schema => {
   if (schema.extends) {
     schema.extends
       // We'll filter out any schema that's prefix with a plugin name
