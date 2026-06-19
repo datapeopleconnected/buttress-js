@@ -32,20 +32,25 @@ import createConfig from '@dpc/node-env-obj';
 import LambdaSchemaModel from '../model/core/lambda.js';
 const Config = createConfig() as unknown as Config;
 
+export interface LambdaResult {
+  err?: boolean;
+  errMessage?: string;
+  redirect?: boolean;
+  [key: string]: unknown;
+}
+
 /**
  * Helpers
  * @class
  */
 class Helpers {
-  lambdaExecution: any;
-  lambdaResult: any;
+  lambdaResult: LambdaResult | null;
 
   successfulHTTPScode: number[];
   /**
    * Constructor for Helpers
    */
   constructor() {
-    this.lambdaExecution = null;
     this.lambdaResult = null;
 
     this.successfulHTTPScode = [200, 201, 202];
@@ -63,7 +68,7 @@ class Helpers {
     jail.setSync('_ivm', ivm);
     jail.setSync(
       '_setResult',
-      new ivm.Reference((res) => {
+      new ivm.Reference((res: unknown) => {
         if (typeof res !== 'object' || Array.isArray(res)) {
           this.lambdaResult = {
             err: true,
@@ -72,7 +77,7 @@ class Helpers {
           return;
         }
 
-        this.lambdaResult = res;
+        this.lambdaResult = res as LambdaResult | null;
       }),
     );
 
@@ -185,22 +190,14 @@ class Helpers {
           data.options.headers = data.options.headers || {};
           data.options.headers['Connection'] = 'close';
 
-          const response: {
-            ok?: boolean;
-            status?: number | null;
-            url?: string;
-            redirected?: boolean;
-            body?: any;
-            text?: any;
-            json?: any;
-            statusText?: string;
-          } = await fetch(data.url, data.options);
+          const response = await fetch(data.url, data.options);
+
           const output: {
             ok?: boolean;
             status?: number | null;
             url?: string;
             redirected?: boolean;
-            body?: any;
+            body?: unknown;
           } = {
             ok: response.ok,
             status: response.status ? response.status : null,
@@ -222,10 +219,59 @@ class Helpers {
           if (output.status && !this.successfulHTTPScode.includes(output.status)) {
             const text = response && response.text ? await response.text() : null;
             if (text && typeof text === 'string') {
+              type ParsedErrorObject = {
+                status?: string;
+                message?: string;
+                code?: string | number;
+                error_description?: string;
+              };
+
+              type ParsedErrorPayload = {
+                error?: string | ParsedErrorObject;
+                message?: string;
+                code?: string | number;
+                statusMessage?: string;
+                error_description?: string;
+              };
+
+              const isRecord = (value: unknown): value is Record<string, unknown> => {
+                return typeof value === 'object' && value !== null && !Array.isArray(value);
+              };
+
               let message = text;
-              let json: any = null;
+              let json: ParsedErrorPayload | null = null;
+
               try {
-                json = JSON.parse(text);
+                const parsed: unknown = JSON.parse(text);
+                if (isRecord(parsed)) {
+                  const parsedError = parsed.error;
+                  const normalizedError =
+                    typeof parsedError === 'string'
+                      ? parsedError
+                      : isRecord(parsedError)
+                        ? {
+                            status: typeof parsedError.status === 'string' ? parsedError.status : undefined,
+                            message: typeof parsedError.message === 'string' ? parsedError.message : undefined,
+                            code:
+                              typeof parsedError.code === 'string' || typeof parsedError.code === 'number'
+                                ? parsedError.code
+                                : undefined,
+                            error_description:
+                              typeof parsedError.error_description === 'string'
+                                ? parsedError.error_description
+                                : undefined,
+                          }
+                        : undefined;
+
+                  json = {
+                    error: normalizedError,
+                    message: typeof parsed.message === 'string' ? parsed.message : undefined,
+                    code: typeof parsed.code === 'string' || typeof parsed.code === 'number' ? parsed.code : undefined,
+                    statusMessage: typeof parsed.statusMessage === 'string' ? parsed.statusMessage : undefined,
+                    error_description:
+                      typeof parsed.error_description === 'string' ? parsed.error_description : undefined,
+                  };
+                }
               } catch (_err) {
                 // If we failed to parse the json we'll just treat it as a string.
               }
@@ -233,27 +279,40 @@ class Helpers {
               if (json) {
                 Logging.logDebug(text);
 
-                if (json.error && json.error.status === 'UNAUTHENTICATED') {
-                  throw new Errors.Unauthenticated(json.error.message, json.error.status, json.error.code);
-                }
-                if (json.error && json.error.status) {
-                  throw new Error(`${data.url.pathname} error is ${json.error.status}`);
-                }
-                if (json.error && typeof json.error === 'string' && json.error.toUpperCase() === 'INVALID_TOKEN') {
-                  throw new Errors.InvalidToken(json.error, 400);
-                }
-                if (json.error && typeof json.error === 'string' && json.error.toUpperCase() === 'INVALID_REQUEST') {
-                  const msg = json && json.error ? json.error : json.error_description ? json.error_description : null;
-                  throw new Errors.InvalidRequest(msg, 400);
-                }
-                if (json.message && json.code) {
-                  const error: any = new Error(json.message);
-                  error.code = json.code;
-                  throw error;
+                if (typeof json.error === 'string') {
+                  if (json.error.toUpperCase() === 'INVALID_TOKEN') {
+                    throw new Errors.InvalidToken(json.error, 400);
+                  }
+                  if (json.error.toUpperCase() === 'INVALID_REQUEST') {
+                    const msg = json.error_description || json.error;
+                    throw new Errors.InvalidRequest(msg, 400);
+                  }
+                } else if (json.error) {
+                  if (json.error.status === 'UNAUTHENTICATED') {
+                    const unauthenticatedCode = Number(json.error.code ?? 401);
+                    throw new Errors.Unauthenticated(
+                      json.error.message || 'Unauthenticated',
+                      json.error.status,
+                      Number.isNaN(unauthenticatedCode) ? 401 : unauthenticatedCode,
+                    );
+                  }
+                  if (json.error.status) {
+                    throw new Error(`${data.url.pathname} error is ${json.error.status}`);
+                  }
                 }
 
-                if (json.error) message = json.error;
-                if (json.error && json.error.message) message = json.error.message;
+                if (json.message && json.code !== undefined) {
+                  throw new Errors.CodedError(json.message, Number(json.code));
+                }
+
+                if (typeof json.error === 'string') {
+                  message = json.error;
+                } else if (json.error) {
+                  if (json.error.error_description) message = json.error.error_description;
+                  if (json.error.message) message = json.error.message;
+                  if (json.error.status) message = json.error.status;
+                }
+                if (json.error_description) message = json.error_description;
                 if (json.message) message = json.message;
                 if (json.statusMessage) message = json.statusMessage;
               }

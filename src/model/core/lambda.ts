@@ -31,8 +31,9 @@ import Logging from '../../helpers/logging.js';
 
 import DeploymentSchemaModel from './deployment.js';
 import LambdaExecutionSchemaModel from './lambda-execution.js';
-import TokenSchemaModel from './token.js';
+import TokenSchemaModel, { PolicyProperties, Token } from './token.js';
 import LambdaSchemaModel from './lambda.js';
+import { App } from './app.js';
 
 export interface Lambda {
   id: string;
@@ -270,11 +271,20 @@ export default class LambdaModel extends StandardModel<Lambda> {
    * @param {Object} app - Lambda app
    * @return {Promise} - fulfilled with lambda Object when the database request is completed
    */
-  override async add(body, internals?: any) {
+  override async add(body, internals: { auth: Partial<Token>; app: App }): Promise<Lambda> {
     const { auth, app } = internals;
-    await this.gitCloneLambda(body, auth, app);
 
-    let deployments: any[] = [];
+    if (!auth.policyProperties) {
+      Logging.logError(`[${LambdaModel.name}] Missing policyProperties in auth`);
+      throw new Helpers.Errors.RequestError(400, `missing_policy_properties`);
+    }
+
+    await this.gitCloneLambda(body, auth.policyProperties, app);
+
+    let deployments: {
+      hash: string | null;
+      deployedAt: Date;
+    }[] = [];
     if (body.git.deployments) {
       deployments = body.git.deployments;
     }
@@ -304,7 +314,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
     const rxsLambda = await super.add(lambdaBody, {
       _appId: app.id,
     });
-    const lambda: any = await Helpers.streamFirst(rxsLambda);
+    const lambda = await Helpers.streamFirst<Lambda>(rxsLambda);
 
     const deployment = await this.__modelManager.getCoreModel(DeploymentSchemaModel).add(
       {
@@ -355,14 +365,14 @@ export default class LambdaModel extends StandardModel<Lambda> {
    * @param {Object} app
    * @return {Promise}
    */
-  async gitCloneLambda(lambda, auth, app) {
+  async gitCloneLambda(lambda: Lambda, policyProperties: PolicyProperties, app: App) {
     const name = lambda?.name;
     const url = lambda?.git?.url;
     const branch = lambda?.git?.branch;
     const gitHash = lambda?.git?.hash;
 
     try {
-      const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, auth.policyProperties);
+      const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, policyProperties);
       if (!policyCheck.passed) {
         Logging.logError(`[${LambdaModel.name}] ${policyCheck.errMessage}`);
         throw new Helpers.Errors.RequestError(400, `invalid_field`);
@@ -417,7 +427,12 @@ export default class LambdaModel extends StandardModel<Lambda> {
     await exec(`cd ${Config.paths.lambda.code}/lambda-${name}; git checkout ${gitHash}`);
   }
 
-  async pullLambdaCode(lambda, lambdaDeployInfo: any = {}) {
+  async pullLambdaCode(lambda, lambdaDeployInfo: {
+    branch?: string;
+    hash?: string;
+    entryFilePath?: string;
+    entryPoint?: string;
+  } = {}) {
     try {
       const branch = lambdaDeployInfo.branch ? lambdaDeployInfo.branch : lambda.git.branch;
       const gitHash = lambdaDeployInfo.hash ? lambdaDeployInfo.hash : lambda.git.hash;

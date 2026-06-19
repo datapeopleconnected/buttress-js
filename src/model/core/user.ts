@@ -22,22 +22,24 @@ import TokenSchemaModel, { Token } from './token.js';
 
 export interface User {
   id: string;
-  auth: Array<{
-    app: string;
-    appId: string;
-    username: string;
-    password: string;
-    profileUrl: string;
-    images: {
-      profile: string;
-      banner: string;
-    };
-    email: string;
-    token: string;
-    tokenSecret: string;
-    refreshToken: string;
-  }>;
+  auth: Array<UserAuth>;
   _appId: string;
+}
+
+export interface UserAuth {
+  app: string;
+  appId: string;
+  username: string;
+  password: string;
+  profileUrl: string;
+  images: {
+    profile: string;
+    banner: string;
+  };
+  email: string;
+  token: string;
+  tokenSecret: string;
+  refreshToken: string;
 }
 
 type UserWithTokens = User & {

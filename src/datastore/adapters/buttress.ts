@@ -46,11 +46,11 @@ export default class Buttress extends AbstractAdapter {
   initPendingResolve: ((value?: unknown) => void)[];
   collectionName?: string;
 
-  protected override __connection: any;
+  protected override __connection: typeof ButtressAPI | null;
 
   declare collection: any;
 
-  constructor(uri, options, connection = null) {
+  constructor(uri, options, connection: typeof ButtressAPI | null = null) {
     super(uri, options, connection);
 
     this.__connection = ButtressAPI.new();
@@ -69,14 +69,16 @@ export default class Buttress extends AbstractAdapter {
 
     const buttressUrl = `${protocol}://${this.uri.host}`;
     const apiPath = this.uri.pathname.replace(/^\/+/, '');
-    await this._apiCall('connect', () =>
-      this.__connection.init({
+    await this._apiCall('connect', () => {
+      if (!this.__connection) throw new Error('Buttress connection not initialized');
+
+      return this.__connection.init({
         buttressUrl,
         appToken: token,
         apiPath,
         version: 1,
-      }),
-    );
+      });
+    });
     Logging.logDebug(`connected to: ${this.uri.host}/${apiPath}`);
 
     // this.collection = this.buttress.getCollection(collection);
@@ -99,9 +101,10 @@ export default class Buttress extends AbstractAdapter {
   override async setCollection(collectionName: string) {
     try {
       this.collectionName = collectionName;
-      this.collection = await this._apiCall('setCollection', () =>
-        Promise.resolve(this.__connection.getCollection(collectionName)),
-      );
+      this.collection = await this._apiCall('setCollection', () => {
+        if (!this.__connection) throw new Error('Buttress connection not initialized');
+        return Promise.resolve(this.__connection.getCollection(collectionName));
+      });
     } catch (err: unknown) {
       if (err instanceof BAPIErrors.SchemaNotFound) throw new Errors.SchemaNotFound(err.message);
       else throw err;
@@ -109,17 +112,23 @@ export default class Buttress extends AbstractAdapter {
   }
 
   async getSchema(rawSchema = false, only = []) {
-    return this._resolvedApiCall('getSchema', () =>
-      this.__connection.App.getSchema(rawSchema, {
+    return this._resolvedApiCall('getSchema', () => {
+      if (!this.__connection) throw new Error('Buttress connection not initialized');
+      if (!this.__connection.App) throw new Error('Buttress App not initialized');
+
+      return this.__connection.App.getSchema(rawSchema, {
         params: {
           only: only.join(','),
         },
-      }),
-    );
+      });
+    });
+
   }
 
   async activateDataSharing(registrationToken, newToken) {
     await this.resolveAfterInit();
+    if (!this.__connection) throw new Error('Buttress connection not initialized');
+    if (!this.__connection.AppDataSharing) throw new Error('Buttress AppDataSharing not initialized');
     return await this.__connection.AppDataSharing.activate(registrationToken, newToken);
   }
 
@@ -165,7 +174,7 @@ export default class Buttress extends AbstractAdapter {
     return target;
   }
 
-  handleResult(result: Stream.Readable | any) {
+  handleResult(result: Stream.Readable | unknown) {
     if (result instanceof Stream.Readable && result.readable) {
       // Stream will be an array of objects, parse them out.
       return result.pipe(parseJsonArrayStream());

@@ -179,8 +179,6 @@ export default class BootstrapRest extends Bootstrap {
   }
 
   override async __initWorker() {
-    Plugins.initRoutes(this.routes);
-
     const app = Express();
     // app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 
@@ -211,6 +209,10 @@ export default class BootstrapRest extends Bootstrap {
     this.routes = new Routes(app);
 
     await this.routes.init(this.__services);
+
+    if (!this.routes) throw new Error('Routes not found whilst trying to init BootstrapRest');
+    Plugins.initRoutes(this.routes);
+
     await this.routes.initRoutes();
 
     this._restServer = await app.listen(Config.listenPorts.rest);

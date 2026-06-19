@@ -42,6 +42,7 @@ import RoutesLambdaSetup from './lambda-setup.js';
 import RoutesMiddleware from './middleware.js';
 
 import createConfig from '@dpc/node-env-obj';
+import { Token } from '../model/core/token.js';
 const Config = createConfig() as unknown as Config;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -51,6 +52,10 @@ export interface AppDeletedMessage {
   appId: string;
   apiPath: string;
 }
+
+type CoreRouteClass = new (services: Services) => Route;
+type PluginRouteClass = new (schema: null, app: null, services: Services) => Route;
+type RouteClass = CoreRouteClass | PluginRouteClass;
 
 class Routes {
   app: express.Application;
@@ -120,7 +125,7 @@ class Routes {
     );
 
     this.app.use((req: Request, _res: Response, next: NextFunction) => {
-      const logEvent = (event: string, err?: any) => {
+      const logEvent = (event: string, err?: unknown) => {
         if (err) {
           Logging.logError(`${event}`, req.context?.id);
           Logging.logError(err, req.context?.id);
@@ -163,7 +168,7 @@ class Routes {
     for (let x = 0; x < providers.length; x++) {
       const routes = providers[x];
       for (let y = 0; y < routes.length; y++) {
-        const route = routes[y];
+        const route = routes[y] as CoreRouteClass;
         this._initRoute(coreRouter, route, true);
       }
     }
@@ -212,7 +217,7 @@ class Routes {
   _mountErrorHandler() {
     if (this._errorHandlerMounted) return;
 
-    const logErrors = (err: any, req: Request, res: Response, next: NextFunction) =>
+    const logErrors = (err: unknown, req: Request, res: Response, next: NextFunction) =>
       this.logErrors(err, req, res, next);
     this.app.use(logErrors);
     this._errorHandlerMounted = true;
@@ -222,7 +227,7 @@ class Routes {
     const keys = [...this._routerOrder];
     let idx = 0;
 
-    const run = (err?: any) => {
+    const run = (err?: unknown) => {
       if (err) return next(err);
       if (res.headersSent || res.writableEnded) return;
 
@@ -334,7 +339,7 @@ class Routes {
     this._registerRouter(app.apiPath, appRouter);
   }
 
-  createPluginRoutes(pluginName, routes) {
+  createPluginRoutes(pluginName: string, routes: PluginRouteClass[]) {
     if (routes.length === 0) return;
 
     Logging.logDebug(`Routes:createPluginRoutes ${pluginName} has ${routes.length} routes`);
@@ -349,8 +354,12 @@ class Routes {
     this._registerRouter(`plugin-${pluginName}`, pluginRouter);
   }
 
-  _initRoute(app: Router, routeClass: any, core: boolean, pathPrefix: string = '') {
-    const route = core ? new routeClass(this._services) : new routeClass(null, null, this._services);
+  _initRoute(app: Router, routeClass: CoreRouteClass, core: true, pathPrefix?: string): void;
+  _initRoute(app: Router, routeClass: PluginRouteClass, core: false, pathPrefix?: string): void;
+  _initRoute(app: Router, routeClass: RouteClass, core: boolean, pathPrefix: string = '') {
+    const route = core
+      ? new (routeClass as CoreRouteClass)(this._services)
+      : new (routeClass as PluginRouteClass)(null, null, this._services);
     route.paths.forEach((pathSpec) => {
       const routePath = path.join(...[Config.app.apiPrefix, pathPrefix, pathSpec]);
       Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
@@ -403,7 +412,7 @@ class Routes {
   }
 
   _getCoreRoutes() {
-    return CoreRoutes;
+    return CoreRoutes as CoreRouteClass[][];
   }
 
   async _setupLambdaEndpoints() {
@@ -421,8 +430,8 @@ class Routes {
   async _getProvidedToken(req: Request) {
     return await this._tokensHelper._getProvidedToken(req);
   }
-
-  _lookupToken(tokens: any[], value: string) {
+  
+  _lookupToken(tokens: Token[], value: string) {
     return this._tokensHelper._lookupToken(tokens, value);
   }
 }

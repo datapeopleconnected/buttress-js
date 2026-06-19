@@ -40,6 +40,7 @@ import Logging from '../helpers/logging.js';
 import Model from '../model/index.js';
 import * as Helpers from '../helpers/index.js';
 import lambdaHelpers from '../lambda-helpers/helpers.js';
+import type { LambdaResult } from '../lambda-helpers/helpers.js';
 import { ExecPriority, LambdaExecutionMessage } from './lambda-manager.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
@@ -245,7 +246,7 @@ export default class LambdaRunner {
     const lambdaModules: Record<string, string> = {};
 
     // ? This doesn't seem right
-    lambdaHelpers.lambdaExecution = execution;
+    // lambdaHelpers.lambdaExecution = execution;
     await this._updateDBLambdaRunningExecution(execution);
 
     // TODO: Handle case where lambda code doesn't exist on file system. (Clone Repo)
@@ -338,17 +339,18 @@ export default class LambdaRunner {
       await this._updateDBLambdaFinishExecution(execution);
 
       if (type === 'API_ENDPOINT') {
-        if (lambdaHelpers.lambdaResult && lambdaHelpers.lambdaResult.err) {
-          throw new Error(lambdaHelpers.lambdaResult.errMessage);
+        const lambdaResult = lambdaHelpers.lambdaResult as LambdaResult | null;
+
+        if (lambdaResult && lambdaResult.err) {
+          throw new Error(lambdaResult.errMessage);
         }
 
         if (!data.reqId) {
           throw new Error(`Missing reqId for API_ENDPOINT lambda ${lambda.name}, execution ${execution.id}`);
         }
 
-        if (trigger && trigger.apiEndpoint.redirect && lambdaHelpers.lambdaResult)
-          lambdaHelpers.lambdaResult.redirect = true;
-        const result = lambdaHelpers.lambdaResult ? lambdaHelpers.lambdaResult : 'success';
+        if (trigger && trigger.apiEndpoint.redirect && lambdaResult) lambdaResult.redirect = true;
+        const result = lambdaResult ? lambdaResult : 'success';
 
         const message: ExecutionResultMessage = {
           code: 200,

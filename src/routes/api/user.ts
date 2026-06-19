@@ -20,10 +20,11 @@ import Model from '../../model/index.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import Datastore from '../../datastore/index.js';
-import TokenSchemaModel, { Token } from '../../model/core/token.js';
-import UserSchemaModel, { User } from '../../model/core/user.js';
+import TokenSchemaModel, { PolicyProperties, Token } from '../../model/core/token.js';
+import UserSchemaModel, { User, UserAuth } from '../../model/core/user.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import AppSchemaModel from '../../model/core/app.js';
+import { QueryParams } from '../../types/bjs-query.js';
 
 const routes: (typeof Route)[] = [];
 
@@ -125,8 +126,8 @@ class GetUser extends Route {
       id = req.context.token._userId;
     }
 
-    let user: any = null;
-    let userTokens: any[] = [];
+    let user: User | null = null;
+    let userTokens: Token[] = [];
     let userId: string;
 
     try {
@@ -222,8 +223,8 @@ class FindUser extends Route {
 
     const output: {
       id: string;
-      auth: any;
-      tokens: any[];
+      auth: UserAuth[];
+      tokens: { value: string; policyProperties: PolicyProperties }[];
     } = {
       id: _user.id,
       auth: _user.auth,
@@ -352,12 +353,12 @@ class CreateUserAuthToken extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, validate: { appId: string; user: any }) {
+  override async _exec(req: Request, res: Response, validate: { appId: string; user: User }) {
     const rxsToken = await Model.getCoreModel(TokenSchemaModel).add(req.body, {
       _appId: Datastore.getInstance('core').ID.new(validate.appId),
       _userId: Datastore.getInstance('core').ID.new(validate.user.id),
     });
-    const token: any = await Helpers.streamFirst(rxsToken);
+    const token = await Helpers.streamFirst<Token>(rxsToken);
 
     // We'll make sure to add the user to the app
     // if+ (user._appId !== req.context.authApp.id.toString()) {
@@ -469,7 +470,7 @@ class AddUser extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_user_auth`));
     }
 
-    const existingUsers: any[] = [];
+    const existingUsers: User[] = [];
     for await (const auth of req.body.auth) {
       const user = await Model.getCoreModel(UserSchemaModel).findOne({
         'auth.app': auth.app,
@@ -829,11 +830,11 @@ class RemoveUserPolicyProperties extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, validate: { appId: string; userToken: any }) {
+  override async _exec(req: Request, res: Response, validate: { appId: string; userToken: Token }) {
     const reqPolicyProps = req.body;
     const policyProps = validate.userToken.policyProperties;
     Object.keys(reqPolicyProps).forEach((key) => {
-      if (policyProps[key] && policyProps[key] === reqPolicyProps[key]) {
+      if (policyProps && policyProps[key] && policyProps[key] === reqPolicyProps[key]) {
         delete policyProps[key];
       }
     });
@@ -914,7 +915,7 @@ class ClearUserPolicyProperties extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, validate: { userId: string; appId: string; userToken: any }) {
+  override async _exec(req: Request, res: Response, validate: { userId: string; appId: string; userToken: Token }) {
     await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.userToken.id);
 
     this._nrp?.emit(
@@ -1080,24 +1081,17 @@ class SearchUserList extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result: {
-      query: any;
-      skip: number;
-      limit: number;
-      sort: any;
-      project: any;
-    } = {
-      query: {
-        $and: [],
-      },
+    const result: QueryParams<User> = {
+      query: {},
       skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
       limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
       sort: req.body && req.body.sort ? req.body.sort : {},
       project: req.body && req.body.project ? req.body.project : false,
     };
+    result.query.$and = [];
 
-    if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-    if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (result.skip && isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
+    if (result.limit && isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
@@ -1109,6 +1103,13 @@ class SearchUserList extends Route {
       {},
       Model.getCoreModel(UserSchemaModel).flatSchemaData,
     );
+
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        _appId: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 
@@ -1140,29 +1141,30 @@ class UserCount extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const result = {
+    const result: QueryParams<User> = {
       query: {},
     };
-
-    let query: any = {};
-
-    if (!query.$and) {
-      query.$and = [];
-    }
+    result.query.$and = [];
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
-      query.$and.push(req.body.query);
+      result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      result.query.$and.push(req.body);
     }
 
-    query = Model.getCoreModel(UserSchemaModel).parseQuery(
-      query,
+    result.query = Model.getCoreModel(UserSchemaModel).parseQuery(
+      result.query,
       {},
       Model.getCoreModel(UserSchemaModel).flatSchemaData,
     );
-    result.query = query;
+
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        _appId: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 
