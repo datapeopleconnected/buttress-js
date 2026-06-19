@@ -430,7 +430,7 @@ class Routes {
   async _getProvidedToken(req: Request) {
     return await this._tokensHelper._getProvidedToken(req);
   }
-  
+
   _lookupToken(tokens: Token[], value: string) {
     return this._tokensHelper._lookupToken(tokens, value);
   }

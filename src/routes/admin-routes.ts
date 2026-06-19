@@ -252,7 +252,7 @@ class AdminRoutes {
    * Create Buttress pre-defined lambda
    * @param {Array} lambdas
    */
-  async _createAdminLambda(lambdas: (Lambda & {policyProperties: PolicyProperties})[]) {
+  async _createAdminLambda(lambdas: (Lambda & { policyProperties: PolicyProperties })[]) {
     try {
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
@@ -285,7 +285,7 @@ class AdminRoutes {
         // await Model.getCoreModel(LambdaSchemaModel).add(lambda, adminLambdaAuth, adminApp);
         await Model.getCoreModel(LambdaSchemaModel).add(lambda, {
           auth: adminLambdaAuth,
-          app: adminApp
+          app: adminApp,
         });
       }
 

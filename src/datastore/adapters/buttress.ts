@@ -122,7 +122,6 @@ export default class Buttress extends AbstractAdapter {
         },
       });
     });
-
   }
 
   async activateDataSharing(registrationToken, newToken) {

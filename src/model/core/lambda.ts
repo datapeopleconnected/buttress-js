@@ -427,12 +427,15 @@ export default class LambdaModel extends StandardModel<Lambda> {
     await exec(`cd ${Config.paths.lambda.code}/lambda-${name}; git checkout ${gitHash}`);
   }
 
-  async pullLambdaCode(lambda, lambdaDeployInfo: {
-    branch?: string;
-    hash?: string;
-    entryFilePath?: string;
-    entryPoint?: string;
-  } = {}) {
+  async pullLambdaCode(
+    lambda,
+    lambdaDeployInfo: {
+      branch?: string;
+      hash?: string;
+      entryFilePath?: string;
+      entryPoint?: string;
+    } = {},
+  ) {
     try {
       const branch = lambdaDeployInfo.branch ? lambdaDeployInfo.branch : lambda.git.branch;
       const gitHash = lambdaDeployInfo.hash ? lambdaDeployInfo.hash : lambda.git.hash;
