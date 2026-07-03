@@ -32,7 +32,7 @@ const Config = createConfig({
 import Logging from '../helpers/logging.js';
 import BootstrapSocketPolicyRouter from '../bootstrap-spr.js';
 
-Logging.init('SOCK');
+Logging.init('SPR');
 
 if (cluster.isPrimary) Logging.startupMessage();
 
