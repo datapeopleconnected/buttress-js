@@ -111,8 +111,13 @@ class IsolateBridge {
           `_${pluginName}_${method}`,
           new ivm.Reference(async (resolve, reject, ...args) => {
             Logging.logVerbose(`${pluginName}_${method}`);
-            const outcome = await pluginMeta.plugin[method](...args);
-            resolve.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto()]);
+            try {
+              const outcome = await pluginMeta.plugin[method](...args);
+              resolve.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto()]);
+            } catch (error: any) {
+              const statusCode = error?.status?.toString() || 'UNKNOWN_ERROR';
+              reject.applyIgnored(undefined, [new ivm.ExternalCopy(`ERROR: ${statusCode}`).copyInto()]);
+            }
           }),
         );
       }
