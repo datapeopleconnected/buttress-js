@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Request, Response } from 'express';
-import { BjsQuery } from '../../types/bjs-query.js';
+import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -23,6 +23,8 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
+
+import * as ACM from '../../access-control/models-access.js';
 
 /**
  * @class GetOne
@@ -78,8 +80,20 @@ export default class GetOne extends Route {
   ) {
     const model = await this.routeModel();
 
-    const rxsEntity = await model.find(validate.query, {}, 1, 0, null, validate.project);
-    const entity = await Helpers.streamFirst(rxsEntity);
+    const findParams: QueryParams<{ id: string | null }> = {
+      query: validate.query,
+      limit: 1,
+      skip: 0,
+      project: validate.project as unknown as Record<string, 1 | -1> | undefined,
+    };
+    const rxsEntity = await ACM.find(model, findParams, req.context.ac);
+
+    let entity;
+    try {
+      entity = await Helpers.streamFirst(rxsEntity);
+    } catch (_err) {
+      entity = null;
+    }
 
     if (!entity) {
       this.log(`${this.schemaName}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.context.id);

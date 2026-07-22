@@ -245,42 +245,33 @@ export class Filter {
         continue;
       }
 
-      for (const field of Object.keys(queryRecord)) {
-        const fieldResults: boolean[] = [];
-        const queryField = queryRecord[field];
-        if (typeof queryField !== 'object' || queryField === null || Array.isArray(queryField)) continue;
+      const queryField = queryRecord[key];
+      if (typeof queryField !== 'object' || queryField === null || Array.isArray(queryField)) continue;
 
-        for (const operator of Object.keys(queryField)) {
-          let evaluationRes = false;
+      const fieldResults: boolean[] = [];
 
-          // if (!Filter.queryOperators[operator]) {
-          // 	throw new Error(`Invalid policy condition operator: ${operator}`);
-          // }
+      for (const operator of Object.keys(queryField)) {
+        let evaluationRes = false;
 
-          // * We don't need to perform a env replacment here as the query should have already
-          // * gone through the query builder which will have replaced the values.
-          const lhs = this.__getValueByPath(flatEntity, field);
-          const rhs = (queryField as Record<string, unknown>)[operator];
+        // if (!Filter.queryOperators[operator]) {
+        // 	throw new Error(`Invalid policy condition operator: ${operator}`);
+        // }
 
-          if (lhs === undefined || rhs === undefined) {
-            // ? Maybe throw an error for incomplete operation sides
-            return evaluationRes;
-          }
+        // * We don't need to perform a env replacment here as the query should have already
+        // * gone through the query builder which will have replaced the values.
+        const lhs = this.__getValueByPath(flatEntity, key);
+        const rhs = (queryField as Record<string, unknown>)[operator];
 
-          if (!isAccessControlValue(lhs) || !isAccessControlValue(rhs)) {
-            return evaluationRes;
-          }
-
+        // ? Maybe throw an error for incomplete operation sides, instead of just failing this operator.
+        if (lhs !== undefined && rhs !== undefined && isAccessControlValue(lhs) && isAccessControlValue(rhs)) {
           evaluationRes = AccessControlHelpers.evaluateOperation(lhs, rhs, operator);
-
-          fieldResults.push(evaluationRes);
         }
 
-        if (partialPass) return fieldResults.some((r) => r);
-
-        // The condition defaults are treated as AND by default.
-        return fieldResults.every((r) => r);
+        fieldResults.push(evaluationRes);
       }
+
+      // The condition defaults are treated as AND by default.
+      results.push(partialPass ? fieldResults.some((r) => r) : fieldResults.every((r) => r));
     }
 
     if (partialPass) return results.some((r) => r);

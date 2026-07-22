@@ -261,6 +261,7 @@ class TokenSchemaModel extends StandardModel<Token> {
       },
     });
 
+    await this.__policyCache.setTokenIdAsStale(tokenId);
     this.__nrp?.emit('app-routes:bust-cache', '{}');
   }
 }

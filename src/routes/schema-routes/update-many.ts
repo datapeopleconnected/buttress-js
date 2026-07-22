@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Response, Request } from 'express';
+import { QueryParams } from '../../types/bjs-query.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -22,6 +23,8 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
+
+import * as ACM from '../../access-control/models-access.js';
 
 /**
  * @class UpdateMany
@@ -105,6 +108,34 @@ export default class UpdateMany extends Route {
       const exists = await model.exists(update.id, body.sourceId);
 
       if (!exists) {
+        this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
+        update.validation = {
+          code: 400,
+          message: `${this.schemaName}: Missing required property updating ${body.path}: ${validation.missingRequired}`,
+        };
+        continue;
+      }
+
+      let objectId;
+      try {
+        objectId = model.createId(update.id);
+      } catch (_err) {
+        update.validation = {
+          code: 400,
+          message: `${this.schemaName}: Invalid ID: ${update.id}`,
+        };
+        continue;
+      }
+
+      const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
+      const rxsScoped = await ACM.find(model, findParams, req.context.ac);
+      let scopedEntity;
+      try {
+        scopedEntity = await Helpers.streamFirst(rxsScoped);
+      } catch (_err) {
+        scopedEntity = null;
+      }
+      if (!scopedEntity) {
         this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
         update.validation = {
           code: 400,

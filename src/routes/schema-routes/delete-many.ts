@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Response, Request } from 'express';
+import { QueryParams } from '../../types/bjs-query.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -22,6 +23,8 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
+
+import * as ACM from '../../access-control/models-access.js';
 
 /**
  * @class DeleteMany
@@ -63,6 +66,17 @@ export default class DeleteMany extends Route {
     //   reject({statusCode: 400, message: 'ERROR: No more than 300 company IDs are supported'});
     //   return;
     // }
+
+    const findParams: QueryParams<{ id: unknown }> = { query: { id: { $in: ids } } };
+    const rxsScoped = await ACM.find(model, findParams, req.context.ac);
+    const scopedEntities = await Helpers.streamAll<{ id: { toString(): string } }>(rxsScoped);
+    const scopedIds = new Set(scopedEntities.map((entity) => entity.id.toString()));
+    const missing = ids.some((id) => !scopedIds.has(id.toString()));
+    if (missing) {
+      this.log(`ERROR: Invalid ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, `invalid_id`);
+    }
+
     return ids;
   }
 

@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Response, Request } from 'express';
+import { QueryParams } from '../../types/bjs-query.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -22,6 +23,8 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
+
+import * as ACM from '../../access-control/models-access.js';
 
 /**
  * @class DeleteOne
@@ -40,7 +43,28 @@ export default class DeleteOne extends Route {
   }
 
   override async _validate(req: Request, _res: Response) {
-    const entity = await (await this.routeModel()).findById(req.params.id);
+    const model = await this.routeModel();
+
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
+    }
+
+    let objectId;
+    try {
+      objectId = model.createId(id);
+    } catch (_err) {
+      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
+    }
+
+    const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
+    const rxsEntity = await ACM.find(model, findParams, req.context.ac);
+    let entity;
+    try {
+      entity = await Helpers.streamFirst(rxsEntity);
+    } catch (_err) {
+      entity = null;
+    }
     if (!entity) {
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
     }

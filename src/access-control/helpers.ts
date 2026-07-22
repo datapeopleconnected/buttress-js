@@ -136,10 +136,10 @@ class Helpers {
       case '@gteDate':
         {
           const lhsDate = wrangleDateType(lhs);
-          const lhsDateInput = toDateComparableValue(lhs);
+          const rhsDate = toDateComparableValue(rhs);
           if (!lhsDate) return false;
-          if (!lhsDateInput) return false;
-          passed = Sugar.Date.isAfter(lhsDate, lhsDateInput) || Sugar.Date.is(lhsDate, lhsDateInput);
+          if (!rhsDate) return false;
+          passed = Sugar.Date.isAfter(lhsDate, rhsDate) || Sugar.Date.is(lhsDate, rhsDate);
         }
         break;
       case '$ltDate':
@@ -156,10 +156,10 @@ class Helpers {
       case '@lteDate':
         {
           const lhsDate = wrangleDateType(lhs);
-          const lhsDateInput = toDateComparableValue(lhs);
+          const rhsDate = toDateComparableValue(rhs);
           if (!lhsDate) return false;
-          if (!lhsDateInput) return false;
-          passed = Sugar.Date.isBefore(lhsDate, lhsDateInput) || Sugar.Date.is(lhsDate, lhsDateInput);
+          if (!rhsDate) return false;
+          passed = Sugar.Date.isBefore(lhsDate, rhsDate) || Sugar.Date.is(lhsDate, rhsDate);
         }
         break;
       case '$rex':

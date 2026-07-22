@@ -15,6 +15,7 @@
  */
 
 import { Response, Request } from 'express';
+import { QueryParams } from '../../types/bjs-query.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -23,6 +24,8 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
+
+import * as ACM from '../../access-control/models-access.js';
 
 /**
  * @class GetMany
@@ -60,6 +63,10 @@ export default class GetMany extends Route {
 
   override async _exec(req: Request, _res: Response, query: { ids: string[]; project: boolean }) {
     const model = await this.routeModel();
-    return model.find({ id: { $in: query.ids.map((id) => model.createId(id)) } }, {}, 0, 0, null, query.project);
+    const findParams: QueryParams<{ id: unknown }> = {
+      query: { id: { $in: query.ids.map((id) => model.createId(id)) } },
+      project: query.project as unknown as Record<string, 1 | -1> | undefined,
+    };
+    return ACM.find(model, findParams, req.context.ac);
   }
 }
