@@ -157,11 +157,19 @@ export default class UpdateMany extends Route {
       id: string;
       sourceId: string;
       results: unknown;
+      validation?: unknown;
     }[] = [];
 
-    type UpdateManyBody = { id: string; sourceId: string; body: unknown };
+    type UpdateManyBody = { id: string; sourceId: string; body: unknown; validation?: unknown };
 
     for await (const body of _data as UpdateManyBody[]) {
+      // Items that failed validation (bad path/value, missing id, or outside the caller's
+      // access-control scope) must not be applied, only reported back.
+      if (body.validation !== true) {
+        output.push({ id: body.id, sourceId: body.sourceId, results: null, validation: body.validation });
+        continue;
+      }
+
       const result = await model.updateByPath(body.body, body.id, body.sourceId);
       output.push({ id: body.id, sourceId: body.sourceId, results: result });
     }
