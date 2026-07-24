@@ -678,7 +678,8 @@ export const extend = (schemas: Schema[], schema: Schema): Schema => {
         const dependency = extend(schemas, schemas[dependencyIdx]);
         if (!dependency.properties) return; // Skip if dependency has no properties
         if (!schema.properties) schema.properties = {};
-        schema.properties = Object.assign(schema.properties, dependency.properties);
+        // The schema's own properties must win over ones it inherits via `extends`.
+        schema.properties = Object.assign({}, dependency.properties, schema.properties);
       });
   }
 

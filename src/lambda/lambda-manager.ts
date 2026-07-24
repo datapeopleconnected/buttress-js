@@ -272,7 +272,9 @@ export default class LambdaManager {
       null,
       this._queueBatchSize,
       0,
-      { priority: 1, executeAfter: 1 },
+      // Higher ExecPriority values are more urgent (URGENT=100 > ... > CRON=0) and must be
+      // dequeued first; earliest executeAfter breaks ties within the same priority.
+      { priority: -1, executeAfter: 1 },
     );
     const lambdaExecs = await Helpers.streamAll<
       LambdaExecution & { body?: unknown; query?: unknown; headers?: unknown }

@@ -447,6 +447,21 @@ describe('services/policy-cache', () => {
       const roleIdx = await Redis.sMembers(K('policy:propertyIndex:role'));
       assert(roleIdx.includes('tok1'));
     });
+
+    it('should remove a property from both the forward and reverse index once it is no longer present', async () => {
+      // Regression check: missingProperties used to be computed with the exact same filter as
+      // newProperties (a copy-paste bug), so a property the token lost was never actually purged.
+      await cache.indexTokenPolicyProperties('tok1', { role: 'admin', dept: 'eng' });
+
+      await cache.indexTokenPolicyProperties('tok1', { dept: 'eng' });
+
+      const indexed = await Redis.sMembers(K('token:tok1:policyProperties'));
+      assert(!indexed.includes('role'), 'role should have been removed from the forward index');
+      assert(indexed.includes('dept'));
+
+      const roleIdx = await Redis.sMembers(K('policy:propertyIndex:role'));
+      assert(!roleIdx.includes('tok1'), 'tok1 should have been removed from the role reverse index');
+    });
   });
 
   describe('removeIndexedTokenPolicyProperties', () => {

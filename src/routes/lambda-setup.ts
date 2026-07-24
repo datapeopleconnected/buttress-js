@@ -104,12 +104,23 @@ export class RoutesLambdaSetup {
       let lambdaResult: ExecutionResultMessage | null = null;
 
       if (result.triggerAPIType === 'SYNC') {
-        lambdaResult = await new Promise((resolve) => {
-          this._nrp?.on('lambda:worker:execution-result', (json) => {
+        lambdaResult = await new Promise<ExecutionResultMessage | null>((resolve) => {
+          // nrp.on() subscribes to Redis and hands back an unsubscribe function - capture it
+          // and use it once we've got our match, otherwise this handler (and the underlying
+          // Redis subscription) leaks for the lifetime of the process, growing with every
+          // SYNC lambda API call.
+          let unsubscribe: (() => void) | undefined;
+
+          const handler = (json: string) => {
             const exec = JSON.parse(json) as ExecutionResultMessage;
-            if (exec.reqId === req.context.id?.toString()) {
-              resolve(exec);
-            }
+            if (exec.reqId !== req.context.id?.toString()) return;
+
+            unsubscribe?.();
+            resolve(exec);
+          };
+
+          this._nrp?.on('lambda:worker:execution-result', handler).then((unsub) => {
+            unsubscribe = unsub;
           });
         });
       }

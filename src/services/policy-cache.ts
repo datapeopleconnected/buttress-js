@@ -358,13 +358,18 @@ export class PolicyCache {
     // Fetch the current properties
     const existingProperties = await this._redisClient.sMembers(this._prefix(`token:${tokenId}:policyProperties`));
 
-    // Work out if any cached properties are missing and if they are remove them from the cache.
-    const missingProperties = propertyKeys.filter((key) => !existingProperties.includes(key));
+    // Work out if any cached properties are no longer part of the token's policyProperties,
+    // and if so remove them from both the forward index and the reverse property index.
+    const missingProperties = existingProperties.filter((key) => !propertyKeys.includes(key));
     if (missingProperties.length > 0) {
       await this._redisClient.sRem(this._prefix(`token:${tokenId}:policyProperties`), missingProperties);
       Logging.logSilly(
         `Removed missing policy properties for token: ${tokenId}, properties: ${JSON.stringify(missingProperties)}`,
       );
+
+      for (const key of missingProperties) {
+        await this._redisClient.sRem(this._prefix(`policy:propertyIndex:${key}`), tokenId);
+      }
     }
 
     const newProperties = propertyKeys.filter((key) => !existingProperties.includes(key));

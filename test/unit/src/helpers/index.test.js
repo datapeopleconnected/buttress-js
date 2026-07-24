@@ -47,6 +47,34 @@ describe('helpers.compareByProps', () => {
 		const b = { name: 'Jordan', age: 5 };
 		assert.strictEqual(Helpers.compareByProps(new Map([['age', -1]]), a, b), -1);
 	});
+
+	it('should order by ObjectId rather than treating them as tied', () => {
+		const lower = new ObjectId('000000000000000000000001');
+		const higher = new ObjectId('000000000000000000000002');
+		const a = { id: higher };
+		const b = { id: lower };
+		assert.strictEqual(Helpers.compareByProps(new Map([['id', 1]]), a, b), 1);
+		assert.strictEqual(Helpers.compareByProps(new Map([['id', 1]]), b, a), -1);
+		assert.strictEqual(Helpers.compareByProps(new Map([['id', 1]]), a, a), 0);
+	});
+});
+
+describe('helpers.checkAppPolicyProperty', () => {
+	it('should pass when the submitted numeric value is exactly in the allow-list', async () => {
+		const result = await Helpers.checkAppPolicyProperty({ level: [5, 10, 15] }, { level: 10 });
+		assert.strictEqual(result.passed, true);
+	});
+
+	it('should fail when the submitted numeric value is not in the allow-list', async () => {
+		// 7 isn't one of the allowed values - regression check for the `<` vs `!==` bug.
+		const result = await Helpers.checkAppPolicyProperty({ level: [5, 10, 15] }, { level: 7 });
+		assert.strictEqual(result.passed, false);
+	});
+
+	it('should fail when the submitted numeric value is higher than every allowed value', async () => {
+		const result = await Helpers.checkAppPolicyProperty({ level: [5, 10, 15] }, { level: 20 });
+		assert.strictEqual(result.passed, false);
+	});
 });
 
 describe('helpers.flattenedObject', () => {

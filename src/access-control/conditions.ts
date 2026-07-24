@@ -94,9 +94,7 @@ export class Conditions {
         continue;
       }
 
-      for await (const key of Object.keys(conditionRecord)) {
-        results.push(await this.__checkInnerConditions(conditionRecord, envVariables, key, partialPass));
-      }
+      results.push(await this.__checkInnerConditions(conditionRecord, envVariables, key, partialPass));
     }
 
     if (partialPass) return results.some((r) => r);

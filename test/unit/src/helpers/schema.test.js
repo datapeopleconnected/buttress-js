@@ -160,3 +160,31 @@ describe('helpers.schema:getFlattenedBody', () => {
 		assert(value[2].arraySubOjectSubObject.thisCouldGoOn === body.array[2].arraySubOjectSubObject.thisCouldGoOn);
 	});
 });
+
+describe('helpers.Schema:extend', () => {
+	it('should pull in a property from the extended schema that the child does not define', () => {
+		const schemas = [
+			{ name: 'timestamps', properties: { createdAt: { __type: 'date', __default: 'parent-default' } } },
+			{ name: 'thing', extends: ['timestamps'], properties: {} },
+		];
+
+		const result = Helpers.Schema.extend(schemas, schemas[1]);
+
+		assert.strictEqual(result.properties.createdAt.__default, 'parent-default');
+	});
+
+	it("should keep the child's own property instead of the extended schema's same-named property", () => {
+		const schemas = [
+			{ name: 'timestamps', properties: { createdAt: { __type: 'date', __default: 'parent-default' } } },
+			{
+				name: 'thing',
+				extends: ['timestamps'],
+				properties: { createdAt: { __type: 'date', __default: 'child-default' } },
+			},
+		];
+
+		const result = Helpers.Schema.extend(schemas, schemas[1]);
+
+		assert.strictEqual(result.properties.createdAt.__default, 'child-default');
+	});
+});

@@ -124,6 +124,27 @@ describe('access-control/conditions:filterPoliciesByPolicyConditions', () => {
     assert.strictEqual(result.length, 0);
   });
 
+  it('should pass when a condition object mixes an @and block with a sibling plain field, both satisfied', async () => {
+    // Regression check: the sibling field used to make __checkCondition re-iterate every key
+    // (including '@and') on each outer-loop pass, injecting a spurious `false` and failing
+    // the whole condition even though every individual piece was actually satisfied.
+    const policies = [
+      {
+        id: 'p1', name: 'test', appId: 'app1', env: { location: 'UK' },
+        config: {
+          verbs: ['GET'], schema: ['user'], query: {}, projection: null,
+          condition: {
+            '@and': [{ '#env.location': { '@eq': 'UK' } }],
+            '#env.appId': { '@eq': 'app1' },
+          },
+        },
+      },
+    ];
+
+    const result = await AccessControlConditions.filterPoliciesByPolicyConditions(policies, emptyEnv);
+    assert.strictEqual(result.length, 1);
+  });
+
   it('should handle @or logical conditions where one must pass', async () => {
     const policies = [
       {

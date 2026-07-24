@@ -366,7 +366,7 @@ export const checkAppPolicyProperty = async (appPolicyList, policyProperties) =>
         return val !== equalValue;
       }
       if (typeof val === 'number') {
-        return val < equalValue;
+        return val !== equalValue;
       }
     });
     if (equalValue !== undefined && appContainsProp) {
@@ -419,8 +419,21 @@ export const compareByProps = (
     const valueA = a && a[key] ? a[key] : null;
     const valueB = b && b[key] ? b[key] : null;
 
-    const left = valueA instanceof Date ? valueA.getTime() : valueA;
-    const right = valueB instanceof Date ? valueB.getTime() : valueB;
+    // ObjectIds (and id strings) are normalised to strings so the string-comparison branch
+    // below can order them - otherwise they fall through every branch and are treated as tied,
+    // which silently breaks the default id-based sort when merging federated result streams.
+    const left =
+      valueA instanceof Date
+        ? valueA.getTime()
+        : valueA !== null && ObjectId.isValid(valueA as string)
+          ? (valueA as ObjectId).toString()
+          : valueA;
+    const right =
+      valueB instanceof Date
+        ? valueB.getTime()
+        : valueB !== null && ObjectId.isValid(valueB as string)
+          ? (valueB as ObjectId).toString()
+          : valueB;
 
     if (left === null && right === null) continue;
     if (left === null) return -1 * sortOrder;
