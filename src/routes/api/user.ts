@@ -712,7 +712,7 @@ class UpdateUserPolicyProperties extends Route {
     }
 
     const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = Model.getCoreModel(UserSchemaModel).exists(userId);
+    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -806,7 +806,7 @@ class RemoveUserPolicyProperties extends Route {
     }
 
     const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = Model.getCoreModel(UserSchemaModel).exists(userId);
+    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -890,7 +890,7 @@ class ClearUserPolicyProperties extends Route {
     }
 
     const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = Model.getCoreModel(UserSchemaModel).exists(userId);
+    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));

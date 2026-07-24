@@ -358,7 +358,7 @@ class BulkUpdateLambda extends Route {
         }
       }
 
-      const exists = Model.getCoreModel(LambdaSchemaModel).exists(item.id);
+      const exists = await Model.getCoreModel(LambdaSchemaModel).exists(item.id);
       if (!exists) {
         this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));

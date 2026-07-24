@@ -328,7 +328,7 @@ class BulkUpdatePolicy extends Route {
         }
       }
 
-      const exists = Model.getCoreModel(PolicySchemaModel).exists(item.id);
+      const exists = await Model.getCoreModel(PolicySchemaModel).exists(item.id);
       if (!exists) {
         this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -481,7 +481,14 @@ class DeleteTransientPolicy extends Route {
       throw new Helpers.Errors.RequestError(400, `missing_field`);
     }
 
-    const policy = await Helpers.streamFirst(await Model.getCoreModel(PolicySchemaModel).find({ name: req.body.name }));
+    // streamFirst() rejects rather than resolving falsy when the stream ends with no data,
+    // so an empty result has to be caught here to surface the intended 400 error.
+    let policy;
+    try {
+      policy = await Helpers.streamFirst(await Model.getCoreModel(PolicySchemaModel).find({ name: req.body.name }));
+    } catch (_err: unknown) {
+      policy = null;
+    }
     if (!policy) {
       this.log(`[${this.name}] Cannot find a policy with name ${req.body.name}`, Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `policy_does_not_exist`);

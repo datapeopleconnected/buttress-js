@@ -169,7 +169,14 @@ class GetSecureStore extends Route {
       _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
     };
 
-    const secureStore = await Helpers.streamFirst(await Model.getCoreModel(SecureStoreSchemaModel).find(query));
+    // streamFirst() rejects rather than resolving falsy when the stream ends with no data,
+    // so an empty result has to be caught here to surface the intended 400 error.
+    let secureStore;
+    try {
+      secureStore = await Helpers.streamFirst(await Model.getCoreModel(SecureStoreSchemaModel).find(query));
+    } catch (_err: unknown) {
+      secureStore = null;
+    }
     if (!secureStore) {
       this.log(`[${this.name}] Cannot find a secure store with id ${id}`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `secure_store_does_not_exist`));
