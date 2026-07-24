@@ -584,7 +584,8 @@ class AccessControl {
       if (this._oneWeekMilliseconds < nearlyExpired) return;
       if (this._queuedLimitedPolicy.includes(p.name)) return;
 
-      const policyIdx = this._queuedLimitedPolicy.push(p.name);
+      this._queuedLimitedPolicy.push(p.name);
+      const policyIdx = this._queuedLimitedPolicy.length - 1;
       setTimeout(async () => {
         await this.__removeUserPropertiesPolicySelection(userToken, p);
         await Model.getCoreModel(PolicySchemaModel).rm(p.id);

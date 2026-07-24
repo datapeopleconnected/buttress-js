@@ -14,8 +14,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
+import sinon from 'sinon';
 
 import LambdaManager from '../../../../dist/lambda/lambda-manager.js';
 
@@ -24,6 +25,25 @@ function createManager() {
   const services = { get: (key) => (key === 'nrp' ? nrp : undefined) };
   return new LambdaManager(services);
 }
+
+// Captures listeners registered via nrp.on() so tests can fire them directly, and spies on
+// emit() so tests can assert what the manager announced back out.
+function createManagerWithNrp() {
+  const nrp = {
+    _listeners: {},
+    on(evt, cb) {
+      this._listeners[evt] = cb;
+    },
+    emit: sinon.spy(),
+  };
+  const services = { get: (key) => (key === 'nrp' ? nrp : undefined) };
+  const manager = new LambdaManager(services);
+  return { manager, nrp };
+}
+
+afterEach(() => {
+  sinon.restore();
+});
 
 // Stub out the parts of execution creation that would otherwise hit the real
 // model/DB layer, and record what was "created" so tests can assert on it.
@@ -100,5 +120,121 @@ describe('lambda/LambdaManager path-mutation debounce', () => {
     await fireDebounceTimer(manager, manager._debouncedPathMutations[0].id);
 
     assert.strictEqual(createdExecutions.length, 2, 'the repeat write must produce a second execution');
+  });
+});
+
+describe('lambda/LambdaManager worker assignment', () => {
+  it('assigns an idle worker to a newly-available execution', () => {
+    const { manager, nrp } = createManagerWithNrp();
+    manager._listenToLambdaWorkers();
+
+    nrp._listeners['lambda:worker:available'](JSON.stringify({ workerId: 'worker-1', executionId: 'exec-1' }));
+
+    assert.strictEqual(manager._workerMap['worker-1'], 'exec-1');
+    assert.ok(nrp.emit.calledWith('lambda:worker:execute'));
+  });
+
+  it('does not reassign an execution another worker already claimed', () => {
+    const { manager, nrp } = createManagerWithNrp();
+    manager._listenToLambdaWorkers();
+
+    nrp._listeners['lambda:worker:available'](JSON.stringify({ workerId: 'worker-1', executionId: 'exec-1' }));
+    nrp.emit.resetHistory();
+
+    nrp._listeners['lambda:worker:available'](JSON.stringify({ workerId: 'worker-2', executionId: 'exec-1' }));
+
+    assert.strictEqual(manager._workerMap['worker-2'], undefined);
+    assert.strictEqual(nrp.emit.called, false);
+  });
+
+  it('does not reassign a worker that is already tracked against another execution', () => {
+    const { manager, nrp } = createManagerWithNrp();
+    manager._listenToLambdaWorkers();
+
+    nrp._listeners['lambda:worker:available'](JSON.stringify({ workerId: 'worker-1', executionId: 'exec-1' }));
+    nrp.emit.resetHistory();
+
+    nrp._listeners['lambda:worker:available'](JSON.stringify({ workerId: 'worker-1', executionId: 'exec-2' }));
+
+    assert.strictEqual(
+      manager._workerMap['worker-1'],
+      'exec-1',
+      'worker-1 should stay assigned to its first execution',
+    );
+    assert.strictEqual(nrp.emit.called, false);
+  });
+
+  it('throws if an available announcement is missing a workerId', () => {
+    const { manager, nrp } = createManagerWithNrp();
+    manager._listenToLambdaWorkers();
+
+    assert.throws(
+      () => nrp._listeners['lambda:worker:available'](JSON.stringify({ executionId: 'exec-1' })),
+      /Unable to assign Lamba worker without a workerId/,
+    );
+  });
+
+  it('untracks the worker once an execution errors', () => {
+    const { manager, nrp } = createManagerWithNrp();
+    manager._listenToLambdaWorkers();
+
+    nrp._listeners['lambda:worker:available'](JSON.stringify({ workerId: 'worker-1', executionId: 'exec-1' }));
+    assert.strictEqual(manager._workerMap['worker-1'], 'exec-1');
+
+    nrp._listeners['lambda:worker:errored'](JSON.stringify({ workerId: 'worker-1', executionId: 'exec-1' }));
+
+    assert.strictEqual(manager._workerMap['worker-1'], undefined);
+    assert.strictEqual(manager._inflightExecutions['exec-1'], undefined);
+  });
+
+  it('untracks the worker once an execution finishes', () => {
+    const { manager, nrp } = createManagerWithNrp();
+    manager._listenToLambdaWorkers();
+
+    nrp._listeners['lambda:worker:available'](JSON.stringify({ workerId: 'worker-1', executionId: 'exec-1' }));
+    nrp._listeners['lambda:worker:finished'](JSON.stringify({ workerId: 'worker-1', executionId: 'exec-1' }));
+
+    assert.strictEqual(manager._workerMap['worker-1'], undefined);
+    assert.strictEqual(manager._inflightExecutions['exec-1'], undefined);
+  });
+
+  it("heals tracking onto the worker's current execution when it reports overloaded", () => {
+    const { manager, nrp } = createManagerWithNrp();
+    manager._listenToLambdaWorkers();
+
+    // worker-1 was assigned exec-1, but by the time it checked in it had actually already
+    // moved on to exec-current (e.g. a stale/duplicate announcement was assigned to it).
+    manager.trackWorkerLambda({ workerId: 'worker-1', executionId: 'exec-current' });
+
+    nrp._listeners['lambda:worker:overloaded'](
+      JSON.stringify({ workerId: 'worker-1', executionId: 'exec-stale', currentExecutionId: 'exec-current' }),
+    );
+
+    assert.strictEqual(manager._workerMap['worker-1'], 'exec-current');
+    assert.strictEqual(manager._inflightExecutions['exec-current'].workerId, 'worker-1');
+  });
+
+  it('untracks a worker when the overloaded execution matches what the manager thinks it is running', () => {
+    const { manager, nrp } = createManagerWithNrp();
+    manager._listenToLambdaWorkers();
+
+    manager.trackWorkerLambda({ workerId: 'worker-1', executionId: 'exec-1' });
+
+    nrp._listeners['lambda:worker:overloaded'](JSON.stringify({ workerId: 'worker-1', executionId: 'exec-1' }));
+
+    assert.strictEqual(manager._workerMap['worker-1'], undefined);
+    assert.strictEqual(manager._inflightExecutions['exec-1'], undefined);
+  });
+});
+
+describe('lambda/LambdaManager trackWorkerLambda/untrackWorkerLambda', () => {
+  it('throws when tracking a message without a workerId', () => {
+    const manager = createManager();
+    assert.throws(() => manager.trackWorkerLambda({ executionId: 'exec-1' }), /Unable to track Lamba worker/);
+  });
+
+  it('throws when untracking a message without a workerId', () => {
+    const manager = createManager();
+    assert.throws(() => manager.untrackWorkerLambda({ executionId: 'exec-1' }), /Unable to track Lamba worker/);
   });
 });
