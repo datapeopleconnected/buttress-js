@@ -286,8 +286,10 @@ export default class RemoteCombinedModel extends StandardModel {
    * @return {Promise}
    */
   override async count(query) {
-    // Make a call out to each of the remotes, and merge the streams into on single stream.
+    // Make a call out to the local datastore and each of the remotes, and sum the results.
     const sourceReqs: Promise<number>[] = [];
+
+    sourceReqs.push(await this.localModel.count(query));
 
     for await (const remote of this._remoteModels) {
       sourceReqs.push(await remote.count(query));

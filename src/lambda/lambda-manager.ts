@@ -687,11 +687,10 @@ export default class LambdaManager {
       const retry = this._debouncedPathMutations[debouncedLambdaIdx]?.retry || 0;
 
       if (retry > this._maximumRetry) {
-        // TODO: Clean up exec records
         Logging.logError(
           `[${this.name}] Lambda ${pathMutation.id} has reached the maximum retry of ${this._maximumRetry}`,
         );
-        return;
+        continue;
       }
 
       if (debouncedLambdaIdx === -1) {
@@ -712,7 +711,7 @@ export default class LambdaManager {
         };
 
         debouncedLambdaIdx = this._debouncedPathMutations.push(debouncer) - 1;
-        return;
+        continue;
       }
 
       const pmExecRecord = this._debouncedPathMutations[debouncedLambdaIdx];
@@ -723,7 +722,6 @@ export default class LambdaManager {
       }, this._lambdaPathMutationTimeout);
       pmExecRecord.CRs = pmExecRecord.CRs.concat(cr);
       pmExecRecord.retry = pmExecRecord.retry + 1;
-      return;
     }
   }
 
@@ -757,6 +755,10 @@ export default class LambdaManager {
     if (!pathMutationLambda || !pathMutationLambda.executionId) {
       throw new Error('Failed to create path mutation lambda execution');
     }
+
+    // Remove the completed debounce record so a later identical write (same lambda + change
+    // hash) starts a fresh debounce/execution instead of being silently swallowed forever.
+    this._debouncedPathMutations.splice(pathMutationLambdaIdx, 1);
 
     this._processQueue();
   }

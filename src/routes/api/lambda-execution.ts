@@ -261,6 +261,12 @@ class LambdaExecutionCount extends Route {
       Model.getCoreModel(LambdaExecutionSchemaModel).flatSchemaData,
     );
 
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
+      result.query.$and?.push({
+        _appId: req.context.authApp?.id,
+      });
+    }
+
     return result;
   }
 
