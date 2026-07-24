@@ -35,6 +35,41 @@ jobs:
     - name: Run Unit Tests
       run: npm run test:unit
 
+  coverage:
+    runs-on: ubuntu-latest
+    env:
+      MOCHA_UNIT_TIMEOUT: 10000
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '24'
+        cache: npm
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build
+      run: npm run build
+
+    # Report-only for now: unit-test coverage against dist/, non-blocking (no --check-coverage).
+    # Once coverage from planned test additions is meaningfully higher, add thresholds to .c8rc.json
+    # and this job should start failing on regression.
+    - name: Run Unit Test Coverage
+      run: npm run coverage:unit
+
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-report
+        path: coverage/
+        retention-days: 14
+
   e2e-tests:
     runs-on: ubuntu-latest
     env:

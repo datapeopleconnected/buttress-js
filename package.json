@@ -30,6 +30,7 @@
     "format": "prettier --check ./src",
     "format:fix": "prettier --write ./src",
     "coverage": "c8 npm run test",
+    "coverage:unit": "c8 npm run test:unit",
     "start": "bin/buttress.sh",
     "licence-check": "./.husky/licence-check",
     "check": "tsc --noEmit && npm run lint && npm run format && npm run licence-check",
@@ -86,6 +87,7 @@
     "husky": "^9.1.7",
     "mocha": "^11.7.5",
     "prettier": "^3.8.3",
+    "sinon": "^19.0.5",
     "source-map-support": "^0.5.21",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.30.1"
