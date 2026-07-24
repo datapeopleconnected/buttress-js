@@ -29,6 +29,8 @@ import TokenSchemaModel, { Token } from '../model/core/token.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
 
+const SYNC_LAMBDA_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
+
 export class RoutesLambdaSetup {
   app: express.Application;
   _nrp?: NRP;
@@ -106,21 +108,38 @@ export class RoutesLambdaSetup {
       if (result.triggerAPIType === 'SYNC') {
         lambdaResult = await new Promise<ExecutionResultMessage | null>((resolve) => {
           // nrp.on() subscribes to Redis and hands back an unsubscribe function - capture it
-          // and use it once we've got our match, otherwise this handler (and the underlying
-          // Redis subscription) leaks for the lifetime of the process, growing with every
-          // SYNC lambda API call.
+          // and use it once we're done (match or timeout), otherwise this handler (and the
+          // underlying Redis subscription) leaks for the lifetime of the process, growing with
+          // every SYNC lambda API call.
           let unsubscribe: (() => void) | undefined;
+          let settled = false;
+
+          const finish = (value: ExecutionResultMessage | null) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            unsubscribe?.();
+            resolve(value);
+          };
+
+          // If the matching result never arrives (e.g. the lambda worker crashed), don't hold
+          // the HTTP response open forever - give up after SYNC_LAMBDA_TIMEOUT_MS. The caller
+          // still gets the executionId back (same as the ASYNC/no-result path below) so they
+          // can look up the outcome themselves.
+          const timer = setTimeout(() => finish(null), SYNC_LAMBDA_TIMEOUT_MS);
 
           const handler = (json: string) => {
             const exec = JSON.parse(json) as ExecutionResultMessage;
             if (exec.reqId !== req.context.id?.toString()) return;
 
-            unsubscribe?.();
-            resolve(exec);
+            finish(exec);
           };
 
           this._nrp?.on('lambda:worker:execution-result', handler).then((unsub) => {
             unsubscribe = unsub;
+            // We already gave up waiting before the subscription finished being set up - clean
+            // it up immediately instead of leaving it registered.
+            if (settled) unsubscribe();
           });
         });
       }
