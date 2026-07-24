@@ -32,6 +32,7 @@ import DeploymentSchemaModel from './deployment.js';
 import LambdaSchemaModel from './lambda.js';
 import LambdaExecutionSchemaModel from './lambda-execution.js';
 import SecureStoreSchemaModel from './secure-store.js';
+import TrackingSchemaModel from './tracking.js';
 import { AppDeletedMessage } from '../../routes/index.js';
 
 export interface App {
@@ -447,6 +448,9 @@ export default class AppSchemaModel extends StandardModel<App> {
 
     Logging.logSilly(`Deleting all policy for app ${entity.id}`);
     await this.__modelManager.getCoreModel(PolicySchemaModel).rmAll({ _appId: entity.id });
+
+    Logging.logSilly(`Deleting all tracking for app ${entity.id}`);
+    await this.__modelManager.getCoreModel(TrackingSchemaModel).rmAll({ _appId: entity.id });
 
     Logging.logSilly(`Deleting schema for app ${entity.id}`);
     await this.__modelManager.dropAndCleanAppModels(entity.id);

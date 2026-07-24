@@ -21,6 +21,8 @@ import { EventEmitter } from 'node:events';
 import createConfig from '@dpc/node-env-obj';
 import Routes from '../routes/index.js';
 import Route from '../routes/route.js';
+import Logging from '../helpers/logging.js';
+import { getThrownErrorMessage } from '../helpers/index.js';
 import type { Services } from '../bootstrap.js';
 const Config = createConfig() as unknown as Config;
 
@@ -110,11 +112,17 @@ class Plugins extends EventEmitter {
 	async _scanPlugins() {
 		const pluginDirs = await this._findPluginEntryFiles(Config.paths.plugins);
 		for (const pluginDir of pluginDirs) {
-			const plugin = new (await import(pluginDir))(this.appType, this.processRole, this.infrastructureRole);
-			this.attachListeners(plugin);
-			if (plugin.initialise) {
-				await plugin.initialise();
-				this.plugins.push(plugin);
+			try {
+				const plugin = new (await import(pluginDir))(this.appType, this.processRole, this.infrastructureRole);
+				this.attachListeners(plugin);
+				if (plugin.initialise) {
+					await plugin.initialise();
+					this.plugins.push(plugin);
+				}
+			} catch (err: unknown) {
+				// A single broken plugin (bad import, throwing/rejecting initialise()) must not take
+				// down the whole process - log it and move on to the rest of the plugins.
+				Logging.logError(`[Plugins] Failed to load plugin at ${pluginDir}: ${getThrownErrorMessage(err)}`);
 			}
 		}
 	}

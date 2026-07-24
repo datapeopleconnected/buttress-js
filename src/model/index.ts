@@ -137,7 +137,7 @@ export class ModelManager {
         } catch (err: unknown) {
           if (err instanceof Helpers.Errors.UnsupportedDatastore) {
             Logging.logWarn(`${err} for ${app.id}`);
-            return;
+            continue;
           }
 
           throw err;

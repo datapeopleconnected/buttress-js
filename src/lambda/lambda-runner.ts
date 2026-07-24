@@ -400,31 +400,34 @@ export default class LambdaRunner {
    */
   async handleLambdaExecutionMessage(payload: LambdaExecutionMessage) {
     const lambdaId = payload.lambdaId;
-    const lambda = (await Model.getCoreModel(LambdaSchemaModel).findById(lambdaId)) as Lambda | null;
-    // TODO add a meaningful error message & notify manager
-    if (!lambda) return;
-
-    const app = (await Model.getCoreModel(AppSchemaModel).findById(lambda._appId)) as App | null;
-    // TODO add a meaningful error message & notify manager
-    if (!app) return;
-
-    const triggerType = payload.lambdaType;
-
-    const executionId = payload.executionId;
-    if (!executionId) throw new Error('unable to fetch execute lambda, missing executionId');
-
-    const execution = (await Model.getCoreModel(LambdaExecutionSchemaModel).findOne({
-      id: Model.getCoreModel(LambdaExecutionSchemaModel).createId(executionId),
-      status: 'PENDING',
-    })) as LambdaExecution | null;
-    if (!execution) throw new Error('Unable to find pending execution, with id: ' + executionId);
-
-    const body = execution.metadata.find((m) => m.key === 'BODY')?.value || undefined;
-    const query = execution.metadata.find((m) => m.key === 'QUERY')?.value || undefined;
-    const headers = execution.metadata.find((m) => m.key === 'HEADERS')?.value || undefined;
-    const reqId = execution.metadata.find((m) => m.key === 'REQ_ID')?.value || undefined;
+    // Resolved once we successfully look it up, so the catch block below can report
+    // against it (and update its DB status) regardless of which step failed.
+    let execution: LambdaExecution | null = null;
+    let reqId: string | undefined;
 
     try {
+      const lambda = (await Model.getCoreModel(LambdaSchemaModel).findById(lambdaId)) as Lambda | null;
+      if (!lambda) throw new Error(`Unable to find lambda with id: ${lambdaId}`);
+
+      const app = (await Model.getCoreModel(AppSchemaModel).findById(lambda._appId)) as App | null;
+      if (!app) throw new Error(`Unable to find app for lambda: ${lambdaId}`);
+
+      const triggerType = payload.lambdaType;
+
+      const executionId = payload.executionId;
+      if (!executionId) throw new Error('unable to fetch execute lambda, missing executionId');
+
+      execution = (await Model.getCoreModel(LambdaExecutionSchemaModel).findOne({
+        id: Model.getCoreModel(LambdaExecutionSchemaModel).createId(executionId),
+        status: 'PENDING',
+      })) as LambdaExecution | null;
+      if (!execution) throw new Error('Unable to find pending execution, with id: ' + executionId);
+
+      const body = execution.metadata.find((m) => m.key === 'BODY')?.value || undefined;
+      const query = execution.metadata.find((m) => m.key === 'QUERY')?.value || undefined;
+      const headers = execution.metadata.find((m) => m.key === 'HEADERS')?.value || undefined;
+      reqId = execution.metadata.find((m) => m.key === 'REQ_ID')?.value || undefined;
+
       this._lambdaExecution = execution;
       await this.execute(lambda, execution, app, triggerType, {
         body,
@@ -447,10 +450,14 @@ export default class LambdaRunner {
       this.working = false;
       const errMessage = Helpers.getThrownErrorMessage(err);
       Logging.logError(errMessage);
-      await this._updateDBLambdaErrorExecution(execution, {
-        message: errMessage,
-        type: 'ERROR',
-      });
+
+      if (execution) {
+        await this._updateDBLambdaErrorExecution(execution, {
+          message: errMessage,
+          type: 'ERROR',
+        });
+      }
+
       this.__nrp?.emit(
         'lambda:worker:errored',
         JSON.stringify({
@@ -458,7 +465,7 @@ export default class LambdaRunner {
           executionId: payload.executionId,
           reqId: reqId,
           lambdaId: lambdaId,
-          lambdaType: triggerType,
+          lambdaType: payload.lambdaType,
           errMessage,
         }),
       );
