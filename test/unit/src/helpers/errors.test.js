@@ -124,3 +124,39 @@ describe('helpers/errors:CodedError', () => {
     assert.strictEqual(err.code, 500);
   });
 });
+
+describe('helpers/errors:UpstreamApiError', () => {
+  it('should set name, message, code and httpStatus', () => {
+    const err = new Errors.UpstreamApiError('Token expired', 'INVALID_CREDENTIALS', 401);
+    assert(err instanceof Error);
+    assert(err instanceof Errors.UpstreamApiError);
+    assert.strictEqual(err.name, 'UPSTREAM_API_ERROR');
+    assert.strictEqual(err.message, 'Token expired');
+    assert.strictEqual(err.code, 'INVALID_CREDENTIALS');
+    assert.strictEqual(err.httpStatus, 401);
+  });
+
+  it('should default retryable from httpStatus when not given explicitly', () => {
+    assert.strictEqual(new Errors.UpstreamApiError('m', 'C', 429).retryable, true);
+    assert.strictEqual(new Errors.UpstreamApiError('m', 'C', 500).retryable, true);
+    assert.strictEqual(new Errors.UpstreamApiError('m', 'C', 503).retryable, true);
+    assert.strictEqual(new Errors.UpstreamApiError('m', 'C', 400).retryable, false);
+    assert.strictEqual(new Errors.UpstreamApiError('m', 'C', 401).retryable, false);
+  });
+
+  it('should let an explicit retryable override the httpStatus default', () => {
+    const err = new Errors.UpstreamApiError('m', 'C', 429, { retryable: false });
+    assert.strictEqual(err.retryable, false);
+  });
+
+  it('should carry through a multi-error array when given', () => {
+    const errors = [{ code: 'FIELD_A', message: 'bad field A', path: '/a' }];
+    const err = new Errors.UpstreamApiError('Multiple errors', 'BAD_REQUEST', 400, { errors });
+    assert.deepStrictEqual(err.errors, errors);
+  });
+
+  it('should leave errors undefined when not given', () => {
+    const err = new Errors.UpstreamApiError('m', 'C', 400);
+    assert.strictEqual(err.errors, undefined);
+  });
+});

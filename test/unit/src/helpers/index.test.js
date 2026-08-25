@@ -277,3 +277,44 @@ describe('helpers.flattenedObject', () => {
 		assert.strictEqual(value.length, 2);
 	});
 });
+
+describe('helpers.getThrownErrorDetails', () => {
+	it('should extract message only from a plain Error', () => {
+		const details = Helpers.getThrownErrorDetails(new Error('plain failure'));
+		assert.strictEqual(details.message, 'plain failure');
+		assert.strictEqual(details.code, undefined);
+		assert.strictEqual(details.httpStatus, undefined);
+		assert.strictEqual(details.retryable, undefined);
+		assert.strictEqual(details.errors, undefined);
+	});
+
+	it('should extract code, httpStatus, retryable and errors from an UpstreamApiError', () => {
+		const errors = [{ code: 'FIELD_A', message: 'bad field A' }];
+		const err = new Helpers.Errors.UpstreamApiError('Multiple errors', 'BAD_REQUEST', 400, { retryable: false, errors });
+		const details = Helpers.getThrownErrorDetails(err);
+		assert.strictEqual(details.message, 'Multiple errors');
+		assert.strictEqual(details.code, 'BAD_REQUEST');
+		assert.strictEqual(details.httpStatus, 400);
+		assert.strictEqual(details.retryable, false);
+		assert.deepStrictEqual(details.errors, errors);
+	});
+
+	it('should ignore a numeric code (e.g. from CodedError) rather than misreport it as a string', () => {
+		const details = Helpers.getThrownErrorDetails(new Helpers.Errors.CodedError('Lambda error', 500));
+		assert.strictEqual(details.message, 'Lambda error');
+		assert.strictEqual(details.code, undefined);
+	});
+
+	it('should extract fields stashed on a plain object (e.g. lambda.setResult({err:true, ...}))', () => {
+		const details = Helpers.getThrownErrorDetails({
+			errMessage: 'set-result failure',
+			code: 'SOME_CODE',
+			httpStatus: 503,
+			retryable: true,
+		});
+		assert.strictEqual(details.message, 'set-result failure');
+		assert.strictEqual(details.code, 'SOME_CODE');
+		assert.strictEqual(details.httpStatus, 503);
+		assert.strictEqual(details.retryable, true);
+	});
+});
