@@ -61,6 +61,7 @@ export interface ExecutionResultMessage {
   code: number;
   res?: unknown;
   err?: unknown;
+  errDetails?: Helpers.ThrownErrorDetails;
   reqId: string;
   executionId: string;
 }
@@ -342,7 +343,11 @@ export default class LambdaRunner {
         const lambdaResult = lambdaHelpers.lambdaResult as LambdaResult | null;
 
         if (lambdaResult && lambdaResult.err) {
-          throw new Error(lambdaResult.errMessage);
+          throw Object.assign(new Error(lambdaResult.errMessage), {
+            code: lambdaResult.code,
+            httpStatus: lambdaResult.httpStatus,
+            retryable: lambdaResult.retryable,
+          });
         }
 
         if (!data.reqId) {
@@ -369,12 +374,14 @@ export default class LambdaRunner {
       Logging.logDebug(err);
 
       if (type === 'API_ENDPOINT') {
-        const errMessage = Helpers.getThrownErrorMessage(err);
+        const errDetails = Helpers.getThrownErrorDetails(err);
+        const errMessage = errDetails.message;
 
         if (data.reqId) {
           const message: ExecutionResultMessage = {
-            code: 400,
+            code: errDetails.httpStatus ?? 400,
             err: errMessage,
+            errDetails,
             reqId: data.reqId,
             executionId: execution.id,
           };

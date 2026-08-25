@@ -100,6 +100,27 @@ export class CodedError extends Error {
   }
 }
 
+export class UpstreamApiError extends Error {
+  code: string;
+  httpStatus: number;
+  retryable: boolean;
+  errors?: Array<{ code?: string; message?: string; path?: string }>;
+
+  constructor(
+    message: string,
+    code: string,
+    httpStatus: number,
+    opts: { retryable?: boolean; errors?: Array<{ code?: string; message?: string; path?: string }> } = {},
+  ) {
+    super(message);
+    this.name = 'UPSTREAM_API_ERROR';
+    this.code = code;
+    this.httpStatus = httpStatus;
+    this.retryable = opts.retryable ?? [429, 500, 502, 503, 504].includes(httpStatus);
+    if (opts.errors) this.errors = opts.errors;
+  }
+}
+
 export default {
   RequestError,
   SchemaNotFound,
@@ -111,4 +132,5 @@ export default {
   Unauthenticated,
   InvalidToken,
   CodedError,
+  UpstreamApiError,
 };

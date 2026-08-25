@@ -36,6 +36,9 @@ export interface LambdaResult {
   err?: boolean;
   errMessage?: string;
   redirect?: boolean;
+  code?: string;
+  httpStatus?: number;
+  retryable?: boolean;
   [key: string]: unknown;
 }
 
@@ -226,12 +229,19 @@ class Helpers {
                 error_description?: string;
               };
 
+              type ParsedErrorEntry = {
+                code?: string;
+                message?: string;
+                path?: string;
+              };
+
               type ParsedErrorPayload = {
                 error?: string | ParsedErrorObject;
                 message?: string;
                 code?: string | number;
                 statusMessage?: string;
                 error_description?: string;
+                errors?: ParsedErrorEntry[];
               };
 
               const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -263,6 +273,14 @@ class Helpers {
                           }
                         : undefined;
 
+                  const normalizedErrors = Array.isArray(parsed.errors)
+                    ? parsed.errors.filter(isRecord).map((entry) => ({
+                        code: typeof entry.code === 'string' ? entry.code : undefined,
+                        message: typeof entry.message === 'string' ? entry.message : undefined,
+                        path: typeof entry.path === 'string' ? entry.path : undefined,
+                      }))
+                    : undefined;
+
                   json = {
                     error: normalizedError,
                     message: typeof parsed.message === 'string' ? parsed.message : undefined,
@@ -270,6 +288,7 @@ class Helpers {
                     statusMessage: typeof parsed.statusMessage === 'string' ? parsed.statusMessage : undefined,
                     error_description:
                       typeof parsed.error_description === 'string' ? parsed.error_description : undefined,
+                    errors: normalizedErrors,
                   };
                 }
               } catch (_err) {
@@ -278,6 +297,7 @@ class Helpers {
 
               if (json) {
                 Logging.logDebug(text);
+                const httpStatus = output.status as number;
 
                 if (typeof json.error === 'string') {
                   if (json.error.toUpperCase() === 'INVALID_TOKEN') {
@@ -287,6 +307,13 @@ class Helpers {
                     const msg = json.error_description || json.error;
                     throw new Errors.InvalidRequest(msg, 400);
                   }
+
+                  throw new Errors.UpstreamApiError(
+                    json.error_description || json.error,
+                    json.error.toUpperCase(),
+                    httpStatus,
+                    { retryable: false },
+                  );
                 } else if (json.error) {
                   if (json.error.status === 'UNAUTHENTICATED') {
                     const unauthenticatedCode = Number(json.error.code ?? 401);
@@ -297,30 +324,41 @@ class Helpers {
                     );
                   }
                   if (json.error.status) {
-                    throw new Error(`${data.url.pathname} error is ${json.error.status}`);
+                    const statusMessage = `${data.url.pathname} error is ${json.error.status}`;
+                    if (typeof json.error.code === 'string') {
+                      throw new Errors.UpstreamApiError(statusMessage, json.error.code, httpStatus, { retryable: false });
+                    }
+                    if (typeof json.error.code === 'number') {
+                      throw new Errors.CodedError(statusMessage, json.error.code);
+                    }
+                    throw new Error(statusMessage);
                   }
                 }
 
                 if (json.message && json.code !== undefined) {
-                  throw new Errors.CodedError(json.message, Number(json.code));
+                  if (typeof json.code === 'string') {
+                    throw new Errors.UpstreamApiError(json.message, json.code, httpStatus, {
+                      errors: json.errors,
+                    });
+                  }
+
+                  throw new Errors.CodedError(json.message, json.code);
                 }
 
-                if (typeof json.error === 'string') {
-                  message = json.error;
-                } else if (json.error) {
-                  if (json.error.error_description) message = json.error.error_description;
-                  if (json.error.message) message = json.error.message;
-                  if (json.error.status) message = json.error.status;
-                }
+                if (json.error && json.error.error_description) message = json.error.error_description;
+                if (json.error && json.error.message) message = json.error.message;
+                if (json.error && json.error.status) message = json.error.status;
                 if (json.error_description) message = json.error_description;
                 if (json.message) message = json.message;
                 if (json.statusMessage) message = json.statusMessage;
               }
 
-              throw new Error(`${data.url.pathname} error is ${message}`);
+              Logging.logError(`${data.url.pathname} error is ${message}`);
+              throw new Errors.CodedError(message, output.status ?? 520)
             } else {
               const responseStatus = response.status ? response.status : 520;
-              throw new Errors.CodedError(`${data.url.pathname} error is ${response.statusText}`, responseStatus);
+              Logging.logError(`${data.url.pathname} error is ${response.statusText}`);
+              throw new Errors.CodedError(response.statusText, responseStatus);
             }
           }
 
@@ -357,14 +395,25 @@ class Helpers {
           const error: Record<string, unknown> = {};
           if (err && typeof err === 'object') {
             const unknownErr = err as Record<string, unknown>;
-            if (unknownErr.message) {
+            // Presence checks, not truthy checks - a falsy-but-valid value (retryable: false,
+            // httpStatus: 0) must survive the isolate boundary just as much as a truthy one.
+            if (unknownErr.message !== undefined) {
               error.message = unknownErr.message;
             }
-            if (unknownErr.code) {
+            if (unknownErr.code !== undefined) {
               error.code = unknownErr.code;
             }
-            if (unknownErr.status) {
+            if (unknownErr.status !== undefined) {
               error.status = unknownErr.status;
+            }
+            if (unknownErr.httpStatus !== undefined) {
+              error.httpStatus = unknownErr.httpStatus;
+            }
+            if (unknownErr.retryable !== undefined) {
+              error.retryable = unknownErr.retryable;
+            }
+            if (unknownErr.errors !== undefined) {
+              error.errors = unknownErr.errors;
             }
           }
           const reference =

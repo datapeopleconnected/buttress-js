@@ -534,6 +534,26 @@ export const getThrownErrorMessage = (err: unknown): string => {
   return normalizeThrownError(err).message;
 };
 
+export interface ThrownErrorDetails {
+  message: string;
+  code?: string;
+  httpStatus?: number;
+  retryable?: boolean;
+  errors?: Array<{ code?: string; message?: string; path?: string }>;
+}
+
+export const getThrownErrorDetails = (err: unknown): ThrownErrorDetails => {
+  const normalized = normalizeThrownError(err);
+  const raw = normalized.raw as Record<string, unknown> | undefined;
+  return {
+    message: normalized.message,
+    code: typeof raw?.code === 'string' ? raw.code : undefined,
+    httpStatus: typeof raw?.httpStatus === 'number' ? raw.httpStatus : undefined,
+    retryable: typeof raw?.retryable === 'boolean' ? raw.retryable : undefined,
+    errors: Array.isArray(raw?.errors) ? (raw.errors as ThrownErrorDetails['errors']) : undefined,
+  };
+};
+
 export function redisPrefix(prefix: string, key: string): string {
   if (!prefix) return key;
   if (prefix.endsWith(':')) return `${prefix}${key}`;

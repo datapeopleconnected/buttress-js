@@ -172,6 +172,7 @@ export class RoutesLambdaSetup {
         res.status(lambdaResult.code).send({
           res: lambdaResult.res,
           err: lambdaResult.err,
+          errDetails: lambdaResult.errDetails,
           executionId: lambdaResult.executionId,
         });
       } else {
