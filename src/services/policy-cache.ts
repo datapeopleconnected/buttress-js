@@ -26,7 +26,7 @@ import AccessControlPolicyMatch from '../access-control/policy-match.js';
 
 import Model from '../model/index.js';
 import { Policy, PolicyConfig } from '../model/core/policy.js';
-import { PolicyProperties, Token } from '../model/core/token.js';
+import { PolicyProperties, PolicyProperty, Token } from '../model/core/token.js';
 
 import * as Helpers from '../helpers/index.js';
 import PolicySchemaModel from '../model/core/policy.js';
@@ -325,10 +325,27 @@ export class PolicyCache {
     const policySelectionProperties = Object.keys(policy.selection);
     if (policySelectionProperties.length < 1) return;
 
-    // Get all tokenIds which have the policy properties indexed using sInter
-    const tokenIds = await this._redisClient.sInter(
-      policySelectionProperties.map((prop) => this._prefix(`policy:propertyIndex:${prop}`)),
-    );
+    // A token matches a selection if ANY one of its properties satisfies its criterion (see
+    // AccessControlPolicyMatch.__checkPolicySelection, which does matches.some(...), not every(...)).
+    // So the tokens that could now be affected are the UNION of each property's candidates, not the
+    // intersection - a token doesn't need every selected property indexed to match.
+    //
+    // For a plain equality criterion we can narrow the candidates to only tokens whose indexed value
+    // actually matches, via the value-qualified index. Everything else (@not, ranges, dates, @rex, or
+    // an array rhs) falls back to the broad "has this property at all" index, same as before.
+    const propertyIndexKeys = policySelectionProperties.map((prop) => {
+      const criterion = policy.selection?.[prop];
+      const [operator] = Object.keys(criterion ?? {});
+      const rhs = criterion?.[operator];
+
+      if ((operator === '@eq' || operator === '$eq') && rhs !== null && rhs !== undefined) {
+        return this._prefix(`policy:propertyIndex:${prop}:${this._normalisePropertyValue(rhs)}`);
+      }
+
+      return this._prefix(`policy:propertyIndex:${prop}`);
+    });
+
+    const tokenIds = await this._redisClient.sUnion(propertyIndexKeys);
     if (tokenIds.length < 1) {
       Logging.logSilly(`No tokens found for policy properties: ${JSON.stringify(policySelectionProperties)}`);
       return;
@@ -336,16 +353,22 @@ export class PolicyCache {
 
     Logging.logSilly(`Found tokens for policy properties: ${tokenIds.length}}`);
 
-    // Now we need to mark these tokens as stale so that they can be re-evaluated on the next request.
-    await tokenIds.reduce(async (prev, tokenId) => {
-      await prev;
-
-      // Mark the token as stale so that it can be re-evaluated on the next request.
-      await this.setTokenIdAsStale(tokenId);
-    }, Promise.resolve());
+    // Mark all the candidate tokens as stale so that they can be re-evaluated on the next request.
+    await Promise.all(tokenIds.map((tokenId) => this.setTokenIdAsStale(tokenId)));
 
     // We remove the policy from the cache so it will be re-evaluated on the next request.
     this.removePolicy(policyId);
+  }
+
+  // Matches the case-insensitive comparison AccessControlHelpers.evaluateOperation uses for @eq/@not.
+  private _normalisePropertyValue(value: PolicyProperty): string {
+    return value.toString().toUpperCase();
+  }
+
+  // Encodes a key/value pair as a single opaque set member so we can diff and later recover the
+  // key it was indexed under, without assuming keys/values never contain a delimiter character.
+  private _propertyValueEntry(key: string, value: PolicyProperty): string {
+    return JSON.stringify([key, this._normalisePropertyValue(value)]);
   }
 
   async indexTokenPolicyProperties(tokenId: string, policyProperties: PolicyProperties = null) {
@@ -367,26 +390,64 @@ export class PolicyCache {
         `Removed missing policy properties for token: ${tokenId}, properties: ${JSON.stringify(missingProperties)}`,
       );
 
-      for (const key of missingProperties) {
-        await this._redisClient.sRem(this._prefix(`policy:propertyIndex:${key}`), tokenId);
-      }
+      await Promise.all(
+        missingProperties.map((key) => this._redisClient.sRem(this._prefix(`policy:propertyIndex:${key}`), tokenId)),
+      );
     }
 
     const newProperties = propertyKeys.filter((key) => !existingProperties.includes(key));
 
-    // If we have no properties to index, we can early out.
     if (newProperties.length < 1) {
       Logging.logSilly(`No new policy properties to index for token: ${tokenId}`);
-      return;
+    } else {
+      await this._redisClient.sAdd(this._prefix(`token:${tokenId}:policyProperties`), newProperties);
+
+      Logging.logSilly(
+        `Indexing policy properties for token: ${tokenId}, properties: ${JSON.stringify(newProperties)}`,
+      );
+
+      await Promise.all(
+        newProperties.map((key) => this._redisClient.sAdd(this._prefix(`policy:propertyIndex:${key}`), tokenId)),
+      );
     }
 
-    await this._redisClient.sAdd(this._prefix(`token:${tokenId}:policyProperties`), newProperties);
+    // Value-qualified index: lets an @eq selection narrow to just the matching value instead of
+    // every token that has the property at all. This has to run even when the key set above hasn't
+    // changed, since a property's *value* can change without its key being added or removed.
+    await this._indexTokenPolicyPropertyValues(tokenId, policyProperties);
+  }
 
-    Logging.logSilly(`Indexing policy properties for token: ${tokenId}, properties: ${JSON.stringify(newProperties)}`);
-
-    for (const key of newProperties) {
-      await this._redisClient.sAdd(this._prefix(`policy:propertyIndex:${key}`), tokenId);
+  private async _indexTokenPolicyPropertyValues(tokenId: string, policyProperties: PolicyProperties) {
+    const desiredEntries = new Set<string>();
+    for (const key of policyProperties ? Object.keys(policyProperties) : []) {
+      const rawValue = policyProperties![key];
+      const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+      values.forEach((value) => desiredEntries.add(this._propertyValueEntry(key, value)));
     }
+
+    const existingEntries = await this._redisClient.sMembers(this._prefix(`token:${tokenId}:policyPropertyValues`));
+
+    const missingEntries = existingEntries.filter((entry) => !desiredEntries.has(entry));
+    if (missingEntries.length > 0) {
+      await this._redisClient.sRem(this._prefix(`token:${tokenId}:policyPropertyValues`), missingEntries);
+      await Promise.all(
+        missingEntries.map((entry) => {
+          const [key, value] = JSON.parse(entry) as [string, string];
+          return this._redisClient.sRem(this._prefix(`policy:propertyIndex:${key}:${value}`), tokenId);
+        }),
+      );
+    }
+
+    const newEntries = [...desiredEntries].filter((entry) => !existingEntries.includes(entry));
+    if (newEntries.length < 1) return;
+
+    await this._redisClient.sAdd(this._prefix(`token:${tokenId}:policyPropertyValues`), newEntries);
+    await Promise.all(
+      newEntries.map((entry) => {
+        const [key, value] = JSON.parse(entry) as [string, string];
+        return this._redisClient.sAdd(this._prefix(`policy:propertyIndex:${key}:${value}`), tokenId);
+      }),
+    );
   }
 
   async removeIndexedTokenPolicyProperties(tokenId: string) {
@@ -397,19 +458,26 @@ export class PolicyCache {
     Logging.logSilly(`Removing indexed policy properties for token: ${tokenId}`);
     // Get all properties for the token
     const properties = await this._redisClient.sMembers(this._prefix(`token:${tokenId}:policyProperties`));
-    if (properties.length < 1) {
+    const valueEntries = await this._redisClient.sMembers(this._prefix(`token:${tokenId}:policyPropertyValues`));
+
+    if (properties.length < 1 && valueEntries.length < 1) {
       Logging.logSilly(`No indexed policy properties found for token: ${tokenId}`);
       return;
     }
 
     await this._redisClient.del(this._prefix(`token:${tokenId}:policyProperties`));
+    await this._redisClient.del(this._prefix(`token:${tokenId}:policyPropertyValues`));
 
     // Remove the token from all indexed properties
-    await properties.reduce(async (prev, property) => {
-      await prev;
-
-      Logging.logSilly(`Removing token ${tokenId} from indexed property: ${property}`);
-      await this._redisClient.sRem(this._prefix(`policy:propertyIndex:${property}`), tokenId);
-    }, Promise.resolve());
+    await Promise.all([
+      ...properties.map((property) => {
+        Logging.logSilly(`Removing token ${tokenId} from indexed property: ${property}`);
+        return this._redisClient.sRem(this._prefix(`policy:propertyIndex:${property}`), tokenId);
+      }),
+      ...valueEntries.map((entry) => {
+        const [key, value] = JSON.parse(entry) as [string, string];
+        return this._redisClient.sRem(this._prefix(`policy:propertyIndex:${key}:${value}`), tokenId);
+      }),
+    ]);
   }
 }

@@ -101,6 +101,16 @@ const Redis = {
     return result;
   },
 
+  async sUnion(keys) {
+    const result = new Set();
+    for (const k of keys) {
+      const s = this._data.get(k);
+      if (!s) continue;
+      for (const item of s) result.add(item);
+    }
+    return [...result];
+  },
+
   async zAdd(key, items) {
     if (!this._data.has(key)) this._data.set(key, new Map());
     const zset = this._data.get(key);
@@ -462,6 +472,35 @@ describe('services/policy-cache', () => {
       const roleIdx = await Redis.sMembers(K('policy:propertyIndex:role'));
       assert(!roleIdx.includes('tok1'), 'tok1 should have been removed from the role reverse index');
     });
+
+    it('should index a value-qualified entry alongside the key-only entry', async () => {
+      await cache.indexTokenPolicyProperties('tok1', { role: 'admin' });
+      const valueIdx = await Redis.sMembers(K('policy:propertyIndex:role:ADMIN'));
+      assert(valueIdx.includes('tok1'));
+    });
+
+    it('should re-index the value-qualified entry when the value changes without the key changing', async () => {
+      await cache.indexTokenPolicyProperties('tok1', { role: 'admin' });
+      await cache.indexTokenPolicyProperties('tok1', { role: 'user' });
+
+      const oldValueIdx = await Redis.sMembers(K('policy:propertyIndex:role:ADMIN'));
+      assert(!oldValueIdx.includes('tok1'), 'tok1 should have been removed from the old value index');
+
+      const newValueIdx = await Redis.sMembers(K('policy:propertyIndex:role:USER'));
+      assert(newValueIdx.includes('tok1'));
+
+      // The key-only index is unaffected since the key itself never changed.
+      const roleIdx = await Redis.sMembers(K('policy:propertyIndex:role'));
+      assert(roleIdx.includes('tok1'));
+    });
+
+    it('should index every value of an array-valued property', async () => {
+      await cache.indexTokenPolicyProperties('tok1', { dept: ['sales', 'eng'] });
+      const salesIdx = await Redis.sMembers(K('policy:propertyIndex:dept:SALES'));
+      const engIdx = await Redis.sMembers(K('policy:propertyIndex:dept:ENG'));
+      assert(salesIdx.includes('tok1'));
+      assert(engIdx.includes('tok1'));
+    });
   });
 
   describe('removeIndexedTokenPolicyProperties', () => {
@@ -475,6 +514,83 @@ describe('services/policy-cache', () => {
       await cache.removeIndexedTokenPolicyProperties('tok1');
       const props = await Redis.sMembers(K('token:tok1:policyProperties'));
       assert.strictEqual(props.length, 0);
+    });
+
+    it('should also remove the token from the value-qualified index', async () => {
+      await cache.indexTokenPolicyProperties('tok1', { role: 'admin' });
+      await cache.removeIndexedTokenPolicyProperties('tok1');
+
+      const valueIdx = await Redis.sMembers(K('policy:propertyIndex:role:ADMIN'));
+      assert(!valueIdx.includes('tok1'));
+      const entries = await Redis.sMembers(K('token:tok1:policyPropertyValues'));
+      assert.strictEqual(entries.length, 0);
+    });
+  });
+
+  describe('invalidatePolicyAndTokensBySelection', () => {
+    it('should do nothing when the policy is not found', async () => {
+      cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(null) }));
+      await cache.invalidatePolicyAndTokensBySelection('missing');
+      // No throw is success here - nothing indexed, nothing to assert on.
+    });
+
+    it('should only mark tokens whose indexed value matches an @eq selection', async () => {
+      await cache.indexTokenPolicyProperties('admin-tok', { role: 'admin' });
+      await cache.indexTokenPolicyProperties('user-tok', { role: 'user' });
+
+      cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(policy1) }));
+      await cache.invalidatePolicyAndTokensBySelection('p1');
+
+      const adminPolicies = await Redis.sMembers(K('token:admin-tok:policies'));
+      const userPolicies = await Redis.sMembers(K('token:user-tok:policies'));
+      assert(adminPolicies.includes('STALE'), 'admin-tok should be marked stale');
+      assert(!userPolicies.includes('STALE'), 'user-tok should not be marked stale');
+    });
+
+    it('should mark a token stale if ANY selected property matches, not requiring all of them', async () => {
+      // roleOnly-tok only has `role`, deptOnly-tok only has `dept` - neither has both properties that
+      // the policy selects on, but the real match is an OR across selection keys, so both should
+      // still be invalidated.
+      await cache.indexTokenPolicyProperties('roleOnly-tok', { role: 'admin' });
+      await cache.indexTokenPolicyProperties('deptOnly-tok', { dept: 'eng' });
+
+      const multiKeyPolicy = {
+        id: 'p3', name: 'multi-key-policy', _appId: 'app1', priority: 1,
+        selection: { role: { '@eq': 'admin' }, dept: { '@eq': 'eng' } },
+        config: [{ verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null }],
+      };
+      cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(multiKeyPolicy) }));
+      await cache.invalidatePolicyAndTokensBySelection('p3');
+
+      const rolePolicies = await Redis.sMembers(K('token:roleOnly-tok:policies'));
+      const deptPolicies = await Redis.sMembers(K('token:deptOnly-tok:policies'));
+      assert(rolePolicies.includes('STALE'), 'roleOnly-tok should be marked stale');
+      assert(deptPolicies.includes('STALE'), 'deptOnly-tok should be marked stale');
+    });
+
+    it('should fall back to the broad key index for operators other than @eq', async () => {
+      await cache.indexTokenPolicyProperties('older-tok', { seniority: 5 });
+
+      const rangePolicy = {
+        id: 'p4', name: 'range-policy', _appId: 'app1', priority: 1,
+        selection: { seniority: { '@gt': '3' } },
+        config: [{ verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null }],
+      };
+      cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(rangePolicy) }));
+      await cache.invalidatePolicyAndTokensBySelection('p4');
+
+      const policies = await Redis.sMembers(K('token:older-tok:policies'));
+      assert(policies.includes('STALE'), 'older-tok should still be caught by the broad fallback index');
+    });
+
+    it('should remove the policy from the cache after invalidating', async () => {
+      await Redis.hSet(K('policies'), 'p1', JSON.stringify(policy1));
+      await cache.indexTokenPolicyProperties('admin-tok', { role: 'admin' });
+
+      cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(policy1) }));
+      await cache.invalidatePolicyAndTokensBySelection('p1');
+
+      assert.strictEqual(await Redis.hExists(K('policies'), 'p1'), false);
     });
   });
 
