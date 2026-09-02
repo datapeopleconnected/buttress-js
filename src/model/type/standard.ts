@@ -394,7 +394,7 @@ export default class StandardModel<TDocument = unknown> {
       // If we're doing a vector-add operation but the user has provided an array as the value then we want to
       // update the whole property.
       let context = extendedPathContext[update.contextPath];
-      if (context.type === 'vector-add' && Array.isArray(body.value)) {
+      if (context.type === 'vector-add' && Array.isArray(update.value)) {
         context = { type: 'scalar', values: [] };
       }
 

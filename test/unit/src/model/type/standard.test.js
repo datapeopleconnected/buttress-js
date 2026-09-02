@@ -275,6 +275,35 @@ describe('model/type/StandardModel:updateByPath', () => {
   });
 });
 
+describe('model/type/StandardModel:updateByPath — vector-add with a whole-array value', () => {
+  // Regression test for a bug found while designing an unrelated feature: updateByPath's
+  // vector-add-with-array-value fallback (src/model/type/standard.ts) checked `body.value`
+  // instead of `update.value`, so it never fired — `body` is the array of update descriptors by
+  // this point, not the current one, and arrays have no `.value` property.
+  const schemaWithArray = {
+    ...widgetSchema,
+    properties: { ...widgetSchema.properties, tags: { __type: 'array', __itemtype: 'string', __allowUpdate: true } },
+  };
+
+  it('downgrades a bare-array-path update to a scalar (whole-property) set when the value is an array', async () => {
+    const model = createModel(schemaWithArray);
+
+    await model.updateByPath({ path: 'tags', value: ['a', 'b', 'c'], contextPath: '^tags$' }, HEX_ID);
+
+    const context = model.adapter.batchUpdateProcess.firstCall.args[2];
+    assert.strictEqual(context.type, 'scalar');
+  });
+
+  it('leaves a bare-array-path update as vector-add when the value is a single item', async () => {
+    const model = createModel(schemaWithArray);
+
+    await model.updateByPath({ path: 'tags', value: 'a', contextPath: '^tags$' }, HEX_ID);
+
+    const context = model.adapter.batchUpdateProcess.firstCall.args[2];
+    assert.strictEqual(context.type, 'vector-add');
+  });
+});
+
 describe('model/type/StandardModel:simple adapter delegators', () => {
   const cases = [
     ['update', ['select', 'update'], ['select', 'update']],
