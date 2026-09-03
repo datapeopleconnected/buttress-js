@@ -443,7 +443,8 @@ export class RoutesMiddleware {
       if (err) {
         Logging.logError(err, req.context.id);
       }
-      res.status(500);
+      // Unhandled errors (DB drivers, etc.) may carry sensitive details, so only a generic message is sent.
+      res.status(500).json({ statusMessage: 'Internal Server Error', message: 'Internal Server Error' });
     }
 
     res.end();
