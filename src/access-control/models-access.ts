@@ -30,20 +30,27 @@ export async function find<T extends StandardModel>(
   ac: { policyConfigs: parsedPolicyConfig[] },
 ) {
   if (ac.policyConfigs.length > 1) {
+    // Resolve + parse every policy's query up front, awaited via Promise.all, before the stream is
+    // ever created. A policy config that fails to parse (e.g. a query shape that doesn't match the
+    // target schema) rejects this function's promise, so the caller's normal error handling responds
+    // with a proper error. Previously this loop used `forEach(async ...)` so a rejection here became
+    // an unhandled promise rejection: the returned stream would silently `end()` early, having only
+    // ever included the OTHER policies' results, with a 200 response and no indication anything failed.
+    const preparedQueries = await Promise.all(
+      ac.policyConfigs.map(async (policyConfig) => {
+        const combined = await combineQueriesWithAc(query, policyConfig);
+        return { ...combined, query: model.parseQuery(combined.query, {}, model.flatSchemaData) };
+      }),
+    );
+
     const resStream = new Stream.PassThrough({ objectMode: true });
 
     let openStreams = 0;
-    // Using forEach here because we don't want to wait for each function to finish before calling the next.
-    ac.policyConfigs.forEach(async (policyConfig) => {
-      const combined = await combineQueriesWithAc(query, policyConfig);
-      const result = model.find(
-        model.parseQuery(combined.query, {}, model.flatSchemaData),
-        {},
-        combined.limit,
-        combined.skip,
-        combined.sort,
-        combined.project,
-      );
+    // Still not awaiting each find() before starting the next — this is the part worth running
+    // concurrently (the actual per-document datastore stream), now that every policy's query is
+    // already known to be valid.
+    preparedQueries.forEach((combined) => {
+      const result = model.find(combined.query, {}, combined.limit, combined.skip, combined.sort, combined.project);
 
       result.pipe(resStream, { end: false });
       result.on('end', () => {
