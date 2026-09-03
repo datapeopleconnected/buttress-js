@@ -161,6 +161,50 @@ describe('helpers.schema:getFlattenedBody', () => {
 	});
 });
 
+describe('helpers.schema:validate - array sub-schema field name collision', () => {
+	// Regression test: a top-level field (`status`) and an array-of-objects field's own sub-schema
+	// field of the same name (`parties[].status`) must validate independently. `__validate`
+	// recurses into the array sub-schema passing the *current element* as `body`, not the
+	// top-level document — if that recursion is ever passed the outer `body` reference again, the
+	// sub-schema field's default silently overwrites the top-level field of the same name whenever
+	// the sub-schema value already equals its own default (see the schema.ts:366 fix this guards).
+	const schema = {
+		name: 'example-relationship',
+		properties: {
+			status: {
+				__type: 'string',
+				__default: 'ACTIVE',
+				__required: true,
+			},
+			parties: {
+				__type: 'array',
+				__schema: {
+					status: {
+						__type: 'string',
+						__default: 'ACCEPTED',
+						__required: true,
+					},
+				},
+			},
+		},
+	};
+
+	const flattenedSchema = Helpers.getFlattenedSchema(schema);
+
+	it("does not let an array sub-schema field's default clobber a same-named top-level field", () => {
+		const body = {
+			status: 'ACTIVE',
+			parties: [{ status: 'ACCEPTED' }],
+		};
+		const flattenedBody = Helpers.Schema.getFlattenedBody(body);
+
+		Helpers.Schema.validate(flattenedSchema, flattenedBody, '', body);
+
+		assert.strictEqual(body.status, 'ACTIVE');
+		assert.strictEqual(body.parties[0].status, 'ACCEPTED');
+	});
+});
+
 describe('helpers.Schema:extend', () => {
 	it('should pull in a property from the extended schema that the child does not define', () => {
 		const schemas = [
