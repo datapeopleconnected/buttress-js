@@ -500,6 +500,46 @@ class Helpers {
       }),
     );
     jail.setSync(
+      '_cryptoEncryptWithKey',
+      new ivm.Reference(async (data, resolve, reject) => {
+        try {
+          const key = Buffer.from(data.key, 'hex'); // caller-supplied, hex-encoded
+          const iv = crypto.randomBytes(12); // IV must still be fresh per call — reusing an IV with a fixed key breaks GCM
+          const cipher = crypto.createCipheriv(data.algorithm, key, iv);
+          const message = typeof data.message === 'string' ? data.message : JSON.stringify(data.message);
+          let ciphertext = cipher.update(message, 'utf8', 'hex');
+          ciphertext += cipher.final('hex');
+          const authTag = cipher.getAuthTag();
+          const output = { iv: iv.toString('hex'), authTag: authTag.toString('hex'), ciphertext };
+          return resolve.applyIgnored(undefined, [
+            new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
+          ]);
+        } catch (err: unknown) {
+          reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
+        }
+      }),
+    );
+    jail.setSync(
+      '_cryptoDecryptWithKey',
+      new ivm.Reference(async (data, resolve, reject) => {
+        try {
+          const decipher = crypto.createDecipheriv(
+            data.algorithm,
+            Buffer.from(data.key, 'hex'),
+            Buffer.from(data.iv, 'hex'),
+          );
+          decipher.setAuthTag(Buffer.from(data.authTag, 'hex'));
+          let message = decipher.update(data.message, 'hex', 'utf8');
+          message += decipher.final('utf8');
+          return resolve.applyIgnored(undefined, [
+            new ivm.ExternalCopy(new ivm.Reference(message).copySync()).copyInto(),
+          ]);
+        } catch (err: unknown) {
+          reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
+        }
+      }),
+    );
+    jail.setSync(
       '_getCodeChallenge',
       new ivm.Reference(async (data, resolve, reject) => {
         try {
