@@ -32,6 +32,7 @@ interface Config {
     pathMutationWorkers: string;
     cronWorkers: string;
     developmentEmailAddress: string;
+    devReload: string;
   };
   logging: {
     level: string;

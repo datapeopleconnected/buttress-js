@@ -17,12 +17,16 @@
 import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
+import fs from 'node:fs';
+import createConfig from '@dpc/node-env-obj';
 
 import LambdaRunner, { LambdaType } from '../../../../dist/lambda/lambda-runner.js';
 import Model from '../../../../dist/model/index.js';
 import LambdaSchemaModel from '../../../../dist/model/core/lambda.js';
 import LambdaExecutionSchemaModel from '../../../../dist/model/core/lambda-execution.js';
 import AppSchemaModel from '../../../../dist/model/core/app.js';
+
+const Config = createConfig();
 
 function createNrpFake() {
   return {
@@ -275,5 +279,51 @@ describe('lambda/LambdaRunner:handleLambdaExecutionMessage', () => {
     assert.ok(nrp.emit.calledWith('lambda:worker:errored'));
     const [, payload] = nrp.emit.firstCall.args;
     assert.match(JSON.parse(payload).errMessage, /boom/);
+  });
+});
+
+describe('lambda/LambdaRunner:_registerLambdaModules dev reload', () => {
+  const packageMod = { packageName: '@buttress/api', name: 'Buttress' };
+  const ownCodeMod = { name: 'lambda_abc123' };
+
+  function createRunnerWithFakeIsolate() {
+    const { runner } = createRunner();
+    const runSync = sinon.spy();
+    const compileScriptSync = sinon.stub().returns({ runSync });
+    runner._isolate = { compileScriptSync };
+    runner._context = {};
+    return { runner, compileScriptSync, runSync };
+  }
+
+  afterEach(() => {
+    Config.lambda.devReload = 'FALSE';
+  });
+
+  it('registers each module only once across calls when devReload is off (the default)', async () => {
+    Config.lambda.devReload = 'FALSE';
+    const { runner, compileScriptSync } = createRunnerWithFakeIsolate();
+    sinon.stub(fs, 'readFileSync').returns('/* bundle */');
+
+    await runner._registerLambdaModules([packageMod, ownCodeMod]);
+    await runner._registerLambdaModules([packageMod, ownCodeMod]);
+
+    assert.strictEqual(compileScriptSync.callCount, 2, 'each module compiled once total, not per call');
+  });
+
+  it('re-registers only the lambda’s own code module on every call when devReload is on, leaving shared package bundles cached', async () => {
+    Config.lambda.devReload = 'TRUE';
+    const { runner, compileScriptSync } = createRunnerWithFakeIsolate();
+    sinon.stub(fs, 'readFileSync').returns('/* bundle */');
+
+    await runner._registerLambdaModules([packageMod, ownCodeMod]);
+    await runner._registerLambdaModules([packageMod, ownCodeMod]);
+
+    // package: compiled once (first call only). own code: compiled on both calls.
+    assert.strictEqual(compileScriptSync.callCount, 3);
+    assert.strictEqual(
+      runner._registeredBundles.filter((m) => m === ownCodeMod.name).length,
+      1,
+      'own code module id should not be pushed into the cache list more than once',
+    );
   });
 });

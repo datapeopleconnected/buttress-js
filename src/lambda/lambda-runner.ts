@@ -755,16 +755,27 @@ export default class LambdaRunner {
     if (!this._isolate) throw new Error('Isolate not initialised');
     if (!this._context) throw new Error('Isolate not initialised');
 
+    // In dev mode (LAMBDA_DEV_RELOAD=TRUE), always re-read and recompile a lambda's OWN code
+    // module — not the shared @buttress/api / @buttress/snippets / sugar package bundles, which
+    // are genuinely static and still worth caching for the isolate's lifetime — so local edits to
+    // lambda source take effect on every call instead of only the first one per process lifetime.
+    // Off by default: this costs an extra fs read + isolate script compile per invocation, which
+    // is fine for a human/agent iterating locally but not something to pay on every request in a
+    // real deployment, where lambda.git.hash is pinned to an immutable commit anyway.
+    const devReload = Config.lambda.devReload === 'TRUE';
+
     for await (const mod of lambdaModules) {
-      if (this._registeredBundles.includes(mod.packageName) || this._registeredBundles.includes(mod.name)) continue;
+      const isOwnCode = !mod.packageName;
+      const alreadyRegistered = this._registeredBundles.includes(mod.packageName) || this._registeredBundles.includes(mod.name);
+      if (alreadyRegistered && !(devReload && isOwnCode)) continue;
 
       let file = null;
       if (mod.packageName) {
         file = mod.packageName.replace('/', '_');
-        this._registeredBundles.push(mod.packageName);
+        if (!alreadyRegistered) this._registeredBundles.push(mod.packageName);
       } else {
         file = mod.name;
-        this._registeredBundles.push(mod.name);
+        if (!alreadyRegistered) this._registeredBundles.push(mod.name);
       }
       try {
         this._isolate

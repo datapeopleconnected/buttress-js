@@ -33,7 +33,8 @@
     "LAMBDA_PATH_MUTATION_WORKERS": "%LAMBDA_PATH_MUTATION_WORKERS%",
     "LAMBDA_CRON_WORKERS": "%LAMBDA_CRON_WORKERS%",
 
-    "LAMBDA_DEVELOPMENT_EMAIL_ADDRESS": ""
+    "LAMBDA_DEVELOPMENT_EMAIL_ADDRESS": "",
+    "LAMBDA_DEV_RELOAD": "FALSE"
   },
   "global": {
     "env": "%NODE_ENV%",
@@ -52,7 +53,8 @@
       "apiWorkers": "%LAMBDA_API_WORKERS%",
       "pathMutationWorkers": "%LAMBDA_PATH_MUTATION_WORKERS%",
       "cronWorkers": "%LAMBDA_CRON_WORKERS%",
-      "developmentEmailAddress": "%LAMBDA_DEVELOPMENT_EMAIL_ADDRESS%"
+      "developmentEmailAddress": "%LAMBDA_DEVELOPMENT_EMAIL_ADDRESS%",
+      "devReload": "%LAMBDA_DEV_RELOAD%"
     },
     "logging": {
       "level": "%BUTTRESS_LOGGING_LEVEL%",
