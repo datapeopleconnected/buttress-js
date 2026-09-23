@@ -14,7 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { URL } from 'node:url';
-import Stream from 'node:stream';
+import https from 'node:https';
+import http from 'node:http';
 
 import ivm from 'isolated-vm';
 // import fetch from 'cross-fetch';
@@ -40,6 +41,73 @@ export interface LambdaResult {
   httpStatus?: number;
   retryable?: boolean;
   [key: string]: unknown;
+}
+
+// Node's built-in fetch() has an internal bug that occasionally leaves a lambda's outbound call
+// stuck forever with no trace of it anywhere below the JS layer (no packet sent, no libuv request
+// queued, event loop otherwise idle) — reproducible via the isolated-vm bridge, never in isolation.
+// The classic http/https module doesn't hit it, so _fetch below uses that instead of global fetch().
+interface NodeHttpFetchResponse {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  url: string;
+  redirected: boolean;
+  text: () => Promise<string>;
+  json: () => Promise<unknown>;
+}
+
+function nodeHttpFetch(
+  url: URL,
+  options: { method?: string; headers?: Record<string, string>; body?: unknown },
+): Promise<NodeHttpFetchResponse> {
+  return new Promise((resolve, reject) => {
+    // Recompute Content-Length from the actual bytes rather than trust the caller-supplied header
+    // — a mismatch there causes the server to hang waiting for body bytes that never arrive.
+    const bodyBuffer =
+      options.body !== undefined && options.body !== null
+        ? Buffer.from(typeof options.body === 'string' ? options.body : String(options.body), 'utf8')
+        : undefined;
+    const headers = { ...options.headers };
+    if (bodyBuffer) {
+      headers['Content-Length'] = String(bodyBuffer.byteLength);
+    } else {
+      delete headers['Content-Length'];
+    }
+
+    const lib = url.protocol === 'https:' ? https : http;
+    const req = lib.request(
+      url,
+      {
+        method: options.method || 'GET',
+        headers,
+      },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          const bodyText = Buffer.concat(chunks).toString('utf8');
+          const status = res.statusCode || 0;
+          resolve({
+            ok: status >= 200 && status < 300,
+            status,
+            statusText: res.statusMessage || http.STATUS_CODES[status] || '',
+            url: url.href,
+            redirected: false,
+            text: async () => bodyText,
+            json: async () => JSON.parse(bodyText),
+          });
+        });
+        res.on('error', reject);
+      },
+    );
+    req.on('error', reject);
+
+    if (bodyBuffer) {
+      req.write(bodyBuffer);
+    }
+    req.end();
+  });
 }
 
 /**
@@ -187,13 +255,9 @@ class Helpers {
             data.options.body = new URLSearchParams(data.options.body);
           }
 
-          // Prevent keep-alive connections due to TCP issues in docker environments
-          // Possibly due to the use of SEARCH method header.
           data.options = data.options || {};
-          data.options.headers = data.options.headers || {};
-          data.options.headers['Connection'] = 'close';
 
-          const response = await fetch(data.url, data.options);
+          const response = await nodeHttpFetch(data.url, data.options);
 
           const output: {
             ok?: boolean;
@@ -326,7 +390,9 @@ class Helpers {
                   if (json.error.status) {
                     const statusMessage = `${data.url.pathname} error is ${json.error.status}`;
                     if (typeof json.error.code === 'string') {
-                      throw new Errors.UpstreamApiError(statusMessage, json.error.code, httpStatus, { retryable: false });
+                      throw new Errors.UpstreamApiError(statusMessage, json.error.code, httpStatus, {
+                        retryable: false,
+                      });
                     }
                     if (typeof json.error.code === 'number') {
                       throw new Errors.CodedError(statusMessage, json.error.code);
@@ -354,7 +420,7 @@ class Helpers {
               }
 
               Logging.logError(`${data.url.pathname} error is ${message}`);
-              throw new Errors.CodedError(message, output.status ?? 520)
+              throw new Errors.CodedError(message, output.status ?? 520);
             } else {
               const responseStatus = response.status ? response.status : 520;
               Logging.logError(`${data.url.pathname} error is ${response.statusText}`);
@@ -363,29 +429,9 @@ class Helpers {
           }
 
           if (callback) {
-            if (!response.body) {
-              // Handle this
-              throw new Error('No response body');
-            }
-
-            if (response.body instanceof Stream) {
-              response.body.on('data', (chunk) => {
-                chunk = chunk.toString();
-                callback.applyIgnored(undefined, [
-                  new ivm.ExternalCopy(new ivm.Reference(chunk).copySync()).copyInto(),
-                ]);
-              });
-              response.body.on('end', () => {
-                return _resolve(output);
-              });
-              response.body.on('error', (err) => {
-                throw new Error(err);
-              });
-            } else {
-              const text = response && response.text ? await response.text() : null;
-              callback.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(text).copySync()).copyInto()]);
-              return _resolve(output);
-            }
+            const text = response && response.text ? await response.text() : null;
+            callback.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(text).copySync()).copyInto()]);
+            return _resolve(output);
           } else {
             const body = response && response.json ? await response.json() : null;
             output.body = output.status === 200 || output.status === 201 ? body : null;
