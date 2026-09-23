@@ -81,6 +81,9 @@ function nodeHttpFetch(
       {
         method: options.method || 'GET',
         headers,
+        // agent:false forces a fresh socket per request — pooled keep-alive sockets get reset by the
+        // far end in docker environments, possibly due to the use of the SEARCH method header.
+        agent: false,
       },
       (res) => {
         const chunks: Buffer[] = [];
