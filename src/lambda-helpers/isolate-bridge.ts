@@ -267,6 +267,19 @@ class IsolateBridge {
 				});
 			}
 
+			global.sleep = (ms) => {
+				return new Promise((resolve, reject) => {
+					_sleep.applyIgnored(
+						undefined,
+						[
+							new ivm.ExternalCopy(ms).copyInto(),
+							new ivm.Reference(resolve),
+							new ivm.Reference(reject),
+						],
+					);
+				});
+			}
+
 			return new ivm.Reference(function forwardMainPromise(mainFunc, resolve) {
 				const derefMainFunc = mainFunc.deref();
 
@@ -296,6 +309,7 @@ class IsolateBridge {
 			getEmailTemplate: async(...args) => getEmailTemplate(...args),
 			getCodeChallenge: async (...args) => getCodeChallenge(...args),
 			generatePDF: async (...args) => generatePDF(...args),
+			sleep: async (...args) => sleep(...args),
 			req: {
 				body: {},
 				query: {},
