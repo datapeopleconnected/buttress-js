@@ -356,8 +356,14 @@ export class Filter {
       throw new Error("Operator must be either '$and' or '$or'.");
     }
 
-    if (Object.keys(baseFilter).length < 1) return additionalFilter;
-    if (Object.keys(additionalFilter).length < 1) return baseFilter;
+    if (operator === '$or') {
+      if (Object.keys(baseFilter).length < 1 || Object.keys(additionalFilter).length < 1) {
+        return {};
+      }
+    } else {
+      if (Object.keys(baseFilter).length < 1) return additionalFilter;
+      if (Object.keys(additionalFilter).length < 1) return baseFilter;
+    }
 
     const newQuery: any = { [operator]: [] };
 
