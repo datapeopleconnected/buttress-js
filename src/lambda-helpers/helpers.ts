@@ -53,6 +53,7 @@ interface NodeHttpFetchResponse {
   statusText: string;
   url: string;
   redirected: boolean;
+  headers: { get: (name: string) => string | null };
   text: () => Promise<string>;
   json: () => Promise<unknown>;
 }
@@ -97,6 +98,13 @@ function nodeHttpFetch(
             statusText: res.statusMessage || http.STATUS_CODES[status] || '',
             url: url.href,
             redirected: false,
+            headers: {
+              get: (name: string) => {
+                const value = res.headers[name.toLowerCase()];
+                if (value === undefined) return null;
+                return Array.isArray(value) ? value.join(', ') : value;
+              },
+            },
             text: async () => bodyText,
             json: async () => JSON.parse(bodyText),
           });
@@ -436,8 +444,17 @@ class Helpers {
             callback.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(text).copySync()).copyInto()]);
             return _resolve(output);
           } else {
-            const body = response && response.json ? await response.json() : null;
-            output.body = output.status === 200 || output.status === 201 ? body : null;
+            const contentType = response?.headers?.get ? response.headers.get('content-type') : null;
+            const isJson = contentType ? contentType.includes('application/json') : false;
+            let body: unknown = null;
+            if (output.status === 200 || output.status === 201) {
+              if (isJson && response.json) {
+                body = await response.json();
+              } else if (response.text) {
+                body = await response.text();
+              }
+            }
+            output.body = body;
             return _resolve(output);
           }
         } catch (err: unknown) {
@@ -628,6 +645,18 @@ class Helpers {
         } catch (err: unknown) {
           const reference = new ivm.Reference(err).copySync();
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(reference).copyInto()]);
+        }
+      }),
+    );
+
+    jail.setSync(
+      '_sleep',
+      new ivm.Reference(async (ms: number, resolve, reject) => {
+        try {
+          await new Promise((r) => setTimeout(r, ms));
+          return resolve.applyIgnored(undefined);
+        } catch (err: unknown) {
+          reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
         }
       }),
     );
