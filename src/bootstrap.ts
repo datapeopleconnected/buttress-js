@@ -27,6 +27,7 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import Logging from './helpers/logging.js';
+import { getThrownErrorMessage } from './helpers/index.js';
 
 export type Services = Map<string, unknown>;
 
@@ -84,17 +85,49 @@ export default class Bootstrap extends EventEmitter {
 
     this.__shutdown = true;
 
-    // Kill worker processes
-    for (let x = 0; x < this.workers.length; x++) {
-      Logging.logSilly(`Killing worker ${x}`);
-      this.workers[x].worker.kill();
-    }
+    // Stop the worker processes, waiting for them to finish their in-flight work
+    await this.__stopWorkers();
 
-    // Close out the NRP connection
+    // Close out the NRP connection, once it's sent anything still pending
     if (this.__nrp) {
       Logging.logSilly('Closing node redis pubsub connection');
-      this.__nrp.end();
+      await this.__nrp.quit();
     }
+  }
+
+  /**
+   * Shut down cleanly on SIGTERM or SIGINT, then exit. Only the entry scripts call this: the e2e tests
+   * run several bootstraps in one process and call clean() themselves.
+   */
+  shutdownOnSignals() {
+    const timeout = (parseInt(Config.timeout.shutdown) || 8) * 1000;
+
+    const onSignal = async (signal: NodeJS.Signals) => {
+      // The signal can arrive more than once: buttress.sh may send it twice, and Ctrl+C signals every process
+      if (this.__shutdown) return;
+      this.__shutdown = true;
+
+      Logging.log(`Received ${signal}, shutting down`);
+
+      // Don't let in-flight work hold up the exit for longer than a container's stop grace period
+      setTimeout(() => {
+        Logging.logError(`Shutdown didn't finish within ${timeout / 1000}s, exiting`);
+        process.exit(1);
+      }, timeout).unref();
+
+      let code = 0;
+      try {
+        await this.clean();
+      } catch (err: unknown) {
+        Logging.logError(getThrownErrorMessage(err));
+        code = 1;
+      }
+
+      process.exit(code);
+    };
+
+    process.on('SIGTERM', onSignal);
+    process.on('SIGINT', onSignal);
   }
 
   protected async __createCluster() {
@@ -191,6 +224,21 @@ export default class Bootstrap extends EventEmitter {
       // this will be checked and called when all workers have sent the initiated message
       this._resolveWorkersInitialised = resolve;
     });
+  }
+
+  protected async __stopWorkers() {
+    await Promise.all(
+      this.workers.map(({ worker }, x) => {
+        if (worker.isDead()) return;
+
+        Logging.logSilly(`Stopping worker ${x}`);
+        const exited = new Promise((resolve) => worker.once('exit', resolve));
+        // Signal the worker directly: worker.kill() disconnects it first, which closes its servers before
+        // its shutdown code runs, and so waits for any keep-alive connections to time out.
+        worker.process.kill('SIGTERM');
+        return exited;
+      }),
+    );
   }
 
   private _checkWorkersInitiated() {

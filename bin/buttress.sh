@@ -23,34 +23,65 @@ APP_TYPE=${APP_TYPE^^}
 
 echo "Launching APP_TYPE: ${APP_TYPE}"
 
+NAMES=()
+PIDS=()
+STOPPING=
+
+start() {
+  # Don't start anything once we've been asked to stop
+  [ -n "$STOPPING" ] && return
+
+  echo "Starting $1"
+  "$BASE_DIR/$2" 2>&1 &
+  NAMES+=("$1")
+  PIDS+=("$!")
+}
+
+# Ask every process to shut down cleanly. This always sends SIGTERM, as until an app script has exec'd
+# node it's a background job of this shell, and those ignore SIGINT. It can run more than once, as a trap
+# can fire between starting a process and adding it to PIDS, and node ignores repeats.
+stop() {
+  STOPPING=1
+
+  kill -TERM "${PIDS[@]}" 2>/dev/null
+}
+
+trap 'echo "Received SIGTERM, stopping"; stop' TERM
+trap 'echo "Received SIGINT, stopping"; stop' INT
+
 if [ "$APP_TYPE" == "REST" ]
 then
-  $BASE_DIR/app.sh 2>&1 &
+  start REST app.sh
 elif [ "$APP_TYPE" == "SPR" ]
 then
-  $BASE_DIR/app-spr.sh 2>&1 &
+  start SPR app-spr.sh
 elif [ "$APP_TYPE" == "SOCK" ]
 then
-  $BASE_DIR/app-socket.sh 2>&1 &
+  start Socket app-socket.sh
 elif [ "$APP_TYPE" == "LAMB" ]
 then
-  $BASE_DIR/app-lambda.sh 2>&1 &
+  start Lambda app-lambda.sh
 else
-  echo "Starting REST"
-  $BASE_DIR/app.sh 2>&1 &
-
-  echo "Starting SPR"
-  $BASE_DIR/app-spr.sh 2>&1 &
-
-  echo "Starting Socket"
-  $BASE_DIR/app-socket.sh 2>&1 &
-
-  echo "Starting Lambda"
-  $BASE_DIR/app-lambda.sh 2>&1 &
+  start REST app.sh
+  start SPR app-spr.sh
+  start Socket app-socket.sh
+  start Lambda app-lambda.sh
 fi
 
-# Wait for any process to exit
+# Wait for any process to exit, or for a signal, then stop the rest
 wait -n
+stop
 
-# Exit with status of process that exited first
-exit $?
+# Exit with the first non-zero status, or 0 if every process stopped cleanly
+STATUS=0
+for i in "${!PIDS[@]}"; do
+  # wait returns early when a signal is trapped, so keep waiting until the process has gone
+  while kill -0 "${PIDS[$i]}" 2>/dev/null; do wait "${PIDS[$i]}"; done
+  wait "${PIDS[$i]}"
+  CODE=$?
+
+  echo "${NAMES[$i]} exited with status $CODE"
+  [ "$STATUS" -eq 0 ] && STATUS=$CODE
+done
+
+exit $STATUS

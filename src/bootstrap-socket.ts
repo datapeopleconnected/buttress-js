@@ -132,6 +132,29 @@ export default class BootstrapSocket extends Bootstrap {
   }
 
   override async clean() {
+    // Stop handing connections to the workers before stopping them. Don't wait for it to close, which it
+    // only does once every connection it handed to a worker has closed, so not until the workers stop.
+    if (this._mainServer) {
+      Logging.logSilly('Closing main server');
+      // this._mainServer.closeAllConnections();
+      this._mainServer.close();
+      this._mainServer = null;
+    }
+
+    // Close down all socket.io connections / handlers. This comes before closing NRP, which the disconnect
+    // handlers publish to, and the redis clients that socket.io's adapter uses.
+    if (this.io) {
+      Logging.logSilly('Closing socket.io');
+      this.io.disconnectSockets(true);
+      await new Promise((resolve) => this.io?.close(resolve));
+      this.io = undefined;
+    }
+    if (this._socketExpressServer) {
+      Logging.logSilly('Closing socket.io express proxy');
+      await new Promise((resolve) => this._socketExpressServer?.close(resolve));
+      this._socketExpressServer = null;
+    }
+
     await super.clean();
 
     Logging.logSilly('BootstrapSocket:clean');
@@ -141,6 +164,9 @@ export default class BootstrapSocket extends Bootstrap {
       this.emitter.disconnectSockets(true);
       this.emitter = undefined;
     }
+
+    this._requestSockets.destroy();
+    // this._requestSockets = null;
 
     if (this._redisClientEmitter) {
       Logging.logSilly('Closing redisClientEmitter');
@@ -162,27 +188,6 @@ export default class BootstrapSocket extends Bootstrap {
       await this._redisClient.quit();
     }
 
-    this._requestSockets.destroy();
-    // this._requestSockets = null;
-
-    // Close down all socket.io connections / handlers
-    if (this.io) {
-      Logging.logSilly('Closing socket.io');
-      this.io.disconnectSockets(true);
-      await new Promise((resolve) => this.io?.close(resolve));
-      this.io = undefined;
-    }
-    if (this._socketExpressServer) {
-      Logging.logSilly('Closing socket.io express proxy');
-      await new Promise((resolve) => this._socketExpressServer?.close(resolve));
-      this._socketExpressServer = null;
-    }
-    if (this._mainServer) {
-      Logging.logSilly('Closing main server');
-      // this._mainServer.closeAllConnections();
-      await new Promise((resolve) => this._mainServer?.close(resolve));
-      this._mainServer = null;
-    }
     for await (const sockets of Object.values(this._dataShareSockets)) {
       for await (const socket of sockets) {
         Logging.logSilly('Closing data share socket');

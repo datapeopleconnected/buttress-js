@@ -78,6 +78,8 @@ export default class LambdaRunner {
 
   working: boolean;
 
+  private _shutdown = false;
+
   _timeout?: NodeJS.Timeout;
   _lambdaExecution: LambdaExecution | null;
 
@@ -139,6 +141,10 @@ export default class LambdaRunner {
 
   async clean() {
     Logging.logDebug('LambdaRunner:clean');
+
+    // Stop taking on lambdas, and let the running one finish
+    this._shutdown = true;
+    while (this.working) await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Shutdown isolate
   }
@@ -486,7 +492,7 @@ export default class LambdaRunner {
     Logging.logDebug(`Registering ${this.name} to listen for lambda execution messages`);
     this.__nrp?.on('lambda:worker:announce', (json: string) => {
       Logging.logDebug(`[${this.name}] Received lambda execution message: ${json}, working status: ${this.working}`);
-      if (this.working) return;
+      if (this.working || this._shutdown) return;
 
       const message = JSON.parse(json) as LambdaExecutionMessage;
 
@@ -507,6 +513,12 @@ export default class LambdaRunner {
       if (message.workerId !== this.id) return;
 
       Logging.logDebug(`[${this.name}] Manager has told me to take task ${message.executionId}`);
+
+      if (this._shutdown) {
+        Logging.logDebug(`[${this.name}] Shutting down, releasing ${message.executionId}`);
+        this.__nrp?.emit('lambda:worker:overloaded', JSON.stringify(message));
+        return;
+      }
 
       if (this.working) {
         Logging.logWarn(`[${this.name}] I've taken on too much work, releasing ${message.executionId}`);
@@ -766,7 +778,8 @@ export default class LambdaRunner {
 
     for await (const mod of lambdaModules) {
       const isOwnCode = !mod.packageName;
-      const alreadyRegistered = this._registeredBundles.includes(mod.packageName) || this._registeredBundles.includes(mod.name);
+      const alreadyRegistered =
+        this._registeredBundles.includes(mod.packageName) || this._registeredBundles.includes(mod.name);
       if (alreadyRegistered && !(devReload && isOwnCode)) continue;
 
       let file = null;

@@ -28,6 +28,7 @@
 
     "BUTTRESS_TIMEOUT_LAMBDA": 5,
     "BUTTRESS_TIMEOUT_LAMBDAS_RUNNER": 10,
+    "BUTTRESS_TIMEOUT_SHUTDOWN": 8,
 
     "LAMBDA_API_WORKERS": "%LAMBDA_API_WORKERS%",
     "LAMBDA_PATH_MUTATION_WORKERS": "%LAMBDA_PATH_MUTATION_WORKERS%",
@@ -71,7 +72,8 @@
     },
     "timeout": {
       "lambdaManager": "%BUTTRESS_TIMEOUT_LAMBDA%",
-      "lambdasRunner": "%BUTTRESS_TIMEOUT_LAMBDAS_RUNNER%"
+      "lambdasRunner": "%BUTTRESS_TIMEOUT_LAMBDAS_RUNNER%",
+      "shutdown": "%BUTTRESS_TIMEOUT_SHUTDOWN%"
     },
     "redis": {
       "url": "%BUTTRESS_REDIS_URL%",

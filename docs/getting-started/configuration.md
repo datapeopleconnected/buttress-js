@@ -34,6 +34,7 @@ The table below lists commonly used runtime parameters.
 | BUTTRESS_LOGGING_LEVEL | string | info | |
 | BUTTRESS_LOGGING_SLOW | boolean | TRUE | |
 | BUTTRESS_LOGGING_SLOW_TIME | int | 2 | |
+| BUTTRESS_TIMEOUT_SHUTDOWN | int | 8 | Seconds a process has to finish in-flight work after SIGTERM/SIGINT before it exits anyway |
 
 ## Lambda Runtime Parameters
 

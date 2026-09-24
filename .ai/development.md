@@ -99,7 +99,7 @@ Notable config paths used throughout the code (`Config.<path>`, all resolved fro
 `datastore.{connectionString,options}`, `redis.{url,scope}`, `rest.app` / `sio.app` (`primary`/`secondary`
 — controls which instance of a multi-instance REST/Socket deployment owns primary-only responsibilities),
 `lambda.{apiWorkers,pathMutationWorkers,cronWorkers,developmentEmailAddress}`,
-`timeout.{lambdaManager,lambdasRunner}`, `paths.{appData,plugins,lambda.{code,plugins,bundles}}`.
+`timeout.{lambdaManager,lambdasRunner,shutdown}`, `paths.{appData,plugins,lambda.{code,plugins,bundles}}`.
 
 ## Docker
 

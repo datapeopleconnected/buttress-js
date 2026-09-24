@@ -51,6 +51,7 @@ interface Config {
     lambda: string;
     lambdasRunner: string;
     lambdaManager: string;
+    shutdown: string;
   };
   redis: {
     url: string;

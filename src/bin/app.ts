@@ -30,6 +30,7 @@ if (cluster.isPrimary) Logging.startupMessage();
 (async () => {
   try {
     const app = new BootstrapRest();
+    app.shutdownOnSignals();
     const isMain = await app.init();
 
     if (isMain) {

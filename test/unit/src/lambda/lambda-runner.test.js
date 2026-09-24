@@ -153,6 +153,48 @@ describe('lambda/LambdaRunner:_subscribeToLambdaManager execute', () => {
   });
 });
 
+describe('lambda/LambdaRunner:clean', () => {
+  it('stops announcing availability once it is shutting down', async () => {
+    const { runner, nrp } = createRunner();
+    runner._subscribeToLambdaManager();
+    await runner.clean();
+
+    nrp._listeners['lambda:worker:announce'](JSON.stringify({ lambdaType: LambdaType.CRON, executionId: 'exec-1' }));
+
+    assert.strictEqual(nrp.emit.called, false);
+  });
+
+  it('releases work it is given once it is shutting down', async () => {
+    const { runner, nrp } = createRunner();
+    sinon.stub(runner, 'handleLambdaExecutionMessage');
+    runner._subscribeToLambdaManager();
+    await runner.clean();
+
+    nrp._listeners['lambda:worker:execute'](JSON.stringify({ workerId: runner.id, executionId: 'exec-new' }));
+
+    assert.ok(nrp.emit.calledWith('lambda:worker:overloaded'));
+    assert.strictEqual(JSON.parse(nrp.emit.firstCall.args[1]).executionId, 'exec-new');
+    assert.strictEqual(runner.handleLambdaExecutionMessage.called, false);
+    assert.strictEqual(runner.working, false);
+  });
+
+  it('waits for the running lambda to finish', async () => {
+    const clock = sinon.useFakeTimers();
+    const { runner } = createRunner();
+    runner.working = true;
+
+    let cleaned = false;
+    const cleaning = runner.clean().then(() => (cleaned = true));
+    await clock.tickAsync(1000);
+    assert.strictEqual(cleaned, false);
+
+    runner.working = false;
+    await clock.tickAsync(100);
+    await cleaning;
+    assert.strictEqual(cleaned, true);
+  });
+});
+
 function stubModel(map) {
   return sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
     const fake = map.get(modelClass);

@@ -83,13 +83,13 @@ export default class BootstrapLambda extends Bootstrap {
   }
 
   override async clean() {
+    // Clean up lambda process, first so a running lambda can finish while its connections are still open.
+    if (this.__lambdaManagerProcess) await this.__lambdaManagerProcess.clean();
+    if (this.__lambdaWorkerProcess) await this.__lambdaWorkerProcess.clean();
+
     await super.clean();
 
     Logging.logDebug('BootstrapLambda:clean');
-
-    // Clean up lambda process.
-    if (this.__lambdaManagerProcess) await this.__lambdaManagerProcess.clean();
-    if (this.__lambdaWorkerProcess) await this.__lambdaWorkerProcess.clean();
 
     if (this._redisClient) {
       this._redisClient.quit();

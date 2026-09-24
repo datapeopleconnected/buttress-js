@@ -39,6 +39,14 @@ Image tags:
 - `dpcltd/buttress:latest`
 - `dpcltd/buttress:<version>`
 
+## Stopping
+
+`docker stop` sends SIGTERM, and each Buttress process then stops taking new work, finishes what it has in
+flight (HTTP requests, a running lambda) and exits. Anything still running after `BUTTRESS_TIMEOUT_SHUTDOWN`
+seconds (default 8) is cut off, so that the container exits before Docker's 10 second grace period runs out
+and it gets killed. If you raise the timeout, raise the grace period to match: `docker stop -t`,
+`stop_grace_period` in Compose, or `terminationGracePeriodSeconds` in Kubernetes.
+
 ## Compose (Local Build)
 
 From the repository root:

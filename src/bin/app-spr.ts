@@ -39,6 +39,7 @@ if (cluster.isPrimary) Logging.startupMessage();
 (async () => {
   try {
     const app = new BootstrapSocketPolicyRouter();
+    app.shutdownOnSignals();
     const isMain = await app.init();
 
     if (isMain) {

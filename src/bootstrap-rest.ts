@@ -103,21 +103,27 @@ export default class BootstrapRest extends Bootstrap {
   }
 
   override async clean() {
+    // Stop taking requests, and let the in-flight ones finish while the connections they use are still open
+    if (this._restServer) {
+      Logging.logSilly('Closing express server');
+      await this._closeRestServer(this._restServer);
+      this._restServer = undefined;
+      Logging.logSilly(`Express server closed`);
+    }
+
     await super.clean();
     Logging.logDebug('Shutting down all connections');
     Logging.logSilly('BootstrapRest:clean');
 
-    // TODO: Handle requests that are in flight and shut them down.
-
     // this.routes.clean();
 
-    if (this.__services.has('redisClient') !== undefined) {
+    if (this.__services.has('redisClient')) {
       Logging.logSilly('Closing _redisClientRest client');
       (this.__services.get('redisClient') as RedisClientType).quit();
       this.__services.delete('redisClient');
     }
 
-    if (this.__services.has('sdsRouting') !== undefined) {
+    if (this.__services.has('sdsRouting')) {
       Logging.logSilly('Closing _sdsRouting');
       (this.__services.get('sdsRouting') as SourceDataSharingRouting).clean();
       this.__services.delete('sdsRouting');
@@ -126,14 +132,19 @@ export default class BootstrapRest extends Bootstrap {
     // Destory all models
     await Model.clean();
 
-    if (this._restServer) {
-      Logging.logSilly('Closing express server');
-      this._restServer.close((err) => (err ? process.exit(1) : Logging.logSilly(`Express server closed`)));
-    }
-
     // Close Datastore connections
     Logging.logSilly('Closing down all datastore connections');
     await DatastoreManager.clean();
+  }
+
+  /**
+   * Resolves once the server has stopped and its open requests have finished. Keep-alive connections are
+   * closed as soon as they're idle, rather than left open until they time out.
+   */
+  private async _closeRestServer(server: http.Server) {
+    const closeIdle = setInterval(() => server.closeIdleConnections(), 100);
+    await new Promise((resolve) => server.close(resolve));
+    clearInterval(closeIdle);
   }
 
   override async __initMain() {

@@ -38,6 +38,7 @@ if (cluster.isPrimary) Logging.startupMessage();
 (async () => {
   try {
     const app = new BootstrapLambda();
+    app.shutdownOnSignals();
     const isMain = await app.init();
 
     if (isMain) {

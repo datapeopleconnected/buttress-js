@@ -34,6 +34,13 @@ Node `cluster`-based primary/worker model:
    worker via `notifyWorker(idx, payload, connection)` using IP-hash routing (`__indexFromIP`).
 5. `BUTTRESS_APP_WORKERS=0` runs "single instance mode" — `__spawnWorkers()` just calls
    `__initWorker()` directly in the primary process instead of forking.
+6. Shutdown — the entry scripts call `shutdownOnSignals()`, so SIGTERM/SIGINT runs `clean()` and then
+   exits (0, or 1 if `clean()` throws or takes longer than `Config.timeout.shutdown`, default 8s). In the
+   primary, `clean()` sends each worker SIGTERM and waits for it to exit (`__stopWorkers()`) before closing
+   its own connections; each worker runs the same handler. Subclass `clean()`s stop taking new work (close
+   their servers, let a running lambda finish) *before* `super.clean()` closes NRP, so in-flight work can
+   still publish and write. In Docker, `tini` is PID 1 and `bin/buttress.sh` forwards SIGTERM to the four
+   node processes (the `bin/app*.sh` scripts `exec node`) and waits for them.
 
 Each `BootstrapXxx` subclass overrides `__initMain` / `__initWorker` / `__handleMessageFromMain` /
 `__handleMessageFromWorker` / `clean()`. Read the relevant subclass, not the base class, to understand

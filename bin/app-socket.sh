@@ -22,4 +22,4 @@ if [ ! -f "$FILE" ]; then
 	exit;
 fi
 
-node $FILE
+exec node $FILE

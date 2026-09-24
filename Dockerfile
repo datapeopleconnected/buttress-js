@@ -17,7 +17,7 @@ RUN npm run build
 # Production stage
 FROM node:24-bookworm-slim
 
-RUN apt-get update && apt-get install -y git openssh-client && apt-get clean
+RUN apt-get update && apt-get install -y git openssh-client tini && apt-get clean
 
 COPY --from=builder /opt/buttress/bin /opt/buttress/bin
 COPY --from=builder /opt/buttress/node_modules /opt/buttress/node_modules
@@ -29,4 +29,7 @@ RUN mkdir -p /opt/buttress/app_data
 
 WORKDIR /opt/buttress
 
+# tini runs as PID 1, passing signals on to the command (buttress.sh by default) and reaping orphaned
+# processes. docker-entrypoint.sh is the node image's own entrypoint.
+ENTRYPOINT ["/usr/bin/tini", "--", "docker-entrypoint.sh"]
 CMD ["./bin/buttress.sh"]
