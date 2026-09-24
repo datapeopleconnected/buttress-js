@@ -53,6 +53,7 @@ interface NodeHttpFetchResponse {
   statusText: string;
   url: string;
   redirected: boolean;
+  headers: { get: (name: string) => string | null };
   text: () => Promise<string>;
   json: () => Promise<unknown>;
 }
@@ -97,6 +98,13 @@ function nodeHttpFetch(
             statusText: res.statusMessage || http.STATUS_CODES[status] || '',
             url: url.href,
             redirected: false,
+            headers: {
+              get: (name: string) => {
+                const value = res.headers[name.toLowerCase()];
+                if (value === undefined) return null;
+                return Array.isArray(value) ? value.join(', ') : value;
+              },
+            },
             text: async () => bodyText,
             json: async () => JSON.parse(bodyText),
           });
