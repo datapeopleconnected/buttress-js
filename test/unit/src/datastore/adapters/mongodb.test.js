@@ -43,12 +43,12 @@ const organisationSchema = {
 };
 
 // A StandardModel on a real MongodbAdapter whose collection records the update of each bulkWrite op.
-function createModel() {
+function createModel(schema = organisationSchema) {
   const services = new Map([
     ['nrp', { on: () => {}, emit: () => {} }],
     ['modelManager', {}],
   ]);
-  const model = new StandardModel(structuredClone(organisationSchema), null, services);
+  const model = new StandardModel(structuredClone(schema), null, services);
 
   const ops = [];
   const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});
@@ -205,5 +205,49 @@ describe('datastore/adapters/MongodbAdapter: single-item writes to typed arrays'
     await update(model, { path: 'tags.0', value: 'x' });
 
     assert.deepStrictEqual(ops, [{ $set: { 'tags.0': 'x' } }]);
+  });
+});
+
+describe('datastore/adapters/MongodbAdapter: object properties of array items', () => {
+  const notesSchema = {
+    name: 'organisation',
+    type: 'collection',
+    extends: [],
+    properties: {
+      notes: {
+        __type: 'array',
+        __allowUpdate: true,
+        __schema: {
+          text: { __type: 'string', __default: null, __allowUpdate: true },
+          meta: { __type: 'object', __default: null, __allowUpdate: true },
+        },
+      },
+    },
+  };
+
+  const note = { text: 'hello', meta: { pinned: true } };
+
+  it('keeps an object property of a pushed item', async () => {
+    const { model, ops } = createModel(notesSchema);
+
+    await update(model, { path: 'notes', value: note });
+
+    assert.deepStrictEqual(ops, [{ $push: { notes: note } }]);
+  });
+
+  it('keeps an object property of an item set by path.N', async () => {
+    const { model, ops } = createModel(notesSchema);
+
+    await update(model, { path: 'notes.0', value: note });
+
+    assert.deepStrictEqual(ops, [{ $set: { 'notes.0': note } }]);
+  });
+
+  it('keeps object properties when the whole array is replaced', async () => {
+    const { model, ops } = createModel(notesSchema);
+
+    await update(model, { path: 'notes', value: [note, { text: 'bare' }] });
+
+    assert.deepStrictEqual(ops, [{ $set: { notes: [note, { text: 'bare', meta: null }] } }]);
   });
 });

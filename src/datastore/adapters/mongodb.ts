@@ -167,8 +167,7 @@ export default class MongodbAdapter extends AbstractAdapter {
         {
           let value: any = null;
           if (schemaConfig && schemaConfig.__schema) {
-            const fb = Helpers.Schema.getFlattenedBody(body.value);
-            value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
+            value = Helpers.Schema.sanitizeArrayItem(schemaConfig.__schema, body.value);
           } else {
             value = body.value;
           }
@@ -251,12 +250,9 @@ export default class MongodbAdapter extends AbstractAdapter {
           let value: any = null;
           if (schemaConfig && schemaConfig.__schema && Array.isArray(body.value)) {
             // An array value replaces the whole array (see StandardModel.updateByPath), so each element is an item.
-            value = body.value.map((item) =>
-              Helpers.Schema.sanitizeObject(schemaConfig.__schema, Helpers.Schema.getFlattenedBody(item)),
-            );
+            value = body.value.map((item) => Helpers.Schema.sanitizeArrayItem(schemaConfig.__schema, item));
           } else if (schemaConfig && schemaConfig.__schema) {
-            const fb = Helpers.Schema.getFlattenedBody(body.value);
-            value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
+            value = Helpers.Schema.sanitizeArrayItem(schemaConfig.__schema, body.value);
           } else {
             value = body.value;
           }

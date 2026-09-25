@@ -566,6 +566,13 @@ export const sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number
   return res;
 };
 
+/**
+ * Cleans one item of an array that has an item `__schema`. The item is also passed as the body, so object properties
+ * keep their values as they do when a whole entity is added.
+ */
+export const sanitizeArrayItem = (itemSchemaFlat, item) =>
+  sanitizeObject(itemSchemaFlat, __getFlattenedBody(item), item);
+
 const __getSchemaKeys = (obj) => {
   return Object.keys(obj).reduce((arr: string[], key) => {
     if (obj[key].__type === 'object') {
