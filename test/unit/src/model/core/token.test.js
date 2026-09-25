@@ -187,3 +187,27 @@ describe('model/core/TokenSchemaModel:clearPolicyPropertiesById', () => {
     assert.ok(nrp.emit.calledWith('app-routes:bust-cache', '{}'));
   });
 });
+
+// REST keeps tokens in an in-memory cache (routes/tokens.ts), so a delete that didn't bust it
+// would leave the deleted token working on REST.
+describe('model/core/TokenSchemaModel:rm/rmBulk/rmAll', () => {
+  const cases = [
+    ['rm', 'token-1'],
+    ['rmBulk', ['token-1', 'token-2']],
+    ['rmAll', { _appId: 'app-1' }],
+  ];
+
+  for (const [method, arg] of cases) {
+    it(`${method}() deletes the tokens, then notifies routes to reload their token cache`, async () => {
+      const { model, nrp } = createModel();
+      model.adapter[method] = sinon.stub().resolves('adapter-result');
+
+      const result = await model[method](arg);
+
+      assert.strictEqual(result, 'adapter-result');
+      assert.deepStrictEqual(model.adapter[method].firstCall.args, [arg]);
+      assert.ok(nrp.emit.calledWith('app-routes:bust-cache', '{}'));
+      assert.ok(nrp.emit.calledAfter(model.adapter[method]), 'the cache should be busted after the delete');
+    });
+  }
+});

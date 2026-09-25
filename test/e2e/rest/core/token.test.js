@@ -17,7 +17,7 @@
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
-import { createApp, bjsReq, createPolicyUser, deleteApp, ENDPOINT } from '../../../helpers.js';
+import { createApp, bjsReq, createPolicyUser, deleteApp, updateSchema, ENDPOINT } from '../../../helpers.js';
 import { runStep } from '../../helpers.js';
 
 import BootstrapRest from '../../../../dist/bootstrap-rest.js';
@@ -145,6 +145,41 @@ describe('Token API', async () => {
 			}, testEnv.apps.app1.token);
 
 			assert.strictEqual(tokens.length, 1, "Tokens length should be 1 for the user");
+		});
+	});
+
+	describe('Deleted tokens', () => {
+		// GET app/schema skips the policy checks, so any live token of the app gets a 200.
+		const getAppSchemaStatus = async (token) => {
+			const res = await fetch(`${ENDPOINT.REST}/api/v1/app/schema`, { headers: { Authorization: `Bearer ${token}` } });
+			return res.status;
+		};
+
+		it('Should refuse a user token on REST once it has been deleted', async function () {
+			this.timeout(10000);
+
+			await updateSchema(ENDPOINT.REST, [{
+				name: 'note',
+				type: 'collection',
+				properties: { text: { __type: 'string', __default: null, __allowUpdate: true } },
+			}], testEnv.apps.app1.token);
+			const user = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'token-test-deleted', {});
+			const userToken = user.tokens[0].value;
+
+			assert.strictEqual(await getAppSchemaStatus(userToken), 200, 'The user token should work before it is deleted');
+
+			await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/token/user`,
+				method: 'DELETE',
+			}, testEnv.apps.app1.token);
+
+			// REST's token cache is cleared over Redis, so give it a moment.
+			let status = null;
+			for (let attempt = 0; attempt < 20 && status !== 401; attempt++) {
+				await new Promise((r) => setTimeout(r, 100));
+				status = await getAppSchemaStatus(userToken);
+			}
+			assert.strictEqual(status, 401, 'A deleted token should be refused');
 		});
 	});
 });

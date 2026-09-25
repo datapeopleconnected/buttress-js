@@ -264,6 +264,26 @@ class TokenSchemaModel extends StandardModel<Token> {
     await this.__policyCache.setTokenIdAsStale(tokenId);
     this.__nrp?.emit('app-routes:bust-cache', '{}');
   }
+
+  // REST caches tokens in memory (routes/tokens.ts) and only reloads on a miss, so every delete has to bust that
+  // cache or the deleted token keeps working on REST.
+  override async rm(id: string) {
+    const result = await super.rm(id);
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+    return result;
+  }
+
+  override async rmBulk(ids) {
+    const result = await super.rmBulk(ids);
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+    return result;
+  }
+
+  override async rmAll(query) {
+    const result = await super.rmAll(query);
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+    return result;
+  }
 }
 
 /**
