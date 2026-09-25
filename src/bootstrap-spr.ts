@@ -47,6 +47,9 @@ interface ActivityMetadata {
   timer: Helpers.Timer;
 }
 
+// The pathSpec suffixes of the schema bulk routes (see routes/schema-routes/update-many.ts).
+const BULK_UPDATE_PATH = '/bulk/update';
+
 /*
  * Message comes in, what's the work?
  * - Who should get this message?
@@ -234,6 +237,41 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
   }
 
   private async _handleIncomingMessage(activity: RESTActivity) {
+    for (const entityActivity of this.__splitBulkActivity(activity)) {
+      await this.__handleEntityActivity(entityActivity);
+    }
+  }
+
+  /**
+   * A bulk update changes several entities, and a token may be allowed to see only some of them. The policies are
+   * checked against one entity at a time, so each changed entity becomes the activity an update-one request would
+   * have produced. System tokens see everything, so their copy (isSuper) stays whole.
+   */
+  private __splitBulkActivity(activity: RESTActivity): RESTActivity[] {
+    if (activity.isSuper || activity.verb !== 'post' || !Array.isArray(activity.response)) return [activity];
+    if (!activity.pathSpec?.endsWith(BULK_UPDATE_PATH)) return [activity];
+
+    const pathSpec = `${activity.pathSpec.slice(0, -BULK_UPDATE_PATH.length)}/:id`;
+    const routePath = activity.path.split('/').slice(0, -2).join('/');
+
+    return activity.response.flatMap((item) => {
+      // Refused items carry `results: null`, nothing changed for them.
+      if (!item?.id || !Array.isArray(item.results)) return [];
+
+      return [
+        {
+          ...activity,
+          verb: 'put',
+          path: `${routePath}/${item.id}`,
+          pathSpec,
+          params: { id: item.id },
+          response: item.results,
+        },
+      ];
+    });
+  }
+
+  private async __handleEntityActivity(activity: RESTActivity) {
     if (!this._policyCache) throw new Error('No Policy Cache');
 
     // Create a container that will be used to track the message event within the SPR and a timer.

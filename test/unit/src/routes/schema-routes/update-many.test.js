@@ -14,10 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
+import sinon from 'sinon';
 import { Readable } from 'stream';
 
+import Route from '../../../../../dist/routes/route.js';
 import UpdateMany from '../../../../../dist/routes/schema-routes/update-many.js';
 
 function createFakeModel(docs) {
@@ -114,5 +116,34 @@ describe('schema-routes/UpdateMany', () => {
       'original',
       'entity outside the access-control scope must not be updated by _exec, even though it was included in the batch',
     );
+  });
+});
+
+describe('schema-routes/UpdateMany:_broadcast', () => {
+  const applied = { id: 'doc-1', sourceId: 'app-1', results: [{ type: 'scalar', path: 'value', value: 'updated' }] };
+  const refused = { id: 'doc-2', sourceId: 'app-1', results: null, validation: { code: 400, message: 'refused' } };
+
+  afterEach(() => sinon.restore());
+
+  it('broadcasts only the items that were applied', async () => {
+    const broadcast = sinon.stub(Route.prototype, '_broadcast').resolves();
+    const route = createRoute(createFakeModel([]));
+
+    await route._broadcast({}, {}, [applied, refused], '/test-schema/bulk/update', true);
+
+    assert.strictEqual(broadcast.callCount, 1);
+    const [, , result, path, isSuper] = broadcast.firstCall.args;
+    assert.deepStrictEqual(result, [applied]);
+    assert.strictEqual(path, '/test-schema/bulk/update');
+    assert.strictEqual(isSuper, true);
+  });
+
+  it('broadcasts nothing when every item was refused', async () => {
+    const broadcast = sinon.stub(Route.prototype, '_broadcast').resolves();
+    const route = createRoute(createFakeModel([]));
+
+    await route._broadcast({}, {}, [refused], '/test-schema/bulk/update');
+
+    assert.strictEqual(broadcast.called, false);
   });
 });

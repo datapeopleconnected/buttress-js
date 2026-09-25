@@ -176,4 +176,12 @@ export default class UpdateMany extends Route {
 
     return output;
   }
+
+  // Refused items are reported in the response but changed nothing, so they aren't broadcast.
+  override async _broadcast(req: Request, res: Response, result: unknown, path: string, isSuper = false) {
+    const applied = (result as { results: unknown }[]).filter((item) => item.results !== null);
+    if (applied.length < 1) return;
+
+    return super._broadcast(req, res, applied, path, isSuper);
+  }
 }
