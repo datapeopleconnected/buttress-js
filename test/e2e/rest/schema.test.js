@@ -258,6 +258,11 @@ describe('Schema', async () => {
 							}
 						}
 					},
+					tags: {
+						__type: 'array',
+						__itemtype: 'string',
+						__allowUpdate: true,
+					},
 				},
 			}];
 
@@ -288,6 +293,52 @@ describe('Schema', async () => {
 			assert.strictEqual(Array.isArray(item.engine), true);
 			assert.strictEqual(typeof item.engine[0].position, 'string');
 			assert.strictEqual(typeof item.engine[0].items, 'number');
+			testEnv.spaceship = item;
+		});
+
+		const putSpaceship = (body) => bjsReq({
+			url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship/${testEnv.spaceship.id}`,
+			method: 'PUT',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(body),
+		}, testEnv.apps.app2.token);
+
+		const getSpaceship = () => bjsReq({
+			url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship/${testEnv.spaceship.id}`,
+		}, testEnv.apps.app2.token);
+
+		it('Should replace a whole array of item schemas with a PUT of an array', async () => {
+			const engine = [{position: 'left', items: 1}, {position: 'right', items: 3}];
+
+			const [{type, path, value}] = await putSpaceship({path: 'engine', value: engine});
+			assert.deepStrictEqual({type, path, value}, {type: 'scalar', path: 'engine', value: engine});
+
+			const spaceship = await getSpaceship();
+			assert.deepStrictEqual(spaceship.engine, engine);
+		});
+
+		it('Should still push one item to an array of item schemas', async () => {
+			await putSpaceship({path: 'engine', value: {position: 'top', items: 5}});
+
+			const spaceship = await getSpaceship();
+			assert.deepStrictEqual(spaceship.engine.map((e) => e.position), ['left', 'right', 'top']);
+		});
+
+		it('Should refuse a whole-array write when an element is invalid, and leave the array as it was', async () => {
+			await assert.rejects(
+				() => putSpaceship({path: 'engine', value: [{position: 'left', items: 'lots'}]}),
+				(err) => err.code === 400 && err.message.includes('engine.0.items:lots[string]'),
+			);
+
+			const spaceship = await getSpaceship();
+			assert.strictEqual(spaceship.engine.length, 3);
+		});
+
+		it('Should replace a whole array of an item type with a PUT of an array', async () => {
+			await putSpaceship({path: 'tags', value: ['z', 'a', 'b']});
+
+			const spaceship = await getSpaceship();
+			assert.deepStrictEqual(spaceship.tags, ['z', 'a', 'b']);
 		});
 	});
 });

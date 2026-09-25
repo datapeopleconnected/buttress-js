@@ -465,6 +465,115 @@ describe('Processing', async () => {
 		});
 	});
 
+	describe('Bulk writes and deletes', () => {
+		const CLIENT_SESSION_ID = '22222222-2222-4222-8222-222222222222';
+
+		// Records the db-activity packets a socket receives for the given entity ids.
+		const recordActivity = (socket, ids) => {
+			const packets = [];
+			const listener = (packet) => {
+				if (ids.includes(packet.data.params?.id)) packets.push(packet.data);
+			};
+			socket.on('db-activity', listener);
+			return { packets, stop: () => socket.off('db-activity', listener) };
+		};
+
+		const waitUntil = async (check, timeoutMs = 5000) => {
+			const start = Date.now();
+			while (!check() && Date.now() - start < timeoutMs) await new Promise((r) => setTimeout(r, 50));
+			// Leave time for any packet that shouldn't arrive.
+			await new Promise((r) => setTimeout(r, 300));
+		};
+
+		const bulkRequest = (action, body) => bjsReq({
+			url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/${action}`,
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json', 'x-client-session-id': CLIENT_SESSION_ID },
+			body: JSON.stringify(body),
+		}, testEnv.apps.app1.token);
+
+		let owned = null;
+		let notOwned = null;
+		let refused = null;
+
+		before(async function () {
+			// env-test-4's policy (env-user-query) only reads the cars it owns.
+			[owned, notOwned, refused] = await bulkRequest('add', [
+				{ name: 'bulk-owned', userId: testEnv.users['env-test-4'].id },
+				{ name: 'bulk-not-owned', userId: testEnv.users['env-test-1'].id },
+				{ name: 'bulk-refused', userId: testEnv.users['env-test-4'].id },
+			]);
+		});
+
+		it('Should relay each entity of a bulk update to the tokens whose policies can read it', async function () {
+			this.timeout(10000);
+			const ids = [owned.id, notOwned.id, refused.id];
+			const fullAccess = recordActivity(testEnv.sockets['basic1'], ids);
+			const ownCars = recordActivity(testEnv.sockets['env-test-4'], ids);
+
+			const response = await bulkRequest('update', [
+				{ id: owned.id, body: { path: 'colour', value: 'green' } },
+				{ id: notOwned.id, body: { path: 'colour', value: 'green' } },
+				{ id: refused.id, body: { path: 'notAProperty', value: 'x' } },
+			]);
+			assert.strictEqual(response.find((r) => r.id === refused.id).results, null);
+
+			await waitUntil(() => fullAccess.packets.length >= 2 && ownCars.packets.length >= 1);
+			fullAccess.stop();
+			ownCars.stop();
+
+			assert.deepStrictEqual(fullAccess.packets.map((p) => p.params.id).sort(), [owned.id, notOwned.id].sort());
+			assert.deepStrictEqual(ownCars.packets.map((p) => p.params.id), [owned.id]);
+
+			const [packet] = ownCars.packets;
+			assert.strictEqual(packet.verb, 'put');
+			assert.strictEqual(packet.path, `/car/${owned.id}`);
+			assert.strictEqual(packet.schemaName, 'car');
+			assert.strictEqual(packet.clientSessionId, CLIENT_SESSION_ID);
+			assert.deepStrictEqual(packet.response.map((r) => [r.type, r.path, r.value]), [['scalar', 'colour', 'green']]);
+		});
+
+		it('Should relay a bulk delete as one delete per id', async function () {
+			this.timeout(10000);
+			const ids = [owned.id, notOwned.id];
+			const fullAccess = recordActivity(testEnv.sockets['basic1'], ids);
+			const ownCars = recordActivity(testEnv.sockets['env-test-4'], ids);
+
+			const response = await bulkRequest('delete', ids);
+			assert.strictEqual(response, true);
+
+			await waitUntil(() => fullAccess.packets.length >= 2 && ownCars.packets.length >= 2);
+			fullAccess.stop();
+			ownCars.stop();
+
+			// A deleted entity can't be checked against a policy's query, so every token the policy reaches is told.
+			for (const { packets } of [fullAccess, ownCars]) {
+				assert.deepStrictEqual(packets.map((p) => p.params.id).sort(), [...ids].sort());
+				for (const packet of packets) {
+					assert.strictEqual(packet.verb, 'delete');
+					assert.strictEqual(packet.path, `/car/${packet.params.id}`);
+					assert.strictEqual(packet.isBulkDelete, false);
+				}
+			}
+		});
+
+		it('Should relay a single delete', async function () {
+			this.timeout(10000);
+			const fullAccess = recordActivity(testEnv.sockets['basic1'], [refused.id]);
+
+			const response = await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${refused.id}`,
+				method: 'DELETE',
+			}, testEnv.apps.app1.token);
+			assert.strictEqual(response, true);
+
+			await waitUntil(() => fullAccess.packets.length >= 1);
+			fullAccess.stop();
+
+			assert.deepStrictEqual(fullAccess.packets.map((p) => [p.verb, p.path]), [['delete', `/car/${refused.id}`]]);
+		});
+	});
+
 	describe('Env', () => {
 		it('Should handle a policy with a env inlcuding a static value query', async function () {
 			this.timeout(10000);
