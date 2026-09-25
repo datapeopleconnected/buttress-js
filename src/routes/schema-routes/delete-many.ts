@@ -82,6 +82,16 @@ export default class DeleteMany extends Route {
 
   override async _exec(_req: Request, _res: Response, ids: string[]) {
     await (await this.routeModel()).rmBulk(ids);
-    return true;
+    return ids;
+  }
+
+  // Clients expect `true` in the response, but other clients need the deleted ids to apply the broadcast.
+  override async _respond(req: Request, res: Response, _ids: unknown) {
+    return super._respond(req, res, true);
+  }
+
+  override async _broadcast(req: Request, res: Response, ids: unknown, path: string, isSuper = false) {
+    const deleted = [...new Set((ids as unknown[]).map((id) => String(id)))].map((id) => ({ id }));
+    return super._broadcast(req, res, deleted, path, isSuper);
   }
 }

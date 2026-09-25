@@ -47,8 +47,9 @@ interface ActivityMetadata {
   timer: Helpers.Timer;
 }
 
-// The pathSpec suffixes of the schema bulk routes (see routes/schema-routes/update-many.ts).
+// The pathSpec suffixes of the schema bulk routes (routes/schema-routes/update-many.ts and delete-many.ts).
 const BULK_UPDATE_PATH = '/bulk/update';
+const BULK_DELETE_PATH = '/bulk/delete';
 
 /*
  * Message comes in, what's the work?
@@ -243,31 +244,28 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
   }
 
   /**
-   * A bulk update changes several entities, and a token may be allowed to see only some of them. The policies are
-   * checked against one entity at a time, so each changed entity becomes the activity an update-one request would
-   * have produced. System tokens see everything, so their copy (isSuper) stays whole.
+   * A bulk update or delete changes several entities, and a token may be allowed to see only some of them. The
+   * policies are checked against one entity at a time, so each entity becomes the activity an update-one or delete-one
+   * request would have produced. System tokens see everything, so their copy (isSuper) stays whole.
    */
   private __splitBulkActivity(activity: RESTActivity): RESTActivity[] {
     if (activity.isSuper || activity.verb !== 'post' || !Array.isArray(activity.response)) return [activity];
-    if (!activity.pathSpec?.endsWith(BULK_UPDATE_PATH)) return [activity];
 
-    const pathSpec = `${activity.pathSpec.slice(0, -BULK_UPDATE_PATH.length)}/:id`;
+    const bulkPath = [BULK_UPDATE_PATH, BULK_DELETE_PATH].find((suffix) => activity.pathSpec?.endsWith(suffix));
+    if (!bulkPath) return [activity];
+
+    const pathSpec = `${activity.pathSpec.slice(0, -bulkPath.length)}/:id`;
     const routePath = activity.path.split('/').slice(0, -2).join('/');
 
     return activity.response.flatMap((item) => {
-      // Refused items carry `results: null`, nothing changed for them.
-      if (!item?.id || !Array.isArray(item.results)) return [];
+      if (!item?.id) return [];
 
-      return [
-        {
-          ...activity,
-          verb: 'put',
-          path: `${routePath}/${item.id}`,
-          pathSpec,
-          params: { id: item.id },
-          response: item.results,
-        },
-      ];
+      const entityActivity = { ...activity, path: `${routePath}/${item.id}`, pathSpec, params: { id: item.id } };
+      if (bulkPath === BULK_DELETE_PATH) return [{ ...entityActivity, verb: 'delete', response: true }];
+
+      // Refused updates carry `results: null`, nothing changed for them.
+      if (!Array.isArray(item.results)) return [];
+      return [{ ...entityActivity, verb: 'put', response: item.results }];
     });
   }
 

@@ -224,6 +224,33 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		}
 	});
 
+	it('relays a bulk delete as one delete-one activity per id, to each token once', async () => {
+		const { spr, received } = createSPR();
+
+		// Deleted entities are gone by the time the SPR sees the activity.
+		const deletedIds = [new ObjectId().toString(), new ObjectId().toString()];
+		await spr._handleIncomingMessage(
+			activity({
+				description: 'BULK DELETE car',
+				path: '/car/bulk/delete',
+				pathSpec: 'car/bulk/delete',
+				response: deletedIds.map((id) => ({ id, sourceId: APP_ID })),
+			}),
+		);
+
+		for (const token of [tokens.fullAccess, tokens.ownRecords, tokens.otherOwnRecords]) {
+			const activities = received(token);
+			assert.deepStrictEqual(activities.map((a) => a.params.id), deletedIds);
+			for (const [idx, a] of activities.entries()) {
+				assert.strictEqual(a.verb, 'delete');
+				assert.strictEqual(a.path, `/car/${deletedIds[idx]}`);
+				assert.strictEqual(a.pathSpec, 'car/:id');
+				assert.strictEqual(a.response, true);
+				assert.strictEqual(a.clientSessionId, CLIENT_SESSION_ID);
+			}
+		}
+	});
+
 	it('still sends system tokens the bulk activity unchanged', async () => {
 		const { spr, received } = createSPR();
 

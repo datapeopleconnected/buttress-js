@@ -14,10 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
+import sinon from 'sinon';
 import { Readable } from 'stream';
 
+import Route from '../../../../../dist/routes/route.js';
 import DeleteMany from '../../../../../dist/routes/schema-routes/delete-many.js';
 import { RequestError } from '../../../../../dist/helpers/errors.js';
 
@@ -121,5 +123,26 @@ describe('schema-routes/DeleteMany', () => {
       ['doc-1', 'doc-2', 'doc-3'],
       'no entity should be deleted when any id in the batch is outside the access-control scope',
     );
+  });
+});
+
+describe('schema-routes/DeleteMany:_respond/_broadcast', () => {
+  afterEach(() => sinon.restore());
+
+  it('still responds true, but broadcasts the deleted ids once each', async () => {
+    const respond = sinon.stub(Route.prototype, '_respond').resolves();
+    const broadcast = sinon.stub(Route.prototype, '_broadcast').resolves();
+    const route = createRoute(createFakeModel([{ id: 'doc-1' }, { id: 'doc-2' }]));
+    const req = { body: ['doc-1', 'doc-2', 'doc-1'], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+
+    const result = await route._exec(req, {}, await route._validate(req, {}));
+    await route._respond(req, {}, result);
+    await route._broadcast(req, {}, result, '/test-schema/bulk/delete', true);
+
+    assert.strictEqual(respond.firstCall.args[2], true);
+    const [, , broadcastResult, path, isSuper] = broadcast.firstCall.args;
+    assert.deepStrictEqual(broadcastResult, [{ id: 'doc-1' }, { id: 'doc-2' }]);
+    assert.strictEqual(path, '/test-schema/bulk/delete');
+    assert.strictEqual(isSuper, true);
   });
 });
