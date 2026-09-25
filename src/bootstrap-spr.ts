@@ -301,7 +301,12 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         return;
       }
 
-      entity = await appModel.findById(entityId);
+      try {
+        entity = await appModel.findById(entityId);
+      } catch (err: unknown) {
+        // findById throws when there's no such entity, which is expected once it has been deleted.
+        if (activity.verb !== 'delete') throw err;
+      }
       // TODO: Entity needs to be flatterned for processing.
     }
 
@@ -450,15 +455,16 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         ? (activity.response as Record<string, unknown>)
         : {};
 
+    // A deleted entity can't be checked against the query, so the delete goes to every token the policy reaches. The
+    // caller sends it, so a token-level policy sends it once to each token rather than to all of them per token.
     if (!entity && activity.verb === 'delete') {
-      this.__broadcastDataByPolicyId(applicablePolicy.id, activity);
       Logging.logTimer(
         `_handleIncomingMessage::end-no-entity-deletion`,
         activityMetadata.timer,
         Logging.Constants.LogLevel.SILLY,
         `${activityMetadata.id}-${applicablePolicy.id}`,
       );
-      return false;
+      return activity;
     }
 
     if (!entity) {

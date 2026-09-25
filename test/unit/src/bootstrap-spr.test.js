@@ -50,6 +50,7 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		system: { id: new ObjectId(), type: 'system' },
 		fullAccess: { id: new ObjectId(), type: 'app' },
 		ownRecords: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+		otherOwnRecords: { id: new ObjectId(), type: 'user', _userId: someoneElse.id.toString() },
 	};
 
 	const cars = {
@@ -79,7 +80,12 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		createId: (id) => new ObjectId(id),
 		find: async (query) => docs.filter((doc) => doc.type === query.type),
 		findOne: async (query) => docs.find((doc) => doc.id.equals(query._id)) || null,
-		findById: async (id) => docs.find((doc) => doc.id.toString() === id.toString()) || null,
+		// Like MongodbAdapter.findById, this throws when there's no such document.
+		findById: async (id) => {
+			const doc = docs.find((d) => d.id.toString() === id.toString());
+			if (!doc) throw new Error('Unable to find document');
+			return doc;
+		},
 	});
 
 	function createSPR() {
@@ -92,7 +98,7 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 			getConnectedTokenIdsByPolicyId: async (policyId) =>
 				({
 					[fullAccessPolicy.id]: [tokens.fullAccess.id.toString()],
-					[ownRecordsPolicy.id]: [tokens.ownRecords.id.toString()],
+					[ownRecordsPolicy.id]: [tokens.ownRecords.id.toString(), tokens.otherOwnRecords.id.toString()],
 				})[policyId] || [],
 		};
 
@@ -192,6 +198,29 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		const refusedId = cars.refused.id.toString();
 		for (const token of [tokens.fullAccess, tokens.ownRecords]) {
 			assert(!received(token).some((a) => a.params.id === refusedId || JSON.stringify(a).includes(refusedId)));
+		}
+	});
+
+	it('relays a delete-one activity, although the entity can no longer be found', async () => {
+		const { spr, received } = createSPR();
+
+		const deletedId = new ObjectId().toString();
+		const deleteOne = activity({
+			description: 'DELETE car',
+			path: `/car/${deletedId}`,
+			pathSpec: 'car/:id',
+			verb: 'delete',
+			params: { id: deletedId },
+			response: true,
+		});
+		await spr._handleIncomingMessage(deleteOne);
+		await spr._handleIncomingMessage({ ...deleteOne, isSuper: true });
+
+		for (const token of [tokens.system, tokens.fullAccess, tokens.ownRecords, tokens.otherOwnRecords]) {
+			assert.deepStrictEqual(
+				received(token).map((a) => [a.verb, a.params.id]),
+				[['delete', deletedId]],
+			);
 		}
 	});
 
