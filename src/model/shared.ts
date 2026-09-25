@@ -59,6 +59,55 @@ export const sanitizeSchemaObject = function (schema, body) {
  *
  **********************************************************************************/
 
+interface ArrayItemCheck {
+  value: unknown;
+  missingRequired?: string;
+  invalidValue?: string;
+}
+
+const isTypedArray = (config) => config?.__type === 'array' && Boolean(config.__schema || config.__itemtype);
+
+/**
+ * Finds the typed array that a `path.N` update sets one item of, e.g. `contacts` for `contacts.2`.
+ */
+const getItemArrayConfig = (flattenedSchema, path: string) => {
+  const match = /^(.+)\.\d+$/.exec(path);
+  // `matrix.0.1` is inside an item of `matrix`, not an item of it.
+  if (!match || /\.\d+$/.test(match[1])) return null;
+
+  const config = flattenedSchema[match[1].replace(/\.\d+/g, '')];
+  return isTypedArray(config) ? config : null;
+};
+
+/**
+ * Checks one item of a typed array against the array's item schema or item type. The returned value is the item
+ * converted to the item type, as validateProp converts values.
+ */
+const checkArrayItem = (config, item: unknown, path: string): ArrayItemCheck => {
+  if (config.__schema) {
+    if (item !== null && (typeof item !== 'object' || Array.isArray(item))) {
+      return { value: item, invalidValue: `${path}:${item}[${Array.isArray(item) ? 'array' : typeof item}] [object]` };
+    }
+
+    const validation = Helpers.Schema.validate(
+      config.__schema,
+      Helpers.Schema.getFlattenedBody(item),
+      `${path}.`,
+      item,
+    );
+    if (validation.isValid === true) return { value: item };
+
+    return { value: item, missingRequired: validation.missing[0], invalidValue: validation.invalid[0] };
+  }
+
+  const prop = { value: item };
+  if (!Helpers.Schema.validateProp(prop, { __type: config.__itemtype })) {
+    return { value: item, invalidValue: `${path}:${item}[${typeof item}] [${config.__itemtype}]` };
+  }
+
+  return { value: prop.value };
+};
+
 /**
  * @param {Object} pathContext - object that defines path specification
  * @param {Object} flattenedSchema - schema object keyed on path
@@ -144,35 +193,32 @@ export const doValidateUpdate = function (pathContext, flattenedSchema) {
     }
 
     const config = flattenedSchema[pathStrippedSuffix];
-    if (config) {
-      if (config.__type === 'array' && config.__schema) {
-        const flattenedBody = Helpers.Schema.getFlattenedBody(body.value);
-        const validation = Helpers.Schema.validate(
-          config.__schema,
-          flattenedBody,
-          `${pathStrippedSuffix}.`,
-          body.value,
-        );
-        if (validation.isValid !== true) {
-          if (validation.missing.length) {
-            res.isMissingRequired = true;
-            res.missingRequired = validation.missing[0];
-          }
-          if (validation.invalid.length) {
-            res.invalidValue = validation.invalid[0];
-          }
-          return res;
-        }
-      } else if (config.__type === 'array' && config.__itemtype) {
-        if (!Helpers.Schema.validateProp(body, { __type: config.__itemtype })) {
-          // Logging.logWarn(`Invalid ${property}.${idx}: ${prop.value} [${typeof prop.value}] expected [${config.__itemtype}]`);
-          res.invalidValue = `${fullPath}:${body.value}[${typeof body.value}] [${config.__itemtype}]`;
-          return res;
-        }
-      } else if (!config.__schema && !Helpers.Schema.validateProp(body, config)) {
-        res.invalidValue = `${fullPath} failed schema test`;
-        return res;
+    const itemArrayConfig = config ? null : getItemArrayConfig(flattenedSchema, pathStrippedSuffix);
+
+    let checks: ArrayItemCheck[] = [];
+    if (isTypedArray(config) && Array.isArray(body.value)) {
+      // An array value replaces the whole array (see StandardModel.updateByPath), so each element is an item.
+      checks = body.value.map((item, idx) => checkArrayItem(config, item, `${pathStrippedSuffix}.${idx}`));
+      body.value = checks.map((check) => check.value);
+    } else if (isTypedArray(config) || itemArrayConfig) {
+      // A push of one item to the array, or a `path.N` set of one item.
+      checks = [checkArrayItem(config || itemArrayConfig, body.value, pathStrippedSuffix)];
+      body.value = checks[0].value;
+    } else if (config && !config.__schema && !Helpers.Schema.validateProp(body, config)) {
+      res.invalidValue = `${fullPath} failed schema test`;
+      return res;
+    }
+
+    const failed = checks.find((check) => check.missingRequired || check.invalidValue);
+    if (failed) {
+      if (failed.missingRequired) {
+        res.isMissingRequired = true;
+        res.missingRequired = failed.missingRequired;
       }
+      if (failed.invalidValue) {
+        res.invalidValue = failed.invalidValue;
+      }
+      return res;
     }
 
     res.isValueValid = true;

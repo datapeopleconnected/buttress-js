@@ -71,6 +71,18 @@ Schemas can inherit properties from other schemas using the `extends` field. Thi
 }
 ```
 
+## Updating Array Properties
+`PUT <schema>/:id` takes an update `{path, value}`, or an array of them. For a property of `__type: "array"`:
+
+| Update | Effect |
+| --- | --- |
+| `{"path": "tags", "value": "a"}` | Appends one item |
+| `{"path": "tags", "value": ["a", "b"]}` | Replaces the whole array |
+| `{"path": "tags.2", "value": "c"}` | Sets one item |
+| `{"path": "tags.2.__remove__", "value": ""}` | Removes one item |
+
+Items are checked against the array's `__itemtype` or item `__schema`, element by element when the whole array is replaced. Objects in an array with an item `__schema` keep only the properties the item schema declares, so declare `id` in the item schema if clients give items their own ids. An array value always replaces the whole property, so an item that is itself an array can't be appended; replace the whole array instead.
+
 ## Managing Schemas
 Schemas can be updated, extended, or deleted using the ButtressJS API. The `Schema` class provides methods for merging, validating, and encoding schemas.
 

@@ -249,7 +249,12 @@ export default class MongodbAdapter extends AbstractAdapter {
       case 'scalar':
         {
           let value: any = null;
-          if (schemaConfig && schemaConfig.__schema) {
+          if (schemaConfig && schemaConfig.__schema && Array.isArray(body.value)) {
+            // An array value replaces the whole array (see StandardModel.updateByPath), so each element is an item.
+            value = body.value.map((item) =>
+              Helpers.Schema.sanitizeObject(schemaConfig.__schema, Helpers.Schema.getFlattenedBody(item)),
+            );
+          } else if (schemaConfig && schemaConfig.__schema) {
             const fb = Helpers.Schema.getFlattenedBody(body.value);
             value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
           } else {
