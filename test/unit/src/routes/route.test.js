@@ -478,6 +478,26 @@ describe('routes/Route:_checkBasedPathLambda', () => {
     assert.deepStrictEqual(parsed.values, ['a', 3]);
   });
 
+  it("names the route's app as the owner of the change, whichever app's token made it", () => {
+    const route = createRoute({ app: { id: 'route-app' } });
+    route.verb = Route.Constants.Verbs.PUT;
+    const req = createReq({ params: { id: 'id-1' }, body: [{ path: 'name', value: 'a' }], authApp: { id: 'token-app' } });
+
+    route._checkBasedPathLambda(req);
+
+    assert.strictEqual(JSON.parse(route._nrp.emit.firstCall.args[1]).appId, 'route-app');
+  });
+
+  it("names the requesting app as the owner of a change to a core schema, whose routes have no app", () => {
+    const route = createRoute({ app: null });
+    route.verb = Route.Constants.Verbs.PUT;
+    const req = createReq({ params: { id: 'id-1' }, body: [{ path: 'name', value: 'a' }], authApp: { id: 'token-app' } });
+
+    route._checkBasedPathLambda(req);
+
+    assert.strictEqual(JSON.parse(route._nrp.emit.firstCall.args[1]).appId, 'token-app');
+  });
+
   it('notifies individual paths for a bulk delete POST', () => {
     const route = createRoute();
     route.verb = Route.Constants.Verbs.POST;

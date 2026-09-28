@@ -603,8 +603,15 @@ export default class LambdaManager {
       const schema = data.collection;
       const values = data.values;
 
+      // Schema names aren't unique across apps, so without the app another app's lambda could see this change.
+      if (!data.appId) {
+        Logging.logWarn(`Ignoring a path change to ${schema} that doesn't name its app`);
+        return;
+      }
+
       Logging.logDebug(`Manager is announcing path mutation lambda to be executed for ${schema} on paths ${paths}`);
       const lambdaPathMutation = this._pathsMutation.filter((item) => {
+        if (item.appId !== data.appId) return false;
         return item.paths.some((itemPath) => paths.some((path) => this._checkMatchingPaths(path, itemPath, schema)));
       });
 

@@ -270,6 +270,36 @@ describe('lambda/LambdaManager path-mutation grouping', () => {
   });
 });
 
+describe('lambda/LambdaManager path changes from other apps', () => {
+  const watchesCars = (id, appId) => ({ id, gitHash: 'hash', type: 'PATH_MUTATION', appId, paths: ['car.*'] });
+
+  function notify(manager, nrp, message) {
+    manager._listenLambdaPathChange();
+    nrp._listeners['rest:worker:notifyLambdaPathChange'](JSON.stringify(message));
+    const queued = manager._debouncedPathMutations.map((r) => r.lambdaId);
+    manager._debouncedPathMutations.forEach((r) => clearTimeout(r.timer));
+    return queued;
+  }
+
+  it("only runs the lambdas of the app whose data changed, even when another app's lambda watches the same paths", () => {
+    const { manager, nrp } = createManagerWithNrp();
+    manager._pathsMutation = [watchesCars('lambda-app-1', 'app-1'), watchesCars('lambda-app-2', 'app-2')];
+
+    const queued = notify(manager, nrp, { paths: ['car.e1.name'], values: ['a'], collection: 'car', appId: 'app-2' });
+
+    assert.deepStrictEqual(queued, ['lambda-app-2']);
+  });
+
+  it('runs no lambda for a change that does not say which app it belongs to', () => {
+    const { manager, nrp } = createManagerWithNrp();
+    manager._pathsMutation = [watchesCars('lambda-app-1', 'app-1')];
+
+    const queued = notify(manager, nrp, { paths: ['car.e1.name'], values: ['a'], collection: 'car' });
+
+    assert.deepStrictEqual(queued, []);
+  });
+});
+
 describe('lambda/LambdaManager worker assignment', () => {
   it('assigns an idle worker to a newly-available execution', () => {
     const { manager, nrp } = createManagerWithNrp();

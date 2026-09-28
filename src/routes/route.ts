@@ -38,6 +38,8 @@ export interface NotifyLambdaPathChangeMessage {
   paths: string[];
   values: unknown[];
   collection: string;
+  // The app whose data changed. Only its lambdas may see the change.
+  appId: string;
 }
 
 interface PathMutationItem {
@@ -599,11 +601,16 @@ export default class Route {
     paths = dedupedPaths;
     if (hasValues) values = dedupedValues;
 
-    if (paths.length > 0) {
+    // A schema route's data belongs to the route's app, whichever app's token made the change. Core routes have no
+    // app, so the change is the requesting app's.
+    const appId = this.appId ?? req.context.authApp?.id;
+
+    if (paths.length > 0 && appId) {
       const message: NotifyLambdaPathChangeMessage = {
         paths: paths,
         values: values,
         collection: schemaName,
+        appId: String(appId),
       };
 
       this._nrp?.emit('rest:worker:notifyLambdaPathChange', JSON.stringify(message));
