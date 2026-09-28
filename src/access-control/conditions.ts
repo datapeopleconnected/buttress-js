@@ -13,11 +13,14 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import AccessControlHelpers, { CombineEnvGroups } from './helpers.js';
-import Env, { ACPolicyEnvCombined } from './env.js';
+import AccessControlHelpers, { AccessControlValue, CombineEnvGroups } from './helpers.js';
+import Env, { ACEnv, ACPolicyEnvCombined } from './env.js';
 
 import { ApplicablePolicyConfig } from './index.js';
 import { PolicyCondition } from '../model/core/policy.js';
+
+// A condition against another schema: `{'@identifier': {<field>: {<operator>: <value>}}}`
+type SchemaQueryCondition = { '@identifier': Record<string, Record<string, unknown>> };
 
 /**
  * @class Conditoins
@@ -49,7 +52,7 @@ export class Conditions {
   static envStr: string = 'env.';
   static conditionQueryRegex = new RegExp('query.');
 
-  async filterPoliciesByPolicyConditions(userPolicies: ApplicablePolicyConfig[], reqEnv?) {
+  async filterPoliciesByPolicyConditions(userPolicies: ApplicablePolicyConfig[], reqEnv: ACEnv) {
     const output: ApplicablePolicyConfig[] = [];
 
     for await (const policy of userPolicies) {
@@ -61,7 +64,7 @@ export class Conditions {
     return output;
   }
 
-  async __checkPolicyConditions(policy: ApplicablePolicyConfig, reqEnv) {
+  async __checkPolicyConditions(policy: ApplicablePolicyConfig, reqEnv: ACEnv) {
     if (!policy.config.condition) return false;
 
     const env = CombineEnvGroups(policy, reqEnv);
@@ -80,9 +83,11 @@ export class Conditions {
         // TODO: Add check as this is expected to be an array.
         const nestedConditions = conditionRecord[key];
         if (!Array.isArray(nestedConditions)) continue;
-        for await (const conditionObj of nestedConditions) {
+        for await (const conditionObj of nestedConditions as unknown[]) {
           if (typeof conditionObj !== 'object' || conditionObj === null) continue;
-          innerResults.push(await this.__checkCondition(conditionObj, envVariables, innerPartialPass));
+          innerResults.push(
+            await this.__checkCondition(conditionObj as PolicyCondition, envVariables, innerPartialPass),
+          );
         }
 
         if (innerPartialPass) {
@@ -175,7 +180,7 @@ export class Conditions {
     }
 
     const conditionEntry = conditionObj[key] as Record<string, unknown>;
-    const lhs = await Env.getEnvValue(conditionEntry[operator] as string, envVariables);
+    const lhs = await Env.getEnvValue(conditionEntry[operator], envVariables);
     const rhs = await Env.getEnvValue(key, envVariables);
 
     if (lhs === undefined || rhs === undefined) {
@@ -183,17 +188,22 @@ export class Conditions {
       return evaluationRes;
     }
 
-    evaluationRes = AccessControlHelpers.evaluateOperation(lhs, rhs, operator);
+    // Not narrowed as the query filter does, evaluateOperation gets whatever the env values resolved to
+    evaluationRes = AccessControlHelpers.evaluateOperation(
+      lhs as AccessControlValue,
+      rhs as AccessControlValue,
+      operator,
+    );
 
     return evaluationRes;
   }
 
-  async isPolicyDateTimeBased(conditions, pass = false): Promise<string | boolean | undefined> {
+  async isPolicyDateTimeBased(conditions: PolicyCondition, pass = false): Promise<string | boolean | undefined> {
     let res: boolean | string = false;
     for await (const key of Object.keys(conditions)) {
       if (Array.isArray(conditions[key])) {
         if (Conditions.logicalOperator.includes(key)) {
-          for await (const item of conditions[key]) {
+          for await (const item of conditions[key] as PolicyCondition[]) {
             return await this.isPolicyDateTimeBased(item, pass);
           }
         } else {
@@ -202,7 +212,7 @@ export class Conditions {
       }
 
       if ((key === 'date' || pass || key === 'time' || pass) && typeof conditions[key] === 'object') {
-        const isDateTimeCondition = Object.keys(conditions[key]).some((cKey) =>
+        const isDateTimeCondition = Object.keys(conditions[key] as object).some((cKey) =>
           Conditions.conditionEndRange.includes(cKey),
         );
         if (isDateTimeCondition) {
@@ -210,18 +220,21 @@ export class Conditions {
           return res;
         }
 
-        return await this.isPolicyDateTimeBased(conditions[key], true);
+        return await this.isPolicyDateTimeBased(conditions[key] as PolicyCondition, true);
       }
 
       return res;
     }
   }
 
-  async isPolicyQueryBasedCondition(condition, schemaNames) {
+  async isPolicyQueryBasedCondition(
+    condition: PolicyCondition,
+    schemaNames: string[],
+  ): Promise<Record<string, unknown> | undefined> {
     for await (const key of Object.keys(condition)) {
       if (Array.isArray(condition[key])) {
         if (Conditions.logicalOperator.includes(key)) {
-          for await (const item of condition[key]) {
+          for await (const item of condition[key] as PolicyCondition[]) {
             return await this.isPolicyQueryBasedCondition(item, schemaNames);
           }
         } else {
@@ -232,10 +245,10 @@ export class Conditions {
       const schemaQuery = schemaNames.find((n) => key.includes(n));
 
       if (schemaQuery) {
-        const [identifier] = Object.keys(condition[key]['@identifier']);
+        const [identifier] = Object.keys((condition[key] as SchemaQueryCondition)['@identifier']);
         return {
           name: schemaQuery,
-          [identifier]: Object.values(condition[key]['@identifier'][identifier]).pop(),
+          [identifier]: Object.values((condition[key] as SchemaQueryCondition)['@identifier'][identifier]).pop(),
         };
       }
     }

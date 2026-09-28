@@ -5,7 +5,6 @@
     "moduleResolution": "nodenext",
     "lib": ["ES2024"],
     "resolveJsonModule": true,
-    "noImplicitAny": false,
     "noEmitOnError": true,
     "strict": true,
     "esModuleInterop": true,

@@ -17,20 +17,32 @@ import StandardModel from '../type/standard.js';
 
 import { Schema } from '../../helpers/schema.js';
 import * as Helpers from '../../helpers/index.js';
+import { Services } from '../../bootstrap.js';
+import { AdapterIdInput } from '../../types/datastore.js';
 
-export interface Deployment {
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type Deployment = {
   id: string;
   lambdaId: string;
   hash: string;
   branch: string;
   deployedAt: Date;
   _appId: string;
-}
+};
+
+// A deployment as passed to add
+export type DeploymentAddBody = {
+  lambdaId?: AdapterIdInput | null;
+  hash?: string | null;
+  branch?: string | null;
+  // Not stored, a new deployment's deployedAt defaults to now
+  deployedAt?: Date;
+};
 
 class DeploymentSchemaModel extends StandardModel<Deployment> {
   static override name = 'Deployment';
 
-  constructor(services) {
+  constructor(services: Services) {
     const schema = DeploymentSchemaModel.Schema;
     super(schema, null, services);
   }
@@ -79,7 +91,7 @@ class DeploymentSchemaModel extends StandardModel<Deployment> {
    * @param {string} appId - the appId the deployment blongs to
    * @return {Promise} - fulfilled with lambda Object when the database request is completed
    */
-  override async add(body, appId) {
+  override async add(body: DeploymentAddBody, appId: string) {
     const deploymentBody = {
       lambdaId: body.lambdaId ? body.lambdaId : null,
       hash: body.hash ? body.hash : null,

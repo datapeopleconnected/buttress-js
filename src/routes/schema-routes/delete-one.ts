@@ -14,7 +14,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Response, Request } from 'express';
+import type { ObjectId } from 'bson';
 import { QueryParams } from '../../types/bjs-query.js';
+import { AdapterDocument } from '../../types/datastore.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -50,7 +52,7 @@ export default class DeleteOne extends Route {
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
     }
 
-    let objectId;
+    let objectId: ObjectId;
     try {
       objectId = model.createId(id);
     } catch (_err) {
@@ -59,9 +61,9 @@ export default class DeleteOne extends Route {
 
     const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
     const rxsEntity = await ACM.find(model, findParams, req.context.ac);
-    let entity;
+    let entity: AdapterDocument | null;
     try {
-      entity = await Helpers.streamFirst(rxsEntity);
+      entity = await Helpers.streamFirst<AdapterDocument>(rxsEntity);
     } catch (_err) {
       entity = null;
     }
@@ -72,7 +74,7 @@ export default class DeleteOne extends Route {
     return entity;
   }
 
-  override async _exec(_req: Request, _res: Response, entity) {
+  override async _exec(_req: Request, _res: Response, entity: AdapterDocument) {
     await (await this.routeModel()).rm(entity.id);
     return true;
   }

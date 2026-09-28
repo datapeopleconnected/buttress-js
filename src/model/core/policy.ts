@@ -19,6 +19,8 @@ import { PolicyCache } from '../../services/policy-cache.js';
 
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
+import { Services } from '../../bootstrap.js';
+import { AdapterIdInput, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
 
 export interface PolicyEnvQuery {
   type: 'string' | 'id' | 'array' | 'boolean';
@@ -58,23 +60,37 @@ export interface PolicyConfig {
   query?: PolicyQuery | null;
   projection?: PolicyProjection | null;
 }
-export interface Policy {
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type Policy = {
   id: string;
   name: string;
+  // add doesn't store it, so it's null unless set by an update
+  version: string | null;
   priority: number;
   selection: PolicySelection | null;
   env: PolicyEnv | null;
   config: PolicyConfig[];
   limit: Date | null;
   _appId: string;
-}
+};
+
+// A policy as passed to add
+export type PolicyAddBody = {
+  id?: AdapterIdInput;
+  name?: string | null;
+  priority?: number;
+  selection?: PolicySelection | null;
+  env?: PolicyEnv | null;
+  config?: Partial<PolicyConfig>[];
+  limit?: string | number | Date | null;
+};
 
 class PolicySchemaModel extends StandardModel<Policy> {
   static override name = 'Policy';
 
   __policyCache: PolicyCache;
 
-  constructor(services) {
+  constructor(services: Services) {
     const schema = PolicySchemaModel.Schema;
     super(schema, null, services);
 
@@ -186,7 +202,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
    * @param {String} appId - app id
    * @return {Promise} - fulfilled with policy Object when the database request is completed
    */
-  override async add(body, appId) {
+  override async add(body: PolicyAddBody, appId: AdapterIdInput) {
     const policyConfig: PolicyConfig[] = [];
     if (body.config) {
       body.config.forEach((item) => {
@@ -228,14 +244,15 @@ class PolicySchemaModel extends StandardModel<Policy> {
   // updateOne() {
 
   // }
-  override async updateById(id, query) {
+  override async updateById(id: AdapterIdInput, query: AdapterQuery) {
     const policy = await super.updateById(this.createId(id), query);
 
-    this.__policyCache.invalidatePolicyAndTokensBySelection(policy.id.toString());
+    // The update resolves to the datastore's update result rather than the policy, so this throws
+    this.__policyCache.invalidatePolicyAndTokensBySelection((policy as Policy).id.toString());
 
     return policy;
   }
-  override async updateByPath(body, id, sourceId = null) {
+  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, sourceId: string | null = null) {
     const policy = await super.updateByPath(body, id, sourceId);
 
     this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());

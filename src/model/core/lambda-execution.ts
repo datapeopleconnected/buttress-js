@@ -14,14 +14,18 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import StandardModel from '../type/standard.js';
+import type { ObjectId } from 'bson';
 
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
+import { Services } from '../../bootstrap.js';
+import { AdapterIdInput } from '../../types/datastore.js';
 
 import AppSchemaModel from './app.js';
 import TokenSchemaModel from './token.js';
 
-export interface LambdaExecution {
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type LambdaExecution = {
   id: string;
   lambdaId: string;
   deploymentId: string;
@@ -44,12 +48,24 @@ export interface LambdaExecution {
   }>;
   createdAt: Date;
   updatedAt: Date;
-}
+};
 
-class LambdaExecutionSchemaModel extends StandardModel {
+// A lambda execution as passed to add
+export type LambdaExecutionAddBody = {
+  lambdaId?: AdapterIdInput | null;
+  deploymentId?: AdapterIdInput | null;
+  triggerType?: LambdaExecution['triggerType'] | null;
+  priority?: number;
+  logs?: LambdaExecution['logs'];
+  executeAfter?: Date | null;
+  nextCronExpression?: string | null;
+  metadata?: LambdaExecution['metadata'];
+};
+
+class LambdaExecutionSchemaModel extends StandardModel<LambdaExecution> {
   static override name = 'LambdaExecution';
 
-  constructor(services) {
+  constructor(services: Services) {
     const schema = LambdaExecutionSchemaModel.Schema;
     super(schema, null, services);
   }
@@ -182,7 +198,11 @@ class LambdaExecutionSchemaModel extends StandardModel {
    * @param {string} tokenId - the tokenId that should be used to exeucte the lambda
    * @return {Promise} - fulfilled with lambda execution Object when the database request is completed
    */
-  override async add(body, appId: string, tokenId: string | null = null) {
+  override async add(
+    body: LambdaExecutionAddBody,
+    appId: string,
+    tokenId: AdapterIdInput | null = null,
+  ): Promise<LambdaExecution> {
     const executionBody = {
       lambdaId: body.lambdaId ? body.lambdaId : null,
       deploymentId: body.deploymentId ? body.deploymentId : null,
@@ -196,13 +216,13 @@ class LambdaExecutionSchemaModel extends StandardModel {
 
     if (!appId) throw new Error('appId is required to create a lambda execution');
 
-    const internals: { _appId: string; _tokenId?: string } = {
+    const internals: { _appId: ObjectId; _tokenId?: ObjectId } = {
       _appId: this.__modelManager.getCoreModel(AppSchemaModel).createId(appId),
     };
     if (tokenId) internals._tokenId = this.__modelManager.getCoreModel(TokenSchemaModel).createId(tokenId);
 
     const rxsExecution = await super.add(executionBody, internals);
-    const execution = await Helpers.streamFirst(rxsExecution);
+    const execution = await Helpers.streamFirst<LambdaExecution>(rxsExecution);
 
     return execution;
   }

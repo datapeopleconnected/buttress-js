@@ -13,33 +13,13 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+// The parts of pug used here, it doesn't ship its own types.
+declare module 'pug' {
+  namespace pug {
+    type compileTemplate = (locals?: Record<string, unknown>) => string;
 
-import Activity from './activity.js';
-import AppDataSharing from './app-data-sharing.js';
-import App from './app.js';
-import Deployment from './deployment.js';
-import Lambda from './lambda.js';
-import LambdaExecution from './lambda-execution.js';
-import Policy from './policy.js';
-import SecureStore from './secure-store.js';
-import status from './status.js';
-import Token from './token.js';
-import Tracking from './tracking.js';
-import User from './user.js';
+    function compileFile(path: string, options?: Record<string, unknown>): compileTemplate;
+  }
 
-import type { CoreRouteClass } from '../../types/routes.js';
-
-export const Routes = [
-  Activity,
-  AppDataSharing,
-  App,
-  Deployment,
-  Lambda,
-  LambdaExecution,
-  Policy,
-  SecureStore,
-  status,
-  Token,
-  Tracking,
-  User,
-] satisfies CoreRouteClass[][];
+  export default pug;
+}

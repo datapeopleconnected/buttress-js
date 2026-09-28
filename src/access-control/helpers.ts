@@ -32,7 +32,7 @@ function isObjectId(value: unknown): value is ObjectId {
 }
 
 type AccessControlScalar = string | number | boolean | Date | ObjectId;
-type AccessControlValue = AccessControlScalar | AccessControlScalar[] | null;
+export type AccessControlValue = AccessControlScalar | AccessControlScalar[] | null;
 
 function toComparableValue(value: AccessControlScalar): number | string {
   if (value instanceof Date) return value.getTime();
@@ -268,7 +268,7 @@ export function findPatternOccurrences(
     if (currentObj === null || currentObj === undefined) return;
 
     if (Array.isArray(currentObj)) {
-      currentObj.forEach((item, index) => {
+      currentObj.forEach((item: unknown, index: number) => {
         const arrayPath = [...path, index.toString()];
         if (typeof item === 'string' && regex.test(item)) {
           occurrences.push({ path: arrayPath, type: 'value', value: item });
@@ -311,7 +311,7 @@ export function patternExists(obj: unknown, pattern: string): boolean {
     if (currentObj === null || currentObj === undefined) return false;
 
     if (Array.isArray(currentObj)) {
-      for (const item of currentObj) {
+      for (const item of currentObj as unknown[]) {
         if (typeof item === 'string' && regex.test(item)) return true;
         if (typeof item === 'object' && item !== null && recurse(item)) return true;
       }

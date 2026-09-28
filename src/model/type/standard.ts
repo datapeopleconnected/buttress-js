@@ -24,6 +24,13 @@ import { Schema } from '../../helpers/schema.js';
 import { App } from '../core/app.js';
 import { Services } from '../../bootstrap.js';
 import { ModelManager } from '../index.js';
+import AbstractAdapter, { AdapterFindResult } from '../../datastore/abstract-adapter.js';
+import { Datastore } from '../../datastore/index.js';
+import { AdapterDocument, AdapterIdInput, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
+import { FlattenedSchema, FlattenedSchemaProperty } from '../../types/schema.js';
+
+// A query after parseQuery, with each property's operators resolved to their datastore form
+export type ParsedQuery = Record<string, unknown>;
 
 /* ********************************************************************************
  *
@@ -31,11 +38,11 @@ import { ModelManager } from '../index.js';
  *
  **********************************************************************************/
 
-export default class StandardModel<TDocument = unknown> {
+export default class StandardModel<TDocument = AdapterDocument> {
   static name = 'Model';
 
   schemaData: Schema;
-  flatSchemaData: { [key: string]: unknown };
+  flatSchemaData: FlattenedSchema;
 
   app: App | null;
 
@@ -48,7 +55,8 @@ export default class StandardModel<TDocument = unknown> {
   protected __nrp: NodeRedisPubsub;
   protected __modelManager: ModelManager;
 
-  adapter: any;
+  // Set by initAdapter, which the model manager calls before the model's used
+  adapter!: AbstractAdapter;
 
   constructor(schemaData: Schema, app: App | null, services: Services) {
     this.schemaData = schemaData;
@@ -74,7 +82,7 @@ export default class StandardModel<TDocument = unknown> {
     if (!this.__modelManager) throw new Error('Unable to find modelManager in services');
 
     this.__nrp.on('app:update-schema', (json: string) => {
-      const data = JSON.parse(json);
+      const data: { appId: string; schemas: Schema[] } = JSON.parse(json);
       if (!app || app.id.toString() !== data.appId) return;
 
       data.schemas.forEach((schema) => {
@@ -85,7 +93,7 @@ export default class StandardModel<TDocument = unknown> {
     });
   }
 
-  async initAdapter(datastore) {
+  async initAdapter(datastore?: Datastore | null) {
     if (datastore) {
       Logging.logSilly(`initAdapter ${this.schemaData.name}`);
       this.adapter = datastore.adapter.cloneAdapterConnection();
@@ -95,19 +103,19 @@ export default class StandardModel<TDocument = unknown> {
     }
   }
 
-  createId(id?: string) {
+  createId(id?: AdapterIdInput) {
     return this.adapter.ID.new(id);
   }
 
-  isValidId(id: string) {
+  isValidId(id: unknown) {
     return this.adapter.ID.isValid(id);
   }
 
-  convertStringToId(id?: string) {
-    return id && this.isValidId(id) ? this.adapter.ID.new(id) : id;
+  convertStringToId<T>(id?: T) {
+    return id && this.isValidId(id) ? this.adapter.ID.new(id as AdapterIdInput) : id;
   }
 
-  __doValidation(body) {
+  __doValidation(body: unknown) {
     const res: {
       isValid: boolean;
       missing: string[];
@@ -127,13 +135,13 @@ export default class StandardModel<TDocument = unknown> {
 
     return res;
   }
-  validate(body) {
+  validate(body: unknown) {
     if (body instanceof Array === false) {
       body = [body];
     }
-    const validation = body.map((b) => this.__doValidation(b)).filter((v) => v.isValid === false);
+    const validation = (body as unknown[]).map((b) => this.__doValidation(b)).filter((v) => v.isValid === false);
 
-    return validation.length >= 1 ? validation[0] : { isValid: true };
+    return validation.length >= 1 ? validation[0] : ({ isValid: true } as const);
   }
 
   /**
@@ -142,8 +150,12 @@ export default class StandardModel<TDocument = unknown> {
    * @param {object} [schemaFlat={}]
    * @return {object} query
    */
-  parseQuery(query, envFlat = {}, schemaFlat = this.flatSchemaData) {
-    let output = {};
+  parseQuery(
+    query: Record<string, unknown>,
+    envFlat: Record<string, unknown> = {},
+    schemaFlat: FlattenedSchema = this.flatSchemaData,
+  ): ParsedQuery {
+    let output: Record<string, unknown> = {};
 
     for (const property in query) {
       if (!{}.hasOwnProperty.call(query, property)) continue;
@@ -152,16 +164,17 @@ export default class StandardModel<TDocument = unknown> {
 
       if (property === '$or' && Array.isArray(command)) {
         if (command.length > 0) {
-          output['$or'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
+          output['$or'] = command.map((q: Record<string, unknown>) => this.parseQuery(q, envFlat, schemaFlat));
         }
       } else if (property === '$and' && Array.isArray(command)) {
         if (command.length > 0) {
-          output['$and'] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
+          output['$and'] = command.map((q: Record<string, unknown>) => this.parseQuery(q, envFlat, schemaFlat));
         }
       } else if (typeof command === 'object' && !this.isValidId(command)) {
-        for (let operator in command) {
-          if (!{}.hasOwnProperty.call(command, operator)) continue;
-          const operand = command[operator];
+        const operators = command as Record<string, unknown>;
+        for (let operator in operators) {
+          if (!{}.hasOwnProperty.call(operators, operator)) continue;
+          const operand = operators[operator];
           let operandOptions: string | undefined = undefined;
 
           switch (operator) {
@@ -210,20 +223,20 @@ export default class StandardModel<TDocument = unknown> {
   }
 
   parseQueryProperty(
-    property,
-    operator,
-    operand,
-    operandOptions?,
-    output = {},
-    envFlat = {},
-    schemaFlat: { [key: string]: unknown } = {},
+    property: string,
+    operator: string,
+    operand: unknown,
+    operandOptions?: string | null,
+    output: Record<string, unknown> = {},
+    envFlat: Record<string, unknown> = {},
+    schemaFlat: FlattenedSchema = {},
   ) {
     // Check to see if operand is a path and fetch value
-    if (operand && operand.indexOf && operand.indexOf('.') !== -1) {
-      let path = operand.split('.');
-      const key = path.shift();
+    if (operand && (operand as string).indexOf && (operand as string).indexOf('.') !== -1) {
+      const parts = (operand as string).split('.');
+      const key = parts.shift();
 
-      path = path.join('.');
+      const path = parts.join('.');
 
       if (key === 'env' && envFlat[path]) {
         operand = envFlat[path];
@@ -233,7 +246,7 @@ export default class StandardModel<TDocument = unknown> {
     }
 
     // Convert id
-    let propSchema: any = undefined;
+    let propSchema: FlattenedSchemaProperty | undefined = undefined;
     if (schemaFlat[property]) {
       propSchema = schemaFlat[property];
     } else if (Object.keys(schemaFlat).length > 0) {
@@ -241,13 +254,15 @@ export default class StandardModel<TDocument = unknown> {
     }
 
     if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
-      operand = this.parseQuery(operand, envFlat, propSchema.__schema);
+      operand = this.parseQuery(operand as Record<string, unknown>, envFlat, propSchema.__schema);
     } else if (propSchema) {
-      if (propSchema.__type === 'array' && propSchema.__schema) {
-        Object.keys(operand).forEach((op) => {
-          if (propSchema.__schema[op].__type === 'id') {
-            Object.keys(operand[op]).forEach((key) => {
-              operand[op][key] = this.convertStringToId(operand[op][key]);
+      const itemSchema = propSchema.__schema;
+      if (propSchema.__type === 'array' && itemSchema) {
+        const operands = operand as Record<string, Record<string, unknown>>;
+        Object.keys(operands).forEach((op) => {
+          if (itemSchema[op].__type === 'id') {
+            Object.keys(operands[op]).forEach((key) => {
+              operands[op][key] = this.convertStringToId(operands[op][key]);
             });
           }
         });
@@ -268,7 +283,7 @@ export default class StandardModel<TDocument = unknown> {
         }
       }
       if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
-        operand = operand.map((o) => {
+        operand = operand.map((o: unknown) => {
           try {
             return this.convertStringToId(o);
           } catch (e) {
@@ -284,15 +299,16 @@ export default class StandardModel<TDocument = unknown> {
     if (!output[property]) {
       output[property] = {};
     }
+    const propertyOutput = output[property] as Record<string, unknown>;
 
     if (operandOptions) {
-      output[property][`$options`] = operandOptions;
+      propertyOutput[`$options`] = operandOptions;
     }
 
     if (operator.indexOf('$') !== 0) {
-      output[property][`$${operator}`] = operand;
+      propertyOutput[`$${operator}`] = operand;
     } else {
-      output[property][`${operator}`] = operand;
+      propertyOutput[`${operator}`] = operand;
     }
 
     return output;
@@ -302,23 +318,24 @@ export default class StandardModel<TDocument = unknown> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  __parseAddBody(body, internals) {
-    const entity = Object.assign({}, internals);
+  __parseAddBody(body: AdapterDocument, internals?: unknown): AdapterDocument {
+    const entity: AdapterDocument = Object.assign({}, internals);
 
     if (body.id) {
-      entity.id = this.adapter.ID.new(body.id);
+      entity.id = this.adapter.ID.new(body.id as AdapterIdInput);
     } else {
       entity.id = this.adapter.ID.new();
     }
 
     if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {
       entity.createdAt = Sugar.Date.create();
-      entity.updatedAt = body.updatedAt ? Sugar.Date.create(body.updatedAt) : null;
+      entity.updatedAt = body.updatedAt ? Sugar.Date.create(body.updatedAt as string | number | Date) : null;
     }
 
     return Object.assign(Shared.sanitizeSchemaObject(this.schemaData, body), entity);
   }
-  add(body, internals?: unknown) {
+  // Subclasses take their own body and internals, and can resolve to other than a stream
+  add(body: unknown, internals?: unknown): Promise<unknown> {
     return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));
   }
 
@@ -327,8 +344,8 @@ export default class StandardModel<TDocument = unknown> {
    * @param {*} update
    * @return {promise}
    */
-  update(select, update) {
-    return this.adapter.update(select, update);
+  update(select: AdapterQuery, update: unknown) {
+    return this.adapter.update(select, update as AdapterQuery);
   }
 
   /**
@@ -336,7 +353,7 @@ export default class StandardModel<TDocument = unknown> {
    * @param {*} update
    * @return {promise}
    */
-  updateOne(query, update) {
+  updateOne(query: AdapterQuery, update: AdapterQuery) {
     return this.adapter.updateOne(query, update);
   }
 
@@ -345,7 +362,7 @@ export default class StandardModel<TDocument = unknown> {
    * @param {*} query
    * @return {promise}
    */
-  updateById(id, query) {
+  updateById(id: AdapterIdInput, query: AdapterQuery) {
     return this.adapter.updateById(id, query);
   }
 
@@ -353,7 +370,7 @@ export default class StandardModel<TDocument = unknown> {
    * @param {object} body
    * @return {promise}
    */
-  validateUpdate(body) {
+  validateUpdate(body: unknown) {
     const sharedFn = Shared.validateUpdate({}, this.schemaData);
     return sharedFn(body);
   }
@@ -366,7 +383,11 @@ export default class StandardModel<TDocument = unknown> {
    * @return {promise}
    */
   // TODO: Model shouldn't be being passed through this way.
-  async updateByPath(body, id: string, _sourceId: string | null = null) {
+  async updateByPath(
+    body: UpdatePathBody | UpdatePathBody[],
+    id: string,
+    _sourceId: string | null = null,
+  ): Promise<unknown[]> {
     if (body instanceof Array === false) {
       body = [body];
     }
@@ -384,7 +405,7 @@ export default class StandardModel<TDocument = unknown> {
     const extendedPathContext = Shared.extendPathContext({}, flattenedSchema || {}, '');
 
     // TODO: This isn't processing updates in a batch
-    return await body.reduce(async (prev, update) => {
+    return await body.reduce(async (prev: Promise<unknown[]>, update) => {
       const arr = await prev;
       let config = flattenedSchema === false ? false : flattenedSchema[update.path];
       if (!config && flattenedSchema) {
@@ -393,7 +414,8 @@ export default class StandardModel<TDocument = unknown> {
 
       // If we're doing a vector-add operation but the user has provided an array as the value then we want to
       // update the whole property.
-      let context = extendedPathContext[update.contextPath];
+      // The update's been validated, so it has a context path.
+      let context = extendedPathContext[update.contextPath as string];
       if (context.type === 'vector-add' && Array.isArray(update.value)) {
         context = { type: 'scalar', values: [] };
       }
@@ -408,14 +430,14 @@ export default class StandardModel<TDocument = unknown> {
    * @param {object} extra
    * @return {Promise}
    */
-  exists(id, _sourceId: string | null = null, extra = {}) {
+  exists(id: AdapterIdInput, _sourceId: string | null = null, extra: AdapterQuery = {}) {
     return this.adapter.exists(id, extra);
   }
 
   /**
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  isDuplicate(details) {
+  isDuplicate(details: unknown) {
     return this.adapter.isDuplicate(details);
   }
 
@@ -423,15 +445,16 @@ export default class StandardModel<TDocument = unknown> {
    * @param {string} id - id to be deleted
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  rm(id: string) {
-    return this.adapter.rm(id);
+  // Takes `unknown` as subclasses (App, RemoteCombined) take an entity rather than its id
+  rm(id: unknown): Promise<unknown> {
+    return this.adapter.rm(id as AdapterIdInput);
   }
 
   /**
    * @param {Array} ids - Array of entity ids to delete
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  rmBulk(ids) {
+  rmBulk(ids: AdapterIdInput[]) {
     return this.adapter.rmBulk(ids);
   }
 
@@ -439,7 +462,7 @@ export default class StandardModel<TDocument = unknown> {
    * @param {Object} query - mongoDB query
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  rmAll(query) {
+  rmAll(query?: AdapterQuery) {
     return this.adapter.rmAll(query);
   }
 
@@ -447,8 +470,8 @@ export default class StandardModel<TDocument = unknown> {
    * @param {String} id - entity id to get
    * @return {Promise} - resolves to an array of Companies
    */
-  findById(id) {
-    return this.adapter.findById(id);
+  findById(id: AdapterIdInput) {
+    return this.adapter.findById(id) as Promise<TDocument>;
   }
 
   /**
@@ -460,7 +483,14 @@ export default class StandardModel<TDocument = unknown> {
    * @param {Boolean} project - mongoDB project ids
    * @return {ReadableStream} - stream
    */
-  find(query, excludes?: any, limit?: number, skip?: number, sort?: any, project?: any) {
+  find(
+    query: AdapterQuery,
+    excludes?: AdapterQuery | null,
+    limit?: number,
+    skip?: number,
+    sort?: Record<string, unknown> | null,
+    project?: Record<string, unknown> | null | false,
+  ): AdapterFindResult {
     // TODO: Handle AC query
 
     return this.adapter.find(query, excludes, limit, skip, sort, project);
@@ -471,14 +501,14 @@ export default class StandardModel<TDocument = unknown> {
    * @param {Object} excludes - mongoDB query excludes
    * @return {Promise} - resolves to a single doc or null
    */
-  findOne(query, excludes = {}): Promise<TDocument | null> {
-    return this.adapter.findOne(query, excludes);
+  findOne(query: AdapterQuery, excludes: AdapterQuery = {}): Promise<TDocument | null> {
+    return this.adapter.findOne(query, excludes) as Promise<TDocument | null>;
   }
 
   /**
    * @return {Promise} - resolves to an array of Companies
    */
-  findAll() {
+  findAll(): AdapterFindResult {
     return this.adapter.findAll();
   }
 
@@ -486,7 +516,7 @@ export default class StandardModel<TDocument = unknown> {
    * @param {Array} ids - Array of entities ids to get
    * @return {Promise} - resolves to an array of Companies
    */
-  findByIds(ids) {
+  findByIds(ids: string[]) {
     return this.adapter.findAllById(ids);
   }
 
@@ -494,7 +524,7 @@ export default class StandardModel<TDocument = unknown> {
    * @param {Object} query - mongoDB query
    * @return {Promise} - resolves to an array of Companies
    */
-  count(query?: any) {
+  count(query?: AdapterQuery) {
     return this.adapter.count(query);
   }
 

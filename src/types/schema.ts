@@ -13,13 +13,16 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+export type SchemaPropertyType = 'string' | 'number' | 'object' | 'array' | 'boolean' | 'id' | 'date' | 'uuid';
+
 export type PropertyDefinition = {
-  __type: 'string' | 'number' | 'object' | 'array' | 'boolean' | 'id' | 'date' | 'uuid';
+  __type: SchemaPropertyType;
   __default?: unknown;
   __required?: boolean;
   __enum?: unknown[];
   __itemtype?: string;
   __allowUpdate?: boolean;
+  __timeSeries?: string;
 };
 
 export type ArraySchema = {
@@ -33,12 +36,13 @@ export type Remotes = {
   schema: string;
 };
 
+// A property is either a definition (it has a `__type`), or a plain object nesting further properties.
 export type Properties = {
-  [key: string]: PropertyDefinition | ArraySchema | { [key: string]: PropertyDefinition | ArraySchema };
+  [key: string]: PropertyDefinition | ArraySchema | Properties;
 };
 
 export type FlattenedSchemaProperty = {
-  __type: 'string' | 'number' | 'object' | 'array' | 'boolean' | 'id' | 'date' | 'uuid';
+  __type: SchemaPropertyType;
   __default?: unknown;
   __required?: boolean;
   __enum?: unknown[];

@@ -25,14 +25,16 @@ import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import { QueryParams } from '../../types/bjs-query.js';
 import UserSchemaModel from '../../model/core/user.js';
 import AppSchemaModel from '../../model/core/app.js';
+import { Services } from '../../bootstrap.js';
+import type { CoreRouteClass, RequestWithBody, SearchBody } from '../../types/routes.js';
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
 
 /**
  * @class GetTokenList
  */
 class GetTokenList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('token', 'LIST TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.APP;
@@ -66,7 +68,7 @@ class GetTokenList extends Route {
     return Promise.resolve(queryParams);
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate: QueryParams<Token>) {
     return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
   }
 }
@@ -76,7 +78,7 @@ routes.push(GetTokenList);
  * @class GetTokenList
  */
 class SearchTokenList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('token', 'SEARCH TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.APP;
@@ -85,7 +87,7 @@ class SearchTokenList extends Route {
     this.redactResults = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchBody<Token>>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
@@ -118,7 +120,7 @@ class SearchTokenList extends Route {
     return queryParams;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<Token>) {
     return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
   }
 }
@@ -128,7 +130,7 @@ routes.push(SearchTokenList);
  * @class DeleteAllTokens
  */
 class DeleteAllTokens extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('token{/:type}', 'DELETE ALL TOKENS', services, Model.getCoreModel(TokenSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.APP;
@@ -141,7 +143,7 @@ class DeleteAllTokens extends Route {
     return Promise.resolve();
   }
 
-  override async _exec(req: Request, _res: Response, _validate) {
+  override async _exec(req: Request, _res: Response, _validate: undefined) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
@@ -194,7 +196,7 @@ routes.push(DeleteAllTokens);
  * @class SearchUserToken
  */
 class SearchUserToken extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('token/:userId', 'SEARCH USER TOKEN', services, Model.getCoreModel(TokenSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.APP;
@@ -203,7 +205,7 @@ class SearchUserToken extends Route {
     this.redactResults = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchBody<Token> | undefined>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
@@ -254,7 +256,7 @@ class SearchUserToken extends Route {
     return queryParams;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<Token>) {
     return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
   }
 }

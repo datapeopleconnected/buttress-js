@@ -33,6 +33,7 @@ import TokenSchemaModel from '../model/core/token.js';
 import StandardModel from '../model/type/standard.js';
 import { App } from '../model/core/app.js';
 import { Services } from '../bootstrap.js';
+import type { RequestWithBody } from '../types/routes.js';
 
 export interface NotifyLambdaPathChangeMessage {
   paths: string[];
@@ -61,8 +62,9 @@ type PathLambdaBody = PathMutationItem | PathMutationItem[] | BulkPathMutationIt
 //   tolerance: 3
 // });
 
-let _app = null;
-let _io = null;
+// Not set anywhere at the moment
+let _app: unknown = null;
+let _io: unknown = null;
 
 /**
  * @type {{Auth: {
@@ -111,18 +113,21 @@ const Constants = {
     PUT: 'put',
     DEL: 'delete',
     SEARCH: 'search',
-  },
+  } as const,
   BulkRequests: {
     BULK_PUT: '/bulk/update',
     BULK_DEL: '/bulk/delete',
   },
 };
 
+// The express router method each route is registered with
+export type RouteVerb = (typeof Constants.Verbs)[keyof typeof Constants.Verbs];
+
 const AuthTypeOrder = Object.values(Constants.Type);
-const authTypeIdx = (type) => AuthTypeOrder.indexOf(type);
+const authTypeIdx = (type: string) => AuthTypeOrder.indexOf(type);
 
 export default class Route {
-  verb: string = Constants.Verbs.GET;
+  verb: RouteVerb = Constants.Verbs.GET;
   authType: string = Constants.Type.USER;
   permissions: string = Constants.Permissions.READ;
 
@@ -182,15 +187,17 @@ export default class Route {
     this.addSourceId = true;
   }
 
-  async _validate(_req: Request, _res: Response): Promise<unknown> {
+  // Implementations can return the validated request details directly or as a promise, exec awaits them. What they
+  // return is passed to _exec as `validate`.
+  _validate(_req: Request, _res: Response): unknown {
     throw new Error('Route:_validate not implemented');
   }
 
-  async _exec(_req: Request, _res: Response, _validate: unknown): Promise<unknown> {
+  _exec(_req: Request, _res: Response, _validate: unknown): unknown {
     throw new Error('Route:_exec not implemented');
   }
 
-  async routeModel<T extends StandardModel>() {
+  async routeModel<T extends StandardModel<unknown> = StandardModel>(): Promise<T> {
     if (!this.schemaName) throw new Error('Route:model called but no schemaName defined');
 
     if (this.appId) {
@@ -240,7 +247,9 @@ export default class Route {
     // Send the result back to the client and resolve the request from
     // this point onward you should treat the request as furfilled.
     if (result instanceof Stream.Readable && result.readable) {
-      result.on('bjs-stream-status', (data) => (this._nrp ? req.context.bjsReqStatus(data, this._nrp) : null));
+      result.on('bjs-stream-status', (data: Record<string, unknown>) =>
+        this._nrp ? req.context.bjsReqStatus(data, this._nrp) : null,
+      );
 
       const resStream = new Stream.PassThrough({ objectMode: true });
       const broadcastStream = new Stream.PassThrough({ objectMode: true });
@@ -343,7 +352,7 @@ export default class Route {
     return result;
   }
 
-  _logActivity(req, _res) {
+  _logActivity(req: Request, _res: Response) {
     req.context.timings.logActivity = req.context.timer.interval;
     Logging.logTimer('_logActivity:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     if (this.verb === Constants.Verbs.GET) {
@@ -357,7 +366,7 @@ export default class Route {
 
     // Fire and forget
     if (this.activity) {
-      this._addLogActivity(req, req.context.pathSpec, this.verb);
+      this._addLogActivity(req, req.context.pathSpec as string, this.verb);
     }
 
     Logging.logTimer('_logActivity:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
@@ -387,7 +396,7 @@ export default class Route {
           req.context.id,
         ),
       )
-      .catch((e) => Logging.logError(e, req.context.id));
+      .catch((e: unknown) => Logging.logError(e, req.context.id));
   }
 
   /**
@@ -471,7 +480,7 @@ export default class Route {
     };
 
     if (isReadStream) {
-      result.on('data', (data) => emit(Helpers.Schema.prepareSchemaResult(data, req.context.authApp?.id)));
+      result.on('data', (data: unknown) => emit(Helpers.Schema.prepareSchemaResult(data, req.context.authApp?.id)));
       Logging.logTimer('_broadcast:end-stream', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
@@ -484,7 +493,7 @@ export default class Route {
    * Triggers path based lambdas
    * @param {Object} req
    */
-  _checkBasedPathLambda(req: Request) {
+  _checkBasedPathLambda(req: RequestWithBody<unknown>) {
     // NOTE: Do we not want to receive updates on core schema?
     // TODO: There should be a restriction here to scope to the application.
     if (!this.schemaName) return;
@@ -527,7 +536,7 @@ export default class Route {
     if (this.verb === Constants.Verbs.POST) {
       if (req.context.pathSpec?.includes(Constants.BulkRequests.BULK_PUT)) {
         if (Array.isArray(body)) {
-          body.forEach((item) => {
+          body.forEach((item: unknown) => {
             if (!isBulkPathMutationItem(item)) return;
 
             if (Array.isArray(item.body)) {
@@ -545,7 +554,7 @@ export default class Route {
         }
       } else if (req.context.pathSpec?.includes(Constants.BulkRequests.BULK_DEL)) {
         if (Array.isArray(body)) {
-          body.forEach((deleteId) => {
+          body.forEach((deleteId: unknown) => {
             if (typeof deleteId === 'string') {
               paths.push(`${schemaName}.${deleteId}`);
             }
@@ -561,7 +570,7 @@ export default class Route {
       if (id) {
         paths.push(`${schemaName}.${id}`);
       } else if (Array.isArray(body)) {
-        body.forEach((item) => {
+        body.forEach((item: unknown) => {
           if (isPathMutationItem(item) && item.path) {
             paths.push(`${schemaName}.${item.path}`);
           }
@@ -572,7 +581,7 @@ export default class Route {
     }
     if (this.verb === Constants.Verbs.PUT) {
       const putBody = Array.isArray(body) ? body : [body];
-      putBody.forEach((item) => {
+      putBody.forEach((item: unknown) => {
         if (!isPathMutationItem(item) || !item.path) return;
         paths.push(`${schemaName}.${id}.${item.path}`);
         values.push(item.value);
@@ -681,7 +690,7 @@ export default class Route {
    * @return {boolean} - true if authorised
    * @private
    */
-  _matchPermission(permissionSpec) {
+  _matchPermission(permissionSpec: string) {
     if (permissionSpec === '*' || permissionSpec === this.permissions) {
       return true;
     }
@@ -703,20 +712,20 @@ export default class Route {
    * @param {object} req - The request object to be compared to
    * @private
    */
-  _close(req) {
+  _close(req: Request) {
     req.context.timings.close = req.context.timer.interval;
     if (this.slowLogging && req.context.timings.close > this.slowLoggingTime) {
       Logging.logError(`${req.method} ${req.url} SLOW REQUEST ${JSON.stringify(req.context.timings)}`, req.context.id);
     }
   }
 
-  static set app(app) {
+  static set app(app: unknown) {
     _app = app;
   }
   static get app() {
     return _app;
   }
-  static set io(io) {
+  static set io(io: unknown) {
     _io = io;
   }
   static get io() {

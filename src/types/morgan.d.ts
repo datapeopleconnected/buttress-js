@@ -13,33 +13,18 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+// The parts of morgan used here, it doesn't ship its own types.
+declare module 'morgan' {
+  import type { IncomingMessage, ServerResponse } from 'node:http';
 
-import Activity from './activity.js';
-import AppDataSharing from './app-data-sharing.js';
-import App from './app.js';
-import Deployment from './deployment.js';
-import Lambda from './lambda.js';
-import LambdaExecution from './lambda-execution.js';
-import Policy from './policy.js';
-import SecureStore from './secure-store.js';
-import status from './status.js';
-import Token from './token.js';
-import Tracking from './tracking.js';
-import User from './user.js';
+  interface Morgan {
+    token<Req = IncomingMessage, Res = ServerResponse>(
+      name: string,
+      callback: (req: Req, res: Res, arg?: string) => string | undefined,
+    ): Morgan;
+  }
 
-import type { CoreRouteClass } from '../../types/routes.js';
+  const morgan: Morgan;
 
-export const Routes = [
-  Activity,
-  AppDataSharing,
-  App,
-  Deployment,
-  Lambda,
-  LambdaExecution,
-  Policy,
-  SecureStore,
-  status,
-  Token,
-  Tracking,
-  User,
-] satisfies CoreRouteClass[][];
+  export default morgan;
+}

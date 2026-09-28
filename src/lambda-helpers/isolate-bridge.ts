@@ -25,13 +25,32 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 /**
+ * The isolate's global object, which the host sets its functions and values on.
+ */
+export type IsolateJail = ivm.Reference<Record<string, unknown>>;
+
+/**
+ * A function in the isolate passed to the host by reference, e.g. a promise's resolve or reject.
+ */
+export type IsolateCallback = ivm.Reference<(value?: unknown) => void>;
+
+// A plugin module's default export: an instance whose public methods are exposed to lambdas.
+interface LambdaPlugin {
+  startUp: () => unknown;
+  [method: string]: (...args: unknown[]) => unknown;
+}
+
+// A lambda's log call arguments. Only the first is logged, the third and fourth go to Logging's level/id parameters.
+type LambdaLogArgs = [unknown, unknown?, string?, string?];
+
+/**
  * IsolateBridge
  * @class
  */
 class IsolateBridge {
   _plugins: {
     [key: string]: {
-      plugin: any;
+      plugin: LambdaPlugin;
       methods: string[];
     };
   };
@@ -46,8 +65,8 @@ class IsolateBridge {
   }
 
   registerPlugins() {
-    const getClassesList = (dirName) => {
-      let files: NodeJS.Require[] = [];
+    const getClassesList = (dirName: string): Partial<LambdaPlugin>[] => {
+      let files: Partial<LambdaPlugin>[] = [];
 
       let items: fs.Dirent[];
       try {
@@ -64,7 +83,7 @@ class IsolateBridge {
         if (item.isDirectory()) {
           files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
         } else {
-          files.push(require(`${dirName}/${item.name}`).default);
+          files.push((require(`${dirName}/${item.name}`) as { default: Partial<LambdaPlugin> }).default);
         }
       }
 
@@ -72,8 +91,8 @@ class IsolateBridge {
     };
 
     this._plugins = {};
-    const classes: any = getClassesList(Config.paths.lambda.plugins);
-    const plugins = classes.filter((c) => c.startUp);
+    const classes = getClassesList(Config.paths.lambda.plugins);
+    const plugins = classes.filter((c) => c.startUp) as LambdaPlugin[];
     const prot = ['constructor', 'startUp'];
     Logging.logSilly('Plugins to register:', plugins.map((p) => p.constructor.name).join(','));
     plugins.forEach((p) => {
@@ -90,7 +109,7 @@ class IsolateBridge {
     Logging.log(`Registered: ${Object.keys(this._plugins).length} lambda plugins`);
   }
 
-  async setupPlugins(jail) {
+  async setupPlugins(jail: IsolateJail) {
     this._pluginBootstrap = '';
 
     for (const [pluginName, pluginMeta] of Object.entries(this._plugins)) {
@@ -109,13 +128,14 @@ class IsolateBridge {
 				`;
         jail.setSync(
           `_${pluginName}_${method}`,
-          new ivm.Reference(async (resolve, reject, ...args) => {
+          new ivm.Reference(async (resolve: IsolateCallback, reject: IsolateCallback, ...args: unknown[]) => {
             Logging.logVerbose(`${pluginName}_${method}`);
             try {
               const outcome = await pluginMeta.plugin[method](...args);
               resolve.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto()]);
-            } catch (error: any) {
-              const statusCode = error?.status?.toString() || 'UNKNOWN_ERROR';
+            } catch (error: unknown) {
+              const statusCode =
+                (error as { status?: number | string } | null | undefined)?.status?.toString() || 'UNKNOWN_ERROR';
               reject.applyIgnored(undefined, [new ivm.ExternalCopy(`ERROR: ${statusCode}`).copyInto()]);
             }
           }),
@@ -124,7 +144,7 @@ class IsolateBridge {
     }
   }
 
-  createHostIsolateBridge(isolate, context) {
+  createHostIsolateBridge(isolate: ivm.Isolate, context: ivm.Context) {
     isolate
       .compileScriptSync(
         `new function() {
@@ -348,10 +368,10 @@ class IsolateBridge {
     // bootstrap.runSync(context);
   }
 
-  async setupLambdaLogs(jail) {
+  async setupLambdaLogs(jail: IsolateJail) {
     jail.setSync(
       '_log',
-      new ivm.Reference((...args) => {
+      new ivm.Reference((...args: LambdaLogArgs) => {
         Logging.log(args[0], args[2], args[3]);
         this._pushLambdaExecutionLog(args[0], 'log');
       }),
@@ -359,7 +379,7 @@ class IsolateBridge {
 
     jail.setSync(
       '_logDebug',
-      new ivm.Reference((...args) => {
+      new ivm.Reference((...args: LambdaLogArgs) => {
         Logging.logDebug(args[0], args[2]);
         this._pushLambdaExecutionLog(args[0], 'debug');
       }),
@@ -367,7 +387,7 @@ class IsolateBridge {
 
     jail.setSync(
       '_logSilly',
-      new ivm.Reference((...args) => {
+      new ivm.Reference((...args: LambdaLogArgs) => {
         Logging.logSilly(args[0], args[2]);
         this._pushLambdaExecutionLog(args[0], 'silly');
       }),
@@ -375,7 +395,7 @@ class IsolateBridge {
 
     jail.setSync(
       '_logVerbose',
-      new ivm.Reference((...args) => {
+      new ivm.Reference((...args: LambdaLogArgs) => {
         Logging.logVerbose(args[0], args[2]);
         this._pushLambdaExecutionLog(args[0], 'verbose');
       }),
@@ -383,7 +403,7 @@ class IsolateBridge {
 
     jail.setSync(
       '_logWarn',
-      new ivm.Reference((...args) => {
+      new ivm.Reference((...args: LambdaLogArgs) => {
         Logging.logWarn(args[0], args[2]);
         this._pushLambdaExecutionLog(args[0], 'warn');
       }),
@@ -391,7 +411,7 @@ class IsolateBridge {
 
     jail.setSync(
       '_logError',
-      new ivm.Reference((...args) => {
+      new ivm.Reference((...args: LambdaLogArgs) => {
         Logging.logError(args[0], args[2]);
         this._pushLambdaExecutionLog(args[0], 'error');
       }),
@@ -399,7 +419,7 @@ class IsolateBridge {
   }
 
   // ! Need to look into this method
-  _pushLambdaExecutionLog(_log, _type) {
+  _pushLambdaExecutionLog(_log: unknown, _type: string) {
     throw new Error('Need to resolve where this.lambdaExecution.id is coming from');
     // Model.getCoreModel(LambdaSchemaModel).update({
     // 	id: Model.getCoreModel(LambdaSchemaModel).createId(this.lambdaExecution.id),

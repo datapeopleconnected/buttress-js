@@ -36,13 +36,19 @@ import * as Schema from './helpers/schema.js';
 import type { Schema as SchemaDefinition } from './types/schema.js';
 
 import { SourceDataSharingRouting } from './services/source-ds-routing.js';
+import type { AppSchemaUpdatedMessage } from './services/nrp.js';
 
 import DatastoreManager, { Datastore } from './datastore/index.js';
 import Plugins from './plugins/index.js';
 import AccessControl from './access-control/index.js';
 import { PolicyCache } from './services/policy-cache.js';
-import AppSchemaModel from './model/core/app.js';
+import AppSchemaModel, { App, AppAddBody } from './model/core/app.js';
 import TokenSchemaModel from './model/core/token.js';
+
+// Express's types don't include app.handle()
+type ExpressApp = Express.Express & {
+  handle: (req: http.IncomingMessage, res: http.ServerResponse) => void;
+};
 
 // morgan.token('id', (req) => req.context.id);
 
@@ -153,7 +159,7 @@ export default class BootstrapRest extends Bootstrap {
     if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');
 
     this.__nrp.on('app-schema:updated', (json) => {
-      const data = JSON.parse(json);
+      const data: AppSchemaUpdatedMessage = JSON.parse(json);
       Logging.logDebug(`App Schema Updated: ${data.appId}`);
       this.notifyWorkers({
         type: 'app-schema:updated',
@@ -209,8 +215,10 @@ export default class BootstrapRest extends Bootstrap {
     );
     app.use(Express.static(`${Config.paths.appData}/public`));
 
-    // @ts-expect-error - Calling a private function within the class, this is the only way it's exposed.
-    Plugins.on('request', (req, res) => app.handle(req, res));
+    // Calling a private function within the class, this is the only way it's exposed.
+    Plugins.on('request', (req: http.IncomingMessage, res: http.ServerResponse) =>
+      (app as ExpressApp).handle(req, res),
+    );
 
     await Model.initCoreModels();
 
@@ -274,12 +282,13 @@ export default class BootstrapRest extends Bootstrap {
         return;
       }
 
+      // domain isn't in the app schema, add() drops it
       const superApp = await Model.getCoreModel(AppSchemaModel).add(
         {
           name: `${Config.app.title} TEST`,
           apiPath: 'bjs',
           domain: '',
-        },
+        } as AppAddBody,
         {
           type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
         },
@@ -342,7 +351,7 @@ export default class BootstrapRest extends Bootstrap {
     Model.getCoreModel(AppSchemaModel).setLocalSchema(localSchema);
 
     const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
-    for await (const app of rxsApps) {
+    for await (const app of rxsApps as AsyncIterable<App>) {
       const appSchema = Schema.decode(app.__schema);
       Logging.log(`Adding ${localSchema.length} local schema for ${app.id}:${app.name}:${appSchema.length}`);
       localSchema.forEach((cS) => {

@@ -43,6 +43,7 @@ import RoutesMiddleware from './middleware.js';
 
 import createConfig from '@dpc/node-env-obj';
 import { Token } from '../model/core/token.js';
+import type { CoreRouteClass } from '../types/routes.js';
 const Config = createConfig() as unknown as Config;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -53,7 +54,6 @@ export interface AppDeletedMessage {
   apiPath: string;
 }
 
-type CoreRouteClass = new (services: Services) => Route;
 type PluginRouteClass = new (schema: null, app: null, services: Services) => Route;
 type RouteClass = CoreRouteClass | PluginRouteClass;
 
@@ -158,7 +158,7 @@ class Routes {
 
       next();
     });
-    this.app.use((err, req: Request, res: Response, next: NextFunction) => {
+    this.app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
       if (err) Logging.logError(err, req.context.id);
       next();
     });
@@ -168,7 +168,7 @@ class Routes {
     for (let x = 0; x < providers.length; x++) {
       const routes = providers[x];
       for (let y = 0; y < routes.length; y++) {
-        const route = routes[y] as CoreRouteClass;
+        const route = routes[y];
         this._initRoute(coreRouter, route, true);
       }
     }
@@ -187,7 +187,7 @@ class Routes {
 
   async initAppRoutes() {
     const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
-    for await (const app of rxsApps) {
+    for await (const app of rxsApps as AsyncIterable<App>) {
       await this._generateAppRoutes(app);
     }
   }
@@ -248,7 +248,7 @@ class Routes {
    * @param {string} key
    * @param {object} router - express router object
    */
-  _registerRouter(key, router: Router) {
+  _registerRouter(key: string, router: Router) {
     if (this._routerMap[key]) {
       Logging.logSilly(`Routes:_registerRouter Reregister ${key}`);
       this._routerMap[key] = router;
@@ -262,7 +262,7 @@ class Routes {
     this._mountRouterDispatcher();
   }
 
-  _deregisterRouter(key) {
+  _deregisterRouter(key: string) {
     if (!this._routerMap[key]) return;
 
     Logging.logSilly(`Routes:_deregisterRouter Deregister ${key}`);
@@ -275,7 +275,7 @@ class Routes {
    * @param {string} key
    * @return {object} - express router object
    */
-  _getRouter(key) {
+  _getRouter(key: string) {
     return this._routerMap[key];
   }
 
@@ -284,7 +284,7 @@ class Routes {
    * @param {string} appId - Buttress app id
    * @return {promise}
    */
-  regenerateAppRoutes(appId) {
+  regenerateAppRoutes(appId: string) {
     Logging.logSilly(`Routes:regenerateAppRoutes regenerating routes for ${appId}`);
     return Model.getCoreModel(AppSchemaModel)
       .findById(appId)
@@ -295,7 +295,7 @@ class Routes {
    * Genereate app routes & register for given app
    * @param {object} app - Buttress app object
    */
-  async _generateAppRoutes(app) {
+  async _generateAppRoutes(app: App | null) {
     if (!app) throw new Error(`Expected app object to be passed through to _generateAppRoutes, got ${app}`);
     if (!app.__schema) return;
 
@@ -375,7 +375,7 @@ class Routes {
    * @param  {Object} app - app data object
    * @param  {Object} schemaData - schema data object
    */
-  _initSchemaRoutes(express, app: App, schemaData: Schema) {
+  _initSchemaRoutes(express: Router, app: App, schemaData: Schema) {
     SchemaRoutes.forEach((SchemaRoute) => {
       let route: Route;
 
@@ -407,19 +407,19 @@ class Routes {
     this._middlewareHelper._configCrossDomain(req, res, next);
   }
 
-  logErrors(err, req: Request, res: Response, next: NextFunction) {
+  logErrors(err: unknown, req: Request, res: Response, next: NextFunction) {
     this._middlewareHelper.logErrors(err, req, res, next);
   }
 
   _getCoreRoutes() {
-    return CoreRoutes as CoreRouteClass[][];
+    return CoreRoutes;
   }
 
   async _setupLambdaEndpoints() {
     await this._lambdaSetupHelper._setupLambdaEndpoints();
   }
 
-  async _queueLambdaAPIExecution(endpointOrId: string, apiPath, req: Request) {
+  async _queueLambdaAPIExecution(endpointOrId: string, apiPath: string, req: Request) {
     return await this._lambdaSetupHelper._queueLambdaAPIExecution(endpointOrId, apiPath, req);
   }
 

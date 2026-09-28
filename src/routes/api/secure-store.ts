@@ -20,27 +20,30 @@ import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
 
-import SecureStoreSchemaModel, { SecureStore } from '../../model/core/secure-store.js';
+import SecureStoreSchemaModel, { SecureStore, SecureStoreAddBody } from '../../model/core/secure-store.js';
 import AppSchemaModel from '../../model/core/app.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import LambdaSchemaModel from '../../model/core/lambda.js';
 import UserSchemaModel from '../../model/core/user.js';
 import { QueryParams } from '../../types/bjs-query.js';
+import { Services } from '../../bootstrap.js';
+import { UpdatePathBody } from '../../types/datastore.js';
+import type { BulkUpdateItem, CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
 
 /**
  * @class AddSecureStore
  */
 class AddSecureStore extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('secure-store', 'ADD SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.POST;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SecureStoreAddBody>, _res: Response) {
     const app = req.context.authApp;
 
     if (!app || !req.body.name) {
@@ -78,7 +81,7 @@ class AddSecureStore extends Route {
     });
   }
 
-  override _exec(req: Request, _res: Response, validate) {
+  override _exec(req: RequestWithBody<SecureStoreAddBody>, _res: Response, validate: { appId: string }) {
     return Model.getCoreModel(SecureStoreSchemaModel).add(req.body, validate.appId);
   }
 }
@@ -88,14 +91,14 @@ routes.push(AddSecureStore);
  * @class AddManySecureStore
  */
 class AddManySecureStore extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('secure-store/bulk/add', 'ADD SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.POST;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SecureStoreAddBody[]>, _res: Response) {
     const app = req.context.authApp;
 
     if (!app) {
@@ -127,9 +130,10 @@ class AddManySecureStore extends Route {
     return Promise.resolve(true);
   }
 
-  override async _exec(req: Request, _res: Response, _validate) {
+  override async _exec(req: RequestWithBody<SecureStoreAddBody[]>, _res: Response, _validate: boolean) {
     for await (const secureStore of req.body) {
-      await Model.getCoreModel(SecureStoreSchemaModel).add(req, secureStore);
+      // FIXME: this passes the request as the body and the secure store as the app id
+      await Model.getCoreModel(SecureStoreSchemaModel).add(req as SecureStoreAddBody, secureStore as unknown as string);
     }
 
     return true;
@@ -141,7 +145,7 @@ routes.push(AddManySecureStore);
  * @class GetSecureStore
  */
 class GetSecureStore extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('secure-store/:id', 'GET SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.LAMBDA;
@@ -171,9 +175,11 @@ class GetSecureStore extends Route {
 
     // streamFirst() rejects rather than resolving falsy when the stream ends with no data,
     // so an empty result has to be caught here to surface the intended 400 error.
-    let secureStore;
+    let secureStore: SecureStore | null;
     try {
-      secureStore = await Helpers.streamFirst(await Model.getCoreModel(SecureStoreSchemaModel).find(query));
+      secureStore = await Helpers.streamFirst<SecureStore>(
+        await Model.getCoreModel(SecureStoreSchemaModel).find(query),
+      );
     } catch (_err: unknown) {
       secureStore = null;
     }
@@ -185,7 +191,7 @@ class GetSecureStore extends Route {
     return secureStore;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: SecureStore) {
     return validate;
   }
 }
@@ -195,7 +201,7 @@ routes.push(GetSecureStore);
  * @class FindSecureStore
  */
 class FindSecureStore extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'secure-store/name/:name',
       'FIND SECURE STORE BY NAME',
@@ -207,7 +213,7 @@ class FindSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown, { name: string }>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -236,7 +242,7 @@ class FindSecureStore extends Route {
     return secureStore;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: SecureStore) {
     return validate;
   }
 }
@@ -246,7 +252,7 @@ routes.push(FindSecureStore);
  * @class UpdateSecureStore
  */
 class UpdateSecureStore extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('secure-store/:id', 'UPDATE SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.PUT;
     this.authType = Route.Constants.Type.APP;
@@ -256,7 +262,7 @@ class UpdateSecureStore extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -299,7 +305,8 @@ class UpdateSecureStore extends Route {
     };
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  // _validate replaced the body with the validated updates
+  override _exec(req: RequestWithBody<UpdatePathBody[]>, res: Response, validate: { id: string }) {
     return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, validate.id);
   }
 }
@@ -309,7 +316,7 @@ routes.push(UpdateSecureStore);
  * @class BulkUpdateSecureStore
  */
 class BulkUpdateSecureStore extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'secure-store/bulk/update',
       'BULK UPDATE SECURE STORE',
@@ -321,7 +328,7 @@ class BulkUpdateSecureStore extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -355,10 +362,10 @@ class BulkUpdateSecureStore extends Route {
       }
     }
 
-    return req.body;
+    return req.body as BulkUpdateItem<UpdatePathBody[]>[];
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate: BulkUpdateItem<UpdatePathBody[]>[]) {
     for await (const item of validate) {
       await Model.getCoreModel(SecureStoreSchemaModel).updateByPath(item.body, item.id, null);
     }
@@ -371,14 +378,14 @@ routes.push(BulkUpdateSecureStore);
  * @class SearchSecureStoreList
  */
 class SearchSecureStoreList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('secure-store', 'SEARCH SECURE STORE LIST', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.LAMBDA;
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchListBody<SecureStore> | undefined>, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -386,8 +393,9 @@ class SearchSecureStoreList extends Route {
 
     const result: QueryParams<SecureStore> = {
       query: {},
-      skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
-      limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
+      // parseInt takes numbers too, it converts them to a string first
+      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
+      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
       sort: req.body && req.body.sort ? req.body.sort : {},
       project: req.body && req.body.project ? req.body.project : false,
     };
@@ -430,7 +438,7 @@ routes.push(SearchSecureStoreList);
  * @class DeleteSecureStore
  */
 class DeleteSecureStore extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('secure-store/:id', 'DELETE SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.APP;
@@ -464,7 +472,7 @@ class DeleteSecureStore extends Route {
     return secureStore;
   }
 
-  override async _exec(req: Request, res: Response, secureStore) {
+  override async _exec(req: Request, res: Response, secureStore: SecureStore) {
     await Model.getCoreModel(SecureStoreSchemaModel).rm(secureStore.id);
     return true;
   }
@@ -475,7 +483,7 @@ routes.push(DeleteSecureStore);
  * @class SecureStoreCount
  */
 class SecureStoreCount extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('secure-store/count', 'COUNT SECURE STORES', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.LAMBDA;
@@ -484,7 +492,7 @@ class SecureStoreCount extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<CountBody<SecureStore> | undefined>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);

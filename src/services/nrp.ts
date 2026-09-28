@@ -17,6 +17,20 @@
 import * as redis from '@redis/client';
 
 /**
+ * The message published on `app-schema:updated`.
+ */
+export interface AppSchemaUpdatedMessage {
+  appId: string;
+}
+
+/**
+ * The message published on `dataShare:activated`.
+ */
+export interface DataShareActivatedMessage {
+  appDataSharingId: string;
+}
+
+/**
  * Redis client options interface
  */
 interface RedisOptions {

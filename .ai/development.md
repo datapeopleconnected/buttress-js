@@ -15,8 +15,8 @@ npm run build          # clean + tsc + copy non-.ts files from src/ to dist/
 npm run watch          # watch mode (tsc -w + copyfiles --watch in parallel)
 ```
 
-Source is TypeScript in `src/`, compiled to `dist/` (nodenext ESM, target ES2024, `strict: true`,
-`noImplicitAny: false` — see [tsconfig.json](../tsconfig.json)). **Nothing runs against `src/` directly**
+Source is TypeScript in `src/`, compiled to `dist/` (nodenext ESM, target ES2024, `strict: true`, which
+includes `noImplicitAny` — see [tsconfig.json](../tsconfig.json)). **Nothing runs against `src/` directly**
 — processes (`bin/*.sh`), unit tests, and e2e tests all import from `dist/`. Always rebuild after
 changing `src/` before running tests or starting a process locally.
 
@@ -34,11 +34,26 @@ npm run check            # tsc --noEmit && lint && format && licence-check — t
 
 The pre-commit hook (`.husky/pre-commit`) runs `licence-check` + `build` on every commit — a commit will
 fail if a new/edited `src/*.ts` file is missing the license header or the build breaks. ESLint config
-([eslint.config.mjs](../eslint.config.mjs)): `max-len` 150 (ignoring strings/template literals),
-`@typescript-eslint/no-explicit-any` is a warning (not an error — `any` is used pervasively in this
-codebase, don't treat `no-explicit-any` warnings as things that must be fixed). Prettier: single quotes,
-trailing commas, 120 print width, 2-space indent, semicolons — see
-[.prettierrc.json](../.prettierrc.json).
+([eslint.config.mjs](../eslint.config.mjs)): `max-len` 150 (ignoring strings/template literals), and
+`@typescript-eslint/no-explicit-any` is an error. Prettier: single quotes, trailing commas, 120 print
+width, 2-space indent, semicolons — see [.prettierrc.json](../.prettierrc.json).
+
+### Types
+
+With `noImplicitAny` on and `no-explicit-any` an error, every declaration needs a real type:
+
+- Values from outside (request bodies, `JSON.parse`, `@buttress/api` and isolated-vm results, NRP
+  messages) are `unknown` or a described shape at the point they come in: annotate the variable
+  (`const msg: AppDeletedMessage = JSON.parse(json)`) or type the request
+  (`RequestWithBody<TBody, TParams>` from [src/types/routes.ts](../src/types/routes.ts)).
+- Shared shapes live in [src/types/](../src/types): `datastore.ts` (the adapter contract's ids,
+  documents, queries and update-by-path bodies), `schema.ts`, `bjs-query.ts`, `routes.ts`,
+  `bjs-nrp-objects.ts`. Entity types (`App`, `Token`, ...) live with their core model and are type
+  aliases rather than interfaces, so they're assignable to `AdapterDocument` (`Record<string, unknown>`).
+- npm packages without types get a minimal local declaration in `src/types/<package>.d.ts`
+  (`object-hash`, `morgan`, `pug`, `randomstring`, `on-finished`, `@dpc/node-env-obj`).
+- Entity ids are typed `string` but are `ObjectId`s at runtime with the Mongo adapter; parameters that
+  take either use `AdapterIdInput`, and `BjsQuery` lets `id`/`_xxxId` fields take an `ObjectId`.
 
 ## Tests
 

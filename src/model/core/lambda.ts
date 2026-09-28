@@ -28,6 +28,8 @@ import StandardModel from '../type/standard.js';
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 import Logging from '../../helpers/logging.js';
+import { Services } from '../../bootstrap.js';
+import { AdapterIdInput } from '../../types/datastore.js';
 
 import DeploymentSchemaModel from './deployment.js';
 import LambdaExecutionSchemaModel from './lambda-execution.js';
@@ -35,7 +37,8 @@ import TokenSchemaModel, { PolicyProperties, Token } from './token.js';
 import LambdaSchemaModel from './lambda.js';
 import { App } from './app.js';
 
-export interface Lambda {
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type Lambda = {
   id: string;
   name: string;
   type: 'PRIVATE' | 'PUBLIC';
@@ -76,12 +79,34 @@ export interface Lambda {
   _appId: string;
   createdAt: Date;
   updatedAt: Date;
-}
+};
+
+type LambdaTrigger = Lambda['trigger'][number];
+
+// A trigger as posted to the API, with the settings for its type, the schema defaults the rest
+export type LambdaTriggerBody =
+  | { type?: 'CRON'; cron?: Partial<LambdaTrigger['cron']> }
+  | { type: 'PATH_MUTATION'; pathMutation?: Partial<LambdaTrigger['pathMutation']> }
+  | { type: 'API_ENDPOINT'; apiEndpoint: Partial<LambdaTrigger['apiEndpoint']> };
+
+// A lambda as posted to the API, the add route checks its name, git and trigger fields are set
+export type LambdaAddBody = {
+  name: string;
+  type?: Lambda['type'];
+  git: Lambda['git'] & {
+    deployments?: {
+      hash: string | null;
+      deployedAt: Date;
+    }[];
+  };
+  trigger: LambdaTriggerBody[];
+  metadata?: Lambda['metadata'];
+};
 
 export default class LambdaModel extends StandardModel<Lambda> {
   static override name = 'Lambda';
 
-  constructor(services) {
+  constructor(services: Services) {
     const schema = LambdaModel.Schema;
     super(schema, null, services);
   }
@@ -271,7 +296,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
    * @param {Object} app - Lambda app
    * @return {Promise} - fulfilled with lambda Object when the database request is completed
    */
-  override async add(body, internals: { auth: Partial<Token>; app: App }): Promise<Lambda> {
+  override async add(body: LambdaAddBody, internals: { auth: Partial<Token>; app: App }): Promise<Lambda> {
     const { auth, app } = internals;
 
     if (!auth.policyProperties) {
@@ -365,7 +390,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
    * @param {Object} app
    * @return {Promise}
    */
-  async gitCloneLambda(lambda: Lambda, policyProperties: PolicyProperties, app: App) {
+  async gitCloneLambda(lambda: LambdaAddBody, policyProperties: NonNullable<PolicyProperties>, app: App) {
     const name = lambda?.name;
     const url = lambda?.git?.url;
     const branch = lambda?.git?.branch;
@@ -407,7 +432,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
     }
   }
 
-  async gitFolderClone(gitHash, branch, name, url) {
+  async gitFolderClone(gitHash: string | null, branch: string | null, name: string, url: string | null) {
     if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${gitHash}`)) return;
 
     // Check to see if the requested git hash exists or just make sure the branch exists if we're using HEAD.
@@ -428,7 +453,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
   }
 
   async pullLambdaCode(
-    lambda,
+    lambda: Lambda,
     lambdaDeployInfo: {
       branch?: string;
       hash?: string;
@@ -470,10 +495,12 @@ export default class LambdaModel extends StandardModel<Lambda> {
 
         await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${gitHash}`);
 
-        const entryDir = path.dirname(entryFilePath);
+        // A stored lambda has an entry file, the schema requires it
+        const entryDir = path.dirname(entryFilePath as string);
         const lambdaDir = `${Config.paths.lambda.code}/${lambdaFolderName}/./${entryDir}`; // Ugly `/./` because I am lazy
         const files = fs.readdirSync(lambdaDir);
-        const entryFile = entryFilePath.split('/').pop();
+        // split always returns at least one part
+        const entryFile = (entryFilePath as string).split('/').pop() as string;
         if (entryFilePath && !files.includes(entryFile)) {
           Logging.log(`[${LambdaModel.name}] No such file ${entryFile} - ${lambda.name} ${gitHash} ${branch}`);
           throw new Helpers.Errors.RequestError(404, `entry_file_not_found`);
@@ -525,7 +552,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
    * @param {Object} data - lambda new data deplyoment
    * @return {Promise} - resolves when save operation is completed
    */
-  async setDeployment(lambdaId, data) {
+  async setDeployment(lambdaId: AdapterIdInput, data: { 'git.branch': string; 'git.hash': string }) {
     const lambdaLastDeployment = {
       hash: data['git.hash'],
       deployedAt: Sugar.Date.create('now'),

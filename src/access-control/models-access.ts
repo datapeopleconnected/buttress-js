@@ -24,7 +24,7 @@ import { parsedPolicyConfig } from './index.js';
 import { BjsQuery, QueryParams } from '../types/bjs-query.js';
 import StandardModel from '../model/type/standard.js';
 
-export async function find<T extends StandardModel>(
+export async function find<T extends StandardModel<unknown>>(
   model: T,
   query: QueryParams<object>,
   ac: { policyConfigs: parsedPolicyConfig[] },
@@ -50,7 +50,15 @@ export async function find<T extends StandardModel>(
     // concurrently (the actual per-document datastore stream), now that every policy's query is
     // already known to be valid.
     preparedQueries.forEach((combined) => {
-      const result = model.find(combined.query, {}, combined.limit, combined.skip, combined.sort, combined.project);
+      // Not awaited, so this only works for models whose find is synchronous, a federated model's isn't
+      const result = model.find(
+        combined.query,
+        {},
+        combined.limit,
+        combined.skip,
+        combined.sort,
+        combined.project,
+      ) as Stream.Readable;
 
       result.pipe(resStream, { end: false });
       result.on('end', () => {
@@ -76,7 +84,7 @@ export async function find<T extends StandardModel>(
   );
 }
 
-export async function count<T extends StandardModel>(
+export async function count<T extends StandardModel<unknown>>(
   model: T,
   query: QueryParams<object>,
   ac: { policyConfigs: parsedPolicyConfig[] },

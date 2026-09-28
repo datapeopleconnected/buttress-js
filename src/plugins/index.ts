@@ -113,7 +113,7 @@ class Plugins extends EventEmitter {
 		const pluginDirs = await this._findPluginEntryFiles(Config.paths.plugins);
 		for (const pluginDir of pluginDirs) {
 			try {
-				const plugin = new (await import(pluginDir))(this.appType, this.processRole, this.infrastructureRole);
+				const plugin: Plugin = new (await import(pluginDir))(this.appType, this.processRole, this.infrastructureRole);
 				this.attachListeners(plugin);
 				if (plugin.initialise) {
 					await plugin.initialise();

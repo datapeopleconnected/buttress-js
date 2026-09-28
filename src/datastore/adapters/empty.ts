@@ -17,16 +17,18 @@ import { ObjectId } from 'bson';
 
 import AbstractAdapter from '../abstract-adapter.js';
 
+import { AdapterIdInput } from '../../types/datastore.js';
+
 class AdapterId {
-  static new(id?: string) {
+  static new(id?: AdapterIdInput) {
     return new ObjectId(id);
   }
 
-  static isValid(id: string) {
-    return ObjectId.isValid(id);
+  static isValid(id: unknown) {
+    return ObjectId.isValid(id as Parameters<typeof ObjectId.isValid>[0]);
   }
 
-  static instanceOf(id: string | ObjectId) {
+  static instanceOf(id: unknown) {
     return id instanceof ObjectId;
   }
 }

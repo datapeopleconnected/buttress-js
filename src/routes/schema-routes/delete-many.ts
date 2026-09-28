@@ -14,7 +14,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Response, Request } from 'express';
+import type { ObjectId } from 'bson';
 import { QueryParams } from '../../types/bjs-query.js';
+import type { RequestWithBody } from '../../types/routes.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -42,9 +44,9 @@ export default class DeleteMany extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<string[] | ObjectId[]>, _res: Response) {
     const model = await this.routeModel();
-    let ids = req.body;
+    let ids: string[] | ObjectId[] = req.body;
 
     if (!ids) {
       this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
@@ -80,7 +82,7 @@ export default class DeleteMany extends Route {
     return ids;
   }
 
-  override async _exec(_req: Request, _res: Response, ids: string[]) {
+  override async _exec(_req: Request, _res: Response, ids: ObjectId[]) {
     await (await this.routeModel()).rmBulk(ids);
     return true;
   }

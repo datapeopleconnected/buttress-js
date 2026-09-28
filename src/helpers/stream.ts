@@ -21,14 +21,24 @@ interface SourceHolder {
   queued: number;
 }
 
-export class SortedStreams extends Readable {
+interface QueuedChunk<T> {
+  chunk: T;
+  sourceIdx: number;
+}
+
+/**
+ * Payload of the `chunkSent` event, emitted once a chunk has been pushed downstream.
+ */
+export type ChunkSentEvent<T> = QueuedChunk<T>;
+
+export class SortedStreams<T = unknown> extends Readable {
   private _sources: SourceHolder[];
 
   private _sourcesClosed: boolean;
 
-  private _queue: any[];
+  private _queue: QueuedChunk<T>[];
 
-  private _compareFn: (a: any, b: any) => number;
+  private _compareFn: (a: T, b: T) => number;
 
   private _pauseUntilRead: boolean;
 
@@ -38,7 +48,7 @@ export class SortedStreams extends Readable {
 
   public limit: number;
 
-  constructor(sources: Readable[], compareFn?: (a: any, b: any) => number, limit: number = 0) {
+  constructor(sources: Readable[], compareFn?: (a: T, b: T) => number, limit: number = 0) {
     super({ objectMode: true });
 
     this._compareFn = compareFn || this._defaultCompare;
@@ -68,7 +78,7 @@ export class SortedStreams extends Readable {
 
   _setupListeners() {
     this._sources.forEach((holder, idx) => {
-      holder.source.on('data', (chunk) => this._handleSourceChunk(chunk, idx));
+      holder.source.on('data', (chunk: T) => this._handleSourceChunk(chunk, idx));
       holder.source.on('end', () => this._handleSourceEnd(holder));
       if (holder.source.isPaused()) holder.source.resume();
     });
@@ -118,7 +128,7 @@ export class SortedStreams extends Readable {
       return;
     }
 
-    this.emit('chunkSent', { chunk: holder.chunk, sourceIdx: holder.sourceIdx });
+    this.emit('chunkSent', { chunk: holder.chunk, sourceIdx: holder.sourceIdx } satisfies ChunkSentEvent<T>);
 
     this._sources[holder.sourceIdx].queued--;
     this.sent++;
@@ -130,7 +140,7 @@ export class SortedStreams extends Readable {
   }
 
   // Source event handlers
-  _handleSourceChunk(chunk: any, sourceIdx: number) {
+  _handleSourceChunk(chunk: T, sourceIdx: number) {
     this._enqueue({ chunk, sourceIdx });
     this._sources[sourceIdx].queued++;
 
@@ -144,30 +154,31 @@ export class SortedStreams extends Readable {
   }
 
   // Queue management
-  _enqueue(chunk: any) {
+  _enqueue(chunk: QueuedChunk<T>) {
     // TODO: Add a cap on the queu
     // TODO: Handle the case where the queue is full and way may need to discard some items.
     this._queue.push(chunk);
     this._queue = this._queue.sort((a, b) => this._compareFn(a.chunk, b.chunk));
   }
-  _dequeue() {
+  _dequeue(): QueuedChunk<T> | null {
     if (this._queue.length === 0) return null;
 
     // If any of the sources are still open, and have less than x items then we want to wait.
     if (this._sources.some((holder) => !holder.closed && holder.queued < 1)) return null;
 
-    return this._queue.shift();
+    // The length check above guarantees there's an item to shift.
+    return this._queue.shift() as QueuedChunk<T>;
   }
-  _defaultCompare(a: any, b: any) {
+  _defaultCompare(a: T, b: T) {
     if (typeof a === 'number' && typeof b === 'number') {
       return a - b;
     } else {
-      a = a.toString();
-      b = b.toString();
+      const aStr = (a as object).toString();
+      const bStr = (b as object).toString();
 
-      if (a == b) return 0;
+      if (aStr == bStr) return 0;
 
-      return a > b ? 1 : -1;
+      return aStr > bStr ? 1 : -1;
     }
   }
 }
@@ -175,7 +186,7 @@ export class SortedStreams extends Readable {
 export const parseJsonArrayStream = () =>
   new Transform({
     objectMode: true,
-    transform(chunk, encoding, callback) {
+    transform(chunk: Buffer | string, encoding, callback) {
       // Convert the chunk to a string and split it by newline characters
       const lines = chunk.toString().split('\n');
 
@@ -189,7 +200,7 @@ export const parseJsonArrayStream = () =>
         if (trimmedLine !== '') {
           // TODO: replace JSON.parse with a tokenizer
           try {
-            const obj = JSON.parse(trimmedLine);
+            const obj: unknown = JSON.parse(trimmedLine);
             this.push(obj);
           } catch (err: unknown) {
             console.error(err);

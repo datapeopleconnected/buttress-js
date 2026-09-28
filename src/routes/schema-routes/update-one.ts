@@ -13,8 +13,10 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { Response, Request } from 'express';
+import { Response } from 'express';
+import type { ObjectId } from 'bson';
 import { QueryParams } from '../../types/bjs-query.js';
+import { AdapterDocument, UpdatePathBody } from '../../types/datastore.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -25,6 +27,7 @@ import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
+import type { RequestWithBody } from '../../types/routes.js';
 
 /**
  * @class UpdateOne
@@ -48,11 +51,12 @@ export default class UpdateOne extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     const model = await this.routeModel();
 
     const { validation, body } = model.validateUpdate(req.body);
     req.body = body;
+    // BUG: req.body is now the validated array, so the messages below always report the path as undefined
     if (!validation.isValid) {
       if (validation.isPathValid === false) {
         this.log(
@@ -74,13 +78,13 @@ export default class UpdateOne extends Route {
         if (validation.isMissingRequired) {
           throw new Helpers.Errors.RequestError(
             400,
-            `${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
+            `${this.schemaName}: Missing required property updating ${(req.body as { path?: string }).path}: ${validation.missingRequired}`,
           );
         }
 
         throw new Helpers.Errors.RequestError(
           400,
-          `${this.schemaName}: Update value is invalid for path ${req.body.path}: ${validation.invalidValue}`,
+          `${this.schemaName}: Update value is invalid for path ${(req.body as { path?: string }).path}: ${validation.invalidValue}`,
         );
       }
     }
@@ -107,7 +111,7 @@ export default class UpdateOne extends Route {
       throw new Helpers.Errors.RequestError(400, `invalid_id`);
     }
 
-    let objectId;
+    let objectId: ObjectId;
     try {
       objectId = model.createId(id);
     } catch (_err) {
@@ -117,9 +121,9 @@ export default class UpdateOne extends Route {
 
     const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
     const rxsScoped = await ACM.find(model, findParams, req.context.ac);
-    let scopedEntity;
+    let scopedEntity: AdapterDocument | null;
     try {
-      scopedEntity = await Helpers.streamFirst(rxsScoped);
+      scopedEntity = await Helpers.streamFirst<AdapterDocument>(rxsScoped);
     } catch (_err) {
       scopedEntity = null;
     }
@@ -134,7 +138,12 @@ export default class UpdateOne extends Route {
     };
   }
 
-  override async _exec(req: Request, _res: Response, validate: { id: string; sourceId: string | undefined }) {
-    return (await this.routeModel()).updateByPath(req.body, validate.id, validate.sourceId);
+  override async _exec(
+    req: RequestWithBody<unknown>,
+    _res: Response,
+    validate: { id: string; sourceId: string | undefined },
+  ) {
+    // _validate replaced the body with the validated updates
+    return (await this.routeModel()).updateByPath(req.body as UpdatePathBody[], validate.id, validate.sourceId);
   }
 }

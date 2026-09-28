@@ -14,7 +14,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Response, Request } from 'express';
+import type { ObjectId } from 'bson';
 import { QueryParams } from '../../types/bjs-query.js';
+import { AdapterDocument, UpdatePathBody } from '../../types/datastore.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -23,8 +25,26 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
+import { UpdateValidationResult } from '../../model/shared.js';
 
 import * as ACM from '../../access-control/models-access.js';
+import type { RequestWithBody } from '../../types/routes.js';
+
+// One entity's updates from the request body. _validate merges the updates for the same entity, and sets whether
+// they can be applied in `validation`.
+type UpdateManyBody = {
+  id: string;
+  sourceId?: string;
+  body: UpdatePathBody | UpdatePathBody[];
+  validation?: true | { code: number; message: string };
+};
+
+// validateUpdate's result as _validate reads it. `body` is always an array, so the `path` and `sourceId` read off it
+// are undefined, as is `missingRequired` once `validation` is valid.
+type ValidatedUpdate = {
+  validation: UpdateValidationResult | { readonly isValid: true; missingRequired?: undefined };
+  body: UpdatePathBody[] & { path?: undefined; sourceId?: undefined };
+};
 
 /**
  * @class UpdateMany
@@ -42,7 +62,7 @@ export default class UpdateMany extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     const model = await this.routeModel();
 
     if (!Array.isArray(req.body)) {
@@ -51,7 +71,7 @@ export default class UpdateMany extends Route {
     }
 
     // Reduce down duplicate entity updates into one object
-    const data = req.body.reduce((reducedUpdates, update) => {
+    const data = (req.body as UpdateManyBody[]).reduce<UpdateManyBody[]>((reducedUpdates, update) => {
       const existing = reducedUpdates.find((u) => u.id === update.id);
 
       if (!existing) {
@@ -66,7 +86,7 @@ export default class UpdateMany extends Route {
     }, []);
 
     for await (const update of data) {
-      const { validation, body } = model.validateUpdate(update.body);
+      const { validation, body }: ValidatedUpdate = model.validateUpdate(update.body);
       update.body = body;
 
       if (!validation.isValid) {
@@ -116,7 +136,7 @@ export default class UpdateMany extends Route {
         continue;
       }
 
-      let objectId;
+      let objectId: ObjectId;
       try {
         objectId = model.createId(update.id);
       } catch (_err) {
@@ -129,9 +149,9 @@ export default class UpdateMany extends Route {
 
       const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
       const rxsScoped = await ACM.find(model, findParams, req.context.ac);
-      let scopedEntity;
+      let scopedEntity: AdapterDocument | null;
       try {
-        scopedEntity = await Helpers.streamFirst(rxsScoped);
+        scopedEntity = await Helpers.streamFirst<AdapterDocument>(rxsScoped);
       } catch (_err) {
         scopedEntity = null;
       }
@@ -150,19 +170,17 @@ export default class UpdateMany extends Route {
     return data;
   }
 
-  override async _exec(_req: Request, _res: Response, _data: unknown) {
+  override async _exec(_req: Request, _res: Response, _data: UpdateManyBody[]) {
     const model = await this.routeModel();
 
     const output: {
       id: string;
-      sourceId: string;
+      sourceId?: string;
       results: unknown;
       validation?: unknown;
     }[] = [];
 
-    type UpdateManyBody = { id: string; sourceId: string; body: unknown; validation?: unknown };
-
-    for await (const body of _data as UpdateManyBody[]) {
+    for await (const body of _data) {
       // Items that failed validation (bad path/value, missing id, or outside the caller's
       // access-control scope) must not be applied, only reported back.
       if (body.validation !== true) {

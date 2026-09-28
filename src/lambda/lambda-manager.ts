@@ -20,6 +20,7 @@ import { exec as cpExec } from 'node:child_process';
 
 import { v4 as uuidv4 } from 'uuid';
 import ObjectHash from 'object-hash';
+import type { ObjectId } from 'bson';
 import NodeRedisPubsub from '../services/nrp.js';
 
 import createConfig from '@dpc/node-env-obj';
@@ -31,6 +32,7 @@ import * as Helpers from '../helpers/index.js';
 
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
 import { NotifyLambdaPathChangeMessage } from '../routes/route.js';
+import type { Services } from '../bootstrap.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
 
@@ -50,10 +52,13 @@ export enum ExecPriority {
 interface PathMutation {
   id: string;
   gitHash: string;
-  type: string;
+  type: LambdaExecution['triggerType'];
   paths: string[];
   appId: string;
 }
+
+// Lambdas read from the datastore have ObjectId ids, ones parsed from an NRP message have strings.
+type PathMutationLambda = Omit<Lambda, 'id' | '_appId'> & { id: string | ObjectId; _appId: string | ObjectId };
 
 interface PathMutationCR {
   paths: string[];
@@ -65,7 +70,7 @@ interface PathMutationDebounce {
   id: string;
   timer?: NodeJS.Timeout;
   pathMutation: boolean;
-  triggerType: string;
+  triggerType: LambdaExecution['triggerType'];
   lambdaId: string;
   executionId?: string;
   gitHash: string;
@@ -112,10 +117,10 @@ export default class LambdaManager {
 
   private _timeout?: NodeJS.Timeout;
 
-  constructor(services) {
+  constructor(services: Services) {
     this.name = 'LAMBDA MANAGER';
 
-    this.__nrp = services.get('nrp');
+    this.__nrp = services.get('nrp') as NodeRedisPubsub;
 
     Logging.logDebug(`[${this.name}] Created instance`);
 
@@ -153,8 +158,8 @@ export default class LambdaManager {
       this._pathsMutation = [];
       await this._loadLambdaPathsMutation();
     });
-    this.__nrp?.on('rest:worker:add-path-mutation', async (lambda) => {
-      lambda = JSON.parse(lambda);
+    this.__nrp?.on('rest:worker:add-path-mutation', async (json: string) => {
+      const lambda: Lambda = JSON.parse(json);
       this.__populateLambdaPathsMutation(lambda);
     });
   }
@@ -316,7 +321,7 @@ export default class LambdaManager {
     }
   }
 
-  __populateLambdaPathsMutation(lambda) {
+  __populateLambdaPathsMutation(lambda: PathMutationLambda) {
     const trigger = lambda.trigger.find((t) => t.type === 'PATH_MUTATION');
     if (!trigger) return;
 
@@ -375,7 +380,7 @@ export default class LambdaManager {
   }
 
   async _createLambdaExecution(
-    type: string,
+    type: LambdaExecution['triggerType'],
     lambdaId: string,
     gitHash: string,
     appId: string,
@@ -618,7 +623,7 @@ export default class LambdaManager {
    * @param {String} schema
    * @return {Boolean}
    */
-  _checkMatchingPaths(path, itemPath, schema) {
+  _checkMatchingPaths(path: string, itemPath: string, schema: string): boolean {
     const isWildedCardRootPath = itemPath.split(`${schema}.*`).join('');
     if (!isWildedCardRootPath || (isWildedCardRootPath !== itemPath && path === schema)) return true;
 
@@ -636,8 +641,9 @@ export default class LambdaManager {
       .shift();
     if (lambdaPathId !== crPathId && lambdaPathId !== '*') return false;
 
-    const lambdaRelativePath = itemPath.split(`${schema}.${lambdaPathId}`).pop();
-    const crRelativePath = path.split(`${crPathId}`).pop();
+    // split() always returns at least one element, so pop() can't return undefined.
+    const lambdaRelativePath = itemPath.split(`${schema}.${lambdaPathId}`).pop() as string;
+    const crRelativePath = path.split(`${crPathId}`).pop() as string;
     return this._checkMatchingRelativePaths(lambdaRelativePath, crRelativePath);
   }
 
@@ -647,15 +653,16 @@ export default class LambdaManager {
    * @param {String} crPath
    * @return {Boolean}
    */
-  _checkMatchingRelativePaths(lambdaPath, crPath) {
+  _checkMatchingRelativePaths(lambdaPath: string, crPath: string): boolean {
     lambdaPath = lambdaPath.replace('.length', '');
     if (lambdaPath === '*' || lambdaPath === crPath || !crPath) return true;
     if (lambdaPath.includes('*')) {
       const wildCardedPath = lambdaPath.split('.*').shift();
       if (!wildCardedPath) return true;
       if (!crPath.includes(wildCardedPath)) return false;
-      const lambdaObservedPath = lambdaPath.split(`${wildCardedPath}.*`).pop();
-      const crObservedPath = crPath.split(`${wildCardedPath}`).pop();
+      // split() always returns at least one element, so pop() can't return undefined.
+      const lambdaObservedPath = lambdaPath.split(`${wildCardedPath}.*`).pop() as string;
+      const crObservedPath = crPath.split(`${wildCardedPath}`).pop() as string;
 
       if (!lambdaObservedPath && crObservedPath) return true;
       if (lambdaObservedPath.includes('*')) {

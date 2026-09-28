@@ -21,14 +21,16 @@ import * as Helpers from '../../helpers/index.js';
 import ActivitySchemaModel, { Activity } from '../../model/core/activity.js';
 import TokenSchemaModel from '../../model/core/token.js';
 import AppSchemaModel from '../../model/core/app.js';
+import { Services } from '../../bootstrap.js';
+import type { CoreRouteClass } from '../../types/routes.js';
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
 
 /**
  * @class GetActivityList
  */
 class GetActivityList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('activity', 'GET ACTIVITY LIST', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.SYSTEM;
@@ -62,14 +64,14 @@ routes.push(GetActivityList);
  * @class GetActivity
  */
 class GetActivity extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('activity/:id', 'GET ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.SYSTEM;
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request<{ id: string }>, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `missing_required_fields`);
@@ -95,7 +97,7 @@ routes.push(GetActivity);
  * @class DeleteAllActivity
  */
 class DeleteAllActivity extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('activity', 'DELETE ALL ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.SYSTEM;

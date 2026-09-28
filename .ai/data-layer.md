@@ -93,6 +93,13 @@ Adding a new backing store means adding a new adapter here and a new `case` in `
 nothing else in the model layer needs to change, since `StandardModel` only calls generic `adapter.*`
 methods.
 
+The contract is typed on [AbstractAdapter](../src/datastore/abstract-adapter.ts), with the shared shapes
+in [src/types/datastore.ts](../src/types/datastore.ts). Adapters return untyped documents
+(`AdapterDocument`); `StandardModel<TDocument>` casts them to its document type (`findById` →
+`Promise<TDocument>`, `findOne` → `Promise<TDocument | null>`). `find`/`findAll` return
+`AdapterFindResult` (`Readable | Promise<Readable>`): the Mongo adapter's find is synchronous but the
+Buttress adapter's and `RemoteCombinedModel`'s aren't, so await the result before using it as a stream.
+
 ## Core model quirks worth knowing before touching them
 
 - `TokenSchemaModel` ([src/model/core/token.ts](../src/model/core/token.ts)) generates the actual token

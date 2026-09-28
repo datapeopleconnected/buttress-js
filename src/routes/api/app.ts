@@ -21,17 +21,20 @@ import Model from '../../model/index.js';
 import Sugar from '../../helpers/sugar.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
-import AppSchemaModel, { App } from '../../model/core/app.js';
+import AppSchemaModel, { App, AppAddBody } from '../../model/core/app.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import { Schema } from '../../helpers/schema.js';
 import { QueryParams } from '../../types/bjs-query.js';
+import { UpdatePathBody } from '../../types/datastore.js';
+import { Services } from '../../bootstrap.js';
+import type { CoreRouteClass, CountBody, RequestWithBody, SearchBody } from '../../types/routes.js';
 
 /**
  * @class GetAppList
  */
 class GetAppList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('app', 'GET APP LIST', services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.APP;
@@ -61,14 +64,14 @@ class GetAppList extends Route {
  * @class SearchAppList
  */
 class SearchAppList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('app', 'GET APP LIST', services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.SEARCH;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchBody<App> | undefined>, _res: Response) {
     const result: QueryParams<App> = {
       query: {},
     };
@@ -93,7 +96,7 @@ class SearchAppList extends Route {
     return result;
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate: QueryParams<App>) {
     const appsDB = await Helpers.streamAll<App>(await Model.getCoreModel(AppSchemaModel).find(validate.query));
 
     const tokenIds = appsDB.map((app) => Model.getCoreModel(TokenSchemaModel).createId(app._tokenId));
@@ -120,7 +123,7 @@ class SearchAppList extends Route {
  * @class GetApp
  */
 class GetApp extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     // Should change to app apiPath instead of ID
     super('app/:id', 'GET APP', services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
@@ -149,11 +152,12 @@ class GetApp extends Route {
     return app;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: App & { tokenValue?: string }) {
     const appToken = Model.getCoreModel(TokenSchemaModel).findById(
       Model.getCoreModel(TokenSchemaModel).createId(validate._tokenId),
     );
-    validate.tokenValue = appToken.value;
+    // BUG: findById isn't awaited, so this reads value off the promise and is always undefined
+    validate.tokenValue = (appToken as Promise<Token> & { value?: string }).value;
 
     return validate;
   }
@@ -163,15 +167,15 @@ class GetApp extends Route {
  * @class AddApp
  */
 class AddApp extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('app', 'APP ADD', services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.POST;
     this.authType = Route.Constants.Type.SYSTEM;
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
+  override _validate(req: RequestWithBody<AppAddBody>, _res: Response) {
+    return new Promise<boolean>((resolve, reject) => {
       const validation = Model.getCoreModel(AppSchemaModel).validate(req.body);
       if (!validation.isValid) {
         if (validation.missing.length > 0) {
@@ -194,8 +198,9 @@ class AddApp extends Route {
       req.body.policyPropertiesList = req.body.policyPropertiesList || {};
       if (req.body.policyPropertiesList) {
         const policyPropertiesList = Object.keys(req.body.policyPropertiesList).filter((key) => key !== 'query');
+        // It's set by now, TypeScript just can't tell inside the callback
         const validPolicyPropertiesList = policyPropertiesList.every((key) =>
-          Array.isArray(req.body.policyPropertiesList[key]),
+          Array.isArray(req.body.policyPropertiesList![key]),
         );
         if (!validPolicyPropertiesList) {
           this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
@@ -215,7 +220,7 @@ class AddApp extends Route {
     });
   }
 
-  override _exec(req: Request, _res: Response, _validate) {
+  override _exec(req: RequestWithBody<AppAddBody>, _res: Response, _validate: boolean) {
     return new Promise((resolve, reject) => {
       Model.getCoreModel(AppSchemaModel)
         .add(req.body)
@@ -234,7 +239,7 @@ class AddApp extends Route {
  * @class DeleteApp
  */
 class DeleteApp extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('app/:id', 'DELETE APP', services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.SYSTEM;
@@ -258,7 +263,7 @@ class DeleteApp extends Route {
     return app;
   }
 
-  override async _exec(req: Request, res: Response, app) {
+  override async _exec(req: Request, res: Response, app: App) {
     await Model.getCoreModel(AppSchemaModel).rm(app);
     return true;
   }
@@ -268,7 +273,7 @@ class DeleteApp extends Route {
  * @class DeleteAppPolicies
  */
 class DeleteAllApps extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('app', 'DELETE ALL APPS', services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.SYSTEM;
@@ -279,7 +284,7 @@ class DeleteAllApps extends Route {
     return true;
   }
 
-  override async _exec(_req: Request, _res: Response, _validate) {
+  override async _exec(_req: Request, _res: Response, _validate: boolean) {
     // Get a list of system tokens
     const systemTokens = await Helpers.streamAll<Token>(
       await Model.getCoreModel(TokenSchemaModel).find(
@@ -304,11 +309,12 @@ class DeleteAllApps extends Route {
       { id: 1, _tokenId: 1 },
     );
 
-    for await (const app of appApps) {
+    for await (const app of appApps as AsyncIterable<Pick<App, 'id' | '_tokenId'>>) {
       if (systemApps.includes(app.id.toString())) continue;
 
       Logging.logDebug(`Deleting app: ${app.id}`);
-      await Model.getCoreModel(AppSchemaModel).rm(app);
+      // BUG: apiPath isn't projected, so rm can't tell the REST workers which app's routes to deregister
+      await Model.getCoreModel(AppSchemaModel).rm(app as App);
     }
 
     return true;
@@ -319,7 +325,7 @@ class DeleteAllApps extends Route {
  * @class GetAppSchema
  */
 class GetAppSchema extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('app/schema', 'GET APP SCHEMA', services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.USER;
@@ -340,7 +346,7 @@ class GetAppSchema extends Route {
       throw new Helpers.Errors.RequestError(400, `no_authenticated_schema`);
     }
 
-    let schema;
+    let schema: Schema[];
     try {
       schema =
         req.query.rawSchema && req.context.authApp.__rawSchema
@@ -371,7 +377,7 @@ class GetAppSchema extends Route {
     return schema;
   }
 
-  override async _exec(req: Request, res: Response, collections) {
+  override async _exec(req: Request, res: Response, collections: Schema[]) {
     const mergedSchema = req.query.rawSchema
       ? collections
       : await Model.getCoreModel(AppSchemaModel).mergeRemoteSchema(req, collections);
@@ -391,7 +397,7 @@ class GetAppSchema extends Route {
  * @class UpdateAppSchema
  */
 class UpdateAppSchema extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('app/schema', 'UPDATE APP SCHEMA', services, Model.getCoreModel(AppSchemaModel).schemaData);
 
     this.verb = Route.Constants.Verbs.PUT;
@@ -402,7 +408,7 @@ class UpdateAppSchema extends Route {
     this.addSourceId = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
@@ -416,7 +422,7 @@ class UpdateAppSchema extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
     }
 
-    const rawSchema = req.body;
+    const rawSchema: unknown[] = req.body;
 
     const checkedSchema: Schema[] = [];
     // Check the validatiry of the rawSchema
@@ -506,7 +512,7 @@ class UpdateAppSchema extends Route {
  * @class GetAppPolicyPropertyList
  */
 class GetAppPolicyPropertyList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app/policy-property-list{/:apiPath}',
       'GET APP POLICY PROPERTY LIST',
@@ -543,8 +549,9 @@ class GetAppPolicyPropertyList extends Route {
     return app;
   }
 
-  override async _exec(req: Request, res: Response, app) {
-    return app.policyPropertiesList;
+  override async _exec(req: Request, res: Response, app: App | null) {
+    // BUG: app is null if no app has the requested apiPath, which throws here
+    return app!.policyPropertiesList;
   }
 }
 
@@ -552,7 +559,7 @@ class GetAppPolicyPropertyList extends Route {
  * @class SetAppPolicyPropertyList
  */
 class SetAppPolicyPropertyList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app/policy-property-list/:update{/:appId}',
       'SET APP POLICY PROPERTY LIST',
@@ -564,8 +571,8 @@ class SetAppPolicyPropertyList extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
+  override _validate(req: RequestWithBody<App['policyPropertiesList']>, _res: Response) {
+    return new Promise<{ appId: string }>((resolve, reject) => {
       if (!req.context.authApp) {
         this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
         return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
@@ -594,12 +601,13 @@ class SetAppPolicyPropertyList extends Route {
         const currentAppListKeys = app.policyPropertiesList !== null ? Object.keys(app.policyPropertiesList) : [];
         Object.keys(req.body).forEach((key) => {
           if (currentAppListKeys.includes(key)) {
-            req.body[key] = req.body[key]
+            // Each list was checked to be an array above
+            req.body[key] = (req.body[key] as Extract<App['policyPropertiesList'][string], unknown[]>)
               .concat(app.policyPropertiesList[key])
               .filter((v, idx, arr) => arr.indexOf(v) === idx);
           }
         });
-        const postedPropsList = Object.keys(req.body).reduce((obj, key) => {
+        const postedPropsList = Object.keys(req.body).reduce<App['policyPropertiesList']>((obj, key) => {
           if (key === 'query') return obj;
 
           obj[key] = req.body[key];
@@ -614,7 +622,7 @@ class SetAppPolicyPropertyList extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, { appId }: { appId: string }) {
+  override async _exec(req: RequestWithBody<App['policyPropertiesList']>, res: Response, { appId }: { appId: string }) {
     const update = Object.assign({}, req.body);
     if (update.query) delete update.query;
 
@@ -627,7 +635,7 @@ class SetAppPolicyPropertyList extends Route {
  * @class AppCount
  */
 class AppCount extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(`app/count`, `COUNT APPS`, services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.SYSTEM;
@@ -637,7 +645,7 @@ class AppCount extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<CountBody<App> | undefined>, _res: Response) {
     const result: QueryParams<App> = {
       query: {},
     };
@@ -665,7 +673,7 @@ class AppCount extends Route {
     return result;
   }
 
-  override _exec(_req: Request, _res: Response, validateResult) {
+  override _exec(_req: Request, _res: Response, validateResult: QueryParams<App>) {
     return Model.getCoreModel(AppSchemaModel).count(validateResult.query);
   }
 }
@@ -674,7 +682,7 @@ class AppCount extends Route {
  * @class AppUpdateOAuth
  */
 class AppUpdateOAuth extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(`app/:id/oauth`, `UPDATE APPS OAUTH`, services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.PUT;
     this.authType = Route.Constants.Type.SYSTEM;
@@ -684,7 +692,7 @@ class AppUpdateOAuth extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown, { id: string }>, _res: Response) {
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
@@ -698,7 +706,11 @@ class AppUpdateOAuth extends Route {
     return Promise.resolve(true);
   }
 
-  override async _exec(req: Request, _res: Response, _validate) {
+  override async _exec(
+    req: RequestWithBody<{ value: string | string[] }, { id: string }>,
+    _res: Response,
+    _validate: boolean,
+  ) {
     const oAuth = Array.isArray(req.body.value) ? req.body.value : [req.body.value];
     await Model.getCoreModel(AppSchemaModel).updateOAuth(req.params.id, oAuth);
     return true;
@@ -710,7 +722,7 @@ class AppUpdateOAuth extends Route {
  * @class AppUpdate
  */
 class AppUpdate extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(`app/:id`, `UPDATE AN APP`, services, Model.getCoreModel(AppSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.PUT;
     this.authType = Route.Constants.Type.APP;
@@ -720,7 +732,7 @@ class AppUpdate extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
@@ -754,7 +766,8 @@ class AppUpdate extends Route {
     };
   }
 
-  override _exec(req: Request, _res: Response, validate: { id: string }) {
+  // _validate replaced the body with the validated updates
+  override _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
     return Model.getCoreModel(AppSchemaModel).updateByPath(req.body, validate.id);
   }
 }
@@ -778,4 +791,4 @@ export default [
 
   // Register get app at the end to avoid conflicts with app list endpoint
   GetApp,
-];
+] satisfies CoreRouteClass[];

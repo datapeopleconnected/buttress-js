@@ -21,19 +21,25 @@ import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
 
 import Datastore from '../../datastore/index.js';
-import PolicySchemaModel, { Policy } from '../../model/core/policy.js';
+import PolicySchemaModel, { Policy, PolicyAddBody } from '../../model/core/policy.js';
 import TokenSchemaModel from '../../model/core/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import AppSchemaModel from '../../model/core/app.js';
 import { QueryParams } from '../../types/bjs-query.js';
+import { Services } from '../../bootstrap.js';
+import { UpdatePathBody } from '../../types/datastore.js';
+import type { BulkUpdateItem, CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
+
+// _validate requires a version, though add doesn't store it
+type AddPolicyBody = PolicyAddBody & { version?: string };
 
 /**
  * @class GetPolicy
  */
 class GetPolicy extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('policy/:id', 'GET POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.APP;
@@ -61,7 +67,7 @@ class GetPolicy extends Route {
     return policy;
   }
 
-  override _exec(req: Request, res: Response, policy) {
+  override _exec(req: Request, res: Response, policy: Policy) {
     return policy;
   }
 }
@@ -71,7 +77,7 @@ routes.push(GetPolicy);
  * @class GetPolicyList
  */
 class GetPolicyList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('policy', 'GET POLICY LIST', services, Model.getCoreModel(PolicySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.APP;
@@ -124,18 +130,19 @@ routes.push(GetPolicyList);
  * @class SearchPolicyList
  */
 class SearchPolicyList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('policy', 'SEARCH POLICY LIST', services, Model.getCoreModel(PolicySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchListBody<Policy> | undefined>, _res: Response) {
     const result: QueryParams<Policy> = {
       query: {},
-      skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
-      limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
+      // parseInt takes numbers too, it converts them to a string first
+      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
+      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
       sort: req.body && req.body.sort ? req.body.sort : {},
       project: req.body && req.body.project ? req.body.project : false,
     };
@@ -164,7 +171,7 @@ class SearchPolicyList extends Route {
     return result;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<Policy>) {
     return Model.getCoreModel(PolicySchemaModel).find(
       validate.query,
       {},
@@ -181,14 +188,14 @@ routes.push(SearchPolicyList);
  * @class AddPolicy
  */
 class AddPolicy extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('policy', 'ADD POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.POST;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<AddPolicyBody>, _res: Response) {
     const app = req.context.authApp;
     try {
       if (!app || !req.body.selection || !req.body.name || !req.body.config || req.body.config.length < 1) {
@@ -226,7 +233,7 @@ class AddPolicy extends Route {
     }
   }
 
-  override _exec(req: Request, res: Response, validate: { appId: string }) {
+  override _exec(req: RequestWithBody<AddPolicyBody>, res: Response, validate: { appId: string }) {
     return Model.getCoreModel(PolicySchemaModel)
       .add(req.body, validate.appId)
       .then((policy) => {
@@ -246,7 +253,7 @@ routes.push(AddPolicy);
  * @class UpdatePolicy
  */
 class UpdatePolicy extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('policy/:id', 'UPDATE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.PUT;
     this.authType = Route.Constants.Type.APP;
@@ -256,8 +263,8 @@ class UpdatePolicy extends Route {
     this.activityBroadcast = true;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
+  override _validate(req: RequestWithBody<unknown, { id: string }>, _res: Response) {
+    return new Promise<boolean>((resolve, reject) => {
       const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(req.body);
       req.body = body;
       if (!validation.isValid) {
@@ -287,7 +294,8 @@ class UpdatePolicy extends Route {
     });
   }
 
-  override _exec(req: Request, _res: Response, _validate) {
+  // _validate replaced the body with the validated updates
+  override _exec(req: RequestWithBody<UpdatePathBody[], { id: string }>, _res: Response, _validate: boolean) {
     // Update Policy cache
 
     return Model.getCoreModel(PolicySchemaModel).updateByPath(req.body, req.params.id);
@@ -299,7 +307,7 @@ routes.push(UpdatePolicy);
  * @class BulkUpdatePolicy
  */
 class BulkUpdatePolicy extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('policy/bulk/update', 'UPDATE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.POST;
     this.authType = Route.Constants.Type.APP;
@@ -309,7 +317,7 @@ class BulkUpdatePolicy extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(item.body);
       item.body = body;
@@ -335,10 +343,10 @@ class BulkUpdatePolicy extends Route {
       }
     }
 
-    return req.body;
+    return req.body as BulkUpdateItem<UpdatePathBody[]>[];
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate: BulkUpdateItem<UpdatePathBody[]>[]) {
     for await (const item of validate) {
       await Model.getCoreModel(PolicySchemaModel).updateByPath(item.body, item.id);
     }
@@ -351,14 +359,14 @@ routes.push(BulkUpdatePolicy);
  * @class SyncPolicies
  */
 class SyncPolicies extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('policy/sync', 'SYNC POLICIES', services, Model.getCoreModel(PolicySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.POST;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<PolicyAddBody[]>, _res: Response) {
     const app = req.context.authApp;
 
     if (!app || !req.body) {
@@ -383,7 +391,7 @@ class SyncPolicies extends Route {
     };
   }
 
-  override async _exec(req: Request, res: Response, validate: { appId: string }) {
+  override async _exec(req: RequestWithBody<PolicyAddBody[]>, res: Response, validate: { appId: string }) {
     await Model.getCoreModel(PolicySchemaModel).rmAll({
       _appId: validate.appId,
     });
@@ -407,7 +415,7 @@ class SyncPolicies extends Route {
  * @class PolicyCount
  */
 class PolicyCount extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(`policy/count`, `COUNT POLICIES`, services, Model.getCoreModel(PolicySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.APP;
@@ -417,7 +425,7 @@ class PolicyCount extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<CountBody<Policy> | undefined>, _res: Response) {
     const result: QueryParams<Policy> = {
       query: {},
     };
@@ -445,7 +453,7 @@ class PolicyCount extends Route {
     return result;
   }
 
-  override _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult: QueryParams<Policy>) {
     return Model.getCoreModel(PolicySchemaModel).count(validateResult.query);
   }
 }
@@ -457,7 +465,7 @@ routes.push(SyncPolicies);
  * @class DeleteTransientPolicy
  */
 class DeleteTransientPolicy extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'policy/delete-transient-policy',
       'DELETE POLICY BY NAME',
@@ -469,7 +477,7 @@ class DeleteTransientPolicy extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<{ name?: string } | undefined>, _res: Response) {
     const appId = req.context.authApp?.id;
     if (!appId) {
       this.log(`[${this.name}] Missing app id`, Route.LogLevel.ERR);
@@ -483,9 +491,11 @@ class DeleteTransientPolicy extends Route {
 
     // streamFirst() rejects rather than resolving falsy when the stream ends with no data,
     // so an empty result has to be caught here to surface the intended 400 error.
-    let policy;
+    let policy: Policy | null;
     try {
-      policy = await Helpers.streamFirst(await Model.getCoreModel(PolicySchemaModel).find({ name: req.body.name }));
+      policy = await Helpers.streamFirst<Policy>(
+        await Model.getCoreModel(PolicySchemaModel).find({ name: req.body.name }),
+      );
     } catch (_err: unknown) {
       policy = null;
     }
@@ -529,14 +539,14 @@ routes.push(DeleteTransientPolicy);
  * @class DeletePolicy
  */
 class DeletePolicy extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('policy/:id', 'DELETE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown, { id: string }>, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `missing_field`);
@@ -579,7 +589,7 @@ routes.push(DeletePolicy);
  * @class DeleteAppPolicies
  */
 class DeleteAppPolicies extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('policy', 'DELETE ALL APP POLICIES', services, Model.getCoreModel(PolicySchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.APP;

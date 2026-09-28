@@ -18,8 +18,12 @@ import { Request } from 'express';
 
 import * as Helpers from '../helpers/index.js';
 import { PolicyProjection } from '../model/core/policy.js';
+import type { Schema } from '../types/schema.js';
 
 import { ApplicablePolicyConfig, PolicyError } from './index.js';
+import type { RequestWithBody } from '../types/routes.js';
+
+type RequestBody = Record<string, unknown>;
 
 /**
  * @class Projection
@@ -34,7 +38,7 @@ class Projection {
     this._ignoredQueryKeys = ['__crPath', 'project', 'id'];
   }
 
-  async filterPoliciesByPolicyProjection(req: Request, applicablePolicies: ApplicablePolicyConfig[], schema) {
+  async filterPoliciesByPolicyProjection(req: Request, applicablePolicies: ApplicablePolicyConfig[], schema: Schema) {
     const output: ApplicablePolicyConfig[] = [];
 
     for await (const policy of applicablePolicies) {
@@ -53,18 +57,18 @@ class Projection {
   }
 
   async __applyPolicyProjection(
-    req: Request,
+    req: RequestWithBody<RequestBody | RequestBody[] | undefined>,
     projections: PolicyProjection | null,
-    schema,
+    schema: Schema,
   ): Promise<{ [key: string]: number } | false> {
     const requestMethod = req.method;
     const flattenedSchema = Helpers.getFlattenedSchema(schema);
-    let requestBody = req.body ?? {};
+    let requestBody: RequestBody | RequestBody[] = req.body ?? {};
 
     const projectionKeys = Array.isArray(projections?.keys)
-      ? projections.keys.filter((key): key is string => typeof key === 'string')
+      ? projections.keys.filter((key: unknown): key is string => typeof key === 'string')
       : [];
-    const projection = {};
+    const projection: { [key: string]: number } = {};
 
     if (projectionKeys.length > 0) {
       projectionKeys.forEach((key) => {
@@ -83,7 +87,8 @@ class Projection {
         removedPaths.forEach((i) => {
           // ? There maybe a required field here but the user does not have access to it.
           const config = flattenedSchema[i];
-          requestBody[i] = Helpers.Schema.getPropDefault(config);
+          // An array body has no schema paths, so doesn't get here
+          (requestBody as RequestBody)[i] = Helpers.Schema.getPropDefault(config);
         });
       }
     } else if (requestMethod === 'PUT') {
@@ -94,7 +99,8 @@ class Projection {
       // Check to see if the any of the update paths don't exists within the projection keys,
       // if they don't then we want to throw as the user doesn't have access.
       const invalidPaths = requestBody
-        .map((elem) => elem.path)
+        // Update bodies are UpdatePathBody[]
+        .map((elem) => elem.path as string)
         .filter((updateKey) => projectionKeys.find((key) => new RegExp(`^${key}`).test(updateKey)) === undefined);
 
       if (invalidPaths.length > 0) {
@@ -104,7 +110,7 @@ class Projection {
         );
       }
     } else {
-      if (projectionKeys.length > 0 && !this.__checkProjectionPath(requestBody, projectionKeys)) {
+      if (projectionKeys.length > 0 && !this.__checkProjectionPath(requestBody as RequestBody, projectionKeys)) {
         return false;
       }
     }
@@ -112,14 +118,14 @@ class Projection {
     return projection;
   }
 
-  __checkProjectionPath(requestBody, projectionKeys) {
-    const query = requestBody.query ? requestBody.query : requestBody;
+  __checkProjectionPath(requestBody: RequestBody, projectionKeys: string[]) {
+    const query = requestBody.query ? (requestBody.query as RequestBody) : requestBody;
     const paths = Object.keys(query).filter((key) => key && !this._ignoredQueryKeys.includes(key));
     let queryKeys: string[] = [];
 
     paths.forEach((path) => {
       if (this.logicalOperator.includes(path)) {
-        query[path].forEach((p) => {
+        (query[path] as RequestBody[]).forEach((p) => {
           queryKeys = queryKeys.concat(Object.keys(p));
         });
         return;

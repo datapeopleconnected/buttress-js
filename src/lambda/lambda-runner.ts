@@ -20,9 +20,11 @@ const require = createRequire(import.meta.url);
 import fs from 'node:fs';
 import path from 'node:path';
 import util from 'node:util';
+import type { IncomingHttpHeaders } from 'node:http';
 import { exec as cpExec } from 'node:child_process';
 
 import NodeRedisPubsub from '../services/nrp.js';
+import type { Services } from '../bootstrap.js';
 
 const exec = util.promisify(cpExec);
 
@@ -41,9 +43,10 @@ import Model from '../model/index.js';
 import * as Helpers from '../helpers/index.js';
 import lambdaHelpers from '../lambda-helpers/helpers.js';
 import type { LambdaResult } from '../lambda-helpers/helpers.js';
+import type { IsolateJail } from '../lambda-helpers/isolate-bridge.js';
 import { ExecPriority, LambdaExecutionMessage } from './lambda-manager.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
-import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
+import LambdaExecutionSchemaModel, { LambdaExecution, LambdaExecutionAddBody } from '../model/core/lambda-execution.js';
 import AppSchemaModel, { App } from '../model/core/app.js';
 import TokenSchemaModel, { Token } from '../model/core/token.js';
 import UserSchemaModel, { User } from '../model/core/user.js';
@@ -55,6 +58,13 @@ export enum LambdaType {
   PATH_MUTATION = 'PATH_MUTATION',
   CRON = 'CRON',
   ALL = 'ALL',
+}
+
+// A module bundled into the isolate: an npm package, or (with an import path) the lambda's own code.
+interface LambdaModule {
+  packageName?: string;
+  name: string;
+  import?: string;
 }
 
 export interface ExecutionResultMessage {
@@ -85,14 +95,14 @@ export default class LambdaRunner {
 
   _isolate?: ivm.Isolate;
   _context?: ivm.Context;
-  _jail?: ivm.Reference;
+  _jail?: IsolateJail;
   _registeredBundles: string[] = [];
   _compiledLambdas: unknown[] = [];
 
   private __nrp?: NodeRedisPubsub;
 
-  constructor(services, type) {
-    this.__nrp = services.get('nrp');
+  constructor(services: Services, type: LambdaType) {
+    this.__nrp = services.get('nrp') as NodeRedisPubsub;
 
     this.id = uuidv4();
     this.name = `LAMBDAS RUNNER ${this.id}`;
@@ -153,7 +163,7 @@ export default class LambdaRunner {
    * gets static values specific to the application
    * @param {Object} app
    */
-  async _getAppLambdaEnvironment(app): Promise<{ [key: string]: unknown } | null> {
+  async _getAppLambdaEnvironment(app: App): Promise<{ [key: string]: unknown } | null> {
     const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
       name: 'environment',
       _appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
@@ -196,12 +206,12 @@ export default class LambdaRunner {
     // Reset lambdaHelpers lambdaResult
     lambdaHelpers.lambdaResult = null;
 
-    const reqBody = data.body ? JSON.parse(data.body) : {};
-    const reqQuery = data.query ? JSON.parse(data.query) : {};
-    const reqHeaders = data.headers ? JSON.parse(data.headers) : {};
+    const reqBody: unknown = data.body ? JSON.parse(data.body) : {};
+    const reqQuery: Record<string, unknown> = data.query ? JSON.parse(data.query) : {};
+    const reqHeaders: IncomingHttpHeaders = data.headers ? JSON.parse(data.headers) : {};
 
     const appLambdaEnv = await this._getAppLambdaEnvironment(app);
-    let userToken: string | undefined = reqHeaders?.authorization || reqQuery?.token;
+    let userToken: string | undefined = reqHeaders?.authorization || (reqQuery?.token as string | undefined);
     userToken = userToken ? userToken.replace('Bearer ', '') : userToken;
     const rxsLambdaToken = await Model.getCoreModel(TokenSchemaModel).find({
       _appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
@@ -535,7 +545,7 @@ export default class LambdaRunner {
     });
   }
 
-  async _updateDBLambdaRunningExecution(execution) {
+  async _updateDBLambdaRunningExecution(execution: LambdaExecution) {
     await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
       Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
       {
@@ -554,7 +564,7 @@ export default class LambdaRunner {
     // }
   }
 
-  async _updateDBLambdaFinishExecution(execution) {
+  async _updateDBLambdaFinishExecution(execution: LambdaExecution) {
     execution = await Model.getCoreModel(LambdaExecutionSchemaModel).findById(execution.id);
     await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
       Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
@@ -575,8 +585,9 @@ export default class LambdaRunner {
           deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(execution.deploymentId),
           executeAfter: Sugar.Date.create(execution.nextCronExpression),
           nextCronExpression: execution.nextCronExpression,
+          // Ignored: add() takes the token id as its third argument, so the new execution doesn't keep it.
           _tokenId: execution._tokenId ? Model.getCoreModel(LambdaSchemaModel).createId(execution._tokenId) : null,
-        },
+        } as LambdaExecutionAddBody,
         execution._appId,
       );
 
@@ -627,12 +638,14 @@ export default class LambdaRunner {
     }
   }
 
-  async installLambdaPackages(lambda, packageAllowList) {
+  async installLambdaPackages(lambda: Lambda, packageAllowList: { packageName: string; packageVersion: string }[]) {
     const packagePath = `${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`;
     const modules: Array<{ name: string }> = [];
     if (!fs.existsSync(packagePath)) return modules;
 
-    const packages = require(`${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`);
+    const packages: { dependencies: Record<string, string> } = require(
+      `${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`,
+    );
     for await (const packageKey of Object.keys(packages.dependencies)) {
       try {
         await exec(`npm ls ${packageKey}`);
@@ -640,7 +653,8 @@ export default class LambdaRunner {
         let packageVersion = packages.dependencies[packageKey];
         const matchedPattern = packageVersion.match(/(^\D)/);
         const [removedPattern] = matchedPattern ? matchedPattern : [];
-        packageVersion = packageVersion.replace(removedPattern, '');
+        // undefined without a prefix, which replace() looks for as the string 'undefined'.
+        packageVersion = packageVersion.replace(removedPattern as string, '');
         const packageIsInAllowList = packageAllowList.some((item) => {
           return item.packageName === packageKey && packageVersion === item.packageVersion;
         });
@@ -670,10 +684,11 @@ export default class LambdaRunner {
     return modules;
   }
 
-  _getLambdaModulesName(lambda) {
-    const modules: Array<{ packageName?: string; name: string; import?: string }> = [];
-    const entryDir = path.dirname(lambda.git.entryFile);
-    const entryFile = path.basename(lambda.git.entryFile);
+  _getLambdaModulesName(lambda: Lambda) {
+    const modules: LambdaModule[] = [];
+    // Not checked before this, path.dirname() throws if the lambda has no entry file.
+    const entryDir = path.dirname(lambda.git.entryFile as string);
+    const entryFile = path.basename(lambda.git.entryFile as string);
     const lambdaDir = `${Config.paths.lambda.code}/lambda-${lambda.git.hash}/./${entryDir}`; // Again ugly /./ because... indolence
 
     modules.push(
@@ -698,14 +713,15 @@ export default class LambdaRunner {
     return modules;
   }
 
-  bundleLambdaModules(modules) {
-    const entry = {};
+  bundleLambdaModules(modules: LambdaModule[]) {
+    const entry: webpack.EntryObject = {};
     modules.forEach((m) => {
       const moduleName = m.packageName ? m.packageName.replace('/', '_') : m.name;
       if (m.packageName && fs.existsSync(`${Config.paths.lambda.bundles}/${moduleName}.js`)) return;
 
       entry[moduleName] = {
-        import: m.import ? m.import : m.packageName,
+        // Every module has an import path or a package name.
+        import: m.import ? m.import : (m.packageName as string),
         library: {
           name: m.name,
           type: 'var',
@@ -754,7 +770,7 @@ export default class LambdaRunner {
     }).catch((error: unknown) => {
       Logging.logError('Error whilst bundling lambda modules');
       if (Array.isArray(error)) {
-        error.forEach((err) => {
+        error.forEach((err: unknown) => {
           Logging.logError(Helpers.getThrownErrorMessage(err));
         });
       } else {
@@ -763,7 +779,7 @@ export default class LambdaRunner {
     });
   }
 
-  async _registerLambdaModules(lambdaModules) {
+  async _registerLambdaModules(lambdaModules: LambdaModule[]) {
     if (!this._isolate) throw new Error('Isolate not initialised');
     if (!this._context) throw new Error('Isolate not initialised');
 
@@ -778,11 +794,12 @@ export default class LambdaRunner {
 
     for await (const mod of lambdaModules) {
       const isOwnCode = !mod.packageName;
+      // Own code has no package name, includes(undefined) is false.
       const alreadyRegistered =
-        this._registeredBundles.includes(mod.packageName) || this._registeredBundles.includes(mod.name);
+        this._registeredBundles.includes(mod.packageName as string) || this._registeredBundles.includes(mod.name);
       if (alreadyRegistered && !(devReload && isOwnCode)) continue;
 
-      let file = null;
+      let file: string | null = null;
       if (mod.packageName) {
         file = mod.packageName.replace('/', '_');
         if (!alreadyRegistered) this._registeredBundles.push(mod.packageName);

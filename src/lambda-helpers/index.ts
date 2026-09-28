@@ -25,8 +25,8 @@ const require = createRequire(import.meta.url);
 
 // ? Why are we dynamically loading classes from the filesystem?
 
-const getClassesList = (dirName) => {
-  let files: NodeRequire[] = [];
+const getClassesList = (dirName: string): Record<string, unknown>[] => {
+  let files: Record<string, unknown>[] = [];
   const items = fs.readdirSync(dirName, { withFileTypes: true });
   for (const item of items) {
     if (item.isDirectory()) {
@@ -40,7 +40,7 @@ const getClassesList = (dirName) => {
 };
 
 const classes = getClassesList(__dirname);
-const lambdaAPI = classes.reduce((obj, file) => {
+const lambdaAPI = classes.reduce<Record<string, unknown>>((obj, file) => {
   if (Object.keys(file).length < 1) return obj;
 
   const [className] = Object.keys(file);

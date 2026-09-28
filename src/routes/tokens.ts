@@ -27,7 +27,7 @@ export class RoutesTokens {
     const tokens: Token[] = [];
     const rxsToken = await Model.getCoreModel(TokenSchemaModel).findAll();
 
-    for await (const token of rxsToken) {
+    for await (const token of rxsToken as AsyncIterable<Token>) {
       tokens.push(token);
     }
 

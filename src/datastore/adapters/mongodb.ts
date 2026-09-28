@@ -15,7 +15,19 @@
  */
 import Stream from 'node:stream';
 
-import { ObjectId, MongoClient, MongoClientOptions, Db, Collection } from 'mongodb';
+import {
+  ObjectId,
+  MongoClient,
+  MongoClientOptions,
+  Db,
+  Collection,
+  AnyBulkWriteOperation,
+  Document,
+  Filter,
+  FindOptions,
+  Sort,
+  UpdateFilter,
+} from 'mongodb';
 
 import * as Helpers from '../../helpers/index.js';
 import Logging from '../../helpers/logging.js';
@@ -23,33 +35,28 @@ import Logging from '../../helpers/logging.js';
 import AbstractAdapter from '../abstract-adapter.js';
 
 import { BjsQuery } from '../../types/bjs-query.js';
+import {
+  AdapterDocument,
+  AdapterIdInput,
+  AdapterQuery,
+  UpdatePathBody,
+  UpdatePathContext,
+} from '../../types/datastore.js';
+import { FlattenedSchemaProperty } from '../../types/schema.js';
 import StandardModel from '../../model/type/standard.js';
 
 class AdapterId {
-  static new(id?: string) {
+  static new(id?: AdapterIdInput) {
     return new ObjectId(id);
   }
 
-  static isValid(id: string) {
-    return ObjectId.isValid(id);
+  static isValid(id: unknown) {
+    return ObjectId.isValid(id as Parameters<typeof ObjectId.isValid>[0]);
   }
 
-  static instanceOf(id) {
+  static instanceOf(id: unknown) {
     return id instanceof ObjectId;
   }
-}
-
-interface BJSDocument {
-  [key: string]: any;
-}
-
-interface Context {
-  [key: string]: any;
-  type: string;
-}
-
-interface SchemaConfig {
-  __schema: any;
 }
 
 export default class MongodbAdapter extends AbstractAdapter {
@@ -103,21 +110,24 @@ export default class MongodbAdapter extends AbstractAdapter {
     return AdapterId;
   }
 
-  override add(body, modifier) {
+  override add(body: AdapterDocument | AdapterDocument[], modifier: (item: AdapterDocument) => AdapterDocument) {
     return this.__batchAddProcess(body, modifier);
   }
 
-  async __batchAddProcess(body: BJSDocument[], modifier: any) {
+  async __batchAddProcess(
+    body: AdapterDocument | AdapterDocument[],
+    modifier: (item: AdapterDocument) => AdapterDocument,
+  ) {
     if (body instanceof Array === false) {
       body = [body];
     }
 
-    const documents = await body.reduce(async (prev, item) => {
+    const documents = await body.reduce(async (prev: Promise<AdapterDocument[]>, item) => {
       const arr = await prev;
       return arr.concat([this._prepareDocumentForMongo(modifier(item))]);
     }, Promise.resolve([]));
 
-    const ops = documents.map((c: BJSDocument) => {
+    const ops = documents.map((c: AdapterDocument): AnyBulkWriteOperation => {
       return { insertOne: { document: c } };
     });
 
@@ -133,7 +143,7 @@ export default class MongodbAdapter extends AbstractAdapter {
     // looking them up in the database again which is a waste of time.
     new Promise<void>((resolve) =>
       setTimeout(() => {
-        documents.forEach((document: any, idx: number) => {
+        documents.forEach((document: AdapterDocument, idx: number) => {
           document._id = res.insertedIds[idx];
           readable.push(document);
         });
@@ -145,19 +155,19 @@ export default class MongodbAdapter extends AbstractAdapter {
     return this._modifyDocumentStream(readable);
   }
 
-  override async batchUpdateProcess<T extends StandardModel>(
+  override async batchUpdateProcess(
     id: string,
-    body: { path: string; value: any },
-    context: Context,
-    schemaConfig: SchemaConfig,
-    model?: T,
+    body: UpdatePathBody,
+    context: UpdatePathContext,
+    schemaConfig: FlattenedSchemaProperty | false | undefined,
+    model?: StandardModel<unknown>,
   ) {
     if (!context) throw new Error(`batchUpdateProcess called without context; ${id}`);
 
     const updateType = context.type;
-    let response: any = null;
+    let response: unknown = null;
 
-    const ops: { updateOne: any }[] = [];
+    const ops: AnyBulkWriteOperation[] = [];
 
     switch (updateType) {
       default: {
@@ -165,7 +175,7 @@ export default class MongodbAdapter extends AbstractAdapter {
       }
       case 'vector-add':
         {
-          let value: any = null;
+          let value: unknown = null;
           if (schemaConfig && schemaConfig.__schema) {
             const fb = Helpers.Schema.getFlattenedBody(body.value);
             value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
@@ -175,11 +185,11 @@ export default class MongodbAdapter extends AbstractAdapter {
 
           if (!schemaConfig && model) {
             const entity = await model.findById(id);
-            const objValue: { [key: string]: any } = {};
+            const objValue: { [key: string]: unknown } = {};
             let updateValueExists = true;
             let modifiedPath = '';
             let basePath = body.path;
-            let obj = entity;
+            let obj = entity as Record<string, unknown>;
 
             body.path.split('.').forEach((key) => {
               modifiedPath = modifiedPath ? key : `${modifiedPath}.${key}`;
@@ -192,7 +202,7 @@ export default class MongodbAdapter extends AbstractAdapter {
                 return;
               }
 
-              obj = obj[key];
+              obj = obj[key] as Record<string, unknown>;
             }, entity);
 
             if (!updateValueExists) {
@@ -208,7 +218,7 @@ export default class MongodbAdapter extends AbstractAdapter {
                 $push: {
                   [body.path]: value,
                 },
-              },
+              } as UpdateFilter<Document>,
             },
           });
           response = value;
@@ -239,7 +249,7 @@ export default class MongodbAdapter extends AbstractAdapter {
                 $pull: {
                   [body.path]: null,
                 },
-              },
+              } as UpdateFilter<Document>,
             },
           });
 
@@ -248,7 +258,7 @@ export default class MongodbAdapter extends AbstractAdapter {
         break;
       case 'scalar':
         {
-          let value: any = null;
+          let value: unknown = null;
           if (schemaConfig && schemaConfig.__schema) {
             const fb = Helpers.Schema.getFlattenedBody(body.value);
             value = Helpers.Schema.sanitizeObject(schemaConfig.__schema, fb);
@@ -283,7 +293,7 @@ export default class MongodbAdapter extends AbstractAdapter {
                 $inc: {
                   [path]: body.value,
                 },
-              },
+              } as UpdateFilter<Document>,
             },
           });
 
@@ -302,23 +312,24 @@ export default class MongodbAdapter extends AbstractAdapter {
     };
   }
 
-  async update(select: any, update: any) {
+  override async update(select: AdapterQuery, update: AdapterQuery) {
     const object = await this.collection?.updateMany(this._prepareQueryForMongo(select), update);
     return this._modifyDocument(object);
   }
 
-  override async updateOne(query: any, update: any) {
+  override async updateOne(query: AdapterQuery, update: AdapterQuery) {
     const object = await this.collection?.updateOne(this._prepareQueryForMongo(query), update);
     return this._modifyDocument(object);
   }
 
-  override async updateById(id: string, query: any) {
+  override async updateById(id: AdapterIdInput, query: AdapterQuery) {
     const object = await this.collection?.updateOne({ _id: new ObjectId(id) }, query);
 
     return this._modifyDocument(object);
   }
 
-  override exists(id: string, extra = {}) {
+  // Async so an invalid id gives a resolved `false`, callers chain `.then()` on the result
+  override async exists(id: AdapterIdInput, extra: AdapterQuery = {}) {
     if (!this.collection) throw new Error('No collection');
 
     Logging.logSilly(`exists: ${this.collection.namespace} ${id}`);
@@ -343,7 +354,7 @@ export default class MongodbAdapter extends AbstractAdapter {
   /*
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override isDuplicate(_details) {
+  override isDuplicate(_details: unknown) {
     // TODO: Implment this method
     return Promise.resolve(false);
   }
@@ -352,7 +363,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {string} id - id to be deleted
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override async rm(id: string) {
+  override async rm(id: AdapterIdInput) {
     const cursor = this.collection?.deleteOne({ _id: new ObjectId(id) });
     if (!cursor) throw new Error('Unable to delete');
 
@@ -363,7 +374,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Array} ids - Array of entity ids to delete
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override rmBulk(ids: any) {
+  override rmBulk(ids: AdapterIdInput[]) {
     // Logging.log(`rmBulk: ${this.collection.namespace} ${ids}`, Logging.Constants.LogLevel.SILLY);
     return this.rmAll({ _id: { $in: ids } });
   }
@@ -372,7 +383,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override async rmAll(query: any) {
+  override async rmAll(query?: AdapterQuery) {
     if (!query) query = {};
 
     const doc = await this.collection?.deleteMany(this._prepareQueryForMongo(query));
@@ -385,7 +396,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {String} id - entity id to get
    * @return {Promise} - resolves to an array of Companies
    */
-  override async findById(id: string) {
+  override async findById(id: AdapterIdInput) {
     // Logging.logSilly(`Schema:findById: ${this.collection.namespace} ${id}`);
 
     const document = await this.collection?.findOne({ _id: new ObjectId(id) }, {});
@@ -404,12 +415,12 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @return {ReadableStream} - stream
    */
   override find<T extends object>(
-    query: BjsQuery<T>,
-    excludes = {},
+    query: BjsQuery<T> | AdapterQuery,
+    excludes: AdapterQuery | null = {},
     limit = 0,
     skip = 0,
-    sort: any = null,
-    project = null,
+    sort: Record<string, unknown> | null = null,
+    project: Record<string, unknown> | null | false = null,
   ) {
     if (!this.collection) throw new Error('No collection');
 
@@ -420,7 +431,12 @@ export default class MongodbAdapter extends AbstractAdapter {
       );
     }
 
-    let results = this.collection.find(this._prepareQueryForMongo(query), excludes).skip(skip).limit(limit).sort(sort);
+    // The driver ignores a null sort
+    let results = this.collection
+      .find(this._prepareQueryForMongo(query), excludes as FindOptions)
+      .skip(skip)
+      .limit(limit)
+      .sort(sort as Sort);
 
     if (project) {
       results = results.project(project);
@@ -434,8 +450,11 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Object} excludes - mongoDB query excludes
    * @return {Promise} - resolves to an array of docs
    */
-  override async findOne<T extends object>(query: BjsQuery<T>, excludes = {}) {
-    const doc = await this.collection?.findOne(this._prepareQueryForMongo(query), this._prepareQueryForMongo(excludes));
+  override async findOne<T extends object>(query: BjsQuery<T> | AdapterQuery, excludes: AdapterQuery = {}) {
+    const doc = await this.collection?.findOne(
+      this._prepareQueryForMongo(query),
+      this._prepareQueryForMongo(excludes) as FindOptions,
+    );
 
     return doc ? this._modifyDocument(doc) : null;
   }
@@ -463,8 +482,10 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @return {Promise} - resolves to an array of Companies
    */
-  override count(query: any) {
-    return this.collection?.countDocuments(this._prepareQueryForMongo(query));
+  override count(query?: AdapterQuery) {
+    if (!this.collection) throw new Error('No collection');
+
+    return this.collection.countDocuments(this._prepareQueryForMongo(query));
   }
 
   /**
@@ -484,10 +505,11 @@ export default class MongodbAdapter extends AbstractAdapter {
   }
 
   // Modify a straem of docuemnts, converting _id to id
-  _modifyDocument(doc: any) {
-    if (doc && doc._id) {
-      doc.id = doc._id;
-      delete doc._id;
+  _modifyDocument<T>(doc: T): T {
+    const document = doc as Record<string, unknown> | null | undefined;
+    if (document && document._id) {
+      document.id = document._id;
+      delete document._id;
     }
 
     return doc;
@@ -495,7 +517,7 @@ export default class MongodbAdapter extends AbstractAdapter {
   _modifyDocumentStream(stream: Stream.Readable) {
     const transformStream = new Stream.Transform({
       objectMode: true,
-      transform: (doc, enc, cb) => cb(null, this._modifyDocument(doc)),
+      transform: (doc: Document, enc, cb) => cb(null, this._modifyDocument(doc)),
     });
 
     stream.on('error', (err) => {
@@ -507,14 +529,16 @@ export default class MongodbAdapter extends AbstractAdapter {
   }
 
   // Methods for modifying a document or query to handle converting from id to _id
-  _prepareDocumentForMongo(document: any) {
+  _prepareDocumentForMongo(document: AdapterDocument) {
     if (document && document.id) {
       document._id = document.id;
       delete document.id;
     }
     return document;
   }
-  _prepareQueryForMongo(query) {
+  _prepareQueryForMongo(query: AdapterQuery): Filter<Document>;
+  _prepareQueryForMongo(query: AdapterQuery | undefined): Filter<Document> | undefined;
+  _prepareQueryForMongo(query: AdapterQuery | undefined): Filter<Document> | undefined {
     if (!query) return query;
 
     if (query.id) {
@@ -522,9 +546,9 @@ export default class MongodbAdapter extends AbstractAdapter {
       delete query.id;
     } else if (query['$or'] || query['$and']) {
       if (query['$or']) {
-        query['$or'] = query['$or'].map((q: any) => this._prepareQueryForMongo(q));
+        query['$or'] = (query['$or'] as AdapterQuery[]).map((q) => this._prepareQueryForMongo(q));
       } else if (query['$and']) {
-        query['$and'] = query['$and'].map((q: any) => this._prepareQueryForMongo(q));
+        query['$and'] = (query['$and'] as AdapterQuery[]).map((q) => this._prepareQueryForMongo(q));
       }
     }
 
@@ -536,12 +560,12 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {object | string} expression
    * @return {object | string}
    */
-  _convertIdValue(expression) {
+  _convertIdValue(expression: unknown) {
     if (typeof expression === 'object' && !(expression instanceof ObjectId)) {
-      const keys = Object.keys(expression);
+      const keys = Object.keys(expression as object);
       if (keys.length === 1) {
         const [key] = keys;
-        const value = this._getExpressionValue(expression[key]);
+        const value = this._getExpressionValue((expression as Record<string, unknown>)[key]);
         return { [key]: value };
       } else {
         // Not sure what we've got here.
@@ -551,7 +575,7 @@ export default class MongodbAdapter extends AbstractAdapter {
     }
 
     // It's not an object, so must be a value.
-    return new ObjectId(expression);
+    return new ObjectId(expression as AdapterIdInput);
   }
 
   /**
@@ -559,10 +583,10 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {array | string} value
    * @return {array | string}
    */
-  _getExpressionValue(value) {
+  _getExpressionValue(value: unknown) {
     if (Array.isArray(value)) {
       return value.length > 0
-        ? value.map((v) => {
+        ? value.map((v: AdapterIdInput) => {
             try {
               return new ObjectId(v);
             } catch (_err) {
@@ -572,7 +596,7 @@ export default class MongodbAdapter extends AbstractAdapter {
         : value;
     } else {
       try {
-        return new ObjectId(value);
+        return new ObjectId(value as AdapterIdInput);
       } catch (_err) {
         return value;
       }

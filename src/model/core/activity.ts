@@ -19,6 +19,7 @@ import { Schema, encode } from '../../helpers/schema.js';
 import * as Shared from '../shared.js';
 
 import StandardModel from '../type/standard.js';
+import { Services } from '../../bootstrap.js';
 
 /**
  * Constants
@@ -29,7 +30,8 @@ const Visibility = {
   PRIVATE: visibility[1],
 };
 
-export interface Activity {
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type Activity = {
   id: string;
   timestamp: Date;
   title: string;
@@ -45,25 +47,29 @@ export interface Activity {
   _tokenId: string | null;
   _appId: string | null;
   _userId: string | null;
-}
+};
 
-export interface ActivityAddBody {
+// A type rather than an interface, so it's usable as the document __parseAddBody takes
+export type ActivityAddBody = {
   req: Request;
-  res: Response;
+  // Route passes an empty object, the response isn't recorded
+  res: Partial<Response>;
   activityTitle: string;
   activityDescription: string;
   activityVisibility: string;
   path: string;
   verb: string;
-  auth: string;
+  auth?: string;
   permissions: string;
+  // Passed by Route but not recorded, the activity takes its params from req
+  params?: Request['params'];
   id?: string;
-}
+};
 
-class ActivitySchemaModel extends StandardModel {
+class ActivitySchemaModel extends StandardModel<Activity> {
   static override name = 'Activity';
 
-  constructor(services) {
+  constructor(services: Services) {
     const schema = ActivitySchemaModel.Schema;
     super(schema, null, services);
   }
@@ -194,7 +200,7 @@ class ActivitySchemaModel extends StandardModel {
     return Shared.sanitizeSchemaObject(ActivitySchemaModel.Schema, md);
   }
 
-  override add(body) {
+  override add(body: ActivityAddBody) {
     body.req.body = encode(body.req.body);
 
     return super.add(body);

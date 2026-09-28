@@ -15,13 +15,17 @@
  */
 import StandardModel from './standard.js';
 
+import { Schema } from '../../types/schema.js';
+import { App } from '../core/app.js';
+import { Services } from '../../bootstrap.js';
+
 /**
  * @class RemoteModel
  */
 export default class RemoteModel extends StandardModel {
   dataSharingId: string;
 
-  constructor(schemaData, app, dataSharingId: string, services) {
+  constructor(schemaData: Schema, app: App | null, dataSharingId: string, services: Services) {
     super(schemaData, app, services);
 
     this.dataSharingId = dataSharingId;
