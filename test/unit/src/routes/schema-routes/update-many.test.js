@@ -119,6 +119,99 @@ describe('schema-routes/UpdateMany', () => {
   });
 });
 
+describe('schema-routes/UpdateMany: per-item results', () => {
+  // Like StandardModel.validateUpdate, this returns the body as an array of updates; any update to `bad` is refused.
+  function createPathCheckingModel(docs) {
+    const model = createFakeModel(docs);
+    model.exists = sinon.spy(async (id) => docs.some((doc) => doc.id === id));
+    model.validateUpdate = (body) => {
+      const updates = Array.isArray(body) ? body : [body];
+      const refused = updates.find((u) => u.path === 'bad');
+      return {
+        validation: refused ? { isValid: false, isPathValid: false, invalidPath: 'bad' } : { isValid: true },
+        body: updates,
+      };
+    };
+    model.updateByPath = async (updates, id) => {
+      const doc = docs.find((d) => d.id === id);
+      updates.forEach((u) => (doc[u.path] = u.value));
+      return updates.map((u) => ({ type: 'scalar', path: u.path, value: u.value }));
+    };
+    return model;
+  }
+
+  const fullAccess = { id: 'req-1', ac: { policyConfigs: [{}] } };
+
+  it('applies a valid update even when another update to the same entity is refused', async () => {
+    const docs = [{ id: 'doc-1', value: 'original' }];
+    const route = createRoute(createPathCheckingModel(docs));
+    const req = {
+      body: [
+        { id: 'doc-1', body: { path: 'value', value: 'updated' } },
+        { id: 'doc-1', body: { path: 'bad', value: 'x' } },
+      ],
+      context: fullAccess,
+    };
+
+    const output = await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.strictEqual(docs[0].value, 'updated');
+    assert.deepStrictEqual(output[0].results, [{ type: 'scalar', path: 'value', value: 'updated' }]);
+    assert.strictEqual(output[1].results, null);
+    assert.deepStrictEqual(output[1].validation, { code: 400, message: 'test-schema: Update path is invalid: bad' });
+  });
+
+  it('returns one result per request item, in request order', async () => {
+    const docs = [{ id: 'doc-1' }, { id: 'doc-2' }];
+    const route = createRoute(createPathCheckingModel(docs));
+    const req = {
+      body: [
+        { id: 'doc-2', body: { path: 'value', value: 'a' } },
+        { id: 'doc-1', body: { path: 'value', value: 'b' } },
+        { id: 'doc-2', body: { path: 'value', value: 'c' } },
+      ],
+      context: fullAccess,
+    };
+
+    const output = await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.deepStrictEqual(
+      output.map((o) => [o.id, o.results[0].value]),
+      [
+        ['doc-2', 'a'],
+        ['doc-1', 'b'],
+        ['doc-2', 'c'],
+      ],
+    );
+    assert.strictEqual(docs[1].value, 'c');
+  });
+
+  it('refuses an update to an entity that does not exist, saying so', async () => {
+    const route = createRoute(createPathCheckingModel([]));
+    const req = { body: [{ id: 'doc-9', body: { path: 'value', value: 'x' } }], context: fullAccess };
+
+    const [item] = await route._validate(req, {});
+
+    assert.deepStrictEqual(item.validation, { code: 400, message: 'test-schema: Invalid ID: doc-9' });
+  });
+
+  it('looks each entity up once, however many updates it has', async () => {
+    const model = createPathCheckingModel([{ id: 'doc-1' }]);
+    const route = createRoute(model);
+    const req = {
+      body: [
+        { id: 'doc-1', body: { path: 'value', value: 'a' } },
+        { id: 'doc-1', body: { path: 'value', value: 'b' } },
+      ],
+      context: fullAccess,
+    };
+
+    await route._validate(req, {});
+
+    assert.strictEqual(model.exists.callCount, 1);
+  });
+});
+
 describe('schema-routes/UpdateMany:_broadcast', () => {
   const applied = { id: 'doc-1', sourceId: 'app-1', results: [{ type: 'scalar', path: 'value', value: 'updated' }] };
   const refused = { id: 'doc-2', sourceId: 'app-1', results: null, validation: { code: 400, message: 'refused' } };

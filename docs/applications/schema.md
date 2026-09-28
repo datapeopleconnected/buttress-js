@@ -83,6 +83,14 @@ Schemas can inherit properties from other schemas using the `extends` field. Thi
 
 Items are checked against the array's `__itemtype` or item `__schema`, element by element when the whole array is replaced. Objects in an array with an item `__schema` keep only the properties the item schema declares, so declare `id` in the item schema if clients give items their own ids. An array value always replaces the whole property, so an item that is itself an array can't be appended; replace the whole array instead.
 
+## Bulk Requests
+`POST <schema>/bulk/update` takes `[{id, sourceId?, body}]`, where `body` is an update or an array of them. Each item is validated and applied on its own, in order, and the response has one entry per item, in request order:
+
+- Applied: `{id, sourceId, results}`, where `results` is what `PUT <schema>/:id` would have returned for that body.
+- Refused: `{id, sourceId, results: null, validation: {code, message}}`. Nothing in that item's body was applied, but other items were, including other items for the same entity.
+
+The response is a 200 whenever the request itself is well formed, so check each item's `results`.
+
 ## Managing Schemas
 Schemas can be updated, extended, or deleted using the ButtressJS API. The `Schema` class provides methods for merging, validating, and encoding schemas.
 

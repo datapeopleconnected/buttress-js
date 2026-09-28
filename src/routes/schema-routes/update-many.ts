@@ -25,6 +25,7 @@ import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
+import StandardModel from '../../model/type/standard.js';
 
 /**
  * @class UpdateMany
@@ -50,104 +51,60 @@ export default class UpdateMany extends Route {
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Expected body to be an array of updates`);
     }
 
-    // Reduce down duplicate entity updates into one object
-    const data = req.body.reduce((reducedUpdates, update) => {
-      const existing = reducedUpdates.find((u) => u.id === update.id);
-
-      if (!existing) {
-        reducedUpdates.push(update);
-      } else {
-        if (!Array.isArray(existing.body)) existing.body = [existing.body];
-        if (!Array.isArray(update.body)) update.body = [update.body];
-        existing.body = [...existing.body, ...update.body];
-      }
-
-      return reducedUpdates;
-    }, []);
-
-    for await (const update of data) {
+    // Each item is validated and applied on its own, so a refused item doesn't stop the others, even ones that update
+    // the same entity. Each entity is only checked once.
+    const updatable = new Map<string, boolean>();
+    for await (const update of req.body) {
       const { validation, body } = model.validateUpdate(update.body);
       update.body = body;
 
       if (!validation.isValid) {
-        if (validation.isPathValid === false) {
-          this.log(
-            `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
-            Route.LogLevel.ERR,
-            req.context.id,
-          );
-          update.validation = {
-            code: 400,
-            message: `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
-          };
-          continue;
-        }
-        if (validation.isValueValid === false) {
-          this.log(
-            `${this.schemaName}: Update value is invalid: ${validation.invalidValue}`,
-            Route.LogLevel.ERR,
-            req.context.id,
-          );
-          if (validation.isMissingRequired) {
-            update.validation = {
-              code: 400,
-              message: `${this.schemaName}: Missing required property updating ${body.path}: ${validation.missingRequired}`,
-            };
-            continue;
-          }
-        }
-
-        // ? I've moved outside isValidValue to be the default fallback if isValid is false.
-        update.validation = {
-          code: 400,
-          message: `${this.schemaName}: Update value is invalid for path ${body.path}: ${validation.invalidValue}`,
-        };
+        update.validation = { code: 400, message: this.__describeInvalidUpdate(validation) };
+        this.log(update.validation.message, Route.LogLevel.ERR, req.context.id);
         continue;
       }
 
-      const exists = await model.exists(update.id, body.sourceId);
-
-      if (!exists) {
-        this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
-        update.validation = {
-          code: 400,
-          message: `${this.schemaName}: Missing required property updating ${body.path}: ${validation.missingRequired}`,
-        };
-        continue;
-      }
-
-      let objectId;
-      try {
-        objectId = model.createId(update.id);
-      } catch (_err) {
-        update.validation = {
-          code: 400,
-          message: `${this.schemaName}: Invalid ID: ${update.id}`,
-        };
-        continue;
-      }
-
-      const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
-      const rxsScoped = await ACM.find(model, findParams, req.context.ac);
-      let scopedEntity;
-      try {
-        scopedEntity = await Helpers.streamFirst(rxsScoped);
-      } catch (_err) {
-        scopedEntity = null;
-      }
-      if (!scopedEntity) {
-        this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
-        update.validation = {
-          code: 400,
-          message: `${this.schemaName}: Missing required property updating ${body.path}: ${validation.missingRequired}`,
-        };
+      const key = `${update.sourceId}/${update.id}`;
+      if (!updatable.has(key)) updatable.set(key, await this.__isUpdatable(req, model, update.id, update.sourceId));
+      if (!updatable.get(key)) {
+        update.validation = { code: 400, message: `${this.schemaName}: Invalid ID: ${update.id}` };
+        this.log(update.validation.message, Route.LogLevel.ERR, req.context.id);
         continue;
       }
 
       update.validation = true;
     }
 
-    return data;
+    return req.body;
+  }
+
+  __describeInvalidUpdate(validation) {
+    if (validation.isPathValid === false)
+      return `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`;
+    if (validation.isMissingRequired)
+      return `${this.schemaName}: Missing required property: ${validation.missingRequired}`;
+
+    return `${this.schemaName}: Update value is invalid: ${validation.invalidValue}`;
+  }
+
+  // Whether the entity exists and is inside the caller's access-control scope.
+  async __isUpdatable(req: Request, model: StandardModel, id: string, sourceId?: string) {
+    let objectId;
+    try {
+      objectId = model.createId(id);
+    } catch (_err) {
+      return false;
+    }
+
+    if (!(await model.exists(id, sourceId))) return false;
+
+    const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
+    const rxsScoped = await ACM.find(model, findParams, req.context.ac);
+    try {
+      return Boolean(await Helpers.streamFirst(rxsScoped));
+    } catch (_err) {
+      return false;
+    }
   }
 
   override async _exec(_req: Request, _res: Response, _data: unknown) {
