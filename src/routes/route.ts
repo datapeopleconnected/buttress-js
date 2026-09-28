@@ -48,6 +48,8 @@ interface PathMutationItem {
 interface BulkPathMutationItem {
   id: string;
   body: PathMutationItem | PathMutationItem[];
+  // Set by UpdateMany._validate: true, or why the item was refused.
+  validation?: unknown;
 }
 
 type PathLambdaBody = PathMutationItem | PathMutationItem[] | BulkPathMutationItem[] | string[] | unknown;
@@ -503,7 +505,7 @@ export default class Route {
     }
 
     let paths: string[] = [];
-    const values: unknown[] = [];
+    let values: unknown[] = [];
     let body: PathLambdaBody = null;
 
     const isPathMutationItem = (value: unknown): value is PathMutationItem =>
@@ -529,13 +531,14 @@ export default class Route {
         if (Array.isArray(body)) {
           body.forEach((item) => {
             if (!isBulkPathMutationItem(item)) return;
+            // A refused item changed nothing.
+            if (item.validation !== undefined && item.validation !== true) return;
 
             if (Array.isArray(item.body)) {
-              const bodyItems = item.body;
-              bodyItems.forEach((obj) => {
+              item.body.forEach((obj) => {
                 if (!isPathMutationItem(obj) || !obj.path) return;
                 paths.push(`${schemaName}.${item.id}.${obj.path}`);
-                bodyItems.forEach((i) => values.push(i.value));
+                values.push(obj.value);
               });
             } else if (isPathMutationItem(item.body) && item.body.path) {
               paths.push(`${schemaName}.${item.id}.${item.body.path}`);
@@ -579,7 +582,23 @@ export default class Route {
       });
     }
 
-    paths = paths.filter((v, idx, arr) => arr.indexOf(v) === idx);
+    // Each path once, where it was first seen. Where there's a value for each path, the path keeps the last value
+    // written to it, so paths and values still line up.
+    const hasValues = values.length === paths.length;
+    const dedupedPaths: string[] = [];
+    const dedupedValues: unknown[] = [];
+    paths.forEach((path, idx) => {
+      const seenIdx = dedupedPaths.indexOf(path);
+      if (seenIdx === -1) {
+        dedupedPaths.push(path);
+        if (hasValues) dedupedValues.push(values[idx]);
+      } else if (hasValues) {
+        dedupedValues[seenIdx] = values[idx];
+      }
+    });
+    paths = dedupedPaths;
+    if (hasValues) values = dedupedValues;
+
     if (paths.length > 0) {
       const message: NotifyLambdaPathChangeMessage = {
         paths: paths,

@@ -424,6 +424,60 @@ describe('routes/Route:_checkBasedPathLambda', () => {
     assert.deepStrictEqual(parsed.paths, ['user.id-1.name']);
   });
 
+  it('leaves out bulk update items that were refused, since they changed nothing', () => {
+    const route = createRoute();
+    route.verb = Route.Constants.Verbs.POST;
+    const req = createReq({
+      pathSpec: '/api/v1/user/bulk/update',
+      body: [
+        { id: 'id-1', body: [{ path: 'name', value: 'a' }], validation: true },
+        { id: 'id-2', body: [{ path: 'name', value: 'b' }], validation: { code: 400, message: 'refused' } },
+      ],
+    });
+
+    route._checkBasedPathLambda(req);
+
+    const parsed = JSON.parse(route._nrp.emit.firstCall.args[1]);
+    assert.deepStrictEqual(parsed.paths, ['user.id-1.name']);
+    assert.deepStrictEqual(parsed.values, ['a']);
+  });
+
+  it('notifies nothing when every bulk update item was refused', () => {
+    const route = createRoute();
+    route.verb = Route.Constants.Verbs.POST;
+    const req = createReq({
+      pathSpec: '/api/v1/user/bulk/update',
+      body: [{ id: 'id-1', body: [{ path: 'name', value: 'a' }], validation: { code: 400, message: 'refused' } }],
+    });
+
+    route._checkBasedPathLambda(req);
+
+    assert.strictEqual(route._nrp.emit.called, false);
+  });
+
+  it('sends one value per path for a bulk update item with several updates', () => {
+    const route = createRoute();
+    route.verb = Route.Constants.Verbs.POST;
+    const req = createReq({
+      pathSpec: '/api/v1/user/bulk/update',
+      body: [
+        {
+          id: 'id-1',
+          body: [
+            { path: 'name', value: 'a' },
+            { path: 'age', value: 3 },
+          ],
+        },
+      ],
+    });
+
+    route._checkBasedPathLambda(req);
+
+    const parsed = JSON.parse(route._nrp.emit.firstCall.args[1]);
+    assert.deepStrictEqual(parsed.paths, ['user.id-1.name', 'user.id-1.age']);
+    assert.deepStrictEqual(parsed.values, ['a', 3]);
+  });
+
   it('notifies individual paths for a bulk delete POST', () => {
     const route = createRoute();
     route.verb = Route.Constants.Verbs.POST;
@@ -478,6 +532,25 @@ describe('routes/Route:_checkBasedPathLambda', () => {
 
     const [, payload] = route._nrp.emit.firstCall.args;
     assert.deepStrictEqual(JSON.parse(payload).paths, ['user.id-1.name']);
+  });
+
+  it('keeps values lined up with paths when a path repeats, with the last value written to it', () => {
+    const route = createRoute();
+    route.verb = Route.Constants.Verbs.PUT;
+    const req = createReq({
+      params: { id: 'id-1' },
+      body: [
+        { path: 'name', value: 'a' },
+        { path: 'age', value: 3 },
+        { path: 'name', value: 'b' },
+      ],
+    });
+
+    route._checkBasedPathLambda(req);
+
+    const parsed = JSON.parse(route._nrp.emit.firstCall.args[1]);
+    assert.deepStrictEqual(parsed.paths, ['user.id-1.name', 'user.id-1.age']);
+    assert.deepStrictEqual(parsed.values, ['b', 3]);
   });
 });
 
