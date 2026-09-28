@@ -41,18 +41,24 @@ it fixes the staged version of each `src/` file and re-stages it, hiding the uns
 staged files while it runs and restoring them afterwards, so staging one hunk still commits only that hunk.
 A commit will fail if ESLint finds an error it can't fix (the files are left as they were), a new/edited
 `src/*.ts` file is missing the license header, or the build breaks. ESLint config
-([eslint.config.mjs](../eslint.config.mjs)): `max-len` 150 (ignoring strings/template literals), and
-`@typescript-eslint/no-explicit-any` is an error. Prettier: single quotes, trailing commas, 120 print
-width, 2-space indent, semicolons — see [.prettierrc.json](../.prettierrc.json).
+([eslint.config.mjs](../eslint.config.mjs)) is type-aware (`projectService`): `max-len` 150 (ignoring
+strings/template literals), and `@typescript-eslint/no-explicit-any` plus the `no-unsafe-*` rules are
+errors. Prettier: single quotes, trailing commas, 120 print width, 2-space indent, semicolons — see
+[.prettierrc.json](../.prettierrc.json).
 
 ### Types
 
-With `noImplicitAny` on and `no-explicit-any` an error, every declaration needs a real type:
+With `noImplicitAny` on, `no-explicit-any` an error, and the `no-unsafe-*` rules stopping `any` from
+libraries flowing on, every value needs a real type:
 
-- Values from outside (request bodies, `JSON.parse`, `@buttress/api` and isolated-vm results, NRP
-  messages) are `unknown` or a described shape at the point they come in: annotate the variable
-  (`const msg: AppDeletedMessage = JSON.parse(json)`) or type the request
-  (`RequestWithBody<TBody, TParams>` from [src/types/routes.ts](../src/types/routes.ts)).
+- Values from outside (request bodies, `JSON.parse`, `require()`/`import()`, `@buttress/api` and
+  isolated-vm results, NRP messages) are `unknown` or a described shape at the point they come in: cast
+  the result (`const msg = JSON.parse(json) as AppDeletedMessage`; annotating the variable instead fails
+  `no-unsafe-assignment`) or type the request (`RequestWithBody<TBody, TParams>` from
+  [src/types/routes.ts](../src/types/routes.ts)).
+- `Array.isArray()` narrows to `unknown[]` rather than `any[]`
+  ([src/types/array-is-array.d.ts](../src/types/array-is-array.d.ts)), so cast the array when the
+  elements have a known type.
 - Shared shapes live in [src/types/](../src/types): `datastore.ts` (the adapter contract's ids,
   documents, queries and update-by-path bodies), `schema.ts`, `bjs-query.ts`, `routes.ts`,
   `bjs-nrp-objects.ts`. Entity types (`App`, `Token`, ...) live with their core model and are type

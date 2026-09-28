@@ -57,13 +57,13 @@ class Projection {
   }
 
   async __applyPolicyProjection(
-    req: RequestWithBody<RequestBody | RequestBody[] | undefined>,
+    req: RequestWithBody<unknown>,
     projections: PolicyProjection | null,
     schema: Schema,
   ): Promise<{ [key: string]: number } | false> {
     const requestMethod = req.method;
     const flattenedSchema = Helpers.getFlattenedSchema(schema);
-    let requestBody: RequestBody | RequestBody[] = req.body ?? {};
+    let requestBody = (req.body ?? {}) as RequestBody | RequestBody[];
 
     const projectionKeys = Array.isArray(projections?.keys)
       ? projections.keys.filter((key: unknown): key is string => typeof key === 'string')

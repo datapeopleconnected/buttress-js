@@ -80,7 +80,7 @@ export class RoutesLambdaSetup {
       const endpointParam = req.params.endpoint;
       const endpoint = Array.isArray(endpointParam) ? endpointParam.join('/') : endpointParam;
 
-      if (req.method === 'POST' && (!req.body || Object.values(req.body).length < 1)) {
+      if (req.method === 'POST' && (!req.body || Object.values(req.body as object).length < 1)) {
         res.status(400).send({ message: 'missing_request_body' });
         return;
       }

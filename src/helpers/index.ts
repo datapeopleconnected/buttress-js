@@ -470,7 +470,7 @@ export const updateCoreSchemaObject = (update: unknown, extendedPathContext: Rec
   const extendedPathContextKeys = Object.keys(extendedPathContext);
   const pattern = /\.\d+/g;
   if (Array.isArray(update)) {
-    update.forEach((item: { path: string; value: unknown }) => __updateObjectPath(item));
+    (update as { path: string; value: unknown }[]).forEach((item) => __updateObjectPath(item));
   } else {
     update = __updateObjectPath(update as { path: string; value: unknown });
   }

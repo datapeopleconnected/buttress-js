@@ -82,7 +82,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
     if (!this.__modelManager) throw new Error('Unable to find modelManager in services');
 
     this.__nrp.on('app:update-schema', (json: string) => {
-      const data: { appId: string; schemas: Schema[] } = JSON.parse(json);
+      const data = JSON.parse(json) as { appId: string; schemas: Schema[] };
       if (!app || app.id.toString() !== data.appId) return;
 
       data.schemas.forEach((schema) => {
@@ -164,11 +164,11 @@ export default class StandardModel<TDocument = AdapterDocument> {
 
       if (property === '$or' && Array.isArray(command)) {
         if (command.length > 0) {
-          output['$or'] = command.map((q: Record<string, unknown>) => this.parseQuery(q, envFlat, schemaFlat));
+          output['$or'] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
         }
       } else if (property === '$and' && Array.isArray(command)) {
         if (command.length > 0) {
-          output['$and'] = command.map((q: Record<string, unknown>) => this.parseQuery(q, envFlat, schemaFlat));
+          output['$and'] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
         }
       } else if (typeof command === 'object' && !this.isValidId(command)) {
         const operators = command as Record<string, unknown>;

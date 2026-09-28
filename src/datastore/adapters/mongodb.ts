@@ -602,7 +602,7 @@ export default class MongodbAdapter extends AbstractAdapter {
   _getExpressionValue(value: unknown) {
     if (Array.isArray(value)) {
       return value.length > 0
-        ? value.map((v: AdapterIdInput) => {
+        ? (value as AdapterIdInput[]).map((v) => {
             try {
               return new ObjectId(v);
             } catch (_err) {

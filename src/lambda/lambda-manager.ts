@@ -159,7 +159,7 @@ export default class LambdaManager {
       await this._loadLambdaPathsMutation();
     });
     this.__nrp?.on('rest:worker:add-path-mutation', async (json: string) => {
-      const lambda: Lambda = JSON.parse(json);
+      const lambda = JSON.parse(json) as Lambda;
       this.__populateLambdaPathsMutation(lambda);
     });
   }

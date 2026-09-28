@@ -179,7 +179,7 @@ export default class BootstrapRest extends Bootstrap {
     if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');
 
     this.__nrp.on('app-schema:updated', (json) => {
-      const data: AppSchemaUpdatedMessage = JSON.parse(json);
+      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
       Logging.logDebug(`App Schema Updated: ${data.appId}`);
       this.notifyWorkers({
         type: 'app-schema:updated',

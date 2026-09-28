@@ -207,8 +207,8 @@ export default class LambdaRunner {
     lambdaHelpers.lambdaResult = null;
 
     const reqBody: unknown = data.body ? JSON.parse(data.body) : {};
-    const reqQuery: Record<string, unknown> = data.query ? JSON.parse(data.query) : {};
-    const reqHeaders: IncomingHttpHeaders = data.headers ? JSON.parse(data.headers) : {};
+    const reqQuery = (data.query ? JSON.parse(data.query) : {}) as Record<string, unknown>;
+    const reqHeaders = (data.headers ? JSON.parse(data.headers) : {}) as IncomingHttpHeaders;
 
     const appLambdaEnv = await this._getAppLambdaEnvironment(app);
     let userToken: string | undefined = reqHeaders?.authorization || (reqQuery?.token as string | undefined);
@@ -643,9 +643,9 @@ export default class LambdaRunner {
     const modules: Array<{ name: string }> = [];
     if (!fs.existsSync(packagePath)) return modules;
 
-    const packages: { dependencies: Record<string, string> } = require(
-      `${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`,
-    );
+    const packages = require(`${Config.paths.lambda.code}/lambda-${lambda.id}/package.json`) as {
+      dependencies: Record<string, string>;
+    };
     for await (const packageKey of Object.keys(packages.dependencies)) {
       try {
         await exec(`npm ls ${packageKey}`);

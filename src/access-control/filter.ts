@@ -14,7 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { ObjectId } from 'bson';
-import { Request } from 'express';
 
 import Sugar from '../helpers/sugar.js';
 
@@ -29,6 +28,7 @@ import { ApplicablePolicyConfig } from './index.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
 import type { AdapterIdInput } from '../types/datastore.js';
+import type { RequestWithBody } from '../types/routes.js';
 
 function isObjectId(value: unknown): value is ObjectId {
   return value?.constructor?.name === 'ObjectId';
@@ -309,7 +309,7 @@ export class Filter {
 
   // TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
   // TODO: This function needs a refactor, expecting the AC to be already applied to the queiries.
-  async evaluateManipulationActions(req: Request, collection: string) {
+  async evaluateManipulationActions(req: RequestWithBody<{ query?: Record<string, unknown> }>, collection: string) {
     const coreSchema = await AccessControlHelpers.cacheCoreSchema();
     const coreSchemNames = coreSchema.map((c) => Sugar.String.singularize(c.name));
     const isCoreSchema = coreSchemNames.includes(collection);

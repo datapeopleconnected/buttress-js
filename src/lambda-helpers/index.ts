@@ -32,7 +32,7 @@ const getClassesList = (dirName: string): Record<string, unknown>[] => {
     if (item.isDirectory()) {
       files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
     } else {
-      files.push(require(`${dirName}/${item.name}`));
+      files.push(require(`${dirName}/${item.name}`) as Record<string, unknown>);
     }
   }
 

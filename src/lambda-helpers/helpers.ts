@@ -107,7 +107,7 @@ function nodeHttpFetch(
               },
             },
             text: async () => bodyText,
-            json: async () => JSON.parse(bodyText),
+            json: async () => JSON.parse(bodyText) as unknown,
           });
         });
         res.on('error', reject);

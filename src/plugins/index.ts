@@ -40,6 +40,9 @@ type PluginEventMap = {
 	request: unknown[];
 };
 
+// A plugin module's export, constructed with the process it's loaded into
+type PluginClass = new (appType?: string, processRole?: string, infrastructureRole?: string) => Plugin;
+
 interface Plugin {
 	code: string;
 	routes?: PluginRouteClass[];
@@ -113,7 +116,7 @@ class Plugins extends EventEmitter {
 		const pluginDirs = await this._findPluginEntryFiles(Config.paths.plugins);
 		for (const pluginDir of pluginDirs) {
 			try {
-				const plugin: Plugin = new (await import(pluginDir))(this.appType, this.processRole, this.infrastructureRole);
+				const plugin = new ((await import(pluginDir)) as PluginClass)(this.appType, this.processRole, this.infrastructureRole);
 				this.attachListeners(plugin);
 				if (plugin.initialise) {
 					await plugin.initialise();

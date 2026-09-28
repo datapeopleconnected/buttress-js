@@ -384,11 +384,11 @@ export default class AppSchemaModel extends StandardModel<App> {
           throw new Error('Unable to load DSA due to missing App API');
         }
 
-        const remoteSchema: Schema[] = await api.App.getSchema(false, {
+        const remoteSchema = (await api.App.getSchema(false, {
           params: {
             only: dataSharingSchema[DSAName].join(','),
           },
-        });
+        })) as Schema[];
 
         remoteSchema.forEach((rs) => {
           schemaWithRemoteRef

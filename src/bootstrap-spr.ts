@@ -171,7 +171,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     this.__nrp.on('worker:socket:disconnect', (tokenId) => this._socketDisconnection(tokenId));
 
     this.__nrp.on('app-schema:updated', async (json: string) => {
-      const data: AppSchemaUpdatedMessage = JSON.parse(json);
+      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
       await Model.initSchema(data.appId);
     });
   }

@@ -485,13 +485,13 @@ export default class BootstrapSocket extends Bootstrap {
     // this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
     // this.__nrp.on('clearUserLocalData', (json) => this.__primaryClearUserLocalData(json));
     this.__nrp.on('dataShare:activated', async (json: string) => {
-      const data: DataShareActivatedMessage = JSON.parse(json);
+      const data = JSON.parse(json) as DataShareActivatedMessage;
       const dataShare = await Model.getCoreModel(AppDataSharingSchemaModel).findById(data.appDataSharingId);
       await this.__primaryCreateDataShareConnection(dataShare);
     });
 
     this.__nrp.on('app-schema:updated', async (json: string) => {
-      const data: AppSchemaUpdatedMessage = JSON.parse(json);
+      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
       await Model.initSchema(data.appId);
     });
   }

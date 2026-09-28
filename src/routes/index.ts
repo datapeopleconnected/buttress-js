@@ -108,7 +108,7 @@ class Routes {
     this._middlewareHelper = new RoutesMiddleware(this._routerMap, this._tokensHelper);
 
     this._nrp?.on('rest:worker:app-deleted', (json: string) => {
-      const exec: AppDeletedMessage = JSON.parse(json);
+      const exec = JSON.parse(json) as AppDeletedMessage;
       if (!exec.apiPath) return;
       this._deregisterRouter(exec.apiPath);
     });

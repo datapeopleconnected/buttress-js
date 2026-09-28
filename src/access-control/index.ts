@@ -38,6 +38,7 @@ import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import AppSchemaModel from '../model/core/app.js';
 
 import { Schema as SchemaDefinition } from '../types/schema.js';
+import type { RequestWithBody } from '../types/routes.js';
 
 export class PolicyError extends Error {
   statusCode: number;
@@ -106,7 +107,7 @@ class AccessControl {
     if (!this._nrp) throw new Error('Unable to register listeners, NRP not set');
 
     this._nrp.on('app-schema:updated', async (json) => {
-      const data: AppSchemaUpdatedMessage = JSON.parse(json);
+      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
       await this.__cacheAppSchema(data.appId);
     });
   }
@@ -248,7 +249,12 @@ class AccessControl {
     next();
   }
 
-  async _getSchemaRoomStructure(tokenPolicies: Policy[], req: Request, schemaName: string, appId: string) {
+  async _getSchemaRoomStructure(
+    tokenPolicies: Policy[],
+    req: RequestWithBody<{ project?: Record<string, unknown>; query?: unknown }>,
+    schemaName: string,
+    appId: string,
+  ) {
     Logging.logTimer(
       `_getSchemaRoomStructure::start`,
       req.context.timer,

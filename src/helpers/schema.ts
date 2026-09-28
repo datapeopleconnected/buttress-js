@@ -574,7 +574,9 @@ export const sanitizeObject = (
         const isSubProperty = property.split('.');
         propVal.path = property;
         propVal.value =
-          isSubProperty.length > 1 ? isSubProperty.reduce(getChild, body[bodyIdx]) : body[bodyIdx][property];
+          isSubProperty.length > 1
+            ? isSubProperty.reduce(getChild, body[bodyIdx])
+            : (body[bodyIdx] as Record<string, unknown>)[property];
       }
     }
 
@@ -644,7 +646,7 @@ export const encode = (obj: unknown) => {
 };
 
 export const decode = (obj: string): Schema[] => {
-  return JSON.parse(obj);
+  return JSON.parse(obj) as Schema[];
   // return JSON.parse(Schema.decodeKey(JSON.stringify(obj)));
 };
 
