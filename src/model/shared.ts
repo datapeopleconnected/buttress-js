@@ -80,6 +80,16 @@ const getItemArrayConfig = (flattenedSchema, path: string) => {
 };
 
 /**
+ * Finds the field of an array item that a path through that item names, e.g. `contacts.qty` for `contacts.2.qty`, so it
+ * is checked like the field. A path ending in an index sets a whole item instead (see getItemArrayConfig).
+ */
+const getItemFieldConfig = (flattenedSchema, path: string) => {
+  if (!/\.\d+\./.test(path) || /\.\d+$/.test(path)) return undefined;
+
+  return flattenedSchema[path.replace(/\.\d+/g, '')];
+};
+
+/**
  * Checks one item of a typed array against the array's item schema or item type. The returned value is the item
  * converted to the item type, as validateProp converts values.
  */
@@ -206,7 +216,7 @@ export const doValidateUpdate = function (pathContext, flattenedSchema) {
       return res;
     }
 
-    const config = flattenedSchema[pathStrippedSuffix];
+    const config = flattenedSchema[pathStrippedSuffix] ?? getItemFieldConfig(flattenedSchema, pathStrippedSuffix);
     const itemArrayConfig = config ? null : getItemArrayConfig(flattenedSchema, pathStrippedSuffix);
 
     let checks: ArrayItemCheck[] = [];

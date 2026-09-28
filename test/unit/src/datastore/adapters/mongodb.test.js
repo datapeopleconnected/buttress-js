@@ -301,6 +301,74 @@ describe('datastore/adapters/MongodbAdapter: object properties of array items', 
   });
 });
 
+describe('datastore/adapters/MongodbAdapter: fields inside array items', () => {
+  const peopleSchema = {
+    name: 'organisation',
+    type: 'collection',
+    extends: [],
+    properties: {
+      people: {
+        __type: 'array',
+        __allowUpdate: true,
+        __schema: {
+          qty: { __type: 'number', __default: 0, __allowUpdate: true },
+          ownerId: { __type: 'id', __default: null, __allowUpdate: true },
+          address: { street: { __type: 'string', __default: null, __allowUpdate: true } },
+          phones: {
+            __type: 'array',
+            __allowUpdate: true,
+            __schema: { number: { __type: 'string', __default: null, __allowUpdate: true } },
+          },
+        },
+      },
+      matrix: { __type: 'array', __itemtype: 'array', __allowUpdate: true },
+    },
+  };
+
+  const setOf = async (path, value) => {
+    const { model, ops } = createModel(peopleSchema);
+    const { validation } = await update(model, { path, value });
+    return { validation, op: ops[0] };
+  };
+
+  it('refuses a value of the wrong type for a field of an item', async () => {
+    const { validation, op } = await setOf('people.0.qty', 'lots');
+
+    assert.strictEqual(validation.isValid, false);
+    assert.strictEqual(validation.invalidValue, 'people.0.qty failed schema test');
+    assert.strictEqual(op, undefined);
+  });
+
+  it("converts a field of an item to the field's type", async () => {
+    assert.deepStrictEqual((await setOf('people.0.qty', '5')).op, { $set: { 'people.0.qty': 5 } });
+    assert.deepStrictEqual((await setOf('people.0.address.street', 12)).op, { $set: { 'people.0.address.street': '12' } });
+
+    const { op } = await setOf('people.0.ownerId', ID);
+    assert.strictEqual(op.$set['people.0.ownerId'].constructor.name, 'ObjectId');
+    assert.strictEqual(op.$set['people.0.ownerId'].toString(), ID);
+  });
+
+  it('increments a field of an item only by a number', async () => {
+    assert.strictEqual((await setOf('people.0.qty.__increment__', 'lots')).validation.isValid, false);
+    assert.deepStrictEqual((await setOf('people.0.qty.__increment__', 2)).op, { $inc: { 'people.0.qty': 2 } });
+  });
+
+  it('treats a typed array inside an item like any other typed array', async () => {
+    assert.deepStrictEqual((await setOf('people.0.phones', { number: 5 })).op, {
+      $push: { 'people.0.phones': { number: '5' } },
+    });
+    assert.deepStrictEqual((await setOf('people.0.phones', [{ number: 5 }])).op, {
+      $set: { 'people.0.phones': [{ number: '5' }] },
+    });
+    assert.deepStrictEqual((await setOf('people.0.phones.1.number', 7)).op, { $set: { 'people.0.phones.1.number': '7' } });
+    assert.strictEqual((await setOf('people.0.phones', 'x')).validation.isValid, false);
+  });
+
+  it('leaves an element of an array inside an array item-type array as it is', async () => {
+    assert.deepStrictEqual((await setOf('matrix.0.1', 'x')).op, { $set: { 'matrix.0.1': 'x' } });
+  });
+});
+
 describe('datastore/adapters/MongodbAdapter:isDuplicate', () => {
   function createAdapter(storedIds) {
     const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});

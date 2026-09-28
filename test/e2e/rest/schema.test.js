@@ -381,6 +381,17 @@ describe('Schema', async () => {
 			assert.deepStrictEqual(spaceship.engine.map((e) => e.position), ['left', 'right', 'top']);
 		});
 
+		it('Should check and convert a field of an array item', async () => {
+			await assert.rejects(
+				() => putSpaceship({path: 'engine.0.items', value: 'lots'}),
+				(err) => err.code === 400 && err.message === 'spaceship: Update value is invalid: engine.0.items failed schema test',
+			);
+
+			await putSpaceship({path: 'engine.0.items', value: '4'});
+			const spaceship = await getSpaceship();
+			assert.strictEqual(spaceship.engine[0].items, 4);
+		});
+
 		it('Should refuse a whole-array write when an element is invalid, and leave the array as it was', async () => {
 			await assert.rejects(
 				() => putSpaceship({path: 'engine', value: [{position: 'left', items: 'lots'}]}),
