@@ -247,6 +247,15 @@ describe('Lambda', async () => {
 				assert.strictEqual(result.res.message, 'Hello World!');
 				assert.notEqual(result.executionId, undefined);
 			});
+
+			it('Should run the lambda when the caller repeats ?token=', async function() {
+				// The query parser makes a repeated parameter an array, so the caller's token isn't always a string.
+				const response = await fetch(`${ENDPOINT.REST}/lambda/v1/${testEnv.apps.app1.apiPath}/hello/world?token=a&token=b`);
+				const result = await response.json();
+
+				assert.strictEqual(response.status, 200);
+				assert.strictEqual(result.res.message, 'Hello World!');
+			});
 		});
 	});
 });
