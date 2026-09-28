@@ -846,5 +846,20 @@ describe('Processing', async () => {
 
 			assert.strictEqual(error.message, 'invalid-namespace');
 		});
+
+		it('Should refuse a token that is not a string', async function () {
+			// A query object would otherwise find whichever token Mongo returns first, a system token included.
+			for (const [app, token] of [[testEnv.apps.app1, { $ne: null }], [testEnv.apps.app2, { $regex: '.' }]]) {
+				const socket = io(`${ENDPOINT.SOCK}/${app.apiPath}`, { auth: { token }, forceNew: true, reconnection: false });
+
+				const error = await new Promise((resolve, reject) => {
+					socket.once('connect_error', resolve);
+					socket.once('connect', () => reject(new Error(`Connected to /${app.apiPath} with ${JSON.stringify(token)}`)));
+				});
+				socket.close();
+
+				assert.strictEqual(error.message, 'invalid-token');
+			}
+		});
 	});
 });

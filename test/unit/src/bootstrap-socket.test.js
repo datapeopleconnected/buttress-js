@@ -36,24 +36,37 @@ describe('bootstrap-socket:namespace authentication', () => {
 
   afterEach(() => sinon.restore());
 
-  // Runs the namespace middleware for a socket connecting to `namespace` with `token`.
-  async function connect(namespace, token) {
+  // Matches a token's value as Mongo would, operators included, so a query object finds a token.
+  const matchesValue = (value, wanted) =>
+    wanted !== null && typeof wanted === 'object' && '$ne' in wanted ? value !== wanted.$ne : value === wanted;
+
+  // Runs the namespace middleware for a socket connecting to `namespace` with `token`, sent as `auth` or in the query.
+  async function connect(namespace, token, { inQuery = false } = {}) {
     const bootstrap = new BootstrapSocket();
     bootstrap.__nrp = { emit: sinon.spy() };
 
+    const lookups = [];
     sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
-      if (modelClass === TokenSchemaModel) return { findOne: async (q) => tokens.find((t) => t.value === q.value) || null };
+      if (modelClass === TokenSchemaModel) {
+        return {
+          findOne: async (q) => {
+            lookups.push(q.value);
+            return tokens.find((t) => matchesValue(t.value, q.value)) || null;
+          },
+        };
+      }
       if (modelClass === AppSchemaModel) return { findOne: async (q) => apps.find((a) => a.id.equals(q.id)) || null };
       throw new Error(`Unexpected core model ${modelClass.name}`);
     });
 
-    const socket = { id: 'socket-1', nsp: { name: namespace }, handshake: { auth: { token }, query: {} }, data: {} };
+    const handshake = inQuery ? { auth: {}, query: { token } } : { auth: { token }, query: {} };
+    const socket = { id: 'socket-1', nsp: { name: namespace }, handshake, data: {} };
     socket.join = sinon.spy();
     socket.on = () => {};
 
     const next = sinon.spy();
     await bootstrap._workerHandleSocketConnection(socket, next);
-    return { socket, next, nrp: bootstrap.__nrp };
+    return { socket, next, nrp: bootstrap.__nrp, lookups };
   }
 
   it("accepts a token on its own app's namespace", async () => {
@@ -73,6 +86,25 @@ describe('bootstrap-socket:namespace authentication', () => {
 
   it("still lets a system token join any app's namespace", async () => {
     const { next } = await connect('/app-one', 'system-token');
+
+    assert.deepStrictEqual(next.firstCall.args, []);
+  });
+
+  it('refuses a token that is not a string, without looking it up', async () => {
+    for (const token of [{ $ne: null }, { $regex: '.' }, ['app-one-token'], 42, '']) {
+      for (const inQuery of [false, true]) {
+        const { next, socket, lookups } = await connect('/app-one', token, { inQuery });
+
+        assert.strictEqual(next.firstCall.args[0]?.message, 'invalid-token', `accepted ${JSON.stringify(token)}`);
+        assert.ok(socket.join.notCalled);
+        assert.deepStrictEqual(lookups, []);
+        sinon.restore();
+      }
+    }
+  });
+
+  it('still accepts a token in the query string', async () => {
+    const { next } = await connect('/app-one', 'app-one-token', { inQuery: true });
 
     assert.deepStrictEqual(next.firstCall.args, []);
   });
