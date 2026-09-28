@@ -34,6 +34,7 @@ The table below lists commonly used runtime parameters.
 | BUTTRESS_LOGGING_LEVEL | string | info | |
 | BUTTRESS_LOGGING_SLOW | boolean | TRUE | |
 | BUTTRESS_LOGGING_SLOW_TIME | int | 2 | |
+| BUTTRESS_LOGGING_SERVER_TIMING | boolean | FALSE | Adds a `Server-Timing` header to API responses, with how long token auth, access control, validation and execution took. Exposes internal timings, so leave it off for public-facing instances |
 | BUTTRESS_TIMEOUT_SHUTDOWN | int | 8 | Seconds a process has to finish in-flight work after SIGTERM/SIGINT before it exits anyway |
 
 ## Lambda Runtime Parameters

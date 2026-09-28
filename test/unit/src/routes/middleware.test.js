@@ -20,6 +20,7 @@ import sinon from 'sinon';
 
 import { RoutesMiddleware } from '../../../../dist/routes/middleware.js';
 import Logging from '../../../../dist/helpers/logging.js';
+import IOStats from '../../../../dist/helpers/io-stats.js';
 import * as Helpers from '../../../../dist/helpers/errors.js';
 
 function createMiddleware() {
@@ -43,6 +44,29 @@ function createRes() {
 
 afterEach(() => {
   sinon.restore();
+});
+
+describe('routes/RoutesMiddleware:_createContext', () => {
+  afterEach(() => {
+    IOStats.disable();
+  });
+
+  it('counts the I/O the rest of the request causes against its request id', async () => {
+    IOStats.enable();
+    const middleware = createMiddleware();
+    const req = {};
+
+    await new Promise((resolve) => {
+      middleware._createContext(req, {}, () => {
+        setImmediate(() => {
+          IOStats.record('mongo', 'find', 'tokens');
+          resolve();
+        });
+      });
+    });
+
+    assert.deepStrictEqual(IOStats.get(req.context.id).mongo, { find: 1 });
+  });
 });
 
 describe('routes/RoutesMiddleware:logErrors', () => {

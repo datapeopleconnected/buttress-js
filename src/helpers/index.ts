@@ -57,6 +57,39 @@ export class Timer {
   }
 }
 
+// The stages reported in a Server-Timing header, each timed from its own mark in RequestContext.timings to the next.
+const SERVER_TIMING_STAGES: { name: string; desc?: string; from: string; to: string }[] = [
+  { name: 'auth', desc: 'token', from: 'authenticateToken', to: 'accessControl' },
+  { name: 'ac', desc: 'access control', from: 'accessControl', to: 'configCrossDomain' },
+  { name: 'validate', from: 'validate', to: 'exec' },
+  { name: 'exec', from: 'exec', to: 'respond' },
+];
+
+/**
+ * Builds a Server-Timing header value, in milliseconds, from a request's timing marks (seconds since it started).
+ * A stage missing either of its marks is left out. `total` runs to the start of the response, so it doesn't include
+ * sending a streamed body.
+ */
+export const serverTimingHeader = (timings: Record<string, unknown>) => {
+  const mark = (name: string) => {
+    const value = timings[name];
+    return typeof value === 'number' ? value : null;
+  };
+  const ms = (seconds: number) => (seconds * 1000).toFixed(3);
+
+  const metrics = SERVER_TIMING_STAGES.flatMap(({ name, desc, from, to }) => {
+    const start = mark(from);
+    const end = mark(to);
+    if (start === null || end === null) return [];
+    return [`${name};dur=${ms(end - start)}${desc ? `;desc="${desc}"` : ''}`];
+  });
+
+  const respond = mark('respond');
+  if (respond !== null) metrics.push(`total;dur=${ms(respond)};desc="until response"`);
+
+  return metrics.join(', ');
+};
+
 export class JSONStringifyStream extends Transform {
   private _first: boolean;
   private prepare: (chunk: unknown) => unknown;

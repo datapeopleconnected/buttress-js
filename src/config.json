@@ -25,6 +25,7 @@
     "BUTTRESS_LOGGING_LEVEL": "info",
     "BUTTRESS_LOGGING_SLOW": "TRUE",
     "BUTTRESS_LOGGING_SLOW_TIME": 2,
+    "BUTTRESS_LOGGING_SERVER_TIMING": "FALSE",
 
     "BUTTRESS_TIMEOUT_LAMBDA": 5,
     "BUTTRESS_TIMEOUT_LAMBDAS_RUNNER": 10,
@@ -60,7 +61,8 @@
     "logging": {
       "level": "%BUTTRESS_LOGGING_LEVEL%",
       "slow": "%BUTTRESS_LOGGING_SLOW%",
-      "slowTime": "%BUTTRESS_LOGGING_SLOW_TIME%"
+      "slowTime": "%BUTTRESS_LOGGING_SLOW_TIME%",
+      "serverTiming": "%BUTTRESS_LOGGING_SERVER_TIMING%"
     },
     "listenPorts": {
       "rest": "%BUTTRESS_REST_LISTEN_PORT%",

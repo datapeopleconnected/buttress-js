@@ -47,6 +47,7 @@ npm run test              # build + test:unit + test:e2e (what CI runs)
 npm run test:unit         # mocha over test/unit/**/* — imports compiled dist/, NOT src/
 npm run test:e2e          # wipes the test DB/Redis, boots a real Buttress in INSTALL_MODE, then runs
                             # test/e2e/index.test.js against it
+npm run test:io-budgets   # as test:e2e, but only the I/O budget suite (see performance.md)
 ```
 
 - **Unit tests import `dist/`** (see e.g. [test/unit/src/helpers/schema.test.js](../test/unit/src/helpers/schema.test.js)
@@ -60,11 +61,11 @@ npm run test:e2e          # wipes the test DB/Redis, boots a real Buttress in IN
   before every e2e run, then `test/hooks.js` reads `<appData>/super.json` for the install-generated super
   token (`Config.testToken`) since e2e runs against a fully-installed instance, not mocks.
   [test/e2e/index.test.js](../test/e2e/index.test.js) is the entry point that requires the individual
-  `test/e2e/{rest,sock,lambda,spr}/*.test.js` suites.
+  `test/e2e/{rest,sock,lambda,spr,perf}/*.test.js` suites.
 - Env used for tests is `.test.env` (`NODE_ENV=test`) — see `helpers/config.ts`, which loads
-  `.${NODE_ENV}.env` from the repo root via `@dpc/node-env-obj`. `test:e2e:timed` /
-  `perf:baseline:record` / `perf:compare` wrap the e2e run with timing collection
-  ([test/perf/](../test/perf)) to catch performance regressions between runs.
+  `.${NODE_ENV}.env` from the repo root via `@dpc/node-env-obj`. Performance checks (the I/O budget
+  suite, and the rougher `test:e2e:timed` / `perf:compare` timing comparison) are in
+  [performance.md](performance.md).
 
 ## Running from source (non-Docker)
 

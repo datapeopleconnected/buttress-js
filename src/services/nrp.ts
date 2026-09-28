@@ -16,6 +16,8 @@
 
 import * as redis from '@redis/client';
 
+import IOStats from '../helpers/io-stats.js';
+
 /**
  * Redis client options interface
  */
@@ -124,6 +126,7 @@ export class NodeRedisPubsub {
    * @returns Whether the message was published
    */
   publish(channel: string, message: string): Promise<number> {
+    IOStats.record('nrp', channel);
     return this.emitter.publish(this.prefix + channel, message);
   }
 

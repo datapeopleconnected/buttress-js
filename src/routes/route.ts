@@ -135,6 +135,8 @@ export default class Route {
   slowLogging: boolean = Config.logging.slow === 'TRUE';
   slowLoggingTime: number = parseFloat(Config.logging.slowTime);
 
+  serverTiming: boolean = Config.logging.serverTiming === 'TRUE';
+
   timingChunkSample: number = 250;
 
   core: boolean = true;
@@ -282,6 +284,7 @@ export default class Route {
    */
   async _respond(req: Request, res: Response, result: unknown) {
     req.context.timings.respond = req.context.timer.interval;
+    if (this.serverTiming) res.set('Server-Timing', Helpers.serverTimingHeader(req.context.timings));
 
     const isReadStream = result instanceof Stream.Readable && result.readable;
 
