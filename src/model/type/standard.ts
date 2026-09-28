@@ -429,6 +429,14 @@ export default class StandardModel<TDocument = unknown> {
   }
 
   /**
+   * @param {string[]} ids - ids of entities about to be added
+   * @return {Promise<string[]>} - the ids among them that are already stored
+   */
+  findStoredIds(ids: string[]) {
+    return this.adapter.findStoredIds(ids);
+  }
+
+  /**
    * @param {string} id - id to be deleted
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */

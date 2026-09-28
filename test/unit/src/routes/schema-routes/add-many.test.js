@@ -20,10 +20,16 @@ import assert from 'assert';
 import AddMany from '../../../../../dist/routes/schema-routes/add-many.js';
 import { RequestError } from '../../../../../dist/helpers/errors.js';
 
+// storedIds are given back in lower case, as the Mongo adapter gives ids.
 function createFakeModel({ validation = { isValid: true }, added, storedIds = [] } = {}) {
+  const lookups = [];
   return {
+    lookups,
     validate: () => validation,
-    isDuplicate: async (entity) => storedIds.includes(entity.id),
+    findStoredIds: async (ids) => {
+      lookups.push(ids);
+      return storedIds.filter((id) => ids.some((wanted) => wanted.toLowerCase() === id));
+    },
     add: async (entities) => added || entities.map((e, idx) => ({ id: `new-${idx}`, ...e })),
   };
 }
@@ -113,6 +119,48 @@ describe('schema-routes/AddMany:_validate', () => {
     await assert.rejects(
       () => route._validate({ body: [{ id: 'x' }, { id: 'y' }], context: { id: 'req-1' } }, {}),
       (err) => err.code === 400 && err.message === 'test-schema: Duplicate id y at index 1',
+    );
+  });
+
+  it('refuses an entity whose id is stored, whatever its case', async () => {
+    const route = createRoute(createFakeModel({ storedIds: ['6ab0abcd'] }));
+
+    await assert.rejects(
+      () => route._validate({ body: [{ id: '6AB0ABCD' }], context: { id: 'req-1' } }, {}),
+      (err) => err.code === 400 && err.message === 'test-schema: Duplicate id 6AB0ABCD at index 0',
+    );
+  });
+
+  it('looks the stored ids up once for the whole batch', async () => {
+    const model = createFakeModel();
+    const route = createRoute(model);
+
+    await route._validate({ body: [{ id: 'x' }, { name: 'a' }, { id: 'y' }], context: { id: 'req-1' } }, {});
+
+    assert.deepStrictEqual(model.lookups, [['x', 'y']]);
+  });
+
+  it('does not look up ids when no entity has one', async () => {
+    const model = createFakeModel();
+    const route = createRoute(model);
+
+    await route._validate({ body: [{ name: 'a' }, { name: 'b' }], context: { id: 'req-1' } }, {});
+
+    assert.deepStrictEqual(model.lookups, []);
+  });
+
+  it('names the first entity that fails, whether it is invalid or a duplicate', async () => {
+    const model = createFakeModel({ storedIds: ['s'] });
+    model.validate = (entity) => (entity.name ? { isValid: true } : { isValid: false, missing: ['name'], invalid: [] });
+    const route = createRoute(model);
+
+    await assert.rejects(
+      () => route._validate({ body: [{ id: 's', name: 'a' }, {}], context: { id: 'req-1' } }, {}),
+      (err) => err.message === 'test-schema: Duplicate id s at index 0',
+    );
+    await assert.rejects(
+      () => route._validate({ body: [{}, { id: 's', name: 'a' }], context: { id: 'req-1' } }, {}),
+      (err) => err.message === 'test-schema: Missing field: name at index 0',
     );
   });
 

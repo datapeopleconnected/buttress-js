@@ -550,6 +550,23 @@ export default class MongodbAdapter extends AbstractAdapter {
     return this.exists(details.id);
   }
 
+  override async findStoredIds(ids: string[]) {
+    if (!this.collection) throw new Error('No collection');
+
+    // An id that isn't an ObjectId can't be stored.
+    const objectIds = ids.flatMap((id) => {
+      try {
+        return [new ObjectId(id)];
+      } catch (_err) {
+        return [];
+      }
+    });
+    if (objectIds.length < 1) return [];
+
+    const documents = await this.collection.find({ _id: { $in: objectIds } }, { projection: { _id: 1 } }).toArray();
+    return documents.map((document) => document._id.toString());
+  }
+
   /**
    * @param {string} id - id to be deleted
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed

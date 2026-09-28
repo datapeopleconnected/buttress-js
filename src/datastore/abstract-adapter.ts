@@ -89,6 +89,14 @@ export default class AbstractAdapter {
   }
 
   /**
+   * @param {string[]} ids - ids of entities about to be added
+   * @return {Promise<string[]>} - the ids among them that are already stored
+   */
+  findStoredIds(_ids: string[]): Promise<string[]> {
+    throw new Errors.NotYetImplemented('findStoredIds');
+  }
+
+  /**
    * @param {App} id - id of the object to be deleted
    */
   rm(_id: unknown) {

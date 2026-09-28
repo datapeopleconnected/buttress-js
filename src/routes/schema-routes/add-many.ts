@@ -28,11 +28,18 @@ import StandardModel from '../../model/type/standard.js';
  * The first reason a batch of new entities can't be stored, naming the index of the entity, or null if it can be.
  */
 const findBatchProblem = async (model: StandardModel, entities: unknown[]) => {
+  const isEntity = (entity: unknown): entity is { id?: unknown } =>
+    entity !== null && typeof entity === 'object' && !Array.isArray(entity);
+
+  // Ids are compared ignoring case, as a hex id names the same entity in either case.
+  const givenIds = entities.flatMap((entity) => (isEntity(entity) && entity.id != null ? [String(entity.id)] : []));
+  const storedIds = new Set(
+    (givenIds.length > 0 ? await model.findStoredIds(givenIds) : []).map((id) => id.toLowerCase()),
+  );
+
   const ids = new Set<string>();
   for (const [idx, entity] of entities.entries()) {
-    if (entity === null || typeof entity !== 'object' || Array.isArray(entity)) {
-      return `Invalid entity at index ${idx}, expected an object`;
-    }
+    if (!isEntity(entity)) return `Invalid entity at index ${idx}, expected an object`;
 
     const validation = model.validate(entity);
     if (!validation.isValid) {
@@ -45,13 +52,12 @@ const findBatchProblem = async (model: StandardModel, entities: unknown[]) => {
       return `${problem} at index ${idx}`;
     }
 
-    const { id } = entity as { id?: unknown };
+    const { id } = entity;
     if (id === undefined || id === null) continue;
 
-    // An existing id would fail the insert part way through, after the entities before it were stored. Ids are
-    // compared ignoring case, as a hex id names the same entity in either case.
+    // An existing id would fail the insert part way through, after the entities before it were stored.
     const key = String(id).toLowerCase();
-    if (ids.has(key) || (await model.isDuplicate(entity))) return `Duplicate id ${id} at index ${idx}`;
+    if (ids.has(key) || storedIds.has(key)) return `Duplicate id ${id} at index ${idx}`;
     ids.add(key);
   }
 

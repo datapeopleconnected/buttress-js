@@ -220,6 +220,10 @@ export default class Buttress extends AbstractAdapter {
     return Promise.resolve(false);
   }
 
+  override findStoredIds(_ids: string[]) {
+    return Promise.resolve([]);
+  }
+
   /**
    * @param {string} id
    * @return {Promise}

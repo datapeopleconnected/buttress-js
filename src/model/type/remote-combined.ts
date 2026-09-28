@@ -164,6 +164,15 @@ export default class RemoteCombinedModel extends StandardModel {
   }
 
   /**
+   * New entities are added to the local model, so that is where their ids would clash.
+   * @param {string[]} ids
+   * @return {Promise<string[]>}
+   */
+  override async findStoredIds(ids: string[]) {
+    return this.localModel.findStoredIds(ids);
+  }
+
+  /**
    * @param {object} entity
    * @param {string} sourceId
    * @return {Promise}

@@ -561,3 +561,37 @@ describe('datastore/adapters/MongodbAdapter:isDuplicate', () => {
     assert.strictEqual(await adapter.isDuplicate({ name: 'a' }), false);
   });
 });
+
+describe('datastore/adapters/MongodbAdapter:findStoredIds', () => {
+  function createAdapter(storedIds) {
+    const queries = [];
+    const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});
+    adapter.collection = {
+      namespace: 'test.organisation',
+      find: (query, options) => {
+        queries.push({ query, options });
+        const wanted = query._id.$in.map((id) => id.toString());
+        return { toArray: async () => storedIds.filter((id) => wanted.includes(id)).map((id) => ({ _id: new ObjectId(id) })) };
+      },
+    };
+    return { adapter, queries };
+  }
+
+  it('gives the ids of those given that are stored, in one query', async () => {
+    const { adapter, queries } = createAdapter([ID]);
+
+    const stored = await adapter.findStoredIds([ID.toUpperCase(), '507f1f77bcf86cd799439012']);
+
+    assert.deepStrictEqual(stored, [ID]);
+    assert.strictEqual(queries.length, 1);
+    assert.deepStrictEqual(queries[0].options, { projection: { _id: 1 } });
+  });
+
+  it('ignores an id that cannot be stored, and does not query for none', async () => {
+    const { adapter, queries } = createAdapter([ID]);
+
+    assert.deepStrictEqual(await adapter.findStoredIds(['abc']), []);
+    assert.deepStrictEqual(await adapter.findStoredIds([]), []);
+    assert.strictEqual(queries.length, 0);
+  });
+});
