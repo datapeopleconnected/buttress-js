@@ -87,9 +87,9 @@ Items are checked against the array's `__itemtype` or item `__schema`, element b
 `POST <schema>/bulk/update` takes `[{id, sourceId?, body}]`, where `body` is an update or an array of them. Each item is validated and applied on its own, in order, and the response has one entry per item, in request order:
 
 - Applied: `{id, sourceId, results}`, where `results` is what `PUT <schema>/:id` would have returned for that body.
-- Refused: `{id, sourceId, results: null, validation: {code, message}}`. Nothing in that item's body was applied, but other items were, including other items for the same entity.
+- Refused: `{id, sourceId, results: null, validation: {code, message}}`. Nothing in that item's body was applied, but other items were, including other items for the same entity. An item is refused when it fails validation, when its entity is missing or outside the caller's scope, or when its write fails, for example with a 400 because the stored data can't take it.
 
-The response is a 200 whenever the request itself is well formed, so check each item's `results`.
+The response is a 200 whenever the request itself is well formed. The `x-bulk-refused` header gives the number of refused items, so a client only needs to look through the results when it isn't `0`.
 
 `POST <schema>/bulk/add` and `POST <schema>/bulk/delete` are all or nothing. `bulk/add` stores nothing unless every entity is valid and none reuses an id, whether another entity's in the request or one already stored; the 400 names the index of the first entity that fails, for example `car: Missing field: name at index 3`. `bulk/delete` deletes nothing unless every id exists and is in the caller's scope, and responds `true`.
 

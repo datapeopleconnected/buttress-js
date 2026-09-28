@@ -43,6 +43,7 @@ import AccessControl from './access-control/index.js';
 import { PolicyCache } from './services/policy-cache.js';
 import AppSchemaModel from './model/core/app.js';
 import TokenSchemaModel from './model/core/token.js';
+import { BULK_REFUSED_HEADER } from './routes/schema-routes/update-many.js';
 
 // morgan.token('id', (req) => req.context.id);
 
@@ -205,6 +206,8 @@ export default class BootstrapRest extends Bootstrap {
         origin: true,
         methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,SEARCH',
         credentials: true,
+        // So browser clients on another origin can read it.
+        exposedHeaders: [BULK_REFUSED_HEADER],
       }),
     );
     app.use(Express.static(`${Config.paths.appData}/public`));

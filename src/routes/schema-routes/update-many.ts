@@ -28,6 +28,10 @@ import * as ACM from '../../access-control/models-access.js';
 import StandardModel from '../../model/type/standard.js';
 import { describeInvalidUpdate } from '../../model/shared.js';
 
+// The number of items a bulk update didn't apply. The response is a 200 whenever the request was well formed, so this
+// tells a client whether to look through the results for refusals.
+export const BULK_REFUSED_HEADER = 'x-bulk-refused';
+
 /**
  * @class UpdateMany
  */
@@ -99,7 +103,7 @@ export default class UpdateMany extends Route {
     }
   }
 
-  override async _exec(_req: Request, _res: Response, _data: unknown) {
+  override async _exec(req: Request, res: Response, _data: unknown) {
     const model = await this.routeModel();
 
     const output: {
@@ -114,16 +118,34 @@ export default class UpdateMany extends Route {
     for await (const body of _data as UpdateManyBody[]) {
       // Items that failed validation (bad path/value, missing id, or outside the caller's
       // access-control scope) must not be applied, only reported back.
-      if (body.validation !== true) {
-        output.push({ id: body.id, sourceId: body.sourceId, results: null, validation: body.validation });
-        continue;
+      if (body.validation === true) {
+        try {
+          const result = await model.updateByPath(body.body, body.id, body.sourceId);
+          output.push({ id: body.id, sourceId: body.sourceId, results: result });
+          continue;
+        } catch (err: unknown) {
+          // An item whose write fails is reported like a refused one, and the rest carry on. Marking it refused on the
+          // request also stops it triggering path lambdas (see Route._checkBasedPathLambda).
+          body.validation = this.__describeWriteFailure(req, body.id, err);
+        }
       }
 
-      const result = await model.updateByPath(body.body, body.id, body.sourceId);
-      output.push({ id: body.id, sourceId: body.sourceId, results: result });
+      output.push({ id: body.id, sourceId: body.sourceId, results: null, validation: body.validation });
     }
 
+    res.set(BULK_REFUSED_HEADER, String(output.filter((item) => item.results === null).length));
     return output;
+  }
+
+  __describeWriteFailure(req: Request, id: string, err: unknown) {
+    if (err instanceof Helpers.Errors.RequestError) return { code: err.code, message: err.message };
+
+    this.log(
+      `${this.schemaName}: Unable to update ${id}: ${Helpers.getThrownErrorMessage(err)}`,
+      Route.LogLevel.ERR,
+      req.context.id,
+    );
+    return { code: 500, message: 'Internal Server Error' };
   }
 
   // Refused items are reported in the response but changed nothing, so they aren't broadcast.

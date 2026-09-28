@@ -474,6 +474,32 @@ describe('Schema', async () => {
 			assert.strictEqual((await getSpaceship()).name, name);
 		});
 
+		it('Should report a bulk update item that fails while being written, apply the rest, and count the refusals', async () => {
+			const res = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship/bulk/update`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${testEnv.apps.app2.token}`,
+					Origin: 'http://crag.example',
+				},
+				body: JSON.stringify([
+					{id: testEnv.spaceship.id, body: {path: 'name', value: 'bulk-renamed'}},
+					{id: testEnv.spaceship.id, body: {path: 'meta.x', value: 1}},
+				]),
+			});
+			const results = await res.json();
+
+			assert.strictEqual(res.status, 200);
+			assert.strictEqual(res.headers.get('x-bulk-refused'), '1');
+			assert.match(res.headers.get('access-control-expose-headers'), /x-bulk-refused/);
+			assert.strictEqual(results[0].results[0].value, 'bulk-renamed');
+			assert.deepStrictEqual(results[1].validation, {
+				code: 400,
+				message: "Update can't be applied: Cannot create field 'x' in element {meta: null}",
+			});
+			assert.strictEqual((await getSpaceship()).name, 'bulk-renamed');
+		});
+
 		it('Should remove an array item without leaving a hole', async () => {
 			const before = (await getSpaceship()).engine;
 
