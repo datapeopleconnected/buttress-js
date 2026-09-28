@@ -54,6 +54,9 @@ export default class BootstrapRest extends Bootstrap {
   _restServer?: http.Server;
   _installMode: boolean;
 
+  // Hands requests from plugins to the Express app. Plugins is a singleton, so clean() has to remove this again.
+  private _onPluginRequest?: (req: http.IncomingMessage, res: http.ServerResponse) => void;
+
   constructor(installMode = false) {
     super();
 
@@ -104,6 +107,11 @@ export default class BootstrapRest extends Bootstrap {
 
   override async clean() {
     // Stop taking requests, and let the in-flight ones finish while the connections they use are still open
+    if (this._onPluginRequest) {
+      Logging.logSilly('Removing plugin request listener');
+      Plugins.off('request', this._onPluginRequest);
+      this._onPluginRequest = undefined;
+    }
     if (this._restServer) {
       Logging.logSilly('Closing express server');
       await this._closeRestServer(this._restServer);
@@ -210,7 +218,8 @@ export default class BootstrapRest extends Bootstrap {
     app.use(Express.static(`${Config.paths.appData}/public`));
 
     // @ts-expect-error - Calling a private function within the class, this is the only way it's exposed.
-    Plugins.on('request', (req, res) => app.handle(req, res));
+    this._onPluginRequest = (req, res) => app.handle(req, res);
+    Plugins.on('request', this._onPluginRequest);
 
     await Model.initCoreModels();
 
