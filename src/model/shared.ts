@@ -109,6 +109,19 @@ const checkArrayItem = (config, item: unknown, path: string): ArrayItemCheck => 
 };
 
 /**
+ * Says why validateUpdate refused an update, for the error a route sends back.
+ */
+export const describeInvalidUpdate = (validation) => {
+  if (!validation.isPathValid && (validation.missingRequired === 'path' || validation.missingRequired === 'value')) {
+    return `Update is missing its ${validation.missingRequired}`;
+  }
+  if (validation.isPathValid === false) return `Update path is invalid: ${validation.invalidPath}`;
+  if (validation.isMissingRequired) return `Missing required property: ${validation.missingRequired}`;
+
+  return `Update value is invalid: ${validation.invalidValue}`;
+};
+
+/**
  * @param {Object} pathContext - object that defines path specification
  * @param {Object} flattenedSchema - schema object keyed on path
  * @return {Object} - returns an object with validation context
@@ -127,15 +140,16 @@ export const doValidateUpdate = function (pathContext, flattenedSchema) {
       invalidValid: '',
     };
 
-    // Seperate between the full update path vs stripped suffix
-    const suffix = ['.__increment__'];
     const fullPath = body.path;
-    const pathStrippedSuffix = fullPath.replace(suffix, '');
-
-    if (!fullPath) {
+    if (!fullPath || typeof fullPath !== 'string') {
       res.missingRequired = 'path';
       return res;
     }
+
+    // Seperate between the full update path vs stripped suffix
+    const suffix = '.__increment__';
+    const pathStrippedSuffix = fullPath.replace(suffix, '');
+
     if (body.value === undefined) {
       res.missingRequired = 'value';
       return res;

@@ -26,6 +26,7 @@ import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
 import StandardModel from '../../model/type/standard.js';
+import { describeInvalidUpdate } from '../../model/shared.js';
 
 /**
  * @class UpdateMany
@@ -59,7 +60,7 @@ export default class UpdateMany extends Route {
       update.body = body;
 
       if (!validation.isValid) {
-        update.validation = { code: 400, message: this.__describeInvalidUpdate(validation) };
+        update.validation = { code: 400, message: `${this.schemaName}: ${describeInvalidUpdate(validation)}` };
         this.log(update.validation.message, Route.LogLevel.ERR, req.context.id);
         continue;
       }
@@ -76,15 +77,6 @@ export default class UpdateMany extends Route {
     }
 
     return req.body;
-  }
-
-  __describeInvalidUpdate(validation) {
-    if (validation.isPathValid === false)
-      return `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`;
-    if (validation.isMissingRequired)
-      return `${this.schemaName}: Missing required property: ${validation.missingRequired}`;
-
-    return `${this.schemaName}: Update value is invalid: ${validation.invalidValue}`;
   }
 
   // Whether the entity exists and is inside the caller's access-control scope.

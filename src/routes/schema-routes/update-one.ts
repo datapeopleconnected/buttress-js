@@ -25,6 +25,7 @@ import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
+import { describeInvalidUpdate } from '../../model/shared.js';
 
 /**
  * @class UpdateOne
@@ -54,35 +55,9 @@ export default class UpdateOne extends Route {
     const { validation, body } = model.validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {
-      if (validation.isPathValid === false) {
-        this.log(
-          `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
-          Route.LogLevel.ERR,
-          req.context.id,
-        );
-        throw new Helpers.Errors.RequestError(
-          400,
-          `${this.schemaName}: Update path is invalid: ${validation.invalidPath}`,
-        );
-      }
-      if (validation.isValueValid === false) {
-        this.log(
-          `${this.schemaName}: Update value is invalid: ${validation.invalidValue}`,
-          Route.LogLevel.ERR,
-          req.context.id,
-        );
-        if (validation.isMissingRequired) {
-          throw new Helpers.Errors.RequestError(
-            400,
-            `${this.schemaName}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
-          );
-        }
-
-        throw new Helpers.Errors.RequestError(
-          400,
-          `${this.schemaName}: Update value is invalid for path ${req.body.path}: ${validation.invalidValue}`,
-        );
-      }
+      const message = `${this.schemaName}: ${describeInvalidUpdate(validation)}`;
+      this.log(message, Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, message);
     }
 
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;

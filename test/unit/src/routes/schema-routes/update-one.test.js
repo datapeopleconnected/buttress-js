@@ -19,6 +19,7 @@ import assert from 'assert';
 import { Readable } from 'stream';
 
 import UpdateOne from '../../../../../dist/routes/schema-routes/update-one.js';
+import StandardModel from '../../../../../dist/model/type/standard.js';
 import { RequestError } from '../../../../../dist/helpers/errors.js';
 
 function createFakeModel(docs) {
@@ -120,5 +121,51 @@ describe('schema-routes/UpdateOne', () => {
     );
 
     assert.strictEqual(docs.find((d) => d.id === 'doc-2').value, 'original');
+  });
+});
+
+describe('schema-routes/UpdateOne: refusal messages', () => {
+  // The fake model, validating with a real StandardModel's validateUpdate.
+  const schema = {
+    name: 'test-schema',
+    type: 'collection',
+    extends: [],
+    properties: {
+      value: { __type: 'string', __default: null, __allowUpdate: true },
+      qty: { __type: 'number', __default: 0, __allowUpdate: true },
+    },
+  };
+  const refusal = async (body) => {
+    const services = new Map([
+      ['nrp', { on: () => {}, emit: () => {} }],
+      ['modelManager', {}],
+    ]);
+    const validator = new StandardModel(schema, null, services);
+    const model = { ...createFakeModel([{ id: 'doc-1' }]), validateUpdate: (b) => validator.validateUpdate(b) };
+    const req = { params: { id: 'doc-1' }, body, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+
+    const err = await createRoute(model)._validate(req, {}).then(
+      () => null,
+      (e) => e,
+    );
+    assert.ok(err instanceof RequestError, 'expected the update to be refused');
+    assert.strictEqual(err.code, 400);
+    return err.message;
+  };
+
+  it('names the invalid value without a path of undefined', async () => {
+    assert.strictEqual(await refusal({ path: 'qty', value: 'lots' }), 'test-schema: Update value is invalid: qty failed schema test');
+  });
+
+  it('says when the value is missing rather than that the path is invalid', async () => {
+    assert.strictEqual(await refusal({ path: 'qty' }), 'test-schema: Update is missing its value');
+  });
+
+  it('refuses an update with no path with a 400, not a 500', async () => {
+    assert.strictEqual(await refusal({ value: 'x' }), 'test-schema: Update is missing its path');
+  });
+
+  it('still names an invalid path', async () => {
+    assert.match(await refusal({ path: 'nope', value: 'x' }), /^test-schema: Update path is invalid: nope/);
   });
 });
