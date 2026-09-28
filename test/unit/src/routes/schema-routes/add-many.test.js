@@ -20,9 +20,10 @@ import assert from 'assert';
 import AddMany from '../../../../../dist/routes/schema-routes/add-many.js';
 import { RequestError } from '../../../../../dist/helpers/errors.js';
 
-function createFakeModel({ validation = { isValid: true }, added } = {}) {
+function createFakeModel({ validation = { isValid: true }, added, storedIds = [] } = {}) {
   return {
     validate: () => validation,
+    isDuplicate: async (entity) => storedIds.includes(entity.id),
     add: async (entities) => added || entities.map((e, idx) => ({ id: `new-${idx}`, ...e })),
   };
 }
@@ -63,6 +64,35 @@ describe('schema-routes/AddMany:_validate', () => {
     await assert.rejects(
       () => route._validate({ body: [{}], context: { id: 'req-1' } }, {}),
       /Invalid value: age:abc\[string\]/,
+    );
+  });
+
+  it('names the index of the first invalid entity', async () => {
+    const model = createFakeModel();
+    model.validate = (entity) => (entity.name ? { isValid: true } : { isValid: false, missing: ['name'], invalid: [] });
+    const route = createRoute(model);
+
+    await assert.rejects(
+      () => route._validate({ body: [{ name: 'a' }, {}], context: { id: 'req-1' } }, {}),
+      (err) => err.code === 400 && err.message === 'test-schema: Missing field: name at index 1',
+    );
+  });
+
+  it('refuses two entities with the same id, naming the second', async () => {
+    const route = createRoute(createFakeModel());
+
+    await assert.rejects(
+      () => route._validate({ body: [{ id: 'x' }, { id: 'y' }, { id: 'x' }], context: { id: 'req-1' } }, {}),
+      (err) => err.code === 400 && err.message === 'test-schema: Duplicate id x at index 2',
+    );
+  });
+
+  it('refuses an entity whose id is already stored', async () => {
+    const route = createRoute(createFakeModel({ storedIds: ['y'] }));
+
+    await assert.rejects(
+      () => route._validate({ body: [{ id: 'x' }, { id: 'y' }], context: { id: 'req-1' } }, {}),
+      (err) => err.code === 400 && err.message === 'test-schema: Duplicate id y at index 1',
     );
   });
 

@@ -53,19 +53,32 @@ export default class AddMany extends Route {
     //   return;
     // }
 
-    const validation = model.validate(entities);
-    if (!validation.isValid) {
-      if (validation.missing.length > 0) {
-        this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.context.id);
-        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`);
-      }
-      if (validation.invalid.length > 0) {
-        this.log(`ERROR: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.context.id);
-        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`);
+    // All or nothing: nothing is stored unless every entity is valid and new, and the error names the first that isn't.
+    const ids = new Set<string>();
+    for (const [idx, entity] of entities.entries()) {
+      const validation = model.validate(entity);
+      if (!validation.isValid) {
+        const problem =
+          validation.missing.length > 0
+            ? `Missing field: ${validation.missing[0]}`
+            : validation.invalid.length > 0
+              ? `Invalid value: ${validation.invalid[0]}`
+              : 'unknown_error';
+        this.log(`ERROR: ${problem} at index ${idx}`, Route.LogLevel.ERR, req.context.id);
+        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem} at index ${idx}`);
       }
 
-      throw new Helpers.Errors.RequestError(400, `unknown_error`);
+      if (entity?.id === undefined || entity.id === null) continue;
+
+      // An existing id would fail the insert part way through, after the entities before it were stored.
+      const id = String(entity.id);
+      if (ids.has(id) || (await model.isDuplicate(entity))) {
+        this.log(`ERROR: Duplicate id ${id} at index ${idx}`, Route.LogLevel.ERR, req.context.id);
+        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Duplicate id ${id} at index ${idx}`);
+      }
+      ids.add(id);
     }
+
     return entities;
   }
 

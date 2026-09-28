@@ -222,6 +222,59 @@ describe('Schema', async () => {
 		});
 	});
 
+	describe('Bulk add', async () => {
+		const carsUrl = () => `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`;
+
+		const bulkAdd = async (entities) => {
+			const res = await fetch(`${carsUrl()}/bulk/add`, {
+				method: 'POST',
+				headers: {'Content-Type': 'application/json', Authorization: `Bearer ${testEnv.apps.app1.token}`},
+				body: JSON.stringify(entities),
+			});
+			return {status: res.status, body: await res.json()};
+		};
+
+		const countNamed = (name) => bjsReq({
+			url: `${carsUrl()}/count`,
+			method: 'SEARCH',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({query: {name}}),
+		}, testEnv.apps.app1.token);
+
+		it('Should refuse the whole batch when an entity reuses a stored id, and store none of it', async () => {
+			const [existing] = await bjsReq({
+				url: carsUrl(),
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({name: 'bulk-add-existing'}),
+			}, testEnv.apps.app1.token);
+
+			const res = await bulkAdd([{name: 'bulk-add-before'}, {id: existing.id, name: 'bulk-add-dup'}, {name: 'bulk-add-after'}]);
+
+			assert.strictEqual(res.status, 400);
+			assert.match(res.body.message, /index 1/);
+			assert.strictEqual(await countNamed('bulk-add-before'), 0);
+		});
+
+		it('Should refuse two entities with the same id', async () => {
+			const id = '6ab000000000000000000001';
+
+			const res = await bulkAdd([{id, name: 'bulk-add-twin'}, {id, name: 'bulk-add-twin'}]);
+
+			assert.strictEqual(res.status, 400);
+			assert.match(res.body.message, /index 1/);
+			assert.strictEqual(await countNamed('bulk-add-twin'), 0);
+		});
+
+		it('Should name the index of an invalid entity', async () => {
+			const res = await bulkAdd([{name: 'bulk-add-valid'}, {}]);
+
+			assert.strictEqual(res.status, 400);
+			assert.strictEqual(res.body.message, 'car: Missing field: name at index 1');
+			assert.strictEqual(await countNamed('bulk-add-valid'), 0);
+		});
+	});
+
 	describe('Types', async () => {
 		before(async function() {
 			testEnv.apps.app2 = await runStep('create app2', async () =>

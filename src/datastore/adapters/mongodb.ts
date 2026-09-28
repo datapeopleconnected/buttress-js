@@ -344,9 +344,11 @@ export default class MongodbAdapter extends AbstractAdapter {
   /*
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override isDuplicate(_details) {
-    // TODO: Implment this method
-    return Promise.resolve(false);
+  override async isDuplicate(details) {
+    // An entity is a duplicate when it reuses the id of one already stored, which the insert would refuse.
+    if (!details?.id) return false;
+
+    return this.exists(details.id);
   }
 
   /**

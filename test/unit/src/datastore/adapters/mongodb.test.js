@@ -251,3 +251,24 @@ describe('datastore/adapters/MongodbAdapter: object properties of array items', 
     assert.deepStrictEqual(ops, [{ $set: { notes: [note, { text: 'bare', meta: null }] } }]);
   });
 });
+
+describe('datastore/adapters/MongodbAdapter:isDuplicate', () => {
+  function createAdapter(storedIds) {
+    const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});
+    adapter.collection = {
+      namespace: 'test.organisation',
+      countDocuments: async (query) => (storedIds.includes(query._id.toString()) ? 1 : 0),
+    };
+    return adapter;
+  }
+
+  it('is a duplicate when an entity with the same id is stored', async () => {
+    assert.strictEqual(await createAdapter([ID]).isDuplicate({ id: ID, name: 'a' }), true);
+  });
+
+  it('is not a duplicate when the id is new, or there is no id', async () => {
+    const adapter = createAdapter([ID]);
+    assert.strictEqual(await adapter.isDuplicate({ id: '507f1f77bcf86cd799439012' }), false);
+    assert.strictEqual(await adapter.isDuplicate({ name: 'a' }), false);
+  });
+});
