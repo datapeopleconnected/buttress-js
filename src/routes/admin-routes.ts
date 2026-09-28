@@ -86,6 +86,11 @@ class AdminRoutes {
 
     app.get('/api/v1/admin/activate/:superToken', async (req: Request, res: Response) => {
       const tokenValue = req.params.superToken;
+      // Only a string is looked up, so the value can't be read as query operators that match some other token.
+      if (typeof tokenValue !== 'string' || tokenValue === '') {
+        Logging.logError('The used token does not exist');
+        return res.status(404).send({ message: 'invalid_token' });
+      }
       const superToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         value: tokenValue,
         type: 'system',
@@ -114,6 +119,11 @@ class AdminRoutes {
       const tokenValue = req.query.token;
       const lambdaToInstall: string[] | undefined = req.body.installLambda;
       const refreshAdminToken: unknown = req.body.refreshAdminToken;
+      // The query parser makes a repeated ?token= an array (and qs made ?token[$ne]= an object), so only a string
+      // is looked up.
+      if (typeof tokenValue !== 'string' || tokenValue === '') {
+        return res.status(401).send({ message: 'invalid_token' });
+      }
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         value: tokenValue,
       });
