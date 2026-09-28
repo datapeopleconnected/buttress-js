@@ -249,7 +249,7 @@ export default class MongodbAdapter extends AbstractAdapter {
       body = [body];
     }
 
-    const documents = await body.reduce(async (prev, item) => {
+    const documents = await body.reduce<Promise<BJSDocument[]>>(async (prev, item) => {
       const arr = await prev;
       return arr.concat([this._prepareDocumentForMongo(modifier(item))]);
     }, Promise.resolve([]));
@@ -260,7 +260,12 @@ export default class MongodbAdapter extends AbstractAdapter {
 
     if (ops.length < 1) return Promise.resolve([]);
 
-    const res = await this.collection?.bulkWrite(ops);
+    let res;
+    try {
+      res = await this.collection?.bulkWrite(ops);
+    } catch (err) {
+      throw await this._undoFailedAdd(err, documents);
+    }
     if (!res) throw new Error('Unable to bulk write');
 
     const readable = new Stream.Readable({ objectMode: true });
@@ -280,6 +285,36 @@ export default class MongodbAdapter extends AbstractAdapter {
     );
 
     return this._modifyDocumentStream(readable);
+  }
+
+  /**
+   * An ordered insert stops at the first document it can't write, after writing the documents before it. Those are
+   * removed, so that a failed add stores nothing, and a reused id becomes a DuplicateIdError naming its index. Gives
+   * the error to throw.
+   */
+  async _undoFailedAdd(err: unknown, documents: BJSDocument[]) {
+    // The driver types writeErrors as one error or an array of them.
+    const writeErrors = (err as { writeErrors?: unknown } | null)?.writeErrors;
+    const writeError = (Array.isArray(writeErrors) ? writeErrors[0] : writeErrors) as
+      | { index?: number; code?: number }
+      | undefined;
+    // Without a write error it isn't known what was written, so nothing is removed.
+    if (typeof writeError?.index !== 'number') return err;
+
+    const written = documents.slice(0, writeError.index).map((document) => document._id);
+    if (written.length > 0) {
+      try {
+        await this.collection?.deleteMany({ _id: { $in: written } });
+      } catch (deleteErr) {
+        Logging.logError(`Unable to remove the ${written.length} entities of a failed add: ${deleteErr}`);
+        return err;
+      }
+    }
+
+    if (writeError.code === 11000) {
+      return new Helpers.Errors.DuplicateIdError(writeError.index, String(documents[writeError.index]._id));
+    }
+    return err;
   }
 
   override async batchUpdateProcess<T extends StandardModel>(

@@ -292,6 +292,23 @@ describe('Schema', async () => {
 			assert.strictEqual(res.body.message, 'car: Duplicate id 6AB00000000000000000ABCD at index 1');
 			assert.strictEqual(await countNamed('bulk-add-case'), 0);
 		});
+
+		it('Should refuse, and store none of, a batch whose id is taken while it is being stored', async () => {
+			// Two batches sent at once both pass the duplicate check, and one then fails to insert its last entity.
+			for (let round = 0; round < 5; round++) {
+				const id = `6ac0000000000000000000${String(round).padStart(2, '0')}`;
+				const name = (tag) => `bulk-add-race-${round}-${tag}`;
+				const batch = (tag) => [...new Array(50).fill(0).map(() => ({name: name(tag)})), {id, name: name(tag)}];
+
+				const results = await Promise.all([bulkAdd(batch('a')), bulkAdd(batch('b'))]);
+
+				assert.deepStrictEqual(results.map((r) => r.status).sort(), [200, 400]);
+				const refused = results.findIndex((r) => r.status === 400);
+				assert.strictEqual(results[refused].body.message, `car: Duplicate id ${id} at index 50`);
+				assert.strictEqual(await countNamed(name(refused === 0 ? 'a' : 'b')), 0);
+				assert.strictEqual(await countNamed(name(refused === 0 ? 'b' : 'a')), 51);
+			}
+		});
 	});
 
 	describe('Types', async () => {

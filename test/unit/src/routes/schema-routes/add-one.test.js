@@ -18,7 +18,9 @@ import { describe, it } from 'mocha';
 import assert from 'assert';
 
 import AddOne from '../../../../../dist/routes/schema-routes/add-one.js';
-import { RequestError } from '../../../../../dist/helpers/errors.js';
+import * as Errors from '../../../../../dist/helpers/errors.js';
+
+const { RequestError } = Errors;
 
 function createFakeModel({ validation = { isValid: true }, isDuplicate = false, added } = {}) {
   return {
@@ -97,5 +99,18 @@ describe('schema-routes/AddOne:_exec', () => {
     const result = await route._exec({ body: { name: 'test' }, context: { id: 'req-1' } }, {}, true);
 
     assert.deepStrictEqual(result, { id: 'new-id', name: 'test' });
+  });
+
+  it('refuses the entity as a duplicate when its id is taken while it is being stored', async () => {
+    const model = createFakeModel();
+    model.add = async () => {
+      throw new Errors.DuplicateIdError(0, 'x');
+    };
+    const route = createRoute(model);
+
+    await assert.rejects(
+      () => route._exec({ body: { id: 'x' }, context: { id: 'req-1' } }, {}, true),
+      (err) => err instanceof RequestError && err.code === 400 && err.message === 'duplicate',
+    );
   });
 });

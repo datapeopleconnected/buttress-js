@@ -100,6 +100,22 @@ export class CodedError extends Error {
   }
 }
 
+/**
+ * An entity being added reuses the id of one already stored, found only when it was written. `index` is its position
+ * among the entities being added.
+ */
+export class DuplicateIdError extends Error {
+  index: number;
+  id: string;
+
+  constructor(index: number, id: string) {
+    super(`Duplicate id ${id} at index ${index}`);
+    this.name = 'DuplicateIdError';
+    this.index = index;
+    this.id = id;
+  }
+}
+
 export class UpstreamApiError extends Error {
   code: string;
   httpStatus: number;
@@ -132,5 +148,6 @@ export default {
   Unauthenticated,
   InvalidToken,
   CodedError,
+  DuplicateIdError,
   UpstreamApiError,
 };

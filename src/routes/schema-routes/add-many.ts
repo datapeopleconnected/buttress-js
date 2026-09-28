@@ -104,7 +104,24 @@ export default class AddMany extends Route {
     return entities;
   }
 
-  override async _exec(_req: Request, _res: Response, entities: unknown) {
-    return (await this.routeModel()).add(entities);
+  override async _exec(req: Request, _res: Response, entities: unknown[]) {
+    try {
+      return await (await this.routeModel()).add(entities);
+    } catch (err) {
+      throw this.refuseDuplicate(err, entities, req);
+    }
+  }
+
+  /**
+   * An id can be taken by another request between the check and the insert. The adapter then removes what it stored
+   * of the batch, and the batch is refused as the check would have refused it.
+   */
+  refuseDuplicate(err: unknown, entities: unknown[], req: Request) {
+    if (!(err instanceof Helpers.Errors.DuplicateIdError)) return err;
+
+    const id = (entities[err.index] as { id?: unknown } | undefined)?.id ?? err.id;
+    const problem = `Duplicate id ${id} at index ${err.index}`;
+    this.log(`ERROR: ${problem}`, Route.LogLevel.ERR, req.context.id);
+    return new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
   }
 }

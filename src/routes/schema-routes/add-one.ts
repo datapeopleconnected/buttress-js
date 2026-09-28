@@ -69,7 +69,15 @@ export default class AddOne extends Route {
 
   override async _exec(req: Request, _res: Response, _validate: unknown) {
     const model = await this.routeModel();
-    const result = await model.add(req.body);
+    let result;
+    try {
+      result = await model.add(req.body);
+    } catch (err) {
+      // The id was taken by another request after the duplicate check.
+      if (!(err instanceof Helpers.Errors.DuplicateIdError)) throw err;
+      this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, `duplicate`);
+    }
     return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, model.schemaData);
   }
 }

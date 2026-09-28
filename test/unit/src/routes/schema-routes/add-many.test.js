@@ -18,7 +18,9 @@ import { describe, it } from 'mocha';
 import assert from 'assert';
 
 import AddMany from '../../../../../dist/routes/schema-routes/add-many.js';
-import { RequestError } from '../../../../../dist/helpers/errors.js';
+import * as Errors from '../../../../../dist/helpers/errors.js';
+
+const { RequestError } = Errors;
 
 // storedIds are given back in lower case, as the Mongo adapter gives ids.
 function createFakeModel({ validation = { isValid: true }, added, storedIds = [] } = {}) {
@@ -182,5 +184,23 @@ describe('schema-routes/AddMany:_exec', () => {
     const result = await route._exec({}, {}, [{ name: 'a' }, { name: 'b' }]);
 
     assert.deepStrictEqual(result, [{ id: 'new-0' }, { id: 'new-1' }]);
+  });
+
+  it('refuses the batch with a 400 when an id is taken while it is being stored', async () => {
+    const model = createFakeModel();
+    model.add = async () => {
+      throw new Errors.DuplicateIdError(1, '6ab0abcd');
+    };
+    const route = createRoute(model);
+
+    await assert.rejects(
+      () => route._exec({ context: { id: 'req-1' } }, {}, [{ name: 'a' }, { id: '6AB0ABCD' }]),
+      (err) => {
+        assert.ok(err instanceof RequestError);
+        assert.strictEqual(err.code, 400);
+        assert.strictEqual(err.message, 'test-schema: Duplicate id 6AB0ABCD at index 1');
+        return true;
+      },
+    );
   });
 });

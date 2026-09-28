@@ -595,3 +595,58 @@ describe('datastore/adapters/MongodbAdapter:findStoredIds', () => {
     assert.strictEqual(queries.length, 0);
   });
 });
+
+describe('datastore/adapters/MongodbAdapter:add when the insert fails part way', () => {
+  const IDS = ['6ab000000000000000000001', '6ab000000000000000000002', '6ab000000000000000000003'];
+
+  // An ordered insert stops at the document it can't write, with the documents before it written.
+  function createAdapter(error) {
+    const deletes = [];
+    const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});
+    adapter.collection = {
+      namespace: 'test.organisation',
+      bulkWrite: async () => {
+        throw error;
+      },
+      deleteMany: async (query) => {
+        deletes.push(query);
+        return { deletedCount: query._id.$in.length };
+      },
+    };
+    return { adapter, deletes };
+  }
+  const writeError = (index, code) =>
+    Object.assign(new Error('write failed'), { code, writeErrors: [{ index, code, errmsg: 'write failed' }] });
+  const add = (adapter) => adapter.add(IDS.map((id, idx) => ({ id, name: `n${idx}` })), (item) => ({ ...item }));
+
+  it('removes the entities written before a reused id, and reports the id and its index', async () => {
+    const { adapter, deletes } = createAdapter(writeError(2, 11000));
+
+    await assert.rejects(add(adapter), (err) => {
+      assert.strictEqual(err.name, 'DuplicateIdError');
+      assert.strictEqual(err.index, 2);
+      assert.strictEqual(err.id, IDS[2]);
+      return true;
+    });
+    assert.deepStrictEqual(deletes, [{ _id: { $in: IDS.slice(0, 2) } }]);
+  });
+
+  it('removes the entities written before any other write error, and gives that error', async () => {
+    const error = writeError(1, 2);
+    const { adapter, deletes } = createAdapter(error);
+
+    await assert.rejects(add(adapter), (err) => err === error);
+    assert.deepStrictEqual(deletes, [{ _id: { $in: IDS.slice(0, 1) } }]);
+  });
+
+  it('removes nothing when the first entity fails, or when it is not known what was written', async () => {
+    const first = createAdapter(writeError(0, 11000));
+    await assert.rejects(add(first.adapter), (err) => err.name === 'DuplicateIdError' && err.index === 0);
+    assert.deepStrictEqual(first.deletes, []);
+
+    const error = new Error('connection lost');
+    const unknown = createAdapter(error);
+    await assert.rejects(add(unknown.adapter), (err) => err === error);
+    assert.deepStrictEqual(unknown.deletes, []);
+  });
+});
