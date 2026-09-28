@@ -174,6 +174,12 @@ export class ModelManager {
   getCoreModelByName<T extends StandardModel>(name: string): T {
     return this.models.core[name] as unknown as T;
   }
+  // By the core schema's own name (users, appDataSharing) rather than the model's (User, AppDataSharing).
+  getCoreModelBySchemaName<T extends StandardModel>(name: string): T | undefined {
+    return Object.keys(CoreModels)
+      .map((modelName) => this.getCoreModelByName<T>(modelName))
+      .find((coreModel) => coreModel?.schemaData?.name === name);
+  }
 
   get CoreModels() {
     return CoreModels;

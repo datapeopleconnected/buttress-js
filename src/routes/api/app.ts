@@ -378,12 +378,7 @@ class GetAppSchema extends Route {
 
   // Takes a core model's name (user, app-data-sharing) or its schema's own name (users, appDataSharing).
   __findCoreModel(name: string) {
-    const byModelName = Model.getCoreModelByName(Sugar.String.camelize(name));
-    if (byModelName) return byModelName;
-
-    return Object.keys(Model.CoreModels)
-      .map((modelName) => Model.getCoreModelByName(modelName))
-      .find((coreModel) => coreModel?.schemaData?.name === name);
+    return Model.getCoreModelByName(Sugar.String.camelize(name)) ?? Model.getCoreModelBySchemaName(name);
   }
 
   override async _exec(req: Request, res: Response, collections) {

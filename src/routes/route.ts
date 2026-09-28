@@ -236,6 +236,9 @@ export default class Route {
     const validate = await this._validate(req, res);
     Logging.logTimer('Route:exec:validate:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
 
+    // Before the change runs, so the owner of a record it deletes can still be found.
+    req.context.changeOwners = await this._findChangeOwners(req);
+
     req.context.timings.exec = req.context.timer.interval;
     Logging.logTimer('Route:exec:exec:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
     const result = await this._exec(req, res, validate);
@@ -601,20 +604,73 @@ export default class Route {
     paths = dedupedPaths;
     if (hasValues) values = dedupedValues;
 
-    // A schema route's data belongs to the route's app, whichever app's token made the change. Core routes have no
-    // app, so the change is the requesting app's.
-    const appId = this.appId ?? req.context.authApp?.id;
+    // Each change goes to the app that owns the data. A schema route's data belongs to the route's app, whichever
+    // app's token made the change. A core record belongs to the app found for it before the change, and anything
+    // else, such as a create, to the requesting app.
+    const requestingAppId = this.appId ?? req.context.authApp?.id;
+    const messages = new Map<string, NotifyLambdaPathChangeMessage>();
+    paths.forEach((path, idx) => {
+      const recordId = path.startsWith(`${schemaName}.`) ? path.slice(schemaName.length + 1).split('.')[0] : '';
+      const appId = req.context.changeOwners?.get(recordId) ?? requestingAppId;
+      if (!appId) return;
 
-    if (paths.length > 0 && appId) {
-      const message: NotifyLambdaPathChangeMessage = {
-        paths: paths,
-        values: values,
-        collection: schemaName,
-        appId: String(appId),
-      };
+      const key = String(appId);
+      if (!messages.has(key)) messages.set(key, { paths: [], values: [], collection: schemaName, appId: key });
+      const message = messages.get(key) as NotifyLambdaPathChangeMessage;
+      message.paths.push(path);
+      if (hasValues) message.values.push(values[idx]);
+    });
 
-      this._nrp?.emit('rest:worker:notifyLambdaPathChange', JSON.stringify(message));
+    messages.forEach((message) => this._nrp?.emit('rest:worker:notifyLambdaPathChange', JSON.stringify(message)));
+  }
+
+  /**
+   * The apps that own the core records a request changes, by record id. An app record is its own owner, and any other
+   * core record belongs to its _appId. A schema route's data belongs to the route's app, so it needs none.
+   */
+  async _findChangeOwners(req: Request): Promise<Map<string, string> | undefined> {
+    if (this.appId || !this.schemaName) return undefined;
+    if (this.verb === Constants.Verbs.GET || this.verb === Constants.Verbs.SEARCH) return undefined;
+
+    const owners = new Map<string, string>();
+    const recordIds = this._changedRecordIds(req);
+    if (recordIds.length < 1) return owners;
+
+    if (this.schemaName === Model.CoreModels.App.Schema.name) {
+      recordIds.forEach((id) => owners.set(id, id));
+      return owners;
     }
+
+    const model = Model.getCoreModelBySchemaName(this.schemaName);
+    if (!model) return owners;
+
+    for (const id of recordIds) {
+      let record: { _appId?: unknown } | null = null;
+      try {
+        record = (await model.findOne({ _id: model.createId(id) })) as { _appId?: unknown } | null;
+      } catch (_err) {
+        // Not an id this model can look up; nothing to find.
+      }
+      if (record?._appId) owners.set(id, String(record._appId));
+    }
+
+    return owners;
+  }
+
+  // The ids of the records a request names, the same way _checkBasedPathLambda reads them.
+  _changedRecordIds(req: Request): string[] {
+    const ids: unknown[] = [];
+    if (this.verb === Constants.Verbs.PUT || this.verb === Constants.Verbs.DEL) {
+      ids.push(req.params.id);
+    } else if (this.verb === Constants.Verbs.POST && Array.isArray(req.body)) {
+      if (req.context.pathSpec?.includes(Constants.BulkRequests.BULK_PUT)) {
+        req.body.forEach((item) => ids.push(item?.id));
+      } else if (req.context.pathSpec?.includes(Constants.BulkRequests.BULK_DEL)) {
+        ids.push(...req.body);
+      }
+    }
+
+    return [...new Set(ids.filter((id) => typeof id === 'string' && id))] as string[];
   }
 
   /**

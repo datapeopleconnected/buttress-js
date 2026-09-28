@@ -234,6 +234,33 @@ describe('Lambda', async () => {
 				assert.notEqual(verifyLambdaRan, undefined);
 				assert.strictEqual(verifyLambdaRan.status, 'COMPLETE');
 			});
+
+			it(`Should trigger the app's path mutation lambda when a super token changes the app's name`, async function() {
+				this.timeout(20000);
+
+				const executions = () => bjsReq({
+					url: `${ENDPOINT.REST}/api/v1/lambda-execution`,
+					method: 'SEARCH',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify({query: {lambdaId: {$eq: testEnv.lambdas['path-mutation'].id}}}),
+				}, testEnv.apps.app1.token);
+				const before = (await executions()).length;
+
+				// The change comes from the super app, but the record belongs to app1.
+				await bjsReq({
+					url: `${ENDPOINT.REST}/api/v1/app/${testEnv.apps.app1.id}`,
+					method: 'PUT',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify([{path: 'name', value: 'Test Lambda App 3'}]),
+				}, Config.testToken);
+
+				let after = before;
+				for (let attempt = 0; attempt < 16 && after === before; attempt++) {
+					await new Promise((resolve) => setTimeout(resolve, 500));
+					after = (await executions()).length;
+				}
+				assert.strictEqual(after, before + 1, 'app1\'s lambda should run for the change to its record');
+			});
 		});
 
 		describe('API Endpoint', async () => {

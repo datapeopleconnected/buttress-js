@@ -40,6 +40,8 @@ export interface RequestContext {
   clientSessionId: string | null;
   apiPath?: string;
   pathSpec?: string;
+  // The apps that own the core records the request changes, by record id (see Route._findChangeOwners).
+  changeOwners?: Map<string, string>;
   isPluginPath: boolean;
   ac: {
     policyConfigs: parsedPolicyConfig[];

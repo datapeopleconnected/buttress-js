@@ -498,6 +498,35 @@ describe('routes/Route:_checkBasedPathLambda', () => {
     assert.strictEqual(JSON.parse(route._nrp.emit.firstCall.args[1]).appId, 'token-app');
   });
 
+  it('sends each change to the app that owns the record it names, and the rest to the requesting app', () => {
+    const route = createRoute({ schema: { name: 'policy' }, app: null });
+    route.verb = Route.Constants.Verbs.POST;
+    const req = createReq({
+      pathSpec: 'policy/bulk/update',
+      authApp: { id: 'super-app' },
+      body: [
+        { id: 'policy-1', body: { path: 'name', value: 'a' } },
+        { id: 'policy-2', body: { path: 'name', value: 'b' } },
+        { id: 'policy-3', body: { path: 'name', value: 'c' } },
+      ],
+    });
+    req.context.changeOwners = new Map([
+      ['policy-1', 'app-a'],
+      ['policy-2', 'app-b'],
+    ]);
+
+    route._checkBasedPathLambda(req);
+
+    assert.deepStrictEqual(
+      route._nrp.emit.getCalls().map((call) => JSON.parse(call.args[1])),
+      [
+        { paths: ['policy.policy-1.name'], values: ['a'], collection: 'policy', appId: 'app-a' },
+        { paths: ['policy.policy-2.name'], values: ['b'], collection: 'policy', appId: 'app-b' },
+        { paths: ['policy.policy-3.name'], values: ['c'], collection: 'policy', appId: 'super-app' },
+      ],
+    );
+  });
+
   it('notifies individual paths for a bulk delete POST', () => {
     const route = createRoute();
     route.verb = Route.Constants.Verbs.POST;
@@ -574,7 +603,97 @@ describe('routes/Route:_checkBasedPathLambda', () => {
   });
 });
 
+describe('routes/Route:_findChangeOwners', () => {
+  // A core model whose records belong to the apps in `owners` (record id -> app id).
+  const stubCoreModel = (owners) =>
+    sinon.stub(Model, 'getCoreModelBySchemaName').returns({
+      createId: (id) => id,
+      findOne: async ({ _id }) => (owners[_id] ? { id: _id, _appId: owners[_id] } : null),
+    });
+
+  it("takes an app record's owner from its own id, without a lookup", async () => {
+    const lookup = stubCoreModel({});
+    const route = createRoute({ schema: { name: 'apps' }, app: null });
+    route.verb = Route.Constants.Verbs.PUT;
+
+    const owners = await route._findChangeOwners(createReq({ params: { id: 'app-x' } }));
+
+    assert.deepStrictEqual([...owners], [['app-x', 'app-x']]);
+    assert.strictEqual(lookup.called, false);
+  });
+
+  it('looks up the app that owns any other core record', async () => {
+    stubCoreModel({ 'user-1': 'app-y' });
+    const route = createRoute({ schema: { name: 'users' }, app: null });
+    route.verb = Route.Constants.Verbs.DEL;
+
+    const owners = await route._findChangeOwners(createReq({ params: { id: 'user-1' } }));
+
+    assert.deepStrictEqual([...owners], [['user-1', 'app-y']]);
+  });
+
+  it('finds the owner of each item of a core bulk update, and skips records it cannot find', async () => {
+    stubCoreModel({ 'policy-1': 'app-a', 'policy-2': 'app-b' });
+    const route = createRoute({ schema: { name: 'policy' }, app: null });
+    route.verb = Route.Constants.Verbs.POST;
+    const req = createReq({
+      pathSpec: 'policy/bulk/update',
+      body: [
+        { id: 'policy-1', body: { path: 'name', value: 'a' } },
+        { id: 'policy-2', body: { path: 'name', value: 'b' } },
+        { id: 'policy-9', body: { path: 'name', value: 'c' } },
+      ],
+    });
+
+    const owners = await route._findChangeOwners(req);
+
+    assert.deepStrictEqual(
+      [...owners],
+      [
+        ['policy-1', 'app-a'],
+        ['policy-2', 'app-b'],
+      ],
+    );
+  });
+
+  it("looks nothing up for a schema route, whose data belongs to the route's app", async () => {
+    const lookup = stubCoreModel({});
+    const route = createRoute({ schema: { name: 'car' }, app: { id: 'app-1' } });
+    route.verb = Route.Constants.Verbs.PUT;
+
+    const owners = await route._findChangeOwners(createReq({ params: { id: 'car-1' } }));
+
+    assert.strictEqual(owners, undefined);
+    assert.strictEqual(lookup.called, false);
+  });
+});
+
 describe('routes/Route:exec', () => {
+  it('finds the owners of the records it will change after validating and before changing them', async () => {
+    const route = createRoute();
+    const calls = [];
+    const owners = new Map([['id-1', 'app-2']]);
+    sinon.stub(route, '_authenticate').resolves();
+    sinon.stub(route, '_validate').callsFake(async () => calls.push('validate'));
+    sinon.stub(route, '_findChangeOwners').callsFake(async () => {
+      calls.push('findChangeOwners');
+      return owners;
+    });
+    const req = createReq();
+    sinon.stub(route, '_exec').callsFake(async () => {
+      calls.push('exec');
+      assert.strictEqual(req.context.changeOwners, owners);
+      return {};
+    });
+    sinon.stub(route, '_respond').resolves();
+    sinon.stub(route, '_logActivity').resolves();
+    sinon.stub(route, '_boardcastData').resolves();
+
+    await route.exec(req, createRes());
+
+    assert.deepStrictEqual(calls, ['validate', 'findChangeOwners', 'exec']);
+  });
+
   it('throws immediately when no _exec implementation is defined', async () => {
     const route = createRoute();
     route._exec = undefined;
