@@ -71,6 +71,14 @@ Schemas can inherit properties from other schemas using the `extends` field. Thi
 }
 ```
 
+## Ids
+Every object has an `id`, and a property can hold ids of other objects with `"__type": "id"` (or an array of
+them with `"__type": "array", "__itemtype": "id"`). Ids are always strings in the API: 24-character hex strings,
+such as `"507f1f77bcf86cd799439011"`. Send them as strings when creating, updating or querying, and they're
+returned as strings. Creating or updating an id property with a value that isn't a valid id fails validation.
+
+Ids held inside an `object` property aren't treated as ids, so they're kept exactly as they're sent.
+
 ## Managing Schemas
 Schemas can be updated, extended, or deleted using the ButtressJS API. The `Schema` class provides methods for merging, validating, and encoding schemas.
 

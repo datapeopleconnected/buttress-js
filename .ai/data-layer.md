@@ -109,6 +109,12 @@ Documents, queries and update documents going in have the id strings under those
 string. So a query or `$set` on an id property can be written with plain strings. Ids inside free-form
 `object` properties aren't converted on the way in, so they're stored as strings.
 
+This was decided on 2026-09-28, after ids had been a mix of `ObjectId`s and strings. Strings won because most of
+the system already sees ids as JSON (API responses, NRP messages, the SPR's entities, federated Buttress
+remotes), strings compare with `===` where two `ObjectId`s don't, and it keeps a datastore's id type inside its
+adapter. What's stored didn't change, so no migration was needed. Keep conversion in the adapter: code outside
+it shouldn't create or expect `ObjectId`s.
+
 ## Core model quirks worth knowing before touching them
 
 - `TokenSchemaModel` ([src/model/core/token.ts](../src/model/core/token.ts)) generates the actual token

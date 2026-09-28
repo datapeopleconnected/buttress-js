@@ -52,6 +52,9 @@ license-header requirements enforced by the pre-commit hook.
   calls. When changing behavior that spans processes (e.g. a new mutation type that should trigger a
   socket update), trace the NRP event chain in [.ai/architecture.md](.ai/architecture.md) rather than
   assuming in-process calls will reach the other side.
+- Ids are strings everywhere outside the MongoDB adapter, which converts them to and from `ObjectId`s by the
+  schema (see [.ai/data-layer.md](.ai/data-layer.md)). Don't pass `ObjectId`s around, and don't test for them
+  with `instanceof`: use `isObjectId()` from `src/datastore/adapters/object-id.ts`.
 - `test/perf/io-budgets.json` holds each request's exact MongoDB/Redis/NRP call counts, and changing it is
   the user's decision. When a budget test fails, find the change behind it and follow
   [.ai/performance.md](.ai/performance.md).
