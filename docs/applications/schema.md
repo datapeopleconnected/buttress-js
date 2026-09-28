@@ -9,7 +9,6 @@ A schema is a blueprint for a data model. It defines the properties, types, and 
 - **Property Definitions**: Specify the type, default value, and constraints for each property.
 - **Extensibility**: Extend schemas to inherit properties and behaviors from other schemas.
 - **Validation**: Enforce data integrity with built-in validation rules.
-- **Time Series Support**: Automatically generate time-series collections for specific properties.
 
 ## Schema Structure
 A schema in ButtressJS is defined as a JSON object with the following key components:
@@ -18,6 +17,8 @@ A schema in ButtressJS is defined as a JSON object with the following key compon
 - **type**: The type of schema (e.g., `collection`, `template`).
 - **properties**: A dictionary of property definitions, each specifying the type, default value, and constraints.
 - **extends**: (Optional) A list of schemas to inherit properties from.
+- **remotes**: (Optional) One or more federation data sharing agreements this collection reads/writes
+  through — see [Federation](../federation/).
 
 ### Example
 ```json
@@ -43,6 +44,82 @@ A schema in ButtressJS is defined as a JSON object with the following key compon
   }
 }
 ```
+
+## Property Attributes
+
+Every property is described by these keys:
+
+| Attribute | Description |
+| :- | :- |
+| `__type` | `string`, `number`, `boolean`, `date`, `id`, `uuid`, `array`, or `object` |
+| `__default` | Default value if none is supplied. `"randomString"` for a `string` generates a random 36-char value; `"new"` for `id`/`uuid` generates a new one on creation |
+| `__required` | Fails validation if the property is missing and has no default |
+| `__allowUpdate` | Whether the property can be set on `PUT`/path-update, not just on create |
+| `__enum` | Array of allowed values (any type) |
+| `__itemtype` | For `__type: "array"` of primitives — the type of each item (e.g. `"string"`, `"id"`) |
+| `__schema` | For `__type: "array"` of objects — the property definitions for each array item |
+| `__timeSeries` | See [Time Series Properties](#time-series-properties) below |
+
+A property without `__type` is treated as a **nested object** — give it its own map of sub-properties
+directly, the same way you'd describe a top-level schema's `properties`:
+
+```json
+{
+  "git": {
+    "url": { "__type": "string", "__required": true, "__allowUpdate": true },
+    "branch": { "__type": "string", "__default": "main", "__allowUpdate": true }
+  }
+}
+```
+
+An array of objects combines `__type: "array"` with `__schema` for the item shape:
+
+```json
+{
+  "deployments": {
+    "__type": "array",
+    "__allowUpdate": true,
+    "__schema": {
+      "hash": { "__type": "string", "__required": true, "__allowUpdate": true },
+      "deployedAt": { "__type": "date", "__required": true, "__allowUpdate": true }
+    }
+  }
+}
+```
+
+An array of primitives uses `__itemtype` instead:
+
+```json
+{
+  "tags": { "__type": "array", "__itemtype": "string", "__allowUpdate": true }
+}
+```
+
+## Time Series Properties
+
+Tagging a property with `__timeSeries: "<group>"` pulls it out of the main collection into its own
+auto-generated collection, `<schema-name>-<group>`, instead of storing it on every document. Use this for
+values that change often and would otherwise bloat the parent record (e.g. a running counter, a location
+ping). Every property sharing the same `<group>` name lands in the same generated collection, alongside an
+`entityId` (a string, correlating back to the parent record's `id`) and the standard `timestamps` fields:
+
+```json
+{
+  "name": "vehicle",
+  "type": "collection",
+  "properties": {
+    "name": { "__type": "string", "__allowUpdate": true },
+    "location": {
+      "__type": "object",
+      "__timeSeries": "telemetry",
+      "__allowUpdate": true
+    }
+  }
+}
+```
+
+This generates a second collection, `vehicle-telemetry`, with `entityId` + `location` (+ `createdAt`/
+`updatedAt`) — one row per update, instead of overwriting `location` in place on the `vehicle` document.
 
 ## Creating a Schema
 To create a schema, define its structure in a JSON file and register it with ButtressJS. Schemas are added to applications and can be managed through the ButtressJS API.

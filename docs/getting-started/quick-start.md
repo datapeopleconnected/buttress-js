@@ -78,6 +78,7 @@ mongodb://[username:password@]host1[:port1]
 If you need to run directly from source for development:
 ```bash
 npm install
+export SERVER_ID='name'
 npm run build
 NODE_ENV=development ./bin/buttress.sh
 ```

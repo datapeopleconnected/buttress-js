@@ -12,6 +12,7 @@ Standalone deployment runs Buttress directly from source or a local build artifa
 
 ```bash
 npm install
+export SERVER_ID='name'
 npm run build
 NODE_ENV=development ./bin/buttress.sh
 ```
