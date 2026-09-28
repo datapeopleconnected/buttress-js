@@ -362,6 +362,15 @@ export default class BootstrapSocket extends Bootstrap {
     socket.data.type = token.type;
     socket.data.tokenId = token.id.toString();
 
+    // A token in the query string ends up in proxy access logs. It stops working in the next tagged release, so name
+    // the token (never its value) to find the clients still sending one.
+    if (!socket.handshake.auth.token) {
+      Logging.logWarn(
+        `Socket ${socket.id} sent token ${socket.data.tokenId} in the query string, which is deprecated and stops ` +
+          `working in the next tagged release; send it as auth.token`,
+      );
+    }
+
     Logging.logDebug(`Fetching app with appId: ${token._appId}`);
     const app = await Model.getCoreModel(AppSchemaModel).findOne({ id: token._appId });
     if (!app) {

@@ -20,6 +20,7 @@ import sinon from 'sinon';
 import { ObjectId } from 'bson';
 
 import BootstrapSocket from '../../../dist/bootstrap-socket.js';
+import Logging from '../../../dist/helpers/logging.js';
 import Model from '../../../dist/model/index.js';
 import TokenSchemaModel from '../../../dist/model/core/token.js';
 import AppSchemaModel from '../../../dist/model/core/app.js';
@@ -107,6 +108,25 @@ describe('bootstrap-socket:namespace authentication', () => {
     const { next } = await connect('/app-one', 'app-one-token', { inQuery: true });
 
     assert.deepStrictEqual(next.firstCall.args, []);
+  });
+
+  it('warns about a token in the query string, naming the token but never its value', async () => {
+    const warn = sinon.stub(Logging, 'logWarn');
+
+    await connect('/app-one', 'app-one-token', { inQuery: true });
+
+    const warnings = warn.args.map(([message]) => message);
+    assert.strictEqual(warnings.length, 1);
+    assert.match(warnings[0], new RegExp(`token ${tokens[0].id}.*query string`));
+    assert.doesNotMatch(warnings[0], /app-one-token/);
+  });
+
+  it('does not warn about a token sent as auth', async () => {
+    const warn = sinon.stub(Logging, 'logWarn');
+
+    await connect('/app-one', 'app-one-token');
+
+    assert.strictEqual(warn.callCount, 0);
   });
 });
 
