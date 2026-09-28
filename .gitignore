@@ -9,6 +9,7 @@ logs
 *.log
 npm-debug.log*
 test/perf/current.json
+bench-results
 
 # Runtime data
 pids

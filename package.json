@@ -19,6 +19,8 @@
     "test:e2e:timed":"BJS_TIMING=1 BJS_TIMING_OUTPUT=${BJS_TIMING_OUTPUT:-test/perf/current.json} npm run test:e2e",
     "perf:baseline:record": "BJS_TIMING=1 BJS_TIMING_OUTPUT=test/perf/baseline.json npm run test:e2e",
     "perf:compare": "node test/perf/compare-timings.mjs --warn-pct 20 --fail-pct 35 --min-abs-ms 50",
+    "bench": "node test/bench/run.mjs",
+    "bench:compare": "node test/bench/compare.mjs",
     "clean": "rm -rf dist/*",
     "build": "npm run clean && npm run build-ts && npm run build-non-ts",
     "build-ts": "tsc",

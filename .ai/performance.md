@@ -1,4 +1,16 @@
-# Performance: I/O budgets and Server-Timing
+# Performance: benchmarks, I/O budgets and Server-Timing
+
+## Benchmarking a build
+
+`npm run bench` ([test/bench/run.mjs](../test/bench/run.mjs)) measures a build's REST throughput, latency and
+server CPU per request, and writes a results file; `npm run bench:compare -- <base.json> <head.json>`
+([test/bench/compare.mjs](../test/bench/compare.mjs)) compares two. Usage is in
+[docs/development/benchmarking.md](../docs/development/benchmarking.md).
+
+It boots the build from `--dist` (default `dist/`, so build first) as its own single-instance REST process, with
+`ENV_FILE=bench` so no `.<env>.env` file overrides its settings. Isolation comes from the app code `bjs-bench`: it
+names the database (`bjs-bench-prod`) and prefixes every Redis key and NRP channel, and the benchmark clears only
+those. A new scenario goes in the `SCENARIOS` map in run.mjs.
 
 ## I/O budgets
 

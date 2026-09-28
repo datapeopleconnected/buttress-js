@@ -48,6 +48,8 @@ npm run test:unit         # mocha over test/unit/**/* — imports compiled dist/
 npm run test:e2e          # wipes the test DB/Redis, boots a real Buttress in INSTALL_MODE, then runs
                             # test/e2e/index.test.js against it
 npm run test:io-budgets   # as test:e2e, but only the I/O budget suite (see performance.md)
+npm run bench             # measure dist/'s REST performance into bench-results/ (see performance.md)
+npm run bench:compare -- a.json b.json   # compare two bench results
 ```
 
 - **Unit tests import `dist/`** (see e.g. [test/unit/src/helpers/schema.test.js](../test/unit/src/helpers/schema.test.js)
