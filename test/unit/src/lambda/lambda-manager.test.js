@@ -49,9 +49,10 @@ afterEach(() => {
 // model/DB layer, and record what was "created" so tests can assert on it.
 function stubExecutionCreation(manager) {
   const createdExecutions = [];
-  manager._createLambdaExecution = async (_triggerType, lambdaId) => {
+  manager._createLambdaExecution = async (_triggerType, lambdaId, _gitHash, _appId, _priority, metadata) => {
     const id = `exec-${createdExecutions.length + 1}`;
-    createdExecutions.push({ id, lambdaId });
+    const CRs = JSON.parse(metadata.find((m) => m.key === 'CR').value);
+    createdExecutions.push({ id, lambdaId, CRs });
     return { id };
   };
   manager._processQueue = async () => {};
@@ -68,13 +69,14 @@ async function fireDebounceTimer(manager, id) {
 
 describe('lambda/LambdaManager path-mutation debounce', () => {
   const cr = { paths: ['schema.field'], values: ['x'], schema: 'schema' };
+  const watchAll = ['schema.*'];
 
   it('debounces and executes every lambda matching a write, not just the first', async () => {
     const manager = createManager();
     const createdExecutions = stubExecutionCreation(manager);
 
-    const lambdaA = { id: 'lambda-a', gitHash: 'hash-a', type: 'PATH_MUTATION', appId: 'app-1' };
-    const lambdaB = { id: 'lambda-b', gitHash: 'hash-b', type: 'PATH_MUTATION', appId: 'app-1' };
+    const lambdaA = { id: 'lambda-a', gitHash: 'hash-a', type: 'PATH_MUTATION', appId: 'app-1', paths: watchAll };
+    const lambdaB = { id: 'lambda-b', gitHash: 'hash-b', type: 'PATH_MUTATION', appId: 'app-1', paths: watchAll };
 
     await manager._debounceLambdaTriggers([lambdaA, lambdaB], cr);
 
@@ -95,7 +97,7 @@ describe('lambda/LambdaManager path-mutation debounce', () => {
   it('lets a later identical write trigger a new execution once the previous debounce has completed', async () => {
     const manager = createManager();
     const createdExecutions = stubExecutionCreation(manager);
-    const lambdaA = { id: 'lambda-a', gitHash: 'hash-a', type: 'PATH_MUTATION', appId: 'app-1' };
+    const lambdaA = { id: 'lambda-a', gitHash: 'hash-a', type: 'PATH_MUTATION', appId: 'app-1', paths: watchAll };
 
     await manager._debounceLambdaTriggers([lambdaA], cr);
     assert.strictEqual(manager._debouncedPathMutations.length, 1);
@@ -120,6 +122,151 @@ describe('lambda/LambdaManager path-mutation debounce', () => {
     await fireDebounceTimer(manager, manager._debouncedPathMutations[0].id);
 
     assert.strictEqual(createdExecutions.length, 2, 'the repeat write must produce a second execution');
+  });
+});
+
+describe('lambda/LambdaManager path-mutation grouping', () => {
+  const lambda = { id: 'lambda-a', gitHash: 'hash-a', type: 'PATH_MUTATION', appId: 'app-1', paths: ['car.*'] };
+  const change = (entityId, value) => ({ paths: [`car.${entityId}.name`], values: [value], schema: 'car' });
+
+  let clock = null;
+  afterEach(() => clock?.restore());
+
+  it('runs a lambda once for many changes to one entity, a second after the last of them', async () => {
+    clock = sinon.useFakeTimers();
+    const manager = createManager();
+    const created = stubExecutionCreation(manager);
+
+    for (const value of ['a', 'b', 'c']) {
+      await manager._debounceLambdaTriggers([lambda], change('e1', value));
+      await clock.tickAsync(300);
+    }
+    await clock.tickAsync(600);
+    assert.strictEqual(created.length, 0, 'no run until a second after the last change');
+
+    await clock.tickAsync(100);
+    assert.strictEqual(created.length, 1);
+    assert.deepStrictEqual(
+      created[0].CRs.map((cr) => cr.values[0]),
+      ['a', 'b', 'c'],
+    );
+  });
+
+  it('runs no later than five seconds after the first change while the entity keeps changing', async () => {
+    clock = sinon.useFakeTimers();
+    const manager = createManager();
+    const created = stubExecutionCreation(manager);
+
+    for (let ms = 0; ms < 5000; ms += 500) {
+      await manager._debounceLambdaTriggers([lambda], change('e1', ms));
+      await clock.tickAsync(500);
+    }
+
+    assert.strictEqual(created.length, 1);
+    assert.strictEqual(created[0].CRs.length, 10);
+  });
+
+  it('gives each entity its own run, including the entities of one bulk request', async () => {
+    const manager = createManager();
+    const created = stubExecutionCreation(manager);
+
+    await manager._debounceLambdaTriggers([lambda], {
+      paths: ['car.e1.name', 'car.e2.name', 'car.e1.colour'],
+      values: ['a', 'b', 'red'],
+      schema: 'car',
+    });
+    await manager._debounceLambdaTriggers([lambda], change('e2', 'c'));
+
+    for (const id of manager._debouncedPathMutations.map((r) => r.id)) {
+      await fireDebounceTimer(manager, id);
+    }
+
+    assert.deepStrictEqual(
+      created.map((e) => e.CRs),
+      [
+        [{ paths: ['car.e1.name', 'car.e1.colour'], values: ['a', 'red'], schema: 'car' }],
+        [
+          { paths: ['car.e2.name'], values: ['b'], schema: 'car' },
+          { paths: ['car.e2.name'], values: ['c'], schema: 'car' },
+        ],
+      ],
+    );
+  });
+
+  it('only runs a lambda for the entities whose paths it watches', async () => {
+    const manager = createManager();
+    const created = stubExecutionCreation(manager);
+    const watchesE1 = { ...lambda, paths: ['car.e1.name'] };
+
+    await manager._debounceLambdaTriggers([watchesE1], {
+      paths: ['car.e1.name', 'car.e2.name'],
+      values: ['a', 'b'],
+      schema: 'car',
+    });
+    for (const id of manager._debouncedPathMutations.map((r) => r.id)) {
+      await fireDebounceTimer(manager, id);
+    }
+
+    assert.deepStrictEqual(
+      created.map((e) => e.CRs),
+      [[{ paths: ['car.e1.name'], values: ['a'], schema: 'car' }]],
+    );
+  });
+
+  it('groups changes that name no entity, such as creates, into one run per lambda', async () => {
+    const manager = createManager();
+    const created = stubExecutionCreation(manager);
+
+    await manager._debounceLambdaTriggers([lambda], { paths: ['car'], values: [{ name: 'a' }], schema: 'car' });
+    await manager._debounceLambdaTriggers([lambda], { paths: ['car'], values: [{ name: 'b' }], schema: 'car' });
+    assert.strictEqual(manager._debouncedPathMutations.length, 1);
+
+    await fireDebounceTimer(manager, manager._debouncedPathMutations[0].id);
+    assert.deepStrictEqual(
+      created[0].CRs.map((cr) => cr.values[0].name),
+      ['a', 'b'],
+    );
+  });
+
+  it('starts a run straight away once it holds 100 changes', async () => {
+    clock = sinon.useFakeTimers();
+    const manager = createManager();
+    const created = stubExecutionCreation(manager);
+
+    for (let n = 0; n < 100; n++) await manager._debounceLambdaTriggers([lambda], change('e1', n));
+    await clock.tickAsync(0);
+
+    assert.strictEqual(created.length, 1);
+    assert.strictEqual(created[0].CRs.length, 100);
+    assert.strictEqual(manager._debouncedPathMutations.length, 0);
+  });
+
+  it('puts a change that arrives while a run is being recorded into the next run', async () => {
+    const manager = createManager();
+    const created = stubExecutionCreation(manager);
+    const create = manager._createLambdaExecution;
+    let release = null;
+    manager._createLambdaExecution = async (...args) => {
+      await new Promise((resolve) => (release = resolve));
+      return create(...args);
+    };
+
+    await manager._debounceLambdaTriggers([lambda], change('e1', 'a'));
+    const running = fireDebounceTimer(manager, manager._debouncedPathMutations[0].id);
+    await manager._debounceLambdaTriggers([lambda], change('e1', 'b'));
+    release();
+    await running;
+
+    assert.deepStrictEqual(
+      created[0].CRs.map((cr) => cr.values[0]),
+      ['a'],
+    );
+    assert.strictEqual(manager._debouncedPathMutations.length, 1, 'the late change should wait for the next run');
+    assert.deepStrictEqual(
+      manager._debouncedPathMutations[0].CRs.map((cr) => cr.values[0]),
+      ['b'],
+    );
+    clearTimeout(manager._debouncedPathMutations[0].timer);
   });
 });
 

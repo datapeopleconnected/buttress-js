@@ -19,7 +19,6 @@ import util from 'node:util';
 import { exec as cpExec } from 'node:child_process';
 
 import { v4 as uuidv4 } from 'uuid';
-import ObjectHash from 'object-hash';
 import NodeRedisPubsub from '../services/nrp.js';
 
 import createConfig from '@dpc/node-env-obj';
@@ -61,18 +60,19 @@ interface PathMutationCR {
   schema: string;
 }
 
+// A path mutation lambda's pending run for one entity, collecting changes until it's recorded.
 interface PathMutationDebounce {
   id: string;
   timer?: NodeJS.Timeout;
   pathMutation: boolean;
   triggerType: string;
   lambdaId: string;
-  executionId?: string;
+  // '' for changes that name no entity, such as creates.
+  entityId: string;
   gitHash: string;
   appId: string;
   CRs: PathMutationCR[];
-  crHash: string;
-  retry: number;
+  firstChangeAt: number;
 }
 
 export interface LambdaExecutionMessage {
@@ -99,8 +99,11 @@ export default class LambdaManager {
   private _pathsMutation: PathMutation[] = [];
   private _debouncedPathMutations: PathMutationDebounce[] = [];
 
-  private _maximumRetry: number = 500;
+  // A lambda runs for an entity a second after that entity's last change, but no later than five seconds after the
+  // first however often it keeps changing, or as soon as it has collected 100 changes.
   private _lambdaPathMutationTimeout: number = 1000;
+  private _lambdaPathMutationMaxWait: number = 5000;
+  private _lambdaPathMutationMaxChanges: number = 100;
 
   private _shutdownQueue: boolean = false;
   private _isProcessing: boolean = false;
@@ -670,97 +673,99 @@ export default class LambdaManager {
   }
 
   /**
-   * Debounces checks for based path lambdas
-   * @param {Array} lambdas
-   * @param {Array} body
-   * @param {Boolean} addExecution
-   * @param {string} executionId
+   * Queues a change for each lambda that watches it, one pending run per lambda and entity.
    */
   async _debounceLambdaTriggers(lambdaPathMutation: PathMutation[], cr: PathMutationCR) {
-    // We'll make a hash of the body so we can use it to compare in the debouncer
-    const crHash = ObjectHash(cr);
+    const entityCRs = this._splitCRByEntity(cr);
 
-    for await (const pathMutation of lambdaPathMutation) {
-      // Check to see if there is a path mutation for the same lambda & body
-      let debouncedLambdaIdx = this._debouncedPathMutations.findIndex(
-        (item) => item.lambdaId.toString() === pathMutation.id && item.crHash === crHash,
-      );
-
-      const retry = this._debouncedPathMutations[debouncedLambdaIdx]?.retry || 0;
-
-      if (retry > this._maximumRetry) {
-        Logging.logError(
-          `[${this.name}] Lambda ${pathMutation.id} has reached the maximum retry of ${this._maximumRetry}`,
+    for (const pathMutation of lambdaPathMutation) {
+      for (const [entityId, entityCR] of entityCRs) {
+        const watched = entityCR.paths.some((path) =>
+          pathMutation.paths.some((itemPath) => this._checkMatchingPaths(path, itemPath, cr.schema)),
         );
-        continue;
+        if (watched) this._queuePathMutationChange(pathMutation, entityId, entityCR);
       }
-
-      if (debouncedLambdaIdx === -1) {
-        const execID = uuidv4();
-        const debouncer: PathMutationDebounce = {
-          id: execID,
-          timer: setTimeout(() => {
-            this._createLambdaPathMutationExecution(execID);
-          }, this._lambdaPathMutationTimeout),
-          pathMutation: true,
-          triggerType: pathMutation.type,
-          lambdaId: pathMutation.id,
-          gitHash: pathMutation.gitHash,
-          appId: pathMutation.appId,
-          CRs: [cr],
-          crHash,
-          retry: 0,
-        };
-
-        debouncedLambdaIdx = this._debouncedPathMutations.push(debouncer) - 1;
-        continue;
-      }
-
-      const pmExecRecord = this._debouncedPathMutations[debouncedLambdaIdx];
-
-      clearTimeout(pmExecRecord?.timer);
-      pmExecRecord.timer = setTimeout(() => {
-        this._createLambdaPathMutationExecution(pmExecRecord.id);
-      }, this._lambdaPathMutationTimeout);
-      pmExecRecord.CRs = pmExecRecord.CRs.concat(cr);
-      pmExecRecord.retry = pmExecRecord.retry + 1;
     }
   }
 
+  // Splits a change into one per entity it names (car.<id>.name), keeping each path's value with it.
+  _splitCRByEntity(cr: PathMutationCR): Map<string, PathMutationCR> {
+    const hasValues = cr.values.length === cr.paths.length;
+    const entityCRs = new Map<string, PathMutationCR>();
+
+    cr.paths.forEach((path, idx) => {
+      const entityId = path.startsWith(`${cr.schema}.`) ? path.slice(cr.schema.length + 1).split('.')[0] : '';
+      if (!entityCRs.has(entityId)) entityCRs.set(entityId, { paths: [], values: [], schema: cr.schema });
+
+      const entityCR = entityCRs.get(entityId) as PathMutationCR;
+      entityCR.paths.push(path);
+      if (hasValues) entityCR.values.push(cr.values[idx]);
+    });
+
+    return entityCRs;
+  }
+
+  _queuePathMutationChange(pathMutation: PathMutation, entityId: string, cr: PathMutationCR) {
+    let pending = this._debouncedPathMutations.find(
+      (item) => item.lambdaId === pathMutation.id && item.entityId === entityId,
+    );
+    if (!pending) {
+      pending = {
+        id: uuidv4(),
+        pathMutation: true,
+        triggerType: pathMutation.type,
+        lambdaId: pathMutation.id,
+        entityId,
+        gitHash: pathMutation.gitHash,
+        appId: pathMutation.appId,
+        CRs: [],
+        firstChangeAt: Date.now(),
+      };
+      this._debouncedPathMutations.push(pending);
+    }
+
+    pending.CRs.push(cr);
+    clearTimeout(pending.timer);
+
+    const { id } = pending;
+    if (pending.CRs.length >= this._lambdaPathMutationMaxChanges) {
+      this._createLambdaPathMutationExecution(id);
+      return;
+    }
+
+    const untilMaxWait = pending.firstChangeAt + this._lambdaPathMutationMaxWait - Date.now();
+    const delay = Math.max(0, Math.min(this._lambdaPathMutationTimeout, untilMaxWait));
+    pending.timer = setTimeout(() => this._createLambdaPathMutationExecution(id), delay);
+  }
+
   /**
-   * announce path mutation lambda
-   * @param {String} execID
+   * Records the execution for a pending path mutation run and announces it.
+   * @param {String} id - the pending run's id
    */
   async _createLambdaPathMutationExecution(id: string) {
-    const pathMutationLambdaIdx = this._debouncedPathMutations.findIndex((item) => item.id.toString() === id);
-    if (pathMutationLambdaIdx === -1) {
+    const pendingIdx = this._debouncedPathMutations.findIndex((item) => item.id === id);
+    if (pendingIdx === -1) {
       Logging.logError(`[${this.name}] Unable to find path mutation lambda with exec ID ${id}`);
       return;
     }
 
-    const pathMutationLambda = this._debouncedPathMutations[pathMutationLambdaIdx];
-    delete this._debouncedPathMutations[pathMutationLambdaIdx].timer;
+    // Taken off the pending list before the execution is written, so a change arriving meanwhile starts the next run
+    // instead of joining one that's already been recorded.
+    const [pending] = this._debouncedPathMutations.splice(pendingIdx, 1);
+    clearTimeout(pending.timer);
 
-    if (!pathMutationLambda.executionId) {
-      const lambdaExecMetadata = [{ key: 'CR', value: JSON.stringify(pathMutationLambda.CRs) }];
-      const execution = (await this._createLambdaExecution(
-        pathMutationLambda.triggerType,
-        pathMutationLambda.lambdaId,
-        pathMutationLambda.gitHash,
-        pathMutationLambda.appId,
-        ExecPriority.PATH_MUTATION,
-        lambdaExecMetadata,
-      )) as LambdaExecution;
-      pathMutationLambda.executionId = execution.id.toString();
-    }
-
-    if (!pathMutationLambda || !pathMutationLambda.executionId) {
+    const lambdaExecMetadata = [{ key: 'CR', value: JSON.stringify(pending.CRs) }];
+    const execution = (await this._createLambdaExecution(
+      pending.triggerType,
+      pending.lambdaId,
+      pending.gitHash,
+      pending.appId,
+      ExecPriority.PATH_MUTATION,
+      lambdaExecMetadata,
+    )) as LambdaExecution;
+    if (!execution?.id) {
       throw new Error('Failed to create path mutation lambda execution');
     }
-
-    // Remove the completed debounce record so a later identical write (same lambda + change
-    // hash) starts a fresh debounce/execution instead of being silently swallowed forever.
-    this._debouncedPathMutations.splice(pathMutationLambdaIdx, 1);
 
     this._processQueue();
   }
