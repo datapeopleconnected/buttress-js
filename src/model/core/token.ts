@@ -17,6 +17,7 @@
 import Crypto from 'node:crypto';
 
 import StandardModel from '../type/standard.js';
+import * as Helpers from '../../helpers/index.js';
 import { PolicyCache } from '../../services/policy-cache.js';
 
 import { Schema } from '../../helpers/schema.js';
@@ -266,23 +267,33 @@ class TokenSchemaModel extends StandardModel<Token> {
   }
 
   // REST caches tokens in memory (routes/tokens.ts) and only reloads on a miss, so every delete has to bust that
-  // cache or the deleted token keeps working on REST.
+  // cache or the deleted token keeps working on REST. Sockets already open with a deleted token would keep receiving
+  // activity, so the Socket processes are told which tokens went (token:deleted) and close them.
   override async rm(id: string) {
     const result = await super.rm(id);
-    this.__nrp?.emit('app-routes:bust-cache', '{}');
+    this.__announceDeleted([id]);
     return result;
   }
 
   override async rmBulk(ids) {
     const result = await super.rmBulk(ids);
-    this.__nrp?.emit('app-routes:bust-cache', '{}');
+    this.__announceDeleted(ids);
     return result;
   }
 
   override async rmAll(query) {
+    // Deleted tokens can't be found, so the ones the query matches are looked up first.
+    const matched = await Helpers.streamAll<Token>(await this.find({ ...query }));
     const result = await super.rmAll(query);
-    this.__nrp?.emit('app-routes:bust-cache', '{}');
+    this.__announceDeleted(matched.map((token) => token.id));
     return result;
+  }
+
+  __announceDeleted(ids: unknown[]) {
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+
+    const tokenIds = ids.map((id) => String(id));
+    if (tokenIds.length > 0) this.__nrp?.emit('token:deleted', JSON.stringify({ tokenIds }));
   }
 }
 

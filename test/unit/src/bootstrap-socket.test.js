@@ -109,3 +109,30 @@ describe('bootstrap-socket:namespace authentication', () => {
     assert.deepStrictEqual(next.firstCall.args, []);
   });
 });
+
+// A socket opened with a token that's since been deleted would keep receiving activity.
+describe('bootstrap-socket: deleted tokens', () => {
+  it("closes a deleted token's sockets on every namespace, and no others", async () => {
+    const bootstrap = new BootstrapSocket();
+    const handlers = {};
+    bootstrap.__nrp = { on: (event, handler) => (handlers[event] = handler), emit: () => {} };
+
+    const disconnected = [];
+    const namespace = (name) => ({
+      in: (room) => ({ local: { disconnectSockets: () => disconnected.push(`${name} ${room}`) } }),
+    });
+    bootstrap.io = { _nsps: new Map(['/', '/app-one', '/app-two'].map((name) => [name, namespace(name)])) };
+
+    await bootstrap.__registerNRPWorkerListeners();
+    handlers['token:deleted'](JSON.stringify({ tokenIds: ['token-1', 'token-2'] }));
+
+    assert.deepStrictEqual(disconnected.sort(), [
+      '/ token-1',
+      '/ token-2',
+      '/app-one token-1',
+      '/app-one token-2',
+      '/app-two token-1',
+      '/app-two token-2',
+    ]);
+  });
+});

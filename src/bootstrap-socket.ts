@@ -501,10 +501,30 @@ export default class BootstrapSocket extends Bootstrap {
 
   async __registerNRPMainListeners() {}
 
+  /**
+   * Closes the sockets of tokens that have been deleted, which would otherwise keep receiving activity. A token's
+   * sockets are in the room named after it, on its app's namespace, or on any namespace for a system token. The client
+   * sees `io server disconnect` and doesn't reconnect by itself; if it tries, its token is refused.
+   * @param {string[]} tokenIds
+   */
+  _disconnectTokenSockets(tokenIds: string[]) {
+    if (!this.io) return;
+
+    for (const namespace of this.io._nsps.values()) {
+      tokenIds.forEach((tokenId) => namespace.in(tokenId).local.disconnectSockets());
+    }
+  }
+
   async __registerNRPWorkerListeners() {
     if (!this.__nrp) throw new Error('No NRP instance');
 
     this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
+
+    // Every Socket process is told, and each closes its own sockets.
+    this.__nrp.on('token:deleted', (json: string) => {
+      const { tokenIds } = JSON.parse(json) as { tokenIds: string[] };
+      this._disconnectTokenSockets(tokenIds);
+    });
 
     this.__nrp.on('sock:worker:request-status', async (json: string) => {
       const data = JSON.parse(json) as RequestStatusMessage;

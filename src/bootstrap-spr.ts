@@ -168,6 +168,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     this.__nrp.on('rest:activity', (data) => this._handleIncomingMessage(JSON.parse(data)));
     this.__nrp.on('worker:socket:connection', (tokenId) => this._socketConnection(tokenId));
     this.__nrp.on('worker:socket:disconnect', (tokenId) => this._socketDisconnection(tokenId));
+    this.__nrp.on('token:deleted', (json: string) => this._tokensDeleted(JSON.parse(json).tokenIds));
 
     this.__nrp.on('app-schema:updated', async (json: string) => {
       const data = JSON.parse(json);
@@ -236,6 +237,14 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     if (!this._policyCache) throw new Error('No Policy Cache');
 
     await this._policyCache.removeConnectedToken(tokenId);
+  }
+
+  // The Socket processes close a deleted token's sockets. It's also taken off the connected list here, so nothing is
+  // routed to it even if a socket's disconnect never arrives.
+  private async _tokensDeleted(tokenIds: string[]) {
+    if (!this._policyCache) throw new Error('No Policy Cache');
+
+    for (const tokenId of tokenIds) await this._policyCache.removeConnectedToken(tokenId);
   }
 
   private async _handleIncomingMessage(activity: RESTActivity) {

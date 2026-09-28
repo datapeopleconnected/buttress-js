@@ -400,3 +400,18 @@ describe('bootstrap-spr:_handleIncomingMessage projection', () => {
 		assert.deepStrictEqual(response, [[{ type: 'scalar', path: 'address', value: { street: 'B St' } }]]);
 	});
 });
+
+describe('bootstrap-spr: deleted tokens', () => {
+  it('takes a deleted token off the list of connected tokens', async () => {
+    const spr = new BootstrapSocketPolicyRouter();
+    const handlers = {};
+    spr.__nrp = { on: (event, handler) => (handlers[event] = handler), emit: () => {} };
+    const removed = [];
+    spr._policyCache = { removeConnectedToken: async (tokenId) => removed.push(tokenId) };
+
+    await spr.__registerNRPPrimaryListeners();
+    await handlers['token:deleted'](JSON.stringify({ tokenIds: ['token-1', 'token-2'] }));
+
+    assert.deepStrictEqual(removed, ['token-1', 'token-2']);
+  });
+});

@@ -601,6 +601,37 @@ describe('Processing', async () => {
 		});
 	});
 
+	describe('Deleted tokens', () => {
+		it("Should close a deleted token's socket, so it receives nothing more", async function () {
+			this.timeout(20000);
+			const user = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'deleted-token', { adminAccess: true });
+			const socket = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, {
+				auth: { token: user.tokens[0].value },
+				forceNew: true,
+			});
+			await new Promise((resolve) => socket.on('connect', resolve));
+			const disconnected = new Promise((resolve) => socket.on('disconnect', resolve));
+			const received = [];
+			socket.on('db-activity', (packet) => received.push(packet.data.response?.name));
+
+			// Deleting the user deletes its token.
+			await bjsReq({ url: `${ENDPOINT.REST}/api/v1/user/${user.id}`, method: 'DELETE' }, testEnv.apps.app1.token);
+			const reason = await Promise.race([disconnected, new Promise((r) => setTimeout(() => r('still connected'), 5000))]);
+
+			await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: 'deleted-token-car', userId: user.id }),
+			}, testEnv.apps.app1.token);
+			await new Promise((r) => setTimeout(r, 1000));
+			socket.close();
+
+			assert.strictEqual(reason, 'io server disconnect');
+			assert(!received.includes('deleted-token-car'), 'the socket received activity after its token was deleted');
+		});
+	});
+
 	describe('Projection', () => {
 		const carUrl = (id = '') => `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car${id ? `/${id}` : ''}`;
 		const send = (url, method, body) => bjsReq({

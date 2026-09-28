@@ -17,6 +17,7 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
+import { Readable } from 'node:stream';
 
 import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 
@@ -32,6 +33,7 @@ function createModel({ policyCache } = {}) {
     ID: { isValid: () => true, new: (v) => (v !== undefined ? { id: v } : { id: 'generated' }) },
     add: sinon.stub().resolves({ id: 'added' }),
     updateById: sinon.stub().resolves(),
+    find: sinon.stub().callsFake(() => Readable.from([])),
   };
   return { model, nrp };
 }
@@ -210,4 +212,45 @@ describe('model/core/TokenSchemaModel:rm/rmBulk/rmAll', () => {
       assert.ok(nrp.emit.calledAfter(model.adapter[method]), 'the cache should be busted after the delete');
     });
   }
+});
+
+// A socket already open with a token would keep receiving activity after the token was deleted, so every delete says
+// which tokens went, for the Socket processes to close their sockets.
+describe('model/core/TokenSchemaModel: token:deleted', () => {
+  const deletedIds = (nrp) =>
+    nrp.emit.args.filter(([event]) => event === 'token:deleted').map(([, json]) => JSON.parse(json).tokenIds);
+
+  it('rm() and rmBulk() name the tokens they deleted, after deleting them', async () => {
+    const { model, nrp } = createModel();
+    model.adapter.rm = sinon.stub().resolves();
+    model.adapter.rmBulk = sinon.stub().resolves();
+
+    await model.rm('token-1');
+    await model.rmBulk(['token-2', 'token-3']);
+
+    assert.deepStrictEqual(deletedIds(nrp), [['token-1'], ['token-2', 'token-3']]);
+    assert.ok(nrp.emit.withArgs('token:deleted').firstCall.calledAfter(model.adapter.rm.firstCall));
+  });
+
+  it('rmAll() looks up the tokens its query matches before deleting them, and names them', async () => {
+    const { model, nrp } = createModel();
+    model.adapter.find = sinon.stub().callsFake(() => Readable.from([{ id: 'token-1' }, { id: 'token-2' }]));
+    model.adapter.rmAll = sinon.stub().resolves();
+
+    await model.rmAll({ _appId: 'app-1' });
+
+    assert.deepStrictEqual(model.adapter.find.firstCall.args[0], { _appId: 'app-1' });
+    assert.ok(model.adapter.find.calledBefore(model.adapter.rmAll));
+    assert.deepStrictEqual(model.adapter.rmAll.firstCall.args, [{ _appId: 'app-1' }]);
+    assert.deepStrictEqual(deletedIds(nrp), [['token-1', 'token-2']]);
+  });
+
+  it('rmAll() names no tokens when its query matched none', async () => {
+    const { model, nrp } = createModel();
+    model.adapter.rmAll = sinon.stub().resolves();
+
+    await model.rmAll({ _appId: 'app-1' });
+
+    assert.deepStrictEqual(deletedIds(nrp), []);
+  });
 });
