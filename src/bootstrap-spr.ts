@@ -30,6 +30,7 @@ import { ApplicablePolicyConfig } from './access-control/index.js';
 import { CombineEnvGroups, containsTokenLevelRef, filterPolicyConfigs } from './access-control/helpers.js';
 import AccessControlEnv, { ACEnv, ACPolicyEnvCombined } from './access-control/env.js';
 import AccessControlFilters from './access-control/filter.js';
+import AccessControlProjection from './access-control/projection.js';
 
 import Datastore from './datastore/index.js';
 import { Datastore as DatastoreInstance } from './datastore/index.js';
@@ -448,11 +449,6 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     env: ACPolicyEnvCombined,
     activityMetadata: ActivityMetadata,
   ): Promise<false | RESTActivity> {
-    const activityResponse =
-      typeof activity.response === 'object' && activity.response !== null
-        ? (activity.response as Record<string, unknown>)
-        : {};
-
     // A deleted entity can't be checked against the query, so the delete goes to every token the policy reaches. The
     // caller sends it, so a token-level policy sends it once to each token rather than to all of them per token.
     if (!entity && activity.verb === 'delete') {
@@ -499,22 +495,24 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     const broadcastActivity = JSON.parse(JSON.stringify(activity)) as RESTActivity;
 
-    // TODO: Is this a flatterned object at this point? because this is only taking into account keys are the the root.
-    const roomProjectionKeys = Array.isArray(applicablePolicy.config.projection)
-      ? applicablePolicy.config.projection
-      : [];
-    if (roomProjectionKeys.length > 0) {
-      const projectedData = roomProjectionKeys.reduce((obj: Record<string, unknown>, key) => {
-        if (typeof key === 'string' && activityResponse[key] !== undefined) {
-          obj[key] = activityResponse[key];
-        }
-
-        return obj;
-      }, {});
-
-      if (Object.keys(projectedData).length > 0) {
-        broadcastActivity.response = projectedData;
+    // The token only gets what the policy's projection lets it read, as on REST.
+    const projectionKeys = AccessControlProjection.getProjectionKeys(applicablePolicy.config.projection);
+    if (projectionKeys.length > 0) {
+      const response = AccessControlProjection.projectActivityResponse(
+        activity.verb,
+        activity.response,
+        projectionKeys,
+      );
+      if (response === null) {
+        Logging.logTimer(
+          `_handleIncomingMessage::end-nothing-projected`,
+          activityMetadata.timer,
+          Logging.Constants.LogLevel.SILLY,
+          `${activityMetadata.id}-${applicablePolicy.id}`,
+        );
+        return false;
       }
+      broadcastActivity.response = response;
     }
 
     return broadcastActivity;

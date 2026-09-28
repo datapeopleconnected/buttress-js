@@ -21,6 +21,40 @@ import { PolicyProjection } from '../model/core/policy.js';
 
 import { ApplicablePolicyConfig, PolicyError } from './index.js';
 
+type Projectable = Record<string, unknown>;
+
+const isProjectable = (value: unknown): value is Projectable => typeof value === 'object' && value !== null;
+
+// Copies what one dotted projection key names from `source` into `target`, as a Mongo projection such as
+// {'address.street': 1} would, including into each element of an array.
+function projectPath(source: unknown, target: Projectable, [head, ...rest]: string[]) {
+  if (!isProjectable(source) || !(head in source)) return;
+
+  const value = source[head];
+  if (rest.length === 0) {
+    target[head] = value;
+  } else if (Array.isArray(value)) {
+    const projected = Array.isArray(target[head]) ? (target[head] as unknown[]) : [];
+    target[head] = value.map((item, idx) => {
+      const element = isProjectable(projected[idx]) ? (projected[idx] as Projectable) : {};
+      projectPath(item, element, rest);
+      return element;
+    });
+  } else if (isProjectable(value)) {
+    if (!isProjectable(target[head])) target[head] = {};
+    projectPath(value, target[head] as Projectable, rest);
+  }
+}
+
+const projectValue = (value: unknown, keys: string[]): unknown => {
+  if (Array.isArray(value)) return value.map((item) => projectValue(item, keys));
+  if (!isProjectable(value)) return value;
+
+  const projected: Projectable = {};
+  keys.forEach((key) => projectPath(value, projected, key.split('.')));
+  return projected;
+};
+
 /**
  * @class Projection
  */
@@ -110,6 +144,53 @@ class Projection {
     }
 
     return projection;
+  }
+
+  // The properties a policy config's projection lets through. None means it doesn't restrict properties.
+  getProjectionKeys(projection: PolicyProjection | null | undefined): string[] {
+    return Array.isArray(projection?.keys)
+      ? projection.keys.filter((key): key is string => typeof key === 'string')
+      : [];
+  }
+
+  /**
+   * Trims a realtime activity's response to what a token may read through the projection keys, as REST does for reads.
+   * An entity keeps its id and sourceId and the projected properties. Update results keep the projected paths, and an
+   * update of a parent object keeps only its projected properties. Returns null when none of an update can be seen.
+   */
+  projectActivityResponse(verb: string, response: unknown, keys: string[]): unknown {
+    if (verb === 'put' && Array.isArray(response)) {
+      const results = response.flatMap((result) => this.__projectUpdateResult(result, keys));
+      return results.length > 0 ? results : null;
+    }
+
+    if (Array.isArray(response)) return response.map((entity) => this.__projectEntity(entity, keys));
+    return this.__projectEntity(response, keys);
+  }
+
+  __projectEntity(entity: unknown, keys: string[]) {
+    if (!isProjectable(entity)) return entity;
+
+    const projected = projectValue(entity, keys) as Projectable;
+    ['id', 'sourceId'].forEach((key) => {
+      if (key in entity) projected[key] = entity[key];
+    });
+    return projected;
+  }
+
+  __projectUpdateResult(result: unknown, keys: string[]): unknown[] {
+    if (!isProjectable(result) || typeof result.path !== 'string') return [];
+
+    // Array indexes and the increment suffix aren't part of the property's name.
+    const path = result.path.replace(/\.__increment__$/, '').replace(/\.\d+(?=\.|$)/g, '');
+    if (keys.some((key) => path === key || path.startsWith(`${key}.`))) return [result];
+
+    const childKeys = keys.filter((key) => key.startsWith(`${path}.`)).map((key) => key.slice(path.length + 1));
+    if (childKeys.length < 1) return [];
+
+    // A removal from the array carries no values to hide.
+    if (result.type === 'vector-rm') return [result];
+    return [{ ...result, value: projectValue(result.value, childKeys) }];
   }
 
   __checkProjectionPath(requestBody, projectionKeys) {

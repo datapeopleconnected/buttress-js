@@ -88,18 +88,19 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		},
 	});
 
-	function createSPR() {
+	const defaultConnections = {
+		[fullAccessPolicy.id]: [tokens.fullAccess],
+		[ownRecordsPolicy.id]: [tokens.ownRecords, tokens.otherOwnRecords],
+	};
+
+	function createSPR({ policies = [fullAccessPolicy, ownRecordsPolicy], connections = defaultConnections } = {}) {
 		const spr = new BootstrapSocketPolicyRouter();
 
 		const emitted = [];
 		spr.__nrp = { emit: (event, json) => emitted.push({ event, ...JSON.parse(json) }) };
 		spr._policyCache = {
-			getPoliciesByRestActivity: async () => [fullAccessPolicy, ownRecordsPolicy],
-			getConnectedTokenIdsByPolicyId: async (policyId) =>
-				({
-					[fullAccessPolicy.id]: [tokens.fullAccess.id.toString()],
-					[ownRecordsPolicy.id]: [tokens.ownRecords.id.toString(), tokens.otherOwnRecords.id.toString()],
-				})[policyId] || [],
+			getPoliciesByRestActivity: async () => policies,
+			getConnectedTokenIdsByPolicyId: async (policyId) => (connections[policyId] || []).map((t) => t.id.toString()),
 		};
 
 		sinon.stub(Model, 'getAppModel').resolves(findIn(Object.values(cars)));
@@ -259,5 +260,98 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 
 		assert.deepStrictEqual(received(tokens.system), [superActivity]);
 		assert.deepStrictEqual(received(tokens.fullAccess), []);
+	});
+});
+
+// A policy's projection ({keys}) limits which properties a token may read, and REST applies it to every read.
+describe('bootstrap-spr:_handleIncomingMessage projection', () => {
+	const APP_ID = new ObjectId().toString();
+	const car = { id: new ObjectId(), name: 'car', secret: 'hidden', address: { street: 'A St', city: 'Leeds' } };
+	const token = { id: new ObjectId(), type: 'user' };
+
+	const namePolicy = (keys) => ({
+		id: 'policy-projected',
+		name: 'projected',
+		_appId: APP_ID,
+		env: null,
+		config: [{ verbs: ['GET'], schema: ['car'], query: { access: '%FULL_ACCESS%' }, projection: { keys } }],
+	});
+
+	afterEach(() => sinon.restore());
+
+	async function relay(keys, overrides) {
+		const spr = new BootstrapSocketPolicyRouter();
+		const emitted = [];
+		spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
+		spr._policyCache = {
+			getPoliciesByRestActivity: async () => [namePolicy(keys)],
+			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
+		};
+		sinon.stub(Model, 'getAppModel').resolves({ findById: async () => car });
+
+		await spr._handleIncomingMessage({
+			broadcast: true,
+			path: `/car/${car.id}`,
+			pathSpec: 'car/:id',
+			verb: 'put',
+			params: { id: car.id.toString() },
+			response: null,
+			appAPIPath: 'test-app',
+			appId: APP_ID,
+			isSuper: false,
+			isCoreSchema: false,
+			schemaName: 'car',
+			...overrides,
+		});
+		return emitted.map((e) => e.activity.response);
+	}
+
+	it('sends a created entity with only its id and the projected properties', async () => {
+		const response = await relay(['name'], {
+			path: '/car',
+			pathSpec: 'car',
+			verb: 'post',
+			params: {},
+			response: { id: car.id.toString(), sourceId: APP_ID, name: 'car', secret: 'hidden' },
+		});
+
+		assert.deepStrictEqual(response, [{ id: car.id.toString(), sourceId: APP_ID, name: 'car' }]);
+	});
+
+	it('projects nested keys of a created entity', async () => {
+		const response = await relay(['address.street'], {
+			path: '/car',
+			pathSpec: 'car',
+			verb: 'post',
+			params: {},
+			response: { id: car.id.toString(), name: 'car', address: { street: 'A St', city: 'Leeds' } },
+		});
+
+		assert.deepStrictEqual(response, [{ id: car.id.toString(), address: { street: 'A St' } }]);
+	});
+
+	it('sends only the update results the projection lets through', async () => {
+		const response = await relay(['name'], {
+			response: [
+				{ type: 'scalar', path: 'secret', value: 'changed' },
+				{ type: 'scalar', path: 'name', value: 'renamed' },
+			],
+		});
+
+		assert.deepStrictEqual(response, [[{ type: 'scalar', path: 'name', value: 'renamed' }]]);
+	});
+
+	it('sends nothing for an update that only changed hidden properties', async () => {
+		const response = await relay(['name'], { response: [{ type: 'scalar', path: 'secret', value: 'changed' }] });
+
+		assert.deepStrictEqual(response, []);
+	});
+
+	it('trims an update of a parent object down to its projected keys', async () => {
+		const response = await relay(['address.street'], {
+			response: [{ type: 'scalar', path: 'address', value: { street: 'B St', city: 'York' } }],
+		});
+
+		assert.deepStrictEqual(response, [[{ type: 'scalar', path: 'address', value: { street: 'B St' } }]]);
 	});
 });

@@ -48,7 +48,17 @@ import { runStep } from '../helpers.js';
 // This suite of tests will run against the REST API and will
 // test the cababiliy of data sharing between different apps.
 describe('Processing', async () => {
+	// Lets a user read only the name of each car.
+	const NameOnlyPolicy = {
+		name: 'realtime-name-only',
+		version: 1,
+		priority: 1,
+		selection: { realtimeNameOnly: { '@eq': 1 } },
+		config: [{ verbs: ['GET'], schema: ['car'], query: { access: '%FULL_ACCESS%' }, projection: { keys: ['name'] } }],
+	};
+
 	const TestPolicies = [
+		NameOnlyPolicy,
 		PolicyTestData['admin-access'],
 		PolicyTestData['env-static-value-query'],
 		PolicyTestData['env-date-condition'],
@@ -300,6 +310,9 @@ describe('Processing', async () => {
 		testEnv.users['env-test-5'] = await runStep('create user env-test-5', async () =>
 			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'env-test-5', { envTest: 5 })
 		, 'Processing setup');
+		testEnv.users['name-only'] = await runStep('create user name-only', async () =>
+			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'name-only', { realtimeNameOnly: 1 })
+		, 'Processing setup');
 
 		const usersKeys = Object.keys(testEnv.users);
 		const colours = ['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'brown', 'black', 'white'];
@@ -344,6 +357,7 @@ describe('Processing', async () => {
 		await createUserSocket('env-test-3');
 		await createUserSocket('env-test-4');
 		await createUserSocket('env-test-5');
+		await createUserSocket('name-only');
 
 		// Allow time for the server to process socket connections and rehydrate tokens
 		await new Promise((r) => setTimeout(r, 1000));
@@ -571,6 +585,68 @@ describe('Processing', async () => {
 			fullAccess.stop();
 
 			assert.deepStrictEqual(fullAccess.packets.map((p) => [p.verb, p.path]), [['delete', `/car/${refused.id}`]]);
+		});
+	});
+
+	describe('Projection', () => {
+		const carUrl = (id = '') => `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car${id ? `/${id}` : ''}`;
+		const send = (url, method, body) => bjsReq({
+			url,
+			method,
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		}, testEnv.apps.app1.token);
+
+		// Collects the db-activity packets the name-only socket gets for a car, until `until` or the timeout.
+		const packetsFor = async (id, act, until = () => false, timeoutMs = 2000) => {
+			const packets = [];
+			const listener = (packet) => {
+				const data = packet.data;
+				if (data.params?.id === id || data.response?.id === id) packets.push(data);
+			};
+			testEnv.sockets['name-only'].on('db-activity', listener);
+			await act();
+			const start = Date.now();
+			while (!until(packets) && Date.now() - start < timeoutMs) await new Promise((r) => setTimeout(r, 50));
+			testEnv.sockets['name-only'].off('db-activity', listener);
+			return packets;
+		};
+
+		let car = null;
+
+		it('Should send a created entity with only the properties the policy projects', async function () {
+			this.timeout(10000);
+
+			// The id isn't known until the POST returns, so collect everything and pick the create out afterwards.
+			const collected = [];
+			const listener = (packet) => collected.push(packet.data);
+			testEnv.sockets['name-only'].on('db-activity', listener);
+			[car] = await send(carUrl(), 'POST', { name: 'projected', colour: 'red', userId: testEnv.users['name-only'].id });
+			const start = Date.now();
+			while (!collected.some((d) => d.response?.id === car.id) && Date.now() - start < 5000) {
+				await new Promise((r) => setTimeout(r, 50));
+			}
+			testEnv.sockets['name-only'].off('db-activity', listener);
+
+			const packet = collected.find((d) => d.response?.id === car.id);
+			assert(packet, 'The create should reach the name-only socket');
+			assert.deepStrictEqual(Object.keys(packet.response).sort(), ['id', 'name', 'sourceId']);
+			assert.strictEqual(packet.response.name, 'projected');
+		});
+
+		it('Should send an update only for the properties the policy projects', async function () {
+			this.timeout(10000);
+
+			const hidden = await packetsFor(car.id, () => send(carUrl(car.id), 'PUT', { path: 'colour', value: 'blue' }));
+			assert.deepStrictEqual(hidden, [], 'An update to a hidden property should not be sent');
+
+			const visible = await packetsFor(
+				car.id,
+				() => send(carUrl(car.id), 'PUT', [{ path: 'colour', value: 'green' }, { path: 'name', value: 'renamed' }]),
+				(packets) => packets.length > 0,
+			);
+			assert.strictEqual(visible.length, 1);
+			assert.deepStrictEqual(visible[0].response.map((r) => [r.path, r.value]), [['name', 'renamed']]);
 		});
 	});
 
