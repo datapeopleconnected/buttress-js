@@ -134,6 +134,19 @@ describe('routes/Route:_authenticate', () => {
     );
   });
 
+  it('rejects with 400 when ?apiPath= is given more than once, even naming the token\'s own app', async () => {
+    const route = createRoute();
+    for (const apiPath of [['customer-app', 'other-app'], ['customer-app', 'customer-app']]) {
+      const req = createReq({ token: { type: 'app' }, authApp: { id: 'app-1', apiPath: 'customer-app' } });
+      req.query = { apiPath };
+
+      await assert.rejects(
+        () => route._authenticate(req, createRes()),
+        (err) => err.code === 400 && err.message.startsWith('apiPath_not_supported'),
+      );
+    }
+  });
+
   it("allows ?apiPath= naming the token's own app", async () => {
     const route = createRoute();
     const req = createReq({ token: { type: 'app' }, authApp: { id: 'app-1', apiPath: 'customer-app' } });

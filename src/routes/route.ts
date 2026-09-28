@@ -723,11 +723,11 @@ export default class Route {
         return reject(new Helpers.Errors.RequestError(401, 'insufficient_authority'));
       }
 
-      // Every route acts on the token's own app; ?apiPath= isn't honoured. Refuse one naming another app rather than
-      // silently act on the token's app instead.
+      // Every route acts on the token's own app; ?apiPath= isn't honoured. Refuse anything but the token's own app,
+      // including ?apiPath= given more than once (an array), rather than silently act on the token's app instead.
       const apiPath = req.query?.apiPath;
       const authApiPath = req.context.authApp?.apiPath;
-      if (typeof apiPath === 'string' && apiPath && authApiPath !== undefined && apiPath !== authApiPath) {
+      if (apiPath !== undefined && apiPath !== '' && authApiPath !== undefined && apiPath !== authApiPath) {
         this.log(`EAUTH: ?apiPath=${apiPath} names another app than ${authApiPath}`, Logging.Constants.LogLevel.ERR);
         return reject(
           new Helpers.Errors.RequestError(

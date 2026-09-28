@@ -119,6 +119,20 @@ describe('Schema', async () => {
 			assert.strictEqual((await res.json()).message, 'Unknown core schema: widgets');
 		});
 
+		it('Should refuse ?apiPath= naming another app than the token\'s, however it is given', async () => {
+			const status = async (query) => {
+				const res = await fetch(`${ENDPOINT.REST}/api/v1/app/schema${query}`, {
+					headers: {Authorization: `Bearer ${testEnv.apps.app1.token}`},
+				});
+				return [res.status, (await res.json()).message];
+			};
+			const refused = `apiPath_not_supported: requests act on the app of the token (${testEnv.apps.app1.apiPath})`;
+
+			assert.deepStrictEqual(await status('?apiPath=another-app'), [400, refused]);
+			assert.deepStrictEqual(await status(`?apiPath=${testEnv.apps.app1.apiPath}&apiPath=another-app`), [400, refused]);
+			assert.strictEqual((await status(`?apiPath=${testEnv.apps.app1.apiPath}`))[0], 200);
+		});
+
 		it('Should be able to fetch only the requested schema', async () => {
 			const body = await bjsReq({
 				url: `${ENDPOINT.REST}/api/v1/app/schema?only=colours`,
