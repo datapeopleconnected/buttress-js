@@ -425,6 +425,10 @@ describe('Schema', async () => {
 				() => add([{position: 'bottom', items: 1}, {items: 2}]),
 				(err) => err.code === 400 && err.message === 'spaceship: Missing field: engine.1.position',
 			);
+			await assert.rejects(
+				() => add([{position: 'bottom', items: 1}, 'top']),
+				(err) => err.code === 400 && err.message === 'spaceship: Invalid value: engine.1:top[string] [object]',
+			);
 		});
 
 		const putSpaceship = (body) => bjsReq({

@@ -271,6 +271,14 @@ describe('model/type/StandardModel: adding an entity with typed array items', ()
     assert.deepStrictEqual(result.missing, ['contacts.0.name']);
   });
 
+  it('refuses an entity with an item that is not an object, naming it as an update does', () => {
+    const result = model().validate({ contacts: [{ name: 'A' }, 'Bob', [{ name: 'C' }]] });
+
+    assert.strictEqual(result.isValid, false);
+    assert.deepStrictEqual(result.missing, []);
+    assert.deepStrictEqual(result.invalid, ['contacts.1:Bob[string] [object]', 'contacts.2:[object Object][array] [object]']);
+  });
+
   it('refuses an entity with an invalid item in a nested typed array', () => {
     const result = model().validate({ contacts: [{ name: 'A', phones: [{ number: true }] }] });
 

@@ -95,9 +95,8 @@ const getItemFieldConfig = (flattenedSchema, path: string) => {
  */
 const checkArrayItem = (config, item: unknown, path: string): ArrayItemCheck => {
   if (config.__schema) {
-    if (item !== null && (typeof item !== 'object' || Array.isArray(item))) {
-      return { value: item, invalidValue: `${path}:${item}[${Array.isArray(item) ? 'array' : typeof item}] [object]` };
-    }
+    const notObject = Helpers.Schema.describeNonObjectItem(path, item);
+    if (notObject) return { value: item, invalidValue: notObject };
 
     const validation = Helpers.Schema.validate(
       config.__schema,

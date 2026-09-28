@@ -277,6 +277,16 @@ const __validateProp = (prop, config) => {
 };
 export const validateProp = __validateProp;
 
+/**
+ * An item of an array with an item `__schema` has to be an object, or null for an item of defaults. Gives the invalid
+ * value to report for an item at `path` that isn't one, or null if it is.
+ */
+export const describeNonObjectItem = (path: string, item: unknown) => {
+  if (item === null || (typeof item === 'object' && !Array.isArray(item))) return null;
+
+  return `${path}:${item}[${Array.isArray(item) ? 'array' : typeof item}] [object]`;
+};
+
 const __validate = (schema, values, parentProperty, body?: unknown) => {
   const res: {
     isValid: boolean;
@@ -362,6 +372,13 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
 
     if (config.__type === 'array' && config.__schema) {
       propVal.value.forEach((v, idx) => {
+        const notObject = describeNonObjectItem(`${parentProperty}${property}.${idx}`, v);
+        if (notObject) {
+          res.isValid = false;
+          res.invalid.push(notObject);
+          return;
+        }
+
         const itemRes = __validate(config.__schema, __getFlattenedBody(v), `${parentProperty}${property}.${idx}.`, v);
         if (itemRes.isValid) return;
 
