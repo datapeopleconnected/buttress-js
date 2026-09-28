@@ -352,15 +352,20 @@ class GetAppSchema extends Route {
     }
 
     if (req.query.core) {
-      const cores = req.query.core.toString().split(',');
+      const cores = req.query.core
+        .toString()
+        .split(',')
+        .map((core) => core.trim())
+        .filter((core) => core);
 
-      cores.forEach((core) => {
-        // Get model.
-        const coreModel = Model.getCoreModelByName(Sugar.String.camelize(core));
-        if (coreModel && coreModel.isCoreAPI) {
-          schema.push(coreModel.schemaData);
+      for (const core of cores) {
+        const coreModel = this.__findCoreModel(core);
+        if (!coreModel) {
+          this.log(`ERROR: Unknown core schema: ${core}`, Route.LogLevel.ERR);
+          throw new Helpers.Errors.RequestError(400, `Unknown core schema: ${core}`);
         }
-      });
+        if (coreModel.isCoreAPI) schema.push(coreModel.schemaData);
+      }
     }
 
     if (req.query.only) {
@@ -369,6 +374,16 @@ class GetAppSchema extends Route {
     }
 
     return schema;
+  }
+
+  // Takes a core model's name (user, app-data-sharing) or its schema's own name (users, appDataSharing).
+  __findCoreModel(name: string) {
+    const byModelName = Model.getCoreModelByName(Sugar.String.camelize(name));
+    if (byModelName) return byModelName;
+
+    return Object.keys(Model.CoreModels)
+      .map((modelName) => Model.getCoreModelByName(modelName))
+      .find((coreModel) => coreModel?.schemaData?.name === name);
   }
 
   override async _exec(req: Request, res: Response, collections) {

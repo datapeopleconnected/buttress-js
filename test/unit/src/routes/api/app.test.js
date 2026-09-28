@@ -32,7 +32,7 @@ const [
   AddApp,
   DeleteApp,
   DeleteAllApps,
-  ,
+  GetAppSchema,
   ,
   GetAppPolicyPropertyList,
   SetAppPolicyPropertyList,
@@ -487,5 +487,36 @@ describe('routes/api/app:SetAppPolicyPropertyList', () => {
 
     assert.ok(appModel.setPolicyPropertiesList.calledWith('app-1'));
     assert.strictEqual('query' in result, false);
+  });
+});
+
+describe('routes/api/app:GetAppSchema ?core=', () => {
+  const coreModels = {
+    User: { isCoreAPI: true, schemaData: { name: 'users', type: 'collection', properties: {} } },
+    AppDataSharing: { isCoreAPI: true, schemaData: { name: 'appDataSharing', type: 'collection', properties: {} } },
+  };
+
+  const coreNames = async (core) => {
+    sinon.stub(Model, 'getCoreModelByName').callsFake((name) => coreModels[name]);
+    const route = createRoute(GetAppSchema);
+    const req = { query: { core }, context: { id: 'req-1', authApp: { id: 'app-1', __schema: '[]' } } };
+
+    const schema = await route._validate(req, {});
+    return schema.map((s) => s.name);
+  };
+
+  it("accepts core model names, as before", async () => {
+    assert.deepStrictEqual(await coreNames('user,app-data-sharing'), ['users', 'appDataSharing']);
+  });
+
+  it("accepts the core schemas' own names", async () => {
+    assert.deepStrictEqual(await coreNames('users,appDataSharing'), ['users', 'appDataSharing']);
+  });
+
+  it('refuses an unknown name with a 400 that names it', async () => {
+    await assert.rejects(
+      () => coreNames('users,widgets'),
+      (err) => err instanceof RequestError && err.code === 400 && err.message === 'Unknown core schema: widgets',
+    );
   });
 });
