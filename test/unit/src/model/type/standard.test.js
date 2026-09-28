@@ -246,6 +246,7 @@ describe('model/type/StandardModel: adding an entity with typed array items', ()
           },
         },
       },
+      tags: { __type: 'array', __itemtype: 'string', __allowUpdate: true },
     },
   };
 
@@ -277,6 +278,17 @@ describe('model/type/StandardModel: adding an entity with typed array items', ()
     assert.strictEqual(result.isValid, false);
     assert.deepStrictEqual(result.missing, []);
     assert.deepStrictEqual(result.invalid, ['contacts.1:Bob[string] [object]', 'contacts.2:[object Object][array] [object]']);
+  });
+
+  it('refuses an entity with a null item in a typed array, naming it', () => {
+    const withNullContact = model().validate({ contacts: [{ name: 'A' }, null] });
+    assert.strictEqual(withNullContact.isValid, false);
+    assert.deepStrictEqual(withNullContact.missing, []);
+    assert.deepStrictEqual(withNullContact.invalid, ['contacts.1:null[null] [object]']);
+
+    const withNullTag = model().validate({ tags: ['a', null] });
+    assert.strictEqual(withNullTag.isValid, false);
+    assert.deepStrictEqual(withNullTag.invalid, ['tags.1:null[null] [string]']);
   });
 
   it('refuses an entity with an invalid item in a nested typed array', () => {

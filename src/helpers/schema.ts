@@ -277,15 +277,24 @@ const __validateProp = (prop, config) => {
 };
 export const validateProp = __validateProp;
 
+const describeItemType = (item: unknown) => (item === null ? 'null' : Array.isArray(item) ? 'array' : typeof item);
+
 /**
- * An item of an array with an item `__schema` has to be an object, or null for an item of defaults. Gives the invalid
- * value to report for an item at `path` that isn't one, or null if it is.
+ * An item of an array with an item `__schema` has to be an object, and null isn't one. Gives the invalid value to
+ * report for an item at `path` that isn't one, or null if it is.
  */
 export const describeNonObjectItem = (path: string, item: unknown) => {
-  if (item === null || (typeof item === 'object' && !Array.isArray(item))) return null;
+  if (item !== null && typeof item === 'object' && !Array.isArray(item)) return null;
 
-  return `${path}:${item}[${Array.isArray(item) ? 'array' : typeof item}] [object]`;
+  return `${path}:${item}[${describeItemType(item)}] [object]`;
 };
+
+/**
+ * An item of an array with an `__itemtype` can't be null, though a property of that type can. Gives the invalid value
+ * to report for a null item at `path`, or null if the item isn't null.
+ */
+export const describeNullItem = (path: string, item: unknown, itemtype: string) =>
+  item === null ? `${path}:null[null] [${itemtype}]` : null;
 
 const __validate = (schema, values, parentProperty, body?: unknown) => {
   const res: {
@@ -389,6 +398,13 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
     } else if (config.__type === 'array' && config.__itemtype) {
       for (const idx in propVal.value) {
         if (!{}.hasOwnProperty.call(propVal.value, idx)) continue;
+        const nullItem = describeNullItem(`${parentProperty}${property}.${idx}`, propVal.value[idx], config.__itemtype);
+        if (nullItem) {
+          res.isValid = false;
+          res.invalid.push(nullItem);
+          continue;
+        }
+
         const prop = {
           value: propVal.value[idx],
         };

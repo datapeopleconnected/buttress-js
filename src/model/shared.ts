@@ -109,6 +109,9 @@ const checkArrayItem = (config, item: unknown, path: string): ArrayItemCheck => 
     return { value: item, missingRequired: validation.missing[0], invalidValue: validation.invalid[0] };
   }
 
+  const nullItem = Helpers.Schema.describeNullItem(path, item, config.__itemtype);
+  if (nullItem) return { value: item, invalidValue: nullItem };
+
   const prop = { value: item };
   if (!Helpers.Schema.validateProp(prop, { __type: config.__itemtype })) {
     return { value: item, invalidValue: `${path}:${item}[${typeof item}] [${config.__itemtype}]` };

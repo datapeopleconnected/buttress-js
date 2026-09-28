@@ -213,6 +213,37 @@ describe('datastore/adapters/MongodbAdapter: single-item writes to typed arrays'
   });
 });
 
+// A null item of a typed array used to become an item of defaults (item schema) or a stored null (item type).
+describe('datastore/adapters/MongodbAdapter: null items in typed arrays', () => {
+  for (const [label, body, invalidValue] of [
+    ['push to an item-schema array', { path: 'contacts', value: null }, 'contacts:null[null] [object]'],
+    ['path.N set on an item-schema array', { path: 'contacts.1', value: null }, 'contacts.1:null[null] [object]'],
+    ['whole item-schema array', { path: 'contacts', value: [{ name: 'A' }, null] }, 'contacts.1:null[null] [object]'],
+    ['push to an item-type array', { path: 'tags', value: null }, 'tags:null[null] [string]'],
+    ['path.N set on an item-type array', { path: 'tags.0', value: null }, 'tags.0:null[null] [string]'],
+    ['whole item-type array', { path: 'tags', value: ['a', null] }, 'tags.1:null[null] [string]'],
+  ]) {
+    it(`refuses a null item in a ${label}, writing nothing`, async () => {
+      const { model, ops } = createModel();
+
+      const { validation } = await update(model, body);
+
+      assert.strictEqual(validation.isValid, false);
+      assert.strictEqual(validation.invalidValue, invalidValue);
+      assert.deepStrictEqual(ops, []);
+    });
+  }
+
+  it('still takes null as an item of an array with no item type', async () => {
+    const { model, ops } = createModel();
+
+    const { validation } = await update(model, { path: 'notes', value: null });
+
+    assert.strictEqual(validation.isValid, true);
+    assert.strictEqual(ops.length, 1);
+  });
+});
+
 describe('datastore/adapters/MongodbAdapter: plain arrays', () => {
   it('appends one value to an array with no item type', async () => {
     const { model, ops } = createModel();

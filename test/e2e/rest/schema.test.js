@@ -497,6 +497,34 @@ describe('Schema', async () => {
 			url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship/${testEnv.spaceship.id}`,
 		}, testEnv.apps.app2.token);
 
+		it('Should refuse a null item in a typed array, and store nothing', async () => {
+			const before = await getSpaceship();
+			const refusals = [
+				[{path: 'engine', value: null}, 'engine:null[null] [object]'],
+				[{path: 'engine', value: [{position: 'left', items: 1}, null]}, 'engine.1:null[null] [object]'],
+				[{path: 'tags', value: null}, 'tags:null[null] [string]'],
+				[{path: 'tags', value: ['a', null]}, 'tags.1:null[null] [string]'],
+			];
+			for (const [body, invalid] of refusals) {
+				await assert.rejects(
+					() => putSpaceship(body),
+					(err) => err.code === 400 && err.message === `spaceship: Update value is invalid: ${invalid}`,
+				);
+			}
+			await assert.rejects(
+				() => bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship`,
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify({name: 'spaceship-null-tag', tags: ['a', null]}),
+				}, testEnv.apps.app2.token),
+				(err) => err.code === 400 && err.message === 'spaceship: Invalid value: tags.1:null[null] [string]',
+			);
+
+			const after = await getSpaceship();
+			assert.deepStrictEqual([after.engine, after.tags], [before.engine, before.tags]);
+		});
+
 		it('Should replace a whole array of item schemas with a PUT of an array', async () => {
 			const engine = [{position: 'left', items: 1}, {position: 'right', items: 3}];
 
