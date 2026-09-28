@@ -74,6 +74,16 @@ describe('schema-routes/DeleteOne', () => {
     assert.ok(!docs.some((d) => d.id === 'doc-1'));
   });
 
+  it('keeps the entity it deletes, as it was, for the SPR to check against policies', async () => {
+    const docs = makeDocs();
+    const route = createRoute(createFakeModel(docs));
+    const req = { params: { id: 'doc-1' }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.deepStrictEqual(req.context.deletedEntities, [{ id: 'doc-1', ownerId: 'user-1' }]);
+  });
+
   it('deletes the entity when it matches the access-control policy query', async () => {
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));

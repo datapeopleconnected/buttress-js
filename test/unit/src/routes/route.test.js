@@ -344,6 +344,23 @@ describe('routes/Route:_broadcast', () => {
     assert.strictEqual(parsed.isSuper, true);
   });
 
+  it('sends the entities a delete removed with the scoped activity only, for the SPR to check', () => {
+    const nrp = createNrpFake();
+    const route = createRoute({ nrp });
+    route.activityBroadcast = true;
+    route.verb = Route.Constants.Verbs.DEL;
+    const req = createReq({ method: 'DELETE', path: '/api/v1/user/doc-1', params: { id: 'doc-1' } });
+    req.context.deletedEntities = [{ id: 'doc-1', ownerId: 'user-1' }];
+
+    route._broadcast(req, createRes(), true, '/user/doc-1', true);
+    route._broadcast(req, createRes(), true, '/user/doc-1');
+
+    const [superActivity, scopedActivity] = nrp.emit.getCalls().map((call) => JSON.parse(call.args[1]));
+    assert.strictEqual('deletedEntities' in superActivity, false);
+    assert.deepStrictEqual(scopedActivity.deletedEntities, [{ id: 'doc-1', ownerId: 'user-1' }]);
+    assert.strictEqual(scopedActivity.response, true);
+  });
+
   it('does not emit when activityBroadcast is disabled', () => {
     const nrp = createNrpFake();
     const route = createRoute({ nrp });

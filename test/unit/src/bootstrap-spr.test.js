@@ -93,7 +93,11 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		[ownRecordsPolicy.id]: [tokens.ownRecords, tokens.otherOwnRecords],
 	};
 
-	function createSPR({ policies = [fullAccessPolicy, ownRecordsPolicy], connections = defaultConnections } = {}) {
+	function createSPR({
+		policies = [fullAccessPolicy, ownRecordsPolicy],
+		connections = defaultConnections,
+		storedCars = Object.values(cars),
+	} = {}) {
 		const spr = new BootstrapSocketPolicyRouter();
 
 		const emitted = [];
@@ -103,7 +107,7 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 			getConnectedTokenIdsByPolicyId: async (policyId) => (connections[policyId] || []).map((t) => t.id.toString()),
 		};
 
-		sinon.stub(Model, 'getAppModel').resolves(findIn(Object.values(cars)));
+		sinon.stub(Model, 'getAppModel').resolves(findIn(storedCars));
 		sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
 			if (modelClass === TokenSchemaModel) return findIn(Object.values(tokens));
 			if (modelClass === UserSchemaModel) return findIn([owner, someoneElse]);
@@ -202,53 +206,94 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		}
 	});
 
-	it('relays a delete-one activity, although the entity can no longer be found', async () => {
-		const { spr, received } = createSPR();
-
-		const deletedId = new ObjectId().toString();
-		const deleteOne = activity({
+	// The route sends the entities a delete removed, as they were, through Redis (so as JSON), for the SPR to check.
+	const asSent = (entity) => JSON.parse(JSON.stringify(entity));
+	const deleteOne = (car, overrides = {}) =>
+		activity({
 			description: 'DELETE car',
-			path: `/car/${deletedId}`,
+			path: `/car/${car.id}`,
 			pathSpec: 'car/:id',
 			verb: 'delete',
-			params: { id: deletedId },
+			params: { id: car.id.toString() },
 			response: true,
+			deletedEntities: [asSent(car)],
+			...overrides,
 		});
-		await spr._handleIncomingMessage(deleteOne);
-		await spr._handleIncomingMessage({ ...deleteOne, isSuper: true });
 
-		for (const token of [tokens.system, tokens.fullAccess, tokens.ownRecords, tokens.otherOwnRecords]) {
-			assert.deepStrictEqual(
-				received(token).map((a) => [a.verb, a.params.id]),
-				[['delete', deletedId]],
-			);
+	it('relays a delete-one activity to the tokens whose policies could read the entity', async () => {
+		const { spr, received } = createSPR({ storedCars: [] });
+
+		await spr._handleIncomingMessage(deleteOne(cars.notOwned));
+		await spr._handleIncomingMessage(deleteOne(cars.notOwned, { isSuper: true, deletedEntities: undefined }));
+
+		const notOwnedId = cars.notOwned.id.toString();
+		for (const token of [tokens.system, tokens.fullAccess, tokens.otherOwnRecords]) {
+			assert.deepStrictEqual(received(token).map((a) => [a.verb, a.params.id]), [['delete', notOwnedId]]);
+		}
+		assert.deepStrictEqual(received(tokens.ownRecords), []);
+	});
+
+	it('never sends on the entities a delete removed', async () => {
+		const { spr, received } = createSPR({ storedCars: [] });
+
+		await spr._handleIncomingMessage(deleteOne(cars.owned));
+
+		for (const token of [tokens.fullAccess, tokens.ownRecords]) {
+			assert.strictEqual(received(token).length, 1);
+			assert(received(token).every((a) => !('deletedEntities' in a)));
 		}
 	});
 
-	it('relays a bulk delete as one delete-one activity per id, to each token once', async () => {
-		const { spr, received } = createSPR();
+	it('relays an entity delete that comes without the entity to system tokens only', async () => {
+		const { spr, received } = createSPR({ storedCars: [] });
 
-		// Deleted entities are gone by the time the SPR sees the activity.
-		const deletedIds = [new ObjectId().toString(), new ObjectId().toString()];
+		await spr._handleIncomingMessage(deleteOne(cars.owned, { deletedEntities: undefined }));
+		await spr._handleIncomingMessage(deleteOne(cars.owned, { isSuper: true, deletedEntities: undefined }));
+
+		assert.strictEqual(received(tokens.system).length, 1);
+		for (const token of [tokens.fullAccess, tokens.ownRecords, tokens.otherOwnRecords]) {
+			assert.deepStrictEqual(received(token), []);
+		}
+	});
+
+	it('relays a delete of every entity, which names none, to every token the policies reach', async () => {
+		const { spr, received } = createSPR({ storedCars: [] });
+
+		await spr._handleIncomingMessage(
+			activity({ description: 'DELETE ALL car', path: '/car', pathSpec: 'car', verb: 'delete', response: true }),
+		);
+
+		for (const token of [tokens.fullAccess, tokens.ownRecords, tokens.otherOwnRecords]) {
+			assert.deepStrictEqual(received(token).map((a) => [a.verb, a.path]), [['delete', '/car']]);
+		}
+	});
+
+	it('relays a bulk delete as one delete-one activity per id, to the tokens that could read each entity', async () => {
+		const { spr, received } = createSPR({ storedCars: [] });
+
+		const deleted = [cars.owned, cars.notOwned];
 		await spr._handleIncomingMessage(
 			activity({
 				description: 'BULK DELETE car',
 				path: '/car/bulk/delete',
 				pathSpec: 'car/bulk/delete',
-				response: deletedIds.map((id) => ({ id, sourceId: APP_ID })),
+				response: deleted.map((car) => ({ id: car.id.toString() })),
+				deletedEntities: deleted.map(asSent),
 			}),
 		);
 
-		for (const token of [tokens.fullAccess, tokens.ownRecords, tokens.otherOwnRecords]) {
-			const activities = received(token);
-			assert.deepStrictEqual(activities.map((a) => a.params.id), deletedIds);
-			for (const [idx, a] of activities.entries()) {
-				assert.strictEqual(a.verb, 'delete');
-				assert.strictEqual(a.path, `/car/${deletedIds[idx]}`);
-				assert.strictEqual(a.pathSpec, 'car/:id');
-				assert.strictEqual(a.response, true);
-				assert.strictEqual(a.clientSessionId, CLIENT_SESSION_ID);
-			}
+		const ids = (...list) => list.map((car) => car.id.toString());
+		assert.deepStrictEqual(received(tokens.fullAccess).map((a) => a.params.id), ids(cars.owned, cars.notOwned));
+		assert.deepStrictEqual(received(tokens.ownRecords).map((a) => a.params.id), ids(cars.owned));
+		assert.deepStrictEqual(received(tokens.otherOwnRecords).map((a) => a.params.id), ids(cars.notOwned));
+
+		for (const a of received(tokens.fullAccess)) {
+			assert.strictEqual(a.verb, 'delete');
+			assert.strictEqual(a.path, `/car/${a.params.id}`);
+			assert.strictEqual(a.pathSpec, 'car/:id');
+			assert.strictEqual(a.response, true);
+			assert.strictEqual(a.clientSessionId, CLIENT_SESSION_ID);
+			assert(!('deletedEntities' in a));
 		}
 	});
 

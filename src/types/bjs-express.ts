@@ -42,6 +42,8 @@ export interface RequestContext {
   pathSpec?: string;
   // The apps that own the core records the request changes, by record id (see Route._findChangeOwners).
   changeOwners?: Map<string, string>;
+  // The entities a delete removed, as they were stored (see Route._keepEntitiesBeingDeleted).
+  deletedEntities?: Record<string, unknown>[];
   isPluginPath: boolean;
   ac: {
     policyConfigs: parsedPolicyConfig[];

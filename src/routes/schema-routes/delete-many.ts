@@ -80,7 +80,8 @@ export default class DeleteMany extends Route {
     return ids;
   }
 
-  override async _exec(_req: Request, _res: Response, ids: string[]) {
+  override async _exec(req: Request, _res: Response, ids: string[]) {
+    await this._keepEntitiesBeingDeleted(req, ids);
     await (await this.routeModel()).rmBulk(ids);
     return ids;
   }

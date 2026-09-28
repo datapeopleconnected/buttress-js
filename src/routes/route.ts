@@ -470,6 +470,7 @@ export default class Route {
             isSuper: isSuper,
             isCoreSchema: this.core,
             schemaName: this.schemaName || '',
+            deletedEntities: isSuper ? undefined : req.context.deletedEntities,
           } satisfies RESTActivity),
         );
       } else {
@@ -485,6 +486,20 @@ export default class Route {
 
     emit(Helpers.Schema.prepareSchemaResult(result, req.context.authApp?.id));
     Logging.logTimer('_broadcast:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+  }
+
+  /**
+   * Keeps the entities a delete is about to remove on the request, as they are stored rather than as the caller may
+   * read them. The SPR can't look up an entity once it has gone, so they go to it with the scoped activity, for it to
+   * check the delete against the policies of each token it could go to.
+   * @param {Request} req
+   * @param {unknown[]} ids
+   */
+  async _keepEntitiesBeingDeleted(req: Request, ids: unknown[]) {
+    const model = await this.routeModel();
+    // A combined (federated) model's find is async; a standard model's gives the stream itself.
+    const stored = await model.find(model.parseQuery({ id: { $in: ids } }), {});
+    req.context.deletedEntities = await Helpers.streamAll<Record<string, unknown>>(stored);
   }
 
   /**

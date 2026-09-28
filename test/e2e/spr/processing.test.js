@@ -547,7 +547,7 @@ describe('Processing', async () => {
 			assert.deepStrictEqual(packet.response.map((r) => [r.type, r.path, r.value]), [['scalar', 'colour', 'green']]);
 		});
 
-		it('Should relay a bulk delete as one delete per id', async function () {
+		it('Should relay a bulk delete as one delete per id, to the tokens whose policies could read each entity', async function () {
 			this.timeout(10000);
 			const ids = [owned.id, notOwned.id];
 			const fullAccess = recordActivity(testEnv.sockets['basic1'], ids);
@@ -556,35 +556,48 @@ describe('Processing', async () => {
 			const response = await bulkRequest('delete', ids);
 			assert.strictEqual(response, true);
 
-			await waitUntil(() => fullAccess.packets.length >= 2 && ownCars.packets.length >= 2);
+			await waitUntil(() => fullAccess.packets.length >= 2 && ownCars.packets.length >= 1);
 			fullAccess.stop();
 			ownCars.stop();
 
-			// A deleted entity can't be checked against a policy's query, so every token the policy reaches is told.
-			for (const { packets } of [fullAccess, ownCars]) {
-				assert.deepStrictEqual(packets.map((p) => p.params.id).sort(), [...ids].sort());
-				for (const packet of packets) {
-					assert.strictEqual(packet.verb, 'delete');
-					assert.strictEqual(packet.path, `/car/${packet.params.id}`);
-					assert.strictEqual(packet.isBulkDelete, false);
-				}
+			// Each delete is checked against the entity as it was, so env-test-4 only hears about its own car.
+			assert.deepStrictEqual(fullAccess.packets.map((p) => p.params.id).sort(), [...ids].sort());
+			assert.deepStrictEqual(ownCars.packets.map((p) => p.params.id), [owned.id]);
+			for (const packet of [...fullAccess.packets, ...ownCars.packets]) {
+				assert.strictEqual(packet.verb, 'delete');
+				assert.strictEqual(packet.path, `/car/${packet.params.id}`);
+				assert.strictEqual(packet.isBulkDelete, false);
+				assert.strictEqual(packet.response, true);
+				assert(!('deletedEntities' in packet));
 			}
 		});
 
-		it('Should relay a single delete', async function () {
+		it('Should relay a single delete to the tokens whose policies could read the entity', async function () {
 			this.timeout(10000);
-			const fullAccess = recordActivity(testEnv.sockets['basic1'], [refused.id]);
-
-			const response = await bjsReq({
-				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${refused.id}`,
-				method: 'DELETE',
+			const [otherCar] = await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: 'single-not-owned', userId: testEnv.users['env-test-1'].id }),
 			}, testEnv.apps.app1.token);
-			assert.strictEqual(response, true);
+			const ids = [refused.id, otherCar.id];
+			const fullAccess = recordActivity(testEnv.sockets['basic1'], ids);
+			const ownCars = recordActivity(testEnv.sockets['env-test-4'], ids);
 
-			await waitUntil(() => fullAccess.packets.length >= 1);
+			for (const id of ids) {
+				const response = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${id}`,
+					method: 'DELETE',
+				}, testEnv.apps.app1.token);
+				assert.strictEqual(response, true);
+			}
+
+			await waitUntil(() => fullAccess.packets.length >= 2 && ownCars.packets.length >= 1);
 			fullAccess.stop();
+			ownCars.stop();
 
-			assert.deepStrictEqual(fullAccess.packets.map((p) => [p.verb, p.path]), [['delete', `/car/${refused.id}`]]);
+			assert.deepStrictEqual(fullAccess.packets.map((p) => [p.verb, p.path]), ids.map((id) => ['delete', `/car/${id}`]));
+			assert.deepStrictEqual(ownCars.packets.map((p) => [p.verb, p.path]), [['delete', `/car/${refused.id}`]]);
 		});
 	});
 

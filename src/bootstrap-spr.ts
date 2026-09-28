@@ -262,7 +262,10 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       if (!item?.id) return [];
 
       const entityActivity = { ...activity, path: `${routePath}/${item.id}`, pathSpec, params: { id: item.id } };
-      if (bulkPath === BULK_DELETE_PATH) return [{ ...entityActivity, verb: 'delete', response: true }];
+      if (bulkPath === BULK_DELETE_PATH) {
+        const deletedEntities = activity.deletedEntities?.filter((entity) => String(entity.id) === String(item.id));
+        return [{ ...entityActivity, verb: 'delete', response: true, deletedEntities }];
+      }
 
       // Refused updates carry `results: null`, nothing changed for them.
       if (!Array.isArray(item.results)) return [];
@@ -270,8 +273,12 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     });
   }
 
-  private async __handleEntityActivity(activity: RESTActivity) {
+  private async __handleEntityActivity(incoming: RESTActivity) {
     if (!this._policyCache) throw new Error('No Policy Cache');
+
+    // A deleted entity can't be looked up, so the entities a delete removed come with the activity, as they were. They
+    // are only for checking policies against, so they're taken off before the activity is sent anywhere.
+    const { deletedEntities, ...activity } = incoming;
 
     // Create a container that will be used to track the message event within the SPR and a timer.
     const activityMetadata: ActivityMetadata = {
@@ -281,7 +288,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     const isCoreSchema = activity.isCoreSchema;
 
-    let entity = null;
+    let entity: Record<string, unknown> | null = null;
     const activityParams = activity.params as Record<string, unknown>;
     const activityResponse =
       typeof activity.response === 'object' && activity.response !== null
@@ -289,7 +296,9 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         : {};
     const entityId = activityParams.id ? activityParams.id : activityResponse.id;
 
-    if (entityId) {
+    if (entityId && activity.verb === 'delete') {
+      entity = deletedEntities?.find((deleted) => String(deleted.id) === String(entityId)) ?? null;
+    } else if (entityId) {
       const appModel = isCoreSchema
         ? await Model.getCoreModelByName(activity.schemaName)
         : await Model.getAppModel(activity.appId, activity.schemaName);
@@ -300,12 +309,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         return;
       }
 
-      try {
-        entity = await appModel.findById(entityId);
-      } catch (err: unknown) {
-        // findById throws when there's no such entity, which is expected once it has been deleted.
-        if (activity.verb !== 'delete') throw err;
-      }
+      entity = await appModel.findById(entityId);
       // TODO: Entity needs to be flatterned for processing.
     }
 
@@ -449,16 +453,23 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     env: ACPolicyEnvCombined,
     activityMetadata: ActivityMetadata,
   ): Promise<false | RESTActivity> {
-    // A deleted entity can't be checked against the query, so the delete goes to every token the policy reaches. The
-    // caller sends it, so a token-level policy sends it once to each token rather than to all of them per token.
     if (!entity && activity.verb === 'delete') {
-      Logging.logTimer(
-        `_handleIncomingMessage::end-no-entity-deletion`,
-        activityMetadata.timer,
-        Logging.Constants.LogLevel.SILLY,
-        `${activityMetadata.id}-${applicablePolicy.id}`,
-      );
-      return activity;
+      // A delete of every entity names none, so there's nothing to check the query against, and the delete goes to every
+      // token the policy reaches. The caller sends it, once to each token.
+      if (!(activity.params as Record<string, unknown>)?.id) {
+        Logging.logTimer(
+          `_handleIncomingMessage::end-no-entity-deletion`,
+          activityMetadata.timer,
+          Logging.Constants.LogLevel.SILLY,
+          `${activityMetadata.id}-${applicablePolicy.id}`,
+        );
+        return activity;
+      }
+
+      // An entity delete comes with the entity as it was. Without it (it had already gone) there's no telling whether
+      // the token could read it, so the token isn't told.
+      Logging.logWarn('Unable to broadcast deletion, the deleted entity was not sent with the activity');
+      return false;
     }
 
     if (!entity) {

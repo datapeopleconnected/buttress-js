@@ -33,6 +33,9 @@ export interface RESTActivity {
   isSameApp?: boolean;
   isCoreSchema: boolean;
   schemaName: string;
+  // The entities a delete removed, as they were, for the SPR to check the delete against policies. Only the scoped
+  // copy has them, and the SPR takes them off before sending the activity on.
+  deletedEntities?: Record<string, unknown>[];
 }
 
 export interface SPRActivity {

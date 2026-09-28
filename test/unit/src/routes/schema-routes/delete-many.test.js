@@ -99,6 +99,19 @@ describe('schema-routes/DeleteMany', () => {
     );
   });
 
+  it('keeps the entities it deletes, as they were, for the SPR to check against policies', async () => {
+    const docs = makeDocs();
+    const route = createRoute(createFakeModel(docs));
+    const req = { body: ['doc-1', 'doc-3'], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.deepStrictEqual(req.context.deletedEntities, [
+      { id: 'doc-1', ownerId: 'user-1' },
+      { id: 'doc-3', ownerId: 'user-1' },
+    ]);
+  });
+
   it('rejects the whole batch and deletes nothing when any requested id is outside the access-control policy scope', async () => {
     // doc-2 belongs to user-2; the policy only scopes to user-1's records, so the whole
     // batch (including doc-1, which the caller *is* allowed to delete) must be rejected.
