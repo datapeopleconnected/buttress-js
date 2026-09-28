@@ -87,6 +87,26 @@ describe('schema-routes/AddMany:_validate', () => {
     );
   });
 
+  it('refuses an entity that is not an object, naming its index', async () => {
+    const route = createRoute(createFakeModel());
+
+    for (const entity of [[{ name: 'a' }], null, 1, 'a']) {
+      await assert.rejects(
+        () => route._validate({ body: [{ name: 'a' }, entity], context: { id: 'req-1' } }, {}),
+        (err) => err.code === 400 && err.message === 'test-schema: Invalid entity at index 1, expected an object',
+      );
+    }
+  });
+
+  it('refuses two entities whose ids differ only in case', async () => {
+    const route = createRoute(createFakeModel());
+
+    await assert.rejects(
+      () => route._validate({ body: [{ id: '6ab0abcd' }, { id: '6AB0ABCD' }], context: { id: 'req-1' } }, {}),
+      (err) => err.code === 400 && err.message === 'test-schema: Duplicate id 6AB0ABCD at index 1',
+    );
+  });
+
   it('refuses an entity whose id is already stored', async () => {
     const route = createRoute(createFakeModel({ storedIds: ['y'] }));
 

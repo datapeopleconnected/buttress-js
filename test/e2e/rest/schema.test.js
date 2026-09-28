@@ -273,6 +273,25 @@ describe('Schema', async () => {
 			assert.strictEqual(res.body.message, 'car: Missing field: name at index 1');
 			assert.strictEqual(await countNamed('bulk-add-valid'), 0);
 		});
+
+		it('Should refuse an entity that is not an object', async () => {
+			const res = await bulkAdd([{name: 'bulk-add-before-nested'}, [{name: 'bulk-add-nested'}]]);
+
+			assert.strictEqual(res.status, 400);
+			assert.strictEqual(res.body.message, 'car: Invalid entity at index 1, expected an object');
+			assert.strictEqual(await countNamed('bulk-add-before-nested'), 0);
+		});
+
+		it('Should refuse two entities whose ids differ only in case', async () => {
+			const res = await bulkAdd([
+				{id: '6ab00000000000000000abcd', name: 'bulk-add-case'},
+				{id: '6AB00000000000000000ABCD', name: 'bulk-add-case'},
+			]);
+
+			assert.strictEqual(res.status, 400);
+			assert.strictEqual(res.body.message, 'car: Duplicate id 6AB00000000000000000ABCD at index 1');
+			assert.strictEqual(await countNamed('bulk-add-case'), 0);
+		});
 	});
 
 	describe('Types', async () => {

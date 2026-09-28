@@ -22,6 +22,41 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
+import StandardModel from '../../model/type/standard.js';
+
+/**
+ * The first reason a batch of new entities can't be stored, naming the index of the entity, or null if it can be.
+ */
+const findBatchProblem = async (model: StandardModel, entities: unknown[]) => {
+  const ids = new Set<string>();
+  for (const [idx, entity] of entities.entries()) {
+    if (entity === null || typeof entity !== 'object' || Array.isArray(entity)) {
+      return `Invalid entity at index ${idx}, expected an object`;
+    }
+
+    const validation = model.validate(entity);
+    if (!validation.isValid) {
+      const problem =
+        validation.missing.length > 0
+          ? `Missing field: ${validation.missing[0]}`
+          : validation.invalid.length > 0
+            ? `Invalid value: ${validation.invalid[0]}`
+            : 'unknown_error';
+      return `${problem} at index ${idx}`;
+    }
+
+    const { id } = entity as { id?: unknown };
+    if (id === undefined || id === null) continue;
+
+    // An existing id would fail the insert part way through, after the entities before it were stored. Ids are
+    // compared ignoring case, as a hex id names the same entity in either case.
+    const key = String(id).toLowerCase();
+    if (ids.has(key) || (await model.isDuplicate(entity))) return `Duplicate id ${id} at index ${idx}`;
+    ids.add(key);
+  }
+
+  return null;
+};
 
 /**
  * @class AddMany
@@ -54,29 +89,10 @@ export default class AddMany extends Route {
     // }
 
     // All or nothing: nothing is stored unless every entity is valid and new, and the error names the first that isn't.
-    const ids = new Set<string>();
-    for (const [idx, entity] of entities.entries()) {
-      const validation = model.validate(entity);
-      if (!validation.isValid) {
-        const problem =
-          validation.missing.length > 0
-            ? `Missing field: ${validation.missing[0]}`
-            : validation.invalid.length > 0
-              ? `Invalid value: ${validation.invalid[0]}`
-              : 'unknown_error';
-        this.log(`ERROR: ${problem} at index ${idx}`, Route.LogLevel.ERR, req.context.id);
-        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem} at index ${idx}`);
-      }
-
-      if (entity?.id === undefined || entity.id === null) continue;
-
-      // An existing id would fail the insert part way through, after the entities before it were stored.
-      const id = String(entity.id);
-      if (ids.has(id) || (await model.isDuplicate(entity))) {
-        this.log(`ERROR: Duplicate id ${id} at index ${idx}`, Route.LogLevel.ERR, req.context.id);
-        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Duplicate id ${id} at index ${idx}`);
-      }
-      ids.add(id);
+    const problem = await findBatchProblem(model, entities);
+    if (problem) {
+      this.log(`ERROR: ${problem}`, Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
     }
 
     return entities;
