@@ -13,7 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { Response, Request } from 'express';
+import { Response } from 'express';
 
 import Route from '../route.js';
 import { describeTakenId, findBatchProblem } from './add-many.js';
@@ -24,6 +24,7 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
+import type { RequestWithBody } from '../../types/routes.js';
 
 /**
  * @class AddOne
@@ -42,7 +43,7 @@ export default class AddOne extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     const model = await this.routeModel();
 
     // An array of entities is stored as bulk/add stores it, so it's checked in the same way.
@@ -79,7 +80,7 @@ export default class AddOne extends Route {
     return true;
   }
 
-  override async _exec(req: Request, _res: Response, _validate: unknown) {
+  override async _exec(req: RequestWithBody<unknown>, _res: Response, _validate: boolean) {
     const model = await this.routeModel();
     let result;
     try {

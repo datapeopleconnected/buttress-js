@@ -13,24 +13,27 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { ObjectId } from 'bson';
 import { Request, Response } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
+import Datastore from '../../datastore/index.js';
 import * as Helpers from '../../helpers/index.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import { QueryParams } from '../../types/bjs-query.js';
 import TokenSchemaModel from '../../model/core/token.js';
+import { Services } from '../../bootstrap.js';
+import { UpdatePathBody } from '../../types/datastore.js';
+import type { CoreRouteClass, CountBody, RequestWithBody, SearchBody } from '../../types/routes.js';
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
 
 /**
  * @class GetLambdaExecution
  */
 class GetLambdaExecution extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'lambda-execution/:id',
       'GET LAMBDA EXECUTION',
@@ -48,7 +51,7 @@ class GetLambdaExecution extends Route {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
     }
-    if (!ObjectId.isValid(id)) {
+    if (!Datastore.getInstance('core').ID.isValid(id)) {
       this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
     }
@@ -62,7 +65,7 @@ class GetLambdaExecution extends Route {
     return lambdaExecution;
   }
 
-  override _exec(req: Request, res: Response, lambdaExecution) {
+  override _exec(req: Request, res: Response, lambdaExecution: LambdaExecution) {
     return lambdaExecution;
   }
 }
@@ -72,7 +75,7 @@ routes.push(GetLambdaExecution);
  * @class GetLambdaExecution
  */
 class GetLambdaExecutionStatus extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'lambda-execution/:id/status',
       'GET LAMBDA EXECUTION STATUS',
@@ -90,7 +93,7 @@ class GetLambdaExecutionStatus extends Route {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
     }
-    if (!ObjectId.isValid(id)) {
+    if (!Datastore.getInstance('core').ID.isValid(id)) {
       this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
     }
@@ -104,7 +107,7 @@ class GetLambdaExecutionStatus extends Route {
     return lambdaExecution.status;
   }
 
-  override async _exec(req: Request, res: Response, status) {
+  override async _exec(req: Request, res: Response, status: LambdaExecution['status']) {
     return {
       status,
     };
@@ -116,7 +119,7 @@ routes.push(GetLambdaExecutionStatus);
  * @class UpdateLambdaExecution
  */
 class UpdateLambdaExecution extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'lambda-execution/:id',
       'UPDATE LAMBDA EXECUTION',
@@ -131,8 +134,8 @@ class UpdateLambdaExecution extends Route {
     this.activityBroadcast = true;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
+  override _validate(req: RequestWithBody<unknown>, _res: Response) {
+    return new Promise<{ id: string }>((resolve, reject) => {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { validation, body } = Model.getCoreModel(LambdaExecutionSchemaModel).validateUpdate(req.body);
       req.body = body;
@@ -169,7 +172,8 @@ class UpdateLambdaExecution extends Route {
     });
   }
 
-  override async _exec(req: Request, _res: Response, validate) {
+  // _validate replaced the body with the validated updates
+  override async _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
     return Model.getCoreModel(LambdaExecutionSchemaModel).updateByPath(req.body, validate.id);
   }
 }
@@ -179,7 +183,7 @@ routes.push(UpdateLambdaExecution);
  * @class SearchExecutionList
  */
 class SearchExecutionList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'lambda-execution',
       'SEARCH LAMBDA EXECUTION LIST',
@@ -191,7 +195,7 @@ class SearchExecutionList extends Route {
     this.permissions = Route.Constants.Permissions.SEARCH;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchBody<LambdaExecution> | undefined>, _res: Response) {
     const result: QueryParams<LambdaExecution> = {
       query: {},
     };
@@ -227,7 +231,7 @@ routes.push(SearchExecutionList);
  * @class LambdaExecutionCount
  */
 class LambdaExecutionCount extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       `lambda-execution/count`,
       `COUNT LAMBDA EXECUTION`,
@@ -242,7 +246,7 @@ class LambdaExecutionCount extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<CountBody<LambdaExecution> | undefined>, _res: Response) {
     const result: QueryParams<LambdaExecution> = {
       query: {},
     };

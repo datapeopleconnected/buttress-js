@@ -20,21 +20,23 @@ import Model from '../../model/index.js';
 import DeploymentSchemaModel, { Deployment } from '../../model/core/deployment.js';
 import { QueryParams } from '../../types/bjs-query.js';
 import TokenSchemaModel from '../../model/core/token.js';
+import { Services } from '../../bootstrap.js';
+import type { CoreRouteClass, CountBody, RequestWithBody, SearchBody } from '../../types/routes.js';
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
 
 /**
  * @class SearchDeploymentList
  */
 class SearchDeploymentList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('deployment', 'SEARCH DEPLOYMENT LIST', services, Model.getCoreModel(DeploymentSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchBody<Deployment> | undefined>, _res: Response) {
     const result: QueryParams<Deployment> = {
       query: {},
     };
@@ -60,7 +62,7 @@ class SearchDeploymentList extends Route {
     return result;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<Deployment>) {
     return Model.getCoreModel(DeploymentSchemaModel).find(validate.query);
   }
 }
@@ -70,7 +72,7 @@ routes.push(SearchDeploymentList);
  * @class DeploymentCount
  */
 class DeploymentCount extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(`deployment/count`, `COUNT DEPLOYMENTS`, services, Model.getCoreModel(DeploymentSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.APP;
@@ -80,7 +82,7 @@ class DeploymentCount extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<CountBody<Deployment> | undefined>, _res: Response) {
     const result: QueryParams<Deployment> = {
       query: {},
     };
@@ -108,7 +110,7 @@ class DeploymentCount extends Route {
     return result;
   }
 
-  override _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult: QueryParams<Deployment>) {
     return Model.getCoreModel(DeploymentSchemaModel).count(validateResult.query);
   }
 }

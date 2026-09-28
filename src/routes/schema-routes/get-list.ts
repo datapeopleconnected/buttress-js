@@ -24,7 +24,13 @@ import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
-import { QueryParams } from '../../types/bjs-query.js';
+import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
+import type { RequestWithBody } from '../../types/routes.js';
+
+type GetListBody = {
+  query?: BjsQuery<object> & { zeroResults?: boolean };
+  project?: QueryParams<object>['project'];
+};
 
 /**
  * @class GetList
@@ -42,7 +48,7 @@ export default class GetList extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<GetListBody | undefined>, _res: Response) {
     const model = await this.routeModel();
     Logging.logTimer(
       `${this.name}:_validate:start`,
@@ -72,14 +78,16 @@ export default class GetList extends Route {
     return result;
   }
 
-  override async _exec(req: Request, _res: Response, validateResult: QueryParams<object>) {
+  override async _exec(req: Request, _res: Response, validateResult: QueryParams<object> | false) {
     const model = await this.routeModel();
     // if (validateResult.query === false) {
     // 	return Promise.resolve([]);
     // }
 
     Logging.logTimer(`${this.name}:_exec:start`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
-    return ACM.find(model, validateResult, req.context.ac);
+    // validateResult is false for a zeroResults query, which isn't handled (see the commented out check above), so
+    // it's passed on as the query params
+    return ACM.find(model, validateResult as QueryParams<object>, req.context.ac);
     // return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
   }
 }

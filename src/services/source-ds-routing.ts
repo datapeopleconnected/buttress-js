@@ -18,7 +18,7 @@ import { RedisClientType } from '@redis/client';
 
 export class SourceDataSharingRouting {
   // This map is used to buffer incoming keys to check.
-  private _tempCheckMap = new Map();
+  private _tempCheckMap = new Map<string, string>();
 
   private _redisClient: RedisClientType;
 

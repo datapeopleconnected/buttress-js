@@ -23,19 +23,46 @@ import Errors from './errors.js';
 import Plugins from '../plugins/index.js';
 import Datastore from '../datastore/index.js';
 
-import { Schema } from '../types/schema.js';
+import { FlattenedSchema, Properties, PropertyDefinition, Schema } from '../types/schema.js';
 
 import { v4 as uuidv4 } from 'uuid';
 
 export type { Schema };
+
+/**
+ * A single value from a body, keyed by its dotted path.
+ */
+export interface FlattenedBodyProperty {
+  path: string;
+  value: unknown;
+}
+
+export interface SchemaValidationResult {
+  isValid: boolean;
+  missing: string[];
+  invalid: string[];
+}
+
+// The parts of a schema property that are used to default and validate a value.
+interface PropertyConfig {
+  __type?: string;
+  __default?: unknown;
+  __enum?: unknown[];
+}
 
 /* ********************************************************************************
  *
  * SCHEMA HELPERS
  *
  **********************************************************************************/
-const __getFlattenedBody = (body) => {
-  const __buildFlattenedBody = (property, parent, path, flattened) => {
+const __getFlattenedBody = (body: unknown) => {
+  const bodyObj = body as Record<string, unknown>;
+  const __buildFlattenedBody = (
+    property: string,
+    parent: Record<string, unknown>,
+    path: string[],
+    flattened: FlattenedBodyProperty[],
+  ) => {
     if (/^_/.test(property)) return; // ignore internals
     path.push(property);
 
@@ -44,7 +71,7 @@ const __getFlattenedBody = (body) => {
       parent[property] instanceof Date ||
       Array.isArray(parent[property]) ||
       parent[property] === null ||
-      Datastore.getInstance('core').ID.instanceOf(body[property])
+      Datastore.getInstance('core').ID.instanceOf(bodyObj[property])
     ) {
       flattened.push({
         path: path.join('.'),
@@ -54,9 +81,11 @@ const __getFlattenedBody = (body) => {
       return;
     }
 
+    const child = parent[property] as Record<string, unknown>;
+
     // Treat an empty object as null
-    if (typeof parent[property] === 'object') {
-      const keys = Object.keys(parent[property]);
+    if (typeof child === 'object') {
+      const keys = Object.keys(child);
       if (keys.length < 1) {
         flattened.push({
           path: path.join('.'),
@@ -65,34 +94,34 @@ const __getFlattenedBody = (body) => {
       }
     }
 
-    for (const childProp in parent[property]) {
-      if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;
-      __buildFlattenedBody(childProp, parent[property], path, flattened);
+    for (const childProp in child) {
+      if (!{}.hasOwnProperty.call(child, childProp)) continue;
+      __buildFlattenedBody(childProp, child, path, flattened);
     }
 
     path.pop();
     return;
   };
 
-  const flattened = [];
-  const path = [];
-  for (const property in body) {
-    if (!{}.hasOwnProperty.call(body, property)) continue;
-    __buildFlattenedBody(property, body, path, flattened);
+  const flattened: FlattenedBodyProperty[] = [];
+  const path: string[] = [];
+  for (const property in bodyObj) {
+    if (!{}.hasOwnProperty.call(bodyObj, property)) continue;
+    __buildFlattenedBody(property, bodyObj, path, flattened);
   }
 
   return flattened;
 };
 export const getFlattenedBody = __getFlattenedBody;
 
-const __getObjProperty = (obj, path) => {
+const __getObjProperty = (obj: unknown, path: string) => {
   const parts = path.split('.');
 
   let current = obj;
   parts.forEach((part) => {
     if (!current) return;
-    if (current && typeof current === 'object' && current !== null && current[part]) {
-      current = current[part];
+    if (current && typeof current === 'object' && current !== null && (current as Record<string, unknown>)[part]) {
+      current = (current as Record<string, unknown>)[part];
     } else {
       current = undefined;
     }
@@ -101,8 +130,8 @@ const __getObjProperty = (obj, path) => {
   return current;
 };
 
-const __getPropDefault = (config) => {
-  let res;
+const __getPropDefault = (config: PropertyConfig) => {
+  let res: unknown;
   switch (config.__type) {
     default:
     case 'boolean':
@@ -116,11 +145,12 @@ const __getPropDefault = (config) => {
           const mask = 0x3d;
 
           const bytes = crypto.randomBytes(length);
-          res = '';
+          let str = '';
           for (let x = 0; x < bytes.length; x++) {
             const byte = bytes[x];
-            res += chars[byte & mask];
+            str += chars[byte & mask];
           }
+          res = str;
         } else {
           res = config.__default;
         }
@@ -161,7 +191,7 @@ const __getPropDefault = (config) => {
       if (config.__default === null) {
         res = null;
       } else if (config.__default) {
-        res = Sugar.Date.create(config.__default);
+        res = Sugar.Date.create(config.__default as string | number | Date);
       } else {
         res = new Date();
       }
@@ -170,7 +200,7 @@ const __getPropDefault = (config) => {
 };
 export const getPropDefault = __getPropDefault;
 
-const __validateProp = (prop, config) => {
+const __validateProp = (prop: { value?: unknown }, config: PropertyConfig) => {
   // TODO: This function needs a refactor, we shouldn't be modifying the prop ref.
 
   let type = typeof prop.value;
@@ -207,7 +237,7 @@ const __validateProp = (prop, config) => {
     case 'id':
       if (type === 'string') {
         try {
-          prop.value = Datastore.getInstance('core').ID.new(prop.value);
+          prop.value = Datastore.getInstance('core').ID.new(prop.value as string);
           valid = type === 'string';
         } catch (_err) {
           valid = false;
@@ -215,7 +245,7 @@ const __validateProp = (prop, config) => {
       } else if (type === 'object') {
         if (Datastore.getInstance('core').ID.isValid(prop.value)) {
           try {
-            prop.value = Datastore.getInstance('core').ID.new(prop.value);
+            prop.value = Datastore.getInstance('core').ID.new(prop.value as string);
             valid = true;
           } catch (_err) {
             valid = false;
@@ -262,7 +292,7 @@ const __validateProp = (prop, config) => {
       if (prop.value === null) {
         valid = true;
       } else {
-        const date = new Date(prop.value);
+        const date = new Date(prop.value as string | number | Date);
         valid = Sugar.Date.isValid(date);
         if (valid) {
           prop.value = date;
@@ -296,12 +326,14 @@ export const describeNonObjectItem = (path: string, item: unknown) => {
 export const describeNullItem = (path: string, item: unknown, itemtype: string) =>
   item === null ? `${path}:null[null] [${itemtype}]` : null;
 
-const __validate = (schema, values, parentProperty, body?: unknown) => {
-  const res: {
-    isValid: boolean;
-    missing: string[];
-    invalid: string[];
-  } = {
+const __validate = (
+  schema: FlattenedSchema,
+  values: FlattenedBodyProperty[],
+  parentProperty: string,
+  body?: unknown,
+): SchemaValidationResult => {
+  const bodyObj = body as Record<string, unknown> | undefined;
+  const res: SchemaValidationResult = {
     isValid: true,
     missing: [],
     invalid: [],
@@ -327,13 +359,14 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
 
     if (propVal === undefined || (propVal && propVal.value === config.__default)) {
       // NOTE: This feels wrong
-      if (body && body[property] && schema && schema[property] && schema[property].__type === 'object') {
+      if (bodyObj && bodyObj[property] && schema && schema[property] && schema[property].__type === 'object') {
+        const bodyValue = bodyObj[property] as Record<string, unknown>;
         const definedObjectKeys = Object.keys(schema)
           .filter((key) => key !== property)
           .map((v) => v.replace(`${property}.`, ''));
-        const blankObjectValues = Object.keys(body[property]).reduce((arr, key) => {
+        const blankObjectValues = Object.keys(bodyValue).reduce((arr: Record<string, unknown>, key) => {
           if (!definedObjectKeys.includes(key) || property !== key) {
-            arr[key] = body[property][key];
+            arr[key] = bodyValue[key];
           }
 
           return arr;
@@ -361,8 +394,8 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
       }
 
       const defaultValue = __getPropDefault(config);
-      if (body && propVal && propVal.value === config.__default) {
-        body[property] = defaultValue;
+      if (bodyObj && propVal && propVal.value === config.__default) {
+        bodyObj[property] = defaultValue;
       }
 
       propVal = {
@@ -380,7 +413,9 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
     }
 
     if (config.__type === 'array' && config.__schema) {
-      propVal.value.forEach((v, idx) => {
+      const itemSchema = config.__schema;
+      // validateProp has checked it's an array (or null)
+      (propVal.value as unknown[]).forEach((v, idx) => {
         const notObject = describeNonObjectItem(`${parentProperty}${property}.${idx}`, v);
         if (notObject) {
           res.isValid = false;
@@ -388,7 +423,7 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
           return;
         }
 
-        const itemRes = __validate(config.__schema, __getFlattenedBody(v), `${parentProperty}${property}.${idx}.`, v);
+        const itemRes = __validate(itemSchema, __getFlattenedBody(v), `${parentProperty}${property}.${idx}.`, v);
         if (itemRes.isValid) return;
 
         res.isValid = false;
@@ -396,17 +431,17 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
         res.invalid = res.invalid.concat(itemRes.invalid);
       });
     } else if (config.__type === 'array' && config.__itemtype) {
-      for (const idx in propVal.value) {
-        if (!{}.hasOwnProperty.call(propVal.value, idx)) continue;
-        const nullItem = describeNullItem(`${parentProperty}${property}.${idx}`, propVal.value[idx], config.__itemtype);
+      const items = propVal.value as unknown[];
+      for (const idx in items) {
+        if (!{}.hasOwnProperty.call(items, idx)) continue;
+        const nullItem = describeNullItem(`${parentProperty}${property}.${idx}`, items[idx], config.__itemtype);
         if (nullItem) {
           res.isValid = false;
           res.invalid.push(nullItem);
           continue;
         }
-
         const prop = {
-          value: propVal.value[idx],
+          value: items[idx],
         };
         if (!__validateProp(prop, { __type: config.__itemtype })) {
           Logging.logWarn(
@@ -417,7 +452,7 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
             `${parentProperty}${property}.${idx}:${prop.value}[${typeof prop.value}] [${config.__itemtype}]`,
           );
         }
-        propVal.value[idx] = prop.value;
+        items[idx] = prop.value;
       }
     }
   }
@@ -426,8 +461,8 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
 };
 export const validate = __validate;
 
-const __prepareSchemaResult = (result, sourceId: string | null = null, projection: boolean = false) => {
-  const _prepare = (chunk, path) => {
+const __prepareSchemaResult = (result: unknown, sourceId: string | null = null, projection: boolean = false) => {
+  const _prepare = (chunk: unknown, path: string | null): unknown => {
     if (!chunk) return chunk;
 
     if (path) {
@@ -438,12 +473,12 @@ const __prepareSchemaResult = (result, sourceId: string | null = null, projectio
       if (Datastore.getInstance('core').ID.isValid(chunk)) return chunk;
       if (chunk instanceof Date) return chunk;
 
-      chunk = Object.assign({}, chunk);
+      const obj: Record<string, unknown> = Object.assign({}, chunk as Record<string, unknown>);
 
       // If no path is provided then we're dealing with a root object.
       if (!path) {
         // If there's no sourceId, then it's an object from us.
-        if (!chunk.sourceId && sourceId) chunk.sourceId = sourceId;
+        if (!obj.sourceId && sourceId) obj.sourceId = sourceId;
       }
 
       // NOT GOOD
@@ -454,47 +489,55 @@ const __prepareSchemaResult = (result, sourceId: string | null = null, projectio
         // TODO: Make a pass on the projections
       }
 
-      for (const key in chunk) {
-        if (!{}.hasOwnProperty.call(chunk, key)) continue;
-        chunk[key] = Array.isArray(chunk[key]) ? chunk[key].map((c) => _prepare(c, key)) : _prepare(chunk[key], key);
+      for (const key in obj) {
+        if (!{}.hasOwnProperty.call(obj, key)) continue;
+        const value = obj[key];
+        obj[key] = Array.isArray(value) ? value.map((c: unknown) => _prepare(c, key)) : _prepare(value, key);
 
         // We've done some processing, if we're left with undefined, remove it.
-        if (chunk[key] === undefined) delete chunk[key];
+        if (obj[key] === undefined) delete obj[key];
       }
+
+      return obj;
     }
 
     return chunk;
   };
 
-  return Array.isArray(result) ? result.map((c) => _prepare(c, null)) : _prepare(result, null);
+  return Array.isArray(result) ? result.map((c: unknown) => _prepare(c, null)) : _prepare(result, null);
 };
 export const prepareSchemaResult = __prepareSchemaResult;
 
-const __inflateObject = (parent, path, value) => {
+// `path` is consumed (shifted) as the object is inflated.
+const __inflateObject = (parent: unknown, path: string[], value: unknown): unknown => {
   if (path.length === 0) {
     parent = value;
     return parent;
   }
 
+  const parentObj = parent as Record<string, unknown>;
   if (path.length > 1) {
-    const parentKey = path.shift();
-    if (!parent[parentKey]) {
-      parent[parentKey] = {};
+    const parentKey = path.shift() as string;
+    if (!parentObj[parentKey]) {
+      parentObj[parentKey] = {};
     }
-    __inflateObject(parent[parentKey], path, value);
-    return parent;
+    __inflateObject(parentObj[parentKey], path, value);
+    return parentObj;
   }
 
-  parent[path.shift()] = value;
-  return parent;
+  parentObj[path.shift() as string] = value;
+  return parentObj;
 };
 
-function __unflattenObject(data) {
-  const result = {};
+function __unflattenObject(data: Record<string, unknown>) {
+  const result: Record<string, unknown> = {};
   for (const i of Object.keys(data)) {
     const keys = i.split('.');
-    keys.reduce(function (r, e, j) {
-      return r[e] || (r[e] = isNaN(Number(keys[j + 1])) ? (keys.length - 1 == j ? data[i] : {}) : []);
+    keys.reduce(function (r: Record<string, unknown>, e, j) {
+      return (r[e] || (r[e] = isNaN(Number(keys[j + 1])) ? (keys.length - 1 == j ? data[i] : {}) : [])) as Record<
+        string,
+        unknown
+      >;
     }, result);
   }
   return result;
@@ -509,13 +552,13 @@ export const unflattenObject = __unflattenObject;
  * @param {Object} body
  * @return {Object} - A fully populated object using schema defaults and values provided.
  */
-export const sanitizeObject = (schemaFlat, values, body = null) => {
-  const res = {};
-  const objects = {};
+export const sanitizeObject = (schemaFlat: FlattenedSchema, values: FlattenedBodyProperty[], body: unknown = null) => {
+  const res: Record<string, unknown> = {};
+  const objects: Record<string, unknown> = {};
 
   for (const property in schemaFlat) {
     if (!{}.hasOwnProperty.call(schemaFlat, property)) continue;
-    let propVal = values.find((v) => v.path === property);
+    let propVal: Partial<FlattenedBodyProperty> | undefined = values.find((v) => v.path === property);
     const config = schemaFlat[property];
 
     if (property === 'source') {
@@ -541,7 +584,8 @@ export const sanitizeObject = (schemaFlat, values, body = null) => {
     const root = path.shift();
 
     if (body && propVal === undefined && schemaFlat[property].__type === 'object') {
-      const value = property.split('.').reduce((obj, str) => obj?.[str], body);
+      const getChild = (obj: unknown, str: string) => (obj as Record<string, unknown> | undefined)?.[str];
+      const value = property.split('.').reduce(getChild, body);
       propVal = {};
       propVal.path = property.split('.').pop();
       propVal.value = value ? value : __getPropDefault(config);
@@ -559,10 +603,11 @@ export const sanitizeObject = (schemaFlat, values, body = null) => {
 
     let value = propVal.value;
     if (config.__type === 'array' && config.__schema) {
+      const itemSchema = config.__schema;
       if (!body || !__getObjProperty(body, property)) {
         value = [];
       } else {
-        value = value.map((item) => sanitizeArrayItem(config.__schema, item));
+        value = (value as unknown[]).map((item) => sanitizeArrayItem(itemSchema, item));
         if (root && property.split('.').length > 1) {
           objects[root] = __inflateObject(objects[root], path, value);
           value = objects[root];
@@ -586,10 +631,10 @@ export const sanitizeObject = (schemaFlat, values, body = null) => {
  * Cleans one item of an array that has an item `__schema`. The item is also passed as the body, so object properties
  * keep their values as they do when a whole entity is added.
  */
-export const sanitizeArrayItem = (itemSchemaFlat, item) =>
+export const sanitizeArrayItem = (itemSchemaFlat: FlattenedSchema, item: unknown) =>
   sanitizeObject(itemSchemaFlat, __getFlattenedBody(item), item);
 
-const __getSchemaKeys = (obj) => {
+const __getSchemaKeys = (obj: FlattenedSchema): string[] => {
   return Object.keys(obj).reduce((arr: string[], key) => {
     if (obj[key].__type === 'object') {
       arr.push(key);
@@ -599,8 +644,9 @@ const __getSchemaKeys = (obj) => {
       arr.push(key);
     }
 
-    if (obj[key].__type === 'array' && obj[key].__schema) {
-      arr = arr.concat(__getSchemaKeys(obj[key].__schema));
+    const itemSchema = obj[key].__schema;
+    if (obj[key].__type === 'array' && itemSchema) {
+      arr = arr.concat(__getSchemaKeys(itemSchema));
     }
 
     return arr;
@@ -616,7 +662,7 @@ export const encode = (obj: unknown) => {
 };
 
 export const decode = (obj: string): Schema[] => {
-  return JSON.parse(obj);
+  return JSON.parse(obj) as Schema[];
   // return JSON.parse(Schema.decodeKey(JSON.stringify(obj)));
 };
 
@@ -709,17 +755,22 @@ export const extend = (schemas: Schema[], schema: Schema): Schema => {
   return schema;
 };
 
-export const createTimeSeriesSchema = async (schemaName, schemaProps, timeSeries = {}) => {
+export const createTimeSeriesSchema = async (
+  schemaName: string,
+  schemaProps: Properties,
+  timeSeries: Record<string, Schema> = {},
+): Promise<Record<string, Schema> | false> => {
   if (!schemaProps || Object.keys(schemaProps).length < 1) return false;
 
   for await (const prop of Object.keys(schemaProps)) {
     if (typeof schemaProps[prop] !== 'object') continue;
-    if (schemaProps[prop].__type && schemaProps[prop].__type === 'array') continue;
+    const propSchema = schemaProps[prop] as PropertyDefinition;
+    if (propSchema.__type && propSchema.__type === 'array') continue;
 
-    if (schemaProps[prop].__timeSeries) {
-      if (!timeSeries[schemaProps[prop].__timeSeries]) {
-        timeSeries[schemaProps[prop].__timeSeries] = {
-          name: `${schemaName}-${schemaProps[prop].__timeSeries}`,
+    if (propSchema.__timeSeries) {
+      if (!timeSeries[propSchema.__timeSeries]) {
+        timeSeries[propSchema.__timeSeries] = {
+          name: `${schemaName}-${propSchema.__timeSeries}`,
           type: 'collection',
           extends: ['timestamps'],
           properties: {
@@ -732,14 +783,14 @@ export const createTimeSeriesSchema = async (schemaName, schemaProps, timeSeries
           },
         };
       }
-      const timesSeriesObj = Object.assign({}, schemaProps[prop]);
+      const timesSeriesObj = Object.assign({}, propSchema);
       delete timesSeriesObj.__timeSeries;
-      timeSeries[schemaProps[prop].__timeSeries].properties[prop] = timesSeriesObj;
+      timeSeries[propSchema.__timeSeries].properties[prop] = timesSeriesObj;
       continue;
     }
 
-    if (!schemaProps[prop].__type) {
-      await createTimeSeriesSchema(schemaName, schemaProps[prop], timeSeries);
+    if (!propSchema.__type) {
+      await createTimeSeriesSchema(schemaName, schemaProps[prop] as Properties, timeSeries);
     }
   }
 

@@ -23,14 +23,18 @@ import { PolicyEnvQuery } from '../model/core/policy.js';
 import Model from '../model/index.js';
 import { Filter } from './filter.js';
 import { User } from '../model/core/user.js';
+import { isObjectId } from '../datastore/adapters/object-id.js';
 
 type DynamicRow = Record<string, unknown>;
 
-function toObjectIdIfValid(value: unknown): unknown {
-  if (value instanceof ObjectId) return value;
-  if (typeof value === 'string' && ObjectId.isValid(value)) return new ObjectId(value);
+// Ids are strings outside the datastore adapters; this gives a valid id in its canonical (hex) form
+function toIdIfValid(value: unknown): unknown {
+  if (isObjectId(value)) return value.toHexString();
+  if (typeof value === 'string' && ObjectId.isValid(value)) return new ObjectId(value).toHexString();
   return value;
 }
+
+const isId = (value: unknown) => typeof value === 'string' && ObjectId.isValid(value);
 
 export interface ACBaseEnv {
   date: {
@@ -45,7 +49,8 @@ export interface ACEnv extends ACBaseEnv {
 }
 
 export interface ACPolicyEnvCombined extends ACEnv {
-  [custom: string]: string | PolicyEnvQuery | User | { now: string } | null;
+  // Policy env definitions, and the values they've been resolved to
+  [custom: string]: unknown;
 }
 
 export class PolicyEnv {
@@ -81,14 +86,15 @@ export class PolicyEnv {
    * @param envVars The environment variables object - **Important:** This object will be modified to include the resolved environment variables.
    * @returns The value of the environment variable or the key itself if not found.
    */
-  async getEnvValue(key: string, envVars) {
+  async getEnvValue(key: unknown, envVars: ACPolicyEnvCombined | null): Promise<unknown> {
     if (!key || typeof key !== 'string' || !key.startsWith(PolicyEnv.strPrefix)) return key;
 
     const path = key.replace(PolicyEnv.strPrefix, '');
     const value = Helpers.get(path, envVars);
 
     if (typeof value === 'object' && value !== null && 'collection' in value) {
-      return this.getQueryEnvironmentVar(key, envVars);
+      // The value was found in envVars, so they aren't null
+      return this.getQueryEnvironmentVar(key, envVars as ACPolicyEnvCombined);
     }
 
     if (typeof value === 'string' && value.startsWith(PolicyEnv.strPrefix)) {
@@ -99,46 +105,52 @@ export class PolicyEnv {
     return value;
   }
 
-  async getQueryEnvironmentVar(environmentKey, envVars, conditionFlag = false) {
+  async getQueryEnvironmentVar(
+    environmentKey: string,
+    envVars: ACPolicyEnvCombined,
+    conditionFlag = false,
+  ): Promise<unknown> {
     if ((!environmentKey || !environmentKey.startsWith(PolicyEnv.strPrefix)) && !conditionFlag) return environmentKey;
 
     const path = environmentKey
       .replace(PolicyEnv.strPrefix, '')
       .split('.')
       .filter((v) => v);
-    const queryValue = path.reduce((obj, str) => obj?.[str], envVars);
+    const queryValue = path.reduce<unknown>((obj, str) => (obj as DynamicRow | undefined)?.[str], envVars);
 
+    // getEnvValue only calls this for a PolicyEnvQuery
     let root: string | null = null;
     if (typeof queryValue === 'string') {
       [root] = queryValue.split('.');
     } else if (typeof queryValue === 'object') {
-      root = queryValue.collection;
+      root = (queryValue as PolicyEnvQuery).collection;
     }
 
     if (root) {
       const isAppSchema = await this.__isAppSchema(root, envVars.appId);
       if (isAppSchema) {
-        return this.__queryAppSchemaEnvValue(queryValue, environmentKey, envVars);
+        return this.__queryAppSchemaEnvValue(queryValue as PolicyEnvQuery, environmentKey, envVars);
       }
     }
 
-    return this._globalQueryEnv[queryValue];
+    // A value that isn't a string is converted to one for the lookup
+    return this._globalQueryEnv[queryValue as string];
   }
 
-  async __isAppSchema(schema: string, appId: string) {
+  async __isAppSchema(schema: string, appId: string | null) {
     if (!schema || !appId) return false;
     const model = await Model.getAppModel(appId, schema);
     return model ? true : false;
   }
 
-  async __findAndReplaceValues(query, envVars) {
+  async __findAndReplaceValues(query: unknown, envVars: ACPolicyEnvCombined) {
     if (typeof query !== 'object' || query === null) {
       return;
     }
 
     const paths = this.__findPaths(query);
     for await (const path of paths) {
-      const dbQuery = path.reduce((current, key) => current && current[key], query);
+      const dbQuery = path.reduce<unknown>((current, key) => current && (current as DynamicRow)[key], query);
       const realValue = await this.getEnvValue(dbQuery, envVars);
 
       this.__setObjectValueByPath(query, path, realValue);
@@ -147,24 +159,24 @@ export class PolicyEnv {
     return query;
   }
 
-  __setObjectValueByPath(obj, path, value) {
+  __setObjectValueByPath(obj: object, path: (string | number)[], value: unknown) {
     const lastKey = path.pop();
-    const parent = path.reduce((current, key) => current[key], obj);
+    const parent = path.reduce<DynamicRow>((current, key) => current[key] as DynamicRow, obj as DynamicRow);
     if (parent && lastKey) {
       parent[lastKey] = value;
     }
   }
 
-  __findPaths(data, currentPath: (string | number)[] = [], paths: (string | number)[][] = []) {
+  __findPaths(data: unknown, currentPath: (string | number)[] = [], paths: (string | number)[][] = []) {
     if (typeof data === 'object' && data !== null) {
       if (Array.isArray(data)) {
-        data.forEach((item, index) => {
+        data.forEach((item: unknown, index: number) => {
           this.__findPaths(item, [...currentPath, index], paths);
         });
       } else {
         for (const key in data) {
           if (Object.prototype.hasOwnProperty.call(data, key)) {
-            this.__findPaths(data[key], [...currentPath, key], paths);
+            this.__findPaths((data as DynamicRow)[key], [...currentPath, key], paths);
           }
         }
       }
@@ -175,7 +187,7 @@ export class PolicyEnv {
     return paths;
   }
 
-  async __queryAppSchemaEnvValue(envObj, envKey, envVars) {
+  async __queryAppSchemaEnvValue(envObj: PolicyEnvQuery, envKey: string, envVars: ACPolicyEnvCombined) {
     const schema = envObj.collection;
     const query = Filter.convertQueryPrefixOperators(envObj.query);
     const output = envObj.output;
@@ -185,7 +197,8 @@ export class PolicyEnv {
     if (envVars[envKey]) return envVars[envKey];
     await this.__findAndReplaceValues(query, envVars);
 
-    const model = await Model.getAppModel(envVars.appId, schema);
+    // __isAppSchema has checked the appId
+    const model = await Model.getAppModel(envVars.appId as string, schema);
     const res = await model.find(query);
     const result = await Helpers.streamAll<DynamicRow>(res);
     if (!result) return false;
@@ -195,7 +208,7 @@ export class PolicyEnv {
         item = obj[output.key];
         if (output.type === 'id') {
           // TODO: Shouldn't be directly accessing ObjectId, this should go through an adapter.
-          item = toObjectIdIfValid(item);
+          item = toIdIfValid(item);
         }
 
         return item;
@@ -207,12 +220,12 @@ export class PolicyEnv {
         const outputValue = obj[output.key];
 
         if (output.type === 'id' && Array.isArray(outputValue)) {
-          arr = arr.concat(outputValue.map(toObjectIdIfValid).filter((id) => id instanceof ObjectId));
+          arr = arr.concat(outputValue.map(toIdIfValid).filter(isId));
           return arr;
         }
 
         if (output.type === 'id') {
-          arr = arr.concat(toObjectIdIfValid(outputValue));
+          arr = arr.concat(toIdIfValid(outputValue));
           return arr;
         }
 

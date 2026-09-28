@@ -23,10 +23,20 @@ import Datastore from '../../datastore/index.js';
 import DatastoreFactory from '../../datastore/adapter-factory.js';
 
 import ButtressAdapater from '../../datastore/adapters/buttress.js';
-import TokenSchemaModel from '../../model/core/token.js';
-import AppDataSharingSchemaModel, { AppDataSharing } from '../../model/core/app-data-sharing.js';
+import TokenSchemaModel, { Token } from '../../model/core/token.js';
+import AppDataSharingSchemaModel, { AppDataSharing, AppDataSharingAddBody } from '../../model/core/app-data-sharing.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import { QueryParams } from '../../types/bjs-query.js';
+import { Services } from '../../bootstrap.js';
+import { UpdatePathBody } from '../../types/datastore.js';
+import type { BulkUpdateItem, CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
+
+// What the activate route (ActivateAppDataSharing) responds with. A remote whose side of the agreement is already
+// active responds `true` instead, which has no `status` so is treated as not activated.
+interface DataSharingActivationResult {
+  status: boolean;
+  token: string;
+}
 
 /**
  * The data sharing agreement registration process should be as follows:
@@ -57,7 +67,11 @@ const activateDataSharing = async (dataSharing: AppDataSharing, dataSharingToken
   }
 
   // Send a request to the remote app to activate the data sharing agreement.
-  const activationResult = await buttressAdapter.activateDataSharing(dataSharing.remoteApp.token, newToken);
+  // @buttress/api doesn't type the response
+  const activationResult = (await buttressAdapter.activateDataSharing(
+    dataSharing.remoteApp.token,
+    newToken,
+  )) as DataSharingActivationResult | null;
   if (!activationResult || !activationResult.status) return dataSharing;
 
   // Flag our data sharing agreement as active & update the remote app token with the new one.
@@ -96,13 +110,13 @@ const activateDataSharing = async (dataSharing: AppDataSharing, dataSharingToken
  * 3. App2 will set it's data sharing agreement property `active` to false, shutdown connections and clean up schema/routes (Optional)
  */
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
 
 /**
  * @class GetAppDataSharing
  */
 class GetAppDataSharing extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing/:id',
       'GET APP DATA SHARING',
@@ -134,7 +148,7 @@ class GetAppDataSharing extends Route {
     return appDataSharing;
   }
 
-  override _exec(req: Request, res: Response, AppDataSharing) {
+  override _exec(req: Request, res: Response, AppDataSharing: AppDataSharing) {
     return AppDataSharing;
   }
 }
@@ -144,7 +158,7 @@ routes.push(GetAppDataSharing);
  * @class AddDataSharing
  */
 class AddDataSharing extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing',
       'ADD APP DATA SHARING',
@@ -156,7 +170,7 @@ class AddDataSharing extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<AppDataSharingAddBody>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
@@ -208,7 +222,7 @@ class AddDataSharing extends Route {
     return true;
   }
 
-  override async _exec(req: Request, _res: Response, _validate) {
+  override async _exec(req: RequestWithBody<AppDataSharingAddBody>, _res: Response, _validate: boolean) {
     const { dataSharing, token } = await Model.getCoreModel(AppDataSharingSchemaModel).add(req.body);
     // let dataSharing = (result.dataSharing) ? result.dataSharing : result;
     this.log(`Added App Data Sharing ${dataSharing.id}`);
@@ -229,7 +243,7 @@ routes.push(AddDataSharing);
  * @class UpdateAppDataSharing
  */
 class UpdateAppDataSharing extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing/:dataSharingId',
       'UPDATE APP DATA SHARING AGREEMENT',
@@ -244,7 +258,7 @@ class UpdateAppDataSharing extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     const dataSharingId = Array.isArray(req.params.dataSharingId)
       ? req.params.dataSharingId[0]
       : req.params.dataSharingId;
@@ -277,7 +291,8 @@ class UpdateAppDataSharing extends Route {
     };
   }
 
-  override async _exec(req: Request, _res: Response, validate: { dataSharingId: string }) {
+  // _validate replaced the body with the validated updates
+  override async _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { dataSharingId: string }) {
     // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
     return Model.getCoreModel(AppDataSharingSchemaModel).updateByPath(req.body, validate.dataSharingId);
   }
@@ -288,7 +303,7 @@ routes.push(UpdateAppDataSharing);
  * @class BulkUpdateAppDataSharing
  */
 class BulkUpdateAppDataSharing extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing/bulk/update',
       'BULK UPDATE APP DATA SHARING AGREEMENT',
@@ -303,7 +318,7 @@ class BulkUpdateAppDataSharing extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
     for await (const item of req.body) {
       const exists = await Model.getCoreModel(AppDataSharingSchemaModel).exists(item.id);
       if (!exists) {
@@ -332,7 +347,8 @@ class BulkUpdateAppDataSharing extends Route {
     return true;
   }
 
-  override async _exec(req: Request, _res: Response, _validate) {
+  // _validate replaced each item's body with the validated updates
+  override async _exec(req: RequestWithBody<BulkUpdateItem<UpdatePathBody[]>[]>, _res: Response, _validate: boolean) {
     for await (const item of req.body) {
       // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
       await Model.getCoreModel(AppDataSharingSchemaModel).updateByPath(item.body, item.id);
@@ -347,7 +363,7 @@ routes.push(BulkUpdateAppDataSharing);
  * @class UpdateAppDataSharingPolicy
  */
 class UpdateAppDataSharingPolicy extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing/:dataSharingId/policy',
       'UPDATE APP DATA SHARING AGREEMENT POLICY',
@@ -359,8 +375,8 @@ class UpdateAppDataSharingPolicy extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
+  override _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
+    return new Promise<{ appId: string }>((resolve, reject) => {
       if (!req.context.authApp) {
         this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
         return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
@@ -391,7 +407,11 @@ class UpdateAppDataSharingPolicy extends Route {
     });
   }
 
-  override _exec(req: Request, _res: Response, validate: { appId: string }) {
+  override _exec(
+    req: RequestWithBody<unknown, { dataSharingId: string }>,
+    _res: Response,
+    validate: { appId: string },
+  ) {
     // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
     return Model.getCoreModel(AppDataSharingSchemaModel)
       .updatePolicy(validate.appId, req.params.dataSharingId, 'local', req.body)
@@ -407,7 +427,7 @@ routes.push(UpdateAppDataSharingPolicy);
  *   not by a end user.
  */
 class ActivateAppDataSharing extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing/activate',
       'POST Activate App Data Sharing',
@@ -419,7 +439,7 @@ class ActivateAppDataSharing extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<{ newToken: string }>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
@@ -457,7 +477,11 @@ class ActivateAppDataSharing extends Route {
       });
   }
 
-  override async _exec(req: Request, res: Response, { token, dataSharing }) {
+  override async _exec(
+    req: RequestWithBody<{ newToken: string }>,
+    res: Response,
+    { token, dataSharing }: { token: Token; dataSharing: AppDataSharing },
+  ): Promise<DataSharingActivationResult | true> {
     if (dataSharing.active) return true;
 
     const newLocalToken = Model.getCoreModel(TokenSchemaModel).createTokenString();
@@ -484,7 +508,7 @@ routes.push(ActivateAppDataSharing);
  *  flow as the activate endpoint and cycle tokens.
  */
 class ReactivateAppDataSharing extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing/reactivate/:dataSharingId',
       'UPDATE Reactivate App Data Sharing',
@@ -496,7 +520,7 @@ class ReactivateAppDataSharing extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
     const dataSharingId = req.params.dataSharingId;
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
@@ -522,7 +546,7 @@ class ReactivateAppDataSharing extends Route {
     return exists;
   }
 
-  override _exec(_req: Request, _res: Response, dataSharing) {
+  override _exec(_req: Request, _res: Response, dataSharing: AppDataSharing) {
     return Model.getCoreModel(AppDataSharingSchemaModel)
       .deactivate(dataSharing.id)
       .then(() => true);
@@ -534,7 +558,7 @@ routes.push(ReactivateAppDataSharing);
  * @class DeactivateAppDataSharing
  */
 class DeactivateAppDataSharing extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing/deactivate/:dataSharingId',
       'UPDATE Deactivate App Data Sharing',
@@ -546,7 +570,7 @@ class DeactivateAppDataSharing extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
     const dataSharingId = req.params.dataSharingId;
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
@@ -572,7 +596,7 @@ class DeactivateAppDataSharing extends Route {
     return exists;
   }
 
-  override _exec(req: Request, res: Response, dataSharing) {
+  override _exec(req: Request, res: Response, dataSharing: AppDataSharing) {
     return Model.getCoreModel(AppDataSharingSchemaModel)
       .deactivate(dataSharing.id)
       .then(() => true);
@@ -581,7 +605,7 @@ class DeactivateAppDataSharing extends Route {
 routes.push(DeactivateAppDataSharing);
 
 class StatusAppDataSharing extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing/:dataSharingId/status',
       'GET App Data Sharing Status',
@@ -593,7 +617,7 @@ class StatusAppDataSharing extends Route {
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
     const dataSharingId = req.params.dataSharingId;
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
@@ -631,7 +655,7 @@ routes.push(StatusAppDataSharing);
  * @class GetAllAppDataSharing
  */
 class GetAllAppDataSharing extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing',
       'APP DATA SHARING AGREEMENT LIST',
@@ -663,7 +687,7 @@ routes.push(GetAllAppDataSharing);
  * @class SearchAppDataSharingAgreement
  */
 class SearchAppDataSharingAgreement extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing',
       'SEARCH APP DATA SHARING AGREEMENT LIST',
@@ -675,13 +699,14 @@ class SearchAppDataSharingAgreement extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchListBody<AppDataSharing> | undefined>, _res: Response) {
     const result: QueryParams<AppDataSharing> = {
       query: {
         $and: [],
       },
-      skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
-      limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
+      // parseInt takes numbers too, it converts them to a string first
+      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
+      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
       sort: req.body && req.body.sort ? req.body.sort : {},
       project: req.body && req.body.project ? req.body.project : false,
     };
@@ -726,7 +751,7 @@ routes.push(SearchAppDataSharingAgreement);
  * @class AppDataSharingAgreementCount
  */
 class AppDataSharingAgreementCount extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing/count',
       'COUNT APP DATA SHARING AGREEMENT',
@@ -740,7 +765,7 @@ class AppDataSharingAgreementCount extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<CountBody<AppDataSharing> | undefined>, _res: Response) {
     const result: QueryParams<AppDataSharing> = {
       query: {},
     };
@@ -768,7 +793,7 @@ class AppDataSharingAgreementCount extends Route {
     return result;
   }
 
-  override _exec(_req: Request, _res: Response, validateResult) {
+  override _exec(_req: Request, _res: Response, validateResult: QueryParams<AppDataSharing>) {
     return Model.getCoreModel(AppDataSharingSchemaModel).count(validateResult.query);
   }
 }
@@ -778,7 +803,7 @@ routes.push(AppDataSharingAgreementCount);
  * @class DeleteDataSharingAgreement
  */
 class DeleteDataSharingAgreement extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing/:id',
       'DELETE APP DATA SHARING AGREEMENT',
@@ -792,7 +817,7 @@ class DeleteDataSharingAgreement extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown, { id: string }>, _res: Response) {
     if (!req.params.id) {
       this.log(`[${this.name}] Missing required App Data Sharing ID`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_id`));
@@ -816,7 +841,7 @@ class DeleteDataSharingAgreement extends Route {
     };
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate: { appDataSharing: AppDataSharing; token: Token }) {
     await Model.getCoreModel(AppDataSharingSchemaModel).rm(validate.appDataSharing.id);
     await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
     return true;
@@ -828,7 +853,7 @@ routes.push(DeleteDataSharingAgreement);
  * @class DeleteAppPolicies
  */
 class DeleteAllDataSharingAgreement extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'app-data-sharing',
       'DELETE ALL DATA SHARING',
@@ -856,7 +881,7 @@ class DeleteAllDataSharingAgreement extends Route {
     );
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate: { dsIds: string[]; tokenIds: string[] }) {
     await Model.getCoreModel(AppDataSharingSchemaModel).rmBulk(validate.dsIds);
     await Model.getCoreModel(TokenSchemaModel).rmBulk(validate.tokenIds);
 

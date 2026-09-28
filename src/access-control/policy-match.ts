@@ -16,7 +16,7 @@
 
 import AccessControlHelpers from './helpers.js';
 
-import { Policy } from '../model/core/policy.js';
+import { Policy, PolicySelection } from '../model/core/policy.js';
 import { Token } from '../model/core/token.js';
 
 /**
@@ -43,8 +43,10 @@ class PolicyMatch {
     if (!token || selection === null) return false;
 
     if (token.type === 'dataSharing') {
-      const eq = (part, value) => part && part['@eq'] && part['@eq'].toString() === value.toString();
-      return eq(selection['#tokenType'], 'DATA_SHARING') && eq(selection['id'], token.id);
+      const eq = (part: PolicySelection[string] | undefined, value: string) =>
+        part && part['@eq'] && part['@eq'].toString() === value.toString();
+      // eq() can be falsy without being false, the caller only checks for truthiness
+      return (eq(selection['#tokenType'], 'DATA_SHARING') as boolean) && (eq(selection['id'], token.id) as boolean);
     }
 
     if (!token.policyProperties) return false;

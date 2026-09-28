@@ -21,12 +21,15 @@ import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import Datastore from '../../datastore/index.js';
 import TokenSchemaModel, { PolicyProperties, Token } from '../../model/core/token.js';
-import UserSchemaModel, { User, UserAuth } from '../../model/core/user.js';
+import UserSchemaModel, { User, UserAddBody, UserAuth } from '../../model/core/user.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import AppSchemaModel from '../../model/core/app.js';
 import { QueryParams } from '../../types/bjs-query.js';
+import { UpdatePathBody } from '../../types/datastore.js';
+import { Services } from '../../bootstrap.js';
+import type { CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
 
 function getTokenQueryfromParams(req: Request, userId: string) {
   const id = Array.isArray(req.params.tokenId) ? req.params.tokenId[0] : req.params.tokenId;
@@ -34,7 +37,7 @@ function getTokenQueryfromParams(req: Request, userId: string) {
     return null;
   }
 
-  let tokenId = null;
+  let tokenId: string | null = null;
   try {
     tokenId = Model.getCoreModel(TokenSchemaModel).createId(id);
   } catch (err: unknown) {
@@ -65,7 +68,7 @@ function getTokenQueryfromParams(req: Request, userId: string) {
  * @class GetUserList
  */
 class GetUserList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('user', 'GET USER LIST', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.LAMBDA;
@@ -95,11 +98,17 @@ class GetUserList extends Route {
 }
 routes.push(GetUserList);
 
+interface GetUserOutput {
+  id: string;
+  auth: UserAuth[];
+  tokens: { id: string; value: string; policyProperties: PolicyProperties }[] | null;
+}
+
 /**
  * @class GetUser
  */
 class GetUser extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('user/:id', 'GET USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.LAMBDA;
@@ -164,7 +173,7 @@ class GetUser extends Route {
       this.log(`[${this.name}] User does not have a token yet ${userId}`, Route.LogLevel.ERR);
     }
 
-    const output = {
+    const output: GetUserOutput = {
       id: user.id,
       auth: user.auth,
       tokens:
@@ -182,17 +191,23 @@ class GetUser extends Route {
     return output;
   }
 
-  override _exec(req: Request, res: Response, user) {
+  override _exec(req: Request, res: Response, user: GetUserOutput) {
     return user;
   }
 }
 routes.push(GetUser);
 
+interface FindUserOutput {
+  id: string;
+  auth: UserAuth[];
+  tokens: { value: string; policyProperties: PolicyProperties }[];
+}
+
 /**
  * @class FindUser
  */
 class FindUser extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('user/:app/:id', 'FIND USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.LAMBDA;
@@ -211,9 +226,10 @@ class FindUser extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
     }
 
+    // The id param's a string, only wildcard route params are arrays
     const _user = await Model.getCoreModel(UserSchemaModel).getByAuthAppId(
       authApp,
-      req.params.id,
+      req.params.id as string,
       req.context.authApp.id,
     );
     if (!_user) {
@@ -221,11 +237,7 @@ class FindUser extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
     }
 
-    const output: {
-      id: string;
-      auth: UserAuth[];
-      tokens: { value: string; policyProperties: PolicyProperties }[];
-    } = {
+    const output: FindUserOutput = {
       id: _user.id,
       auth: _user.auth,
       tokens: [],
@@ -247,24 +259,31 @@ class FindUser extends Route {
     return Promise.resolve(output);
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: FindUserOutput) {
     return Promise.resolve(validate);
   }
 }
 routes.push(FindUser);
 
+interface GetUserByTokenOutput {
+  id: string;
+  auth: UserAuth[];
+  token: string;
+  policyProperties: PolicyProperties;
+}
+
 /**
  * @class GetUserByToken
  */
 class GetUserByToken extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('user/get-by-token', 'GET USER BY TOKEN', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.POST;
     this.authType = Route.Constants.Type.LAMBDA;
     this.permissions = Route.Constants.Permissions.READ;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<{ token?: string }>, _res: Response): Promise<GetUserByTokenOutput> {
     const { token } = req.body;
     if (!token) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
@@ -295,7 +314,7 @@ class GetUserByToken extends Route {
     };
   }
 
-  override _exec(req: Request, res: Response, user) {
+  override _exec(req: Request, res: Response, user: GetUserByTokenOutput) {
     return user;
   }
 }
@@ -305,7 +324,7 @@ routes.push(GetUserByToken);
  * @class CreateUserAuthToken
  */
 class CreateUserAuthToken extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('user/:id/token', 'CREATE USER AUTH TOKEN', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.POST;
     this.authType = Route.Constants.Type.LAMBDA;
@@ -314,7 +333,7 @@ class CreateUserAuthToken extends Route {
     this.redactResults = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<Partial<Token> | undefined, { id: string }>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
@@ -353,7 +372,7 @@ class CreateUserAuthToken extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, validate: { appId: string; user: User }) {
+  override async _exec(req: RequestWithBody<Partial<Token>>, res: Response, validate: { appId: string; user: User }) {
     const rxsToken = await Model.getCoreModel(TokenSchemaModel).add(req.body, {
       _appId: Datastore.getInstance('core').ID.new(validate.appId),
       _userId: Datastore.getInstance('core').ID.new(validate.user.id),
@@ -447,14 +466,14 @@ routes.push(CreateUserAuthToken);
  * @class AddUser
  */
 class AddUser extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('user', 'ADD USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.POST;
     this.authType = Route.Constants.Type.LAMBDA;
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<UserAddBody>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
@@ -504,7 +523,7 @@ class AddUser extends Route {
     });
   }
 
-  override async _exec(req: Request, _res: Response, validate: { appId: string }) {
+  override async _exec(req: RequestWithBody<UserAddBody>, _res: Response, validate: { appId: string }) {
     const user = await Model.getCoreModel(UserSchemaModel).add(req.body, {
       _appId: Model.getCoreModel(AppSchemaModel).createId(validate.appId),
     });
@@ -522,7 +541,7 @@ routes.push(AddUser);
  * @class UpdateUser
  */
 class UpdateUser extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('user/:id', 'UPDATE USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.PUT;
     this.authType = Route.Constants.Type.LAMBDA;
@@ -532,8 +551,8 @@ class UpdateUser extends Route {
     this.activityBroadcast = true;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
+  override _validate(req: RequestWithBody<unknown>, _res: Response) {
+    return new Promise<{ id: string }>((resolve, reject) => {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
         this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
@@ -571,17 +590,21 @@ class UpdateUser extends Route {
     });
   }
 
-  override _exec(req: Request, _res: Response, validate: { id: string }) {
+  // _validate replaced the body with the validated updates
+  override _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
     return Model.getCoreModel(UserSchemaModel).updateByPath(req.body, validate.id);
   }
 }
 routes.push(UpdateUser);
 
+// Policy properties as posted, _validate checks them against the app's policy property list
+type PostedPolicyProperties = Record<string, unknown>;
+
 /**
  * @class SetUserPolicyProperties
  */
 class SetUserPolicyProperties extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'user/:id/policy-property/:tokenId',
       'SET USER POLICY PROPERTY',
@@ -596,7 +619,7 @@ class SetUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<PostedPolicyProperties | undefined>, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
@@ -643,7 +666,7 @@ class SetUserPolicyProperties extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, validate: { tokenId: string }) {
+  override async _exec(req: RequestWithBody<PostedPolicyProperties>, res: Response, validate: { tokenId: string }) {
     await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(validate.tokenId, req.body);
 
     // this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
@@ -678,7 +701,7 @@ routes.push(SetUserPolicyProperties);
  * @class UpdateUserPolicyProperties
  */
 class UpdateUserPolicyProperties extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'user/:id/update-policy-property/:tokenId',
       'UPDATE USER POLICY PROPERTY',
@@ -693,7 +716,7 @@ class UpdateUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<PostedPolicyProperties | undefined>, _res: Response) {
     const app = req.context.authApp;
     if (!app) {
       this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
@@ -738,7 +761,7 @@ class UpdateUserPolicyProperties extends Route {
     return Promise.resolve(userToken);
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: RequestWithBody<PostedPolicyProperties>, res: Response, validate: Token) {
     await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate, req.body);
 
     // this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
@@ -773,7 +796,7 @@ routes.push(UpdateUserPolicyProperties);
  * @class RemoveUserPolicyProperties
  */
 class RemoveUserPolicyProperties extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'user/:id/remove-policy-property/:tokenId',
       'REMOVE USER POLICY PROPERTY',
@@ -788,7 +811,7 @@ class RemoveUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<PostedPolicyProperties | undefined>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
@@ -830,7 +853,11 @@ class RemoveUserPolicyProperties extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, validate: { appId: string; userToken: Token }) {
+  override async _exec(
+    req: RequestWithBody<PostedPolicyProperties>,
+    res: Response,
+    validate: { appId: string; userToken: Token },
+  ) {
     const reqPolicyProps = req.body;
     const policyProps = validate.userToken.policyProperties;
     Object.keys(reqPolicyProps).forEach((key) => {
@@ -838,7 +865,11 @@ class RemoveUserPolicyProperties extends Route {
         delete policyProps[key];
       }
     });
-    await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate.userToken, policyProps);
+    // BUG: policyProps is null if the token has no policy properties, which updatePolicyProperties throws on
+    await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(
+      validate.userToken,
+      policyProps as Record<string, unknown>,
+    );
 
     this._nrp?.emit(
       'worker:socket:evaluateUserRooms',
@@ -857,7 +888,7 @@ routes.push(RemoveUserPolicyProperties);
  * @class ClearUserPolicyProperties
  */
 class ClearUserPolicyProperties extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'user/:id/clear-policy-property/:tokenId',
       'CLEAR USER POLICY PROPERTY',
@@ -872,7 +903,7 @@ class ClearUserPolicyProperties extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
@@ -935,7 +966,7 @@ routes.push(ClearUserPolicyProperties);
  * @class DeleteAllUsers
  */
 class DeleteAllUsers extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('user', 'DELETE ALL USERS', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.APP;
@@ -964,7 +995,7 @@ routes.push(DeleteAllUsers);
  * @class DeleteUser
  */
 class DeleteUser extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('user/:id', 'DELETE USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.LAMBDA;
@@ -1022,7 +1053,7 @@ routes.push(DeleteUser);
  * @class clearUserLocalData
  */
 class clearUserLocalData extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(
       'user/:id/clear-local-data',
       'CLEAR USER LOCAL DATA',
@@ -1034,8 +1065,8 @@ class clearUserLocalData extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
+  override _validate(req: Request<{ id: string }>, _res: Response) {
+    return new Promise<User>((resolve, reject) => {
       if (!req.params.id) {
         this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
         return reject(new Helpers.Errors.RequestError(400, `missing_field`));
@@ -1054,7 +1085,7 @@ class clearUserLocalData extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, user) {
+  override async _exec(req: RequestWithBody<{ collections?: unknown }>, res: Response, user: User) {
     this._nrp?.emit(
       'clearUserLocalData',
       JSON.stringify({
@@ -1073,18 +1104,19 @@ routes.push(clearUserLocalData);
  * @class SearchUserList
  */
 class SearchUserList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('user', 'SEARCH USER LIST', services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.LAMBDA;
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchListBody<User> | undefined>, _res: Response) {
     const result: QueryParams<User> = {
       query: {},
-      skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
-      limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
+      // parseInt takes numbers too, it converts them to a string first
+      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
+      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
       sort: req.body && req.body.sort ? req.body.sort : {},
       project: req.body && req.body.project ? req.body.project : false,
     };
@@ -1113,7 +1145,7 @@ class SearchUserList extends Route {
     return result;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<User>) {
     return Model.getCoreModel(UserSchemaModel).find(
       validate.query,
       {},
@@ -1130,7 +1162,7 @@ routes.push(SearchUserList);
  * @class UserCount
  */
 class UserCount extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super(`user/count`, `COUNT USERS`, services, Model.getCoreModel(UserSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.SEARCH;
     this.authType = Route.Constants.Type.LAMBDA;
@@ -1140,7 +1172,7 @@ class UserCount extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<CountBody<User> | undefined>, _res: Response) {
     const result: QueryParams<User> = {
       query: {},
     };
@@ -1168,7 +1200,7 @@ class UserCount extends Route {
     return result;
   }
 
-  override async _exec(req: Request, res: Response, validateResult) {
+  override async _exec(req: Request, res: Response, validateResult: QueryParams<User>) {
     return Model.getCoreModel(UserSchemaModel).count(validateResult.query);
   }
 }

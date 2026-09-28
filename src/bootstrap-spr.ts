@@ -15,7 +15,6 @@
  */
 import createConfig from '@dpc/node-env-obj';
 
-import { ObjectId } from 'bson';
 import { createClient, RedisClientType } from '@redis/client';
 
 import Bootstrap from './bootstrap.js';
@@ -24,6 +23,7 @@ const Config = createConfig() as unknown as Config;
 
 import Model from './model/index.js';
 import * as Helpers from './helpers/index.js';
+import IOStats from './helpers/io-stats.js';
 import Logging from './helpers/logging.js';
 
 import { ApplicablePolicyConfig } from './access-control/index.js';
@@ -39,7 +39,10 @@ import { Policy } from './model/core/policy.js';
 import TokenSchemaModel, { Token } from './model/core/token.js';
 
 import { PolicyCache } from './services/policy-cache.js';
+import type { AppSchemaUpdatedMessage } from './services/nrp.js';
 import UserSchemaModel, { User } from './model/core/user.js';
+import StandardModel from './model/type/standard.js';
+import type { AdapterDocument } from './types/datastore.js';
 
 // Abstract policy cache
 
@@ -165,13 +168,17 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     if (!this.__nrp) throw new Error('No NRP instance');
 
     // TODO: Event should come from the SPR
-    this.__nrp.on('rest:activity', (data) => this._handleIncomingMessage(JSON.parse(data)));
+    this.__nrp.on('rest:activity', (data) =>
+      IOStats.run('spr', () => this._handleIncomingMessage(JSON.parse(data) as RESTActivity)),
+    );
     this.__nrp.on('worker:socket:connection', (tokenId) => this._socketConnection(tokenId));
     this.__nrp.on('worker:socket:disconnect', (tokenId) => this._socketDisconnection(tokenId));
-    this.__nrp.on('token:deleted', (json: string) => this._tokensDeleted(JSON.parse(json).tokenIds));
+    this.__nrp.on('token:deleted', (json: string) =>
+      this._tokensDeleted((JSON.parse(json) as { tokenIds: string[] }).tokenIds),
+    );
 
     this.__nrp.on('app-schema:updated', async (json: string) => {
-      const data = JSON.parse(json);
+      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
       await Model.initSchema(data.appId);
     });
   }
@@ -218,7 +225,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     }
 
     // Look up the token by ID
-    const token = (await Model.getCoreModel(TokenSchemaModel).findOne({ _id: new ObjectId(tokenId) })) as Token;
+    const token = (await Model.getCoreModel(TokenSchemaModel).findOne({ id: tokenId })) as Token;
     if (!token) {
       Logging.logError(`Token not found: ${tokenId}`);
       return;
@@ -267,7 +274,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     const pathSpec = `${activity.pathSpec.slice(0, -bulkPath.length)}/:id`;
     const routePath = activity.path.split('/').slice(0, -2).join('/');
 
-    return activity.response.flatMap((item) => {
+    return activity.response.flatMap((entry): RESTActivity[] => {
+      const item = entry as { id?: string; results?: unknown } | null;
       if (!item?.id) return [];
 
       const entityActivity = { ...activity, path: `${routePath}/${item.id}`, pathSpec, params: { id: item.id } };
@@ -297,7 +305,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     const isCoreSchema = activity.isCoreSchema;
 
-    let entity: Record<string, unknown> | null = null;
+    let entity: AdapterDocument | null = null;
     const activityParams = activity.params as Record<string, unknown>;
     const activityResponse =
       typeof activity.response === 'object' && activity.response !== null
@@ -309,8 +317,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       entity = deletedEntities?.find((deleted) => String(deleted.id) === String(entityId)) ?? null;
     } else if (entityId) {
       const appModel = isCoreSchema
-        ? await Model.getCoreModelByName(activity.schemaName)
-        : await Model.getAppModel(activity.appId, activity.schemaName);
+        ? await Model.getCoreModelByName<StandardModel>(activity.schemaName)
+        : await Model.getAppModel<StandardModel>(activity.appId, activity.schemaName);
       if (!appModel) {
         Logging.logWarn(
           `Unable to broadcast entity, can not find ${activity.schemaName} for ${activity.appId} in the database`,
@@ -318,7 +326,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         return;
       }
 
-      entity = await appModel.findById(entityId);
+      entity = await appModel.findById(entityId as string);
       // TODO: Entity needs to be flatterned for processing.
     }
 
@@ -327,7 +335,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       const tokenModel = Model.getCoreModel(TokenSchemaModel);
       const systemTokens = await tokenModel.find({ type: 'system' });
 
-      for await (const systemToken of systemTokens) {
+      for await (const systemToken of systemTokens as AsyncIterable<Token>) {
         await this.__broadcastDataByToken(systemToken.id, activity);
         Logging.logTimer(
           `_handleIncomingMessage::systemToken ${systemToken.id}`,

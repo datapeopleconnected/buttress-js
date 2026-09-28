@@ -16,6 +16,7 @@
 
 import { Response, Request } from 'express';
 import { QueryParams } from '../../types/bjs-query.js';
+import type { RequestWithBody } from '../../types/routes.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -26,6 +27,16 @@ import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
+
+interface GetManyQuery {
+  ids: string[];
+  project: Record<string, 1 | -1> | false;
+}
+
+type GetManyBody = {
+  query: { ids?: string[] };
+  project?: Record<string, 1 | -1>;
+};
 
 /**
  * @class GetMany
@@ -43,10 +54,10 @@ export default class GetMany extends Route {
     this.activityBroadcast = false;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
-      const _ids = req.body.query.ids;
-      const project = req.body && req.body.project ? req.body.project : false;
+  override _validate(req: RequestWithBody<GetManyBody>, _res: Response) {
+    return new Promise<GetManyQuery>((resolve, reject) => {
+      const _ids: string[] | undefined = req.body.query.ids;
+      const project: Record<string, 1 | -1> | false = req.body && req.body.project ? req.body.project : false;
 
       if (!_ids) {
         this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
@@ -61,11 +72,11 @@ export default class GetMany extends Route {
     });
   }
 
-  override async _exec(req: Request, _res: Response, query: { ids: string[]; project: boolean }) {
+  override async _exec(req: Request, _res: Response, query: GetManyQuery) {
     const model = await this.routeModel();
     const findParams: QueryParams<{ id: unknown }> = {
       query: { id: { $in: query.ids.map((id) => model.createId(id)) } },
-      project: query.project as unknown as Record<string, 1 | -1> | undefined,
+      project: query.project,
     };
     return ACM.find(model, findParams, req.context.ac);
   }

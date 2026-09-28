@@ -15,6 +15,8 @@
  */
 import { Response, Request } from 'express';
 import { QueryParams } from '../../types/bjs-query.js';
+import type { RequestWithBody } from '../../types/routes.js';
+import type { AdapterDocument } from '../../types/datastore.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -42,9 +44,9 @@ export default class DeleteMany extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<string[]>, _res: Response) {
     const model = await this.routeModel();
-    let ids = req.body;
+    let ids: string[] = req.body;
 
     if (!ids) {
       this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
@@ -77,11 +79,11 @@ export default class DeleteMany extends Route {
       throw new Helpers.Errors.RequestError(400, `invalid_id`);
     }
 
-    return ids;
+    return { ids, found: scopedEntities as AdapterDocument[] };
   }
 
-  override async _exec(req: Request, _res: Response, ids: string[]) {
-    await this._keepEntitiesBeingDeleted(req, ids);
+  override async _exec(req: Request, _res: Response, { ids, found }: { ids: string[]; found: AdapterDocument[] }) {
+    await this._keepEntitiesBeingDeleted(req, ids, found);
     await (await this.routeModel()).rmBulk(ids);
     return ids;
   }

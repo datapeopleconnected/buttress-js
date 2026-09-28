@@ -13,9 +13,26 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import Stream from 'node:stream';
 import { URL } from 'node:url';
 
 import { Errors } from '../helpers/index.js';
+
+import type {
+  AdapterAddModifier,
+  AdapterIdHelper,
+  AdapterQuery,
+  UpdatePathBody,
+  UpdatePathContext,
+  UpdatePathOperation,
+} from '../types/datastore.js';
+import type { FlattenedSchemaProperty, Schema } from '../types/schema.js';
+import type StandardModel from '../model/type/standard.js';
+
+/**
+ * The results of a find: a stream of documents, which some adapters have to wait on.
+ */
+export type AdapterFindResult = Stream.Readable | Promise<Stream.Readable>;
 
 export default class AbstractAdapter {
   uri: URL;
@@ -23,6 +40,9 @@ export default class AbstractAdapter {
   requiresFormalSchema: boolean;
   protected __connection?: unknown;
   collection?: unknown;
+
+  // Set on remote adapters by RemoteCombinedModel, not read by any adapter yet.
+  declare returnPausedStream?: boolean;
 
   constructor(uri: URL, options: unknown, connection?: unknown) {
     this.uri = uri;
@@ -43,48 +63,64 @@ export default class AbstractAdapter {
     throw new Errors.NotYetImplemented('close');
   }
 
-  cloneAdapterConnection(): unknown {
+  cloneAdapterConnection(): AbstractAdapter {
     throw new Errors.NotYetImplemented('cloneAdapterConnection');
   }
 
-  setCollection(_collectionName: string) {
+  setCollection(_collectionName: string): Promise<void> {
     throw new Errors.NotYetImplemented('setCollection');
   }
 
-  updateSchema(_schemaData: unknown) {
+  updateSchema(_schemaData: Schema) {
     if (!this.requiresFormalSchema) return;
 
     throw new Errors.NotYetImplemented('updateSchema');
   }
 
-  get ID(): unknown {
+  get ID(): AdapterIdHelper {
     throw new Errors.NotYetImplemented('get ID');
   }
 
-  add(_body: unknown, _modifier: unknown) {
+  add(_body: unknown, _modifier: AdapterAddModifier): Promise<unknown> {
     throw new Errors.NotYetImplemented('add');
   }
 
-  async batchUpdateProcess(_id: string, _body: unknown, _context: unknown, _schemaConfig: unknown): Promise<unknown> {
+  async batchUpdateProcess(
+    _id: string,
+    _body: UpdatePathBody,
+    _context: UpdatePathContext,
+    _schemaConfig: FlattenedSchemaProperty | false | undefined,
+    _model?: StandardModel<unknown>,
+  ): Promise<unknown> {
     throw new Errors.NotYetImplemented('batchUpdateProcess');
   }
 
-  updateById(_id: string, _query: unknown) {
+  /**
+   * Applies all of one request's updates to an entity together, so they all take effect or none do. An adapter that
+   * can't leaves it out, and StandardModel.updateByPath applies them one at a time with batchUpdateProcess.
+   */
+  updateByPaths?(id: string, updates: UpdatePathOperation[], model?: StandardModel<unknown>): Promise<unknown[]>;
+
+  update(_select: AdapterQuery, _update: AdapterQuery): Promise<unknown> {
+    throw new Errors.NotYetImplemented('update');
+  }
+
+  updateById(_id: string, _query: AdapterQuery): Promise<unknown> {
     throw new Errors.NotYetImplemented('updateById');
   }
 
-  updateOne(_query: unknown, _update: unknown) {
+  updateOne(_query: AdapterQuery, _update: AdapterQuery): Promise<unknown> {
     throw new Errors.NotYetImplemented('updateOne');
   }
 
-  exists(id: string, _extra = {}) {
+  exists(_id: string, _extra: AdapterQuery = {}): Promise<boolean> {
     throw new Errors.NotYetImplemented('exists');
   }
 
   /*
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  isDuplicate(_details: unknown) {
+  isDuplicate(_details: unknown): Promise<boolean> {
     throw new Errors.NotYetImplemented('isDuplicate');
   }
 
@@ -99,14 +135,14 @@ export default class AbstractAdapter {
   /**
    * @param {App} id - id of the object to be deleted
    */
-  rm(_id: unknown) {
+  rm(_id: string): Promise<unknown> {
     throw new Errors.NotYetImplemented('rm');
   }
 
   /**
    * @param {Array} ids - Array of entity ids to delete
    */
-  rmBulk(_ids: unknown) {
+  rmBulk(_ids: string[]): Promise<unknown> {
     throw new Errors.NotYetImplemented('rmBulk');
   }
 
@@ -114,14 +150,14 @@ export default class AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  rmAll(_query: unknown) {
+  rmAll(_query?: AdapterQuery): Promise<unknown> {
     throw new Errors.NotYetImplemented('rmAll');
   }
 
   /**
    * @param {String} id - entity id to get
    */
-  findById(_id: unknown) {
+  findById(_id: string): Promise<unknown> {
     throw new Errors.NotYetImplemented('findById');
   }
 
@@ -133,7 +169,14 @@ export default class AbstractAdapter {
    * @param {Object} sort - mongoDB sort object
    * @param {Boolean} project - mongoDB project ids
    */
-  find(_query: unknown, _excludes = {}, _limit = 0, _skip = 0, _sort = null, _project = null) {
+  find(
+    _query: AdapterQuery,
+    _excludes: AdapterQuery | null = {},
+    _limit: number = 0,
+    _skip: number = 0,
+    _sort: Record<string, unknown> | null = null,
+    _project: Record<string, unknown> | null | false = null,
+  ): AdapterFindResult {
     throw new Errors.NotYetImplemented('find');
   }
 
@@ -141,33 +184,33 @@ export default class AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @param {Object} excludes - mongoDB query excludes
    */
-  findOne(_query: unknown, _excludes = {}) {
+  findOne(_query: AdapterQuery, _excludes: AdapterQuery = {}): Promise<unknown> {
     throw new Errors.NotYetImplemented('findOne');
   }
 
   /**
    */
-  findAll() {
+  findAll(): AdapterFindResult {
     throw new Errors.NotYetImplemented('findAll');
   }
 
   /**
    * @param {Array} ids - Array of entities ids to get
    */
-  findAllById(_ids: string[]) {
+  findAllById(_ids: string[]): AdapterFindResult {
     throw new Errors.NotYetImplemented('findAllById');
   }
 
   /**
    * @param {Object} query - mongoDB query
    */
-  count(_query: unknown) {
+  count(_query?: AdapterQuery): Promise<number> {
     throw new Errors.NotYetImplemented('count');
   }
 
   /**
    */
-  drop() {
+  drop(): Promise<unknown> {
     throw new Errors.NotYetImplemented('drop');
   }
 }

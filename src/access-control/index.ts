@@ -17,7 +17,7 @@
 import hash from 'object-hash';
 import { Request, Response, NextFunction } from 'express';
 
-import NodeRedisPubsub from '../services/nrp.js';
+import NodeRedisPubsub, { AppSchemaUpdatedMessage } from '../services/nrp.js';
 
 import Sugar from '../helpers/sugar.js';
 import { getThrownErrorMessage } from '../helpers/index.js';
@@ -38,6 +38,7 @@ import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import AppSchemaModel from '../model/core/app.js';
 
 import { Schema as SchemaDefinition } from '../types/schema.js';
+import type { RequestWithBody } from '../types/routes.js';
 
 export class PolicyError extends Error {
   statusCode: number;
@@ -60,6 +61,12 @@ export type ApplicablePolicyConfig = {
   env: PolicyEnv | null;
   config: PolicyConfig;
 };
+
+interface SchemaRoomStructure {
+  appId: string;
+  schema: { [schemaName: string]: { access: { query?: unknown; projection?: string[] } } };
+  appliedPolicy: string[];
+}
 
 class AccessControl {
   _schemas: { [key: string]: SchemaDefinition[] };
@@ -100,7 +107,7 @@ class AccessControl {
     if (!this._nrp) throw new Error('Unable to register listeners, NRP not set');
 
     this._nrp.on('app-schema:updated', async (json) => {
-      const data = JSON.parse(json);
+      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
       await this.__cacheAppSchema(data.appId);
     });
   }
@@ -114,6 +121,7 @@ class AccessControl {
    * @private
    */
   async accessControlPolicyMiddleware(req: Request, res: Response, next: NextFunction) {
+    req.context.timings.accessControl = req.context.timer.interval;
     Logging.logTimer(
       `accessControlPolicyMiddleware::start`,
       req.context.timer,
@@ -241,7 +249,12 @@ class AccessControl {
     next();
   }
 
-  async _getSchemaRoomStructure(tokenPolicies, req: Request, schemaName: string, appId: string) {
+  async _getSchemaRoomStructure(
+    tokenPolicies: Policy[],
+    req: RequestWithBody<{ project?: Record<string, unknown>; query?: unknown }>,
+    schemaName: string,
+    appId: string,
+  ) {
     Logging.logTimer(
       `_getSchemaRoomStructure::start`,
       req.context.timer,
@@ -264,7 +277,7 @@ class AccessControl {
       return {};
     }
 
-    const structure = {
+    const structure: SchemaRoomStructure = {
       appId: appId,
       schema: {},
       appliedPolicy: outcome.map((o) => o.policies).flat(),
@@ -280,7 +293,7 @@ class AccessControl {
     if (projectionKeys.length > 0) {
       structure.schema[schemaName].access.projection = [];
       projectionKeys.forEach((key) => {
-        structure.schema[schemaName].access.projection.push(key);
+        structure.schema[schemaName].access.projection!.push(key);
       });
     }
 
@@ -395,7 +408,7 @@ class AccessControl {
           name: `${policy.name}#${idx}`,
           env: policy.env,
           appId,
-          config: JSON.parse(JSON.stringify(config)),
+          config: JSON.parse(JSON.stringify(config)) as PolicyConfig,
         });
       });
 
@@ -575,12 +588,13 @@ class AccessControl {
     // }));
   }
 
-  _queuePolicyLimitDeleteEvent(policies, userToken, appId) {
+  _queuePolicyLimitDeleteEvent(policies: Policy[], userToken: Token, appId: string) {
     const limitedPolicies = policies.filter((p) => p.limit && Sugar.Date.isValid(p.limit));
     if (limitedPolicies.length < 1) return;
 
     limitedPolicies.forEach((p) => {
-      const nearlyExpired = Sugar.Date.create(p.limit).getTime() - Sugar.Date.create().getTime();
+      // Filtered to the policies with a limit
+      const nearlyExpired = Sugar.Date.create(p.limit as Date).getTime() - Sugar.Date.create().getTime();
       if (this._oneWeekMilliseconds < nearlyExpired) return;
       if (this._queuedLimitedPolicy.includes(p.name)) return;
 
@@ -607,9 +621,10 @@ class AccessControl {
     });
   }
 
-  async __removeUserPropertiesPolicySelection(userToken, policy) {
-    const policySelectionKeys = Object.keys(policy.selection);
-    const tokenPolicyProps = userToken.policyProperties;
+  async __removeUserPropertiesPolicySelection(userToken: Token, policy: Policy) {
+    // The policy matched on its selection and the token's policy properties, see AccessControlPolicyMatch
+    const policySelectionKeys = Object.keys(policy.selection!);
+    const tokenPolicyProps = userToken.policyProperties!;
     policySelectionKeys.forEach((key) => {
       delete tokenPolicyProps[key];
     });
@@ -617,7 +632,7 @@ class AccessControl {
     await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(userToken.id.toString(), tokenPolicyProps);
   }
 
-  __getInnerObjectValue(originalObj) {
+  __getInnerObjectValue(originalObj: Record<string, unknown> | null) {
     if (!originalObj) return null;
 
     const { _schema, ...rest } = originalObj;

@@ -93,6 +93,28 @@ Adding a new backing store means adding a new adapter here and a new `case` in `
 nothing else in the model layer needs to change, since `StandardModel` only calls generic `adapter.*`
 methods.
 
+The contract is typed on [AbstractAdapter](../src/datastore/abstract-adapter.ts), with the shared shapes
+in [src/types/datastore.ts](../src/types/datastore.ts). Adapters return untyped documents
+(`AdapterDocument`); `StandardModel<TDocument>` casts them to its document type (`findById` →
+`Promise<TDocument>`, `findOne` → `Promise<TDocument | null>`). `find`/`findAll` return
+`AdapterFindResult` (`Readable | Promise<Readable>`): the Mongo adapter's find is synchronous but the
+Buttress adapter's and `RemoteCombinedModel`'s aren't, so await the result before using it as a stream.
+
+Ids are strings outside the adapters. MongoDB stores them as `ObjectId`s, and
+[mongodb-ids.ts](../src/datastore/adapters/mongodb-ids.ts) converts at the adapter boundary, going by the
+schema the model passes to `adapter.updateSchema()`: properties with `__type: 'id'` (including nested ones
+and those in array item schemas), arrays with `__itemtype: 'id'`, and each document's `id`/`_id`.
+Documents, queries and update documents going in have the id strings under those properties converted to
+`ObjectId`s (a new copy, and `id` becomes `_id`); every `ObjectId` in a document coming out becomes a
+string. So a query or `$set` on an id property can be written with plain strings. Ids inside free-form
+`object` properties aren't converted on the way in, so they're stored as strings.
+
+This was decided on 2026-09-28, after ids had been a mix of `ObjectId`s and strings. Strings won because most of
+the system already sees ids as JSON (API responses, NRP messages, the SPR's entities, federated Buttress
+remotes), strings compare with `===` where two `ObjectId`s don't, and it keeps a datastore's id type inside its
+adapter. What's stored didn't change, so no migration was needed. Keep conversion in the adapter: code outside
+it shouldn't create or expect `ObjectId`s.
+
 ## Core model quirks worth knowing before touching them
 
 - `TokenSchemaModel` ([src/model/core/token.ts](../src/model/core/token.ts)) generates the actual token

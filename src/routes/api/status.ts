@@ -17,14 +17,16 @@ import os from 'node:os';
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
+import { Services } from '../../bootstrap.js';
+import type { CoreRouteClass } from '../../types/routes.js';
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
 
 /**
  * @class GetTrackingList
  */
 class GetProcessStatus extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('status', 'GET TRACKING LIST', services, null);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.USER;
@@ -35,7 +37,7 @@ class GetProcessStatus extends Route {
     return Promise.resolve(true);
   }
 
-  override async _exec(_req: Request, _res: Response, _validate) {
+  override async _exec(_req: Request, _res: Response, _validate: boolean) {
     const mem = process.memoryUsage().rss;
     const memTotal = os.totalmem();
 

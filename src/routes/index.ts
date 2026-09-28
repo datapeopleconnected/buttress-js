@@ -43,6 +43,7 @@ import RoutesMiddleware from './middleware.js';
 
 import createConfig from '@dpc/node-env-obj';
 import { Token } from '../model/core/token.js';
+import type { CoreRouteClass } from '../types/routes.js';
 const Config = createConfig() as unknown as Config;
 
 const __filename = fileURLToPath(import.meta.url);
@@ -53,7 +54,6 @@ export interface AppDeletedMessage {
   apiPath: string;
 }
 
-type CoreRouteClass = new (services: Services) => Route;
 type PluginRouteClass = new (schema: null, app: null, services: Services) => Route;
 type RouteClass = CoreRouteClass | PluginRouteClass;
 
@@ -108,7 +108,7 @@ class Routes {
     this._middlewareHelper = new RoutesMiddleware(this._routerMap, this._tokensHelper);
 
     this._nrp?.on('rest:worker:app-deleted', (json: string) => {
-      const exec: AppDeletedMessage = JSON.parse(json);
+      const exec = JSON.parse(json) as AppDeletedMessage;
       if (!exec.apiPath) return;
       this._deregisterRouter(exec.apiPath);
     });
@@ -120,9 +120,7 @@ class Routes {
    */
   async initRoutes() {
     this.app.get('/favicon.ico', (req: Request, res: Response) => res.sendStatus(404));
-    this.app.get(['/', '/index.html'], (req: Request, res: Response) =>
-      res.sendFile(path.join(__dirname, '../static/index.html')),
-    );
+    this._initIndexPage();
 
     this.app.use((req: Request, _res: Response, next: NextFunction) => {
       const logEvent = (event: string, err?: unknown) => {
@@ -158,7 +156,7 @@ class Routes {
 
       next();
     });
-    this.app.use((err, req: Request, res: Response, next: NextFunction) => {
+    this.app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
       if (err) Logging.logError(err, req.context.id);
       next();
     });
@@ -168,7 +166,7 @@ class Routes {
     for (let x = 0; x < providers.length; x++) {
       const routes = providers[x];
       for (let y = 0; y < routes.length; y++) {
-        const route = routes[y] as CoreRouteClass;
+        const route = routes[y];
         this._initRoute(coreRouter, route, true);
       }
     }
@@ -185,9 +183,23 @@ class Routes {
     Logging.logSilly(`init:registered-routes`);
   }
 
+  /**
+   * Serve the landing page at / and /index.html, or 404 there when BUTTRESS_APP_INDEX_PAGE isn't TRUE
+   */
+  _initIndexPage() {
+    if (Config.app.indexPage === 'TRUE') {
+      this.app.get(['/', '/index.html'], (req: Request, res: Response) =>
+        // Pass root so send's dotfile check only covers the file name, not wherever Buttress is installed
+        res.sendFile('index.html', { root: path.join(__dirname, '../static') }),
+      );
+    } else {
+      this.app.get(['/', '/index.html'], (req: Request, res: Response) => res.sendStatus(404));
+    }
+  }
+
   async initAppRoutes() {
     const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
-    for await (const app of rxsApps) {
+    for await (const app of rxsApps as AsyncIterable<App>) {
       await this._generateAppRoutes(app);
     }
   }
@@ -248,7 +260,7 @@ class Routes {
    * @param {string} key
    * @param {object} router - express router object
    */
-  _registerRouter(key, router: Router) {
+  _registerRouter(key: string, router: Router) {
     if (this._routerMap[key]) {
       Logging.logSilly(`Routes:_registerRouter Reregister ${key}`);
       this._routerMap[key] = router;
@@ -262,7 +274,7 @@ class Routes {
     this._mountRouterDispatcher();
   }
 
-  _deregisterRouter(key) {
+  _deregisterRouter(key: string) {
     if (!this._routerMap[key]) return;
 
     Logging.logSilly(`Routes:_deregisterRouter Deregister ${key}`);
@@ -275,7 +287,7 @@ class Routes {
    * @param {string} key
    * @return {object} - express router object
    */
-  _getRouter(key) {
+  _getRouter(key: string) {
     return this._routerMap[key];
   }
 
@@ -284,7 +296,7 @@ class Routes {
    * @param {string} appId - Buttress app id
    * @return {promise}
    */
-  regenerateAppRoutes(appId) {
+  regenerateAppRoutes(appId: string) {
     Logging.logSilly(`Routes:regenerateAppRoutes regenerating routes for ${appId}`);
     return Model.getCoreModel(AppSchemaModel)
       .findById(appId)
@@ -295,7 +307,7 @@ class Routes {
    * Genereate app routes & register for given app
    * @param {object} app - Buttress app object
    */
-  async _generateAppRoutes(app) {
+  async _generateAppRoutes(app: App | null) {
     if (!app) throw new Error(`Expected app object to be passed through to _generateAppRoutes, got ${app}`);
     if (!app.__schema) return;
 
@@ -375,7 +387,7 @@ class Routes {
    * @param  {Object} app - app data object
    * @param  {Object} schemaData - schema data object
    */
-  _initSchemaRoutes(express, app: App, schemaData: Schema) {
+  _initSchemaRoutes(express: Router, app: App, schemaData: Schema) {
     SchemaRoutes.forEach((SchemaRoute) => {
       let route: Route;
 
@@ -407,19 +419,19 @@ class Routes {
     this._middlewareHelper._configCrossDomain(req, res, next);
   }
 
-  logErrors(err, req: Request, res: Response, next: NextFunction) {
+  logErrors(err: unknown, req: Request, res: Response, next: NextFunction) {
     this._middlewareHelper.logErrors(err, req, res, next);
   }
 
   _getCoreRoutes() {
-    return CoreRoutes as CoreRouteClass[][];
+    return CoreRoutes;
   }
 
   async _setupLambdaEndpoints() {
     await this._lambdaSetupHelper._setupLambdaEndpoints();
   }
 
-  async _queueLambdaAPIExecution(endpointOrId: string, apiPath, req: Request) {
+  async _queueLambdaAPIExecution(endpointOrId: string, apiPath: string, req: Request) {
     return await this._lambdaSetupHelper._queueLambdaAPIExecution(endpointOrId, apiPath, req);
   }
 

@@ -26,6 +26,7 @@ interface Config {
     apiPrefix: string;
     workers: string;
     trustProxy: string;
+    indexPage: string;
   };
   lambda: {
     apiWorkers: string;
@@ -38,6 +39,7 @@ interface Config {
     level: string;
     slow: string;
     slowTime: string;
+    serverTiming: string;
   };
   listenPorts: {
     rest: string;

@@ -27,7 +27,8 @@ import AppSchemaModel from '../model/core/app.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import TokenSchemaModel, { Token } from '../model/core/token.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
-import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
+import LambdaExecutionSchemaModel, { LambdaExecution, LambdaExecutionAddBody } from '../model/core/lambda-execution.js';
+import type { RequestWithBody } from '../types/routes.js';
 
 const SYNC_LAMBDA_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -79,7 +80,7 @@ export class RoutesLambdaSetup {
       const endpointParam = req.params.endpoint;
       const endpoint = Array.isArray(endpointParam) ? endpointParam.join('/') : endpointParam;
 
-      if (req.method === 'POST' && (!req.body || Object.values(req.body).length < 1)) {
+      if (req.method === 'POST' && (!req.body || Object.values(req.body as object).length < 1)) {
         res.status(400).send({ message: 'missing_request_body' });
         return;
       }
@@ -183,7 +184,7 @@ export class RoutesLambdaSetup {
     });
   }
 
-  async _queueLambdaAPIExecution(endpointOrId: string, apiPath: string, req: Request) {
+  async _queueLambdaAPIExecution(endpointOrId: string, apiPath: string, req: RequestWithBody<unknown>) {
     const res: {
       errCode?: number;
       errMessage?: string;
@@ -251,7 +252,7 @@ export class RoutesLambdaSetup {
       lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
       deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(deployment.id),
       metadata: [{ key: 'REQ_ID', value: req.context.id }],
-    };
+    } satisfies LambdaExecutionAddBody;
 
     if (req.body) LambdaExecutionData.metadata.push({ key: 'BODY', value: JSON.stringify(req.body) });
     if (req.query) LambdaExecutionData.metadata.push({ key: 'QUERY', value: JSON.stringify(req.query) });

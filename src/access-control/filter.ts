@@ -14,13 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { ObjectId } from 'bson';
-import { Request } from 'express';
 
 import Sugar from '../helpers/sugar.js';
 
 import AccessControlHelpers, { CombineEnvGroups } from './helpers.js';
 
-import Env, { ACPolicyEnvCombined } from './env.js';
+import Env, { ACEnv, ACPolicyEnvCombined } from './env.js';
 
 import * as Helpers from '../helpers/index.js';
 import Model from '../model/index.js';
@@ -28,6 +27,8 @@ import Model from '../model/index.js';
 import { ApplicablePolicyConfig } from './index.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
+
+import type { RequestWithBody } from '../types/routes.js';
 
 function isObjectId(value: unknown): value is ObjectId {
   return value?.constructor?.name === 'ObjectId';
@@ -43,7 +44,7 @@ function isAccessControlScalar(value: unknown): value is AccessControlScalar {
 function isAccessControlValue(value: unknown): value is AccessControlValue {
   if (value === null) return true;
   if (isAccessControlScalar(value)) return true;
-  return Array.isArray(value) && value.every((item) => isAccessControlScalar(item));
+  return Array.isArray(value) && value.every((item: unknown) => isAccessControlScalar(item));
 }
 
 /**
@@ -86,7 +87,7 @@ export class Filter {
   }
 
   // This function will now take in policies, modifiy their queries and return back the list.
-  async buildApplicablePoliciesQuery(policies: ApplicablePolicyConfig[], reqEnv) {
+  async buildApplicablePoliciesQuery(policies: ApplicablePolicyConfig[], reqEnv: ACEnv) {
     const output: ApplicablePolicyConfig[] = [];
 
     for await (const policy of policies) {
@@ -135,13 +136,13 @@ export class Filter {
 
       if (Filter.logicalOperator.includes(key)) {
         if (!Array.isArray(val)) continue;
-        for (const queryObj of val) {
+        for (const queryObj of val as unknown[]) {
           if (typeof queryObj !== 'object' || Array.isArray(queryObj)) {
             throw new Error(`Invalid query object for logical operator ${key}: ${JSON.stringify(queryObj)}`);
           }
 
           // Recursively build the query for each object in the logical operator array.
-          const builtQuery = await this.buildPolicyQuery(queryObj, envVars, stripAccessKeys);
+          const builtQuery = await this.buildPolicyQuery(queryObj as PolicyQuery | null, envVars, stripAccessKeys);
           if (builtQuery) {
             const existing = outputRecord[key];
             if (!Array.isArray(existing)) outputRecord[key] = [];
@@ -153,7 +154,7 @@ export class Filter {
 
       if (outputRecord[key]) {
         if (Array.isArray(outputRecord[key]) && Array.isArray(val)) {
-          for await (const elem of val) {
+          for await (const elem of val as unknown[]) {
             const elementExist = (outputRecord[key] as unknown[]).findIndex(
               (el) => JSON.stringify(el) === JSON.stringify(elem),
             );
@@ -172,7 +173,7 @@ export class Filter {
               const existing = outputByKey[k];
               const next = valRecord[k];
               if (Array.isArray(existing) && Array.isArray(next)) {
-                outputByKey[k] = existing.concat(next).filter((v, idx, arr) => arr.indexOf(v) === idx);
+                outputByKey[k] = existing.concat(next).filter((v: unknown, idx, arr) => arr.indexOf(v) === idx);
               }
             } else {
               outputByKey[k] = valRecord[k];
@@ -194,7 +195,7 @@ export class Filter {
       // if (!Filter.queryOperators[operator]) continue;
 
       outputRecord[key] = {};
-      (outputRecord[key] as Record<string, unknown>)[operator] = await Env.getEnvValue(value as string, envVars);
+      (outputRecord[key] as Record<string, unknown>)[operator] = await Env.getEnvValue(value, envVars);
     }
 
     return output;
@@ -231,9 +232,11 @@ export class Filter {
         // TODO: Add check as this is expected to be an array.
         const nestedQuery = queryRecord[key];
         if (!Array.isArray(nestedQuery)) continue;
-        for (const queryObj of nestedQuery) {
+        for (const queryObj of nestedQuery as unknown[]) {
           if (typeof queryObj !== 'object' || queryObj === null) continue;
-          innerResults.push(this.__evaluateQueryAgainstEntity(queryObj, flatEntity, innerPartialPass, testEntity));
+          innerResults.push(
+            this.__evaluateQueryAgainstEntity(queryObj as PolicyQuery, flatEntity, innerPartialPass, testEntity),
+          );
         }
 
         if (innerPartialPass) {
@@ -306,7 +309,7 @@ export class Filter {
 
   // TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
   // TODO: This function needs a refactor, expecting the AC to be already applied to the queiries.
-  async evaluateManipulationActions(req: Request, collection: string) {
+  async evaluateManipulationActions(req: RequestWithBody<{ query?: Record<string, unknown> }>, collection: string) {
     const coreSchema = await AccessControlHelpers.cacheCoreSchema();
     const coreSchemNames = coreSchema.map((c) => Sugar.String.singularize(c.name));
     const isCoreSchema = coreSchemNames.includes(collection);
@@ -320,8 +323,8 @@ export class Filter {
 
     const appId = req.context.authApp.id;
     // const appShortId = Helpers.shortId(appId);
-    const body = Array.isArray(req.body) ? req.body : [req.body];
-    let query = req.body.query ? req.body.query : {};
+    const body: unknown[] = Array.isArray(req.body) ? req.body : [req.body];
+    let query: Record<string, unknown> = req.body.query ? req.body.query : {};
     // const baseURL = req.url.replace(/\?.*/, '');
     // const id = (baseURL) ? baseURL.split('/').pop() : undefined;
     let passed = true;
@@ -331,7 +334,7 @@ export class Filter {
     // ! This looks weird
     for await (const _update of body) {
       if (query._id && typeof query._id !== 'object') {
-        query._id = await model.createId(query._id);
+        query._id = await model.createId(query._id as string);
       }
 
       const parsedQuery = await model.parseQuery(query, {}, model.flatSchemaData);
@@ -348,7 +351,11 @@ export class Filter {
     return passed;
   }
 
-  mergeQueryFilters(baseFilter, additionalFilter, operator = '$and') {
+  mergeQueryFilters(
+    baseFilter: PolicyQuery | null | undefined,
+    additionalFilter: PolicyQuery | null | undefined,
+    operator = '$and',
+  ): PolicyQuery {
     if (!baseFilter || !additionalFilter) {
       throw new Error('Both baseFilter and additionalFilter must be provided.');
     }
@@ -365,18 +372,18 @@ export class Filter {
       if (Object.keys(additionalFilter).length < 1) return baseFilter;
     }
 
-    const newQuery: any = { [operator]: [] };
+    const newQuery: Record<string, unknown[]> = { [operator]: [] };
 
     // Check to see if the base filter already has the operator, if it does then spread it
     if (baseFilter[operator]) {
-      newQuery[operator] = [...baseFilter[operator]];
+      newQuery[operator] = [...(baseFilter[operator] as unknown[])];
     } else {
       newQuery[operator].push(baseFilter);
     }
 
     // Check to see if the additional filter already has the operator, if it does then spread it
     if (additionalFilter[operator]) {
-      newQuery[operator] = [...newQuery[operator], ...additionalFilter[operator]];
+      newQuery[operator] = [...newQuery[operator], ...(additionalFilter[operator] as unknown[])];
     } else {
       newQuery[operator].push(additionalFilter);
     }
@@ -385,7 +392,10 @@ export class Filter {
   }
 
   // A function for merging a request query with an access control query. The Access control query will take priority.
-  mergeQueryFiltersWithAccessControl(reqQuery, accessControlQuery) {
+  mergeQueryFiltersWithAccessControl(
+    reqQuery: PolicyQuery | null | undefined,
+    accessControlQuery: PolicyQuery | null | undefined,
+  ) {
     return this.mergeQueryFilters(reqQuery, accessControlQuery, '$and');
   }
 
@@ -395,23 +405,25 @@ export class Filter {
    * @todo This functionality should really happen in the mongo adpater. All queries within buttress should be
    * referenced using the @ prefix.
    */
-  static convertQueryPrefixOperators(query: unknown) {
+  static convertQueryPrefixOperators(query: Record<string, unknown>): Record<string, unknown>;
+  static convertQueryPrefixOperators(query: unknown): unknown;
+  static convertQueryPrefixOperators(query: unknown): unknown {
     if (typeof query !== 'object' || query === null) {
       return query;
     }
 
     // ! Shouldn't be referencing ObjectId's outside of the adapters.
-    if (typeof query === 'object' && ObjectId.isValid(query as ObjectId)) {
+    if (isObjectId(query)) {
       return query;
     }
 
     if (Array.isArray(query)) {
-      return query.map((item) => Filter.convertQueryPrefixOperators(item));
+      return query.map((item: unknown) => Filter.convertQueryPrefixOperators(item));
     }
 
-    return Object.keys(query).reduce((acc, key) => {
+    return Object.keys(query).reduce((acc: Record<string, unknown>, key) => {
       const newKey = key.replace(/@/g, '$');
-      acc[newKey] = Filter.convertQueryPrefixOperators(query[key]);
+      acc[newKey] = Filter.convertQueryPrefixOperators((query as Record<string, unknown>)[key]);
       return acc;
     }, {});
   }

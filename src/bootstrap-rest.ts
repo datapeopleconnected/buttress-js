@@ -36,16 +36,34 @@ import * as Schema from './helpers/schema.js';
 import type { Schema as SchemaDefinition } from './types/schema.js';
 
 import { SourceDataSharingRouting } from './services/source-ds-routing.js';
+import type { AppSchemaUpdatedMessage } from './services/nrp.js';
 
 import DatastoreManager, { Datastore } from './datastore/index.js';
 import Plugins from './plugins/index.js';
 import AccessControl from './access-control/index.js';
 import { PolicyCache } from './services/policy-cache.js';
-import AppSchemaModel from './model/core/app.js';
+import AppSchemaModel, { App, AppAddBody } from './model/core/app.js';
 import TokenSchemaModel from './model/core/token.js';
 import { BULK_REFUSED_HEADER } from './routes/schema-routes/update-many.js';
 
+// Express's types don't include app.handle()
+type ExpressApp = Express.Express & {
+  handle: (req: http.IncomingMessage, res: http.ServerResponse) => void;
+};
+
 // morgan.token('id', (req) => req.context.id);
+
+/**
+ * Config values are always strings, and Express reads a string `trust proxy` as a list of addresses, so '1' would
+ * only trust 0.0.0.1. Digits become a hop count and true/false become booleans; anything else, such as 'loopback'
+ * or a list of subnets, is left for Express to parse.
+ */
+export function parseTrustProxy(value: string): number | boolean | string {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  if (/^(true|false)$/i.test(trimmed)) return trimmed.toLowerCase() === 'true';
+  return trimmed;
+}
 
 Error.stackTraceLimit = Infinity;
 export default class BootstrapRest extends Bootstrap {
@@ -54,6 +72,9 @@ export default class BootstrapRest extends Bootstrap {
 
   _restServer?: http.Server;
   _installMode: boolean;
+
+  // Hands requests from plugins to the Express app. Plugins is a singleton, so clean() has to remove this again.
+  private _onPluginRequest?: (req: http.IncomingMessage, res: http.ServerResponse) => void;
 
   constructor(installMode = false) {
     super();
@@ -105,6 +126,11 @@ export default class BootstrapRest extends Bootstrap {
 
   override async clean() {
     // Stop taking requests, and let the in-flight ones finish while the connections they use are still open
+    if (this._onPluginRequest) {
+      Logging.logSilly('Removing plugin request listener');
+      Plugins.off('request', this._onPluginRequest);
+      this._onPluginRequest = undefined;
+    }
     if (this._restServer) {
       Logging.logSilly('Closing express server');
       await this._closeRestServer(this._restServer);
@@ -154,7 +180,7 @@ export default class BootstrapRest extends Bootstrap {
     if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');
 
     this.__nrp.on('app-schema:updated', (json) => {
-      const data = JSON.parse(json);
+      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
       Logging.logDebug(`App Schema Updated: ${data.appId}`);
       this.notifyWorkers({
         type: 'app-schema:updated',
@@ -194,9 +220,10 @@ export default class BootstrapRest extends Bootstrap {
     const app = Express();
     // app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 
-    if (Config.app.trustProxy) {
-      app.set('trust proxy', Config.app.trustProxy);
-      Logging.logVerbose(`Trust proxy enabled for REST server, ${Config.app.trustProxy}`);
+    const trustProxy = parseTrustProxy(Config.app.trustProxy);
+    if (trustProxy) {
+      app.set('trust proxy', trustProxy);
+      Logging.logVerbose(`Trust proxy enabled for REST server, ${trustProxy}`);
     }
 
     app.use(Express.json({ limit: '20mb' }));
@@ -212,8 +239,9 @@ export default class BootstrapRest extends Bootstrap {
     );
     app.use(Express.static(`${Config.paths.appData}/public`));
 
-    // @ts-expect-error - Calling a private function within the class, this is the only way it's exposed.
-    Plugins.on('request', (req, res) => app.handle(req, res));
+    // Calling a private function within the class, this is the only way it's exposed.
+    this._onPluginRequest = (req, res) => (app as ExpressApp).handle(req, res);
+    Plugins.on('request', this._onPluginRequest);
 
     await Model.initCoreModels();
 
@@ -277,12 +305,13 @@ export default class BootstrapRest extends Bootstrap {
         return;
       }
 
+      // domain isn't in the app schema, add() drops it
       const superApp = await Model.getCoreModel(AppSchemaModel).add(
         {
           name: `${Config.app.title} TEST`,
           apiPath: 'bjs',
           domain: '',
-        },
+        } as AppAddBody,
         {
           type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
         },
@@ -345,7 +374,7 @@ export default class BootstrapRest extends Bootstrap {
     Model.getCoreModel(AppSchemaModel).setLocalSchema(localSchema);
 
     const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
-    for await (const app of rxsApps) {
+    for await (const app of rxsApps as AsyncIterable<App>) {
       const appSchema = Schema.decode(app.__schema);
       Logging.log(`Adding ${localSchema.length} local schema for ${app.id}:${app.name}:${appSchema.length}`);
       localSchema.forEach((cS) => {

@@ -34,5 +34,6 @@
 * Development
   * [Building](development/building.md)
   * [Testing](development/testing.md)
+  * [Benchmarking](development/benchmarking.md)
 
 * [Changelog](changelog.md)

@@ -13,7 +13,7 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { Request, Response } from 'express';
+import { Application, Request, Response } from 'express';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -24,10 +24,25 @@ import * as Helpers from '../helpers/index.js';
 
 import adminPolicy from '../admin-policy.json' with { type: 'json' };
 import adminLambda from '../admin-lambda.json' with { type: 'json' };
-import TokenSchemaModel, { PolicyProperties, Token } from '../model/core/token.js';
+import TokenSchemaModel, { Token } from '../model/core/token.js';
 import AppSchemaModel, { App } from '../model/core/app.js';
-import PolicySchemaModel from '../model/core/policy.js';
-import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
+import PolicySchemaModel, { PolicyAddBody } from '../model/core/policy.js';
+import LambdaSchemaModel, { LambdaAddBody } from '../model/core/lambda.js';
+import type { RequestWithBody } from '../types/routes.js';
+
+// The sets of lambdas in admin-lambda.json, and one of their lambdas
+type AdminLambdaKey = keyof typeof adminLambda;
+type AdminLambda = (typeof adminLambda)[AdminLambdaKey][number];
+
+// A config in admin-policy.json as _createAdminPolicy reads it. It expects an array query to hold items with a
+// `schema`, `id` and `_appId`, but they're plain queries with no `schema`, so `q.schema.includes()` throws.
+type AdminPolicyConfig = {
+  query?: Record<string, unknown> | { schema: string[]; id?: unknown; _appId?: unknown }[];
+};
+
+type InstallLambdaRequest = RequestWithBody<{ installLambda?: string[]; refreshAdminToken?: unknown }>;
+
+type PolicyPropertiesListArray = Extract<App['policyPropertiesList'][string], unknown[]>;
 
 // TODO: This file might be able to be rolled into routes.
 
@@ -43,7 +58,7 @@ class AdminRoutes {
    * @param {object} app
    * @return {promise}
    */
-  async initAdminRoutes(app) {
+  async initAdminRoutes(app: Application) {
     app.get('/api/v1/check/admin', async (req: Request, res: Response) => {
       const superToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
@@ -71,6 +86,11 @@ class AdminRoutes {
 
     app.get('/api/v1/admin/activate/:superToken', async (req: Request, res: Response) => {
       const tokenValue = req.params.superToken;
+      // Only a string is looked up, so the value can't be read as query operators that match some other token.
+      if (typeof tokenValue !== 'string' || tokenValue === '') {
+        Logging.logError('The used token does not exist');
+        return res.status(404).send({ message: 'invalid_token' });
+      }
       const superToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         value: tokenValue,
         type: 'system',
@@ -95,10 +115,15 @@ class AdminRoutes {
       res.status(200).send({ appId: superApp.id });
     });
 
-    app.post('/api/v1/admin/install-lambda', async (req: Request, res: Response) => {
+    app.post('/api/v1/admin/install-lambda', async (req: InstallLambdaRequest, res: Response) => {
       const tokenValue = req.query.token;
-      const lambdaToInstall = req.body.installLambda;
-      const refreshAdminToken = req.body.refreshAdminToken;
+      const lambdaToInstall: string[] | undefined = req.body.installLambda;
+      const refreshAdminToken: unknown = req.body.refreshAdminToken;
+      // The query parser makes a repeated ?token= an array (and qs made ?token[$ne]= an object), so only a string
+      // is looked up.
+      if (typeof tokenValue !== 'string' || tokenValue === '') {
+        return res.status(401).send({ message: 'invalid_token' });
+      }
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         value: tokenValue,
       });
@@ -113,7 +138,7 @@ class AdminRoutes {
       }
 
       const adminLambdaKeys = Object.keys(adminLambda);
-      if (!lambdaToInstall.every((key) => adminLambdaKeys.includes(key))) {
+      if (!lambdaToInstall.every((key): key is AdminLambdaKey => adminLambdaKeys.includes(key))) {
         return res.status(404).send({ message: 'lambda_not_found' });
       }
 
@@ -191,7 +216,7 @@ class AdminRoutes {
    * @param {Object} app
    */
   async _updateAppPolicySelectorList(app: App) {
-    let adminPolicyPropsList = {
+    let adminPolicyPropsList: App['policyPropertiesList'] = {
       role: ['ADMIN', 'ADMIN_LAMBDA'],
     };
     const policyPropsList = app.policyPropertiesList;
@@ -199,7 +224,8 @@ class AdminRoutes {
       const currentAppListKeys = Object.keys(policyPropsList);
       Object.keys(adminPolicyPropsList).forEach((key) => {
         if (currentAppListKeys.includes(key)) {
-          adminPolicyPropsList[key] = adminPolicyPropsList[key]
+          // Only the admin lists have been set so far, and they're all arrays
+          adminPolicyPropsList[key] = (adminPolicyPropsList[key] as PolicyPropertiesListArray)
             .concat(policyPropsList[key])
             .filter((v, idx, arr) => arr.indexOf(v) === idx);
         }
@@ -226,7 +252,7 @@ class AdminRoutes {
 
       const name = policy.name.replace(/[\s-]+/g, '_').toUpperCase();
       if (name.toUpperCase() === 'ADMIN_LAMBDA_ACCESS') {
-        policy.config.forEach((conf) => {
+        (policy.config as AdminPolicyConfig[]).forEach((conf) => {
           if (!conf.query || !Array.isArray(conf.query)) return;
 
           const appQueryIdx = conf.query.findIndex((q) => q.schema.includes('app'));
@@ -244,7 +270,8 @@ class AdminRoutes {
         });
       }
 
-      await Model.getCoreModel(PolicySchemaModel).add(policy, appId);
+      // The admin-lambda-access app and user configs have `verbs` as a string rather than an array
+      await Model.getCoreModel(PolicySchemaModel).add(policy as PolicyAddBody, appId);
     }
   }
 
@@ -252,7 +279,7 @@ class AdminRoutes {
    * Create Buttress pre-defined lambda
    * @param {Array} lambdas
    */
-  async _createAdminLambda(lambdas: (Lambda & { policyProperties: PolicyProperties })[]) {
+  async _createAdminLambda(lambdas: AdminLambda[]) {
     try {
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
@@ -283,7 +310,8 @@ class AdminRoutes {
         };
 
         // await Model.getCoreModel(LambdaSchemaModel).add(lambda, adminLambdaAuth, adminApp);
-        await Model.getCoreModel(LambdaSchemaModel).add(lambda, {
+        // JSON imports type strings as string, rather than the literals LambdaAddBody wants
+        await Model.getCoreModel(LambdaSchemaModel).add(lambda as LambdaAddBody, {
           auth: adminLambdaAuth,
           app: adminApp,
         });

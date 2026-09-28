@@ -34,8 +34,10 @@ import LambdaExecutionSchemaModel from './lambda-execution.js';
 import SecureStoreSchemaModel from './secure-store.js';
 import TrackingSchemaModel from './tracking.js';
 import { AppDeletedMessage } from '../../routes/index.js';
+import { Services } from '../../bootstrap.js';
 
-export interface App {
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type App = {
   id: string;
   name: string;
   version: string;
@@ -50,14 +52,26 @@ export interface App {
   datastore: {
     connectionString: string | null;
   };
-}
+};
+
+// An app as posted to the API, the schema drops any fields it doesn't define
+export type AppAddBody = Partial<Omit<App, 'id'>> & {
+  // Set by add
+  id?: string;
+};
+
+// What __handleAddingNonSystemApp needs, add has set the id by then
+type NonSystemAppAddBody = AppAddBody & {
+  id: string;
+  policyPropertiesList: App['policyPropertiesList'];
+};
 
 export default class AppSchemaModel extends StandardModel<App> {
   static override name = 'App';
 
   private _localSchema?: Schema[];
 
-  constructor(services) {
+  constructor(services: Services) {
     const schema = AppSchemaModel.Schema;
     super(schema, null, services);
   }
@@ -149,7 +163,7 @@ export default class AppSchemaModel extends StandardModel<App> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with App Object when the database request is completed
    */
-  override async add(body, internals?: { type?: string }) {
+  override async add(body: AppAddBody, internals?: { type?: string }): Promise<{ app: App; token: Token }> {
     body.id = this.createId();
 
     const isSuper = internals?.type === TokenSchemaModel.Constants.Type.SYSTEM;
@@ -177,7 +191,8 @@ export default class AppSchemaModel extends StandardModel<App> {
     const rxsApp = await super.add(body, { _tokenId: token.id });
     const app = await Helpers.streamFirst<App>(rxsApp);
 
-    if (!isSuper) await this.__handleAddingNonSystemApp(body, token);
+    // The add route defaults policyPropertiesList, which only non-system apps need
+    if (!isSuper) await this.__handleAddingNonSystemApp(body as NonSystemAppAddBody, token);
 
     Logging.logSilly(`Emitting app-routes:bust-cache`);
     this.__nrp?.emit('app-routes:bust-cache', '{}');
@@ -197,9 +212,9 @@ export default class AppSchemaModel extends StandardModel<App> {
     return Promise.resolve({ app: app, token: token });
   }
 
-  async __handleAddingNonSystemApp(body, token) {
+  async __handleAddingNonSystemApp(body: NonSystemAppAddBody, token: Token) {
     let appPolicyPropertiesList = body.policyPropertiesList;
-    const list = {
+    const list: Record<string, (string | number | boolean | null)[]> = {
       role: ['APP'],
     };
     const bodyAppListKeys = Object.keys(appPolicyPropertiesList);
@@ -267,7 +282,7 @@ export default class AppSchemaModel extends StandardModel<App> {
       .setPolicyPropertiesList(body.id.toString(), appPolicyPropertiesList);
   }
 
-  async findByApiPath(apiPath) {
+  async findByApiPath(apiPath: string) {
     Logging.logSilly(`Find by ApiPath ${apiPath}`);
     const app = await super.findOne({ apiPath: apiPath });
 
@@ -281,12 +296,12 @@ export default class AppSchemaModel extends StandardModel<App> {
   }
 
   /**
-   * @param {ObjectId} appId - app id which needs to be updated
+   * @param {string} appId - app id which needs to be updated
    * @param {object} compiledSchema - schema object for the app
    * @param {object} rawSchema - encoded raw app schema
    * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
    */
-  async updateSchema(appId: string, compiledSchema, rawSchema?) {
+  async updateSchema(appId: string, compiledSchema: Schema[], rawSchema?: string) {
     Logging.logSilly(`Update Schema ${appId}`);
 
     await super.updateById(appId, { $set: { __schema: Helpers.Schema.encode(compiledSchema) } });
@@ -313,7 +328,7 @@ export default class AppSchemaModel extends StandardModel<App> {
 
     // TODO: Check params for any core scheam thats been requested.
     // TODO: Handle mutiple remotes
-    const dataSharingSchema = schemaWithRemoteRef.reduce((map, collection) => {
+    const dataSharingSchema = schemaWithRemoteRef.reduce<Record<string, string[]>>((map, collection) => {
       if (!collection.remotes) return map;
 
       if (!Array.isArray(collection.remotes)) {
@@ -367,11 +382,11 @@ export default class AppSchemaModel extends StandardModel<App> {
           throw new Error('Unable to load DSA due to missing App API');
         }
 
-        const remoteSchema = await api.App.getSchema(false, {
+        const remoteSchema = (await api.App.getSchema(false, {
           params: {
             only: dataSharingSchema[DSAName].join(','),
           },
-        });
+        })) as Schema[];
 
         remoteSchema.forEach((rs) => {
           schemaWithRemoteRef
@@ -409,14 +424,14 @@ export default class AppSchemaModel extends StandardModel<App> {
    * @param {Object} appPolicyPropertiesList - App policy property list
    * @return {Promise} - resolves when save operation is completed
    */
-  async setPolicyPropertiesList(appId: string, appPolicyPropertiesList) {
+  async setPolicyPropertiesList(appId: string, appPolicyPropertiesList: App['policyPropertiesList']) {
     return super.updateById(appId, { $set: { policyPropertiesList: appPolicyPropertiesList } });
   }
 
   /**
    * @return {Promise} - resolves to the token
    */
-  getToken(app) {
+  getToken(app: App) {
     return this.__modelManager.getCoreModel(TokenSchemaModel).findOne({ id: app._tokenId });
   }
 
@@ -424,7 +439,7 @@ export default class AppSchemaModel extends StandardModel<App> {
    * @param {App} entity - entity object to be deleted
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override async rm(entity) {
+  override async rm(entity: Pick<App, 'id' | 'apiPath'>) {
     Logging.logSilly(`Deleting all app data sharing for app ${entity.id}`);
     await this.__modelManager.getCoreModel(AppDataSharingSchemaModel).rmAll({ _appId: entity.id });
 
@@ -469,7 +484,7 @@ export default class AppSchemaModel extends StandardModel<App> {
    * @param {array} oAuth - oAuth options for the app
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  async updateOAuth(appId, oAuth) {
+  async updateOAuth(appId: string, oAuth: App['oAuth']) {
     return super.updateById(this.createId(appId), { $set: { oAuth: oAuth } });
   }
 }

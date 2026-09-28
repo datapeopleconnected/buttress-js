@@ -27,6 +27,8 @@ import Token from './token.js';
 import Tracking from './tracking.js';
 import User from './user.js';
 
+import type { CoreRouteClass } from '../../types/routes.js';
+
 export const Routes = [
   Activity,
   AppDataSharing,
@@ -40,4 +42,4 @@ export const Routes = [
   Token,
   Tracking,
   User,
-];
+] satisfies CoreRouteClass[][];

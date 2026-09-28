@@ -26,6 +26,7 @@ import { App } from '../../model/core/app.js';
 import * as ACM from '../../access-control/models-access.js';
 
 import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
+import type { CountBody, RequestWithBody } from '../../types/routes.js';
 
 interface validateResult {
   queryParams: QueryParams<object>;
@@ -48,7 +49,10 @@ export default class SearchCount extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(
+    req: RequestWithBody<(CountBody<object> & { actualCount?: boolean }) | undefined>,
+    _res: Response,
+  ) {
     const model = await this.routeModel();
 
     const result: validateResult = {

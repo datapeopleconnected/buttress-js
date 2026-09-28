@@ -20,6 +20,7 @@ before working in an area rather than re-deriving them from scratch:
 | [.ai/lambda-system.md](.ai/lambda-system.md) | `LambdaManager` (queueing/debouncing) + `LambdaRunner` (isolated-vm execution) |
 | [.ai/routing.md](.ai/routing.md) | `Routes`/`Route` request lifecycle, middleware chain, generated schema CRUD routes |
 | [.ai/development.md](.ai/development.md) | Build/lint/format/test commands, running a single test, config & env vars, Docker |
+| [.ai/performance.md](.ai/performance.md) | Benchmarking a build (`npm run bench`); I/O budgets: a failing budget test, adding a budget, how MongoDB/Redis/NRP calls are counted per request; the `Server-Timing` header |
 
 User-facing product docs (policy/lambda/schema JSON shapes, deployment guides) live in [docs/](docs/)
 (docsify site) — useful for payload shapes, not for internals.
@@ -33,6 +34,7 @@ npm run format           # prettier --check ./src
 npm run check            # tsc --noEmit && lint && format && licence-check — full pre-PR gate
 npm run test             # build + test:unit + test:e2e (needs MongoDB + Redis reachable)
 npm run test:unit        # mocha over test/unit/**/* (imports compiled dist/, run build first)
+npm run bench            # measure dist/'s REST performance; bench:compare -- a.json b.json compares two runs
 npm run docker:run-full  # Buttress + MongoDB + Redis via docker-compose
 ```
 
@@ -50,3 +52,9 @@ license-header requirements enforced by the pre-commit hook.
   calls. When changing behavior that spans processes (e.g. a new mutation type that should trigger a
   socket update), trace the NRP event chain in [.ai/architecture.md](.ai/architecture.md) rather than
   assuming in-process calls will reach the other side.
+- Ids are strings everywhere outside the MongoDB adapter, which converts them to and from `ObjectId`s by the
+  schema (see [.ai/data-layer.md](.ai/data-layer.md)). Don't pass `ObjectId`s around, and don't test for them
+  with `instanceof`: use `isObjectId()` from `src/datastore/adapters/object-id.ts`.
+- `test/perf/io-budgets.json` holds each request's exact MongoDB/Redis/NRP call counts, and changing it is
+  the user's decision. When a budget test fails, find the change behind it and follow
+  [.ai/performance.md](.ai/performance.md).

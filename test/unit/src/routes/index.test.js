@@ -14,11 +14,15 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it, afterEach } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
+import createConfig from '@dpc/node-env-obj';
+import Express from 'express';
 
 import Routes from '../../../../dist/routes/index.js';
+
+const Config = createConfig();
 
 function createApp() {
   return { get: sinon.stub(), use: sinon.stub(), post: sinon.stub(), put: sinon.stub(), delete: sinon.stub() };
@@ -54,6 +58,59 @@ describe('routes/Routes:init', () => {
 
     assert.strictEqual(routes._routerMap['myapp'], undefined);
   });
+});
+
+describe('routes/Routes:_initIndexPage', () => {
+  let indexPage;
+  let server;
+  let baseUrl;
+
+  // Register the index page on a real Express app listening on a free port
+  async function listen() {
+    const app = Express();
+    new Routes(app)._initIndexPage();
+    server = await new Promise((resolve) => {
+      const s = app.listen(0, () => resolve(s));
+    });
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  }
+
+  beforeEach(() => {
+    indexPage = Config.app.indexPage;
+  });
+
+  afterEach(async () => {
+    Config.app.indexPage = indexPage;
+    if (server) await new Promise((resolve) => server.close(resolve));
+    server = undefined;
+  });
+
+  it('is enabled by default', () => {
+    assert.strictEqual(indexPage, 'TRUE');
+  });
+
+  for (const pagePath of ['/', '/index.html']) {
+    it(`serves the landing page at ${pagePath} when BUTTRESS_APP_INDEX_PAGE is TRUE`, async () => {
+      Config.app.indexPage = 'TRUE';
+      await listen();
+
+      const res = await fetch(`${baseUrl}${pagePath}`);
+
+      assert.strictEqual(res.status, 200);
+      assert.match(res.headers.get('content-type'), /text\/html/);
+      assert.match(await res.text(), /<html/i);
+    });
+
+    it(`returns 404 at ${pagePath} when BUTTRESS_APP_INDEX_PAGE is FALSE`, async () => {
+      Config.app.indexPage = 'FALSE';
+      await listen();
+
+      const res = await fetch(`${baseUrl}${pagePath}`);
+
+      assert.strictEqual(res.status, 404);
+      assert.doesNotMatch(await res.text(), /<html/i);
+    });
+  }
 });
 
 describe('routes/Routes:_registerRouter/_deregisterRouter/_getRouter', () => {

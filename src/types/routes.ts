@@ -14,6 +14,34 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Route from '../routes/route.js';
+import type { Request } from 'express';
+import type { ParamsDictionary } from 'express-serve-static-core';
+
+import type Route from '../routes/route.js';
+import type { Services } from '../bootstrap.js';
+import type { BjsQuery, QueryParams } from './bjs-query.js';
 
 export type ExtendsRoute<T extends Route> = new (...args: unknown[]) => T;
+
+// A core API route class, each file in routes/api exports a list of them
+export type CoreRouteClass = new (services: Services) => Route;
+
+// A request with the body a route expects, which is only as checked as the route's _validate makes it
+export type RequestWithBody<TBody, TParams = ParamsDictionary> = Request<TParams, unknown, TBody>;
+
+// The body of a search over documents of type T
+export type SearchBody<T extends object> = { query?: BjsQuery<T> };
+
+// The body of a search that pages, sorts or projects its results
+export type SearchListBody<T extends object> = SearchBody<T> & {
+  skip?: number | string;
+  limit?: number | string;
+  sort?: QueryParams<T>['sort'];
+  project?: QueryParams<T>['project'];
+};
+
+// The body of a count, which is either its query or a search body
+export type CountBody<T extends object> = SearchBody<T> & BjsQuery<T>;
+
+// An item of a bulk update request, the routes' _validate replaces its body with the validated updates
+export type BulkUpdateItem<TBody = unknown> = { id: string; body: TBody };

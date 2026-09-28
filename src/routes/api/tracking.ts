@@ -18,16 +18,19 @@ import { Response, Request } from 'express';
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
-import TrackingSchemaModel from '../../model/core/tracking.js';
+import TrackingSchemaModel, { Tracking } from '../../model/core/tracking.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
+import { Services } from '../../bootstrap.js';
+import { UpdatePathBody } from '../../types/datastore.js';
+import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
 
 /**
  * @class GetTrackingList
  */
 class GetTrackingList extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('tracking', 'GET TRACKING LIST', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.GET;
     this.authType = Route.Constants.Type.SYSTEM;
@@ -48,7 +51,7 @@ routes.push(GetTrackingList);
  * @class AddTracking
  */
 class AddTracking extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('tracking', 'ADD TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.POST;
     this.authType = Route.Constants.Type.SYSTEM;
@@ -59,8 +62,8 @@ class AddTracking extends Route {
     this.activityBroadcast = false;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
+  override _validate(req: RequestWithBody<unknown>, _res: Response) {
+    return new Promise<boolean>((resolve, reject) => {
       const validation = Model.getCoreModel(TrackingSchemaModel).validate(req.body);
       if (!validation.isValid) {
         if (validation.missing.length > 0) {
@@ -80,14 +83,14 @@ class AddTracking extends Route {
     });
   }
 
-  override _exec(req: Request, _res: Response, _validate: boolean) {
+  override _exec(req: RequestWithBody<unknown>, _res: Response, _validate: boolean) {
     return Model.getCoreModel(TrackingSchemaModel).add(req.body);
   }
 }
 routes.push(AddTracking);
 
 class UpdateTracking extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('tracking/:id', 'UPDATE TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.PUT;
     this.authType = Route.Constants.Type.SYSTEM;
@@ -98,8 +101,8 @@ class UpdateTracking extends Route {
     this.activityBroadcast = true;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
+  override _validate(req: RequestWithBody<unknown>, _res: Response) {
+    return new Promise<{ id: string }>((resolve, reject) => {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
         this.log('ERROR: Missing required Tracking ID', Route.LogLevel.ERR);
@@ -137,7 +140,8 @@ class UpdateTracking extends Route {
     });
   }
 
-  override _exec(req: Request, _res: Response, validate: { id: string }) {
+  // _validate replaced the body with the validated updates
+  override _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
     return Model.getCoreModel(TrackingSchemaModel).updateByPath(req.body, validate.id);
   }
 }
@@ -147,14 +151,14 @@ routes.push(UpdateTracking);
  * @class DeleteTracking
  */
 class DeleteTracking extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('tracking/:id', 'DELETE TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.SYSTEM;
     this.permissions = Route.Constants.Permissions.DELETE;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: Request<{ id: string }>, _res: Response) {
     const tracking = await Model.getCoreModel(TrackingSchemaModel).findById(req.params.id);
     if (!tracking) {
       this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
@@ -164,7 +168,7 @@ class DeleteTracking extends Route {
     return tracking;
   }
 
-  override async _exec(req: Request, res: Response, tracking) {
+  override async _exec(req: Request, res: Response, tracking: Tracking) {
     await Model.getCoreModel(TrackingSchemaModel).rm(tracking.id);
     return true;
   }
@@ -175,7 +179,7 @@ routes.push(DeleteTracking);
  * @class DeleteAllTrackings
  */
 class DeleteAllTrackings extends Route {
-  constructor(services) {
+  constructor(services: Services) {
     super('tracking', 'DELETE ALL TRACKINGS', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
     this.verb = Route.Constants.Verbs.DEL;
     this.authType = Route.Constants.Type.SYSTEM;
@@ -186,7 +190,7 @@ class DeleteAllTrackings extends Route {
     return true;
   }
 
-  override async _exec(_req: Request, _res: Response, _validate) {
+  override async _exec(_req: Request, _res: Response, _validate: boolean) {
     await Model.getCoreModel(TrackingSchemaModel).rmAll({});
     return true;
   }

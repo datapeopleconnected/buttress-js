@@ -16,14 +16,26 @@
 
 import Logging from '../helpers/logging.js';
 import * as Helpers from '../helpers/index.js';
-import { FlattenedSchema, Schema } from '../types/schema.js';
+import { FlattenedSchema, FlattenedSchemaProperty, Schema } from '../types/schema.js';
+import { UpdatePathBody, UpdatePathContexts } from '../types/datastore.js';
+
+export interface UpdateValidationResult {
+  isValid: boolean;
+  isMissingRequired: boolean;
+  missingRequired: string;
+  isPathValid: boolean;
+  invalidPath: string;
+  invalidValue: string;
+  isValueValid: boolean;
+  invalidValid: string;
+}
 
 /* ********************************************************************************
  *
  * APP-SPECIFIC SCHEMA
  *
  **********************************************************************************/
-export const validateSchemaObject = function (schema, body) {
+export const validateSchemaObject = function (schema: Schema | false, body: unknown) {
   // const schema = __getCollectionSchema(collection);
   if (schema === false)
     return {
@@ -43,7 +55,7 @@ export const validateSchemaObject = function (schema, body) {
  * @param {Object} body - object containing properties to be applied
  * @return {Object} - returns an object with only validated properties
  */
-export const sanitizeSchemaObject = function (schema, body) {
+export const sanitizeSchemaObject = function (schema: Schema | false, body: unknown) {
   // const schema = __getCollectionSchema(collection);
   if (schema === false) return {};
 
@@ -65,12 +77,13 @@ interface ArrayItemCheck {
   invalidValue?: string;
 }
 
-const isTypedArray = (config) => config?.__type === 'array' && Boolean(config.__schema || config.__itemtype);
+const isTypedArray = (config: FlattenedSchemaProperty | false | null | undefined) =>
+  !!config && config.__type === 'array' && Boolean(config.__schema || config.__itemtype);
 
 /**
  * Finds the typed array that a `path.N` update sets one item of, e.g. `contacts` for `contacts.2`.
  */
-const getItemArrayConfig = (flattenedSchema, path: string) => {
+const getItemArrayConfig = (flattenedSchema: FlattenedSchema, path: string) => {
   const match = /^(.+)\.\d+$/.exec(path);
   // `matrix.0.1` is inside an item of `matrix`, not an item of it.
   if (!match || /\.\d+$/.test(match[1])) return null;
@@ -83,7 +96,7 @@ const getItemArrayConfig = (flattenedSchema, path: string) => {
  * Finds the field of an array item that a path through that item names, e.g. `contacts.qty` for `contacts.2.qty`, so it
  * is checked like the field. A path ending in an index sets a whole item instead (see getItemArrayConfig).
  */
-const getItemFieldConfig = (flattenedSchema, path: string) => {
+const getItemFieldConfig = (flattenedSchema: FlattenedSchema, path: string): FlattenedSchemaProperty | undefined => {
   if (!/\.\d+\./.test(path) || /\.\d+$/.test(path)) return undefined;
 
   return flattenedSchema[path.replace(/\.\d+/g, '')];
@@ -93,7 +106,7 @@ const getItemFieldConfig = (flattenedSchema, path: string) => {
  * Checks one item of a typed array against the array's item schema or item type. The returned value is the item
  * converted to the item type, as validateProp converts values.
  */
-const checkArrayItem = (config, item: unknown, path: string): ArrayItemCheck => {
+const checkArrayItem = (config: FlattenedSchemaProperty, item: unknown, path: string): ArrayItemCheck => {
   if (config.__schema) {
     const notObject = Helpers.Schema.describeNonObjectItem(path, item);
     if (notObject) return { value: item, invalidValue: notObject };
@@ -109,12 +122,13 @@ const checkArrayItem = (config, item: unknown, path: string): ArrayItemCheck => 
     return { value: item, missingRequired: validation.missing[0], invalidValue: validation.invalid[0] };
   }
 
-  const nullItem = Helpers.Schema.describeNullItem(path, item, config.__itemtype);
+  const itemtype = config.__itemtype ?? '';
+  const nullItem = Helpers.Schema.describeNullItem(path, item, itemtype);
   if (nullItem) return { value: item, invalidValue: nullItem };
 
   const prop = { value: item };
-  if (!Helpers.Schema.validateProp(prop, { __type: config.__itemtype })) {
-    return { value: item, invalidValue: `${path}:${item}[${typeof item}] [${config.__itemtype}]` };
+  if (!Helpers.Schema.validateProp(prop, { __type: itemtype })) {
+    return { value: item, invalidValue: `${path}:${String(item)}[${typeof item}] [${itemtype}]` };
   }
 
   return { value: prop.value };
@@ -123,7 +137,7 @@ const checkArrayItem = (config, item: unknown, path: string): ArrayItemCheck => 
 /**
  * Says why validateUpdate refused an update, for the error a route sends back.
  */
-export const describeInvalidUpdate = (validation) => {
+export const describeInvalidUpdate = (validation: UpdateValidationResult) => {
   if (!validation.isPathValid && (validation.missingRequired === 'path' || validation.missingRequired === 'value')) {
     return `Update is missing its ${validation.missingRequired}`;
   }
@@ -138,10 +152,11 @@ export const describeInvalidUpdate = (validation) => {
  * @param {Object} flattenedSchema - schema object keyed on path
  * @return {Object} - returns an object with validation context
  */
-export const doValidateUpdate = function (pathContext, flattenedSchema) {
-  return (body) => {
+export const doValidateUpdate = function (pathContext: UpdatePathContexts, flattenedSchema: FlattenedSchema | false) {
+  const schemaFlat = flattenedSchema || {};
+  return (body: UpdatePathBody) => {
     Logging.logSilly(`doValidateUpdate: path: ${body.path}, value: ${body.value}`);
-    const res = {
+    const res: UpdateValidationResult = {
       isValid: false,
       isMissingRequired: false,
       missingRequired: '',
@@ -186,7 +201,7 @@ export const doValidateUpdate = function (pathContext, flattenedSchema) {
         break;
       }
 
-      const blankObjectKeys = Helpers.Schema.getSchemaKeys(flattenedSchema);
+      const blankObjectKeys = Helpers.Schema.getSchemaKeys(schemaFlat);
       const matchObject = blankObjectKeys.reduce((match: RegExpExecArray | null, key) => {
         const rexMatch = rex.exec(key);
         if (!rexMatch) return match;
@@ -209,26 +224,26 @@ export const doValidateUpdate = function (pathContext, flattenedSchema) {
     }
 
     res.isPathValid = true;
-    if (
-      body.value !== null &&
-      pathContext[body.contextPath].values.length > 0 &&
-      pathContext[body.contextPath].values.indexOf(body.value) === -1
-    ) {
-      res.invalidValue = `${body.value} <> ${pathContext[body.contextPath].values}`;
+    // A valid path means a context path was found
+    const context = pathContext[body.contextPath as string];
+    if (body.value !== null && context.values.length > 0 && context.values.indexOf(body.value) === -1) {
+      res.invalidValue = `${body.value} <> ${context.values}`;
       return res;
     }
 
-    const config = flattenedSchema[pathStrippedSuffix] ?? getItemFieldConfig(flattenedSchema, pathStrippedSuffix);
-    const itemArrayConfig = config ? null : getItemArrayConfig(flattenedSchema, pathStrippedSuffix);
+    const config = schemaFlat[pathStrippedSuffix] ?? getItemFieldConfig(schemaFlat, pathStrippedSuffix);
+    const itemArrayConfig = config ? null : getItemArrayConfig(schemaFlat, pathStrippedSuffix);
+    // The typed array the update writes to: the property itself, or the array that a `path.N` sets one item of.
+    const arrayConfig = config && isTypedArray(config) ? config : itemArrayConfig;
 
     let checks: ArrayItemCheck[] = [];
-    if (isTypedArray(config) && Array.isArray(body.value)) {
+    if (config && isTypedArray(config) && Array.isArray(body.value)) {
       // An array value replaces the whole array (see StandardModel.updateByPath), so each element is an item.
       checks = body.value.map((item, idx) => checkArrayItem(config, item, `${pathStrippedSuffix}.${idx}`));
       body.value = checks.map((check) => check.value);
-    } else if (isTypedArray(config) || itemArrayConfig) {
+    } else if (arrayConfig) {
       // A push of one item to the array, or a `path.N` set of one item.
-      checks = [checkArrayItem(config || itemArrayConfig, body.value, pathStrippedSuffix)];
+      checks = [checkArrayItem(arrayConfig, body.value, pathStrippedSuffix)];
       body.value = checks[0].value;
     } else if (config?.__type === 'array') {
       // An array with no item type takes any value: one to append, or an array to replace it with.
@@ -255,9 +270,13 @@ export const doValidateUpdate = function (pathContext, flattenedSchema) {
   };
 };
 
-export const extendPathContext = (pathContext, schema: FlattenedSchema, prefix: string) => {
+export const extendPathContext = (
+  pathContext: UpdatePathContexts,
+  schema: FlattenedSchema,
+  prefix: string,
+): UpdatePathContexts => {
   if (!schema) return pathContext;
-  let extended = {};
+  let extended: UpdatePathContexts = {};
   for (const property in schema) {
     if (!{}.hasOwnProperty.call(schema, property)) continue;
     const config = schema[property];
@@ -294,8 +313,8 @@ export const extendPathContext = (pathContext, schema: FlattenedSchema, prefix: 
   return Object.assign(extended, pathContext);
 };
 
-export const validateUpdate = function (pathContext, schema: Schema) {
-  return function (body) {
+export const validateUpdate = function (pathContext: UpdatePathContexts, schema: Schema) {
+  return function (body: unknown) {
     Logging.logDebug(body instanceof Array);
     // const schema = __getCollectionSchema(collection);
     const flattenedSchema = schema ? Helpers.getFlattenedSchema(schema) : false;
@@ -309,13 +328,13 @@ export const validateUpdate = function (pathContext, schema: Schema) {
       body = [body];
     }
 
-    const validation = body
+    const validation = (body as UpdatePathBody[])
       .map(doValidateUpdate(extendedPathContext, flattenedSchema))
       .filter((v) => v.isValid === false);
 
     return {
-      validation: validation.length >= 1 ? validation[0] : { isValid: true },
-      body: body,
+      validation: validation.length >= 1 ? validation[0] : ({ isValid: true } as const),
+      body: body as UpdatePathBody[],
     };
   };
 };

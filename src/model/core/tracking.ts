@@ -17,6 +17,7 @@
 import StandardModel from '../type/standard.js';
 
 import { Schema } from '../../helpers/schema.js';
+import { Services } from '../../bootstrap.js';
 
 /**
  * Constants
@@ -28,10 +29,43 @@ const Type = {
   LOGGING: type[2],
 };
 
-class TrackingSchemaModel extends StandardModel {
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type Tracking = {
+  id: string;
+  timestamp: Date;
+  // Required by the schema, but validate only checks name and type
+  userId: string | null;
+  name: string;
+  type: string;
+  interaction: {
+    type: string;
+    location: string;
+    context: string;
+  };
+  error: {
+    message: string;
+    url: string;
+    line: string;
+    col: string;
+  };
+  logging: {
+    level: string;
+  };
+  environment: {
+    browser: string;
+    os: string;
+    resolution: string;
+    dpi: string;
+    ram: string;
+  };
+  // Only set if it's in the posted body
+  _appId: string | null;
+};
+
+class TrackingSchemaModel extends StandardModel<Tracking> {
   static override name = 'Tracking';
 
-  constructor(services) {
+  constructor(services: Services) {
     const schema = TrackingSchemaModel.Schema;
     super(schema, null, services);
   }
@@ -159,7 +193,7 @@ class TrackingSchemaModel extends StandardModel {
    * @param {Object} body - body passed through from a POST request to be validated
    * @return {Object} - returns an object with validation context
    */
-  override __doValidation(body) {
+  override __doValidation(body: Partial<Tracking>) {
     const res: {
       isValid: boolean;
       missing: string[];
@@ -182,13 +216,13 @@ class TrackingSchemaModel extends StandardModel {
     return res;
   }
 
-  override validate(body) {
+  override validate(body: unknown) {
     if (body instanceof Array === false) {
       body = [body];
     }
-    const validation = body.map(this.__doValidation).filter((v) => v.isValid === false);
+    const validation = (body as Partial<Tracking>[]).map(this.__doValidation).filter((v) => v.isValid === false);
 
-    return validation.length >= 1 ? validation[0] : { isValid: true };
+    return validation.length >= 1 ? validation[0] : ({ isValid: true } as const);
   }
 }
 

@@ -17,10 +17,12 @@
 import Crypto from 'node:crypto';
 
 import StandardModel from '../type/standard.js';
+import type { AdapterQuery } from '../../types/datastore.js';
 import * as Helpers from '../../helpers/index.js';
 import { PolicyCache } from '../../services/policy-cache.js';
 
 import { Schema } from '../../helpers/schema.js';
+import { Services } from '../../bootstrap.js';
 
 /**
  * Constants
@@ -37,7 +39,8 @@ const Type = {
 export type PolicyProperty = string | number;
 export type PolicyProperties = Record<string, PolicyProperty | PolicyProperty[]> | null;
 
-export interface Token {
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type Token = {
   id: string;
   type: string;
   value: string;
@@ -50,14 +53,22 @@ export interface Token {
   _userId: string;
   _entityId: string;
   _appDataSharingId: string;
-}
+};
+
+// The ids add stores on the new token
+type TokenAddInternals = {
+  _appId?: string;
+  _lambdaId?: string;
+  _userId?: string;
+  _appDataSharingId?: string;
+};
 
 class TokenSchemaModel extends StandardModel<Token> {
   static override name = 'Token';
 
   __policyCache: PolicyCache;
 
-  constructor(services) {
+  constructor(services: Services) {
     const schema = TokenSchemaModel.Schema;
     super(schema, null, services);
 
@@ -183,7 +194,7 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override add(body, internals) {
+  override add(body: Partial<Token>, internals?: TokenAddInternals) {
     body.value = this.createTokenString();
     return super.add(body, internals);
   }
@@ -193,14 +204,14 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @param {String} appId - DB id for the app
    * @return {Promise} - resolves to an array of Tokens
    */
-  findUserAuthTokens(userId, appId) {
+  findUserAuthTokens(userId: string, appId: string) {
     return this.find({
       _appId: this.createId(appId),
       _userId: this.createId(userId),
     });
   }
 
-  findByValue(value) {
+  findByValue(value: string) {
     return this.findOne({
       value: value,
     });
@@ -211,7 +222,7 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @param {Object} policyProperties - Policy properties
    * @return {Promise} - resolves after updating token policy properties
    */
-  async setPolicyPropertiesById(tokenId: string, policyProperties) {
+  async setPolicyPropertiesById(tokenId: string, policyProperties: Record<string, unknown>) {
     if (policyProperties.query) {
       delete policyProperties.query; // What is this line for??
     }
@@ -227,16 +238,20 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @param {Object} policyProperties - Policy properties
    * @return {Promise} - resolves to an array of Apps
    */
-  async updatePolicyProperties(token: Token, policyProperties) {
+  async updatePolicyProperties(token: Token, policyProperties: Record<string, unknown>) {
     if (policyProperties.query) {
       delete policyProperties.query; // Again, what is this line for??
     }
 
     const tokenPolicy = token.policyProperties || {};
-    const policy = Object.keys(policyProperties).reduce((obj, key) => {
-      obj[key] = policyProperties[key];
-      return obj;
-    }, []);
+    // The accumulator's an array, but only string keys are set on it, so it spreads like an object
+    const policy = Object.keys(policyProperties).reduce(
+      (obj: Record<string, unknown>, key) => {
+        obj[key] = policyProperties[key];
+        return obj;
+      },
+      [] as unknown as Record<string, unknown>,
+    );
 
     await super.updateById(this.createId(token.id), {
       $set: {
@@ -255,7 +270,7 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @param {String} tokenId - tokenId
    * @return {Promise}
    */
-  async clearPolicyPropertiesById(tokenId) {
+  async clearPolicyPropertiesById(tokenId: string) {
     await super.updateById(this.createId(tokenId), {
       $set: {
         policyProperties: {},
@@ -275,13 +290,13 @@ class TokenSchemaModel extends StandardModel<Token> {
     return result;
   }
 
-  override async rmBulk(ids) {
+  override async rmBulk(ids: string[]) {
     const result = await super.rmBulk(ids);
     this.__announceDeleted(ids);
     return result;
   }
 
-  override async rmAll(query) {
+  override async rmAll(query?: AdapterQuery) {
     // Deleted tokens can't be found, so the ones the query matches are looked up first.
     const matched = await Helpers.streamAll<Token>(await this.find({ ...query }));
     const result = await super.rmAll(query);
@@ -291,7 +306,7 @@ class TokenSchemaModel extends StandardModel<Token> {
 
   // A token's value can be changed in place (data-sharing activation does), and the old value would otherwise keep
   // working on REST from the cache.
-  override async updateById(id, query) {
+  override async updateById(id: string, query: AdapterQuery) {
     const result = await super.updateById(id, query);
     this.__nrp?.emit('app-routes:bust-cache', '{}');
     return result;

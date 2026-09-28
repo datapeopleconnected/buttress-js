@@ -25,6 +25,7 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
+import type { RequestWithBody, SearchListBody } from '../../types/routes.js';
 
 /**
  * @class SearchList
@@ -42,13 +43,14 @@ export default class SearchList extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchListBody<object> | undefined>, _res: Response) {
     const model = await this.routeModel();
 
     const result: QueryParams<object> = {
       query: {},
-      skip: req.body && req.body.skip ? parseInt(req.body.skip) : 0,
-      limit: req.body && req.body.limit ? parseInt(req.body.limit) : 0,
+      // parseInt takes numbers too, it converts them to a string first
+      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
+      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
       sort: req.body && req.body.sort ? req.body.sort : {},
       project: req.body && req.body.project ? req.body.project : false,
     };

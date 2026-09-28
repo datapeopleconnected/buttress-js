@@ -15,7 +15,6 @@
  */
 
 import Stream from 'node:stream';
-import { ObjectId } from 'bson';
 import ButtressExport, { Errors as BAPIErrors } from '@buttress/api';
 // TODO: Look into why the export from @buttress/api is not working as expected.
 const { default: ButtressAPI } = ButtressExport;
@@ -26,19 +25,31 @@ import { parseJsonArrayStream } from '../../helpers/stream.js';
 import Logging from '../../helpers/logging.js';
 
 import AbstractAdapter from '../abstract-adapter.js';
+import ObjectIdHelper, { isObjectId } from './object-id.js';
 
-class AdapterId {
-  static new(id?: string) {
-    return new ObjectId(id);
-  }
+import { AdapterQuery } from '../../types/datastore.js';
+import { Schema } from '../../types/schema.js';
 
-  static isValid(id: string) {
-    return ObjectId.isValid(id);
-  }
-
-  static instanceOf(id: string | ObjectId) {
-    return id instanceof ObjectId;
-  }
+// The collection calls made against a remote Buttress. @buttress/api types these results as `any`, and
+// its declarations don't allow some of the arguments used here (an object `sort`, `count` without a sort).
+interface ButtressCollection {
+  get(id: unknown): Promise<unknown>;
+  save(details: unknown, options?: { stream?: boolean }): Promise<unknown>;
+  bulkSave(details: unknown[], options?: { stream?: boolean }): Promise<unknown>;
+  update(id: string, details: unknown): Promise<unknown>;
+  remove(id: string): Promise<unknown>;
+  bulkRemove(ids: unknown): Promise<unknown>;
+  removeAll(query?: unknown): Promise<unknown>;
+  getAll(): Promise<unknown>;
+  bulkGet(ids: unknown): Promise<unknown>;
+  search(
+    query: unknown,
+    limit?: number,
+    skip?: number,
+    sort?: unknown,
+    options?: { project?: unknown; stream?: boolean },
+  ): Promise<unknown>;
+  count(query: unknown): Promise<unknown>;
 }
 
 export default class Buttress extends AbstractAdapter {
@@ -48,9 +59,10 @@ export default class Buttress extends AbstractAdapter {
 
   protected override __connection: typeof ButtressAPI | null;
 
-  declare collection: any;
+  // Set by setCollection, which is called before any of the collection methods
+  declare collection: ButtressCollection;
 
-  constructor(uri, options, connection: typeof ButtressAPI | null = null) {
+  constructor(uri: URL, options: unknown, connection: typeof ButtressAPI | null = null) {
     super(uri, options, connection);
 
     this.__connection = ButtressAPI.new();
@@ -103,7 +115,7 @@ export default class Buttress extends AbstractAdapter {
       this.collectionName = collectionName;
       this.collection = await this._apiCall('setCollection', () => {
         if (!this.__connection) throw new Error('Buttress connection not initialized');
-        return Promise.resolve(this.__connection.getCollection(collectionName));
+        return Promise.resolve(this.__connection.getCollection(collectionName) as unknown as ButtressCollection);
       });
     } catch (err: unknown) {
       if (err instanceof BAPIErrors.SchemaNotFound) throw new Errors.SchemaNotFound(err.message);
@@ -111,8 +123,8 @@ export default class Buttress extends AbstractAdapter {
     }
   }
 
-  async getSchema(rawSchema = false, only = []) {
-    return this._resolvedApiCall('getSchema', () => {
+  async getSchema(rawSchema = false, only: string[] = []) {
+    return this._resolvedApiCall<Schema[]>('getSchema', () => {
       if (!this.__connection) throw new Error('Buttress connection not initialized');
       if (!this.__connection.App) throw new Error('Buttress App not initialized');
 
@@ -124,7 +136,7 @@ export default class Buttress extends AbstractAdapter {
     });
   }
 
-  async activateDataSharing(registrationToken, newToken) {
+  async activateDataSharing(registrationToken: string, newToken: string): Promise<unknown> {
     await this.resolveAfterInit();
     if (!this.__connection) throw new Error('Buttress connection not initialized');
     if (!this.__connection.AppDataSharing) throw new Error('Buttress AppDataSharing not initialized');
@@ -132,12 +144,12 @@ export default class Buttress extends AbstractAdapter {
   }
 
   override get ID() {
-    return AdapterId;
+    return ObjectIdHelper;
   }
 
   resolveAfterInit() {
     if (this.init) return Promise.resolve();
-    return new Promise((resolve) => {
+    return new Promise<unknown>((resolve) => {
       this.initPendingResolve.push(resolve);
     });
   }
@@ -159,15 +171,18 @@ export default class Buttress extends AbstractAdapter {
     return this._apiCall(operation, call);
   }
 
-  convertBSONObjects(target) {
-    if (target instanceof ObjectId) {
-      return target.toString();
+  // Replaces any ObjectIds with their string form, so they can be sent to the remote. The value's static
+  // type is kept, as it's only used to build requests.
+  convertBSONObjects<T>(target: T): T {
+    if (isObjectId(target)) {
+      return target.toString() as T;
     } else if (Array.isArray(target)) {
-      return target.map((value) => this.convertBSONObjects(value));
+      return target.map((value: unknown) => this.convertBSONObjects(value)) as T;
     } else if (typeof target === 'object' && target !== null) {
-      for (const key in target) {
-        if (!{}.hasOwnProperty.call(target, key)) continue;
-        target[key] = this.convertBSONObjects(target[key]);
+      const obj = target as Record<string, unknown>;
+      for (const key in obj) {
+        if (!{}.hasOwnProperty.call(obj, key)) continue;
+        obj[key] = this.convertBSONObjects(obj[key]);
       }
     }
     return target;
@@ -182,7 +197,7 @@ export default class Buttress extends AbstractAdapter {
     return result;
   }
 
-  override async batchUpdateProcess(id, body) {
+  override async batchUpdateProcess(id: string, body: unknown) {
     const result = await this._resolvedApiCall('batchUpdateProcess', () => this.collection.update(id, body));
     return this.handleResult(result);
   }
@@ -191,7 +206,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {object} body
    * @return {Promise}
    */
-  override async add(body) {
+  override async add(body: unknown) {
     body = this.convertBSONObjects(body);
     const result = await this._resolvedApiCall('add', () =>
       Array.isArray(body)
@@ -206,7 +221,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {string} id
    * @return {Boolean}
    */
-  override async exists(id) {
+  override async exists(id: string) {
     id = this.convertBSONObjects(id);
     const result = await this._resolvedApiCall('exists', () => this.collection.get(id));
     return result ? true : false;
@@ -238,7 +253,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {array} ids
    * @return {Promise}
    */
-  override async rmBulk(ids) {
+  override async rmBulk(ids: string[]) {
     ids = this.convertBSONObjects(ids);
     const result = await this._resolvedApiCall('rmBulk', () => this.collection.bulkRemove(ids));
     return this.handleResult(result);
@@ -248,7 +263,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {object} query
    * @return {Promise}
    */
-  override async rmAll(query) {
+  override async rmAll(query?: AdapterQuery) {
     const result = await this._resolvedApiCall('rmAll', () => this.collection.removeAll(query));
     return this.handleResult(result);
   }
@@ -257,7 +272,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {string} id
    * @return {Promise}
    */
-  override async findById(id) {
+  override async findById(id: string) {
     id = this.convertBSONObjects(id);
     const result = await this._resolvedApiCall('findById', () => this.collection.get(id));
     return this.handleResult(result);
@@ -272,7 +287,14 @@ export default class Buttress extends AbstractAdapter {
    * @param {Boolean} project - mongoDB project ids
    * @return {Promise} - resolves to an array of docs
    */
-  override async find(query, _excludes = {}, limit = 0, skip = 0, sort, project = null) {
+  override async find(
+    query: AdapterQuery,
+    _excludes: AdapterQuery | null = {},
+    limit = 0,
+    skip = 0,
+    sort?: Record<string, unknown> | null,
+    project: Record<string, unknown> | null | false = null,
+  ) {
     // Logging.logSilly(`find: ${this.collectionName} ${query}`);
     query = this.convertBSONObjects(query);
 
@@ -283,7 +305,8 @@ export default class Buttress extends AbstractAdapter {
       }),
     );
 
-    return this.handleResult(result);
+    // Requested as a stream
+    return this.handleResult(result) as Stream.Readable;
   }
 
   /**
@@ -291,27 +314,27 @@ export default class Buttress extends AbstractAdapter {
    */
   override async findAll() {
     const result = await this._resolvedApiCall('findAll', () => this.collection.getAll());
-    return this.handleResult(result);
+    return this.handleResult(result) as Stream.Readable;
   }
 
   /**
    * @param {Array} ids - mongoDB query
    * @return {Promise}
    */
-  override async findAllById(ids) {
+  override async findAllById(ids: string[]) {
     ids = this.convertBSONObjects(ids);
     const result = await this._resolvedApiCall('findAllById', () => this.collection.bulkGet(ids));
-    return this.handleResult(result);
+    return this.handleResult(result) as Stream.Readable;
   }
 
   /**
    * @param {Object} query - mongoDB query
    * @return {Promise}
    */
-  override async count(query) {
+  override async count(query?: AdapterQuery) {
     query = this.convertBSONObjects(query);
     const result = await this._resolvedApiCall('count', () => this.collection.count(query));
-    return this.handleResult(result);
+    return this.handleResult(result) as number;
   }
 
   /**

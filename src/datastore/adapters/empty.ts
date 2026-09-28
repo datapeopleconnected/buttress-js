@@ -13,27 +13,13 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { ObjectId } from 'bson';
 
 import AbstractAdapter from '../abstract-adapter.js';
-
-class AdapterId {
-  static new(id?: string) {
-    return new ObjectId(id);
-  }
-
-  static isValid(id: string) {
-    return ObjectId.isValid(id);
-  }
-
-  static instanceOf(id: string | ObjectId) {
-    return id instanceof ObjectId;
-  }
-}
+import ObjectIdHelper from './object-id.js';
 
 export default class EmptyAdapter extends AbstractAdapter {
   override get ID() {
-    return AdapterId;
+    return ObjectIdHelper;
   }
 
   override async connect() {

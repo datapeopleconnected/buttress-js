@@ -15,6 +15,7 @@
  */
 import { Response, Request } from 'express';
 import { QueryParams } from '../../types/bjs-query.js';
+import { UpdatePathBody } from '../../types/datastore.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -23,10 +24,20 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
+import { describeInvalidUpdate } from '../../model/shared.js';
 
 import * as ACM from '../../access-control/models-access.js';
 import StandardModel from '../../model/type/standard.js';
-import { describeInvalidUpdate } from '../../model/shared.js';
+import type { RequestWithBody } from '../../types/routes.js';
+
+// One item of the request body: the updates for one entity. _validate records in `validation` whether they can be
+// applied.
+type UpdateManyBody = {
+  id: string;
+  sourceId?: string;
+  body: UpdatePathBody | UpdatePathBody[];
+  validation?: true | { code: number; message: string };
+};
 
 // The number of items a bulk update didn't apply. The response is a 200 whenever the request was well formed, so this
 // tells a client whether to look through the results for refusals.
@@ -48,7 +59,7 @@ export default class UpdateMany extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     const model = await this.routeModel();
 
     if (!Array.isArray(req.body)) {
@@ -59,7 +70,7 @@ export default class UpdateMany extends Route {
     // Each item is validated and applied on its own, so a refused item doesn't stop the others, even ones that update
     // the same entity. Each entity is only checked once.
     const updatable = new Map<string, boolean>();
-    for await (const update of req.body) {
+    for await (const update of req.body as UpdateManyBody[]) {
       const { validation, body } = model.validateUpdate(update.body);
       update.body = body;
 
@@ -103,19 +114,17 @@ export default class UpdateMany extends Route {
     }
   }
 
-  override async _exec(req: Request, res: Response, _data: unknown) {
+  override async _exec(req: Request, res: Response, _data: UpdateManyBody[]) {
     const model = await this.routeModel();
 
     const output: {
       id: string;
-      sourceId: string;
+      sourceId?: string;
       results: unknown;
       validation?: unknown;
     }[] = [];
 
-    type UpdateManyBody = { id: string; sourceId: string; body: unknown; validation?: unknown };
-
-    for await (const body of _data as UpdateManyBody[]) {
+    for await (const body of _data) {
       // Items that failed validation (bad path/value, missing id, or outside the caller's
       // access-control scope) must not be applied, only reported back.
       if (body.validation === true) {

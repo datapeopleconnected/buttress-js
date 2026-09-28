@@ -112,6 +112,32 @@ describe('schema-routes/DeleteMany', () => {
     ]);
   });
 
+  it('keeps the entities it found in scope rather than reading them again, when no policy restricts fields', async () => {
+    const model = createFakeModel(makeDocs());
+    const find = sinon.spy(model, 'find');
+    const route = createRoute(model);
+    const req = { body: ['doc-1', 'doc-3'], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.strictEqual(find.callCount, 1);
+    assert.deepStrictEqual(req.context.deletedEntities.map((entity) => entity.id), ['doc-1', 'doc-3']);
+  });
+
+  it('reads the entities again, whole, when a policy restricts fields', async () => {
+    const model = createFakeModel(makeDocs());
+    const find = sinon.spy(model, 'find');
+    const route = createRoute(model);
+    const req = {
+      body: ['doc-1', 'doc-3'],
+      context: { id: 'req-1', ac: { policyConfigs: [{ projection: { keys: ['ownerId'] } }] } },
+    };
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.strictEqual(find.callCount, 2);
+  });
+
   it('rejects the whole batch and deletes nothing when any requested id is outside the access-control policy scope', async () => {
     // doc-2 belongs to user-2; the policy only scopes to user-1's records, so the whole
     // batch (including doc-1, which the caller *is* allowed to delete) must be rejected.

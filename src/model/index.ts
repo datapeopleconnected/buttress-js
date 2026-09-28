@@ -19,6 +19,7 @@ import { Schema } from '../helpers/schema.js';
 import Logging from '../helpers/logging.js';
 
 import Datastores, { Datastore } from '../datastore/index.js';
+import { Services } from '../bootstrap.js';
 
 import StandardModel from './type/standard.js';
 import RemoteCombinedModel from './type/remote-combined.js';
@@ -36,7 +37,10 @@ import User from './core/user.js';
 import AppSchemaModel, { App } from './core/app.js';
 import AppDataSharingSchemaModel from './core/app-data-sharing.js';
 
-type StandardModelExtended<T extends StandardModel> = new (...args: any[]) => T;
+// Any model, whatever its document type
+type AnyModel = StandardModel<unknown>;
+
+type StandardModelExtended<T extends AnyModel> = new (services: Services) => T;
 
 const CoreModels = {
   Activity,
@@ -59,21 +63,21 @@ const CoreModels = {
 export class ModelManager {
   models: {
     core: {
-      [key: string]: StandardModel;
+      [key: string]: AnyModel;
     };
     [key: string]: {
-      [key: string]: StandardModel;
+      [key: string]: AnyModel;
     };
   };
-  Schema: { [key: string]: any };
+  Schema: { [key: string]: unknown };
 
-  Constants: { [key: string]: any };
+  Constants: { [key: string]: unknown };
 
-  app: any;
+  app: unknown;
 
-  coreSchema: any[];
+  coreSchema: string[];
 
-  _services: any;
+  _services: Services | null;
 
   constructor() {
     this.models = {
@@ -88,7 +92,7 @@ export class ModelManager {
     this._services = null;
   }
 
-  async init(services) {
+  async init(services: Services) {
     Logging.logSilly('Model:init');
     this._services = services;
   }
@@ -120,9 +124,9 @@ export class ModelManager {
 
   async initSchema(appId?: string) {
     Logging.logSilly('Model:initSchema');
-    const rxsApps = (await this.getCoreModel(AppSchemaModel).findAll()) as App[];
+    const rxsApps = await this.getCoreModel(AppSchemaModel).findAll();
 
-    for await (const app of rxsApps) {
+    for await (const app of rxsApps as AsyncIterable<App>) {
       if (!app || !app.__schema) continue;
       if (appId && app.id.toString() !== appId) continue;
 
@@ -146,7 +150,7 @@ export class ModelManager {
         datastore = Datastores.getInstance('core');
       }
 
-      let builtSchemas: any[];
+      let builtSchemas: Schema[];
       try {
         builtSchemas = await Helpers.Schema.buildCollections(Helpers.Schema.decode(app.__schema));
       } catch (err: unknown) {
@@ -162,7 +166,7 @@ export class ModelManager {
     Logging.logSilly('Model:initSchema:end');
   }
 
-  getCoreModel<T extends StandardModel>(modelClass: StandardModelExtended<T>): T {
+  getCoreModel<T extends AnyModel>(modelClass: StandardModelExtended<T>): T {
     const name = modelClass.name;
 
     if (!this.models.core[name]) {
@@ -171,7 +175,7 @@ export class ModelManager {
 
     return this.models.core[name] as unknown as T;
   }
-  getCoreModelByName<T extends StandardModel>(name: string): T {
+  getCoreModelByName<T extends AnyModel>(name: string): T {
     return this.models.core[name] as unknown as T;
   }
   // By the core schema's own name (users, appDataSharing) rather than the model's (User, AppDataSharing).
@@ -189,7 +193,7 @@ export class ModelManager {
    * Unlike fetching the core models, app models might not be initialized yet, so this
    * is an async function.
    */
-  async getAppModel<T extends StandardModel>(appId: string, name: string): Promise<T> {
+  async getAppModel<T extends AnyModel>(appId: string, name: string): Promise<T> {
     return this.models[appId][name] as unknown as T;
   }
 
@@ -198,14 +202,15 @@ export class ModelManager {
    * @return {object} SchemaModel - initiated schema model built from passed schema object
    * @private
    */
-  async _initCoreModel(name) {
-    const CoreSchemaModel = CoreModels[name];
+  async _initCoreModel(name: string) {
+    const CoreSchemaModel: StandardModelExtended<AnyModel> = CoreModels[name as keyof typeof CoreModels];
 
     this.coreSchema.push(name);
 
     if (!this.models.core[name]) {
       Logging.logSilly(`Creating core model: ${name}`);
-      this.models.core[name] = new CoreSchemaModel(this._services);
+      // init() provides the services before any models are created
+      this.models.core[name] = new CoreSchemaModel(this._services as Services);
       await this.models.core[name].initAdapter(Datastores.getInstance('core'));
     }
 
@@ -219,14 +224,16 @@ export class ModelManager {
    * @return {object} SchemaModel - initiated schema model built from passed schema object
    * @private
    */
-  async _initSchemaModel(app: App, schemaData: Schema, mainDatastore) {
+  async _initSchemaModel(app: App, schemaData: Schema, mainDatastore: Datastore | null) {
     const modelName = schemaData.name;
+    // init() provides the services before any models are created
+    const services = this._services as Services;
 
     // Is data sharing
     if (schemaData.remotes) {
       const remotes = Array.isArray(schemaData.remotes) ? schemaData.remotes : [schemaData.remotes];
 
-      const datastores: any[] = [];
+      const datastores: Datastore[] = [];
 
       for await (const remote of remotes) {
         if (!remote.name || !remote.schema) {
@@ -258,7 +265,7 @@ export class ModelManager {
         datastores.push(remoteDatastore);
       }
 
-      this._setModel(app.id, modelName, new RemoteCombinedModel(schemaData, app, this._services));
+      this._setModel(app.id, modelName, new RemoteCombinedModel(schemaData, app, services));
 
       try {
         await (this.models[app.id][modelName] as RemoteCombinedModel).initAdapter(mainDatastore, datastores);
@@ -270,14 +277,14 @@ export class ModelManager {
 
       return this.models[app.id][modelName];
     } else {
-      this._setModel(app.id, modelName, new StandardModel(schemaData, app, this._services));
+      this._setModel(app.id, modelName, new StandardModel(schemaData, app, services));
       await this.models[app.id][modelName].initAdapter(mainDatastore);
     }
 
     return this.models[app.id][modelName];
   }
 
-  private _setModel<T extends StandardModel>(appId: string, modelName: string, modelInstance: T) {
+  private _setModel<T extends AnyModel>(appId: string, modelName: string, modelInstance: T) {
     if (!this.models[appId]) this.models[appId] = {};
     this.models[appId][modelName] = modelInstance;
   }

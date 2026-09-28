@@ -278,6 +278,41 @@ describe('helpers.flattenedObject', () => {
 	});
 });
 
+describe('helpers.serverTimingHeader', () => {
+	it('should report each stage and the time until the response, in milliseconds', () => {
+		const timings = {
+			authenticateToken: 0,
+			accessControl: 0.001,
+			configCrossDomain: 0.003,
+			authenticate: 0.0031,
+			validate: 0.0032,
+			exec: 0.004,
+			respond: 0.0105,
+			logActivity: null,
+			stream: [],
+		};
+
+		assert.strictEqual(
+			Helpers.serverTimingHeader(timings),
+			'auth;dur=1.000;desc="token", ac;dur=2.000;desc="access control", validate;dur=0.800, exec;dur=6.500, ' +
+				'total;dur=10.500;desc="until response"',
+		);
+	});
+
+	it('should leave out stages missing a mark, e.g. when a request fails before validation', () => {
+		const timings = { authenticateToken: 0, accessControl: 0.001, configCrossDomain: 0.002, validate: null };
+
+		assert.strictEqual(
+			Helpers.serverTimingHeader(timings),
+			'auth;dur=1.000;desc="token", ac;dur=1.000;desc="access control"',
+		);
+	});
+
+	it('should return an empty string when there are no marks', () => {
+		assert.strictEqual(Helpers.serverTimingHeader({ stream: [] }), '');
+	});
+});
+
 describe('helpers.getThrownErrorDetails', () => {
 	it('should extract message only from a plain Error', () => {
 		const details = Helpers.getThrownErrorDetails(new Error('plain failure'));

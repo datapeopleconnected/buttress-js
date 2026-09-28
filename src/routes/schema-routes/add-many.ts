@@ -22,6 +22,8 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
+import { AdapterDocument } from '../../types/datastore.js';
+import type { RequestWithBody } from '../../types/routes.js';
 import StandardModel from '../../model/type/standard.js';
 
 /**
@@ -90,9 +92,9 @@ export default class AddMany extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<AdapterDocument[]>, _res: Response) {
     const model = await this.routeModel();
-    const entities = req.body;
+    const entities: AdapterDocument[] = req.body;
     if (entities instanceof Array === false) {
       this.log(`ERROR: You need to supply an array of ${this.schemaName}`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `array_required`);
@@ -113,7 +115,7 @@ export default class AddMany extends Route {
     return entities;
   }
 
-  override async _exec(req: Request, _res: Response, entities: unknown[]) {
+  override async _exec(req: Request, _res: Response, entities: AdapterDocument[]) {
     try {
       return await (await this.routeModel()).add(entities);
     } catch (err) {

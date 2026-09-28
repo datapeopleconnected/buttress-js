@@ -15,8 +15,8 @@ npm run build          # clean + tsc + copy non-.ts files from src/ to dist/
 npm run watch          # watch mode (tsc -w + copyfiles --watch in parallel)
 ```
 
-Source is TypeScript in `src/`, compiled to `dist/` (nodenext ESM, target ES2024, `strict: true`,
-`noImplicitAny: false` — see [tsconfig.json](../tsconfig.json)). **Nothing runs against `src/` directly**
+Source is TypeScript in `src/`, compiled to `dist/` (nodenext ESM, target ES2024, `strict: true`, which
+includes `noImplicitAny` — see [tsconfig.json](../tsconfig.json)). **Nothing runs against `src/` directly**
 — processes (`bin/*.sh`), unit tests, and e2e tests all import from `dist/`. Always rebuild after
 changing `src/` before running tests or starting a process locally.
 
@@ -27,18 +27,49 @@ npm run lint            # eslint ./src
 npm run lint:fix
 npm run format           # prettier --check ./src
 npm run format:fix
-npm run licence-check    # ./.husky/licence-check — every src file (except html/json/md/sh) must
-                          # contain the AGPL header block from .husky/licencing_header.txt
+npm run lint:staged      # eslint --fix + prettier --write on staged src files only (run by the hook)
+npm run licence-check    # ./scripts/licence-check — every src file (except html/json/md/sh) must
+                          # contain the AGPL header block from scripts/licencing_header.txt
 npm run check            # tsc --noEmit && lint && format && licence-check — the full pre-PR gate
 ```
 
-The pre-commit hook (`.husky/pre-commit`) runs `licence-check` + `build` on every commit — a commit will
-fail if a new/edited `src/*.ts` file is missing the license header or the build breaks. ESLint config
-([eslint.config.mjs](../eslint.config.mjs)): `max-len` 150 (ignoring strings/template literals),
-`@typescript-eslint/no-explicit-any` is a warning (not an error — `any` is used pervasively in this
-codebase, don't treat `no-explicit-any` warnings as things that must be fixed). Prettier: single quotes,
-trailing commas, 120 print width, 2-space indent, semicolons — see
+The pre-commit hook ([.githooks/pre-commit](../.githooks/pre-commit), enabled by the `prepare` script
+setting `core.hooksPath` on `npm install`) runs `lint:staged`, `licence-check` + `build` on every commit,
+with the node version from `.nvmrc` when nvm is installed. `lint:staged` is
+[lint-staged](https://github.com/lint-staged/lint-staged) (config under `"lint-staged"` in `package.json`):
+it fixes the staged version of each `src/` file and re-stages it, hiding the unstaged changes of partially
+staged files while it runs and restoring them afterwards, so staging one hunk still commits only that hunk.
+A commit will fail if ESLint finds an error it can't fix (the files are left as they were), a new/edited
+`src/*.ts` file is missing the license header, or the build breaks. ESLint config
+([eslint.config.mjs](../eslint.config.mjs)) is type-aware (`projectService`): `max-len` 150 (ignoring
+strings/template literals), and `@typescript-eslint/no-explicit-any` plus the `no-unsafe-*` rules are
+errors. Prettier: single quotes, trailing commas, 120 print width, 2-space indent, semicolons — see
 [.prettierrc.json](../.prettierrc.json).
+
+### Types
+
+With `noImplicitAny` on, `no-explicit-any` an error, and the `no-unsafe-*` rules stopping `any` from
+libraries flowing on, every value needs a real type:
+
+- Values from outside (request bodies, `JSON.parse`, `require()`/`import()`, `@buttress/api` and
+  isolated-vm results, NRP messages) are `unknown` or a described shape at the point they come in: cast
+  the result (`const msg = JSON.parse(json) as AppDeletedMessage`; annotating the variable instead fails
+  `no-unsafe-assignment`) or type the request (`RequestWithBody<TBody, TParams>` from
+  [src/types/routes.ts](../src/types/routes.ts)).
+- `Array.isArray()` narrows to `unknown[]` rather than `any[]`
+  ([src/types/array-is-array.d.ts](../src/types/array-is-array.d.ts)), so cast the array when the
+  elements have a known type.
+- Shared shapes live in [src/types/](../src/types): `datastore.ts` (the adapter contract's ids,
+  documents, queries and update-by-path bodies), `schema.ts`, `bjs-query.ts`, `routes.ts`,
+  `bjs-nrp-objects.ts`. Entity types (`App`, `Token`, ...) live with their core model and are type
+  aliases rather than interfaces, so they're assignable to `AdapterDocument` (`Record<string, unknown>`).
+- npm packages without types get a minimal local declaration in `src/types/<package>.d.ts`
+  (`object-hash`, `morgan`, `pug`, `randomstring`, `on-finished`, `@dpc/node-env-obj`).
+- Ids are strings (an ObjectId's hex form) everywhere outside the datastore adapters: `createId()` and
+  `adapter.ID.new()` return strings, and documents come back with string ids. Only the MongoDB adapter
+  deals in `ObjectId`s, see [data-layer.md](data-layer.md). To check for an `ObjectId` use `isObjectId()`
+  from `src/datastore/adapters/object-id.ts`, not `instanceof`: bson's ESM and CommonJS builds have
+  different `ObjectId` classes, and the driver uses the CommonJS one.
 
 ## Tests
 
@@ -47,6 +78,9 @@ npm run test              # build + test:unit + test:e2e (what CI runs)
 npm run test:unit         # mocha over test/unit/**/* — imports compiled dist/, NOT src/
 npm run test:e2e          # wipes the test DB/Redis, boots a real Buttress in INSTALL_MODE, then runs
                             # test/e2e/index.test.js against it
+npm run test:io-budgets   # as test:e2e, but only the I/O budget suite (see performance.md)
+npm run bench             # measure dist/'s REST performance into bench-results/ (see performance.md)
+npm run bench:compare -- a.json b.json   # compare two bench results
 ```
 
 - **Unit tests import `dist/`** (see e.g. [test/unit/src/helpers/schema.test.js](../test/unit/src/helpers/schema.test.js)
@@ -60,11 +94,17 @@ npm run test:e2e          # wipes the test DB/Redis, boots a real Buttress in IN
   before every e2e run, then `test/hooks.js` reads `<appData>/super.json` for the install-generated super
   token (`Config.testToken`) since e2e runs against a fully-installed instance, not mocks.
   [test/e2e/index.test.js](../test/e2e/index.test.js) is the entry point that requires the individual
-  `test/e2e/{rest,sock,lambda,spr}/*.test.js` suites.
+  `test/e2e/{rest,sock,lambda,spr,perf}/*.test.js` suites.
 - Env used for tests is `.test.env` (`NODE_ENV=test`) — see `helpers/config.ts`, which loads
-  `.${NODE_ENV}.env` from the repo root via `@dpc/node-env-obj`. `test:e2e:timed` /
-  `perf:baseline:record` / `perf:compare` wrap the e2e run with timing collection
-  ([test/perf/](../test/perf)) to catch performance regressions between runs.
+  `.${NODE_ENV}.env` from the repo root via `@dpc/node-env-obj`. Performance tools (`npm run bench` and
+  the I/O budget suite) are in [performance.md](performance.md).
+- **Coverage:** `coverage:unit` (the CI coverage job) and `coverage` use c8, whose figures read high: it
+  counts licence headers, comments and types as covered lines in any file that loads, and only counts
+  branches inside functions that ran. For real numbers use `npm run coverage:istanbul` (add `-- unit` or
+  `-- e2e` for one suite). It builds, runs the suites with `dist/` instrumented on load by a loader hook
+  ([test/istanbul/](../test/istanbul), so `dist/` itself is untouched), and prints per-suite and combined
+  coverage of `src/*.ts`; the HTML report lands in `coverage/istanbul/lcov-report/`. Its e2e step is plain
+  `test:e2e`, so it needs MongoDB + Redis and wipes them the same way.
 
 ## Running from source (non-Docker)
 

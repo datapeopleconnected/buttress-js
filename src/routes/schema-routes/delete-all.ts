@@ -43,7 +43,7 @@ export default class DeleteAll extends Route {
     return true;
   }
 
-  override async _exec(_req: Request, _res: Response, _validate: unknown) {
+  override async _exec(_req: Request, _res: Response, _validate: boolean) {
     await (await this.routeModel()).rmAll({});
     return true;
   }

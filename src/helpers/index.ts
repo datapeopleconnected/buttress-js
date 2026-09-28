@@ -13,13 +13,14 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { Transform, TransformCallback, TransformOptions } from 'node:stream';
+import { Readable, Transform, TransformCallback, TransformOptions } from 'node:stream';
 import { ObjectId } from 'bson';
 
 import * as DataSharingHelpers from './data-sharing.js';
 
 import Datastore from '../datastore/index.js';
-import { Properties, Schema, FlattenedSchema } from '../types/schema.js';
+import { isObjectId } from '../datastore/adapters/object-id.js';
+import { Properties, FlattenedSchema, FlattenedSchemaProperty } from '../types/schema.js';
 
 export const DataSharing = DataSharingHelpers;
 
@@ -56,6 +57,39 @@ export class Timer {
     return (time - this._start) / 1000000;
   }
 }
+
+// The stages reported in a Server-Timing header, each timed from its own mark in RequestContext.timings to the next.
+const SERVER_TIMING_STAGES: { name: string; desc?: string; from: string; to: string }[] = [
+  { name: 'auth', desc: 'token', from: 'authenticateToken', to: 'accessControl' },
+  { name: 'ac', desc: 'access control', from: 'accessControl', to: 'configCrossDomain' },
+  { name: 'validate', from: 'validate', to: 'exec' },
+  { name: 'exec', from: 'exec', to: 'respond' },
+];
+
+/**
+ * Builds a Server-Timing header value, in milliseconds, from a request's timing marks (seconds since it started).
+ * A stage missing either of its marks is left out. `total` runs to the start of the response, so it doesn't include
+ * sending a streamed body.
+ */
+export const serverTimingHeader = (timings: Record<string, unknown>) => {
+  const mark = (name: string) => {
+    const value = timings[name];
+    return typeof value === 'number' ? value : null;
+  };
+  const ms = (seconds: number) => (seconds * 1000).toFixed(3);
+
+  const metrics = SERVER_TIMING_STAGES.flatMap(({ name, desc, from, to }) => {
+    const start = mark(from);
+    const end = mark(to);
+    if (start === null || end === null) return [];
+    return [`${name};dur=${ms(end - start)}${desc ? `;desc="${desc}"` : ''}`];
+  });
+
+  const respond = mark('respond');
+  if (respond !== null) metrics.push(`total;dur=${ms(respond)};desc="until response"`);
+
+  return metrics.join(', ');
+};
 
 export class JSONStringifyStream extends Transform {
   private _first: boolean;
@@ -103,19 +137,28 @@ export class JSONStringifyStream extends Transform {
 }
 
 const PromiseHelpers = {
-  prop: (prop) => (val) => val[prop],
-  func: (func) => (val) => val[func](),
+  prop:
+    (prop: string) =>
+    <T extends object>(val: T) =>
+      val[prop as keyof T],
+  func: (func: string) => (val: Record<string, () => unknown>) => val[func](),
   nop: () => () => null,
-  inject: (value) => () => value,
-  arrayProp: (prop) => (arr) => arr.map((a) => a[prop]),
+  inject:
+    <T>(value: T) =>
+    () =>
+      value,
+  arrayProp:
+    (prop: string) =>
+    <T extends object>(arr: T[]) =>
+      arr.map((a) => a[prop as keyof T]),
 };
 export { PromiseHelpers as Promise };
 
-export const shortId = (id) => {
-  const toBase = (num, base) => {
+export const shortId = (id: string) => {
+  const toBase = (num: number, base: number) => {
     const symbols = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-'.split('');
     let decimal = num;
-    let temp;
+    let temp: number;
     let output = '';
 
     if (base > symbols.length || base <= 1) {
@@ -135,12 +178,12 @@ export const shortId = (id) => {
   if (!id) return output;
 
   // HACK: need to make sure the id is in the correct format to extract the timestamp
-  id = Datastore.getInstance('core').ID.new(id);
+  const objectId = new ObjectId(Datastore.getInstance('core').ID.new(id));
 
-  const date = id.getTimestamp();
+  const date = objectId.getTimestamp();
   let time = date.getTime();
 
-  let counter = parseInt(id.toHexString().slice(-6), 16);
+  let counter = parseInt(objectId.toHexString().slice(-6), 16);
   counter = parseInt(counter.toString().slice(-3), 10);
 
   time = counter + time;
@@ -150,11 +193,18 @@ export const shortId = (id) => {
   return output;
 };
 
-const __flattenRoles = (data, path) => {
-  if (!path) path = [];
+export interface RoleNode {
+  name: string;
+  roles?: RoleNode[];
+  [key: string]: unknown;
+}
 
-  return data.reduce((_roles, role) => {
-    const _path = path.concat(`${role.name}`);
+const __flattenRoles = (data: RoleNode[], path?: string[]): RoleNode[] => {
+  if (!path) path = [];
+  const parentPath = path;
+
+  return data.reduce((_roles: RoleNode[], role) => {
+    const _path = parentPath.concat(`${role.name}`);
     if (role.roles && role.roles.length > 0) {
       return _roles.concat(__flattenRoles(role.roles, _path));
     }
@@ -167,26 +217,31 @@ const __flattenRoles = (data, path) => {
 };
 export const flattenRoles = __flattenRoles;
 
-export const flattenedObject = (obj, output: { [index: string]: unknown } = {}, paths: string[] = []) => {
+export const flattenedObject = (
+  obj: unknown,
+  output: { [index: string]: unknown } = {},
+  paths: string[] = [],
+): { [index: string]: unknown } => {
   if (obj === null || typeof obj !== 'object') {
     return output;
   }
 
-  if (obj instanceof Date || ObjectId.isValid(obj)) {
-    return (output[paths.join('.')] = obj);
+  // NOTE: returns obj itself rather than output here, callers only pass other objects at the top level
+  if (obj instanceof Date || isObjectId(obj)) {
+    return (output[paths.join('.')] = obj) as unknown as { [index: string]: unknown };
   }
 
   Object.getOwnPropertyNames(obj).forEach((key) => {
-    const value = obj[key];
+    const value = (obj as Record<string, unknown>)[key];
     const currentPath = [...paths, key];
 
     if (Array.isArray(value)) {
       if (value.length < 1) {
         output[currentPath.join('.')] = value;
       } else {
-        value.forEach((item, index) => {
+        value.forEach((item: unknown, index) => {
           const arrayPath = [...currentPath, index.toString()];
-          if (!item || typeof item !== 'object' || item instanceof Date || ObjectId.isValid(obj)) {
+          if (!item || typeof item !== 'object' || item instanceof Date || isObjectId(item)) {
             output[arrayPath.join('.')] = item;
           } else {
             flattenedObject(item, output, arrayPath);
@@ -222,13 +277,13 @@ export const flattenedObject = (obj, output: { [index: string]: unknown } = {}, 
 //   }, output);
 // };
 
-export const mergeDeep = (...objects) => {
-  const isObject = (obj) => obj && typeof obj === 'object';
+export const mergeDeep = <T extends object>(...objects: T[]): T => {
+  const isObject = (obj: unknown): obj is Record<string, unknown> => !!obj && typeof obj === 'object';
 
-  return objects.reduce((prev, obj) => {
+  return objects.reduce((prev: Record<string, unknown>, obj) => {
     Object.keys(obj).forEach((key) => {
       const pVal = prev[key];
-      const oVal = obj[key];
+      const oVal = (obj as Record<string, unknown>)[key];
 
       if (Array.isArray(pVal) && Array.isArray(oVal)) {
         prev[key] = pVal.concat(...oVal);
@@ -240,38 +295,42 @@ export const mergeDeep = (...objects) => {
     });
 
     return prev;
-  }, {});
+  }, {}) as T;
 };
 
-export const getFlattenedSchema = (schema: Schema | Properties) => {
-  const __buildFlattenedSchema = (property, parent, path, flattened) => {
+// NOTE: Converts the `__schema` of any array properties to its flattened form, in place.
+export const getFlattenedSchema = (schema: { properties?: Properties }) => {
+  const __buildFlattenedSchema = (property: string, parent: Properties, path: string[], flattened: FlattenedSchema) => {
     path.push(property);
 
-    if (parent[property].__type === 'array' && parent[property].__schema) {
+    const prop: Record<string, unknown> = parent[property];
+    if (prop.__type === 'array' && prop.__schema) {
       // Handle Array
-      for (const childProp in parent[property].__schema) {
-        if (!{}.hasOwnProperty.call(parent[property].__schema, childProp)) continue;
-        __buildFlattenedSchema(childProp, parent[property].__schema, path, flattened);
+      const arraySchema = prop.__schema as Properties;
+      for (const childProp in arraySchema) {
+        if (!{}.hasOwnProperty.call(arraySchema, childProp)) continue;
+        __buildFlattenedSchema(childProp, arraySchema, path, flattened);
       }
 
-      parent[property].__schema = getFlattenedSchema({ properties: parent[property].__schema });
-      flattened[path.join('.')] = parent[property];
-    } else if (typeof parent[property] === 'object' && !parent[property].__type) {
+      prop.__schema = getFlattenedSchema({ properties: arraySchema });
+      flattened[path.join('.')] = prop as FlattenedSchemaProperty;
+    } else if (typeof prop === 'object' && !prop.__type) {
       // Handle Object
-      for (const childProp in parent[property]) {
-        if (!{}.hasOwnProperty.call(parent[property], childProp)) continue;
+      const nested = prop as Properties;
+      for (const childProp in nested) {
+        if (!{}.hasOwnProperty.call(nested, childProp)) continue;
         if (childProp.indexOf('__') === 0) continue;
-        __buildFlattenedSchema(childProp, parent[property], path, flattened);
+        __buildFlattenedSchema(childProp, nested, path, flattened);
       }
     } else {
-      flattened[path.join('.')] = parent[property];
+      flattened[path.join('.')] = prop as FlattenedSchemaProperty;
     }
 
     path.pop();
   };
 
   const flattened: FlattenedSchema = {};
-  const path = [];
+  const path: string[] = [];
 
   if (schema.properties) {
     for (const property in schema.properties) {
@@ -283,8 +342,11 @@ export const getFlattenedSchema = (schema: Schema | Properties) => {
   return flattened;
 };
 
-export const streamFirst = <T>(stream): Promise<T> => {
-  if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
+const isStream = (stream: unknown): stream is Readable =>
+  stream !== null && typeof stream === 'object' && typeof (stream as Readable).pipe === 'function';
+
+export const streamFirst = <T>(stream: unknown): Promise<T> => {
+  if (!isStream(stream)) {
     throw new Error(`Expected Stream but got '${stream}'`);
   }
 
@@ -297,8 +359,8 @@ export const streamFirst = <T>(stream): Promise<T> => {
     });
   });
 };
-export const streamAll = <T>(stream): Promise<T[]> => {
-  if (!(stream !== null && typeof stream === 'object' && typeof stream.pipe === 'function')) {
+export const streamAll = <T>(stream: unknown): Promise<T[]> => {
+  if (!isStream(stream)) {
     throw new Error(`Expected Stream but got '${stream}'`);
   }
 
@@ -324,7 +386,12 @@ export const awaitForEach = async <T>(arr: T[], handler: (item: T) => Promise<vo
   }, Promise.resolve());
 };
 
-export const checkAppPolicyProperty = async (appPolicyList, policyProperties) => {
+type PolicyPropertyValue = string | number | boolean | null;
+
+export const checkAppPolicyProperty = async (
+  appPolicyList: Record<string, PolicyPropertyValue | PolicyPropertyValue[]> | null | undefined,
+  policyProperties: Record<string, unknown>,
+) => {
   const res: {
     passed: boolean;
     errMessage: string;
@@ -349,10 +416,11 @@ export const checkAppPolicyProperty = async (appPolicyList, policyProperties) =>
 
     let operator: string | null = null;
     if (typeof policyProperties[key] === 'object') {
-      [operator] = Object.keys(policyProperties[key]);
+      [operator] = Object.keys(policyProperties[key] as object);
     }
-    const appPolicyPropertiesValues = appPolicyList[key];
-    const equalValue = operator ? policyProperties[key][operator] : policyProperties[key];
+    // The app's list holds an array of allowed values for each key
+    const appPolicyPropertiesValues = appPolicyList[key] as PolicyPropertyValue[];
+    const equalValue = operator ? (policyProperties[key] as Record<string, unknown>)[operator] : policyProperties[key];
     if (equalValue === null || equalValue === undefined) {
       res.passed = false;
       res.errMessage = 'Policy property value not listed';
@@ -360,7 +428,7 @@ export const checkAppPolicyProperty = async (appPolicyList, policyProperties) =>
 
     const appContainsProp = appPolicyPropertiesValues.every((val) => {
       if (typeof val === 'string') {
-        return val.toUpperCase() !== equalValue.toUpperCase();
+        return val.toUpperCase() !== (equalValue as string).toUpperCase();
       }
       if (typeof val === 'boolean') {
         return val !== equalValue;
@@ -378,30 +446,33 @@ export const checkAppPolicyProperty = async (appPolicyList, policyProperties) =>
   return res;
 };
 
-export const updateCoreSchemaObject = (update, extendedPathContext) => {
-  const __updateObjectPath = (body) => {
+// NOTE: __updateObjectPath doesn't return anything, so this returns an array update unchanged and
+// `undefined` for a single update.
+export const updateCoreSchemaObject = (update: unknown, extendedPathContext: Record<string, unknown>) => {
+  const __updateObjectPath = (body: { path: string; value: unknown }): void => {
     const bodyPath = body.path.replace(pattern, '');
     if (!Array.isArray(body) && body.value && typeof body.value === 'object' && !Array.isArray(body.value)) {
-      body = Object.keys(body.value).reduce((arr: { path: string; value: unknown }[], key) => {
+      const bodyValue = body.value as Record<string, unknown>;
+      body = Object.keys(bodyValue).reduce((arr: { path: string; value: unknown }[], key) => {
         const extendedPath = `${bodyPath}.${key}`;
         if (!extendedPathContextKeys.some((key) => key.includes(extendedPath))) return arr;
 
         arr.push({
           path: `${body.path}.${key}`,
-          value: body.value[key],
+          value: bodyValue[key],
         });
 
         return arr;
-      }, []);
+      }, []) as unknown as { path: string; value: unknown };
     }
   };
 
   const extendedPathContextKeys = Object.keys(extendedPathContext);
   const pattern = /\.\d+/g;
   if (Array.isArray(update)) {
-    update.forEach((item) => __updateObjectPath(item));
+    (update as { path: string; value: unknown }[]).forEach((item) => __updateObjectPath(item));
   } else {
-    update = __updateObjectPath(update);
+    update = __updateObjectPath(update as { path: string; value: unknown });
   }
 
   return update;
@@ -560,16 +631,17 @@ export function redisPrefix(prefix: string, key: string): string {
   return `${prefix}:${key}`;
 }
 
-export class ExpireMap extends Map {
+// Values are stored wrapped with their expiry time, so the Map's own iterators return the wrappers.
+export class ExpireMap<K = unknown, V = unknown> extends Map<K, unknown> {
   expireTime: number;
   gcTimeout?: NodeJS.Timeout;
 
-  constructor(expireTime) {
+  constructor(expireTime: number) {
     super();
     this.expireTime = expireTime;
   }
 
-  override set(key, value) {
+  override set(key: K, value: V) {
     super.set(key, {
       value,
       expire: Date.now() + this.expireTime,
@@ -578,8 +650,8 @@ export class ExpireMap extends Map {
     return this;
   }
 
-  override get(key) {
-    const item = super.get(key);
+  override get(key: K): V | undefined {
+    const item = super.get(key) as { value: V; expire: number } | undefined;
     if (!item) return undefined;
 
     if (item.expire < Date.now()) {

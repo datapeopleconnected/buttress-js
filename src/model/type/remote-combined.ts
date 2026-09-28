@@ -24,6 +24,10 @@ import { SourceDataSharingRouting } from '../../services/source-ds-routing.js';
 import { App } from '../core/app.js';
 import { Schema } from '../../helpers/schema.js';
 import { Services } from '../../bootstrap.js';
+import { Datastore } from '../../datastore/index.js';
+import ButtressAdapter from '../../datastore/adapters/buttress.js';
+import { ChunkSentEvent } from '../../helpers/stream.js';
+import { AdapterDocument, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
 
 /**
  * @class RemoteCombinedModel
@@ -52,7 +56,7 @@ export default class RemoteCombinedModel extends StandardModel {
     this._sdsRouting = services.get('sdsRouting') as SourceDataSharingRouting;
   }
 
-  override async initAdapter(localDataStore, remoteDatastores?) {
+  override async initAdapter(localDataStore?: Datastore | null, remoteDatastores?: Datastore[]) {
     if (!remoteDatastores) throw new Error('Remote datastores are required');
 
     if (localDataStore) {
@@ -66,10 +70,17 @@ export default class RemoteCombinedModel extends StandardModel {
     }
 
     for await (const remoteDatastore of remoteDatastores) {
-      const model = new RemoteModel(this.schemaData, this.app, remoteDatastore.dataSharingId, this.__services);
+      // The model manager sets the data sharing id of each remote datastore
+      const model = new RemoteModel(
+        this.schemaData,
+        this.app,
+        remoteDatastore.dataSharingId as string,
+        this.__services,
+      );
 
       // TODO: handle a model which is unable to connect.
-      model.adapter = remoteDatastore.adapter.cloneAdapterConnection();
+      const adapter = remoteDatastore.adapter.cloneAdapterConnection();
+      model.adapter = adapter;
 
       // We want api call to return a stream directly without any tampering.
       model.adapter.returnPausedStream = true;
@@ -78,11 +89,11 @@ export default class RemoteCombinedModel extends StandardModel {
       await model.adapter.setCollection(`${this.schemaData.name}`);
 
       // TODO: this shouldn't be necessary when using a standard model.
-      if (model.adapter.getSchema) {
-        const remoteSchemas = await model.adapter.getSchema(false, [this.schemaData.name]);
+      if (adapter instanceof ButtressAdapter) {
+        const remoteSchemas = await adapter.getSchema(false, [this.schemaData.name]);
         if (remoteSchemas && remoteSchemas.length > 0) {
           delete this.schemaData.remotes;
-          this.schemaData = Helpers.mergeDeep(this.schemaData, remoteSchemas.pop());
+          this.schemaData = Helpers.mergeDeep(this.schemaData, remoteSchemas.pop() as Schema);
         }
       }
 
@@ -90,7 +101,7 @@ export default class RemoteCombinedModel extends StandardModel {
     }
   }
 
-  override createId(id) {
+  override createId(id?: string) {
     // NOTE: This could be linked to the add problem, the Id will want to be created based
     // on the remote.
     return this.localModel.adapter.ID.new(id);
@@ -101,7 +112,7 @@ export default class RemoteCombinedModel extends StandardModel {
     return this._localModel;
   }
 
-  async _getTargetModel(sourceId) {
+  async _getTargetModel(sourceId?: string | null) {
     if (!sourceId || sourceId === this.app.id.toString()) return this.localModel;
 
     const dataSharingId = await this._sdsRouting.get(this.app.id.toString(), sourceId);
@@ -121,11 +132,11 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {object} body
    * @return {Promise}
    */
-  override async add(body) {
-    return (await this._getTargetModel(body.sourceId)).add(body);
+  override async add(body: AdapterDocument | AdapterDocument[]) {
+    return (await this._getTargetModel((body as { sourceId?: string }).sourceId)).add(body);
   }
 
-  override async update(details, id, sourceId?) {
+  override async update(details: AdapterQuery, id: string, sourceId?: string) {
     if (!sourceId) throw new Error('SourceId is required for update');
 
     return (await this._getTargetModel(sourceId)).updateById(id, details);
@@ -137,7 +148,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {promise}
    */
-  override async updateByPath(body, id, sourceId) {
+  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, sourceId?: string | null) {
     return (await this._getTargetModel(sourceId)).updateByPath(body, id);
   }
 
@@ -146,7 +157,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Boolean}
    */
-  override async exists(id, sourceId) {
+  override async exists(id: string, sourceId?: string | null) {
     return (await this._getTargetModel(sourceId)).exists(id);
   }
 
@@ -155,7 +166,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Boolean}
    */
-  override async isDuplicate(details, sourceId?) {
+  override async isDuplicate(details: unknown, sourceId?: string) {
     return (await this._getTargetModel(sourceId)).isDuplicate(details);
     // // Make a call to each api, if any return true then return true.
     // const calls = this._remoteModels.map((remoteModel) => remoteModel.isDuplicate(details));
@@ -177,7 +188,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Promise}
    */
-  override async rm(entity, sourceId?) {
+  override async rm(entity: { id: string }, sourceId?: string) {
     if (!sourceId) throw new Error('SourceId is required for rm');
 
     return (await this._getTargetModel(sourceId)).rm(entity.id);
@@ -187,7 +198,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {array} ids
    * @return {Promise}
    */
-  override async rmBulk(ids) {
+  override async rmBulk(ids: string[]) {
     return this.localModel.rmBulk(ids);
   }
 
@@ -195,7 +206,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {array} query
    * @return {Promise}
    */
-  override async rmAll(query) {
+  override async rmAll(query?: AdapterQuery) {
     return this.localModel.rmAll(query);
   }
 
@@ -204,7 +215,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Promise}
    */
-  override async findById(id, sourceId?) {
+  override async findById(id: string, sourceId?: string) {
     if (!sourceId) throw new Error('SourceId is required for findById');
 
     return (await this._getTargetModel(sourceId)).findById(id);
@@ -219,7 +230,14 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {Boolean} project - mongoDB project ids
    * @return {Promise} - resolves to an array of docs
    */
-  override async find(query, excludes = {}, limit = 0, skip = 0, sort = {}, project = null) {
+  override async find(
+    query: AdapterQuery,
+    excludes: AdapterQuery | null = {},
+    limit = 0,
+    skip = 0,
+    sort: Record<string, unknown> | null = {},
+    project: Record<string, unknown> | null | false = null,
+  ) {
     const sortMap = new Map<string, number>(
       Object.entries(sort as Record<string, unknown>).map(([key, value]) => [key, Number(value)]),
     );
@@ -234,7 +252,7 @@ export default class RemoteCombinedModel extends StandardModel {
       sources.push(await remote.find(query, excludes, limit, skip, sort, project));
     }
 
-    const combinedStream = new Helpers.Stream.SortedStreams(
+    const combinedStream = new Helpers.Stream.SortedStreams<AdapterDocument>(
       sources,
       (a, b) => Helpers.compareByProps(sortMap, a, b),
       limit,
@@ -242,11 +260,11 @@ export default class RemoteCombinedModel extends StandardModel {
 
     // When a chunk is sent, we'll inform the routing service of the sourceId.
     // We're always expecting the first source to be the local model.
-    combinedStream.on('chunkSent', (data) => {
+    combinedStream.on('chunkSent', (data: ChunkSentEvent<AdapterDocument>) => {
       return data.sourceIdx > 0
         ? this._sdsRouting.inform(
             this.app.id.toString(),
-            data.chunk.sourceId,
+            data.chunk.sourceId as string,
             this._remoteModels[data.sourceIdx - 1].dataSharingId.toString(),
           )
         : null;
@@ -266,13 +284,13 @@ export default class RemoteCombinedModel extends StandardModel {
       sources.push(await remote.findAll());
     }
 
-    const combinedStream = new Helpers.Stream.SortedStreams(sources);
+    const combinedStream = new Helpers.Stream.SortedStreams<AdapterDocument>(sources);
 
     // When a chunk is sent, we'll inform the routing service of the sourceId.
-    combinedStream.on('chunkSent', (data) =>
+    combinedStream.on('chunkSent', (data: ChunkSentEvent<AdapterDocument>) =>
       this._sdsRouting.inform(
         this.app.id.toString(),
-        data.chunk.sourceId,
+        data.chunk.sourceId as string,
         this._remoteModels[data.sourceIdx].dataSharingId.toString(),
       ),
     );
@@ -285,7 +303,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @return {Promise}
    * @deprecated - use find
    */
-  findAllById(_ids) {
+  findAllById(_ids: string[]) {
     throw new Error('Not yet implemented');
     // return this.remote.findAllById(ids);
   }
@@ -294,9 +312,9 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {Object} query - mongoDB query
    * @return {Promise}
    */
-  override async count(query) {
+  override async count(query?: AdapterQuery) {
     // Make a call out to the local datastore and each of the remotes, and sum the results.
-    const sourceReqs: Promise<number>[] = [];
+    const sourceReqs: (number | Promise<number>)[] = [];
 
     sourceReqs.push(await this.localModel.count(query));
 

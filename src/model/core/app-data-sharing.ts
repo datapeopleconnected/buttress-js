@@ -20,9 +20,11 @@ import Logging from '../../helpers/logging.js';
 
 import StandardModel from '../type/standard.js';
 import TokenSchemaModel, { Token } from './token.js';
-import PolicySchemaModel from './policy.js';
+import PolicySchemaModel, { PolicyConfig } from './policy.js';
+import { Services } from '../../bootstrap.js';
 
-export interface AppDataSharing {
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type AppDataSharing = {
   id: string;
   name: string;
 
@@ -36,7 +38,21 @@ export interface AppDataSharing {
 
   _appId: string;
   _tokenId: string;
-}
+};
+
+// A data sharing agreement as posted to the API
+export type AppDataSharingAddBody = {
+  id?: string;
+  name: string;
+  remoteApp: {
+    endpoint: string;
+    ws?: string | null;
+    apiPath: string;
+    token: string;
+  };
+  policyConfig?: Partial<PolicyConfig>[];
+  appId?: string;
+};
 
 /**
  * @class AppDataSharingSchemaModel
@@ -44,7 +60,7 @@ export interface AppDataSharing {
 export default class AppDataSharingSchemaModel extends StandardModel<AppDataSharing> {
   static override name = 'AppDataSharing';
 
-  constructor(services) {
+  constructor(services: Services) {
     const schema = AppDataSharingSchemaModel.Schema;
     super(schema, null, services);
   }
@@ -118,7 +134,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with App Object when the database request is completed
    */
-  override async add(body) {
+  override async add(body: AppDataSharingAddBody): Promise<{ dataSharing: AppDataSharing; token: Token }> {
     const appDataSharingBody = {
       id: body.id ? this.createId(body.id) : this.createId(),
       name: body.name,
@@ -168,7 +184,10 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
     return { dataSharing, token };
   }
 
-  async __createDataSharingPolicy(body, tokenId) {
+  async __createDataSharingPolicy(
+    body: { name: string; policyConfig: Partial<PolicyConfig>[]; _appId: string },
+    tokenId: string,
+  ) {
     return await this.__modelManager.getCoreModel(PolicySchemaModel).add(
       {
         name: `Data Sharing Policy - ${body.name}`,
@@ -193,10 +212,10 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
    * @param {Object} policy - policy object for the app
    * @return {Promise} - resolves when save operation is completed
    */
-  updatePolicy(appId, appDataSharingId, type, policy) {
+  updatePolicy(appId: string, appDataSharingId: string, type: 'local' | 'remote', policy: unknown) {
     policy = Helpers.Schema.encode(policy);
 
-    const update = { $set: {} };
+    const update: { $set: Record<string, unknown> } = { $set: {} };
 
     if (type === 'remote') {
       update.$set['dataSharing.remoteApp'] = policy;
@@ -212,8 +231,8 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
    * @param {String} token - activation token for remote app
    * @return {Promise} - resolves when save operation is completed
    */
-  updateActivationToken(appDataSharingId, token) {
-    const update = { $set: {} };
+  updateActivationToken(appDataSharingId: string, token: string) {
+    const update: { $set: { 'remoteApp.token'?: string; 'remoteApp.active'?: boolean } } = { $set: {} };
 
     update.$set['remoteApp.token'] = token;
     update.$set['remoteApp.active'] = false;
@@ -226,8 +245,8 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
    * @param {String} newToken - The new token which will be used to talk to the remote app
    * @return {Promise} - resolves when save operation is completed
    */
-  activate(appDataSharingId, newToken = null) {
-    const update = {
+  activate(appDataSharingId: string, newToken: string | null = null) {
+    const update: { $set: { active: boolean; 'remoteApp.token'?: string } } = {
       $set: {
         active: true,
       },
@@ -246,7 +265,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
    * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
    * @return {Promise} - resolves when save operation is completed
    */
-  deactivate(appDataSharingId) {
+  deactivate(appDataSharingId: string) {
     const update = {
       $set: {
         active: false,

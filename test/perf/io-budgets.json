@@ -1,0 +1,62 @@
+{
+  "_comment": "Exact MongoDB/Redis/NRP operation counts per request, checked by test/e2e/perf/io-budgets.test.js. Read .ai/performance.md before changing a budget.",
+  "rest": {
+    "GET /car/:id": {
+      "mongo": { "find": 3 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": {}
+    },
+    "GET /car": {
+      "mongo": { "find": 3 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": { "sock:worker:request-end": 1, "sock:worker:request-status": 1 }
+    },
+    "SEARCH /car": {
+      "mongo": { "find": 3 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": { "sock:worker:request-end": 1, "sock:worker:request-status": 1 }
+    },
+    "SEARCH /car/count": {
+      "mongo": { "aggregate": 1, "find": 2 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": {}
+    },
+    "POST /car": {
+      "mongo": { "find": 2, "insert": 2 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": {
+        "rest:activity": 2,
+        "rest:worker:notifyLambdaPathChange": 1,
+        "sock:worker:request-end": 1,
+        "sock:worker:request-status": 1
+      }
+    },
+    "POST /car/bulk/add (5 cars)": {
+      "mongo": { "find": 2, "insert": 2 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": {
+        "rest:activity": 10,
+        "rest:worker:notifyLambdaPathChange": 1,
+        "sock:worker:request-end": 1,
+        "sock:worker:request-status": 1
+      }
+    },
+    "PUT /car/:id": {
+      "mongo": { "aggregate": 1, "find": 3, "insert": 1, "update": 1 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": { "rest:activity": 2, "rest:worker:notifyLambdaPathChange": 1 }
+    },
+    "DELETE /car/:id": {
+      "mongo": { "delete": 1, "find": 3, "insert": 1 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": { "rest:activity": 2, "rest:worker:notifyLambdaPathChange": 1 }
+    }
+  },
+  "spr": {
+    "POST /car, 2 sockets on admin-access + 2 on env-user-query": {
+      "mongo": { "find": 7 },
+      "redis": { "HMGET": 1, "SMEMBERS": 6, "ZRANGE": 3, "ZSCORE": 5 },
+      "nrp": { "spr:activity": 3 }
+    }
+  }
+}

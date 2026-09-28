@@ -49,5 +49,6 @@ export type QueryParams<T extends object> = {
   skip?: number;
   limit?: number;
   sort?: Record<string, 1 | -1>;
-  project?: Record<string, 1 | -1>;
+  // false for no projection, as with null
+  project?: Record<string, 1 | -1> | false;
 };

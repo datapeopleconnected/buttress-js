@@ -28,6 +28,7 @@ import Model from '../model/index.js';
 import Logging from '../helpers/logging.js';
 import { Errors } from '../helpers/index.js';
 import IsolateBridge from './isolate-bridge.js';
+import type { IsolateCallback, IsolateJail } from './isolate-bridge.js';
 
 import createConfig from '@dpc/node-env-obj';
 import LambdaSchemaModel from '../model/core/lambda.js';
@@ -106,7 +107,7 @@ function nodeHttpFetch(
               },
             },
             text: async () => bodyText,
-            json: async () => JSON.parse(bodyText),
+            json: async () => JSON.parse(bodyText) as unknown,
           });
         });
         res.on('error', reject);
@@ -119,6 +120,66 @@ function nodeHttpFetch(
     }
     req.end();
   });
+}
+
+// A host function called from the isolate, which settles the lambda's promise through resolve/reject.
+type HostFunction<TData> = (data: TData, resolve: IsolateCallback, reject: IsolateCallback) => Promise<void>;
+
+// What lambdas pass to the host functions. It's untrusted and unchecked, these describe what the host expects.
+interface EmailTemplateRequest {
+  gitHash: string;
+  emailTemplate: string;
+  emailData?: Record<string, unknown>;
+}
+
+interface CreateSignRequest {
+  signature: string;
+  preSignature?: string;
+  key: string;
+  encodingType: crypto.BinaryToTextEncoding;
+}
+
+interface UpdateMetadataRequest {
+  id: string;
+  idx: number;
+  key: string;
+  value: string;
+}
+
+// A url string, or the url and the options for nodeHttpFetch(). The url is replaced with a URL in place.
+interface FetchRequest {
+  url?: string | URL;
+  options?: Parameters<typeof nodeHttpFetch>[1];
+}
+
+type FetchHostFunction = (
+  data: string | FetchRequest,
+  callback: ivm.Reference<(text: string | null) => void> | null,
+  resolve: IsolateCallback,
+  reject: IsolateCallback,
+) => Promise<void>;
+
+interface CreateHashRequest {
+  algorithm: string;
+  message: unknown;
+}
+
+// The host generates a 12 byte IV and reads an auth tag, i.e. a GCM cipher.
+interface EncryptRequest {
+  algorithm: crypto.CipherGCMTypes;
+  message: unknown;
+}
+
+interface EncryptWithKeyRequest extends EncryptRequest {
+  key: string;
+}
+
+interface DecryptRequest {
+  algorithm: crypto.CipherGCMTypes;
+  key: string;
+  iv: string;
+  authTag: string;
+  message: string;
 }
 
 /**
@@ -138,7 +199,7 @@ class Helpers {
     this.successfulHTTPScode = [200, 201, 202];
   }
 
-  async _createIsolateContext(isolate, context, jail) {
+  async _createIsolateContext(isolate: ivm.Isolate, context: ivm.Context, jail: IsolateJail) {
     IsolateBridge.registerPlugins();
 
     jail.setSync(
@@ -165,7 +226,7 @@ class Helpers {
 
     jail.setSync(
       '_getEmailTemplate',
-      new ivm.Reference(async (data, resolve, reject) => {
+      new ivm.Reference<HostFunction<EmailTemplateRequest>>(async (data, resolve, reject) => {
         try {
           Logging.logVerbose(`Populating email body from template ${data.emailTemplate}`);
 
@@ -185,7 +246,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoCreateSign',
-      new ivm.Reference(async (data, resolve, reject) => {
+      new ivm.Reference<HostFunction<CreateSignRequest>>(async (data, resolve, reject) => {
         try {
           Logging.logVerbose(`Creating crypto signature ${data.signature}`);
 
@@ -206,7 +267,7 @@ class Helpers {
     );
     jail.setSync(
       '_updateMetadata',
-      new ivm.Reference(async (data, resolve, reject) => {
+      new ivm.Reference<HostFunction<UpdateMetadataRequest>>(async (data, resolve, reject) => {
         try {
           Logging.logVerbose(
             `Updating metadata for ${data.id}:${data.idx} with key ${data.key} and value ${data.value}`,
@@ -243,7 +304,7 @@ class Helpers {
     );
     jail.setSync(
       '_fetch',
-      new ivm.Reference(async (data, callback, resolve, reject) => {
+      new ivm.Reference<FetchHostFunction>(async (data, callback, resolve, reject) => {
         if (typeof data === 'string') {
           const url = new URL(data);
           data = {
@@ -253,8 +314,9 @@ class Helpers {
           data.url = typeof data.url === 'string' ? new URL(data.url) : data.url;
         }
 
+        // data.url is a URL from here on, unless a request object had no url (then this line throws).
         Logging.logSilly(
-          `Lambda Fetch - [${data.options?.method}] ${data.url.href} with options - ${JSON.stringify(data.options)}`,
+          `Lambda Fetch - [${data.options?.method}] ${(data.url as URL).href} with options - ${JSON.stringify(data.options)}`,
         );
 
         try {
@@ -263,12 +325,12 @@ class Helpers {
             data.options.headers &&
             data.options.headers['Content-Type'] === 'application/x-www-form-urlencoded'
           ) {
-            data.options.body = new URLSearchParams(data.options.body);
+            data.options.body = new URLSearchParams(data.options.body as string | Record<string, string>);
           }
 
           data.options = data.options || {};
 
-          const response = await nodeHttpFetch(data.url, data.options);
+          const response = await nodeHttpFetch(data.url as URL, data.options);
 
           const output: {
             ok?: boolean;
@@ -283,13 +345,15 @@ class Helpers {
             redirected: response.redirected,
           };
 
-          Logging.logDebug(`Lambda Fetch Response - [${data.options?.method}] ${data.url.href} - ${output.status}`);
+          Logging.logDebug(
+            `Lambda Fetch Response - [${data.options?.method}] ${(data.url as URL).href} - ${output.status}`,
+          );
 
           if (
             output.status &&
             !this.successfulHTTPScode.includes(output.status) &&
             response.url &&
-            response.url !== data.url.href
+            response.url !== (data.url as URL).href
           ) {
             return _resolve(output);
           }
@@ -399,7 +463,7 @@ class Helpers {
                     );
                   }
                   if (json.error.status) {
-                    const statusMessage = `${data.url.pathname} error is ${json.error.status}`;
+                    const statusMessage = `${(data.url as URL).pathname} error is ${json.error.status}`;
                     if (typeof json.error.code === 'string') {
                       throw new Errors.UpstreamApiError(statusMessage, json.error.code, httpStatus, {
                         retryable: false,
@@ -430,11 +494,11 @@ class Helpers {
                 if (json.statusMessage) message = json.statusMessage;
               }
 
-              Logging.logError(`${data.url.pathname} error is ${message}`);
+              Logging.logError(`${(data.url as URL).pathname} error is ${message}`);
               throw new Errors.CodedError(message, output.status ?? 520);
             } else {
               const responseStatus = response.status ? response.status : 520;
-              Logging.logError(`${data.url.pathname} error is ${response.statusText}`);
+              Logging.logError(`${(data.url as URL).pathname} error is ${response.statusText}`);
               throw new Errors.CodedError(response.statusText, responseStatus);
             }
           }
@@ -487,14 +551,14 @@ class Helpers {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(reference).copyInto()]);
         }
 
-        function _resolve(output) {
+        function _resolve(output: unknown) {
           resolve.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto()]);
         }
       }),
     );
     jail.setSync(
       '_cryptoRandomBytes',
-      new ivm.Reference(async (data, resolve, reject) => {
+      new ivm.Reference<HostFunction<number>>(async (data, resolve, reject) => {
         try {
           return resolve.applyIgnored(undefined, [
             new ivm.ExternalCopy(new ivm.Reference(crypto.randomBytes(data).toString('hex')).copySync()).copyInto(),
@@ -506,7 +570,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoCreateHash',
-      new ivm.Reference(async (data, resolve, reject) => {
+      new ivm.Reference<HostFunction<CreateHashRequest>>(async (data, resolve, reject) => {
         try {
           data.message = typeof data.message === 'string' ? data.message : JSON.stringify(data.message);
           const hash = crypto.createHash(data.algorithm);
@@ -522,7 +586,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoCreateCipheriv',
-      new ivm.Reference(async (data, resolve, reject) => {
+      new ivm.Reference<HostFunction<EncryptRequest>>(async (data, resolve, reject) => {
         try {
           const key = crypto.randomBytes(32); // 32 bytes
           const iv = crypto.randomBytes(12); // Generate random 12 bytes IV
@@ -547,7 +611,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoCreateDecipheriv',
-      new ivm.Reference(async (data, resolve, reject) => {
+      new ivm.Reference<HostFunction<DecryptRequest>>(async (data, resolve, reject) => {
         try {
           const decipher = crypto.createDecipheriv(
             data.algorithm,
@@ -567,7 +631,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoEncryptWithKey',
-      new ivm.Reference(async (data, resolve, reject) => {
+      new ivm.Reference<HostFunction<EncryptWithKeyRequest>>(async (data, resolve, reject) => {
         try {
           const key = Buffer.from(data.key, 'hex'); // caller-supplied, hex-encoded
           const iv = crypto.randomBytes(12); // IV must still be fresh per call — reusing an IV with a fixed key breaks GCM
@@ -587,7 +651,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoDecryptWithKey',
-      new ivm.Reference(async (data, resolve, reject) => {
+      new ivm.Reference<HostFunction<DecryptRequest>>(async (data, resolve, reject) => {
         try {
           const decipher = crypto.createDecipheriv(
             data.algorithm,
@@ -607,7 +671,7 @@ class Helpers {
     );
     jail.setSync(
       '_getCodeChallenge',
-      new ivm.Reference(async (data, resolve, reject) => {
+      new ivm.Reference<HostFunction<unknown>>(async (data, resolve, reject) => {
         try {
           const codeVerifier = randomstring.generate(128);
           const base64Digest = crypto.createHash('sha256').update(codeVerifier).digest('base64');
@@ -620,14 +684,14 @@ class Helpers {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
         }
 
-        function _resolve(output) {
+        function _resolve(output: unknown) {
           resolve.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto()]);
         }
       }),
     );
     jail.setSync(
       '_generatePDF',
-      new ivm.Reference(async (htmlString, resolve, reject) => {
+      new ivm.Reference<HostFunction<string>>(async (htmlString, resolve, reject) => {
         try {
           if (!htmlString) throw new Error(`Missing HTML string for pdf generation`);
           const browser = await puppeteer.launch({ headless: true });
@@ -651,7 +715,7 @@ class Helpers {
 
     jail.setSync(
       '_sleep',
-      new ivm.Reference(async (ms: number, resolve, reject) => {
+      new ivm.Reference<HostFunction<number>>(async (ms, resolve, reject) => {
         try {
           await new Promise((r) => setTimeout(r, ms));
           return resolve.applyIgnored(undefined);

@@ -16,6 +16,7 @@
 
 import { describe, it } from 'mocha';
 import assert from 'assert';
+import sinon from 'sinon';
 import { Readable } from 'stream';
 
 import DeleteOne from '../../../../../dist/routes/schema-routes/delete-one.js';
@@ -82,6 +83,33 @@ describe('schema-routes/DeleteOne', () => {
     await route._exec(req, {}, await route._validate(req, {}));
 
     assert.deepStrictEqual(req.context.deletedEntities, [{ id: 'doc-1', ownerId: 'user-1' }]);
+  });
+
+  it('keeps the entity it found in scope rather than reading it again, when no policy restricts fields', async () => {
+    const model = createFakeModel(makeDocs());
+    const find = sinon.spy(model, 'find');
+    const route = createRoute(model);
+    const req = { params: { id: 'doc-1' }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.strictEqual(find.callCount, 1);
+    assert.deepStrictEqual(req.context.deletedEntities, [{ id: 'doc-1', ownerId: 'user-1' }]);
+  });
+
+  it('reads the entity again, whole, when a policy restricts fields', async () => {
+    const model = createFakeModel(makeDocs());
+    const find = sinon.spy(model, 'find');
+    const route = createRoute(model);
+    const req = {
+      params: { id: 'doc-1' },
+      context: { id: 'req-1', ac: { policyConfigs: [{ projection: { keys: ['name'] } }] } },
+    };
+
+    await route._exec(req, {}, await route._validate(req, {}));
+
+    assert.strictEqual(find.callCount, 2);
+    assert.strictEqual(find.secondCall.args[5], undefined, 'the second read projects nothing');
   });
 
   it('deletes the entity when it matches the access-control policy query', async () => {

@@ -15,6 +15,7 @@
  */
 import { Request, Response } from 'express';
 import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
+import { AdapterDocument } from '../../types/datastore.js';
 
 import Route from '../route.js';
 import * as Helpers from '../../helpers/index.js';
@@ -51,7 +52,7 @@ export default class GetOne extends Route {
 
     const model = await this.routeModel();
 
-    let objectId = null;
+    let objectId: string | null = null;
     // const project = req.body && req.body.project ? req.body.project : false;
 
     try {
@@ -61,7 +62,7 @@ export default class GetOne extends Route {
       throw new Helpers.Errors.RequestError(400, 'invalid_id');
     }
 
-    const query: BjsQuery<{ id: string | null }> = { id: objectId };
+    const query: BjsQuery<{ id: string }> = { id: objectId };
     // if (req.body.query && Object.keys(req.body.query).length > 0) {
     //   query = model.parseQuery(req.body.query, {}, model.flatSchemaData);
     //   query.id = objectId;
@@ -73,24 +74,20 @@ export default class GetOne extends Route {
     };
   }
 
-  override async _exec(
-    req: Request,
-    _res: Response,
-    validate: { query: BjsQuery<{ id: string | null }>; project: boolean },
-  ) {
+  override async _exec(req: Request, _res: Response, validate: { query: BjsQuery<{ id: string }>; project: false }) {
     const model = await this.routeModel();
 
-    const findParams: QueryParams<{ id: string | null }> = {
+    const findParams: QueryParams<{ id: string }> = {
       query: validate.query,
       limit: 1,
       skip: 0,
-      project: validate.project as unknown as Record<string, 1 | -1> | undefined,
+      project: validate.project,
     };
     const rxsEntity = await ACM.find(model, findParams, req.context.ac);
 
-    let entity;
+    let entity: AdapterDocument | null;
     try {
-      entity = await Helpers.streamFirst(rxsEntity);
+      entity = await Helpers.streamFirst<AdapterDocument>(rxsEntity);
     } catch (_err) {
       entity = null;
     }

@@ -18,13 +18,15 @@ import StandardModel from '../type/standard.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
-import TokenSchemaModel, { Token } from './token.js';
+import TokenSchemaModel, { PolicyProperties, Token } from './token.js';
+import { Services } from '../../bootstrap.js';
 
-export interface User {
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type User = {
   id: string;
   auth: Array<UserAuth>;
   _appId: string;
-}
+};
 
 export interface UserAuth {
   app: string;
@@ -37,10 +39,49 @@ export interface UserAuth {
     banner: string;
   };
   email: string;
+  locale: string;
   token: string;
   tokenSecret: string;
   refreshToken: string;
+  extras: string;
 }
+
+// An auth entry as posted to the API, add stores the images from profileImgUrl and bannerImgUrl
+export type UserAuthBody = {
+  app?: string;
+  appId?: string | null;
+  username?: string;
+  password?: string;
+  profileUrl?: string;
+  profileImgUrl?: string;
+  bannerImgUrl?: string;
+  email?: string;
+  token?: string;
+  tokenSecret?: string;
+  refreshToken?: string;
+};
+
+// A user as posted to the API, with an optional token to create for them
+export type UserAddBody = {
+  id?: string;
+  auth: UserAuthBody[];
+  token?: {
+    domains?: string[];
+    policyProperties?: PolicyProperties;
+  };
+};
+
+// A user's details from an auth app, see updateAppInfo
+type UserAppInfo = {
+  username: string;
+  profileUrl: string;
+  profileImgUrl: string;
+  bannerImgUrl: string;
+  email: string;
+  token: string;
+  tokenSecret: string;
+  refreshToken: string;
+};
 
 type UserWithTokens = User & {
   tokens: Array<{
@@ -65,7 +106,7 @@ const App = {
 export default class UserSchemaModel extends StandardModel<User> {
   static override name = 'User';
 
-  constructor(services) {
+  constructor(services: Services) {
     const schema = UserSchemaModel.Schema;
     super(schema, null, services);
   }
@@ -230,23 +271,23 @@ export default class UserSchemaModel extends StandardModel<User> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override async add(body, internals: { _appId: string }) {
+  override async add(body: UserAddBody, internals: { _appId: string }): Promise<UserWithTokens> {
     const userBody: {
       id: string;
       auth: Array<{
-        app: string;
-        appId: string;
-        username: string;
-        password: string;
-        profileUrl: string;
+        app?: string;
+        appId: string | null;
+        username?: string;
+        password?: string;
+        profileUrl?: string;
         images: {
-          profile: string;
-          banner: string;
+          profile?: string;
+          banner?: string;
         };
-        email: string;
-        token: string;
-        tokenSecret: string;
-        refreshToken: string;
+        email?: string;
+        token?: string;
+        tokenSecret?: string;
+        refreshToken?: string;
       }>;
     } = {
       id: body.id ? this.createId(body.id) : this.createId(),
@@ -339,7 +380,7 @@ export default class UserSchemaModel extends StandardModel<User> {
    * @param {Object} updated - updated app information passed through from a PUT request
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  updateAppInfo(user, app, updated) {
+  updateAppInfo(user: User, app: string, updated: UserAppInfo) {
     const authIdx = user.auth.findIndex((a) => a.app === app);
     if (authIdx === -1) {
       Logging.log(`Unable to find Appauth for ${app}`, Logging.Constants.LogLevel.DEBUG);
@@ -356,7 +397,7 @@ export default class UserSchemaModel extends StandardModel<User> {
     auth.tokenSecret = updated.tokenSecret;
     auth.refreshToken = updated.refreshToken;
 
-    const update = {};
+    const update: Record<string, UserAuth> = {};
     update[`auth.${authIdx}`] = auth;
     return super.updateById(user.id, update).then(() => true);
   }
@@ -365,7 +406,7 @@ export default class UserSchemaModel extends StandardModel<User> {
    * @param {string} username - username to check for
    * @return {Promise} - resolves to a User object or null
    */
-  getByUsername(username) {
+  getByUsername(username: string) {
     return super.findOne({ username: username }, { id: 1 });
   }
 
@@ -375,7 +416,7 @@ export default class UserSchemaModel extends StandardModel<User> {
    * @param {string} appId - Buttress App Id of the user
    * @return {Promise} - resolves to an array of Apps
    */
-  getByAuthAppId(authAppName, authAppUserId, appId?: string) {
+  getByAuthAppId(authAppName: string, authAppUserId: string, appId?: string) {
     return super.findOne({
       'auth.app': authAppName,
       'auth.appId': authAppUserId,

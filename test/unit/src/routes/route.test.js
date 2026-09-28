@@ -822,3 +822,48 @@ describe('routes/Route:exec', () => {
     );
   });
 });
+
+describe('routes/Route:_respond Server-Timing', () => {
+  const createTimedReq = () => {
+    const req = createReq();
+    req.context.timer.interval = 0.01;
+    Object.assign(req.context.timings, {
+      authenticateToken: 0,
+      accessControl: 0.001,
+      configCrossDomain: 0.002,
+      validate: 0.003,
+      exec: 0.004,
+    });
+    return req;
+  };
+
+  it('sets the header before responding when server timing is on', async () => {
+    const route = createRoute();
+    route.redactResults = false;
+    route.serverTiming = true;
+    const res = createRes();
+
+    await route._respond(createTimedReq(), res, { name: 'test' });
+
+    assert.ok(
+      res.set.calledWith(
+        'Server-Timing',
+        'auth;dur=1.000;desc="token", ac;dur=1.000;desc="access control", validate;dur=1.000, exec;dur=6.000, ' +
+          'total;dur=10.000;desc="until response"',
+      ),
+    );
+    assert.ok(res.set.calledBefore(res.json));
+  });
+
+  it('leaves the header off by default', async () => {
+    const route = createRoute();
+    route.redactResults = false;
+    const res = createRes();
+
+    await route._respond(createTimedReq(), res, { name: 'test' });
+
+    assert.strictEqual(route.serverTiming, false);
+    assert.ok(res.set.neverCalledWith('Server-Timing'));
+    assert.ok(res.json.calledOnce);
+  });
+});

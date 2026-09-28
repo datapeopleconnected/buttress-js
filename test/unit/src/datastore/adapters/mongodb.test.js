@@ -64,6 +64,8 @@ function createModel(schema = organisationSchema, stored = {}) {
     },
   };
   model.adapter = adapter;
+  // As StandardModel.initAdapter does, so the adapter converts the schema's id properties on the way in.
+  adapter.updateSchema(model.schemaData);
 
   return { model, ops };
 }
@@ -689,7 +691,10 @@ describe('datastore/adapters/MongodbAdapter:add when the insert fails part way',
       assert.strictEqual(err.id, IDS[2]);
       return true;
     });
-    assert.deepStrictEqual(deletes, [{ _id: { $in: IDS.slice(0, 2) } }]);
+    assert.deepStrictEqual(
+      deletes.map((query) => query._id.$in.map(String)),
+      [IDS.slice(0, 2)],
+    );
   });
 
   it('removes the entities written before any other write error, and gives that error', async () => {
@@ -697,7 +702,10 @@ describe('datastore/adapters/MongodbAdapter:add when the insert fails part way',
     const { adapter, deletes } = createAdapter(error);
 
     await assert.rejects(add(adapter), (err) => err === error);
-    assert.deepStrictEqual(deletes, [{ _id: { $in: IDS.slice(0, 1) } }]);
+    assert.deepStrictEqual(
+      deletes.map((query) => query._id.$in.map(String)),
+      [IDS.slice(0, 1)],
+    );
   });
 
   it('removes nothing when the first entity fails, or when it is not known what was written', async () => {

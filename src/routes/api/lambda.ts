@@ -18,8 +18,6 @@ import util from 'node:util';
 import { Request, Response } from 'express';
 import { exec as cpExec } from 'node:child_process';
 
-import { ObjectId } from 'bson';
-
 const exec = util.promisify(cpExec);
 
 import createConfig from '@dpc/node-env-obj';
@@ -31,8 +29,8 @@ import Sugar from '../../helpers/sugar.js';
 import * as Helpers from '../../helpers/index.js';
 
 import Datastore from '../../datastore/index.js';
-import LambdaSchemaModel, { Lambda } from '../../model/core/lambda.js';
-import TokenSchemaModel from '../../model/core/token.js';
+import LambdaSchemaModel, { Lambda, LambdaAddBody } from '../../model/core/lambda.js';
+import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import UserSchemaModel from '../../model/core/user.js';
 import AppSchemaModel from '../../model/core/app.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
@@ -42,10 +40,34 @@ import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/la
 import { Services } from '../../bootstrap.js';
 
 import { QueryParams } from '../../types/bjs-query.js';
+import { UpdatePathBody } from '../../types/datastore.js';
+import type { BulkUpdateItem, CountBody, RequestWithBody, SearchBody } from '../../types/routes.js';
 
 // Should contain a list of route classes that extend Route.
 type LambdaRouteConstructor = new (services: Services) => Route;
 const routes: LambdaRouteConstructor[] = [];
+
+// The body of a set or update policy property request, e.g. `{ role: { '@eq': 'ADMIN' } }`
+type PolicyPropertiesBody = Record<string, unknown>;
+
+type AddLambdaBody = {
+  lambda: LambdaAddBody & { policyProperties?: Token['policyProperties'] };
+  auth: Partial<Token>;
+};
+
+type ScheduleLambdaExecutionBody = {
+  deploymentId?: string;
+  // A date expression, see Sugar.Date.create
+  executeAfter?: string;
+  metadata?: LambdaExecution['metadata'];
+};
+
+type EditLambdaDeploymentBody = {
+  branch: string;
+  hash: string;
+  entryFile?: string;
+  entryPoint?: string;
+};
 
 /**
  * @class GetLambda
@@ -64,7 +86,7 @@ class GetLambda extends Route {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
     }
-    if (!ObjectId.isValid(id)) {
+    if (!Datastore.getInstance('core').ID.isValid(id)) {
       this.log(`[${this.name}] Invalid lambda id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
     }
@@ -113,7 +135,7 @@ class GetLambdaList extends Route {
     return Promise.resolve(ids);
   }
 
-  override async _exec(req: Request, res: Response, ids) {
+  override async _exec(req: Request, res: Response, ids: unknown[]) {
     if (ids.length > 0) {
       // TODO: needs to be scoped by appId - Disabled until fixed.
       // return Model.getCoreModel(LambdaSchemaModel).findByIds(ids);
@@ -145,7 +167,7 @@ class SearchLambdaList extends Route {
     this.permissions = Route.Constants.Permissions.LIST;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<SearchBody<Lambda> | undefined>, _res: Response) {
     const result: QueryParams<Lambda> = {
       query: {},
     };
@@ -171,7 +193,7 @@ class SearchLambdaList extends Route {
     return result;
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: QueryParams<Lambda>) {
     return Model.getCoreModel(LambdaSchemaModel).find(validate.query);
   }
 }
@@ -188,7 +210,7 @@ class AddLambda extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<AddLambdaBody>, _res: Response) {
     try {
       const name = req.body?.lambda?.name;
       const url = req.body?.lambda?.git?.url;
@@ -230,7 +252,7 @@ class AddLambda extends Route {
     }
   }
 
-  override async _exec(req: Request, _res: Response, _validate) {
+  override async _exec(req: RequestWithBody<AddLambdaBody>, _res: Response, _validate: boolean) {
     let appId = req.context.authApp?.id;
     if (!appId) {
       // const token = await this._getToken(req);
@@ -248,7 +270,8 @@ class AddLambda extends Route {
       }
     }
 
-    const app = await Model.getCoreModel(AppSchemaModel).findById(appId);
+    // Every token has an app, so one of the above sets it
+    const app = await Model.getCoreModel(AppSchemaModel).findById(appId as string);
     const lambda = await Model.getCoreModel(LambdaSchemaModel).add(req.body.lambda, { auth: req.body.auth, app });
 
     const hasPathMutation = lambda.trigger.some((t) => t.type === 'PATH_MUTATION');
@@ -276,8 +299,8 @@ class UpdateLambda extends Route {
     this.activityBroadcast = true;
   }
 
-  override _validate(req: Request, _res: Response) {
-    return new Promise((resolve, reject) => {
+  override _validate(req: RequestWithBody<unknown>, _res: Response) {
+    return new Promise<{ id: string }>((resolve, reject) => {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       const { validation, body } = Model.getCoreModel(LambdaSchemaModel).validateUpdate(req.body);
       req.body = body;
@@ -311,7 +334,8 @@ class UpdateLambda extends Route {
     });
   }
 
-  override async _exec(req: Request, _res: Response, validate) {
+  // _validate replaced the body with the validated updates
+  override async _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
     const updated = await Model.getCoreModel(LambdaSchemaModel).updateByPath(req.body, validate.id);
 
     // TODO: Check to see if the updated involved the triggers or path mutations.
@@ -339,7 +363,7 @@ class BulkUpdateLambda extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(LambdaSchemaModel).validateUpdate(item.body);
       item.body = body;
@@ -365,10 +389,10 @@ class BulkUpdateLambda extends Route {
       }
     }
 
-    return req.body;
+    return req.body as BulkUpdateItem<UpdatePathBody[]>[];
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate: BulkUpdateItem<UpdatePathBody[]>[]) {
     for await (const item of validate) {
       await Model.getCoreModel(LambdaSchemaModel).updateByPath(item.body, item.id);
       const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(item.id);
@@ -397,7 +421,7 @@ class ScheduleLambdaExecution extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<ScheduleLambdaExecutionBody>, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
@@ -463,7 +487,11 @@ class ScheduleLambdaExecution extends Route {
     };
   }
 
-  override async _exec(_req: Request, _res: Response, validate) {
+  override async _exec(
+    _req: Request,
+    _res: Response,
+    validate: { appId: string; execution: Partial<LambdaExecution> },
+  ) {
     return await Model.getCoreModel(LambdaExecutionSchemaModel).add(validate.execution, validate.appId);
   }
 }
@@ -485,7 +513,7 @@ class EditLambdaDeployment extends Route {
     this.permissions = Route.Constants.Permissions.ADD;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<EditLambdaDeploymentBody, { id: string }>, _res: Response) {
     try {
       const branch = req.body?.branch ? req.body.branch : null;
       const hash = req.body?.hash ? req.body.hash : null;
@@ -508,8 +536,9 @@ class EditLambdaDeployment extends Route {
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
       }
 
-      const entryFilePath = req.body.entryFile ? req.body.entryFile : lambda.git.entryFile;
-      const entryPoint = req.body.entryPoint ? req.body.entryPoint : lambda.git.entryPoint;
+      // An added lambda always has its entry file and point set
+      const entryFilePath = req.body.entryFile ? req.body.entryFile : (lambda.git.entryFile as string);
+      const entryPoint = req.body.entryPoint ? req.body.entryPoint : (lambda.git.entryPoint as string);
       const lambdaDeployInfo = {
         branch,
         hash,
@@ -520,7 +549,8 @@ class EditLambdaDeployment extends Route {
 
       return Promise.resolve({
         hash: req.body.hash,
-        branch: req.body.body,
+        // FIXME: this reads `body` rather than `branch`, so it's undefined unless the request sends a `body`
+        branch: (req.body as EditLambdaDeploymentBody & { body: string }).body,
         lambda,
       });
     } catch (err: unknown) {
@@ -530,7 +560,7 @@ class EditLambdaDeployment extends Route {
     }
   }
 
-  override _exec(req: Request, res: Response, validate) {
+  override _exec(req: Request, res: Response, validate: { hash: string; branch: string; lambda: Lambda }) {
     return Model.getCoreModel(LambdaSchemaModel).setDeployment(validate.lambda.id, {
       'git.branch': validate.branch,
       'git.hash': validate.hash,
@@ -558,7 +588,7 @@ class SetLambdaPolicyProperties extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<PolicyPropertiesBody>, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
@@ -576,7 +606,8 @@ class SetLambdaPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(req.params.id);
+    // A named route param, so a string
+    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(req.params.id as string);
     if (!exists) {
       this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -599,7 +630,7 @@ class SetLambdaPolicyProperties extends Route {
     return Promise.resolve(lambdaToken);
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: RequestWithBody<PolicyPropertiesBody>, res: Response, validate: Token) {
     await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(validate.id.toString(), req.body);
     return true;
   }
@@ -625,7 +656,7 @@ class UpdateLambdaPolicyProperties extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<PolicyPropertiesBody>, _res: Response) {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
@@ -643,7 +674,8 @@ class UpdateLambdaPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(req.params.id);
+    // A named route param, so a string
+    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(req.params.id as string);
     if (!exists) {
       this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -668,7 +700,7 @@ class UpdateLambdaPolicyProperties extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: RequestWithBody<PolicyPropertiesBody>, res: Response, validate: { token: Token }) {
     await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate.token, req.body);
     return true;
   }
@@ -694,7 +726,7 @@ class ClearLambdaPolicyProperties extends Route {
     this.activityBroadcast = true;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
@@ -725,8 +757,9 @@ class ClearLambdaPolicyProperties extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, validate) {
-    await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.token);
+  override async _exec(req: Request, res: Response, validate: { token: Token }) {
+    // FIXME: this passes the token rather than its id
+    await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.token as unknown as string);
     return true;
   }
 }
@@ -743,7 +776,7 @@ class DeleteLambda extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<unknown, { id: string }>, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
@@ -767,7 +800,7 @@ class DeleteLambda extends Route {
     };
   }
 
-  override async _exec(req: Request, res: Response, validate) {
+  override async _exec(req: Request, res: Response, validate: { lambda: Lambda; token: Token }) {
     await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${validate.lambda.id}`);
     await Model.getCoreModel(LambdaSchemaModel).rm(validate.lambda.id);
     await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
@@ -795,7 +828,7 @@ class LambdaCount extends Route {
     this.activityBroadcast = false;
   }
 
-  override async _validate(req: Request, _res: Response) {
+  override async _validate(req: RequestWithBody<CountBody<Lambda> | undefined>, _res: Response) {
     const result: QueryParams<Lambda> = {
       query: {},
     };
@@ -823,7 +856,7 @@ class LambdaCount extends Route {
     return result;
   }
 
-  override _exec(req: Request, res: Response, validateResult) {
+  override _exec(req: Request, res: Response, validateResult: QueryParams<Lambda>) {
     return Model.getCoreModel(LambdaSchemaModel).count(validateResult.query);
   }
 }

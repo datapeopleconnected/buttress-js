@@ -21,7 +21,7 @@ import createConfig from '@dpc/node-env-obj';
 import Express from 'express';
 import { createClient, RedisClientType } from '@redis/client';
 
-import { Server as sio, Socket as sioSocket } from 'socket.io';
+import { Server as sio, Socket as sioSocket, DefaultEventsMap } from 'socket.io';
 import sioClient, { Socket as sioClientSocket } from 'socket.io-client';
 import { createAdapter } from '@socket.io/redis-adapter';
 import { Emitter } from '@socket.io/redis-emitter';
@@ -41,12 +41,13 @@ import * as Schema from './helpers/schema.js';
 import Datastore from './datastore/index.js';
 import { Datastore as DatastoreInstance } from './datastore/index.js';
 import { PolicyCache } from './services/policy-cache.js';
+import type { AppSchemaUpdatedMessage, DataShareActivatedMessage } from './services/nrp.js';
 
 import { DataShareSocketSharePayload, RESTActivity } from './types/bjs-nrp-objects.js';
 
 import TokenSchemaModel, { Token } from './model/core/token.js';
 import AppSchemaModel from './model/core/app.js';
-import AppDataSharingSchemaModel from './model/core/app-data-sharing.js';
+import AppDataSharingSchemaModel, { AppDataSharing } from './model/core/app-data-sharing.js';
 import UserSchemaModel from './model/core/user.js';
 interface RequestStatusMessage {
   id: string;
@@ -55,6 +56,18 @@ interface RequestStatusMessage {
 interface RequestEndMessage {
   id: string;
 }
+interface RequestSubscribeMessage {
+  id: string;
+}
+
+// Set on an app namespace socket when it connects
+interface SocketData {
+  type: string;
+  tokenId: string;
+  dataShareId?: string;
+  userId?: string;
+}
+type AppSocket = sioSocket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>;
 
 export default class BootstrapSocket extends Bootstrap {
   private _dataShareSockets: {
@@ -68,10 +81,10 @@ export default class BootstrapSocket extends Bootstrap {
 
   // private _processResQueue: any;
 
-  private _requestSockets: Helpers.ExpireMap;
+  private _requestSockets: Helpers.ExpireMap<string, AppSocket>;
 
   emitter?: Emitter;
-  io?: sio;
+  io?: sio<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>;
 
   isPrimary: boolean;
 
@@ -191,8 +204,8 @@ export default class BootstrapSocket extends Bootstrap {
     for await (const sockets of Object.values(this._dataShareSockets)) {
       for await (const socket of sockets) {
         Logging.logSilly('Closing data share socket');
-        // @ts-expect-error - Double check the sio-client types
-        socket.destroy();
+        // destroy() is private in the sio-client types
+        (socket as unknown as { destroy: () => void }).destroy();
       }
     }
 
@@ -250,7 +263,7 @@ export default class BootstrapSocket extends Bootstrap {
         active: true,
       });
 
-      for await (const dataShare of rxsDataShare) {
+      for await (const dataShare of rxsDataShare as AsyncIterable<AppDataSharing>) {
         await this.__primaryCreateDataShareConnection(dataShare);
       }
     }
@@ -265,8 +278,9 @@ export default class BootstrapSocket extends Bootstrap {
     if (this.workerProcesses > 0) {
       this._mainServer = net
         .createServer({ pauseOnConnect: true }, (connection: net.Socket) => {
+          // remoteAddress is set on a newly accepted connection
           this.notifyWorker(
-            this.__indexFromIP(connection.remoteAddress, this.workerProcesses),
+            this.__indexFromIP(connection.remoteAddress as string, this.workerProcesses),
             {
               type: 'buttress:connection',
               payload: null,
@@ -342,9 +356,9 @@ export default class BootstrapSocket extends Bootstrap {
     }
   }
 
-  private async _workerHandleSocketConnection(socket: sioSocket, next: (err?: Error) => void) {
+  private async _workerHandleSocketConnection(socket: AppSocket, next: (err?: Error) => void) {
     // DEPRECATED: We should phase out accepting token via query and only use the auth headers.
-    const rawToken = socket.handshake.auth.token || socket.handshake.query.token;
+    const rawToken: unknown = socket.handshake.auth.token || socket.handshake.query.token;
     // The client sends auth as JSON, so the token can be anything. A query object such as {$ne: null} would find
     // whichever token Mongo returned first, so only a string is looked up.
     if (typeof rawToken !== 'string' || rawToken === '') {
@@ -398,7 +412,7 @@ export default class BootstrapSocket extends Bootstrap {
     this.__nrp?.emit('worker:socket:connection', socket.data.tokenId);
 
     if (token.type === 'dataSharing') {
-      const remoteSchemas = Schema.decode(app.__schema).reduce((obj, item) => {
+      const remoteSchemas = Schema.decode(app.__schema).reduce((obj: Record<string, Schema.Schema>, item) => {
         if (!item.remotes) return obj;
 
         if (!Array.isArray(item.remotes)) {
@@ -465,7 +479,7 @@ export default class BootstrapSocket extends Bootstrap {
       Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
     }
 
-    socket.on('bjs-request-subscribe', (data) => {
+    socket.on('bjs-request-subscribe', (data: RequestSubscribeMessage) => {
       if (!data.id) return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} missing id`);
       Logging.logSilly(`[${apiPath}] bjs-request-subscribe ${socket.id} ${data.id}`);
 
@@ -497,13 +511,13 @@ export default class BootstrapSocket extends Bootstrap {
     // this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
     // this.__nrp.on('clearUserLocalData', (json) => this.__primaryClearUserLocalData(json));
     this.__nrp.on('dataShare:activated', async (json: string) => {
-      const data = JSON.parse(json);
+      const data = JSON.parse(json) as DataShareActivatedMessage;
       const dataShare = await Model.getCoreModel(AppDataSharingSchemaModel).findById(data.appDataSharingId);
       await this.__primaryCreateDataShareConnection(dataShare);
     });
 
     this.__nrp.on('app-schema:updated', async (json: string) => {
-      const data = JSON.parse(json);
+      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
       await Model.initSchema(data.appId);
     });
   }
@@ -527,7 +541,7 @@ export default class BootstrapSocket extends Bootstrap {
   async __registerNRPWorkerListeners() {
     if (!this.__nrp) throw new Error('No NRP instance');
 
-    this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
+    this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data) as DataShareSocketSharePayload));
 
     // Every Socket process is told, and each closes its own sockets.
     this.__nrp.on('token:deleted', (json: string) => {
@@ -640,10 +654,10 @@ export default class BootstrapSocket extends Bootstrap {
     // });
   }
 
-  __indexFromIP(ip, spread) {
+  __indexFromIP(ip: string, spread: number) {
     let s = '';
     for (let i = 0, _len = ip.length; i < _len; i++) {
-      if (!isNaN(ip[i])) {
+      if (!isNaN(Number(ip[i]))) {
         s += ip[i];
       }
     }
@@ -651,7 +665,7 @@ export default class BootstrapSocket extends Bootstrap {
     return Number(s) % spread;
   }
 
-  async __primaryCreateDataShareConnection(dataShare) {
+  async __primaryCreateDataShareConnection(dataShare: AppDataSharing) {
     let url = `${dataShare.remoteApp.endpoint}/${dataShare.remoteApp.apiPath}`;
 
     if (dataShare.remoteApp.ws) {

@@ -15,51 +15,46 @@
  */
 import Stream from 'node:stream';
 
-import { BSON, ObjectId, MongoClient, MongoClientOptions, Db, Collection } from 'mongodb';
+import {
+  BSON,
+  ObjectId,
+  MongoClient,
+  MongoClientOptions,
+  Db,
+  Collection,
+  CommandStartedEvent,
+  AnyBulkWriteOperation,
+  Document,
+  Filter,
+  FindOptions,
+  Sort,
+  UpdateFilter,
+} from 'mongodb';
 
 import * as Helpers from '../../helpers/index.js';
+import IOStats from '../../helpers/io-stats.js';
 import Logging from '../../helpers/logging.js';
 
 import AbstractAdapter from '../abstract-adapter.js';
+import MongodbIds from './mongodb-ids.js';
+import ObjectIdHelper, { isObjectId } from './object-id.js';
 
 import { BjsQuery } from '../../types/bjs-query.js';
+import {
+  AdapterDocument,
+  AdapterQuery,
+  UpdatePathBody,
+  UpdatePathContext,
+  UpdatePathOperation,
+} from '../../types/datastore.js';
+import { FlattenedSchemaProperty, Schema } from '../../types/schema.js';
 import StandardModel from '../../model/type/standard.js';
 
-class AdapterId {
-  static new(id?: string) {
-    return new ObjectId(id);
-  }
-
-  static isValid(id: string) {
-    return ObjectId.isValid(id);
-  }
-
-  static instanceOf(id) {
-    return id instanceof ObjectId;
-  }
-}
-
-interface BJSDocument {
-  [key: string]: any;
-}
-
-interface Context {
-  [key: string]: any;
-  type: string;
-}
-
-interface SchemaConfig {
-  __schema: any;
-}
-
 // One Mongo update operation on one path, e.g. {$push: {tags: 'a'}}.
-type UpdateOp = { [operator: string]: { [path: string]: any } };
+type UpdateOp = Record<string, Record<string, unknown>>;
 
-interface PathUpdate {
-  body: { path: string; value: any };
-  context: Context;
-  schemaConfig: SchemaConfig;
-}
+// A document, or an array inside one, that an update operation reaches into.
+type UpdateContainer = Record<string | number, unknown>;
 
 // Tries at writing ops that had to be worked out on the entity as read, before giving up because it keeps changing.
 const MAX_UPDATE_ATTEMPTS = 5;
@@ -103,12 +98,12 @@ export const mergeUpdateOps = (ops: UpdateOp[]): UpdateOp | null => {
 const describeElement = (key: string, value: unknown) => `{${key}: ${value === null ? 'null' : JSON.stringify(value)}}`;
 
 // The key a path segment names in `container`: an index for an array, which only numeric segments can name.
-const keyIn = (container: any, segment: string): string | number | null => {
+const keyIn = (container: unknown, segment: string): string | number | null => {
   if (!Array.isArray(container)) return segment;
   return /^\d+$/.test(segment) ? Number(segment) : null;
 };
 
-const setKey = (container: any, key: string | number, value: unknown) => {
+const setKey = (container: UpdateContainer, key: string | number, value: unknown) => {
   if (Array.isArray(container)) {
     while (container.length < (key as number)) container.push(null);
   }
@@ -120,7 +115,11 @@ const setKey = (container: any, key: string | number, value: unknown) => {
  * path through a value that isn't a document is refused, as Mongo does for $set, $push and $inc. Without it, a path
  * that doesn't lead anywhere gives null, as for $unset and $pull.
  */
-const resolvePath = (doc: any, path: string, create: boolean) => {
+const resolvePath = (
+  doc: UpdateContainer,
+  path: string,
+  create: boolean,
+): { container: UpdateContainer; key: string | number } | null => {
   const segments = path.split('.');
   let container = doc;
   let parentKey = '';
@@ -143,7 +142,7 @@ const resolvePath = (doc: any, path: string, create: boolean) => {
       throw refuseUpdate(`Cannot create field '${segments[idx + 1]}' in element ${describeElement(segment, next)}`);
     }
 
-    container = next;
+    container = next as UpdateContainer;
     parentKey = segment;
   }
 
@@ -154,7 +153,7 @@ const resolvePath = (doc: any, path: string, create: boolean) => {
  * Applies update operations to a document in memory, in order, following Mongo's rules for the operators the adapter
  * uses, and refusing what Mongo would refuse in Mongo's words.
  */
-export const applyUpdateOps = (doc: Record<string, any>, ops: UpdateOp[]) => {
+export const applyUpdateOps = (doc: UpdateContainer, ops: UpdateOp[]) => {
   for (const op of ops) {
     const { operator, path, value } = readOp(op);
     const target = resolvePath(doc, path, !['$unset', '$pull', REMOVE_AT].includes(operator));
@@ -178,7 +177,7 @@ export const applyUpdateOps = (doc: Record<string, any>, ops: UpdateOp[]) => {
       case REMOVE_AT:
         if (current === undefined) break;
         if (!Array.isArray(current)) throw refuseUpdate('Cannot remove an item from a non-array value');
-        if (value < current.length) current.splice(value, 1);
+        if (typeof value === 'number' && value < current.length) current.splice(value, 1);
         break;
       case '$push':
         if (current === undefined) setKey(container, key, [value]);
@@ -190,7 +189,7 @@ export const applyUpdateOps = (doc: Record<string, any>, ops: UpdateOp[]) => {
         break;
       case '$inc':
         if (current === undefined) setKey(container, key, value);
-        else if (typeof current === 'number') container[key] = current + value;
+        else if (typeof current === 'number' && typeof value === 'number') container[key] = current + value;
         else throw refuseUpdate('Cannot apply $inc to a value of non-numeric type');
         break;
       default:
@@ -208,13 +207,30 @@ export default class MongodbAdapter extends AbstractAdapter {
 
   declare collection?: Collection;
 
+  // Converts ids to ObjectIds on the way in and back to strings on the way out, see MongodbIds
+  private _ids = new MongodbIds();
+
   override async connect() {
     if (this.__connection) return this.__connection;
 
     // Remove the pathname as we'll selected the db using the client method
     const connectionString = this.uri.href.replace(this.uri.pathname, '');
 
-    this._client = await MongoClient.connect(connectionString, this.options || {});
+    // Command monitoring costs something per command, so it's only on while I/O is being counted (the budget tests).
+    if (IOStats.isEnabled()) {
+      this._client = await MongoClient.connect(connectionString, { ...this.options, monitorCommands: true });
+      this._client.on('commandStarted', (event: CommandStartedEvent) => {
+        const target: unknown = event.command[event.commandName];
+        // Commands like getMore don't name the collection first, but in `collection`
+        IOStats.record(
+          'mongo',
+          event.commandName,
+          typeof target === 'string' ? target : (event.command.collection as string | undefined),
+        );
+      });
+    } else {
+      this._client = await MongoClient.connect(connectionString, this.options || {});
+    }
 
     this.__connection = this._client.db(this.uri.pathname.replace(/\//g, ''));
 
@@ -247,24 +263,31 @@ export default class MongodbAdapter extends AbstractAdapter {
   }
 
   override get ID() {
-    return AdapterId;
+    return ObjectIdHelper;
   }
 
-  override add(body, modifier) {
+  override updateSchema(schemaData: Schema) {
+    this._ids.setSchema(schemaData.properties);
+  }
+
+  override add(body: AdapterDocument | AdapterDocument[], modifier: (item: AdapterDocument) => AdapterDocument) {
     return this.__batchAddProcess(body, modifier);
   }
 
-  async __batchAddProcess(body: BJSDocument[], modifier: any) {
+  async __batchAddProcess(
+    body: AdapterDocument | AdapterDocument[],
+    modifier: (item: AdapterDocument) => AdapterDocument,
+  ) {
     if (body instanceof Array === false) {
       body = [body];
     }
 
-    const documents = await body.reduce<Promise<BJSDocument[]>>(async (prev, item) => {
+    const documents = await body.reduce(async (prev: Promise<AdapterDocument[]>, item) => {
       const arr = await prev;
-      return arr.concat([this._prepareDocumentForMongo(modifier(item))]);
+      return arr.concat([this._ids.toStored(modifier(item))]);
     }, Promise.resolve([]));
 
-    const ops = documents.map((c: BJSDocument) => {
+    const ops = documents.map((c: AdapterDocument): AnyBulkWriteOperation => {
       return { insertOne: { document: c } };
     });
 
@@ -285,7 +308,7 @@ export default class MongodbAdapter extends AbstractAdapter {
     // looking them up in the database again which is a waste of time.
     new Promise<void>((resolve) =>
       setTimeout(() => {
-        documents.forEach((document: any, idx: number) => {
+        documents.forEach((document: AdapterDocument, idx: number) => {
           document._id = res.insertedIds[idx];
           readable.push(document);
         });
@@ -302,7 +325,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * removed, so that a failed add stores nothing, and a reused id becomes a DuplicateIdError naming its index. Gives
    * the error to throw.
    */
-  async _undoFailedAdd(err: unknown, documents: BJSDocument[]) {
+  async _undoFailedAdd(err: unknown, documents: AdapterDocument[]) {
     // The driver types writeErrors as one error or an array of them.
     const writeErrors = (err as { writeErrors?: unknown } | null)?.writeErrors;
     const writeError = (Array.isArray(writeErrors) ? writeErrors[0] : writeErrors) as
@@ -311,28 +334,31 @@ export default class MongodbAdapter extends AbstractAdapter {
     // Without a write error it isn't known what was written, so nothing is removed.
     if (typeof writeError?.index !== 'number') return err;
 
-    const written = documents.slice(0, writeError.index).map((document) => document._id);
+    const written = documents.slice(0, writeError.index).map((document) => document._id as ObjectId);
     if (written.length > 0) {
       try {
         await this.collection?.deleteMany({ _id: { $in: written } });
       } catch (deleteErr) {
-        Logging.logError(`Unable to remove the ${written.length} entities of a failed add: ${deleteErr}`);
+        Logging.logError(
+          `Unable to remove the ${written.length} entities of a failed add: ${Helpers.getThrownErrorMessage(deleteErr)}`,
+        );
         return err;
       }
     }
 
     if (writeError.code === 11000) {
-      return new Helpers.Errors.DuplicateIdError(writeError.index, String(documents[writeError.index]._id));
+      const { _id } = documents[writeError.index];
+      return new Helpers.Errors.DuplicateIdError(writeError.index, isObjectId(_id) ? _id.toHexString() : String(_id));
     }
     return err;
   }
 
-  override async batchUpdateProcess<T extends StandardModel>(
+  override async batchUpdateProcess(
     id: string,
-    body: { path: string; value: any },
-    context: Context,
-    schemaConfig: SchemaConfig,
-    model?: T,
+    body: UpdatePathBody,
+    context: UpdatePathContext,
+    schemaConfig: FlattenedSchemaProperty | false | undefined,
+    model?: StandardModel<unknown>,
   ) {
     const { ops, result } = await this._prepareUpdate(id, body, context, schemaConfig, model);
     await this._applyUpdateOps(id, ops);
@@ -342,7 +368,7 @@ export default class MongodbAdapter extends AbstractAdapter {
   /**
    * Applies all of one request's updates to an entity together, so either all of them take effect or none do.
    */
-  async updateByPaths<T extends StandardModel>(id: string, updates: PathUpdate[], model?: T) {
+  override async updateByPaths(id: string, updates: UpdatePathOperation[], model?: StandardModel<unknown>) {
     const prepared: Awaited<ReturnType<MongodbAdapter['_prepareUpdate']>>[] = [];
     for (const update of updates) {
       prepared.push(await this._prepareUpdate(id, update.body, update.context, update.schemaConfig, model));
@@ -356,17 +382,17 @@ export default class MongodbAdapter extends AbstractAdapter {
   }
 
   // Works out the operations one update makes and the result the client gets back, without writing anything.
-  async _prepareUpdate<T extends StandardModel>(
+  async _prepareUpdate(
     id: string,
-    body: { path: string; value: any },
-    context: Context,
-    schemaConfig: SchemaConfig,
-    model?: T,
+    body: UpdatePathBody,
+    context: UpdatePathContext,
+    schemaConfig: FlattenedSchemaProperty | false | undefined,
+    model?: StandardModel<unknown>,
   ) {
     if (!context) throw new Error(`batchUpdateProcess called without context; ${id}`);
 
     const updateType = context.type;
-    let response: any = null;
+    let response: unknown = null;
 
     const ops: UpdateOp[] = [];
 
@@ -376,7 +402,7 @@ export default class MongodbAdapter extends AbstractAdapter {
       }
       case 'vector-add':
         {
-          let value: any = null;
+          let value: unknown = null;
           if (schemaConfig && schemaConfig.__schema) {
             value = Helpers.Schema.sanitizeArrayItem(schemaConfig.__schema, body.value);
           } else {
@@ -385,11 +411,11 @@ export default class MongodbAdapter extends AbstractAdapter {
 
           if (!schemaConfig && model) {
             const entity = await model.findById(id);
-            const objValue: { [key: string]: any } = {};
+            const objValue: { [key: string]: unknown } = {};
             let updateValueExists = true;
             let modifiedPath = '';
             let basePath = body.path;
-            let obj = entity;
+            let obj = entity as Record<string, unknown>;
 
             body.path.split('.').forEach((key) => {
               modifiedPath = modifiedPath ? key : `${modifiedPath}.${key}`;
@@ -402,7 +428,7 @@ export default class MongodbAdapter extends AbstractAdapter {
                 return;
               }
 
-              obj = obj[key];
+              obj = obj[key] as Record<string, unknown>;
             }, entity);
 
             if (!updateValueExists) {
@@ -434,10 +460,11 @@ export default class MongodbAdapter extends AbstractAdapter {
         break;
       case 'scalar':
         {
-          let value: any = null;
+          let value: unknown = null;
           if (schemaConfig && schemaConfig.__schema && Array.isArray(body.value)) {
             // An array value replaces the whole array (see StandardModel.updateByPath), so each element is an item.
-            value = body.value.map((item) => Helpers.Schema.sanitizeArrayItem(schemaConfig.__schema, item));
+            const itemSchema = schemaConfig.__schema;
+            value = body.value.map((item) => Helpers.Schema.sanitizeArrayItem(itemSchema, item));
           } else if (schemaConfig && schemaConfig.__schema) {
             value = Helpers.Schema.sanitizeArrayItem(schemaConfig.__schema, body.value);
           } else {
@@ -480,16 +507,18 @@ export default class MongodbAdapter extends AbstractAdapter {
     };
   }
 
+  // The update values carry ids as strings, so they're converted to ObjectIds before they're merged or applied.
   async _applyUpdateOps(id: string, ops: UpdateOp[]) {
     if (ops.length < 1) return;
 
-    const merged = mergeUpdateOps(ops);
+    const storedOps = ops.map((op) => this._ids.toStored(op));
+    const merged = mergeUpdateOps(storedOps);
     if (merged) {
-      await this._write(() => this.collection?.updateOne({ _id: new ObjectId(id) }, merged));
+      await this._write(() => this.collection?.updateOne({ _id: new ObjectId(id) }, merged as UpdateFilter<Document>));
       return;
     }
 
-    await this._applyUpdateOpsInOneWrite(id, ops);
+    await this._applyUpdateOpsInOneWrite(id, storedOps);
   }
 
   /**
@@ -507,17 +536,17 @@ export default class MongodbAdapter extends AbstractAdapter {
       const stored = await this.collection.findOne({ _id }, { projection });
       if (!stored) return;
 
-      const updated = BSON.deserialize(BSON.serialize(stored));
+      const updated: Document = BSON.deserialize(BSON.serialize(stored));
       applyUpdateOps(updated, ops);
 
-      const unchanged = Object.fromEntries(
+      const unchanged: Filter<Document> = Object.fromEntries(
         fields.map((field) => [field, field in stored ? stored[field] : { $exists: false }]),
       );
       const $set = Object.fromEntries(
         fields.filter((field) => field in updated).map((field) => [field, updated[field]]),
       );
       const $unset = Object.fromEntries(fields.filter((field) => !(field in updated)).map((field) => [field, '']));
-      const update = {
+      const update: UpdateFilter<Document> = {
         ...(Object.keys($set).length > 0 ? { $set } : {}),
         ...(Object.keys($unset).length > 0 ? { $unset } : {}),
       };
@@ -532,29 +561,31 @@ export default class MongodbAdapter extends AbstractAdapter {
   async _write<T>(write: () => Promise<T> | undefined): Promise<T | undefined> {
     try {
       return await write();
-    } catch (err: any) {
-      if (!DATA_CONFLICT_CODES.includes(err?.code)) throw err;
-      throw refuseUpdate(String(err.errmsg ?? err.message).replace(/^.*caused by :: /, ''));
+    } catch (err: unknown) {
+      const { code, errmsg, message } = (err ?? {}) as { code?: unknown; errmsg?: unknown; message?: unknown };
+      if (typeof code !== 'number' || !DATA_CONFLICT_CODES.includes(code)) throw err;
+      throw refuseUpdate(String(errmsg ?? message).replace(/^.*caused by :: /, ''));
     }
   }
 
-  async update(select: any, update: any) {
-    const object = await this.collection?.updateMany(this._prepareQueryForMongo(select), update);
+  override async update(select: AdapterQuery, update: AdapterQuery) {
+    const object = await this.collection?.updateMany(this._query(select), this._ids.toStored(update));
     return this._modifyDocument(object);
   }
 
-  override async updateOne(query: any, update: any) {
-    const object = await this.collection?.updateOne(this._prepareQueryForMongo(query), update);
+  override async updateOne(query: AdapterQuery, update: AdapterQuery) {
+    const object = await this.collection?.updateOne(this._query(query), this._ids.toStored(update));
     return this._modifyDocument(object);
   }
 
-  override async updateById(id: string, query: any) {
-    const object = await this.collection?.updateOne({ _id: new ObjectId(id) }, query);
+  override async updateById(id: string, query: AdapterQuery) {
+    const object = await this.collection?.updateOne({ _id: new ObjectId(id) }, this._ids.toStored(query));
 
     return this._modifyDocument(object);
   }
 
-  override exists(id: string, extra = {}) {
+  // Async so an invalid id gives a resolved `false`, callers chain `.then()` on the result
+  override async exists(id: string, extra: AdapterQuery = {}) {
     if (!this.collection) throw new Error('No collection');
 
     Logging.logSilly(`exists: ${this.collection.namespace} ${id}`);
@@ -579,28 +610,23 @@ export default class MongodbAdapter extends AbstractAdapter {
   /*
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override async isDuplicate(details) {
+  override async isDuplicate(details: unknown) {
     // An entity is a duplicate when it reuses the id of one already stored, which the insert would refuse.
-    if (!details?.id) return false;
+    const id = (details as { id?: unknown } | null)?.id;
+    if (typeof id !== 'string' || !id) return false;
 
-    return this.exists(details.id);
+    return this.exists(id);
   }
 
   override async findStoredIds(ids: string[]) {
     if (!this.collection) throw new Error('No collection');
 
     // An id that isn't an ObjectId can't be stored.
-    const objectIds = ids.flatMap((id) => {
-      try {
-        return [new ObjectId(id)];
-      } catch (_err) {
-        return [];
-      }
-    });
+    const objectIds = ids.flatMap((id) => (ObjectId.isValid(id) ? [new ObjectId(id)] : []));
     if (objectIds.length < 1) return [];
 
     const documents = await this.collection.find({ _id: { $in: objectIds } }, { projection: { _id: 1 } }).toArray();
-    return documents.map((document) => document._id.toString());
+    return documents.map((document) => document._id.toHexString());
   }
 
   /**
@@ -618,7 +644,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Array} ids - Array of entity ids to delete
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override rmBulk(ids: any) {
+  override rmBulk(ids: string[]) {
     // Logging.log(`rmBulk: ${this.collection.namespace} ${ids}`, Logging.Constants.LogLevel.SILLY);
     return this.rmAll({ _id: { $in: ids } });
   }
@@ -627,10 +653,10 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override async rmAll(query: any) {
+  override async rmAll(query?: AdapterQuery) {
     if (!query) query = {};
 
-    const doc = await this.collection?.deleteMany(this._prepareQueryForMongo(query));
+    const doc = await this.collection?.deleteMany(this._query(query));
     if (!doc) throw new Error('Unable to deleteMany');
 
     return doc;
@@ -659,12 +685,12 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @return {ReadableStream} - stream
    */
   override find<T extends object>(
-    query: BjsQuery<T>,
-    excludes = {},
+    query: BjsQuery<T> | AdapterQuery,
+    excludes: AdapterQuery | null = {},
     limit = 0,
     skip = 0,
-    sort: any = null,
-    project = null,
+    sort: Record<string, unknown> | null = null,
+    project: Record<string, unknown> | null | false = null,
   ) {
     if (!this.collection) throw new Error('No collection');
 
@@ -675,7 +701,12 @@ export default class MongodbAdapter extends AbstractAdapter {
       );
     }
 
-    let results = this.collection.find(this._prepareQueryForMongo(query), excludes).skip(skip).limit(limit).sort(sort);
+    // The driver ignores a null sort
+    let results = this.collection
+      .find(this._query(query), excludes as FindOptions)
+      .skip(skip)
+      .limit(limit)
+      .sort(sort as Sort);
 
     if (project) {
       results = results.project(project);
@@ -689,8 +720,8 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Object} excludes - mongoDB query excludes
    * @return {Promise} - resolves to an array of docs
    */
-  override async findOne<T extends object>(query: BjsQuery<T>, excludes = {}) {
-    const doc = await this.collection?.findOne(this._prepareQueryForMongo(query), this._prepareQueryForMongo(excludes));
+  override async findOne<T extends object>(query: BjsQuery<T> | AdapterQuery, excludes: AdapterQuery = {}) {
+    const doc = await this.collection?.findOne(this._query(query), this._query(excludes) as FindOptions);
 
     return doc ? this._modifyDocument(doc) : null;
   }
@@ -718,8 +749,10 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Object} query - mongoDB query
    * @return {Promise} - resolves to an array of Companies
    */
-  override count(query: any) {
-    return this.collection?.countDocuments(this._prepareQueryForMongo(query));
+  override count(query?: AdapterQuery) {
+    if (!this.collection) throw new Error('No collection');
+
+    return this.collection.countDocuments(this._query(query));
   }
 
   /**
@@ -738,19 +771,14 @@ export default class MongodbAdapter extends AbstractAdapter {
     }
   }
 
-  // Modify a straem of docuemnts, converting _id to id
-  _modifyDocument(doc: any) {
-    if (doc && doc._id) {
-      doc.id = doc._id;
-      delete doc._id;
-    }
-
-    return doc;
+  // Modify a straem of docuemnts, converting _id to id and ObjectIds to strings
+  _modifyDocument<T>(doc: T): T {
+    return this._ids.fromStored(doc);
   }
   _modifyDocumentStream(stream: Stream.Readable) {
     const transformStream = new Stream.Transform({
       objectMode: true,
-      transform: (doc, enc, cb) => cb(null, this._modifyDocument(doc)),
+      transform: (doc: Document, enc, cb) => cb(null, this._modifyDocument(doc)),
     });
 
     stream.on('error', (err) => {
@@ -761,76 +789,8 @@ export default class MongodbAdapter extends AbstractAdapter {
     return stream.pipe(transformStream);
   }
 
-  // Methods for modifying a document or query to handle converting from id to _id
-  _prepareDocumentForMongo(document: any) {
-    if (document && document.id) {
-      document._id = document.id;
-      delete document.id;
-    }
-    return document;
-  }
-  _prepareQueryForMongo(query) {
-    if (!query) return query;
-
-    if (query.id) {
-      query._id = this._convertIdValue(query.id);
-      delete query.id;
-    } else if (query['$or'] || query['$and']) {
-      if (query['$or']) {
-        query['$or'] = query['$or'].map((q: any) => this._prepareQueryForMongo(q));
-      } else if (query['$and']) {
-        query['$and'] = query['$and'].map((q: any) => this._prepareQueryForMongo(q));
-      }
-    }
-
-    return query;
-  }
-
-  /**
-   * Handling converting part of an expression to a object id.
-   * @param {object | string} expression
-   * @return {object | string}
-   */
-  _convertIdValue(expression) {
-    if (typeof expression === 'object' && !(expression instanceof ObjectId)) {
-      const keys = Object.keys(expression);
-      if (keys.length === 1) {
-        const [key] = keys;
-        const value = this._getExpressionValue(expression[key]);
-        return { [key]: value };
-      } else {
-        // Not sure what we've got here.
-        Logging.logDebug(JSON.stringify(expression));
-        throw new Error('Unknown expression in query.');
-      }
-    }
-
-    // It's not an object, so must be a value.
-    return new ObjectId(expression);
-  }
-
-  /**
-   * Handling getting a value of an expression and converting it to object id.
-   * @param {array | string} value
-   * @return {array | string}
-   */
-  _getExpressionValue(value) {
-    if (Array.isArray(value)) {
-      return value.length > 0
-        ? value.map((v) => {
-            try {
-              return new ObjectId(v);
-            } catch (_err) {
-              return v;
-            }
-          })
-        : value;
-    } else {
-      try {
-        return new ObjectId(value);
-      } catch (_err) {
-        return value;
-      }
-    }
+  // A query with its ids as ObjectIds and `id` as `_id`
+  _query(query: AdapterQuery | undefined): Filter<Document> {
+    return this._ids.toStored(query) as Filter<Document>;
   }
 }

@@ -48,8 +48,10 @@ export interface RequestContext {
   ac: {
     policyConfigs: parsedPolicyConfig[];
   };
+  // Seconds since the request started (Timer.interval) at the start of each stage.
   timings: {
     authenticateToken: number | null;
+    accessControl: number | null;
     configCrossDomain: number | null;
     authenticate: number | null;
     validate: number | null;

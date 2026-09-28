@@ -78,7 +78,7 @@ export class PolicyCache {
     }
 
     const policies = (await this._redisClient.hmGet(this._prefix('policies'), policyIds))
-      .map((policy) => (policy ? JSON.parse(policy) : false))
+      .map((policy): Policy | false => (policy ? (JSON.parse(policy) as Policy) : false))
       .filter((policy) => policy !== false);
 
     const missingPolicies = policyIds.filter((policyId) => !policies.find((policy) => policyId === policy.id));

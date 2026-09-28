@@ -53,7 +53,7 @@ export class Datastore {
     this._adapter = Factory.create(config.connectionString, config.options);
   }
 
-  setHash(hash) {
+  setHash(hash: string) {
     this._hash = hash;
   }
 
@@ -87,7 +87,7 @@ export default {
     datastores[hash].setHash(hash);
     return datastores[hash];
   },
-  getInstance(hash) {
+  getInstance(hash: string) {
     return datastores[hash];
   },
   clean: async () => {

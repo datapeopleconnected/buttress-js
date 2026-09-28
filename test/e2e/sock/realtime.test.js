@@ -123,6 +123,21 @@ describe('Realtime', async () => {
 
 			socket.disconnect();
 		});
+
+		it('Should refuse a token that is not a string', async function () {
+			// A query object would otherwise be used in the token lookup and find whichever token Mongo returns first.
+			for (const token of [{ $ne: null }, { $regex: '.' }, [testEnv.apps.app1.token], 42]) {
+				const namespace = `${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`;
+				const refused = io(namespace, { auth: { token }, forceNew: true, reconnection: false });
+
+				const error = await new Promise((resolve, reject) => {
+					refused.once('connect_error', resolve);
+					refused.once('connect', () => reject(new Error(`Connected with ${JSON.stringify(token)}`)));
+				}).finally(() => refused.close());
+
+				assert.strictEqual(error.message, 'invalid-token');
+			}
+		});
 	});
 
 	describe('db-activity', async () => {

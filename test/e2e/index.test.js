@@ -32,3 +32,5 @@ import './sock/realtime.test.js';
 
 import './lambda/lambda.test.js';
 
+import './perf/io-budgets.test.js';
+

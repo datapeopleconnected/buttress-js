@@ -49,11 +49,11 @@ class ButtressPlugin extends EventEmitter {
 		throw new Error('Not implemented');
 	}
 
-	addAction(name, callback, priority = 10) {
+	addAction(name: string, callback: (...args: unknown[]) => unknown, priority = 10) {
 		this.emit('add-action', { name, callback, priority });
 	}
 
-	addFilter(name, callback, priority = 10) {
+	addFilter(name: string, callback: (...args: unknown[]) => unknown, priority = 10) {
 		this.emit('add-filter', { name, callback, priority });
 	}
 }
