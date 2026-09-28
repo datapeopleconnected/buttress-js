@@ -26,6 +26,7 @@ interface Config {
     apiPrefix: string;
     workers: string;
     trustProxy: string;
+    indexPage: string;
   };
   lambda: {
     apiWorkers: string;

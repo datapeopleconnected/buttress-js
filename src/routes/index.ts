@@ -120,9 +120,7 @@ class Routes {
    */
   async initRoutes() {
     this.app.get('/favicon.ico', (req: Request, res: Response) => res.sendStatus(404));
-    this.app.get(['/', '/index.html'], (req: Request, res: Response) =>
-      res.sendFile(path.join(__dirname, '../static/index.html')),
-    );
+    this._initIndexPage();
 
     this.app.use((req: Request, _res: Response, next: NextFunction) => {
       const logEvent = (event: string, err?: unknown) => {
@@ -183,6 +181,20 @@ class Routes {
 
     this._mountErrorHandler();
     Logging.logSilly(`init:registered-routes`);
+  }
+
+  /**
+   * Serve the landing page at / and /index.html, or 404 there when BUTTRESS_APP_INDEX_PAGE isn't TRUE
+   */
+  _initIndexPage() {
+    if (Config.app.indexPage === 'TRUE') {
+      this.app.get(['/', '/index.html'], (req: Request, res: Response) =>
+        // Pass root so send's dotfile check only covers the file name, not wherever Buttress is installed
+        res.sendFile('index.html', { root: path.join(__dirname, '../static') }),
+      );
+    } else {
+      this.app.get(['/', '/index.html'], (req: Request, res: Response) => res.sendStatus(404));
+    }
   }
 
   async initAppRoutes() {

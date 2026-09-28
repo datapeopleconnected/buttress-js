@@ -23,6 +23,7 @@ The table below lists commonly used runtime parameters.
 | BUTTRESS_APP_PROTOCOL | string | https | Public protocol used in generated URLs |
 | BUTTRESS_APP_PATH | string | (empty) | Absolute path to the runtime root |
 | BUTTRESS_APP_WORKERS | boolean/int | FALSE | FALSE uses default worker strategy; integer sets worker count |
+| BUTTRESS_APP_INDEX_PAGE | boolean | TRUE | Serves the Buttress landing page at `/` and `/index.html`. Set FALSE to return 404 there instead |
 | BUTTRESS_HOST_URL | string | (empty) | Public host and optional port for generated URLs |
 | BUTTRESS_REST_LISTEN_PORT | int | 8000 | REST process listen port |
 | BUTTRESS_SOCK_LISTEN_PORT | int | 8010 | Socket process listen port |
