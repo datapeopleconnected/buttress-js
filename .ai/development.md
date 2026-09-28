@@ -27,13 +27,15 @@ npm run lint            # eslint ./src
 npm run lint:fix
 npm run format           # prettier --check ./src
 npm run format:fix
-npm run licence-check    # ./.husky/licence-check — every src file (except html/json/md/sh) must
-                          # contain the AGPL header block from .husky/licencing_header.txt
+npm run licence-check    # ./scripts/licence-check — every src file (except html/json/md/sh) must
+                          # contain the AGPL header block from scripts/licencing_header.txt
 npm run check            # tsc --noEmit && lint && format && licence-check — the full pre-PR gate
 ```
 
-The pre-commit hook (`.husky/pre-commit`) runs `licence-check` + `build` on every commit — a commit will
-fail if a new/edited `src/*.ts` file is missing the license header or the build breaks. ESLint config
+The pre-commit hook ([.githooks/pre-commit](../.githooks/pre-commit), enabled by the `prepare` script
+setting `core.hooksPath` on `npm install`) runs `licence-check` + `build` on every commit, with the node
+version from `.nvmrc` when nvm is installed — a commit will fail if a new/edited `src/*.ts` file is
+missing the license header or the build breaks. ESLint config
 ([eslint.config.mjs](../eslint.config.mjs)): `max-len` 150 (ignoring strings/template literals),
 `@typescript-eslint/no-explicit-any` is a warning (not an error — `any` is used pervasively in this
 codebase, don't treat `no-explicit-any` warnings as things that must be fixed). Prettier: single quotes,
