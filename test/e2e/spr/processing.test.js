@@ -741,5 +741,21 @@ describe('Processing', async () => {
 			const ref = 'token-type-test-1';
 			await envAwaitPostedCar(ref, testEnv.users[ref].tokens[0].id, testEnv.users[ref].id, testEnv.apps.app2);
 		});
+
+		it("Should refuse a token on another app's namespace", async function () {
+			const socket = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, {
+				auth: { token: testEnv.apps.app2.token },
+				forceNew: true,
+				reconnection: false,
+			});
+
+			const error = await new Promise((resolve, reject) => {
+				socket.once('connect_error', resolve);
+				socket.once('connect', () => reject(new Error('Connected with a token for another app')));
+			});
+			socket.close();
+
+			assert.strictEqual(error.message, 'invalid-namespace');
+		});
 	});
 });

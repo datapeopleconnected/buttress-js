@@ -365,6 +365,17 @@ export default class BootstrapSocket extends Bootstrap {
 
     const apiPath = app.apiPath;
 
+    // Activity is only emitted to a token on its own app's namespace, so a token elsewhere would silently receive
+    // nothing. System tokens may join any app's namespace to receive its activity.
+    if (
+      socket.nsp.name !== '/' &&
+      socket.nsp.name !== `/${apiPath}` &&
+      token.type !== TokenSchemaModel.Constants.Type.SYSTEM
+    ) {
+      Logging.logWarn(`Token for /${apiPath} used on ${socket.nsp.name}, closing connection: ${socket.id}`);
+      return next(new Error('invalid-namespace'));
+    }
+
     // Join them to a room based on the tokenId.
     socket.join(socket.data.tokenId);
 

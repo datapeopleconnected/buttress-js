@@ -1,0 +1,79 @@
+/**
+ * Buttress - The federated real-time open data platform
+ * Copyright (C) 2016-2026 Data People Connected LTD.
+ * <https://www.dpc-ltd.com/>
+ *
+ * This file is part of Buttress.
+ * Buttress is free software: you can redistribute it and/or modify it under the
+ * terms of the GNU Affero General Public Licence as published by the Free Software
+ * Foundation, either version 3 of the Licence, or (at your option) any later version.
+ * Buttress is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU Affero General Public Licence for more details.
+ * You should have received a copy of the GNU Affero General Public Licence along with
+ * this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+import { describe, it, afterEach } from 'mocha';
+import assert from 'assert';
+import sinon from 'sinon';
+import { ObjectId } from 'bson';
+
+import BootstrapSocket from '../../../dist/bootstrap-socket.js';
+import Model from '../../../dist/model/index.js';
+import TokenSchemaModel from '../../../dist/model/core/token.js';
+import AppSchemaModel from '../../../dist/model/core/app.js';
+
+describe('bootstrap-socket:namespace authentication', () => {
+  const apps = [
+    { id: new ObjectId(), apiPath: 'app-one' },
+    { id: new ObjectId(), apiPath: 'app-two' },
+  ];
+  const tokens = [
+    { id: new ObjectId(), value: 'app-one-token', type: 'app', _appId: apps[0].id },
+    { id: new ObjectId(), value: 'system-token', type: 'system', _appId: apps[1].id },
+  ];
+
+  afterEach(() => sinon.restore());
+
+  // Runs the namespace middleware for a socket connecting to `namespace` with `token`.
+  async function connect(namespace, token) {
+    const bootstrap = new BootstrapSocket();
+    bootstrap.__nrp = { emit: sinon.spy() };
+
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      if (modelClass === TokenSchemaModel) return { findOne: async (q) => tokens.find((t) => t.value === q.value) || null };
+      if (modelClass === AppSchemaModel) return { findOne: async (q) => apps.find((a) => a.id.equals(q.id)) || null };
+      throw new Error(`Unexpected core model ${modelClass.name}`);
+    });
+
+    const socket = { id: 'socket-1', nsp: { name: namespace }, handshake: { auth: { token }, query: {} }, data: {} };
+    socket.join = sinon.spy();
+    socket.on = () => {};
+
+    const next = sinon.spy();
+    await bootstrap._workerHandleSocketConnection(socket, next);
+    return { socket, next, nrp: bootstrap.__nrp };
+  }
+
+  it("accepts a token on its own app's namespace", async () => {
+    const { next, socket } = await connect('/app-one', 'app-one-token');
+
+    assert.deepStrictEqual(next.firstCall.args, []);
+    assert.ok(socket.join.calledOnce);
+  });
+
+  it("refuses a token on another app's namespace with invalid-namespace", async () => {
+    const { next, socket, nrp } = await connect('/app-two', 'app-one-token');
+
+    assert.strictEqual(next.firstCall.args[0].message, 'invalid-namespace');
+    assert.ok(socket.join.notCalled);
+    assert.ok(nrp.emit.notCalled, 'the token should not be registered as connected');
+  });
+
+  it("still lets a system token join any app's namespace", async () => {
+    const { next } = await connect('/app-one', 'system-token');
+
+    assert.deepStrictEqual(next.firstCall.args, []);
+  });
+});

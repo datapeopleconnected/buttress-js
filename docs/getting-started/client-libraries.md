@@ -50,10 +50,10 @@ Buttress Socket process publishes mutation events for subscribed clients.
 
 Typical client flow:
 
-1. Connect to the Socket endpoint.
-2. Authenticate with token information.
-3. Subscribe to schema-specific channels/rooms.
-4. Consume mutation events and update local state.
+1. Connect to the app's namespace, `<socket endpoint>/<apiPath>`, passing the token as `auth: {token}` (`io(url, {auth: {token}, forceNew: true})`). A token in the query string (`query: {token}`) still works but is deprecated.
+2. Consume `db-activity` events and update local state.
+
+A token can only connect to its own app's namespace; anywhere else the connection fails with the `connect_error` message `invalid-namespace`. System tokens may connect to any app's namespace. Pass `forceNew: true` when connecting to more than one namespace on the same endpoint, or socket.io reuses the first connection and its token.
 
 ## Security Guidance
 
