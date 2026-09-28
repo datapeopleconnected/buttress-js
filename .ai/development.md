@@ -27,15 +27,20 @@ npm run lint            # eslint ./src
 npm run lint:fix
 npm run format           # prettier --check ./src
 npm run format:fix
+npm run lint:staged      # eslint --fix + prettier --write on staged src files only (run by the hook)
 npm run licence-check    # ./scripts/licence-check — every src file (except html/json/md/sh) must
                           # contain the AGPL header block from scripts/licencing_header.txt
 npm run check            # tsc --noEmit && lint && format && licence-check — the full pre-PR gate
 ```
 
 The pre-commit hook ([.githooks/pre-commit](../.githooks/pre-commit), enabled by the `prepare` script
-setting `core.hooksPath` on `npm install`) runs `licence-check` + `build` on every commit, with the node
-version from `.nvmrc` when nvm is installed — a commit will fail if a new/edited `src/*.ts` file is
-missing the license header or the build breaks. ESLint config
+setting `core.hooksPath` on `npm install`) runs `lint:staged`, `licence-check` + `build` on every commit,
+with the node version from `.nvmrc` when nvm is installed. `lint:staged` is
+[lint-staged](https://github.com/lint-staged/lint-staged) (config under `"lint-staged"` in `package.json`):
+it fixes the staged version of each `src/` file and re-stages it, hiding the unstaged changes of partially
+staged files while it runs and restoring them afterwards, so staging one hunk still commits only that hunk.
+A commit will fail if ESLint finds an error it can't fix (the files are left as they were), a new/edited
+`src/*.ts` file is missing the license header, or the build breaks. ESLint config
 ([eslint.config.mjs](../eslint.config.mjs)): `max-len` 150 (ignoring strings/template literals),
 `@typescript-eslint/no-explicit-any` is a warning (not an error — `any` is used pervasively in this
 codebase, don't treat `no-explicit-any` warnings as things that must be fixed). Prettier: single quotes,

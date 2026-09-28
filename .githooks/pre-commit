@@ -5,7 +5,9 @@ export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
 set -e
 
-# npm run lint
+# eslint --fix + prettier --write on the staged src files ("lint-staged" in package.json).
+# --if-present: worktrees on branches that predate the script share this hook.
+npm run --if-present lint:staged
 
 npm run licence-check
 npm run build
