@@ -119,6 +119,29 @@ describe('routes/Route:constructor', () => {
 });
 
 describe('routes/Route:_authenticate', () => {
+  it("rejects with 400 when ?apiPath= names an app other than the token's", async () => {
+    const route = createRoute();
+    const req = createReq({ token: { type: 'system' }, authApp: { id: 'app-1', apiPath: 'super-app' } });
+    req.query = { apiPath: 'customer-app' };
+
+    await assert.rejects(
+      () => route._authenticate(req, createRes()),
+      (err) => {
+        assert.strictEqual(err.code, 400);
+        assert.strictEqual(err.message, 'apiPath_not_supported: requests act on the app of the token (super-app)');
+        return true;
+      },
+    );
+  });
+
+  it("allows ?apiPath= naming the token's own app", async () => {
+    const route = createRoute();
+    const req = createReq({ token: { type: 'app' }, authApp: { id: 'app-1', apiPath: 'customer-app' } });
+    req.query = { apiPath: 'customer-app' };
+
+    await route._authenticate(req, createRes());
+  });
+
   it('rejects with 401 when there is no token', async () => {
     const route = createRoute();
     const req = createReq({ token: null });
