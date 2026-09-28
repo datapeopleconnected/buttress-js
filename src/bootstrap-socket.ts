@@ -359,6 +359,12 @@ export default class BootstrapSocket extends Bootstrap {
   private async _workerHandleSocketConnection(socket: AppSocket, next: (err?: Error) => void) {
     // DEPRECATED: We should phase out accepting token via query and only use the auth headers.
     const rawToken: unknown = socket.handshake.auth.token || socket.handshake.query.token;
+    // The client sends auth as JSON, so the token can be anything. A query object such as {$ne: null} would find
+    // whichever token Mongo returned first, so only a string is looked up.
+    if (typeof rawToken !== 'string' || rawToken === '') {
+      Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
+      return next(new Error('invalid-token'));
+    }
 
     Logging.logDebug(`Fetching token with value: ${rawToken}`);
     const token = (await Model.getCoreModel(TokenSchemaModel).findOne({ value: rawToken })) as Token;
