@@ -211,7 +211,9 @@ export default class LambdaRunner {
     const reqHeaders = (data.headers ? JSON.parse(data.headers) : {}) as IncomingHttpHeaders;
 
     const appLambdaEnv = await this._getAppLambdaEnvironment(app);
-    let userToken: string | undefined = reqHeaders?.authorization || (reqQuery?.token as string | undefined);
+    const callerToken = reqHeaders?.authorization || reqQuery?.token;
+    // A repeated ?token= arrives as an array, so a token that isn't a string is dropped rather than passed on.
+    let userToken: string | undefined = typeof callerToken === 'string' ? callerToken : undefined;
     userToken = userToken ? userToken.replace('Bearer ', '') : userToken;
     const rxsLambdaToken = await Model.getCoreModel(TokenSchemaModel).find({
       _appId: Model.getCoreModel(AppSchemaModel).createId(app.id),

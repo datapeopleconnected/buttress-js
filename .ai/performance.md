@@ -4,7 +4,8 @@
 
 `npm run bench` ([test/bench/run.mjs](../test/bench/run.mjs)) measures a build's REST throughput, latency and
 server CPU per request, and writes a results file; `npm run bench:compare -- <base.json> <head.json>`
-([test/bench/compare.mjs](../test/bench/compare.mjs)) compares two. Usage is in
+([test/bench/compare.mjs](../test/bench/compare.mjs)) compares two. Either side can be a comma-separated list of
+one build's results files, whose rounds are pooled and the medians recomputed. Usage is in
 [docs/development/benchmarking.md](../docs/development/benchmarking.md).
 
 It boots the build from `--dist` (default `dist/`, so build first) as its own single-instance REST process, with
@@ -13,8 +14,10 @@ names the database (`bjs-bench-prod`) and prefixes every Redis key and NRP chann
 those. A new scenario goes in the `SCENARIOS` map in run.mjs.
 
 In CI, [.github/workflows/bench.yml](../.github/workflows/bench.yml) benchmarks each push to `develop`/`main`, and
-each PR, against the commit it builds on, and puts the comparison in the job summary. It is report-only and runs
-apart from the Tests workflow, so a slow or failing benchmark can't hold up the Docker publish.
+each PR, against the commit it builds on, and puts the comparison in the job summary. The two builds take turns
+(base, head, head, base) so drift over the job, such as a cold runner warming up, doesn't all land on one side. It
+is report-only and runs apart from the Tests workflow, so a slow or failing benchmark can't hold up the Docker
+publish.
 
 ## I/O budgets
 
