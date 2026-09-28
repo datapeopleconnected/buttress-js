@@ -76,8 +76,3 @@ exposes internal timings.
 `req.context.timings` holds `Timer.interval` values: **seconds** since the request started, marking the start of each
 stage. The header converts them to milliseconds. A new stage needs a mark at its start (as
 `accessControlPolicyMiddleware` sets `accessControl`) and an entry in `SERVER_TIMING_STAGES`.
-
-## E2E timing harness
-
-`test:e2e:timed` / `perf:baseline:record` / `perf:compare` time each e2e test once against a committed baseline.
-Fixed sleeps and polling dominate those times, so treat the comparison as a rough smoke signal.
