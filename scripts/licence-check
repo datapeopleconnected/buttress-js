@@ -46,7 +46,7 @@ rm "$has_errors_file"
 if [[ "$has_errors" == "true" ]]; then
   echo -e "Licensing Check: \033[31mFailed\033[0m"
   echo "The above files are missing or have the incorrect license header."
-  echo "The license header can be found in the file ./.husky/licensing_header.txt"
+  echo "The license header can be found in the file $license_file"
   exit 1
 fi
 

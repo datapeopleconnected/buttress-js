@@ -33,13 +33,13 @@
     "coverage:unit": "c8 npm run test:unit",
     "coverage:istanbul": "npm run build && node test/istanbul/run.mjs",
     "start": "bin/buttress.sh",
-    "licence-check": "./.husky/licence-check",
+    "licence-check": "./scripts/licence-check",
     "check": "tsc --noEmit && npm run lint && npm run format && npm run licence-check",
     "docker:build": "docker build -t buttress .",
     "docker:build-token": "npm run docker:build -- --build-arg NPM_TOKEN=${NPM_TOKEN}",
     "docker:run": "docker-compose -f .docker/docker-compose.yml up",
     "docker:run-full": "docker-compose -f .docker/docker-compose.full.yml up",
-    "prepare": "husky install && [ -f ./.husky/nvm-fix ] && ./.husky/nvm-fix || true",
+    "prepare": "[ -e .git ] && git config core.hooksPath .githooks || true",
     "nvm": "~/.nvm/nvm-exec which node | xargs -I {} bash -c 'ln -sf \"{}\" ./.nvm-node' && chmod +x ./.nvm-node"
   },
   "repository": {
@@ -85,7 +85,6 @@
     "c8": "^11.0.0",
     "copyfiles": "^2.4.1",
     "eslint": "^10.3.0",
-    "husky": "^9.1.7",
     "istanbul-lib-coverage": "^3.2.2",
     "istanbul-lib-instrument": "^6.0.3",
     "istanbul-lib-report": "^3.0.1",

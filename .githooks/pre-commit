@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Git GUIs and agent shells don't load nvm, so use the version pinned in .nvmrc.
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" && nvm use --silent >/dev/null
+
+set -e
+
+# npm run lint
+
+npm run licence-check
+npm run build
