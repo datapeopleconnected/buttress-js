@@ -20,7 +20,47 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Git gives every snapshot of the files a tree hash. A PR run tests the PR merged into its base, and merging it
+  # (merge, squash or rebase, with the base unchanged) creates a commit with that same tree. So every run whose
+  # tests pass records its tree as a tested-<tree> artifact, and a push whose tree has already passed skips the
+  # tests and goes straight to the docker job. The same goes for a release tag on a commit main already tested.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tree: ${{ steps.lookup.outputs.tree }}
+      tested: ${{ steps.lookup.outputs.tested }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Look for a passing run of the same tree
+      id: lookup
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        tree=$(git rev-parse 'HEAD^{tree}')
+        echo "tree=$tree" >> "$GITHUB_OUTPUT"
+        tested=false
+        if [ "$GITHUB_EVENT_NAME" = push ]; then
+          # Only trust records from this repository's own runs. Fork PRs run their own copy of this workflow.
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=tested-$tree" --jq '
+            [.artifacts[] | select(.expired | not)
+              | select(.workflow_run.head_repository_id == .workflow_run.repository_id)][0].workflow_run.id // empty')
+          if [ -n "$run" ]; then
+            tested=true
+            echo "::notice::Tree $tree already passed in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run, skipping the tests"
+          fi
+        fi
+        echo "tested=$tested" >> "$GITHUB_OUTPUT"
+
   check:
+    needs: gate
+    if: needs.gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -42,6 +82,8 @@ jobs:
       run: npm run check
 
   unit-tests:
+    needs: gate
+    if: needs.gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
@@ -78,6 +120,8 @@ jobs:
         retention-days: 14
 
   e2e-tests:
+    needs: gate
+    if: needs.gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -139,7 +183,9 @@ jobs:
   #   main        -> latest, sha-<short>
   #   tag v1.2.3  -> 1.2.3
   docker:
-    needs: [check, unit-tests, e2e-tests]
+    needs: [gate, check, unit-tests, e2e-tests]
+    # Also runs when the gate skipped the tests, but not when anything failed.
+    if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -148,6 +194,19 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v7
+
+    # The tests passed on this tree, so later pushes of it can skip them (see the gate job).
+    - name: Record the tested tree
+      if: needs.gate.outputs.tested != 'true'
+      run: echo "$GITHUB_SHA" > tested-commit.txt
+
+    - name: Upload the tested tree record
+      if: needs.gate.outputs.tested != 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: tested-${{ needs.gate.outputs.tree }}
+        path: tested-commit.txt
+        retention-days: 30
 
     - name: Compute tags and labels
       id: meta
