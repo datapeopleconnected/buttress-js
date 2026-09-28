@@ -46,6 +46,18 @@ import TokenSchemaModel from './model/core/token.js';
 
 // morgan.token('id', (req) => req.context.id);
 
+/**
+ * Config values are always strings, and Express reads a string `trust proxy` as a list of addresses, so '1' would
+ * only trust 0.0.0.1. Digits become a hop count and true/false become booleans; anything else, such as 'loopback'
+ * or a list of subnets, is left for Express to parse.
+ */
+export function parseTrustProxy(value: string): number | boolean | string {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  if (/^(true|false)$/i.test(trimmed)) return trimmed.toLowerCase() === 'true';
+  return trimmed;
+}
+
 Error.stackTraceLimit = Infinity;
 export default class BootstrapRest extends Bootstrap {
   routes?: Routes;
@@ -193,9 +205,10 @@ export default class BootstrapRest extends Bootstrap {
     const app = Express();
     // app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 
-    if (Config.app.trustProxy) {
-      app.set('trust proxy', Config.app.trustProxy);
-      Logging.logVerbose(`Trust proxy enabled for REST server, ${Config.app.trustProxy}`);
+    const trustProxy = parseTrustProxy(Config.app.trustProxy);
+    if (trustProxy) {
+      app.set('trust proxy', trustProxy);
+      Logging.logVerbose(`Trust proxy enabled for REST server, ${trustProxy}`);
     }
 
     app.use(Express.json({ limit: '20mb' }));
