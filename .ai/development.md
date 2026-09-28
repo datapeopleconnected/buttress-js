@@ -65,9 +65,16 @@ npm run bench:compare -- a.json b.json   # compare two bench results
   [test/e2e/index.test.js](../test/e2e/index.test.js) is the entry point that requires the individual
   `test/e2e/{rest,sock,lambda,spr,perf}/*.test.js` suites.
 - Env used for tests is `.test.env` (`NODE_ENV=test`) — see `helpers/config.ts`, which loads
-  `.${NODE_ENV}.env` from the repo root via `@dpc/node-env-obj`. Performance checks (the I/O budget
-  suite, and the rougher `test:e2e:timed` / `perf:compare` timing comparison) are in
+  `.${NODE_ENV}.env` from the repo root via `@dpc/node-env-obj`. Performance tools (`npm run bench`, the
+  I/O budget suite, and the rougher `test:e2e:timed` / `perf:compare` timing comparison) are in
   [performance.md](performance.md).
+- **Coverage:** `coverage:unit` (the CI coverage job) and `coverage` use c8, whose figures read high: it
+  counts licence headers, comments and types as covered lines in any file that loads, and only counts
+  branches inside functions that ran. For real numbers use `npm run coverage:istanbul` (add `-- unit` or
+  `-- e2e` for one suite). It builds, runs the suites with `dist/` instrumented on load by a loader hook
+  ([test/istanbul/](../test/istanbul), so `dist/` itself is untouched), and prints per-suite and combined
+  coverage of `src/*.ts`; the HTML report lands in `coverage/istanbul/lcov-report/`. Its e2e step is plain
+  `test:e2e`, so it needs MongoDB + Redis and wipes them the same way.
 
 ## Running from source (non-Docker)
 
