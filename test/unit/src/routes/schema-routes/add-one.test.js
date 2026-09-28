@@ -22,11 +22,12 @@ import * as Errors from '../../../../../dist/helpers/errors.js';
 
 const { RequestError } = Errors;
 
-function createFakeModel({ validation = { isValid: true }, isDuplicate = false, added } = {}) {
+function createFakeModel({ validation = { isValid: true }, isDuplicate = false, added, storedIds = [] } = {}) {
   return {
     schemaData: { name: 'test-schema' },
     validate: () => validation,
     isDuplicate: async () => isDuplicate,
+    findStoredIds: async (ids) => storedIds.filter((id) => ids.includes(id)),
     add: async (body) => added || { id: 'new-id', ...body },
   };
 }
@@ -82,6 +83,30 @@ describe('schema-routes/AddOne:_validate', () => {
     );
   });
 
+  it('checks an array of entities as bulk/add does, naming the index of the first that fails', async () => {
+    const model = createFakeModel({ storedIds: ['x'] });
+    model.validate = (entity) => (entity.name ? { isValid: true } : { isValid: false, missing: ['name'], invalid: [] });
+    const route = createRoute(model);
+
+    for (const [body, message] of [
+      [[{ name: 'a' }, { id: 'x', name: 'b' }], 'test-schema: Duplicate id x at index 1'],
+      [[{ name: 'a' }, { id: 'y', name: 'b' }, { id: 'y', name: 'c' }], 'test-schema: Duplicate id y at index 2'],
+      [[{ name: 'a' }, {}], 'test-schema: Missing field: name at index 1'],
+      [[{ name: 'a' }, [{ name: 'b' }]], 'test-schema: Invalid entity at index 1, expected an object'],
+    ]) {
+      await assert.rejects(
+        () => route._validate({ body, context: { id: 'req-1' } }, {}),
+        (err) => err instanceof RequestError && err.code === 400 && err.message === message,
+      );
+    }
+  });
+
+  it('resolves true for an array of valid, new entities', async () => {
+    const route = createRoute(createFakeModel({ storedIds: ['x'] }));
+
+    assert.strictEqual(await route._validate({ body: [{ id: 'y' }, { name: 'b' }], context: { id: 'req-1' } }, {}), true);
+  });
+
   it('resolves true when the body is valid and not a duplicate', async () => {
     const route = createRoute(createFakeModel());
 
@@ -111,6 +136,19 @@ describe('schema-routes/AddOne:_exec', () => {
     await assert.rejects(
       () => route._exec({ body: { id: 'x' }, context: { id: 'req-1' } }, {}, true),
       (err) => err instanceof RequestError && err.code === 400 && err.message === 'duplicate',
+    );
+  });
+
+  it('names the index of an id taken while an array of entities is being stored', async () => {
+    const model = createFakeModel();
+    model.add = async () => {
+      throw new Errors.DuplicateIdError(1, 'x');
+    };
+    const route = createRoute(model);
+
+    await assert.rejects(
+      () => route._exec({ body: [{ name: 'a' }, { id: 'x' }], context: { id: 'req-1' } }, {}, true),
+      (err) => err instanceof RequestError && err.message === 'test-schema: Duplicate id x at index 1',
     );
   });
 });

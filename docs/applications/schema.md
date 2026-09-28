@@ -91,7 +91,7 @@ Items are checked against the array's `__itemtype` or item `__schema`, element b
 
 The response is a 200 whenever the request itself is well formed. The `x-bulk-refused` header gives the number of refused items, so a client only needs to look through the results when it isn't `0`.
 
-`POST <schema>/bulk/add` and `POST <schema>/bulk/delete` are all or nothing. `bulk/add` stores nothing unless every entity is valid and none reuses an id, whether another entity's in the request or one already stored; the 400 names the index of the first entity that fails, for example `car: Missing field: name at index 3`. `bulk/delete` deletes nothing unless every id exists and is in the caller's scope, and responds `true`.
+`POST <schema>/bulk/add` and `POST <schema>/bulk/delete` are all or nothing. `bulk/add` stores nothing unless every entity is valid and none reuses an id, whether another entity's in the request or one already stored; the 400 names the index of the first entity that fails, for example `car: Missing field: name at index 3`. An array sent to `POST <schema>` is stored and checked in the same way. `bulk/delete` deletes nothing unless every id exists and is in the caller's scope, and responds `true`.
 
 ## Managing Schemas
 Schemas can be updated, extended, or deleted using the ButtressJS API. The `Schema` class provides methods for merging, validating, and encoding schemas.

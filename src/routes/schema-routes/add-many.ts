@@ -27,7 +27,7 @@ import StandardModel from '../../model/type/standard.js';
 /**
  * The first reason a batch of new entities can't be stored, naming the index of the entity, or null if it can be.
  */
-const findBatchProblem = async (model: StandardModel, entities: unknown[]) => {
+export const findBatchProblem = async (model: StandardModel, entities: unknown[]) => {
   const isEntity = (entity: unknown): entity is { id?: unknown } =>
     entity !== null && typeof entity === 'object' && !Array.isArray(entity);
 
@@ -62,6 +62,15 @@ const findBatchProblem = async (model: StandardModel, entities: unknown[]) => {
   }
 
   return null;
+};
+
+/**
+ * An id can be taken by another request between the check and the insert. The adapter then removes what it stored of
+ * the batch, and this is the problem to refuse the batch with, as the check would have refused it.
+ */
+export const describeTakenId = (err: InstanceType<typeof Helpers.Errors.DuplicateIdError>, entities: unknown[]) => {
+  const id = (entities[err.index] as { id?: unknown } | undefined)?.id ?? err.id;
+  return `Duplicate id ${id} at index ${err.index}`;
 };
 
 /**
@@ -108,20 +117,11 @@ export default class AddMany extends Route {
     try {
       return await (await this.routeModel()).add(entities);
     } catch (err) {
-      throw this.refuseDuplicate(err, entities, req);
+      if (!(err instanceof Helpers.Errors.DuplicateIdError)) throw err;
+
+      const problem = describeTakenId(err, entities);
+      this.log(`ERROR: ${problem}`, Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
     }
-  }
-
-  /**
-   * An id can be taken by another request between the check and the insert. The adapter then removes what it stored
-   * of the batch, and the batch is refused as the check would have refused it.
-   */
-  refuseDuplicate(err: unknown, entities: unknown[], req: Request) {
-    if (!(err instanceof Helpers.Errors.DuplicateIdError)) return err;
-
-    const id = (entities[err.index] as { id?: unknown } | undefined)?.id ?? err.id;
-    const problem = `Duplicate id ${id} at index ${err.index}`;
-    this.log(`ERROR: ${problem}`, Route.LogLevel.ERR, req.context.id);
-    return new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
   }
 }

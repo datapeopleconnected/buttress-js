@@ -225,8 +225,8 @@ describe('Schema', async () => {
 	describe('Bulk add', async () => {
 		const carsUrl = () => `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`;
 
-		const bulkAdd = async (entities) => {
-			const res = await fetch(`${carsUrl()}/bulk/add`, {
+		const bulkAdd = async (entities, url = `${carsUrl()}/bulk/add`) => {
+			const res = await fetch(url, {
 				method: 'POST',
 				headers: {'Content-Type': 'application/json', Authorization: `Bearer ${testEnv.apps.app1.token}`},
 				body: JSON.stringify(entities),
@@ -308,6 +308,21 @@ describe('Schema', async () => {
 				assert.strictEqual(await countNamed(name(refused === 0 ? 'a' : 'b')), 0);
 				assert.strictEqual(await countNamed(name(refused === 0 ? 'b' : 'a')), 51);
 			}
+		});
+
+		it('Should check an array sent to add-one as bulk/add checks it', async () => {
+			const [existing] = await bjsReq({
+				url: carsUrl(),
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({name: 'add-one-array-existing'}),
+			}, testEnv.apps.app1.token);
+
+			const res = await bulkAdd([{name: 'add-one-array-before'}, {id: existing.id, name: 'add-one-array-dup'}], carsUrl());
+
+			assert.strictEqual(res.status, 400);
+			assert.strictEqual(res.body.message, `car: Duplicate id ${existing.id} at index 1`);
+			assert.strictEqual(await countNamed('add-one-array-before'), 0);
 		});
 	});
 

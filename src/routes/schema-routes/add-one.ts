@@ -16,6 +16,7 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
+import { describeTakenId, findBatchProblem } from './add-many.js';
 import * as Helpers from '../../helpers/index.js';
 import Plugins from '../../plugins/index.js';
 
@@ -43,6 +44,17 @@ export default class AddOne extends Route {
 
   override async _validate(req: Request, _res: Response) {
     const model = await this.routeModel();
+
+    // An array of entities is stored as bulk/add stores it, so it's checked in the same way.
+    if (Array.isArray(req.body)) {
+      const problem = await findBatchProblem(model, req.body);
+      if (problem) {
+        this.log(`${this.schemaName}: ${problem}`, Route.LogLevel.ERR, req.context.id);
+        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
+      }
+      return true;
+    }
+
     const validation = model.validate(req.body);
     if (!validation.isValid) {
       if (validation.missing.length > 0) {
@@ -75,6 +87,11 @@ export default class AddOne extends Route {
     } catch (err) {
       // The id was taken by another request after the duplicate check.
       if (!(err instanceof Helpers.Errors.DuplicateIdError)) throw err;
+      if (Array.isArray(req.body)) {
+        const problem = describeTakenId(err, req.body);
+        this.log(`${this.schemaName}: ${problem}`, Route.LogLevel.ERR, req.context.id);
+        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
+      }
       this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `duplicate`);
     }
