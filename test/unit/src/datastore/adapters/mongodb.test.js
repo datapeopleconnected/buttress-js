@@ -39,6 +39,7 @@ const organisationSchema = {
       },
     },
     tags: { __type: 'array', __itemtype: 'string', __allowUpdate: true },
+    notes: { __type: 'array', __allowUpdate: true },
   },
 };
 
@@ -205,6 +206,54 @@ describe('datastore/adapters/MongodbAdapter: single-item writes to typed arrays'
     await update(model, { path: 'tags.0', value: 'x' });
 
     assert.deepStrictEqual(ops, [{ $set: { 'tags.0': 'x' } }]);
+  });
+});
+
+describe('datastore/adapters/MongodbAdapter: plain arrays', () => {
+  it('appends one value to an array with no item type', async () => {
+    const { model, ops } = createModel();
+
+    const { validation, results } = await update(model, { path: 'notes', value: 'hello' });
+
+    assert.strictEqual(validation.isValid, true);
+    assert.deepStrictEqual(ops, [{ $push: { notes: 'hello' } }]);
+    assert.deepStrictEqual(results, [{ type: 'vector-add', path: 'notes', value: 'hello' }]);
+  });
+
+  it('appends an object to an array with no item type as it is', async () => {
+    const { model, ops } = createModel();
+
+    await update(model, { path: 'notes', value: { text: 'hello', pinned: true } });
+
+    assert.deepStrictEqual(ops, [{ $push: { notes: { text: 'hello', pinned: true } } }]);
+  });
+
+  it('replaces an array with no item type when the value is an array', async () => {
+    const { model, ops } = createModel();
+
+    await update(model, { path: 'notes', value: ['a', 'b'] });
+
+    assert.deepStrictEqual(ops, [{ $set: { notes: ['a', 'b'] } }]);
+  });
+});
+
+describe('datastore/adapters/MongodbAdapter: several appends in one request', () => {
+  it('applies each append to the same property, in order', async () => {
+    const { model, ops } = createModel();
+
+    await update(model, [
+      { path: 'tags', value: 'a' },
+      { path: 'tags', value: 'b' },
+      { path: 'contacts', value: { name: 'Alice' } },
+      { path: 'contacts', value: { name: 'Bob' } },
+    ]);
+
+    assert.deepStrictEqual(ops, [
+      { $push: { tags: 'a' } },
+      { $push: { tags: 'b' } },
+      { $push: { contacts: { name: 'Alice', qty: 0, address: { street: null } } } },
+      { $push: { contacts: { name: 'Bob', qty: 0, address: { street: null } } } },
+    ]);
   });
 });
 

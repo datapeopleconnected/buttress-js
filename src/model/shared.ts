@@ -204,6 +204,8 @@ export const doValidateUpdate = function (pathContext, flattenedSchema) {
       // A push of one item to the array, or a `path.N` set of one item.
       checks = [checkArrayItem(config || itemArrayConfig, body.value, pathStrippedSuffix)];
       body.value = checks[0].value;
+    } else if (config?.__type === 'array') {
+      // An array with no item type takes any value: one to append, or an array to replace it with.
     } else if (config && !config.__schema && !Helpers.Schema.validateProp(body, config)) {
       res.invalidValue = `${fullPath} failed schema test`;
       return res;

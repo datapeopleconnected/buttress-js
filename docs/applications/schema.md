@@ -81,7 +81,7 @@ Schemas can inherit properties from other schemas using the `extends` field. Thi
 | `{"path": "tags.2", "value": "c"}` | Sets one item |
 | `{"path": "tags.2.__remove__", "value": ""}` | Removes one item |
 
-Items are checked against the array's `__itemtype` or item `__schema`, element by element when the whole array is replaced. Objects in an array with an item `__schema` keep only the properties the item schema declares, so declare `id` in the item schema if clients give items their own ids. An array value always replaces the whole property, so an item that is itself an array can't be appended; replace the whole array instead.
+Items are checked against the array's `__itemtype` or item `__schema`, element by element when the whole array is replaced. Objects in an array with an item `__schema` keep only the properties the item schema declares, so declare `id` in the item schema if clients give items their own ids. An array with neither takes any value. An array value always replaces the whole property, so an item that is itself an array can't be appended; replace the whole array instead. To append several items, send one update per item, as an array of updates to `PUT <schema>/:id` or as items of a `bulk/update`; they're applied in order.
 
 ## Bulk Requests
 `POST <schema>/bulk/update` takes `[{id, sourceId?, body}]`, where `body` is an update or an array of them. Each item is validated and applied on its own, in order, and the response has one entry per item, in request order:

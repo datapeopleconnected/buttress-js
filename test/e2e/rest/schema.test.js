@@ -316,6 +316,10 @@ describe('Schema', async () => {
 						__itemtype: 'string',
 						__allowUpdate: true,
 					},
+					notes: {
+						__type: 'array',
+						__allowUpdate: true,
+					},
 				},
 			}];
 
@@ -392,6 +396,30 @@ describe('Schema', async () => {
 
 			const spaceship = await getSpaceship();
 			assert.deepStrictEqual(spaceship.tags, ['z', 'a', 'b']);
+		});
+
+		it('Should append several values to one property with a bulk update', async () => {
+			const results = await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship/bulk/update`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify([
+					{id: testEnv.spaceship.id, body: {path: 'tags', value: 'c'}},
+					{id: testEnv.spaceship.id, body: {path: 'tags', value: 'd'}},
+				]),
+			}, testEnv.apps.app2.token);
+			assert.deepStrictEqual(results.map((r) => r.results[0].type), ['vector-add', 'vector-add']);
+
+			const spaceship = await getSpaceship();
+			assert.deepStrictEqual(spaceship.tags, ['z', 'a', 'b', 'c', 'd']);
+		});
+
+		it('Should append a value to an array with no item type', async () => {
+			await putSpaceship({path: 'notes', value: 'hello'});
+			await putSpaceship({path: 'notes', value: {text: 'world'}});
+
+			const spaceship = await getSpaceship();
+			assert.deepStrictEqual(spaceship.notes, ['hello', {text: 'world'}]);
 		});
 	});
 });
