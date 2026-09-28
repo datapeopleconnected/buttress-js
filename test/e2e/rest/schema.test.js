@@ -345,6 +345,28 @@ describe('Schema', async () => {
 		});
 	});
 
+	describe('Search operators', async () => {
+		const searchNames = async (query) => (await bjsReq({
+			url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+			method: 'SEARCH',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({query}),
+		}, testEnv.apps.app1.token)).map((car) => car.name);
+
+		it('Should match $rex with case, and $rexi without', async () => {
+			await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({name: 'Rex-Case-Car'}),
+			}, testEnv.apps.app1.token);
+
+			assert.deepStrictEqual(await searchNames({name: {$rex: '^Rex-Case'}}), ['Rex-Case-Car']);
+			assert.deepStrictEqual(await searchNames({name: {$rex: '^rex-case'}}), []);
+			assert.deepStrictEqual(await searchNames({name: {$rexi: '^rex-case'}}), ['Rex-Case-Car']);
+		});
+	});
+
 	describe('Types', async () => {
 		before(async function() {
 			testEnv.apps.app2 = await runStep('create app2', async () =>

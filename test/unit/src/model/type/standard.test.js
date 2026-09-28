@@ -127,10 +127,10 @@ describe('model/type/StandardModel:parseQuery', () => {
     assert.deepStrictEqual(result, { createdAt: { $gt: new Date('2025-01-01') } });
   });
 
-  it('rewrites $rex/$rexi into a case-insensitive $regex', () => {
+  it('rewrites $rex into a case-sensitive $regex, and $rexi into a case-insensitive one', () => {
     const model = createModel();
-    const result = model.parseQuery({ name: { $rex: '^wid' } });
-    assert.deepStrictEqual(result, { name: { $regex: '^wid', $options: 'i' } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $rex: '^wid' } }), { name: { $regex: '^wid' } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $rexi: '^wid' } }), { name: { $regex: '^wid', $options: 'i' } });
   });
 
   it('recurses into $or/$and arrays', () => {

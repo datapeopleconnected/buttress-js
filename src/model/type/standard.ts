@@ -185,7 +185,10 @@ export default class StandardModel<TDocument = unknown> {
               operator = '$lte';
               break;
 
+            // $rex is case-sensitive and $rexi isn't, as in the SPR, policy selection and crag.
             case '$rex':
+              operator = '$regex';
+              break;
             case '$rexi':
               operator = '$regex';
               operandOptions = 'i';
