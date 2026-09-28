@@ -241,6 +241,55 @@ describe('lambda/LambdaManager path-mutation grouping', () => {
     assert.strictEqual(manager._debouncedPathMutations.length, 0);
   });
 
+  // The changes are stored in the run's LambdaExecution document, which Mongo caps at 16 MB.
+  const MB = 1024 * 1024;
+  const sizedChange = (entityId, bytes) => change(entityId, 'x'.repeat(bytes));
+
+  it('starts a run straight away when its next change would take it past 1 MB, before it holds 100', async () => {
+    clock = sinon.useFakeTimers();
+    const manager = createManager();
+    const created = stubExecutionCreation(manager);
+
+    // Each change is a little over a quarter of 1 MB once serialised, so the fourth would take the run past it.
+    for (let n = 0; n < 5; n++) await manager._debounceLambdaTriggers([lambda], sizedChange('e1', MB / 4));
+    await clock.tickAsync(0);
+
+    assert.strictEqual(created.length, 1);
+    assert.strictEqual(created[0].CRs.length, 3);
+    assert.strictEqual(manager._debouncedPathMutations[0].CRs.length, 2, 'the fourth and fifth are the next run');
+  });
+
+  it('starts a run before a change that would take it past 1 MB, and puts that change in the next', async () => {
+    clock = sinon.useFakeTimers();
+    const manager = createManager();
+    const created = stubExecutionCreation(manager);
+
+    await manager._debounceLambdaTriggers([lambda], sizedChange('e1', MB / 2));
+    await manager._debounceLambdaTriggers([lambda], sizedChange('e1', (MB * 3) / 4));
+    await clock.tickAsync(0);
+
+    assert.strictEqual(created.length, 1);
+    assert.strictEqual(created[0].CRs.length, 1);
+    assert.strictEqual(manager._debouncedPathMutations[0].CRs.length, 1);
+  });
+
+  it('runs a change bigger than 1 MB on its own, straight away', async () => {
+    clock = sinon.useFakeTimers();
+    const manager = createManager();
+    const created = stubExecutionCreation(manager);
+
+    await manager._debounceLambdaTriggers([lambda], change('e1', 'small'));
+    await manager._debounceLambdaTriggers([lambda], sizedChange('e1', 2 * MB));
+    await clock.tickAsync(0);
+
+    assert.deepStrictEqual(
+      created.map((run) => run.CRs.length),
+      [1, 1],
+    );
+    assert.strictEqual(created[1].CRs[0].values[0].length, 2 * MB);
+    assert.strictEqual(manager._debouncedPathMutations.length, 0);
+  });
+
   it('puts a change that arrives while a run is being recorded into the next run', async () => {
     const manager = createManager();
     const created = stubExecutionCreation(manager);

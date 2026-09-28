@@ -72,6 +72,8 @@ interface PathMutationDebounce {
   gitHash: string;
   appId: string;
   CRs: PathMutationCR[];
+  // The size of the CRs once serialised, as they're stored in the run's LambdaExecution.
+  bytes: number;
   firstChangeAt: number;
 }
 
@@ -100,10 +102,13 @@ export default class LambdaManager {
   private _debouncedPathMutations: PathMutationDebounce[] = [];
 
   // A lambda runs for an entity a second after that entity's last change, but no later than five seconds after the
-  // first however often it keeps changing, or as soon as it has collected 100 changes.
+  // first however often it keeps changing, or as soon as it has collected 100 changes. A run's changes are stored in
+  // its LambdaExecution, which Mongo caps at 16 MB, so a run also starts before a change that would take it past 1 MB,
+  // and a change of 1 MB or more runs on its own.
   private _lambdaPathMutationTimeout: number = 1000;
   private _lambdaPathMutationMaxWait: number = 5000;
   private _lambdaPathMutationMaxChanges: number = 100;
+  private _lambdaPathMutationMaxBytes: number = 1024 * 1024;
 
   private _shutdownQueue: boolean = false;
   private _isProcessing: boolean = false;
@@ -713,9 +718,16 @@ export default class LambdaManager {
   }
 
   _queuePathMutationChange(pathMutation: PathMutation, entityId: string, cr: PathMutationCR) {
+    const bytes = Buffer.byteLength(JSON.stringify(cr));
+
     let pending = this._debouncedPathMutations.find(
       (item) => item.lambdaId === pathMutation.id && item.entityId === entityId,
     );
+    if (pending && pending.bytes + bytes > this._lambdaPathMutationMaxBytes) {
+      // The change goes in the next run, so this one starts now.
+      this._createLambdaPathMutationExecution(pending.id);
+      pending = undefined;
+    }
     if (!pending) {
       pending = {
         id: uuidv4(),
@@ -726,16 +738,18 @@ export default class LambdaManager {
         gitHash: pathMutation.gitHash,
         appId: pathMutation.appId,
         CRs: [],
+        bytes: 0,
         firstChangeAt: Date.now(),
       };
       this._debouncedPathMutations.push(pending);
     }
 
     pending.CRs.push(cr);
+    pending.bytes += bytes;
     clearTimeout(pending.timer);
 
     const { id } = pending;
-    if (pending.CRs.length >= this._lambdaPathMutationMaxChanges) {
+    if (pending.CRs.length >= this._lambdaPathMutationMaxChanges || pending.bytes >= this._lambdaPathMutationMaxBytes) {
       this._createLambdaPathMutationExecution(id);
       return;
     }
