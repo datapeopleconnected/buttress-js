@@ -358,14 +358,17 @@ class GetAppSchema extends Route {
         .map((core) => core.trim())
         .filter((core) => core);
 
+      // A core schema can be named more than once (user,users), but is returned once.
+      const coreSchemas = new Set<Schema>();
       for (const core of cores) {
         const coreModel = this.__findCoreModel(core);
         if (!coreModel) {
           this.log(`ERROR: Unknown core schema: ${core}`, Route.LogLevel.ERR);
           throw new Helpers.Errors.RequestError(400, `Unknown core schema: ${core}`);
         }
-        if (coreModel.isCoreAPI) schema.push(coreModel.schemaData);
+        if (coreModel.isCoreAPI) coreSchemas.add(coreModel.schemaData);
       }
+      schema.push(...coreSchemas);
     }
 
     if (req.query.only) {

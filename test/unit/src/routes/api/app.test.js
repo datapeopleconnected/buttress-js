@@ -513,6 +513,10 @@ describe('routes/api/app:GetAppSchema ?core=', () => {
     assert.deepStrictEqual(await coreNames('users,appDataSharing'), ['users', 'appDataSharing']);
   });
 
+  it('returns each core schema once, however many times it is named', async () => {
+    assert.deepStrictEqual(await coreNames('user,users,appDataSharing,app-data-sharing'), ['users', 'appDataSharing']);
+  });
+
   it('refuses an unknown name with a 400 that names it', async () => {
     await assert.rejects(
       () => coreNames('users,widgets'),

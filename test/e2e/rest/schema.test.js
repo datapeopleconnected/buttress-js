@@ -100,6 +100,25 @@ describe('Schema', async () => {
 			assert.strictEqual(body[1].name, 'colours');
 		});
 
+		it('Should include the core schemas asked for by model or schema name, each once', async () => {
+			const body = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/app/schema?core=users,user,activities`,
+			}, testEnv.apps.app1.token);
+
+			const core = body.filter((s) => s.core);
+			assert.deepStrictEqual(core.map((s) => s.name), ['users', 'activities']);
+			assert.deepStrictEqual(body.filter((s) => !s.core).map((s) => s.name), ['car', 'colours']);
+		});
+
+		it('Should refuse an unknown core schema name, naming it', async () => {
+			const res = await fetch(`${ENDPOINT.REST}/api/v1/app/schema?core=users,widgets`, {
+				headers: {Authorization: `Bearer ${testEnv.apps.app1.token}`},
+			});
+
+			assert.strictEqual(res.status, 400);
+			assert.strictEqual((await res.json()).message, 'Unknown core schema: widgets');
+		});
+
 		it('Should be able to fetch only the requested schema', async () => {
 			const body = await bjsReq({
 				url: `${ENDPOINT.REST}/api/v1/app/schema?only=colours`,
