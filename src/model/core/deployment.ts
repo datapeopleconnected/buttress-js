@@ -18,7 +18,6 @@ import StandardModel from '../type/standard.js';
 import { Schema } from '../../helpers/schema.js';
 import * as Helpers from '../../helpers/index.js';
 import { Services } from '../../bootstrap.js';
-import { AdapterIdInput } from '../../types/datastore.js';
 
 // A type rather than an interface, so it's assignable to AdapterDocument
 export type Deployment = {
@@ -32,7 +31,7 @@ export type Deployment = {
 
 // A deployment as passed to add
 export type DeploymentAddBody = {
-  lambdaId?: AdapterIdInput | null;
+  lambdaId?: string | null;
   hash?: string | null;
   branch?: string | null;
   // Not stored, a new deployment's deployedAt defaults to now

@@ -24,7 +24,6 @@ import Plugins from '../plugins/index.js';
 import Datastore from '../datastore/index.js';
 
 import { FlattenedSchema, Properties, PropertyDefinition, Schema } from '../types/schema.js';
-import { AdapterIdInput } from '../types/datastore.js';
 
 import { v4 as uuidv4 } from 'uuid';
 
@@ -246,7 +245,7 @@ const __validateProp = (prop: { value?: unknown }, config: PropertyConfig) => {
       } else if (type === 'object') {
         if (Datastore.getInstance('core').ID.isValid(prop.value)) {
           try {
-            prop.value = Datastore.getInstance('core').ID.new(prop.value as AdapterIdInput);
+            prop.value = Datastore.getInstance('core').ID.new(prop.value as string);
             valid = true;
           } catch (_err) {
             valid = false;

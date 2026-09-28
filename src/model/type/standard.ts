@@ -26,7 +26,7 @@ import { Services } from '../../bootstrap.js';
 import { ModelManager } from '../index.js';
 import AbstractAdapter, { AdapterFindResult } from '../../datastore/abstract-adapter.js';
 import { Datastore } from '../../datastore/index.js';
-import { AdapterDocument, AdapterIdInput, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
+import { AdapterDocument, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
 import { FlattenedSchema, FlattenedSchemaProperty } from '../../types/schema.js';
 
 // A query after parseQuery, with each property's operators resolved to their datastore form
@@ -103,7 +103,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
     }
   }
 
-  createId(id?: AdapterIdInput) {
+  createId(id?: string) {
     return this.adapter.ID.new(id);
   }
 
@@ -112,7 +112,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
   }
 
   convertStringToId<T>(id?: T) {
-    return id && this.isValidId(id) ? this.adapter.ID.new(id as AdapterIdInput) : id;
+    return id && this.isValidId(id) ? this.adapter.ID.new(id as string) : id;
   }
 
   __doValidation(body: unknown) {
@@ -322,7 +322,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
     const entity: AdapterDocument = Object.assign({}, internals);
 
     if (body.id) {
-      entity.id = this.adapter.ID.new(body.id as AdapterIdInput);
+      entity.id = this.adapter.ID.new(body.id as string);
     } else {
       entity.id = this.adapter.ID.new();
     }
@@ -362,7 +362,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
    * @param {*} query
    * @return {promise}
    */
-  updateById(id: AdapterIdInput, query: AdapterQuery) {
+  updateById(id: string, query: AdapterQuery) {
     return this.adapter.updateById(id, query);
   }
 
@@ -430,7 +430,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
    * @param {object} extra
    * @return {Promise}
    */
-  exists(id: AdapterIdInput, _sourceId: string | null = null, extra: AdapterQuery = {}) {
+  exists(id: string, _sourceId: string | null = null, extra: AdapterQuery = {}) {
     return this.adapter.exists(id, extra);
   }
 
@@ -447,14 +447,14 @@ export default class StandardModel<TDocument = AdapterDocument> {
    */
   // Takes `unknown` as subclasses (App, RemoteCombined) take an entity rather than its id
   rm(id: unknown): Promise<unknown> {
-    return this.adapter.rm(id as AdapterIdInput);
+    return this.adapter.rm(id as string);
   }
 
   /**
    * @param {Array} ids - Array of entity ids to delete
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  rmBulk(ids: AdapterIdInput[]) {
+  rmBulk(ids: string[]) {
     return this.adapter.rmBulk(ids);
   }
 
@@ -470,7 +470,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
    * @param {String} id - entity id to get
    * @return {Promise} - resolves to an array of Companies
    */
-  findById(id: AdapterIdInput) {
+  findById(id: string) {
     return this.adapter.findById(id) as Promise<TDocument>;
   }
 

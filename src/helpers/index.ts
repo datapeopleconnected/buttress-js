@@ -19,8 +19,8 @@ import { ObjectId } from 'bson';
 import * as DataSharingHelpers from './data-sharing.js';
 
 import Datastore from '../datastore/index.js';
+import { isObjectId } from '../datastore/adapters/object-id.js';
 import { Properties, FlattenedSchema, FlattenedSchemaProperty } from '../types/schema.js';
-import { AdapterIdInput } from '../types/datastore.js';
 
 export const DataSharing = DataSharingHelpers;
 
@@ -154,7 +154,7 @@ const PromiseHelpers = {
 };
 export { PromiseHelpers as Promise };
 
-export const shortId = (id: AdapterIdInput) => {
+export const shortId = (id: string) => {
   const toBase = (num: number, base: number) => {
     const symbols = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-'.split('');
     let decimal = num;
@@ -178,7 +178,7 @@ export const shortId = (id: AdapterIdInput) => {
   if (!id) return output;
 
   // HACK: need to make sure the id is in the correct format to extract the timestamp
-  const objectId = Datastore.getInstance('core').ID.new(id);
+  const objectId = new ObjectId(Datastore.getInstance('core').ID.new(id));
 
   const date = objectId.getTimestamp();
   let time = date.getTime();
@@ -226,9 +226,9 @@ export const flattenedObject = (
     return output;
   }
 
-  // NOTE: returns obj itself rather than output here
-  if (obj instanceof Date || ObjectId.isValid(obj as ObjectId)) {
-    return (output[paths.join('.')] = obj) as { [index: string]: unknown };
+  // NOTE: returns obj itself rather than output here, callers only pass other objects at the top level
+  if (obj instanceof Date || isObjectId(obj)) {
+    return (output[paths.join('.')] = obj) as unknown as { [index: string]: unknown };
   }
 
   Object.getOwnPropertyNames(obj).forEach((key) => {
@@ -241,7 +241,7 @@ export const flattenedObject = (
       } else {
         value.forEach((item: unknown, index) => {
           const arrayPath = [...currentPath, index.toString()];
-          if (!item || typeof item !== 'object' || item instanceof Date || ObjectId.isValid(obj as ObjectId)) {
+          if (!item || typeof item !== 'object' || item instanceof Date || isObjectId(item)) {
             output[arrayPath.join('.')] = item;
           } else {
             flattenedObject(item, output, arrayPath);

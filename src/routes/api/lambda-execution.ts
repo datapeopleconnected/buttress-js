@@ -13,11 +13,11 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { ObjectId } from 'bson';
 import { Request, Response } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
+import Datastore from '../../datastore/index.js';
 import * as Helpers from '../../helpers/index.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
@@ -51,7 +51,7 @@ class GetLambdaExecution extends Route {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
     }
-    if (!ObjectId.isValid(id)) {
+    if (!Datastore.getInstance('core').ID.isValid(id)) {
       this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
     }
@@ -93,7 +93,7 @@ class GetLambdaExecutionStatus extends Route {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
     }
-    if (!ObjectId.isValid(id)) {
+    if (!Datastore.getInstance('core').ID.isValid(id)) {
       this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
     }

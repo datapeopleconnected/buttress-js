@@ -20,7 +20,7 @@ import { PolicyCache } from '../../services/policy-cache.js';
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 import { Services } from '../../bootstrap.js';
-import { AdapterIdInput, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
+import { AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
 
 export interface PolicyEnvQuery {
   type: 'string' | 'id' | 'array' | 'boolean';
@@ -76,7 +76,7 @@ export type Policy = {
 
 // A policy as passed to add
 export type PolicyAddBody = {
-  id?: AdapterIdInput;
+  id?: string;
   name?: string | null;
   priority?: number;
   selection?: PolicySelection | null;
@@ -202,7 +202,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
    * @param {String} appId - app id
    * @return {Promise} - fulfilled with policy Object when the database request is completed
    */
-  override async add(body: PolicyAddBody, appId: AdapterIdInput) {
+  override async add(body: PolicyAddBody, appId: string) {
     const policyConfig: PolicyConfig[] = [];
     if (body.config) {
       body.config.forEach((item) => {
@@ -244,7 +244,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
   // updateOne() {
 
   // }
-  override async updateById(id: AdapterIdInput, query: AdapterQuery) {
+  override async updateById(id: string, query: AdapterQuery) {
     const policy = await super.updateById(this.createId(id), query);
 
     // The update resolves to the datastore's update result rather than the policy, so this throws

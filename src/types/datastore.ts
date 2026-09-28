@@ -13,18 +13,13 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import type { ObjectId } from 'bson';
-
 /**
- * Anything an adapter can turn into an id, see the `ObjectId` constructor.
- */
-export type AdapterIdInput = ConstructorParameters<typeof ObjectId>[0];
-
-/**
- * Creates and checks the ids used by an adapter's datastore.
+ * Creates and checks ids. Outside the adapters an id is a string: it's only a datastore's own type (e.g. an ObjectId)
+ * inside the adapter for that datastore.
  */
 export interface AdapterIdHelper {
-  new: (id?: AdapterIdInput) => ObjectId;
+  // A new id, or the canonical string form of the given one. Throws if it isn't a valid id.
+  new: (id?: string) => string;
   isValid: (id: unknown) => boolean;
   instanceOf: (id: unknown) => boolean;
 }

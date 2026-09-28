@@ -14,14 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import StandardModel from '../type/standard.js';
-import type { ObjectId } from 'bson';
 
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 import TokenSchemaModel, { PolicyProperties, Token } from './token.js';
 import { Services } from '../../bootstrap.js';
-import { AdapterIdInput } from '../../types/datastore.js';
 
 // A type rather than an interface, so it's assignable to AdapterDocument
 export type User = {
@@ -65,7 +63,7 @@ export type UserAuthBody = {
 
 // A user as posted to the API, with an optional token to create for them
 export type UserAddBody = {
-  id?: AdapterIdInput;
+  id?: string;
   auth: UserAuthBody[];
   token?: {
     domains?: string[];
@@ -273,9 +271,9 @@ export default class UserSchemaModel extends StandardModel<User> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override async add(body: UserAddBody, internals: { _appId: AdapterIdInput }): Promise<UserWithTokens> {
+  override async add(body: UserAddBody, internals: { _appId: string }): Promise<UserWithTokens> {
     const userBody: {
-      id: ObjectId;
+      id: string;
       auth: Array<{
         app?: string;
         appId: string | null;

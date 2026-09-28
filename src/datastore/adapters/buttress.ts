@@ -15,7 +15,6 @@
  */
 
 import Stream from 'node:stream';
-import { ObjectId } from 'bson';
 import ButtressExport, { Errors as BAPIErrors } from '@buttress/api';
 // TODO: Look into why the export from @buttress/api is not working as expected.
 const { default: ButtressAPI } = ButtressExport;
@@ -26,23 +25,10 @@ import { parseJsonArrayStream } from '../../helpers/stream.js';
 import Logging from '../../helpers/logging.js';
 
 import AbstractAdapter from '../abstract-adapter.js';
+import ObjectIdHelper, { isObjectId } from './object-id.js';
 
-import { AdapterIdInput, AdapterQuery } from '../../types/datastore.js';
+import { AdapterQuery } from '../../types/datastore.js';
 import { Schema } from '../../types/schema.js';
-
-class AdapterId {
-  static new(id?: AdapterIdInput) {
-    return new ObjectId(id);
-  }
-
-  static isValid(id: unknown) {
-    return ObjectId.isValid(id as Parameters<typeof ObjectId.isValid>[0]);
-  }
-
-  static instanceOf(id: unknown) {
-    return id instanceof ObjectId;
-  }
-}
 
 // The collection calls made against a remote Buttress. @buttress/api types these results as `any`, and
 // its declarations don't allow some of the arguments used here (an object `sort`, `count` without a sort).
@@ -51,7 +37,7 @@ interface ButtressCollection {
   save(details: unknown, options?: { stream?: boolean }): Promise<unknown>;
   bulkSave(details: unknown[], options?: { stream?: boolean }): Promise<unknown>;
   update(id: string, details: unknown): Promise<unknown>;
-  remove(id: AdapterIdInput): Promise<unknown>;
+  remove(id: string): Promise<unknown>;
   bulkRemove(ids: unknown): Promise<unknown>;
   removeAll(query?: unknown): Promise<unknown>;
   getAll(): Promise<unknown>;
@@ -158,7 +144,7 @@ export default class Buttress extends AbstractAdapter {
   }
 
   override get ID() {
-    return AdapterId;
+    return ObjectIdHelper;
   }
 
   resolveAfterInit() {
@@ -188,7 +174,7 @@ export default class Buttress extends AbstractAdapter {
   // Replaces any ObjectIds with their string form, so they can be sent to the remote. The value's static
   // type is kept, as it's only used to build requests.
   convertBSONObjects<T>(target: T): T {
-    if (target instanceof ObjectId) {
+    if (isObjectId(target)) {
       return target.toString() as T;
     } else if (Array.isArray(target)) {
       return target.map((value: unknown) => this.convertBSONObjects(value)) as T;
@@ -235,7 +221,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {string} id
    * @return {Boolean}
    */
-  override async exists(id: AdapterIdInput) {
+  override async exists(id: string) {
     id = this.convertBSONObjects(id);
     const result = await this._resolvedApiCall('exists', () => this.collection.get(id));
     return result ? true : false;
@@ -253,7 +239,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {string} id
    * @return {Promise}
    */
-  override async rm(id: AdapterIdInput) {
+  override async rm(id: string) {
     // entity = this.convertBSONObjects(entity);
     const result = await this._resolvedApiCall('rm', () => this.collection.remove(id));
     return this.handleResult(result);
@@ -263,7 +249,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {array} ids
    * @return {Promise}
    */
-  override async rmBulk(ids: AdapterIdInput[]) {
+  override async rmBulk(ids: string[]) {
     ids = this.convertBSONObjects(ids);
     const result = await this._resolvedApiCall('rmBulk', () => this.collection.bulkRemove(ids));
     return this.handleResult(result);
@@ -282,7 +268,7 @@ export default class Buttress extends AbstractAdapter {
    * @param {string} id
    * @return {Promise}
    */
-  override async findById(id: AdapterIdInput) {
+  override async findById(id: string) {
     id = this.convertBSONObjects(id);
     const result = await this._resolvedApiCall('findById', () => this.collection.get(id));
     return this.handleResult(result);

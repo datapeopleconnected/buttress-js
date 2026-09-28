@@ -21,7 +21,6 @@ import { PolicyCache } from '../../services/policy-cache.js';
 
 import { Schema } from '../../helpers/schema.js';
 import { Services } from '../../bootstrap.js';
-import { AdapterIdInput } from '../../types/datastore.js';
 
 /**
  * Constants
@@ -56,10 +55,10 @@ export type Token = {
 
 // The ids add stores on the new token
 type TokenAddInternals = {
-  _appId?: AdapterIdInput;
-  _lambdaId?: AdapterIdInput;
-  _userId?: AdapterIdInput;
-  _appDataSharingId?: AdapterIdInput;
+  _appId?: string;
+  _lambdaId?: string;
+  _userId?: string;
+  _appDataSharingId?: string;
 };
 
 class TokenSchemaModel extends StandardModel<Token> {
@@ -203,7 +202,7 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @param {String} appId - DB id for the app
    * @return {Promise} - resolves to an array of Tokens
    */
-  findUserAuthTokens(userId: AdapterIdInput, appId: AdapterIdInput) {
+  findUserAuthTokens(userId: string, appId: string) {
     return this.find({
       _appId: this.createId(appId),
       _userId: this.createId(userId),

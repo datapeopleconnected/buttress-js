@@ -14,12 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import StandardModel from '../type/standard.js';
-import type { ObjectId } from 'bson';
 
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 import { Services } from '../../bootstrap.js';
-import { AdapterIdInput } from '../../types/datastore.js';
 
 import AppSchemaModel from './app.js';
 import TokenSchemaModel from './token.js';
@@ -52,8 +50,8 @@ export type LambdaExecution = {
 
 // A lambda execution as passed to add
 export type LambdaExecutionAddBody = {
-  lambdaId?: AdapterIdInput | null;
-  deploymentId?: AdapterIdInput | null;
+  lambdaId?: string | null;
+  deploymentId?: string | null;
   triggerType?: LambdaExecution['triggerType'] | null;
   priority?: number;
   logs?: LambdaExecution['logs'];
@@ -201,7 +199,7 @@ class LambdaExecutionSchemaModel extends StandardModel<LambdaExecution> {
   override async add(
     body: LambdaExecutionAddBody,
     appId: string,
-    tokenId: AdapterIdInput | null = null,
+    tokenId: string | null = null,
   ): Promise<LambdaExecution> {
     const executionBody = {
       lambdaId: body.lambdaId ? body.lambdaId : null,
@@ -216,7 +214,7 @@ class LambdaExecutionSchemaModel extends StandardModel<LambdaExecution> {
 
     if (!appId) throw new Error('appId is required to create a lambda execution');
 
-    const internals: { _appId: ObjectId; _tokenId?: ObjectId } = {
+    const internals: { _appId: string; _tokenId?: string } = {
       _appId: this.__modelManager.getCoreModel(AppSchemaModel).createId(appId),
     };
     if (tokenId) internals._tokenId = this.__modelManager.getCoreModel(TokenSchemaModel).createId(tokenId);

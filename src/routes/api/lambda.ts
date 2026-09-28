@@ -18,8 +18,6 @@ import util from 'node:util';
 import { Request, Response } from 'express';
 import { exec as cpExec } from 'node:child_process';
 
-import { ObjectId } from 'bson';
-
 const exec = util.promisify(cpExec);
 
 import createConfig from '@dpc/node-env-obj';
@@ -88,7 +86,7 @@ class GetLambda extends Route {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
     }
-    if (!ObjectId.isValid(id)) {
+    if (!Datastore.getInstance('core').ID.isValid(id)) {
       this.log(`[${this.name}] Invalid lambda id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
     }
@@ -272,7 +270,8 @@ class AddLambda extends Route {
       }
     }
 
-    const app = await Model.getCoreModel(AppSchemaModel).findById(appId);
+    // Every token has an app, so one of the above sets it
+    const app = await Model.getCoreModel(AppSchemaModel).findById(appId as string);
     const lambda = await Model.getCoreModel(LambdaSchemaModel).add(req.body.lambda, { auth: req.body.auth, app });
 
     const hasPathMutation = lambda.trigger.some((t) => t.type === 'PATH_MUTATION');
@@ -449,7 +448,7 @@ class ScheduleLambdaExecution extends Route {
     // Find deployment
     const deploymentQuery: {
       lambdaId: string;
-      id?: ObjectId;
+      id?: string;
     } = {
       lambdaId: lambda.id,
     };

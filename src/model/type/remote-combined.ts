@@ -27,7 +27,7 @@ import { Services } from '../../bootstrap.js';
 import { Datastore } from '../../datastore/index.js';
 import ButtressAdapter from '../../datastore/adapters/buttress.js';
 import { ChunkSentEvent } from '../../helpers/stream.js';
-import { AdapterDocument, AdapterIdInput, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
+import { AdapterDocument, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
 
 /**
  * @class RemoteCombinedModel
@@ -101,7 +101,7 @@ export default class RemoteCombinedModel extends StandardModel {
     }
   }
 
-  override createId(id?: AdapterIdInput) {
+  override createId(id?: string) {
     // NOTE: This could be linked to the add problem, the Id will want to be created based
     // on the remote.
     return this.localModel.adapter.ID.new(id);
@@ -136,7 +136,7 @@ export default class RemoteCombinedModel extends StandardModel {
     return (await this._getTargetModel((body as { sourceId?: string }).sourceId)).add(body);
   }
 
-  override async update(details: AdapterQuery, id: AdapterIdInput, sourceId?: string) {
+  override async update(details: AdapterQuery, id: string, sourceId?: string) {
     if (!sourceId) throw new Error('SourceId is required for update');
 
     return (await this._getTargetModel(sourceId)).updateById(id, details);
@@ -157,7 +157,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Boolean}
    */
-  override async exists(id: AdapterIdInput, sourceId?: string | null) {
+  override async exists(id: string, sourceId?: string | null) {
     return (await this._getTargetModel(sourceId)).exists(id);
   }
 
@@ -179,7 +179,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Promise}
    */
-  override async rm(entity: { id: AdapterIdInput }, sourceId?: string) {
+  override async rm(entity: { id: string }, sourceId?: string) {
     if (!sourceId) throw new Error('SourceId is required for rm');
 
     return (await this._getTargetModel(sourceId)).rm(entity.id);
@@ -189,7 +189,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {array} ids
    * @return {Promise}
    */
-  override async rmBulk(ids: AdapterIdInput[]) {
+  override async rmBulk(ids: string[]) {
     return this.localModel.rmBulk(ids);
   }
 
@@ -206,7 +206,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Promise}
    */
-  override async findById(id: AdapterIdInput, sourceId?: string) {
+  override async findById(id: string, sourceId?: string) {
     if (!sourceId) throw new Error('SourceId is required for findById');
 
     return (await this._getTargetModel(sourceId)).findById(id);

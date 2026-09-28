@@ -13,20 +13,28 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { ObjectId } from 'bson';
 
-import AbstractAdapter from '../abstract-adapter.js';
-import ObjectIdHelper from './object-id.js';
+/**
+ * Whether a value is an ObjectId. bson's ESM and CommonJS builds each have their own ObjectId class, and the MongoDB
+ * driver uses the CommonJS one, so `instanceof` can't be used.
+ */
+export const isObjectId = (value: unknown): value is ObjectId =>
+  (value as { _bsontype?: unknown } | null | undefined)?._bsontype === 'ObjectId';
 
-export default class EmptyAdapter extends AbstractAdapter {
-  override get ID() {
-    return ObjectIdHelper;
+/**
+ * The id helper for adapters that use ObjectIds. Outside the adapters an id is an ObjectId's hex string.
+ */
+export default class ObjectIdHelper {
+  static new(id?: string) {
+    return new ObjectId(id).toHexString();
   }
 
-  override async connect() {
-    return;
+  static isValid(id: unknown) {
+    return (typeof id === 'string' || isObjectId(id)) && ObjectId.isValid(id);
   }
 
-  override async close() {
-    return;
+  static instanceOf(id: unknown) {
+    return isObjectId(id);
   }
 }

@@ -21,7 +21,6 @@ import { Errors } from '../helpers/index.js';
 import type {
   AdapterAddModifier,
   AdapterIdHelper,
-  AdapterIdInput,
   AdapterQuery,
   UpdatePathBody,
   UpdatePathContext,
@@ -99,7 +98,7 @@ export default class AbstractAdapter {
     throw new Errors.NotYetImplemented('update');
   }
 
-  updateById(_id: AdapterIdInput, _query: AdapterQuery): Promise<unknown> {
+  updateById(_id: string, _query: AdapterQuery): Promise<unknown> {
     throw new Errors.NotYetImplemented('updateById');
   }
 
@@ -107,7 +106,7 @@ export default class AbstractAdapter {
     throw new Errors.NotYetImplemented('updateOne');
   }
 
-  exists(_id: AdapterIdInput, _extra: AdapterQuery = {}): Promise<boolean> {
+  exists(_id: string, _extra: AdapterQuery = {}): Promise<boolean> {
     throw new Errors.NotYetImplemented('exists');
   }
 
@@ -121,14 +120,14 @@ export default class AbstractAdapter {
   /**
    * @param {App} id - id of the object to be deleted
    */
-  rm(_id: AdapterIdInput): Promise<unknown> {
+  rm(_id: string): Promise<unknown> {
     throw new Errors.NotYetImplemented('rm');
   }
 
   /**
    * @param {Array} ids - Array of entity ids to delete
    */
-  rmBulk(_ids: AdapterIdInput[]): Promise<unknown> {
+  rmBulk(_ids: string[]): Promise<unknown> {
     throw new Errors.NotYetImplemented('rmBulk');
   }
 
@@ -143,7 +142,7 @@ export default class AbstractAdapter {
   /**
    * @param {String} id - entity id to get
    */
-  findById(_id: AdapterIdInput): Promise<unknown> {
+  findById(_id: string): Promise<unknown> {
     throw new Errors.NotYetImplemented('findById');
   }
 

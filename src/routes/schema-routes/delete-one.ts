@@ -14,7 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Response, Request } from 'express';
-import type { ObjectId } from 'bson';
 import { QueryParams } from '../../types/bjs-query.js';
 import { AdapterDocument } from '../../types/datastore.js';
 
@@ -52,7 +51,7 @@ export default class DeleteOne extends Route {
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
     }
 
-    let objectId: ObjectId;
+    let objectId: string;
     try {
       objectId = model.createId(id);
     } catch (_err) {

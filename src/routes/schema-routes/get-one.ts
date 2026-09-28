@@ -14,7 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Request, Response } from 'express';
-import type { ObjectId } from 'bson';
 import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
 import { AdapterDocument } from '../../types/datastore.js';
 
@@ -53,7 +52,7 @@ export default class GetOne extends Route {
 
     const model = await this.routeModel();
 
-    let objectId: ObjectId | null = null;
+    let objectId: string | null = null;
     // const project = req.body && req.body.project ? req.body.project : false;
 
     try {
@@ -63,7 +62,7 @@ export default class GetOne extends Route {
       throw new Helpers.Errors.RequestError(400, 'invalid_id');
     }
 
-    const query: BjsQuery<{ id: ObjectId }> = { id: objectId };
+    const query: BjsQuery<{ id: string }> = { id: objectId };
     // if (req.body.query && Object.keys(req.body.query).length > 0) {
     //   query = model.parseQuery(req.body.query, {}, model.flatSchemaData);
     //   query.id = objectId;
@@ -75,10 +74,10 @@ export default class GetOne extends Route {
     };
   }
 
-  override async _exec(req: Request, _res: Response, validate: { query: BjsQuery<{ id: ObjectId }>; project: false }) {
+  override async _exec(req: Request, _res: Response, validate: { query: BjsQuery<{ id: string }>; project: false }) {
     const model = await this.routeModel();
 
-    const findParams: QueryParams<{ id: ObjectId }> = {
+    const findParams: QueryParams<{ id: string }> = {
       query: validate.query,
       limit: 1,
       skip: 0,

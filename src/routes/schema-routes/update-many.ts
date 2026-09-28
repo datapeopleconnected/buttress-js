@@ -14,7 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Response, Request } from 'express';
-import type { ObjectId } from 'bson';
 import { QueryParams } from '../../types/bjs-query.js';
 import { AdapterDocument, UpdatePathBody } from '../../types/datastore.js';
 
@@ -136,7 +135,7 @@ export default class UpdateMany extends Route {
         continue;
       }
 
-      let objectId: ObjectId;
+      let objectId: string;
       try {
         objectId = model.createId(update.id);
       } catch (_err) {

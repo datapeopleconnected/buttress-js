@@ -14,7 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Response, Request } from 'express';
-import type { ObjectId } from 'bson';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
@@ -32,13 +31,13 @@ import type { CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from 
 
 const routes: CoreRouteClass[] = [];
 
-function getTokenQueryfromParams(req: Request, userId: ObjectId) {
+function getTokenQueryfromParams(req: Request, userId: string) {
   const id = Array.isArray(req.params.tokenId) ? req.params.tokenId[0] : req.params.tokenId;
   if (!id) {
     return null;
   }
 
-  let tokenId: ObjectId | null = null;
+  let tokenId: string | null = null;
   try {
     tokenId = Model.getCoreModel(TokenSchemaModel).createId(id);
   } catch (err: unknown) {
@@ -53,8 +52,8 @@ function getTokenQueryfromParams(req: Request, userId: ObjectId) {
   }
 
   const tokenQuery: {
-    _id?: ObjectId;
-    _userId: ObjectId;
+    _id?: string;
+    _userId: string;
     value?: string;
   } = {
     _userId: userId,
@@ -138,7 +137,7 @@ class GetUser extends Route {
 
     let user: User | null = null;
     let userTokens: Token[] = [];
-    let userId: ObjectId;
+    let userId: string;
 
     try {
       userId = Model.getCoreModel(UserSchemaModel).createId(id);
@@ -947,7 +946,7 @@ class ClearUserPolicyProperties extends Route {
     });
   }
 
-  override async _exec(req: Request, res: Response, validate: { userId: ObjectId; appId: string; userToken: Token }) {
+  override async _exec(req: Request, res: Response, validate: { userId: string; appId: string; userToken: Token }) {
     await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.userToken.id);
 
     this._nrp?.emit(

@@ -22,7 +22,6 @@ import StandardModel from '../type/standard.js';
 import TokenSchemaModel, { Token } from './token.js';
 import PolicySchemaModel, { PolicyConfig } from './policy.js';
 import { Services } from '../../bootstrap.js';
-import { AdapterIdInput } from '../../types/datastore.js';
 
 // A type rather than an interface, so it's assignable to AdapterDocument
 export type AppDataSharing = {
@@ -43,7 +42,7 @@ export type AppDataSharing = {
 
 // A data sharing agreement as posted to the API
 export type AppDataSharingAddBody = {
-  id?: AdapterIdInput;
+  id?: string;
   name: string;
   remoteApp: {
     endpoint: string;
@@ -186,7 +185,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
   }
 
   async __createDataSharingPolicy(
-    body: { name: string; policyConfig: Partial<PolicyConfig>[]; _appId: AdapterIdInput },
+    body: { name: string; policyConfig: Partial<PolicyConfig>[]; _appId: string },
     tokenId: string,
   ) {
     return await this.__modelManager.getCoreModel(PolicySchemaModel).add(
@@ -213,7 +212,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
    * @param {Object} policy - policy object for the app
    * @return {Promise} - resolves when save operation is completed
    */
-  updatePolicy(appId: string, appDataSharingId: AdapterIdInput, type: 'local' | 'remote', policy: unknown) {
+  updatePolicy(appId: string, appDataSharingId: string, type: 'local' | 'remote', policy: unknown) {
     policy = Helpers.Schema.encode(policy);
 
     const update: { $set: Record<string, unknown> } = { $set: {} };
@@ -232,7 +231,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
    * @param {String} token - activation token for remote app
    * @return {Promise} - resolves when save operation is completed
    */
-  updateActivationToken(appDataSharingId: AdapterIdInput, token: string) {
+  updateActivationToken(appDataSharingId: string, token: string) {
     const update: { $set: { 'remoteApp.token'?: string; 'remoteApp.active'?: boolean } } = { $set: {} };
 
     update.$set['remoteApp.token'] = token;

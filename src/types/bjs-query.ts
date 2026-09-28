@@ -14,23 +14,18 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import type { ObjectId } from 'bson';
-
-// Ids are typed as strings on the entity types, but queries match them with ObjectIds
-type QueryValue<K, V> = K extends 'id' | `_${string}Id` ? V | ObjectId : V;
-
 export type BjsQuery<T extends object> = {
   [K in keyof T]?:
-    | QueryValue<K, T[K]>
+    | T[K]
     | {
-        $eq?: QueryValue<K, T[K]>;
-        $ne?: QueryValue<K, T[K]>;
+        $eq?: T[K];
+        $ne?: T[K];
         $gt?: T[K];
         $gte?: T[K];
         $lt?: T[K];
         $lte?: T[K];
-        $in?: QueryValue<K, T[K]>[];
-        $nin?: QueryValue<K, T[K]>[];
+        $in?: T[K][];
+        $nin?: T[K][];
         $exists?: boolean;
         $type?: number;
         $regex?: RegExp | string;

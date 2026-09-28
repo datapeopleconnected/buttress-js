@@ -100,6 +100,15 @@ in [src/types/datastore.ts](../src/types/datastore.ts). Adapters return untyped 
 `AdapterFindResult` (`Readable | Promise<Readable>`): the Mongo adapter's find is synchronous but the
 Buttress adapter's and `RemoteCombinedModel`'s aren't, so await the result before using it as a stream.
 
+Ids are strings outside the adapters. MongoDB stores them as `ObjectId`s, and
+[mongodb-ids.ts](../src/datastore/adapters/mongodb-ids.ts) converts at the adapter boundary, going by the
+schema the model passes to `adapter.updateSchema()`: properties with `__type: 'id'` (including nested ones
+and those in array item schemas), arrays with `__itemtype: 'id'`, and each document's `id`/`_id`.
+Documents, queries and update documents going in have the id strings under those properties converted to
+`ObjectId`s (a new copy, and `id` becomes `_id`); every `ObjectId` in a document coming out becomes a
+string. So a query or `$set` on an id property can be written with plain strings. Ids inside free-form
+`object` properties aren't converted on the way in, so they're stored as strings.
+
 ## Core model quirks worth knowing before touching them
 
 - `TokenSchemaModel` ([src/model/core/token.ts](../src/model/core/token.ts)) generates the actual token

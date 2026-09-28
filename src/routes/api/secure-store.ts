@@ -13,11 +13,11 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { ObjectId } from 'bson';
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
+import Datastore from '../../datastore/index.js';
 import * as Helpers from '../../helpers/index.js';
 
 import SecureStoreSchemaModel, { SecureStore, SecureStoreAddBody } from '../../model/core/secure-store.js';
@@ -163,7 +163,7 @@ class GetSecureStore extends Route {
       this.log(`[${this.name}] Missing required secure store id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
     }
-    if (!ObjectId.isValid(id)) {
+    if (!Datastore.getInstance('core').ID.isValid(id)) {
       this.log(`[${this.name}] Invalid secure store id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
     }

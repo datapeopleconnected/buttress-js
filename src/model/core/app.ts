@@ -14,7 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Request } from 'express';
-import type { ObjectId } from 'bson';
 
 import ButtressExport from '@buttress/api';
 // TODO: Look into why the export from @buttress/api is not working as expected.
@@ -36,7 +35,6 @@ import SecureStoreSchemaModel from './secure-store.js';
 import TrackingSchemaModel from './tracking.js';
 import { AppDeletedMessage } from '../../routes/index.js';
 import { Services } from '../../bootstrap.js';
-import { AdapterIdInput } from '../../types/datastore.js';
 
 // A type rather than an interface, so it's assignable to AdapterDocument
 export type App = {
@@ -59,12 +57,12 @@ export type App = {
 // An app as posted to the API, the schema drops any fields it doesn't define
 export type AppAddBody = Partial<Omit<App, 'id'>> & {
   // Set by add
-  id?: AdapterIdInput;
+  id?: string;
 };
 
 // What __handleAddingNonSystemApp needs, add has set the id by then
 type NonSystemAppAddBody = AppAddBody & {
-  id: ObjectId;
+  id: string;
   policyPropertiesList: App['policyPropertiesList'];
 };
 
@@ -298,7 +296,7 @@ export default class AppSchemaModel extends StandardModel<App> {
   }
 
   /**
-   * @param {ObjectId} appId - app id which needs to be updated
+   * @param {string} appId - app id which needs to be updated
    * @param {object} compiledSchema - schema object for the app
    * @param {object} rawSchema - encoded raw app schema
    * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
@@ -486,7 +484,7 @@ export default class AppSchemaModel extends StandardModel<App> {
    * @param {array} oAuth - oAuth options for the app
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  async updateOAuth(appId: AdapterIdInput, oAuth: App['oAuth']) {
+  async updateOAuth(appId: string, oAuth: App['oAuth']) {
     return super.updateById(this.createId(appId), { $set: { oAuth: oAuth } });
   }
 }

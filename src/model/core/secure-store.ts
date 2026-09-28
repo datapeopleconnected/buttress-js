@@ -19,7 +19,6 @@ import StandardModel from '../type/standard.js';
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 import { Services } from '../../bootstrap.js';
-import { AdapterIdInput } from '../../types/datastore.js';
 
 // A type rather than an interface, so it's assignable to AdapterDocument
 export type SecureStore = {
@@ -31,7 +30,7 @@ export type SecureStore = {
 
 // A secure store as posted to the API
 export type SecureStoreAddBody = {
-  id?: AdapterIdInput | null;
+  id?: string | null;
   name?: string | null;
   storeData?: Record<string, unknown> | null;
 };

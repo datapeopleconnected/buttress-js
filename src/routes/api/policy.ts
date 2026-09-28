@@ -13,7 +13,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { ObjectId } from 'bson';
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
@@ -53,7 +52,7 @@ class GetPolicy extends Route {
       this.log(`[${this.name}] Missing required policy id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_id`));
     }
-    if (!ObjectId.isValid(id)) {
+    if (!Datastore.getInstance('core').ID.isValid(id)) {
       this.log(`[${this.name}] Invalid policy id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_id`));
     }

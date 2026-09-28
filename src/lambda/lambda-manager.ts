@@ -20,7 +20,6 @@ import { exec as cpExec } from 'node:child_process';
 
 import { v4 as uuidv4 } from 'uuid';
 import ObjectHash from 'object-hash';
-import type { ObjectId } from 'bson';
 import NodeRedisPubsub from '../services/nrp.js';
 
 import createConfig from '@dpc/node-env-obj';
@@ -56,9 +55,6 @@ interface PathMutation {
   paths: string[];
   appId: string;
 }
-
-// Lambdas read from the datastore have ObjectId ids, ones parsed from an NRP message have strings.
-type PathMutationLambda = Omit<Lambda, 'id' | '_appId'> & { id: string | ObjectId; _appId: string | ObjectId };
 
 interface PathMutationCR {
   paths: string[];
@@ -321,7 +317,7 @@ export default class LambdaManager {
     }
   }
 
-  __populateLambdaPathsMutation(lambda: PathMutationLambda) {
+  __populateLambdaPathsMutation(lambda: Lambda) {
     const trigger = lambda.trigger.find((t) => t.type === 'PATH_MUTATION');
     if (!trigger) return;
 
@@ -333,11 +329,11 @@ export default class LambdaManager {
 
     Logging.logSilly(`Pushing a new path mutation lambda (${lambda.name}) into the path mutation cached array`);
     this._pathsMutation.push({
-      id: typeof lambda.id === 'object' ? lambda.id.toString() : lambda.id,
+      id: lambda.id,
       gitHash,
       type: trigger.type,
       paths: trigger.pathMutation.paths,
-      appId: typeof lambda._appId === 'object' ? lambda._appId.toString() : lambda._appId,
+      appId: lambda._appId,
     });
   }
 

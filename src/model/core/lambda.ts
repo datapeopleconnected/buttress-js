@@ -29,7 +29,6 @@ import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
 import Logging from '../../helpers/logging.js';
 import { Services } from '../../bootstrap.js';
-import { AdapterIdInput } from '../../types/datastore.js';
 
 import DeploymentSchemaModel from './deployment.js';
 import LambdaExecutionSchemaModel from './lambda-execution.js';
@@ -552,7 +551,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
    * @param {Object} data - lambda new data deplyoment
    * @return {Promise} - resolves when save operation is completed
    */
-  async setDeployment(lambdaId: AdapterIdInput, data: { 'git.branch': string; 'git.hash': string }) {
+  async setDeployment(lambdaId: string, data: { 'git.branch': string; 'git.hash': string }) {
     const lambdaLastDeployment = {
       hash: data['git.hash'],
       deployedAt: Sugar.Date.create('now'),

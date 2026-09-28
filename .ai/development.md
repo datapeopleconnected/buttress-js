@@ -65,8 +65,11 @@ libraries flowing on, every value needs a real type:
   aliases rather than interfaces, so they're assignable to `AdapterDocument` (`Record<string, unknown>`).
 - npm packages without types get a minimal local declaration in `src/types/<package>.d.ts`
   (`object-hash`, `morgan`, `pug`, `randomstring`, `on-finished`, `@dpc/node-env-obj`).
-- Entity ids are typed `string` but are `ObjectId`s at runtime with the Mongo adapter; parameters that
-  take either use `AdapterIdInput`, and `BjsQuery` lets `id`/`_xxxId` fields take an `ObjectId`.
+- Ids are strings (an ObjectId's hex form) everywhere outside the datastore adapters: `createId()` and
+  `adapter.ID.new()` return strings, and documents come back with string ids. Only the MongoDB adapter
+  deals in `ObjectId`s, see [data-layer.md](data-layer.md). To check for an `ObjectId` use `isObjectId()`
+  from `src/datastore/adapters/object-id.ts`, not `instanceof`: bson's ESM and CommonJS builds have
+  different `ObjectId` classes, and the driver uses the CommonJS one.
 
 ## Tests
 

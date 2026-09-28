@@ -27,7 +27,7 @@ import Model from '../model/index.js';
 import { ApplicablePolicyConfig } from './index.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
-import type { AdapterIdInput } from '../types/datastore.js';
+
 import type { RequestWithBody } from '../types/routes.js';
 
 function isObjectId(value: unknown): value is ObjectId {
@@ -334,7 +334,7 @@ export class Filter {
     // ! This looks weird
     for await (const _update of body) {
       if (query._id && typeof query._id !== 'object') {
-        query._id = await model.createId(query._id as AdapterIdInput);
+        query._id = await model.createId(query._id as string);
       }
 
       const parsedQuery = await model.parseQuery(query, {}, model.flatSchemaData);
@@ -413,7 +413,7 @@ export class Filter {
     }
 
     // ! Shouldn't be referencing ObjectId's outside of the adapters.
-    if (typeof query === 'object' && ObjectId.isValid(query as ObjectId)) {
+    if (isObjectId(query)) {
       return query;
     }
 

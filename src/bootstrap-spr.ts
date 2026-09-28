@@ -15,7 +15,6 @@
  */
 import createConfig from '@dpc/node-env-obj';
 
-import { ObjectId } from 'bson';
 import { createClient, RedisClientType } from '@redis/client';
 
 import Bootstrap from './bootstrap.js';
@@ -42,7 +41,7 @@ import { PolicyCache } from './services/policy-cache.js';
 import type { AppSchemaUpdatedMessage } from './services/nrp.js';
 import UserSchemaModel, { User } from './model/core/user.js';
 import StandardModel from './model/type/standard.js';
-import type { AdapterDocument, AdapterIdInput } from './types/datastore.js';
+import type { AdapterDocument } from './types/datastore.js';
 
 // Abstract policy cache
 
@@ -218,7 +217,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     }
 
     // Look up the token by ID
-    const token = (await Model.getCoreModel(TokenSchemaModel).findOne({ _id: new ObjectId(tokenId) })) as Token;
+    const token = (await Model.getCoreModel(TokenSchemaModel).findOne({ id: tokenId })) as Token;
     if (!token) {
       Logging.logError(`Token not found: ${tokenId}`);
       return;
@@ -269,7 +268,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         return;
       }
 
-      entity = await appModel.findById(entityId as AdapterIdInput);
+      entity = await appModel.findById(entityId as string);
       // TODO: Entity needs to be flatterned for processing.
     }
 

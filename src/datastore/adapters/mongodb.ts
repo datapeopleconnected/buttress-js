@@ -35,31 +35,13 @@ import IOStats from '../../helpers/io-stats.js';
 import Logging from '../../helpers/logging.js';
 
 import AbstractAdapter from '../abstract-adapter.js';
+import MongodbIds from './mongodb-ids.js';
+import ObjectIdHelper from './object-id.js';
 
 import { BjsQuery } from '../../types/bjs-query.js';
-import {
-  AdapterDocument,
-  AdapterIdInput,
-  AdapterQuery,
-  UpdatePathBody,
-  UpdatePathContext,
-} from '../../types/datastore.js';
-import { FlattenedSchemaProperty } from '../../types/schema.js';
+import { AdapterDocument, AdapterQuery, UpdatePathBody, UpdatePathContext } from '../../types/datastore.js';
+import { FlattenedSchemaProperty, Schema } from '../../types/schema.js';
 import StandardModel from '../../model/type/standard.js';
-
-class AdapterId {
-  static new(id?: AdapterIdInput) {
-    return new ObjectId(id);
-  }
-
-  static isValid(id: unknown) {
-    return ObjectId.isValid(id as Parameters<typeof ObjectId.isValid>[0]);
-  }
-
-  static instanceOf(id: unknown) {
-    return id instanceof ObjectId;
-  }
-}
 
 export default class MongodbAdapter extends AbstractAdapter {
   private _client?: MongoClient;
@@ -69,6 +51,9 @@ export default class MongodbAdapter extends AbstractAdapter {
   declare protected __connection?: Db;
 
   declare collection?: Collection;
+
+  // Converts ids to ObjectIds on the way in and back to strings on the way out, see MongodbIds
+  private _ids = new MongodbIds();
 
   override async connect() {
     if (this.__connection) return this.__connection;
@@ -123,7 +108,11 @@ export default class MongodbAdapter extends AbstractAdapter {
   }
 
   override get ID() {
-    return AdapterId;
+    return ObjectIdHelper;
+  }
+
+  override updateSchema(schemaData: Schema) {
+    this._ids.setSchema(schemaData.properties);
   }
 
   override add(body: AdapterDocument | AdapterDocument[], modifier: (item: AdapterDocument) => AdapterDocument) {
@@ -140,7 +129,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 
     const documents = await body.reduce(async (prev: Promise<AdapterDocument[]>, item) => {
       const arr = await prev;
-      return arr.concat([this._prepareDocumentForMongo(modifier(item))]);
+      return arr.concat([this._ids.toStored(modifier(item))]);
     }, Promise.resolve([]));
 
     const ops = documents.map((c: AdapterDocument): AnyBulkWriteOperation => {
@@ -318,7 +307,12 @@ export default class MongodbAdapter extends AbstractAdapter {
         break;
     }
 
-    const res = await this.collection?.bulkWrite(ops);
+    // The update values carry ids as strings
+    const res = await this.collection?.bulkWrite(
+      ops.map((op) =>
+        'updateOne' in op ? { updateOne: { ...op.updateOne, update: this._ids.toStored(op.updateOne.update) } } : op,
+      ),
+    );
     if (!res) throw new Error('Unable to bulk write');
 
     return {
@@ -329,23 +323,23 @@ export default class MongodbAdapter extends AbstractAdapter {
   }
 
   override async update(select: AdapterQuery, update: AdapterQuery) {
-    const object = await this.collection?.updateMany(this._prepareQueryForMongo(select), update);
+    const object = await this.collection?.updateMany(this._query(select), this._ids.toStored(update));
     return this._modifyDocument(object);
   }
 
   override async updateOne(query: AdapterQuery, update: AdapterQuery) {
-    const object = await this.collection?.updateOne(this._prepareQueryForMongo(query), update);
+    const object = await this.collection?.updateOne(this._query(query), this._ids.toStored(update));
     return this._modifyDocument(object);
   }
 
-  override async updateById(id: AdapterIdInput, query: AdapterQuery) {
-    const object = await this.collection?.updateOne({ _id: new ObjectId(id) }, query);
+  override async updateById(id: string, query: AdapterQuery) {
+    const object = await this.collection?.updateOne({ _id: new ObjectId(id) }, this._ids.toStored(query));
 
     return this._modifyDocument(object);
   }
 
   // Async so an invalid id gives a resolved `false`, callers chain `.then()` on the result
-  override async exists(id: AdapterIdInput, extra: AdapterQuery = {}) {
+  override async exists(id: string, extra: AdapterQuery = {}) {
     if (!this.collection) throw new Error('No collection');
 
     Logging.logSilly(`exists: ${this.collection.namespace} ${id}`);
@@ -379,7 +373,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {string} id - id to be deleted
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override async rm(id: AdapterIdInput) {
+  override async rm(id: string) {
     const cursor = this.collection?.deleteOne({ _id: new ObjectId(id) });
     if (!cursor) throw new Error('Unable to delete');
 
@@ -390,7 +384,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {Array} ids - Array of entity ids to delete
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override rmBulk(ids: AdapterIdInput[]) {
+  override rmBulk(ids: string[]) {
     // Logging.log(`rmBulk: ${this.collection.namespace} ${ids}`, Logging.Constants.LogLevel.SILLY);
     return this.rmAll({ _id: { $in: ids } });
   }
@@ -402,7 +396,7 @@ export default class MongodbAdapter extends AbstractAdapter {
   override async rmAll(query?: AdapterQuery) {
     if (!query) query = {};
 
-    const doc = await this.collection?.deleteMany(this._prepareQueryForMongo(query));
+    const doc = await this.collection?.deleteMany(this._query(query));
     if (!doc) throw new Error('Unable to deleteMany');
 
     return doc;
@@ -412,7 +406,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @param {String} id - entity id to get
    * @return {Promise} - resolves to an array of Companies
    */
-  override async findById(id: AdapterIdInput) {
+  override async findById(id: string) {
     // Logging.logSilly(`Schema:findById: ${this.collection.namespace} ${id}`);
 
     const document = await this.collection?.findOne({ _id: new ObjectId(id) }, {});
@@ -449,7 +443,7 @@ export default class MongodbAdapter extends AbstractAdapter {
 
     // The driver ignores a null sort
     let results = this.collection
-      .find(this._prepareQueryForMongo(query), excludes as FindOptions)
+      .find(this._query(query), excludes as FindOptions)
       .skip(skip)
       .limit(limit)
       .sort(sort as Sort);
@@ -467,10 +461,7 @@ export default class MongodbAdapter extends AbstractAdapter {
    * @return {Promise} - resolves to an array of docs
    */
   override async findOne<T extends object>(query: BjsQuery<T> | AdapterQuery, excludes: AdapterQuery = {}) {
-    const doc = await this.collection?.findOne(
-      this._prepareQueryForMongo(query),
-      this._prepareQueryForMongo(excludes) as FindOptions,
-    );
+    const doc = await this.collection?.findOne(this._query(query), this._query(excludes) as FindOptions);
 
     return doc ? this._modifyDocument(doc) : null;
   }
@@ -501,7 +492,7 @@ export default class MongodbAdapter extends AbstractAdapter {
   override count(query?: AdapterQuery) {
     if (!this.collection) throw new Error('No collection');
 
-    return this.collection.countDocuments(this._prepareQueryForMongo(query));
+    return this.collection.countDocuments(this._query(query));
   }
 
   /**
@@ -520,15 +511,9 @@ export default class MongodbAdapter extends AbstractAdapter {
     }
   }
 
-  // Modify a straem of docuemnts, converting _id to id
+  // Modify a straem of docuemnts, converting _id to id and ObjectIds to strings
   _modifyDocument<T>(doc: T): T {
-    const document = doc as Record<string, unknown> | null | undefined;
-    if (document && document._id) {
-      document.id = document._id;
-      delete document._id;
-    }
-
-    return doc;
+    return this._ids.fromStored(doc);
   }
   _modifyDocumentStream(stream: Stream.Readable) {
     const transformStream = new Stream.Transform({
@@ -544,78 +529,8 @@ export default class MongodbAdapter extends AbstractAdapter {
     return stream.pipe(transformStream);
   }
 
-  // Methods for modifying a document or query to handle converting from id to _id
-  _prepareDocumentForMongo(document: AdapterDocument) {
-    if (document && document.id) {
-      document._id = document.id;
-      delete document.id;
-    }
-    return document;
-  }
-  _prepareQueryForMongo(query: AdapterQuery): Filter<Document>;
-  _prepareQueryForMongo(query: AdapterQuery | undefined): Filter<Document> | undefined;
-  _prepareQueryForMongo(query: AdapterQuery | undefined): Filter<Document> | undefined {
-    if (!query) return query;
-
-    if (query.id) {
-      query._id = this._convertIdValue(query.id);
-      delete query.id;
-    } else if (query['$or'] || query['$and']) {
-      if (query['$or']) {
-        query['$or'] = (query['$or'] as AdapterQuery[]).map((q) => this._prepareQueryForMongo(q));
-      } else if (query['$and']) {
-        query['$and'] = (query['$and'] as AdapterQuery[]).map((q) => this._prepareQueryForMongo(q));
-      }
-    }
-
-    return query;
-  }
-
-  /**
-   * Handling converting part of an expression to a object id.
-   * @param {object | string} expression
-   * @return {object | string}
-   */
-  _convertIdValue(expression: unknown) {
-    if (typeof expression === 'object' && !(expression instanceof ObjectId)) {
-      const keys = Object.keys(expression as object);
-      if (keys.length === 1) {
-        const [key] = keys;
-        const value = this._getExpressionValue((expression as Record<string, unknown>)[key]);
-        return { [key]: value };
-      } else {
-        // Not sure what we've got here.
-        Logging.logDebug(JSON.stringify(expression));
-        throw new Error('Unknown expression in query.');
-      }
-    }
-
-    // It's not an object, so must be a value.
-    return new ObjectId(expression as AdapterIdInput);
-  }
-
-  /**
-   * Handling getting a value of an expression and converting it to object id.
-   * @param {array | string} value
-   * @return {array | string}
-   */
-  _getExpressionValue(value: unknown) {
-    if (Array.isArray(value)) {
-      return value.length > 0
-        ? (value as AdapterIdInput[]).map((v) => {
-            try {
-              return new ObjectId(v);
-            } catch (_err) {
-              return v;
-            }
-          })
-        : value;
-    } else {
-      try {
-        return new ObjectId(value as AdapterIdInput);
-      } catch (_err) {
-        return value;
-      }
-    }
+  // A query with its ids as ObjectIds and `id` as `_id`
+  _query(query: AdapterQuery | undefined): Filter<Document> {
+    return this._ids.toStored(query) as Filter<Document>;
   }
 }

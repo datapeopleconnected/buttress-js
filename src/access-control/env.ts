@@ -23,14 +23,18 @@ import { PolicyEnvQuery } from '../model/core/policy.js';
 import Model from '../model/index.js';
 import { Filter } from './filter.js';
 import { User } from '../model/core/user.js';
+import { isObjectId } from '../datastore/adapters/object-id.js';
 
 type DynamicRow = Record<string, unknown>;
 
-function toObjectIdIfValid(value: unknown): unknown {
-  if (value instanceof ObjectId) return value;
-  if (typeof value === 'string' && ObjectId.isValid(value)) return new ObjectId(value);
+// Ids are strings outside the datastore adapters; this gives a valid id in its canonical (hex) form
+function toIdIfValid(value: unknown): unknown {
+  if (isObjectId(value)) return value.toHexString();
+  if (typeof value === 'string' && ObjectId.isValid(value)) return new ObjectId(value).toHexString();
   return value;
 }
+
+const isId = (value: unknown) => typeof value === 'string' && ObjectId.isValid(value);
 
 export interface ACBaseEnv {
   date: {
@@ -204,7 +208,7 @@ export class PolicyEnv {
         item = obj[output.key];
         if (output.type === 'id') {
           // TODO: Shouldn't be directly accessing ObjectId, this should go through an adapter.
-          item = toObjectIdIfValid(item);
+          item = toIdIfValid(item);
         }
 
         return item;
@@ -216,12 +220,12 @@ export class PolicyEnv {
         const outputValue = obj[output.key];
 
         if (output.type === 'id' && Array.isArray(outputValue)) {
-          arr = arr.concat(outputValue.map(toObjectIdIfValid).filter((id) => id instanceof ObjectId));
+          arr = arr.concat(outputValue.map(toIdIfValid).filter(isId));
           return arr;
         }
 
         if (output.type === 'id') {
-          arr = arr.concat(toObjectIdIfValid(outputValue));
+          arr = arr.concat(toIdIfValid(outputValue));
           return arr;
         }
 
