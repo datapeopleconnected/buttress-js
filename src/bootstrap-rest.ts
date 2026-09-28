@@ -52,6 +52,18 @@ type ExpressApp = Express.Express & {
 
 // morgan.token('id', (req) => req.context.id);
 
+/**
+ * Config values are always strings, and Express reads a string `trust proxy` as a list of addresses, so '1' would
+ * only trust 0.0.0.1. Digits become a hop count and true/false become booleans; anything else, such as 'loopback'
+ * or a list of subnets, is left for Express to parse.
+ */
+export function parseTrustProxy(value: string): number | boolean | string {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  if (/^(true|false)$/i.test(trimmed)) return trimmed.toLowerCase() === 'true';
+  return trimmed;
+}
+
 Error.stackTraceLimit = Infinity;
 export default class BootstrapRest extends Bootstrap {
   routes?: Routes;
@@ -59,6 +71,9 @@ export default class BootstrapRest extends Bootstrap {
 
   _restServer?: http.Server;
   _installMode: boolean;
+
+  // Hands requests from plugins to the Express app. Plugins is a singleton, so clean() has to remove this again.
+  private _onPluginRequest?: (req: http.IncomingMessage, res: http.ServerResponse) => void;
 
   constructor(installMode = false) {
     super();
@@ -110,6 +125,11 @@ export default class BootstrapRest extends Bootstrap {
 
   override async clean() {
     // Stop taking requests, and let the in-flight ones finish while the connections they use are still open
+    if (this._onPluginRequest) {
+      Logging.logSilly('Removing plugin request listener');
+      Plugins.off('request', this._onPluginRequest);
+      this._onPluginRequest = undefined;
+    }
     if (this._restServer) {
       Logging.logSilly('Closing express server');
       await this._closeRestServer(this._restServer);
@@ -199,9 +219,10 @@ export default class BootstrapRest extends Bootstrap {
     const app = Express();
     // app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 
-    if (Config.app.trustProxy) {
-      app.set('trust proxy', Config.app.trustProxy);
-      Logging.logVerbose(`Trust proxy enabled for REST server, ${Config.app.trustProxy}`);
+    const trustProxy = parseTrustProxy(Config.app.trustProxy);
+    if (trustProxy) {
+      app.set('trust proxy', trustProxy);
+      Logging.logVerbose(`Trust proxy enabled for REST server, ${trustProxy}`);
     }
 
     app.use(Express.json({ limit: '20mb' }));
@@ -216,9 +237,8 @@ export default class BootstrapRest extends Bootstrap {
     app.use(Express.static(`${Config.paths.appData}/public`));
 
     // Calling a private function within the class, this is the only way it's exposed.
-    Plugins.on('request', (req: http.IncomingMessage, res: http.ServerResponse) =>
-      (app as ExpressApp).handle(req, res),
-    );
+    this._onPluginRequest = (req, res) => (app as ExpressApp).handle(req, res);
+    Plugins.on('request', this._onPluginRequest);
 
     await Model.initCoreModels();
 

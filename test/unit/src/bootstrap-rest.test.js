@@ -14,10 +14,31 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
+import sinon from 'sinon';
+import createConfig from '@dpc/node-env-obj';
+import Express from 'express';
 
-import BootstrapRest from '../../../dist/bootstrap-rest.js';
+import BootstrapRest, { parseTrustProxy } from '../../../dist/bootstrap-rest.js';
+import DatastoreManager from '../../../dist/datastore/index.js';
+import Model from '../../../dist/model/index.js';
+import Plugins from '../../../dist/plugins/index.js';
+import Routes from '../../../dist/routes/index.js';
+
+const Config = createConfig();
+
+// Stub out what __initWorker() and clean() use besides the Express app and its server
+function stubWorkerServices() {
+	sinon.stub(Model, 'initCoreModels').resolves();
+	sinon.stub(Model, 'getCoreModel').returns({ setLocalSchema: () => {} });
+	sinon.stub(Model, 'initSchema').resolves();
+	sinon.stub(Model, 'clean').resolves();
+	sinon.stub(Routes.prototype, 'init').resolves();
+	sinon.stub(Routes.prototype, 'initRoutes').resolves();
+	sinon.stub(Routes.prototype, 'initAppRoutes').resolves();
+	sinon.stub(DatastoreManager, 'clean').resolves();
+}
 
 describe('bootstrap-rest:class', () => {
 	it(`should create an instance of the bootstrapRest class`, () => {
@@ -43,5 +64,73 @@ describe('bootstrap-rest:class', () => {
 			const result = bootstrapRest._getLocalSchemas();
 			assert(Array.isArray(result));
 		});
+	});
+
+	describe('bootstrapRest:clean', () => {
+		let restPort;
+
+		beforeEach(() => {
+			// Listen on any free port, not the configured one
+			restPort = Config.listenPorts.rest;
+			Config.listenPorts.rest = 0;
+		});
+
+		afterEach(() => {
+			Config.listenPorts.rest = restPort;
+			sinon.restore();
+		});
+
+		it(`should stop passing plugin requests to its app`, async () => {
+			stubWorkerServices();
+			const listenerCount = Plugins.listenerCount('request');
+			const bootstrapRest = new BootstrapRest();
+			await bootstrapRest.__initWorker();
+
+			const handle = sinon.stub(bootstrapRest.routes.app, 'handle');
+			const req = {};
+			const res = {};
+			Plugins.emit('request', req, res);
+			assert(handle.calledOnceWith(req, res));
+
+			await bootstrapRest.clean();
+			Plugins.emit('request', req, res);
+
+			assert.strictEqual(handle.callCount, 1);
+			assert.strictEqual(Plugins.listenerCount('request'), listenerCount);
+		});
+	});
+});
+
+describe('bootstrap-rest:parseTrustProxy', () => {
+	it(`should turn an all-digit value into a hop count`, () => {
+		assert.strictEqual(parseTrustProxy('1'), 1);
+		assert.strictEqual(parseTrustProxy('0'), 0);
+		assert.strictEqual(parseTrustProxy(' 2 '), 2);
+	});
+
+	it(`should turn true/false into booleans, in any case`, () => {
+		assert.strictEqual(parseTrustProxy('true'), true);
+		assert.strictEqual(parseTrustProxy('TRUE'), true);
+		assert.strictEqual(parseTrustProxy('false'), false);
+		assert.strictEqual(parseTrustProxy('FALSE'), false);
+	});
+
+	it(`should leave any other value as a string for express to parse`, () => {
+		assert.strictEqual(parseTrustProxy('loopback'), 'loopback');
+		assert.strictEqual(parseTrustProxy('10.0.0.0/8, 172.16.0.0/12'), '10.0.0.0/8, 172.16.0.0/12');
+		assert.strictEqual(parseTrustProxy('10.0.0.1'), '10.0.0.1');
+	});
+
+	it(`should make express take req.ip from X-Forwarded-For behind one proxy`, () => {
+		// node-env-obj turns the config.json default of 1 into '1', which express would read as the address 0.0.0.1
+		const app = Express();
+		app.set('trust proxy', parseTrustProxy('1'));
+
+		const req = Object.create(app.request, {
+			headers: { value: { 'x-forwarded-for': '203.0.113.7' } },
+			socket: { value: { remoteAddress: '10.0.0.5' } },
+		});
+
+		assert.strictEqual(req.ip, '203.0.113.7');
 	});
 });

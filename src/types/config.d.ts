@@ -38,6 +38,7 @@ interface Config {
     level: string;
     slow: string;
     slowTime: string;
+    serverTiming: string;
   };
   listenPorts: {
     rest: string;

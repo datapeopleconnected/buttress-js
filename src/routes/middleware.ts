@@ -18,6 +18,7 @@ import onFinished from 'on-finished';
 
 import Logging from '../helpers/logging.js';
 import * as Helpers from '../helpers/index.js';
+import IOStats from '../helpers/io-stats.js';
 import Model from '../model/index.js';
 import Datastore from '../datastore/index.js';
 import TokenSchemaModel from '../model/core/token.js';
@@ -63,6 +64,7 @@ export class RoutesMiddleware {
       timer: new Helpers.Timer(),
       timings: {
         authenticateToken: null,
+        accessControl: null,
         configCrossDomain: null,
         authenticate: null,
         validate: null,
@@ -90,7 +92,8 @@ export class RoutesMiddleware {
 
     req.context = context;
 
-    next();
+    // Count the I/O the rest of the request causes against it, including work still running after it responds.
+    IOStats.run(id, next);
   }
 
   _timeRequest(req: Request, res: Response, next: NextFunction) {

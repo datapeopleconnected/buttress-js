@@ -24,6 +24,7 @@ const Config = createConfig() as unknown as Config;
 
 import Model from './model/index.js';
 import * as Helpers from './helpers/index.js';
+import IOStats from './helpers/io-stats.js';
 import Logging from './helpers/logging.js';
 
 import { ApplicablePolicyConfig } from './access-control/index.js';
@@ -163,7 +164,9 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     if (!this.__nrp) throw new Error('No NRP instance');
 
     // TODO: Event should come from the SPR
-    this.__nrp.on('rest:activity', (data) => this._handleIncomingMessage(JSON.parse(data) as RESTActivity));
+    this.__nrp.on('rest:activity', (data) =>
+      IOStats.run('spr', () => this._handleIncomingMessage(JSON.parse(data) as RESTActivity)),
+    );
     this.__nrp.on('worker:socket:connection', (tokenId) => this._socketConnection(tokenId));
     this.__nrp.on('worker:socket:disconnect', (tokenId) => this._socketDisconnection(tokenId));
 

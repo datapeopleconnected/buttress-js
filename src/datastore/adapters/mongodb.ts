@@ -21,6 +21,7 @@ import {
   MongoClientOptions,
   Db,
   Collection,
+  CommandStartedEvent,
   AnyBulkWriteOperation,
   Document,
   Filter,
@@ -30,6 +31,7 @@ import {
 } from 'mongodb';
 
 import * as Helpers from '../../helpers/index.js';
+import IOStats from '../../helpers/io-stats.js';
 import Logging from '../../helpers/logging.js';
 
 import AbstractAdapter from '../abstract-adapter.js';
@@ -74,7 +76,21 @@ export default class MongodbAdapter extends AbstractAdapter {
     // Remove the pathname as we'll selected the db using the client method
     const connectionString = this.uri.href.replace(this.uri.pathname, '');
 
-    this._client = await MongoClient.connect(connectionString, this.options || {});
+    // Command monitoring costs something per command, so it's only on while I/O is being counted (the budget tests).
+    if (IOStats.isEnabled()) {
+      this._client = await MongoClient.connect(connectionString, { ...this.options, monitorCommands: true });
+      this._client.on('commandStarted', (event: CommandStartedEvent) => {
+        const target: unknown = event.command[event.commandName];
+        // Commands like getMore don't name the collection first, but in `collection`
+        IOStats.record(
+          'mongo',
+          event.commandName,
+          typeof target === 'string' ? target : (event.command.collection as string | undefined),
+        );
+      });
+    } else {
+      this._client = await MongoClient.connect(connectionString, this.options || {});
+    }
 
     this.__connection = this._client.db(this.uri.pathname.replace(/\//g, ''));
 

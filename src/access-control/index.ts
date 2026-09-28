@@ -120,6 +120,7 @@ class AccessControl {
    * @private
    */
   async accessControlPolicyMiddleware(req: Request, res: Response, next: NextFunction) {
+    req.context.timings.accessControl = req.context.timer.interval;
     Logging.logTimer(
       `accessControlPolicyMiddleware::start`,
       req.context.timer,

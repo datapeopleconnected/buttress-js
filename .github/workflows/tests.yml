@@ -10,20 +10,48 @@ on:
 permissions:
   contents: read
 
+# A new push to a PR cancels its older run. Pushes to main/develop always run to completion, since
+# docker-publish.yml only publishes after a successful run.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+
+    - name: Install dependencies
+      run: npm ci
+
+    # Typecheck, lint, formatting and licence headers.
+    - name: Check
+      run: npm run check
+
   unit-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       MOCHA_UNIT_TIMEOUT: 10000
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
-        node-version: '24'
+        node-version-file: .nvmrc
         cache: npm
 
     - name: Install dependencies
@@ -32,39 +60,15 @@ jobs:
     - name: Build
       run: npm run build
 
-    - name: Run Unit Tests
-      run: npm run test:unit
-
-  coverage:
-    runs-on: ubuntu-latest
-    env:
-      MOCHA_UNIT_TIMEOUT: 10000
-
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '24'
-        cache: npm
-
-    - name: Install dependencies
-      run: npm ci
-
-    - name: Build
-      run: npm run build
-
-    # Report-only for now: unit-test coverage against dist/, non-blocking (no --check-coverage).
-    # Once coverage from planned test additions is meaningfully higher, add thresholds to .c8rc.json
-    # and this job should start failing on regression.
-    - name: Run Unit Test Coverage
+    # Runs the unit tests once under c8, so a failing test fails the job and the coverage report comes free.
+    # Coverage is report-only for now (no --check-coverage). Once planned test additions raise it, add
+    # thresholds to .c8rc.json so this job fails on regression.
+    - name: Run Unit Tests with Coverage
       run: npm run coverage:unit
 
     - name: Upload coverage report
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: coverage-report
         path: coverage/
@@ -72,6 +76,7 @@ jobs:
 
   e2e-tests:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       MOCHA_E2E_TIMEOUT: 20000
 
@@ -86,7 +91,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:latest
+        image: redis:8
         ports:
           - 6380:6379
         options: >-
@@ -97,12 +102,12 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
-        node-version: '24'
+        node-version-file: .nvmrc
         cache: npm
 
     - name: Install dependencies
@@ -124,3 +129,24 @@ jobs:
         BUTTRESS_REDIS_URL: redis://localhost:6380
         BUTTRESS_SOCK_URL: http://localhost:8010
       run: npm run test:e2e
+
+  # Pushes to main/develop build the image in docker-publish.yml. This catches a broken Dockerfile before merge.
+  docker-build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build image
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        push: false
+        cache-from: type=gha
+        cache-to: type=gha,mode=max

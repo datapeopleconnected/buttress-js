@@ -24,7 +24,8 @@ Every registered path gets this exact array wired in as Express middleware, in o
 `_initRoute`/`_initSchemaRoutes`):
 
 1. `_middlewareHelper._createContext` — creates `req.context` (id, timer, timings, auth placeholders) —
-   see [src/types/bjs-express.ts](../src/types/bjs-express.ts) `RequestContext` for the full shape.
+   see [src/types/bjs-express.ts](../src/types/bjs-express.ts) `RequestContext` for the full shape — and
+   runs the rest of the request as its own I/O-counting unit (see [performance.md](performance.md)).
 2. `_middlewareHelper._timeRequest` — sets `x-bjs-request-id`, starts the timer.
 3. `_authenticateToken` → delegates to `RoutesMiddleware._authenticateToken`
    ([src/routes/middleware.ts](../src/routes/middleware.ts)) — resolves the token (admin call, lambda
@@ -53,7 +54,8 @@ share:
 2. `_validate(req, res)` then `_exec(req, res, validate)` — the only two methods subclasses must implement.
 3. `_respond()` — if `_exec` returned a `Stream.Readable`, pipes it through `JSONStringifyStream` (with
    per-chunk redaction via `Helpers.Schema.prepareSchemaResult`) straight to the HTTP response; otherwise
-   `res.json()`s the (redacted, unless `redactResults = false`) result directly.
+   `res.json()`s the (redacted, unless `redactResults = false`) result directly. With
+   `BUTTRESS_LOGGING_SERVER_TIMING` on it first sets a `Server-Timing` header (see [performance.md](performance.md)).
 4. `_logActivity()` — fire-and-forget `ActivitySchemaModel.add()` for non-GET/SEARCH verbs, if
    `this.activity` (default `true`).
 5. `_boardcastData()` — for non-GET/SEARCH verbs: emits `rest:activity` twice (once as a "super"
