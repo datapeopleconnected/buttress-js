@@ -254,3 +254,25 @@ describe('model/core/TokenSchemaModel: token:deleted', () => {
     assert.deepStrictEqual(deletedIds(nrp), []);
   });
 });
+
+// A token's value can be changed in place (data-sharing activation does), and the old value would keep working on
+// REST from the cache.
+describe('model/core/TokenSchemaModel:updateById', () => {
+  it('notifies routes to reload their token cache after the update', async () => {
+    const { model, nrp } = createModel();
+
+    await model.updateById('token-1', { $set: { value: 'new-value' } });
+
+    assert.deepStrictEqual(model.adapter.updateById.firstCall.args, ['token-1', { $set: { value: 'new-value' } }]);
+    assert.ok(nrp.emit.calledWith('app-routes:bust-cache', '{}'));
+    assert.ok(nrp.emit.calledAfter(model.adapter.updateById));
+  });
+
+  it('still busts the cache once when policy properties are set', async () => {
+    const { model, nrp } = createModel();
+
+    await model.setPolicyPropertiesById('token-1', { role: 'admin' });
+
+    assert.strictEqual(nrp.emit.withArgs('app-routes:bust-cache').callCount, 1);
+  });
+});

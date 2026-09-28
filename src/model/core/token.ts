@@ -289,6 +289,14 @@ class TokenSchemaModel extends StandardModel<Token> {
     return result;
   }
 
+  // A token's value can be changed in place (data-sharing activation does), and the old value would otherwise keep
+  // working on REST from the cache.
+  override async updateById(id, query) {
+    const result = await super.updateById(id, query);
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+    return result;
+  }
+
   __announceDeleted(ids: unknown[]) {
     this.__nrp?.emit('app-routes:bust-cache', '{}');
 
