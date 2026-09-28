@@ -227,6 +227,62 @@ describe('model/type/StandardModel:__parseAddBody / add', () => {
   });
 });
 
+describe('model/type/StandardModel: adding an entity with typed array items', () => {
+  const schema = {
+    name: 'organisation',
+    type: 'collection',
+    extends: [],
+    properties: {
+      contacts: {
+        __type: 'array',
+        __allowUpdate: true,
+        __schema: {
+          name: { __type: 'string', __default: null, __required: true, __allowUpdate: true },
+          qty: { __type: 'number', __default: 0, __allowUpdate: true },
+          phones: {
+            __type: 'array',
+            __allowUpdate: true,
+            __schema: { number: { __type: 'string', __default: null, __allowUpdate: true } },
+          },
+        },
+      },
+    },
+  };
+
+  const model = () => createModel(structuredClone(schema));
+
+  it('keeps a typed array nested inside an item', () => {
+    const entity = model().__parseAddBody({ contacts: [{ name: 'A', phones: [{ number: '123', extra: 1 }] }] }, {});
+
+    assert.deepStrictEqual(entity.contacts, [{ name: 'A', qty: 0, phones: [{ number: '123' }] }]);
+  });
+
+  it('refuses an entity whose item has a value of the wrong type, naming it', () => {
+    const result = model().validate({ contacts: [{ name: 'A' }, { name: 'B', qty: 'lots' }] });
+
+    assert.strictEqual(result.isValid, false);
+    assert.deepStrictEqual(result.invalid, ['contacts.1.qty:lots[string]']);
+  });
+
+  it('refuses an entity whose item is missing a required property, naming it', () => {
+    const result = model().validate({ contacts: [{ qty: 1 }] });
+
+    assert.strictEqual(result.isValid, false);
+    assert.deepStrictEqual(result.missing, ['contacts.0.name']);
+  });
+
+  it('refuses an entity with an invalid item in a nested typed array', () => {
+    const result = model().validate({ contacts: [{ name: 'A', phones: [{ number: true }] }] });
+
+    assert.strictEqual(result.isValid, false);
+    assert.deepStrictEqual(result.invalid, ['contacts.0.phones.0.number:true[boolean]']);
+  });
+
+  it('accepts an entity whose items are valid', () => {
+    assert.strictEqual(model().validate({ contacts: [{ name: 'A', qty: 2, phones: [{ number: '1' }] }] }).isValid, true);
+  });
+});
+
 describe('model/type/StandardModel:updateByPath', () => {
   it('runs each path update through adapter.batchUpdateProcess and collects the results in order', async () => {
     const model = createModel();

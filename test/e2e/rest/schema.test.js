@@ -353,6 +353,24 @@ describe('Schema', async () => {
 			testEnv.spaceship = item;
 		});
 
+		it('Should refuse to add an entity with an invalid array item, naming it', async () => {
+			const add = (engine) => bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({name: 'spaceship-invalid', engine}),
+			}, testEnv.apps.app2.token);
+
+			await assert.rejects(
+				() => add([{position: 'bottom', items: 'lots'}]),
+				(err) => err.code === 400 && err.message === 'spaceship: Invalid value: engine.0.items:lots[string]',
+			);
+			await assert.rejects(
+				() => add([{position: 'bottom', items: 1}, {items: 2}]),
+				(err) => err.code === 400 && err.message === 'spaceship: Missing field: engine.1.position',
+			);
+		});
+
 		const putSpaceship = (body) => bjsReq({
 			url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship/${testEnv.spaceship.id}`,
 			method: 'PUT',

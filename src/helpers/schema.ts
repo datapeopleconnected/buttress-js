@@ -337,7 +337,7 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
       if (config.__required && propVal === undefined && (config.__default === null || config.__default === undefined)) {
         res.isValid = false;
         Logging.logWarn(`Missing required ${property}`);
-        res.missing.push(property);
+        res.missing.push(`${parentProperty}${property}`);
         continue;
       }
 
@@ -361,19 +361,14 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
     }
 
     if (config.__type === 'array' && config.__schema) {
-      propVal.value.reduce((errors, v, idx) => {
-        const values = __getFlattenedBody(v);
-        const res = __validate(config.__schema, values, `${property}.${idx}.`, v);
-        if (!res.invalid) return errors;
-        if (res.missing.length) {
-          errors.missing = errors.missing.concat(res.missing);
-        }
-        if (res.invalid.length) {
-          errors.invalid = errors.invalid.concat(res.invalid);
-        }
+      propVal.value.forEach((v, idx) => {
+        const itemRes = __validate(config.__schema, __getFlattenedBody(v), `${parentProperty}${property}.${idx}.`, v);
+        if (itemRes.isValid) return;
 
-        return errors;
-      }, res);
+        res.isValid = false;
+        res.missing = res.missing.concat(itemRes.missing);
+        res.invalid = res.invalid.concat(itemRes.invalid);
+      });
     } else if (config.__type === 'array' && config.__itemtype) {
       for (const idx in propVal.value) {
         if (!{}.hasOwnProperty.call(propVal.value, idx)) continue;
@@ -385,7 +380,9 @@ const __validate = (schema, values, parentProperty, body?: unknown) => {
             `Invalid ${property}.${idx}: ${prop.value} [${typeof prop.value}] expected [${config.__itemtype}]`,
           );
           res.isValid = false;
-          res.invalid.push(`${parentProperty}.${idx}:${prop.value}[${typeof prop.value}] [${config.__itemtype}]`);
+          res.invalid.push(
+            `${parentProperty}${property}.${idx}:${prop.value}[${typeof prop.value}] [${config.__itemtype}]`,
+          );
         }
         propVal.value[idx] = prop.value;
       }
@@ -477,10 +474,9 @@ export const unflattenObject = __unflattenObject;
  * @param {Object} schemaFlat - a flatterned schema
  * @param {Array} values - Array of values, path/value
  * @param {Object} body
- * @param {Integer} bodyIdx
  * @return {Object} - A fully populated object using schema defaults and values provided.
  */
-export const sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number) => {
+export const sanitizeObject = (schemaFlat, values, body = null) => {
   const res = {};
   const objects = {};
 
@@ -516,17 +512,6 @@ export const sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number
       propVal = {};
       propVal.path = property.split('.').pop();
       propVal.value = value ? value : __getPropDefault(config);
-      if (Array.isArray(body)) {
-        // TODO: Error here
-        if (bodyIdx === undefined)
-          throw new Error("bodyIdx is required but condition wasn't set to handle it being undefined");
-        const isSubProperty = property.split('.');
-        propVal.path = property;
-        propVal.value =
-          isSubProperty.length > 1
-            ? isSubProperty.reduce((obj, str) => obj?.[str], body[bodyIdx])
-            : body[bodyIdx][property];
-      }
     }
 
     if (propVal === undefined) {
@@ -544,9 +529,7 @@ export const sanitizeObject = (schemaFlat, values, body = null, bodyIdx?: number
       if (!body || !__getObjProperty(body, property)) {
         value = [];
       } else {
-        value = value.map((v, idx) =>
-          sanitizeObject(config.__schema, __getFlattenedBody(v), __getObjProperty(body, property), idx),
-        );
+        value = value.map((item) => sanitizeArrayItem(config.__schema, item));
         if (root && property.split('.').length > 1) {
           objects[root] = __inflateObject(objects[root], path, value);
           value = objects[root];
