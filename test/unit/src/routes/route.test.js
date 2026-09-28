@@ -313,7 +313,7 @@ describe('routes/Route:_boardcastData', () => {
   });
 
   it('broadcasts twice (super + scoped) and checks for path lambdas on mutating verbs', async () => {
-    const route = createRoute();
+    const route = createRoute({ app: null });
     route.verb = Route.Constants.Verbs.POST;
     const broadcast = sinon.stub(route, '_broadcast').resolves();
     const checkLambda = sinon.stub(route, '_checkBasedPathLambda').resolves();
@@ -329,7 +329,7 @@ describe('routes/Route:_boardcastData', () => {
   });
 
   it('strips the app api path segment from the broadcast path when present', async () => {
-    const route = createRoute();
+    const route = createRoute({ app: null });
     route.verb = Route.Constants.Verbs.POST;
     const broadcast = sinon.stub(route, '_broadcast').resolves();
     sinon.stub(route, '_checkBasedPathLambda').resolves();
@@ -338,6 +338,22 @@ describe('routes/Route:_boardcastData', () => {
     await route._boardcastData(req, createRes(), {});
 
     assert.strictEqual(broadcast.firstCall.args[3], '/v1/user');
+  });
+
+  it("strips the api path of an app route's own app, whoever's token it is", async () => {
+    const route = createRoute({ app: { id: 'app-1', apiPath: 'app-one' } });
+    route.verb = Route.Constants.Verbs.POST;
+    const broadcast = sinon.stub(route, '_broadcast').resolves();
+    sinon.stub(route, '_checkBasedPathLambda').resolves();
+    const req = createReq({
+      path: '/app-one/api/v1/car',
+      token: { type: 'system' },
+      authApp: { id: 'super-app', apiPath: 'bjs' },
+    });
+
+    await route._boardcastData(req, createRes(), {});
+
+    assert.strictEqual(broadcast.firstCall.args[3], '/car');
   });
 });
 
@@ -372,6 +388,34 @@ describe('routes/Route:_broadcast', () => {
     assert.strictEqual('deletedEntities' in superActivity, false);
     assert.deepStrictEqual(scopedActivity.deletedEntities, [{ id: 'doc-1', ownerId: 'user-1' }]);
     assert.strictEqual(scopedActivity.response, true);
+  });
+
+  // A super or system token can call an app's schema routes, and the data it changes is that app's.
+  it("names an app route's own app on the activity and the entity's sourceId, whoever's token it is", () => {
+    const nrp = createNrpFake();
+    const route = createRoute({ nrp, app: { id: 'app-1', apiPath: 'app-one' } });
+    route.activityBroadcast = true;
+    route.verb = Route.Constants.Verbs.POST;
+    const req = createReq({ token: { type: 'system' }, authApp: { id: 'super-app', apiPath: 'bjs' } });
+
+    route._broadcast(req, createRes(), { name: 'car-1' }, '/car');
+
+    const activity = JSON.parse(nrp.emit.firstCall.args[1]);
+    assert.deepStrictEqual([activity.appId, activity.appAPIPath], ['app-1', 'app-one']);
+    assert.strictEqual(activity.response.sourceId, 'app-1');
+  });
+
+  it("names the token's app on a core route's activity", () => {
+    const nrp = createNrpFake();
+    const route = createRoute({ nrp, app: null });
+    route.activityBroadcast = true;
+    route.verb = Route.Constants.Verbs.POST;
+    const req = createReq({ authApp: { id: 'app-1', apiPath: 'app-one' } });
+
+    route._broadcast(req, createRes(), { name: 'user-1' }, '/user');
+
+    const activity = JSON.parse(nrp.emit.firstCall.args[1]);
+    assert.deepStrictEqual([activity.appId, activity.appAPIPath], ['app-1', 'app-one']);
   });
 
   it('does not emit when activityBroadcast is disabled', () => {

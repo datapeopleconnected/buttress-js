@@ -19,7 +19,7 @@ Recommendations:
 
 For regular operations, use app-scoped tokens and policies instead of super tokens.
 
-A request always acts on the app its token belongs to, super tokens included. To administer an app, use that app's token. A `?apiPath=` query parameter naming any other app is refused with a 400, `apiPath_not_supported`, rather than being applied to the token's own app. Routes that can act on another app say so in their path, such as `GET app/policy-property-list/:apiPath` for a super token.
+The core API (`/api/v1/...`) acts on the app your token belongs to, super tokens included, so to administer an app, use that app's token. A `?apiPath=` query parameter naming any other app is refused with a 400, `apiPath_not_supported`, rather than being applied to the token's own app. Routes that act on another app say so in their path: an app's schema routes (`/<apiPath>/api/v1/<schema>`) act on that app, and take its own tokens or a super or system token, and `GET app/policy-property-list/:apiPath` lets a super token read another app's list.
 
 Typical flow:
 

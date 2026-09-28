@@ -632,6 +632,36 @@ describe('Processing', async () => {
 		});
 	});
 
+	describe('System tokens', () => {
+		it("Should relay a system token's write to an app's data to that app's tokens, as that app's", async function () {
+			this.timeout(10000);
+			const received = [];
+			const listener = (packet) => received.push(packet.data);
+			testEnv.sockets['basic1'].on('db-activity', listener);
+
+			const res = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`, {
+				method: 'POST',
+				headers: { Authorization: `Bearer ${Config.testToken}`, 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: 'system-token-car', userId: testEnv.users['env-test-1'].id }),
+			});
+			assert.strictEqual(res.status, 200);
+			const [car] = await res.json();
+			assert.strictEqual(car.sourceId, testEnv.apps.app1.id);
+
+			const start = Date.now();
+			while (!received.some((p) => p.response?.id === car.id) && Date.now() - start < 5000) {
+				await new Promise((r) => setTimeout(r, 50));
+			}
+			testEnv.sockets['basic1'].off('db-activity', listener);
+
+			const packet = received.find((p) => p.response?.id === car.id);
+			assert(packet, "app1's socket got nothing");
+			assert.strictEqual(packet.verb, 'post');
+			assert.strictEqual(packet.path, '/car');
+			assert.strictEqual(packet.response.sourceId, testEnv.apps.app1.id);
+		});
+	});
+
 	describe('Projection', () => {
 		const carUrl = (id = '') => `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car${id ? `/${id}` : ''}`;
 		const send = (url, method, body) => bjsReq({

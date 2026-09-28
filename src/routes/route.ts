@@ -147,6 +147,8 @@ export default class Route {
 
   // model: T;
   appId?: string;
+  // The api path of the app whose schema route this is, if it is one.
+  appApiPath?: string;
   schemaName?: string;
 
   paths: string[];
@@ -164,6 +166,7 @@ export default class Route {
     // this.model = model;
     this.schemaName = schema?.name;
     this.appId = app?.id;
+    this.appApiPath = app?.apiPath;
 
     this.paths = Array.isArray(paths) ? paths : [paths];
 
@@ -306,7 +309,7 @@ export default class Route {
 
         if (chunkCount % this.timingChunkSample === 0) req.context.timings.stream.push(req.context.timer.interval);
         return this.redactResults
-          ? Helpers.Schema.prepareSchemaResult(chunk, this.addSourceId ? req.context.authApp?.id : null)
+          ? Helpers.Schema.prepareSchemaResult(chunk, this.addSourceId ? this._dataApp(req).id : null)
           : chunk;
       });
 
@@ -332,7 +335,7 @@ export default class Route {
     }
 
     if (this.redactResults) {
-      res.json(Helpers.Schema.prepareSchemaResult(result, this.addSourceId ? req.context.authApp?.id : null));
+      res.json(Helpers.Schema.prepareSchemaResult(result, this.addSourceId ? this._dataApp(req).id : null));
     } else {
       res.json(result);
     }
@@ -398,6 +401,18 @@ export default class Route {
   }
 
   /**
+   * The app whose data a request reads or changes. An app's schema routes act on that app, and a super or system token
+   * can call them as well as the app's own tokens; core routes act on the token's app.
+   * @param {Request} req
+   * @return {{id?: string, apiPath?: string}}
+   */
+  _dataApp(req: Request): { id?: string; apiPath?: string } {
+    if (this.appId) return { id: this.appId, apiPath: this.appApiPath };
+
+    return { id: req.context.authApp?.id, apiPath: req.context.authApp?.apiPath };
+  }
+
+  /**
    * Handle broadcasting the result by app policies
    * @param {Object} req
    * @param {Object} res
@@ -414,7 +429,8 @@ export default class Route {
 
     const pathArr = req.path.split('/');
     if (pathArr[0] === '') pathArr.shift();
-    if (req.context.authApp?.apiPath && pathArr.indexOf(req.context.authApp.apiPath) === 0) {
+    const { apiPath } = this._dataApp(req);
+    if (apiPath && pathArr.indexOf(apiPath) === 0) {
       pathArr.shift();
     }
 
@@ -447,6 +463,7 @@ export default class Route {
       req.context.id,
     );
 
+    const dataApp = this._dataApp(req);
     const emit = (_result: unknown) => {
       if (this.activityBroadcast === true) {
         this._nrp?.emit(
@@ -465,8 +482,8 @@ export default class Route {
             response: _result,
             clientSessionId: req.context.clientSessionId,
             user: req.context.authUser ? req.context.authUser.id : '',
-            appAPIPath: req.context.authApp ? req.context.authApp.apiPath : '',
-            appId: req.context.authApp ? req.context.authApp.id : '',
+            appAPIPath: dataApp.apiPath ?? '',
+            appId: dataApp.id ?? '',
             isSuper: isSuper,
             isCoreSchema: this.core,
             schemaName: this.schemaName || '',
@@ -479,12 +496,12 @@ export default class Route {
     };
 
     if (isReadStream) {
-      result.on('data', (data) => emit(Helpers.Schema.prepareSchemaResult(data, req.context.authApp?.id)));
+      result.on('data', (data) => emit(Helpers.Schema.prepareSchemaResult(data, dataApp.id ?? null)));
       Logging.logTimer('_broadcast:end-stream', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
 
-    emit(Helpers.Schema.prepareSchemaResult(result, req.context.authApp?.id));
+    emit(Helpers.Schema.prepareSchemaResult(result, dataApp.id ?? null));
     Logging.logTimer('_broadcast:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
   }
 
