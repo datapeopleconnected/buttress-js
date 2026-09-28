@@ -65,6 +65,13 @@ npm run test:e2e          # wipes the test DB/Redis, boots a real Buttress in IN
   `.${NODE_ENV}.env` from the repo root via `@dpc/node-env-obj`. `test:e2e:timed` /
   `perf:baseline:record` / `perf:compare` wrap the e2e run with timing collection
   ([test/perf/](../test/perf)) to catch performance regressions between runs.
+- **Coverage:** `coverage:unit` (the CI coverage job) and `coverage` use c8, whose figures read high: it
+  counts licence headers, comments and types as covered lines in any file that loads, and only counts
+  branches inside functions that ran. For real numbers use `npm run coverage:istanbul` (add `-- unit` or
+  `-- e2e` for one suite). It builds, runs the suites with `dist/` instrumented on load by a loader hook
+  ([test/istanbul/](../test/istanbul), so `dist/` itself is untouched), and prints per-suite and combined
+  coverage of `src/*.ts`; the HTML report lands in `coverage/istanbul/lcov-report/`. Its e2e step is plain
+  `test:e2e`, so it needs MongoDB + Redis and wipes them the same way.
 
 ## Running from source (non-Docker)
 
