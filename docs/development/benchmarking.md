@@ -43,6 +43,18 @@ To measure a build without switching branches, point `--dist` at it, for example
 **better** or **worse** only when every round of one build beat every round of the other and the medians differ by
 at least 5% (`--threshold` changes this). Smaller or inconsistent differences are left unmarked as run-to-run noise.
 
+A machine can speed up or slow down over the few minutes two benchmarks take, so whichever build runs second can
+look better or worse than it is. To even that out, measure the builds in turns and give each side as a
+comma-separated list of its results files. `bench:compare` pools each side's rounds:
+
+```bash
+npm run bench -- --dist ../develop-checkout/dist --rounds 3 --out bench-results/base-1.json
+npm run bench -- --rounds 3 --out bench-results/head-1.json
+npm run bench -- --rounds 3 --out bench-results/head-2.json
+npm run bench -- --dist ../develop-checkout/dist --rounds 3 --out bench-results/base-2.json
+npm run bench:compare -- bench-results/base-1.json,bench-results/base-2.json bench-results/head-1.json,bench-results/head-2.json
+```
+
 Timings depend on the machine, so compare results measured on the same machine, with no other heavy work running.
 `bench:compare` warns when two results come from different settings, CPUs, or Node, MongoDB or Redis versions.
 
@@ -50,8 +62,8 @@ Timings depend on the machine, so compare results measured on the same machine, 
 
 The **Benchmark** workflow runs on every push to `develop` or `main` and on every pull request. It skips changes
 that only touch docs or Markdown. It builds the new commit and the one it builds on: the branch's previous tip for
-a push, or the base for a pull request. It benchmarks both on the same runner and puts the `bench:compare` table in
-the job summary. The results files are kept as the `bench-results` artifact for 30 days.
+a push, or the base for a pull request. It benchmarks both on the same runner, in turns (base, head, head, base, 3
+rounds each), and puts the `bench:compare` table in the job summary. The results files are kept as the `bench-results` artifact for 30 days.
 
 It's report-only. Timings on shared CI runners vary from run to run, so it never fails over them, though it adds a
 warning when a metric is marked worse. Before acting on a change it reports, confirm it by benchmarking both

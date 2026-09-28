@@ -1,9 +1,9 @@
 name: Benchmark
 
 # Report only. Benchmarks each push to develop or main, and each PR, against the commit it builds on (npm run bench,
-# both builds on the same runner) and puts npm run bench:compare's table in the job summary. Timings on shared
-# runners vary from run to run, so this never fails over them; it warns when a metric is marked worse. It runs
-# separately from Tests so it can't hold up the Docker image. See docs/development/benchmarking.md.
+# both builds on the same runner, taking turns) and puts npm run bench:compare's table in the job summary. Timings
+# on shared runners vary from run to run, so this never fails over them; it warns when a metric is marked worse. It
+# runs separately from Tests so it can't hold up the Docker image. See docs/development/benchmarking.md.
 
 on:
   push:
@@ -107,20 +107,26 @@ jobs:
         fi
         npm run build
 
+    # The builds take turns, base, head, head, base, so neither always gets the runner's first or last minutes.
+    # Whatever drifts over the job (a cold runner warming up, a noisy neighbour) lands on both sides, and
+    # bench:compare pools each side's rounds.
     - name: Benchmark the base and this commit
       run: |
-        npm run bench -- --dist "$RUNNER_TEMP/base/dist" --label base --out bench-results/base.json
-        npm run bench -- --label head --out bench-results/head.json
+        npm run bench -- --dist "$RUNNER_TEMP/base/dist" --label base --rounds 3 --out bench-results/base-1.json
+        npm run bench -- --label head --rounds 3 --out bench-results/head-1.json
+        npm run bench -- --label head --rounds 3 --out bench-results/head-2.json
+        npm run bench -- --dist "$RUNNER_TEMP/base/dist" --label base --rounds 3 --out bench-results/base-2.json
 
     - name: Report
       run: |
-        npm run --silent bench:compare -- bench-results/base.json bench-results/head.json > bench-results/compare.txt
+        npm run --silent bench:compare -- bench-results/base-1.json,bench-results/base-2.json \
+          bench-results/head-1.json,bench-results/head-2.json > bench-results/compare.txt
         cat bench-results/compare.txt
         {
           echo "## Benchmark: ${BASE::8} → ${GITHUB_SHA::8}"
           echo
-          echo "Report only. Both builds ran on this runner, one after the other; shared runners vary from run to run,"
-          echo "so check a change marked worse by running npm run bench locally before acting on it."
+          echo "Report only. Both builds ran on this runner, taking turns (base, head, head, base); shared runners vary"
+          echo "from run to run, so check a change marked worse by running npm run bench locally before acting on it."
           echo
           echo '```'
           cat bench-results/compare.txt

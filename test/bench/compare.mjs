@@ -14,15 +14,17 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-// npm run bench:compare -- <base.json> <head.json>: compares two npm run bench results, scenario by scenario.
+// npm run bench:compare -- <base.json> <head.json>: compares two npm run bench results, scenario by scenario. Either
+// side can be several comma-separated results files for one build, whose rounds are pooled.
 
 import fs from 'node:fs';
 import { parseArgs } from 'node:util';
 
-const USAGE = `Usage: npm run bench:compare -- [--threshold <pct>] <base.json> <head.json>
+const USAGE = `Usage: npm run bench:compare -- [--threshold <pct>] <base.json>[,<base.json>...] <head.json>[,<head.json>...]
 
 Marks a metric better or worse when every head round beat, or lost to, every base round, and the medians differ by
-at least --threshold percent (default: 5).`;
+at least --threshold percent (default: 5). A side given as several comma-separated results files of the same build,
+e.g. runs taking turns with the other build's, is compared as one: their rounds are pooled.`;
 
 // higherIsBetter decides which way a change counts as better.
 const METRICS = [
@@ -48,11 +50,47 @@ const load = (file) => {
   return results;
 };
 
-const describe = (results) => {
+const buildOf = (results) => {
   const commit = results.build.git.commit?.slice(0, 8) ?? 'no git';
-  const dirty = results.build.git.dirty ? ' +uncommitted' : '';
-  const label = results.label ? ` "${results.label}"` : '';
-  return `${commit}${dirty}${label}, ${results.createdAt.slice(0, 16).replace('T', ' ')}`;
+  return `${commit}${results.build.git.dirty ? ' +uncommitted' : ''}`;
+};
+
+const describe = ({ runs }) => {
+  const label = runs[0].label ? ` "${runs[0].label}"` : '';
+  const times = runs.map((results) => results.createdAt.slice(0, 16).replace('T', ' '));
+  const when = runs.length === 1 ? times[0] : `${runs.length} runs, ${times[0]} to ${times.at(-1).slice(11)}`;
+  return `${buildOf(runs[0])}${label}, ${when}`;
+};
+
+const median = (values) => {
+  const sorted = values.filter((value) => value !== null).sort((a, b) => a - b);
+  if (!sorted.length) return null;
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+};
+
+// Loads one side: a results file, or comma-separated ones whose rounds are pooled per scenario, with the medians
+// taken across all of them.
+const loadSide = (arg) => {
+  const files = arg.split(',').filter(Boolean);
+  const runs = files.map(load);
+  const builds = new Set(runs.map(buildOf));
+  if (builds.size > 1) console.log(`warning: ${files.join(', ')} measure different builds (${[...builds].join(', ')})`);
+
+  const scenarios = {};
+  for (const results of runs) {
+    for (const [name, scenario] of Object.entries(results.scenarios)) {
+      (scenarios[name] ??= { rounds: [] }).rounds.push(...scenario.rounds);
+    }
+  }
+  for (const scenario of Object.values(scenarios)) {
+    scenario.median = Object.fromEntries(
+      METRICS.map(({ key }) => [key, median(scenario.rounds.map((round) => round[key]))]).concat([
+        ['errors', scenario.rounds.reduce((sum, round) => sum + round.errors, 0)],
+      ]),
+    );
+  }
+  return { files, runs, scenarios };
 };
 
 const percentChange = (base, head) =>
@@ -85,18 +123,24 @@ try {
 const thresholdPct = Number(args.values.threshold);
 if (args.positionals.length !== 2 || !(thresholdPct >= 0)) fail(USAGE);
 
-const [baseFile, headFile] = args.positionals;
-const base = load(baseFile);
-const head = load(headFile);
+const base = loadSide(args.positionals[0]);
+const head = loadSide(args.positionals[1]);
 
-console.log(`base: ${describe(base)}  (${baseFile})`);
-console.log(`head: ${describe(head)}  (${headFile})`);
+console.log(`base: ${describe(base)}  (${base.files.join(', ')})`);
+console.log(`head: ${describe(head)}  (${head.files.join(', ')})`);
 
-const differences = [
-  ['settings', JSON.stringify(base.settings), JSON.stringify(head.settings)],
-  ...['node', 'cpu', 'cpus', 'mongo', 'redis'].map((key) => [key, base.environment[key], head.environment[key]]),
-].filter(([, a, b]) => a !== b);
-for (const [what, a, b] of differences) {
+// Every run is checked against the first base run, so a mismatch within a side shows up too.
+const [first, ...others] = [...base.runs, ...head.runs];
+const differences = new Map();
+for (const results of others) {
+  for (const [what, a, b] of [
+    ['settings', JSON.stringify(first.settings), JSON.stringify(results.settings)],
+    ...['node', 'cpu', 'cpus', 'mongo', 'redis'].map((key) => [key, first.environment[key], results.environment[key]]),
+  ]) {
+    if (a !== b && !differences.has(what)) differences.set(what, [a, b]);
+  }
+}
+for (const [what, [a, b]] of differences) {
   console.log(`warning: ${what} differs (${a} vs ${b}), so the comparison may not be like for like`);
 }
 console.log('');
@@ -136,6 +180,7 @@ const missing = [...Object.keys(base.scenarios), ...Object.keys(head.scenarios)]
 if (missing.length) console.log(`\nnot in both results: ${[...new Set(missing)].join(', ')}`);
 
 console.log(
-  `\nValues are medians across rounds. better/worse: every head round beat, or lost to, every base round, by at` +
-    `\nleast ${thresholdPct}% at the median. Unmarked changes are too small or inconsistent to tell from run-to-run noise.`,
+  `\nValues are medians across all of a side's rounds. better/worse: every head round beat, or lost to, every base` +
+    `\nround, by at least ${thresholdPct}% at the median. Unmarked changes are too small or inconsistent to tell from` +
+    `\nrun-to-run noise.`,
 );
