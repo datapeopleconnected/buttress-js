@@ -17,7 +17,9 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import MongodbAdapter from '../../../../../dist/datastore/adapters/mongodb.js';
+import { ObjectId } from 'bson';
+
+import MongodbAdapter, { applyUpdateOps, mergeUpdateOps } from '../../../../../dist/datastore/adapters/mongodb.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
 
 const ID = '507f1f77bcf86cd799439011';
@@ -43,8 +45,9 @@ const organisationSchema = {
   },
 };
 
-// A StandardModel on a real MongodbAdapter whose collection records the update of each bulkWrite op.
-function createModel(schema = organisationSchema) {
+// A StandardModel on a real MongodbAdapter whose collection records the update document of each write. It holds one
+// stored entity for updates that have to read it first.
+function createModel(schema = organisationSchema, stored = {}) {
   const services = new Map([
     ['nrp', { on: () => {}, emit: () => {} }],
     ['modelManager', {}],
@@ -54,9 +57,10 @@ function createModel(schema = organisationSchema) {
   const ops = [];
   const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});
   adapter.collection = {
-    bulkWrite: async (batch) => {
-      ops.push(...batch.map((op) => op.updateOne.update));
-      return { ok: 1 };
+    findOne: async () => ({ _id: new ObjectId(ID), ...structuredClone(stored) }),
+    updateOne: async (_filter, update) => {
+      ops.push(update);
+      return { matchedCount: 1 };
     },
   };
   model.adapter = adapter;
@@ -238,8 +242,8 @@ describe('datastore/adapters/MongodbAdapter: plain arrays', () => {
 });
 
 describe('datastore/adapters/MongodbAdapter: several appends in one request', () => {
-  it('applies each append to the same property, in order', async () => {
-    const { model, ops } = createModel();
+  it('applies each append to the same property, in order, in one write', async () => {
+    const { model, ops } = createModel(organisationSchema, { tags: ['z'] });
 
     await update(model, [
       { path: 'tags', value: 'a' },
@@ -249,10 +253,15 @@ describe('datastore/adapters/MongodbAdapter: several appends in one request', ()
     ]);
 
     assert.deepStrictEqual(ops, [
-      { $push: { tags: 'a' } },
-      { $push: { tags: 'b' } },
-      { $push: { contacts: { name: 'Alice', qty: 0, address: { street: null } } } },
-      { $push: { contacts: { name: 'Bob', qty: 0, address: { street: null } } } },
+      {
+        $set: {
+          tags: ['z', 'a', 'b'],
+          contacts: [
+            { name: 'Alice', qty: 0, address: { street: null } },
+            { name: 'Bob', qty: 0, address: { street: null } },
+          ],
+        },
+      },
     ]);
   });
 });
@@ -366,6 +375,169 @@ describe('datastore/adapters/MongodbAdapter: fields inside array items', () => {
 
   it('leaves an element of an array inside an array item-type array as it is', async () => {
     assert.deepStrictEqual((await setOf('matrix.0.1', 'x')).op, { $set: { 'matrix.0.1': 'x' } });
+  });
+});
+
+describe('datastore/adapters/MongodbAdapter: one request, one write', () => {
+  it('writes updates to separate paths as one update document, without reading first', async () => {
+    const { model, ops } = createModel();
+    model.adapter.collection.findOne = async () => assert.fail('should not read the entity');
+
+    await update(model, [
+      { path: 'tags', value: 'a' },
+      { path: 'contacts.0.name', value: 'Alice' },
+      { path: 'contacts.1', value: { name: 'Bob' } },
+    ]);
+
+    assert.deepStrictEqual(ops, [
+      {
+        $push: { tags: 'a' },
+        $set: { 'contacts.0.name': 'Alice', 'contacts.1': { name: 'Bob', qty: 0, address: { street: null } } },
+      },
+    ]);
+  });
+
+  it('removes an item in one write, leaving no hole', async () => {
+    const { model, ops } = createModel(organisationSchema, { tags: ['a', 'b', 'c'] });
+
+    const { results } = await update(model, { path: 'tags.1.__remove__', value: '' });
+
+    assert.deepStrictEqual(ops, [{ $set: { tags: ['a', 'c'] } }]);
+    assert.deepStrictEqual(results, [{ type: 'vector-rm', path: 'tags', value: { numRemoved: 1, index: '1' } }]);
+  });
+
+  it('only writes the fields it read if they have not changed since, and tries again if they have', async () => {
+    const { model } = createModel(organisationSchema, { tags: ['a', 'b'] });
+    const filters = [];
+    let changes = 2;
+    model.adapter.collection.updateOne = async (filter) => {
+      filters.push(filter);
+      return { matchedCount: changes-- > 0 ? 0 : 1 };
+    };
+
+    await update(model, [{ path: 'tags.0.__remove__', value: '' }]);
+
+    assert.strictEqual(filters.length, 3);
+    assert.deepStrictEqual(filters[0].tags, ['a', 'b']);
+  });
+
+  it('gives up with a 409 if the entity keeps changing', async () => {
+    const { model } = createModel(organisationSchema, { tags: ['a', 'b'] });
+    model.adapter.collection.updateOne = async () => ({ matchedCount: 0 });
+
+    await assert.rejects(
+      () => update(model, [{ path: 'tags.0.__remove__', value: '' }]),
+      (err) => err.code === 409,
+    );
+  });
+
+  it('writes nothing when one of the updates cannot be applied to the entity', async () => {
+    const { model, ops } = createModel(organisationSchema, { tags: 'not-an-array' });
+
+    await assert.rejects(
+      () =>
+        update(model, [
+          { path: 'contacts', value: { name: 'Alice' } },
+          { path: 'tags.0.__remove__', value: '' },
+        ]),
+      (err) => err.code === 400 && err.message === "Update can't be applied: Cannot apply $pull to a non-array value",
+    );
+    assert.deepStrictEqual(ops, []);
+  });
+
+  it("refuses with a 400 an update Mongo can't apply to the stored data, rather than a 500", async () => {
+    const { model } = createModel();
+    model.adapter.collection.updateOne = async () => {
+      throw Object.assign(new Error('write failed'), {
+        code: 28,
+        errmsg: "Plan executor error during update :: caused by :: Cannot create field 'x' in element {meta: null}",
+      });
+    };
+
+    await assert.rejects(
+      () => update(model, { path: 'tags', value: 'a' }),
+      (err) => err.code === 400 && err.message === "Update can't be applied: Cannot create field 'x' in element {meta: null}",
+    );
+  });
+});
+
+describe('datastore/adapters/MongodbAdapter:mergeUpdateOps', () => {
+  it('merges operations on separate paths into one update document', () => {
+    assert.deepStrictEqual(mergeUpdateOps([{ $set: { a: 1 } }, { $push: { b: 2 } }, { $set: { 'c.d': 3 } }]), {
+      $set: { a: 1, 'c.d': 3 },
+      $push: { b: 2 },
+    });
+  });
+
+  it('cannot merge operations on the same path, or on a path and one inside it', () => {
+    assert.strictEqual(mergeUpdateOps([{ $push: { tags: 'a' } }, { $push: { tags: 'b' } }]), null);
+    assert.strictEqual(mergeUpdateOps([{ $set: { meta: null } }, { $set: { 'meta.x': 1 } }]), null);
+    assert.strictEqual(mergeUpdateOps([{ $unset: { 'tags.1': null } }, { $pull: { tags: null } }]), null);
+  });
+});
+
+describe('datastore/adapters/MongodbAdapter:applyUpdateOps', () => {
+  const apply = (doc, ops) => {
+    applyUpdateOps(doc, ops);
+    return doc;
+  };
+  const refusal = (doc, ops) => {
+    try {
+      applyUpdateOps(doc, ops);
+    } catch (err) {
+      return [err.code, err.message];
+    }
+    return null;
+  };
+
+  it('sets a field, creating the documents on its way', () => {
+    assert.deepStrictEqual(apply({}, [{ $set: { 'a.b.c': 1 } }]), { a: { b: { c: 1 } } });
+  });
+
+  it('sets an array element by index, padding with null past the end', () => {
+    assert.deepStrictEqual(apply({ tags: ['a'] }, [{ $set: { 'tags.2': 'c' } }]), { tags: ['a', null, 'c'] });
+  });
+
+  it('pushes onto an array, creating it when missing', () => {
+    assert.deepStrictEqual(apply({ tags: ['a'] }, [{ $push: { tags: 'b' } }, { $push: { other: 1 } }]), {
+      tags: ['a', 'b'],
+      other: [1],
+    });
+  });
+
+  it('increments a number, setting it when missing', () => {
+    assert.deepStrictEqual(apply({ n: 1 }, [{ $inc: { n: 2 } }, { $inc: { m: 3 } }]), { n: 3, m: 3 });
+  });
+
+  it('removes an array element the way $unset then $pull does', () => {
+    assert.deepStrictEqual(apply({ tags: ['a', 'b', 'c'] }, [{ $unset: { 'tags.1': null } }, { $pull: { tags: null } }]), {
+      tags: ['a', 'c'],
+    });
+  });
+
+  it('applies operations in order', () => {
+    assert.deepStrictEqual(apply({ meta: { x: 1 } }, [{ $set: { meta: null } }, { $set: { meta: { y: 2 } } }]), {
+      meta: { y: 2 },
+    });
+  });
+
+  it("refuses what Mongo refuses, in Mongo's words", () => {
+    assert.deepStrictEqual(refusal({ meta: null }, [{ $set: { 'meta.x': 1 } }]), [
+      400,
+      "Update can't be applied: Cannot create field 'x' in element {meta: null}",
+    ]);
+    assert.deepStrictEqual(refusal({ tags: 'x' }, [{ $push: { tags: 1 } }]), [
+      400,
+      "Update can't be applied: The field 'tags' must be an array but is of type string",
+    ]);
+    assert.deepStrictEqual(refusal({ n: 's' }, [{ $inc: { n: 1 } }]), [
+      400,
+      "Update can't be applied: Cannot apply $inc to a value of non-numeric type",
+    ]);
+    assert.deepStrictEqual(refusal({ tags: ['a'] }, [{ $set: { 'tags.x': 1 } }]), [
+      400,
+      "Update can't be applied: Cannot create field 'x' in element {tags: [\"a\"]}",
+    ]);
   });
 });
 

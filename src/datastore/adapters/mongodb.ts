@@ -15,7 +15,7 @@
  */
 import Stream from 'node:stream';
 
-import { ObjectId, MongoClient, MongoClientOptions, Db, Collection } from 'mongodb';
+import { BSON, ObjectId, MongoClient, MongoClientOptions, Db, Collection } from 'mongodb';
 
 import * as Helpers from '../../helpers/index.js';
 import Logging from '../../helpers/logging.js';
@@ -51,6 +51,143 @@ interface Context {
 interface SchemaConfig {
   __schema: any;
 }
+
+// One Mongo update operation on one path, e.g. {$push: {tags: 'a'}}.
+type UpdateOp = { [operator: string]: { [path: string]: any } };
+
+interface PathUpdate {
+  body: { path: string; value: any };
+  context: Context;
+  schemaConfig: SchemaConfig;
+}
+
+// Tries at writing ops that had to be worked out on the entity as read, before giving up because it keeps changing.
+const MAX_UPDATE_ATTEMPTS = 5;
+
+// Mongo's codes for an update the stored data can't take: a field under a non-document (PathNotViable), a push or
+// pull on a non-array (BadValue), an increment of a non-number (TypeMismatch).
+const DATA_CONFLICT_CODES = [2, 14, 28];
+
+const refuseUpdate = (reason: string) => new Helpers.Errors.RequestError(400, `Update can't be applied: ${reason}`);
+
+const readOp = (op: UpdateOp) => {
+  const [operator] = Object.keys(op);
+  const [path] = Object.keys(op[operator]);
+  return { operator, path, value: op[operator][path] };
+};
+
+const pathsOverlap = (a: string, b: string) => a === b || a.startsWith(`${b}.`) || b.startsWith(`${a}.`);
+
+/**
+ * Merges one request's operations into a single update document, which Mongo applies atomically. Returns null when two
+ * of them touch the same path, or a path and one inside it, which one document can't express.
+ */
+export const mergeUpdateOps = (ops: UpdateOp[]): UpdateOp | null => {
+  const merged: UpdateOp = {};
+  const paths: string[] = [];
+  for (const op of ops) {
+    const { operator, path, value } = readOp(op);
+    if (paths.some((other) => pathsOverlap(other, path))) return null;
+
+    paths.push(path);
+    merged[operator] = { ...merged[operator], [path]: value };
+  }
+  return merged;
+};
+
+const describeElement = (key: string, value: unknown) => `{${key}: ${value === null ? 'null' : JSON.stringify(value)}}`;
+
+// The key a path segment names in `container`: an index for an array, which only numeric segments can name.
+const keyIn = (container: any, segment: string): string | number | null => {
+  if (!Array.isArray(container)) return segment;
+  return /^\d+$/.test(segment) ? Number(segment) : null;
+};
+
+const setKey = (container: any, key: string | number, value: unknown) => {
+  if (Array.isArray(container)) {
+    while (container.length < (key as number)) container.push(null);
+  }
+  container[key] = value;
+};
+
+/**
+ * Finds the container and key a dotted path ends at. With `create`, missing documents on the way are created and a
+ * path through a value that isn't a document is refused, as Mongo does for $set, $push and $inc. Without it, a path
+ * that doesn't lead anywhere gives null, as for $unset and $pull.
+ */
+const resolvePath = (doc: any, path: string, create: boolean) => {
+  const segments = path.split('.');
+  let container = doc;
+  let parentKey = '';
+
+  for (const [idx, segment] of segments.entries()) {
+    const key = keyIn(container, segment);
+    if (key === null) {
+      if (!create) return null;
+      throw refuseUpdate(`Cannot create field '${segment}' in element ${describeElement(parentKey, container)}`);
+    }
+    if (idx === segments.length - 1) return { container, key };
+
+    let next = container[key];
+    if (next === undefined) {
+      if (!create) return null;
+      next = {};
+      setKey(container, key, next);
+    } else if (next === null || typeof next !== 'object') {
+      if (!create) return null;
+      throw refuseUpdate(`Cannot create field '${segments[idx + 1]}' in element ${describeElement(segment, next)}`);
+    }
+
+    container = next;
+    parentKey = segment;
+  }
+
+  return null;
+};
+
+/**
+ * Applies update operations to a document in memory, in order, following Mongo's rules for the operators the adapter
+ * uses, and refusing what Mongo would refuse in Mongo's words.
+ */
+export const applyUpdateOps = (doc: Record<string, any>, ops: UpdateOp[]) => {
+  for (const op of ops) {
+    const { operator, path, value } = readOp(op);
+    const target = resolvePath(doc, path, operator !== '$unset' && operator !== '$pull');
+    if (!target) continue;
+
+    const { container, key } = target;
+    const current = container[key];
+    switch (operator) {
+      case '$set':
+        setKey(container, key, value);
+        break;
+      case '$unset':
+        if (!Array.isArray(container)) delete container[key];
+        else if ((key as number) < container.length) container[key] = null;
+        break;
+      case '$pull':
+        if (current === undefined) break;
+        if (!Array.isArray(current)) throw refuseUpdate('Cannot apply $pull to a non-array value');
+        container[key] = current.filter((item) => item !== null);
+        break;
+      case '$push':
+        if (current === undefined) setKey(container, key, [value]);
+        else if (Array.isArray(current)) current.push(value);
+        else
+          throw refuseUpdate(
+            `The field '${path}' must be an array but is of type ${current === null ? 'null' : typeof current}`,
+          );
+        break;
+      case '$inc':
+        if (current === undefined) setKey(container, key, value);
+        else if (typeof current === 'number') container[key] = current + value;
+        else throw refuseUpdate('Cannot apply $inc to a value of non-numeric type');
+        break;
+      default:
+        throw new Error(`Unsupported update operator: ${operator}`);
+    }
+  }
+};
 
 export default class MongodbAdapter extends AbstractAdapter {
   private _client?: MongoClient;
@@ -152,12 +289,41 @@ export default class MongodbAdapter extends AbstractAdapter {
     schemaConfig: SchemaConfig,
     model?: T,
   ) {
+    const { ops, result } = await this._prepareUpdate(id, body, context, schemaConfig, model);
+    await this._applyUpdateOps(id, ops);
+    return result;
+  }
+
+  /**
+   * Applies all of one request's updates to an entity together, so either all of them take effect or none do.
+   */
+  async updateByPaths<T extends StandardModel>(id: string, updates: PathUpdate[], model?: T) {
+    const prepared: Awaited<ReturnType<MongodbAdapter['_prepareUpdate']>>[] = [];
+    for (const update of updates) {
+      prepared.push(await this._prepareUpdate(id, update.body, update.context, update.schemaConfig, model));
+    }
+
+    await this._applyUpdateOps(
+      id,
+      prepared.flatMap((update) => update.ops),
+    );
+    return prepared.map((update) => update.result);
+  }
+
+  // Works out the operations one update makes and the result the client gets back, without writing anything.
+  async _prepareUpdate<T extends StandardModel>(
+    id: string,
+    body: { path: string; value: any },
+    context: Context,
+    schemaConfig: SchemaConfig,
+    model?: T,
+  ) {
     if (!context) throw new Error(`batchUpdateProcess called without context; ${id}`);
 
     const updateType = context.type;
     let response: any = null;
 
-    const ops: { updateOne: any }[] = [];
+    const ops: UpdateOp[] = [];
 
     switch (updateType) {
       default: {
@@ -201,13 +367,8 @@ export default class MongodbAdapter extends AbstractAdapter {
           }
 
           ops.push({
-            updateOne: {
-              filter: { _id: new ObjectId(id) },
-              update: {
-                $push: {
-                  [body.path]: value,
-                },
-              },
+            $push: {
+              [body.path]: value,
             },
           });
           response = value;
@@ -222,23 +383,13 @@ export default class MongodbAdapter extends AbstractAdapter {
           body.path = params.join('.');
 
           ops.push({
-            updateOne: {
-              filter: { _id: new ObjectId(id) },
-              update: {
-                $unset: {
-                  [rmPath]: null,
-                },
-              },
+            $unset: {
+              [rmPath]: null,
             },
           });
           ops.push({
-            updateOne: {
-              filter: { _id: new ObjectId(id) },
-              update: {
-                $pull: {
-                  [body.path]: null,
-                },
-              },
+            $pull: {
+              [body.path]: null,
             },
           });
 
@@ -258,13 +409,8 @@ export default class MongodbAdapter extends AbstractAdapter {
           }
 
           ops.push({
-            updateOne: {
-              filter: { _id: new ObjectId(id) },
-              update: {
-                $set: {
-                  [body.path]: value,
-                },
-              },
+            $set: {
+              [body.path]: value,
             },
           });
 
@@ -278,13 +424,8 @@ export default class MongodbAdapter extends AbstractAdapter {
           const path = params.join('.');
 
           ops.push({
-            updateOne: {
-              filter: { _id: new ObjectId(id) },
-              update: {
-                $inc: {
-                  [path]: body.value,
-                },
-              },
+            $inc: {
+              [path]: body.value,
             },
           });
 
@@ -293,14 +434,72 @@ export default class MongodbAdapter extends AbstractAdapter {
         break;
     }
 
-    const res = await this.collection?.bulkWrite(ops);
-    if (!res) throw new Error('Unable to bulk write');
-
     return {
-      type: updateType,
-      path: body.path,
-      value: response,
+      ops,
+      result: {
+        type: updateType,
+        path: body.path,
+        value: response,
+      },
     };
+  }
+
+  async _applyUpdateOps(id: string, ops: UpdateOp[]) {
+    if (ops.length < 1) return;
+
+    const merged = mergeUpdateOps(ops);
+    if (merged) {
+      await this._write(() => this.collection?.updateOne({ _id: new ObjectId(id) }, merged));
+      return;
+    }
+
+    await this._applyUpdateOpsInOneWrite(id, ops);
+  }
+
+  /**
+   * Operations on overlapping paths can't share one update document, so they're worked out on the fields they touch as
+   * read, and those fields are written back only if they haven't changed since. If they have, it tries again.
+   */
+  async _applyUpdateOpsInOneWrite(id: string, ops: UpdateOp[]) {
+    if (!this.collection) throw new Error('No collection');
+
+    const _id = new ObjectId(id);
+    const fields = [...new Set(ops.map((op) => readOp(op).path.split('.')[0]))];
+    const projection = Object.fromEntries(fields.map((field) => [field, 1]));
+
+    for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt++) {
+      const stored = await this.collection.findOne({ _id }, { projection });
+      if (!stored) return;
+
+      const updated = BSON.deserialize(BSON.serialize(stored));
+      applyUpdateOps(updated, ops);
+
+      const unchanged = Object.fromEntries(
+        fields.map((field) => [field, field in stored ? stored[field] : { $exists: false }]),
+      );
+      const $set = Object.fromEntries(
+        fields.filter((field) => field in updated).map((field) => [field, updated[field]]),
+      );
+      const $unset = Object.fromEntries(fields.filter((field) => !(field in updated)).map((field) => [field, '']));
+      const update = {
+        ...(Object.keys($set).length > 0 ? { $set } : {}),
+        ...(Object.keys($unset).length > 0 ? { $unset } : {}),
+      };
+
+      const res = await this._write(() => this.collection?.updateOne({ _id, ...unchanged }, update));
+      if (res && res.matchedCount > 0) return;
+    }
+
+    throw new Helpers.Errors.RequestError(409, 'The entity changed while it was being updated, try again');
+  }
+
+  async _write<T>(write: () => Promise<T> | undefined): Promise<T | undefined> {
+    try {
+      return await write();
+    } catch (err: any) {
+      if (!DATA_CONFLICT_CODES.includes(err?.code)) throw err;
+      throw refuseUpdate(String(err.errmsg ?? err.message).replace(/^.*caused by :: /, ''));
+    }
   }
 
   async update(select: any, update: any) {

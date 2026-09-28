@@ -383,9 +383,7 @@ export default class StandardModel<TDocument = unknown> {
     const flattenedSchema = this.schemaData ? Helpers.getFlattenedSchema(this.schemaData) : false;
     const extendedPathContext = Shared.extendPathContext({}, flattenedSchema || {}, '');
 
-    // TODO: This isn't processing updates in a batch
-    return await body.reduce(async (prev, update) => {
-      const arr = await prev;
+    const updates = body.map((update) => {
       let config = flattenedSchema === false ? false : flattenedSchema[update.path];
       if (!config && flattenedSchema) {
         config = flattenedSchema[update.path.replace(/\.\d+/g, '')];
@@ -398,8 +396,19 @@ export default class StandardModel<TDocument = unknown> {
         context = { type: 'scalar', values: [] };
       }
 
-      return arr.concat([await this.adapter.batchUpdateProcess(id, update, context, config, this)]);
-    }, Promise.resolve([]));
+      return { body: update, context, schemaConfig: config };
+    });
+
+    // An adapter that can apply the request's updates together does, so they all take effect or none do.
+    if (typeof this.adapter.updateByPaths === 'function') {
+      return this.adapter.updateByPaths(id, updates, this);
+    }
+
+    const results: unknown[] = [];
+    for (const update of updates) {
+      results.push(await this.adapter.batchUpdateProcess(id, update.body, update.context, update.schemaConfig, this));
+    }
+    return results;
   }
 
   /**

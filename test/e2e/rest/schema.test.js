@@ -320,6 +320,11 @@ describe('Schema', async () => {
 						__type: 'array',
 						__allowUpdate: true,
 					},
+					meta: {
+						__type: 'object',
+						__default: null,
+						__allowUpdate: true,
+					},
 				},
 			}];
 
@@ -449,6 +454,38 @@ describe('Schema', async () => {
 
 			const spaceship = await getSpaceship();
 			assert.deepStrictEqual(spaceship.notes, ['hello', {text: 'world'}]);
+		});
+
+		it('Should apply none of a request\'s updates when one of them can\'t be applied', async () => {
+			const {name} = await getSpaceship();
+			const refused = "Update can't be applied: Cannot create field 'x' in element {meta: null}";
+
+			// Separate paths, written as one update document.
+			await assert.rejects(
+				() => putSpaceship([{path: 'name', value: 'renamed'}, {path: 'meta.x', value: 1}]),
+				(err) => err.code === 400 && err.message === refused,
+			);
+			// Overlapping paths, worked out on the entity as read.
+			await assert.rejects(
+				() => putSpaceship([{path: 'name', value: 'renamed'}, {path: 'meta', value: null}, {path: 'meta.x', value: 1}]),
+				(err) => err.code === 400 && err.message === refused,
+			);
+
+			assert.strictEqual((await getSpaceship()).name, name);
+		});
+
+		it('Should remove an array item without leaving a hole', async () => {
+			const before = (await getSpaceship()).engine;
+
+			await putSpaceship({path: 'engine.1.__remove__', value: ''});
+
+			assert.deepStrictEqual((await getSpaceship()).engine, [before[0], ...before.slice(2)]);
+		});
+
+		it('Should apply an append and a remove to the same array in one request', async () => {
+			await putSpaceship([{path: 'tags', value: 'e'}, {path: 'tags.0.__remove__', value: ''}]);
+
+			assert.deepStrictEqual((await getSpaceship()).tags, ['a', 'b', 'c', 'd', 'e']);
 		});
 	});
 });
