@@ -68,6 +68,10 @@ const MAX_UPDATE_ATTEMPTS = 5;
 // pull on a non-array (BadValue), an increment of a non-number (TypeMismatch).
 const DATA_CONFLICT_CODES = [2, 14, 28];
 
+// An operation of the adapter's own that removes the item at an index, e.g. {$removeAt: {tags: 1}}. Mongo has none: its
+// $unset then $pull also took every other null in the array. It's only ever applied to the entity as read.
+const REMOVE_AT = '$removeAt';
+
 const refuseUpdate = (reason: string) => new Helpers.Errors.RequestError(400, `Update can't be applied: ${reason}`);
 
 const readOp = (op: UpdateOp) => {
@@ -87,6 +91,7 @@ export const mergeUpdateOps = (ops: UpdateOp[]): UpdateOp | null => {
   const paths: string[] = [];
   for (const op of ops) {
     const { operator, path, value } = readOp(op);
+    if (operator === REMOVE_AT) return null;
     if (paths.some((other) => pathsOverlap(other, path))) return null;
 
     paths.push(path);
@@ -152,7 +157,7 @@ const resolvePath = (doc: any, path: string, create: boolean) => {
 export const applyUpdateOps = (doc: Record<string, any>, ops: UpdateOp[]) => {
   for (const op of ops) {
     const { operator, path, value } = readOp(op);
-    const target = resolvePath(doc, path, operator !== '$unset' && operator !== '$pull');
+    const target = resolvePath(doc, path, !['$unset', '$pull', REMOVE_AT].includes(operator));
     if (!target) continue;
 
     const { container, key } = target;
@@ -169,6 +174,11 @@ export const applyUpdateOps = (doc: Record<string, any>, ops: UpdateOp[]) => {
         if (current === undefined) break;
         if (!Array.isArray(current)) throw refuseUpdate('Cannot apply $pull to a non-array value');
         container[key] = current.filter((item) => item !== null);
+        break;
+      case REMOVE_AT:
+        if (current === undefined) break;
+        if (!Array.isArray(current)) throw refuseUpdate('Cannot remove an item from a non-array value');
+        if (value < current.length) current.splice(value, 1);
         break;
       case '$push':
         if (current === undefined) setKey(container, key, [value]);
@@ -413,20 +423,11 @@ export default class MongodbAdapter extends AbstractAdapter {
         {
           const params = body.path.split('.');
           params.splice(-1, 1);
-          const rmPath = params.join('.');
           const index = params.pop();
           body.path = params.join('.');
 
-          ops.push({
-            $unset: {
-              [rmPath]: null,
-            },
-          });
-          ops.push({
-            $pull: {
-              [body.path]: null,
-            },
-          });
+          // Only the item at the index goes, so the array's other nulls stay.
+          ops.push({ [REMOVE_AT]: { [body.path]: Number(index) } });
 
           response = { numRemoved: 1, index: index };
         }

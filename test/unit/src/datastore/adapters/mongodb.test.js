@@ -371,6 +371,15 @@ describe('datastore/adapters/MongodbAdapter: fields inside array items', () => {
     return { validation, op: ops[0] };
   };
 
+  it("removes only the item at the index from an array inside an item, leaving that array's other nulls", async () => {
+    const stored = { people: [{ qty: 1, phones: [{ number: '1' }, null, { number: '3' }] }] };
+    const { model, ops } = createModel(peopleSchema, stored);
+
+    await update(model, { path: 'people.0.phones.0.__remove__', value: '' });
+
+    assert.deepStrictEqual(ops, [{ $set: { people: [{ qty: 1, phones: [null, { number: '3' }] }] } }]);
+  });
+
   it('refuses a value of the wrong type for a field of an item', async () => {
     const { validation, op } = await setOf('people.0.qty', 'lots');
 
@@ -437,6 +446,27 @@ describe('datastore/adapters/MongodbAdapter: one request, one write', () => {
     assert.deepStrictEqual(results, [{ type: 'vector-rm', path: 'tags', value: { numRemoved: 1, index: '1' } }]);
   });
 
+  it("removes only the item at the index, leaving the array's other nulls", async () => {
+    const { model, ops } = createModel(organisationSchema, { notes: ['a', null, 'b', null] });
+
+    const { results } = await update(model, { path: 'notes.0.__remove__', value: '' });
+
+    assert.deepStrictEqual(ops, [{ $set: { notes: [null, 'b', null] } }]);
+    assert.deepStrictEqual(results, [{ type: 'vector-rm', path: 'notes', value: { numRemoved: 1, index: '0' } }]);
+  });
+
+  it('removes items one after another, a null item included, and nothing for an index past the end', async () => {
+    const { model, ops } = createModel(organisationSchema, { notes: ['a', null, 'b'] });
+
+    await update(model, [
+      { path: 'notes.0.__remove__', value: '' },
+      { path: 'notes.0.__remove__', value: '' },
+      { path: 'notes.5.__remove__', value: '' },
+    ]);
+
+    assert.deepStrictEqual(ops, [{ $set: { notes: ['b'] } }]);
+  });
+
   it('only writes the fields it read if they have not changed since, and tries again if they have', async () => {
     const { model } = createModel(organisationSchema, { tags: ['a', 'b'] });
     const filters = [];
@@ -471,7 +501,7 @@ describe('datastore/adapters/MongodbAdapter: one request, one write', () => {
           { path: 'contacts', value: { name: 'Alice' } },
           { path: 'tags.0.__remove__', value: '' },
         ]),
-      (err) => err.code === 400 && err.message === "Update can't be applied: Cannot apply $pull to a non-array value",
+      (err) => err.code === 400 && err.message === "Update can't be applied: Cannot remove an item from a non-array value",
     );
     assert.deepStrictEqual(ops, []);
   });

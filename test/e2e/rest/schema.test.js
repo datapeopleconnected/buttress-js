@@ -525,6 +525,19 @@ describe('Schema', async () => {
 			assert.deepStrictEqual([after.engine, after.tags], [before.engine, before.tags]);
 		});
 
+		it('Should remove only the item at the index, leaving the array\'s other nulls', async () => {
+			await putSpaceship({path: 'notes', value: ['a', null, 'b', null]});
+
+			const [{type, path, value}] = await putSpaceship({path: 'notes.0.__remove__', value: ''});
+			assert.deepStrictEqual({type, path, value}, {type: 'vector-rm', path: 'notes', value: {numRemoved: 1, index: '0'}});
+
+			const spaceship = await getSpaceship();
+			assert.deepStrictEqual(spaceship.notes, [null, 'b', null]);
+
+			// Later tests expect notes to start empty.
+			await putSpaceship({path: 'notes', value: []});
+		});
+
 		it('Should replace a whole array of item schemas with a PUT of an array', async () => {
 			const engine = [{position: 'left', items: 1}, {position: 'right', items: 3}];
 
