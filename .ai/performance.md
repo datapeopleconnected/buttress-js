@@ -12,6 +12,10 @@ It boots the build from `--dist` (default `dist/`, so build first) as its own si
 names the database (`bjs-bench-prod`) and prefixes every Redis key and NRP channel, and the benchmark clears only
 those. A new scenario goes in the `SCENARIOS` map in run.mjs.
 
+In CI, [.github/workflows/bench.yml](../.github/workflows/bench.yml) benchmarks each push to `develop`/`main`, and
+each PR, against the commit it builds on, and puts the comparison in the job summary. It is report-only and runs
+apart from the Tests workflow, so a slow or failing benchmark can't hold up the Docker publish.
+
 ## I/O budgets
 
 [test/perf/io-budgets.json](../test/perf/io-budgets.json) holds the exact number of MongoDB commands, Redis commands

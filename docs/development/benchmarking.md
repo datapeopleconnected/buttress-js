@@ -46,6 +46,18 @@ at least 5% (`--threshold` changes this). Smaller or inconsistent differences ar
 Timings depend on the machine, so compare results measured on the same machine, with no other heavy work running.
 `bench:compare` warns when two results come from different settings, CPUs, or Node, MongoDB or Redis versions.
 
+## In CI
+
+The **Benchmark** workflow runs on every push to `develop` or `main` and on every pull request. It skips changes
+that only touch docs or Markdown. It builds the new commit and the one it builds on: the branch's previous tip for
+a push, or the base for a pull request. It benchmarks both on the same runner and puts the `bench:compare` table in
+the job summary. The results files are kept as the `bench-results` artifact for 30 days.
+
+It's report-only. Timings on shared CI runners vary from run to run, so it never fails over them, though it adds a
+warning when a metric is marked worse. Before acting on a change it reports, confirm it by benchmarking both
+builds locally. To compare against something else, run the workflow by hand (Actions → Benchmark → Run workflow)
+and give it a branch, tag or commit as the base.
+
 ## Requirements
 
 MongoDB and Redis, set with `BENCH_MONGO_URL` (default `mongodb://localhost:27017`) and `BENCH_REDIS_URL` (default

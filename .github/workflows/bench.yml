@@ -1,0 +1,140 @@
+name: Benchmark
+
+# Report only. Benchmarks each push to develop or main, and each PR, against the commit it builds on (npm run bench,
+# both builds on the same runner) and puts npm run bench:compare's table in the job summary. Timings on shared
+# runners vary from run to run, so this never fails over them; it warns when a metric is marked worse. It runs
+# separately from Tests so it can't hold up the Docker image. See docs/development/benchmarking.md.
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  pull_request:
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Branch, tag or commit to compare against
+        default: develop
+
+permissions:
+  contents: read
+
+# One benchmark per branch at a time. A new push to a PR cancels its older run; pushes to main/develop queue, so
+# every push gets measured.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      # Only a lambda helper uses puppeteer's browser, and the benchmark doesn't reach it.
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+      BENCH_MONGO_URL: mongodb://localhost:27018
+      BENCH_REDIS_URL: redis://localhost:6380
+
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27018:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand({ ping: 1 })' --quiet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    # Full history, so the base commit can be checked out alongside.
+    - name: Checkout code
+      uses: actions/checkout@v7
+      with:
+        fetch-depth: 0
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build
+      run: npm run build
+
+    - name: Build the base commit
+      env:
+        EVENT: ${{ github.event_name }}
+        PUSH_BEFORE: ${{ github.event.before }}
+        PR_BASE: ${{ github.event.pull_request.base.sha }}
+        DISPATCH_BASE: ${{ inputs.base }}
+      run: |
+        case "$EVENT" in
+          pull_request) BASE=$(git merge-base "$PR_BASE" HEAD) ;;
+          workflow_dispatch) BASE=$(git rev-parse --verify -q "origin/$DISPATCH_BASE^{commit}" || git rev-parse --verify "$DISPATCH_BASE^{commit}") ;;
+          *) BASE=$PUSH_BEFORE ;;
+        esac
+        # A new branch or a force-push can leave no earlier commit to compare with.
+        if ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then BASE=$(git rev-parse HEAD~1); fi
+        echo "BASE=$BASE" >> "$GITHUB_ENV"
+
+        git worktree add --detach "$RUNNER_TEMP/base" "$BASE"
+        cd "$RUNNER_TEMP/base"
+        # Reuse this checkout's dependencies unless the base locks different ones.
+        if git -C "$GITHUB_WORKSPACE" diff --quiet "$BASE" HEAD -- package-lock.json; then
+          ln -s "$GITHUB_WORKSPACE/node_modules" node_modules
+        else
+          npm ci
+        fi
+        npm run build
+
+    - name: Benchmark the base and this commit
+      run: |
+        npm run bench -- --dist "$RUNNER_TEMP/base/dist" --label base --out bench-results/base.json
+        npm run bench -- --label head --out bench-results/head.json
+
+    - name: Report
+      run: |
+        npm run --silent bench:compare -- bench-results/base.json bench-results/head.json > bench-results/compare.txt
+        cat bench-results/compare.txt
+        {
+          echo "## Benchmark: ${BASE::8} → ${GITHUB_SHA::8}"
+          echo
+          echo "Report only. Both builds ran on this runner, one after the other; shared runners vary from run to run,"
+          echo "so check a change marked worse by running npm run bench locally before acting on it."
+          echo
+          echo '```'
+          cat bench-results/compare.txt
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+        # A verdict ends its table row; the legend below the table mentions "worse" too.
+        if grep -qE '[[:space:]]worse$' bench-results/compare.txt; then
+          echo "::warning::Some benchmark metrics are worse than ${BASE::8}. The job summary has the comparison."
+        fi
+
+    - name: Upload results
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: bench-results
+        path: bench-results/
+        retention-days: 30
