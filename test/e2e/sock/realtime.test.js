@@ -14,6 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { spawn } from 'node:child_process';
+import net from 'node:net';
+import { fileURLToPath } from 'node:url';
+
 import { io } from 'socket.io-client';
 import { describe, it, before, after } from 'mocha';
 import assert from 'assert';
@@ -40,6 +44,69 @@ let SOCK_PROCESS = null;
 const testEnv = {
 	apps: {},
 	socket: null,
+};
+
+const SOCKET_ENTRY = fileURLToPath(new URL('../../../dist/bin/app-socket.js', import.meta.url));
+
+const getFreePort = () => new Promise((resolve, reject) => {
+	const server = net.createServer();
+	server.once('error', reject);
+	server.listen(0, 'localhost', () => {
+		const { port } = server.address();
+		server.close(() => resolve(port));
+	});
+});
+
+// Starts a Socket process in its own process, so it can fork workers, and resolves once it's accepting connections
+// (its main process only listens once every worker has started).
+const startSocketProcess = async (workers) => {
+	const port = await getFreePort();
+	const child = spawn(process.execPath, [SOCKET_ENTRY], {
+		env: {
+			// The config loader has put the test settings into process.env.
+			...process.env,
+			// Points the config loader at an env file that doesn't exist, so no .<env>.env overrides these settings.
+			ENV_FILE: 'realtime-workers',
+			BUTTRESS_APP_WORKERS: String(workers),
+			BUTTRESS_SOCK_LISTEN_PORT: String(port),
+			// The Socket process in this suite is the primary.
+			BUTTRESS_SOCKET_APP: 'secondary',
+			BUTTRESS_LOGGING_LEVEL: 'error',
+		},
+		stdio: ['ignore', 'pipe', 'pipe'],
+	});
+
+	let output = '';
+	child.stdout.on('data', (chunk) => output += chunk);
+	child.stderr.on('data', (chunk) => output += chunk);
+
+	await new Promise((resolve, reject) => {
+		const onExit = (code) => reject(new Error(`Socket process exited with ${code} before listening:\n${output}`));
+		child.once('exit', onExit);
+
+		const attempt = () => {
+			if (child.exitCode !== null) return;
+			const probe = net.connect(port, 'localhost');
+			probe.once('connect', () => {
+				probe.destroy();
+				child.off('exit', onExit);
+				resolve();
+			});
+			probe.once('error', () => setTimeout(attempt, 100));
+		};
+		attempt();
+	});
+
+	return { child, url: `http://localhost:${port}` };
+};
+
+const stopSocketProcess = async (child) => {
+	if (child.exitCode !== null || child.signalCode !== null) return;
+	const exited = new Promise((resolve) => child.once('exit', resolve));
+	child.kill('SIGTERM');
+	const killTimer = setTimeout(() => child.kill('SIGKILL'), 15000);
+	await exited;
+	clearTimeout(killTimer);
 };
 
 describe('Realtime', async () => {
@@ -264,6 +331,60 @@ describe('Realtime', async () => {
 		// TODO: event clear-local-db
 		// TODO: event db-connect-room
 		// TODO: event db-disconnect-room
+	});
+
+	describe('db-activity with several socket workers', async () => {
+		let sockProcess = null;
+		let socket = null;
+
+		before(async function () {
+			this.timeout(30000);
+			// Its workers share the socket.io adapter with this suite's Socket process, so there are three workers.
+			sockProcess = await runStep('start SOCK process with 2 workers', async () => startSocketProcess(2),
+				'Realtime setup');
+		});
+
+		after(async function () {
+			this.timeout(20000);
+			if (socket) socket.close();
+			if (sockProcess) await stopSocketProcess(sockProcess.child);
+		});
+
+		it('Should deliver each activity to a client once', async function () {
+			this.timeout(20000);
+
+			socket = io(`${sockProcess.url}/${testEnv.apps.app1.apiPath}`, {
+				auth: {
+					token: testEnv.apps.app1.token,
+				},
+				forceNew: true,
+			});
+			await new Promise((resolve, reject) => {
+				socket.once('connect', resolve);
+				socket.once('connect_error', reject);
+			});
+
+			const name = `workers-${Math.floor(Math.random() * 100)}`;
+			const received = [];
+			socket.on('db-activity', (ev) => received.push(ev));
+
+			const firstActivity = new Promise((resolve) => socket.once('db-activity', resolve));
+
+			const cars = await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name }),
+			}, testEnv.apps.app1.token);
+			assert.equal(cars.length, 1);
+
+			await firstActivity;
+			// Give any copies from the other workers time to arrive
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+
+			const activities = received.filter((ev) => ev.data.response?.id === cars[0].id);
+			assert.equal(activities.length, 1, `Received ${activities.length} db-activity events for one POST`);
+		});
 	});
 
 	// This set of tests will test the functionality of tracking the state of a request.
