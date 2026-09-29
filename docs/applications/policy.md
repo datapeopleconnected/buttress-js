@@ -9,6 +9,7 @@ By default, requests without matching policy access are denied.
 | Property | Type | Required | Description |
 | :- | :- | :-: | :- |
 | name | string | yes | Policy name |
+| version | string | yes | Policy version. A policy without one is refused with `invalid_policy_no_version` |
 | merge | boolean | no | Merge behavior when multiple policies apply |
 | priority | number | no | Evaluation precedence |
 | selection | object | yes | Selector against token policy properties |
@@ -35,6 +36,7 @@ bjs policy list-property
 [
   {
     "name": "email-reader",
+    "version": "1",
     "selection": {
       "emailReader": {
         "@eq": true
@@ -52,6 +54,7 @@ bjs policy list-property
   },
   {
     "name": "junior-account-manager",
+    "version": "1",
     "selection": {
       "role": {
         "@eq": "accountant"

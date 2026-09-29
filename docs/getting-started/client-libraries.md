@@ -18,7 +18,8 @@ npm i @buttress/api
 Example:
 
 ```js
-const Buttress = require('@buttress/api');
+// The client is the package's default export
+const {default: Buttress} = require('@buttress/api');
 
 async function main() {
 	await Buttress.init({
