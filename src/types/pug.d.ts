@@ -19,6 +19,9 @@ declare module 'pug' {
     type compileTemplate = (locals?: Record<string, unknown>) => string;
 
     function compileFile(path: string, options?: Record<string, unknown>): compileTemplate;
+
+    // Compiles to the source of a render function, without running it
+    function compileFileClient(path: string, options?: Record<string, unknown>): string;
   }
 
   export default pug;

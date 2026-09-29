@@ -27,6 +27,7 @@ import lambdaMail from './mail.js';
 import Model from '../model/index.js';
 import Logging from '../helpers/logging.js';
 import { Errors } from '../helpers/index.js';
+import { isGitHash } from '../helpers/git.js';
 import IsolateBridge from './isolate-bridge.js';
 import type { IsolateCallback, IsolateJail } from './isolate-bridge.js';
 
@@ -127,7 +128,8 @@ type HostFunction<TData> = (data: TData, resolve: IsolateCallback, reject: Isola
 
 // What lambdas pass to the host functions. It's untrusted and unchecked, these describe what the host expects.
 interface EmailTemplateRequest {
-  gitHash: string;
+  // Unused: templates come from the executing lambda's own code folder
+  gitHash?: string;
   emailTemplate: string;
   emailData?: Record<string, unknown>;
 }
@@ -189,12 +191,16 @@ interface DecryptRequest {
 class Helpers {
   lambdaResult: LambdaResult | null;
 
+  // The git hash of the lambda that's executing, set by the runner. Its code folder holds its email templates.
+  lambdaGitHash: string | null;
+
   successfulHTTPScode: number[];
   /**
    * Constructor for Helpers
    */
   constructor() {
     this.lambdaResult = null;
+    this.lambdaGitHash = null;
 
     this.successfulHTTPScode = [200, 201, 202];
   }
@@ -230,12 +236,13 @@ class Helpers {
         try {
           Logging.logVerbose(`Populating email body from template ${data.emailTemplate}`);
 
-          const render = lambdaMail.getEmailTemplate(
-            `${Config.paths.lambda.code}/lambda-${data.gitHash}/${data.emailTemplate}`,
-            data.emailTemplate,
-          );
+          if (!isGitHash(this.lambdaGitHash)) throw new Error('no_executing_lambda');
 
-          const output = await render(data.emailData);
+          // The isolate runs the template's render function, see getEmailTemplate in isolate-bridge
+          const output = lambdaMail.getEmailTemplateSource(
+            `${Config.paths.lambda.code}/lambda-${this.lambdaGitHash}`,
+            String(data.emailTemplate),
+          );
           return resolve.applyIgnored(undefined, [
             new ivm.ExternalCopy(new ivm.Reference(output).copySync()).copyInto(),
           ]);

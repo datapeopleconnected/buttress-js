@@ -205,6 +205,8 @@ export default class LambdaRunner {
 
     // Reset lambdaHelpers lambdaResult
     lambdaHelpers.lambdaResult = null;
+    // Email templates are read from this lambda's code folder
+    lambdaHelpers.lambdaGitHash = lambda.git.hash;
 
     const reqBody: unknown = data.body ? JSON.parse(data.body) : {};
     const reqQuery = (data.query ? JSON.parse(data.query) : {}) as Record<string, unknown>;

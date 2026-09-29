@@ -14,6 +14,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import fs from 'node:fs';
+import path from 'node:path';
+
 import pug from 'pug';
 
 /**
@@ -21,8 +24,9 @@ import pug from 'pug';
  * @class
  */
 class Mail {
+  // Compiled template sources by the template's real path
   _templates: {
-    [key: string]: pug.compileTemplate;
+    [path: string]: string;
   };
 
   /**
@@ -33,19 +37,48 @@ class Mail {
   }
 
   /**
-   * Returns the render function for a given template
-   * @param {String} path - template path
-   * @param {String} key - template key
-   * @return {Object} template - pug render function for the given template
+   * Returns the source of a function, `template(locals)`, that renders a .pug template. Compiling it runs none of
+   * the template's code: the caller runs the function where the template may run. The template, and any file it
+   * includes or extends, must be inside `root` once links are resolved. Filters are refused, since pug runs them
+   * while compiling.
+   * @param {String} root - the folder the template must be in
+   * @param {String} template - template path, relative to root
+   * @return {String} source of the render function
    */
-  getEmailTemplate(path: string, key: string) {
-    if (this._templates[key]) return this._templates[key];
+  getEmailTemplateSource(root: string, template: string) {
+    const realRoot = fs.realpathSync(root);
+    const file = this._realPathInside(realRoot, path.resolve(root, template));
+    if (path.extname(file) !== '.pug') throw new Error('invalid_email_template');
 
-    this._templates[key] = pug.compileFile(path, {
-      test: 'I am here',
+    if (this._templates[file]) return this._templates[file];
+
+    this._templates[file] = pug.compileFileClient(file, {
+      name: 'template',
+      compileDebug: false,
+      inlineRuntimeFunctions: true,
+      plugins: [
+        {
+          read: (filename: string) => fs.readFileSync(this._realPathInside(realRoot, filename), 'utf8'),
+          postLex: (tokens: Array<{ type: string }>) => {
+            if (tokens.some((token) => token.type === 'filter')) throw new Error('invalid_email_template');
+            return tokens;
+          },
+        },
+      ],
     });
 
-    return this._templates[key];
+    return this._templates[file];
+  }
+
+  _realPathInside(realRoot: string, filename: string) {
+    let realPath: string;
+    try {
+      realPath = fs.realpathSync(filename);
+    } catch {
+      throw new Error('email_template_not_found');
+    }
+    if (!realPath.startsWith(`${realRoot}${path.sep}`)) throw new Error('invalid_email_template');
+    return realPath;
   }
 }
 export default new Mail();

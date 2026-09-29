@@ -252,6 +252,7 @@ class IsolateBridge {
 				});
 			}
 
+			// The host compiles the template to a render function's source, which runs here in the isolate
 			global.getEmailTemplate = (data) => {
 				return new Promise((resolve, reject) => {
 					_getEmailTemplate.applyIgnored(
@@ -262,7 +263,7 @@ class IsolateBridge {
 							new ivm.Reference(reject),
 						],
 					);
-				});
+				}).then((source) => new Function(source + ';return template;')()(data && data.emailData));
 			}
 
 			global.getCodeChallenge = (data) => {
