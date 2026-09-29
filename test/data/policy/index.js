@@ -36,6 +36,8 @@ import EnvDateCondition from './env-date-condition.json' with { type: 'json' };
 import EnvEntityCondition from './env-entity-condition.json' with { type: 'json' };
 import EnvUserCondition from './env-user-condition.json' with { type: 'json' };
 import EnvUserQuery from './env-user-query.json' with { type: 'json' };
+import EnvCollectionQuery from './env-collection-query.json' with { type: 'json' };
+import EnvCollectionMissing from './env-collection-missing.json' with { type: 'json' };
 
 import CacheTest1 from './cache-test-1.json' with { type: 'json' };
 import CacheTest2 from './cache-test-2.json' with { type: 'json' };
@@ -64,6 +66,8 @@ export default {
   'env-entity-condition': EnvEntityCondition,
   'env-user-condition': EnvUserCondition,
   'env-user-query': EnvUserQuery,
+  'env-collection-query': EnvCollectionQuery,
+  'env-collection-missing': EnvCollectionMissing,
   'lambda-test-access': LambdaTestAccess,
 
   'cache-test-1': CacheTest1,

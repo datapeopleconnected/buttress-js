@@ -14,10 +14,15 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import Stream from 'node:stream';
+
+import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
+import sinon from 'sinon';
+import { ObjectId } from 'bson';
 
 import AccessControlEnv from '../../../../dist/access-control/env.js';
+import Model from '../../../../dist/model/index.js';
 
 describe('access-control/env:generateBaseGlobalEnvs', () => {
   it('should return an object with date.now', () => {
@@ -128,5 +133,74 @@ describe('access-control/env:__setObjectValueByPath', () => {
     const obj = { a: { b: 'old' } };
     AccessControlEnv.__setObjectValueByPath(obj, ['a', 'b'], 'new');
     assert.strictEqual(obj.a.b, 'new');
+  });
+});
+
+describe('access-control/env: collection lookups', () => {
+  const USER_ID = '507f1f77bcf86cd799439011';
+  const BOARD_IDS = ['507f1f77bcf86cd799439021', '507f1f77bcf86cd799439022'];
+
+  // A policy env that looks up the ids of the boards the user is subscribed to, as the data-filter policies do
+  const envVars = () => ({
+    appId: 'app1',
+    user: { id: USER_ID },
+    boardIds: {
+      collection: 'board',
+      type: 'array',
+      query: { subscribed: { '@eq': '#env.user.id' } },
+      output: { key: 'id', type: 'id' },
+    },
+  });
+
+  // Stubs the app's board model, which finds `entities`, and records the queries it's given
+  function stubBoardModel(entities) {
+    const queries = [];
+    const model = {
+      find: (query) => {
+        queries.push(query);
+        return Stream.Readable.from(entities.map((entity) => ({ ...entity })));
+      },
+    };
+    sinon.stub(Model, 'getAppModel').callsFake(async (_appId, name) => (name === 'board' ? model : undefined));
+    return queries;
+  }
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  it('gives the ids of the entities it finds, querying with the env values substituted', async () => {
+    const queries = stubBoardModel([{ id: BOARD_IDS[0] }, { id: new ObjectId(BOARD_IDS[1]) }]);
+
+    const result = await AccessControlEnv.getEnvValue('#env.boardIds', envVars());
+
+    assert.deepStrictEqual(result, BOARD_IDS);
+    assert.deepStrictEqual(queries, [{ subscribed: { $eq: USER_ID } }]);
+  });
+
+  it('leaves out values that are not ids, so only ids reach an $in', async () => {
+    stubBoardModel([{ id: BOARD_IDS[0] }, { id: 'not-an-id' }, {}, { id: [BOARD_IDS[1], null] }]);
+
+    const result = await AccessControlEnv.getEnvValue('#env.boardIds', envVars());
+
+    assert.deepStrictEqual(result, BOARD_IDS);
+  });
+
+  it('gives an empty array when it finds nothing', async () => {
+    stubBoardModel([]);
+
+    const result = await AccessControlEnv.getEnvValue('#env.boardIds', envVars());
+
+    assert.deepStrictEqual(result, []);
+  });
+
+  it("gives an empty array for a collection the app doesn't have", async () => {
+    stubBoardModel([{ id: BOARD_IDS[0] }]);
+    const env = envVars();
+    env.boardIds.collection = 'missing';
+
+    const result = await AccessControlEnv.getEnvValue('#env.boardIds', env);
+
+    assert.deepStrictEqual(result, []);
   });
 });
