@@ -129,7 +129,7 @@ describe('routes/api/lambda:GetLambda', () => {
   });
 
   it('rejects when no lambda is found', async () => {
-    stubModel({ lambda: { findById: async () => null } });
+    stubModel({ lambda: { findOne: async () => null } });
     const route = createRoute(GetLambda);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /lambda_does_not_exist/);
@@ -430,7 +430,7 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
   });
 
   it('rejects when the lambda cannot be found', async () => {
-    stubModel({ lambda: { findById: async () => null } });
+    stubModel({ lambda: { findOne: async () => null } });
     const route = createRoute(EditLambdaDeployment);
 
     await assert.rejects(route._validate(createReq({ body: { branch: 'main', hash: 'abc' } })), /invalid_lambda_id/);
@@ -438,7 +438,7 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
 
   it('resolves with the requested branch and hash', async () => {
     const lambda = { id: 'lambda-1', git: { entryFile: 'index.js', entryPoint: 'execute' } };
-    stubModel({ lambda: { findById: async () => lambda } });
+    stubModel({ lambda: { findOne: async () => lambda } });
     const route = createRoute(EditLambdaDeployment);
 
     const result = await route._validate(createReq({ params: { id: HEX_ID }, body: { branch: 'main', hash: 'abc' } }));
@@ -526,6 +526,18 @@ describe('routes/api/lambda:ClearLambdaPolicyProperties', () => {
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: {} })), /can_not_find_lambda_token/);
   });
 
+  it("looks the lambda and its token up in the caller's app", async () => {
+    const exists = sinon.stub().resolves(true);
+    const findOne = sinon.stub().resolves({ id: 'token-1' });
+    stubModel({ lambda: { exists }, token: { findOne } });
+    const route = createRoute(ClearLambdaPolicyProperties);
+
+    await route._validate(createReq({ params: { id: HEX_ID }, body: {}, token: { type: 'app' } }));
+
+    assert.deepStrictEqual(exists.firstCall.args, [HEX_ID, null, { _appId: 'app-1' }]);
+    assert.deepStrictEqual(findOne.firstCall.args, [{ _lambdaId: HEX_ID, _appId: 'app-1' }]);
+  });
+
   it('clears the policy properties on the lambda token', async () => {
     const { tokenModel } = stubModel();
     const route = createRoute(ClearLambdaPolicyProperties);
@@ -545,7 +557,7 @@ describe('routes/api/lambda:DeleteLambda', () => {
   });
 
   it('rejects when the lambda cannot be found', async () => {
-    stubModel({ lambda: { findById: async () => null } });
+    stubModel({ lambda: { findOne: async () => null } });
     const route = createRoute(DeleteLambda);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_lambda_id/);
@@ -553,7 +565,7 @@ describe('routes/api/lambda:DeleteLambda', () => {
 
   it('rejects when the lambda has no associated token', async () => {
     stubModel({
-      lambda: { findById: async () => ({ id: 'lambda-1' }) },
+      lambda: { findOne: async () => ({ id: 'lambda-1' }) },
       token: { findOne: async () => null },
     });
     const route = createRoute(DeleteLambda);

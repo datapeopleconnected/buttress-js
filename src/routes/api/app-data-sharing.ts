@@ -139,7 +139,10 @@ class GetAppDataSharing extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_app_data_sharing_id`));
     }
 
-    const appDataSharing = await Model.getCoreModel(AppDataSharingSchemaModel).findById(id);
+    const appDataSharing = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
+      _id: Model.getCoreModel(AppDataSharingSchemaModel).createId(id),
+      ...this._tenantFilter(req),
+    });
     if (!appDataSharing) {
       this.log(`[${this.name}] Cannot find a app data sharing with id ${id}`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `app_data_sharing_does_not_exist`));
@@ -267,7 +270,11 @@ class UpdateAppDataSharing extends Route {
       throw new Helpers.Errors.RequestError(400, `missing_data_sharing_id`);
     }
 
-    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).exists(dataSharingId);
+    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).exists(
+      dataSharingId,
+      null,
+      this._tenantFilter(req),
+    );
     if (!exists) {
       this.log('ERROR: Invalid App Data Sharing ID', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `invalid_id`);
@@ -325,7 +332,7 @@ class BulkUpdateAppDataSharing extends Route {
     }
 
     for await (const item of req.body) {
-      const exists = await Model.getCoreModel(AppDataSharingSchemaModel).exists(item.id);
+      const exists = await Model.getCoreModel(AppDataSharingSchemaModel).exists(item.id, null, this._tenantFilter(req));
       if (!exists) {
         this.log('ERROR: Invalid App Data Sharing ID', Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -537,7 +544,10 @@ class ReactivateAppDataSharing extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_id`));
     }
 
-    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findById(dataSharingId);
+    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
+      _id: Model.getCoreModel(AppDataSharingSchemaModel).createId(dataSharingId),
+      ...this._tenantFilter(req),
+    });
 
     if (!exists) {
       this.log(
@@ -587,7 +597,10 @@ class DeactivateAppDataSharing extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_id`));
     }
 
-    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findById(dataSharingId);
+    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
+      _id: Model.getCoreModel(AppDataSharingSchemaModel).createId(dataSharingId),
+      ...this._tenantFilter(req),
+    });
 
     if (!exists) {
       this.log(
@@ -634,7 +647,10 @@ class StatusAppDataSharing extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_id`));
     }
 
-    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findById(dataSharingId);
+    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
+      _id: Model.getCoreModel(AppDataSharingSchemaModel).createId(dataSharingId),
+      ...this._tenantFilter(req),
+    });
 
     if (!exists) {
       this.log(
@@ -833,7 +849,10 @@ class DeleteDataSharingAgreement extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_id`));
     }
 
-    const appDataSharing = await Model.getCoreModel(AppDataSharingSchemaModel).findById(req.params.id);
+    const appDataSharing = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
+      _id: Model.getCoreModel(AppDataSharingSchemaModel).createId(req.params.id),
+      ...this._tenantFilter(req),
+    });
     if (!appDataSharing) {
       this.log('ERROR: Invalid App Data Sharing ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));

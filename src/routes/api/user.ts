@@ -356,7 +356,10 @@ class CreateUserAuthToken extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const user = await Model.getCoreModel(UserSchemaModel).findById(req.params.id);
+    const user = await Model.getCoreModel(UserSchemaModel).findOne({
+      _id: Model.getCoreModel(UserSchemaModel).createId(req.params.id),
+      ...this._tenantFilter(req),
+    });
     if (!user) {
       this.log(`[${this.name}] User not found`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
@@ -587,7 +590,7 @@ class UpdateUser extends Route {
       }
 
       Model.getCoreModel(UserSchemaModel)
-        .exists(id)
+        .exists(id, null, this._tenantFilter(req))
         .then((exists) => {
           if (!exists) {
             this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
@@ -648,7 +651,7 @@ class SetUserPolicyProperties extends Route {
     }
 
     const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
+    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId, null, this._tenantFilter(req));
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -660,7 +663,7 @@ class SetUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
     }
 
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne(tokenQuery);
+    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ ...tokenQuery, ...this._tenantFilter(req) });
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -745,7 +748,7 @@ class UpdateUserPolicyProperties extends Route {
     }
 
     const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
+    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId, null, this._tenantFilter(req));
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -757,7 +760,7 @@ class UpdateUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
     }
 
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne(tokenQuery);
+    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ ...tokenQuery, ...this._tenantFilter(req) });
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_token_not_found`));
@@ -839,7 +842,7 @@ class RemoveUserPolicyProperties extends Route {
     }
 
     const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
+    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId, null, this._tenantFilter(req));
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -851,7 +854,7 @@ class RemoveUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
     }
 
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne(tokenQuery);
+    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ ...tokenQuery, ...this._tenantFilter(req) });
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -931,7 +934,7 @@ class ClearUserPolicyProperties extends Route {
     }
 
     const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
+    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId, null, this._tenantFilter(req));
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -943,7 +946,7 @@ class ClearUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
     }
 
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne(tokenQuery);
+    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ ...tokenQuery, ...this._tenantFilter(req) });
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -1024,13 +1027,19 @@ class DeleteUser extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_token`));
     }
 
-    const user = await Model.getCoreModel(UserSchemaModel).findById(id);
+    const user = await Model.getCoreModel(UserSchemaModel).findOne({
+      _id: Model.getCoreModel(UserSchemaModel).createId(id),
+      ...this._tenantFilter(req),
+    });
     if (!user) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
 
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ _userId: user.id });
+    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({
+      _userId: user.id,
+      ...this._tenantFilter(req),
+    });
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -1083,7 +1092,10 @@ class clearUserLocalData extends Route {
       }
 
       Model.getCoreModel(UserSchemaModel)
-        .findById(req.params.id)
+        .findOne({
+          _id: Model.getCoreModel(UserSchemaModel).createId(req.params.id),
+          ...this._tenantFilter(req),
+        })
         .then((user) => {
           if (user) {
             return resolve(user);

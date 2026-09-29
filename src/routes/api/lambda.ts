@@ -88,7 +88,10 @@ class GetLambda extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
     }
 
-    const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(id);
+    const lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
+      _id: Model.getCoreModel(LambdaSchemaModel).createId(id),
+      ...this._tenantFilter(req),
+    });
     if (!lambda) {
       this.log(`[${this.name}] Cannot find a lambda with id ${id}`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_does_not_exist`));
@@ -324,7 +327,7 @@ class UpdateLambda extends Route {
       }
 
       Model.getCoreModel(LambdaSchemaModel)
-        .exists(id)
+        .exists(id, null, this._tenantFilter(req))
         .then((exists) => {
           if (!exists) {
             this.log('ERROR: Invalid LAMBDA ID', Route.LogLevel.ERR);
@@ -390,7 +393,7 @@ class BulkUpdateLambda extends Route {
         }
       }
 
-      const exists = await Model.getCoreModel(LambdaSchemaModel).exists(item.id);
+      const exists = await Model.getCoreModel(LambdaSchemaModel).exists(item.id, null, this._tenantFilter(req));
       if (!exists) {
         this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -538,7 +541,10 @@ class EditLambdaDeployment extends Route {
         return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_deployment_hash`));
       }
 
-      const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(req.params.id);
+      const lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
+        _id: Model.getCoreModel(LambdaSchemaModel).createId(req.params.id),
+        ...this._tenantFilter(req),
+      });
       if (!lambda) {
         this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
@@ -614,7 +620,11 @@ class SetLambdaPolicyProperties extends Route {
     }
 
     // A named route param, so a string
-    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(req.params.id as string);
+    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(
+      req.params.id as string,
+      null,
+      this._tenantFilter(req),
+    );
     if (!exists) {
       this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -628,6 +638,7 @@ class SetLambdaPolicyProperties extends Route {
 
     const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
       _lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(id),
+      ...this._tenantFilter(req),
     });
     if (!lambdaToken) {
       this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
@@ -682,7 +693,11 @@ class UpdateLambdaPolicyProperties extends Route {
     }
 
     // A named route param, so a string
-    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(req.params.id as string);
+    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(
+      req.params.id as string,
+      null,
+      this._tenantFilter(req),
+    );
     if (!exists) {
       this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -696,6 +711,7 @@ class UpdateLambdaPolicyProperties extends Route {
 
     const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
       _lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(id),
+      ...this._tenantFilter(req),
     });
     if (!lambdaToken) {
       this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
@@ -745,7 +761,7 @@ class ClearLambdaPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
     }
 
-    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(id);
+    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(id, null, this._tenantFilter(req));
     if (!exists) {
       this.log('ERROR: Invalid lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -753,6 +769,7 @@ class ClearLambdaPolicyProperties extends Route {
 
     const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
       _lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(id),
+      ...this._tenantFilter(req),
     });
     if (!lambdaToken) {
       this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
@@ -788,13 +805,19 @@ class DeleteLambda extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
     }
 
-    const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(req.params.id);
+    const lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
+      _id: Model.getCoreModel(LambdaSchemaModel).createId(req.params.id),
+      ...this._tenantFilter(req),
+    });
     if (!lambda) {
       this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
     }
 
-    const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({ _lambdaId: lambda.id });
+    const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
+      _lambdaId: lambda.id,
+      ...this._tenantFilter(req),
+    });
     if (!lambdaToken) {
       this.log(`ERROR: Could not fetch lambda's token`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `could_fetch_lambda_token`));

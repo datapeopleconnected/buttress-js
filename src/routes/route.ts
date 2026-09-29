@@ -437,6 +437,20 @@ export default class Route {
   }
 
   /**
+   * The filter that limits a lookup in a core collection, which every app shares, to the caller's app. A system
+   * token isn't limited.
+   * @param {Request} req
+   * @return {{_appId?: string}}
+   */
+  _tenantFilter(req: Request): { _appId?: string } {
+    if (req.context.token?.type === TokenSchemaModel.Constants.Type.SYSTEM) return {};
+
+    const appId = req.context.authApp?.id;
+    if (!appId) throw new Helpers.Errors.RequestError(400, `no_authenticated_app`);
+    return { _appId: appId };
+  }
+
+  /**
    * Handle broadcasting the result by app policies
    * @param {Object} req
    * @param {Object} res

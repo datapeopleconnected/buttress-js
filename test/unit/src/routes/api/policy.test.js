@@ -48,6 +48,7 @@ function stubModel({ policy = {}, token = {}, app = {} } = {}) {
   const policyModel = {
     schemaData: { name: 'policies' },
     ...realQueryParser(PolicySchemaModel),
+    createId: (v) => v,
     findById: async () => null,
     findOne: async () => null,
     find: sinon.stub(),
@@ -115,14 +116,25 @@ describe('routes/api/policy:GetPolicy', () => {
   });
 
   it('rejects when no policy is found', async () => {
-    stubModel({ policy: { findById: async () => null } });
+    stubModel({ policy: { findOne: async () => null } });
     const route = createRoute(GetPolicy);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /policy_does_not_exist/);
   });
 
+  it("looks the policy up in the caller's app, or in any app for a system token", async () => {
+    const findOne = sinon.stub().resolves({ id: HEX_ID });
+    stubModel({ policy: { findOne } });
+    const route = createRoute(GetPolicy);
+
+    await route._validate(createReq({ params: { id: HEX_ID }, token: { type: 'app' } }));
+    await route._validate(createReq({ params: { id: HEX_ID }, token: { type: 'system' } }));
+
+    assert.deepStrictEqual(findOne.args, [[{ _id: HEX_ID, _appId: 'app-1' }], [{ _id: HEX_ID }]]);
+  });
+
   it('resolves and returns the found policy unchanged', async () => {
-    stubModel({ policy: { findById: async () => ({ id: HEX_ID, name: 'test-policy' }) } });
+    stubModel({ policy: { findOne: async () => ({ id: HEX_ID, name: 'test-policy' }) } });
     const route = createRoute(GetPolicy);
 
     const policy = await route._validate(createReq({ params: { id: HEX_ID } }));
@@ -290,6 +302,16 @@ describe('routes/api/policy:UpdatePolicy', () => {
     const route = createRoute(UpdatePolicy);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);
+  });
+
+  it("checks the policy exists in the caller's app", async () => {
+    const exists = sinon.stub().resolves(true);
+    stubModel({ policy: { exists } });
+    const route = createRoute(UpdatePolicy);
+
+    await route._validate(createReq({ params: { id: HEX_ID }, token: { type: 'app' } }));
+
+    assert.deepStrictEqual(exists.firstCall.args, [HEX_ID, null, { _appId: 'app-1' }]);
   });
 
   it('updates the policy by path', async () => {
@@ -469,7 +491,7 @@ describe('routes/api/policy:DeletePolicy', () => {
   });
 
   it('rejects when the policy cannot be found', async () => {
-    stubModel({ policy: { findById: async () => null } });
+    stubModel({ policy: { findOne: async () => null } });
     const route = createRoute(DeletePolicy);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);

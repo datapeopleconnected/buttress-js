@@ -288,7 +288,7 @@ describe('routes/api/user:CreateUserAuthToken', () => {
 
   for (const domains of [[null], ['app.example.com', 42], [''], 'app.example.com']) {
     it(`rejects domains of ${JSON.stringify(domains)} with a 400`, async () => {
-      stubModel({ user: { findById: async () => ({ id: 'user-1' }) } });
+      stubModel({ user: { findOne: async () => ({ id: 'user-1' }) } });
       const route = createRoute(CreateUserAuthToken);
       const body = { policyProperties: {}, domains };
 
@@ -301,7 +301,7 @@ describe('routes/api/user:CreateUserAuthToken', () => {
   }
 
   it('rejects when the user cannot be found', async () => {
-    stubModel({ user: { findById: async () => null } });
+    stubModel({ user: { findOne: async () => null } });
     const route = createRoute(CreateUserAuthToken);
     const body = { policyProperties: {}, domains: ['*'] };
 
@@ -314,7 +314,7 @@ describe('routes/api/user:CreateUserAuthToken', () => {
   it('adds a token scoped to the app and user, then busts the route cache', async () => {
     // _exec() converts appId/user.id via the real Datastore ObjectId adapter (not routed through
     // Model.getCoreModel), so these need to look like real 24-char hex ids.
-    const { tokenModel } = stubModel({ user: { findById: async () => ({ id: HEX_ID }) } });
+    const { tokenModel } = stubModel({ user: { findOne: async () => ({ id: HEX_ID }) } });
     const nrp = { emit: sinon.spy() };
     const route = createRoute(CreateUserAuthToken, { nrp });
 
@@ -583,14 +583,14 @@ describe('routes/api/user:DeleteUser', () => {
   });
 
   it('rejects when the user cannot be found', async () => {
-    stubModel({ user: { findById: async () => null } });
+    stubModel({ user: { findOne: async () => null } });
     const route = createRoute(DeleteUser);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);
   });
 
   it('rejects when the user has no token', async () => {
-    stubModel({ user: { findById: async () => ({ id: 'user-1' }) }, token: { findOne: async () => null } });
+    stubModel({ user: { findOne: async () => ({ id: 'user-1' }) }, token: { findOne: async () => null } });
     const route = createRoute(DeleteUser);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /user_not_found/);
@@ -598,7 +598,7 @@ describe('routes/api/user:DeleteUser', () => {
 
   it('rejects when the requesting token belongs to the user being deleted', async () => {
     stubModel({
-      user: { findById: async () => ({ id: 'user-1' }) },
+      user: { findOne: async () => ({ id: 'user-1' }) },
       token: { findOne: async () => ({ value: 'same-token' }) },
     });
     const route = createRoute(DeleteUser);
@@ -639,7 +639,7 @@ describe('routes/api/user:ClearUserLocalData', () => {
   });
 
   it('rejects when the user cannot be found', async () => {
-    stubModel({ user: { findById: async () => null } });
+    stubModel({ user: { findOne: async () => null } });
     const route = createRoute(ClearUserLocalData);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);

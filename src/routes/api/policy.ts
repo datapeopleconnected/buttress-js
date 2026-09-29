@@ -57,7 +57,10 @@ class GetPolicy extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_id`));
     }
 
-    const policy = await Model.getCoreModel(PolicySchemaModel).findById(id);
+    const policy = await Model.getCoreModel(PolicySchemaModel).findOne({
+      _id: Model.getCoreModel(PolicySchemaModel).createId(id),
+      ...this._tenantFilter(req),
+    });
     if (!policy) {
       this.log(`[${this.name}] Cannot find a policy with id id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `policy_does_not_exist`));
@@ -286,7 +289,7 @@ class UpdatePolicy extends Route {
       }
 
       Model.getCoreModel(PolicySchemaModel)
-        .exists(req.params.id)
+        .exists(req.params.id, null, this._tenantFilter(req))
         .then((exists) => {
           if (!exists) {
             this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
@@ -344,7 +347,7 @@ class BulkUpdatePolicy extends Route {
         }
       }
 
-      const exists = await Model.getCoreModel(PolicySchemaModel).exists(item.id);
+      const exists = await Model.getCoreModel(PolicySchemaModel).exists(item.id, null, this._tenantFilter(req));
       if (!exists) {
         this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -571,7 +574,10 @@ class DeletePolicy extends Route {
       throw new Helpers.Errors.RequestError(500, `missing_app_id`);
     }
 
-    const policy = await Model.getCoreModel(PolicySchemaModel).findById(req.params.id);
+    const policy = await Model.getCoreModel(PolicySchemaModel).findOne({
+      _id: Model.getCoreModel(PolicySchemaModel).createId(req.params.id),
+      ...this._tenantFilter(req),
+    });
     if (!policy) {
       this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `invalid_id`);

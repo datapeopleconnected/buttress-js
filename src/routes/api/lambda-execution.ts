@@ -56,7 +56,10 @@ class GetLambdaExecution extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
     }
 
-    const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).findById(id);
+    const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).findOne({
+      _id: Model.getCoreModel(LambdaExecutionSchemaModel).createId(id),
+      ...this._tenantFilter(req),
+    });
     if (!lambdaExecution) {
       this.log(`[${this.name}] Cannot find a lambda execution with id id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_execution_does_not_exist`));
@@ -98,7 +101,10 @@ class GetLambdaExecutionStatus extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
     }
 
-    const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).findById(id);
+    const lambdaExecution = await Model.getCoreModel(LambdaExecutionSchemaModel).findOne({
+      _id: Model.getCoreModel(LambdaExecutionSchemaModel).createId(id),
+      ...this._tenantFilter(req),
+    });
     if (!lambdaExecution) {
       this.log(`[${this.name}] Cannot find a lambda execution with id id`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_execution_does_not_exist`));
@@ -159,7 +165,7 @@ class UpdateLambdaExecution extends Route {
       }
 
       Model.getCoreModel(LambdaExecutionSchemaModel)
-        .exists(id)
+        .exists(id, null, this._tenantFilter(req))
         .then((exists) => {
           if (!exists) {
             this.log('ERROR: Invalid LAMBDA EXECUTION ID', Route.LogLevel.ERR);

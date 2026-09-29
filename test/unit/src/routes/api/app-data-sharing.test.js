@@ -116,7 +116,7 @@ describe('routes/api/app-data-sharing:GetAppDataSharing', () => {
   });
 
   it('rejects when no data sharing agreement is found', async () => {
-    stubModel({ ds: { findById: async () => null } });
+    stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(GetAppDataSharing);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /app_data_sharing_does_not_exist/);
@@ -362,7 +362,7 @@ describe('routes/api/app-data-sharing:ReactivateAppDataSharing', () => {
   });
 
   it('rejects when the agreement cannot be found', async () => {
-    stubModel({ ds: { findById: async () => null } });
+    stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(ReactivateAppDataSharing);
 
     await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /no_datasharing/);
@@ -382,7 +382,7 @@ describe('routes/api/app-data-sharing:ReactivateAppDataSharing', () => {
 
 describe('routes/api/app-data-sharing:DeactivateAppDataSharing', () => {
   it('rejects when the agreement cannot be found', async () => {
-    stubModel({ ds: { findById: async () => null } });
+    stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(DeactivateAppDataSharing);
 
     await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /no_datasharing/);
@@ -401,7 +401,7 @@ describe('routes/api/app-data-sharing:DeactivateAppDataSharing', () => {
 
 describe('routes/api/app-data-sharing:StatusAppDataSharing', () => {
   it('rejects when the agreement cannot be found', async () => {
-    stubModel({ ds: { findById: async () => null } });
+    stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(StatusAppDataSharing);
 
     await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /no_datasharing/);
@@ -506,7 +506,7 @@ describe('routes/api/app-data-sharing:DeleteDataSharingAgreement', () => {
   });
 
   it('rejects when the agreement cannot be found', async () => {
-    stubModel({ ds: { findById: async () => null } });
+    stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(DeleteDataSharingAgreement);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);
@@ -514,7 +514,7 @@ describe('routes/api/app-data-sharing:DeleteDataSharingAgreement', () => {
 
   it('rejects when the agreement token cannot be found', async () => {
     stubModel({
-      ds: { findById: async () => ({ id: 'ds-1', _tokenId: 'token-1' }) },
+      ds: { findOne: async () => ({ id: 'ds-1', _tokenId: 'token-1' }) },
       token: { findById: async () => null },
     });
     const route = createRoute(DeleteDataSharingAgreement);
