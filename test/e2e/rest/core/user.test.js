@@ -16,9 +16,11 @@
 
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
+import http from 'node:http';
 
 import { createApp, bjsReq, createUser, createPolicyUser, deleteApp, BJSReqError, ENDPOINT } from '../../../helpers.js';
 import { runStep } from '../../helpers.js';
+import Config from '../../../config.js';
 
 import BootstrapRest from '../../../../dist/bootstrap-rest.js';
 
@@ -178,6 +180,46 @@ describe('User API', async () => {
 			assert.strictEqual(user.auth[0].appId, userData.auth[0].appId, 'User auth appId should match');
 			assert.strictEqual(user.auth[0].email, userData.auth[0].email, 'User auth email should match');
 			assert.strictEqual(user.tokens.length, 1, 'User should have one token');
+		});
+	});
+
+	describe('KeepAlive', () => {
+		// A request over the agent, resolving with the response and the socket it used. It goes straight to the REST
+		// process, rather than to ENDPOINT.REST, which may be a proxy with connections of its own.
+		const agentReq = (agent, method, path, token, body) => new Promise((resolve, reject) => {
+			const req = http.request(`http://localhost:${Config.listenPorts.rest}${path}`, {
+				agent,
+				method,
+				headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+			}, (res) => {
+				let data = '';
+				res.on('data', (chunk) => data += chunk);
+				res.on('end', () => resolve({ status: res.statusCode, headers: res.headers, body: data, socket: req.socket }));
+			});
+			req.on('error', reject);
+			req.end(body ? JSON.stringify(body) : undefined);
+		});
+
+		it('Should add a user over the connection a failed user lookup used', async () => {
+			const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+			const auth = { app: 'test-keep-alive', appId: 'keep-alive-1', email: 'keep-alive+1@example.com' };
+
+			try {
+				// As @buttress/api's findOrCreateUser does for a new user
+				const lookup = await agentReq(agent, 'GET', `/api/v1/user/${auth.app}/${auth.appId}`, testEnv.apps.app1.token);
+				assert.strictEqual(lookup.status, 404, 'The user lookup should 404');
+				assert.notStrictEqual(lookup.headers.connection, 'close', 'The 404 should keep the connection open');
+
+				// Give the server time to act on the finished request, so a socket it closes is seen as closed
+				await new Promise((resolve) => setTimeout(resolve, 50));
+
+				const added = await agentReq(agent, 'POST', '/api/v1/user', testEnv.apps.app1.token, { auth: [auth] });
+				assert.strictEqual(added.status, 200, 'The user should be added');
+				assert.strictEqual(JSON.parse(added.body).auth[0].appId, auth.appId, 'User auth appId should match');
+				assert.strictEqual(added.socket, lookup.socket, 'The add should reuse the connection of the lookup');
+			} finally {
+				agent.destroy();
+			}
 		});
 	});
 
