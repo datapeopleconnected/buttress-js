@@ -130,25 +130,3 @@ describe('access-control/env:__setObjectValueByPath', () => {
     assert.strictEqual(obj.a.b, 'new');
   });
 });
-
-describe('access-control/env:__getClientIpFromXForwardedFor', () => {
-  it('should extract first valid IPv4 from X-Forwarded-For', () => {
-    const result = AccessControlEnv.__getClientIpFromXForwardedFor('192.168.1.1, 10.0.0.1');
-    assert.strictEqual(result, '192.168.1.1');
-  });
-
-  it('should handle IPv4 with port', () => {
-    const result = AccessControlEnv.__getClientIpFromXForwardedFor('192.168.1.1:8080, 10.0.0.1');
-    assert.strictEqual(result, '192.168.1.1');
-  });
-
-  it('should handle IPv6 addresses', () => {
-    const result = AccessControlEnv.__getClientIpFromXForwardedFor('::1');
-    assert.strictEqual(result, '::1');
-  });
-
-  it('should return undefined for unknown format', () => {
-    const result = AccessControlEnv.__getClientIpFromXForwardedFor('not-an-ip');
-    assert.strictEqual(result, undefined);
-  });
-});
