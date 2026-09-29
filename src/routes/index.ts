@@ -115,6 +115,35 @@ class Routes {
   }
 
   /**
+   * Handles an error from the middleware that runs before any route, such as the body parsers. They refuse a body
+   * that's malformed, isn't an object or array, is too large or is in an unknown encoding, and carrying on would
+   * reach the route with no body, so these are answered with the parser's status. Other errors are logged and the
+   * request carries on, as before. The body parsers' errors skip the middleware that creates the context.
+   */
+  _handleEarlyError(err: unknown, req: Request, res: Response, next: NextFunction) {
+    const parserError = err as { type?: unknown; status?: unknown; expose?: unknown } | undefined;
+    if (
+      typeof parserError?.type === 'string' &&
+      parserError.expose === true &&
+      typeof parserError.status === 'number' &&
+      parserError.status >= 400 &&
+      parserError.status < 500
+    ) {
+      const message =
+        parserError.status === 413
+          ? 'body_too_large'
+          : parserError.status === 415
+            ? 'unsupported_body_encoding'
+            : 'invalid_body';
+      res.status(parserError.status).json({ statusMessage: message, message });
+      return;
+    }
+
+    if (err) Logging.logError(err, req.context?.id);
+    next();
+  }
+
+  /**
    * Init core routes & app schema
    * @return {promise}
    */
@@ -156,10 +185,9 @@ class Routes {
 
       next();
     });
-    this.app.use((err: unknown, req: Request, res: Response, next: NextFunction) => {
-      if (err) Logging.logError(err, req.context.id);
-      next();
-    });
+    this.app.use((err: unknown, req: Request, res: Response, next: NextFunction) =>
+      this._handleEarlyError(err, req, res, next),
+    );
 
     const coreRouter = this._createRouter();
     const providers = this._getCoreRoutes();

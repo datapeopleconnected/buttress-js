@@ -212,6 +212,13 @@ describe('routes/api/app-data-sharing:UpdateAppDataSharing', () => {
 });
 
 describe('routes/api/app-data-sharing:BulkUpdateAppDataSharing', () => {
+  it('rejects a request with no body', async () => {
+    stubModel();
+    const route = createRoute(BulkUpdateAppDataSharing);
+
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /array_required/);
+  });
+
   it('rejects when one item in the batch does not exist', async () => {
     stubModel({ ds: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(BulkUpdateAppDataSharing);
@@ -430,6 +437,13 @@ describe('routes/api/app-data-sharing:GetAllAppDataSharing', () => {
 });
 
 describe('routes/api/app-data-sharing:SearchAppDataSharingAgreement', () => {
+  it('rejects an array body', async () => {
+    stubModel();
+    const route = createRoute(SearchAppDataSharingAgreement);
+
+    await assert.rejects(route._validate(createReq({ body: [] })), /invalid_body/);
+  });
+
   it('rejects when skip is not a number', async () => {
     stubModel();
     const route = createRoute(SearchAppDataSharingAgreement);

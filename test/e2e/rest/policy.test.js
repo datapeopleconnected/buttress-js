@@ -232,6 +232,40 @@ const schema = [{
       __allowUpdate: true,
     }
   },
+}, {
+  name: 'board',
+  type: 'collection',
+  properties: {
+    name: {
+      __type: 'string',
+      __default: null,
+      __required: true,
+      __allowUpdate: true,
+    },
+    subscribed: {
+      __type: 'array',
+      __itemtype: 'id',
+      __required: true,
+      __allowUpdate: true,
+    },
+  },
+}, {
+  name: 'post',
+  type: 'collection',
+  properties: {
+    content: {
+      __type: 'string',
+      __default: null,
+      __required: true,
+      __allowUpdate: true,
+    },
+    boardId: {
+      __type: 'id',
+      __default: null,
+      __required: true,
+      __allowUpdate: true,
+    },
+  },
 }];
 
 // This suite of tests will run against the REST API and will
@@ -666,6 +700,74 @@ describe('Policy', async () => {
       assert(car0.length === 2, `Expected 2 but got ${car0.length}`);
       const car0colourIdx = car0.findIndex((car) => car.color !== undefined);
       assert(car0colourIdx !== -1, `Expected one of the cars to have a colour but got ${car0[car0colourIdx].color}`);
+    });
+  });
+
+  // Policies that compare ids from the env with ids stored as ObjectIds, as the env-collection-* policies do
+  describe('Collection env lookups', async () => {
+    const appRequest = async (path, method, body) => bjsReq({
+      url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/${path}`,
+      method,
+      headers: {'Content-Type': 'application/json'},
+      body: body ? JSON.stringify(body) : undefined,
+    }, testEnv.apps.app1.token);
+    const userRequest = async (user, path, method) => bjsReq({
+      url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/${path}`,
+      method,
+      headers: {'Content-Type': 'application/json'},
+    }, user.tokens[0].value);
+
+    const boards = {};
+
+    before(async function() {
+      this.timeout(20000);
+
+      const subscriber = await runStep('create user envSubscriber', async () =>
+        _createPolicyUser(testEnv.apps.app1, 'envSubscriber', {envCollection: 'subscribed'})
+      , 'Policy env lookup setup');
+      await runStep('create user envMissing', async () =>
+        _createPolicyUser(testEnv.apps.app1, 'envMissing', {envCollection: 'missing'})
+      , 'Policy env lookup setup');
+
+      await runStep('seed boards and posts', async () => {
+        [boards.subscribed] = await appRequest('board', 'POST', {name: 'Subscribed', subscribed: [subscriber.id]});
+        [boards.other] = await appRequest('board', 'POST', {name: 'Other', subscribed: [testEnv.users.basic1.id]});
+
+        await appRequest('post', 'POST', [
+          {content: 'One', boardId: boards.subscribed.id},
+          {content: 'Two', boardId: boards.subscribed.id},
+          {content: 'Three', boardId: boards.other.id},
+        ]);
+      }, 'Policy env lookup setup');
+    });
+
+    it('Should only return the boards the user is subscribed to', async function() {
+      await expectEventually(async () => {
+        const res = await userRequest(testEnv.users.envSubscriber, 'board', 'GET');
+        assert.deepStrictEqual(res.map((board) => board.id), [boards.subscribed.id]);
+      });
+    });
+
+    it('Should only return the posts on those boards, with their ids looked up through the env', async function() {
+      await expectEventually(async () => {
+        for (const method of ['GET', 'SEARCH']) {
+          const res = await userRequest(testEnv.users.envSubscriber, 'post', method);
+          assert.deepStrictEqual(res.map((post) => post.content).sort(), ['One', 'Two'], method);
+        }
+
+        const count = await userRequest(testEnv.users.envSubscriber, 'post/count', 'SEARCH');
+        assert.strictEqual(count, 2);
+      });
+    });
+
+    it("Should return no posts when the env lookup's collection doesn't exist", async function() {
+      await expectEventually(async () => {
+        const res = await userRequest(testEnv.users.envMissing, 'post', 'GET');
+        assert.deepStrictEqual(res, []);
+
+        const count = await userRequest(testEnv.users.envMissing, 'post/count', 'SEARCH');
+        assert.strictEqual(count, 0);
+      });
     });
   });
 });

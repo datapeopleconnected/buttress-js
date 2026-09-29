@@ -177,6 +177,13 @@ describe('routes/api/policy:GetPolicyList', () => {
 });
 
 describe('routes/api/policy:SearchPolicyList', () => {
+  it('rejects an array body', async () => {
+    stubModel();
+    const route = createRoute(SearchPolicyList);
+
+    await assert.rejects(route._validate(createReq({ body: [] })), /invalid_body/);
+  });
+
   it('rejects when skip is not a number', async () => {
     stubModel();
     const route = createRoute(SearchPolicyList);
@@ -207,6 +214,13 @@ describe('routes/api/policy:SearchPolicyList', () => {
 });
 
 describe('routes/api/policy:AddPolicy', () => {
+  it('rejects a request with no body', async () => {
+    stubModel();
+    const route = createRoute(AddPolicy);
+
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /missing_field/);
+  });
+
   it('rejects when a required field is missing', async () => {
     stubModel();
     const route = createRoute(AddPolicy);
@@ -288,6 +302,19 @@ describe('routes/api/policy:UpdatePolicy', () => {
 });
 
 describe('routes/api/policy:BulkUpdatePolicy', () => {
+  for (const [label, body] of [
+    ['no body', undefined],
+    ['an object', {}],
+    ['a null item', [null]],
+  ]) {
+    it(`rejects ${label} instead of an array of updates`, async () => {
+      stubModel();
+      const route = createRoute(BulkUpdatePolicy);
+
+      await assert.rejects(route._validate(Object.assign(createReq(), { body })), /array_required/);
+    });
+  }
+
   it('rejects when one update in the batch has an invalid path', async () => {
     stubModel({
       policy: {

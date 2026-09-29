@@ -21,6 +21,7 @@ import { ObjectId } from 'bson';
 
 import MongodbAdapter, { applyUpdateOps, mergeUpdateOps } from '../../../../../dist/datastore/adapters/mongodb.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
+import { isObjectId } from '../../../../../dist/datastore/adapters/object-id.js';
 
 const ID = '507f1f77bcf86cd799439011';
 
@@ -717,5 +718,50 @@ describe('datastore/adapters/MongodbAdapter:add when the insert fails part way',
     const unknown = createAdapter(error);
     await assert.rejects(add(unknown.adapter), (err) => err === error);
     assert.deepStrictEqual(unknown.deletes, []);
+  });
+});
+
+describe('datastore/adapters/MongodbAdapter: exists', () => {
+  const APP_ID = '507f1f77bcf86cd799439099';
+
+  // An adapter for a schema with an id property, whose collection records the filter of each count
+  function createAdapter() {
+    const filters = [];
+    const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});
+    adapter.collection = {
+      namespace: 'test.shares',
+      countDocuments: async (filter) => {
+        filters.push(filter);
+        return 1;
+      },
+    };
+    adapter.updateSchema({ name: 'share', type: 'collection', properties: { _appId: { __type: 'id' } } });
+    return { adapter, filters };
+  }
+
+  it('converts the id properties of the extra filter, as it does the id', async () => {
+    const { adapter, filters } = createAdapter();
+
+    assert.strictEqual(await adapter.exists(ID, { _appId: APP_ID }), true);
+
+    const [filter] = filters;
+    assert(isObjectId(filter._id) && filter._id.toHexString() === ID);
+    assert(isObjectId(filter._appId) && filter._appId.toHexString() === APP_ID);
+  });
+
+  it('converts an extra filter given with operators', async () => {
+    const { adapter, filters } = createAdapter();
+
+    await adapter.exists(ID, { _appId: { $in: [APP_ID] } });
+
+    const [filter] = filters;
+    assert(isObjectId(filter._appId.$in[0]) && filter._appId.$in[0].toHexString() === APP_ID);
+  });
+
+  it('gives false for an invalid id without counting', async () => {
+    const { adapter, filters } = createAdapter();
+
+    assert.strictEqual(await adapter.exists('not-an-id', { _appId: APP_ID }), false);
+    assert.deepStrictEqual(filters, []);
   });
 });

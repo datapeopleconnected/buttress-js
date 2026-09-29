@@ -64,6 +64,11 @@ class AddTracking extends Route {
 
   override _validate(req: RequestWithBody<unknown>, _res: Response) {
     return new Promise<boolean>((resolve, reject) => {
+      if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+        this.log('ERROR: Expected the tracking entry as an object', Route.LogLevel.ERR);
+        return reject(new Helpers.Errors.RequestError(400, `invalid_body`));
+      }
+
       const validation = Model.getCoreModel(TrackingSchemaModel).validate(req.body);
       if (!validation.isValid) {
         if (validation.missing.length > 0) {

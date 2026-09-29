@@ -46,7 +46,7 @@ class AddSecureStore extends Route {
   override async _validate(req: RequestWithBody<SecureStoreAddBody>, _res: Response) {
     const app = req.context.authApp;
 
-    if (!app || !req.body.name) {
+    if (!app || !req.body?.name) {
       this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
@@ -344,6 +344,11 @@ class BulkUpdateSecureStore extends Route {
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
     }
 
+    if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
+      this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `array_required`);
+    }
+
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(item.body);
       item.body = body;
@@ -396,6 +401,9 @@ class SearchSecureStoreList extends Route {
   }
 
   override async _validate(req: RequestWithBody<SearchListBody<SecureStore> | undefined>, _res: Response) {
+    // The search options are read off the body, and an array has a sort method of its own
+    if (Array.isArray(req.body)) throw new Helpers.Errors.RequestError(400, `invalid_body`);
+
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);

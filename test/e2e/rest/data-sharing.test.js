@@ -196,6 +196,26 @@ describe('Data Sharing', async () => {
 			testEnv.agreements[name] = agreement;
 		});
 
+		const updatePolicy = async (agreement, app) => bjsReq({
+			url: `${ENDPOINT.REST}/api/v1/app-data-sharing/${agreement.id}/policy`,
+			method: 'PUT',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({car: ['READ']}),
+		}, app.token);
+
+		it(`Should update the policy of an app's own agreement`, async () => {
+			const result = await updatePolicy(testEnv.agreements[`app1-to-app2`], testEnv.apps.app1);
+
+			assert.strictEqual(result, true);
+		});
+
+		it(`Should refuse to update the policy of another app's agreement`, async () => {
+			await assert.rejects(
+				updatePolicy(testEnv.agreements[`app1-to-app2`], testEnv.apps.app2),
+				(err) => err.code === 400 && err.message === 'unknown_data_sharing',
+			);
+		});
+
 		it(`Should update app2 schema to reference cars collection from app1`, async () => {
 			testEnv.apps.app2.schema = await updateSchema(ENDPOINT.REST, [{
 				name: 'car',

@@ -1,0 +1,32 @@
+{
+  "name": "env-collection-missing",
+  "version": 1,
+  "priority": 1,
+  "selection": {
+    "envCollection": {
+      "@eq": "missing"
+    }
+  },
+  "config": [
+    {
+      "verbs": ["GET", "SEARCH"],
+      "schema": ["post"],
+      "env": {
+        "boardIds": {
+          "collection": "no-such-collection",
+          "type": "array",
+          "query": {},
+          "output": {
+            "key": "id",
+            "type": "id"
+          }
+        }
+      },
+      "query": {
+        "boardId": {
+          "@in": "#env.boardIds"
+        }
+      }
+    }
+  ]
+}

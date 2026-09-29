@@ -599,12 +599,8 @@ export default class MongodbAdapter extends AbstractAdapter {
 
     if (_id === null) return false;
 
-    return this.collection
-      ?.countDocuments({
-        _id,
-        ...extra,
-      })
-      .then((count) => count > 0);
+    // The extra filter carries ids as strings, as any other query does
+    return this.collection?.countDocuments(this._query({ _id, ...extra })).then((count) => count > 0);
   }
 
   /*
