@@ -318,3 +318,70 @@ describe('routes/Routes:_initRoute', () => {
     assert.strictEqual(next.firstCall.args[0].message, 'exec failed');
   });
 });
+
+describe('routes/Routes:_handleEarlyError', () => {
+  let server;
+  let baseUrl;
+
+  // A real Express app with the JSON parser, the handler and a route that echoes the body it got
+  beforeEach(async () => {
+    const app = Express();
+    const routes = new Routes(app);
+    app.use(Express.json({ limit: '1kb' }));
+    app.use((err, req, res, next) => routes._handleEarlyError(err, req, res, next));
+    app.post('/echo', (req, res) => res.json({ body: req.body ?? null }));
+    server = await new Promise((resolve) => {
+      const s = app.listen(0, () => resolve(s));
+    });
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+
+  afterEach(async () => {
+    await new Promise((resolve) => server.close(resolve));
+  });
+
+  const post = (body, headers = {}) =>
+    fetch(`${baseUrl}/echo`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body });
+
+  for (const [label, body] of [
+    ['malformed JSON', '{"a":'],
+    ['a string', '"x"'],
+    ['null', 'null'],
+  ]) {
+    it(`answers 400 invalid_body for ${label}`, async () => {
+      const res = await post(body);
+
+      assert.strictEqual(res.status, 400);
+      assert.deepStrictEqual(await res.json(), { statusMessage: 'invalid_body', message: 'invalid_body' });
+    });
+  }
+
+  it('answers 413 body_too_large for a body over the limit', async () => {
+    const res = await post(JSON.stringify({ a: 'x'.repeat(2048) }));
+
+    assert.strictEqual(res.status, 413);
+    assert.strictEqual((await res.json()).message, 'body_too_large');
+  });
+
+  it('answers 415 unsupported_body_encoding for an unknown charset', async () => {
+    const res = await post('{}', { 'Content-Type': 'application/json; charset=klingon' });
+
+    assert.strictEqual(res.status, 415);
+    assert.strictEqual((await res.json()).message, 'unsupported_body_encoding');
+  });
+
+  it('passes a valid body through to the route', async () => {
+    const res = await post('{"a":1}');
+
+    assert.deepStrictEqual(await res.json(), { body: { a: 1 } });
+  });
+
+  it('logs any other error and carries on', () => {
+    const routes = new Routes(createApp());
+    const next = sinon.spy();
+
+    routes._handleEarlyError(new Error('boom'), {}, {}, next);
+
+    assert.ok(next.calledOnceWithExactly());
+  });
+});

@@ -155,7 +155,6 @@ export const describeInvalidUpdate = (validation: UpdateValidationResult) => {
 export const doValidateUpdate = function (pathContext: UpdatePathContexts, flattenedSchema: FlattenedSchema | false) {
   const schemaFlat = flattenedSchema || {};
   return (body: UpdatePathBody) => {
-    Logging.logSilly(`doValidateUpdate: path: ${body.path}, value: ${body.value}`);
     const res: UpdateValidationResult = {
       isValid: false,
       isMissingRequired: false,
@@ -166,6 +165,13 @@ export const doValidateUpdate = function (pathContext: UpdatePathContexts, flatt
       isValueValid: false,
       invalidValid: '',
     };
+
+    // A request with no body, or an item of an array that isn't an update, has nothing to read a path from
+    if (!body || typeof body !== 'object') {
+      res.missingRequired = 'path';
+      return res;
+    }
+    Logging.logSilly(`doValidateUpdate: path: ${body.path}, value: ${body.value}`);
 
     const fullPath = body.path;
     if (!fullPath || typeof fullPath !== 'string') {
@@ -320,12 +326,13 @@ export const validateUpdate = function (pathContext: UpdatePathContexts, schema:
     const flattenedSchema = schema ? Helpers.getFlattenedSchema(schema) : false;
     const extendedPathContext = extendPathContext(pathContext, flattenedSchema || {}, '');
 
-    if (schema.core) {
-      body = Helpers.updateCoreSchemaObject(body, extendedPathContext);
-    }
-
+    // One update or an array of them. updateCoreSchemaObject only handles an array, it returns undefined for one.
     if (body instanceof Array === false) {
       body = [body];
+    }
+
+    if (schema.core) {
+      body = Helpers.updateCoreSchemaObject(body, extendedPathContext);
     }
 
     const validation = (body as UpdatePathBody[])

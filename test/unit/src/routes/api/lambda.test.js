@@ -192,6 +192,13 @@ describe('routes/api/lambda:SearchLambdaList', () => {
 });
 
 describe('routes/api/lambda:AddLambda', () => {
+  it('rejects a request with no body', async () => {
+    stubModel();
+    const route = createRoute(AddLambda);
+
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /missing_field/);
+  });
+
   const validLambdaBody = {
     lambda: {
       name: 'test-lambda',
@@ -305,6 +312,13 @@ describe('routes/api/lambda:UpdateLambda', () => {
 });
 
 describe('routes/api/lambda:BulkUpdateLambda', () => {
+  it('rejects a request with no body', async () => {
+    stubModel();
+    const route = createRoute(BulkUpdateLambda);
+
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /array_required/);
+  });
+
   it('rejects when one item in the batch does not exist', async () => {
     stubModel({ lambda: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(BulkUpdateLambda);
@@ -503,7 +517,7 @@ describe('routes/api/lambda:ClearLambdaPolicyProperties', () => {
 
     await route._exec(createReq(), {}, { token: { id: 'token-1' } });
 
-    assert.ok(tokenModel.clearPolicyPropertiesById.calledWith({ id: 'token-1' }));
+    assert.ok(tokenModel.clearPolicyPropertiesById.calledWith('token-1'));
   });
 });
 

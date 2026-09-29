@@ -319,6 +319,11 @@ class BulkUpdateAppDataSharing extends Route {
   }
 
   override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
+    if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
+      this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `array_required`);
+    }
+
     for await (const item of req.body) {
       const exists = await Model.getCoreModel(AppDataSharingSchemaModel).exists(item.id);
       if (!exists) {
@@ -700,6 +705,9 @@ class SearchAppDataSharingAgreement extends Route {
   }
 
   override async _validate(req: RequestWithBody<SearchListBody<AppDataSharing> | undefined>, _res: Response) {
+    // The search options are read off the body, and an array has a sort method of its own
+    if (Array.isArray(req.body)) throw new Helpers.Errors.RequestError(400, `invalid_body`);
+
     const result: QueryParams<AppDataSharing> = {
       query: {
         $and: [],

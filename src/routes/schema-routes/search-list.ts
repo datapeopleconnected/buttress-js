@@ -44,6 +44,9 @@ export default class SearchList extends Route {
   }
 
   override async _validate(req: RequestWithBody<SearchListBody<object> | undefined>, _res: Response) {
+    // The search options are read off the body, and an array has a sort method of its own
+    if (Array.isArray(req.body)) throw new Helpers.Errors.RequestError(400, `invalid_body`);
+
     const model = await this.routeModel();
 
     const result: QueryParams<object> = {

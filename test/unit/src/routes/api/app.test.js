@@ -192,17 +192,26 @@ describe('routes/api/app:GetApp', () => {
     await assert.rejects(route._validate(createReq({ params: { id: 'app-1' } })), /invalid_id/);
   });
 
-  it('attaches the app token value on exec', () => {
-    stubModel({ token: { findById: () => ({ value: 'the-token' }) } });
+  it('attaches the app token value on exec', async () => {
+    stubModel({ token: { findById: sinon.stub().resolves({ value: 'the-token' }) } });
     const route = createRoute(GetApp);
 
-    const result = route._exec(createReq(), {}, { id: 'app-1', _tokenId: 'token-1' });
+    const result = await route._exec(createReq(), {}, { id: 'app-1', _tokenId: 'token-1' });
 
     assert.strictEqual(result.tokenValue, 'the-token');
   });
 });
 
 describe('routes/api/app:AddApp', () => {
+  for (const [label, body] of [['no body', undefined], ['an array', []]]) {
+    it(`rejects ${label} instead of an app`, async () => {
+      stubModel();
+      const route = createRoute(AddApp);
+
+      await assert.rejects(route._validate(Object.assign(createReq(), { body })), /invalid_body/);
+    });
+  }
+
   it('rejects with the first missing field', async () => {
     stubModel({ app: { validate: () => ({ isValid: false, missing: ['name'], invalid: [] }) } });
     const route = createRoute(AddApp);

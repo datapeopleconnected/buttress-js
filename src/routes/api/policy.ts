@@ -137,6 +137,9 @@ class SearchPolicyList extends Route {
   }
 
   override async _validate(req: RequestWithBody<SearchListBody<Policy> | undefined>, _res: Response) {
+    // The search options are read off the body, and an array has a sort method of its own
+    if (Array.isArray(req.body)) throw new Helpers.Errors.RequestError(400, `invalid_body`);
+
     const result: QueryParams<Policy> = {
       query: {},
       // parseInt takes numbers too, it converts them to a string first
@@ -197,7 +200,7 @@ class AddPolicy extends Route {
   override async _validate(req: RequestWithBody<AddPolicyBody>, _res: Response) {
     const app = req.context.authApp;
     try {
-      if (!app || !req.body.selection || !req.body.name || !req.body.config || req.body.config.length < 1) {
+      if (!app || !req.body?.selection || !req.body.name || !req.body.config || req.body.config.length < 1) {
         this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
       }
@@ -317,6 +320,11 @@ class BulkUpdatePolicy extends Route {
   }
 
   override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
+    if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
+      this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `array_required`);
+    }
+
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(PolicySchemaModel).validateUpdate(item.body);
       item.body = body;

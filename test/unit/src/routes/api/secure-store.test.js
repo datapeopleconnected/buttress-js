@@ -89,6 +89,13 @@ afterEach(() => {
 });
 
 describe('routes/api/secure-store:AddSecureStore', () => {
+  it('rejects a request with no body', async () => {
+    stubModel();
+    const route = createRoute(AddSecureStore);
+
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /missing_field/);
+  });
+
   it('rejects when the name field is missing', async () => {
     stubModel();
     const route = createRoute(AddSecureStore);
@@ -310,6 +317,13 @@ describe('routes/api/secure-store:UpdateSecureStore', () => {
 });
 
 describe('routes/api/secure-store:BulkUpdateSecureStore', () => {
+  it('rejects a request with no body', async () => {
+    stubModel();
+    const route = createRoute(BulkUpdateSecureStore);
+
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /array_required/);
+  });
+
   it('rejects when there is no authenticated app', async () => {
     stubModel();
     const route = createRoute(BulkUpdateSecureStore);
@@ -343,6 +357,13 @@ describe('routes/api/secure-store:BulkUpdateSecureStore', () => {
 });
 
 describe('routes/api/secure-store:SearchSecureStoreList', () => {
+  it('rejects an array body', async () => {
+    stubModel();
+    const route = createRoute(SearchSecureStoreList);
+
+    await assert.rejects(route._validate(createReq({ body: [] })), /invalid_body/);
+  });
+
   it('rejects when there is no authenticated app', async () => {
     stubModel();
     const route = createRoute(SearchSecureStoreList);

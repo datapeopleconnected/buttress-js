@@ -113,7 +113,7 @@ class SearchTokenList extends Route {
       queryParams.query.$and = [];
     }
 
-    if (req.body.query) {
+    if (req.body?.query) {
       queryParams.query.$and.push(req.body.query);
     }
 

@@ -450,6 +450,8 @@ export const checkAppPolicyProperty = async (
 // `undefined` for a single update.
 export const updateCoreSchemaObject = (update: unknown, extendedPathContext: Record<string, unknown>) => {
   const __updateObjectPath = (body: { path: string; value: unknown }): void => {
+    // Not an update, validation reports it
+    if (!body || typeof body.path !== 'string') return;
     const bodyPath = body.path.replace(pattern, '');
     if (!Array.isArray(body) && body.value && typeof body.value === 'object' && !Array.isArray(body.value)) {
       const bodyValue = body.value as Record<string, unknown>;
