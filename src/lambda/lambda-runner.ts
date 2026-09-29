@@ -764,34 +764,34 @@ export default class LambdaRunner {
             chunkFormat: 'commonjs',
           },
         },
-        function (err: unknown, stats) {
-          if (err && typeof err === 'object' && 'details' in err) {
-            reject((err as { details: unknown }).details);
+        (err, stats) => {
+          // The compiler itself failed, rather than a module in the build.
+          if (err) {
+            reject(err);
+            return;
           }
 
-          if (stats) {
-            const info = stats.toJson();
-            if (stats.hasErrors()) {
-              reject(info.errors);
-            }
+          const info = stats?.toJson({ all: false, errors: true, warnings: true });
+          // A warning, e.g. a require() of an expression webpack can't follow, still leaves a bundle
+          // that works unless that code path runs.
+          info?.warnings?.forEach((warning) => {
+            Logging.logWarn(`[${this.name}] Warning whilst bundling lambda modules: ${warning.message}`);
+          });
 
-            if (stats.hasWarnings()) {
-              reject(info.warnings);
-            }
+          if (stats?.hasErrors()) {
+            // webpack still writes a bundle, which would fail later and less clearly when it's loaded.
+            const messages = (info?.errors ?? []).map((error) => error.message);
+            reject(new Error(`Unable to bundle lambda modules: ${messages.join('\n')}`));
+            return;
           }
 
           resolve();
         },
       );
     }).catch((error: unknown) => {
-      Logging.logError('Error whilst bundling lambda modules');
-      if (Array.isArray(error)) {
-        error.forEach((err: unknown) => {
-          Logging.logError(Helpers.getThrownErrorMessage(err));
-        });
-      } else {
-        Logging.logError(Helpers.getThrownErrorMessage(error));
-      }
+      Logging.logError(`[${this.name}] Error whilst bundling lambda modules`);
+      Logging.logError(Helpers.getThrownErrorMessage(error));
+      throw error;
     });
   }
 

@@ -444,6 +444,31 @@ module.exports = HelloWorld;
       isolate.dispose();
     }
   });
+  it('rejects with webpack\'s error when the lambda requires a module that is missing', async function () {
+    this.timeout(30000);
+    const lambdaDir = `${Config.paths.lambda.code}/lambda-abc123`;
+    fs.mkdirSync(lambdaDir, { recursive: true });
+    fs.writeFileSync(`${lambdaDir}/index.js`, "module.exports = require('./missing.js');\n");
+    const { runner } = createRunner();
+
+    await assert.rejects(
+      runner.bundleLambdaModules([{ name: 'lambda_abc123', import: `${lambdaDir}/./index.js` }]),
+      /Unable to bundle lambda modules: .*Can't resolve '\.\/missing\.js'/,
+    );
+  });
+
+  it('bundles a lambda that only causes a webpack warning', async function () {
+    this.timeout(30000);
+    const lambdaDir = `${Config.paths.lambda.code}/lambda-abc123`;
+    fs.mkdirSync(lambdaDir, { recursive: true });
+    // A require() of an expression webpack can't follow is a warning, not an error.
+    fs.writeFileSync(`${lambdaDir}/index.js`, 'module.exports = (name) => require(name);\n');
+    const { runner } = createRunner();
+
+    await runner.bundleLambdaModules([{ name: 'lambda_abc123', import: `${lambdaDir}/./index.js` }]);
+
+    assert.ok(fs.existsSync(`${Config.paths.lambda.bundles}/lambda_abc123.js`));
+  });
 });
 
 describe('lambda/LambdaRunner:execute', () => {
