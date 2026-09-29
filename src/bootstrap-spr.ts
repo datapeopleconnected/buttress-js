@@ -539,10 +539,13 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       return false;
     }
 
-    const query = await AccessControlFilters.buildPolicyQuery(applicablePolicy.config.query, env, false);
+    // As on REST, the query's access keys are dropped, and a query left empty reads every entity
+    const query = await AccessControlFilters.buildPolicyQuery(applicablePolicy.config.query, env);
 
     // ? How does this work if it's a core schema?
-    const broadcast = query ? AccessControlFilters.evaluateQueryAgainstEntity(query, entity) : false;
+    const readsEntity = (q: NonNullable<typeof query>) =>
+      Object.keys(q).length === 0 || AccessControlFilters.evaluateQueryAgainstEntity(q, entity);
+    const broadcast = query ? readsEntity(query) : false;
     if (!broadcast && activity.verb === 'post') {
       Logging.logTimer(
         `_handleIncomingMessage::end-falsy-evaluateRoomQueryOperation-post entityId: ${entity?.id}`,

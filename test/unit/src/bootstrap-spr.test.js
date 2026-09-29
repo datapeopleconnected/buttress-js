@@ -453,9 +453,9 @@ describe('bootstrap-spr:_handleIncomingMessage projection', () => {
 	});
 });
 
-// A config's condition is checked as REST checks it, before its query: a token only gets the activity while the condition
-// holds.
-describe('bootstrap-spr:_handleIncomingMessage conditions', () => {
+// A config's condition and query are checked as REST checks them: a token only gets the activity while the condition
+// holds and the query reads the entity.
+describe('bootstrap-spr:_handleIncomingMessage conditions and queries', () => {
 	const APP_ID = new ObjectId().toString();
 	const car = { id: new ObjectId(), name: 'car' };
 	const user = { id: new ObjectId(), role: 'admin' };
@@ -476,6 +476,13 @@ describe('bootstrap-spr:_handleIncomingMessage conditions', () => {
 			query: { access: '%FULL_ACCESS%' },
 			condition,
 		})),
+	});
+	const queryPolicy = (query) => ({
+		id: 'policy-query',
+		name: 'query',
+		_appId: APP_ID,
+		env: null,
+		config: [{ verbs: ['GET'], schema: ['car'], query, condition: null }],
 	});
 
 	afterEach(() => sinon.restore());
@@ -533,6 +540,20 @@ describe('bootstrap-spr:_handleIncomingMessage conditions', () => {
 		});
 
 		assert.deepStrictEqual(deleted, []);
+	});
+
+	it('relays an activity for a query that, once its access keys are dropped, is empty, as REST reads every entity', async () => {
+		for (const query of [{}, { access: '%FULL_ACCESS%' }, { access: '%APP_SCHEMA%' }]) {
+			assert.strictEqual((await relay([queryPolicy(query)])).length, 1, JSON.stringify(query));
+		}
+	});
+
+	it('applies the rest of a query that gives full access, as REST does', async () => {
+		const other = { access: '%FULL_ACCESS%', name: { '@eq': 'another car' } };
+		const same = { access: '%FULL_ACCESS%', name: { '@eq': car.name } };
+
+		assert.deepStrictEqual(await relay([queryPolicy(other)]), []);
+		assert.strictEqual((await relay([queryPolicy(same)])).length, 1);
 	});
 
 	it("checks a condition on the token's user against each token", async () => {
