@@ -61,7 +61,9 @@ after token authentication. Flow:
 `AccessControlEnv.generateRequestGlobalEnvs(req, appId, user)` builds the `env` object that policy
 `query`/`condition` values can reference via dotted paths (e.g. `env.userId`) — read
 [src/access-control/env.ts](../src/access-control/env.ts) when a policy needs a new environment variable
-exposed.
+exposed. `env.ipAddress` is the requester's `req.ip`, so it's only as trustworthy as `BUTTRESS_TRUST_PROXY`
+(Express's `trust proxy`) is right for the deployment; an IPv4-mapped IPv6 address is given as plain IPv4. SPR
+builds its env without a request, so `env.ipAddress` is always null there.
 
 ## SPR path: `BootstrapSocketPolicyRouter._handleIncomingMessage` (`src/bootstrap-spr.ts`)
 

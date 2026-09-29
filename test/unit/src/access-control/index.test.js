@@ -41,10 +41,11 @@ function createInstance({ coreSchema = [], schemas = {} } = {}) {
   return instance;
 }
 
-function createReq({ method = 'GET', authApp = null, authUser = null, body = {} } = {}) {
+function createReq({ method = 'GET', authApp = null, authUser = null, body = {}, ip = undefined } = {}) {
   return {
     method,
     body,
+    ip,
     context: {
       timer: { interval: 0, lapTime: 0 },
       id: 'req-1',
@@ -143,6 +144,35 @@ describe('access-control/AccessControl:__getOutcome', () => {
         assert.match(err.message, /condition is not fulfilled/);
         return true;
       },
+    );
+  });
+
+  it("applies a policy whose condition names the requester's IP address only to requests from it", async () => {
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+    const tokenPolicies = [
+      {
+        id: 'p1',
+        name: 'office-only',
+        priority: 1,
+        env: null,
+        config: [
+          {
+            verbs: ['GET'],
+            schema: ['user'],
+            query: {},
+            projection: null,
+            condition: { '#env.ipAddress': { '@eq': '203.0.113.7' } },
+          },
+        ],
+      },
+    ];
+
+    const outcome = await instance.__getOutcome(tokenPolicies, createReq({ ip: '203.0.113.7' }), 'user', 'app1');
+    assert.deepStrictEqual(outcome[0].policies, ['office-only#0']);
+
+    await assert.rejects(
+      () => instance.__getOutcome(tokenPolicies, createReq({ ip: '198.51.100.1' }), 'user', 'app1'),
+      /condition is not fulfilled/,
     );
   });
 

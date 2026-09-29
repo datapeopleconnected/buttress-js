@@ -71,10 +71,11 @@ export class PolicyEnv {
     };
   }
 
-  generateRequestGlobalEnvs(_req: Request | null, appId: string, authUser: User | null): ACEnv {
+  generateRequestGlobalEnvs(req: Request | null, appId: string, authUser: User | null): ACEnv {
     return {
       ...this.generateBaseGlobalEnvs(),
-      ipAddress: null,
+      // SPR checks activity without a request, so there's no address there
+      ipAddress: req ? this.__requestIPAddress(req) : null,
       user: authUser,
       appId: appId,
     };
@@ -244,10 +245,15 @@ export class PolicyEnv {
     return outputValue;
   }
 
-  __requestIPAddress(req: Request) {
-    // express already has everything to handle this, we needs to make sure we
-    // trust the proxy settings in express for this to work correctly
-    return req.ip;
+  /**
+   * The requester's address, as Express works it out through the trust proxy setting (BUTTRESS_TRUST_PROXY), or null
+   * once the client has gone. An IPv4 client of a server listening on IPv6 shows as ::ffff:<address>, so it's given
+   * as the IPv4 address a policy would name.
+   */
+  __requestIPAddress(req: Request): string | null {
+    const ip = req.ip;
+    if (!ip) return null;
+    return ip.replace(/^::ffff:(\d{1,3}(\.\d{1,3}){3})$/i, '$1');
   }
 
   __getClientIpFromXForwardedFor(str: string) {
