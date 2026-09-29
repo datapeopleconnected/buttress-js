@@ -184,23 +184,44 @@ export default class Bootstrap extends EventEmitter {
     Logging.logSilly(`Unhandled message from Worker [${idx}]: ${JSON.stringify(message)}`);
   }
 
+  /**
+   * Sends a worker a message, and the handle with it. A connection handed to a worker that has gone is closed, so the
+   * client isn't left waiting on it.
+   */
   async notifyWorker(idx: number, payload: LocalProcessMessage, handle?: net.Socket) {
-    if (this.workers[idx]) {
-      Logging.logDebug(`notifying Worker ${idx} of ${payload.type}`);
-      this.workers[idx].worker.send(payload, handle);
-    } else {
-      Logging.logWarn(`Attempted to notify Worker ${idx} of ${payload.type}, but it does not exist`);
-    }
+    if (!this._sendToWorker(idx, payload, handle)) handle?.destroy();
   }
 
   async notifyWorkers(payload: LocalProcessMessage, handle?: net.Socket) {
     if (this.workerProcesses > 0) {
       Logging.logDebug(`notifying ${this.workers.length} Workers of ${payload.type}`);
-      this.workers.forEach((w) => w.worker.send(payload, handle));
+      this.workers.forEach((_holder, idx) => this._sendToWorker(idx, payload, handle));
     } else {
       Logging.logSilly(`single instance mode notification`);
       await this._handleMessageFromMain(payload, handle);
     }
+  }
+
+  /**
+   * Skips a worker that has exited or is exiting, as sending to it fails. Gives whether the message was sent.
+   */
+  private _sendToWorker(idx: number, payload: LocalProcessMessage, handle?: net.Socket) {
+    const holder = this.workers[idx];
+    if (!holder) {
+      Logging.logWarn(`Attempted to notify Worker ${idx} of ${payload.type}, but it does not exist`);
+      return false;
+    }
+    if (!holder.worker.isConnected()) {
+      Logging.logWarn(`Attempted to notify Worker ${idx} of ${payload.type}, but it has disconnected`);
+      return false;
+    }
+
+    Logging.logDebug(`notifying Worker ${idx} of ${payload.type}`);
+    // Without a callback, a failed send is emitted as an 'error' event instead
+    holder.worker.send(payload, handle, (err: Error | null) => {
+      if (err) Logging.logError(`Failed to notify Worker ${idx} of ${payload.type}: ${err.message}`);
+    });
+    return true;
   }
 
   protected async __spawnWorkers() {
@@ -212,11 +233,7 @@ export default class Bootstrap extends EventEmitter {
     Logging.logVerbose(`Spawning ${this.workerProcesses} Workers`);
 
     for (let x = 0; x < this.workerProcesses; x++) {
-      this.workers[x] = {
-        initiated: false,
-        worker: cluster.fork(),
-      };
-      this.workers[x].worker.on('message', (message: LocalProcessMessage) => this._handleMessageFromWorker(x, message));
+      this._forkWorker(x);
     }
 
     return new Promise((resolve) => {
@@ -224,6 +241,34 @@ export default class Bootstrap extends EventEmitter {
       // this will be checked and called when all workers have sent the initiated message
       this._resolveWorkersInitialised = resolve;
     });
+  }
+
+  private _forkWorker(idx: number) {
+    const worker = cluster.fork();
+    this.workers[idx] = { initiated: false, worker };
+
+    worker.on('message', (message: LocalProcessMessage) => this._handleMessageFromWorker(idx, message));
+    worker.on('error', (err: Error) => Logging.logError(`Worker ${idx}: ${err.message}`));
+    worker.once('exit', (code: number | null, signal: string | null) =>
+      this._handleWorkerExit(idx, worker, code, signal),
+    );
+  }
+
+  /**
+   * Replaces a worker that exits while the process is running, so the process keeps serving with its full count. One
+   * that exits before it's finished starting isn't replaced, as its replacement would most likely fail the same way.
+   */
+  private _handleWorkerExit(idx: number, worker: Worker, code: number | null, signal: string | null) {
+    if (this.__shutdown || this.workers[idx]?.worker !== worker) return;
+
+    const reason = signal ? `signal ${signal}` : `code ${code}`;
+    if (!this.workers[idx].initiated) {
+      Logging.logError(`Worker ${idx} exited with ${reason} before it finished starting, so it won't be replaced`);
+      return;
+    }
+
+    Logging.logError(`Worker ${idx} exited with ${reason}, replacing it`);
+    this._forkWorker(idx);
   }
 
   protected async __stopWorkers() {

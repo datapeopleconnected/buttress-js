@@ -17,13 +17,17 @@ import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import EventEmitter from 'node:events';
 import sinon from 'sinon';
+import cluster from 'node:cluster';
 
 import Bootstrap from '../../../dist/bootstrap.js';
+import Logging from '../../../dist/helpers/logging.js';
 
 // A stand-in for a cluster worker, which the tests make exit by emitting 'exit'
-function createWorker({ dead = false } = {}) {
+function createWorker({ dead = false, connected = !dead } = {}) {
   const worker = new EventEmitter();
   worker.isDead = () => dead;
+  worker.isConnected = () => connected;
+  worker.send = sinon.spy();
   worker.process = { kill: sinon.spy() };
   return worker;
 }
@@ -136,5 +140,129 @@ describe('bootstrap:shutdownOnSignals', () => {
 
     await clock.tickAsync(1);
     assert.ok(exit.calledOnceWith(1));
+  });
+});
+
+describe('bootstrap:notifyWorkers', () => {
+  const payload = { type: 'app-routes:bust-cache', payload: {} };
+
+  function createBootstrap(workers) {
+    const bootstrap = new Bootstrap();
+    bootstrap.workerProcesses = workers.length;
+    bootstrap.workers = workers.map((worker) => ({ initiated: true, worker }));
+    return bootstrap;
+  }
+
+  it('skips a worker that has exited, and still notifies the others', async () => {
+    sinon.stub(Logging, 'logWarn');
+    const workers = [createWorker(), createWorker({ dead: true }), createWorker()];
+
+    await createBootstrap(workers).notifyWorkers(payload);
+
+    assert.strictEqual(workers[1].send.called, false);
+    assert.ok(workers[0].send.calledOnceWith(payload));
+    assert.ok(workers[2].send.calledOnceWith(payload));
+  });
+
+  it('skips a worker that is still running but has disconnected', async () => {
+    sinon.stub(Logging, 'logWarn');
+    const worker = createWorker({ connected: false });
+
+    await createBootstrap([worker]).notifyWorkers(payload);
+
+    assert.strictEqual(worker.send.called, false);
+  });
+
+  it('logs a failed send rather than letting it be emitted as an error', async () => {
+    const logError = sinon.stub(Logging, 'logError');
+    const worker = createWorker();
+
+    await createBootstrap([worker]).notifyWorkers(payload);
+    const callback = worker.send.firstCall.args.find((arg) => typeof arg === 'function');
+    callback(new Error('Channel closed'));
+
+    assert.ok(logError.calledOnce);
+    assert.match(logError.firstCall.args[0], /Channel closed/);
+  });
+});
+
+describe('bootstrap:notifyWorker', () => {
+  it('closes a connection meant for a worker that has exited', async () => {
+    sinon.stub(Logging, 'logWarn');
+    const worker = createWorker({ dead: true });
+    const bootstrap = new Bootstrap();
+    bootstrap.workers = [{ initiated: true, worker }];
+    const connection = { destroy: sinon.spy() };
+
+    await bootstrap.notifyWorker(0, { type: 'buttress:connection', payload: null }, connection);
+
+    assert.strictEqual(worker.send.called, false);
+    assert.ok(connection.destroy.calledOnce);
+  });
+});
+
+describe('bootstrap:worker exit', () => {
+  // Spawns the workers with cluster.fork stubbed, giving the fake workers in the order they were forked
+  function spawn(workerProcesses) {
+    const forked = [];
+    sinon.stub(cluster, 'fork').callsFake(() => {
+      const worker = createWorker();
+      forked.push(worker);
+      return worker;
+    });
+    const bootstrap = new Bootstrap();
+    bootstrap.workerProcesses = workerProcesses;
+    bootstrap.__spawnWorkers();
+    return { bootstrap, forked };
+  }
+
+  function initiate(forked) {
+    forked.forEach((worker) => worker.emit('message', { type: 'worker:initiated', payload: null }));
+  }
+
+  it('replaces a worker that exits while the process is running', () => {
+    sinon.stub(Logging, 'logError');
+    const { bootstrap, forked } = spawn(2);
+    initiate(forked);
+
+    forked[1].emit('exit', 1, null);
+
+    assert.strictEqual(forked.length, 3);
+    assert.strictEqual(bootstrap.workers[1].worker, forked[2]);
+    assert.strictEqual(bootstrap.workers[0].worker, forked[0]);
+
+    // The replacement is notified like any other worker
+    bootstrap.notifyWorkers({ type: 'app-routes:bust-cache', payload: {} });
+    assert.ok(forked[2].send.calledOnce);
+  });
+
+  it("doesn't replace a worker that exits while shutting down", async () => {
+    const { bootstrap, forked } = spawn(1);
+    initiate(forked);
+
+    const cleaning = bootstrap.clean();
+    forked[0].emit('exit', 0, 'SIGTERM');
+    await cleaning;
+
+    assert.strictEqual(forked.length, 1);
+  });
+
+  it("doesn't replace a worker that exits before it finished starting", () => {
+    const logError = sinon.stub(Logging, 'logError');
+    const { forked } = spawn(1);
+
+    forked[0].emit('exit', 1, null);
+
+    assert.strictEqual(forked.length, 1);
+    assert.match(logError.firstCall.args[0], /before it finished starting/);
+  });
+
+  it('logs an error a worker emits', () => {
+    const logError = sinon.stub(Logging, 'logError');
+    const { forked } = spawn(1);
+
+    forked[0].emit('error', new Error('Channel closed'));
+
+    assert.match(logError.firstCall.args[0], /Channel closed/);
   });
 });

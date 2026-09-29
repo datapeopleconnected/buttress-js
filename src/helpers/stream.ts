@@ -80,6 +80,8 @@ export class SortedStreams<T = unknown> extends Readable {
     this._sources.forEach((holder, idx) => {
       holder.source.on('data', (chunk: T) => this._handleSourceChunk(chunk, idx));
       holder.source.on('end', () => this._handleSourceEnd(holder));
+      // A source's error fails the combined stream, rather than going unheard and bringing the process down
+      holder.source.on('error', (err: Error) => this.destroy(err));
       if (holder.source.isPaused()) holder.source.resume();
     });
   }
@@ -91,12 +93,14 @@ export class SortedStreams<T = unknown> extends Readable {
     this._tryToSendIt();
   }
 
-  override _destroy() {
+  override _destroy(err: Error | null, callback: (error?: Error | null) => void) {
     this._sources.forEach((holder) => {
       holder.source.destroy();
     });
 
     this._queue = [];
+
+    callback(err);
   }
 
   _tryToSendIt() {

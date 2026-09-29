@@ -32,6 +32,11 @@ Node `cluster`-based primary/worker model:
    Redis — e.g. REST's primary tells workers to regenerate app routes after a schema change
    (`app-schema:updated` → `notifyWorkers`), and Socket's primary hands off raw TCP connections to a
    worker via `notifyWorker(idx, payload, connection)` using IP-hash routing (`__indexFromIP`).
+   Both skip a worker that has exited or disconnected, rather than letting `worker.send()` fail with an
+   uncaught `Channel closed` error that takes the primary down; a connection meant for it is closed.
+   A worker that exits while the process is running is re-forked in the same slot. One that exits before
+   it sends `worker:initiated` isn't, as its replacement would most likely fail the same way. Workers keep
+   Node's default of exiting on an uncaught exception; `unhandledRejection` is only logged.
 5. `BUTTRESS_APP_WORKERS=0` runs "single instance mode" — `__spawnWorkers()` just calls
    `__initWorker()` directly in the primary process instead of forking.
 6. Shutdown — the entry scripts call `shutdownOnSignals()`, so SIGTERM/SIGINT runs `clean()` and then
