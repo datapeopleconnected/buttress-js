@@ -16,7 +16,9 @@
 
 import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
+import http from 'node:http';
 import sinon from 'sinon';
+import Express from 'express';
 
 import { RoutesMiddleware } from '../../../../dist/routes/middleware.js';
 import Logging from '../../../../dist/helpers/logging.js';
@@ -82,8 +84,7 @@ describe('routes/RoutesMiddleware:logErrors', () => {
 
     assert(res.status.calledWith(400));
     assert(res.json.calledWith({ statusMessage: 'invalid_input', message: 'invalid_input' }));
-    assert(res.end.calledOnce);
-    assert(next.calledWith(err));
+    assert(next.notCalled);
     assert(Logging.logError.notCalled);
   });
 
@@ -104,7 +105,91 @@ describe('routes/RoutesMiddleware:logErrors', () => {
     assert.strictEqual(body.message, 'Internal Server Error');
     assert.strictEqual(body.statusMessage, 'Internal Server Error');
     assert(!JSON.stringify(body).includes('ECONNREFUSED'));
-    assert(res.end.calledOnce);
+    assert(next.notCalled);
+  });
+
+  it('passes the error on without sending one when the response has already started', () => {
+    sinon.stub(Logging, 'logError');
+    const middleware = createMiddleware();
+    const req = createReq();
+    const res = { ...createRes(), headersSent: true };
+    const next = sinon.spy();
+    const err = new TypeError('stream failed');
+
+    middleware.logErrors(err, req, res, next);
+
+    assert(Logging.logError.calledWith(err, 'req-1'));
+    assert(res.status.notCalled);
+    assert(res.json.notCalled);
     assert(next.calledWith(err));
+  });
+
+  describe('over a keep-alive connection', () => {
+    let server = null;
+
+    afterEach(async () => {
+      if (server) await new Promise((resolve) => server.close(resolve));
+      server = null;
+    });
+
+    // An Express app with a route that fails and one that doesn't, using logErrors as its error handler, as the REST
+    // process does.
+    async function listen() {
+      const middleware = createMiddleware();
+      const app = Express();
+      app.use(Express.json());
+      app.use((req, res, next) => {
+        req.context = { id: 'req-1' };
+        next();
+      });
+      app.get('/missing', () => {
+        throw new Helpers.RequestError(404, 'not_found');
+      });
+      app.post('/add', (req, res) => res.json(req.body));
+      app.use((err, req, res, next) => middleware.logErrors(err, req, res, next));
+
+      server = await new Promise((resolve) => {
+        const s = app.listen(0, () => resolve(s));
+      });
+      return server.address().port;
+    }
+
+    function request(agent, port, method, path, body) {
+      return new Promise((resolve, reject) => {
+        const req = http.request(
+          { agent, port, method, path, headers: { 'Content-Type': 'application/json' } },
+          (res) => {
+            let data = '';
+            res.on('data', (chunk) => (data += chunk));
+            res.on('end', () =>
+              resolve({ status: res.statusCode, headers: res.headers, body: data, socket: req.socket }),
+            );
+          },
+        );
+        req.on('error', reject);
+        req.end(body ? JSON.stringify(body) : undefined);
+      });
+    }
+
+    it('leaves the connection open for the next request after an error', async () => {
+      const port = await listen();
+      const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+
+      try {
+        const failed = await request(agent, port, 'GET', '/missing');
+        assert.strictEqual(failed.status, 404);
+        assert.notStrictEqual(failed.headers.connection, 'close');
+
+        // Wait for the server to act on the finished request, so a socket it closes is seen as closed
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        const added = await request(agent, port, 'POST', '/add', { name: 'after-error' });
+        assert.strictEqual(added.status, 200);
+        assert.deepStrictEqual(JSON.parse(added.body), { name: 'after-error' });
+        assert.strictEqual(added.socket, failed.socket, 'the POST should reuse the connection of the failed request');
+      } finally {
+        agent.destroy();
+      }
+    });
   });
 });

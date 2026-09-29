@@ -438,20 +438,28 @@ export class RoutesMiddleware {
     next();
   }
 
+  /**
+   * Sends the error response. The error isn't passed on once it's sent, as Express's final handler destroys the
+   * socket of a request whose response has started, and a client reusing the keep-alive connection would have its
+   * next request fail.
+   */
   logErrors(err: unknown, req: Request, res: Response, next: NextFunction) {
     Logging.logSilly(`logErrors ${err}`);
-    if (err instanceof Helpers.Errors.RequestError) {
+    const isRequestError = err instanceof Helpers.Errors.RequestError;
+    if (err && !isRequestError) {
+      Logging.logError(err, req.context.id);
+    }
+
+    // Part of the response has already gone, so the error can't be sent. Destroying the socket is how the client
+    // learns the response is incomplete.
+    if (res.headersSent) return next(err);
+
+    if (isRequestError) {
       res.status(err.code).json({ statusMessage: err.message, message: err.message });
     } else {
-      if (err) {
-        Logging.logError(err, req.context.id);
-      }
       // Unhandled errors (DB drivers, etc.) may carry sensitive details, so only a generic message is sent.
       res.status(500).json({ statusMessage: 'Internal Server Error', message: 'Internal Server Error' });
     }
-
-    res.end();
-    next(err);
   }
 }
 
