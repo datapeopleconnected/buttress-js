@@ -801,6 +801,13 @@ export default class Route {
           ),
         );
       }
+      // An app's routes act on that app's data, so only its own tokens and system tokens can call them
+      const tokenIsSystem = req.context.token.type === TokenSchemaModel.Constants.Type.SYSTEM;
+      if (this.appId && !tokenIsSystem && req.context.authApp?.id !== this.appId) {
+        this.log(`EAUTH: TOKEN IS NOT FOR THIS APP`, Logging.Constants.LogLevel.ERR, req.context.id);
+        return reject(new Helpers.Errors.RequestError(401, 'insufficient_authority'));
+      }
+
       /**
        * @description Route:
        *  '*' - all routes (SUPER)

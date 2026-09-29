@@ -25,6 +25,7 @@ import {
 	createPolicyUser,
 	registerDataSharing,
 	updatePolicyPropertyList,
+	updateSchema,
 	bjsReq,
 	bjsReqPost,
 	deleteApp,
@@ -129,6 +130,18 @@ describe('Core route tenant scoping', async () => {
 			remoteApp: { endpoint: ENDPOINT.REST, ws: ENDPOINT.SOCK, apiPath: testEnv.apps.app1.apiPath, token: null },
 			policyConfig: [{ verbs: ['%ALL%'], schema: ['%ALL%'], query: { access: '%FULL_ACCESS%' } }],
 		}, testEnv.apps.app2.token), scope);
+
+		// Both apps have a note collection, and app2 has a note in it
+		for (const app of ['app1', 'app2']) {
+			await runStep(`add the note schema to ${app}`, async () => updateSchema(ENDPOINT.REST, [{
+				name: 'note',
+				type: 'collection',
+				properties: { text: { __type: 'string', __default: null, __required: true, __allowUpdate: true } },
+			}], testEnv.apps[app].token), scope);
+		}
+		[owned.note] = await runStep('add app2 note', async () =>
+			bjsReqPost(`${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note`, { text: 'app2 note' }, testEnv.apps.app2.token)
+		, scope);
 	});
 
 	after(async function () {
@@ -308,6 +321,57 @@ describe('Core route tenant scoping', async () => {
 
 			const agreement = await asApp2({ url: api(`app-data-sharing/${owned.agreement.id}`), method: 'GET' });
 			assert.strictEqual(agreement.name, 'tenant-scoping-agreement');
+		});
+	});
+	describe("App routes refuse another app's token", () => {
+		const notes = (path = '') => `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note${path}`;
+		const json = { 'Content-Type': 'application/json' };
+		const asApp1 = (opts) => bjsReq(opts, testEnv.apps.app1.token);
+
+		const appRoutes = [
+			['GET note', () => ({ url: notes(), method: 'GET' })],
+			['GET note/:id', () => ({ url: notes(`/${owned.note.id}`), method: 'GET' })],
+			['SEARCH note', () => ({ url: notes(), method: 'SEARCH', headers: json, body: '{}' })],
+			['SEARCH note/count', () => ({ url: notes('/count'), method: 'SEARCH', headers: json, body: '{}' })],
+			['SEARCH note/bulk/load', () => ({
+				url: notes('/bulk/load'), method: 'SEARCH', headers: json, body: JSON.stringify([owned.note.id]),
+			})],
+			['POST note', () => ({ url: notes(), method: 'POST', headers: json, body: JSON.stringify({ text: 'by app1' }) })],
+			['POST note/bulk/add', () => ({
+				url: notes('/bulk/add'), method: 'POST', headers: json, body: JSON.stringify([{ text: 'by app1' }]),
+			})],
+			['PUT note/:id', () => ({
+				url: notes(`/${owned.note.id}`), method: 'PUT', headers: json,
+				body: JSON.stringify([{ path: 'text', value: 'by app1' }]),
+			})],
+			['POST note/bulk/update', () => ({
+				url: notes('/bulk/update'), method: 'POST', headers: json,
+				body: JSON.stringify([{ id: owned.note.id, body: [{ path: 'text', value: 'by app1' }] }]),
+			})],
+			['DELETE note/:id', () => ({ url: notes(`/${owned.note.id}`), method: 'DELETE' })],
+			['POST note/bulk/delete', () => ({
+				url: notes('/bulk/delete'), method: 'POST', headers: json, body: JSON.stringify([owned.note.id]),
+			})],
+			['DELETE note', () => ({ url: notes(), method: 'DELETE' })],
+		];
+
+		for (const [name, request] of appRoutes) {
+			it(`Should refuse ${name}`, async () => {
+				await assert.rejects(asApp1(request()), (err) => {
+					assert.ok(err instanceof BJSReqError, err);
+					assert.strictEqual(err.code, 401, `answered ${err.code} ${err.message}`);
+					assert.strictEqual(err.message, 'insufficient_authority');
+					return true;
+				});
+			});
+		}
+
+		it("Should leave app2's notes unchanged, and still serve them to app2 and system tokens", async () => {
+			const expected = [{ id: owned.note.id, text: 'app2 note' }];
+			const summary = (list) => list.map(({ id, text }) => ({ id, text }));
+
+			assert.deepStrictEqual(summary(await bjsReq({ url: notes(), method: 'GET' }, testEnv.apps.app2.token)), expected);
+			assert.deepStrictEqual(summary(await bjsReq({ url: notes(), method: 'GET' })), expected);
 		});
 	});
 });

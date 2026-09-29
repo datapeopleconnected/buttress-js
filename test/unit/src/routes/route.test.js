@@ -200,6 +200,29 @@ describe('routes/Route:_authenticate', () => {
     assert.strictEqual(result.type, 'dataSharing');
   });
 
+  it("refuses a token from another app on an app's route, other than a system token", async () => {
+    const route = createRoute({ app: { id: 'app-2' } });
+
+    for (const type of ['app', 'user', 'lambda', 'dataSharing']) {
+      const req = createReq({ token: { type }, authApp: { id: 'app-1' } });
+      await assert.rejects(
+        () => route._authenticate(req, createRes()),
+        (err) => err.code === 401 && err.message === 'insufficient_authority',
+        type,
+      );
+    }
+
+    const req = createReq({ token: { type: 'system' }, authApp: { id: 'app-1' } });
+    assert.strictEqual((await route._authenticate(req, createRes())).type, 'system');
+  });
+
+  it("allows another app's token on a core route, which has no app", async () => {
+    const route = createRoute({ app: null });
+    const req = createReq({ token: { type: 'app' }, authApp: { id: 'app-1' } });
+
+    assert.strictEqual((await route._authenticate(req, createRes())).type, 'app');
+  });
+
   it('resolves for a regular user token with sufficient authority', async () => {
     const route = createRoute();
     const req = createReq({ token: { type: 'user' } });
