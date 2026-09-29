@@ -686,6 +686,23 @@ describe('services/policy-cache: invalidating a policy', () => {
     assert.deepStrictEqual(found.map((p) => p.id), ['p1']);
   });
 
+  it("takes a policy off a token whose stored properties no longer select it, once it's reselected", async () => {
+    db.tokens = [{ ...admin, policyProperties: {} }];
+
+    await cache.reselectToken(admin.id);
+
+    assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
+    assert.deepStrictEqual(await Redis.sMembers(K(`token:${admin.id}:policies`)), []);
+  });
+
+  it("forgets a token's policies when it's reselected after being deleted", async () => {
+    db.tokens = [];
+
+    await cache.reselectToken(admin.id);
+
+    assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
+  });
+
   it("takes a deleted policy off every token and every schema lookup", async () => {
     db.policies = [];
     await cache.removePolicy('p1');

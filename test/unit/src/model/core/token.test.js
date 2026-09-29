@@ -26,7 +26,7 @@ function createModel({ policyCache } = {}) {
   const services = new Map([
     ['nrp', nrp],
     ['modelManager', {}],
-    ['policyCache', policyCache || { setTokenIdAsStale: sinon.stub().resolves() }],
+    ['policyCache', policyCache || { setTokenIdAsStale: sinon.stub().resolves(), reselectToken: sinon.stub().resolves() }],
   ]);
   const model = new TokenSchemaModel(services);
   model.adapter = {
@@ -116,7 +116,7 @@ describe('model/core/TokenSchemaModel:findUserAuthTokens/findByValue', () => {
 
 describe('model/core/TokenSchemaModel:setPolicyPropertiesById', () => {
   it('persists the policy properties, busts the policy cache, and notifies routes', async () => {
-    const policyCache = { setTokenIdAsStale: sinon.stub().resolves() };
+    const policyCache = { setTokenIdAsStale: sinon.stub().resolves(), reselectToken: sinon.stub().resolves() };
     const { model, nrp } = createModel({ policyCache });
 
     await model.setPolicyPropertiesById('token-1', { role: 'admin' });
@@ -126,6 +126,7 @@ describe('model/core/TokenSchemaModel:setPolicyPropertiesById', () => {
     assert.deepStrictEqual(id, { id: 'token-1' });
     assert.deepStrictEqual(update, { $set: { policyProperties: { role: 'admin' } } });
     assert.ok(policyCache.setTokenIdAsStale.calledWith('token-1'));
+    assert.ok(policyCache.reselectToken.calledWith('token-1'));
     assert.ok(nrp.emit.calledWith('app-routes:bust-cache', '{}'));
   });
 
@@ -141,7 +142,7 @@ describe('model/core/TokenSchemaModel:setPolicyPropertiesById', () => {
 
 describe('model/core/TokenSchemaModel:updatePolicyProperties', () => {
   it('merges new policy properties on top of the existing ones', async () => {
-    const policyCache = { setTokenIdAsStale: sinon.stub().resolves() };
+    const policyCache = { setTokenIdAsStale: sinon.stub().resolves(), reselectToken: sinon.stub().resolves() };
     const { model, nrp } = createModel({ policyCache });
     const token = { id: 'token-1', policyProperties: { role: 'user', department: 'sales' } };
 
@@ -151,6 +152,7 @@ describe('model/core/TokenSchemaModel:updatePolicyProperties', () => {
     assert.deepStrictEqual(id, { id: 'token-1' });
     assert.deepStrictEqual(update.$set.policyProperties, { role: 'admin', department: 'sales' });
     assert.ok(policyCache.setTokenIdAsStale.calledWith('token-1'));
+    assert.ok(policyCache.reselectToken.calledWith('token-1'));
     assert.ok(nrp.emit.calledWith('app-routes:bust-cache', '{}'));
   });
 
@@ -177,7 +179,7 @@ describe('model/core/TokenSchemaModel:updatePolicyProperties', () => {
 
 describe('model/core/TokenSchemaModel:clearPolicyPropertiesById', () => {
   it('clears the policy properties, busts the policy cache, and notifies routes', async () => {
-    const policyCache = { setTokenIdAsStale: sinon.stub().resolves() };
+    const policyCache = { setTokenIdAsStale: sinon.stub().resolves(), reselectToken: sinon.stub().resolves() };
     const { model, nrp } = createModel({ policyCache });
 
     await model.clearPolicyPropertiesById('token-1');
@@ -186,6 +188,7 @@ describe('model/core/TokenSchemaModel:clearPolicyPropertiesById', () => {
     assert.deepStrictEqual(id, { id: 'token-1' });
     assert.deepStrictEqual(update, { $set: { policyProperties: {} } });
     assert.ok(policyCache.setTokenIdAsStale.calledWith('token-1'));
+    assert.ok(policyCache.reselectToken.calledWith('token-1'));
     assert.ok(nrp.emit.calledWith('app-routes:bust-cache', '{}'));
   });
 });
@@ -275,4 +278,25 @@ describe('model/core/TokenSchemaModel:updateById', () => {
 
     assert.strictEqual(nrp.emit.withArgs('app-routes:bust-cache').callCount, 1);
   });
+});
+
+describe('model/core/TokenSchemaModel: policy properties reach the policy cache', () => {
+  for (const [method, args] of [
+    ['setPolicyPropertiesById', ['token-1', { role: 'user' }]],
+    ['updatePolicyProperties', [{ id: 'token-1', policyProperties: { role: 'admin' } }, { role: 'user' }]],
+    ['clearPolicyPropertiesById', ['token-1']],
+  ]) {
+    it(`${method} works the token's policies out again before it resolves`, async () => {
+      const reselected = [];
+      const policyCache = {
+        setTokenIdAsStale: sinon.stub().resolves(),
+        reselectToken: (id) => new Promise((resolve) => setTimeout(() => resolve(reselected.push(id)), 5)),
+      };
+      const { model } = createModel({ policyCache });
+
+      await model[method](...args);
+
+      assert.deepStrictEqual(reselected, ['token-1']);
+    });
+  }
 });

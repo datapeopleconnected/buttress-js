@@ -579,3 +579,26 @@ describe('bootstrap-spr: deleted tokens', () => {
     assert.deepStrictEqual(removed, ['token-1', 'token-2']);
   });
 });
+
+describe('bootstrap-spr: socket connections', () => {
+  afterEach(() => sinon.restore());
+
+  it("works out a token's policies on every connection, even one already connected, before renewing it", async () => {
+    const spr = new BootstrapSocketPolicyRouter();
+    const token = { id: new ObjectId(), type: 'user' };
+    const calls = [];
+    spr._policyCache = {
+      isTokenConnected: async () => true,
+      getPoliciesByToken: async (t) => calls.push(['getPoliciesByToken', t.id.toString()]),
+      addConnectedToken: async (id) => calls.push(['addConnectedToken', id]),
+    };
+    sinon.stub(Model, 'getCoreModel').returns({ findOne: async () => token });
+
+    await spr._socketConnection(token.id.toString());
+
+    assert.deepStrictEqual(calls, [
+      ['getPoliciesByToken', token.id.toString()],
+      ['addConnectedToken', token.id.toString()],
+    ]);
+  });
+});

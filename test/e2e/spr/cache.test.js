@@ -271,7 +271,7 @@ describe('Cache', async () => {
       }
     });
 
-    it('Should mark a Token as STALE if the policy properties change', async () => {
+    it("Should work a Token's policies out again when its policy properties change", async () => {
       const [token] = testEnv.users['cache-test-1'].tokens;
 
       // Check that the current token cache isn't already stale
@@ -286,9 +286,14 @@ describe('Cache', async () => {
         }, token.value, testEnv.apps.app1.token
       );
 
-      // The token cache should now be marked as STALE
+      // The token's policies are worked out again straight away, from its new properties
       const policyIdsAfter = await REDIS_CLIENT.sMembers(tokenPoliciesKey);
-      assert(policyIdsAfter.includes('STALE'), 'Token policies should be marked as STALE after properties change');
+      assert(!policyIdsAfter.includes('STALE'), 'Token policies should be worked out again, not left STALE');
+      assert.notDeepStrictEqual(policyIdsAfter.sort(), policyIdsBefore.sort(), 'Token policies should follow its new properties');
+      for (const policyId of policyIdsBefore.filter((id) => !policyIdsAfter.includes(id))) {
+        const tokenIds = await REDIS_CLIENT.sMembers(`${Config.redis.scope}policy:${policyId}:tokens`);
+        assert(!tokenIds.includes(token.id), `Policy ${policyId} should no longer list the token`);
+      }
 
       // Make any scucessful request to the API to trigger a cache refresh
       const cars = await bjsReq({

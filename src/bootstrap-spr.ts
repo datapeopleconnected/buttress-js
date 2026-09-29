@@ -210,20 +210,11 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
   }
 
   // Token is connected
-  // - Check to see if the token is already in the list of connected tokens, if it is early out
-  // - Otherwise we need to fetch the relevant policies from MongoDB and store them in redis for quick access
-  // - Any time a policy is changed in MongoDB, we need to update the redis cache
+  // - Its policies are looked up, from the cache, which works them out again if the token is stale or unknown. This is
+  //   done for a token that's already connected too, so a new socket never renews a connection without them.
+  // - It's added to, or its time renewed on, the list of connected tokens
   private async _socketConnection(tokenId: string) {
     if (!this._policyCache) throw new Error('No Policy Cache');
-
-    const connected = await this._policyCache.isTokenConnected(tokenId);
-
-    // If we're already connected no need to do anything further
-    if (connected) {
-      Logging.logDebug(`Token already connected: ${tokenId}`);
-      await this._policyCache.addConnectedToken(tokenId);
-      return;
-    }
 
     // Look up the token by ID
     const token = (await Model.getCoreModel(TokenSchemaModel).findOne({ id: tokenId })) as Token;

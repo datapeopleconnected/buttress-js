@@ -198,6 +198,25 @@ describe('Processing', async () => {
 		await futurePromise;
 	};
 
+	// Posts a car and collects every SPR activity for it until well after the SPR has handled it
+	const collectPostedCarActivity = async (name, userId, app) => {
+		let addedCar = null;
+		const received = [];
+		const unsubscribe = await NRP_INSTANCE.subscribe('spr:activity', async (data) => {
+			const json = JSON.parse(data);
+			if (addedCar && json.activity.schemaName === 'car' && json.activity.response.id === addedCar.id) received.push(json);
+		});
+		[addedCar] = await bjsReq({
+			url: `${ENDPOINT.REST}/${app.apiPath}/api/v1/car`,
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ name, userId, colour: 'red' }),
+		}, app.token);
+		await new Promise((r) => setTimeout(r, 1500));
+		await unsubscribe();
+		return received;
+	};
+
 	const populateTestEnvTokens = async () => {
 		const [systemToken] = await bjsReq({
 			url: `${ENDPOINT.REST}/api/v1/token`,
@@ -764,24 +783,36 @@ describe('Processing', async () => {
 			});
 			assert.strictEqual(read.status, 401);
 
-			// Collects every activity for the car until well after the SPR has handled it
-			let addedCar = null;
-			const received = [];
-			const unsubscribe = await NRP_INSTANCE.subscribe('spr:activity', async (data) => {
-				const json = JSON.parse(data);
-				if (addedCar && json.activity.schemaName === 'car' && json.activity.response.id === addedCar.id) received.push(json);
-			});
-			[addedCar] = await bjsReq({
-				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ name: ref, userId: user.id, colour: 'red' }),
-			}, testEnv.apps.app1.token);
-			await new Promise((r) => setTimeout(r, 1500));
-			await unsubscribe();
+			const received = await collectPostedCarActivity(ref, user.id, testEnv.apps.app1);
 
 			assert.ok(received.length > 0, 'the SPR should have sent the activity to some token');
 			assert.ok(!received.some((json) => json.tokens.includes(user.tokens[0].id)), 'the refused token was sent it');
+		});
+	});
+
+	describe('Revocation', () => {
+		it('Should stop sending a token activity once its policy properties no longer select the policy', async function () {
+			this.timeout(20000);
+
+			const ref = 'revoke-1';
+			testEnv.users[ref] = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, ref, { envTest: 1 });
+			await createUserSocket(ref);
+			await new Promise((r) => setTimeout(r, 500));
+			const user = testEnv.users[ref];
+			const tokenId = user.tokens[0].id;
+
+			await envAwaitPostedCar(ref, tokenId, user.id, testEnv.apps.app1);
+
+			await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user/${user.id}/clear-policy-property/${tokenId}`,
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: '{}',
+			}, testEnv.apps.app1.token);
+
+			const received = await collectPostedCarActivity(ref, user.id, testEnv.apps.app1);
+			assert.ok(received.length > 0, 'the SPR should have sent the activity to some token');
+			assert.ok(!received.some((json) => json.tokens.includes(tokenId)), 'the revoked token was sent it');
 		});
 	});
 

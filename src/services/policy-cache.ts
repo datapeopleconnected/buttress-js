@@ -356,12 +356,17 @@ export class PolicyCache {
     }
 
     for (const tokenId of linkedTokenIds) {
-      await this._reselectToken(tokenId);
+      await this.reselectToken(tokenId);
     }
   }
 
-  // Works out a token's policies again from the token as it's stored, or forgets it if it's gone
-  private async _reselectToken(tokenId: string) {
+  /**
+   * Works out a token's policies again from the token as it's stored, or forgets them if it's gone. Its links to
+   * policies are what the SPR sends activity by, so this is how a change to a token reaches realtime.
+   * @param {string} tokenId
+   * @return {Promise}
+   */
+  async reselectToken(tokenId: string) {
     const tokenModel = this._modelManager.getCoreModelByName('Token');
     const [token] = await Helpers.streamAll<Token>(tokenModel.find({ id: { $in: [tokenId] } }));
     if (!token) {

@@ -229,7 +229,7 @@ class TokenSchemaModel extends StandardModel<Token> {
 
     await super.updateById(this.createId(tokenId), { $set: { policyProperties: policyProperties } });
 
-    await this.__policyCache.setTokenIdAsStale(tokenId);
+    await this.__refreshTokenPolicies(tokenId);
     this.__nrp?.emit('app-routes:bust-cache', '{}');
   }
 
@@ -262,7 +262,7 @@ class TokenSchemaModel extends StandardModel<Token> {
       },
     });
 
-    await this.__policyCache.setTokenIdAsStale(token.id.toString());
+    await this.__refreshTokenPolicies(token.id.toString());
     this.__nrp?.emit('app-routes:bust-cache', '{}');
   }
 
@@ -277,8 +277,15 @@ class TokenSchemaModel extends StandardModel<Token> {
       },
     });
 
-    await this.__policyCache.setTokenIdAsStale(tokenId);
+    await this.__refreshTokenPolicies(tokenId);
     this.__nrp?.emit('app-routes:bust-cache', '{}');
+  }
+
+  // A token whose policy properties changed has its policies worked out again at once, so realtime stops (or starts)
+  // sending it activity by them. It's marked stale first, so REST works them out again if that fails.
+  private async __refreshTokenPolicies(tokenId: string) {
+    await this.__policyCache.setTokenIdAsStale(tokenId);
+    await this.__policyCache.reselectToken(tokenId);
   }
 
   // REST caches tokens in memory (routes/tokens.ts) and only reloads on a miss, so every delete has to bust that
