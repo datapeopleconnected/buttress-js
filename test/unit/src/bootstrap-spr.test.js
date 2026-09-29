@@ -268,6 +268,58 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		}
 	});
 
+	const scopedDeleteAll = (deleted, overrides = {}) =>
+		activity({
+			description: 'DELETE ALL car',
+			path: '/car',
+			pathSpec: 'car',
+			verb: 'delete',
+			response: deleted.map((car) => ({ id: car.id.toString() })),
+			deletedEntities: deleted.map(asSent),
+			...overrides,
+		});
+
+	it('relays a delete of every entity that policies limited as one delete-one activity per entity deleted', async () => {
+		const { spr, received } = createSPR({ storedCars: [] });
+
+		await spr._handleIncomingMessage(scopedDeleteAll([cars.owned, cars.notOwned]));
+
+		const ids = (...list) => list.map((car) => car.id.toString());
+		assert.deepStrictEqual(received(tokens.fullAccess).map((a) => a.params.id), ids(cars.owned, cars.notOwned));
+		assert.deepStrictEqual(received(tokens.ownRecords).map((a) => a.params.id), ids(cars.owned));
+		assert.deepStrictEqual(received(tokens.otherOwnRecords).map((a) => a.params.id), ids(cars.notOwned));
+
+		for (const a of received(tokens.fullAccess)) {
+			assert.strictEqual(a.verb, 'delete');
+			assert.strictEqual(a.path, `/car/${a.params.id}`);
+			assert.strictEqual(a.pathSpec, 'car/:id');
+			assert.strictEqual(a.response, true);
+			assert(!('deletedEntities' in a));
+		}
+	});
+
+	it('relays a delete of every entity that policies limited to system tokens as a delete of each, too', async () => {
+		const { spr, received } = createSPR({ storedCars: [] });
+
+		await spr._handleIncomingMessage(scopedDeleteAll([cars.owned], { isSuper: true, deletedEntities: undefined }));
+
+		assert.deepStrictEqual(
+			received(tokens.system).map((a) => [a.verb, a.path, a.params.id]),
+			[['delete', `/car/${cars.owned.id}`, cars.owned.id.toString()]],
+		);
+	});
+
+	it('relays nothing for a delete of every entity that policies limited to none', async () => {
+		const { spr, received } = createSPR({ storedCars: [] });
+
+		await spr._handleIncomingMessage(scopedDeleteAll([]));
+		await spr._handleIncomingMessage(scopedDeleteAll([], { isSuper: true, deletedEntities: undefined }));
+
+		for (const token of Object.values(tokens)) {
+			assert.deepStrictEqual(received(token), []);
+		}
+	});
+
 	it('relays a bulk delete as one delete-one activity per id, to the tokens that could read each entity', async () => {
 		const { spr, received } = createSPR({ storedCars: [] });
 

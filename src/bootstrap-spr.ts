@@ -266,6 +266,9 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
    * request would have produced. System tokens see everything, so their copy (isSuper) stays whole.
    */
   private __splitBulkActivity(activity: RESTActivity): RESTActivity[] {
+    const scopedDeleteAll = this.__splitScopedDeleteAllActivity(activity);
+    if (scopedDeleteAll) return scopedDeleteAll;
+
     if (activity.isSuper || activity.verb !== 'post' || !Array.isArray(activity.response)) return [activity];
 
     const bulkPath = [BULK_UPDATE_PATH, BULK_DELETE_PATH].find((suffix) => activity.pathSpec?.endsWith(suffix));
@@ -287,6 +290,36 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       // Refused updates carry `results: null`, nothing changed for them.
       if (!Array.isArray(item.results)) return [];
       return [{ ...entityActivity, verb: 'put', response: item.results }];
+    });
+  }
+
+  /**
+   * A delete of every entity that the caller's policies limited names the entities it deleted, and the rest are still
+   * there. Relayed whole, it would tell a client to drop them all, so each becomes the activity a delete-one request
+   * would have produced, for system tokens too. Returns null for any other activity.
+   */
+  private __splitScopedDeleteAllActivity(activity: RESTActivity): RESTActivity[] | null {
+    const params = activity.params as Record<string, unknown> | undefined;
+    if (activity.verb !== 'delete' || params?.id || !Array.isArray(activity.response)) return null;
+
+    const pathSpec = `${activity.pathSpec.replace(/\/$/, '')}/:id`;
+    const routePath = activity.path.replace(/\/$/, '');
+
+    return activity.response.flatMap((entry): RESTActivity[] => {
+      const item = entry as { id?: string } | null;
+      if (!item?.id) return [];
+
+      const deletedEntities = activity.deletedEntities?.filter((entity) => String(entity.id) === String(item.id));
+      return [
+        {
+          ...activity,
+          path: `${routePath}/${item.id}`,
+          pathSpec,
+          params: { id: item.id },
+          response: true,
+          deletedEntities,
+        },
+      ];
     });
   }
 
@@ -471,8 +504,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     activityMetadata: ActivityMetadata,
   ): Promise<false | RESTActivity> {
     if (!entity && activity.verb === 'delete') {
-      // A delete of every entity names none, so there's nothing to check the query against, and the delete goes to every
-      // token the policy reaches. The caller sends it, once to each token.
+      // A delete of every entity, which no policy limited, names none, so there's nothing to check the query against, and
+      // the delete goes to every token the policy reaches. The caller sends it, once to each token.
       if (!(activity.params as Record<string, unknown>)?.id) {
         Logging.logTimer(
           `_handleIncomingMessage::end-no-entity-deletion`,

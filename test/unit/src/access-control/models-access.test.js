@@ -125,3 +125,23 @@ describe('access-control/models-access:find', () => {
     assert.ok(streams.one.destroyed, "the other policy's find should be destroyed");
   });
 });
+
+describe('access-control/models-access:reachesEveryEntity', () => {
+  it('is true when there are no policy configs, as for a system token', () => {
+    assert.strictEqual(ACM.reachesEveryEntity({ policyConfigs: [] }), true);
+  });
+
+  it('is true when any policy config has no query, as a built %FULL_ACCESS% query has none', () => {
+    assert.strictEqual(ACM.reachesEveryEntity({ policyConfigs: [{ query: { owner: 'alice' } }, { query: {} }] }), true);
+    assert.strictEqual(ACM.reachesEveryEntity({ policyConfigs: [{ query: null }] }), true);
+  });
+
+  it('is true for a config that only restricts fields', () => {
+    assert.strictEqual(ACM.reachesEveryEntity({ policyConfigs: [{ query: {}, projection: { keys: ['name'] } }] }), true);
+  });
+
+  it('is false when every policy config has a query', () => {
+    const policyConfigs = [{ query: { owner: 'alice' } }, { query: { shared: { $eq: true } } }];
+    assert.strictEqual(ACM.reachesEveryEntity({ policyConfigs }), false);
+  });
+});

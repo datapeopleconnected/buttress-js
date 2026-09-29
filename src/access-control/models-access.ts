@@ -123,6 +123,16 @@ export async function count<T extends StandardModel<unknown>>(
   return model.count(model.parseQuery(combined.query));
 }
 
+/**
+ * Whether the caller's policies let it reach every entity, so a query needs no access-control filter. A system token
+ * has no policy configs, and a `%FULL_ACCESS%` query is built down to `{}`. The configs are alternatives, so one
+ * without a query is enough. Projections only limit which fields can be read, not which entities.
+ */
+export function reachesEveryEntity(ac: { policyConfigs: parsedPolicyConfig[] }) {
+  if (ac.policyConfigs.length < 1) return true;
+  return ac.policyConfigs.some((policyConfig) => !policyConfig.query || Object.keys(policyConfig.query).length < 1);
+}
+
 export async function combineQueriesWithAc(raw: QueryParams<object>, policyConfig: PolicyConfig & { appId: string }) {
   const query: QueryParams<object> = {
     query: raw.query,

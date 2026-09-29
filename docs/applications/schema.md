@@ -178,6 +178,8 @@ The response is a 200 whenever the request itself is well formed. The `x-bulk-re
 
 `POST <schema>/bulk/add` and `POST <schema>/bulk/delete` are all or nothing. `bulk/add` stores nothing unless every entity is valid and none reuses an id, whether another entity's in the request or one already stored; the 400 names the index of the first entity that fails, for example `car: Missing field: name at index 3`. An array sent to `POST <schema>` is stored and checked in the same way. `bulk/delete` deletes nothing unless every id exists and is in the caller's scope, and responds `true`.
 
+`DELETE <schema>` deletes every entity in the caller's scope and responds `true`. A system token, or a token with a `%FULL_ACCESS%` policy, empties the collection, and realtime clients get a single delete with no id. For any other token, the entities its policies' queries don't select are left alone, and realtime clients get a delete for each entity removed, as `DELETE <schema>/:id` would send.
+
 ## Managing Schemas
 Schemas can be updated, extended, or deleted using the ButtressJS API. The `Schema` class provides methods for merging, validating, and encoding schemas.
 

@@ -72,6 +72,11 @@ Runs only in the SPR primary process, triggered by the `rest:activity` NRP event
 it exists because by the time this runs, the write already happened and the question is purely "who
 should be told":
 
+`__splitBulkActivity` first turns a bulk update/delete, and a delete-all that the caller's policies limited (its
+`response` lists the deleted ids), into one by-id activity per entity. A deleted entity can't be loaded, so the REST
+route sends it along as it was, in `deletedEntities` (`Route._keepEntitiesBeingDeleted`). A limited delete-all is split
+for system tokens (`isSuper`) too: sent whole, it would clear entities that still exist. Then, for each activity:
+
 1. Loads the mutated entity by id (unless it's a delete with no entity).
 2. `isSuper` activities (from the super/system app) broadcast to every `system`-type token unconditionally.
 3. Otherwise, `PolicyCache.getPoliciesByRestActivity()` finds candidate policies for the schema/app, then
