@@ -104,7 +104,12 @@ class Routes {
     this._nrp = services.get('nrp') as NRP;
     if (!this._nrp) throw new Error('Routes: NRP not found in services');
 
-    this._lambdaSetupHelper = new RoutesLambdaSetup(this.app, this._nrp, this._preRouteMiddleware);
+    this._lambdaSetupHelper = new RoutesLambdaSetup(
+      this.app,
+      this._nrp,
+      this._preRouteMiddleware,
+      (err, req, res, next) => this.logErrors(err, req, res, next),
+    );
     this._middlewareHelper = new RoutesMiddleware(this._routerMap, this._tokensHelper);
 
     this._nrp?.on('rest:worker:app-deleted', (json: string) => {

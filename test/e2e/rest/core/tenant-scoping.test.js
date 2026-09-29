@@ -119,6 +119,23 @@ describe('Core route tenant scoping', async () => {
 			policyProperties: { lambda: 'TEST_ACCESS' },
 		}, testEnv.apps.app2.token), scope);
 
+		owned.privateLambda = await runStep('create app2 private lambda', async () => createLambda(ENDPOINT.REST, {
+			name: 'tenant-scoping-private',
+			type: 'PRIVATE',
+			git: {
+				url: Config.paths.root,
+				branch: 'develop',
+				hash: 'HEAD',
+				entryFile: 'test/data/lambda/hello-world.cjs',
+				entryPoint: 'execute',
+			},
+			trigger: [{ type: 'API_ENDPOINT', apiEndpoint: { method: 'GET', url: 'tenant-scoping/private', type: 'ASYNC' } }],
+		}, {
+			domains: ['localhost'],
+			permissions: [{ route: '*', permission: '*' }],
+			policyProperties: { lambda: 'TEST_ACCESS' },
+		}, testEnv.apps.app2.token), scope);
+
 		owned.execution = await runStep('schedule app2 lambda execution', async () =>
 			bjsReqPost(`${ENDPOINT.REST}/api/v1/lambda/${owned.lambda.id}/schedule`, {
 				executeAfter: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -372,6 +389,38 @@ describe('Core route tenant scoping', async () => {
 
 			assert.deepStrictEqual(summary(await bjsReq({ url: notes(), method: 'GET' }, testEnv.apps.app2.token)), expected);
 			assert.deepStrictEqual(summary(await bjsReq({ url: notes(), method: 'GET' })), expected);
+		});
+	});
+	describe('PRIVATE lambda endpoints take only their own app\'s tokens', () => {
+		const endpoint = () => `${ENDPOINT.REST}/lambda/v1/${testEnv.apps.app2.apiPath}/tenant-scoping/private`;
+		const call = (token) => fetch(endpoint(), { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+
+		it("Should refuse another app's token", async () => {
+			const res = await call(testEnv.apps.app1.token);
+
+			assert.strictEqual(res.status, 401);
+			assert.strictEqual((await res.json()).message, 'insufficient_authority');
+		});
+
+		it("Should refuse another app's user token", async () => {
+			const res = await call(testEnv.users.app1.tokens[0].value);
+
+			assert.strictEqual(res.status, 401);
+		});
+
+		it('Should refuse a request with no token', async () => {
+			const res = await call(null);
+
+			assert.strictEqual(res.status, 401);
+		});
+
+		it("Should still run for the app's own tokens and a system token", async () => {
+			for (const token of [testEnv.users.app2.tokens[0].value, testEnv.apps.app2.token, Config.testToken]) {
+				const res = await call(token);
+
+				assert.strictEqual(res.status, 200);
+				assert.ok((await res.json()).executionId);
+			}
 		});
 	});
 });

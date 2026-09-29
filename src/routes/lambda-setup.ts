@@ -36,11 +36,20 @@ export class RoutesLambdaSetup {
   app: express.Application;
   _nrp?: NRP;
   _preRouteMiddleware: express.RequestHandler[];
+  // Answers an error from an endpoint's middleware. Lambda endpoints are added after the app's own error handler, so
+  // they need one of their own.
+  _errorHandler?: express.ErrorRequestHandler;
 
-  constructor(app: express.Application, nrp: NRP | undefined, preRouteMiddleware: express.RequestHandler[]) {
+  constructor(
+    app: express.Application,
+    nrp: NRP | undefined,
+    preRouteMiddleware: express.RequestHandler[],
+    errorHandler?: express.ErrorRequestHandler,
+  ) {
     this.app = app;
     this._nrp = nrp;
     this._preRouteMiddleware = preRouteMiddleware;
+    this._errorHandler = errorHandler;
   }
 
   async _setupLambdaEndpoints() {
@@ -182,6 +191,8 @@ export class RoutesLambdaSetup {
         });
       }
     });
+    // Express passes an error only to error handlers added with use(), not to route handlers
+    if (this._errorHandler) this.app.use(`/lambda/v1/${apiPath}`, this._errorHandler);
   }
 
   async _queueLambdaAPIExecution(endpointOrId: string, apiPath: string, req: RequestWithBody<unknown>) {

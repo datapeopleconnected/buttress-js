@@ -211,8 +211,21 @@ export class RoutesMiddleware {
           throw new Helpers.Errors.RequestError(404, 'unknown_lambda_endpoint');
         }
 
-        if (req.context.authLambda.type === 'PRIVATE' && !reqToken) {
+        // A PRIVATE endpoint takes a token of the lambda's own app, or a system token
+        if (req.context.authLambda.type === 'PRIVATE') {
           reqToken = await this._getProvidedToken(req);
+          if (!reqToken) throw new Helpers.Errors.RequestError(401, 'invalid_token');
+
+          const isSystem = reqToken.type === TokenSchemaModelCore.Constants.Type.SYSTEM;
+          if (!isSystem && String(reqToken._appId) !== String(apiLambdaApp.id)) {
+            Logging.logTimer(
+              `_authenticateToken:end-private-lambda-other-app`,
+              req.context.timer,
+              Logging.Constants.LogLevel.SILLY,
+              req.context.id,
+            );
+            throw new Helpers.Errors.RequestError(401, 'insufficient_authority');
+          }
         }
 
         Logging.logTimer(
