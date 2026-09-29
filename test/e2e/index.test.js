@@ -29,6 +29,7 @@ import './spr/processing.test.js';
 import './spr/cache.test.js';
 
 import './sock/realtime.test.js';
+import './sock/data-sharing.test.js';
 
 import './lambda/lambda.test.js';
 

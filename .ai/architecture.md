@@ -110,7 +110,13 @@ Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" â€
   instance via a `butt://`/`butts://` connection string
   ([src/datastore/adapters/buttress.ts](../src/datastore/adapters/buttress.ts)), built from the DSA's
   `remoteApp` details (`Helpers.DataSharing.createDataSharingConnectionString`).
-- **Realtime**: the Socket process's primary opens an outbound `socket.io-client` connection per active
-  DSA (`__primaryCreateDataShareConnection`) and relays `dataShareSocket:share` events back into the
-  local `rest:activity` NRP channel, so remote mutations flow through the same SPR pipeline as local
-  ones.
+- **Realtime**: the primary Socket instance's (`BUTTRESS_SOCKET_APP=primary`) main process opens an
+  outbound `socket.io-client` connection per active DSA (`__primaryCreateDataShareConnection`), so only
+  that process has them. It also listens for `spr:activity` and forwards each activity of an app with
+  DSAs over that app's connections as `dataShareSocket:share` (`_primaryForwardDataShareActivity`);
+  workers don't forward. The receiving instance's Socket worker puts the activity back on its own
+  `rest:activity` NRP channel as the local app's, with `isSameApp` set, so remote mutations flow through
+  the same SPR pipeline as local ones and aren't forwarded back. The SPR emits an `spr:activity` per
+  matching policy (or token), so an activity is forwarded once for each. The receiving SPR then looks the
+  entity up in the app's `RemoteCombinedModel`, whose `findById` needs a `sourceId` that the activity
+  doesn't carry, so forwarded activity doesn't yet reach the remote app's clients.
