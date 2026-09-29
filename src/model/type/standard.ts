@@ -170,7 +170,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
         if (command.length > 0) {
           output['$and'] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
         }
-      } else if (typeof command === 'object' && !this.isValidId(command)) {
+      } else if (typeof command === 'object' && command !== null && !this.isValidId(command)) {
         const operators = command as Record<string, unknown>;
         for (let operator in operators) {
           if (!{}.hasOwnProperty.call(operators, operator)) continue;
@@ -260,7 +260,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
       operand = this.parseQuery(operand as Record<string, unknown>, envFlat, propSchema.__schema);
     } else if (propSchema) {
       const itemSchema = propSchema.__schema;
-      if (propSchema.__type === 'array' && itemSchema) {
+      if (propSchema.__type === 'array' && itemSchema && typeof operand === 'object' && operand !== null) {
         const operands = operand as Record<string, Record<string, unknown>>;
         Object.keys(operands).forEach((op) => {
           if (itemSchema[op].__type === 'id') {

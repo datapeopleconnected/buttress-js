@@ -111,6 +111,15 @@ describe('model/type/StandardModel:parseQuery', () => {
     assert.deepStrictEqual(model.parseQuery({ name: 'widget-1' }), { name: { $eq: 'widget-1' } });
   });
 
+  it('turns a direct null compare into $eq null rather than dropping it', () => {
+    const model = createModel();
+    assert.deepStrictEqual(model.parseQuery({ name: null }), { name: { $eq: null } });
+    assert.deepStrictEqual(model.parseQuery({ $and: [{ name: null }] }), { $and: [{ name: { $eq: null } }] });
+
+    const contacts = { __type: 'array', __schema: { ownerId: { __type: 'id' } } };
+    assert.deepStrictEqual(model.parseQuery({ contacts: null }, {}, { contacts }), { contacts: { $eq: null } });
+  });
+
   it('passes through an already-prefixed mongo operator unchanged', () => {
     const model = createModel();
     assert.deepStrictEqual(model.parseQuery({ age: { $gt: 18 } }), { age: { $gt: 18 } });

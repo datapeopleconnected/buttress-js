@@ -37,6 +37,24 @@ describe('access-control/env:generateRequestGlobalEnvs', () => {
     assert(result.date);
     assert(typeof result.date.now === 'string');
   });
+
+  it("sets ipAddress to the request's address", () => {
+    const result = AccessControlEnv.generateRequestGlobalEnvs({ ip: '203.0.113.7' }, 'app123', null);
+    assert.strictEqual(result.ipAddress, '203.0.113.7');
+  });
+
+  it('gives an IPv4-mapped IPv6 address as the IPv4 address, and other IPv6 addresses as they are', () => {
+    const mapped = AccessControlEnv.generateRequestGlobalEnvs({ ip: '::ffff:203.0.113.7' }, 'app123', null);
+    assert.strictEqual(mapped.ipAddress, '203.0.113.7');
+
+    const ipv6 = AccessControlEnv.generateRequestGlobalEnvs({ ip: '2001:db8::1' }, 'app123', null);
+    assert.strictEqual(ipv6.ipAddress, '2001:db8::1');
+  });
+
+  it('sets ipAddress to null when the request has no address, as once its client has gone', () => {
+    const result = AccessControlEnv.generateRequestGlobalEnvs({ ip: undefined }, 'app123', null);
+    assert.strictEqual(result.ipAddress, null);
+  });
 });
 
 describe('access-control/env:getEnvValue', () => {
@@ -110,27 +128,5 @@ describe('access-control/env:__setObjectValueByPath', () => {
     const obj = { a: { b: 'old' } };
     AccessControlEnv.__setObjectValueByPath(obj, ['a', 'b'], 'new');
     assert.strictEqual(obj.a.b, 'new');
-  });
-});
-
-describe('access-control/env:__getClientIpFromXForwardedFor', () => {
-  it('should extract first valid IPv4 from X-Forwarded-For', () => {
-    const result = AccessControlEnv.__getClientIpFromXForwardedFor('192.168.1.1, 10.0.0.1');
-    assert.strictEqual(result, '192.168.1.1');
-  });
-
-  it('should handle IPv4 with port', () => {
-    const result = AccessControlEnv.__getClientIpFromXForwardedFor('192.168.1.1:8080, 10.0.0.1');
-    assert.strictEqual(result, '192.168.1.1');
-  });
-
-  it('should handle IPv6 addresses', () => {
-    const result = AccessControlEnv.__getClientIpFromXForwardedFor('::1');
-    assert.strictEqual(result, '::1');
-  });
-
-  it('should return undefined for unknown format', () => {
-    const result = AccessControlEnv.__getClientIpFromXForwardedFor('not-an-ip');
-    assert.strictEqual(result, undefined);
   });
 });

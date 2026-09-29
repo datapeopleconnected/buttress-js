@@ -54,11 +54,6 @@ export interface ACPolicyEnvCombined extends ACEnv {
 }
 
 export class PolicyEnv {
-  static IPv4Regex = /((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)(\.|$)){4}/g;
-  static IPv6Regex =
-    // eslint-disable-next-line max-len
-    /(([0-9a-fA-F]{1,4}:){7,7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3,3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))/g;
-
   static strPrefix = '#env.';
 
   private _globalQueryEnv: { [index: string]: string } = {};
@@ -71,10 +66,11 @@ export class PolicyEnv {
     };
   }
 
-  generateRequestGlobalEnvs(_req: Request | null, appId: string, authUser: User | null): ACEnv {
+  generateRequestGlobalEnvs(req: Request | null, appId: string, authUser: User | null): ACEnv {
     return {
       ...this.generateBaseGlobalEnvs(),
-      ipAddress: null,
+      // SPR checks activity without a request, so there's no address there
+      ipAddress: req ? this.__requestIPAddress(req) : null,
       user: authUser,
       appId: appId,
     };
@@ -244,29 +240,15 @@ export class PolicyEnv {
     return outputValue;
   }
 
-  __requestIPAddress(req: Request) {
-    // express already has everything to handle this, we needs to make sure we
-    // trust the proxy settings in express for this to work correctly
-    return req.ip;
-  }
-
-  __getClientIpFromXForwardedFor(str: string) {
-    const forwardedIPs = str.split(',').map((ip) => {
-      ip = ip.trim();
-      if (ip.includes(':')) {
-        const splitted = ip.split(':');
-        // make sure we only use this if it's ipv4 (ip:port)
-        if (splitted.length === 2) {
-          return splitted[0];
-        }
-      }
-
-      return ip;
-    });
-
-    return forwardedIPs.find((ip) => {
-      return ip.match(PolicyEnv.IPv4Regex) || ip.match(PolicyEnv.IPv6Regex);
-    });
+  /**
+   * The requester's address, as Express works it out through the trust proxy setting (BUTTRESS_TRUST_PROXY), or null
+   * once the client has gone. An IPv4 client of a server listening on IPv6 shows as ::ffff:<address>, so it's given
+   * as the IPv4 address a policy would name.
+   */
+  __requestIPAddress(req: Request): string | null {
+    const ip = req.ip;
+    if (!ip) return null;
+    return ip.replace(/^::ffff:(\d{1,3}(\.\d{1,3}){3})$/i, '$1');
   }
 }
 export default new PolicyEnv();
