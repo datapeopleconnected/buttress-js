@@ -753,11 +753,35 @@ describe('Processing', async () => {
 			await envAwaitPostedCar(ref, testEnv.users[ref].tokens[0].id, testEnv.users[ref].id, testEnv.apps.app1);
 		});
 
-		it('Should handle a policy with a env inlcuding a user base condition', async function () {
+		// env-test-5's condition reads #env.user.role.auth.appId, which a user doesn't have, so it never holds
+		it("Should not send a token activity that its policy's condition refuses, as REST refuses it", async function () {
 			this.timeout(10000);
 
 			const ref = 'env-test-5';
-			await envAwaitPostedCar(ref, testEnv.users[ref].tokens[0].id, testEnv.users[ref].id, testEnv.apps.app1);
+			const user = testEnv.users[ref];
+			const read = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`, {
+				headers: { Authorization: `Bearer ${user.tokens[0].value}` },
+			});
+			assert.strictEqual(read.status, 401);
+
+			// Collects every activity for the car until well after the SPR has handled it
+			let addedCar = null;
+			const received = [];
+			const unsubscribe = await NRP_INSTANCE.subscribe('spr:activity', async (data) => {
+				const json = JSON.parse(data);
+				if (addedCar && json.activity.schemaName === 'car' && json.activity.response.id === addedCar.id) received.push(json);
+			});
+			[addedCar] = await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: ref, userId: user.id, colour: 'red' }),
+			}, testEnv.apps.app1.token);
+			await new Promise((r) => setTimeout(r, 1500));
+			await unsubscribe();
+
+			assert.ok(received.length > 0, 'the SPR should have sent the activity to some token');
+			assert.ok(!received.some((json) => json.tokens.includes(user.tokens[0].id)), 'the refused token was sent it');
 		});
 	});
 

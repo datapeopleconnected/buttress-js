@@ -30,6 +30,7 @@ import { ApplicablePolicyConfig } from './access-control/index.js';
 import { CombineEnvGroups, containsTokenLevelRef, filterPolicyConfigs } from './access-control/helpers.js';
 import AccessControlEnv, { ACEnv, ACPolicyEnvCombined } from './access-control/env.js';
 import AccessControlFilters from './access-control/filter.js';
+import AccessControlConditions from './access-control/conditions.js';
 import AccessControlProjection from './access-control/projection.js';
 
 import Datastore from './datastore/index.js';
@@ -503,6 +504,17 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     env: ACPolicyEnvCombined,
     activityMetadata: ActivityMetadata,
   ): Promise<false | RESTActivity> {
+    // As on REST, the config's condition must hold before its query is checked
+    if (!(await AccessControlConditions.passesPolicyCondition(applicablePolicy, env))) {
+      Logging.logTimer(
+        `_handleIncomingMessage::end-condition-not-fulfilled`,
+        activityMetadata.timer,
+        Logging.Constants.LogLevel.SILLY,
+        `${activityMetadata.id}-${applicablePolicy.id}`,
+      );
+      return false;
+    }
+
     if (!entity && activity.verb === 'delete') {
       // A delete of every entity, which no policy limited, names none, so there's nothing to check the query against, and
       // the delete goes to every token the policy reaches. The caller sends it, once to each token.

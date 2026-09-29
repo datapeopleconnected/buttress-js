@@ -64,6 +64,19 @@ export class Conditions {
     return output;
   }
 
+  /**
+   * Whether a policy config's condition holds for `env`, the policy's env combined with the request's or token's. A
+   * config without a condition passes. Any other condition, an empty one included, must hold, as on REST.
+   * @param {ApplicablePolicyConfig} policy
+   * @param {ACPolicyEnvCombined} env
+   * @return {Promise<boolean>}
+   */
+  async passesPolicyCondition(policy: ApplicablePolicyConfig, env: ACPolicyEnvCombined) {
+    if (policy.config.condition === null || policy.config.condition === undefined) return true;
+
+    return await this.__checkCondition(policy.config.condition, env);
+  }
+
   async __checkPolicyConditions(policy: ApplicablePolicyConfig, reqEnv: ACEnv) {
     if (!policy.config.condition) return false;
 

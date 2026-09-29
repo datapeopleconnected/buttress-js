@@ -453,6 +453,97 @@ describe('bootstrap-spr:_handleIncomingMessage projection', () => {
 	});
 });
 
+// A config's condition is checked as REST checks it, before its query: a token only gets the activity while the condition
+// holds.
+describe('bootstrap-spr:_handleIncomingMessage conditions', () => {
+	const APP_ID = new ObjectId().toString();
+	const car = { id: new ObjectId(), name: 'car' };
+	const user = { id: new ObjectId(), role: 'admin' };
+	const token = { id: new ObjectId(), type: 'user', _userId: user.id.toString() };
+
+	// Conditions on the app, which don't depend on the token
+	const holds = { '#env.appId': { '@eq': APP_ID } };
+	const fails = { '#env.appId': { '@eq': new ObjectId().toString() } };
+
+	const policy = (...conditions) => ({
+		id: 'policy-conditioned',
+		name: 'conditioned',
+		_appId: APP_ID,
+		env: null,
+		config: conditions.map((condition) => ({
+			verbs: ['GET'],
+			schema: ['car'],
+			query: { access: '%FULL_ACCESS%' },
+			condition,
+		})),
+	});
+
+	afterEach(() => sinon.restore());
+
+	async function relay(policies, overrides = {}) {
+		sinon.restore();
+		const spr = new BootstrapSocketPolicyRouter();
+		const emitted = [];
+		spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
+		spr._policyCache = {
+			getPoliciesByRestActivity: async () => policies,
+			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
+		};
+		sinon.stub(Model, 'getAppModel').resolves({ findById: async () => car });
+		sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+			const docs = modelClass === TokenSchemaModel ? [token] : [user];
+			return {
+				createId: (id) => new ObjectId(id),
+				findOne: async (query) => docs.find((doc) => doc.id.equals(query._id)) || null,
+			};
+		});
+
+		await spr._handleIncomingMessage({
+			broadcast: true,
+			path: `/car/${car.id}`,
+			pathSpec: 'car/:id',
+			verb: 'put',
+			params: { id: car.id.toString() },
+			response: [{ type: 'scalar', path: 'name', value: 'renamed' }],
+			appAPIPath: 'test-app',
+			appId: APP_ID,
+			isSuper: false,
+			isCoreSchema: false,
+			schemaName: 'car',
+			...overrides,
+		});
+		return emitted.filter((e) => e.tokens?.includes(token.id.toString()));
+	}
+
+	it('relays an activity for a config whose condition holds, or that has none', async () => {
+		assert.strictEqual((await relay([policy(holds)])).length, 1);
+		assert.strictEqual((await relay([policy(null)])).length, 1);
+	});
+
+	it("doesn't relay an activity for a config whose condition doesn't hold", async () => {
+		assert.deepStrictEqual(await relay([policy(fails)]), []);
+		assert.deepStrictEqual(await relay([policy({})]), []);
+	});
+
+	it("doesn't relay a delete for a config whose condition doesn't hold", async () => {
+		const deleted = await relay([policy(fails)], {
+			verb: 'delete',
+			response: true,
+			deletedEntities: [JSON.parse(JSON.stringify(car))],
+		});
+
+		assert.deepStrictEqual(deleted, []);
+	});
+
+	it("checks a condition on the token's user against each token", async () => {
+		const admin = { '#env.user.role': { '@eq': 'admin' } };
+		const editor = { '#env.user.role': { '@eq': 'editor' } };
+
+		assert.strictEqual((await relay([policy(admin)])).length, 1);
+		assert.deepStrictEqual(await relay([policy(editor)]), []);
+	});
+});
+
 describe('bootstrap-spr: deleted tokens', () => {
   it('takes a deleted token off the list of connected tokens', async () => {
     const spr = new BootstrapSocketPolicyRouter();
