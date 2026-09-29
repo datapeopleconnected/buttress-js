@@ -26,6 +26,8 @@ import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 import { RequestError } from '../../../../../dist/helpers/errors.js';
 
+import { realQueryParser } from '../../../../query-parser.js';
+
 const [
   GetAppList,
   SearchAppList,
@@ -45,9 +47,8 @@ const [
 function stubModel({ app = {}, token = {} } = {}) {
   const appModel = {
     schemaData: { name: 'apps' },
-    flatSchemaData: {},
     localSchema: [],
-    parseQuery: (q) => q,
+    ...realQueryParser(AppSchemaModel),
     validate: () => ({ isValid: true }),
     isDuplicate: async () => false,
     add: async () => ({ app: { id: 'app-1', apiPath: 'test-app' }, token: { value: 'token-value' } }),
@@ -141,7 +142,19 @@ describe('routes/api/app:SearchAppList', () => {
 
     const result = await route._validate(createReq({ token: { type: 'user' } }));
 
-    assert.deepStrictEqual(result.query.$and, [{ id: 'app-1' }]);
+    assert.deepStrictEqual(result.query, { $and: [{ id: { $eq: 'app-1' } }] });
+  });
+
+  it('scopes the search to the authenticated app when there is no body', async () => {
+    stubModel();
+    const route = createRoute(SearchAppList);
+
+    const req = createReq({ token: { type: 'app' } });
+    req.body = undefined;
+
+    const result = await route._validate(req);
+
+    assert.deepStrictEqual(result.query, { $and: [{ id: { $eq: 'app-1' } }] });
   });
 
   it('does not scope the search for a system token', async () => {
@@ -150,23 +163,58 @@ describe('routes/api/app:SearchAppList', () => {
 
     const result = await route._validate(createReq({ token: { type: 'system' } }));
 
-    assert.deepStrictEqual(result.query.$and, []);
+    assert.deepStrictEqual(result.query, {});
   });
 
-  it('enriches each returned app with its token value', async () => {
+  it("gives an app token only its own app's token value", async () => {
     const appsDB = [
       { id: 'app-1', _tokenId: 'token-1' },
       { id: 'app-2', _tokenId: 'token-2' },
     ];
     const { appModel, tokenModel } = stubModel();
     appModel.find.returns(Readable.from(appsDB, { objectMode: true }));
-    tokenModel.find.returns(Readable.from([{ id: 'token-1', value: 'value-1' }], { objectMode: true }));
+    tokenModel.find.returns(
+      Readable.from(
+        [
+          { id: 'token-1', value: 'value-1' },
+          { id: 'token-2', value: 'value-2' },
+        ],
+        { objectMode: true },
+      ),
+    );
     const route = createRoute(SearchAppList);
 
-    const result = await route._exec(createReq(), {}, { query: {} });
+    const result = await route._exec(createReq({ token: { type: 'app' } }), {}, { query: {} });
 
     assert.strictEqual(result.find((a) => a.id === 'app-1').tokenValue, 'value-1');
-    assert.strictEqual(result.find((a) => a.id === 'app-2').tokenValue, undefined);
+    assert.ok(!('tokenValue' in result.find((a) => a.id === 'app-2')));
+    assert.deepStrictEqual(tokenModel.find.firstCall.args[0], { id: { $in: ['token-1'] } });
+  });
+
+  it('gives a system token each returned app with its token value', async () => {
+    const appsDB = [
+      { id: 'app-1', _tokenId: 'token-1' },
+      { id: 'app-2', _tokenId: 'token-2' },
+      { id: 'app-3', _tokenId: 'token-3' },
+    ];
+    const { appModel, tokenModel } = stubModel();
+    appModel.find.returns(Readable.from(appsDB, { objectMode: true }));
+    tokenModel.find.returns(
+      Readable.from(
+        [
+          { id: 'token-1', value: 'value-1' },
+          { id: 'token-2', value: 'value-2' },
+        ],
+        { objectMode: true },
+      ),
+    );
+    const route = createRoute(SearchAppList);
+
+    const result = await route._exec(createReq({ token: { type: 'system' } }), {}, { query: {} });
+
+    assert.strictEqual(result.find((a) => a.id === 'app-1').tokenValue, 'value-1');
+    assert.strictEqual(result.find((a) => a.id === 'app-2').tokenValue, 'value-2');
+    assert.strictEqual(result.find((a) => a.id === 'app-3').tokenValue, undefined);
   });
 });
 
@@ -329,7 +377,7 @@ describe('routes/api/app:AppCount', () => {
 
     // The queryless body itself is pushed as a query fragment, then further scoped to the
     // authenticated app since the token isn't a system token.
-    assert.deepStrictEqual(result.query.$and, [{}, { id: 'app-1' }]);
+    assert.deepStrictEqual(result.query.$and, [{}, { id: { $eq: 'app-1' } }]);
   });
 
   it('counts using the built query', async () => {

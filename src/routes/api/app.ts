@@ -81,17 +81,18 @@ class SearchAppList extends Route {
       result.query.$and.push(req.body.query);
     }
 
-    result.query = Model.getCoreModel(AppSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(AppSchemaModel).flatSchemaData,
-    );
-
+    // Before parseQuery, which drops an empty $and
     if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       result.query.$and?.push({
         id: req.context.authApp?.id,
       });
     }
+
+    result.query = Model.getCoreModel(AppSchemaModel).parseQuery(
+      result.query,
+      {},
+      Model.getCoreModel(AppSchemaModel).flatSchemaData,
+    );
 
     return result;
   }
@@ -99,7 +100,11 @@ class SearchAppList extends Route {
   override async _exec(req: Request, res: Response, validate: QueryParams<App>) {
     const appsDB = await Helpers.streamAll<App>(await Model.getCoreModel(AppSchemaModel).find(validate.query));
 
-    const tokenIds = appsDB.map((app) => Model.getCoreModel(TokenSchemaModel).createId(app._tokenId));
+    // A system token gets every app's token value, any other token only its own app's
+    const isSystem = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
+    const withToken = (app: App) => isSystem || app.id.toString() === req.context.authApp?.id.toString();
+
+    const tokenIds = appsDB.filter(withToken).map((app) => Model.getCoreModel(TokenSchemaModel).createId(app._tokenId));
     const appTokens = await Helpers.streamAll<Token>(
       await Model.getCoreModel(TokenSchemaModel).find({
         id: {
@@ -109,6 +114,11 @@ class SearchAppList extends Route {
     );
 
     return appsDB.reduce<Array<App & { tokenValue?: string }>>((arr, app) => {
+      if (!withToken(app)) {
+        arr.push(app);
+        return arr;
+      }
+
       const appToken = appTokens.find((t) => t.id.toString() === app._tokenId.toString());
       arr.push({
         ...app,
@@ -675,17 +685,18 @@ class AppCount extends Route {
       result.query.$and.push(req.body);
     }
 
-    result.query = Model.getCoreModel(AppSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(AppSchemaModel).flatSchemaData,
-    );
-
+    // Before parseQuery, which drops an empty $and
     if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       result.query.$and?.push({
         id: req.context.authApp?.id,
       });
     }
+
+    result.query = Model.getCoreModel(AppSchemaModel).parseQuery(
+      result.query,
+      {},
+      Model.getCoreModel(AppSchemaModel).flatSchemaData,
+    );
 
     return result;
   }
