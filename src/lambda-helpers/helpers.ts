@@ -142,7 +142,8 @@ interface CreateSignRequest {
 }
 
 interface UpdateMetadataRequest {
-  id: string;
+  // Must be the executing lambda's id, when given
+  id?: string;
   idx: number;
   key: string;
   value: string;
@@ -191,7 +192,8 @@ interface DecryptRequest {
 class Helpers {
   lambdaResult: LambdaResult | null;
 
-  // The git hash of the lambda that's executing, set by the runner. Its code folder holds its email templates.
+  // The lambda that's executing, set by the runner: its id, and the git hash whose code folder holds its email templates
+  lambdaId: string | null;
   lambdaGitHash: string | null;
 
   successfulHTTPScode: number[];
@@ -200,6 +202,7 @@ class Helpers {
    */
   constructor() {
     this.lambdaResult = null;
+    this.lambdaId = null;
     this.lambdaGitHash = null;
 
     this.successfulHTTPScode = [200, 201, 202];
@@ -280,9 +283,15 @@ class Helpers {
             `Updating metadata for ${data.id}:${data.idx} with key ${data.key} and value ${data.value}`,
           );
 
+          // Only the executing lambda's metadata can be updated
+          const lambdaId = this.lambdaId;
+          if (!lambdaId) throw new Error('no_executing_lambda');
+          if (data.id !== undefined && String(data.id) !== lambdaId) throw new Error('invalid_lambda_id');
+          if (!Number.isInteger(data.idx) || data.idx < -1) throw new Error('invalid_metadata_index');
+
           if (data.idx === -1) {
             await Model.getCoreModel(LambdaSchemaModel).updateById(
-              Model.getCoreModel(LambdaSchemaModel).createId(data.id),
+              Model.getCoreModel(LambdaSchemaModel).createId(lambdaId),
               {
                 $push: {
                   metadata: {
@@ -294,7 +303,7 @@ class Helpers {
             );
           } else {
             await Model.getCoreModel(LambdaSchemaModel).updateById(
-              Model.getCoreModel(LambdaSchemaModel).createId(data.id),
+              Model.getCoreModel(LambdaSchemaModel).createId(lambdaId),
               {
                 $set: {
                   [`metadata.${data.idx}.value`]: data.value,
