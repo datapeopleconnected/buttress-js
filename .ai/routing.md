@@ -34,6 +34,9 @@ Every registered path gets this exact array wired in as Express middleware, in o
 4. `AccessControl.accessControlPolicyMiddleware` — see [access-control.md](access-control.md).
 5. `_configCrossDomain` — CORS header logic; **also the point where a missing token becomes a 401** for
    non-system/app tokens, and where per-token `domains` allow-lists are enforced for user tokens.
+   Entries that aren't strings are ignored, so they match no origin. The routes that write a token's
+   domains (`POST user`'s `token.domains`, `POST user/:id/token`, `POST lambda`'s `auth.domains`) refuse
+   anything but a list of non-empty strings with `400 invalid_domains` (`Helpers.isDomainList`).
 
 This is a flat array re-run per route registration (not once globally) — see the comment in the
 `Routes` constructor about why (avoiding router-level middleware firing once per sub-router match).

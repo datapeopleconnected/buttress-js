@@ -246,6 +246,11 @@ class AddLambda extends Route {
         return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
       }
 
+      if (!Helpers.isDomainList(req.body.auth.domains)) {
+        this.log(`[${this.name}] auth.domains must be a list of domain names`, Route.LogLevel.ERR);
+        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_domains`));
+      }
+
       return Promise.resolve(true);
     } catch (err: unknown) {
       return Promise.reject(err);

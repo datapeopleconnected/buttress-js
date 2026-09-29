@@ -285,6 +285,20 @@ describe('routes/api/user:CreateUserAuthToken', () => {
     await assert.rejects(route._validate(createReq({ params: { id: 'user-1' }, body: {} })), /missing_field/);
   });
 
+  for (const domains of [[null], ['app.example.com', 42], [''], 'app.example.com']) {
+    it(`rejects domains of ${JSON.stringify(domains)} with a 400`, async () => {
+      stubModel({ user: { findById: async () => ({ id: 'user-1' }) } });
+      const route = createRoute(CreateUserAuthToken);
+      const body = { policyProperties: {}, domains };
+
+      await assert.rejects(route._validate(createReq({ params: { id: 'user-1' }, body })), (err) => {
+        assert.strictEqual(err.code, 400);
+        assert.strictEqual(err.message, 'invalid_domains');
+        return true;
+      });
+    });
+  }
+
   it('rejects when the user cannot be found', async () => {
     stubModel({ user: { findById: async () => null } });
     const route = createRoute(CreateUserAuthToken);
@@ -343,6 +357,34 @@ describe('routes/api/user:AddUser', () => {
     const body = { auth: [{ app: 'google', appId: 'ext-1', email: 'a@b.com' }] };
 
     await assert.rejects(route._validate(createReq({ body })), /user_already_exists_with_that_name/);
+  });
+
+  for (const domains of [[null], ['app.example.com', {}], null]) {
+    it(`rejects token domains of ${JSON.stringify(domains)} with a 400`, async () => {
+      stubModel({ user: { findOne: async () => null } });
+      const route = createRoute(AddUser);
+      const body = {
+        auth: [{ app: 'google', appId: 'ext-1', email: 'a@b.com' }],
+        token: { domains, policyProperties: {} },
+      };
+
+      await assert.rejects(route._validate(createReq({ body })), (err) => {
+        assert.strictEqual(err.code, 400);
+        assert.strictEqual(err.message, 'invalid_domains');
+        return true;
+      });
+    });
+  }
+
+  it('accepts a token with a list of domains', async () => {
+    stubModel({ user: { findOne: async () => null } });
+    const route = createRoute(AddUser);
+    const body = {
+      auth: [{ app: 'google', appId: 'ext-1', email: 'a@b.com' }],
+      token: { domains: ['app.example.com', '*.example.com'], policyProperties: {} },
+    };
+
+    assert.deepStrictEqual(await route._validate(createReq({ body })), { appId: 'app-1' });
   });
 
   it('resolves the app id once validated', async () => {

@@ -387,10 +387,15 @@ export class RoutesMiddleware {
       origin = matches[1];
     }
 
-    const domains = context.token.domains.map((d: string) => {
-      matches = rex.exec(d);
-      return matches ? matches[1] : d;
-    });
+    // A token stored before its domains were checked may hold something other than a list of strings, which is
+    // left out, so the request is refused like any other that matches none of its domains.
+    const tokenDomains: unknown[] = Array.isArray(context.token.domains) ? context.token.domains : [];
+    const domains = tokenDomains
+      .filter((d): d is string => typeof d === 'string')
+      .map((d) => {
+        matches = rex.exec(d);
+        return matches ? matches[1] : d;
+      });
 
     domains.push(Config.app.host);
 

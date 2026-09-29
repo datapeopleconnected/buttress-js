@@ -143,6 +143,23 @@ describe('User API', async () => {
 
 			assert.strictEqual(token.policyProperties.someProperty, 'value', 'Token policy property should match');
 		});
+
+		it('Should refuse a token whose domains aren\'t all domain names', async () => {
+			try {
+				await bjsReq({
+					url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}/token`,
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ policyProperties: { someProperty: 'value' }, domains: [null] })
+				}, testEnv.apps.app1.token);
+				throw new Error('Should refuse a null domain');
+			} catch (error) {
+				if (!(error instanceof BJSReqError)) throw error;
+
+				assert.strictEqual(error.code, 400, 'Error status code should be 400');
+				assert.match(error.message, /invalid_domains/);
+			}
+		});
 	});
 
 	describe('AddUser', () => {
@@ -180,6 +197,30 @@ describe('User API', async () => {
 			assert.strictEqual(user.auth[0].appId, userData.auth[0].appId, 'User auth appId should match');
 			assert.strictEqual(user.auth[0].email, userData.auth[0].email, 'User auth email should match');
 			assert.strictEqual(user.tokens.length, 1, 'User should have one token');
+		});
+
+		it('Should refuse a user whose token domains aren\'t all domain names', async () => {
+			const userData = {
+				auth: [{ app: 'test-app-name', appId: '3', email: 'newuser+3@example.com' }],
+				token: {
+					domains: [null],
+					policyProperties: { someProperty: 'value' }
+				}
+			};
+			try {
+				await bjsReq({
+					url: `${ENDPOINT.REST}/api/v1/user`,
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(userData)
+				}, testEnv.apps.app1.token);
+				throw new Error('Should refuse a null domain');
+			} catch (error) {
+				if (!(error instanceof BJSReqError)) throw error;
+
+				assert.strictEqual(error.code, 400, 'Error status code should be 400');
+				assert.match(error.message, /invalid_domains/);
+			}
 		});
 	});
 

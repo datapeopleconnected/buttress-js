@@ -231,6 +231,20 @@ describe('routes/api/lambda:AddLambda', () => {
     await assert.rejects(route._validate(createReq({ body })), /missing_field/);
   });
 
+  for (const domains of [[null], ['app.example.com', 42], [' '], 'app.example.com']) {
+    it(`rejects auth domains of ${JSON.stringify(domains)} with a 400`, async () => {
+      stubModel();
+      const route = createRoute(AddLambda);
+      const body = { lambda: validLambdaBody.lambda, auth: { domains, policyProperties: {} } };
+
+      await assert.rejects(route._validate(createReq({ body })), (err) => {
+        assert.strictEqual(err.code, 400);
+        assert.strictEqual(err.message, 'invalid_domains');
+        return true;
+      });
+    });
+  }
+
   it('resolves true once fully validated', async () => {
     stubModel();
     const route = createRoute(AddLambda);

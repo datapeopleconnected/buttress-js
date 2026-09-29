@@ -372,6 +372,13 @@ export const streamAll = <T>(stream: unknown): Promise<T[]> => {
   });
 };
 
+/**
+ * Whether a token's domains are a list of non-empty strings. The cross-domain check matches each one against the
+ * request's origin.
+ */
+export const isDomainList = (domains: unknown): domains is string[] =>
+  Array.isArray(domains) && domains.every((domain) => typeof domain === 'string' && domain.trim() !== '');
+
 export const trimSlashes = (str: string) => {
   return str ? str.replace(/^\/+|\/+$/g, '') : str;
 };

@@ -24,6 +24,8 @@ import { RoutesMiddleware } from '../../../../dist/routes/middleware.js';
 import Logging from '../../../../dist/helpers/logging.js';
 import IOStats from '../../../../dist/helpers/io-stats.js';
 import * as Helpers from '../../../../dist/helpers/errors.js';
+import Model from '../../../../dist/model/index.js';
+import TokenSchemaModel from '../../../../dist/model/core/token.js';
 
 function createMiddleware() {
   return new RoutesMiddleware({}, {});
@@ -191,5 +193,51 @@ describe('routes/RoutesMiddleware:logErrors', () => {
         agent.destroy();
       }
     });
+  });
+});
+
+describe('routes/RoutesMiddleware:_configCrossDomain', () => {
+  function run(domains, origin) {
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      if (modelClass === TokenSchemaModel) return { Constants: { Type: { USER: 'user' } } };
+      throw new Error(`Unexpected model requested in test: ${modelClass?.name}`);
+    });
+    sinon.stub(Logging, 'logError');
+    const req = {
+      method: 'GET',
+      header: (name) => ({ Origin: origin })[name],
+      context: { id: 'req-1', timings: {}, token: { type: 'user', domains } },
+    };
+    const res = { header: sinon.stub(), sendStatus: sinon.stub() };
+    const next = sinon.spy();
+
+    createMiddleware()._configCrossDomain(req, res, next);
+
+    return { res, next };
+  }
+
+  it("lets through a request from one of the token's domains", () => {
+    const { next } = run(['https://app.example.com'], 'https://app.example.com');
+
+    assert.ok(next.calledOnceWithExactly());
+  });
+
+  it('refuses a token that holds a null domain with a 403, like any other domain it does not match', () => {
+    const { res, next } = run([null], 'https://app.example.com');
+
+    assert.ok(res.sendStatus.calledOnceWith(403));
+    assert.strictEqual(next.called, false);
+  });
+
+  it('ignores the domains that are not strings and matches the rest', () => {
+    const { next } = run([null, 42, {}, '*.example.com'], 'https://app.example.com');
+
+    assert.ok(next.calledOnceWithExactly());
+  });
+
+  it('refuses a token whose domains are not a list', () => {
+    const { res } = run(null, 'https://app.example.com');
+
+    assert.ok(res.sendStatus.calledOnceWith(403));
   });
 });

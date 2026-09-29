@@ -344,6 +344,11 @@ class CreateUserAuthToken extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
+    if (!Helpers.isDomainList(req.body.domains)) {
+      this.log(`[${this.name}] domains must be a list of domain names`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_domains`));
+    }
+
     req.body.type = Model.getCoreModel(TokenSchemaModel).Constants.Type.USER;
 
     if (!req.params.id) {
@@ -505,6 +510,11 @@ class AddUser extends Route {
       this.log(`[${this.name}] A user already exists with matching auth (appId or email)`, Route.LogLevel.ERR);
       Logging.logObject(existingUsers, Logging.LogLevel.DEBUG);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_already_exists_with_that_name`));
+    }
+
+    if (req.body.token && req.body.token.domains !== undefined && !Helpers.isDomainList(req.body.token.domains)) {
+      this.log(`[${this.name}] token.domains must be a list of domain names`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_domains`));
     }
 
     if (req.body.token && req.body.token.policyProperties) {
