@@ -130,7 +130,11 @@ export class PolicyEnv {
     }
 
     // A value that isn't a string is converted to one for the lookup
-    return this._globalQueryEnv[queryValue as string];
+    const value = this._globalQueryEnv[queryValue as string];
+    // An array lookup that can't be made finds nothing, as an array, which $in and $nin need
+    if (value === undefined && (queryValue as PolicyEnvQuery | null)?.type === 'array') return [];
+
+    return value;
   }
 
   async __isAppSchema(schema: string, appId: string | null) {
@@ -197,7 +201,6 @@ export class PolicyEnv {
     const model = await Model.getAppModel(envVars.appId as string, schema);
     const res = await model.find(query);
     const result = await Helpers.streamAll<DynamicRow>(res);
-    if (!result) return false;
 
     if (outputType === 'string' || outputType === 'id') {
       return result.reduce<unknown>((item, obj) => {
@@ -215,13 +218,10 @@ export class PolicyEnv {
       return result.reduce<unknown[]>((arr, obj) => {
         const outputValue = obj[output.key];
 
-        if (output.type === 'id' && Array.isArray(outputValue)) {
-          arr = arr.concat(outputValue.map(toIdIfValid).filter(isId));
-          return arr;
-        }
-
+        // Only valid ids, whether an entity holds one or an array of them
         if (output.type === 'id') {
-          arr = arr.concat(toIdIfValid(outputValue));
+          const values: unknown[] = Array.isArray(outputValue) ? outputValue : [outputValue];
+          arr = arr.concat(values.map(toIdIfValid).filter(isId));
           return arr;
         }
 
