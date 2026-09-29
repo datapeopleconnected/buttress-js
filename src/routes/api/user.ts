@@ -284,7 +284,7 @@ class GetUserByToken extends Route {
   }
 
   override async _validate(req: RequestWithBody<{ token?: string }>, _res: Response): Promise<GetUserByTokenOutput> {
-    const { token } = req.body;
+    const token = req.body?.token;
     if (!token) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `missing_field`);
@@ -479,7 +479,7 @@ class AddUser extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
     }
 
-    if (!req.body.auth) {
+    if (!req.body?.auth) {
       this.log(`[${this.name}] Missing required user auth block`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_user_auth`));
     }
@@ -1091,7 +1091,7 @@ class clearUserLocalData extends Route {
       JSON.stringify({
         appAPIPath: req.context.authApp ? req.context.authApp.apiPath : '',
         userId: user.id,
-        collections: req.body.collections ? req.body.collections : false,
+        collections: req.body?.collections ? req.body.collections : false,
       }),
     );
 
@@ -1112,6 +1112,9 @@ class SearchUserList extends Route {
   }
 
   override async _validate(req: RequestWithBody<SearchListBody<User> | undefined>, _res: Response) {
+    // The search options are read off the body, and an array has a sort method of its own
+    if (Array.isArray(req.body)) throw new Helpers.Errors.RequestError(400, `invalid_body`);
+
     const result: QueryParams<User> = {
       query: {},
       // parseInt takes numbers too, it converts them to a string first

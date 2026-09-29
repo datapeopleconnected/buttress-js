@@ -229,6 +229,13 @@ describe('routes/api/user:FindUser', () => {
 });
 
 describe('routes/api/user:GetUserByToken', () => {
+  it('rejects a request with no body', async () => {
+    stubModel();
+    const route = createRoute(GetUserByToken);
+
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /missing_field/);
+  });
+
   it('rejects when the token is missing', async () => {
     stubModel();
     const route = createRoute(GetUserByToken);
@@ -309,6 +316,13 @@ describe('routes/api/user:CreateUserAuthToken', () => {
 });
 
 describe('routes/api/user:AddUser', () => {
+  it('rejects a request with no body', async () => {
+    stubModel();
+    const route = createRoute(AddUser);
+
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /missing_user_auth/);
+  });
+
   it('rejects when auth block is missing', async () => {
     stubModel();
     const route = createRoute(AddUser);
@@ -564,6 +578,16 @@ describe('routes/api/user:DeleteUser', () => {
 });
 
 describe('routes/api/user:ClearUserLocalData', () => {
+  it('clears every collection when the request has no body', async () => {
+    const nrp = { emit: sinon.spy() };
+    const route = createRoute(ClearUserLocalData, { nrp });
+
+    await route._exec(Object.assign(createReq(), { body: undefined }), {}, { id: 'user-1' });
+
+    const [, payload] = nrp.emit.firstCall.args;
+    assert.strictEqual(JSON.parse(payload).collections, false);
+  });
+
   it('rejects when no id is provided', async () => {
     stubModel();
     const route = createRoute(ClearUserLocalData);
@@ -591,6 +615,13 @@ describe('routes/api/user:ClearUserLocalData', () => {
 });
 
 describe('routes/api/user:SearchUserList', () => {
+  it('rejects an array body', async () => {
+    stubModel();
+    const route = createRoute(SearchUserList);
+
+    await assert.rejects(route._validate(createReq({ body: [] })), /invalid_body/);
+  });
+
   it('rejects when skip is not a number', async () => {
     stubModel();
     const route = createRoute(SearchUserList);

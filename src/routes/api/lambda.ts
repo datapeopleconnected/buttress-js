@@ -219,7 +219,7 @@ class AddLambda extends Route {
 
       if (
         !req.context.authApp ||
-        !req.body.lambda.trigger ||
+        !req.body?.lambda?.trigger ||
         !req.body.lambda.git ||
         !req.body.lambda.git.entryFile ||
         !req.body.lambda.git.entryPoint ||
@@ -364,6 +364,11 @@ class BulkUpdateLambda extends Route {
   }
 
   override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
+    if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
+      this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
+      throw new Helpers.Errors.RequestError(400, `array_required`);
+    }
+
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(LambdaSchemaModel).validateUpdate(item.body);
       item.body = body;
@@ -757,8 +762,7 @@ class ClearLambdaPolicyProperties extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: { token: Token }) {
-    // FIXME: this passes the token rather than its id
-    await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.token as unknown as string);
+    await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.token.id);
     return true;
   }
 }

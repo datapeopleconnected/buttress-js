@@ -152,12 +152,11 @@ class GetApp extends Route {
     return app;
   }
 
-  override _exec(req: Request, res: Response, validate: App & { tokenValue?: string }) {
-    const appToken = Model.getCoreModel(TokenSchemaModel).findById(
+  override async _exec(req: Request, res: Response, validate: App & { tokenValue?: string }) {
+    const appToken: Token | null = await Model.getCoreModel(TokenSchemaModel).findById(
       Model.getCoreModel(TokenSchemaModel).createId(validate._tokenId),
     );
-    // BUG: findById isn't awaited, so this reads value off the promise and is always undefined
-    validate.tokenValue = (appToken as Promise<Token> & { value?: string }).value;
+    validate.tokenValue = appToken?.value;
 
     return validate;
   }
@@ -176,6 +175,11 @@ class AddApp extends Route {
 
   override _validate(req: RequestWithBody<AppAddBody>, _res: Response) {
     return new Promise<boolean>((resolve, reject) => {
+      if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+        this.log(`${this.schemaName}: Expected the app as an object`, Route.LogLevel.ERR, req.context.id);
+        return reject(new Helpers.Errors.RequestError(400, `invalid_body`));
+      }
+
       const validation = Model.getCoreModel(AppSchemaModel).validate(req.body);
       if (!validation.isValid) {
         if (validation.missing.length > 0) {
