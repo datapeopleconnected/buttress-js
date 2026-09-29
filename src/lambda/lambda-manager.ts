@@ -15,8 +15,6 @@
  */
 
 import fs from 'node:fs';
-import util from 'node:util';
-import { exec as cpExec } from 'node:child_process';
 
 import { v4 as uuidv4 } from 'uuid';
 import NodeRedisPubsub from '../services/nrp.js';
@@ -33,8 +31,6 @@ import { NotifyLambdaPathChangeMessage } from '../routes/route.js';
 import type { Services } from '../bootstrap.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
-
-const exec = util.promisify(cpExec);
 
 // ? Lambdas should really be driven by the deployments and the executions not by the lambda object. This needs a rethink and refactor.
 
@@ -799,15 +795,15 @@ export default class LambdaManager {
    */
   async _setupLambdaFolders() {
     if (!fs.existsSync(Config.paths.lambda.code)) {
-      await exec(`mkdir -p ${Config.paths.lambda.code}`);
+      fs.mkdirSync(Config.paths.lambda.code, { recursive: true });
     }
 
     if (!fs.existsSync(Config.paths.lambda.plugins)) {
-      await exec(`mkdir -p ${Config.paths.lambda.plugins}`);
+      fs.mkdirSync(Config.paths.lambda.plugins, { recursive: true });
     }
 
     if (fs.existsSync(Config.paths.lambda.bundles)) {
-      await exec(`rm -rf ${Config.paths.lambda.bundles}`);
+      fs.rmSync(Config.paths.lambda.bundles, { recursive: true, force: true });
     }
   }
 }

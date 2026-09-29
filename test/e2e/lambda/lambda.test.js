@@ -106,6 +106,29 @@ describe('Lambda', async () => {
 			}, testEnv.apps.app1.token);
 		});
 
+		it('Should refuse a lambda whose git branch is not a branch name', async function() {
+			await assert.rejects(createLambda(ENDPOINT.REST, {
+				name: 'bad-branch',
+				type: 'PUBLIC',
+				git: {
+					url: Config.paths.root,
+					branch: 'develop; true',
+					hash: 'HEAD',
+					entryFile: 'test/data/lambda/hello-world.cjs',
+					entryPoint: 'execute',
+				},
+				trigger: [],
+			}, {
+				domains: ['localhost'],
+				permissions: [{route: '*', permission: '*'}],
+				policyProperties: {lambda: 'TEST_ACCESS'},
+			}, testEnv.apps.app1.token), (err) => {
+				assert.strictEqual(err.code, 400);
+				assert.strictEqual(err.message, 'invalid_lambda_git_branch');
+				return true;
+			});
+		});
+
 		// TODO: Basics tests to do with the lambda process
 	});
 

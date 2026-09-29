@@ -15,17 +15,13 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
-import util from 'node:util';
-import { exec as cpExec } from 'node:child_process';
-
-const exec = util.promisify(cpExec);
-
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import Sugar from '../../helpers/sugar.js';
 import StandardModel from '../type/standard.js';
 import * as Helpers from '../../helpers/index.js';
+import * as Git from '../../helpers/git.js';
 import { Schema } from '../../helpers/schema.js';
 import Logging from '../../helpers/logging.js';
 import { Services } from '../../bootstrap.js';
@@ -374,9 +370,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
     });
 
     if (!fs.existsSync(`${Config.paths.lambda.code}/lambda-${lambda.git.hash}`)) {
-      await exec(
-        `cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.git.hash}; mv lambda-${lambda.name} lambda-${lambda.git.hash}`,
-      );
+      this._moveLambdaFolder(lambda.name, lambda.git.hash as string);
     }
 
     return lambda;
@@ -394,6 +388,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
     const url = lambda?.git?.url;
     const branch = lambda?.git?.branch;
     const gitHash = lambda?.git?.hash;
+    Git.assertLambdaGitSource({ name, url, branch, hash: gitHash });
 
     try {
       const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, policyProperties);
@@ -422,9 +417,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
 
       await this.gitFolderClone(gitHash, branch, name, url);
     } catch (err: unknown) {
-      if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
-        await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
-      }
+      this._removeLambdaFolder(name);
 
       Logging.logError(`[${LambdaModel.name}] ${Helpers.getThrownErrorMessage(err)}`);
       throw err;
@@ -432,23 +425,40 @@ export default class LambdaModel extends StandardModel<Lambda> {
   }
 
   async gitFolderClone(gitHash: string | null, branch: string | null, name: string, url: string | null) {
-    if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${gitHash}`)) return;
+    Git.assertLambdaGitSource({ name, url, branch, hash: gitHash });
+    const codeDir = Config.paths.lambda.code;
+    if (fs.existsSync(`${codeDir}/lambda-${gitHash}`)) return;
+
+    const lambdaDir = `${codeDir}/lambda-${name}`;
+    await Git.git(['clone', '--filter=blob:limit=1m', '--', url as string, `lambda-${name}`], codeDir);
 
     // Check to see if the requested git hash exists or just make sure the branch exists if we're using HEAD.
-    const exPramChkBranch =
-      gitHash !== 'HEAD' ? `git branch ${branch} --contains ${gitHash}` : `git ls-remote --heads origin ${branch}`;
-    const result = await exec(`cd ${Config.paths.lambda.code}; git clone --filter=blob:limit=1m ${url} lambda-${name};
-			cd lambda-${name}; ${exPramChkBranch}`);
+    const checkBranch =
+      gitHash !== 'HEAD'
+        ? ['branch', branch as string, '--contains', gitHash as string]
+        : ['ls-remote', '--heads', 'origin', branch as string];
+    const result = await Git.git(checkBranch, lambdaDir);
     if (!result.stdout) {
-      if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
-        await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
-      }
+      this._removeLambdaFolder(name);
       Logging.logError(`[${LambdaModel.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
       throw new Helpers.Errors.RequestError(400, `incorrect_lambda_hash_or_branch`);
     }
 
     // TODO it should only clone the lambda file from the repo
-    await exec(`cd ${Config.paths.lambda.code}/lambda-${name}; git checkout ${gitHash}`);
+    await Git.git(['checkout', gitHash as string], lambdaDir);
+  }
+
+  // The folder a lambda's code is cloned into before it's moved to its hash's folder. The name is checked first.
+  _removeLambdaFolder(name: string) {
+    if (!Git.isLambdaName(name)) return;
+    fs.rmSync(`${Config.paths.lambda.code}/lambda-${name}`, { recursive: true, force: true });
+  }
+
+  _moveLambdaFolder(name: string, gitHash: string) {
+    Git.assertLambdaGitSource({ name, hash: gitHash });
+    const hashDir = `${Config.paths.lambda.code}/lambda-${gitHash}`;
+    fs.rmSync(hashDir, { recursive: true, force: true });
+    fs.renameSync(`${Config.paths.lambda.code}/lambda-${name}`, hashDir);
   }
 
   async pullLambdaCode(
@@ -460,9 +470,11 @@ export default class LambdaModel extends StandardModel<Lambda> {
       entryPoint?: string;
     } = {},
   ) {
+    const branch = lambdaDeployInfo.branch ? lambdaDeployInfo.branch : lambda.git.branch;
+    const gitHash = lambdaDeployInfo.hash ? lambdaDeployInfo.hash : lambda.git.hash;
+    Git.assertLambdaGitSource({ name: lambda.name, url: lambda.git.url, branch, hash: gitHash });
+
     try {
-      const branch = lambdaDeployInfo.branch ? lambdaDeployInfo.branch : lambda.git.branch;
-      const gitHash = lambdaDeployInfo.hash ? lambdaDeployInfo.hash : lambda.git.hash;
       const entryFilePath = lambdaDeployInfo.entryFilePath ? lambdaDeployInfo.entryFilePath : lambda.git.entryFile;
       const entryPoint = lambdaDeployInfo.entryPoint ? lambdaDeployInfo.entryPoint : lambda.git.entryPoint;
 
@@ -470,21 +482,18 @@ export default class LambdaModel extends StandardModel<Lambda> {
       const lambdaFolderName = `lambda-${gitHash}`;
       if (!fs.existsSync(`${Config.paths.lambda.code}/${lambdaFolderName}`)) {
         await this.gitFolderClone(gitHash, branch, lambda.name, lambda.git.url);
-        await exec(
-          `cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.git.hash}; mv lambda-${lambda.name} lambda-${lambda.git.hash}`,
-        );
+        this._moveLambdaFolder(lambda.name, lambda.git.hash as string);
       } else {
-        await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git fetch`);
-        const checkoutRes = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${branch}`);
+        const checkoutDir = `${Config.paths.lambda.code}/${lambdaFolderName}`;
+        await Git.git(['fetch'], checkoutDir);
+        const checkoutRes = await Git.git(['checkout', branch as string], checkoutDir);
         if (!checkoutRes.stdout) {
           Logging.log(`[${LambdaModel.name}] Lambda ${branch} does not exist`);
           return Promise.reject(new Helpers.Errors.RequestError(400, `branch_${branch}_does_not_exist_for_lambda`));
         }
 
-        await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git pull`);
-        const results = await exec(
-          `cd ${Config.paths.lambda.code}/${lambdaFolderName}; git branch ${branch} --contains ${gitHash}`,
-        );
+        await Git.git(['pull'], checkoutDir);
+        const results = await Git.git(['branch', branch as string, '--contains', gitHash as string], checkoutDir);
         if (!results.stdout) {
           Logging.log(`[${LambdaModel.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
           return Promise.reject(
@@ -492,7 +501,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
           );
         }
 
-        await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${gitHash}`);
+        await Git.git(['checkout', gitHash as string], checkoutDir);
 
         // A stored lambda has an entry file, the schema requires it
         const entryDir = path.dirname(entryFilePath as string);
@@ -537,9 +546,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
           });
       }
     } catch (err: unknown) {
-      if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${lambda.name}`)) {
-        await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.name}`);
-      }
+      this._removeLambdaFolder(lambda.name);
 
       Logging.logError(`[${LambdaModel.name}] ${Helpers.getThrownErrorMessage(err)}`);
       throw err;

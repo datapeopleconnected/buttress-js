@@ -21,12 +21,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import util from 'node:util';
 import type { IncomingHttpHeaders } from 'node:http';
-import { exec as cpExec } from 'node:child_process';
+import { execFile as cpExecFile } from 'node:child_process';
 
 import NodeRedisPubsub from '../services/nrp.js';
 import type { Services } from '../bootstrap.js';
 
-const exec = util.promisify(cpExec);
+const execFile = util.promisify(cpExecFile);
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -652,7 +652,7 @@ export default class LambdaRunner {
     };
     for await (const packageKey of Object.keys(packages.dependencies)) {
       try {
-        await exec(`npm ls ${packageKey}`);
+        await execFile('npm', ['ls', '--', packageKey]);
       } catch (err: unknown) {
         let packageVersion = packages.dependencies[packageKey];
         const matchedPattern = packageVersion.match(/(^\D)/);
@@ -666,7 +666,7 @@ export default class LambdaRunner {
         if (err && typeof err === 'object' && 'code' in err && err.code === 1 && packageIsInAllowList) {
           try {
             Logging.log(`Installing ${packageKey}@${packageVersion} for lambda ${lambda.name}`);
-            await exec(`npm install ${packageKey}@${packageVersion}`);
+            await execFile('npm', ['install', '--', `${packageKey}@${packageVersion}`]);
             modules.push({
               name: packageKey,
             });

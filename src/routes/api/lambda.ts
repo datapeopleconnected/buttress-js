@@ -14,11 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import util from 'node:util';
+import fs from 'node:fs';
 import { Request, Response } from 'express';
-import { exec as cpExec } from 'node:child_process';
-
-const exec = util.promisify(cpExec);
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -810,7 +807,7 @@ class DeleteLambda extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: { lambda: Lambda; token: Token }) {
-    await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${validate.lambda.id}`);
+    fs.rmSync(`${Config.paths.lambda.code}/lambda-${validate.lambda.id}`, { recursive: true, force: true });
     await Model.getCoreModel(LambdaSchemaModel).rm(validate.lambda.id);
     await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
 
