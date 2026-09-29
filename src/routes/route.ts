@@ -15,7 +15,7 @@
  */
 import Stream from 'node:stream';
 
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 import { RedisClientType } from '@redis/client';
 
 import createConfig from '@dpc/node-env-obj';
@@ -220,9 +220,11 @@ export default class Route {
   /**
    * @param {Object} req - ExpressJS request object
    * @param {Object} res - ExpresJS response object
+   * @param {Function} next - ExpressJS next function, given the error of a result stream that fails after exec has
+   * returned
    * @return {Promise} - Promise is fulfilled once execution has completed
    */
-  async exec(req: Request, res: Response) {
+  async exec(req: Request, res: Response, next: NextFunction) {
     Logging.logTimer(
       `${req.method} ${req.originalUrl || req.url} ${req.ip}`,
       req.context.timer,
@@ -266,6 +268,15 @@ export default class Route {
 
       const resStream = new Stream.PassThrough({ objectMode: true });
       const broadcastStream = new Stream.PassThrough({ objectMode: true });
+
+      // pipe() doesn't pass the result's errors on, and an error nobody listens for would bring the process down. It
+      // comes after exec has returned, so it goes to the error handler, which responds with an error status, or
+      // destroys the response if it has started.
+      result.on('error', (err) => {
+        resStream.destroy();
+        broadcastStream.destroy();
+        next(err);
+      });
 
       result.pipe(resStream);
 

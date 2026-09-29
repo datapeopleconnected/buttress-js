@@ -56,6 +56,12 @@ share:
    per-chunk redaction via `Helpers.Schema.prepareSchemaResult`) straight to the HTTP response; otherwise
    `res.json()`s the (redacted, unless `redactResults = false`) result directly. With
    `BUTTRESS_LOGGING_SERVER_TIMING` on it first sets a `Server-Timing` header (see [performance.md](performance.md)).
+   A stream can fail after `exec` has returned (MongoDB only checks some queries, e.g. a non-array `$in`, once
+   the cursor runs). `exec` listens for the result's `'error'` and passes it to Express's `next`, as `pipe()`
+   doesn't forward errors and an unhandled one would kill the worker. The error handler then sends an error
+   status, or destroys the socket if the response has started. Anything that pipes or merges find streams
+   (the adapters, `models-access.find`) must pass errors on too: use `Stream.pipeline()`, or destroy the
+   output with the error.
 4. `_logActivity()` — fire-and-forget `ActivitySchemaModel.add()` for non-GET/SEARCH verbs, if
    `this.activity` (default `true`).
 5. `_boardcastData()` — for non-GET/SEARCH verbs: emits `rest:activity` twice (once as a "super"

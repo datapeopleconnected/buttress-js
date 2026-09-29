@@ -377,7 +377,7 @@ class Routes {
       Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
       app[route.verb](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
         req.context.pathSpec = pathSpec;
-        return route.exec(req, res).catch(next);
+        return route.exec(req, res, next).catch(next);
       });
     });
   }
@@ -405,7 +405,7 @@ class Routes {
         Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
         express[route.verb](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
           req.context.pathSpec = pathSpec;
-          return route.exec(req, res).catch(next);
+          return route.exec(req, res, next).catch(next);
         });
       });
     });

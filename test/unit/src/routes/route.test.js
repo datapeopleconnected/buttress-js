@@ -821,6 +821,52 @@ describe('routes/Route:exec', () => {
       '_boardcastData should receive a piped PassThrough stream',
     );
   });
+
+  it('gives the error of a result stream that fails after exec has returned to next, and stops its streams', async () => {
+    const route = createRoute();
+    route.verb = Route.Constants.Verbs.POST;
+    sinon.stub(route, '_authenticate').resolves();
+    sinon.stub(route, '_validate').resolves();
+    const stream = new Readable({ objectMode: true, read() {} });
+    sinon.stub(route, '_exec').resolves(stream);
+    const respond = sinon.stub(route, '_respond').resolves();
+    sinon.stub(route, '_logActivity').resolves();
+    const broadcastData = sinon.stub(route, '_boardcastData').resolves();
+    const next = sinon.spy();
+
+    await route.exec(createReq(), createRes(), next);
+    const err = new Error('$in needs an array');
+    // Without a listener the error would be thrown here.
+    stream.destroy(err);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.ok(next.calledOnceWithExactly(err));
+    assert.ok(respond.firstCall.args[2].destroyed, 'the response stream should be destroyed');
+    assert.ok(broadcastData.firstCall.args[2].destroyed, 'the broadcast stream should be destroyed');
+  });
+
+  it('fails a streamed response that has not started through the error handler, without responding itself', async () => {
+    const route = createRoute();
+    route.redactResults = false;
+    sinon.stub(route, '_authenticate').resolves();
+    sinon.stub(route, '_validate').resolves();
+    const stream = new Readable({ objectMode: true, read() {} });
+    sinon.stub(route, '_exec').resolves(stream);
+    sinon.stub(route, '_logActivity').resolves();
+    sinon.stub(route, '_boardcastData').resolves();
+    const res = Object.assign(new PassThrough(), { headersSent: false, set: sinon.stub(), json: sinon.stub() });
+    const written = [];
+    res.on('data', (chunk) => written.push(chunk.toString()));
+    const next = sinon.spy();
+
+    await route.exec(createReq(), res, next);
+    stream.destroy(new Error('$in needs an array'));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.ok(next.calledOnce);
+    assert.deepStrictEqual(written, [], 'nothing should be written before the error handler responds');
+    assert.strictEqual(res.writableEnded, false, 'the response should be left for the error handler');
+  });
 });
 
 describe('routes/Route:_respond Server-Timing', () => {

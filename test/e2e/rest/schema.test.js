@@ -379,6 +379,17 @@ describe('Schema', async () => {
 			assert.deepStrictEqual(await searchNames({name: {$rex: '^rex-case'}}), []);
 			assert.deepStrictEqual(await searchNames({name: {$rexi: '^rex-case'}}), ['Rex-Case-Car']);
 		});
+
+		it('Should fail a search that MongoDB refuses while streaming, and keep serving requests', async () => {
+			// MongoDB only rejects a non-array $in once the cursor runs, after the route has its stream.
+			await assert.rejects(() => searchNames({name: {$in: 'Rex-Case-Car'}}), (err) => {
+				assert.strictEqual(err.code, 500);
+				assert.strictEqual(err.message, 'Internal Server Error');
+				return true;
+			});
+
+			assert.deepStrictEqual(await searchNames({name: {$in: ['Rex-Case-Car']}}), ['Rex-Case-Car']);
+		});
 	});
 
 	describe('Types', async () => {

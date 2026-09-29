@@ -49,7 +49,7 @@ export async function find<T extends StandardModel<unknown>>(
     // Still not awaiting each find() before starting the next — this is the part worth running
     // concurrently (the actual per-document datastore stream), now that every policy's query is
     // already known to be valid.
-    preparedQueries.forEach((combined) => {
+    const results = preparedQueries.map((combined) => {
       // Not awaited, so this only works for models whose find is synchronous, a federated model's isn't
       const result = model.find(
         combined.query,
@@ -65,9 +65,15 @@ export async function find<T extends StandardModel<unknown>>(
         openStreams--;
         if (openStreams === 0) resStream.end();
       });
+      // pipe() doesn't pass errors on, so one policy's failed find fails the merged stream.
+      result.on('error', (err) => resStream.destroy(err));
 
       openStreams++;
+      return result;
     });
+
+    // Once the merged stream is done with, failed or not, the finds still running aren't needed.
+    resStream.once('close', () => results.forEach((result) => result.destroy()));
 
     return resStream;
   }

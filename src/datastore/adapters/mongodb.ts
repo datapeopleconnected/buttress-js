@@ -781,12 +781,10 @@ export default class MongodbAdapter extends AbstractAdapter {
       transform: (doc: Document, enc, cb) => cb(null, this._modifyDocument(doc)),
     });
 
-    stream.on('error', (err) => {
-      Logging.logSilly(`Error in MongoDB stream: ${err.message}`);
-      transformStream.emit('error', err);
+    // Fails the transform with the cursor's error, and closes the cursor if the transform is destroyed before it ends.
+    return Stream.pipeline(stream, transformStream, (err) => {
+      if (err) Logging.logSilly(`Error in MongoDB stream: ${err.message}`);
     });
-
-    return stream.pipe(transformStream);
   }
 
   // A query with its ids as ObjectIds and `id` as `_id`

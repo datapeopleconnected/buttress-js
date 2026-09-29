@@ -190,8 +190,11 @@ export default class Buttress extends AbstractAdapter {
 
   handleResult(result: Stream.Readable | unknown) {
     if (result instanceof Stream.Readable && result.readable) {
-      // Stream will be an array of objects, parse them out.
-      return result.pipe(parseJsonArrayStream());
+      // Stream will be an array of objects, parse them out. Unlike pipe(), pipeline() fails the parsed stream with
+      // the remote stream's error.
+      return Stream.pipeline(result, parseJsonArrayStream(), (err) => {
+        if (err) Logging.logSilly(`Error in remote stream: ${err.message}`);
+      });
     }
 
     return result;

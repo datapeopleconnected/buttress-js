@@ -100,4 +100,28 @@ describe('access-control/models-access:find', () => {
 
     await assert.rejects(() => ACM.find(model, { query: {} }, ac));
   });
+
+  it("fails the merged stream with a policy's find error, and stops the other finds", async () => {
+    const err = new Error('$in needs an array');
+    const streams = {};
+    const model = {
+      flatSchemaData: {},
+      parseQuery: (query) => query,
+      find: (query) => {
+        streams[query.tag] = new Readable({ objectMode: true, read() {} });
+        return streams[query.tag];
+      },
+    };
+    const ac = {
+      policyConfigs: [{ appId: 'app-1', query: { tag: 'one' } }, { appId: 'app-1', query: { tag: 'two' } }],
+    };
+
+    const stream = await ACM.find(model, { query: {} }, ac);
+    const drained = drain(stream);
+    streams.two.destroy(err);
+
+    await assert.rejects(drained, (thrown) => thrown === err);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.ok(streams.one.destroyed, "the other policy's find should be destroyed");
+  });
 });
