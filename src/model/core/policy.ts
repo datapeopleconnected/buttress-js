@@ -233,7 +233,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
     });
     const policy = (await Helpers.streamFirst(rxsPolicy)) as Policy;
 
-    this.__policyCache.invalidatePolicyAndTokensBySelection(policy.id.toString());
+    await this.__policyCache.invalidatePolicyAndTokensBySelection(policy.id.toString());
 
     return policy;
   }
@@ -245,17 +245,16 @@ class PolicySchemaModel extends StandardModel<Policy> {
 
   // }
   override async updateById(id: string, query: AdapterQuery) {
-    const policy = await super.updateById(this.createId(id), query);
+    const result = await super.updateById(this.createId(id), query);
 
-    // The update resolves to the datastore's update result rather than the policy, so this throws
-    this.__policyCache.invalidatePolicyAndTokensBySelection((policy as Policy).id.toString());
+    await this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());
 
-    return policy;
+    return result;
   }
   override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, sourceId: string | null = null) {
     const policy = await super.updateByPath(body, id, sourceId);
 
-    this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());
+    await this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());
 
     return policy;
   }

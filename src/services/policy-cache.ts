@@ -88,10 +88,11 @@ export class PolicyCache {
         this._modelManager.getCoreModel(PolicySchemaModel).find({ id: { $in: missingPolicies } }),
       );
 
+      // Cached with its schema lookups, as addPolicy caches it, so activity on its schemas finds it
       await newPolicies.reduce(async (prev, policy) => {
         await prev;
 
-        await this._redisClient.hSet(this._prefix(`policies`), policy.id.toString(), JSON.stringify(policy));
+        await this._cachePolicy(policy);
       }, Promise.resolve());
 
       return policies.concat(newPolicies);
@@ -224,9 +225,12 @@ export class PolicyCache {
     const policyExists = await this._redisClient.hExists(this._prefix(`policies`), policy.id.toString());
     if (policyExists) return false;
 
-    await this._redisClient.hSet(this._prefix(`policies`), policy.id.toString(), JSON.stringify(policy));
+    await this._cachePolicy(policy);
+  }
 
-    const lookupKeys = policy.config.reduce((acc: string[], config: PolicyConfig) => {
+  // The schema lookups that find a policy for activity: one for each schema it lets a token read
+  private _lookupKeys(policy: Policy) {
+    return policy.config.reduce((acc: string[], config: PolicyConfig) => {
       for (const schema of config.schema) {
         for (const verb of config.verbs) {
           if (verb === '%ALL%' || verb === 'GET' || verb === 'SEARCH') {
@@ -236,17 +240,39 @@ export class PolicyCache {
       }
       return acc;
     }, []);
+  }
 
-    for (const key of lookupKeys) {
+  private async _cachePolicy(policy: Policy) {
+    await this._redisClient.hSet(this._prefix(`policies`), policy.id.toString(), JSON.stringify(policy));
+
+    for (const key of this._lookupKeys(policy)) {
       await this._redisClient.sAdd(this._prefix(key), policy.id.toString());
     }
   }
 
+  /**
+   * Takes a policy out of the cache: its content, the schema lookups that find it, and its links to tokens.
+   * @param {string} policyId
+   * @return {Promise<string[]>} the ids of the tokens it was linked to
+   */
   async removePolicy(policyId: string) {
     Logging.logSilly(`Removing policy: ${policyId}`);
 
-    // Delete the policy from policies
+    const cached = await this._redisClient.hGet(this._prefix(`policies`), policyId);
+    if (cached) {
+      for (const key of this._lookupKeys(JSON.parse(cached) as Policy)) {
+        await this._redisClient.sRem(this._prefix(key), policyId);
+      }
+    }
     await this._redisClient.hDel(this._prefix(`policies`), policyId);
+
+    const tokenIds = await this._redisClient.sMembers(this._prefix(`policy:${policyId}:tokens`));
+    for (const tokenId of tokenIds) {
+      await this._redisClient.sRem(this._prefix(`token:${tokenId}:policies`), policyId);
+    }
+    await this._redisClient.del(this._prefix(`policy:${policyId}:tokens`));
+
+    return tokenIds;
   }
 
   async clearTokenPolicies(tokenId: string) {
@@ -309,17 +335,45 @@ export class PolicyCache {
     return connectedPolicyTokens;
   }
 
-  // A new policy has been added but we need to check to see if it selects against any connected tokens.
-  // if it does then we can cache it otherwise we can ignore it.
+  /**
+   * Refreshes a policy that was added or changed. Its old content, schema lookups and token links are removed, it is
+   * cached again as it now is, and selection is run again for each token it was linked to. Tokens its selection may
+   * now match are marked stale, so their policies are worked out again when they're next used.
+   * @param {string} policyId
+   * @return {Promise}
+   */
   async invalidatePolicyAndTokensBySelection(policyId: string) {
-    // Get the policy
-    const policy = (await this._modelManager.getCoreModel(PolicySchemaModel).findById(policyId)) as Policy;
-    if (!policy) {
+    const linkedTokenIds = await this.removePolicy(policyId);
+
+    const [policy] = await Helpers.streamAll<Policy>(
+      this._modelManager.getCoreModel(PolicySchemaModel).find({ id: { $in: [policyId] } }),
+    );
+    if (policy) {
+      await this._cachePolicy(policy);
+      await this._markTokensSelectableByPolicy(policy, linkedTokenIds);
+    } else {
       Logging.logSilly(`Policy not found: ${policyId}`);
+    }
+
+    for (const tokenId of linkedTokenIds) {
+      await this._reselectToken(tokenId);
+    }
+  }
+
+  // Works out a token's policies again from the token as it's stored, or forgets it if it's gone
+  private async _reselectToken(tokenId: string) {
+    const tokenModel = this._modelManager.getCoreModelByName('Token');
+    const [token] = await Helpers.streamAll<Token>(tokenModel.find({ id: { $in: [tokenId] } }));
+    if (!token) {
+      await this.clearTokenPolicies(tokenId);
       return;
     }
 
-    if (policy.selection === null) return;
+    await this.rehydrateToken(token);
+  }
+
+  private async _markTokensSelectableByPolicy(policy: Policy, skipTokenIds: string[]) {
+    if (!policy.selection) return;
 
     // ! We're asuming that the selection is just a simple object here and doesn't contain $and or $or.
     const policySelectionProperties = Object.keys(policy.selection);
@@ -345,7 +399,7 @@ export class PolicyCache {
       return this._prefix(`policy:propertyIndex:${prop}`);
     });
 
-    const tokenIds = await this._redisClient.sUnion(propertyIndexKeys);
+    const tokenIds = (await this._redisClient.sUnion(propertyIndexKeys)).filter((id) => !skipTokenIds.includes(id));
     if (tokenIds.length < 1) {
       Logging.logSilly(`No tokens found for policy properties: ${JSON.stringify(policySelectionProperties)}`);
       return;
@@ -355,9 +409,6 @@ export class PolicyCache {
 
     // Mark all the candidate tokens as stale so that they can be re-evaluated on the next request.
     await Promise.all(tokenIds.map((tokenId) => this.setTokenIdAsStale(tokenId)));
-
-    // We remove the policy from the cache so it will be re-evaluated on the next request.
-    this.removePolicy(policyId);
   }
 
   // Matches the case-insensitive comparison AccessControlHelpers.evaluateOperation uses for @eq/@not.

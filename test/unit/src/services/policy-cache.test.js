@@ -583,14 +583,14 @@ describe('services/policy-cache', () => {
       assert(policies.includes('STALE'), 'older-tok should still be caught by the broad fallback index');
     });
 
-    it('should remove the policy from the cache after invalidating', async () => {
-      await Redis.hSet(K('policies'), 'p1', JSON.stringify(policy1));
+    it('should replace the cached policy with the policy as it now is', async () => {
+      await Redis.hSet(K('policies'), 'p1', JSON.stringify({ ...policy1, name: 'old-name' }));
       await cache.indexTokenPolicyProperties('admin-tok', { role: 'admin' });
 
       cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(policy1) }));
       await cache.invalidatePolicyAndTokensBySelection('p1');
 
-      assert.strictEqual(await Redis.hExists(K('policies'), 'p1'), false);
+      assert.strictEqual(JSON.parse(await Redis.hGet(K('policies'), 'p1')).name, 'admin-policy');
     });
   });
 
@@ -605,5 +605,93 @@ describe('services/policy-cache', () => {
       const result = await cache.getConnectedTokenIdsByPolicyId('p1');
       assert(result.includes('tok1'));
     });
+  });
+});
+
+// Changing or deleting a policy, on a stand-in datastore that the test changes as the policy routes would
+describe('services/policy-cache: invalidating a policy', () => {
+  let db;
+  let cache;
+
+  const collection = (name) => ({
+    find(query) {
+      const ids = query?.id?.$in;
+      const appId = query?._appId;
+      const docs = db[name].filter((doc) => (!ids || ids.includes(doc.id)) && (!appId || doc._appId === appId));
+      return Readable.from(docs.map((doc) => JSON.parse(JSON.stringify(doc))), { objectMode: true });
+    },
+    async findById(id) {
+      return db[name].find((doc) => doc.id === id) ?? null;
+    },
+  });
+
+  const adminPolicy = (overrides = {}) => ({
+    id: 'p1', name: 'admin-policy', _appId: 'app1', priority: 1,
+    selection: { role: { '@eq': 'admin' } },
+    config: [{ verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null }],
+    ...overrides,
+  });
+  const admin = { id: 'admin-tok', _appId: 'app1', type: 'user', policyProperties: { role: 'admin' } };
+
+  // The db changes the way the policy routes change it, then the policy is invalidated as the model does
+  const changePolicy = async (policy) => {
+    db.policies = db.policies.map((p) => (p.id === policy.id ? policy : p));
+    await cache.invalidatePolicyAndTokensBySelection(policy.id);
+  };
+
+  beforeEach(async () => {
+    Redis.reset();
+    db = { policies: [adminPolicy()], tokens: [admin] };
+    cache = new PolicyCache(Redis, {
+      getCoreModel: () => collection('policies'),
+      getCoreModelByName: () => collection('tokens'),
+    });
+    await cache.addConnectedToken(admin.id);
+    await cache.getPoliciesByToken(admin);
+  });
+
+  it("takes a policy off a token that its narrowed selection no longer selects", async () => {
+    await changePolicy(adminPolicy({ selection: { role: { '@eq': 'superadmin' } } }));
+
+    assert.deepStrictEqual((await cache.getPoliciesByToken(admin)).map((p) => p.id), []);
+    assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
+  });
+
+  it('keeps a changed policy on a token it still selects, with its new content', async () => {
+    await changePolicy(adminPolicy({ name: 'renamed' }));
+
+    assert.deepStrictEqual((await cache.getPoliciesByToken(admin)).map((p) => p.name), ['renamed']);
+    assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), [admin.id]);
+  });
+
+  it('finds a policy for activity on the schemas it now covers, and not on those it no longer does', async () => {
+    const invoicePolicy = adminPolicy({
+      config: [{ verbs: ['GET'], schema: ['invoice'], query: {}, projection: null, condition: null }],
+    });
+    await changePolicy(invoicePolicy);
+
+    const ids = async (schemaName) =>
+      (await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName })).map((p) => p.id);
+    assert.deepStrictEqual(await ids('user'), []);
+    assert.deepStrictEqual(await ids('invoice'), ['p1']);
+  });
+
+  it('indexes a policy it caches after missing it, so activity on its schemas finds it', async () => {
+    await Redis.hDel(K('policies'), 'p1');
+    db.policies = [adminPolicy({ config: [{ verbs: ['GET'], schema: ['invoice'], query: {}, projection: null, condition: null }] })];
+
+    await cache.getPolicies(['p1']);
+
+    const found = await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'invoice' });
+    assert.deepStrictEqual(found.map((p) => p.id), ['p1']);
+  });
+
+  it("takes a deleted policy off every token and every schema lookup", async () => {
+    db.policies = [];
+    await cache.removePolicy('p1');
+
+    assert.deepStrictEqual((await cache.getPoliciesByToken(admin)).map((p) => p.id), []);
+    assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
+    assert.deepStrictEqual(await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'user' }), []);
   });
 });

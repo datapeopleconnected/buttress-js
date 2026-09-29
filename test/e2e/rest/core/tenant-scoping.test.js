@@ -83,7 +83,7 @@ describe('Core route tenant scoping', async () => {
 		for (const app of ['app1', 'app2']) {
 			await runStep(`allow policy properties on ${app}`, async () => updatePolicyPropertyList(ENDPOINT.REST, {
 				lambda: ['TEST_ACCESS'],
-				role: ['ADMIN', 'VIEWER'],
+				role: ['ADMIN', 'VIEWER', 'EDITOR', 'NOBODY'],
 			}, testEnv.apps[app].token), scope);
 		}
 
@@ -487,6 +487,40 @@ describe('Core route tenant scoping', async () => {
 					assert.strictEqual(note.text, 'app2 note');
 				}
 			}
+		});
+	});
+	describe('Changing a policy', () => {
+		const readNotes = (token) => bjsReq({ url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note`, method: 'GET' }, token);
+
+		before(async function () {
+			this.timeout(20000);
+			const scope = 'Policy change setup';
+
+			owned.editorPolicy = await runStep('create app2 editor policy', async () => createPolicy(ENDPOINT.REST, {
+				name: 'tenant-scoping-editors',
+				version: '1',
+				selection: { role: { '@eq': 'EDITOR' } },
+				config: [{ verbs: ['GET', 'SEARCH'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }],
+			}, testEnv.apps.app2.token), scope);
+
+			testEnv.users.app2Editor = await runStep('create app2 editor user', async () =>
+				createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'tenant-scoping-editor', { role: 'EDITOR' })
+			, scope);
+		});
+
+		it('Should stop granting a policy to a token once its selection no longer selects it', async () => {
+			const token = testEnv.users.app2Editor.tokens[0].value;
+			assert.ok((await readNotes(token)).length > 0);
+
+			await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/policy/${owned.editorPolicy.id}`,
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				// A role no token has
+				body: JSON.stringify([{ path: 'selection', value: { role: { '@eq': 'NOBODY' } } }]),
+			}, testEnv.apps.app2.token);
+
+			await assert.rejects(readNotes(token), (err) => err instanceof BJSReqError && err.code === 401);
 		});
 	});
 });
