@@ -511,3 +511,83 @@ describe('lambda/LambdaRunner:execute', () => {
     assert.ok(updateById.calledWithMatch('exec-1', { $set: { status: 'ERROR' } }));
   });
 });
+
+describe('lambda/LambdaRunner:execute timeout', () => {
+  let savedTimeout;
+  let savedPlugins;
+  let tmpDir;
+
+  beforeEach(() => {
+    savedTimeout = Config.timeout.lambdasRunner;
+    savedPlugins = Config.paths.lambda.plugins;
+    Config.timeout.lambdasRunner = '1';
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-timeout-'));
+    Config.paths.lambda.plugins = tmpDir;
+  });
+
+  afterEach(() => {
+    Config.timeout.lambdasRunner = savedTimeout;
+    Config.paths.lambda.plugins = savedPlugins;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // Runs a lambda whose entry point is `entryPoint`, in the runner's real isolate
+  async function executeLambda(runner, entryPoint) {
+    const updateById = sinon.stub().resolves();
+    stubModel(
+      new Map([
+        [SecureStoreSchemaModel, { findOne: async () => null }],
+        [AppSchemaModel, { createId: (v) => v }],
+        [LambdaSchemaModel, { createId: (v) => v }],
+        [TokenSchemaModel, { find: async () => Readable.from([{ value: 'lambda-token' }]) }],
+        [LambdaExecutionSchemaModel, fakeExecutionModel({ updateById })],
+      ]),
+    );
+    sinon.stub(runner, '_getLambdaModulesName').returns([{ name: 'lambda_lambda-1' }]);
+    sinon.stub(runner, 'bundleLambdaModules').resolves();
+    sinon.stub(runner, '_registerLambdaModules').callsFake(async () => {
+      runner._context.evalSync(`
+        globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
+        globalThis['lambda_lambda-1'] = class { async execute() { ${entryPoint} } };
+      `);
+    });
+    const lambda = {
+      id: 'lambda-1',
+      name: 'hello-world',
+      git: { url: 'git@example.com:hello-world.git', hash: 'HEAD', entryFile: 'index.js', entryPoint: 'execute' },
+      trigger: [],
+    };
+
+    const started = Date.now();
+    const execution = { id: 'exec-1', lambdaId: 'lambda-1', deploymentId: 'deployment-1', metadata: [] };
+    const result = runner.execute(lambda, execution, { id: 'app-1', apiPath: 'test' }, 'API_ENDPOINT', {
+      reqId: 'req-1',
+    });
+    await assert.rejects(result, /lambda_execution_timed_out/);
+    return { elapsed: Date.now() - started, updateById };
+  }
+
+  for (const [name, entryPoint] of [
+    ['runs without awaiting', 'while (true) {}'],
+    ['is still running after an await', 'await Promise.resolve(); while (true) {}'],
+  ]) {
+    it(`stops a lambda that ${name} after the runner timeout, and starts a new isolate`, async function () {
+      this.timeout(10000);
+      const { runner, nrp } = createRunner();
+      await runner.init();
+      const firstIsolate = runner._isolate;
+
+      const { elapsed, updateById } = await executeLambda(runner, entryPoint);
+
+      assert.ok(elapsed < 3000, `took ${elapsed}ms`);
+      assert.ok(updateById.calledWithMatch('exec-1', { $set: { status: 'ERROR' } }));
+      const resultCall = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+      assert.match(JSON.parse(resultCall.args[1]).err, /lambda_execution_timed_out/);
+
+      assert.notStrictEqual(runner._isolate, firstIsolate);
+      assert.ok(firstIsolate.isDisposed);
+      assert.strictEqual(runner._context.evalSync('typeof getEmailTemplate'), 'function');
+      runner._isolate.dispose();
+    });
+  }
+});

@@ -31,6 +31,14 @@ const execFile = util.promisify(cpExecFile);
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
+// A lambda that runs for longer than the runner's timeout
+class LambdaTimeoutError extends Error {
+  constructor() {
+    super('lambda_execution_timed_out');
+    this.name = 'LambdaTimeoutError';
+  }
+}
+
 import ivm from 'isolated-vm';
 import { v4 as uuidv4 } from 'uuid';
 import webpack from 'webpack';
@@ -131,6 +139,12 @@ export default class LambdaRunner {
   async init() {
     Logging.logDebug('LambdaRunner:init');
 
+    this._createIsolate();
+    this._subscribeToLambdaManager();
+  }
+
+  // A new isolate and context with the host functions lambdas use. Bundles are registered in it as they're needed.
+  _createIsolate() {
     this._isolate = new ivm.Isolate({
       inspector: false,
       onCatastrophicError: () => {
@@ -146,7 +160,37 @@ export default class LambdaRunner {
     this._compiledLambdas = [];
 
     lambdaHelpers._createIsolateContext(this._isolate, this._context, this._jail);
-    this._subscribeToLambdaManager();
+  }
+
+  /**
+   * Runs a lambda's script for at most Constants.TIMEOUT. isolated-vm's timeout only stops code that runs without
+   * awaiting, so when the time is up the isolate is disposed, which stops whatever is still running in it, and the
+   * runner starts a new one.
+   * @param {ivm.Script} script
+   * @return {Promise}
+   */
+  async _runLambdaScript(script: ivm.Script) {
+    if (!this._context) throw new Error('Isolate Context not initialised');
+
+    const timeout = LambdaRunner.Constants.TIMEOUT;
+    let timer: NodeJS.Timeout | undefined;
+    const timedOut = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(() => reject(new LambdaTimeoutError()), timeout);
+    });
+
+    try {
+      await Promise.race([script.run(this._context, { promise: true, timeout }), timedOut]);
+    } catch (err: unknown) {
+      const isolateTimedOut = err instanceof Error && err.message === 'Script execution timed out.';
+      if (!(err instanceof LambdaTimeoutError) && !isolateTimedOut) throw err;
+
+      Logging.logError(`[${this.name}] Lambda execution timed out after ${timeout}ms, starting a new isolate`);
+      this._isolate?.dispose();
+      this._createIsolate();
+      throw new LambdaTimeoutError();
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   async clean() {
@@ -357,7 +401,7 @@ export default class LambdaRunner {
 					await lambdaCode[lambdaInfo.entryPoint]();
 				})();
 			`);
-      await hostile.run(this._context, { promise: true });
+      await this._runLambdaScript(hostile);
       // Maybe dispose isolate after executin the lambda?
 
       await this._updateDBLambdaFinishExecution(execution);
@@ -823,7 +867,7 @@ export default class LambdaRunner {
       try {
         this._isolate
           .compileScriptSync(fs.readFileSync(`${Config.paths.lambda.bundles}/${file}.js`, 'utf8'))
-          .runSync(this._context);
+          .runSync(this._context, { timeout: LambdaRunner.Constants.TIMEOUT });
       } catch (err: unknown) {
         Logging.logError(`Error registering lambda module ${mod.name}`);
         throw err;
