@@ -407,6 +407,16 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
     await assert.rejects(route._validate(createReq({ body: { branch: 'main', hash: 'abc' } })), /invalid_lambda_id/);
   });
 
+  it('resolves with the requested branch and hash', async () => {
+    const lambda = { id: 'lambda-1', git: { entryFile: 'index.js', entryPoint: 'execute' } };
+    stubModel({ lambda: { findById: async () => lambda } });
+    const route = createRoute(EditLambdaDeployment);
+
+    const result = await route._validate(createReq({ params: { id: HEX_ID }, body: { branch: 'main', hash: 'abc' } }));
+
+    assert.deepStrictEqual(result, { branch: 'main', hash: 'abc', lambda });
+  });
+
   it('sets the new deployment info on exec', async () => {
     const { lambdaModel } = stubModel();
     const route = createRoute(EditLambdaDeployment);

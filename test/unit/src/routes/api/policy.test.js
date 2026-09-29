@@ -402,6 +402,18 @@ describe('routes/api/policy:DeleteTransientPolicy', () => {
     await assert.rejects(route._validate(createReq({ body: { name: 'missing' } })), /policy_does_not_exist/);
   });
 
+  it('only looks the name up within the authenticated app', async () => {
+    const policy = { id: 'policy-1', name: 'transient' };
+    const find = sinon.stub().returns(Readable.from([policy], { objectMode: true }));
+    stubModel({ policy: { find } });
+    const route = createRoute(DeleteTransientPolicy);
+
+    const result = await route._validate(createReq({ body: { name: 'transient' } }));
+
+    assert.ok(find.calledWith({ name: 'transient', _appId: 'app-1' }));
+    assert.deepStrictEqual(result, { appId: 'app-1', policy });
+  });
+
   it('removes the matched transient policy and notifies dependents', async () => {
     const { policyModel } = stubModel();
     const nrp = { emit: sinon.spy() };

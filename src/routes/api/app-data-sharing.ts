@@ -548,7 +548,7 @@ class ReactivateAppDataSharing extends Route {
 
   override _exec(_req: Request, _res: Response, dataSharing: AppDataSharing) {
     return Model.getCoreModel(AppDataSharingSchemaModel)
-      .deactivate(dataSharing.id)
+      .activate(dataSharing.id)
       .then(() => true);
   }
 }

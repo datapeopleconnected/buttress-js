@@ -94,7 +94,7 @@ A token is required whenever a call is made to Buttress.
 You can make a test request using the super token:
 
 ```bash
-curl --location --request GET 'http://localhost:8000/api/v1/app?token=<INSERT TOKEN HERE>'
+curl --location --request GET 'http://localhost:8000/api/v1/app' --header 'Authorization: Bearer <INSERT TOKEN HERE>'
 ```
 
 If running via Compose defaults, change the port to `8080`.

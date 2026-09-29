@@ -107,6 +107,7 @@ More policy details are available in [Policy](../applications/policy.md).
 ```json
 {
   "name": "admin-access",
+  "version": "1",
   "selection": {
     "role": {
       "@eq": "admin"
@@ -162,6 +163,7 @@ Edit `policy.json` and add the following. Policy sync also expects an array.
 ```json
 [{
   "name": "admin-access",
+  "version": "1",
   "selection": {
     "role": {
       "@eq": "admin"
@@ -179,7 +181,8 @@ Edit `policy.json` and add the following. Policy sync also expects an array.
 
 Edit `sync.js` and add the following:
 ```nodejs
-const Buttress = require('@buttress/api');
+// The client is the package's default export
+const {default: Buttress} = require('@buttress/api');
 
 const Schema = require('./schema.json');
 const AppPolicies = require('./policy.json');
@@ -207,7 +210,7 @@ node sync.js
 
 The schema and policy for your application will now be updated in Buttress, and a `cars` API will be available. You can test this with the command below. Replace `<APP TOKEN>` with your app token and `<APP CODE>` with your app code.
 ```bash
-curl --location --request GET 'http://localhost:8000/<APP CODE>/api/v1/cars?token=<APP TOKEN>'
+curl --location --request GET 'http://localhost:8000/<APP CODE>/api/v1/cars' --header 'Authorization: Bearer <APP TOKEN>'
 ```
 
 ## Next Steps

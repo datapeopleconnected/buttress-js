@@ -493,7 +493,11 @@ class DeleteTransientPolicy extends Route {
     let policy: Policy | null;
     try {
       policy = await Helpers.streamFirst<Policy>(
-        await Model.getCoreModel(PolicySchemaModel).find({ name: req.body.name }),
+        // Policy names are only unique within an app, so another app's policy of the same name is left alone
+        await Model.getCoreModel(PolicySchemaModel).find({
+          name: req.body.name,
+          _appId: Model.getCoreModel(AppSchemaModel).createId(appId),
+        }),
       );
     } catch (_err: unknown) {
       policy = null;

@@ -117,9 +117,18 @@ class AddManySecureStore extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
+    const names = req.body.map((ss) => ss.name);
+    const repeated = names.find((name, idx) => names.indexOf(name) !== idx);
+    if (repeated) {
+      this.log(`ERROR: Secure Store name ${repeated} is given more than once`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
+    }
+
+    // Names are unique within an app, as AddSecureStore checks
     for await (const secureStore of req.body) {
       const secureStoreExist = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
         name: secureStore.name,
+        _appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
       });
       if (secureStoreExist) {
         this.log(`ERROR: Secure Store with this name ${secureStore.name} already exists`, Route.LogLevel.ERR);
@@ -127,13 +136,14 @@ class AddManySecureStore extends Route {
       }
     }
 
-    return Promise.resolve(true);
+    return Promise.resolve({
+      appId: app.id,
+    });
   }
 
-  override async _exec(req: RequestWithBody<SecureStoreAddBody[]>, _res: Response, _validate: boolean) {
+  override async _exec(req: RequestWithBody<SecureStoreAddBody[]>, _res: Response, validate: { appId: string }) {
     for await (const secureStore of req.body) {
-      // FIXME: this passes the request as the body and the secure store as the app id
-      await Model.getCoreModel(SecureStoreSchemaModel).add(req as SecureStoreAddBody, secureStore as unknown as string);
+      await Model.getCoreModel(SecureStoreSchemaModel).add(secureStore, validate.appId);
     }
 
     return true;
