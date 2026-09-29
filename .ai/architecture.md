@@ -68,7 +68,9 @@ the only dependency-injection mechanism in the codebase — there's no DI contai
    about that schema+verb, evaluates each policy's query/projection against the entity, and re-emits a
    filtered `spr:activity` event per token (or per policy, batched in groups of 1000 token ids).
 6. Each **Socket** worker's `_workerOnSPRActivity` listens for `spr:activity` and emits `db-activity` to
-   the Socket.IO room(s) for the matching app namespace/tokens, and to `/stats` for global counters.
+   the Socket.IO room(s) for the matching app namespace/tokens, and to `/stats` for global counters. Every
+   worker receives every `spr:activity`, so these emits are `.local` to the worker's own sockets: going
+   through the redis adapter would deliver one copy per worker.
 7. If the write matched a `PATH_MUTATION` lambda trigger, the **Lambda** primary's `LambdaManager` debounces
    and eventually creates a `LambdaExecution`, then announces it to `LambdaRunner` workers over NRP.
 

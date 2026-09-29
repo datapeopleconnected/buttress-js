@@ -605,7 +605,9 @@ export default class BootstrapSocket extends Bootstrap {
 
     const { tokens, activity }: DataShareSocketSharePayload = data;
 
-    this.io.of(`/stats`).emit('activity', 1);
+    // Every Socket worker receives each activity over NRP, so each emits only to its own sockets. Emitting through
+    // the redis adapter would reach every worker's sockets, and a client would get a copy from each worker.
+    this.io.of(`/stats`).local.emit('activity', 1);
     Logging.logTimer(`emitted stats activity`, container.timer, Logging.Constants.LogLevel.SILLY, container.id);
 
     if (activity.broadcast === false) {
@@ -642,7 +644,7 @@ export default class BootstrapSocket extends Bootstrap {
       },
     };
 
-    this.io.of(`/${data.activity.appAPIPath}`).to(tokens).emit('db-activity', packet);
+    this.io.of(`/${data.activity.appAPIPath}`).local.to(tokens).emit('db-activity', packet);
   }
 
   __primaryClearUserLocalData() {
