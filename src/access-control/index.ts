@@ -447,6 +447,13 @@ class AccessControl {
 
     // Look through each of the policies and build the queries
     applicablePolicies = await AccessControlFilter.buildApplicablePoliciesQuery(applicablePolicies, reqEnv);
+    if (applicablePolicies.length < 1) {
+      throw new PolicyError(
+        401,
+        `Access control policy query can not be applied to ${schemaName}`,
+        '_accessControlPolicy:query-not-resolved',
+      );
+    }
     applicablePolicies = await AccessControlProjection.filterPoliciesByPolicyProjection(
       req,
       applicablePolicies,

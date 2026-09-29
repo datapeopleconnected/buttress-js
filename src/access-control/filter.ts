@@ -19,9 +19,10 @@ import Sugar from '../helpers/sugar.js';
 
 import AccessControlHelpers, { CombineEnvGroups } from './helpers.js';
 
-import Env, { ACEnv, ACPolicyEnvCombined } from './env.js';
+import Env, { ACEnv, ACPolicyEnvCombined, PolicyEnv } from './env.js';
 
 import * as Helpers from '../helpers/index.js';
+import Logging from '../helpers/logging.js';
 import Model from '../model/index.js';
 
 import { ApplicablePolicyConfig } from './index.js';
@@ -50,6 +51,24 @@ function isAccessControlValue(value: unknown): value is AccessControlValue {
 /**
  * @class Filter
  */
+// A policy query referring to an #env value that isn't set, which can't be applied
+export class UnresolvedEnvError extends Error {
+  constructor(reference: string) {
+    super(`unresolved_policy_env: ${reference}`);
+    this.name = 'UnresolvedEnvError';
+  }
+}
+
+// The value an #env reference in a policy query stands for. A reference to a value that isn't set is refused, rather
+// than left undefined, which a datastore reads as matching every entity that lacks the field.
+const resolveQueryValue = async (value: unknown, envVars: ACPolicyEnvCombined) => {
+  const resolved = await Env.getEnvValue(value, envVars);
+  if (resolved === undefined && typeof value === 'string' && value.startsWith(PolicyEnv.strPrefix)) {
+    throw new UnresolvedEnvError(value);
+  }
+  return resolved;
+};
+
 export class Filter {
   static queryOperators: { [index: string]: string } = {
     '@eq': '$eq',
@@ -97,7 +116,14 @@ export class Filter {
 
       const p = Object.assign({}, policy);
       const env = CombineEnvGroups(policy, reqEnv);
-      p.config.query = await this.buildPolicyQuery(policy.config.query, env);
+      try {
+        p.config.query = await this.buildPolicyQuery(policy.config.query, env);
+      } catch (err: unknown) {
+        // A config whose query can't be built grants nothing
+        if (!(err instanceof UnresolvedEnvError)) throw err;
+        Logging.logWarn(`Policy ${policy.name} not applied: ${err.message}`);
+        continue;
+      }
       output.push(p);
     }
 
@@ -125,7 +151,7 @@ export class Filter {
       if (stripAccessKeys && key === 'access' && typeof val === 'string' && this._queryAccess.includes(val)) continue;
 
       if (typeof val === 'string') {
-        outputRecord[key] = await Env.getEnvValue(val, envVars);
+        outputRecord[key] = await resolveQueryValue(val, envVars);
         continue;
       }
       if (typeof val !== 'object' || val === null) {
@@ -185,7 +211,7 @@ export class Filter {
       }
 
       if (typeof val === 'string') {
-        outputRecord[key] = await Env.getEnvValue(val, envVars);
+        outputRecord[key] = await resolveQueryValue(val, envVars);
         continue;
       }
 
@@ -195,7 +221,7 @@ export class Filter {
       // if (!Filter.queryOperators[operator]) continue;
 
       outputRecord[key] = {};
-      (outputRecord[key] as Record<string, unknown>)[operator] = await Env.getEnvValue(value, envVars);
+      (outputRecord[key] as Record<string, unknown>)[operator] = await resolveQueryValue(value, envVars);
     }
 
     return output;
@@ -374,15 +400,15 @@ export class Filter {
 
     const newQuery: Record<string, unknown[]> = { [operator]: [] };
 
-    // Check to see if the base filter already has the operator, if it does then spread it
-    if (baseFilter[operator]) {
+    // A filter of only the operator is spread into the new one. A filter with other keys too is kept whole, so they
+    // still apply.
+    if (baseFilter[operator] && Object.keys(baseFilter).length === 1) {
       newQuery[operator] = [...(baseFilter[operator] as unknown[])];
     } else {
       newQuery[operator].push(baseFilter);
     }
 
-    // Check to see if the additional filter already has the operator, if it does then spread it
-    if (additionalFilter[operator]) {
+    if (additionalFilter[operator] && Object.keys(additionalFilter).length === 1) {
       newQuery[operator] = [...newQuery[operator], ...(additionalFilter[operator] as unknown[])];
     } else {
       newQuery[operator].push(additionalFilter);

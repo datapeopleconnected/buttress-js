@@ -127,6 +127,55 @@ describe('access-control/filter:mergeQueryFilters', () => {
   });
 });
 
+describe('access-control/filter:mergeQueryFilters keeps every key', () => {
+  it("keeps the other keys of a filter that has the operator as well", () => {
+    const withAnd = { $and: [{ age: { $gt: 18 } }], ownerId: 'owner-1' };
+    const withOr = { $or: [{ role: 'admin' }, { role: 'editor' }], tenant: 'tenant-1' };
+    const other = { city: 'New York' };
+
+    assert.deepStrictEqual(Filter.mergeQueryFilters(withAnd, other), { $and: [withAnd, other] });
+    assert.deepStrictEqual(Filter.mergeQueryFilters(other, withAnd), { $and: [other, withAnd] });
+    assert.deepStrictEqual(Filter.mergeQueryFilters(withOr, other, '$or'), { $or: [withOr, other] });
+    assert.deepStrictEqual(Filter.mergeQueryFilters(other, withOr, '$or'), { $or: [other, withOr] });
+  });
+});
+
+describe('access-control/filter:buildPolicyQuery env references that are not set', () => {
+  const env = { date: { now: '2025-06-01T00:00:00.000Z' }, user: null, appId: 'app-1', ownerId: 'owner-1' };
+
+  it('refuses a query whose #env reference is not set', async () => {
+    for (const query of [
+      { ownerId: '#env.user.id' },
+      { ownerId: { '@eq': '#env.user.id' } },
+      { $and: [{ ownerId: '#env.misspelt' }] },
+      { $or: [{ ownerId: '#env.ownerId' }, { editorId: { '@eq': '#env.user.id' } }] },
+    ]) {
+      await assert.rejects(Filter.buildPolicyQuery(query, env), /unresolved_policy_env: #env\./, JSON.stringify(query));
+    }
+  });
+
+  it('builds a query whose #env references are set, even to null', async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ ownerId: '#env.ownerId' }, env), { ownerId: 'owner-1' });
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ userId: { '@eq': '#env.user' } }, env), {
+      userId: { $eq: null },
+    });
+  });
+
+  it("drops a policy config whose query can't be built, keeping the others", async () => {
+    const config = (query) => ({ id: 'p', name: 'p', env: null, appId: 'app-1', config: { query } });
+
+    const built = await Filter.buildApplicablePoliciesQuery(
+      [config({ ownerId: '#env.user.id' }), config({ ownerId: '#env.ownerId' })],
+      env,
+    );
+
+    assert.deepStrictEqual(
+      built.map((p) => p.config.query),
+      [{ ownerId: 'owner-1' }],
+    );
+  });
+});
+
 describe('access-control/filter:mergeQueryFiltersWithAccessControl', () => {
   it('should merge request query with access control query using $and', () => {
     const reqQuery = { age: { $gt: 18 } };

@@ -29,7 +29,7 @@ import Logging from './helpers/logging.js';
 import { ApplicablePolicyConfig } from './access-control/index.js';
 import { CombineEnvGroups, containsTokenLevelRef, filterPolicyConfigs } from './access-control/helpers.js';
 import AccessControlEnv, { ACEnv, ACPolicyEnvCombined } from './access-control/env.js';
-import AccessControlFilters from './access-control/filter.js';
+import AccessControlFilters, { UnresolvedEnvError } from './access-control/filter.js';
 import AccessControlConditions from './access-control/conditions.js';
 import AccessControlProjection from './access-control/projection.js';
 
@@ -540,7 +540,14 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     }
 
     // As on REST, the query's access keys are dropped, and a query left empty reads every entity
-    const query = await AccessControlFilters.buildPolicyQuery(applicablePolicy.config.query, env);
+    let query: Awaited<ReturnType<typeof AccessControlFilters.buildPolicyQuery>>;
+    try {
+      query = await AccessControlFilters.buildPolicyQuery(applicablePolicy.config.query, env);
+    } catch (err: unknown) {
+      // A query referring to an env value that isn't set reads nothing
+      if (err instanceof UnresolvedEnvError) return false;
+      throw err;
+    }
 
     // ? How does this work if it's a core schema?
     const readsEntity = (q: NonNullable<typeof query>) =>

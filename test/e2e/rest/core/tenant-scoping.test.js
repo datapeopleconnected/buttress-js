@@ -423,4 +423,28 @@ describe('Core route tenant scoping', async () => {
 			}
 		});
 	});
+	describe('Policy queries that refer to env values that are not set', () => {
+		before(async function () {
+			this.timeout(20000);
+			const scope = 'Policy env setup';
+
+			await runStep('create app2 policy on an unset user field', async () => createPolicy(ENDPOINT.REST, {
+				name: 'tenant-scoping-unset-env',
+				version: '1',
+				selection: { role: { '@eq': 'ADMIN' } },
+				config: [{ verbs: ['GET', 'SEARCH'], schema: ['note'], query: { owner: { '@eq': '#env.user.nickname' } } }],
+			}, testEnv.apps.app2.token), scope);
+
+			testEnv.users.app2Admin = await runStep('create app2 admin user', async () =>
+				createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'tenant-scoping-admin', { role: 'ADMIN' })
+			, scope);
+		});
+
+		it("Should refuse a read whose only policy query can't be resolved, rather than match entities without the field", async () => {
+			await assert.rejects(bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note`,
+				method: 'GET',
+			}, testEnv.users.app2Admin.tokens[0].value), (err) => err instanceof BJSReqError && err.code === 401);
+		});
+	});
 });
