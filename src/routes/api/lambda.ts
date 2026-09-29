@@ -548,9 +548,8 @@ class EditLambdaDeployment extends Route {
       await Model.getCoreModel(LambdaSchemaModel).pullLambdaCode(lambda, lambdaDeployInfo);
 
       return Promise.resolve({
-        hash: req.body.hash,
-        // FIXME: this reads `body` rather than `branch`, so it's undefined unless the request sends a `body`
-        branch: (req.body as EditLambdaDeploymentBody & { body: string }).body,
+        hash,
+        branch,
         lambda,
       });
     } catch (err: unknown) {

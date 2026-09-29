@@ -360,13 +360,14 @@ describe('routes/api/app-data-sharing:ReactivateAppDataSharing', () => {
     await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /no_datasharing/);
   });
 
-  it('deactivates and resolves true (route name notwithstanding)', async () => {
+  it('activates the agreement and resolves true', async () => {
     const { dsModel } = stubModel();
     const route = createRoute(ReactivateAppDataSharing);
 
     const result = await route._exec(createReq(), {}, { id: 'ds-1' });
 
-    assert.ok(dsModel.deactivate.calledWith('ds-1'));
+    assert.ok(dsModel.activate.calledWith('ds-1'));
+    assert.ok(dsModel.deactivate.notCalled);
     assert.strictEqual(result, true);
   });
 });

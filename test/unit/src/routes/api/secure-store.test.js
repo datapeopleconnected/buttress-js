@@ -160,6 +160,37 @@ describe('routes/api/secure-store:AddManySecureStore', () => {
 
     await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }] })), /already_exist/);
   });
+
+  it('rejects when a name is given more than once in the batch', async () => {
+    stubModel();
+    const route = createRoute(AddManySecureStore);
+
+    await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }, { name: 'a' }] })), /already_exist/);
+  });
+
+  it('only checks for existing names within the authenticated app', async () => {
+    const findOne = sinon.stub().resolves(null);
+    stubModel({ secureStore: { findOne } });
+    const route = createRoute(AddManySecureStore);
+
+    const result = await route._validate(createReq({ body: [{ name: 'a' }] }));
+
+    assert.ok(findOne.calledWith({ name: 'a', _appId: 'app-1' }));
+    assert.deepStrictEqual(result, { appId: 'app-1' });
+  });
+
+  it('adds each secure store scoped to the authenticated app', async () => {
+    const { secureStoreModel } = stubModel();
+    const route = createRoute(AddManySecureStore);
+    const body = [{ name: 'a' }, { name: 'b', storeData: { key: 'value' } }];
+
+    const result = await route._exec(createReq({ body }), {}, { appId: 'app-1' });
+
+    assert.strictEqual(secureStoreModel.add.callCount, 2);
+    assert.ok(secureStoreModel.add.firstCall.calledWith(body[0], 'app-1'));
+    assert.ok(secureStoreModel.add.secondCall.calledWith(body[1], 'app-1'));
+    assert.strictEqual(result, true);
+  });
 });
 
 describe('routes/api/secure-store:GetSecureStore', () => {
