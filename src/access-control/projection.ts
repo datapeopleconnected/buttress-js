@@ -135,7 +135,7 @@ class Projection {
       const invalidPaths = requestBody
         // Update bodies are UpdatePathBody[]
         .map((elem) => elem.path as string)
-        .filter((updateKey) => projectionKeys.find((key) => new RegExp(`^${key}`).test(updateKey)) === undefined);
+        .filter((updateKey) => !projectionKeys.some((key) => updateKey === key || updateKey.startsWith(`${key}.`)));
 
       if (invalidPaths.length > 0) {
         throw new PolicyError(

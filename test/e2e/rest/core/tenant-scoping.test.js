@@ -83,7 +83,7 @@ describe('Core route tenant scoping', async () => {
 		for (const app of ['app1', 'app2']) {
 			await runStep(`allow policy properties on ${app}`, async () => updatePolicyPropertyList(ENDPOINT.REST, {
 				lambda: ['TEST_ACCESS'],
-				role: ['ADMIN'],
+				role: ['ADMIN', 'VIEWER'],
 			}, testEnv.apps[app].token), scope);
 		}
 
@@ -153,11 +153,14 @@ describe('Core route tenant scoping', async () => {
 			await runStep(`add the note schema to ${app}`, async () => updateSchema(ENDPOINT.REST, [{
 				name: 'note',
 				type: 'collection',
-				properties: { text: { __type: 'string', __default: null, __required: true, __allowUpdate: true } },
+				properties: {
+					text: { __type: 'string', __default: null, __required: true, __allowUpdate: true },
+					secret: { __type: 'string', __default: null, __required: false, __allowUpdate: true },
+				},
 			}], testEnv.apps[app].token), scope);
 		}
 		[owned.note] = await runStep('add app2 note', async () =>
-			bjsReqPost(`${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note`, { text: 'app2 note' }, testEnv.apps.app2.token)
+			bjsReqPost(`${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note`, { text: 'app2 note', secret: 'app2 secret' }, testEnv.apps.app2.token)
 		, scope);
 	});
 
@@ -445,6 +448,45 @@ describe('Core route tenant scoping', async () => {
 				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note`,
 				method: 'GET',
 			}, testEnv.users.app2Admin.tokens[0].value), (err) => err instanceof BJSReqError && err.code === 401);
+		});
+	});
+	describe('Policy projections', () => {
+		before(async function () {
+			this.timeout(20000);
+			const scope = 'Policy projection setup';
+
+			await runStep('create app2 policy that projects the text', async () => createPolicy(ENDPOINT.REST, {
+				name: 'tenant-scoping-text-only',
+				version: '1',
+				selection: { role: { '@eq': 'VIEWER' } },
+				config: [{
+					verbs: ['GET', 'SEARCH'],
+					schema: ['note'],
+					query: { access: '%FULL_ACCESS%' },
+					projection: { keys: ['text'] },
+				}],
+			}, testEnv.apps.app2.token), scope);
+
+			testEnv.users.app2Viewer = await runStep('create app2 viewer user', async () =>
+				createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'tenant-scoping-viewer', { role: 'VIEWER' })
+			, scope);
+		});
+
+		it('Should give only the projected properties, whatever the request projects', async () => {
+			for (const project of [{ secret: 1 }, { text: 1, secret: 1 }, undefined]) {
+				const notes = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note`,
+					method: 'SEARCH',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ query: {}, project }),
+				}, testEnv.users.app2Viewer.tokens[0].value);
+
+				assert.ok(notes.length > 0, JSON.stringify(project));
+				for (const note of notes) {
+					assert.ok(!('secret' in note), `${JSON.stringify(project)} gave ${JSON.stringify(note)}`);
+					assert.strictEqual(note.text, 'app2 note');
+				}
+			}
 		});
 	});
 });

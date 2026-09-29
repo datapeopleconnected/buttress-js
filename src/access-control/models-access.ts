@@ -148,20 +148,40 @@ export async function combineQueriesWithAc(raw: QueryParams<object>, policyConfi
   }
 
   if (policyConfig.projection) {
-    // TODO: We may need to do more in making sure the user isn't projection to something they don't have.
-    if (query.project === null) query.project = {};
-    const projection = Object.entries(policyConfig.projection).reduce((acc: Record<string, 1 | -1>, [key, value]) => {
-      if (value === 1 || value === -1) {
-        acc[key] = value;
-        return acc;
-      }
-
-      if (value) acc[key] = 1;
-      return acc;
-    }, {});
-
-    query.project = { ...query.project, ...projection };
+    const policyKeys = Object.entries(policyConfig.projection)
+      .filter(([, value]) => Boolean(value))
+      .map(([key]) => key);
+    if (policyKeys.length > 0) query.project = intersectProjection(query.project, policyKeys);
   }
 
   return query;
+}
+
+// `path` is `key` or a path beneath it
+const isWithin = (path: string, key: string) => path === key || path.startsWith(`${key}.`);
+
+/**
+ * The properties both the request's projection and the policy's keys name: a requested property the policy allows, or
+ * the parts of a requested property that the policy allows. A request that names none of them, or projects by
+ * exclusion, gets the policy's properties.
+ */
+function intersectProjection(requested: unknown, policyKeys: string[]): Record<string, 1> {
+  const requestedKeys =
+    requested && typeof requested === 'object'
+      ? Object.entries(requested as Record<string, unknown>)
+          .filter(([, value]) => value === 1 || value === true)
+          .map(([key]) => key)
+      : [];
+
+  const keys = new Set<string>();
+  for (const key of requestedKeys) {
+    if (policyKeys.some((policyKey) => isWithin(key, policyKey))) {
+      keys.add(key);
+    } else {
+      policyKeys.filter((policyKey) => isWithin(policyKey, key)).forEach((policyKey) => keys.add(policyKey));
+    }
+  }
+
+  const projected = keys.size > 0 ? [...keys] : policyKeys;
+  return Object.fromEntries(projected.map((key) => [key, 1]));
 }

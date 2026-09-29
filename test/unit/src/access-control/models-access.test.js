@@ -145,3 +145,27 @@ describe('access-control/models-access:reachesEveryEntity', () => {
     assert.strictEqual(ACM.reachesEveryEntity({ policyConfigs }), false);
   });
 });
+
+describe('access-control/models-access:combineQueriesWithAc projection', () => {
+  const project = async (clientProject, policyProjection) => {
+    const policyConfig = { appId: 'app-1', query: null, projection: policyProjection };
+    const combined = await ACM.combineQueriesWithAc({ query: {}, project: clientProject }, policyConfig);
+    return combined.project;
+  };
+
+  it('gives only the properties both the request and the policy name', async () => {
+    assert.deepStrictEqual(await project({ name: 1, salary: 1 }, { name: 1, email: 1 }), { name: 1 });
+    assert.deepStrictEqual(await project({ 'address.street': 1 }, { address: 1 }), { 'address.street': 1 });
+    assert.deepStrictEqual(await project({ address: 1 }, { 'address.street': 1 }), { 'address.street': 1 });
+  });
+
+  it("gives the policy's properties when the request names none of them, or none at all", async () => {
+    for (const clientProject of [{ salary: 1, ssn: 1 }, { salary: 0 }, {}, null, false, undefined]) {
+      assert.deepStrictEqual(await project(clientProject, { name: 1 }), { name: 1 }, JSON.stringify(clientProject));
+    }
+  });
+
+  it("keeps the request's projection when the policy doesn't limit properties", async () => {
+    assert.deepStrictEqual(await project({ salary: 1 }, null), { salary: 1 });
+  });
+});

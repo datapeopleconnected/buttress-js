@@ -95,6 +95,26 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
     );
   });
 
+  it('should throw on PUT when the update path only starts with a projected key', async () => {
+    const policies = [{
+      id: 'p1', name: 'test', appId: 'app1', env: null,
+      config: {
+        verbs: ['PUT'], schema: ['user'], query: {}, projection: { keys: ['name', 'address'] }, condition: null,
+      },
+    }];
+
+    for (const path of ['nameSecret', 'addressHistory', 'address_street']) {
+      await assert.rejects(
+        () => AccessControlProjection.filterPoliciesByPolicyProjection({ method: 'PUT', body: [{ path }] }, policies, schema),
+        /Can not access\/edit properties/,
+        path,
+      );
+    }
+
+    const req = { method: 'PUT', body: [{ path: 'name' }, { path: 'address.street' }] };
+    assert.strictEqual((await AccessControlProjection.filterPoliciesByPolicyProjection(req, policies, schema)).length, 1);
+  });
+
   it('should pass PUT when update path is in projection', async () => {
     const policies = [{
       id: 'p1', name: 'test', appId: 'app1', env: null,
