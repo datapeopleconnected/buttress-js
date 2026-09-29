@@ -113,9 +113,21 @@
       },
       "plugins": "%BUTTRESS_APP_PATH%/plugins",
       "lambda": {
-        "code": "%BUTTRESS_APP_PATH%/app_data/lambda/code",
-        "plugins": "%BUTTRESS_APP_PATH%/app_data/lambda/plugins",
-        "bundles": "%BUTTRESS_APP_PATH%/app_data/lambda/bundles"
+        "code": {
+          "dev": "%BUTTRESS_APP_PATH%/app_data/lambda/code",
+          "prod": "%BUTTRESS_APP_PATH%/app_data/lambda/code",
+          "test": "%BUTTRESS_APP_PATH%/app_data/test/lambda/code"
+        },
+        "plugins": {
+          "dev": "%BUTTRESS_APP_PATH%/app_data/lambda/plugins",
+          "prod": "%BUTTRESS_APP_PATH%/app_data/lambda/plugins",
+          "test": "%BUTTRESS_APP_PATH%/app_data/test/lambda/plugins"
+        },
+        "bundles": {
+          "dev": "%BUTTRESS_APP_PATH%/app_data/lambda/bundles",
+          "prod": "%BUTTRESS_APP_PATH%/app_data/lambda/bundles",
+          "test": "%BUTTRESS_APP_PATH%/app_data/test/lambda/bundles"
+        }
       }
     }
   }
