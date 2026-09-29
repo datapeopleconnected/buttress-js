@@ -128,6 +128,11 @@ export const relayedDataShareActivity = (
   };
 };
 
+// Socket.IO's Redis adapter names its pub/sub channels after this key. Channels ignore the Redis
+// database index, so it's scoped by app code as NRP's channels are, or instances sharing a Redis would get each
+// other's broadcasts and count each other's servers.
+const SOCKET_IO_REDIS_KEY = Helpers.redisPrefix(Config.redis.scope, 'socket.io');
+
 export default class BootstrapSocket extends Bootstrap {
   // Each app's connections to the instances it shares data with: one for each agreement, with the id of the token the
   // agreement gives its partner, which the agreement's policy selects
@@ -361,7 +366,7 @@ export default class BootstrapSocket extends Bootstrap {
     await this._redisClientIOPub.connect();
     await this._redisClientIOSub.connect();
 
-    this.io.adapter(createAdapter(this._redisClientIOPub, this._redisClientIOSub));
+    this.io.adapter(createAdapter(this._redisClientIOPub, this._redisClientIOSub, { key: SOCKET_IO_REDIS_KEY }));
 
     const stats = this.io.of(`/stats`);
     stats.on('connect', (socket) => {
