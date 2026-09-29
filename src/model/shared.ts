@@ -147,6 +147,25 @@ export const describeInvalidUpdate = (validation: UpdateValidationResult) => {
   return `Update value is invalid: ${validation.invalidValue}`;
 };
 
+// A property name as it's matched in an update path spec
+const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * The property typed object that `fullPath` is a path beneath. A typed object declares no properties of its own (a
+ * nested object with declared properties is untyped, and its properties have their own specs). Each segment beneath
+ * it must be a plain name, not one of the `__`-prefixed update operations.
+ * @param {String} fullPath - update path
+ * @param {Object} schemaFlat - flattened schema
+ * @return {String|undefined} - the property's key
+ */
+const objectKeyOf = (fullPath: string, schemaFlat: FlattenedSchema) =>
+  Object.keys(schemaFlat).find((key) => {
+    if (schemaFlat[key].__type !== 'object' || !fullPath.startsWith(`${key}.`)) return false;
+
+    const segments = fullPath.slice(key.length + 1).split('.');
+    return segments.every((segment) => segment !== '' && !segment.startsWith('__'));
+  });
+
 /**
  * @param {Object} pathContext - object that defines path specification
  * @param {Object} flattenedSchema - schema object keyed on path
@@ -206,22 +225,17 @@ export const doValidateUpdate = function (pathContext: UpdatePathContexts, flatt
         body.contextParams = matches;
         break;
       }
+    }
 
-      const blankObjectKeys = Helpers.Schema.getSchemaKeys(schemaFlat);
-      const matchObject = blankObjectKeys.reduce((match: RegExpExecArray | null, key) => {
-        const rexMatch = rex.exec(key);
-        if (!rexMatch) return match;
-
-        return rexMatch;
-      }, null);
-
-      if (!matchObject || !fullPath.includes(matchObject.input)) continue;
-
-      const isRemoved = fullPath.includes('remove');
-      matchObject.splice(0, 1);
-      validPath = true;
-      body.contextPath = isRemoved ? fullPath : pathSpec;
-      body.contextParams = matchObject;
+    // A property typed object takes writes to paths beneath it
+    if (!validPath) {
+      const objectKey = objectKeyOf(fullPath, schemaFlat);
+      const pathSpec = objectKey ? `^${escapeRegExp(objectKey)}$` : null;
+      if (pathSpec && pathContext[pathSpec]) {
+        validPath = true;
+        body.contextPath = pathSpec;
+        body.contextParams = [];
+      }
     }
 
     if (validPath === false) {
@@ -287,31 +301,33 @@ export const extendPathContext = (
     if (!{}.hasOwnProperty.call(schema, property)) continue;
     const config = schema[property];
     if (config.__allowUpdate === false) continue;
+    // The specs are regular expressions: the property name is escaped, and the dots between segments are `\.`
+    const name = `${prefix}${escapeRegExp(property)}`;
     switch (config.__type) {
       default:
       case 'number':
-        extended[`^${prefix}${property}$`] = { type: 'scalar', values: [] };
-        extended[`^${prefix}${property}\.__increment__$`] = { type: 'scalar-increment', values: [] };
+        extended[`^${name}$`] = { type: 'scalar', values: [] };
+        extended[`^${name}\\.__increment__$`] = { type: 'scalar-increment', values: [] };
         break;
       case 'object':
       case 'date':
-        extended[`^${prefix}${property}$`] = { type: 'scalar', values: [] };
+        extended[`^${name}$`] = { type: 'scalar', values: [] };
         break;
       case 'string':
         if (config.__enum) {
-          extended[`^${prefix}${property}$`] = { type: 'scalar', values: config.__enum };
+          extended[`^${name}$`] = { type: 'scalar', values: config.__enum };
         } else {
-          extended[`^${prefix}${property}$`] = { type: 'scalar', values: [] };
+          extended[`^${name}$`] = { type: 'scalar', values: [] };
         }
         break;
       case 'array':
-        extended[`^${prefix}${property}$`] = { type: 'vector-add', values: [] };
-        extended[`^${prefix}${property}\.([0-9]{1,11})\.__remove__$`] = { type: 'vector-rm', values: [] };
-        extended[`^${prefix}${property}\.([0-9]{1,11})$`] = { type: 'scalar', values: [] };
+        extended[`^${name}$`] = { type: 'vector-add', values: [] };
+        extended[`^${name}\\.([0-9]{1,11})\\.__remove__$`] = { type: 'vector-rm', values: [] };
+        extended[`^${name}\\.([0-9]{1,11})$`] = { type: 'scalar', values: [] };
         if (config.__schema) {
-          extended = extendPathContext(extended, config.__schema, `${prefix}${property}\.([0-9]{1,11})\.`);
+          extended = extendPathContext(extended, config.__schema, `${name}\\.([0-9]{1,11})\\.`);
         } else if (config.__itemtype) {
-          extended[`^${prefix}${property}\.([0-9]{1,11})\.(.+)$`] = { type: 'scalar', values: [] };
+          extended[`^${name}\\.([0-9]{1,11})\\.(.+)$`] = { type: 'scalar', values: [] };
         }
         break;
     }

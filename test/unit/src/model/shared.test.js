@@ -64,3 +64,66 @@ describe('model/shared:validateUpdate', () => {
     });
   }
 });
+
+describe('model/shared:validateUpdate paths', () => {
+  const HEX_ID = '5f0000000000000000000000';
+  const validate = validateUpdate(
+    {},
+    {
+      name: 'thing',
+      type: 'collection',
+      properties: {
+        owner: { __type: 'object', __allowUpdate: true },
+        ownerId: { __type: 'id', __allowUpdate: false },
+        meta: { __type: 'object', __allowUpdate: true },
+        isAdmin: { __type: 'boolean', __allowUpdate: false },
+        datastore: {
+          connectionString: { __type: 'string', __allowUpdate: false },
+          name: { __type: 'string', __allowUpdate: true },
+        },
+        specification: { env: { __type: 'string', __allowUpdate: true } },
+        'a+b': { __type: 'string', __allowUpdate: true },
+      },
+    },
+  );
+  const accepts = (path, value) => {
+    const { validation, body } = validate({ path, value });
+    assert.strictEqual(validation.isValid, true, `refused ${path}`);
+    return body[0].contextPath;
+  };
+  const refuses = (path, value) => {
+    const { validation } = validate({ path, value });
+    assert.strictEqual(validation.isValid, false, `accepted ${path}`);
+    assert.strictEqual(validation.isPathValid, false, `${path} was refused for its value, not its path`);
+  };
+
+  it('refuses a property that does not allow updates, even when its name contains an object property', () => {
+    refuses('ownerId', HEX_ID);
+    refuses('isAdminmeta', true);
+    refuses('xmetax', 'x');
+  });
+
+  it('refuses a path that only matches a property name as a regular expression would', () => {
+    refuses('specification_env', 'x');
+    refuses('aab', 'x');
+  });
+
+  it('takes a path beneath an object property that declares no properties', () => {
+    assert.strictEqual(accepts('owner.name', 'x'), '^owner$');
+    assert.strictEqual(accepts('meta.a.b', 1), '^meta$');
+  });
+
+  it('refuses a path that is not a declared property, or an update operation beneath an object property', () => {
+    refuses('datastore.connectionString', 'mongodb://example.com');
+    refuses('datastore.other', 'x');
+    refuses('owner.__remove__', 'x');
+    refuses('owner.', 'x');
+  });
+
+  it('still takes the declared paths', () => {
+    assert.strictEqual(accepts('owner', { name: 'x' }), '^owner$');
+    assert.strictEqual(accepts('datastore.name', 'x'), '^datastore\\.name$');
+    assert.strictEqual(accepts('specification.env', 'x'), '^specification\\.env$');
+    assert.strictEqual(accepts('a+b', 'x'), '^a\\+b$');
+  });
+});
