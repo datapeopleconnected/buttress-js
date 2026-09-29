@@ -767,6 +767,13 @@ class AppUpdate extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
+    // Only a system token can update an app other than its own, any other id is answered as an unknown one
+    const isSystem = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
+    if (!isSystem && id !== req.context.authApp?.id) {
+      this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+    }
+
     const { validation, body } = Model.getCoreModel(AppSchemaModel).validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {

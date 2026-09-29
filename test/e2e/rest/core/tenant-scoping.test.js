@@ -17,14 +17,14 @@
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
 
-import { createApp, createPolicyUser, bjsReq, deleteApp, ENDPOINT } from '../../../helpers.js';
+import { createApp, createPolicyUser, bjsReq, deleteApp, BJSReqError, ENDPOINT } from '../../../helpers.js';
 import { runStep } from '../../helpers.js';
 
 import BootstrapRest from '../../../../dist/bootstrap-rest.js';
 
-// Core search and count routes, called with an app token and no request body, return only the calling
-// app's entities.
-describe('Core search tenant scoping', async () => {
+// Core routes called with one app's token reach only that app's entities: search and count with no request
+// body, and routes that take another app's id.
+describe('Core route tenant scoping', async () => {
 	const testEnv = {
 		apps: {},
 		users: {},
@@ -40,21 +40,21 @@ describe('Core search tenant scoping', async () => {
 		await runStep('init REST process', async () => {
 			REST_PROCESS = new BootstrapRest();
 			await REST_PROCESS.init();
-		}, 'Core search tenant scoping setup');
+		}, 'Core route tenant scoping setup');
 
 		testEnv.apps.app1 = await runStep('create app1', async () =>
 			createApp(ENDPOINT.REST, 'Test Tenant Scoping 1', 'test-tenant-scoping-1')
-		, 'Core search tenant scoping setup');
+		, 'Core route tenant scoping setup');
 		testEnv.apps.app2 = await runStep('create app2', async () =>
 			createApp(ENDPOINT.REST, 'Test Tenant Scoping 2', 'test-tenant-scoping-2')
-		, 'Core search tenant scoping setup');
+		, 'Core route tenant scoping setup');
 
 		testEnv.users.app1 = await runStep('create app1 user', async () =>
 			createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'tenant-scoping-user1', {})
-		, 'Core search tenant scoping setup');
+		, 'Core route tenant scoping setup');
 		testEnv.users.app2 = await runStep('create app2 user', async () =>
 			createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'tenant-scoping-user2', {})
-		, 'Core search tenant scoping setup');
+		, 'Core route tenant scoping setup');
 	});
 
 	after(async function () {
@@ -89,5 +89,29 @@ describe('Core search tenant scoping', async () => {
 		const count = await search('user/count', testEnv.apps.app1.token);
 
 		assert.strictEqual(count, 1);
+	});
+
+	it("Should refuse to update another app, and leave it unchanged", async () => {
+		await assert.rejects(bjsReq({
+			url: `${ENDPOINT.REST}/api/v1/app/${testEnv.apps.app2.id}`,
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify([{ path: 'name', value: 'Renamed by app1' }]),
+		}, testEnv.apps.app1.token), (err) => err instanceof BJSReqError && err.code === 400 && err.message === 'invalid_id');
+
+		const [app2] = await search('app', testEnv.apps.app2.token);
+		assert.strictEqual(app2.name, 'Test Tenant Scoping 2');
+	});
+
+	it('Should still update the calling app', async () => {
+		await bjsReq({
+			url: `${ENDPOINT.REST}/api/v1/app/${testEnv.apps.app1.id}`,
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify([{ path: 'name', value: 'Test Tenant Scoping 1 renamed' }]),
+		}, testEnv.apps.app1.token);
+
+		const [app1] = await search('app', testEnv.apps.app1.token);
+		assert.strictEqual(app1.name, 'Test Tenant Scoping 1 renamed');
 	});
 });

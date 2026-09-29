@@ -458,6 +458,29 @@ describe('routes/api/app:AppUpdate', () => {
     await assert.rejects(route._validate(createReq({ params: { id: 'app-1' } })), /invalid_id/);
   });
 
+  it("refuses another app's id for a non-system token, as it does an unknown id", async () => {
+    const exists = sinon.stub().resolves(true);
+    stubModel({ app: { exists } });
+    const route = createRoute(AppUpdate);
+
+    for (const type of ['app', 'user', 'lambda']) {
+      await assert.rejects(route._validate(createReq({ params: { id: 'app-2' }, token: { type } })), /invalid_id/);
+    }
+    assert.strictEqual(exists.callCount, 0);
+  });
+
+  it("accepts the caller's own app, and any app for a system token", async () => {
+    stubModel();
+    const route = createRoute(AppUpdate);
+
+    assert.deepStrictEqual(await route._validate(createReq({ params: { id: 'app-1' }, token: { type: 'app' } })), {
+      id: 'app-1',
+    });
+    assert.deepStrictEqual(await route._validate(createReq({ params: { id: 'app-2' }, token: { type: 'system' } })), {
+      id: 'app-2',
+    });
+  });
+
   it('updates the app by path once validated', async () => {
     const { appModel } = stubModel();
     const route = createRoute(AppUpdate);
