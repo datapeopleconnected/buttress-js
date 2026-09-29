@@ -14,10 +14,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it, afterEach } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Readable } from 'node:stream';
+import ivm from 'isolated-vm';
 import createConfig from '@dpc/node-env-obj';
 
 import LambdaRunner, { LambdaType } from '../../../../dist/lambda/lambda-runner.js';
@@ -25,6 +29,8 @@ import Model from '../../../../dist/model/index.js';
 import LambdaSchemaModel from '../../../../dist/model/core/lambda.js';
 import LambdaExecutionSchemaModel from '../../../../dist/model/core/lambda-execution.js';
 import AppSchemaModel from '../../../../dist/model/core/app.js';
+import TokenSchemaModel from '../../../../dist/model/core/token.js';
+import SecureStoreSchemaModel from '../../../../dist/model/core/secure-store.js';
 
 const Config = createConfig();
 
@@ -367,5 +373,116 @@ describe('lambda/LambdaRunner:_registerLambdaModules dev reload', () => {
       1,
       'own code module id should not be pushed into the cache list more than once',
     );
+  });
+});
+
+describe('lambda/LambdaRunner:_registerLambdaModules failure', () => {
+  it('loads a bundle again on the next call if it threw the first time', async () => {
+    const { runner } = createRunner();
+    const runSync = sinon.stub();
+    runSync.onFirstCall().throws(new ReferenceError('module is not defined'));
+    const compileScriptSync = sinon.stub().returns({ runSync });
+    runner._isolate = { compileScriptSync };
+    runner._context = {};
+    sinon.stub(fs, 'readFileSync').returns('/* bundle */');
+    const ownCodeMod = { name: 'lambda_abc123' };
+
+    await assert.rejects(runner._registerLambdaModules([ownCodeMod]), /module is not defined/);
+    await runner._registerLambdaModules([ownCodeMod]);
+
+    assert.strictEqual(compileScriptSync.callCount, 2);
+    assert.deepStrictEqual(runner._registeredBundles, [ownCodeMod.name]);
+  });
+});
+
+describe('lambda/LambdaRunner:bundleLambdaModules', () => {
+  let tmpDir;
+  let savedPaths;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-bundle-'));
+    savedPaths = { ...Config.paths.lambda };
+    Config.paths.lambda.code = `${tmpDir}/app_data/lambda/code`;
+    Config.paths.lambda.bundles = `${tmpDir}/app_data/lambda/bundles`;
+  });
+
+  afterEach(() => {
+    Object.assign(Config.paths.lambda, savedPaths);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('bundles a CommonJS lambda checked out under a "type": "module" Buttress install so it loads in an isolate', async function () {
+    this.timeout(30000);
+    // As in the Docker image, where lambda code is checked out under /opt/buttress.
+    fs.writeFileSync(`${tmpDir}/package.json`, JSON.stringify({ type: 'module' }));
+    const lambdaDir = `${Config.paths.lambda.code}/lambda-abc123`;
+    fs.mkdirSync(`${lambdaDir}/lib`, { recursive: true });
+    fs.writeFileSync(
+      `${lambdaDir}/index.js`,
+      `const answer = require('./lib/answer.js');
+class HelloWorld {
+  execute() {
+    return answer;
+  }
+}
+module.exports = HelloWorld;
+`,
+    );
+    fs.writeFileSync(`${lambdaDir}/lib/answer.js`, 'module.exports = 42;\n');
+    const { runner } = createRunner();
+
+    await runner.bundleLambdaModules([{ name: 'lambda_abc123', import: `${lambdaDir}/./index.js` }]);
+
+    const isolate = new ivm.Isolate();
+    try {
+      const context = isolate.createContextSync();
+      isolate
+        .compileScriptSync(fs.readFileSync(`${Config.paths.lambda.bundles}/lambda_abc123.js`, 'utf8'))
+        .runSync(context);
+      assert.strictEqual(context.evalSync('new lambda_abc123().execute()'), 42);
+    } finally {
+      isolate.dispose();
+    }
+  });
+});
+
+describe('lambda/LambdaRunner:execute', () => {
+  it('reports the error to the API caller waiting on the result when the lambda fails to load', async () => {
+    const { runner, nrp } = createRunner();
+    runner._isolate = {};
+    runner._context = {};
+    runner._jail = { setSync: sinon.spy() };
+    const updateById = sinon.stub().resolves();
+    stubModel(
+      new Map([
+        [SecureStoreSchemaModel, { findOne: async () => null }],
+        [AppSchemaModel, { createId: (v) => v }],
+        [LambdaSchemaModel, { createId: (v) => v }],
+        [TokenSchemaModel, { find: async () => Readable.from([{ value: 'lambda-token' }]) }],
+        [LambdaExecutionSchemaModel, fakeExecutionModel({ updateById })],
+      ]),
+    );
+    sinon.stub(runner, 'bundleLambdaModules').resolves();
+    sinon.stub(runner, '_registerLambdaModules').rejects(new ReferenceError('module is not defined'));
+    const lambda = {
+      id: 'lambda-1',
+      name: 'hello-world',
+      git: { url: 'git@example.com:hello-world.git', entryFile: 'index.js', entryPoint: 'execute' },
+      trigger: [],
+    };
+
+    await assert.rejects(
+      runner.execute(lambda, { id: 'exec-1', metadata: [] }, { id: 'app-1', apiPath: 'test' }, 'API_ENDPOINT', {
+        reqId: 'req-1',
+      }),
+      /module is not defined/,
+    );
+
+    const resultCall = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+    assert.ok(resultCall, 'the API caller should be sent the result rather than left waiting');
+    const message = JSON.parse(resultCall.args[1]);
+    assert.strictEqual(message.reqId, 'req-1');
+    assert.match(message.err, /module is not defined/);
+    assert.ok(updateById.calledWithMatch('exec-1', { $set: { status: 'ERROR' } }));
   });
 });

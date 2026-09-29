@@ -274,56 +274,58 @@ export default class LambdaRunner {
     // TODO: Handle case where repo code hash doesn't match lambda. (Update Repo)
 
     // const modulesNames = await this.installLambdaPackages(lambda, appAllowList); // not install packages on lambdas anymore
-    const modulesNames = this._getLambdaModulesName(lambda);
-    await this.bundleLambdaModules(modulesNames);
-    await this._registerLambdaModules(modulesNames);
-    modulesNames.forEach((m: { name: string }) => {
-      lambdaModules[m.name] = m.name;
-    });
-
-    this._jail.setSync('buttressOptions', new ivm.ExternalCopy(buttressOptions).copyInto());
-
-    // * Would be better to just group these under one namespace "lambda". Unless we're going.
-    this._jail.setSync('lambdaModules', new ivm.ExternalCopy(lambdaModules).copyInto());
-    this._jail.setSync(
-      'lambdaInfo',
-      new ivm.ExternalCopy({
-        env: appLambdaEnv ? appLambdaEnv.env : null,
-        lambdaId: lambda.id.toString(),
-        executionId: execution.id.toString(),
-        gitHash: lambda.git.hash,
-        metadata: lambda.metadata,
-        lambdaToken: lambdaToken.value,
-        userId: executionUserId,
-        appApiPath: apiPath,
-        fileName: `lambda_${lambda.id}`,
-        entryPoint: lambda.git.entryPoint,
-        developmentEmailAddress: Config.lambda.developmentEmailAddress,
-        userToken: userToken,
-      }).copyInto(),
-    );
-    this._jail.setSync('lambdaData', new ivm.ExternalCopy(reqBody).copyInto());
-    this._jail.setSync('lambdaQuery', new ivm.ExternalCopy(reqQuery).copyInto());
-    this._jail.setSync('lambdaRequestHeaders', new ivm.ExternalCopy(reqHeaders).copyInto());
-
-    // Just exposing a few properties of exeuction
-    this._jail.setSync(
-      'lambdaExecution',
-      new ivm.ExternalCopy({
-        id: execution.id.toString(),
-        lambdaId: execution.lambdaId.toString(),
-        deploymentId: execution.deploymentId.toString(),
-        triggerType: execution.triggerType,
-        executeAfter: execution.executeAfter,
-        nextCronExpression: execution.nextCronExpression,
-        status: execution.status,
-        startedAt: execution.startedAt,
-        endedAt: execution.endedAt,
-        metadata: execution.metadata,
-      }).copyInto(),
-    );
-
+    // Inside the try so a lambda that fails to bundle or load is reported back to an API caller
+    // waiting on its result, like one that throws while running.
     try {
+      const modulesNames = this._getLambdaModulesName(lambda);
+      await this.bundleLambdaModules(modulesNames);
+      await this._registerLambdaModules(modulesNames);
+      modulesNames.forEach((m: { name: string }) => {
+        lambdaModules[m.name] = m.name;
+      });
+
+      this._jail.setSync('buttressOptions', new ivm.ExternalCopy(buttressOptions).copyInto());
+
+      // * Would be better to just group these under one namespace "lambda". Unless we're going.
+      this._jail.setSync('lambdaModules', new ivm.ExternalCopy(lambdaModules).copyInto());
+      this._jail.setSync(
+        'lambdaInfo',
+        new ivm.ExternalCopy({
+          env: appLambdaEnv ? appLambdaEnv.env : null,
+          lambdaId: lambda.id.toString(),
+          executionId: execution.id.toString(),
+          gitHash: lambda.git.hash,
+          metadata: lambda.metadata,
+          lambdaToken: lambdaToken.value,
+          userId: executionUserId,
+          appApiPath: apiPath,
+          fileName: `lambda_${lambda.id}`,
+          entryPoint: lambda.git.entryPoint,
+          developmentEmailAddress: Config.lambda.developmentEmailAddress,
+          userToken: userToken,
+        }).copyInto(),
+      );
+      this._jail.setSync('lambdaData', new ivm.ExternalCopy(reqBody).copyInto());
+      this._jail.setSync('lambdaQuery', new ivm.ExternalCopy(reqQuery).copyInto());
+      this._jail.setSync('lambdaRequestHeaders', new ivm.ExternalCopy(reqHeaders).copyInto());
+
+      // Just exposing a few properties of exeuction
+      this._jail.setSync(
+        'lambdaExecution',
+        new ivm.ExternalCopy({
+          id: execution.id.toString(),
+          lambdaId: execution.lambdaId.toString(),
+          deploymentId: execution.deploymentId.toString(),
+          triggerType: execution.triggerType,
+          executeAfter: execution.executeAfter,
+          nextCronExpression: execution.nextCronExpression,
+          status: execution.status,
+          startedAt: execution.startedAt,
+          endedAt: execution.endedAt,
+          metadata: execution.metadata,
+        }).copyInto(),
+      );
+
       const hostile = this._isolate.compileScriptSync(`
 				(async function() {
 					function require(data) {
@@ -744,6 +746,18 @@ export default class LambdaRunner {
               crypto: require.resolve('crypto-browserify'),
             },
           },
+          module: {
+            rules: [
+              {
+                // Lambda code is checked out inside the Buttress install, so without this its .js files
+                // take Buttress's own package.json "type": "module" and are parsed as ES modules, where
+                // a CommonJS lambda's `module` and `require` don't exist. Tell ESM from CommonJS by syntax.
+                test: /\.js$/,
+                include: path.resolve(Config.paths.lambda.code),
+                type: 'javascript/auto',
+              },
+            ],
+          },
           plugins: [new NodePolyfillPlugin()],
           output: {
             path: path.resolve(Config.paths.lambda.bundles),
@@ -801,14 +815,8 @@ export default class LambdaRunner {
         this._registeredBundles.includes(mod.packageName as string) || this._registeredBundles.includes(mod.name);
       if (alreadyRegistered && !(devReload && isOwnCode)) continue;
 
-      let file: string | null = null;
-      if (mod.packageName) {
-        file = mod.packageName.replace('/', '_');
-        if (!alreadyRegistered) this._registeredBundles.push(mod.packageName);
-      } else {
-        file = mod.name;
-        if (!alreadyRegistered) this._registeredBundles.push(mod.name);
-      }
+      const registeredName = mod.packageName ? mod.packageName : mod.name;
+      const file = mod.packageName ? mod.packageName.replace('/', '_') : mod.name;
       try {
         this._isolate
           .compileScriptSync(fs.readFileSync(`${Config.paths.lambda.bundles}/${file}.js`, 'utf8'))
@@ -817,6 +825,8 @@ export default class LambdaRunner {
         Logging.logError(`Error registering lambda module ${mod.name}`);
         throw err;
       }
+      // Only once it has run, so a bundle that threw is loaded again next time rather than skipped.
+      if (!alreadyRegistered) this._registeredBundles.push(registeredName);
     }
   }
 }
