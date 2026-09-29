@@ -14,10 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { spawn } from 'node:child_process';
-import net from 'node:net';
-import { fileURLToPath } from 'node:url';
-
 import { io } from 'socket.io-client';
 import { describe, it, before, after } from 'mocha';
 import assert from 'assert';
@@ -33,7 +29,7 @@ import {
 import BootstrapSPR from '../../../dist/bootstrap-spr.js';
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
 import BootstrapSocket from '../../../dist/bootstrap-socket.js';
-import { runStep } from '../helpers.js';
+import { runStep, startSocketProcess, stopSocketProcess } from '../helpers.js';
 
 import PolicyTestData from '../../data/policy/index.js';
 
@@ -44,69 +40,6 @@ let SOCK_PROCESS = null;
 const testEnv = {
 	apps: {},
 	socket: null,
-};
-
-const SOCKET_ENTRY = fileURLToPath(new URL('../../../dist/bin/app-socket.js', import.meta.url));
-
-const getFreePort = () => new Promise((resolve, reject) => {
-	const server = net.createServer();
-	server.once('error', reject);
-	server.listen(0, 'localhost', () => {
-		const { port } = server.address();
-		server.close(() => resolve(port));
-	});
-});
-
-// Starts a Socket process in its own process, so it can fork workers, and resolves once it's accepting connections
-// (its main process only listens once every worker has started).
-const startSocketProcess = async (workers) => {
-	const port = await getFreePort();
-	const child = spawn(process.execPath, [SOCKET_ENTRY], {
-		env: {
-			// The config loader has put the test settings into process.env.
-			...process.env,
-			// Points the config loader at an env file that doesn't exist, so no .<env>.env overrides these settings.
-			ENV_FILE: 'realtime-workers',
-			BUTTRESS_APP_WORKERS: String(workers),
-			BUTTRESS_SOCK_LISTEN_PORT: String(port),
-			// The Socket process in this suite is the primary.
-			BUTTRESS_SOCKET_APP: 'secondary',
-			BUTTRESS_LOGGING_LEVEL: 'error',
-		},
-		stdio: ['ignore', 'pipe', 'pipe'],
-	});
-
-	let output = '';
-	child.stdout.on('data', (chunk) => output += chunk);
-	child.stderr.on('data', (chunk) => output += chunk);
-
-	await new Promise((resolve, reject) => {
-		const onExit = (code) => reject(new Error(`Socket process exited with ${code} before listening:\n${output}`));
-		child.once('exit', onExit);
-
-		const attempt = () => {
-			if (child.exitCode !== null) return;
-			const probe = net.connect(port, 'localhost');
-			probe.once('connect', () => {
-				probe.destroy();
-				child.off('exit', onExit);
-				resolve();
-			});
-			probe.once('error', () => setTimeout(attempt, 100));
-		};
-		attempt();
-	});
-
-	return { child, url: `http://localhost:${port}` };
-};
-
-const stopSocketProcess = async (child) => {
-	if (child.exitCode !== null || child.signalCode !== null) return;
-	const exited = new Promise((resolve) => child.once('exit', resolve));
-	child.kill('SIGTERM');
-	const killTimer = setTimeout(() => child.kill('SIGKILL'), 15000);
-	await exited;
-	clearTimeout(killTimer);
 };
 
 describe('Realtime', async () => {
@@ -340,7 +273,7 @@ describe('Realtime', async () => {
 		before(async function () {
 			this.timeout(30000);
 			// Its workers share the socket.io adapter with this suite's Socket process, so there are three workers.
-			sockProcess = await runStep('start SOCK process with 2 workers', async () => startSocketProcess(2),
+			sockProcess = await runStep('start SOCK process with 2 workers', async () => startSocketProcess({ workers: 2 }),
 				'Realtime setup');
 		});
 

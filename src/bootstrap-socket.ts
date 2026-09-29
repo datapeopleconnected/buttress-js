@@ -508,7 +508,10 @@ export default class BootstrapSocket extends Bootstrap {
 
     if (!this.__nrp) throw new Error('No NRP instance');
 
-    // this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data)));
+    // The data share connections are only open in this process, so it's the one that forwards activity over them.
+    this.__nrp.on('spr:activity', (data) =>
+      this._primaryForwardDataShareActivity(JSON.parse(data) as DataShareSocketSharePayload),
+    );
     // this.__nrp.on('clearUserLocalData', (json) => this.__primaryClearUserLocalData(json));
     this.__nrp.on('dataShare:activated', async (json: string) => {
       const data = JSON.parse(json) as DataShareActivatedMessage;
@@ -618,16 +621,6 @@ export default class BootstrapSocket extends Bootstrap {
       return;
     }
 
-    if (activity.appId && this._dataShareSockets[activity.appId] && activity.isSameApp === undefined) {
-      Logging.logTimer(
-        `[${activity.appAPIPath}][${activity.verb}] notifying data sharing`,
-        container.timer,
-        Logging.Constants.LogLevel.SILLY,
-        container.id,
-      );
-      this._dataShareSockets[activity.appId].forEach((sock) => sock.emit('dataShareSocket:share', data));
-    }
-
     const packet = {
       time: new Date().toISOString(),
       data: {
@@ -645,6 +638,25 @@ export default class BootstrapSocket extends Bootstrap {
     };
 
     this.io.of(`/${data.activity.appAPIPath}`).local.to(tokens).emit('db-activity', packet);
+  }
+
+  /**
+   * Sends an activity on to the remote instances the app shares data with. Only the primary Socket instance's main
+   * process holds data share connections, so the activity goes to each remote once, however many workers there are.
+   * @param {DataShareSocketSharePayload} data
+   */
+  private _primaryForwardDataShareActivity(data: DataShareSocketSharePayload) {
+    const { tokens, activity } = data;
+    if (!tokens || tokens.length < 1) return;
+    if (activity.broadcast === false) return;
+    // An activity that came in over a data share has isSameApp set by the receiving side, so it isn't sent back.
+    if (activity.isSameApp !== undefined) return;
+
+    const sockets = activity.appId ? this._dataShareSockets[activity.appId] : undefined;
+    if (!sockets) return;
+
+    Logging.logSilly(`[${activity.appAPIPath}][${activity.verb}] notifying data sharing on ${activity.path}`);
+    sockets.forEach((sock) => sock.emit('dataShareSocket:share', data));
   }
 
   __primaryClearUserLocalData() {
