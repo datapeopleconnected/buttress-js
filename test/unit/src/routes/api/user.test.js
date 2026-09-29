@@ -26,6 +26,8 @@ import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import AppSchemaModel from '../../../../../dist/model/core/app.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 
+import { realQueryParser } from '../../../../query-parser.js';
+
 const [
   GetUserList,
   GetUser,
@@ -50,8 +52,7 @@ const HEX_ID = '507f1f77bcf86cd799439011';
 function stubModel({ user = {}, token = {}, app = {} } = {}) {
   const userModel = {
     schemaData: { name: 'users' },
-    flatSchemaData: {},
-    parseQuery: (q) => q,
+    ...realQueryParser(UserSchemaModel),
     createId: (v) => v,
     findAll: sinon.stub(),
     find: sinon.stub(),
@@ -677,7 +678,7 @@ describe('routes/api/user:SearchUserList', () => {
 
     const result = await route._validate(createReq({ token: { type: 'user' } }));
 
-    assert.deepStrictEqual(result.query.$and, [{ _appId: 'app-1' }]);
+    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
   });
 
   it('finds using the built query params', () => {
@@ -698,9 +699,12 @@ describe('routes/api/user:UserCount', () => {
     stubModel();
     const route = createRoute(UserCount);
 
-    const result = await route._validate(createReq({ token: { type: 'user' }, body: {} }));
+    const req = createReq({ token: { type: 'user' } });
+    req.body = undefined;
 
-    assert.deepStrictEqual(result.query.$and, [{}, { _appId: 'app-1' }]);
+    const result = await route._validate(req);
+
+    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
   });
 
   it('counts using the built query', async () => {

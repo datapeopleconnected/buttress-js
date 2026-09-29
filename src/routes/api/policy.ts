@@ -158,17 +158,18 @@ class SearchPolicyList extends Route {
       result.query.$and.push(req.body.query);
     }
 
-    result.query = Model.getCoreModel(PolicySchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(PolicySchemaModel).flatSchemaData,
-    );
-
+    // Before parseQuery, which drops an empty $and
     if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       result.query.$and?.push({
         _appId: req.context.authApp?.id,
       });
     }
+
+    result.query = Model.getCoreModel(PolicySchemaModel).parseQuery(
+      result.query,
+      {},
+      Model.getCoreModel(PolicySchemaModel).flatSchemaData,
+    );
 
     return result;
   }
@@ -445,17 +446,18 @@ class PolicyCount extends Route {
       result.query.$and.push(req.body);
     }
 
-    result.query = Model.getCoreModel(PolicySchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(PolicySchemaModel).flatSchemaData,
-    );
-
+    // Before parseQuery, which drops an empty $and
     if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       result.query.$and?.push({
         _appId: req.context.authApp?.id,
       });
     }
+
+    result.query = Model.getCoreModel(PolicySchemaModel).parseQuery(
+      result.query,
+      {},
+      Model.getCoreModel(PolicySchemaModel).flatSchemaData,
+    );
 
     return result;
   }

@@ -20,6 +20,7 @@ sourceMapSupport.install();
 import './rest/core/secureStore.test.js';
 import './rest/core/token.test.js';
 import './rest/core/user.test.js';
+import './rest/core/tenant-scoping.test.js';
 
 import './rest/schema.test.js';
 import './rest/data-sharing.test.js';

@@ -26,6 +26,8 @@ import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 import AppSchemaModel from '../../../../../dist/model/core/app.js';
 
+import { realQueryParser } from '../../../../query-parser.js';
+
 const [
   GetPolicy,
   GetPolicyList,
@@ -45,8 +47,7 @@ const HEX_ID = '507f1f77bcf86cd799439011';
 function stubModel({ policy = {}, token = {}, app = {} } = {}) {
   const policyModel = {
     schemaData: { name: 'policies' },
-    flatSchemaData: {},
-    parseQuery: (q) => q,
+    ...realQueryParser(PolicySchemaModel),
     findById: async () => null,
     findOne: async () => null,
     find: sinon.stub(),
@@ -197,7 +198,7 @@ describe('routes/api/policy:SearchPolicyList', () => {
 
     const result = await route._validate(createReq({ token: { type: 'user' } }));
 
-    assert.deepStrictEqual(result.query.$and, [{ _appId: 'app-1' }]);
+    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
   });
 
   it('finds using the built query params', async () => {
@@ -368,9 +369,12 @@ describe('routes/api/policy:PolicyCount', () => {
     stubModel();
     const route = createRoute(PolicyCount);
 
-    const result = await route._validate(createReq({ token: { type: 'user' }, body: {} }));
+    const req = createReq({ token: { type: 'user' } });
+    req.body = undefined;
 
-    assert.deepStrictEqual(result.query.$and, [{}, { _appId: 'app-1' }]);
+    const result = await route._validate(req);
+
+    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
   });
 });
 

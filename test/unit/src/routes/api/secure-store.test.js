@@ -27,6 +27,8 @@ import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 import LambdaSchemaModel from '../../../../../dist/model/core/lambda.js';
 import UserSchemaModel from '../../../../../dist/model/core/user.js';
 
+import { realQueryParser } from '../../../../query-parser.js';
+
 const [
   AddSecureStore,
   AddManySecureStore,
@@ -44,8 +46,7 @@ const HEX_ID = '507f1f77bcf86cd799439011';
 function stubModel({ secureStore = {}, app = {}, lambda = {}, user = {} } = {}) {
   const secureStoreModel = {
     schemaData: { name: 'secureStore' },
-    flatSchemaData: {},
-    parseQuery: (q) => q,
+    ...realQueryParser(SecureStoreSchemaModel),
     findOne: async () => null,
     find: sinon.stub().returns(Readable.from([], { objectMode: true })),
     add: sinon.stub().resolves({ id: 'secure-store-1' }),
@@ -384,7 +385,7 @@ describe('routes/api/secure-store:SearchSecureStoreList', () => {
 
     const result = await route._validate(createReq());
 
-    assert.deepStrictEqual(result.query.$and, [{ _appId: 'app-1' }]);
+    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
   });
 
   it('finds using the built query params', () => {
@@ -450,7 +451,7 @@ describe('routes/api/secure-store:SecureStoreCount', () => {
 
     const result = await route._validate(createReq({ body: {} }));
 
-    assert.deepStrictEqual(result.query.$and, [{}, { _appId: 'app-1' }]);
+    assert.deepStrictEqual(result.query.$and, [{}, { _appId: { $eq: 'app-1' } }]);
   });
 
   it('counts using the built query', async () => {

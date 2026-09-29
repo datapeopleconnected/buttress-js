@@ -25,6 +25,8 @@ import AppDataSharingSchemaModel from '../../../../../dist/model/core/app-data-s
 import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 
+import { realQueryParser } from '../../../../query-parser.js';
+
 const [
   GetAppDataSharing,
   AddDataSharing,
@@ -47,8 +49,7 @@ const HEX_ID = '507f1f77bcf86cd799439011';
 function stubModel({ ds = {}, token = {} } = {}) {
   const dsModel = {
     schemaData: { name: 'appDataSharing' },
-    flatSchemaData: {},
-    parseQuery: (q) => q,
+    ...realQueryParser(AppDataSharingSchemaModel),
     createId: (v) => v,
     validate: () => ({ isValid: true }),
     isDuplicate: async () => false,
@@ -457,7 +458,7 @@ describe('routes/api/app-data-sharing:SearchAppDataSharingAgreement', () => {
 
     const result = await route._validate(createReq({ token: { type: 'app' } }));
 
-    assert.deepStrictEqual(result.query.$and, [{ _appId: 'app-1' }]);
+    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
   });
 
   it('finds using the built query params', () => {
@@ -478,9 +479,12 @@ describe('routes/api/app-data-sharing:AppDataSharingAgreementCount', () => {
     stubModel();
     const route = createRoute(AppDataSharingAgreementCount);
 
-    const result = await route._validate(createReq({ token: { type: 'app' }, body: {} }));
+    const req = createReq({ token: { type: 'app' } });
+    req.body = undefined;
 
-    assert.deepStrictEqual(result.query.$and, [{}, { _appId: 'app-1' }]);
+    const result = await route._validate(req);
+
+    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
   });
 
   it('counts using the built query', async () => {

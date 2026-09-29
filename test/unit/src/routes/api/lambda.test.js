@@ -28,6 +28,8 @@ import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 import DeploymentSchemaModel from '../../../../../dist/model/core/deployment.js';
 import LambdaExecutionSchemaModel from '../../../../../dist/model/core/lambda-execution.js';
 
+import { realQueryParser } from '../../../../query-parser.js';
+
 const [
   GetLambda,
   GetLambdaList,
@@ -49,8 +51,7 @@ const HEX_ID = '507f1f77bcf86cd799439011';
 function stubModel({ lambda = {}, token = {}, user = {}, app = {}, deployment = {}, lambdaExecution = {} } = {}) {
   const lambdaModel = {
     schemaData: { name: 'lambdas' },
-    flatSchemaData: {},
-    parseQuery: (q) => q,
+    ...realQueryParser(LambdaSchemaModel),
     createId: (v) => v,
     adapter: { ID: { new: (v) => v } },
     findById: async () => null,
@@ -176,7 +177,7 @@ describe('routes/api/lambda:SearchLambdaList', () => {
 
     const result = await route._validate(createReq({ token: { type: 'user' } }));
 
-    assert.deepStrictEqual(result.query.$and, [{ _appId: 'app-1' }]);
+    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
   });
 
   it('finds using the built query', () => {
@@ -570,9 +571,12 @@ describe('routes/api/lambda:LambdaCount', () => {
     stubModel();
     const route = createRoute(LambdaCount);
 
-    const result = await route._validate(createReq({ token: { type: 'user' }, body: {} }));
+    const req = createReq({ token: { type: 'user' } });
+    req.body = undefined;
 
-    assert.deepStrictEqual(result.query.$and, [{}, { _appId: 'app-1' }]);
+    const result = await route._validate(req);
+
+    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
   });
 
   it('counts using the built query', async () => {
