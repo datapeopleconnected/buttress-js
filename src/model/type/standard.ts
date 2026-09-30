@@ -41,8 +41,8 @@ export type ParsedQuery = Record<string, unknown>;
 export default class StandardModel<TDocument = AdapterDocument> {
   static name = 'Model';
 
-  schemaData: Schema;
-  flatSchemaData: FlattenedSchema;
+  private _schemaData!: Schema;
+  flatSchemaData: FlattenedSchema = {};
 
   app: App | null;
 
@@ -58,9 +58,11 @@ export default class StandardModel<TDocument = AdapterDocument> {
   // Set by initAdapter, which the model manager calls before the model's used
   adapter!: AbstractAdapter;
 
+  // Stops the model listening for its app's schema changes, once it's replaced or dropped
+  private _unsubscribeSchemaUpdates?: Promise<() => unknown>;
+
   constructor(schemaData: Schema, app: App | null, services: Services) {
     this.schemaData = schemaData;
-    this.flatSchemaData = schemaData ? Helpers.getFlattenedSchema(this.schemaData) : {};
 
     this.app = app;
 
@@ -81,9 +83,11 @@ export default class StandardModel<TDocument = AdapterDocument> {
     this.__modelManager = this.__services.get('modelManager') as ModelManager;
     if (!this.__modelManager) throw new Error('Unable to find modelManager in services');
 
-    this.__nrp.on('app:update-schema', (json: string) => {
+    // A core model has no app whose schema could change
+    if (!app) return;
+    this._unsubscribeSchemaUpdates = this.__nrp.on('app:update-schema', (json: string) => {
       const data = JSON.parse(json) as { appId: string; schemas: Schema[] };
-      if (!app || app.id.toString() !== data.appId) return;
+      if (app.id.toString() !== data.appId) return;
 
       data.schemas.forEach((schema) => {
         if (schema.name !== this.schemaData.name) return;
@@ -91,6 +95,26 @@ export default class StandardModel<TDocument = AdapterDocument> {
         this.schemaData = schema;
       });
     });
+  }
+
+  get schemaData(): Schema {
+    return this._schemaData;
+  }
+
+  // The flattened schema that queries are parsed against follows the schema
+  set schemaData(schemaData: Schema) {
+    this._schemaData = schemaData;
+    this.flatSchemaData = schemaData ? Helpers.getFlattenedSchema(schemaData) : {};
+  }
+
+  /**
+   * Lets the model go: it stops listening for its app's schema changes. The model manager calls this when it replaces
+   * or drops the model.
+   */
+  async destroy() {
+    const unsubscribe = await this._unsubscribeSchemaUpdates;
+    delete this._unsubscribeSchemaUpdates;
+    await unsubscribe?.();
   }
 
   async initAdapter(datastore?: Datastore | null) {

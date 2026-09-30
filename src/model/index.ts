@@ -161,6 +161,13 @@ export class ModelManager {
       for await (const schema of builtSchemas) {
         await this._initSchemaModel(app, schema, datastore);
       }
+
+      // A schema the app no longer has leaves no model behind
+      for (const [modelName, model] of Object.entries(this.models[app.id] ?? {})) {
+        if (builtSchemas.some((schema) => schema.name === modelName)) continue;
+        delete this.models[app.id][modelName];
+        this._destroyModel(app.id, modelName, model);
+      }
     }
 
     Logging.logSilly('Model:initSchema:end');
@@ -286,7 +293,19 @@ export class ModelManager {
 
   private _setModel<T extends AnyModel>(appId: string, modelName: string, modelInstance: T) {
     if (!this.models[appId]) this.models[appId] = {};
+    const replaced = this.models[appId][modelName];
     this.models[appId][modelName] = modelInstance;
+    if (replaced && replaced !== modelInstance) this._destroyModel(appId, modelName, replaced);
+  }
+
+  private _destroyModel(appId: string, modelName: string, model: AnyModel) {
+    model
+      .destroy()
+      .catch((err: unknown) =>
+        Logging.logError(
+          `Error letting go of model ${modelName} for app ${appId}: ${Helpers.getThrownErrorMessage(err)}`,
+        ),
+      );
   }
 
   async dropAndCleanAppModels(appId: string) {
@@ -299,6 +318,7 @@ export class ModelManager {
       } catch (err: unknown) {
         Logging.logError(`Error dropping model ${modelName} for app ${appId}: ${Helpers.getThrownErrorMessage(err)}`);
       }
+      this._destroyModel(appId, modelName, this.models[appId][modelName]);
       delete this.models[appId][modelName];
     }
 
