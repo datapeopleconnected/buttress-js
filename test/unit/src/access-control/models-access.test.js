@@ -169,3 +169,20 @@ describe('access-control/models-access:combineQueriesWithAc projection', () => {
     assert.deepStrictEqual(await project({ salary: 1 }, null), { salary: 1 });
   });
 });
+
+describe('access-control/models-access:canCreate', () => {
+  const config = (query) => ({ appId: 'app-1', verbs: ['POST'], query, projection: null, policies: ['p'] });
+
+  it('lets any entity be created when the policies reach every entity', () => {
+    assert.strictEqual(ACM.canCreate({ policyConfigs: [] }, { teamId: 'T9' }), true);
+    assert.strictEqual(ACM.canCreate({ policyConfigs: [config({})] }, { teamId: 'T9' }), true);
+  });
+
+  it("lets an entity be created only when a policy config's query reads it", () => {
+    const ac = { policyConfigs: [config({ teamId: { $eq: 'T1' } }), config({ ownerId: { $eq: 'U1' } })] };
+
+    assert.strictEqual(ACM.canCreate(ac, { teamId: 'T1', ownerId: 'U9' }), true);
+    assert.strictEqual(ACM.canCreate(ac, { teamId: 'T9', ownerId: 'U1' }), true);
+    assert.strictEqual(ACM.canCreate(ac, { teamId: 'T9', ownerId: 'U9' }), false);
+  });
+});

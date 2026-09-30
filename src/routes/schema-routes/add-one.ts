@@ -16,7 +16,7 @@
 import { Response } from 'express';
 
 import Route from '../route.js';
-import { describeTakenId, findBatchProblem } from './add-many.js';
+import { describeTakenId, findBatchProblem, refuseEntitiesOutsidePolicy } from './add-many.js';
 import * as Helpers from '../../helpers/index.js';
 import Plugins from '../../plugins/index.js';
 
@@ -53,6 +53,7 @@ export default class AddOne extends Route {
         this.log(`${this.schemaName}: ${problem}`, Route.LogLevel.ERR, req.context.id);
         throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
       }
+      refuseEntitiesOutsidePolicy(model, req.body, req.context.ac, this.schemaName);
       return true;
     }
 
@@ -70,6 +71,8 @@ export default class AddOne extends Route {
       this.log(`${this.schemaName}: Unhandled Error`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Unhandled error.`);
     }
+
+    refuseEntitiesOutsidePolicy(model, [req.body], req.context.ac, this.schemaName);
 
     const isDuplicate = await model.isDuplicate(req.body);
     if (isDuplicate === true) {

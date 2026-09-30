@@ -133,6 +133,20 @@ export function reachesEveryEntity(ac: { policyConfigs: parsedPolicyConfig[] }) 
   return ac.policyConfigs.some((policyConfig) => !policyConfig.query || Object.keys(policyConfig.query).length < 1);
 }
 
+/**
+ * Whether the caller's policies let it create `entity`, given as it will be stored: a config's query must read it, as
+ * it would have to for the caller to read or change it.
+ */
+export function canCreate(ac: { policyConfigs: parsedPolicyConfig[] }, entity: Record<string, unknown>) {
+  if (reachesEveryEntity(ac)) return true;
+  return ac.policyConfigs.some(
+    (policyConfig) =>
+      !policyConfig.query ||
+      Object.keys(policyConfig.query).length < 1 ||
+      AccessControlFilter.evaluateQueryAgainstEntity(policyConfig.query, entity),
+  );
+}
+
 export async function combineQueriesWithAc(raw: QueryParams<object>, policyConfig: PolicyConfig & { appId: string }) {
   const query: QueryParams<object> = {
     query: raw.query,

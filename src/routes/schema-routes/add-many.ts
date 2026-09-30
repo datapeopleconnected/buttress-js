@@ -25,6 +25,8 @@ import { App } from '../../model/core/app.js';
 import { AdapterDocument } from '../../types/datastore.js';
 import type { RequestWithBody } from '../../types/routes.js';
 import StandardModel from '../../model/type/standard.js';
+import { sanitizeSchemaObject } from '../../model/shared.js';
+import * as ACM from '../../access-control/models-access.js';
 
 /**
  * The first reason a batch of new entities can't be stored, naming the index of the entity, or null if it can be.
@@ -64,6 +66,25 @@ export const findBatchProblem = async (model: StandardModel, entities: unknown[]
   }
 
   return null;
+};
+
+/**
+ * Refuses a batch of new entities with 401 if the caller's policies don't let it create one of them, checked as each
+ * will be stored.
+ */
+export const refuseEntitiesOutsidePolicy = (
+  model: StandardModel,
+  entities: unknown[],
+  ac: Request['context']['ac'] | undefined,
+  schemaName?: string,
+) => {
+  if (!ac) return;
+  for (const [idx, entity] of entities.entries()) {
+    const stored = sanitizeSchemaObject(model.schemaData, entity) as Record<string, unknown>;
+    if (!ACM.canCreate(ac, stored)) {
+      throw new Helpers.Errors.RequestError(401, `${schemaName}: the policy does not allow the entity at index ${idx}`);
+    }
+  }
 };
 
 /**
@@ -111,6 +132,7 @@ export default class AddMany extends Route {
       this.log(`ERROR: ${problem}`, Route.LogLevel.ERR, req.context.id);
       throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
     }
+    refuseEntitiesOutsidePolicy(model, entities, req.context.ac, this.schemaName);
 
     return entities;
   }

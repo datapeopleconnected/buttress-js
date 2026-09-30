@@ -83,7 +83,7 @@ describe('Core route tenant scoping', async () => {
 		for (const app of ['app1', 'app2']) {
 			await runStep(`allow policy properties on ${app}`, async () => updatePolicyPropertyList(ENDPOINT.REST, {
 				lambda: ['TEST_ACCESS'],
-				role: ['ADMIN', 'VIEWER', 'EDITOR', 'NOBODY', 'WRITER'],
+				role: ['ADMIN', 'VIEWER', 'EDITOR', 'NOBODY', 'WRITER', 'SCOPED'],
 			}, testEnv.apps[app].token), scope);
 		}
 
@@ -578,6 +578,42 @@ describe('Core route tenant scoping', async () => {
 			});
 			assert.strictEqual(stored.length, 2);
 			for (const note of stored) assert.strictEqual(note.secret, null, JSON.stringify(note));
+		});
+	});
+	describe('Creates limited by a policy query', () => {
+		const notes = (path = '') => `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note${path}`;
+		const json = { 'Content-Type': 'application/json' };
+		const create = (path, body) => bjsReq({ url: notes(path), method: 'POST', headers: json, body: JSON.stringify(body) },
+			testEnv.users.app2Scoped.tokens[0].value);
+
+		before(async function () {
+			this.timeout(20000);
+			const scope = 'Policy query creates setup';
+
+			await runStep('create app2 policy scoped to one text', async () => createPolicy(ENDPOINT.REST, {
+				name: 'tenant-scoping-scoped',
+				version: '1',
+				selection: { role: { '@eq': 'SCOPED' } },
+				config: [{ verbs: ['GET', 'SEARCH', 'POST'], schema: ['note'], query: { text: { '@eq': 'scoped' } } }],
+			}, testEnv.apps.app2.token), scope);
+
+			testEnv.users.app2Scoped = await runStep('create app2 scoped user', async () =>
+				createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'tenant-scoping-scoped', { role: 'SCOPED' })
+			, scope);
+		});
+
+		it("Should refuse to create an entity the policy's query doesn't read", async () => {
+			for (const [path, body] of [['', { text: 'outside' }], ['', [{ text: 'scoped' }, { text: 'outside' }]], ['/bulk/add', [{ text: 'outside' }]]]) {
+				await assert.rejects(create(path, body), (err) => err instanceof BJSReqError && err.code === 401, JSON.stringify(body));
+			}
+
+			const stored = await bjsReq({ url: notes(), method: 'SEARCH', headers: json, body: JSON.stringify({ query: { text: 'outside' } }) });
+			assert.deepStrictEqual(stored, []);
+		});
+
+		it("Should still create an entity the policy's query reads", async () => {
+			const [created] = await create('', { text: 'scoped' });
+			assert.strictEqual(created.text, 'scoped');
 		});
 	});
 });
