@@ -17,6 +17,7 @@
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import util from 'node:util';
@@ -65,6 +66,7 @@ import Sugar from '../helpers/sugar.js';
 import Logging from '../helpers/logging.js';
 import Model from '../model/index.js';
 import * as Helpers from '../helpers/index.js';
+import * as Git from '../helpers/git.js';
 import lambdaHelpers from '../lambda-helpers/helpers.js';
 import type { LambdaResult } from '../lambda-helpers/helpers.js';
 import IsolateBridge, { type IsolateJail } from '../lambda-helpers/isolate-bridge.js';
@@ -94,6 +96,8 @@ interface LambdaModule {
   lambdaId?: string;
   // Built and loaded again for every run, rather than once
   reload?: boolean;
+  // For a shared module, the file lambdas require it by, which their bundles take from its global instead
+  sharedEntryFile?: string;
 }
 
 export interface ExecutionResultMessage {
@@ -847,6 +851,23 @@ export default class LambdaRunner {
     // loaded in its place. HEAD moves with every pull, and dev reload picks up local edits, so either is built each run.
     const reload = Config.lambda.devReload === 'TRUE' || String(lambda.git.hash).toUpperCase() === 'HEAD';
 
+    // Named by hash, as lambdas in one app can pin different hashes and each needs its own copy
+    const checkoutDir = `${Config.paths.lambda.code}/lambda-${lambda.git.hash}`;
+    const sharedModules: LambdaModule[] = Git.assertLambdaSharedModules(lambda.git.sharedModules).map((shared) => ({
+      name: `shared_${shared.name}_${lambda.git.hash}`,
+      import: `${checkoutDir}/./${shared.entryFile}`,
+      sharedEntryFile: path.resolve(checkoutDir, shared.entryFile),
+      reload,
+    }));
+    // Own code built against shared modules is a different bundle from one built without them
+    const sharedSuffix = sharedModules.length
+      ? `_${crypto
+          .createHash('sha1')
+          .update(sharedModules.map((m) => m.import).join('\n'))
+          .digest('hex')
+          .slice(0, 8)}`
+      : '';
+
     modules.push(
       {
         packageName: '@buttress/api',
@@ -860,8 +881,9 @@ export default class LambdaRunner {
         packageName: 'sugar',
         name: 'Sugar',
       },
+      ...sharedModules,
       {
-        name: `lambda_${lambda.id}_${lambda.git.hash}`,
+        name: `lambda_${lambda.id}_${lambda.git.hash}${sharedSuffix}`,
         import: `${lambdaDir}/${entryFile}`,
         lambdaId: String(lambda.id),
         reload,
@@ -897,12 +919,17 @@ export default class LambdaRunner {
     fs.mkdirSync(bundlesDir, { recursive: true });
     const buildDir = fs.mkdtempSync(path.join(bundlesDir, '.build-'));
 
+    const sharedGlobals = new Map(
+      modules.filter((m) => m.sharedEntryFile).map((m) => [m.sharedEntryFile as string, m.name]),
+    );
+
     return new Promise<void>((resolve, reject) => {
       webpack(
         {
           target: 'es2020',
           mode: 'development',
           entry: entry,
+          ...(sharedGlobals.size > 0 ? { externals: [LambdaRunner._sharedModuleExternal(sharedGlobals)] } : {}),
           resolve: {
             fallback: {
               crypto: require.resolve('crypto-browserify'),
@@ -968,6 +995,23 @@ export default class LambdaRunner {
         Logging.logError(Helpers.getThrownErrorMessage(error));
         throw error;
       });
+  }
+
+  // A require of a shared module's entry file becomes a reference to that module's global
+  static _sharedModuleExternal(sharedGlobals: Map<string, string>) {
+    return (
+      { context, request, contextInfo }: { context: string; request?: string; contextInfo: { issuer: string } },
+      callback: (err?: Error | null, result?: string) => void,
+    ) => {
+      // An entry has no issuer, so a shared module's own entry is still bundled
+      if (!contextInfo.issuer || !request || !request.startsWith('.')) return callback();
+
+      const target = path.resolve(context, request);
+      const sharedGlobal = [target, `${target}.js`, path.join(target, 'index.js')]
+        .map((file) => sharedGlobals.get(file))
+        .find((name) => name !== undefined);
+      return callback(null, sharedGlobal ? `var ${sharedGlobal}` : undefined);
+    };
   }
 
   async _registerLambdaModules(lambdaModules: LambdaModule[]) {

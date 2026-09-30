@@ -74,6 +74,61 @@ describe('lambda/LambdaRunner:_getLambdaModulesName', () => {
     const entry = modules.find((m) => m.name === 'lambda_lambda-1_abc123');
     assert.ok(entry.import.endsWith('/src/index.js'));
   });
+
+  it('adds each shared module ahead of the lambda, named by its hash, and names the lambda for them', () => {
+    const { runner } = createRunner();
+    const lambda = {
+      id: 'lambda-1',
+      git: {
+        hash: 'abc123',
+        entryFile: 'src/index.js',
+        sharedModules: [{ name: 'Snippet', entryFile: '_snippets/index.js' }],
+      },
+    };
+
+    const modules = runner._getLambdaModulesName(lambda);
+
+    const names = modules.map((m) => m.name);
+    assert.deepStrictEqual(names.slice(0, 4), ['Buttress', 'LambdaSnippet', 'Sugar', 'shared_Snippet_abc123']);
+    assert.match(names[4], /^lambda_lambda-1_abc123_[0-9a-f]{8}$/);
+    const shared = modules[3];
+    assert.ok(shared.import.endsWith('/lambda-abc123/./_snippets/index.js'));
+    assert.strictEqual(shared.sharedEntryFile, path.resolve(`${Config.paths.lambda.code}/lambda-abc123/_snippets/index.js`));
+  });
+
+  it('gives lambdas at different hashes their own copy of a shared module', () => {
+    const { runner } = createRunner();
+    const sharedModules = [{ name: 'Snippet', entryFile: '_snippets/index.js' }];
+    const sharedName = (hash) =>
+      runner
+        ._getLambdaModulesName({ id: 'lambda-1', git: { hash, entryFile: 'index.js', sharedModules } })
+        .find((m) => m.sharedEntryFile).name;
+
+    assert.strictEqual(sharedName('abc123'), 'shared_Snippet_abc123');
+    assert.strictEqual(sharedName('def456'), 'shared_Snippet_def456');
+  });
+
+  it('builds shared modules again for every run when the lambda is', () => {
+    const { runner } = createRunner();
+    const lambda = {
+      id: 'lambda-1',
+      git: { hash: 'HEAD', entryFile: 'index.js', sharedModules: [{ name: 'Snippet', entryFile: 'shared.js' }] },
+    };
+
+    const shared = runner._getLambdaModulesName(lambda).find((m) => m.sharedEntryFile);
+
+    assert.strictEqual(shared.reload, true);
+  });
+
+  it('refuses a shared module whose entry file is outside the checkout', () => {
+    const { runner } = createRunner();
+    const lambda = {
+      id: 'lambda-1',
+      git: { hash: 'abc123', entryFile: 'index.js', sharedModules: [{ name: 'Snippet', entryFile: '../other.js' }] },
+    };
+
+    assert.throws(() => runner._getLambdaModulesName(lambda), { code: 400 });
+  });
 });
 
 describe('lambda/LambdaRunner:_subscribeToLambdaManager announce', () => {
@@ -765,6 +820,67 @@ module.exports = HelloWorld;
     await runner.bundleLambdaModules([{ name: 'lambda_abc123', import: `${lambdaDir}/./index.js` }]);
 
     assert.ok(fs.existsSync(`${Config.paths.lambda.bundles}/lambda_abc123.js`));
+  });
+
+  it('bundles a shared module once and has lambdas use its global rather than their own copy', async function () {
+    this.timeout(30000);
+    const checkoutDir = `${Config.paths.lambda.code}/lambda-abc123`;
+    fs.mkdirSync(`${checkoutDir}/_shared/lib`, { recursive: true });
+    fs.mkdirSync(`${checkoutDir}/area`, { recursive: true });
+    fs.writeFileSync(
+      `${checkoutDir}/_shared/index.js`,
+      `globalThis.sharedLoads = (globalThis.sharedLoads || 0) + 1;
+module.exports = { answer: require('./lib/answer.js'), marker: 'SHARED_MODULE_SOURCE' };
+`,
+    );
+    fs.writeFileSync(`${checkoutDir}/_shared/lib/answer.js`, 'module.exports = 42;\n');
+    // Each form a lambda could require the shared entry by
+    const requireForms = {
+      one: "require('../_shared')",
+      two: "require('../_shared/index.js')",
+      three: "require('../_shared/')",
+    };
+    Object.entries(requireForms).forEach(([file, requireCall]) => {
+      fs.writeFileSync(
+        `${checkoutDir}/area/${file}.js`,
+        `const Shared = ${requireCall};
+class Lambda {
+  execute() {
+    return Shared.answer;
+  }
+}
+Lambda.shared = Shared;
+module.exports = Lambda;
+`,
+      );
+    });
+    const { runner } = createRunner();
+    const shared = {
+      name: 'shared_Shared_abc123',
+      import: `${checkoutDir}/./_shared/index.js`,
+      sharedEntryFile: path.resolve(`${checkoutDir}/_shared/index.js`),
+    };
+    const lambdas = Object.keys(requireForms).map((file) => ({
+      name: `lambda_${file}_abc123`,
+      import: `${checkoutDir}/./area/${file}.js`,
+    }));
+
+    await runner.bundleLambdaModules([shared, ...lambdas]);
+
+    const read = (name) => fs.readFileSync(`${Config.paths.lambda.bundles}/${name}.js`, 'utf8');
+    assert.ok(read(shared.name).includes('SHARED_MODULE_SOURCE'));
+    lambdas.forEach((l) => assert.ok(!read(l.name).includes('SHARED_MODULE_SOURCE'), `${l.name} has its own copy`));
+
+    const isolate = new ivm.Isolate();
+    try {
+      const context = isolate.createContextSync();
+      [shared, ...lambdas].forEach((m) => isolate.compileScriptSync(read(m.name)).runSync(context));
+      lambdas.forEach((l) => assert.strictEqual(context.evalSync(`new ${l.name}().execute()`), 42));
+      assert.strictEqual(context.evalSync('sharedLoads'), 1);
+      assert.strictEqual(context.evalSync(`${lambdas[0].name}.shared === ${lambdas[1].name}.shared`), true);
+    } finally {
+      isolate.dispose();
+    }
   });
 });
 

@@ -17,7 +17,13 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import { isGitBranch, isGitHash, isGitUrl, isLambdaName } from '../../../../dist/helpers/git.js';
+import {
+  assertLambdaSharedModules,
+  isGitBranch,
+  isGitHash,
+  isGitUrl,
+  isLambdaName,
+} from '../../../../dist/helpers/git.js';
 
 describe('helpers/git:lambda git source checks', () => {
   it('accepts the names, branches, hashes and urls lambdas use', () => {
@@ -66,6 +72,42 @@ describe('helpers/git:lambda git source checks', () => {
       { $ne: 1 },
     ]) {
       assert.ok(!isGitUrl(url), JSON.stringify(url));
+    }
+  });
+});
+
+describe('helpers/git:lambda shared module checks', () => {
+  it('accepts no shared modules, and modules with a plain name and a .js file in the checkout', () => {
+    assert.deepStrictEqual(assertLambdaSharedModules(undefined), []);
+    assert.deepStrictEqual(assertLambdaSharedModules(null), []);
+    const modules = [
+      { name: 'Snippet', entryFile: '_snippets/index.js' },
+      { name: 'shared_2', entryFile: 'lib/./shared.js' },
+    ];
+    assert.deepStrictEqual(assertLambdaSharedModules(modules), modules);
+  });
+
+  it('refuses names that are not identifiers, files outside the checkout, and repeated names', () => {
+    for (const modules of [
+      'Snippet',
+      { name: 'Snippet', entryFile: '_snippets/index.js' },
+      [{ name: 'Snip-pet', entryFile: '_snippets/index.js' }],
+      [{ name: '1Snippet', entryFile: '_snippets/index.js' }],
+      [{ name: 'Snippet', entryFile: '../other/index.js' }],
+      [{ name: 'Snippet', entryFile: '_snippets/../../index.js' }],
+      [{ name: 'Snippet', entryFile: '/etc/passwd.js' }],
+      [{ name: 'Snippet', entryFile: '_snippets\\index.js' }],
+      [{ name: 'Snippet', entryFile: '_snippets/index.ts' }],
+      [{ name: 'Snippet', entryFile: '_snippets/in dex.js' }],
+      [{ name: 'Snippet' }],
+      [null],
+      [
+        { name: 'Snippet', entryFile: 'a.js' },
+        { name: 'Snippet', entryFile: 'b.js' },
+      ],
+      Array.from({ length: 17 }, (_, i) => ({ name: `m${i}`, entryFile: 'a.js' })),
+    ]) {
+      assert.throws(() => assertLambdaSharedModules(modules), { code: 400 }, JSON.stringify(modules));
     }
   });
 });

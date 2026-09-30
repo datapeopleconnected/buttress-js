@@ -48,6 +48,8 @@ export type Lambda = {
     branch: string | null;
     entryFile: string | null;
     entryPoint: string | null;
+    // Modules in the checkout bundled once per hash and shared as globals, rather than bundled into each lambda
+    sharedModules?: Git.LambdaSharedModule[];
   };
   trigger: Array<{
     type: 'CRON' | 'PATH_MUTATION' | 'API_ENDPOINT';
@@ -180,6 +182,24 @@ export default class LambdaModel extends StandardModel<Lambda> {
             __default: null,
             __required: true,
             __allowUpdate: true,
+          },
+          sharedModules: {
+            __type: 'array',
+            __allowUpdate: true,
+            __schema: {
+              name: {
+                __type: 'string',
+                __default: null,
+                __required: true,
+                __allowUpdate: true,
+              },
+              entryFile: {
+                __type: 'string',
+                __default: null,
+                __required: true,
+                __allowUpdate: true,
+              },
+            },
           },
         },
         trigger: {
@@ -325,6 +345,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
         branch: body.git.branch ? body.git.branch : null,
         entryFile: body.git.entryFile ? body.git.entryFile : null,
         entryPoint: body.git.entryPoint ? body.git.entryPoint : null,
+        sharedModules: Git.assertLambdaSharedModules(body.git.sharedModules),
       },
 
       trigger: body.trigger ? body.trigger : [],

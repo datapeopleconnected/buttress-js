@@ -254,6 +254,8 @@ class AddLambda extends Route {
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_domains`));
       }
 
+      Git.assertLambdaSharedModules(req.body.lambda.git.sharedModules);
+
       return Promise.resolve(true);
     } catch (err: unknown) {
       return Promise.reject(err);
