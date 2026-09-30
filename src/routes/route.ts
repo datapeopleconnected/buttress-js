@@ -226,7 +226,8 @@ export default class Route {
    */
   async exec(req: Request, res: Response, next: NextFunction) {
     Logging.logTimer(
-      `${req.method} ${req.originalUrl || req.url} ${req.ip}`,
+      // The path, not the URL, whose query can carry a token
+      `${req.method} ${req.path} ${req.ip}`,
       req.context.timer,
       Logging.Constants.LogLevel.DEBUG,
       req.context.id,
@@ -889,7 +890,7 @@ export default class Route {
   _close(req: Request) {
     req.context.timings.close = req.context.timer.interval;
     if (this.slowLogging && req.context.timings.close > this.slowLoggingTime) {
-      Logging.logError(`${req.method} ${req.url} SLOW REQUEST ${JSON.stringify(req.context.timings)}`, req.context.id);
+      Logging.logError(`${req.method} ${req.path} SLOW REQUEST ${JSON.stringify(req.context.timings)}`, req.context.id);
     }
   }
 

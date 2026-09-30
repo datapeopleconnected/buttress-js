@@ -22,6 +22,7 @@ import { createHash } from 'node:crypto';
 import Factory from './adapter-factory.js';
 
 import Logging from '../helpers/logging.js';
+import { redactUrl } from '../helpers/redact.js';
 
 import EmptyAdapter from './adapters/empty.js';
 import MongodbAdapter from './adapters/mongodb.js';
@@ -58,7 +59,7 @@ export class Datastore {
   }
 
   connect() {
-    Logging.logSilly(`Attempting to connect to datastore ${this._adapter.uri}`);
+    Logging.logSilly(`Attempting to connect to datastore ${redactUrl(this._adapter.uri)}`);
     return this.adapter.connect();
   }
 

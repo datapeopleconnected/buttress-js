@@ -26,6 +26,7 @@ import puppeteer from 'puppeteer';
 import lambdaMail from './mail.js';
 import Model from '../model/index.js';
 import Logging from '../helpers/logging.js';
+import { redactUrl } from '../helpers/redact.js';
 import { Errors } from '../helpers/index.js';
 import { isGitHash } from '../helpers/git.js';
 import IsolateBridge from './isolate-bridge.js';
@@ -331,9 +332,8 @@ class Helpers {
         }
 
         // data.url is a URL from here on, unless a request object had no url (then this line throws).
-        Logging.logSilly(
-          `Lambda Fetch - [${data.options?.method}] ${(data.url as URL).href} with options - ${JSON.stringify(data.options)}`,
-        );
+        // Not the options or the whole URL, whose headers, body and query can carry the lambda's credentials
+        Logging.logSilly(`Lambda Fetch - [${data.options?.method}] ${redactUrl(data.url)}`);
 
         try {
           if (
@@ -362,7 +362,7 @@ class Helpers {
           };
 
           Logging.logDebug(
-            `Lambda Fetch Response - [${data.options?.method}] ${(data.url as URL).href} - ${output.status}`,
+            `Lambda Fetch Response - [${data.options?.method}] ${redactUrl(data.url)} - ${output.status}`,
           );
 
           if (

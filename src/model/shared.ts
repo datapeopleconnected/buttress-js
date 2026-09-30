@@ -190,7 +190,8 @@ export const doValidateUpdate = function (pathContext: UpdatePathContexts, flatt
       res.missingRequired = 'path';
       return res;
     }
-    Logging.logSilly(`doValidateUpdate: path: ${body.path}, value: ${body.value}`);
+    // Not the value, which can be a secret
+    Logging.logSilly(`doValidateUpdate: path: ${body.path}`);
 
     const fullPath = body.path;
     if (!fullPath || typeof fullPath !== 'string') {

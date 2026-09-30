@@ -16,6 +16,7 @@
 import { Request } from 'express';
 
 import Logging from '../helpers/logging.js';
+import { tokenFingerprint } from '../helpers/redact.js';
 import * as Helpers from '../helpers/index.js';
 import Model from '../model/index.js';
 import TokenSchemaModel, { Token } from '../model/core/token.js';
@@ -82,7 +83,7 @@ export class RoutesTokens {
     let tokenValue: string | undefined = req.headers['authorization'];
     if (tokenValue) tokenValue = tokenValue.replace('Bearer ', '');
 
-    Logging.logSilly(`_getProvidedToken:start ${tokenValue}`, req.context.id);
+    Logging.logSilly(`_getProvidedToken:start ${tokenFingerprint(tokenValue)}`, req.context.id);
 
     if (!tokenValue) {
       Logging.logTimer(

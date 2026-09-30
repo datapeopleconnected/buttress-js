@@ -33,6 +33,7 @@ const Config = createConfig() as unknown as Config;
 import Model from './model/index.js';
 import * as Helpers from './helpers/index.js';
 import Logging from './helpers/logging.js';
+import { redactUrl, tokenFingerprint } from './helpers/redact.js';
 
 import AccessControl from './access-control/index.js';
 
@@ -415,7 +416,7 @@ export default class BootstrapSocket extends Bootstrap {
       return next(new Error('invalid-token'));
     }
 
-    Logging.logDebug(`Fetching token with value: ${rawToken}`);
+    Logging.logDebug(`Fetching token ${tokenFingerprint(rawToken)}`);
     const token = (await Model.getCoreModel(TokenSchemaModel).findOne({ value: rawToken })) as Token;
     if (!token) {
       Logging.logWarn(`Invalid token, closing connection: ${socket.id}`);
@@ -733,7 +734,9 @@ export default class BootstrapSocket extends Bootstrap {
       url = `${dataShare.remoteApp.ws}/${dataShare.remoteApp.apiPath}`;
     }
 
-    Logging.logSilly(`Attempting to connect to ${url} with token ${dataShare.remoteApp.token}`);
+    Logging.logSilly(
+      `Attempting to connect to ${redactUrl(url)} with token ${tokenFingerprint(dataShare.remoteApp.token)}`,
+    );
     if (!this._dataShareSockets[dataShare._appId]) {
       this._dataShareSockets[dataShare._appId] = [];
     }
