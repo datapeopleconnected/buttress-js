@@ -58,7 +58,7 @@ what a given process actually does on startup.
 
 Bootstrap classes populate `this.__services` (a `Map<string, unknown>`) and pass it down to `Model`,
 `Routes`, `Route`, and model instances. Common keys: `nrp` (NodeRedisPubsub), `redisClient`,
-`policyCache` (`PolicyCache`), `modelManager` (the singleton `Model`), `sdsRouting` (REST only). This is
+`policyCache` (`PolicyCache`), `modelManager` (the singleton `Model`), `sdsRouting` (REST and SPR). This is
 the only dependency-injection mechanism in the codebase â€” there's no DI container.
 
 ## Data flow (REST write â†’ realtime delivery)
@@ -119,7 +119,12 @@ Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" â€
   ([src/model/type/remote-combined.ts](../src/model/type/remote-combined.ts)) at a remote Buttress
   instance via a `butt://`/`butts://` connection string
   ([src/datastore/adapters/buttress.ts](../src/datastore/adapters/buttress.ts)), built from the DSA's
-  `remoteApp` details (`Helpers.DataSharing.createDataSharingConnectionString`).
+  `remoteApp` details (`Helpers.DataSharing.createDataSharingConnectionString`). Reads go to the local
+  model and every remote, merged by `SortedStreams`. A partner's record carries its `sourceId` (the app it
+  came from), and a write to it names it (`PUT <schema>/:sourceId/:id`; delete-one takes the found
+  record's). Which DSA reaches a source is learnt from reads by `SourceDataSharingRouting`
+  ([src/services/source-ds-routing.ts](../src/services/source-ds-routing.ts)) and kept in Redis
+  (`sds-route:<appId>-<sourceId>` under `Config.redis.scope`), so every process and the next start share it.
 - **Realtime**: the primary Socket instance's (`BUTTRESS_SOCKET_APP=primary`) main process opens an
   outbound `socket.io-client` connection per active DSA (`__primaryCreateDataShareConnection`), so only
   that process has them. It also listens for `spr:activity` and forwards each activity of an app with
@@ -127,6 +132,8 @@ Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" â€
   workers don't forward. The receiving instance's Socket worker puts the activity back on its own
   `rest:activity` NRP channel as the local app's, with `isSameApp` set, so remote mutations flow through
   the same SPR pipeline as local ones and aren't forwarded back. The SPR emits an `spr:activity` per
-  matching policy (or token), so an activity is forwarded once for each. The receiving SPR then looks the
-  entity up in the app's `RemoteCombinedModel`, whose `findById` needs a `sourceId` that the activity
-  doesn't carry, so forwarded activity doesn't yet reach the remote app's clients.
+  matching policy (or token), so an activity is forwarded once for each. The receiving worker relays an
+  activity only for a collection whose `RemoteCombinedModel` reads the partner through that DSA, as its own
+  models have it (every Socket worker re-inits an app's models on `app-schema:updated`), and tags it with
+  the DSA's id (`dataShareId`). The receiving SPR looks the entity up through that DSA
+  (`findSharedById`), and takes the tag off before sending the activity on.
