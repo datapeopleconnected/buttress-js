@@ -142,24 +142,35 @@ export class PolicyCache {
       this._modelManager.getCoreModel(PolicySchemaModel).find({ _appId: tokenState._appId }),
     );
     const policies = AccessControlPolicyMatch.getTokenPolicies(appPolicies, tokenState);
+    const tokenId = tokenState.id.toString();
+    const tokenPoliciesKey = this._prefix(`token:${tokenId}:policies`);
 
-    // Clear out old policies for the token
-    await this.clearTokenPolicies(tokenState.id.toString());
+    // Requests read the token's policies meanwhile, so they're changed without ever being partly there: the policies are
+    // cached and linked to the token first, then the token's set is swapped for the new one in one step, and only then
+    // are links to policies it no longer has removed
+    const oldPolicyIds = (await this._redisClient.sMembers(tokenPoliciesKey)).filter((id) => id !== 'STALE');
+    const newPolicyIds = policies.map((policy) => policy.id.toString());
 
-    // Index the token's policy properties
-    await this.indexTokenPolicyProperties(tokenState.id.toString(), tokenState.policyProperties);
+    await policies.reduce(async (prev, policy) => {
+      await prev;
+      await this.addPolicy(policy);
+      await this._redisClient.sAdd(this._prefix(`policy:${policy.id}:tokens`), tokenId);
+    }, Promise.resolve());
 
-    if (policies.length > 0) {
-      await policies.reduce(async (prev, policy) => {
-        await prev;
-
-        await this._redisClient.sAdd(this._prefix(`token:${tokenState.id}:policies`), policy.id.toString());
-
-        await this.addPolicy(policy);
-
-        await this._redisClient.sAdd(this._prefix(`policy:${policy.id}:tokens`), tokenState.id.toString());
-      }, Promise.resolve());
+    if (newPolicyIds.length > 0) {
+      const nextKey = `${tokenPoliciesKey}:next:${Math.random().toString(36).slice(2)}`;
+      await this._redisClient.sAdd(nextKey, newPolicyIds);
+      await this._redisClient.rename(nextKey, tokenPoliciesKey);
+    } else {
+      await this._redisClient.del(tokenPoliciesKey);
     }
+
+    for (const policyId of oldPolicyIds.filter((id) => !newPolicyIds.includes(id))) {
+      await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
+    }
+
+    // Index the token's policy properties, which adds and removes only what changed
+    await this.indexTokenPolicyProperties(tokenId, tokenState.policyProperties);
 
     return policies;
   }

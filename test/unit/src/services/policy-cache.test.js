@@ -167,6 +167,13 @@ const Redis = {
     return [...zset.keys()].slice(start, stop === -1 ? undefined : stop + 1);
   },
 
+  async rename(source, destination) {
+    if (!this._data.has(source)) throw new Error('ERR no such key');
+    this._data.set(destination, this._data.get(source));
+    this._data.delete(source);
+    return 'OK';
+  },
+
   async del(key) {
     const existed = this._data.has(key);
     this._data.delete(key);
@@ -710,5 +717,41 @@ describe('services/policy-cache: invalidating a policy', () => {
     assert.deepStrictEqual((await cache.getPoliciesByToken(admin)).map((p) => p.id), []);
     assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
     assert.deepStrictEqual(await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'user' }), []);
+  });
+});
+
+// Requests read a token's policies while it's rehydrated, so they must see its old policies or its new ones, not some
+describe('services/policy-cache: rehydrating a token while it is read', () => {
+  const policies = ['p1', 'p2', 'p3'].map((id) => ({
+    id, name: id, _appId: 'app1', priority: 1,
+    selection: { role: { '@eq': 'admin' } },
+    config: [{ verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null }],
+  }));
+  const token = { id: 'tok1', _appId: 'app1', type: 'user', policyProperties: { role: 'admin' } };
+
+  it("never leaves the token's policies part-way changed", async () => {
+    Redis.reset();
+    const cache = new PolicyCache(Redis, mockModelManager({ Token: { findById: async () => token }, Policy: mockModel(policies) }));
+    await cache.rehydrateToken(token);
+
+    // Look at the token's policies after every Redis call the next rehydrate makes
+    const seen = [];
+    const methods = ['sAdd', 'sRem', 'del', 'rename', 'hSet', 'hDel', 'sUnion'];
+    const originals = Object.fromEntries(methods.map((m) => [m, Redis[m]]));
+    for (const m of methods) {
+      Redis[m] = async (...args) => {
+        const result = await originals[m].apply(Redis, args);
+        seen.push((await Redis.sMembers(K('token:tok1:policies'))).sort().join(','));
+        return result;
+      };
+    }
+    try {
+      await cache.rehydrateToken(token);
+    } finally {
+      Object.assign(Redis, originals);
+    }
+
+    assert.deepStrictEqual([...new Set(seen)], ['p1,p2,p3']);
+    assert.deepStrictEqual((await Redis.sMembers(K('policy:p2:tokens'))), ['tok1']);
   });
 });
