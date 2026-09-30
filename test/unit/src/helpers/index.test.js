@@ -75,6 +75,20 @@ describe('helpers.checkAppPolicyProperty', () => {
 		const result = await Helpers.checkAppPolicyProperty({ level: [5, 10, 15] }, { level: 20 });
 		assert.strictEqual(result.passed, false);
 	});
+
+	it("refuses a value of another type than the app's listed values, rather than failing", async () => {
+		for (const properties of [{ role: 5 }, { role: { '@eq': 5 } }, { role: { '@eq': { nested: 'admin' } } }]) {
+			const result = await Helpers.checkAppPolicyProperty({ role: ['admin', 'user'] }, properties);
+			assert.strictEqual(result.passed, false, JSON.stringify(properties));
+		}
+	});
+
+	it('takes an array of values when every one of them is listed, ignoring the case of text', async () => {
+		const list = { role: ['admin', 'user'] };
+
+		assert.strictEqual((await Helpers.checkAppPolicyProperty(list, { role: { '@in': ['ADMIN', 'user'] } })).passed, true);
+		assert.strictEqual((await Helpers.checkAppPolicyProperty(list, { role: { '@in': ['admin', 'other'] } })).passed, false);
+	});
 });
 
 describe('helpers.flattenedObject', () => {

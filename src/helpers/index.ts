@@ -425,26 +425,24 @@ export const checkAppPolicyProperty = async (
     if (typeof policyProperties[key] === 'object') {
       [operator] = Object.keys(policyProperties[key] as object);
     }
-    // The app's list holds an array of allowed values for each key
-    const appPolicyPropertiesValues = appPolicyList[key] as PolicyPropertyValue[];
+    // The app's list holds the allowed values for each key
+    const appPolicyPropertiesValues = ([] as PolicyPropertyValue[]).concat(appPolicyList[key]);
     const equalValue = operator ? (policyProperties[key] as Record<string, unknown>)[operator] : policyProperties[key];
     if (equalValue === null || equalValue === undefined) {
       res.passed = false;
       res.errMessage = 'Policy property value not listed';
     }
 
-    const appContainsProp = appPolicyPropertiesValues.every((val) => {
-      if (typeof val === 'string') {
-        return val.toUpperCase() !== (equalValue as string).toUpperCase();
-      }
-      if (typeof val === 'boolean') {
-        return val !== equalValue;
-      }
-      if (typeof val === 'number') {
-        return val !== equalValue;
-      }
-    });
-    if (equalValue !== undefined && appContainsProp) {
+    // Text is compared without case; anything else only matches a listed value of its own type
+    const isListed = (value: unknown) =>
+      appPolicyPropertiesValues.some((val) =>
+        typeof val === 'string' && typeof value === 'string'
+          ? val.toUpperCase() === value.toUpperCase()
+          : val === value,
+      );
+    // An array, as an operator like @in takes, is listed when every value in it is
+    const values = Array.isArray(equalValue) ? equalValue : [equalValue];
+    if (equalValue !== undefined && (values.length < 1 || !values.every(isListed))) {
       res.passed = false;
       res.errMessage = 'Policy property value not listed';
     }
