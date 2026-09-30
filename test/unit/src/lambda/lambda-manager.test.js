@@ -18,7 +18,10 @@ import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 
+import { Readable } from 'node:stream';
+
 import LambdaManager from '../../../../dist/lambda/lambda-manager.js';
+import Model from '../../../../dist/model/index.js';
 
 function createManager() {
   const nrp = { on: () => {}, emit: () => {} };
@@ -346,6 +349,52 @@ describe('lambda/LambdaManager path changes from other apps', () => {
     const queued = notify(manager, nrp, { paths: ['car.e1.name'], values: ['a'], collection: 'car' });
 
     assert.deepStrictEqual(queued, []);
+  });
+});
+
+describe('lambda/LambdaManager path-mutation cache rebuild', () => {
+  const watching = (id) => ({
+    id,
+    _appId: 'app-1',
+    git: { hash: 'hash' },
+    trigger: [{ type: 'PATH_MUTATION', pathMutation: { paths: ['car.*'] } }],
+  });
+
+  // A manager started with `initial` lambdas watching paths, whose next load waits to be released with `next`
+  async function startManager(initial) {
+    const { manager, nrp } = createManagerWithNrp();
+    sinon.stub(manager, '_setupLambdaFolders');
+    sinon.stub(manager, '_setQueueTimeout');
+    let lambdas = Promise.resolve(initial);
+    sinon.stub(Model, 'getCoreModel').returns({ find: async () => Readable.from(await lambdas) });
+    await manager.init();
+
+    let release;
+    lambdas = new Promise((resolve) => (release = resolve));
+    const rebuild = () => nrp._listeners['rest:worker:rebuild-path-mutation-cache']();
+    return { manager, rebuild, release: (next) => release(next) };
+  }
+
+  it('keeps the cached lambdas while it loads them again, then uses the new ones', async () => {
+    const { manager, rebuild, release } = await startManager([watching('before')]);
+
+    const rebuilding = rebuild();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepStrictEqual(manager._pathsMutation.map((l) => l.id), ['before']);
+
+    release([watching('after')]);
+    await rebuilding;
+    assert.deepStrictEqual(manager._pathsMutation.map((l) => l.id), ['after']);
+  });
+
+  it('keeps none once no lambda watches paths', async () => {
+    const { manager, rebuild, release } = await startManager([watching('before')]);
+
+    const rebuilding = rebuild();
+    release([]);
+    await rebuilding;
+
+    assert.deepStrictEqual(manager._pathsMutation, []);
   });
 });
 

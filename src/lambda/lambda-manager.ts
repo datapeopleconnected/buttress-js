@@ -96,6 +96,8 @@ export default class LambdaManager {
   private _inflightExecutions: { [key: string]: LambdaExecutionMessage } = {};
 
   private _pathsMutation: PathMutation[] = [];
+  // Counts loads of _pathsMutation, so only the latest one started replaces it
+  private _pathsMutationLoads = 0;
   private _debouncedPathMutations: PathMutationDebounce[] = [];
 
   // A lambda runs for an entity a second after that entity's last change, but no later than five seconds after the
@@ -144,7 +146,7 @@ export default class LambdaManager {
   async init() {
     Logging.logDebug('LambdaManager:init');
 
-    this._loadLambdaPathsMutation();
+    await this._loadLambdaPathsMutation();
 
     this._setupLambdaFolders();
 
@@ -155,7 +157,6 @@ export default class LambdaManager {
     this._setQueueTimeout();
 
     this.__nrp?.on('rest:worker:rebuild-path-mutation-cache', async () => {
-      this._pathsMutation = [];
       await this._loadLambdaPathsMutation();
     });
     this.__nrp?.on('rest:worker:add-path-mutation', async (json: string) => {
@@ -303,6 +304,7 @@ export default class LambdaManager {
    * @return {Promise}
    */
   async _loadLambdaPathsMutation() {
+    const load = ++this._pathsMutationLoads;
     const rxsLambdas = await Model.getCoreModel(LambdaSchemaModel).find({
       executable: {
         $eq: true,
@@ -314,14 +316,13 @@ export default class LambdaManager {
 
     const lambdas = await Helpers.streamAll<Lambda>(rxsLambdas);
 
-    if (lambdas.length < 1) return;
-
-    for await (const lambda of lambdas) {
-      await this.__populateLambdaPathsMutation(lambda);
-    }
+    // Path changes keep matching the lambdas already loaded until these replace them
+    const pathsMutation: PathMutation[] = [];
+    lambdas.forEach((lambda) => this.__populateLambdaPathsMutation(lambda, pathsMutation));
+    if (load === this._pathsMutationLoads) this._pathsMutation = pathsMutation;
   }
 
-  __populateLambdaPathsMutation(lambda: Lambda) {
+  __populateLambdaPathsMutation(lambda: Lambda, pathsMutation = this._pathsMutation) {
     const trigger = lambda.trigger.find((t) => t.type === 'PATH_MUTATION');
     if (!trigger) return;
 
@@ -332,7 +333,7 @@ export default class LambdaManager {
     }
 
     Logging.logSilly(`Pushing a new path mutation lambda (${lambda.name}) into the path mutation cached array`);
-    this._pathsMutation.push({
+    pathsMutation.push({
       id: lambda.id,
       gitHash,
       type: trigger.type,

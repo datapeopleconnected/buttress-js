@@ -21,7 +21,9 @@ Coordinates work; never executes lambda code itself. Talks to `LambdaRunner` wor
   `_inflightExecutions`, so a second worker announcing for the same execution is ignored. Workers report
   back `lambda:worker:finished`/`errored`/`overloaded`, each of which untracks the assignment.
 - **Path-mutation lambdas**: `_loadLambdaPathsMutation()` caches every executable lambda with a
-  `PATH_MUTATION` trigger into `_pathsMutation` at boot (and on `rest:worker:rebuild-path-mutation-cache`).
+  `PATH_MUTATION` trigger into `_pathsMutation` at boot (and on `rest:worker:rebuild-path-mutation-cache`,
+  which the lambda routes publish when a path-watching lambda is updated, redeployed or deleted, or any lambda's
+  triggers change). A rebuild replaces the list once it's loaded, so path changes meanwhile still match.
   When a REST write fires `rest:worker:notifyLambdaPathChange` (see `Route._checkBasedPathLambda()` in
   [routing.md](routing.md)), `_checkMatchingPaths()`/`_checkMatchingRelativePaths()` do wildcard path
   matching (`schema.*`, `schema.id.field`, trailing `*`) against each cached lambda's `trigger.pathMutation.paths`.

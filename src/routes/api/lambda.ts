@@ -291,6 +291,13 @@ class AddLambda extends Route {
 routes.push(AddLambda);
 
 /**
+ * Whether a change to a lambda may change which paths the Lambda manager runs it for: it watches paths, or the change
+ * is to its triggers, which may have.
+ */
+const changesPathMutations = (lambda: Lambda, updates: UpdatePathBody[] = []) =>
+  lambda.trigger.some((t) => t.type === 'PATH_MUTATION') || updates.some((update) => /^trigger\b/.test(update.path));
+
+/**
  * @class UpdateLambda
  */
 class UpdateLambda extends Route {
@@ -345,12 +352,11 @@ class UpdateLambda extends Route {
   override async _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
     const updated = await Model.getCoreModel(LambdaSchemaModel).updateByPath(req.body, validate.id);
 
-    // TODO: Check to see if the updated involved the triggers or path mutations.
-
     const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(validate.id);
     if (req.body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
       await Model.getCoreModel(LambdaSchemaModel).pullLambdaCode(lambda);
     }
+    if (changesPathMutations(lambda, req.body)) this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
     return updated;
   }
 }
@@ -405,13 +411,16 @@ class BulkUpdateLambda extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: BulkUpdateItem<UpdatePathBody[]>[]) {
+    let pathMutationsChanged = false;
     for await (const item of validate) {
       await Model.getCoreModel(LambdaSchemaModel).updateByPath(item.body, item.id);
       const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(item.id);
       if (item.body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
         await Model.getCoreModel(LambdaSchemaModel).pullLambdaCode(lambda);
       }
+      if (changesPathMutations(lambda, item.body)) pathMutationsChanged = true;
     }
+    if (pathMutationsChanged) this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
     return true;
   }
 }
@@ -576,11 +585,14 @@ class EditLambdaDeployment extends Route {
     }
   }
 
-  override _exec(req: Request, res: Response, validate: { hash: string; branch: string; lambda: Lambda }) {
-    return Model.getCoreModel(LambdaSchemaModel).setDeployment(validate.lambda.id, {
+  override async _exec(req: Request, res: Response, validate: { hash: string; branch: string; lambda: Lambda }) {
+    const deployment = await Model.getCoreModel(LambdaSchemaModel).setDeployment(validate.lambda.id, {
       'git.branch': validate.branch,
       'git.hash': validate.hash,
     });
+    // The manager keeps each path-watching lambda's hash
+    if (changesPathMutations(validate.lambda)) this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
+    return deployment;
   }
 }
 routes.push(EditLambdaDeployment);

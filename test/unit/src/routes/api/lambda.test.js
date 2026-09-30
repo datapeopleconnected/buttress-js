@@ -313,6 +313,36 @@ describe('routes/api/lambda:UpdateLambda', () => {
     assert.ok(lambdaModel.pullLambdaCode.calledOnce);
   });
 
+  it('has the path-mutation cache rebuilt when the updated lambda watches paths', async () => {
+    stubModel({ lambda: { findById: async () => ({ id: HEX_ID, trigger: [{ type: 'PATH_MUTATION' }] }) } });
+    const nrp = { emit: sinon.spy() };
+    const route = createRoute(UpdateLambda, { nrp });
+
+    await route._exec(createReq({ body: [{ path: 'executable', value: false }] }), {}, { id: HEX_ID });
+
+    assert.ok(nrp.emit.calledWith('rest:worker:rebuild-path-mutation-cache'));
+  });
+
+  it('has the path-mutation cache rebuilt when the update changes the triggers, which may have watched paths', async () => {
+    stubModel({ lambda: { findById: async () => ({ id: HEX_ID, trigger: [] }) } });
+    const nrp = { emit: sinon.spy() };
+    const route = createRoute(UpdateLambda, { nrp });
+
+    await route._exec(createReq({ body: [{ path: 'trigger', value: [] }] }), {}, { id: HEX_ID });
+
+    assert.ok(nrp.emit.calledWith('rest:worker:rebuild-path-mutation-cache'));
+  });
+
+  it("leaves the path-mutation cache alone for a lambda that doesn't watch paths", async () => {
+    stubModel({ lambda: { findById: async () => ({ id: HEX_ID, trigger: [{ type: 'CRON' }] }) } });
+    const nrp = { emit: sinon.spy() };
+    const route = createRoute(UpdateLambda, { nrp });
+
+    await route._exec(createReq({ body: [{ path: 'name', value: 'renamed' }] }), {}, { id: HEX_ID });
+
+    assert.strictEqual(nrp.emit.called, false);
+  });
+
   it('does not pull code when the update does not touch git.hash', async () => {
     const { lambdaModel } = stubModel({
       lambda: { findById: async () => ({ id: HEX_ID, trigger: [] }) },
@@ -339,6 +369,17 @@ describe('routes/api/lambda:BulkUpdateLambda', () => {
     const route = createRoute(BulkUpdateLambda);
 
     await assert.rejects(route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'name' } }] })), /invalid_id/);
+  });
+
+  it('has the path-mutation cache rebuilt once when a lambda in the batch watches paths', async () => {
+    stubModel({ lambda: { findById: async () => ({ id: HEX_ID, trigger: [{ type: 'PATH_MUTATION' }] }) } });
+    const nrp = { emit: sinon.spy() };
+    const route = createRoute(BulkUpdateLambda, { nrp });
+    const update = { id: HEX_ID, body: [{ path: 'executable', value: false }] };
+
+    await route._exec(createReq(), {}, [update, update]);
+
+    assert.ok(nrp.emit.calledOnceWith('rest:worker:rebuild-path-mutation-cache'));
   });
 
   it('applies every update in the batch', async () => {
@@ -415,6 +456,18 @@ describe('routes/api/lambda:ScheduleLambdaExecution', () => {
 });
 
 describe('routes/api/lambda:EditLambdaDeployment', () => {
+  it('has the path-mutation cache rebuilt when the deployed lambda watches paths, as its hash changed', async () => {
+    const { lambdaModel } = stubModel();
+    const nrp = { emit: sinon.spy() };
+    const route = createRoute(EditLambdaDeployment, { nrp });
+    const lambda = { id: 'lambda-1', trigger: [{ type: 'PATH_MUTATION' }] };
+
+    await route._exec(createReq(), {}, { hash: 'abc1234', branch: 'main', lambda });
+
+    assert.ok(lambdaModel.setDeployment.calledOnce);
+    assert.ok(nrp.emit.calledWith('rest:worker:rebuild-path-mutation-cache'));
+  });
+
   it("answers a deployment that fails with a fixed message, not the failure's detail", async () => {
     const lambda = { id: 'lambda-1', git: { entryFile: 'index.js', entryPoint: 'execute' } };
     const failure = new Error('Command failed: git checkout main\nfatal: /srv/buttress/app_data/lambda/code/lambda-abc');
@@ -477,7 +530,7 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
     const { lambdaModel } = stubModel();
     const route = createRoute(EditLambdaDeployment);
 
-    await route._exec(createReq(), {}, { branch: 'main', hash: 'abc', lambda: { id: 'lambda-1' } });
+    await route._exec(createReq(), {}, { branch: 'main', hash: 'abc', lambda: { id: 'lambda-1', trigger: [] } });
 
     assert.ok(lambdaModel.setDeployment.calledWith('lambda-1', { 'git.branch': 'main', 'git.hash': 'abc' }));
   });
