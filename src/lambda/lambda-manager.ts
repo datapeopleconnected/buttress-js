@@ -29,6 +29,7 @@ import * as Helpers from '../helpers/index.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../model/core/lambda-execution.js';
 import { NotifyLambdaPathChangeMessage } from '../routes/route.js';
 import type { Services } from '../bootstrap.js';
+import type { ExecutionResultMessage } from './lambda-runner.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
 
@@ -94,6 +95,8 @@ export default class LambdaManager {
 
   private _workerMap: { [key: string]: string } = {}; // workerId -> executionId
   private _inflightExecutions: { [key: string]: LambdaExecutionMessage } = {};
+  // When each in-flight execution was handed to its worker
+  private _assignedAt = new Map<string, number>();
 
   private _pathsMutation: PathMutation[] = [];
   // Counts loads of _pathsMutation, so only the latest one started replaces it
@@ -138,8 +141,12 @@ export default class LambdaManager {
     let timeout = parseInt(Config.timeout.lambdaManager);
     if (!timeout) timeout = 10;
 
+    // A run stops at the runner's timeout; the minute on top is for looking the lambda up and bundling it first
+    const runnerTimeout = parseInt(Config.timeout.lambdasRunner) || 10;
+
     return {
       TIMEOUT: timeout * 1000,
+      ASSIGNMENT_TIMEOUT: (runnerTimeout + 60) * 1000,
     };
   }
 
@@ -220,6 +227,7 @@ export default class LambdaManager {
     this._isProcessing = true;
 
     try {
+      await this._expireLostAssignments();
       const lambdaExec = await this.__getPendingLambdaExec();
       // TODO: Handle pausing lambdas due to READ / WRITE access
       await this.__announcePendingExecutions(lambdaExec);
@@ -441,6 +449,50 @@ export default class LambdaManager {
 
     this._workerMap[message.workerId] = message.executionId;
     this._inflightExecutions[message.executionId] = message;
+    this._assignedAt.set(message.executionId, Date.now());
+  }
+
+  /**
+   * Gives up on executions whose worker hasn't said it's done within the runner's timeout, as it has gone or its message
+   * was lost, so the worker is given work again. One that hadn't finished is recorded as errored, and an API caller
+   * waiting on it is answered, rather than run again, which could run the lambda twice.
+   */
+  async _expireLostAssignments() {
+    const expiredBefore = Date.now() - LambdaManager.Constants.ASSIGNMENT_TIMEOUT;
+    const lost = Object.values(this._inflightExecutions).filter(
+      (message) => (this._assignedAt.get(message.executionId) ?? Infinity) < expiredBefore,
+    );
+
+    for (const message of lost) {
+      Logging.logError(`[${this.name}] ${message.workerId} never finished ${message.executionId}, giving up on it`);
+      this.untrackWorkerLambda(message);
+
+      try {
+        const executionModel = Model.getCoreModel(LambdaExecutionSchemaModel);
+        const execution = (await executionModel.findById(message.executionId)) as LambdaExecution | null;
+        if (!execution || (execution.status !== 'RUNNING' && execution.status !== 'PENDING')) continue;
+
+        await executionModel.updateById(executionModel.createId(execution.id), {
+          $set: { status: 'ERROR', endedAt: new Date() },
+          $push: { logs: { $each: [{ log: 'lambda_worker_lost', type: 'ERROR' }] } },
+        });
+
+        const reqId = execution.metadata.find((m) => m.key === 'REQ_ID')?.value;
+        if (execution.triggerType === 'API_ENDPOINT' && reqId) {
+          const result: ExecutionResultMessage = {
+            code: 500,
+            err: 'lambda_worker_lost',
+            reqId,
+            executionId: execution.id,
+          };
+          this.__nrp?.emit('lambda:worker:execution-result', JSON.stringify(result));
+        }
+      } catch (err: unknown) {
+        Logging.logError(
+          `[${this.name}] Failed to record ${message.executionId} as lost: ${Helpers.getThrownErrorMessage(err)}`,
+        );
+      }
+    }
   }
 
   /**
@@ -456,6 +508,7 @@ export default class LambdaManager {
 
     delete this._workerMap[message.workerId];
     delete this._inflightExecutions[message.executionId];
+    this._assignedAt.delete(message.executionId);
 
     // if (!message.workerExecID) return;
 

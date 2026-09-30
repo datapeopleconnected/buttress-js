@@ -22,6 +22,7 @@ import { Readable } from 'node:stream';
 
 import LambdaManager from '../../../../dist/lambda/lambda-manager.js';
 import Model from '../../../../dist/model/index.js';
+import Logging from '../../../../dist/helpers/logging.js';
 
 function createManager() {
   const nrp = { on: () => {}, emit: () => {} };
@@ -395,6 +396,65 @@ describe('lambda/LambdaManager path-mutation cache rebuild', () => {
     await rebuilding;
 
     assert.deepStrictEqual(manager._pathsMutation, []);
+  });
+});
+
+describe('lambda/LambdaManager assignments that never finish', () => {
+  // The runner timeout is 10s by default, and the manager allows a minute on top for setting a run up
+  const LIMIT = 70 * 1000;
+
+  function assignedManager(execution) {
+    const clock = sinon.useFakeTimers();
+    sinon.stub(Logging, 'logError');
+    const { manager, nrp } = createManagerWithNrp();
+    const updateById = sinon.stub().resolves();
+    sinon.stub(Model, 'getCoreModel').returns({ createId: (v) => v, findById: async () => execution, updateById });
+    manager._listenToLambdaWorkers();
+    nrp._listeners['lambda:worker:available'](JSON.stringify({ workerId: 'worker-1', executionId: 'exec-1' }));
+    nrp.emit.resetHistory();
+    return { clock, manager, nrp, updateById };
+  }
+
+  it("gives up on one that hasn't finished within the runner's timeout, marks it errored and answers its caller", async () => {
+    const execution = { id: 'exec-1', status: 'RUNNING', triggerType: 'API_ENDPOINT', metadata: [{ key: 'REQ_ID', value: 'req-1' }] };
+    const { clock, manager, nrp, updateById } = assignedManager(execution);
+
+    clock.tick(LIMIT + 1);
+    await manager._expireLostAssignments();
+
+    assert.deepStrictEqual(manager._workerMap, {});
+    assert.deepStrictEqual(manager._inflightExecutions, {});
+    assert.ok(updateById.calledWithMatch('exec-1', { $set: { status: 'ERROR' } }));
+    assert.match(updateById.firstCall.args[1].$push.logs.$each[0].log, /lambda_worker_lost/);
+    const result = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+    assert.deepStrictEqual(JSON.parse(result.args[1]), {
+      code: 500,
+      err: 'lambda_worker_lost',
+      reqId: 'req-1',
+      executionId: 'exec-1',
+    });
+  });
+
+  it('leaves one alone until then', async () => {
+    const execution = { id: 'exec-1', status: 'RUNNING', triggerType: 'CRON', metadata: [] };
+    const { clock, manager, updateById } = assignedManager(execution);
+
+    clock.tick(LIMIT - 1);
+    await manager._expireLostAssignments();
+
+    assert.strictEqual(manager._workerMap['worker-1'], 'exec-1');
+    assert.strictEqual(updateById.called, false);
+  });
+
+  it("frees the worker of one that finished without saying so, and leaves the execution's status", async () => {
+    const execution = { id: 'exec-1', status: 'COMPLETE', triggerType: 'CRON', metadata: [] };
+    const { clock, manager, updateById } = assignedManager(execution);
+
+    clock.tick(LIMIT + 1);
+    await manager._expireLostAssignments();
+
+    assert.deepStrictEqual(manager._workerMap, {});
+    assert.strictEqual(updateById.called, false);
   });
 });
 
