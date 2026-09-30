@@ -101,13 +101,15 @@ manually. Its token type bypasses the access-control policy middleware entirely.
 ## Plugin system
 
 [src/plugins/index.ts](../src/plugins/index.ts) (`Plugins` singleton) scans `Config.paths.plugins` for
-subdirectories containing an `index.js`, imports each as a `ButtressPlugin` subclass
-([src/plugins/plugin.ts](../src/plugins/plugin.ts)), and calls `.initialise()` — which branches on
+subdirectories containing an `index.js`, imports each one's default export (a `ButtressPlugin` subclass,
+[src/plugins/plugin.ts](../src/plugins/plugin.ts)), constructs it with the process's app type and roles, and
+awaits `.initialise()` if it has one — which branches on
 `APP_TYPE` (`rest`/`socket`/`lambda`) to `initialiseRest/Socket/Lambda()`. Plugins register Express
 routes (`plugin.routes`, mounted via `Routes.createPluginRoutes`) and/or WordPress-style
 `addAction`/`addFilter` hooks consumed via `Plugins.do_action(name, ...)` /
 `Plugins.apply_filters(name, value, ...)`. Plugins are file-system based, not npm packages — there is no
-plugin registry in this repo, only the loader.
+plugin registry in this repo, only the loader. Only the REST process loads plugins
+(`bootstrap-rest.ts`); a plugin that fails to load is logged and skipped. Tests: `test/unit/src/plugins/`.
 
 ## Federation / data sharing
 

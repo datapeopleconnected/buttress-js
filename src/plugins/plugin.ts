@@ -23,29 +23,34 @@ class ButtressPlugin extends EventEmitter {
 	processRole?: string;
 	infrastructureRole?: string;
 
-	constructor() {
+	// The loader constructs each plugin with the process it's loaded into
+	constructor(appType?: string, processRole?: string, infrastructureRole?: string) {
 		super();
+
+		this.appType = appType;
+		this.processRole = processRole;
+		this.infrastructureRole = infrastructureRole;
 	}
 
 	async initialise() {
 		if (this.appType === plugins.APP_TYPE.REST) {
-			this.initialiseRest();
+			await this.initialiseRest();
 		} else if (this.appType === plugins.APP_TYPE.SOCKET) {
-			this.initialiseSocket();
+			await this.initialiseSocket();
 		} else if (this.appType === plugins.APP_TYPE.LAMBDA) {
-			this.initialiseLambda();
+			await this.initialiseLambda();
 		}
 	}
 
-	initialiseRest() {
+	initialiseRest(): void | Promise<void> {
 		throw new Error('Not implemented');
 	}
 
-	initialiseSocket() {
+	initialiseSocket(): void | Promise<void> {
 		throw new Error('Not implemented');
 	}
 
-	initialiseLambda() {
+	initialiseLambda(): void | Promise<void> {
 		throw new Error('Not implemented');
 	}
 

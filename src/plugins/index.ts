@@ -16,6 +16,7 @@
 
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { EventEmitter } from 'node:events';
 
 import createConfig from '@dpc/node-env-obj';
@@ -116,12 +117,15 @@ class Plugins extends EventEmitter {
 		const pluginDirs = await this._findPluginEntryFiles(Config.paths.plugins);
 		for (const pluginDir of pluginDirs) {
 			try {
-				const plugin = new ((await import(pluginDir)) as PluginClass)(this.appType, this.processRole, this.infrastructureRole);
+				// A plugin is its folder's index.js, whose default export is its class
+				const pluginModule = (await import(pathToFileURL(path.join(pluginDir, 'index.js')).href)) as {
+					default?: PluginClass;
+				};
+				const PluginExport = pluginModule.default ?? (pluginModule as unknown as PluginClass);
+				const plugin = new PluginExport(this.appType, this.processRole, this.infrastructureRole);
 				this.attachListeners(plugin);
-				if (plugin.initialise) {
-					await plugin.initialise();
-					this.plugins.push(plugin);
-				}
+				if (plugin.initialise) await plugin.initialise();
+				this.plugins.push(plugin);
 			} catch (err: unknown) {
 				// A single broken plugin (bad import, throwing/rejecting initialise()) must not take
 				// down the whole process - log it and move on to the rest of the plugins.
