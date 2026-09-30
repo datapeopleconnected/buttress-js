@@ -146,6 +146,17 @@ export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
     return this._model.rmBulk(ids.filter((id) => ownedIds.has(String(id))));
   }
 
+  /**
+   * The whole model, once the row is the tenant's, for the model's own methods that act on a row by id
+   * (setDeployment, activate, updatePolicyProperties...). Another app's row is refused.
+   * @param {string} id
+   * @return {Promise<StandardModel>}
+   */
+  async owned(id: string): Promise<M> {
+    await this._assertTenants(id);
+    return this._model;
+  }
+
   rmAll(query?: AdapterQuery) {
     return this._model.rmAll(this.scope(query));
   }

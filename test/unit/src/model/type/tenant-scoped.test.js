@@ -163,6 +163,16 @@ describe('model/type/TenantScopedModel', () => {
       assert.deepStrictEqual(writes(model), [['rmBulk', [rows[0].id]]]);
     });
 
+    it("gives the model for one of its own rows, for the model's own methods", async () => {
+      const model = createModel();
+
+      assert.strictEqual(await scoped(model).owned(rows[0].id), model);
+    });
+
+    it("refuses the model for another app's row", async () => {
+      await assert.rejects(() => scoped().owned(rows[1].id), { code: 400, message: 'invalid_id' });
+    });
+
     it('removes all of its own rows, and no others', async () => {
       const model = createModel();
 
@@ -179,6 +189,12 @@ describe('model/type/TenantScopedModel', () => {
       const found = await (await unscoped().find({})).toArray();
 
       assert.deepStrictEqual(found.map((row) => row.name), ['ours', 'theirs']);
+    });
+
+    it("gives the model for any app's row", async () => {
+      const model = createModel();
+
+      assert.strictEqual(await unscoped(model).owned(rows[1].id), model);
     });
 
     it("updates any app's row", async () => {
