@@ -52,6 +52,7 @@ function stubModel({ secureStore = {}, app = {}, lambda = {}, user = {} } = {}) 
     add: sinon.stub().resolves({ id: 'secure-store-1' }),
     rm: sinon.stub().resolves(),
     count: sinon.stub().resolves(0),
+    exists: sinon.stub().resolves(true),
     updateByPath: sinon.stub().resolves(),
     validateUpdate: () => ({ validation: { isValid: true }, body: {} }),
     createId: (v) => v,
@@ -120,14 +121,13 @@ describe('routes/api/secure-store:AddSecureStore', () => {
     assert.deepStrictEqual(result, { appId: 'app-1' });
   });
 
-  it('falls back to the lambda token’s app id when there is no authenticated app', async () => {
-    stubModel({ lambda: { findById: async () => ({ _appId: 'app-from-lambda' }) } });
+  it("adds the secure store to the caller's app", async () => {
+    stubModel();
     const route = createRoute(AddSecureStore);
-    const req = createReq({ authApp: { id: null }, token: { _lambdaId: 'lambda-1' }, body: { name: 'test' } });
 
-    const result = await route._validate(req);
+    const result = await route._validate(createReq({ body: { name: 'test' } }));
 
-    assert.strictEqual(result.appId, 'app-from-lambda');
+    assert.strictEqual(result.appId, 'app-1');
   });
 
   it('adds the entity scoped to the resolved app id', () => {
@@ -183,7 +183,7 @@ describe('routes/api/secure-store:AddManySecureStore', () => {
 
     const result = await route._validate(createReq({ body: [{ name: 'a' }] }));
 
-    assert.ok(findOne.calledWith({ name: 'a', _appId: 'app-1' }));
+    assert.deepStrictEqual(findOne.firstCall.args[0], { $and: [{ name: 'a', _appId: 'app-1' }, { _appId: 'app-1' }] });
     assert.deepStrictEqual(result, { appId: 'app-1' });
   });
 
@@ -392,12 +392,19 @@ describe('routes/api/secure-store:SearchSecureStoreList', () => {
     const { secureStoreModel } = stubModel();
     secureStoreModel.find.returns('a-stream');
     const route = createRoute(SearchSecureStoreList);
-    const validate = { query: { $and: [] }, skip: 0, limit: 10, sort: {}, project: false };
+    const validate = { query: { name: { $eq: 'a' } }, skip: 0, limit: 10, sort: {}, project: false };
 
     const result = route._exec(createReq(), {}, validate);
 
     assert.strictEqual(result, 'a-stream');
-    assert.deepStrictEqual(secureStoreModel.find.firstCall.args, [validate.query, {}, 10, 0, {}, false]);
+    assert.deepStrictEqual(secureStoreModel.find.firstCall.args, [
+      { $and: [validate.query, { _appId: 'app-1' }] },
+      {},
+      10,
+      0,
+      {},
+      false,
+    ]);
   });
 });
 
@@ -458,8 +465,8 @@ describe('routes/api/secure-store:SecureStoreCount', () => {
     const { secureStoreModel } = stubModel();
     const route = createRoute(SecureStoreCount);
 
-    await route._exec(createReq(), {}, { query: { $and: [] } });
+    await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(secureStoreModel.count.calledWith({ $and: [] }));
+    assert.ok(secureStoreModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
   });
 });
