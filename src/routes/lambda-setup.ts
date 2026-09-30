@@ -42,6 +42,9 @@ export class RoutesLambdaSetup {
   _errorHandler?: express.ErrorRequestHandler;
   // The api paths whose lambda endpoints are registered, so each is registered once
   _configuredApiPaths = new Set<string>();
+  // Lambda results this process is waiting on, by request id, and the one subscription that hands them over
+  _pendingResults = new Map<string, (result: ExecutionResultMessage) => void>();
+  _resultsSubscription?: Promise<unknown>;
 
   constructor(
     app: express.Application,
@@ -87,6 +90,19 @@ export class RoutesLambdaSetup {
     });
   }
 
+  /**
+   * Subscribes to lambda results once, handing each to the request waiting on it.
+   */
+  _listenForResults() {
+    this._resultsSubscription ??= Promise.resolve(
+      this._nrp?.on('lambda:worker:execution-result', (json: string) => {
+        const result = JSON.parse(json) as ExecutionResultMessage;
+        this._pendingResults.get(result.reqId)?.(result);
+      }),
+    );
+    return this._resultsSubscription;
+  }
+
   async __configureAppLambdaEndpoints(apiPath: string) {
     if (this._configuredApiPaths.has(apiPath)) return;
     this._configuredApiPaths.add(apiPath);
@@ -111,59 +127,39 @@ export class RoutesLambdaSetup {
         return;
       }
 
-      const result = await this._queueLambdaAPIExecution(endpoint, apiPath, req);
-      if (result.errCode && result.errMessage) {
-        res.status(result.errCode).send({ message: result.errMessage });
-        return;
-      }
-
-      const lambdaExecutionId = result.lambdaExecution?.id;
-      if (!lambdaExecutionId) {
-        res.status(500).send({ message: 'lambda_execution_id_missing' });
-        return;
-      }
-
-      res.set('Cache-Control', 'no-store');
+      // Waiting before the call is queued, as its result can come back before queueing it has finished
+      await this._listenForResults();
+      const reqId = String(req.context.id);
+      let settle: (result: ExecutionResultMessage | null) => void = () => {};
+      const resultArrives = new Promise<ExecutionResultMessage | null>((resolve) => (settle = resolve));
+      this._pendingResults.set(reqId, settle);
 
       let lambdaResult: ExecutionResultMessage | null = null;
+      let lambdaExecutionId: string | undefined;
+      try {
+        const result = await this._queueLambdaAPIExecution(endpoint, apiPath, req);
+        if (result.errCode && result.errMessage) {
+          res.status(result.errCode).send({ message: result.errMessage });
+          return;
+        }
 
-      if (result.triggerAPIType === 'SYNC') {
-        lambdaResult = await new Promise<ExecutionResultMessage | null>((resolve) => {
-          // nrp.on() subscribes to Redis and hands back an unsubscribe function - capture it
-          // and use it once we're done (match or timeout), otherwise this handler (and the
-          // underlying Redis subscription) leaks for the lifetime of the process, growing with
-          // every SYNC lambda API call.
-          let unsubscribe: (() => void) | undefined;
-          let settled = false;
+        lambdaExecutionId = result.lambdaExecution?.id;
+        if (!lambdaExecutionId) {
+          res.status(500).send({ message: 'lambda_execution_id_missing' });
+          return;
+        }
 
-          const finish = (value: ExecutionResultMessage | null) => {
-            if (settled) return;
-            settled = true;
-            clearTimeout(timer);
-            unsubscribe?.();
-            resolve(value);
-          };
+        res.set('Cache-Control', 'no-store');
 
-          // If the matching result never arrives (e.g. the lambda worker crashed), don't hold
-          // the HTTP response open forever - give up after SYNC_LAMBDA_TIMEOUT_MS. The caller
-          // still gets the executionId back (same as the ASYNC/no-result path below) so they
-          // can look up the outcome themselves.
-          const timer = setTimeout(() => finish(null), SYNC_LAMBDA_TIMEOUT_MS);
-
-          const handler = (json: string) => {
-            const exec = JSON.parse(json) as ExecutionResultMessage;
-            if (exec.reqId !== req.context.id?.toString()) return;
-
-            finish(exec);
-          };
-
-          this._nrp?.on('lambda:worker:execution-result', handler).then((unsub) => {
-            unsubscribe = unsub;
-            // We already gave up waiting before the subscription finished being set up - clean
-            // it up immediately instead of leaving it registered.
-            if (settled) unsubscribe();
-          });
-        });
+        if (result.triggerAPIType === 'SYNC') {
+          // If the result never arrives (e.g. the lambda worker crashed), the caller gets the executionId, as for an
+          // ASYNC call, to look the outcome up themselves
+          const timer = setTimeout(() => settle(null), SYNC_LAMBDA_TIMEOUT_MS);
+          lambdaResult = await resultArrives;
+          clearTimeout(timer);
+        }
+      } finally {
+        this._pendingResults.delete(reqId);
       }
 
       const lambdaResultPayload =
@@ -177,18 +173,10 @@ export class RoutesLambdaSetup {
           typeof lambdaResultPayload.query === 'object' && lambdaResultPayload.query !== null
             ? (lambdaResultPayload.query as Record<string, unknown>)
             : null;
-        let query: string = '';
-        if (queryObj) {
-          query = Object.keys(queryObj).reduce((output, key) => {
-            if (!output) {
-              output = `${key}=${queryObj[key]}`;
-            } else {
-              output = `${output}&${key}=${queryObj[key]}`;
-            }
-            return output;
-          }, '');
-        }
-        const redirectURL = query ? `${url}?${query}` : url;
+        const query = Object.entries(queryObj ?? {})
+          .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+          .join('&');
+        const redirectURL = query ? `${url}${url.includes('?') ? '&' : '?'}${query}` : url;
         res.redirect(redirectURL);
       } else if (lambdaResult) {
         res.status(lambdaResult.code).send({
@@ -252,8 +240,12 @@ export class RoutesLambdaSetup {
       return res;
     }
 
-    const triggerAPI = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
-    if (!triggerAPI || triggerAPI.apiEndpoint.method !== req.method) {
+    // The trigger the request is for: the one at its url, or any, for a request that names the lambda by id; and with
+    // its method, as a url can have one trigger for each
+    const apiTriggers = lambda.trigger.filter((t) => t.type === 'API_ENDPOINT');
+    const atUrl = apiTriggers.filter((t) => t.apiEndpoint.url === endpointOrId);
+    const triggerAPI = (atUrl.length > 0 ? atUrl : apiTriggers).find((t) => t.apiEndpoint.method === req.method);
+    if (!triggerAPI) {
       res.errCode = 404;
       res.errMessage = 'api_method_not_found';
       return res;
@@ -274,7 +266,14 @@ export class RoutesLambdaSetup {
       priority: triggerAPI.apiEndpoint.type === 'SYNC' ? ExecPriority.API_ENDPOINT_SYNC : ExecPriority.API_ENDPOINT,
       lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
       deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(deployment.id),
-      metadata: [{ key: 'REQ_ID', value: req.context.id }],
+      metadata: [
+        { key: 'REQ_ID', value: req.context.id },
+        // So the runner applies this trigger's settings
+        {
+          key: 'API_ENDPOINT',
+          value: JSON.stringify({ url: triggerAPI.apiEndpoint.url, method: triggerAPI.apiEndpoint.method }),
+        },
+      ],
     } satisfies LambdaExecutionAddBody;
 
     if (req.body) LambdaExecutionData.metadata.push({ key: 'BODY', value: JSON.stringify(req.body) });

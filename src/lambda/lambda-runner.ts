@@ -342,7 +342,7 @@ export default class LambdaRunner {
       }
       executionToken = execToken;
       // Only an endpoint that uses the caller's token is given it
-      const callerTrigger = lambda.trigger.find((t) => t.type === type);
+      const callerTrigger = this._executionTrigger(lambda, execution, type);
       if (type === 'API_ENDPOINT' && callerTrigger?.apiEndpoint?.useCallerToken) userToken = execToken.value;
 
       if (execToken.type === 'user') {
@@ -359,8 +359,7 @@ export default class LambdaRunner {
 
     const apiPath = app.apiPath;
     // const appAllowList = app.allowList;
-    const trigger = lambda.trigger.find((t) => t.type === type);
-    // trigger = trigger?.[Sugar.String.camelize(type, false)];
+    const trigger = this._executionTrigger(lambda, execution, type);
     const buttressOptions = {
       buttressUrl: `${Config.app.protocol}://${Config.app.host}`,
       appToken: executionToken.value,
@@ -527,6 +526,20 @@ export default class LambdaRunner {
 
       return Promise.reject(failure);
     }
+  }
+
+  /**
+   * The trigger an execution is for. An API call names the endpoint it was made to, as a lambda can have several; an
+   * execution queued before calls named it goes by the lambda's first.
+   */
+  _executionTrigger(lambda: Lambda, execution: LambdaExecution, type: string) {
+    const endpoint = execution.metadata?.find((m) => m.key === 'API_ENDPOINT')?.value;
+    if (type !== 'API_ENDPOINT' || !endpoint) return lambda.trigger.find((t) => t.type === type);
+
+    const { url, method } = JSON.parse(endpoint) as { url: string; method: string };
+    return lambda.trigger.find(
+      (t) => t.type === type && t.apiEndpoint?.url === url && t.apiEndpoint?.method === method,
+    );
   }
 
   /**

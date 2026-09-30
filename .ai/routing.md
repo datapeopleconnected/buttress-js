@@ -92,7 +92,10 @@ only custom validation via their JSON schema).
 
 [src/routes/lambda-setup.ts](../src/routes/lambda-setup.ts) (`RoutesLambdaSetup`) mounts one Express
 route per `API_ENDPOINT`-trigger lambda under `/lambda/v1/<apiPath>/<endpoint url>`, holds the HTTP
-response open, and resolves it when `lambda:worker:execution-result` arrives for the matching `reqId`
-(`_queueLambdaAPIExecution`). [src/routes/tokens.ts](../src/routes/tokens.ts) (`RoutesTokens`) caches all
+response open for a SYNC endpoint, and resolves it when `lambda:worker:execution-result` arrives for the
+matching `reqId`. One subscription per process hands results to the waiting requests
+(`_pendingResults`), and a request is waiting before its execution is queued (`_queueLambdaAPIExecution`), so
+a fast result isn't missed. The call goes through the trigger at its url and method, which the execution
+names in its `API_ENDPOINT` metadata so the runner applies that trigger's settings. [src/routes/tokens.ts](../src/routes/tokens.ts) (`RoutesTokens`) caches all
 tokens in memory (`loadTokens()`, refreshed on `app-routes:bust-cache`) for fast lookup by header/query
 value — token lookups are **not** a DB hit per request in the common case.

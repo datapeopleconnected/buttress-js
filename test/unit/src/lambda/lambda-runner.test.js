@@ -856,7 +856,7 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
       `);
     });
     const lambda = {
-      id: 'lambda-1', name: 'hello-world', trigger: [trigger],
+      id: 'lambda-1', name: 'hello-world', trigger: [].concat(trigger),
       git: { url: 'git@example.com:hello-world.git', hash: 'HEAD', entryFile: 'index.js', entryPoint: 'execute' },
     };
     const headers = JSON.stringify({ authorization: 'Bearer caller-token-value', cookie: 'session=s', 'x-trace': 't' });
@@ -874,6 +874,19 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
 
     assert.strictEqual(seen.userToken, null);
     assert.deepStrictEqual(seen.headers, { 'x-trace': 't' });
+  });
+
+  it("goes by the endpoint the call was made to, of a lambda's several", async function () {
+    this.timeout(10000);
+    const triggers = [
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'a', method: 'GET', useCallerToken: false } },
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'b', method: 'POST', useCallerToken: true } },
+    ];
+    const metadata = [{ key: 'API_ENDPOINT', value: JSON.stringify({ url: 'b', method: 'POST' }) }];
+
+    const seen = await given(triggers, { _tokenId: 'caller-token', metadata });
+
+    assert.strictEqual(seen.userToken, 'caller-token-value');
   });
 
   it("gives an endpoint that uses the caller's token that token, without the credential headers", async function () {
