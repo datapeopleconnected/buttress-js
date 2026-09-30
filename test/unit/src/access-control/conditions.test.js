@@ -269,3 +269,24 @@ describe('access-control/conditions:isPolicyQueryBasedCondition', () => {
     assert.strictEqual(result, undefined);
   });
 });
+
+describe('access-control/conditions: @or branches', () => {
+  const policy = (condition) => ({ id: 'p1', name: 'p1', env: null, appId: 'app1', config: { condition } });
+  const condition = {
+    '@or': [{ '#env.role': { '@eq': 'admin' }, '#env.location': { '@eq': 'UK' } }, { '#env.role': { '@eq': 'owner' } }],
+  };
+  const env = (role, location) => ({ date: { now: new Date().toISOString() }, user: null, appId: 'app1', role, location });
+
+  it('needs every condition of a branch to hold', async () => {
+    const kept = await AccessControlConditions.filterPoliciesByPolicyConditions([policy(condition)], env('user', 'UK'));
+
+    assert.strictEqual(kept.length, 0);
+  });
+
+  it('holds when one branch holds in full', async () => {
+    for (const [role, location] of [['admin', 'UK'], ['owner', 'FR']]) {
+      const kept = await AccessControlConditions.filterPoliciesByPolicyConditions([policy(condition)], env(role, location));
+      assert.strictEqual(kept.length, 1, `${role} ${location}`);
+    }
+  });
+});

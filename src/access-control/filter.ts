@@ -260,9 +260,8 @@ export class Filter {
         if (!Array.isArray(nestedQuery)) continue;
         for (const queryObj of nestedQuery as unknown[]) {
           if (typeof queryObj !== 'object' || queryObj === null) continue;
-          innerResults.push(
-            this.__evaluateQueryAgainstEntity(queryObj as PolicyQuery, flatEntity, innerPartialPass, testEntity),
-          );
+          // Each branch is a whole query, its fields AND'd as MongoDB does; the OR is across branches
+          innerResults.push(this.__evaluateQueryAgainstEntity(queryObj as PolicyQuery, flatEntity, false, testEntity));
         }
 
         if (innerPartialPass) {

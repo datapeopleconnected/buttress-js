@@ -315,3 +315,19 @@ describe('access-control/filter:evaluateQueryAgainstEntity', () => {
     assert.strictEqual(result, false);
   });
 });
+
+describe('access-control/filter:evaluateQueryAgainstEntity $or branches', () => {
+  const query = {
+    $or: [{ _teamId: { $eq: 'T1' }, visibility: { $eq: 'shared' } }, { _ownerId: { $eq: 'U1' } }],
+  };
+
+  it('needs every field of a branch to match, as MongoDB does', () => {
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T9', visibility: 'shared', _ownerId: 'U9' }), false);
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T1', visibility: 'private', _ownerId: 'U9' }), false);
+  });
+
+  it('matches when one branch matches in full', () => {
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T1', visibility: 'shared', _ownerId: 'U9' }), true);
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T9', visibility: 'private', _ownerId: 'U1' }), true);
+  });
+});

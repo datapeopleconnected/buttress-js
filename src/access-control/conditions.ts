@@ -98,9 +98,8 @@ export class Conditions {
         if (!Array.isArray(nestedConditions)) continue;
         for await (const conditionObj of nestedConditions as unknown[]) {
           if (typeof conditionObj !== 'object' || conditionObj === null) continue;
-          innerResults.push(
-            await this.__checkCondition(conditionObj as PolicyCondition, envVariables, innerPartialPass),
-          );
+          // Each branch is a whole condition, its parts AND'd; the OR is across branches
+          innerResults.push(await this.__checkCondition(conditionObj as PolicyCondition, envVariables, false));
         }
 
         if (innerPartialPass) {
