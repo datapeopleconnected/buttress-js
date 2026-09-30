@@ -37,6 +37,10 @@ const REMOTE_RETRY_MOST_MS = 60000;
 /**
  * @class RemoteCombinedModel
  */
+
+// A partner a read or write needs can't be reached
+const partnerUnavailable = () =>
+  Helpers.Errors.unavailable('data_sharing_partner_unavailable', 'A data sharing partner is unavailable');
 export default class RemoteCombinedModel extends StandardModel {
   override app: App;
 
@@ -202,7 +206,7 @@ export default class RemoteCombinedModel extends StandardModel {
   _remoteModelThrough(dataSharingId: string) {
     const model = this._remoteModels.find((remoteModel) => remoteModel.dataSharingId.toString() === dataSharingId);
     if (!model && this._unreachable.has(dataSharingId)) {
-      throw new Helpers.Errors.RequestError(503, 'data_sharing_partner_unavailable');
+      throw partnerUnavailable();
     }
     if (!model) throw new Error('Unable to find remote model');
 
@@ -312,7 +316,7 @@ export default class RemoteCombinedModel extends StandardModel {
    * @return {Promise}
    */
   override async rmAll(query?: AdapterQuery) {
-    if (this._unreachable.size > 0) throw new Helpers.Errors.RequestError(503, 'data_sharing_partner_unavailable');
+    if (this._unreachable.size > 0) throw partnerUnavailable();
 
     const remotes = [...this._remoteModels];
     await this.localModel.rmAll(query);

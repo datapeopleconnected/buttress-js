@@ -212,7 +212,7 @@ describe('Data Sharing', async () => {
 		it(`Should refuse to update the policy of another app's agreement`, async () => {
 			await assert.rejects(
 				updatePolicy(testEnv.agreements[`app1-to-app2`], testEnv.apps.app2),
-				(err) => err.code === 400 && err.message === 'unknown_data_sharing',
+				(err) => err.code === 404 && err.body.code === 'not_found',
 			);
 		});
 

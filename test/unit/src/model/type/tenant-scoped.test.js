@@ -85,7 +85,7 @@ const createAdapter = () => {
       calls.push(['add', row]);
       return row;
     },
-    ID: { new: (id) => id ?? '6abd00000000000000000099' },
+    ID: { new: (id) => id ?? '6abd00000000000000000099', isValid: (id) => typeof id === 'string' && /^[0-9a-f]{24}$/.test(id) },
   };
   return adapter;
 };
@@ -95,6 +95,10 @@ const createModel = () => {
   model.adapter = createAdapter();
   return model;
 };
+// Another app's row is answered as one that doesn't exist; an id that can't be one, as invalid
+const notFound = (id) => ({ status: 404, code: 'not_found', details: { schema: 'widget', id } });
+const invalidId = { status: 400, code: 'invalid_id' };
+
 const writes = (model) => model.adapter.calls.filter(([call]) => ['updateByPaths', 'rm', 'rmBulk', 'rmAll'].includes(call));
 
 describe('model/type/TenantScopedModel', () => {
@@ -140,10 +144,10 @@ describe('model/type/TenantScopedModel', () => {
     it("refuses to update another app's row, without writing", async () => {
       const model = createModel();
 
-      await assert.rejects(() => scoped(model).updateByPath([{ path: 'name', value: 'x', contextPath: '^name$' }], rows[1].id), {
-        code: 400,
-        message: 'invalid_id',
-      });
+      await assert.rejects(() => scoped(model).updateByPath([{ path: 'name', value: 'x', contextPath: '^name$' }], rows[1].id),
+        notFound(rows[1].id));
+      await assert.rejects(() => scoped(model).updateByPath([{ path: 'name', value: 'x', contextPath: '^name$' }], 'not-an-id'),
+        invalidId);
       assert.deepStrictEqual(writes(model), []);
     });
 
@@ -158,7 +162,7 @@ describe('model/type/TenantScopedModel', () => {
     it("refuses to remove another app's row, without writing", async () => {
       const model = createModel();
 
-      await assert.rejects(() => scoped(model).rm(rows[1].id), { code: 400, message: 'invalid_id' });
+      await assert.rejects(() => scoped(model).rm(rows[1].id), notFound(rows[1].id));
       assert.deepStrictEqual(writes(model), []);
     });
 
@@ -177,7 +181,25 @@ describe('model/type/TenantScopedModel', () => {
     });
 
     it("refuses the model for another app's row", async () => {
-      await assert.rejects(() => scoped().owned(rows[1].id), { code: 400, message: 'invalid_id' });
+      await assert.rejects(() => scoped().owned(rows[1].id), notFound(rows[1].id));
+      await assert.rejects(() => scoped().owned('not-an-id'), invalidId);
+    });
+
+    it("checks its own row exists, answering another app's as not found", async () => {
+      const model = scoped();
+
+      await model.assertExists(rows[0].id);
+      await assert.rejects(() => model.assertExists(rows[1].id), notFound(rows[1].id));
+      await assert.rejects(() => model.assertExists('not-an-id'), invalidId);
+    });
+
+    it("finds its own row by id or fails, answering another app's as not found", async () => {
+      const model = scoped();
+
+      assert.strictEqual((await model.findByIdOrFail(rows[0].id)).name, 'ours');
+      await assert.rejects(() => model.findByIdOrFail(rows[1].id), notFound(rows[1].id));
+      await assert.rejects(() => model.findByIdOrFail('6abd00000000000000000077'), notFound('6abd00000000000000000077'));
+      await assert.rejects(() => model.findByIdOrFail('not-an-id'), invalidId);
     });
 
     it('adds a row for its own app, whatever app the caller names', async () => {
@@ -218,6 +240,11 @@ describe('model/type/TenantScopedModel', () => {
       const model = createModel();
 
       assert.strictEqual(await unscoped(model).owned(rows[1].id), model);
+    });
+
+    it("finds any app's row by id, or fails for one that doesn't exist", async () => {
+      assert.strictEqual((await unscoped().findByIdOrFail(rows[1].id)).name, 'theirs');
+      await assert.rejects(() => unscoped().findByIdOrFail('6abd00000000000000000077'), notFound('6abd00000000000000000077'));
     });
 
     it('adds a row for the app it names', async () => {

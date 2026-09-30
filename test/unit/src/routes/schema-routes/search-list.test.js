@@ -19,7 +19,7 @@ import assert from 'assert';
 
 import SearchList from '../../../../../dist/routes/schema-routes/search-list.js';
 import { streamAll } from '../../../../../dist/helpers/index.js';
-import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { ApiError } from '../../../../../dist/helpers/errors.js';
 import { createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
@@ -52,8 +52,8 @@ describe('schema-routes/SearchList:_validate', () => {
     await assert.rejects(
       () => route._validate({ body: { skip: 'abc' } }, {}),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.message, 'invalid_value_skip');
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.code, 'invalid_value_skip');
         return true;
       },
     );
@@ -61,7 +61,7 @@ describe('schema-routes/SearchList:_validate', () => {
 
   it('rejects when limit is not a number', async () => {
     const route = createRoute(createFakeModel([]));
-    await assert.rejects(() => route._validate({ body: { limit: 'abc' } }, {}), /invalid_value_limit/);
+    await assert.rejects(() => route._validate({ body: { limit: 'abc' } }, {}), { code: 'invalid_value_limit' });
   });
 
   it('defaults skip/limit/sort/project when the body omits them', async () => {

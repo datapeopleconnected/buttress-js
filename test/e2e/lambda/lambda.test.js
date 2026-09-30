@@ -124,7 +124,7 @@ describe('Lambda', async () => {
 				policyProperties: {lambda: 'TEST_ACCESS'},
 			}, testEnv.apps.app1.token), (err) => {
 				assert.strictEqual(err.code, 400);
-				assert.strictEqual(err.message, 'invalid_lambda_git_branch');
+				assert.strictEqual(err.body.code, 'invalid_lambda_git_branch');
 				return true;
 			});
 		});

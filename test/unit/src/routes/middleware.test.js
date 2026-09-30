@@ -94,19 +94,6 @@ describe('routes/RoutesMiddleware:logErrors', () => {
     assert(Logging.logError.notCalled);
   });
 
-  it('sends a RequestError with its message as its code', () => {
-    sinon.stub(Logging, 'logError');
-    const middleware = createMiddleware();
-    const res = createRes();
-    const next = sinon.spy();
-
-    middleware.logErrors(new Helpers.RequestError(400, 'invalid_input'), createReq(), res, next);
-
-    assert(res.status.calledWith(400));
-    assert.deepStrictEqual(res.json.firstCall.args[0], { code: 'invalid_input', message: 'invalid_input' });
-    assert(next.notCalled);
-  });
-
   it('logs and sends a generic JSON body for any other error, without leaking its message', () => {
     sinon.stub(Logging, 'logError');
     const middleware = createMiddleware();
@@ -173,7 +160,7 @@ describe('routes/RoutesMiddleware:logErrors', () => {
         next();
       });
       app.get('/missing', () => {
-        throw new Helpers.RequestError(404, 'not_found');
+        throw Helpers.notFound('not_found');
       });
       app.post('/add', (req, res) => res.json(req.body));
       app.use((err, req, res, next) => middleware.logErrors(err, req, res, next));

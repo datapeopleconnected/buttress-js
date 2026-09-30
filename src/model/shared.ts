@@ -147,6 +147,51 @@ export const describeInvalidUpdate = (validation: UpdateValidationResult) => {
   return `Update value is invalid: ${validation.invalidValue}`;
 };
 
+/**
+ * The error for an update validateUpdate refused, 400 invalid_update, saying why.
+ * @param {string} schema - the name of what's being updated
+ * @param {object} validation
+ * @return {ApiError}
+ */
+export const invalidUpdateError = (schema: string | undefined, validation: UpdateValidationResult) =>
+  Helpers.Errors.badRequest('invalid_update', `${schema}: ${describeInvalidUpdate(validation)}`, { schema });
+
+/**
+ * The error for an entity validate() refused: 400 missing_field for its first missing field, or invalid_value for its
+ * first invalid value, given as `path:value[type]`.
+ * @param {string} schema - the name of what's being added
+ * @param {object} validation
+ * @param {number} [index] - the entity's place in a list of them
+ * @return {ApiError}
+ */
+export const invalidEntityError = (
+  schema: string | undefined,
+  validation: { missing?: string[]; invalid?: string[] },
+  index?: number,
+) => {
+  const at = index === undefined ? '' : ` at index ${index}`;
+  const where = index === undefined ? {} : { index };
+  const [missing] = validation.missing ?? [];
+  if (missing !== undefined) {
+    return Helpers.Errors.badRequest('missing_field', `${schema}: Missing field: ${missing}${at}`, {
+      schema,
+      path: missing,
+      ...where,
+    });
+  }
+
+  const [invalid] = validation.invalid ?? [];
+  if (invalid !== undefined) {
+    return Helpers.Errors.badRequest('invalid_value', `${schema}: Invalid value: ${invalid}${at}`, {
+      schema,
+      path: invalid.split(':')[0],
+      ...where,
+    });
+  }
+
+  return Helpers.Errors.badRequest('invalid_value', `${schema}: Invalid entity${at}`, { schema, ...where });
+};
+
 // A property name as it's matched in an update path spec
 const escapeRegExp = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 

@@ -19,7 +19,7 @@ import assert from 'assert';
 import sinon from 'sinon';
 
 import DeleteOne from '../../../../../dist/routes/schema-routes/delete-one.js';
-import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { ApiError } from '../../../../../dist/helpers/errors.js';
 import { createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
@@ -114,7 +114,7 @@ describe('schema-routes/DeleteOne', () => {
     assert.ok(!docs.some((d) => d.id === DOC_1));
   });
 
-  it('rejects with a 400 and leaves the entity intact when it exists but is outside the access-control policy scope', async () => {
+  it('rejects with a 404 and leaves the entity intact when it exists but is outside the access-control policy scope', async () => {
     // DOC_2 exists, but belongs to USER_2 while the policy only scopes to USER_1's records.
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
@@ -126,8 +126,9 @@ describe('schema-routes/DeleteOne', () => {
     await assert.rejects(
       () => route._validate(req, {}),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.code, 400);
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.status, 404);
+        assert.strictEqual(err.code, 'not_found');
         return true;
       },
     );

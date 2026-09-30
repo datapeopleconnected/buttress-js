@@ -268,7 +268,7 @@ describe('model/type/RemoteCombinedModel', () => {
     it("refuses a write to the partner's record as unavailable", async () => {
       const model = await createModel(createPartner('agreement-1'));
 
-      await assert.rejects(() => model.updateByPath([{ path: 'name', value: 'x' }], 'car-a', 'app-a'), { code: 503 });
+      await assert.rejects(() => model.updateByPath([{ path: 'name', value: 'x' }], 'car-a', 'app-a'), { status: 503, code: 'data_sharing_partner_unavailable' });
       await model.destroy();
     });
 
@@ -343,7 +343,7 @@ describe('model/type/RemoteCombinedModel', () => {
     it("removes nothing, as unavailable, when a partner can't be reached", async () => {
       const { model, removed } = createBulkModel({ unreachable: ['agreement-2'] });
 
-      await assert.rejects(() => model.rmAll({}), { code: 503 });
+      await assert.rejects(() => model.rmAll({}), { status: 503, code: 'data_sharing_partner_unavailable' });
       assert.deepStrictEqual(removed, []);
     });
   });

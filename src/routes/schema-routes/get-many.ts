@@ -60,13 +60,13 @@ export default class GetMany extends Route {
 
     if (!Array.isArray(_ids) || _ids.length < 1) {
       this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, 'invalid_id');
+      throw Helpers.Errors.badRequest('array_required', 'Expected query.ids to be a list of ids');
     }
 
     const model = await this.routeModel();
     if (!_ids.every((id) => model.isValidId(id))) {
       this.log(`ERROR: Invalid ${this.schemaName} ID provided`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, 'invalid_id');
+      throw Helpers.Errors.badRequest('invalid_id', 'The ids are not all valid');
     }
 
     return { ids: _ids as string[], project: project };

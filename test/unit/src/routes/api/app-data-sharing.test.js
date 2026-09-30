@@ -70,8 +70,8 @@ function stubModel({ ds = {}, token = {} } = {}) {
     find: sinon.stub(),
     findAll: sinon.stub(),
     add: sinon.stub().resolves({
-      dataSharing: { id: 'ds-1', remoteApp: {} },
-      token: { id: 'token-1', value: 'reg-token-value' },
+      dataSharing: { id: '6abd08000000000000000001', remoteApp: {} },
+      token: { id: '6abd02000000000000000001', value: 'reg-token-value' },
     }),
     exists: sinon.stub().resolves(true),
     validateUpdate: () => ({ validation: { isValid: true }, body: {} }),
@@ -85,6 +85,7 @@ function stubModel({ ds = {}, token = {} } = {}) {
     ...ds,
   };
   const tokenModel = {
+    ...realQueryParser(TokenSchemaModel),
     Constants: { Type: { SYSTEM: 'system', DATA_SHARING: 'dataSharing' } },
     createTokenString: () => 'new-token-string',
     findById: async () => null,
@@ -116,7 +117,7 @@ function createRoute(RouteClass, { nrp } = {}) {
   return route;
 }
 
-function createReq({ params = {}, body = {}, authApp = { id: 'app-1' }, token = { type: 'app' } } = {}) {
+function createReq({ params = {}, body = {}, authApp = { id: '6abd05000000000000000001' }, token = { type: 'app' } } = {}) {
   return { params, body, context: { id: 'req-1', authApp, token } };
 }
 
@@ -129,14 +130,14 @@ describe('routes/api/app-data-sharing:GetAppDataSharing', () => {
     stubModel();
     const route = createRoute(GetAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_required_app_data_sharing_id/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when no data sharing agreement is found', async () => {
     stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(GetAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /app_data_sharing_does_not_exist/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 });
 
@@ -160,7 +161,7 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
       ]) {
         stubModel();
         const route = createRoute(AddDataSharing);
-        await assert.rejects(route._validate(createReq({ body: { policyConfig: {}, remoteApp } })), (err) => err.message === message, JSON.stringify(remoteApp));
+        await assert.rejects(route._validate(createReq({ body: { policyConfig: {}, remoteApp } })), (err) => err.code === message, JSON.stringify(remoteApp));
         sinon.restore();
       }
     });
@@ -170,7 +171,7 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
     stubModel();
     const route = createRoute(AddDataSharing);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects with the first missing field', async () => {
@@ -184,14 +185,14 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
     stubModel();
     const route = createRoute(AddDataSharing);
 
-    await assert.rejects(route._validate(createReq({ body: {} })), /missing_policy/);
+    await assert.rejects(route._validate(createReq({ body: {} })), { code: 'missing_policy' });
   });
 
   it('rejects duplicate agreements', async () => {
     stubModel({ ds: { isDuplicate: async () => true } });
     const route = createRoute(AddDataSharing);
 
-    await assert.rejects(route._validate(createReq({ body: { policyConfig: {} } })), /duplicate/);
+    await assert.rejects(route._validate(createReq({ body: { policyConfig: {} } })), { code: 'duplicate' });
   });
 
   it('scopes appId to the token’s app when not a system token', async () => {
@@ -210,7 +211,7 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
 
     const result = await route._exec(createReq({ body: { policyConfig: {} } }), {}, true);
 
-    assert.ok(dsModel.add.calledWith({ policyConfig: {} }, { _appId: 'app-1' }));
+    assert.ok(dsModel.add.calledWith({ policyConfig: {} }, { _appId: '6abd05000000000000000001' }));
     assert.strictEqual(result.registrationToken, 'reg-token-value');
   });
 
@@ -218,9 +219,9 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
     const { dsModel } = stubModel();
     const route = createRoute(AddDataSharing);
 
-    await route._exec(createReq({ token: { type: 'system' }, body: { policyConfig: {}, appId: 'app-2' } }), {}, true);
+    await route._exec(createReq({ token: { type: 'system' }, body: { policyConfig: {}, appId: '6abd05000000000000000002' } }), {}, true);
 
-    assert.ok(dsModel.add.calledWith(sinon.match.any, { _appId: 'app-2' }));
+    assert.ok(dsModel.add.calledWith(sinon.match.any, { _appId: '6abd05000000000000000002' }));
   });
 });
 
@@ -231,7 +232,7 @@ describe('routes/api/app-data-sharing:UpdateAppDataSharing', () => {
 
     await assert.rejects(
       route._validate(createReq({ params: { dataSharingId: HEX_ID }, body: [{ path: 'name' }] })),
-      (err) => err.code === 400 && err.message === 'ERROR: Update is missing its value',
+      (err) => err.status === 400 && err.code === 'invalid_update' && err.message.endsWith(': Update is missing its value'),
     );
   });
 
@@ -239,14 +240,14 @@ describe('routes/api/app-data-sharing:UpdateAppDataSharing', () => {
     stubModel();
     const route = createRoute(UpdateAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_data_sharing_id/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when the agreement does not exist', async () => {
     stubModel({ ds: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(UpdateAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), { code: 'not_found' });
   });
 
   it('rejects when the update path is invalid', async () => {
@@ -278,22 +279,22 @@ describe('routes/api/app-data-sharing:BulkUpdateAppDataSharing', () => {
     stubModel();
     const route = createRoute(BulkUpdateAppDataSharing);
 
-    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /array_required/);
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), { code: 'array_required' });
   });
 
   it('rejects when one item in the batch does not exist', async () => {
     stubModel({ ds: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(BulkUpdateAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'name' } }] })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'name' } }] })), { code: 'not_found' });
   });
 
   it('applies every update in the batch', async () => {
     const { dsModel } = stubModel();
     const route = createRoute(BulkUpdateAppDataSharing);
     const body = [
-      { id: 'ds-1', body: { path: 'name', value: 'a' } },
-      { id: 'ds-2', body: { path: 'name', value: 'b' } },
+      { id: '6abd08000000000000000001', body: { path: 'name', value: 'a' } },
+      { id: '6abd08000000000000000002', body: { path: 'name', value: 'b' } },
     ];
 
     const result = await route._exec(createReq({ body }), {}, true);
@@ -308,14 +309,14 @@ describe('routes/api/app-data-sharing:UpdateAppDataSharingPolicy', () => {
     stubModel();
     const route = createRoute(UpdateAppDataSharingPolicy);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects when no data sharing id is provided', async () => {
     stubModel();
     const route = createRoute(UpdateAppDataSharingPolicy);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_data_sharing_id/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when the agreement is not scoped to the authenticated app', async () => {
@@ -323,9 +324,9 @@ describe('routes/api/app-data-sharing:UpdateAppDataSharingPolicy', () => {
     stubModel({ ds: { findOne } });
     const route = createRoute(UpdateAppDataSharingPolicy);
 
-    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /unknown_data_sharing/);
+    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), { status: 404, code: 'not_found' });
     assert.deepStrictEqual(findOne.firstCall.args[0], {
-      $and: [{ id: HEX_ID, _appId: 'app-1' }, { _appId: 'app-1' }],
+      $and: [{ id: HEX_ID, _appId: '6abd05000000000000000001' }, { _appId: '6abd05000000000000000001' }],
     });
   });
 
@@ -336,10 +337,10 @@ describe('routes/api/app-data-sharing:UpdateAppDataSharingPolicy', () => {
     const result = await route._exec(
       createReq({ params: { dataSharingId: HEX_ID }, body: { some: 'policy' } }),
       {},
-      { appId: 'app-1' },
+      { appId: '6abd05000000000000000001' },
     );
 
-    assert.ok(dsModel.updatePolicy.calledWith('app-1', HEX_ID, 'local', { some: 'policy' }));
+    assert.ok(dsModel.updatePolicy.calledWith('6abd05000000000000000001', HEX_ID, 'local', { some: 'policy' }));
     assert.strictEqual(result, true);
   });
 });
@@ -349,21 +350,21 @@ describe('routes/api/app-data-sharing:ActivateAppDataSharing', () => {
     stubModel();
     const route = createRoute(ActivateAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects when there is no authenticated token', async () => {
     stubModel();
     const route = createRoute(ActivateAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ token: null })), /no_authenticated_token/);
+    await assert.rejects(route._validate(createReq({ token: null })), { code: 'internal_error' });
   });
 
   it('rejects when the token is not a dataSharing token', async () => {
     stubModel();
     const route = createRoute(ActivateAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ token: { type: 'user' } })), /invalid_token_type/);
+    await assert.rejects(route._validate(createReq({ token: { type: 'user' } })), { code: 'invalid_token_type' });
   });
 
   it('rejects when newToken is missing from the body', async () => {
@@ -372,19 +373,20 @@ describe('routes/api/app-data-sharing:ActivateAppDataSharing', () => {
 
     await assert.rejects(
       route._validate(createReq({ token: { type: 'dataSharing' }, body: {} })),
-      /missing_data_token/,
+      { code: 'missing_data_token' },
     );
   });
 
-  it('rejects when no matching data sharing agreement is found', async () => {
+  // The agreement is the token's own, so one that's gone is a fault
+  it('rejects when no matching data sharing agreement is found, as an internal error', async () => {
     stubModel({ ds: { findById: async () => null } });
     const route = createRoute(ActivateAppDataSharing);
 
     await assert.rejects(
       route._validate(
-        createReq({ token: { type: 'dataSharing', _appDataSharingId: 'ds-1' }, body: { newToken: 'x' } }),
+        createReq({ token: { type: 'dataSharing', _appDataSharingId: '6abd08000000000000000001' }, body: { newToken: 'x' } }),
       ),
-      /no_datasharing/,
+      { code: 'internal_error' },
     );
   });
 
@@ -392,7 +394,7 @@ describe('routes/api/app-data-sharing:ActivateAppDataSharing', () => {
     stubModel();
     const route = createRoute(ActivateAppDataSharing);
 
-    const result = await route._exec(createReq(), {}, { token: { id: 'token-1' }, dataSharing: { active: true } });
+    const result = await route._exec(createReq(), {}, { token: { id: '6abd02000000000000000001' }, dataSharing: { active: true } });
 
     assert.strictEqual(result, true);
   });
@@ -402,10 +404,10 @@ describe('routes/api/app-data-sharing:ActivateAppDataSharing', () => {
     const route = createRoute(ActivateAppDataSharing);
     const req = createReq({ body: { newToken: 'remote-token-value' } });
 
-    const result = await route._exec(req, {}, { token: { id: 'token-1' }, dataSharing: { id: 'ds-1', active: false } });
+    const result = await route._exec(req, {}, { token: { id: '6abd02000000000000000001' }, dataSharing: { id: '6abd08000000000000000001', active: false } });
 
-    assert.ok(dsModel.activate.calledWith('ds-1', 'remote-token-value'));
-    assert.ok(tokenModel.updateById.calledWith('token-1', { $set: { value: 'new-token-string' } }));
+    assert.ok(dsModel.activate.calledWith('6abd08000000000000000001', 'remote-token-value'));
+    assert.ok(tokenModel.updateById.calledWith('6abd02000000000000000001', { $set: { value: 'new-token-string' } }));
     assert.strictEqual(result.status, true);
     assert.strictEqual(result.token, 'new-token-string');
   });
@@ -416,30 +418,30 @@ describe('routes/api/app-data-sharing:ReactivateAppDataSharing', () => {
     stubModel();
     const route = createRoute(ReactivateAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects when no data sharing id param is provided', async () => {
     stubModel();
     const route = createRoute(ReactivateAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_data_id/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when the agreement cannot be found', async () => {
     stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(ReactivateAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /no_datasharing/);
+    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), { code: 'not_found' });
   });
 
   it('activates the agreement and resolves true', async () => {
     const { dsModel } = stubModel();
     const route = createRoute(ReactivateAppDataSharing);
 
-    const result = await route._exec(createReq(), {}, { id: 'ds-1' });
+    const result = await route._exec(createReq(), {}, { id: '6abd08000000000000000001' });
 
-    assert.ok(dsModel.activate.calledWith('ds-1'));
+    assert.ok(dsModel.activate.calledWith('6abd08000000000000000001'));
     assert.ok(dsModel.deactivate.notCalled);
     assert.strictEqual(result, true);
   });
@@ -450,16 +452,16 @@ describe('routes/api/app-data-sharing:DeactivateAppDataSharing', () => {
     stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(DeactivateAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /no_datasharing/);
+    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), { code: 'not_found' });
   });
 
   it('deactivates the agreement', async () => {
     const { dsModel } = stubModel();
     const route = createRoute(DeactivateAppDataSharing);
 
-    const result = await route._exec(createReq(), {}, { id: 'ds-1' });
+    const result = await route._exec(createReq(), {}, { id: '6abd08000000000000000001' });
 
-    assert.ok(dsModel.deactivate.calledWith('ds-1'));
+    assert.ok(dsModel.deactivate.calledWith('6abd08000000000000000001'));
     assert.strictEqual(result, true);
   });
 });
@@ -469,7 +471,7 @@ describe('routes/api/app-data-sharing:StatusAppDataSharing', () => {
     stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(StatusAppDataSharing);
 
-    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /no_datasharing/);
+    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), { code: 'not_found' });
   });
 
   it('always reports not connected', async () => {
@@ -489,7 +491,7 @@ describe('routes/api/app-data-sharing:GetAllAppDataSharing', () => {
 
     route._exec(createReq({ token: { type: 'app' } }), {});
 
-    assert.ok(dsModel.find.calledWith({ _appId: 'app-1' }));
+    assert.ok(dsModel.find.calledWith({ _appId: '6abd05000000000000000001' }));
   });
 
   it('returns every agreement for a system token', () => {
@@ -507,14 +509,14 @@ describe('routes/api/app-data-sharing:SearchAppDataSharingAgreement', () => {
     stubModel();
     const route = createRoute(SearchAppDataSharingAgreement);
 
-    await assert.rejects(route._validate(createReq({ body: [] })), /invalid_body/);
+    await assert.rejects(route._validate(createReq({ body: [] })), { code: 'invalid_body' });
   });
 
   it('rejects when skip is not a number', async () => {
     stubModel();
     const route = createRoute(SearchAppDataSharingAgreement);
 
-    await assert.rejects(route._validate(createReq({ body: { skip: 'abc' } })), /invalid_value_skip/);
+    await assert.rejects(route._validate(createReq({ body: { skip: 'abc' } })), { code: 'invalid_value_skip' });
   });
 
   it('scopes the search to the authenticated app for a non-system token', async () => {
@@ -524,7 +526,7 @@ describe('routes/api/app-data-sharing:SearchAppDataSharingAgreement', () => {
 
     await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(dsModel.find.firstCall.args[0], { _appId: 'app-1' });
+    assert.deepStrictEqual(dsModel.find.firstCall.args[0], { _appId: '6abd05000000000000000001' });
   });
 
   it('finds using the built query params', () => {
@@ -537,7 +539,7 @@ describe('routes/api/app-data-sharing:SearchAppDataSharingAgreement', () => {
 
     assert.strictEqual(result, 'a-stream');
     assert.deepStrictEqual(dsModel.find.firstCall.args, [
-      { $and: [validate.query, { _appId: 'app-1' }] },
+      { $and: [validate.query, { _appId: '6abd05000000000000000001' }] },
       {},
       10,
       0,
@@ -557,7 +559,7 @@ describe('routes/api/app-data-sharing:AppDataSharingAgreementCount', () => {
 
     await route._exec(req, {}, await route._validate(req));
 
-    assert.ok(dsModel.count.calledWith({ _appId: 'app-1' }));
+    assert.ok(dsModel.count.calledWith({ _appId: '6abd05000000000000000001' }));
   });
 
   it('counts using the built query', async () => {
@@ -566,7 +568,7 @@ describe('routes/api/app-data-sharing:AppDataSharingAgreementCount', () => {
 
     await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(dsModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
+    assert.ok(dsModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: '6abd05000000000000000001' }] }));
   });
 });
 
@@ -575,35 +577,35 @@ describe('routes/api/app-data-sharing:DeleteDataSharingAgreement', () => {
     stubModel();
     const route = createRoute(DeleteDataSharingAgreement);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_required_id/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when the agreement cannot be found', async () => {
     stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(DeleteDataSharingAgreement);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
   it('rejects when the agreement token cannot be found', async () => {
     stubModel({
-      ds: { findOne: async () => ({ id: 'ds-1', _tokenId: 'token-1' }) },
+      ds: { findOne: async () => ({ id: '6abd08000000000000000001', _tokenId: '6abd02000000000000000001' }) },
       token: { findById: async () => null },
     });
     const route = createRoute(DeleteDataSharingAgreement);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /could_not_fetch_data_sharing_token/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
   it('removes the agreement and its token', async () => {
     const { dsModel, tokenModel } = stubModel();
     const route = createRoute(DeleteDataSharingAgreement);
-    const validate = { appDataSharing: { id: 'ds-1' }, token: { id: 'token-1' } };
+    const validate = { appDataSharing: { id: '6abd08000000000000000001' }, token: { id: '6abd02000000000000000001' } };
 
     const result = await route._exec(createReq(), {}, validate);
 
-    assert.ok(dsModel.rm.calledWith('ds-1'));
-    assert.ok(tokenModel.rm.calledWith('token-1'));
+    assert.ok(dsModel.rm.calledWith('6abd08000000000000000001'));
+    assert.ok(tokenModel.rm.calledWith('6abd02000000000000000001'));
     assert.strictEqual(result, true);
   });
 
@@ -612,35 +614,35 @@ describe('routes/api/app-data-sharing:DeleteDataSharingAgreement', () => {
     const nrp = { emit: sinon.spy() };
     const route = createRoute(DeleteDataSharingAgreement, { nrp });
 
-    await route._exec(createReq(), {}, { appDataSharing: { id: 'ds-1' }, token: { id: 'token-1' } });
+    await route._exec(createReq(), {}, { appDataSharing: { id: '6abd08000000000000000001' }, token: { id: '6abd02000000000000000001' } });
 
-    assert.ok(nrp.emit.calledWith('dataShare:deactivated', JSON.stringify({ appDataSharingId: 'ds-1' })));
+    assert.ok(nrp.emit.calledWith('dataShare:deactivated', JSON.stringify({ appDataSharingId: '6abd08000000000000000001' })));
   });
 });
 
 describe('routes/api/app-data-sharing:DeleteAllDataSharingAgreement', () => {
   it('collects the ids of every agreement and their tokens', async () => {
     const docs = [
-      { id: 'ds-1', _tokenId: 'token-1' },
-      { id: 'ds-2', _tokenId: 'token-2' },
+      { id: '6abd08000000000000000001', _tokenId: '6abd02000000000000000001' },
+      { id: '6abd08000000000000000002', _tokenId: '6abd02000000000000000002' },
     ];
     stubModel({ ds: { find: sinon.stub().resolves(Readable.from(docs, { objectMode: true })) } });
     const route = createRoute(DeleteAllDataSharingAgreement);
 
     const result = await route._validate(createReq());
 
-    assert.deepStrictEqual(result, { dsIds: ['ds-1', 'ds-2'], tokenIds: ['token-1', 'token-2'] });
+    assert.deepStrictEqual(result, { dsIds: ['6abd08000000000000000001', '6abd08000000000000000002'], tokenIds: ['6abd02000000000000000001', '6abd02000000000000000002'] });
   });
 
   it('bulk-removes every collected agreement and token id', async () => {
     const { dsModel, tokenModel } = stubModel();
     const route = createRoute(DeleteAllDataSharingAgreement);
-    const validate = { dsIds: ['ds-1', 'ds-2'], tokenIds: ['token-1', 'token-2'] };
+    const validate = { dsIds: ['6abd08000000000000000001', '6abd08000000000000000002'], tokenIds: ['6abd02000000000000000001', '6abd02000000000000000002'] };
 
     const result = await route._exec(createReq(), {}, validate);
 
-    assert.ok(dsModel.rmBulk.calledWith(['ds-1', 'ds-2']));
-    assert.ok(tokenModel.rmBulk.calledWith(['token-1', 'token-2']));
+    assert.ok(dsModel.rmBulk.calledWith(['6abd08000000000000000001', '6abd08000000000000000002']));
+    assert.ok(tokenModel.rmBulk.calledWith(['6abd02000000000000000001', '6abd02000000000000000002']));
     assert.strictEqual(result, true);
   });
 
@@ -649,11 +651,11 @@ describe('routes/api/app-data-sharing:DeleteAllDataSharingAgreement', () => {
     const nrp = { emit: sinon.spy() };
     const route = createRoute(DeleteAllDataSharingAgreement, { nrp });
 
-    await route._exec(createReq(), {}, { dsIds: ['ds-1', 'ds-2'], tokenIds: ['token-1', 'token-2'] });
+    await route._exec(createReq(), {}, { dsIds: ['6abd08000000000000000001', '6abd08000000000000000002'], tokenIds: ['6abd02000000000000000001', '6abd02000000000000000002'] });
 
     assert.deepStrictEqual(
       nrp.emit.getCalls().map((call) => call.args),
-      ['ds-1', 'ds-2'].map((id) => ['dataShare:deactivated', JSON.stringify({ appDataSharingId: id })]),
+      ['6abd08000000000000000001', '6abd08000000000000000002'].map((id) => ['dataShare:deactivated', JSON.stringify({ appDataSharingId: id })]),
     );
   });
 });

@@ -20,7 +20,7 @@ import assert from 'assert';
 import AddOne from '../../../../../dist/routes/schema-routes/add-one.js';
 import * as Errors from '../../../../../dist/helpers/errors.js';
 
-const { RequestError } = Errors;
+const { ApiError } = Errors;
 
 function createFakeModel({ validation = { isValid: true }, isDuplicate = false, added, storedIds = [] } = {}) {
   return {
@@ -46,8 +46,8 @@ describe('schema-routes/AddOne:_validate', () => {
     await assert.rejects(
       () => route._validate({ body: {}, context: { id: 'req-1' } }, {}),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.code, 400);
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.status, 400);
         assert.match(err.message, /Missing field: name/);
         return true;
       },
@@ -62,7 +62,7 @@ describe('schema-routes/AddOne:_validate', () => {
     await assert.rejects(
       () => route._validate({ body: {}, context: { id: 'req-1' } }, {}),
       (err) => {
-        assert.ok(err instanceof RequestError);
+        assert.ok(err instanceof ApiError);
         assert.match(err.message, /Invalid value: age:abc\[string\]/);
         return true;
       },
@@ -75,9 +75,9 @@ describe('schema-routes/AddOne:_validate', () => {
     await assert.rejects(
       () => route._validate({ body: { name: 'test' }, context: { id: 'req-1' } }, {}),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.code, 400);
-        assert.strictEqual(err.message, 'duplicate');
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.status, 400);
+        assert.strictEqual(err.code, 'duplicate');
         return true;
       },
     );
@@ -96,7 +96,7 @@ describe('schema-routes/AddOne:_validate', () => {
     ]) {
       await assert.rejects(
         () => route._validate({ body, context: { id: 'req-1' } }, {}),
-        (err) => err instanceof RequestError && err.code === 400 && err.message === message,
+        (err) => err instanceof ApiError && err.status === 400 && err.message === message,
       );
     }
   });
@@ -135,7 +135,7 @@ describe('schema-routes/AddOne:_exec', () => {
 
     await assert.rejects(
       () => route._exec({ body: { id: 'x' }, context: { id: 'req-1' } }, {}, true),
-      (err) => err instanceof RequestError && err.code === 400 && err.message === 'duplicate',
+      (err) => err instanceof ApiError && err.status === 400 && err.code === 'duplicate',
     );
   });
 
@@ -148,7 +148,7 @@ describe('schema-routes/AddOne:_exec', () => {
 
     await assert.rejects(
       () => route._exec({ body: [{ name: 'a' }, { id: 'x' }], context: { id: 'req-1' } }, {}, true),
-      (err) => err instanceof RequestError && err.message === 'test-schema: Duplicate id x at index 1',
+      (err) => err instanceof ApiError && err.message === 'test-schema: Duplicate id x at index 1',
     );
   });
 });

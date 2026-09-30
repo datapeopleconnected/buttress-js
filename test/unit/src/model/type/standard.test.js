@@ -192,7 +192,7 @@ describe('model/type/StandardModel:parseQuery', () => {
     const model = createModel();
     assert.throws(
       () => model.parseQuery({ createdAt: { $gtDate: 'not a date' } }, {}, { createdAt: { __type: 'date' } }),
-      (err) => err.code === 400 && err.message === 'invalid_date: createdAt',
+      (err) => err.status === 400 && err.code === 'invalid_date' && err.details.path === 'createdAt',
     );
   });
 });

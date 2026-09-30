@@ -47,7 +47,7 @@ export default class GetOne extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`${this.schemaName}: Missing ID`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, 'missing_id');
+      throw Helpers.Errors.badRequest('missing_id', 'An id is required');
     }
 
     const model = await this.routeModel();
@@ -59,7 +59,7 @@ export default class GetOne extends Route {
       objectId = model.createId(id);
     } catch (_err) {
       this.log(`${this.schemaName}: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, 'invalid_id');
+      throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
     }
 
     const query: BjsQuery<{ id: string }> = { id: objectId };
@@ -93,8 +93,9 @@ export default class GetOne extends Route {
     }
 
     if (!entity) {
+      // One outside the caller's policies is answered as one that doesn't exist
       this.log(`${this.schemaName}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, 'invalid_id or access_control_not_fullfilled');
+      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', req.params.id);
     }
 
     return entity;

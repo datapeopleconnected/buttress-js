@@ -20,7 +20,7 @@ import assert from 'assert';
 import AddMany from '../../../../../dist/routes/schema-routes/add-many.js';
 import * as Errors from '../../../../../dist/helpers/errors.js';
 
-const { RequestError } = Errors;
+const { ApiError } = Errors;
 
 // storedIds are given back in lower case, as the Mongo adapter gives ids.
 function createFakeModel({ validation = { isValid: true }, added, storedIds = [] } = {}) {
@@ -50,9 +50,9 @@ describe('schema-routes/AddMany:_validate', () => {
     await assert.rejects(
       () => route._validate({ body: { name: 'test' }, context: { id: 'req-1' } }, {}),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.code, 400);
-        assert.strictEqual(err.message, 'array_required');
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.status, 400);
+        assert.strictEqual(err.code, 'array_required');
         return true;
       },
     );
@@ -82,7 +82,7 @@ describe('schema-routes/AddMany:_validate', () => {
 
     await assert.rejects(
       () => route._validate({ body: [{ name: 'a' }, {}], context: { id: 'req-1' } }, {}),
-      (err) => err.code === 400 && err.message === 'test-schema: Missing field: name at index 1',
+      (err) => err.status === 400 && err.message === 'test-schema: Missing field: name at index 1',
     );
   });
 
@@ -91,7 +91,7 @@ describe('schema-routes/AddMany:_validate', () => {
 
     await assert.rejects(
       () => route._validate({ body: [{ id: 'x' }, { id: 'y' }, { id: 'x' }], context: { id: 'req-1' } }, {}),
-      (err) => err.code === 400 && err.message === 'test-schema: Duplicate id x at index 2',
+      (err) => err.status === 400 && err.message === 'test-schema: Duplicate id x at index 2',
     );
   });
 
@@ -101,7 +101,7 @@ describe('schema-routes/AddMany:_validate', () => {
     for (const entity of [[{ name: 'a' }], null, 1, 'a']) {
       await assert.rejects(
         () => route._validate({ body: [{ name: 'a' }, entity], context: { id: 'req-1' } }, {}),
-        (err) => err.code === 400 && err.message === 'test-schema: Invalid entity at index 1, expected an object',
+        (err) => err.status === 400 && err.message === 'test-schema: Invalid entity at index 1, expected an object',
       );
     }
   });
@@ -111,7 +111,7 @@ describe('schema-routes/AddMany:_validate', () => {
 
     await assert.rejects(
       () => route._validate({ body: [{ id: '6ab0abcd' }, { id: '6AB0ABCD' }], context: { id: 'req-1' } }, {}),
-      (err) => err.code === 400 && err.message === 'test-schema: Duplicate id 6AB0ABCD at index 1',
+      (err) => err.status === 400 && err.message === 'test-schema: Duplicate id 6AB0ABCD at index 1',
     );
   });
 
@@ -120,7 +120,7 @@ describe('schema-routes/AddMany:_validate', () => {
 
     await assert.rejects(
       () => route._validate({ body: [{ id: 'x' }, { id: 'y' }], context: { id: 'req-1' } }, {}),
-      (err) => err.code === 400 && err.message === 'test-schema: Duplicate id y at index 1',
+      (err) => err.status === 400 && err.message === 'test-schema: Duplicate id y at index 1',
     );
   });
 
@@ -129,7 +129,7 @@ describe('schema-routes/AddMany:_validate', () => {
 
     await assert.rejects(
       () => route._validate({ body: [{ id: '6AB0ABCD' }], context: { id: 'req-1' } }, {}),
-      (err) => err.code === 400 && err.message === 'test-schema: Duplicate id 6AB0ABCD at index 0',
+      (err) => err.status === 400 && err.message === 'test-schema: Duplicate id 6AB0ABCD at index 0',
     );
   });
 
@@ -196,8 +196,8 @@ describe('schema-routes/AddMany:_exec', () => {
     await assert.rejects(
       () => route._exec({ context: { id: 'req-1' } }, {}, [{ name: 'a' }, { id: '6AB0ABCD' }]),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.code, 400);
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.status, 400);
         assert.strictEqual(err.message, 'test-schema: Duplicate id 6AB0ABCD at index 1');
         return true;
       },

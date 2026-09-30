@@ -17,7 +17,7 @@ import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { describeInvalidUpdate } from '../../model/shared.js';
+import { invalidUpdateError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 
 import Datastore from '../../datastore/index.js';
@@ -50,20 +50,10 @@ class GetPolicy extends Route {
     const id = Array.isArray(rawId) ? rawId[0] : rawId;
     if (!id) {
       this.log(`[${this.name}] Missing required policy id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_policy_id`));
-    }
-    if (!Datastore.getInstance('core').ID.isValid(id)) {
-      this.log(`[${this.name}] Invalid policy id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
-    const policy = await this.scoped(req, PolicySchemaModel).findById(id);
-    if (!policy) {
-      this.log(`[${this.name}] Cannot find a policy with id id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `policy_does_not_exist`));
-    }
-
-    return policy;
+    return this.scoped(req, PolicySchemaModel).findByIdOrFail(id);
   }
 
   override _exec(req: Request, res: Response, policy: Policy) {
@@ -90,7 +80,7 @@ class GetPolicyList extends Route {
     const appId = req.context.authApp?.id;
     if (!appId) {
       this.log(`[${this.name}] Missing app id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `missing_app_id`));
+      return Promise.reject(Helpers.Errors.internal('missing_app_id'));
     }
 
     if (ids.length > 0) {
@@ -99,7 +89,7 @@ class GetPolicyList extends Route {
           Datastore.getInstance('core').ID.new(id.toString());
         } catch (_err) {
           this.log(`POLICY: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
-          throw new Helpers.Errors.RequestError(400, 'invalid_id');
+          throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
         }
       });
     }
@@ -134,7 +124,7 @@ class SearchPolicyList extends Route {
 
   override async _validate(req: RequestWithBody<SearchListBody<Policy> | undefined>, _res: Response) {
     // The search options are read off the body, and an array has a sort method of its own
-    if (Array.isArray(req.body)) throw new Helpers.Errors.RequestError(400, `invalid_body`);
+    if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
 
     const result: QueryParams<Policy> = {
       query: {},
@@ -146,8 +136,8 @@ class SearchPolicyList extends Route {
     };
     result.query.$and = [];
 
-    if (isNaN(result.skip ?? 0)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-    if (isNaN(result.limit ?? 0)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (isNaN(result.skip ?? 0)) throw Helpers.Errors.badRequest('invalid_value_skip');
+    if (isNaN(result.limit ?? 0)) throw Helpers.Errors.badRequest('invalid_value_limit');
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
@@ -189,7 +179,7 @@ class AddPolicy extends Route {
     try {
       if (!app || !req.body?.selection || !req.body.name || !req.body.config || req.body.config.length < 1) {
         this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+        return Promise.reject(Helpers.Errors.badRequest('missing_field'));
       }
 
       // Names are unique within the caller's app, which a system token names too
@@ -201,18 +191,18 @@ class AddPolicy extends Route {
       });
       if (policyExist) {
         this.log(`[${this.name}] Policy with name ${req.body.name} already exists`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `policy_with_name_already_exists`));
+        return Promise.reject(Helpers.Errors.badRequest('policy_with_name_already_exists'));
       }
 
       const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body.selection);
       if (!policyCheck.passed) {
         this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_selection`));
+        return Promise.reject(Helpers.Errors.badRequest('invalid_policy_selection'));
       }
 
       if (!req.body.version) {
         this.log(`[${this.name}] a version property is required: ${req.body.name}`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_no_version`));
+        return Promise.reject(Helpers.Errors.badRequest('invalid_policy_no_version'));
       }
 
       return Promise.resolve({
@@ -259,20 +249,14 @@ class UpdatePolicy extends Route {
       const { validation, body } = policies.validateUpdate(req.body);
       req.body = body;
       if (!validation.isValid) {
-        const message = describeInvalidUpdate(validation);
-        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `POLICY: ${message}`));
+        const err = invalidUpdateError(this.schemaName, validation);
+        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+        return reject(err);
       }
 
       policies
-        .exists(req.params.id)
-        .then((exists) => {
-          if (!exists) {
-            this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
-            return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-          }
-          resolve(true);
-        })
+        .assertExists(req.params.id)
+        .then(() => resolve(true))
         .catch(reject);
     });
   }
@@ -303,7 +287,7 @@ class BulkUpdatePolicy extends Route {
   override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
     if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
       this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `array_required`);
+      throw Helpers.Errors.badRequest('array_required');
     }
 
     const policies = this.scoped(req, PolicySchemaModel);
@@ -311,16 +295,12 @@ class BulkUpdatePolicy extends Route {
       const { validation, body } = policies.validateUpdate(item.body);
       item.body = body;
       if (!validation.isValid) {
-        const message = describeInvalidUpdate(validation);
-        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `POLICY: ${message}`));
+        const err = invalidUpdateError(this.schemaName, validation);
+        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+        return Promise.reject(err);
       }
 
-      const exists = await policies.exists(item.id);
-      if (!exists) {
-        this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-      }
+      await policies.assertExists(item.id);
     }
 
     return req.body as BulkUpdateItem<UpdatePathBody[]>[];
@@ -367,12 +347,12 @@ class SyncPolicies extends Route {
 
     if (!app || !req.body) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `missing_field`);
+      throw Helpers.Errors.badRequest('missing_field');
     }
 
     if (!Array.isArray(req.body)) {
       this.log(`[${this.name}] invalid field`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `invalid_field`);
+      throw Helpers.Errors.badRequest('invalid_field');
     }
 
     // Checked as adding each one is, before any are replaced
@@ -381,11 +361,11 @@ class SyncPolicies extends Route {
       const problem = await newPolicyProblem(app, policy);
       if (problem) {
         this.log(`[${this.name}] ${problem}: ${policy?.name}`, Route.LogLevel.ERR);
-        throw new Helpers.Errors.RequestError(400, problem);
+        throw Helpers.Errors.badRequest(problem);
       }
       if (names.has(policy.name as string)) {
         this.log(`[${this.name}] Policy with name ${policy.name} is given twice`, Route.LogLevel.ERR);
-        throw new Helpers.Errors.RequestError(400, `policy_with_name_already_exists`);
+        throw Helpers.Errors.badRequest('policy_with_name_already_exists');
       }
       names.add(policy.name as string);
     }
@@ -497,12 +477,12 @@ class DeleteTransientPolicy extends Route {
     const appId = req.context.authApp?.id;
     if (!appId) {
       this.log(`[${this.name}] Missing app id`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `missing_app_id`);
+      throw Helpers.Errors.internal('missing_app_id');
     }
 
     if (!req.body || !req.body.name) {
       this.log(`[${this.name}] Missing required policy transient name field`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `missing_field`);
+      throw Helpers.Errors.badRequest('missing_field');
     }
 
     // streamFirst() rejects rather than resolving falsy when the stream ends with no data,
@@ -521,7 +501,7 @@ class DeleteTransientPolicy extends Route {
     }
     if (!policy) {
       this.log(`[${this.name}] Cannot find a policy with name ${req.body.name}`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `policy_does_not_exist`);
+      throw Helpers.Errors.notFound('not_found', 'No policy has that name', { schema: 'policy', name: req.body.name });
     }
 
     return {
@@ -569,20 +549,16 @@ class DeletePolicy extends Route {
   override async _validate(req: RequestWithBody<unknown, { id: string }>, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `missing_field`);
+      throw Helpers.Errors.badRequest('missing_field');
     }
 
     const appId = req.context.authApp?.id;
     if (!appId) {
       this.log('ERROR: Missing app id', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `missing_app_id`);
+      throw Helpers.Errors.internal('missing_app_id');
     }
 
-    const policy = await this.scoped(req, PolicySchemaModel).findById(req.params.id);
-    if (!policy) {
-      this.log('ERROR: Invalid Policy ID', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `invalid_id`);
-    }
+    const policy = await this.scoped(req, PolicySchemaModel).findByIdOrFail(req.params.id);
 
     return {
       appId,
@@ -619,7 +595,7 @@ class DeleteAppPolicies extends Route {
   override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: Missing app id', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `missing_app_id`);
+      throw Helpers.Errors.internal('missing_app_id');
     }
 
     const rxsPolicies = await this.scoped(req, PolicySchemaModel).findAll();

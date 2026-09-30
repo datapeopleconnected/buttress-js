@@ -17,8 +17,7 @@ import { Request, Response } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { describeInvalidUpdate } from '../../model/shared.js';
-import Datastore from '../../datastore/index.js';
+import { invalidUpdateError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
@@ -49,18 +48,10 @@ class GetLambdaExecution extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
-    }
-    if (!Datastore.getInstance('core').ID.isValid(id)) {
-      this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
-    const lambdaExecution = await this.scoped(req, LambdaExecutionSchemaModel).findById(id);
-    if (!lambdaExecution) {
-      this.log(`[${this.name}] Cannot find a lambda execution with id id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_execution_does_not_exist`));
-    }
+    const lambdaExecution = await this.scoped(req, LambdaExecutionSchemaModel).findByIdOrFail(id);
 
     return lambdaExecution;
   }
@@ -91,18 +82,10 @@ class GetLambdaExecutionStatus extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_execution_id`));
-    }
-    if (!Datastore.getInstance('core').ID.isValid(id)) {
-      this.log(`[${this.name}] Invalid lambda execution id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_execution_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
-    const lambdaExecution = await this.scoped(req, LambdaExecutionSchemaModel).findById(id);
-    if (!lambdaExecution) {
-      this.log(`[${this.name}] Cannot find a lambda execution with id id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_execution_does_not_exist`));
-    }
+    const lambdaExecution = await this.scoped(req, LambdaExecutionSchemaModel).findByIdOrFail(id);
 
     return lambdaExecution.status;
   }
@@ -142,22 +125,14 @@ class UpdateLambdaExecution extends Route {
       req.body = body;
 
       if (!validation.isValid) {
-        const message = describeInvalidUpdate(validation);
-        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `LAMBDA EXECUTION: ${message}`));
+        const err = invalidUpdateError(this.schemaName, validation);
+        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+        return reject(err);
       }
 
       executions
-        .exists(id)
-        .then((exists) => {
-          if (!exists) {
-            this.log('ERROR: Invalid LAMBDA EXECUTION ID', Route.LogLevel.ERR);
-            return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-          }
-          resolve({
-            id,
-          });
-        })
+        .assertExists(id)
+        .then(() => resolve({ id }))
         .catch(reject);
     });
   }

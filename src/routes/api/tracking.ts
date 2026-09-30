@@ -17,7 +17,7 @@ import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { describeInvalidUpdate } from '../../model/shared.js';
+import { invalidEntityError, invalidUpdateError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 import TrackingSchemaModel, { Tracking } from '../../model/core/tracking.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
@@ -70,22 +70,14 @@ class AddTracking extends Route {
     return new Promise<boolean>((resolve, reject) => {
       if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
         this.log('ERROR: Expected the tracking entry as an object', Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `invalid_body`));
+        return reject(Helpers.Errors.badRequest('invalid_body'));
       }
 
       const validation = Model.getCoreModel(TrackingSchemaModel).validate(req.body);
       if (!validation.isValid) {
-        if (validation.missing.length > 0) {
-          this.log(`ERROR: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR);
-          return reject(new Helpers.Errors.RequestError(400, `TRACKING: Missing field: ${validation.missing[0]}`));
-        }
-        if (validation.invalid.length > 0) {
-          this.log(`ERROR: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR);
-          return reject(new Helpers.Errors.RequestError(400, `TRACKING: Invalid value: ${validation.invalid[0]}`));
-        }
-
-        this.log(`ERROR: TRACKING: Unhandled Error`, Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `unknown_error`));
+        const err = invalidEntityError(this.schemaName, validation);
+        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+        return reject(err);
       }
 
       resolve(true);
@@ -115,28 +107,20 @@ class UpdateTracking extends Route {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
         this.log('ERROR: Missing required Tracking ID', Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `missing_required_tracking_id`));
+        return reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
       }
 
       const { validation, body } = Model.getCoreModel(TrackingSchemaModel).validateUpdate(req.body);
       req.body = body;
       if (!validation.isValid) {
-        const message = describeInvalidUpdate(validation);
-        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `TRACKING: ${message}`));
+        const err = invalidUpdateError(this.schemaName, validation);
+        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+        return reject(err);
       }
 
-      this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY)
-        .exists(id)
-        .then((exists) => {
-          if (!exists) {
-            this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
-            return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-          }
-          resolve({
-            id,
-          });
-        })
+      this.scoped(req, TrackingSchemaModel)
+        .assertExists(id)
+        .then(() => resolve({ id }))
         .catch(reject);
     });
   }
@@ -160,11 +144,7 @@ class DeleteTracking extends Route {
   }
 
   override async _validate(req: Request<{ id: string }>, _res: Response) {
-    const tracking = await this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY).findById(req.params.id);
-    if (!tracking) {
-      this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `invalid_id`);
-    }
+    const tracking = await this.scoped(req, TrackingSchemaModel).findByIdOrFail(req.params.id);
 
     return tracking;
   }

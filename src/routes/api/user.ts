@@ -17,7 +17,7 @@ import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { describeInvalidUpdate } from '../../model/shared.js';
+import { invalidUpdateError } from '../../model/shared.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import TokenSchemaModel, { PolicyProperties, Token } from '../../model/core/token.js';
@@ -29,6 +29,10 @@ import { Services } from '../../bootstrap.js';
 import type { CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
+
+// The user's token the request names, or the user's only one, wasn't found
+const userTokenNotFound = () =>
+  Helpers.Errors.notFound('not_found', "The user's token was not found", { schema: 'token' });
 
 function getTokenQueryfromParams(req: Request, userId: string) {
   const id = Array.isArray(req.params.tokenId) ? req.params.tokenId[0] : req.params.tokenId;
@@ -77,7 +81,7 @@ class GetUserList extends Route {
   override _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
     }
 
     return Promise.resolve({
@@ -111,39 +115,27 @@ class GetUser extends Route {
   override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     let id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `missing_field`);
+      throw Helpers.Errors.badRequest('missing_field');
     }
 
     if (id === 'me') {
       if (!req.context.token) {
         this.log(`[${this.name}] Missing token`, Route.LogLevel.ERR);
-        throw new Helpers.Errors.RequestError(400, `missing_token`);
+        throw Helpers.Errors.unauthorised('missing_token', 'A token is required');
       }
       id = req.context.token._userId;
     }
 
     let user: User | null = null;
     let userTokens: Token[] = [];
-    let userId: string;
-
-    try {
-      userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    } catch (_err) {
-      throw new Helpers.Errors.RequestError(400, `inavlid_id`);
-    }
-
-    user = await this.scoped(req, UserSchemaModel).findById(userId);
-
-    if (!user) {
-      this.log(`[${this.name}] Could not fetch user data using ${userId}`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(404, `user_not_found`);
-    }
+    user = await this.scoped(req, UserSchemaModel).findByIdOrFail(id);
+    const userId = user.id;
 
     if (userTokens.length < 1 && user) {
       userTokens = await Helpers.streamAll(
@@ -201,13 +193,16 @@ class FindUser extends Route {
   override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     const authApp = Array.isArray(req.params.app) ? req.params.app[0] : req.params.app;
     const validAuthApps = ['twitter', 'facebook', 'google', 'linkedin', 'microsoft'];
+    // No user is found by another auth app. Clients look a user up, and add them when it isn't found.
     if (!validAuthApps.includes(authApp) && !authApp.startsWith('app-')) {
-      return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
+      return Promise.reject(
+        Helpers.Errors.notFound('not_found', 'No user has that auth app id', { schema: 'user', app: authApp }),
+      );
     }
 
     // The id param's a string, only wildcard route params are arrays
@@ -217,7 +212,9 @@ class FindUser extends Route {
     ).getByAuthAppId(authApp, req.params.id as string, req.context.authApp.id);
     if (!_user) {
       this.log(`[${this.name}] Could not fetch user`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
+      return Promise.reject(
+        Helpers.Errors.notFound('not_found', 'No user has that auth app id', { schema: 'user', app: authApp }),
+      );
     }
 
     const output: FindUserOutput = {
@@ -273,7 +270,7 @@ class GetUserByToken extends Route {
     const token = req.body?.token;
     if (!token) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `missing_field`);
+      throw Helpers.Errors.badRequest('missing_field');
     }
 
     // A token of another app is answered as an unknown one, unless the caller is a system token
@@ -282,15 +279,16 @@ class GetUserByToken extends Route {
         $eq: token,
       },
     });
+    // Another app's token is answered as one nobody has
     if (!userToken) {
       this.log('ERROR: Invalid User Token', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `invalid_token`);
+      throw Helpers.Errors.notFound('not_found', 'No user has that token', { schema: 'token' });
     }
 
     const user = await this.scoped(req, UserSchemaModel).findById(userToken._userId);
     if (!user) {
       this.log('ERROR: Can not find a user with the provided token', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(404, `user_not_found`);
+      throw Helpers.Errors.notFound('not_found', 'No user has that token', { schema: 'user' });
     }
 
     return {
@@ -323,31 +321,27 @@ class CreateUserAuthToken extends Route {
   override async _validate(req: RequestWithBody<Partial<Token> | undefined, { id: string }>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     if (!req.body || !req.body.policyProperties || !req.body.domains) {
       this.log(`[${this.name}] Missing required field (policyProperties or domains)`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     if (!Helpers.isDomainList(req.body.domains)) {
       this.log(`[${this.name}] domains must be a list of domain names`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_domains`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_domains'));
     }
 
     req.body.type = Model.getCoreModel(TokenSchemaModel).Constants.Type.USER;
 
     if (!req.params.id) {
       this.log(`[${this.name}] Missing required field (id)`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
-    const user = await this.scoped(req, UserSchemaModel).findById(req.params.id);
-    if (!user) {
-      this.log(`[${this.name}] User not found`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
-    }
+    const user = await this.scoped(req, UserSchemaModel).findByIdOrFail(req.params.id);
 
     const policyCheck = await Helpers.checkAppPolicyProperty(
       req.context.authApp.policyPropertiesList,
@@ -355,7 +349,7 @@ class CreateUserAuthToken extends Route {
     );
     if (!policyCheck.passed) {
       this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_policy_property'));
     }
 
     return Promise.resolve({
@@ -416,20 +410,20 @@ routes.push(CreateUserAuthToken);
 // 					!req.body.auth.permissions ||
 // 					!req.body.auth.domains) {
 // 				this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-// 				return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+// 				return Promise.reject(Helpers.Errors.badRequest('missing_field'));
 // 			}
 
 // 			req.body.auth.type = Model.getCoreModel(TokenSchemaModel).Constants.Type.USER;
 // 			req.body.auth.app = req.context.authApp.id;
 // 		} else {
 // 			this.log(`[${this.name}] Auth properties are required when creating a user`, Route.LogLevel.ERR);
-// 			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
+// 			return Promise.reject(Helpers.Errors.badRequest('missing_auth'));
 // 		}
 
 // 		const policyCheck = await Helpers.checkAppPolicyProperty(req?.authApp?.policyPropertiesList, req.body.user.policyProperties);
 // 		if (!policyCheck.passed) {
 // 			this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-// 			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+// 			return Promise.reject(Helpers.Errors.badRequest('invalid_field'));
 // 		}
 
 // 		return Promise.resolve(true);
@@ -468,17 +462,17 @@ class AddUser extends Route {
   override async _validate(req: RequestWithBody<UserAddBody>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
     }
 
     if (!req.body?.auth) {
       this.log(`[${this.name}] Missing required user auth block`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_user_auth`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_user_auth'));
     }
 
     if (!Array.isArray(req.body.auth) || (Array.isArray(req.body.auth) && req.body.auth.length < 1)) {
       this.log(`[${this.name}] Invalid user auth block`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_user_auth`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_user_auth'));
     }
 
     const existingUsers: User[] = [];
@@ -504,12 +498,12 @@ class AddUser extends Route {
     if (existingUsers.length > 0) {
       this.log(`[${this.name}] A user already exists with matching auth (appId or email)`, Route.LogLevel.ERR);
       Logging.logObject(existingUsers, Logging.LogLevel.DEBUG);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `user_already_exists_with_that_name`));
+      return Promise.reject(Helpers.Errors.badRequest('user_already_exists_with_that_name'));
     }
 
     if (req.body.token && req.body.token.domains !== undefined && !Helpers.isDomainList(req.body.token.domains)) {
       this.log(`[${this.name}] token.domains must be a list of domain names`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_domains`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_domains'));
     }
 
     if (req.body.token && req.body.token.policyProperties) {
@@ -519,7 +513,7 @@ class AddUser extends Route {
       );
       if (!policyCheck.passed) {
         this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
+        return Promise.reject(Helpers.Errors.badRequest('invalid_policy_property'));
       }
     }
 
@@ -559,29 +553,21 @@ class UpdateUser extends Route {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
       if (!id) {
         this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+        return reject(Helpers.Errors.badRequest('missing_field'));
       }
 
       const users = this.scoped(req, UserSchemaModel);
       const { validation, body } = users.validateUpdate(req.body);
       req.body = body;
       if (!validation.isValid) {
-        const message = describeInvalidUpdate(validation);
-        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `USER: ${message}`));
+        const err = invalidUpdateError(this.schemaName, validation);
+        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+        return reject(err);
       }
 
       users
-        .exists(id)
-        .then((exists) => {
-          if (!exists) {
-            this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-            return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-          }
-          resolve({
-            id,
-          });
-        })
+        .assertExists(id)
+        .then(() => resolve({ id }))
         .catch(reject);
     });
   }
@@ -619,43 +605,39 @@ class SetUserPolicyProperties extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     const app = req.context.authApp;
     if (!app) {
       this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     const users = this.scoped(req, UserSchemaModel);
+    await users.assertExists(id);
     const userId = users.createId(id);
-    const exists = await users.exists(userId);
-    if (!exists) {
-      this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
 
     const tokenQuery = getTokenQueryfromParams(req, userId);
     if (!tokenQuery) {
       this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_token_param'));
     }
 
     const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
+      return Promise.reject(userTokenNotFound());
     }
     const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
     if (!policyCheck.passed) {
       this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_field'));
     }
 
     return Promise.resolve({
@@ -718,43 +700,39 @@ class UpdateUserPolicyProperties extends Route {
     const app = req.context.authApp;
     if (!app) {
       this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     const users = this.scoped(req, UserSchemaModel);
+    await users.assertExists(id);
     const userId = users.createId(id);
-    const exists = await users.exists(userId);
-    if (!exists) {
-      this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
 
     const tokenQuery = getTokenQueryfromParams(req, userId);
     if (!tokenQuery) {
       this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_token_param'));
     }
 
     const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `user_token_not_found`));
+      return Promise.reject(userTokenNotFound());
     }
     const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
     if (!policyCheck.passed) {
       this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_field'));
     }
 
     return Promise.resolve(userToken);
@@ -814,38 +792,34 @@ class RemoveUserPolicyProperties extends Route {
   override async _validate(req: RequestWithBody<PostedPolicyProperties | undefined>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
     }
 
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     const users = this.scoped(req, UserSchemaModel);
+    await users.assertExists(id);
     const userId = users.createId(id);
-    const exists = await users.exists(userId);
-    if (!exists) {
-      this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
 
     const tokenQuery = getTokenQueryfromParams(req, userId);
     if (!tokenQuery) {
       this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_token_param'));
     }
 
     const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
+      return Promise.reject(userTokenNotFound());
     }
 
     return Promise.resolve({
@@ -905,38 +879,34 @@ class ClearUserPolicyProperties extends Route {
   override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
     }
 
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     const users = this.scoped(req, UserSchemaModel);
+    await users.assertExists(id);
     const userId = users.createId(id);
-    const exists = await users.exists(userId);
-    if (!exists) {
-      this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
 
     const tokenQuery = getTokenQueryfromParams(req, userId);
     if (!tokenQuery) {
       this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_token_param'));
     }
 
     const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
+      return Promise.reject(userTokenNotFound());
     }
 
     return Promise.resolve({
@@ -977,7 +947,7 @@ class DeleteAllUsers extends Route {
   override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
     }
 
     return {
@@ -1008,29 +978,25 @@ class DeleteUser extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     if (!req.context.token) {
       this.log('ERROR: No authenticated token', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_token`));
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_token'));
     }
 
-    const user = await this.scoped(req, UserSchemaModel).findById(id);
-    if (!user) {
-      this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
+    const user = await this.scoped(req, UserSchemaModel).findByIdOrFail(id);
 
     const userToken = await this.scoped(req, TokenSchemaModel).findOne({ _userId: user.id });
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
+      return Promise.reject(userTokenNotFound());
     }
 
     if (req.context.token.value === userToken.value) {
       this.log(`ERROR: A user could not delete itself`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `user_can_not_delete_itself`));
+      return Promise.reject(Helpers.Errors.badRequest('user_can_not_delete_itself'));
     }
 
     return {
@@ -1071,20 +1037,10 @@ class clearUserLocalData extends Route {
     return new Promise<User>((resolve, reject) => {
       if (!req.params.id) {
         this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `missing_field`));
+        return reject(Helpers.Errors.badRequest('missing_field'));
       }
 
-      this.scoped(req, UserSchemaModel)
-        .findById(req.params.id)
-        .then((user) => {
-          if (user) {
-            return resolve(user);
-          }
-
-          this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-          return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-        })
-        .catch(reject);
+      this.scoped(req, UserSchemaModel).findByIdOrFail(req.params.id).then(resolve).catch(reject);
     });
   }
 
@@ -1116,7 +1072,7 @@ class SearchUserList extends Route {
 
   override async _validate(req: RequestWithBody<SearchListBody<User> | undefined>, _res: Response) {
     // The search options are read off the body, and an array has a sort method of its own
-    if (Array.isArray(req.body)) throw new Helpers.Errors.RequestError(400, `invalid_body`);
+    if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
 
     const result: QueryParams<User> = {
       query: {},
@@ -1128,8 +1084,8 @@ class SearchUserList extends Route {
     };
     result.query.$and = [];
 
-    if (isNaN(result.skip ?? 0)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-    if (isNaN(result.limit ?? 0)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (isNaN(result.skip ?? 0)) throw Helpers.Errors.badRequest('invalid_value_skip');
+    if (isNaN(result.limit ?? 0)) throw Helpers.Errors.badRequest('invalid_value_limit');
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {

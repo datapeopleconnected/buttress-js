@@ -24,7 +24,7 @@ import Model from '../../../../../dist/model/index.js';
 import AppSchemaModel from '../../../../../dist/model/core/app.js';
 import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
-import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { ApiError } from '../../../../../dist/helpers/errors.js';
 
 import { realQueryParser } from '../../../../query-parser.js';
 
@@ -52,7 +52,7 @@ function stubModel({ app = {}, token = {} } = {}) {
     validate: () => ({ isValid: true }),
     isDuplicate: async () => false,
     apiPathProblem: async () => null,
-    add: async () => ({ app: { id: 'app-1', apiPath: 'test-app' }, token: { value: 'token-value' } }),
+    add: async () => ({ app: { id: '6abd05000000000000000001', apiPath: 'test-app' }, token: { value: 'token-value' } }),
     findById: async () => null,
     findOne: async () => null,
     find: sinon.stub(),
@@ -94,7 +94,7 @@ function createRoute(RouteClass, { nrp } = {}) {
   return route;
 }
 
-function createReq({ params = {}, body = {}, authApp = { id: 'app-1' }, token = { type: 'user' } } = {}) {
+function createReq({ params = {}, body = {}, authApp = { id: '6abd05000000000000000001' }, token = { type: 'user' } } = {}) {
   return { params, body, context: { id: 'req-1', authApp, token } };
 }
 
@@ -109,7 +109,7 @@ describe('routes/api/app:GetAppList', () => {
 
     route._exec(createReq({ token: { type: 'user' } }), {}, true);
 
-    assert.ok(appModel.find.calledWith({ id: 'app-1' }));
+    assert.ok(appModel.find.calledWith({ id: '6abd05000000000000000001' }));
   });
 
   it('returns every app for a system token', () => {
@@ -128,8 +128,8 @@ describe('routes/api/app:GetAppList', () => {
     assert.throws(
       () => route._exec(createReq({ authApp: null }), {}, true),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.message, 'invalid_token');
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.code, 'internal_error');
         return true;
       },
     );
@@ -146,7 +146,7 @@ describe('routes/api/app:SearchAppList', () => {
 
     await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(appModel.find.firstCall.args[0], { id: 'app-1' });
+    assert.deepStrictEqual(appModel.find.firstCall.args[0], { id: '6abd05000000000000000001' });
   });
 
   it('scopes the search to the authenticated app when there is no body', async () => {
@@ -160,7 +160,7 @@ describe('routes/api/app:SearchAppList', () => {
 
     await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(appModel.find.firstCall.args[0], { id: 'app-1' });
+    assert.deepStrictEqual(appModel.find.firstCall.args[0], { id: '6abd05000000000000000001' });
   });
 
   it('does not scope the search for a system token', async () => {
@@ -174,16 +174,16 @@ describe('routes/api/app:SearchAppList', () => {
 
   it("gives an app token only its own app's token value", async () => {
     const appsDB = [
-      { id: 'app-1', _tokenId: 'token-1' },
-      { id: 'app-2', _tokenId: 'token-2' },
+      { id: '6abd05000000000000000001', _tokenId: '6abd02000000000000000001' },
+      { id: '6abd05000000000000000002', _tokenId: '6abd02000000000000000002' },
     ];
     const { appModel, tokenModel } = stubModel();
     appModel.find.returns(Readable.from(appsDB, { objectMode: true }));
     tokenModel.find.returns(
       Readable.from(
         [
-          { id: 'token-1', value: 'value-1' },
-          { id: 'token-2', value: 'value-2' },
+          { id: '6abd02000000000000000001', value: 'value-1' },
+          { id: '6abd02000000000000000002', value: 'value-2' },
         ],
         { objectMode: true },
       ),
@@ -192,24 +192,24 @@ describe('routes/api/app:SearchAppList', () => {
 
     const result = await route._exec(createReq({ token: { type: 'app' } }), {}, { query: {} });
 
-    assert.strictEqual(result.find((a) => a.id === 'app-1').tokenValue, 'value-1');
-    assert.ok(!('tokenValue' in result.find((a) => a.id === 'app-2')));
-    assert.deepStrictEqual(tokenModel.find.firstCall.args[0], { $and: [{ id: { $in: ['token-1'] } }, { _appId: 'app-1' }] });
+    assert.strictEqual(result.find((a) => a.id === '6abd05000000000000000001').tokenValue, 'value-1');
+    assert.ok(!('tokenValue' in result.find((a) => a.id === '6abd05000000000000000002')));
+    assert.deepStrictEqual(tokenModel.find.firstCall.args[0], { $and: [{ id: { $in: ['6abd02000000000000000001'] } }, { _appId: '6abd05000000000000000001' }] });
   });
 
   it('gives a system token each returned app with its token value', async () => {
     const appsDB = [
-      { id: 'app-1', _tokenId: 'token-1' },
-      { id: 'app-2', _tokenId: 'token-2' },
-      { id: 'app-3', _tokenId: 'token-3' },
+      { id: '6abd05000000000000000001', _tokenId: '6abd02000000000000000001' },
+      { id: '6abd05000000000000000002', _tokenId: '6abd02000000000000000002' },
+      { id: '6abd05000000000000000003', _tokenId: '6abd02000000000000000003' },
     ];
     const { appModel, tokenModel } = stubModel();
     appModel.find.returns(Readable.from(appsDB, { objectMode: true }));
     tokenModel.find.returns(
       Readable.from(
         [
-          { id: 'token-1', value: 'value-1' },
-          { id: 'token-2', value: 'value-2' },
+          { id: '6abd02000000000000000001', value: 'value-1' },
+          { id: '6abd02000000000000000002', value: 'value-2' },
         ],
         { objectMode: true },
       ),
@@ -218,9 +218,9 @@ describe('routes/api/app:SearchAppList', () => {
 
     const result = await route._exec(createReq({ token: { type: 'system' } }), {}, { query: {} });
 
-    assert.strictEqual(result.find((a) => a.id === 'app-1').tokenValue, 'value-1');
-    assert.strictEqual(result.find((a) => a.id === 'app-2').tokenValue, 'value-2');
-    assert.strictEqual(result.find((a) => a.id === 'app-3').tokenValue, undefined);
+    assert.strictEqual(result.find((a) => a.id === '6abd05000000000000000001').tokenValue, 'value-1');
+    assert.strictEqual(result.find((a) => a.id === '6abd05000000000000000002').tokenValue, 'value-2');
+    assert.strictEqual(result.find((a) => a.id === '6abd05000000000000000003').tokenValue, undefined);
   });
 });
 
@@ -229,28 +229,28 @@ describe('routes/api/app:GetApp', () => {
     stubModel();
     const route = createRoute(GetApp);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_fields/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when the id is not a valid id format', async () => {
     stubModel({ app: { isValidId: () => false } });
     const route = createRoute(GetApp);
 
-    await assert.rejects(route._validate(createReq({ params: { id: 'bad-id' } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: 'bad-id' } })), { code: 'invalid_id' });
   });
 
   it('rejects when no app is found for the id', async () => {
     stubModel({ app: { findById: async () => null } });
     const route = createRoute(GetApp);
 
-    await assert.rejects(route._validate(createReq({ params: { id: 'app-1' } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: '6abd05000000000000000001' } })), { code: 'not_found' });
   });
 
   it('attaches the app token value on exec', async () => {
     stubModel({ token: { findById: sinon.stub().resolves({ value: 'the-token' }) } });
     const route = createRoute(GetApp);
 
-    const result = await route._exec(createReq(), {}, { id: 'app-1', _tokenId: 'token-1' });
+    const result = await route._exec(createReq(), {}, { id: '6abd05000000000000000001', _tokenId: '6abd02000000000000000001' });
 
     assert.strictEqual(result.tokenValue, 'the-token');
   });
@@ -262,7 +262,7 @@ describe('routes/api/app:AddApp', () => {
       stubModel();
       const route = createRoute(AddApp);
 
-      await assert.rejects(route._validate(Object.assign(createReq(), { body })), /invalid_body/);
+      await assert.rejects(route._validate(Object.assign(createReq(), { body })), { code: 'invalid_body' });
     });
   }
 
@@ -286,7 +286,7 @@ describe('routes/api/app:AddApp', () => {
 
     await assert.rejects(
       route._validate(createReq({ body: { policyPropertiesList: { role: 'not-an-array' } } })),
-      /invalid_field/,
+      { code: 'invalid_field' },
     );
   });
 
@@ -294,7 +294,7 @@ describe('routes/api/app:AddApp', () => {
     stubModel({ app: { isDuplicate: async () => true } });
     const route = createRoute(AddApp);
 
-    await assert.rejects(route._validate(createReq({ body: { name: 'test' } })), /duplicate/);
+    await assert.rejects(route._validate(createReq({ body: { name: 'test' } })), { code: 'duplicate' });
   });
 
   it('resolves true for a valid, non-duplicate app', async () => {
@@ -315,7 +315,7 @@ describe('routes/api/app:AddApp', () => {
 
     assert.ok(nrp.emit.calledWith('app:configure-lambda-endpoints', 'test-app'));
     assert.strictEqual(result.token, 'token-value');
-    assert.strictEqual(result.id, 'app-1');
+    assert.strictEqual(result.id, '6abd05000000000000000001');
   });
 });
 
@@ -324,20 +324,20 @@ describe('routes/api/app:DeleteApp', () => {
     stubModel();
     const route = createRoute(DeleteApp);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when the app cannot be found', async () => {
     stubModel({ app: { findById: async () => null } });
     const route = createRoute(DeleteApp);
 
-    await assert.rejects(route._validate(createReq({ params: { id: 'app-1' } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: '6abd05000000000000000001' } })), { code: 'not_found' });
   });
 
   it('removes the app and resolves true', async () => {
     const { appModel } = stubModel();
     const route = createRoute(DeleteApp);
-    const app = { id: 'app-1' };
+    const app = { id: '6abd05000000000000000001' };
 
     const result = await route._exec(createReq(), {}, app);
 
@@ -383,7 +383,7 @@ describe('routes/api/app:AppCount', () => {
     await route._exec(req, {}, await route._validate(req));
 
     // The queryless body itself is the query, then the scoped model limits it to the authenticated app
-    assert.deepStrictEqual(appModel.count.firstCall.args[0], { $and: [{ $and: [{}] }, { id: 'app-1' }] });
+    assert.deepStrictEqual(appModel.count.firstCall.args[0], { $and: [{ $and: [{}] }, { id: '6abd05000000000000000001' }] });
   });
 
   it('counts using the built query', async () => {
@@ -392,7 +392,7 @@ describe('routes/api/app:AppCount', () => {
 
     await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(appModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { id: 'app-1' }] }));
+    assert.ok(appModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { id: '6abd05000000000000000001' }] }));
   });
 });
 
@@ -401,23 +401,26 @@ describe('routes/api/app:AppUpdateOAuth', () => {
     stubModel();
     const route = createRoute(AppUpdateOAuth);
 
-    await assert.rejects(route._validate({ ...createReq(), body: undefined }), /missing_field/);
+    await assert.rejects(route._validate({ ...createReq(), body: undefined }), { code: 'missing_field' });
   });
 
   it('rejects when the app cannot be found', async () => {
-    stubModel({ app: { findById: async () => null } });
+    stubModel({ app: { exists: async () => false } });
     const route = createRoute(AppUpdateOAuth);
 
-    await assert.rejects(route._validate(createReq({ body: { value: {} } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: '6abd05000000000000000009' }, body: { value: {} } })), {
+      status: 404,
+      code: 'not_found',
+    });
   });
 
   it('wraps a single oauth value into an array before updating', async () => {
     const { appModel } = stubModel();
     const route = createRoute(AppUpdateOAuth);
 
-    await route._exec(createReq({ params: { id: 'app-1' }, body: { value: { provider: 'google' } } }), {}, true);
+    await route._exec(createReq({ params: { id: '6abd05000000000000000001' }, body: { value: { provider: 'google' } } }), {}, true);
 
-    assert.deepStrictEqual(appModel.updateOAuth.firstCall.args, ['app-1', [{ provider: 'google' }]]);
+    assert.deepStrictEqual(appModel.updateOAuth.firstCall.args, ['6abd05000000000000000001', [{ provider: 'google' }]]);
   });
 });
 
@@ -426,7 +429,7 @@ describe('routes/api/app:AppUpdate', () => {
     stubModel();
     const route = createRoute(AppUpdate);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when the update path is invalid', async () => {
@@ -440,7 +443,7 @@ describe('routes/api/app:AppUpdate', () => {
     });
     const route = createRoute(AppUpdate);
 
-    await assert.rejects(route._validate(createReq({ params: { id: 'app-1' } })), /Update path is invalid/);
+    await assert.rejects(route._validate(createReq({ params: { id: '6abd05000000000000000001' } })), /Update path is invalid/);
   });
 
   it('rejects when the update value is invalid', async () => {
@@ -454,14 +457,14 @@ describe('routes/api/app:AppUpdate', () => {
     });
     const route = createRoute(AppUpdate);
 
-    await assert.rejects(route._validate(createReq({ params: { id: 'app-1' } })), /Update value is invalid/);
+    await assert.rejects(route._validate(createReq({ params: { id: '6abd05000000000000000001' } })), /Update value is invalid/);
   });
 
   it('rejects when the app does not exist', async () => {
     stubModel({ app: { exists: async () => false } });
     const route = createRoute(AppUpdate);
 
-    await assert.rejects(route._validate(createReq({ params: { id: 'app-1' } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: '6abd05000000000000000001' } })), { code: 'not_found' });
   });
 
   it("refuses another app's id for a non-system token, as it does an unknown id", async () => {
@@ -470,7 +473,10 @@ describe('routes/api/app:AppUpdate', () => {
     const route = createRoute(AppUpdate);
 
     for (const type of ['app', 'user', 'lambda']) {
-      await assert.rejects(route._validate(createReq({ params: { id: 'app-2' }, token: { type } })), /invalid_id/);
+      await assert.rejects(route._validate(createReq({ params: { id: '6abd05000000000000000002' }, token: { type } })), {
+        status: 404,
+        code: 'not_found',
+      });
     }
     assert.strictEqual(exists.callCount, 0);
   });
@@ -479,11 +485,11 @@ describe('routes/api/app:AppUpdate', () => {
     stubModel();
     const route = createRoute(AppUpdate);
 
-    assert.deepStrictEqual(await route._validate(createReq({ params: { id: 'app-1' }, token: { type: 'app' } })), {
-      id: 'app-1',
+    assert.deepStrictEqual(await route._validate(createReq({ params: { id: '6abd05000000000000000001' }, token: { type: 'app' } })), {
+      id: '6abd05000000000000000001',
     });
-    assert.deepStrictEqual(await route._validate(createReq({ params: { id: 'app-2' }, token: { type: 'system' } })), {
-      id: 'app-2',
+    assert.deepStrictEqual(await route._validate(createReq({ params: { id: '6abd05000000000000000002' }, token: { type: 'system' } })), {
+      id: '6abd05000000000000000002',
     });
   });
 
@@ -491,9 +497,9 @@ describe('routes/api/app:AppUpdate', () => {
     const { appModel } = stubModel();
     const route = createRoute(AppUpdate);
 
-    await route._exec(createReq({ body: [{ path: 'name', value: 'new' }] }), {}, { id: 'app-1' });
+    await route._exec(createReq({ body: [{ path: 'name', value: 'new' }] }), {}, { id: '6abd05000000000000000001' });
 
-    assert.ok(appModel.updateByPath.calledWith([{ path: 'name', value: 'new' }], 'app-1'));
+    assert.ok(appModel.updateByPath.calledWith([{ path: 'name', value: 'new' }], '6abd05000000000000000001'));
   });
 });
 
@@ -502,22 +508,22 @@ describe('routes/api/app:GetAppPolicyPropertyList', () => {
     stubModel();
     const route = createRoute(GetAppPolicyPropertyList);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects fetching another app’s list without a system token', async () => {
     stubModel();
     const route = createRoute(GetAppPolicyPropertyList);
-    const req = createReq({ authApp: { id: 'app-1', apiPath: 'app-one' }, params: { apiPath: 'app-two' } });
+    const req = createReq({ authApp: { id: '6abd05000000000000000001', apiPath: 'app-one' }, params: { apiPath: 'app-two' } });
 
-    await assert.rejects(route._validate(req), /cannot_fetch_list_for_another_app/);
+    await assert.rejects(route._validate(req), { code: 'cannot_fetch_list_for_another_app' });
   });
 
   it('allows a system token to fetch another app’s list', async () => {
     stubModel({ app: { findOne: async () => ({ policyPropertiesList: { role: ['admin'] } }) } });
     const route = createRoute(GetAppPolicyPropertyList);
     const req = createReq({
-      authApp: { id: 'app-1', apiPath: 'app-one' },
+      authApp: { id: '6abd05000000000000000001', apiPath: 'app-one' },
       params: { apiPath: 'app-two' },
       token: { type: 'system' },
     });
@@ -534,21 +540,21 @@ describe('routes/api/app:SetAppPolicyPropertyList', () => {
     stubModel();
     const route = createRoute(SetAppPolicyPropertyList);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects when the body is an array rather than an object', async () => {
     stubModel();
     const route = createRoute(SetAppPolicyPropertyList);
 
-    await assert.rejects(route._validate(createReq({ body: ['not-an-object'] })), /invalid_type/);
+    await assert.rejects(route._validate(createReq({ body: ['not-an-object'] })), { code: 'invalid_type' });
   });
 
   it('rejects when a list value is not an array', async () => {
     stubModel();
     const route = createRoute(SetAppPolicyPropertyList);
 
-    await assert.rejects(route._validate(createReq({ body: { role: 'not-an-array' } })), /invalid_field/);
+    await assert.rejects(route._validate(createReq({ body: { role: 'not-an-array' } })), { code: 'invalid_field' });
   });
 
   it('merges new values into the existing list when update=true', async () => {
@@ -556,7 +562,7 @@ describe('routes/api/app:SetAppPolicyPropertyList', () => {
     const route = createRoute(SetAppPolicyPropertyList);
     const req = createReq({
       params: { update: 'true' },
-      authApp: { id: 'app-1', policyPropertiesList: { role: ['admin'] } },
+      authApp: { id: '6abd05000000000000000001', policyPropertiesList: { role: ['admin'] } },
       body: { role: ['user'] },
     });
 
@@ -569,9 +575,9 @@ describe('routes/api/app:SetAppPolicyPropertyList', () => {
     const { appModel } = stubModel();
     const route = createRoute(SetAppPolicyPropertyList);
 
-    const result = await route._exec(createReq(), {}, { appId: 'app-1' });
+    const result = await route._exec(createReq(), {}, { appId: '6abd05000000000000000001' });
 
-    assert.ok(appModel.setPolicyPropertiesList.calledWith('app-1'));
+    assert.ok(appModel.setPolicyPropertiesList.calledWith('6abd05000000000000000001'));
     assert.strictEqual('query' in result, false);
   });
 });
@@ -585,7 +591,7 @@ describe('routes/api/app:GetAppSchema ?core=', () => {
   const coreNames = async (core) => {
     sinon.stub(Model, 'getCoreModelByName').callsFake((name) => coreModels[name]);
     const route = createRoute(GetAppSchema);
-    const req = { query: { core }, context: { id: 'req-1', authApp: { id: 'app-1', __schema: '[]' } } };
+    const req = { query: { core }, context: { id: 'req-1', authApp: { id: '6abd05000000000000000001', __schema: '[]' } } };
 
     const schema = await route._validate(req, {});
     return schema.map((s) => s.name);
@@ -606,7 +612,7 @@ describe('routes/api/app:GetAppSchema ?core=', () => {
   it('refuses an unknown name with a 400 that names it', async () => {
     await assert.rejects(
       () => coreNames('users,widgets'),
-      (err) => err instanceof RequestError && err.code === 400 && err.message === 'Unknown core schema: widgets',
+      (err) => err instanceof ApiError && err.status === 400 && err.message === 'Unknown core schema: widgets',
     );
   });
 });

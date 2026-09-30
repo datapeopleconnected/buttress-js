@@ -19,7 +19,7 @@ import assert from 'assert';
 
 import UpdateOne from '../../../../../dist/routes/schema-routes/update-one.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
-import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { ApiError } from '../../../../../dist/helpers/errors.js';
 import { createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
@@ -82,7 +82,7 @@ describe('schema-routes/UpdateOne', () => {
     assert.strictEqual(docs.find((d) => d.id === DOC_1).value, 'updated');
   });
 
-  it('rejects with a 400 and leaves the entity untouched when it exists but is outside the access-control policy scope', async () => {
+  it('rejects with a 404 and leaves the entity untouched when it exists but is outside the access-control policy scope', async () => {
     // DOC_2 exists, but belongs to USER_2 while the policy only scopes to USER_1's records.
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
@@ -95,8 +95,9 @@ describe('schema-routes/UpdateOne', () => {
     await assert.rejects(
       () => route._validate(req, {}),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.code, 400);
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.status, 404);
+        assert.strictEqual(err.code, 'not_found');
         return true;
       },
     );
@@ -129,8 +130,8 @@ describe('schema-routes/UpdateOne: refusal messages', () => {
       () => null,
       (e) => e,
     );
-    assert.ok(err instanceof RequestError, 'expected the update to be refused');
-    assert.strictEqual(err.code, 400);
+    assert.ok(err instanceof ApiError, 'expected the update to be refused');
+    assert.strictEqual(err.status, 400);
     return err.message;
   };
 

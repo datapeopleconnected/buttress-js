@@ -49,7 +49,7 @@ function stubModel({ secureStore = {}, app = {}, lambda = {}, user = {} } = {}) 
     ...realQueryParser(SecureStoreSchemaModel),
     findOne: async () => null,
     find: sinon.stub().returns(Readable.from([], { objectMode: true })),
-    add: sinon.stub().resolves({ id: 'secure-store-1' }),
+    add: sinon.stub().resolves({ id: '6abd09000000000000000003' }),
     rm: sinon.stub().resolves(),
     count: sinon.stub().resolves(0),
     exists: sinon.stub().resolves(true),
@@ -82,7 +82,7 @@ function createRoute(RouteClass, { nrp } = {}) {
   return route;
 }
 
-function createReq({ params = {}, body = {}, authApp = { id: 'app-1' }, token = { type: 'app' } } = {}) {
+function createReq({ params = {}, body = {}, authApp = { id: '6abd05000000000000000001' }, token = { type: 'app' } } = {}) {
   return { params, body, context: { id: 'req-1', authApp, token } };
 }
 
@@ -95,21 +95,21 @@ describe('routes/api/secure-store:AddSecureStore', () => {
     stubModel();
     const route = createRoute(AddSecureStore);
 
-    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /missing_field/);
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), { code: 'missing_field' });
   });
 
   it('rejects when the name field is missing', async () => {
     stubModel();
     const route = createRoute(AddSecureStore);
 
-    await assert.rejects(route._validate(createReq({ body: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ body: {} })), { code: 'missing_field' });
   });
 
   it('rejects when a secure store with the same name already exists', async () => {
     stubModel({ secureStore: { findOne: async () => ({ id: 'existing' }) } });
     const route = createRoute(AddSecureStore);
 
-    await assert.rejects(route._validate(createReq({ body: { name: 'test' } })), /already_exist/);
+    await assert.rejects(route._validate(createReq({ body: { name: 'test' } })), { code: 'already_exist' });
   });
 
   it('resolves the app id directly from the authenticated app when available', async () => {
@@ -118,7 +118,7 @@ describe('routes/api/secure-store:AddSecureStore', () => {
 
     const result = await route._validate(createReq({ body: { name: 'test' } }));
 
-    assert.deepStrictEqual(result, { appId: 'app-1' });
+    assert.deepStrictEqual(result, { appId: '6abd05000000000000000001' });
   });
 
   it("adds the secure store to the caller's app", async () => {
@@ -127,16 +127,16 @@ describe('routes/api/secure-store:AddSecureStore', () => {
 
     const result = await route._validate(createReq({ body: { name: 'test' } }));
 
-    assert.strictEqual(result.appId, 'app-1');
+    assert.strictEqual(result.appId, '6abd05000000000000000001');
   });
 
   it('adds the entity scoped to the resolved app id', () => {
     const { secureStoreModel } = stubModel();
     const route = createRoute(AddSecureStore);
 
-    route._exec(createReq({ body: { name: 'test' } }), {}, { appId: 'app-1' });
+    route._exec(createReq({ body: { name: 'test' } }), {}, { appId: '6abd05000000000000000001' });
 
-    assert.ok(secureStoreModel.add.calledWith({ name: 'test' }, { _appId: 'app-1' }));
+    assert.ok(secureStoreModel.add.calledWith({ name: 'test' }, { _appId: '6abd05000000000000000001' }));
   });
 });
 
@@ -145,35 +145,35 @@ describe('routes/api/secure-store:AddManySecureStore', () => {
     stubModel();
     const route = createRoute(AddManySecureStore);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'missing_field' });
   });
 
   it('rejects when the body is not an array', async () => {
     stubModel();
     const route = createRoute(AddManySecureStore);
 
-    await assert.rejects(route._validate(createReq({ body: {} })), /invalid_body/);
+    await assert.rejects(route._validate(createReq({ body: {} })), { code: 'invalid_body' });
   });
 
   it('rejects when an item in the batch is missing a name', async () => {
     stubModel();
     const route = createRoute(AddManySecureStore);
 
-    await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }, {}] })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }, {}] })), { code: 'missing_field' });
   });
 
   it('rejects when an item in the batch already exists', async () => {
     stubModel({ secureStore: { findOne: async () => ({ id: 'existing' }) } });
     const route = createRoute(AddManySecureStore);
 
-    await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }] })), /already_exist/);
+    await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }] })), { code: 'already_exist' });
   });
 
   it('rejects when a name is given more than once in the batch', async () => {
     stubModel();
     const route = createRoute(AddManySecureStore);
 
-    await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }, { name: 'a' }] })), /already_exist/);
+    await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }, { name: 'a' }] })), { code: 'already_exist' });
   });
 
   it('only checks for existing names within the authenticated app', async () => {
@@ -183,8 +183,8 @@ describe('routes/api/secure-store:AddManySecureStore', () => {
 
     const result = await route._validate(createReq({ body: [{ name: 'a' }] }));
 
-    assert.deepStrictEqual(findOne.firstCall.args[0], { $and: [{ name: 'a', _appId: 'app-1' }, { _appId: 'app-1' }] });
-    assert.deepStrictEqual(result, { appId: 'app-1' });
+    assert.deepStrictEqual(findOne.firstCall.args[0], { $and: [{ name: 'a', _appId: '6abd05000000000000000001' }, { _appId: '6abd05000000000000000001' }] });
+    assert.deepStrictEqual(result, { appId: '6abd05000000000000000001' });
   });
 
   it('adds each secure store scoped to the authenticated app', async () => {
@@ -192,11 +192,11 @@ describe('routes/api/secure-store:AddManySecureStore', () => {
     const route = createRoute(AddManySecureStore);
     const body = [{ name: 'a' }, { name: 'b', storeData: { key: 'value' } }];
 
-    const result = await route._exec(createReq({ body }), {}, { appId: 'app-1' });
+    const result = await route._exec(createReq({ body }), {}, { appId: '6abd05000000000000000001' });
 
     assert.strictEqual(secureStoreModel.add.callCount, 2);
-    assert.ok(secureStoreModel.add.firstCall.calledWith(body[0], { _appId: 'app-1' }));
-    assert.ok(secureStoreModel.add.secondCall.calledWith(body[1], { _appId: 'app-1' }));
+    assert.ok(secureStoreModel.add.firstCall.calledWith(body[0], { _appId: '6abd05000000000000000001' }));
+    assert.ok(secureStoreModel.add.secondCall.calledWith(body[1], { _appId: '6abd05000000000000000001' }));
     assert.strictEqual(result, true);
   });
 });
@@ -206,28 +206,28 @@ describe('routes/api/secure-store:GetSecureStore', () => {
     stubModel();
     const route = createRoute(GetSecureStore);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects when no id is provided', async () => {
     stubModel();
     const route = createRoute(GetSecureStore);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_required_secure_store_id/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when the id is not a valid ObjectId', async () => {
     stubModel();
     const route = createRoute(GetSecureStore);
 
-    await assert.rejects(route._validate(createReq({ params: { id: 'bad-id' } })), /invalid_secure_store_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: 'bad-id' } })), { code: 'invalid_id' });
   });
 
   it('rejects when no secure store matches the id (empty stream)', async () => {
     stubModel({ secureStore: { find: sinon.stub().returns(Readable.from([], { objectMode: true })) } });
     const route = createRoute(GetSecureStore);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /secure_store_does_not_exist/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
   it('resolves the matching secure store', async () => {
@@ -247,14 +247,14 @@ describe('routes/api/secure-store:FindSecureStore', () => {
     stubModel();
     const route = createRoute(FindSecureStore);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects when no name parameter is provided', async () => {
     stubModel();
     const route = createRoute(FindSecureStore);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_field' });
   });
 
   it('rejects with 404 when no secure store matches the name', async () => {
@@ -262,8 +262,8 @@ describe('routes/api/secure-store:FindSecureStore', () => {
     const route = createRoute(FindSecureStore);
 
     await assert.rejects(route._validate(createReq({ params: { name: 'missing' } })), (err) => {
-      assert.strictEqual(err.code, 404);
-      assert.strictEqual(err.message, 'not_found');
+      assert.strictEqual(err.status, 404);
+      assert.strictEqual(err.code, 'not_found');
       return true;
     });
   });
@@ -283,7 +283,7 @@ describe('routes/api/secure-store:UpdateSecureStore', () => {
     stubModel();
     const route = createRoute(UpdateSecureStore);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects when the update path is invalid', async () => {
@@ -304,7 +304,7 @@ describe('routes/api/secure-store:UpdateSecureStore', () => {
     stubModel({ secureStore: { findOne: async () => null } });
     const route = createRoute(UpdateSecureStore);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
   it('updates the secure store by path', async () => {
@@ -322,14 +322,14 @@ describe('routes/api/secure-store:BulkUpdateSecureStore', () => {
     stubModel();
     const route = createRoute(BulkUpdateSecureStore);
 
-    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /array_required/);
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), { code: 'array_required' });
   });
 
   it('rejects when there is no authenticated app', async () => {
     stubModel();
     const route = createRoute(BulkUpdateSecureStore);
 
-    await assert.rejects(route._validate(createReq({ authApp: null, body: [] })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null, body: [] })), { code: 'internal_error' });
   });
 
   it('rejects when one item in the batch does not exist', async () => {
@@ -338,7 +338,7 @@ describe('routes/api/secure-store:BulkUpdateSecureStore', () => {
 
     await assert.rejects(
       route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'name', value: 'a' } }] })),
-      /invalid_id/,
+      { code: 'not_found' },
     );
   });
 
@@ -346,8 +346,8 @@ describe('routes/api/secure-store:BulkUpdateSecureStore', () => {
     const { secureStoreModel } = stubModel({ secureStore: { findOne: async () => ({ id: HEX_ID }) } });
     const route = createRoute(BulkUpdateSecureStore);
     const batch = [
-      { id: 'ss-1', body: { path: 'name', value: 'a' } },
-      { id: 'ss-2', body: { path: 'name', value: 'b' } },
+      { id: '6abd09000000000000000001', body: { path: 'name', value: 'a' } },
+      { id: '6abd09000000000000000002', body: { path: 'name', value: 'b' } },
     ];
 
     const result = await route._exec(createReq(), {}, batch);
@@ -362,21 +362,21 @@ describe('routes/api/secure-store:SearchSecureStoreList', () => {
     stubModel();
     const route = createRoute(SearchSecureStoreList);
 
-    await assert.rejects(route._validate(createReq({ body: [] })), /invalid_body/);
+    await assert.rejects(route._validate(createReq({ body: [] })), { code: 'invalid_body' });
   });
 
   it('rejects when there is no authenticated app', async () => {
     stubModel();
     const route = createRoute(SearchSecureStoreList);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects when skip is not a number', async () => {
     stubModel();
     const route = createRoute(SearchSecureStoreList);
 
-    await assert.rejects(route._validate(createReq({ body: { skip: 'abc' } })), /invalid_value_skip/);
+    await assert.rejects(route._validate(createReq({ body: { skip: 'abc' } })), { code: 'invalid_value_skip' });
   });
 
   it('always scopes the search to the authenticated app', async () => {
@@ -385,7 +385,7 @@ describe('routes/api/secure-store:SearchSecureStoreList', () => {
 
     const result = await route._validate(createReq());
 
-    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
+    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: '6abd05000000000000000001' } }] });
   });
 
   it('finds using the built query params', () => {
@@ -398,7 +398,7 @@ describe('routes/api/secure-store:SearchSecureStoreList', () => {
 
     assert.strictEqual(result, 'a-stream');
     assert.deepStrictEqual(secureStoreModel.find.firstCall.args, [
-      { $and: [validate.query, { _appId: 'app-1' }] },
+      { $and: [validate.query, { _appId: '6abd05000000000000000001' }] },
       {},
       10,
       0,
@@ -413,14 +413,14 @@ describe('routes/api/secure-store:DeleteSecureStore', () => {
     stubModel();
     const route = createRoute(DeleteSecureStore);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('rejects when no id is provided', async () => {
     stubModel();
     const route = createRoute(DeleteSecureStore);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_required_secure_store_id/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects with 404 when no secure store matches the id', async () => {
@@ -428,7 +428,7 @@ describe('routes/api/secure-store:DeleteSecureStore', () => {
     const route = createRoute(DeleteSecureStore);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), (err) => {
-      assert.strictEqual(err.code, 404);
+      assert.strictEqual(err.status, 404);
       return true;
     });
   });
@@ -437,9 +437,9 @@ describe('routes/api/secure-store:DeleteSecureStore', () => {
     const { secureStoreModel } = stubModel();
     const route = createRoute(DeleteSecureStore);
 
-    const result = await route._exec(createReq(), {}, { id: 'secure-store-1' });
+    const result = await route._exec(createReq(), {}, { id: '6abd09000000000000000003' });
 
-    assert.ok(secureStoreModel.rm.calledWith('secure-store-1'));
+    assert.ok(secureStoreModel.rm.calledWith('6abd09000000000000000003'));
     assert.strictEqual(result, true);
   });
 });
@@ -449,7 +449,7 @@ describe('routes/api/secure-store:SecureStoreCount', () => {
     stubModel();
     const route = createRoute(SecureStoreCount);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('always scopes the count to the authenticated app', async () => {
@@ -458,7 +458,7 @@ describe('routes/api/secure-store:SecureStoreCount', () => {
 
     const result = await route._validate(createReq({ body: {} }));
 
-    assert.deepStrictEqual(result.query.$and, [{}, { _appId: { $eq: 'app-1' } }]);
+    assert.deepStrictEqual(result.query.$and, [{}, { _appId: { $eq: '6abd05000000000000000001' } }]);
   });
 
   it('counts using the built query', async () => {
@@ -467,6 +467,6 @@ describe('routes/api/secure-store:SecureStoreCount', () => {
 
     await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(secureStoreModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
+    assert.ok(secureStoreModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: '6abd05000000000000000001' }] }));
   });
 });

@@ -67,7 +67,8 @@ const DATA_CONFLICT_CODES = [2, 14, 28];
 // $unset then $pull also took every other null in the array. It's only ever applied to the entity as read.
 const REMOVE_AT = '$removeAt';
 
-const refuseUpdate = (reason: string) => new Helpers.Errors.RequestError(400, `Update can't be applied: ${reason}`);
+const refuseUpdate = (reason: string) =>
+  Helpers.Errors.badRequest('invalid_update', `Update can't be applied: ${reason}`);
 
 const readOp = (op: UpdateOp) => {
   const [operator] = Object.keys(op);
@@ -555,7 +556,7 @@ export default class MongodbAdapter extends AbstractAdapter {
       if (res && res.matchedCount > 0) return;
     }
 
-    throw new Helpers.Errors.RequestError(409, 'The entity changed while it was being updated, try again');
+    throw Helpers.Errors.conflict('update_conflict', 'The entity changed while it was being updated, try again');
   }
 
   async _write<T>(write: () => Promise<T> | undefined): Promise<T | undefined> {

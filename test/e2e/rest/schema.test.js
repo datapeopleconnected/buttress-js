@@ -656,7 +656,8 @@ describe('Schema', async () => {
 			assert.match(res.headers.get('access-control-expose-headers'), /x-bulk-refused/);
 			assert.strictEqual(results[0].results[0].value, 'bulk-renamed');
 			assert.deepStrictEqual(results[1].validation, {
-				code: 400,
+				status: 400,
+				code: 'invalid_update',
 				message: "Update can't be applied: Cannot create field 'x' in element {meta: null}",
 			});
 			assert.strictEqual((await getSpaceship()).name, 'bulk-renamed');

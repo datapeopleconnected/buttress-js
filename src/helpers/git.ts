@@ -16,7 +16,7 @@
 import util from 'node:util';
 import { execFile as cpExecFile } from 'node:child_process';
 
-import { RequestError } from './errors.js';
+import { badRequest } from './errors.js';
 
 const execFile = util.promisify(cpExecFile);
 
@@ -57,10 +57,10 @@ export const isGitUrl = (value: unknown): value is string =>
  * Refuses a lambda git source whose given fields aren't a plain name, url, branch or hash, with a 400.
  */
 export const assertLambdaGitSource = (source: { name?: unknown; url?: unknown; branch?: unknown; hash?: unknown }) => {
-  if ('name' in source && !isLambdaName(source.name)) throw new RequestError(400, 'invalid_lambda_name');
-  if ('url' in source && !isGitUrl(source.url)) throw new RequestError(400, 'invalid_lambda_git_url');
-  if ('branch' in source && !isGitBranch(source.branch)) throw new RequestError(400, 'invalid_lambda_git_branch');
-  if ('hash' in source && !isGitHash(source.hash)) throw new RequestError(400, 'invalid_lambda_git_hash');
+  if ('name' in source && !isLambdaName(source.name)) throw badRequest('invalid_lambda_name');
+  if ('url' in source && !isGitUrl(source.url)) throw badRequest('invalid_lambda_git_url');
+  if ('branch' in source && !isGitBranch(source.branch)) throw badRequest('invalid_lambda_git_branch');
+  if ('hash' in source && !isGitHash(source.hash)) throw badRequest('invalid_lambda_git_hash');
 };
 
 export type LambdaSharedModule = { name: string; entryFile: string };
@@ -85,14 +85,14 @@ const isSharedModuleEntryFile = (value: unknown): value is string =>
 export const assertLambdaSharedModules = (modules: unknown): LambdaSharedModule[] => {
   if (modules === undefined || modules === null) return [];
   if (!Array.isArray(modules) || modules.length > MAX_SHARED_MODULES) {
-    throw new RequestError(400, 'invalid_lambda_shared_modules');
+    throw badRequest('invalid_lambda_shared_modules');
   }
 
   const names = new Set<string>();
   (modules as Array<{ name?: unknown; entryFile?: unknown } | null>).forEach((mod) => {
     const name = mod?.name;
     const valid = typeof name === 'string' && SHARED_MODULE_NAME.test(name) && isSharedModuleEntryFile(mod?.entryFile);
-    if (!valid || names.has(name)) throw new RequestError(400, 'invalid_lambda_shared_module');
+    if (!valid || names.has(name)) throw badRequest('invalid_lambda_shared_module');
     names.add(name);
   });
   return modules as LambdaSharedModule[];

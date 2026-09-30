@@ -279,7 +279,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
     if (schemaFlat[property]) {
       propSchema = schemaFlat[property];
     } else if (Object.keys(schemaFlat).length > 0) {
-      // throw new Helpers.Errors.RequestError(400, `unknown property ${property} in query`);
+      // throw Helpers.Errors.badRequest('unknown_property', `Unknown property ${property} in query`);
     }
 
     if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
@@ -301,7 +301,9 @@ export default class StandardModel<TDocument = AdapterDocument> {
       if (propSchema.__type === 'date' && typeof operand === 'string') {
         operand = new Date(operand);
         // Stored, an invalid date is the start of 1970, which every later date is after
-        if (isNaN((operand as Date).getTime())) throw new Helpers.Errors.RequestError(400, `invalid_date: ${property}`);
+        if (isNaN((operand as Date).getTime())) {
+          throw Helpers.Errors.badRequest('invalid_date', `Invalid date for ${property}`, { path: property });
+        }
       }
 
       if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {

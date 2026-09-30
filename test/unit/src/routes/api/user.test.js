@@ -62,7 +62,7 @@ function stubModel({ user = {}, token = {}, app = {} } = {}) {
       return query && 'id' in query ? this.findById(query.id) : null;
     },
     getByAuthAppId: async () => null,
-    add: sinon.stub().resolves({ id: 'user-1', auth: [], tokens: [] }),
+    add: sinon.stub().resolves({ id: '6abd01000000000000000001', auth: [], tokens: [] }),
     exists: sinon.stub().resolves(true),
     validateUpdate: () => ({ validation: { isValid: true }, body: {} }),
     updateByPath: sinon.stub().resolves(),
@@ -72,6 +72,7 @@ function stubModel({ user = {}, token = {}, app = {} } = {}) {
     ...user,
   };
   const tokenModel = {
+    ...realQueryParser(TokenSchemaModel),
     Constants: { Type: { SYSTEM: 'system', USER: 'user' } },
     createId: (v) => v,
     findOne: async () => null,
@@ -79,7 +80,7 @@ function stubModel({ user = {}, token = {}, app = {} } = {}) {
     findUserAuthTokens: sinon.stub().returns(Readable.from([], { objectMode: true })),
     add: sinon
       .stub()
-      .resolves(Readable.from([{ id: 'token-1', value: 'token-value', policyProperties: {} }], { objectMode: true })),
+      .resolves(Readable.from([{ id: '6abd02000000000000000001', value: 'token-value', policyProperties: {} }], { objectMode: true })),
     setPolicyPropertiesById: sinon.stub().resolves(),
     updatePolicyProperties: sinon.stub().resolves(),
     clearPolicyPropertiesById: sinon.stub().resolves(),
@@ -110,7 +111,7 @@ function createRoute(RouteClass, { nrp } = {}) {
 function createReq({
   params = {},
   body = {},
-  authApp = { id: 'app-1', policyPropertiesList: {} },
+  authApp = { id: '6abd05000000000000000001', policyPropertiesList: {} },
   token = { type: 'user' },
 } = {}) {
   return { params, body, context: { id: 'req-1', authApp, token } };
@@ -125,14 +126,14 @@ describe('routes/api/user:GetUserList', () => {
     stubModel();
     const route = createRoute(GetUserList);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('returns every user for a system token', () => {
     const { userModel } = stubModel();
     const route = createRoute(GetUserList);
 
-    route._exec(createReq({ token: { type: 'system' } }), {}, { appId: 'app-1' });
+    route._exec(createReq({ token: { type: 'system' } }), {}, { appId: '6abd05000000000000000001' });
 
     assert.ok(userModel.findAll.calledOnce);
   });
@@ -141,9 +142,9 @@ describe('routes/api/user:GetUserList', () => {
     const { userModel } = stubModel();
     const route = createRoute(GetUserList);
 
-    route._exec(createReq({ token: { type: 'user' } }), {}, { appId: 'app-1' });
+    route._exec(createReq({ token: { type: 'user' } }), {}, { appId: '6abd05000000000000000001' });
 
-    assert.ok(userModel.find.calledWith({ _appId: 'app-1' }));
+    assert.ok(userModel.find.calledWith({ _appId: '6abd05000000000000000001' }));
   });
 });
 
@@ -152,25 +153,25 @@ describe('routes/api/user:GetUser', () => {
     stubModel();
     const route = createRoute(GetUser);
 
-    await assert.rejects(route._validate(createReq({ authApp: null, params: { id: HEX_ID } })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null, params: { id: HEX_ID } })), { code: 'internal_error' });
   });
 
   it('rejects when no id is provided', async () => {
     stubModel();
     const route = createRoute(GetUser);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_field' });
   });
 
   it('resolves "me" to the token\'s own user id', async () => {
-    const { userModel } = stubModel({ user: { findOne: sinon.stub().resolves({ id: 'user-1', auth: [] }) } });
+    const { userModel } = stubModel({ user: { findOne: sinon.stub().resolves({ id: '6abd01000000000000000001', auth: [] }) } });
     const route = createRoute(GetUser);
-    const req = createReq({ params: { id: 'me' }, token: { type: 'user', _userId: 'user-1' } });
+    const req = createReq({ params: { id: 'me' }, token: { type: 'user', _userId: '6abd01000000000000000001' } });
 
     await route._validate(req);
 
     const [query] = userModel.findOne.firstCall.args;
-    assert.deepStrictEqual(query, { id: 'user-1', _appId: 'app-1' });
+    assert.deepStrictEqual(query, { id: '6abd01000000000000000001', _appId: '6abd05000000000000000001' });
   });
 
   it('rejects when the user cannot be found', async () => {
@@ -178,19 +179,19 @@ describe('routes/api/user:GetUser', () => {
     const route = createRoute(GetUser);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), (err) => {
-      assert.strictEqual(err.code, 404);
+      assert.strictEqual(err.status, 404);
       return true;
     });
   });
 
   it('includes the mapped auth tokens for the found user', async () => {
     stubModel({
-      user: { findOne: async () => ({ id: 'user-1', auth: [] }) },
+      user: { findOne: async () => ({ id: '6abd01000000000000000001', auth: [] }) },
       token: {
         findUserAuthTokens: sinon
           .stub()
           .returns(
-            Readable.from([{ id: 'token-1', value: 'v', policyProperties: { role: 'admin' } }], { objectMode: true }),
+            Readable.from([{ id: '6abd02000000000000000001', value: 'v', policyProperties: { role: 'admin' } }], { objectMode: true }),
           ),
       },
     });
@@ -198,28 +199,28 @@ describe('routes/api/user:GetUser', () => {
 
     const result = await route._validate(createReq({ params: { id: HEX_ID } }));
 
-    assert.deepStrictEqual(result.tokens, [{ id: 'token-1', value: 'v', policyProperties: { role: 'admin' } }]);
+    assert.deepStrictEqual(result.tokens, [{ id: '6abd02000000000000000001', value: 'v', policyProperties: { role: 'admin' } }]);
   });
 });
 
 describe('routes/api/user:FindUser', () => {
-  it('rejects for an unrecognised auth provider', async () => {
+  it('answers an unrecognised auth provider as not found, as clients add a user they do not find', async () => {
     stubModel();
     const route = createRoute(FindUser);
 
-    await assert.rejects(route._validate(createReq({ params: { app: 'myspace', id: 'ext-1' } })), (err) => {
-      assert.strictEqual(err.code, 404);
-      return true;
+    await assert.rejects(route._validate(createReq({ params: { app: 'myspace', id: 'ext-1' } })), {
+      status: 404,
+      code: 'not_found',
     });
   });
 
   it('accepts a federated "app-" prefixed provider', async () => {
-    stubModel({ user: { getByAuthAppId: async () => ({ id: 'user-1', auth: [] }) } });
+    stubModel({ user: { getByAuthAppId: async () => ({ id: '6abd01000000000000000001', auth: [] }) } });
     const route = createRoute(FindUser);
 
     const result = await route._validate(createReq({ params: { app: 'app-myapp', id: 'ext-1' } }));
 
-    assert.strictEqual(result.id, 'user-1');
+    assert.strictEqual(result.id, '6abd01000000000000000001');
   });
 
   it('rejects when no matching user is found', async () => {
@@ -227,7 +228,7 @@ describe('routes/api/user:FindUser', () => {
     const route = createRoute(FindUser);
 
     await assert.rejects(route._validate(createReq({ params: { app: 'google', id: 'ext-1' } })), (err) => {
-      assert.strictEqual(err.code, 404);
+      assert.strictEqual(err.status, 404);
       return true;
     });
   });
@@ -238,14 +239,14 @@ describe('routes/api/user:GetUserByToken', () => {
     stubModel();
     const route = createRoute(GetUserByToken);
 
-    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /missing_field/);
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), { code: 'missing_field' });
   });
 
   it('rejects when the token is missing', async () => {
     stubModel();
     const route = createRoute(GetUserByToken);
 
-    await assert.rejects(route._validate(createReq({ body: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ body: {} })), { code: 'missing_field' });
   });
 
   it("looks the token up in the caller's app, or in any app for a system token", async () => {
@@ -258,34 +259,38 @@ describe('routes/api/user:GetUserByToken', () => {
 
     assert.deepStrictEqual(
       findOne.args.map(([query]) => query),
-      [{ $and: [{ value: { $eq: 'tok' } }, { _appId: 'app-1' }] }, { value: { $eq: 'tok' } }],
+      [{ $and: [{ value: { $eq: 'tok' } }, { _appId: '6abd05000000000000000001' }] }, { value: { $eq: 'tok' } }],
     );
   });
 
-  it('rejects when the token is invalid', async () => {
+  it('answers a token nobody has as not found', async () => {
     stubModel({ token: { findOne: async () => null } });
     const route = createRoute(GetUserByToken);
 
-    await assert.rejects(route._validate(createReq({ body: { token: 'bad' } })), /invalid_token/);
+    await assert.rejects(route._validate(createReq({ body: { token: 'bad' } })), {
+      status: 404,
+      code: 'not_found',
+      details: { schema: 'token' },
+    });
   });
 
   it('rejects when no user owns the token', async () => {
     stubModel({
-      token: { findOne: async () => ({ _userId: 'user-1', value: 'tok', policyProperties: {} }) },
+      token: { findOne: async () => ({ _userId: '6abd01000000000000000001', value: 'tok', policyProperties: {} }) },
       user: { findOne: async () => null },
     });
     const route = createRoute(GetUserByToken);
 
     await assert.rejects(route._validate(createReq({ body: { token: 'tok' } })), (err) => {
-      assert.strictEqual(err.code, 404);
+      assert.strictEqual(err.status, 404);
       return true;
     });
   });
 
   it('resolves the user with the matched token value', async () => {
     stubModel({
-      token: { findOne: async () => ({ _userId: 'user-1', value: 'tok', policyProperties: { role: 'admin' } }) },
-      user: { findOne: async () => ({ id: 'user-1', auth: [] }) },
+      token: { findOne: async () => ({ _userId: '6abd01000000000000000001', value: 'tok', policyProperties: { role: 'admin' } }) },
+      user: { findOne: async () => ({ id: '6abd01000000000000000001', auth: [] }) },
     });
     const route = createRoute(GetUserByToken);
 
@@ -301,18 +306,18 @@ describe('routes/api/user:CreateUserAuthToken', () => {
     stubModel();
     const route = createRoute(CreateUserAuthToken);
 
-    await assert.rejects(route._validate(createReq({ params: { id: 'user-1' }, body: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ params: { id: '6abd01000000000000000001' }, body: {} })), { code: 'missing_field' });
   });
 
   for (const domains of [[null], ['app.example.com', 42], [''], 'app.example.com']) {
     it(`rejects domains of ${JSON.stringify(domains)} with a 400`, async () => {
-      stubModel({ user: { findOne: async () => ({ id: 'user-1' }) } });
+      stubModel({ user: { findOne: async () => ({ id: '6abd01000000000000000001' }) } });
       const route = createRoute(CreateUserAuthToken);
       const body = { policyProperties: {}, domains };
 
-      await assert.rejects(route._validate(createReq({ params: { id: 'user-1' }, body })), (err) => {
-        assert.strictEqual(err.code, 400);
-        assert.strictEqual(err.message, 'invalid_domains');
+      await assert.rejects(route._validate(createReq({ params: { id: '6abd01000000000000000001' }, body })), (err) => {
+        assert.strictEqual(err.status, 400);
+        assert.strictEqual(err.code, 'invalid_domains');
         return true;
       });
     });
@@ -323,8 +328,8 @@ describe('routes/api/user:CreateUserAuthToken', () => {
     const route = createRoute(CreateUserAuthToken);
     const body = { policyProperties: {}, domains: ['*'] };
 
-    await assert.rejects(route._validate(createReq({ params: { id: 'user-1' }, body })), (err) => {
-      assert.strictEqual(err.code, 404);
+    await assert.rejects(route._validate(createReq({ params: { id: '6abd01000000000000000001' }, body })), (err) => {
+      assert.strictEqual(err.status, 404);
       return true;
     });
   });
@@ -353,21 +358,21 @@ describe('routes/api/user:AddUser', () => {
     stubModel();
     const route = createRoute(AddUser);
 
-    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /missing_user_auth/);
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), { code: 'missing_user_auth' });
   });
 
   it('rejects when auth block is missing', async () => {
     stubModel();
     const route = createRoute(AddUser);
 
-    await assert.rejects(route._validate(createReq({ body: {} })), /missing_user_auth/);
+    await assert.rejects(route._validate(createReq({ body: {} })), { code: 'missing_user_auth' });
   });
 
   it('rejects when auth is not a non-empty array', async () => {
     stubModel();
     const route = createRoute(AddUser);
 
-    await assert.rejects(route._validate(createReq({ body: { auth: [] } })), /invalid_user_auth/);
+    await assert.rejects(route._validate(createReq({ body: { auth: [] } })), { code: 'invalid_user_auth' });
   });
 
   it('rejects when a matching user already exists', async () => {
@@ -375,7 +380,7 @@ describe('routes/api/user:AddUser', () => {
     const route = createRoute(AddUser);
     const body = { auth: [{ app: 'google', appId: 'ext-1', email: 'a@b.com' }] };
 
-    await assert.rejects(route._validate(createReq({ body })), /user_already_exists_with_that_name/);
+    await assert.rejects(route._validate(createReq({ body })), { code: 'user_already_exists_with_that_name' });
   });
 
   for (const domains of [[null], ['app.example.com', {}], null]) {
@@ -388,8 +393,8 @@ describe('routes/api/user:AddUser', () => {
       };
 
       await assert.rejects(route._validate(createReq({ body })), (err) => {
-        assert.strictEqual(err.code, 400);
-        assert.strictEqual(err.message, 'invalid_domains');
+        assert.strictEqual(err.status, 400);
+        assert.strictEqual(err.code, 'invalid_domains');
         return true;
       });
     });
@@ -403,7 +408,7 @@ describe('routes/api/user:AddUser', () => {
       token: { domains: ['app.example.com', '*.example.com'], policyProperties: {} },
     };
 
-    assert.deepStrictEqual(await route._validate(createReq({ body })), { appId: 'app-1' });
+    assert.deepStrictEqual(await route._validate(createReq({ body })), { appId: '6abd05000000000000000001' });
   });
 
   it('resolves the app id once validated', async () => {
@@ -413,19 +418,19 @@ describe('routes/api/user:AddUser', () => {
 
     const result = await route._validate(createReq({ body }));
 
-    assert.deepStrictEqual(result, { appId: 'app-1' });
+    assert.deepStrictEqual(result, { appId: '6abd05000000000000000001' });
   });
 
   it('adds the user scoped to the app', async () => {
     const { userModel } = stubModel({
-      user: { add: sinon.stub().resolves({ id: 'user-1', auth: [], tokens: [] }) },
+      user: { add: sinon.stub().resolves({ id: '6abd01000000000000000001', auth: [], tokens: [] }) },
     });
     const route = createRoute(AddUser);
 
-    const result = await route._exec(createReq({ body: { auth: [] } }), {}, { appId: 'app-1' });
+    const result = await route._exec(createReq({ body: { auth: [] } }), {}, { appId: '6abd05000000000000000001' });
 
-    assert.ok(userModel.add.calledWith({ auth: [] }, { _appId: 'app-1' }));
-    assert.strictEqual(result.id, 'user-1');
+    assert.ok(userModel.add.calledWith({ auth: [] }, { _appId: '6abd05000000000000000001' }));
+    assert.strictEqual(result.id, '6abd01000000000000000001');
   });
 });
 
@@ -434,7 +439,7 @@ describe('routes/api/user:UpdateUser', () => {
     stubModel();
     const route = createRoute(UpdateUser);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_field' });
   });
 
   it('rejects when the update path is invalid', async () => {
@@ -455,7 +460,7 @@ describe('routes/api/user:UpdateUser', () => {
     stubModel({ user: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(UpdateUser);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
   it('updates the user by path', async () => {
@@ -473,30 +478,30 @@ describe('routes/api/user:SetUserPolicyProperties', () => {
     stubModel();
     const route = createRoute(SetUserPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_field' });
   });
 
   it('rejects when the user does not exist', async () => {
     stubModel({ user: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(SetUserPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), { code: 'not_found' });
   });
 
   it('rejects when no matching token can be found', async () => {
     stubModel({ token: { findOne: async () => null } });
     const route = createRoute(SetUserPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), /user_not_found/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), { code: 'not_found' });
   });
 
   it('sets the policy properties on the resolved token', async () => {
     const { tokenModel } = stubModel();
     const route = createRoute(SetUserPolicyProperties);
 
-    await route._exec(createReq({ body: { role: 'admin' } }), {}, { tokenId: 'token-1' });
+    await route._exec(createReq({ body: { role: 'admin' } }), {}, { tokenId: '6abd02000000000000000001' });
 
-    assert.ok(tokenModel.setPolicyPropertiesById.calledWith('token-1', { role: 'admin' }));
+    assert.ok(tokenModel.setPolicyPropertiesById.calledWith('6abd02000000000000000001', { role: 'admin' }));
   });
 });
 
@@ -505,7 +510,7 @@ describe('routes/api/user:UpdateUserPolicyProperties', () => {
     stubModel({ user: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(UpdateUserPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), { code: 'not_found' });
   });
 
   it('rejects when no matching token can be found', async () => {
@@ -514,14 +519,14 @@ describe('routes/api/user:UpdateUserPolicyProperties', () => {
 
     await assert.rejects(
       route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })),
-      /user_token_not_found/,
+      { code: 'not_found' },
     );
   });
 
   it('updates the policy properties on the resolved token', async () => {
     const { tokenModel } = stubModel();
     const route = createRoute(UpdateUserPolicyProperties);
-    const token = { id: 'token-1' };
+    const token = { id: '6abd02000000000000000001' };
 
     await route._exec(createReq({ body: { role: 'admin' } }), {}, token);
 
@@ -534,18 +539,18 @@ describe('routes/api/user:RemoveUserPolicyProperties', () => {
     stubModel({ user: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(RemoveUserPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), { code: 'not_found' });
   });
 
   it('removes only the policy-property keys whose value matches the request', async () => {
     const { tokenModel } = stubModel();
     const route = createRoute(RemoveUserPolicyProperties);
-    const userToken = { id: 'token-1', policyProperties: { role: 'admin', department: 'sales' } };
+    const userToken = { id: '6abd02000000000000000001', policyProperties: { role: 'admin', department: 'sales' } };
 
     await route._exec(
-      createReq({ params: { id: 'user-1' }, body: { role: 'admin' } }),
+      createReq({ params: { id: '6abd01000000000000000001' }, body: { role: 'admin' } }),
       {},
-      { appId: 'app-1', userToken },
+      { appId: '6abd05000000000000000001', userToken },
     );
 
     assert.ok(tokenModel.updatePolicyProperties.calledWith(userToken, { department: 'sales' }));
@@ -557,18 +562,18 @@ describe('routes/api/user:ClearUserPolicyProperties', () => {
     stubModel({ user: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(ClearUserPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), { code: 'not_found' });
   });
 
   it('clears the policy properties on the resolved token and notifies sockets', async () => {
     const { tokenModel } = stubModel();
     const nrp = { emit: sinon.spy() };
     const route = createRoute(ClearUserPolicyProperties, { nrp });
-    const validate = { userId: 'user-1', appId: 'app-1', userToken: { id: 'token-1' } };
+    const validate = { userId: '6abd01000000000000000001', appId: '6abd05000000000000000001', userToken: { id: '6abd02000000000000000001' } };
 
-    await route._exec(createReq({ params: { id: 'user-1' } }), {}, validate);
+    await route._exec(createReq({ params: { id: '6abd01000000000000000001' } }), {}, validate);
 
-    assert.ok(tokenModel.clearPolicyPropertiesById.calledWith('token-1'));
+    assert.ok(tokenModel.clearPolicyPropertiesById.calledWith('6abd02000000000000000001'));
     assert.ok(nrp.emit.calledWith('worker:socket:evaluateUserRooms'));
   });
 });
@@ -578,16 +583,16 @@ describe('routes/api/user:DeleteAllUsers', () => {
     stubModel();
     const route = createRoute(DeleteAllUsers);
 
-    await assert.rejects(route._validate(createReq({ authApp: null })), /no_authenticated_app/);
+    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
   });
 
   it('removes every user scoped to the app', async () => {
     const { userModel } = stubModel();
     const route = createRoute(DeleteAllUsers);
 
-    const result = await route._exec(createReq(), {}, { appId: 'app-1' });
+    const result = await route._exec(createReq(), {}, { appId: '6abd05000000000000000001' });
 
-    assert.ok(userModel.rmAll.calledWith({ $and: [{ _appId: 'app-1' }, { _appId: 'app-1' }] }));
+    assert.ok(userModel.rmAll.calledWith({ $and: [{ _appId: '6abd05000000000000000001' }, { _appId: '6abd05000000000000000001' }] }));
     assert.strictEqual(result, true);
   });
 });
@@ -597,43 +602,43 @@ describe('routes/api/user:DeleteUser', () => {
     stubModel();
     const route = createRoute(DeleteUser);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_field' });
   });
 
   it('rejects when the user cannot be found', async () => {
     stubModel({ user: { findOne: async () => null } });
     const route = createRoute(DeleteUser);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
   it('rejects when the user has no token', async () => {
-    stubModel({ user: { findOne: async () => ({ id: 'user-1' }) }, token: { findOne: async () => null } });
+    stubModel({ user: { findOne: async () => ({ id: '6abd01000000000000000001' }) }, token: { findOne: async () => null } });
     const route = createRoute(DeleteUser);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /user_not_found/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
   it('rejects when the requesting token belongs to the user being deleted', async () => {
     stubModel({
-      user: { findOne: async () => ({ id: 'user-1' }) },
+      user: { findOne: async () => ({ id: '6abd01000000000000000001' }) },
       token: { findOne: async () => ({ value: 'same-token' }) },
     });
     const route = createRoute(DeleteUser);
     const req = createReq({ params: { id: HEX_ID }, token: { type: 'user', value: 'same-token' } });
 
-    await assert.rejects(route._validate(req), /user_can_not_delete_itself/);
+    await assert.rejects(route._validate(req), { code: 'user_can_not_delete_itself' });
   });
 
   it('removes the user and their token', async () => {
     const { userModel, tokenModel } = stubModel();
     const route = createRoute(DeleteUser);
-    const validate = { user: { id: 'user-1' }, token: { id: 'token-1' } };
+    const validate = { user: { id: '6abd01000000000000000001' }, token: { id: '6abd02000000000000000001' } };
 
     const result = await route._exec(createReq(), {}, validate);
 
-    assert.ok(userModel.rm.calledWith('user-1'));
-    assert.ok(tokenModel.rm.calledWith('token-1'));
+    assert.ok(userModel.rm.calledWith('6abd01000000000000000001'));
+    assert.ok(tokenModel.rm.calledWith('6abd02000000000000000001'));
     assert.strictEqual(result, true);
   });
 });
@@ -643,7 +648,7 @@ describe('routes/api/user:ClearUserLocalData', () => {
     const nrp = { emit: sinon.spy() };
     const route = createRoute(ClearUserLocalData, { nrp });
 
-    await route._exec(Object.assign(createReq(), { body: undefined }), {}, { id: 'user-1' });
+    await route._exec(Object.assign(createReq(), { body: undefined }), {}, { id: '6abd01000000000000000001' });
 
     const [, payload] = nrp.emit.firstCall.args;
     assert.strictEqual(JSON.parse(payload).collections, false);
@@ -653,21 +658,21 @@ describe('routes/api/user:ClearUserLocalData', () => {
     stubModel();
     const route = createRoute(ClearUserLocalData);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_field' });
   });
 
   it('rejects when the user cannot be found', async () => {
     stubModel({ user: { findOne: async () => null } });
     const route = createRoute(ClearUserLocalData);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
   it('emits a clearUserLocalData event for the found user', async () => {
     const nrp = { emit: sinon.spy() };
     const route = createRoute(ClearUserLocalData, { nrp });
 
-    await route._exec(createReq({ body: { collections: ['widgets'] } }), {}, { id: 'user-1' });
+    await route._exec(createReq({ body: { collections: ['widgets'] } }), {}, { id: '6abd01000000000000000001' });
 
     assert.ok(nrp.emit.calledWith('clearUserLocalData'));
     const [, payload] = nrp.emit.firstCall.args;
@@ -680,14 +685,14 @@ describe('routes/api/user:SearchUserList', () => {
     stubModel();
     const route = createRoute(SearchUserList);
 
-    await assert.rejects(route._validate(createReq({ body: [] })), /invalid_body/);
+    await assert.rejects(route._validate(createReq({ body: [] })), { code: 'invalid_body' });
   });
 
   it('rejects when skip is not a number', async () => {
     stubModel();
     const route = createRoute(SearchUserList);
 
-    await assert.rejects(route._validate(createReq({ body: { skip: 'abc' } })), /invalid_value_skip/);
+    await assert.rejects(route._validate(createReq({ body: { skip: 'abc' } })), { code: 'invalid_value_skip' });
   });
 
   it('scopes the search to the authenticated app for a non-system token', async () => {
@@ -697,7 +702,7 @@ describe('routes/api/user:SearchUserList', () => {
 
     await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(userModel.find.firstCall.args[0], { _appId: 'app-1' });
+    assert.deepStrictEqual(userModel.find.firstCall.args[0], { _appId: '6abd05000000000000000001' });
   });
 
   it('finds using the built query params', () => {
@@ -710,7 +715,7 @@ describe('routes/api/user:SearchUserList', () => {
 
     assert.strictEqual(result, 'a-stream');
     assert.deepStrictEqual(userModel.find.firstCall.args, [
-      { $and: [validate.query, { _appId: 'app-1' }] },
+      { $and: [validate.query, { _appId: '6abd05000000000000000001' }] },
       {},
       10,
       0,
@@ -730,7 +735,7 @@ describe('routes/api/user:UserCount', () => {
 
     await route._exec(req, {}, await route._validate(req));
 
-    assert.ok(userModel.count.calledWith({ _appId: 'app-1' }));
+    assert.ok(userModel.count.calledWith({ _appId: '6abd05000000000000000001' }));
   });
 
   it('counts using the built query', async () => {
@@ -739,6 +744,6 @@ describe('routes/api/user:UserCount', () => {
 
     await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(userModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
+    assert.ok(userModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: '6abd05000000000000000001' }] }));
   });
 });

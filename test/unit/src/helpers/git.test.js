@@ -107,7 +107,7 @@ describe('helpers/git:lambda shared module checks', () => {
       ],
       Array.from({ length: 17 }, (_, i) => ({ name: `m${i}`, entryFile: 'a.js' })),
     ]) {
-      assert.throws(() => assertLambdaSharedModules(modules), { code: 400 }, JSON.stringify(modules));
+      assert.throws(() => assertLambdaSharedModules(modules), { status: 400 }, JSON.stringify(modules));
     }
   });
 });

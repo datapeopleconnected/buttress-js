@@ -119,28 +119,12 @@ const bodyParserError = (err: unknown) => {
  */
 export function toApiError(err: unknown): ApiError {
   if (err instanceof ApiError) return err;
-  if (err instanceof RequestError) {
-    return new ApiError(err.code, /^[a-z][a-z0-9_]*$/.test(err.message) ? err.message : 'error', err.message);
-  }
   return bodyParserError(err) ?? new ApiError(500, 'internal_error', 'Internal server error', undefined, err);
 }
 
 /** A body parser's refusal as an ApiError, or null for any other error. */
 export function fromBodyParserError(err: unknown): ApiError | null {
   return bodyParserError(err);
-}
-
-/**
- * @deprecated Throw an ApiError, from one of the factories above. Kept while the routes move over; `code` is the HTTP
- * status. It's answered with its message as its code when that's one already (`invalid_id`), or as `error`.
- */
-export class RequestError extends Error {
-  code: number;
-  constructor(code: number, message: string) {
-    super(message);
-    this.code = code;
-    this.name = 'RequestError';
-  }
 }
 
 export class SchemaNotFound extends Error {
@@ -270,7 +254,6 @@ export default {
   internal,
   toApiError,
   fromBodyParserError,
-  RequestError,
   SchemaNotFound,
   SchemaInvalid,
   RouteMissingModel,

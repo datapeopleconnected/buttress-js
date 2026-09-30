@@ -22,7 +22,7 @@ const Config = createConfig() as unknown as Config;
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { describeInvalidUpdate } from '../../model/shared.js';
+import { invalidUpdateError } from '../../model/shared.js';
 import Sugar from '../../helpers/sugar.js';
 import * as Helpers from '../../helpers/index.js';
 import * as Git from '../../helpers/git.js';
@@ -82,20 +82,10 @@ class GetLambda extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
-    }
-    if (!Datastore.getInstance('core').ID.isValid(id)) {
-      this.log(`[${this.name}] Invalid lambda id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
-    const lambda = await this.scoped(req, LambdaSchemaModel).findById(id);
-    if (!lambda) {
-      this.log(`[${this.name}] Cannot find a lambda with id ${id}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_does_not_exist`));
-    }
-
-    return lambda;
+    return this.scoped(req, LambdaSchemaModel).findByIdOrFail(id);
   }
 
   override async _exec(_req: Request, _res: Response, lambda: Lambda) {
@@ -125,7 +115,7 @@ class GetLambdaList extends Route {
           Datastore.getInstance('core').ID.new(id.toString());
         } catch (_err) {
           this.log(`LAMBDA: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
-          throw new Helpers.Errors.RequestError(400, 'invalid_id');
+          throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
         }
       });
     }
@@ -142,7 +132,7 @@ class GetLambdaList extends Route {
     const appId = req.context.authApp?.id;
     if (!appId) {
       this.log(`[${this.name}] Unable to get app id from request context`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `unable_to_get_app_id`));
+      return Promise.reject(Helpers.Errors.badRequest('unable_to_get_app_id'));
     }
 
     return await this.scoped(req, LambdaSchemaModel).findAll();
@@ -214,7 +204,7 @@ class AddLambda extends Route {
         !branch
       ) {
         this.log(`[${this.name}] Missing required lambda field`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+        return Promise.reject(Helpers.Errors.badRequest('missing_field'));
       }
 
       if (req.body.lambda && req.body.lambda.policyProperties) {
@@ -223,17 +213,17 @@ class AddLambda extends Route {
 
       if (!req.body.auth) {
         this.log(`[${this.name}] Auth properties are required when creating a lambda`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `missing_auth`));
+        return Promise.reject(Helpers.Errors.badRequest('missing_auth'));
       }
 
       if (!req.body.auth.domains || !req.body.auth.policyProperties) {
         this.log(`[${this.name}] Missing required field (auth.domains, auth.policyProperties)`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+        return Promise.reject(Helpers.Errors.badRequest('missing_field'));
       }
 
       if (!Helpers.isDomainList(req.body.auth.domains)) {
         this.log(`[${this.name}] auth.domains must be a list of domain names`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_domains`));
+        return Promise.reject(Helpers.Errors.badRequest('invalid_domains'));
       }
 
       Git.assertLambdaSharedModules(req.body.lambda.git.sharedModules);
@@ -293,22 +283,14 @@ class UpdateLambda extends Route {
       req.body = body;
 
       if (!validation.isValid) {
-        const message = describeInvalidUpdate(validation);
-        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `LAMBDA: ${message}`));
+        const err = invalidUpdateError(this.schemaName, validation);
+        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+        return reject(err);
       }
 
       lambdas
-        .exists(id)
-        .then((exists) => {
-          if (!exists) {
-            this.log('ERROR: Invalid LAMBDA ID', Route.LogLevel.ERR);
-            return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-          }
-          resolve({
-            id,
-          });
-        })
+        .assertExists(id)
+        .then(() => resolve({ id }))
         .catch(reject);
     });
   }
@@ -345,7 +327,7 @@ class BulkUpdateLambda extends Route {
   override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
     if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
       this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `array_required`);
+      throw Helpers.Errors.badRequest('array_required');
     }
 
     const lambdas = this.scoped(req, LambdaSchemaModel);
@@ -353,16 +335,12 @@ class BulkUpdateLambda extends Route {
       const { validation, body } = lambdas.validateUpdate(item.body);
       item.body = body;
       if (!validation.isValid) {
-        const message = describeInvalidUpdate(validation);
-        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `LAMBDA: ${message}`));
+        const err = invalidUpdateError(this.schemaName, validation);
+        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+        return Promise.reject(err);
       }
 
-      const exists = await lambdas.exists(item.id);
-      if (!exists) {
-        this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-      }
+      await lambdas.assertExists(item.id);
     }
 
     return req.body as BulkUpdateItem<UpdatePathBody[]>[];
@@ -405,19 +383,15 @@ class ScheduleLambdaExecution extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_post_body`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_post_body'));
     }
 
-    const lambda = await this.scoped(req, LambdaSchemaModel).findById(id);
-    if (!lambda) {
-      this.log('ERROR: Lambda not found', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
-    }
+    const lambda = await this.scoped(req, LambdaSchemaModel).findByIdOrFail(id);
 
     // Find deployment
     const deploymentQuery: {
@@ -428,19 +402,26 @@ class ScheduleLambdaExecution extends Route {
     };
     const deployments = this.scoped(req, DeploymentSchemaModel);
     if (req.body.deploymentId) {
+      if (!Model.getCoreModel(DeploymentSchemaModel).isValidId(req.body.deploymentId)) {
+        return Promise.reject(Helpers.Errors.badRequest('invalid_id', 'The deployment id is not valid'));
+      }
       deploymentQuery.id = deployments.createId(req.body.deploymentId);
     }
 
     const deployment = await deployments.findOne(deploymentQuery);
     if (!deployment) {
       this.log('ERROR: Deployment not found', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
+      return Promise.reject(
+        req.body.deploymentId
+          ? Helpers.Errors.entityNotFound('deployment', req.body.deploymentId)
+          : Helpers.Errors.notFound('not_found', 'The lambda has no deployment', { schema: 'deployment' }),
+      );
     }
 
     const executeAfter = Sugar.Date.create(req.body.executeAfter);
     if (!Sugar.Date.isValid(executeAfter)) {
       this.log('ERROR: Invalid executeAfter date expression', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_execute_after_date`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_execute_after_date'));
     }
 
     const execution: Partial<LambdaExecution> = {
@@ -490,23 +471,19 @@ class EditLambdaDeployment extends Route {
       const hash = req.body?.hash ? req.body.hash : null;
       if (!req.body) {
         this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `no_data_posted`));
+        return Promise.reject(Helpers.Errors.badRequest('no_data_posted'));
       }
       if (!branch) {
         this.log(`[${this.name}] Missing required deployment branch`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_deployment_branch`));
+        return Promise.reject(Helpers.Errors.badRequest('missing_required_deployment_branch'));
       }
       if (!hash) {
         this.log(`[${this.name}] Missing required deployment hash`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_deployment_hash`));
+        return Promise.reject(Helpers.Errors.badRequest('missing_required_deployment_hash'));
       }
 
       const lambdas = this.scoped(req, LambdaSchemaModel);
-      const lambda = await lambdas.findById(req.params.id);
-      if (!lambda) {
-        this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
-      }
+      const lambda = await lambdas.findByIdOrFail(req.params.id);
 
       // An added lambda always has its entry file and point set
       const entryFilePath = req.body.entryFile ? req.body.entryFile : (lambda.git.entryFile as string);
@@ -529,9 +506,11 @@ class EditLambdaDeployment extends Route {
     } catch (err: unknown) {
       const errMessage = Helpers.getThrownErrorMessage(err);
       this.log(`[${this.name}] ${errMessage}`, Route.LogLevel.ERR);
-      // A refusal's reason is kept. Any other failure, such as git's, would give away commands and paths
-      const message = err instanceof Helpers.Errors.RequestError ? err.message : 'lambda_deployment_failed';
-      return Promise.reject(new Helpers.Errors.RequestError(400, message));
+      // A refusal is kept. Any other failure, such as git's, would give away commands and paths
+      if (err instanceof Helpers.Errors.ApiError) return Promise.reject(err);
+      return Promise.reject(
+        Helpers.Errors.badRequest('lambda_deployment_failed', "The lambda's code could not be deployed"),
+      );
     }
   }
 
@@ -578,37 +557,35 @@ class SetLambdaPolicyProperties extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
     const app = req.context.authApp;
     if (!app) {
       this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     // A named route param, so a string
-    const exists = await this.scoped(req, LambdaSchemaModel).exists(req.params.id as string);
-    if (!exists) {
-      this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
+    await this.scoped(req, LambdaSchemaModel).assertExists(req.params.id as string);
 
     const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
     if (!policyCheck.passed) {
       this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_field'));
     }
 
     const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: id });
     if (!lambdaToken) {
       this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `can_not_find_lambda_token`));
+      return Promise.reject(
+        Helpers.Errors.notFound('not_found', "The lambda's token was not found", { schema: 'token' }),
+      );
     }
 
     return Promise.resolve(lambdaToken);
@@ -645,37 +622,35 @@ class UpdateLambdaPolicyProperties extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
     const app = req.context.authApp;
     if (!app) {
       this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     // A named route param, so a string
-    const exists = await this.scoped(req, LambdaSchemaModel).exists(req.params.id as string);
-    if (!exists) {
-      this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
+    await this.scoped(req, LambdaSchemaModel).assertExists(req.params.id as string);
 
     const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
     if (!policyCheck.passed) {
       this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_field'));
     }
 
     const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: id });
     if (!lambdaToken) {
       this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `can_not_find_lambda_token`));
+      return Promise.reject(
+        Helpers.Errors.notFound('not_found', "The lambda's token was not found", { schema: 'token' }),
+      );
     }
 
     return Promise.resolve({
@@ -713,25 +688,23 @@ class ClearLambdaPolicyProperties extends Route {
   override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
-    const exists = await this.scoped(req, LambdaSchemaModel).exists(id);
-    if (!exists) {
-      this.log('ERROR: Invalid lambda ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
+    await this.scoped(req, LambdaSchemaModel).assertExists(id);
 
     const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: id });
     if (!lambdaToken) {
       this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `can_not_find_lambda_token`));
+      return Promise.reject(
+        Helpers.Errors.notFound('not_found', "The lambda's token was not found", { schema: 'token' }),
+      );
     }
 
     return Promise.resolve({
@@ -761,19 +734,15 @@ class DeleteLambda extends Route {
   override async _validate(req: RequestWithBody<unknown, { id: string }>, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required lambda ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
-    const lambda = await this.scoped(req, LambdaSchemaModel).findById(req.params.id);
-    if (!lambda) {
-      this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
-    }
+    const lambda = await this.scoped(req, LambdaSchemaModel).findByIdOrFail(req.params.id);
 
     const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: lambda.id });
     if (!lambdaToken) {
       this.log(`ERROR: Could not fetch lambda's token`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `could_fetch_lambda_token`));
+      return Promise.reject(Helpers.Errors.badRequest('could_fetch_lambda_token'));
     }
 
     return {

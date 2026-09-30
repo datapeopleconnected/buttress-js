@@ -105,17 +105,6 @@ describe('helpers/errors:toApiError', () => {
   }
 });
 
-describe('helpers/errors:RequestError', () => {
-  it('should set name and code', () => {
-    const err = new Errors.RequestError(404, 'Not found');
-    assert(err instanceof Error);
-    assert(err instanceof Errors.RequestError);
-    assert.strictEqual(err.name, 'RequestError');
-    assert.strictEqual(err.code, 404);
-    assert.strictEqual(err.message, 'Not found');
-  });
-});
-
 describe('helpers/errors:SchemaNotFound', () => {
   it('should set name and message', () => {
     const err = new Errors.SchemaNotFound('Schema user not found');

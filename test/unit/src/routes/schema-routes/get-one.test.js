@@ -18,7 +18,7 @@ import { describe, it } from 'mocha';
 import assert from 'assert';
 
 import GetOne from '../../../../../dist/routes/schema-routes/get-one.js';
-import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { ApiError } from '../../../../../dist/helpers/errors.js';
 import { createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
@@ -68,7 +68,7 @@ describe('schema-routes/GetOne', () => {
     assert.strictEqual(entity.id, DOC_1);
   });
 
-  it('rejects with a 400 when the entity exists but is outside the access-control policy scope', async () => {
+  it('rejects with a 404 when the entity exists but is outside the access-control policy scope', async () => {
     // DOC_2 exists, but belongs to USER_2 while the policy only scopes to USER_1's records.
     const route = createRoute(createFakeModel(docs));
     const req = {
@@ -80,14 +80,15 @@ describe('schema-routes/GetOne', () => {
     await assert.rejects(
       () => route._exec(req, {}, validate),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.code, 400);
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.status, 404);
+        assert.strictEqual(err.code, 'not_found');
         return true;
       },
     );
   });
 
-  it('rejects with a 400 when the id does not exist at all', async () => {
+  it('rejects with a 404 when the id does not exist at all', async () => {
     const route = createRoute(createFakeModel(docs));
     const req = { params: { id: newId() }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
@@ -95,8 +96,9 @@ describe('schema-routes/GetOne', () => {
     await assert.rejects(
       () => route._exec(req, {}, validate),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.code, 400);
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.status, 404);
+        assert.strictEqual(err.code, 'not_found');
         return true;
       },
     );

@@ -51,7 +51,7 @@ class GetActivityList extends Route {
     const appId = req.context.authApp?.id;
     if (!appId) {
       this.log('ERROR: No App ID in token', Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `invalid_token`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     // Only a system token reaches this route today, but another would see its app's public activity
@@ -76,15 +76,10 @@ class GetActivity extends Route {
   override async _validate(req: Request<{ id: string }>, _res: Response) {
     if (!req.params.id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `missing_required_fields`);
+      throw Helpers.Errors.badRequest('missing_required_fields');
     }
 
-    const activity = await this.unscopedModel(ActivitySchemaModel, SYSTEM_ONLY).findById(req.params.id);
-
-    if (!activity) {
-      this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `invalid_id`);
-    }
+    const activity = await this.scoped(req, ActivitySchemaModel).findByIdOrFail(req.params.id);
 
     return activity;
   }
@@ -130,7 +125,7 @@ routes.push(DeleteAllActivity);
 
 // 		if (!activity) {
 // 			this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR);
-// 			throw new Helpers.Errors.RequestError(400, `invalid_id`);
+// 			throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
 // 		}
 
 // 		try {
@@ -140,7 +135,7 @@ routes.push(DeleteAllActivity);
 // 				this.log(`ERROR: ${e.message}`, Route.LogLevel.ERR);
 // 			}
 
-// 			throw new Helpers.Errors.RequestError(400, 'invalid_json');
+// 			throw Helpers.Errors.badRequest('invalid_json');
 // 		}
 
 // 		return activity;
@@ -169,17 +164,17 @@ routes.push(DeleteAllActivity);
 // 			this.model.findById(req.params.id).then((activity) => {
 // 				if (!activity) {
 // 					this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR);
-// 					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+// 					return reject(Helpers.Errors.badRequest('invalid_id', 'The id is not valid'));
 // 				}
 // 				if (activity.findMetadata(req.params.key) === false) {
 // 					this.log('ERROR: Metadata does not exist', Route.LogLevel.ERR);
-// 					return reject(new Helpers.Errors.RequestError(404, `metadata_not_found`));
+// 					return reject(Helpers.Errors.notFound(`metadata_not_found`));
 // 				}
 // 				try {
 // 					JSON.parse(req.body.value);
 // 				} catch (e) {
 // 					this.log(`ERROR: ${e.message}`, Route.LogLevel.ERR);
-// 					return reject(new Helpers.Errors.RequestError(500, 'invalid_json'));
+// 					return reject(Helpers.Errors.internal('invalid_json'));
 // 				}
 
 // 				this._activity = activity;
@@ -211,13 +206,13 @@ routes.push(DeleteAllActivity);
 // 			this.model.findById(req.params.id).then((activity) => {
 // 				if (!activity) {
 // 					this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR);
-// 					return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+// 					return reject(Helpers.Errors.badRequest('invalid_id', 'The id is not valid'));
 // 				}
 
 // 				this._metadata = activity.findMetadata(req.params.key);
 // 				if (this._metadata === false) {
 // 					this.log('WARN: Activity Metadata Not Found', Route.LogLevel.ERR);
-// 					return reject(new Helpers.Errors.RequestError(404, `metadata_not_found`));
+// 					return reject(Helpers.Errors.notFound(`metadata_not_found`));
 // 				}
 
 // 				resolve(true);
@@ -249,11 +244,11 @@ routes.push(DeleteAllActivity);
 // 				.then((activity) => {
 // 					if (!activity) {
 // 						this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR);
-// 						return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+// 						return reject(Helpers.Errors.badRequest('invalid_id', 'The id is not valid'));
 // 					}
 // 					this._activity = activity;
 // 					resolve(true);
-// 				}, (err) => reject(new Helpers.Errors.RequestError(400, err.message)));
+// 				}, (err) => reject(Helpers.Errors.badRequest(err.message)));
 // 		});
 // 	}
 

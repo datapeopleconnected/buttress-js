@@ -50,17 +50,17 @@ export default class DeleteMany extends Route {
 
     if (!ids) {
       this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `Requires ids`);
+      throw Helpers.Errors.badRequest('array_required', 'Expected a list of ids');
     }
     if (!ids.length) {
       this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `Expecting array of ids`);
+      throw Helpers.Errors.badRequest('array_required', 'Expected a list of ids');
     }
 
     try {
       ids = ids.map((id) => model.createId(id));
     } catch (_err) {
-      throw new Helpers.Errors.RequestError(400, `All ids must be string of 12 bytes or a string of 24 hex characters`);
+      throw Helpers.Errors.badRequest('invalid_id', 'The ids are not all valid');
     }
 
     // if (this._ids.length > 600) {
@@ -73,10 +73,11 @@ export default class DeleteMany extends Route {
     const rxsScoped = await ACM.find(model, findParams, req.context.ac);
     const scopedEntities = await Helpers.streamAll<{ id: { toString(): string } }>(rxsScoped);
     const scopedIds = new Set(scopedEntities.map((entity) => entity.id.toString()));
-    const missing = ids.some((id) => !scopedIds.has(id.toString()));
-    if (missing) {
+    // One outside the caller's policies is answered as one that doesn't exist
+    const missing = ids.find((id) => !scopedIds.has(id.toString()));
+    if (missing !== undefined) {
       this.log(`ERROR: Invalid ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `invalid_id`);
+      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', missing);
     }
 
     return { ids, found: scopedEntities as AdapterDocument[] };

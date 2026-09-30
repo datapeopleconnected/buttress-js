@@ -60,7 +60,7 @@ describe('routes/api: validators whose datastore calls fail', () => {
       const req = {
         params: { id: HEX_ID, dataSharingId: HEX_ID },
         body: [{ path: 'name', value: 'x' }],
-        context: { id: 'req-1', authApp: { id: 'app-1' }, token: { type: 'app' } },
+        context: { id: 'req-1', authApp: { id: '6abd05000000000000000001' }, token: { type: 'app' } },
       };
 
       const outcome = await Promise.race([

@@ -45,7 +45,7 @@ class GetTokenList extends Route {
   override _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
+      return Promise.reject(Helpers.Errors.internal('no_auth_app'));
     }
 
     // The scoped model limits the query to the caller's app
@@ -87,7 +87,7 @@ class SearchTokenList extends Route {
   override async _validate(req: RequestWithBody<SearchBody<Token>>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
+      return Promise.reject(Helpers.Errors.internal('no_auth_app'));
     }
 
     // The scoped model limits the query to the caller's app
@@ -141,12 +141,12 @@ class DeleteAllTokens extends Route {
   override async _exec(req: Request, _res: Response, _validate: undefined) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
+      return Promise.reject(Helpers.Errors.internal('no_auth_app'));
     }
 
     if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
       this.log('ERROR: Cannot delete system tokens', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_param_type'));
     }
 
     if (req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
@@ -163,7 +163,7 @@ class DeleteAllTokens extends Route {
     } else {
       if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.APP) {
         this.log('ERROR: Cannot delete app tokens as app', Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_type`));
+        return Promise.reject(Helpers.Errors.badRequest('invalid_param_type'));
       }
 
       const query = req.params.type
@@ -200,13 +200,13 @@ class SearchUserToken extends Route {
   override async _validate(req: RequestWithBody<SearchBody<Token> | undefined>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No auth app in request context', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
+      return Promise.reject(Helpers.Errors.internal('no_auth_app'));
     }
 
     const userId = Array.isArray(req.params.userId) ? req.params.userId[0] : req.params.userId;
     if (!userId) {
       this.log('ERROR: No user ID in request params', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_param_userId`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
     // The scoped model limits the query to the caller's app
@@ -224,11 +224,7 @@ class SearchUserToken extends Route {
     }
 
     // Another app's user is answered as an unknown one, unless the caller is a system token
-    const exists = await this.scoped(req, UserSchemaModel).exists(userId);
-    if (!exists) {
-      this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_id`));
-    }
+    await this.scoped(req, UserSchemaModel).assertExists(userId);
 
     if (!queryParams.query.$and) {
       queryParams.query.$and = [];

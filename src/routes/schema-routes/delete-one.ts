@@ -48,14 +48,14 @@ export default class DeleteOne extends Route {
 
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
-      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
+      throw Helpers.Errors.badRequest('missing_id', 'An id is required');
     }
 
     let objectId: string;
     try {
       objectId = model.createId(id);
     } catch (_err) {
-      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
+      throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
     }
 
     const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
@@ -66,8 +66,9 @@ export default class DeleteOne extends Route {
     } catch (_err) {
       entity = null;
     }
+    // One outside the caller's policies is answered as one that doesn't exist
     if (!entity) {
-      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
+      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', id);
     }
 
     return entity;

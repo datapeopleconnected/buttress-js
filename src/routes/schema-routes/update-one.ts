@@ -26,7 +26,7 @@ import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
-import { describeInvalidUpdate } from '../../model/shared.js';
+import { invalidUpdateError } from '../../model/shared.js';
 import type { RequestWithBody } from '../../types/routes.js';
 
 /**
@@ -58,15 +58,15 @@ export default class UpdateOne extends Route {
     req.body = body;
     // BUG: req.body is now the validated array, so the messages below always report the path as undefined
     if (!validation.isValid) {
-      const message = `${this.schemaName}: ${describeInvalidUpdate(validation)}`;
-      this.log(message, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, message);
+      const err = invalidUpdateError(this.schemaName, validation);
+      this.log(err.message, Route.LogLevel.ERR, req.context.id);
+      throw err;
     }
 
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`${this.schemaName}: Invalid ID`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid ID`);
+      throw Helpers.Errors.badRequest('missing_id', 'An id is required');
     }
 
     let sourceId: string | undefined;
@@ -75,23 +75,22 @@ export default class UpdateOne extends Route {
 
       if (!sourceId) {
         this.log(`${this.schemaName}: Invalid source ID`, Route.LogLevel.ERR, req.context.id);
-        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid source ID`);
+        throw Helpers.Errors.badRequest('invalid_source_id', 'The source id is not valid');
       }
+    }
+
+    if (!model.isValidId(id)) {
+      this.log(`${this.schemaName}: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
     }
 
     const exists = await model.exists(id, sourceId);
     if (!exists) {
       this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `invalid_id`);
+      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', id);
     }
 
-    let objectId: string;
-    try {
-      objectId = model.createId(id);
-    } catch (_err) {
-      this.log(`${this.schemaName}: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `invalid_id`);
-    }
+    const objectId = model.createId(id);
 
     const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
     const rxsScoped = await ACM.find(model, findParams, req.context.ac);
@@ -101,9 +100,10 @@ export default class UpdateOne extends Route {
     } catch (_err) {
       scopedEntity = null;
     }
+    // One outside the caller's policies is answered as one that doesn't exist
     if (!scopedEntity) {
       this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `invalid_id`);
+      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', id);
     }
 
     return {

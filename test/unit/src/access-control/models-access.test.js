@@ -61,7 +61,7 @@ describe('access-control/models-access:find', () => {
 
     await assert.rejects(
       () => ACM.find(model, { query: {} }, policies({ tag: 'one' }, { when: 'not a date' })),
-      (err) => err.code === 400 && err.message === 'invalid_date: when',
+      (err) => err.status === 400 && err.code === 'invalid_date' && err.details.path === 'when',
     );
   });
 

@@ -25,13 +25,22 @@ import { App } from '../../model/core/app.js';
 import { AdapterDocument } from '../../types/datastore.js';
 import type { RequestWithBody } from '../../types/routes.js';
 import StandardModel from '../../model/type/standard.js';
-import { sanitizeSchemaObject } from '../../model/shared.js';
+import { invalidEntityError, sanitizeSchemaObject } from '../../model/shared.js';
 import * as ACM from '../../access-control/models-access.js';
 
+// An entity reuses an id that's stored, or given earlier in the batch
+const duplicateIdError = (schemaName: string | undefined, id: unknown, index: number) =>
+  Helpers.Errors.badRequest('duplicate_id', `${schemaName}: Duplicate id ${id} at index ${index}`, {
+    schema: schemaName,
+    id: String(id),
+    index,
+  });
+
 /**
- * The first reason a batch of new entities can't be stored, naming the index of the entity, or null if it can be.
+ * The error for the first reason a batch of new entities can't be stored, naming the index of the entity, or null if
+ * it can be.
  */
-export const findBatchProblem = async (model: StandardModel, entities: unknown[]) => {
+export const findBatchProblem = async (model: StandardModel, entities: unknown[], schemaName?: string) => {
   const isEntity = (entity: unknown): entity is { id?: unknown } =>
     entity !== null && typeof entity === 'object' && !Array.isArray(entity);
 
@@ -43,25 +52,26 @@ export const findBatchProblem = async (model: StandardModel, entities: unknown[]
 
   const ids = new Set<string>();
   for (const [idx, entity] of entities.entries()) {
-    if (!isEntity(entity)) return `Invalid entity at index ${idx}, expected an object`;
+    if (!isEntity(entity)) {
+      return Helpers.Errors.badRequest(
+        'invalid_value',
+        `${schemaName}: Invalid entity at index ${idx}, expected an object`,
+        {
+          schema: schemaName,
+          index: idx,
+        },
+      );
+    }
 
     const validation = model.validate(entity);
-    if (!validation.isValid) {
-      const problem =
-        validation.missing.length > 0
-          ? `Missing field: ${validation.missing[0]}`
-          : validation.invalid.length > 0
-            ? `Invalid value: ${validation.invalid[0]}`
-            : 'unknown_error';
-      return `${problem} at index ${idx}`;
-    }
+    if (!validation.isValid) return invalidEntityError(schemaName, validation, idx);
 
     const { id } = entity;
     if (id === undefined || id === null) continue;
 
     // An existing id would fail the insert part way through, after the entities before it were stored.
     const key = String(id).toLowerCase();
-    if (ids.has(key) || storedIds.has(key)) return `Duplicate id ${id} at index ${idx}`;
+    if (ids.has(key) || storedIds.has(key)) return duplicateIdError(schemaName, id, idx);
     ids.add(key);
   }
 
@@ -69,8 +79,8 @@ export const findBatchProblem = async (model: StandardModel, entities: unknown[]
 };
 
 /**
- * Refuses a batch of new entities with 401 if the caller's policies don't let it create one of them, checked as each
- * will be stored.
+ * Refuses a batch of new entities with 403 access_denied if the caller's policies don't let it create one of them,
+ * checked as each will be stored.
  */
 export const refuseEntitiesOutsidePolicy = (
   model: StandardModel,
@@ -82,18 +92,29 @@ export const refuseEntitiesOutsidePolicy = (
   for (const [idx, entity] of entities.entries()) {
     const stored = sanitizeSchemaObject(model.schemaData, entity) as Record<string, unknown>;
     if (!ACM.canCreate(ac, stored)) {
-      throw new Helpers.Errors.RequestError(401, `${schemaName}: the policy does not allow the entity at index ${idx}`);
+      throw Helpers.Errors.forbidden(
+        'access_denied',
+        `${schemaName}: the policy does not allow the entity at index ${idx}`,
+        {
+          schema: schemaName,
+          index: idx,
+        },
+      );
     }
   }
 };
 
 /**
  * An id can be taken by another request between the check and the insert. The adapter then removes what it stored of
- * the batch, and this is the problem to refuse the batch with, as the check would have refused it.
+ * the batch, and this is the error to refuse the batch with, as the check would have refused it.
  */
-export const describeTakenId = (err: InstanceType<typeof Helpers.Errors.DuplicateIdError>, entities: unknown[]) => {
+export const takenIdError = (
+  err: InstanceType<typeof Helpers.Errors.DuplicateIdError>,
+  entities: unknown[],
+  schemaName?: string,
+) => {
   const id = (entities[err.index] as { id?: unknown } | undefined)?.id ?? err.id;
-  return `Duplicate id ${id} at index ${err.index}`;
+  return duplicateIdError(schemaName, id, err.index);
 };
 
 /**
@@ -118,7 +139,7 @@ export default class AddMany extends Route {
     const entities: AdapterDocument[] = req.body;
     if (entities instanceof Array === false) {
       this.log(`ERROR: You need to supply an array of ${this.schemaName}`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `array_required`);
+      throw Helpers.Errors.badRequest('array_required');
     }
     // if (companies.length > 601) {
     //   this.log(`ERROR: No more than 300`, Route.LogLevel.ERR);
@@ -127,10 +148,10 @@ export default class AddMany extends Route {
     // }
 
     // All or nothing: nothing is stored unless every entity is valid and new, and the error names the first that isn't.
-    const problem = await findBatchProblem(model, entities);
+    const problem = await findBatchProblem(model, entities, this.schemaName);
     if (problem) {
-      this.log(`ERROR: ${problem}`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
+      this.log(`ERROR: ${problem.message}`, Route.LogLevel.ERR, req.context.id);
+      throw problem;
     }
     refuseEntitiesOutsidePolicy(model, entities, req.context.ac, this.schemaName);
 
@@ -143,9 +164,9 @@ export default class AddMany extends Route {
     } catch (err) {
       if (!(err instanceof Helpers.Errors.DuplicateIdError)) throw err;
 
-      const problem = describeTakenId(err, entities);
-      this.log(`ERROR: ${problem}`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
+      const problem = takenIdError(err, entities, this.schemaName);
+      this.log(`ERROR: ${problem.message}`, Route.LogLevel.ERR, req.context.id);
+      throw problem;
     }
   }
 }

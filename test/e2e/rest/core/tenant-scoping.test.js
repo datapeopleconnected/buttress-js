@@ -204,7 +204,7 @@ describe('Core route tenant scoping', async () => {
 			method: 'PUT',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify([{ path: 'name', value: 'Renamed by app1' }]),
-		}, testEnv.apps.app1.token), (err) => err instanceof BJSReqError && err.code === 400 && err.message === 'invalid_id');
+		}, testEnv.apps.app1.token), (err) => err instanceof BJSReqError && err.code === 404 && err.body.code === 'not_found');
 
 		const [app2] = await search('app', testEnv.apps.app2.token);
 		assert.strictEqual(app2.name, 'Test Tenant Scoping 2');
@@ -229,13 +229,11 @@ describe('Core route tenant scoping', async () => {
 		const asApp2 = (opts) => bjsReq(opts, testEnv.apps.app2.token);
 		const update = (path, value) => JSON.stringify([{ path, value }]);
 
-		// The route answers as it does for an id that doesn't exist: 400 or 404, or for the agreement reactivate,
-		// deactivate and status routes 500 no_datasharing
-		const refused = (promise, message) => assert.rejects(promise, (err) => {
+		// The route answers as it does for an id that doesn't exist
+		const refused = (promise) => assert.rejects(promise, (err) => {
 			assert.ok(err instanceof BJSReqError, err);
-			const unknownId = [400, 404].includes(err.code) || (err.code === 500 && err.message === 'no_datasharing');
-			assert.ok(unknownId, `answered ${err.code} ${err.message}`);
-			if (message) assert.strictEqual(err.message, message);
+			assert.strictEqual(err.code, 404, `answered ${err.code} ${err.message}`);
+			assert.strictEqual(err.body.code, 'not_found');
 			return true;
 		});
 
@@ -262,7 +260,7 @@ describe('Core route tenant scoping', async () => {
 			['PUT lambda/:id/deployment', () => ({
 				url: api(`lambda/${owned.lambda.id}/deployment`), method: 'PUT', headers: json,
 				body: JSON.stringify({ branch: 'develop', hash: 'HEAD' }),
-			}), 'invalid_lambda_id'],
+			})],
 			...['policy-property', 'update-policy-property', 'clear-policy-property'].map((route) => [
 				`PUT lambda/:id/${route}`,
 				() => ({
@@ -303,7 +301,7 @@ describe('Core route tenant scoping', async () => {
 			// Answered as a user that doesn't exist, rather than with an empty list, which would say it's another app's
 			['SEARCH token/:userId', () => ({
 				url: api(`token/${testEnv.users.app2.id}`), method: 'SEARCH', headers: json, body: '{}',
-			}), 'invalid_param_id'],
+			})],
 
 			['GET app-data-sharing/:id', () => ({ url: api(`app-data-sharing/${owned.agreement.id}`), method: 'GET' })],
 			['PUT app-data-sharing/:id', () => ({
@@ -323,9 +321,9 @@ describe('Core route tenant scoping', async () => {
 			['DELETE app-data-sharing/:id', () => ({ url: api(`app-data-sharing/${owned.agreement.id}`), method: 'DELETE' })],
 		];
 
-		for (const [name, request, message] of byIdRoutes) {
+		for (const [name, request] of byIdRoutes) {
 			it(`Should refuse ${name}`, async () => {
-				await refused(asApp1(request()), message);
+				await refused(asApp1(request()));
 			});
 		}
 
@@ -620,7 +618,7 @@ describe('Core route tenant scoping', async () => {
 
 		it("Should refuse to create an entity the policy's query doesn't read", async () => {
 			for (const [path, body] of [['', { text: 'outside' }], ['', [{ text: 'scoped' }, { text: 'outside' }]], ['/bulk/add', [{ text: 'outside' }]]]) {
-				await assert.rejects(create(path, body), (err) => err instanceof BJSReqError && err.code === 401, JSON.stringify(body));
+				await assert.rejects(create(path, body), (err) => err instanceof BJSReqError && err.code === 403 && err.body.code === 'access_denied', JSON.stringify(body));
 			}
 
 			const stored = await bjsReq({ url: notes(), method: 'SEARCH', headers: json, body: JSON.stringify({ query: { text: 'outside' } }) });
@@ -645,7 +643,7 @@ describe('Core route tenant scoping', async () => {
 				['', 'invalid_api_path'],
 			]) {
 				await assert.rejects(createApp(ENDPOINT.REST, 'Clashing App', apiPath),
-					(err) => err instanceof BJSReqError && err.code === 400 && err.message === message, apiPath);
+					(err) => err instanceof BJSReqError && err.code === 400 && err.body.code === message, apiPath);
 			}
 		});
 
@@ -655,7 +653,7 @@ describe('Core route tenant scoping', async () => {
 				method: 'PUT',
 				headers: json,
 				body: JSON.stringify([{ path: 'apiPath', value: testEnv.apps.app2.apiPath }]),
-			}, testEnv.apps.app1.token), (err) => err instanceof BJSReqError && err.code === 400 && err.message === 'duplicate_api_path');
+			}, testEnv.apps.app1.token), (err) => err instanceof BJSReqError && err.code === 400 && err.body.code === 'duplicate_api_path');
 
 			const [app2] = await bjsReq({ url: `${ENDPOINT.REST}/api/v1/app`, method: 'SEARCH' }, testEnv.apps.app2.token);
 			assert.strictEqual(app2.apiPath, testEnv.apps.app2.apiPath);
@@ -664,9 +662,9 @@ describe('Core route tenant scoping', async () => {
 	describe('Looking a user up by token', () => {
 		const byToken = (token, callerToken) => bjsReqPost(`${ENDPOINT.REST}/api/v1/user/get-by-token`, { token }, callerToken);
 
-		it("Should refuse another app's user token, as an unknown token", async () => {
+		it("Should refuse another app's user token, as one nobody has", async () => {
 			await assert.rejects(byToken(testEnv.users.app2.tokens[0].value, testEnv.apps.app1.token),
-				(err) => err instanceof BJSReqError && err.code === 400 && err.message === 'invalid_token');
+				(err) => err instanceof BJSReqError && err.code === 404 && err.body.code === 'not_found');
 		});
 
 		it("Should still find the caller's own user, and any app's for a system token", async () => {

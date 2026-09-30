@@ -176,7 +176,9 @@ export default class AppSchemaModel extends StandardModel<App> {
         .findOne({ type: { $eq: TokenSchemaModel.Constants.Type.SYSTEM } });
 
       if (adminToken) {
-        return Promise.reject(new Helpers.Errors.RequestError(400, `This Buttress instance already have a system app`));
+        return Promise.reject(
+          Helpers.Errors.badRequest('system_app_exists', 'This Buttress instance already has a system app'),
+        );
       }
     }
 

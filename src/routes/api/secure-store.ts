@@ -17,7 +17,7 @@ import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { describeInvalidUpdate } from '../../model/shared.js';
+import { invalidUpdateError } from '../../model/shared.js';
 import Datastore from '../../datastore/index.js';
 import * as Helpers from '../../helpers/index.js';
 
@@ -29,6 +29,8 @@ import { UpdatePathBody } from '../../types/datastore.js';
 import type { BulkUpdateItem, CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
+
+const invalidId = () => Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
 
 /**
  * @class AddSecureStore
@@ -46,7 +48,7 @@ class AddSecureStore extends Route {
 
     if (!app || !req.body?.name) {
       this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     const secureStoreExist = await this.scoped(req, SecureStoreSchemaModel).findOne({
@@ -55,7 +57,7 @@ class AddSecureStore extends Route {
     });
     if (secureStoreExist) {
       this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
+      return Promise.reject(Helpers.Errors.badRequest('already_exist'));
     }
 
     // Authentication refuses a token whose app it can't find, so the app always has an id
@@ -86,25 +88,25 @@ class AddManySecureStore extends Route {
 
     if (!app) {
       this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     if (!Array.isArray(req.body)) {
       this.log(`[${this.name}] Invalid request body`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_body'));
     }
 
     const missingField = req.body.find((ss) => !ss.name);
     if (missingField) {
       this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
     const names = req.body.map((ss) => ss.name);
     const repeated = names.find((name, idx) => names.indexOf(name) !== idx);
     if (repeated) {
       this.log(`ERROR: Secure Store name ${repeated} is given more than once`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
+      return Promise.reject(Helpers.Errors.badRequest('already_exist'));
     }
 
     // Names are unique within an app, as AddSecureStore checks
@@ -115,7 +117,7 @@ class AddManySecureStore extends Route {
       });
       if (secureStoreExist) {
         this.log(`ERROR: Secure Store with this name ${secureStore.name} already exists`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
+        return Promise.reject(Helpers.Errors.badRequest('already_exist'));
       }
     }
 
@@ -149,17 +151,17 @@ class GetSecureStore extends Route {
   override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required secure store id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
     if (!Datastore.getInstance('core').ID.isValid(id)) {
       this.log(`[${this.name}] Invalid secure store id`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_id', 'The id is not valid'));
     }
 
     const query = {
@@ -177,7 +179,7 @@ class GetSecureStore extends Route {
     }
     if (!secureStore) {
       this.log(`[${this.name}] Cannot find a secure store with id ${id}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `secure_store_does_not_exist`));
+      return Promise.reject(Helpers.Errors.entityNotFound('secureStore', id));
     }
 
     return secureStore;
@@ -208,7 +210,7 @@ class FindSecureStore extends Route {
   override async _validate(req: RequestWithBody<unknown, { name: string }>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     const appId = req.context.authApp.id;
@@ -216,7 +218,7 @@ class FindSecureStore extends Route {
     const name = req.params.name;
     if (!name) {
       this.log(`[${this.name}] Missing request parameter`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `missing_field`);
+      throw Helpers.Errors.badRequest('missing_field');
     }
 
     const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
@@ -228,7 +230,7 @@ class FindSecureStore extends Route {
 
     if (!secureStore) {
       this.log(`[${this.name}] Cannot find a secure store with name ${name}`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(404, `not_found`);
+      throw Helpers.Errors.notFound('not_found', 'No secure store has that name', { schema: 'secureStore', name });
     }
 
     return secureStore;
@@ -257,30 +259,31 @@ class UpdateSecureStore extends Route {
   override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log(`[${this.name}] Missing required secure store ID`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
     const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {
-      const message = describeInvalidUpdate(validation);
-      this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: ${message}`));
+      const err = invalidUpdateError(this.schemaName, validation);
+      this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+      return Promise.reject(err);
     }
 
+    if (!Model.getCoreModel(SecureStoreSchemaModel).isValidId(id)) return Promise.reject(invalidId());
     const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
       _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
       _appId: req.context.authApp.id,
     });
     if (!secureStore) {
       this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+      return Promise.reject(Helpers.Errors.entityNotFound('secureStore', id));
     }
 
     return {
@@ -314,30 +317,31 @@ class BulkUpdateSecureStore extends Route {
   override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
       this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `array_required`);
+      throw Helpers.Errors.badRequest('array_required');
     }
 
     for await (const item of req.body) {
       const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(item.body);
       item.body = body;
       if (!validation.isValid) {
-        const message = describeInvalidUpdate(validation);
-        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: ${message}`));
+        const err = invalidUpdateError(this.schemaName, validation);
+        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+        return Promise.reject(err);
       }
 
+      if (!Model.getCoreModel(SecureStoreSchemaModel).isValidId(item.id)) return Promise.reject(invalidId());
       const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
         _id: Model.getCoreModel(SecureStoreSchemaModel).createId(item.id),
         _appId: req.context.authApp.id,
       });
       if (!secureStore) {
         this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
-        return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+        return Promise.reject(Helpers.Errors.entityNotFound('secureStore', item.id));
       }
     }
 
@@ -366,11 +370,11 @@ class SearchSecureStoreList extends Route {
 
   override async _validate(req: RequestWithBody<SearchListBody<SecureStore> | undefined>, _res: Response) {
     // The search options are read off the body, and an array has a sort method of its own
-    if (Array.isArray(req.body)) throw new Helpers.Errors.RequestError(400, `invalid_body`);
+    if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
 
     if (!req.context.authApp?.id) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     const result: QueryParams<SecureStore> = {
@@ -383,8 +387,8 @@ class SearchSecureStoreList extends Route {
     };
     result.query.$and = [];
 
-    if (isNaN(result.skip ?? 0)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-    if (isNaN(result.limit ?? 0)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (isNaN(result.skip ?? 0)) throw Helpers.Errors.badRequest('invalid_value_skip');
+    if (isNaN(result.limit ?? 0)) throw Helpers.Errors.badRequest('invalid_value_limit');
 
     // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
     if (req.body && req.body.query) {
@@ -430,7 +434,7 @@ class DeleteSecureStore extends Route {
   override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     const appId = req.context.authApp.id;
@@ -438,9 +442,10 @@ class DeleteSecureStore extends Route {
 
     if (!id) {
       this.log('ERROR: Missing required secure store ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
+    if (!Model.getCoreModel(SecureStoreSchemaModel).isValidId(id)) throw invalidId();
     const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
       _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
       _appId: appId,
@@ -448,7 +453,7 @@ class DeleteSecureStore extends Route {
 
     if (!secureStore) {
       this.log(`[${this.name}] Cannot find a secure store with ID ${id}`, Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(404, `not_found`);
+      throw Helpers.Errors.entityNotFound('secureStore', id);
     }
 
     return secureStore;
@@ -477,7 +482,7 @@ class SecureStoreCount extends Route {
   override async _validate(req: RequestWithBody<CountBody<SecureStore> | undefined>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(500, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     const result: QueryParams<SecureStore> = {

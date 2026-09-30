@@ -20,7 +20,7 @@ import sinon from 'sinon';
 
 import Route from '../../../../../dist/routes/route.js';
 import UpdateMany from '../../../../../dist/routes/schema-routes/update-many.js';
-import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { ApiError } from '../../../../../dist/helpers/errors.js';
 import { createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
@@ -147,7 +147,12 @@ describe('schema-routes/UpdateMany: per-item results', () => {
     assert.strictEqual(docs[0].value, 'updated');
     assert.deepStrictEqual(output[0].results, [{ type: 'scalar', path: 'value', value: 'updated' }]);
     assert.strictEqual(output[1].results, null);
-    assert.deepStrictEqual(output[1].validation, { code: 400, message: 'test-schema: Update path is invalid: bad' });
+    assert.deepStrictEqual(output[1].validation, {
+      status: 400,
+      code: 'invalid_update',
+      message: 'test-schema: Update path is invalid: bad',
+      details: { schema: 'test-schema' },
+    });
   });
 
   it('returns one result per request item, in request order', async () => {
@@ -181,7 +186,12 @@ describe('schema-routes/UpdateMany: per-item results', () => {
 
     const [item] = await route._validate(req, {});
 
-    assert.deepStrictEqual(item.validation, { code: 400, message: `test-schema: Invalid ID: ${DOC_9}` });
+    assert.deepStrictEqual(item.validation, {
+      status: 404,
+      code: 'not_found',
+      message: 'No test-schema was found with that id',
+      details: { schema: 'test-schema', id: DOC_9 },
+    });
   });
 
   it('looks each entity up once, however many updates it has', async () => {
@@ -228,7 +238,7 @@ describe('schema-routes/UpdateMany: items that fail while being written', () => 
 
   it('reports an item whose write fails as refused, and carries on with the rest', async () => {
     const docs = makeDocs();
-    const error = new RequestError(400, "Update can't be applied: Cannot create field 'x' in element {meta: null}");
+    const error = new ApiError(400, 'invalid_update', "Update can't be applied: Cannot create field 'x' in element {meta: null}");
     const route = createRoute(createFailingModel(docs, error));
     const req = threeItems();
 
@@ -236,7 +246,7 @@ describe('schema-routes/UpdateMany: items that fail while being written', () => 
 
     assert.deepStrictEqual(
       output.map((o) => o.validation ?? o.results[0].value),
-      ['a', { code: 400, message: error.message }, 'c'],
+      ['a', { status: 400, code: 'invalid_update', message: error.message }, 'c'],
     );
     assert.strictEqual(output[1].results, null);
     assert.deepStrictEqual(
@@ -246,12 +256,12 @@ describe('schema-routes/UpdateMany: items that fail while being written', () => 
   });
 
   it('marks the failed item refused on the request, so it triggers no path lambdas', async () => {
-    const route = createRoute(createFailingModel(makeDocs(), new RequestError(409, 'The entity changed')));
+    const route = createRoute(createFailingModel(makeDocs(), new ApiError(409, 'update_conflict', 'The entity changed')));
     const req = threeItems();
 
     await route._exec(req, createRes(), await route._validate(req, {}));
 
-    assert.deepStrictEqual(req.body[1].validation, { code: 409, message: 'The entity changed' });
+    assert.deepStrictEqual(req.body[1].validation, { status: 409, code: 'update_conflict', message: 'The entity changed' });
   });
 
   it('reports an unexpected failure as a 500 for that item, without its details', async () => {
@@ -260,12 +270,12 @@ describe('schema-routes/UpdateMany: items that fail while being written', () => 
 
     const output = await route._exec(req, createRes(), await route._validate(req, {}));
 
-    assert.deepStrictEqual(output[1].validation, { code: 500, message: 'Internal Server Error' });
+    assert.deepStrictEqual(output[1].validation, { status: 500, code: 'internal_error', message: 'Internal server error' });
     assert.strictEqual(output[2].results[0].value, 'c');
   });
 
   it('counts the refused items, however they were refused, in the x-bulk-refused header', async () => {
-    const route = createRoute(createFailingModel(makeDocs(), new RequestError(400, 'refused')));
+    const route = createRoute(createFailingModel(makeDocs(), new ApiError(400, 'refused', 'refused')));
     const req = threeItems();
     req.body.push({ id: DOC_9, body: { path: 'value', value: 'd' } });
     const res = createRes();
@@ -276,7 +286,7 @@ describe('schema-routes/UpdateMany: items that fail while being written', () => 
   });
 
   it('sends x-bulk-refused: 0 when every item was applied', async () => {
-    const route = createRoute(createFailingModel(makeDocs(), new RequestError(400, 'refused')));
+    const route = createRoute(createFailingModel(makeDocs(), new ApiError(400, 'refused', 'refused')));
     const req = { body: [{ id: DOC_1, body: { path: 'value', value: 'a' } }], context: fullAccess };
     const res = createRes();
 

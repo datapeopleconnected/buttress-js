@@ -19,18 +19,20 @@ import { getFlattenedSchema } from '../dist/helpers/index.js';
 import StandardModel from '../dist/model/type/standard.js';
 
 /**
- * The real StandardModel.parseQuery for a core model's schema, with the core datastore's id codec, for
+ * The real StandardModel.parseQuery and isValidId for a core model's schema, with the core datastore's id codec, for
  * route tests that stub the rest of the model. A stub like `parseQuery: (q) => q` hides what parsing
  * does to the query, e.g. dropping an empty `$and`.
  * @param {typeof StandardModel} SchemaModel - a core model class with a static `Schema`
- * @return {{flatSchemaData: object, parseQuery: Function}}
+ * @return {{schemaData: object, flatSchemaData: object, parseQuery: Function, isValidId: Function}}
  */
 export function realQueryParser(SchemaModel) {
   const model = Object.create(StandardModel.prototype);
   model.adapter = { ID: Datastore.getInstance('core').ID };
   model.flatSchemaData = getFlattenedSchema(SchemaModel.Schema);
   return {
+    schemaData: SchemaModel.Schema,
     flatSchemaData: model.flatSchemaData,
     parseQuery: (query, envFlat, schemaFlat) => model.parseQuery(query, envFlat, schemaFlat),
+    isValidId: (id) => model.isValidId(id),
   };
 }

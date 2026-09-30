@@ -18,7 +18,7 @@ import { Request, Response } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { describeInvalidUpdate } from '../../model/shared.js';
+import { invalidEntityError, invalidUpdateError } from '../../model/shared.js';
 import Sugar from '../../helpers/sugar.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
@@ -53,7 +53,7 @@ class GetAppList extends Route {
     const appId = req.context.authApp?.id;
     if (!appId) {
       this.log('ERROR: No App ID in token', Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `invalid_token`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     return this.scoped(req, AppSchemaModel).findAll();
@@ -135,21 +135,10 @@ class GetApp extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_fields`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
-    if (!Model.getCoreModel(AppSchemaModel).isValidId(id)) {
-      this.log('ERROR: Invalid App ID format', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
-
-    const app = await this.unscopedModel(AppSchemaModel, SYSTEM_ONLY).findById(id);
-    if (!app) {
-      this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
-
-    return app;
+    return this.scoped(req, AppSchemaModel).findByIdOrFail(id);
   }
 
   override async _exec(req: Request, res: Response, validate: App & { tokenValue?: string }) {
@@ -177,26 +166,14 @@ class AddApp extends Route {
     return new Promise<boolean>((resolve, reject) => {
       if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
         this.log(`${this.schemaName}: Expected the app as an object`, Route.LogLevel.ERR, req.context.id);
-        return reject(new Helpers.Errors.RequestError(400, `invalid_body`));
+        return reject(Helpers.Errors.badRequest('invalid_body'));
       }
 
       const validation = Model.getCoreModel(AppSchemaModel).validate(req.body);
       if (!validation.isValid) {
-        if (validation.missing.length > 0) {
-          this.log(`${this.schemaName}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.context.id);
-          return reject(
-            new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`),
-          );
-        }
-        if (validation.invalid.length > 0) {
-          this.log(`${this.schemaName}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.context.id);
-          return reject(
-            new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`),
-          );
-        }
-
-        this.log(`${this.schemaName}: Unhandled Error`, Route.LogLevel.ERR, req.context.id);
-        return reject(new Helpers.Errors.RequestError(400, `${this.schemaName}: Unhandled error.`));
+        const err = invalidEntityError(this.schemaName, validation);
+        this.log(err.message, Route.LogLevel.ERR, req.context.id);
+        return reject(err);
       }
 
       req.body.policyPropertiesList = req.body.policyPropertiesList || {};
@@ -208,7 +185,7 @@ class AddApp extends Route {
         );
         if (!validPolicyPropertiesList) {
           this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
-          return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+          return reject(Helpers.Errors.badRequest('invalid_field'));
         }
       }
 
@@ -216,13 +193,13 @@ class AddApp extends Route {
       apps
         .apiPathProblem(req.body.apiPath)
         .then((problem) => {
-          if (problem) throw new Helpers.Errors.RequestError(400, problem);
+          if (problem) throw Helpers.Errors.badRequest(problem);
           return apps.isDuplicate(req.body);
         })
         .then((res) => {
           if (res === true) {
             this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
-            return reject(new Helpers.Errors.RequestError(400, `duplicate`));
+            return reject(Helpers.Errors.badRequest('duplicate'));
           }
           resolve(true);
         })
@@ -261,16 +238,10 @@ class DeleteApp extends Route {
 
     if (!id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `missing_field`);
+      throw Helpers.Errors.badRequest('missing_id', 'An id is required');
     }
 
-    const app = await this.unscopedModel(AppSchemaModel, SYSTEM_ONLY).findById(id);
-    if (!app) {
-      this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `invalid_id`);
-    }
-
-    return app;
+    return this.scoped(req, AppSchemaModel).findByIdOrFail(id);
   }
 
   override async _exec(req: Request, res: Response, app: App) {
@@ -342,12 +313,12 @@ class GetAppSchema extends Route {
   override async _validate(req: Request, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `no_authenticated_app`);
+      throw Helpers.Errors.internal('no_authenticated_app');
     }
 
     if (!req.context.authApp.__schema) {
       this.log('ERROR: No app schema defined', Route.LogLevel.ERR);
-      throw new Helpers.Errors.RequestError(400, `no_authenticated_schema`);
+      throw Helpers.Errors.badRequest('no_authenticated_schema');
     }
 
     let schema: Schema[];
@@ -357,7 +328,7 @@ class GetAppSchema extends Route {
           ? Helpers.Schema.decode(req.context.authApp.__rawSchema)
           : await Helpers.Schema.buildCollections(Helpers.Schema.decode(req.context.authApp.__schema));
     } catch (err: unknown) {
-      if (err instanceof Helpers.Errors.SchemaInvalid) throw new Helpers.Errors.RequestError(400, `invalid_schema`);
+      if (err instanceof Helpers.Errors.SchemaInvalid) throw Helpers.Errors.badRequest('invalid_schema');
       else throw err;
     }
 
@@ -374,7 +345,7 @@ class GetAppSchema extends Route {
         const coreModel = this.__findCoreModel(core);
         if (!coreModel) {
           this.log(`ERROR: Unknown core schema: ${core}`, Route.LogLevel.ERR);
-          throw new Helpers.Errors.RequestError(400, `Unknown core schema: ${core}`);
+          throw Helpers.Errors.badRequest('unknown_core_schema', `Unknown core schema: ${core}`, { core });
         }
         if (coreModel.isCoreAPI) coreSchemas.add(coreModel.schemaData);
       }
@@ -430,15 +401,15 @@ class UpdateAppSchema extends Route {
   override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     if (!req.context.authApp) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
     }
     if (!req.body) {
       this.log('ERROR: Missing body', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `no_body`));
+      return Promise.reject(Helpers.Errors.badRequest('no_body'));
     }
     if (!Array.isArray(req.body)) {
       this.log(`ERROR: Expected body to be an array but got ${typeof req.body}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body_type`));
+      return Promise.reject(Helpers.Errors.badRequest('invalid_body_type'));
     }
 
     const rawSchema: unknown[] = req.body;
@@ -450,11 +421,11 @@ class UpdateAppSchema extends Route {
         const schema = rawSchema[i] as Schema;
         if (!schema.name) {
           this.log(`ERROR: Missing name for schema at index ${i}`, Route.LogLevel.ERR);
-          return Promise.reject(new Helpers.Errors.RequestError(400, `schema_missing_name`));
+          return Promise.reject(Helpers.Errors.badRequest('schema_missing_name'));
         }
         if (!schema.type) {
           this.log(`ERROR: Missing type for schema at index ${i}`, Route.LogLevel.ERR);
-          return Promise.reject(new Helpers.Errors.RequestError(400, `schema_missing_type`));
+          return Promise.reject(Helpers.Errors.badRequest('schema_missing_type'));
         }
 
         if (schema.name.length < 1 || schema.name.length > 20) {
@@ -462,16 +433,16 @@ class UpdateAppSchema extends Route {
             `ERROR: Schema name needs to be between 1 and 20 alphanumeric characters (${schema.name})`,
             Route.LogLevel.ERR,
           );
-          return Promise.reject(new Helpers.Errors.RequestError(400, `schema_invalid_name`));
+          return Promise.reject(Helpers.Errors.badRequest('schema_invalid_name'));
         }
         if (!/^[a-zA-Z0-9]+$/.test(schema.name)) {
           this.log(`ERROR: Schema name can only contain alphanumeric characters (${schema.name})`, Route.LogLevel.ERR);
-          return Promise.reject(new Helpers.Errors.RequestError(400, `schema_invalid_name`));
+          return Promise.reject(Helpers.Errors.badRequest('schema_invalid_name'));
         }
 
         if (!Helpers.Schema.validTypes.includes(schema.type)) {
           this.log(`ERROR: Invalid schema type (${schema.type})`, Route.LogLevel.ERR);
-          return Promise.reject(new Helpers.Errors.RequestError(400, `schema_invalid_type`));
+          return Promise.reject(Helpers.Errors.badRequest('schema_invalid_type'));
         }
 
         checkedSchema.push(schema);
@@ -506,7 +477,7 @@ class UpdateAppSchema extends Route {
       };
     } catch (err: unknown) {
       Logging.logError(Helpers.getThrownErrorMessage(err));
-      throw new Helpers.Errors.RequestError(400, `invalid_body_type`);
+      throw Helpers.Errors.badRequest('invalid_body_type');
     }
   }
 
@@ -548,14 +519,14 @@ class GetAppPolicyPropertyList extends Route {
     let app = req.context.authApp;
     if (!app) {
       this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
     }
 
     const apiPath = req.params.apiPath;
     const isSuper = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
     if (apiPath && apiPath !== app.apiPath && !isSuper) {
       this.log('ERROR: Cannot fetch policy properties list for another app', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `cannot_fetch_list_for_another_app`));
+      return Promise.reject(Helpers.Errors.badRequest('cannot_fetch_list_for_another_app'));
     }
 
     if (apiPath) {
@@ -595,24 +566,24 @@ class SetAppPolicyPropertyList extends Route {
     return new Promise<{ appId: string }>((resolve, reject) => {
       if (!req.context.authApp) {
         this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
+        return reject(Helpers.Errors.internal('no_authenticated_app'));
       }
 
       if (!req.body) {
         this.log('ERROR: Missing body', Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `no_body`));
+        return reject(Helpers.Errors.badRequest('no_body'));
       }
 
       if (typeof req.body !== 'object' || (typeof req.body === 'object' && Array.isArray(req.body))) {
         this.log('ERROR: Policy property list is invalid type', Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `invalid_type`));
+        return reject(Helpers.Errors.badRequest('invalid_type'));
       }
 
       const policyPropertiesList = Object.keys(req.body).filter((key) => key !== 'query');
       const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(req.body[key]));
       if (!validPolicyPropertiesList) {
         this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
-        return reject(new Helpers.Errors.RequestError(400, `invalid_field`));
+        return reject(Helpers.Errors.badRequest('invalid_field'));
       }
 
       const app = req.context.authApp;
@@ -709,15 +680,11 @@ class AppUpdateOAuth extends Route {
   override async _validate(req: RequestWithBody<unknown, { id: string }>, _res: Response) {
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
     }
 
-    const app = await this.unscopedModel(AppSchemaModel, SYSTEM_ONLY).findById(req.params.id);
-    if (!app) {
-      this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
-    return Promise.resolve(true);
+    await this.scoped(req, AppSchemaModel).assertExists(req.params.id);
+    return true;
   }
 
   override async _exec(
@@ -750,36 +717,36 @@ class AppUpdate extends Route {
     const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
     if (!id) {
       this.log('ERROR: Missing required field', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
     }
 
-    // Only a system token can update an app other than its own, any other id is answered as an unknown one
+    // Only a system token can update an app other than its own, any other is answered as an unknown one
     const isSystem = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
     if (!isSystem && id !== req.context.authApp?.id) {
       this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+      return Promise.reject(
+        Model.getCoreModel(AppSchemaModel).isValidId(id)
+          ? Helpers.Errors.entityNotFound('app', id)
+          : Helpers.Errors.badRequest('invalid_id', 'The id is not valid'),
+      );
     }
 
     const { validation, body } = Model.getCoreModel(AppSchemaModel).validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {
-      const message = describeInvalidUpdate(validation);
-      this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: ${message}`));
+      const err = invalidUpdateError(this.schemaName, validation);
+      this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+      return Promise.reject(err);
     }
 
-    const exists = await this.scoped(req, AppSchemaModel).exists(id);
-    if (!exists) {
-      this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-    }
+    await this.scoped(req, AppSchemaModel).assertExists(id);
 
     // A new api path has to be one the app can have
     for (const update of (Array.isArray(body) ? body : [body]) as UpdatePathBody[]) {
       if (update.path !== 'apiPath') continue;
       const apps = this.unscopedModel(AppSchemaModel, 'an api path is checked against every app');
       const problem = await apps.apiPathProblem(update.value, id);
-      if (problem) return Promise.reject(new Helpers.Errors.RequestError(400, problem));
+      if (problem) return Promise.reject(Helpers.Errors.badRequest(problem));
     }
     return {
       id,

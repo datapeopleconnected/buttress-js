@@ -65,8 +65,8 @@ describe('model/core/LambdaSchemaModel:git source', () => {
 
   const assertRefused = async (promise, message) => {
     await assert.rejects(promise, (err) => {
-      assert.strictEqual(err.code, 400);
-      assert.strictEqual(err.message, message);
+      assert.strictEqual(err.status, 400);
+      assert.strictEqual(err.code, message);
       return true;
     });
     assert.ok(!fs.existsSync(marker), 'a shell ran the value');

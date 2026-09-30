@@ -127,7 +127,7 @@ describe('lambda/LambdaRunner:_getLambdaModulesName', () => {
       git: { hash: 'abc123', entryFile: 'index.js', sharedModules: [{ name: 'Snippet', entryFile: '../other.js' }] },
     };
 
-    assert.throws(() => runner._getLambdaModulesName(lambda), { code: 400 });
+    assert.throws(() => runner._getLambdaModulesName(lambda), { status: 400, code: 'invalid_lambda_shared_module' });
   });
 });
 

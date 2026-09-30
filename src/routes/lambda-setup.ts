@@ -187,7 +187,7 @@ export class RoutesLambdaSetup {
     let lambda: Lambda | null = null;
 
     const lambdaApp = await Model.getCoreModel(AppSchemaModel).findByApiPath(apiPath);
-    if (!lambdaApp) throw Helpers.Errors.notFound('app_not_found', 'No app has that api path');
+    if (!lambdaApp) throw Helpers.Errors.notFound('not_found', 'No app has that api path', { schema: 'app', apiPath });
 
     lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
       $or: [

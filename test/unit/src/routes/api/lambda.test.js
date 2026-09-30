@@ -74,7 +74,7 @@ function stubModel({ lambda = {}, token = {}, user = {}, app = {}, deployment = 
     },
     find: sinon.stub(),
     findAll: sinon.stub(),
-    add: sinon.stub().resolves({ id: 'lambda-1', trigger: [] }),
+    add: sinon.stub().resolves({ id: '6abd03000000000000000001', trigger: [] }),
     rm: sinon.stub().resolves(),
     count: sinon.stub().resolves(0),
     exists: sinon.stub().resolves(true),
@@ -85,6 +85,7 @@ function stubModel({ lambda = {}, token = {}, user = {}, app = {}, deployment = 
     ...lambda,
   };
   const tokenModel = {
+    ...realQueryParser(TokenSchemaModel),
     Constants: { Type: { SYSTEM: 'system' } },
     createId: (v) => v,
     findOne: async () => null,
@@ -99,7 +100,7 @@ function stubModel({ lambda = {}, token = {}, user = {}, app = {}, deployment = 
   const appModel = { findById: async () => null, createId: (v) => v, ...app };
   const activityModel = { Constants: { Visibility: { PRIVATE: 'PRIVATE' } } };
   const deploymentModel = { findOne: async () => null, createId: (v) => v, ...deployment };
-  const lambdaExecutionModel = { add: sinon.stub().resolves({ id: 'exec-1' }), ...lambdaExecution };
+  const lambdaExecutionModel = { add: sinon.stub().resolves({ id: '6abd07000000000000000001' }), ...lambdaExecution };
 
   sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
     if (modelClass === LambdaSchemaModel) return lambdaModel;
@@ -122,7 +123,7 @@ function createRoute(RouteClass, { nrp } = {}) {
   return route;
 }
 
-function createReq({ params = {}, query = {}, body = {}, authApp = { id: 'app-1' }, token = { type: 'user' } } = {}) {
+function createReq({ params = {}, query = {}, body = {}, authApp = { id: '6abd05000000000000000001' }, token = { type: 'user' } } = {}) {
   return { params, query, body, context: { id: 'req-1', authApp, token } };
 }
 
@@ -135,21 +136,21 @@ describe('routes/api/lambda:GetLambda', () => {
     stubModel();
     const route = createRoute(GetLambda);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_required_lambda_id/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when the id is invalid', async () => {
     stubModel();
     const route = createRoute(GetLambda);
 
-    await assert.rejects(route._validate(createReq({ params: { id: 'bad-id' } })), /invalid_lambda_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: 'bad-id' } })), { code: 'invalid_id' });
   });
 
   it('rejects when no lambda is found', async () => {
     stubModel({ lambda: { findOne: async () => null } });
     const route = createRoute(GetLambda);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /lambda_does_not_exist/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 });
 
@@ -158,14 +159,14 @@ describe('routes/api/lambda:GetLambdaList', () => {
     stubModel();
     const route = createRoute(GetLambdaList);
 
-    assert.throws(() => route._validate(createReq({ query: { ids: 'not-an-id' } })), /invalid_id/);
+    assert.throws(() => route._validate(createReq({ query: { ids: 'not-an-id' } })), { code: 'invalid_id' });
   });
 
   it('rejects exec when there is no app id in context', async () => {
     stubModel();
     const route = createRoute(GetLambdaList);
 
-    await assert.rejects(route._exec(createReq({ authApp: null }), {}, []), /unable_to_get_app_id/);
+    await assert.rejects(route._exec(createReq({ authApp: null }), {}, []), { code: 'unable_to_get_app_id' });
   });
 
   it('returns every lambda for a system token', async () => {
@@ -183,7 +184,7 @@ describe('routes/api/lambda:GetLambdaList', () => {
 
     await route._exec(createReq({ token: { type: 'user' } }), {}, []);
 
-    assert.ok(lambdaModel.find.calledWith({ _appId: 'app-1' }));
+    assert.ok(lambdaModel.find.calledWith({ _appId: '6abd05000000000000000001' }));
   });
 });
 
@@ -195,7 +196,7 @@ describe('routes/api/lambda:SearchLambdaList', () => {
 
     await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(lambdaModel.find.firstCall.args[0], { _appId: 'app-1' });
+    assert.deepStrictEqual(lambdaModel.find.firstCall.args[0], { _appId: '6abd05000000000000000001' });
   });
 
   it('finds using the built query', () => {
@@ -206,7 +207,7 @@ describe('routes/api/lambda:SearchLambdaList', () => {
     const result = route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
     assert.strictEqual(result, 'a-stream');
-    assert.ok(lambdaModel.find.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
+    assert.ok(lambdaModel.find.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: '6abd05000000000000000001' }] }));
   });
 });
 
@@ -215,7 +216,7 @@ describe('routes/api/lambda:AddLambda', () => {
     stubModel();
     const route = createRoute(AddLambda);
 
-    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /missing_field/);
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), { code: 'missing_field' });
   });
 
   const validLambdaBody = {
@@ -231,7 +232,7 @@ describe('routes/api/lambda:AddLambda', () => {
     stubModel();
     const route = createRoute(AddLambda);
 
-    await assert.rejects(route._validate(createReq({ body: { lambda: {} } })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ body: { lambda: {} } })), { code: 'missing_field' });
   });
 
   it('rejects when auth is missing entirely', async () => {
@@ -239,7 +240,7 @@ describe('routes/api/lambda:AddLambda', () => {
     const route = createRoute(AddLambda);
     const body = { lambda: validLambdaBody.lambda };
 
-    await assert.rejects(route._validate(createReq({ body })), /missing_auth/);
+    await assert.rejects(route._validate(createReq({ body })), { code: 'missing_auth' });
   });
 
   it('rejects when auth is missing domains/policyProperties', async () => {
@@ -247,7 +248,7 @@ describe('routes/api/lambda:AddLambda', () => {
     const route = createRoute(AddLambda);
     const body = { lambda: validLambdaBody.lambda, auth: {} };
 
-    await assert.rejects(route._validate(createReq({ body })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ body })), { code: 'missing_field' });
   });
 
   for (const domains of [[null], ['app.example.com', 42], [' '], 'app.example.com']) {
@@ -257,8 +258,8 @@ describe('routes/api/lambda:AddLambda', () => {
       const body = { lambda: validLambdaBody.lambda, auth: { domains, policyProperties: {} } };
 
       await assert.rejects(route._validate(createReq({ body })), (err) => {
-        assert.strictEqual(err.code, 400);
-        assert.strictEqual(err.message, 'invalid_domains');
+        assert.strictEqual(err.status, 400);
+        assert.strictEqual(err.code, 'invalid_domains');
         return true;
       });
     });
@@ -280,13 +281,13 @@ describe('routes/api/lambda:AddLambda', () => {
     await route._exec(createReq({ body: validLambdaBody }), {}, true);
 
     assert.ok(
-      lambdaModel.add.calledWith(validLambdaBody.lambda, { _appId: 'app-1', auth: validLambdaBody.auth, app: { id: 'app-1' } }),
+      lambdaModel.add.calledWith(validLambdaBody.lambda, { _appId: '6abd05000000000000000001', auth: validLambdaBody.auth, app: { id: '6abd05000000000000000001' } }),
     );
   });
 
   it('notifies the path-mutation cache when the added lambda has a PATH_MUTATION trigger', async () => {
     const { lambdaModel } = stubModel({
-      lambda: { add: sinon.stub().resolves({ id: 'lambda-1', trigger: [{ type: 'PATH_MUTATION' }] }) },
+      lambda: { add: sinon.stub().resolves({ id: '6abd03000000000000000001', trigger: [{ type: 'PATH_MUTATION' }] }) },
     });
     const nrp = { emit: sinon.spy() };
     const route = createRoute(AddLambda, { nrp });
@@ -317,7 +318,7 @@ describe('routes/api/lambda:UpdateLambda', () => {
     stubModel({ lambda: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(UpdateLambda);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
   it('pulls fresh code when the update touches git.hash', async () => {
@@ -382,7 +383,7 @@ describe('routes/api/lambda:BulkUpdateLambda', () => {
 
     await assert.rejects(
       route._validate(createReq({ body: [{ id: HEX_ID, body: [{ path: 'name' }] }] })),
-      (err) => err.code === 400 && err.message === 'LAMBDA: Update is missing its value',
+      (err) => err.status === 400 && err.code === 'invalid_update' && err.message.endsWith(': Update is missing its value'),
     );
   });
 
@@ -390,14 +391,14 @@ describe('routes/api/lambda:BulkUpdateLambda', () => {
     stubModel();
     const route = createRoute(BulkUpdateLambda);
 
-    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), /array_required/);
+    await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), { code: 'array_required' });
   });
 
   it('rejects when one item in the batch does not exist', async () => {
     stubModel({ lambda: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(BulkUpdateLambda);
 
-    await assert.rejects(route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'name' } }] })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'name' } }] })), { code: 'not_found' });
   });
 
   it('has the path-mutation cache rebuilt once when a lambda in the batch watches paths', async () => {
@@ -412,11 +413,11 @@ describe('routes/api/lambda:BulkUpdateLambda', () => {
   });
 
   it('applies every update in the batch', async () => {
-    const { lambdaModel } = stubModel({ lambda: { findById: async () => ({ id: 'lambda-1', trigger: [] }) } });
+    const { lambdaModel } = stubModel({ lambda: { findById: async () => ({ id: '6abd03000000000000000001', trigger: [] }) } });
     const route = createRoute(BulkUpdateLambda);
     const batch = [
-      { id: 'lambda-1', body: [{ path: 'name', value: 'a' }] },
-      { id: 'lambda-2', body: [{ path: 'name', value: 'b' }] },
+      { id: '6abd03000000000000000001', body: [{ path: 'name', value: 'a' }] },
+      { id: '6abd03000000000000000002', body: [{ path: 'name', value: 'b' }] },
     ];
 
     const result = await route._exec(createReq(), {}, batch);
@@ -431,7 +432,7 @@ describe('routes/api/lambda:ScheduleLambdaExecution', () => {
     stubModel();
     const route = createRoute(ScheduleLambdaExecution);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_required_lambda_id/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects with 404 when the lambda cannot be found', async () => {
@@ -439,48 +440,48 @@ describe('routes/api/lambda:ScheduleLambdaExecution', () => {
     const route = createRoute(ScheduleLambdaExecution);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: {} })), (err) => {
-      assert.strictEqual(err.code, 404);
+      assert.strictEqual(err.status, 404);
       return true;
     });
   });
 
   it('rejects with 404 when the deployment cannot be found', async () => {
     stubModel({
-      lambda: { findOne: async () => ({ id: 'lambda-1', _appId: 'app-1', trigger: [] }) },
+      lambda: { findOne: async () => ({ id: '6abd03000000000000000001', _appId: '6abd05000000000000000001', trigger: [] }) },
       deployment: { findOne: async () => null },
     });
     const route = createRoute(ScheduleLambdaExecution);
 
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: {} })), (err) => {
-      assert.strictEqual(err.code, 404);
+      assert.strictEqual(err.status, 404);
       return true;
     });
   });
 
   it('rejects when executeAfter is not a valid date expression', async () => {
     stubModel({
-      lambda: { findOne: async () => ({ id: 'lambda-1', _appId: 'app-1', trigger: [] }) },
-      deployment: { findOne: async () => ({ id: 'deployment-1' }) },
+      lambda: { findOne: async () => ({ id: '6abd03000000000000000001', _appId: '6abd05000000000000000001', trigger: [] }) },
+      deployment: { findOne: async () => ({ id: '6abd06000000000000000001' }) },
     });
     const route = createRoute(ScheduleLambdaExecution);
 
     await assert.rejects(
       route._validate(createReq({ params: { id: HEX_ID }, body: { executeAfter: 'not-a-date' } })),
-      /invalid_execute_after_date/,
+      { code: 'invalid_execute_after_date' },
     );
   });
 
   it('schedules the execution against the resolved deployment', async () => {
     const { lambdaExecutionModel } = stubModel({
-      lambda: { findOne: async () => ({ id: 'lambda-1', _appId: 'app-1', trigger: [] }) },
-      deployment: { findOne: async () => ({ id: 'deployment-1' }) },
+      lambda: { findOne: async () => ({ id: '6abd03000000000000000001', _appId: '6abd05000000000000000001', trigger: [] }) },
+      deployment: { findOne: async () => ({ id: '6abd06000000000000000001' }) },
     });
     const route = createRoute(ScheduleLambdaExecution);
 
     const validate = await route._validate(createReq({ params: { id: HEX_ID }, body: { executeAfter: 'now' } }));
     await route._exec(createReq(), {}, validate);
 
-    assert.ok(lambdaExecutionModel.add.calledWith(validate.execution, { _appId: 'app-1' }));
+    assert.ok(lambdaExecutionModel.add.calledWith(validate.execution, { _appId: '6abd05000000000000000001' }));
   });
 });
 
@@ -489,7 +490,7 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
     const { lambdaModel } = stubModel();
     const nrp = { emit: sinon.spy() };
     const route = createRoute(EditLambdaDeployment, { nrp });
-    const lambda = { id: 'lambda-1', trigger: [{ type: 'PATH_MUTATION' }] };
+    const lambda = { id: '6abd03000000000000000001', trigger: [{ type: 'PATH_MUTATION' }] };
 
     await route._exec(createReq(), {}, { hash: 'abc1234', branch: 'main', lambda });
 
@@ -498,29 +499,28 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
   });
 
   it("answers a deployment that fails with a fixed message, not the failure's detail", async () => {
-    const lambda = { id: 'lambda-1', git: { entryFile: 'index.js', entryPoint: 'execute' } };
+    const lambda = { id: '6abd03000000000000000001', git: { entryFile: 'index.js', entryPoint: 'execute' } };
     const failure = new Error('Command failed: git checkout main\nfatal: /srv/buttress/app_data/lambda/code/lambda-abc');
     stubModel({ lambda: { findOne: async () => lambda, pullLambdaCode: sinon.stub().rejects(failure) } });
     const route = createRoute(EditLambdaDeployment);
 
     await assert.rejects(
       route._validate(createReq({ params: { id: HEX_ID }, body: { branch: 'main', hash: 'abc1234' } })),
-      (err) => err.code === 400 && err.message === 'lambda_deployment_failed',
+      (err) => err.status === 400 && err.code === 'lambda_deployment_failed',
     );
   });
 
-  it('keeps the message of a deployment refused for a reason of its own', async () => {
-    const lambda = { id: 'lambda-1', git: { entryFile: 'index.js', entryPoint: 'execute' } };
-    const refusal = Object.assign(new Error('invalid_lambda_git_branch'), { code: 400, name: 'RequestError' });
-    const { RequestError } = await import('../../../../../dist/helpers/errors.js');
+  it('keeps the error of a deployment refused for a reason of its own', async () => {
+    const lambda = { id: '6abd03000000000000000001', git: { entryFile: 'index.js', entryPoint: 'execute' } };
+    const { badRequest } = await import('../../../../../dist/helpers/errors.js');
     stubModel({
-      lambda: { findOne: async () => lambda, pullLambdaCode: sinon.stub().rejects(new RequestError(400, refusal.message)) },
+      lambda: { findOne: async () => lambda, pullLambdaCode: sinon.stub().rejects(badRequest('invalid_lambda_git_branch')) },
     });
     const route = createRoute(EditLambdaDeployment);
 
     await assert.rejects(
       route._validate(createReq({ params: { id: HEX_ID }, body: { branch: 'main', hash: 'abc1234' } })),
-      (err) => err.code === 400 && err.message === 'invalid_lambda_git_branch',
+      (err) => err.status === 400 && err.code === 'invalid_lambda_git_branch',
     );
   });
 
@@ -528,25 +528,25 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
     stubModel();
     const route = createRoute(EditLambdaDeployment);
 
-    await assert.rejects(route._validate(createReq({ body: { hash: 'abc' } })), /missing_required_deployment_branch/);
+    await assert.rejects(route._validate(createReq({ body: { hash: 'abc' } })), { code: 'missing_required_deployment_branch' });
   });
 
   it('rejects when the hash is missing', async () => {
     stubModel();
     const route = createRoute(EditLambdaDeployment);
 
-    await assert.rejects(route._validate(createReq({ body: { branch: 'main' } })), /missing_required_deployment_hash/);
+    await assert.rejects(route._validate(createReq({ body: { branch: 'main' } })), { code: 'missing_required_deployment_hash' });
   });
 
   it('rejects when the lambda cannot be found', async () => {
     stubModel({ lambda: { findOne: async () => null } });
     const route = createRoute(EditLambdaDeployment);
 
-    await assert.rejects(route._validate(createReq({ body: { branch: 'main', hash: 'abc' } })), /invalid_lambda_id/);
+    await assert.rejects(route._validate(createReq({ body: { branch: 'main', hash: 'abc' } })), { code: 'invalid_id' });
   });
 
   it('resolves with the requested branch and hash', async () => {
-    const lambda = { id: 'lambda-1', git: { entryFile: 'index.js', entryPoint: 'execute' } };
+    const lambda = { id: '6abd03000000000000000001', git: { entryFile: 'index.js', entryPoint: 'execute' } };
     stubModel({ lambda: { findOne: async () => lambda } });
     const route = createRoute(EditLambdaDeployment);
 
@@ -556,7 +556,7 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
   });
 
   it('saves a new entry file and point, which the deployment was checked against', async () => {
-    const lambda = { id: 'lambda-1', trigger: [], git: { entryFile: 'index.js', entryPoint: 'execute' } };
+    const lambda = { id: '6abd03000000000000000001', trigger: [], git: { entryFile: 'index.js', entryPoint: 'execute' } };
     const { lambdaModel } = stubModel({ lambda: { findOne: async () => lambda } });
     const route = createRoute(EditLambdaDeployment);
     const body = { branch: 'main', hash: 'abc1234', entryFile: 'src/main.js', entryPoint: 'run' };
@@ -571,7 +571,7 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
       entryPoint: 'run',
     });
     assert.ok(
-      lambdaModel.setDeployment.calledWith('lambda-1', {
+      lambdaModel.setDeployment.calledWith('6abd03000000000000000001', {
         'git.branch': 'main',
         'git.hash': 'abc1234',
         'git.entryFile': 'src/main.js',
@@ -585,10 +585,10 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
     const route = createRoute(EditLambdaDeployment);
 
     const validated = { branch: 'main', hash: 'abc', entryFile: 'index.js', entryPoint: 'execute' };
-    await route._exec(createReq(), {}, { ...validated, lambda: { id: 'lambda-1', trigger: [] } });
+    await route._exec(createReq(), {}, { ...validated, lambda: { id: '6abd03000000000000000001', trigger: [] } });
 
     assert.ok(
-      lambdaModel.setDeployment.calledWith('lambda-1', {
+      lambdaModel.setDeployment.calledWith('6abd03000000000000000001', {
         'git.branch': 'main',
         'git.hash': 'abc',
         'git.entryFile': 'index.js',
@@ -603,14 +603,14 @@ describe('routes/api/lambda:SetLambdaPolicyProperties', () => {
     stubModel();
     const route = createRoute(SetLambdaPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, authApp: null })), /missing_field/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, authApp: null })), { code: 'missing_field' });
   });
 
   it('rejects when the lambda does not exist', async () => {
     stubModel({ lambda: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(SetLambdaPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: {} })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: {} })), { code: 'not_found' });
   });
 
   it('rejects when no lambda token can be found', async () => {
@@ -619,19 +619,19 @@ describe('routes/api/lambda:SetLambdaPolicyProperties', () => {
     const req = createReq({
       params: { id: HEX_ID },
       body: {},
-      authApp: { id: 'app-1', policyPropertiesList: {} },
+      authApp: { id: '6abd05000000000000000001', policyPropertiesList: {} },
     });
 
-    await assert.rejects(route._validate(req), /can_not_find_lambda_token/);
+    await assert.rejects(route._validate(req), { code: 'not_found' });
   });
 
   it('sets the policy properties on the lambda token', async () => {
-    const { tokenModel } = stubModel({ token: { findOne: async () => ({ id: 'token-1' }) } });
+    const { tokenModel } = stubModel({ token: { findOne: async () => ({ id: '6abd02000000000000000001' }) } });
     const route = createRoute(SetLambdaPolicyProperties);
 
-    await route._exec(createReq({ body: { role: 'admin' } }), {}, { id: 'token-1' });
+    await route._exec(createReq({ body: { role: 'admin' } }), {}, { id: '6abd02000000000000000001' });
 
-    assert.ok(tokenModel.setPolicyPropertiesById.calledWith('token-1', { role: 'admin' }));
+    assert.ok(tokenModel.setPolicyPropertiesById.calledWith('6abd02000000000000000001', { role: 'admin' }));
   });
 });
 
@@ -640,16 +640,16 @@ describe('routes/api/lambda:UpdateLambdaPolicyProperties', () => {
     stubModel({ lambda: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(UpdateLambdaPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: {} })), /invalid_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: {} })), { code: 'not_found' });
   });
 
   it('updates the policy properties on the lambda token', async () => {
-    const { tokenModel } = stubModel({ token: { findOne: async () => ({ id: 'token-1' }) } });
+    const { tokenModel } = stubModel({ token: { findOne: async () => ({ id: '6abd02000000000000000001' }) } });
     const route = createRoute(UpdateLambdaPolicyProperties);
 
-    await route._exec(createReq({ body: { role: 'admin' } }), {}, { token: { id: 'token-1' } });
+    await route._exec(createReq({ body: { role: 'admin' } }), {}, { token: { id: '6abd02000000000000000001' } });
 
-    assert.ok(tokenModel.updatePolicyProperties.calledWith({ id: 'token-1' }, { role: 'admin' }));
+    assert.ok(tokenModel.updatePolicyProperties.calledWith({ id: '6abd02000000000000000001' }, { role: 'admin' }));
   });
 });
 
@@ -658,35 +658,35 @@ describe('routes/api/lambda:ClearLambdaPolicyProperties', () => {
     stubModel();
     const route = createRoute(ClearLambdaPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: {}, body: {} })), /missing_required_lambda_id/);
+    await assert.rejects(route._validate(createReq({ params: {}, body: {} })), { code: 'missing_id' });
   });
 
   it('rejects when no lambda token can be found', async () => {
     stubModel({ token: { findOne: async () => null } });
     const route = createRoute(ClearLambdaPolicyProperties);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: {} })), /can_not_find_lambda_token/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: {} })), { code: 'not_found' });
   });
 
   it("looks the lambda and its token up in the caller's app", async () => {
     const exists = sinon.stub().resolves(true);
-    const findOne = sinon.stub().resolves({ id: 'token-1' });
+    const findOne = sinon.stub().resolves({ id: '6abd02000000000000000001' });
     stubModel({ lambda: { exists }, token: { findOne } });
     const route = createRoute(ClearLambdaPolicyProperties);
 
     await route._validate(createReq({ params: { id: HEX_ID }, body: {}, token: { type: 'app' } }));
 
-    assert.deepStrictEqual(exists.firstCall.args, [HEX_ID, null, { _appId: 'app-1' }]);
-    assert.deepStrictEqual(findOne.firstCall.args[0], { $and: [{ _lambdaId: HEX_ID }, { _appId: 'app-1' }] });
+    assert.deepStrictEqual(exists.firstCall.args, [HEX_ID, null, { _appId: '6abd05000000000000000001' }]);
+    assert.deepStrictEqual(findOne.firstCall.args[0], { $and: [{ _lambdaId: HEX_ID }, { _appId: '6abd05000000000000000001' }] });
   });
 
   it('clears the policy properties on the lambda token', async () => {
     const { tokenModel } = stubModel();
     const route = createRoute(ClearLambdaPolicyProperties);
 
-    await route._exec(createReq(), {}, { token: { id: 'token-1' } });
+    await route._exec(createReq(), {}, { token: { id: '6abd02000000000000000001' } });
 
-    assert.ok(tokenModel.clearPolicyPropertiesById.calledWith('token-1'));
+    assert.ok(tokenModel.clearPolicyPropertiesById.calledWith('6abd02000000000000000001'));
   });
 });
 
@@ -695,24 +695,24 @@ describe('routes/api/lambda:DeleteLambda', () => {
     stubModel();
     const route = createRoute(DeleteLambda);
 
-    await assert.rejects(route._validate(createReq({ params: {} })), /missing_required_lambda_id/);
+    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
   });
 
   it('rejects when the lambda cannot be found', async () => {
     stubModel({ lambda: { findOne: async () => null } });
     const route = createRoute(DeleteLambda);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /invalid_lambda_id/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
   it('rejects when the lambda has no associated token', async () => {
     stubModel({
-      lambda: { findOne: async () => ({ id: 'lambda-1' }) },
+      lambda: { findOne: async () => ({ id: '6abd03000000000000000001' }) },
       token: { findOne: async () => null },
     });
     const route = createRoute(DeleteLambda);
 
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /could_fetch_lambda_token/);
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'could_fetch_lambda_token' });
   });
 
   describe('code folders', () => {
@@ -739,11 +739,11 @@ describe('routes/api/lambda:DeleteLambda', () => {
         deployment: { find: async () => Readable.from([{ hash: 'bbbbbbb' }, { hash: 'ccccccc' }]) },
       });
       const route = createRoute(DeleteLambda);
-      const lambda = { id: 'lambda-1', trigger: [], git: { hash: 'aaaaaaa' } };
+      const lambda = { id: '6abd03000000000000000001', trigger: [], git: { hash: 'aaaaaaa' } };
 
-      await route._exec(createReq(), {}, { lambda, token: { id: 'token-1' } });
+      await route._exec(createReq(), {}, { lambda, token: { id: '6abd02000000000000000001' } });
 
-      assert.ok(lambdaModel.rm.calledWith('lambda-1'));
+      assert.ok(lambdaModel.rm.calledWith('6abd03000000000000000001'));
       assert.deepStrictEqual(fs.readdirSync(tmpDir).sort(), ['lambda-bbbbbbb', 'lambda-ddddddd']);
     });
   });
@@ -759,7 +759,7 @@ describe('routes/api/lambda:LambdaCount', () => {
 
     await route._exec(req, {}, await route._validate(req));
 
-    assert.ok(lambdaModel.count.calledWith({ _appId: 'app-1' }));
+    assert.ok(lambdaModel.count.calledWith({ _appId: '6abd05000000000000000001' }));
   });
 
   it('counts using the built query', async () => {
@@ -768,6 +768,6 @@ describe('routes/api/lambda:LambdaCount', () => {
 
     await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(lambdaModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
+    assert.ok(lambdaModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: '6abd05000000000000000001' }] }));
   });
 });

@@ -45,7 +45,7 @@ export default class SearchList extends Route {
 
   override async _validate(req: RequestWithBody<SearchListBody<object> | undefined>, _res: Response) {
     // The search options are read off the body, and an array has a sort method of its own
-    if (Array.isArray(req.body)) throw new Helpers.Errors.RequestError(400, `invalid_body`);
+    if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
 
     const model = await this.routeModel();
 
@@ -58,8 +58,8 @@ export default class SearchList extends Route {
       project: req.body && req.body.project ? req.body.project : false,
     };
 
-    if (isNaN(result.skip ?? 0)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-    if (isNaN(result.limit ?? 0)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    if (isNaN(result.skip ?? 0)) throw Helpers.Errors.badRequest('invalid_value_skip');
+    if (isNaN(result.limit ?? 0)) throw Helpers.Errors.badRequest('invalid_value_limit');
 
     let query: BjsQuery<object> = {};
 

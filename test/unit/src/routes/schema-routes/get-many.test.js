@@ -53,13 +53,14 @@ describe('schema-routes/GetMany', () => {
     { id: DOC_3, ownerId: USER_1 },
   ];
 
-  it('refuses a request with no query, or an id that is not one, as an invalid id', async () => {
+  it('refuses a request with no ids, or an id that is not one', async () => {
     const route = createRoute(createFakeModel(docs));
     const request = (body) => route._validate({ body, context: { id: 'req-1', ac: { policyConfigs: [{}] } } }, {});
 
-    for (const body of [{}, { query: {} }, { query: { ids: [] } }, { query: { ids: [DOC_1, 'not-an-id'] } }, undefined]) {
-      await assert.rejects(request(body), (err) => err.code === 400 && err.message === 'invalid_id', JSON.stringify(body));
+    for (const body of [{}, { query: {} }, { query: { ids: [] } }, undefined]) {
+      await assert.rejects(request(body), (err) => err.status === 400 && err.code === 'array_required', JSON.stringify(body));
     }
+    await assert.rejects(request({ query: { ids: [DOC_1, 'not-an-id'] } }), { status: 400, code: 'invalid_id' });
   });
 
   it('returns all requested docs when the token has full access', async () => {

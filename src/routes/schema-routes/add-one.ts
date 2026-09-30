@@ -16,7 +16,8 @@
 import { Response } from 'express';
 
 import Route from '../route.js';
-import { describeTakenId, findBatchProblem, refuseEntitiesOutsidePolicy } from './add-many.js';
+import { takenIdError, findBatchProblem, refuseEntitiesOutsidePolicy } from './add-many.js';
+import { invalidEntityError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 import Plugins from '../../plugins/index.js';
 
@@ -48,10 +49,10 @@ export default class AddOne extends Route {
 
     // An array of entities is stored as bulk/add stores it, so it's checked in the same way.
     if (Array.isArray(req.body)) {
-      const problem = await findBatchProblem(model, req.body);
+      const problem = await findBatchProblem(model, req.body, this.schemaName);
       if (problem) {
-        this.log(`${this.schemaName}: ${problem}`, Route.LogLevel.ERR, req.context.id);
-        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
+        this.log(problem.message, Route.LogLevel.ERR, req.context.id);
+        throw problem;
       }
       refuseEntitiesOutsidePolicy(model, req.body, req.context.ac, this.schemaName);
       return true;
@@ -59,17 +60,9 @@ export default class AddOne extends Route {
 
     const validation = model.validate(req.body);
     if (!validation.isValid) {
-      if (validation.missing.length > 0) {
-        this.log(`${this.schemaName}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.context.id);
-        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Missing field: ${validation.missing[0]}`);
-      }
-      if (validation.invalid.length > 0) {
-        this.log(`${this.schemaName}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.context.id);
-        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Invalid value: ${validation.invalid[0]}`);
-      }
-
-      this.log(`${this.schemaName}: Unhandled Error`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Unhandled error.`);
+      const err = invalidEntityError(this.schemaName, validation);
+      this.log(err.message, Route.LogLevel.ERR, req.context.id);
+      throw err;
     }
 
     refuseEntitiesOutsidePolicy(model, [req.body], req.context.ac, this.schemaName);
@@ -77,7 +70,7 @@ export default class AddOne extends Route {
     const isDuplicate = await model.isDuplicate(req.body);
     if (isDuplicate === true) {
       this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `duplicate`);
+      throw Helpers.Errors.badRequest('duplicate');
     }
 
     return true;
@@ -92,12 +85,12 @@ export default class AddOne extends Route {
       // The id was taken by another request after the duplicate check.
       if (!(err instanceof Helpers.Errors.DuplicateIdError)) throw err;
       if (Array.isArray(req.body)) {
-        const problem = describeTakenId(err, req.body);
-        this.log(`${this.schemaName}: ${problem}`, Route.LogLevel.ERR, req.context.id);
-        throw new Helpers.Errors.RequestError(400, `${this.schemaName}: ${problem}`);
+        const problem = takenIdError(err, req.body, this.schemaName);
+        this.log(problem.message, Route.LogLevel.ERR, req.context.id);
+        throw problem;
       }
       this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `duplicate`);
+      throw Helpers.Errors.badRequest('duplicate');
     }
     return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, model.schemaData);
   }

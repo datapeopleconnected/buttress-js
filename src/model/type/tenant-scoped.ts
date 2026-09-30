@@ -15,6 +15,7 @@
  */
 
 import * as Helpers from '../../helpers/index.js';
+import Sugar from '../../helpers/sugar.js';
 
 import StandardModel from './standard.js';
 import { AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
@@ -22,6 +23,8 @@ import { FlattenedSchema } from '../../types/schema.js';
 
 // The property of a core collection's rows that names the app they belong to. An app is its own row in `apps`.
 export type TenantKey = '_appId' | 'id';
+
+const invalidId = () => Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
 
 export type DocumentOf<M> = M extends StandardModel<infer TDocument> ? TDocument : never;
 
@@ -111,6 +114,27 @@ export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
     return this._model.findOne({ id, ...this.clause });
   }
 
+  /**
+   * @param {string} id
+   * @return {Promise} the row, refusing an id that can't be one with 400 invalid_id, and one that names no row of the
+   * tenant's, another app's included, with 404 not_found
+   */
+  async findByIdOrFail(id: string): Promise<DocumentOf<M>> {
+    if (!this._model.isValidId(id)) throw invalidId();
+    const row = await this.findById(id);
+    if (!row) throw this._notFound(id);
+    return row;
+  }
+
+  /**
+   * Refuses an id that can't be one with 400 invalid_id, and one that names no row of the tenant's with 404 not_found.
+   * @param {string} id
+   */
+  async assertExists(id: string) {
+    if (!this._model.isValidId(id)) throw invalidId();
+    if (!(await this.exists(id))) throw this._notFound(id);
+  }
+
   count(query?: AdapterQuery) {
     return this._model.count(this.scope(query));
   }
@@ -182,6 +206,11 @@ export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
 
   private async _assertTenants(id: string) {
     if (this.tenant === null) return;
-    if (!(await this.exists(id))) throw new Helpers.Errors.RequestError(400, 'invalid_id');
+    if (!this._model.isValidId(id)) throw invalidId();
+    if (!(await this.exists(id))) throw this._notFound(id);
+  }
+
+  private _notFound(id: string) {
+    return Helpers.Errors.entityNotFound(Sugar.String.singularize(this._model.schemaData.name), id);
   }
 }

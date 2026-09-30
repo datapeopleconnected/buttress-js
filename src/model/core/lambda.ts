@@ -326,7 +326,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
 
     if (!auth.policyProperties) {
       Logging.logError(`[${LambdaModel.name}] Missing policyProperties in auth`);
-      throw new Helpers.Errors.RequestError(400, `missing_policy_properties`);
+      throw Helpers.Errors.badRequest('missing_policy_properties');
     }
 
     await this.gitCloneLambda(body, auth.policyProperties, app);
@@ -425,7 +425,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
       const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, policyProperties);
       if (!policyCheck.passed) {
         Logging.logError(`[${LambdaModel.name}] ${policyCheck.errMessage}`);
-        throw new Helpers.Errors.RequestError(400, `invalid_field`);
+        throw Helpers.Errors.badRequest('invalid_field');
       }
 
       const apiTrigger = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
@@ -443,7 +443,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
 
       if (lambdaExists) {
         Logging.logError(`[${LambdaModel.name}] Lambda with the same API url already exists`);
-        throw new Helpers.Errors.RequestError(400, `duplicate_item`);
+        throw Helpers.Errors.badRequest('duplicate_item');
       }
 
       await this.gitFolderClone(gitHash, branch, name, url);
@@ -472,7 +472,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
     if (!result.stdout) {
       this._removeLambdaFolder(name);
       Logging.logError(`[${LambdaModel.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
-      throw new Helpers.Errors.RequestError(400, `incorrect_lambda_hash_or_branch`);
+      throw Helpers.Errors.badRequest('incorrect_lambda_hash_or_branch');
     }
 
     // TODO it should only clone the lambda file from the repo
@@ -520,7 +520,11 @@ export default class LambdaModel extends StandardModel<Lambda> {
         const checkoutRes = await Git.git(['checkout', branch as string], checkoutDir);
         if (!checkoutRes.stdout) {
           Logging.log(`[${LambdaModel.name}] Lambda ${branch} does not exist`);
-          return Promise.reject(new Helpers.Errors.RequestError(400, `branch_${branch}_does_not_exist_for_lambda`));
+          return Promise.reject(
+            Helpers.Errors.badRequest('branch_not_found', `The lambda's repository has no branch ${branch}`, {
+              branch,
+            }),
+          );
         }
 
         await Git.git(['pull'], checkoutDir);
@@ -528,7 +532,10 @@ export default class LambdaModel extends StandardModel<Lambda> {
         if (!results.stdout) {
           Logging.log(`[${LambdaModel.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
           return Promise.reject(
-            new Helpers.Errors.RequestError(400, `lambda_${gitHash}_does_not_exist_on_branch_${branch}`),
+            Helpers.Errors.badRequest('hash_not_on_branch', `The commit ${gitHash} is not on the branch ${branch}`, {
+              hash: gitHash,
+              branch,
+            }),
           );
         }
 
@@ -542,7 +549,9 @@ export default class LambdaModel extends StandardModel<Lambda> {
         const entryFile = (entryFilePath as string).split('/').pop() as string;
         if (entryFilePath && !files.includes(entryFile)) {
           Logging.log(`[${LambdaModel.name}] No such file ${entryFile} - ${lambda.name} ${gitHash} ${branch}`);
-          throw new Helpers.Errors.RequestError(404, `entry_file_not_found`);
+          throw Helpers.Errors.notFound('entry_file_not_found', 'The entry file was not found in the repository', {
+            entryFile: entryFilePath,
+          });
         }
 
         for await (const file of files) {
@@ -551,7 +560,9 @@ export default class LambdaModel extends StandardModel<Lambda> {
           const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
           if (entryFile === file && entryPoint && !content.includes(entryPoint)) {
             Logging.log(`[${LambdaModel.name}] No such function ${entryPoint} - ${lambda.name}`);
-            throw new Helpers.Errors.RequestError(404, `entry_point_not_found`);
+            throw Helpers.Errors.notFound('entry_point_not_found', 'The entry point was not found in the entry file', {
+              entryPoint,
+            });
           }
         }
       }

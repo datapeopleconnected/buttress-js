@@ -157,7 +157,7 @@ describe('User API', async () => {
 				if (!(error instanceof BJSReqError)) throw error;
 
 				assert.strictEqual(error.code, 400, 'Error status code should be 400');
-				assert.match(error.message, /invalid_domains/);
+				assert.strictEqual(error.body.code, 'invalid_domains');
 			}
 		});
 	});
@@ -219,7 +219,7 @@ describe('User API', async () => {
 				if (!(error instanceof BJSReqError)) throw error;
 
 				assert.strictEqual(error.code, 400, 'Error status code should be 400');
-				assert.match(error.message, /invalid_domains/);
+				assert.strictEqual(error.body.code, 'invalid_domains');
 			}
 		});
 
@@ -236,7 +236,7 @@ describe('User API', async () => {
 					return false;
 				} catch (error) {
 					if (!(error instanceof BJSReqError)) throw error;
-					assert.match(error.message, /user_already_exists_with_that_name/);
+					assert.strictEqual(error.body.code, 'user_already_exists_with_that_name');
 					return true;
 				}
 			};

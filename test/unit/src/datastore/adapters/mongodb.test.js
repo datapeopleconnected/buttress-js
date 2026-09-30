@@ -491,7 +491,7 @@ describe('datastore/adapters/MongodbAdapter: one request, one write', () => {
 
     await assert.rejects(
       () => update(model, [{ path: 'tags.0.__remove__', value: '' }]),
-      (err) => err.code === 409,
+      (err) => err.status === 409,
     );
   });
 
@@ -504,7 +504,7 @@ describe('datastore/adapters/MongodbAdapter: one request, one write', () => {
           { path: 'contacts', value: { name: 'Alice' } },
           { path: 'tags.0.__remove__', value: '' },
         ]),
-      (err) => err.code === 400 && err.message === "Update can't be applied: Cannot remove an item from a non-array value",
+      (err) => err.status === 400 && err.message === "Update can't be applied: Cannot remove an item from a non-array value",
     );
     assert.deepStrictEqual(ops, []);
   });
@@ -520,7 +520,7 @@ describe('datastore/adapters/MongodbAdapter: one request, one write', () => {
 
     await assert.rejects(
       () => update(model, { path: 'tags', value: 'a' }),
-      (err) => err.code === 400 && err.message === "Update can't be applied: Cannot create field 'x' in element {meta: null}",
+      (err) => err.status === 400 && err.message === "Update can't be applied: Cannot create field 'x' in element {meta: null}",
     );
   });
 });
@@ -549,7 +549,7 @@ describe('datastore/adapters/MongodbAdapter:applyUpdateOps', () => {
     try {
       applyUpdateOps(doc, ops);
     } catch (err) {
-      return [err.code, err.message];
+      return [err.status, err.message];
     }
     return null;
   };

@@ -24,7 +24,7 @@ import { Schema, modelToRoute } from '../../helpers/schema.js';
 
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
-import { describeInvalidUpdate } from '../../model/shared.js';
+import { invalidUpdateError } from '../../model/shared.js';
 
 import * as ACM from '../../access-control/models-access.js';
 import StandardModel from '../../model/type/standard.js';
@@ -36,8 +36,12 @@ type UpdateManyBody = {
   id: string;
   sourceId?: string;
   body: UpdatePathBody | UpdatePathBody[];
-  validation?: true | { code: number; message: string };
+  validation?: true | Refusal;
 };
+
+// Why an item wasn't applied: its error's status and body, as a request refused for it would be answered
+type Refusal = { status: number } & Helpers.Errors.ApiErrorBody;
+const refusal = (err: Helpers.Errors.ApiError): Refusal => ({ status: err.status, ...err.toBody() });
 
 // The number of items a bulk update didn't apply. The response is a 200 whenever the request was well formed, so this
 // tells a client whether to look through the results for refusals.
@@ -64,7 +68,7 @@ export default class UpdateMany extends Route {
 
     if (!Array.isArray(req.body)) {
       this.log(`${this.schemaName}: Expected body to be an array of updates`, Route.LogLevel.ERR, req.context.id);
-      throw new Helpers.Errors.RequestError(400, `${this.schemaName}: Expected body to be an array of updates`);
+      throw Helpers.Errors.badRequest('array_required', `${this.schemaName}: Expected body to be an array of updates`);
     }
 
     // Each item is validated and applied on its own, so a refused item doesn't stop the others, even ones that update
@@ -75,15 +79,20 @@ export default class UpdateMany extends Route {
       update.body = body;
 
       if (!validation.isValid) {
-        update.validation = { code: 400, message: `${this.schemaName}: ${describeInvalidUpdate(validation)}` };
+        update.validation = refusal(invalidUpdateError(this.schemaName, validation));
         this.log(update.validation.message, Route.LogLevel.ERR, req.context.id);
         continue;
       }
 
       const key = `${update.sourceId}/${update.id}`;
       if (!updatable.has(key)) updatable.set(key, await this.__isUpdatable(req, model, update.id, update.sourceId));
+      // One outside the caller's policies is answered as one that doesn't exist
       if (!updatable.get(key)) {
-        update.validation = { code: 400, message: `${this.schemaName}: Invalid ID: ${update.id}` };
+        update.validation = refusal(
+          model.isValidId(update.id)
+            ? Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', update.id)
+            : Helpers.Errors.badRequest('invalid_id', 'The id is not valid', { id: update.id }),
+        );
         this.log(update.validation.message, Route.LogLevel.ERR, req.context.id);
         continue;
       }
@@ -147,14 +156,15 @@ export default class UpdateMany extends Route {
   }
 
   __describeWriteFailure(req: Request, id: string, err: unknown) {
-    if (err instanceof Helpers.Errors.RequestError) return { code: err.code, message: err.message };
-
-    this.log(
-      `${this.schemaName}: Unable to update ${id}: ${Helpers.getThrownErrorMessage(err)}`,
-      Route.LogLevel.ERR,
-      req.context.id,
-    );
-    return { code: 500, message: 'Internal Server Error' };
+    const apiError = Helpers.Errors.toApiError(err);
+    if (apiError.status >= 500) {
+      this.log(
+        `${this.schemaName}: Unable to update ${id}: ${Helpers.getThrownErrorMessage(err)}`,
+        Route.LogLevel.ERR,
+        req.context.id,
+      );
+    }
+    return refusal(apiError);
   }
 
   // Refused items are reported in the response but changed nothing, so they aren't broadcast.

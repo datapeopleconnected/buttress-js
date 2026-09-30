@@ -20,7 +20,7 @@ import sinon from 'sinon';
 
 import Route from '../../../../../dist/routes/route.js';
 import DeleteMany from '../../../../../dist/routes/schema-routes/delete-many.js';
-import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { ApiError } from '../../../../../dist/helpers/errors.js';
 import { createSchemaModel, newId } from '../../../../schema-model.js';
 
 // A real schema model, so the route and access control run the real parseQuery, over rows in memory
@@ -138,8 +138,9 @@ describe('schema-routes/DeleteMany', () => {
     await assert.rejects(
       () => route._validate(req, {}),
       (err) => {
-        assert.ok(err instanceof RequestError);
-        assert.strictEqual(err.code, 400);
+        assert.ok(err instanceof ApiError);
+        assert.strictEqual(err.status, 404);
+        assert.strictEqual(err.code, 'not_found');
         return true;
       },
     );
