@@ -399,7 +399,7 @@ export default class LambdaRunner {
       modulesNames.forEach((m: { name: string }) => {
         lambdaModules[m.name] = m.name;
       });
-      const ownCode = modulesNames.find((m) => !m.packageName);
+      const ownCode = modulesNames.find((m) => !m.packageName && !m.sharedEntryFile);
 
       this._jail.setSync('buttressOptions', new ivm.ExternalCopy(buttressOptions).copyInto());
 

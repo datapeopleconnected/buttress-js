@@ -575,7 +575,7 @@ describe('lambda/LambdaRunner:execute logs', () => {
   });
 
   // A runner that runs a lambda whose entry point is `body` in its real isolate, giving the update that completed it
-  async function createLoggingRunner() {
+  async function createLoggingRunner(modules = [{ name: 'lambda_logging' }]) {
     const { runner } = createRunner();
     await runner.init();
     const updateById = sinon.stub().resolves();
@@ -591,12 +591,13 @@ describe('lambda/LambdaRunner:execute logs', () => {
         }],
       ]),
     );
-    sinon.stub(runner, '_getLambdaModulesName').returns([{ name: 'lambda_logging' }]);
+    sinon.stub(runner, '_getLambdaModulesName').returns(modules);
     sinon.stub(runner, 'bundleLambdaModules').resolves();
     let body = '';
     sinon.stub(runner, '_registerLambdaModules').callsFake(async () => {
       runner._context.evalSync(`
         globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
+        globalThis['shared_Shared_HEAD'] = { answer: 42 };
         globalThis['lambda_logging'] = class { async execute() { ${body} } };
       `);
     });
@@ -634,6 +635,21 @@ describe('lambda/LambdaRunner:execute logs', () => {
       { log: 'careful', type: 'warn' },
       { log: '{"code":7}', type: 'error' },
     ]);
+  });
+
+  it('runs the lambda rather than a shared module listed ahead of it', async function () {
+    this.timeout(10000);
+    const runner = await createLoggingRunner([
+      { name: 'shared_Shared_HEAD', import: '/code/lambda-HEAD/./shared.js', sharedEntryFile: '/code/lambda-HEAD/shared.js' },
+      { name: 'lambda_logging' },
+    ]);
+
+    try {
+      const update = await runner.complete('lambda.log(String(shared_Shared_HEAD.answer));');
+      assert.deepStrictEqual(update.$push.logs.$each, [{ log: '42', type: 'log' }]);
+    } finally {
+      runner.dispose();
+    }
   });
 
   it('keeps each run to its own logs', async function () {
