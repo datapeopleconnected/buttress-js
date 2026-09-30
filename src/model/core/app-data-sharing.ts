@@ -19,6 +19,7 @@ import { Schema } from '../../helpers/schema.js';
 import Logging from '../../helpers/logging.js';
 
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 import TokenSchemaModel, { Token } from './token.js';
 import PolicySchemaModel, { PolicyConfig } from './policy.js';
 import { Services } from '../../bootstrap.js';
@@ -59,6 +60,8 @@ export type AppDataSharingAddBody = {
  */
 export default class AppDataSharingSchemaModel extends StandardModel<AppDataSharing> {
   static override name = 'AppDataSharing';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   constructor(services: Services) {
     const schema = AppDataSharingSchemaModel.Schema;

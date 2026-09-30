@@ -15,6 +15,7 @@
  */
 import Sugar from '../../helpers/sugar.js';
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 import { PolicyCache } from '../../services/policy-cache.js';
 
 import * as Helpers from '../../helpers/index.js';
@@ -88,6 +89,8 @@ export type PolicyAddBody = {
 
 class PolicySchemaModel extends StandardModel<Policy> {
   static override name = 'Policy';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   __policyCache: PolicyCache;
 

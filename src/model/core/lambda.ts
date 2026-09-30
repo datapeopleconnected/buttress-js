@@ -20,6 +20,7 @@ const Config = createConfig() as unknown as Config;
 
 import Sugar from '../../helpers/sugar.js';
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 import * as Helpers from '../../helpers/index.js';
 import * as Git from '../../helpers/git.js';
 import { Schema } from '../../helpers/schema.js';
@@ -100,6 +101,8 @@ export type LambdaAddBody = {
 
 export default class LambdaModel extends StandardModel<Lambda> {
   static override name = 'Lambda';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   constructor(services: Services) {
     const schema = LambdaModel.Schema;

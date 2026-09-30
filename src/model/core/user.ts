@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
@@ -105,6 +106,8 @@ const App = {
 
 export default class UserSchemaModel extends StandardModel<User> {
   static override name = 'User';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   constructor(services: Services) {
     const schema = UserSchemaModel.Schema;

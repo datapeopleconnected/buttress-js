@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 
 import { Schema } from '../../helpers/schema.js';
 import * as Helpers from '../../helpers/index.js';
@@ -40,6 +41,8 @@ export type DeploymentAddBody = {
 
 class DeploymentSchemaModel extends StandardModel<Deployment> {
   static override name = 'Deployment';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   constructor(services: Services) {
     const schema = DeploymentSchemaModel.Schema;

@@ -15,6 +15,7 @@
  */
 
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
@@ -37,6 +38,8 @@ export type SecureStoreAddBody = {
 
 class SecureStoreSchemaModel extends StandardModel<SecureStore> {
   static override name = 'SecureStore';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   constructor(services: Services) {
     const schema = SecureStoreSchemaModel.Schema;

@@ -24,6 +24,8 @@ import Logging from '../../../../dist/helpers/logging.js';
 import Model from '../../../../dist/model/index.js';
 import ActivitySchemaModel from '../../../../dist/model/core/activity.js';
 import TokenSchemaModel from '../../../../dist/model/core/token.js';
+import PolicySchemaModel from '../../../../dist/model/core/policy.js';
+import AppSchemaModel from '../../../../dist/model/core/app.js';
 
 function createNrpFake() {
   return { on: () => {}, emit: sinon.spy() };
@@ -987,3 +989,48 @@ describe('routes/Route:_respond Server-Timing', () => {
     assert.ok(res.json.calledOnce);
   });
 });
+
+describe('routes/Route:scoped', () => {
+  const policies = { name: 'policies' };
+  const apps = { name: 'apps' };
+  beforeEach(() => {
+    Model.getCoreModel.restore();
+    const models = {
+      [ActivitySchemaModel.name]: { Constants: { Visibility: { PRIVATE: 'PRIVATE' } } },
+      [PolicySchemaModel.name]: policies,
+      [AppSchemaModel.name]: apps,
+    };
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => models[modelClass.name]);
+  });
+
+  it("limits a core model to the caller's app", () => {
+    const scoped = createRoute().scoped(createReq({ token: { type: 'app' }, authApp: { id: 'app-1' } }), PolicySchemaModel);
+
+    assert.deepStrictEqual([scoped.tenant, scoped.clause], ['app-1', { _appId: 'app-1' }]);
+  });
+
+  it("limits the apps model to the caller's own app", () => {
+    const scoped = createRoute().scoped(createReq({ token: { type: 'app' }, authApp: { id: 'app-1' } }), AppSchemaModel);
+
+    assert.deepStrictEqual(scoped.clause, { id: 'app-1' });
+  });
+
+  it("doesn't limit a system token", () => {
+    const scoped = createRoute().scoped(createReq({ token: { type: 'system' } }), PolicySchemaModel);
+
+    assert.strictEqual(scoped.tenant, null);
+  });
+
+  it('refuses a caller with no app', () => {
+    assert.throws(() => createRoute().scoped(createReq({ token: { type: 'app' }, authApp: null }), PolicySchemaModel), {
+      code: 400,
+      message: 'no_authenticated_app',
+    });
+  });
+
+  it('gives the whole model only when asked for it by name, with a reason', () => {
+    assert.strictEqual(createRoute().unscopedModel(PolicySchemaModel, 'reads every app for the test'), policies);
+    assert.throws(() => createRoute().unscopedModel(PolicySchemaModel, ''), /reason/);
+  });
+});
+

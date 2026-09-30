@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 
 import * as Helpers from '../../helpers/index.js';
 import { Schema } from '../../helpers/schema.js';
@@ -62,6 +63,8 @@ export type LambdaExecutionAddBody = {
 
 class LambdaExecutionSchemaModel extends StandardModel<LambdaExecution> {
   static override name = 'LambdaExecution';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   constructor(services: Services) {
     const schema = LambdaExecutionSchemaModel.Schema;

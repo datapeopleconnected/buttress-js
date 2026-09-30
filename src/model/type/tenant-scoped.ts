@@ -1,0 +1,157 @@
+/**
+ * Buttress - The federated real-time open data platform
+ * Copyright (C) 2016-2026 Data People Connected LTD.
+ * <https://www.dpc-ltd.com/>
+ *
+ * This file is part of Buttress.
+ * Buttress is free software: you can redistribute it and/or modify it under the
+ * terms of the GNU Affero General Public Licence as published by the Free Software
+ * Foundation, either version 3 of the Licence, or (at your option) any later version.
+ * Buttress is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU Affero General Public Licence for more details.
+ * You should have received a copy of the GNU Affero General Public Licence along with
+ * this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+import * as Helpers from '../../helpers/index.js';
+
+import StandardModel from './standard.js';
+import { AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
+import { FlattenedSchema } from '../../types/schema.js';
+
+// The property of a core collection's rows that names the app they belong to. An app is its own row in `apps`.
+export type TenantKey = '_appId' | 'id';
+
+export type DocumentOf<M> = M extends StandardModel<infer TDocument> ? TDocument : never;
+
+/**
+ * A core model limited to one app's rows. Every query is ANDed with the app's clause as it goes to the model, after
+ * the route has built and parsed it, so route code can't leave it out; a write by id is refused for a row outside the
+ * app before anything is written. With no tenant (a system token) it passes everything through.
+ */
+export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
+  private readonly _model: M;
+
+  // The app whose rows it reaches, or null for every app's
+  readonly tenant: string | null;
+
+  readonly tenantKey: TenantKey;
+
+  constructor(model: M, tenant: string | null, tenantKey: TenantKey = '_appId') {
+    this._model = model;
+    this.tenant = tenant;
+    this.tenantKey = tenantKey;
+  }
+
+  get schemaData() {
+    return this._model.schemaData;
+  }
+
+  get flatSchemaData() {
+    return this._model.flatSchemaData;
+  }
+
+  // The clause that limits a query to the tenant's rows, empty for a system token
+  get clause(): AdapterQuery {
+    return this.tenant === null ? {} : { [this.tenantKey]: this.tenant };
+  }
+
+  /**
+   * @param {object} query - the final query, after parseQuery and any policy merge
+   * @return {object} the query limited to the tenant's rows
+   */
+  scope(query: AdapterQuery = {}): AdapterQuery {
+    if (this.tenant === null) return query;
+    if (Object.keys(query).length === 0) return this.clause;
+    return { $and: [query, this.clause] };
+  }
+
+  parseQuery(query: Record<string, unknown>, envFlat?: Record<string, unknown>, schemaFlat?: FlattenedSchema) {
+    return this._model.parseQuery(query, envFlat, schemaFlat);
+  }
+
+  createId(id?: string) {
+    return this._model.createId(id);
+  }
+
+  validateUpdate(body: unknown) {
+    return this._model.validateUpdate(body);
+  }
+
+  find(
+    query: AdapterQuery,
+    excludes?: AdapterQuery | null,
+    limit?: number,
+    skip?: number,
+    sort?: Record<string, unknown> | null,
+    project?: Record<string, unknown> | null | false,
+  ) {
+    return this._model.find(this.scope(query), excludes, limit, skip, sort, project);
+  }
+
+  findAll() {
+    return this.tenant === null ? this._model.findAll() : this.find({});
+  }
+
+  findByIds(ids: string[]) {
+    return this.tenant === null ? this._model.findByIds(ids) : this.find({ id: { $in: ids } });
+  }
+
+  findOne(query: AdapterQuery, excludes?: AdapterQuery) {
+    return this._model.findOne(this.scope(query), excludes);
+  }
+
+  /**
+   * @param {string} id
+   * @return {Promise} the row, or null when it isn't the tenant's
+   */
+  findById(id: string): Promise<DocumentOf<M> | null> {
+    if (this.tenant === null) return this._model.findById(id);
+    return this._model.findOne({ id, ...this.clause });
+  }
+
+  count(query?: AdapterQuery) {
+    return this._model.count(this.scope(query));
+  }
+
+  async exists(id: string): Promise<boolean> {
+    return Boolean(await this._model.exists(id, null, this.clause));
+  }
+
+  async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string) {
+    await this._assertTenants(id);
+    return this._model.updateByPath(body, id);
+  }
+
+  /**
+   * @param {string|object} target - the row's id, or the row, as the apps model takes
+   * @return {Promise}
+   */
+  async rm(target: string | { id: string }) {
+    await this._assertTenants(typeof target === 'string' ? target : String(target.id));
+    return this._model.rm(target);
+  }
+
+  /**
+   * Removes those of the rows that are the tenant's, through the model's own rmBulk
+   * @param {string[]} ids
+   * @return {Promise}
+   */
+  async rmBulk(ids: string[]) {
+    if (this.tenant === null) return this._model.rmBulk(ids);
+
+    const owned = await Helpers.streamAll<{ id: unknown }>(await this.find({ id: { $in: ids } }));
+    const ownedIds = new Set(owned.map((row) => String(row.id)));
+    return this._model.rmBulk(ids.filter((id) => ownedIds.has(String(id))));
+  }
+
+  rmAll(query?: AdapterQuery) {
+    return this._model.rmAll(this.scope(query));
+  }
+
+  private async _assertTenants(id: string) {
+    if (this.tenant === null) return;
+    if (!(await this.exists(id))) throw new Helpers.Errors.RequestError(400, 'invalid_id');
+  }
+}
