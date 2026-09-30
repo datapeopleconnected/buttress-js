@@ -426,7 +426,8 @@ class UpdateAppDataSharingPolicy extends Route {
           resolve({
             appId: appId,
           });
-        });
+        })
+        .catch(reject);
     });
   }
 

@@ -141,7 +141,8 @@ class UpdateTracking extends Route {
           resolve({
             id,
           });
-        });
+        })
+        .catch(reject);
     });
   }
 

@@ -604,7 +604,8 @@ class UpdateUser extends Route {
           resolve({
             id,
           });
-        });
+        })
+        .catch(reject);
     });
   }
 
@@ -1108,7 +1109,8 @@ class clearUserLocalData extends Route {
 
           this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
           return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-        });
+        })
+        .catch(reject);
     });
   }
 

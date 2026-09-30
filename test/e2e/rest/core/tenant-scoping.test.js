@@ -674,6 +674,11 @@ describe('Core route tenant scoping', async () => {
 		});
 	});
 	describe('Responses', () => {
+		it('Should answer a lookup of an id that names nothing as not found, not as a server error', async () => {
+			await assert.rejects(bjsReq({ url: `${ENDPOINT.REST}/api/v1/app/507f1f77bcf86cd799439011`, method: 'GET' }),
+				(err) => err instanceof BJSReqError && err.code >= 400 && err.code < 500, 'app');
+		});
+
 		it('Should tell browsers not to send the URL on as a referrer', async () => {
 			for (const url of [`${ENDPOINT.REST}/api/v1/app`, `${ENDPOINT.REST}/api/v1/check/admin`]) {
 				const res = await fetch(url, { headers: { Authorization: `Bearer ${testEnv.apps.app1.token}` } });

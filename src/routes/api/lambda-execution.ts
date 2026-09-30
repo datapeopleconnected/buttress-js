@@ -174,7 +174,8 @@ class UpdateLambdaExecution extends Route {
           resolve({
             id,
           });
-        });
+        })
+        .catch(reject);
     });
   }
 

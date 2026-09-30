@@ -296,7 +296,8 @@ class UpdatePolicy extends Route {
             return reject(new Helpers.Errors.RequestError(400, `invalid_id`));
           }
           resolve(true);
-        });
+        })
+        .catch(reject);
     });
   }
 

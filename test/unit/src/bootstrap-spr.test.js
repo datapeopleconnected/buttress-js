@@ -80,12 +80,8 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		createId: (id) => new ObjectId(id),
 		find: async (query) => docs.filter((doc) => doc.type === query.type),
 		findOne: async (query) => docs.find((doc) => doc.id.equals(query._id)) || null,
-		// Like MongodbAdapter.findById, this throws when there's no such document.
-		findById: async (id) => {
-			const doc = docs.find((d) => d.id.toString() === id.toString());
-			if (!doc) throw new Error('Unable to find document');
-			return doc;
-		},
+		// Like MongodbAdapter.findById, this resolves to null when there's no such document.
+		findById: async (id) => docs.find((d) => d.id.toString() === id.toString()) ?? null,
 	});
 
 	const defaultConnections = {

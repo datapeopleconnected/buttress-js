@@ -765,3 +765,20 @@ describe('datastore/adapters/MongodbAdapter: exists', () => {
     assert.deepStrictEqual(filters, []);
   });
 });
+
+describe('datastore/adapters/mongodb:findById', () => {
+  const adapterWith = (stored) => {
+    const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});
+    adapter.collection = { findOne: async (query) => (stored && query._id.toHexString() === ID ? { _id: new ObjectId(ID), name: 'x' } : null) };
+    return adapter;
+  };
+
+  it('resolves to the entity with that id', async () => {
+    assert.strictEqual((await adapterWith(true).findById(ID)).name, 'x');
+  });
+
+  it("resolves to null for an id with no entity, or one that isn't an id, for the caller to answer as not found", async () => {
+    assert.strictEqual(await adapterWith(false).findById(ID), null);
+    assert.strictEqual(await adapterWith(true).findById('not-an-id'), null);
+  });
+});

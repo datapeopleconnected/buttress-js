@@ -336,7 +336,8 @@ class UpdateLambda extends Route {
           resolve({
             id,
           });
-        });
+        })
+        .catch(reject);
     });
   }
 

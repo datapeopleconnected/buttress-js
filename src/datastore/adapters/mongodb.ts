@@ -665,8 +665,10 @@ export default class MongodbAdapter extends AbstractAdapter {
   override async findById(id: string) {
     // Logging.logSilly(`Schema:findById: ${this.collection.namespace} ${id}`);
 
+    // A miss, or an id that can't name an entity, is null for the caller to answer as not found
+    if (!ObjectId.isValid(id)) return null;
     const document = await this.collection?.findOne({ _id: new ObjectId(id) }, {});
-    if (!document) throw new Error('Unable to find document');
+    if (!document) return null;
 
     return this._modifyDocument(document);
   }
