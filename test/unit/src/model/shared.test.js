@@ -127,3 +127,17 @@ describe('model/shared:validateUpdate paths', () => {
     assert.strictEqual(accepts('a+b', 'x'), '^a\\+b$');
   });
 });
+
+describe('model/shared:validateUpdate paths beneath a typed object', () => {
+  const validate = validateUpdate({}, {
+    name: 'thing',
+    type: 'collection',
+    properties: { meta: { __type: 'object', __default: {}, __allowUpdate: true } },
+  });
+
+  it('takes a path whose names contain "remove", which is only an update operation as __remove__', () => {
+    for (const path of ['meta.removeMe', 'meta.remover.x']) {
+      assert.deepStrictEqual(validate([{ path, value: 1 }]).validation, { isValid: true }, path);
+    }
+  });
+});

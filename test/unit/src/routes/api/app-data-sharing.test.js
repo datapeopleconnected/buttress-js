@@ -24,11 +24,17 @@ import Model from '../../../../../dist/model/index.js';
 import AppDataSharingSchemaModel from '../../../../../dist/model/core/app-data-sharing.js';
 import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
+import StandardModel from '../../../../../dist/model/type/standard.js';
 
 import { realQueryParser } from '../../../../query-parser.js';
 import createConfig from '@dpc/node-env-obj';
 
 const Config = createConfig();
+
+
+// A core model's own update validation, as the route runs it
+const realValidateUpdate = (ModelClass) => (body) =>
+  StandardModel.prototype.validateUpdate.call({ schemaData: ModelClass.Schema }, body);
 
 const [
   GetAppDataSharing,
@@ -202,6 +208,16 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
 });
 
 describe('routes/api/app-data-sharing:UpdateAppDataSharing', () => {
+  it('says an update is missing its value, rather than that its path is invalid', async () => {
+    stubModel({ ds: { validateUpdate: realValidateUpdate(AppDataSharingSchemaModel) } });
+    const route = createRoute(UpdateAppDataSharing);
+
+    await assert.rejects(
+      route._validate(createReq({ params: { dataSharingId: HEX_ID }, body: [{ path: 'name' }] })),
+      (err) => err.code === 400 && err.message === 'ERROR: Update is missing its value',
+    );
+  });
+
   it('rejects when no data sharing id is provided', async () => {
     stubModel();
     const route = createRoute(UpdateAppDataSharing);

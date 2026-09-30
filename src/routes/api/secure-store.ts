@@ -17,6 +17,7 @@ import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
+import { describeInvalidUpdate } from '../../model/shared.js';
 import Datastore from '../../datastore/index.js';
 import * as Helpers from '../../helpers/index.js';
 
@@ -287,18 +288,9 @@ class UpdateSecureStore extends Route {
     const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {
-      if (validation.isPathValid === false) {
-        this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-        return Promise.reject(
-          new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`),
-        );
-      }
-      if (validation.isValueValid === false) {
-        this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-        return Promise.reject(
-          new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`),
-        );
-      }
+      const message = describeInvalidUpdate(validation);
+      this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: ${message}`));
     }
 
     const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
@@ -353,18 +345,9 @@ class BulkUpdateSecureStore extends Route {
       const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(item.body);
       item.body = body;
       if (!validation.isValid) {
-        if (validation.isPathValid === false) {
-          this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-          return Promise.reject(
-            new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`),
-          );
-        }
-        if (validation.isValueValid === false) {
-          this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-          return Promise.reject(
-            new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`),
-          );
-        }
+        const message = describeInvalidUpdate(validation);
+        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
+        return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: ${message}`));
       }
 
       const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({

@@ -17,6 +17,7 @@ import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
+import { describeInvalidUpdate } from '../../model/shared.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import Datastore from '../../datastore/index.js';
@@ -580,18 +581,9 @@ class UpdateUser extends Route {
       const { validation, body } = Model.getCoreModel(UserSchemaModel).validateUpdate(req.body);
       req.body = body;
       if (!validation.isValid) {
-        if (validation.isPathValid === false) {
-          this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-          return reject(
-            new Helpers.Errors.RequestError(400, `USER: Update path is invalid: ${validation.invalidPath}`),
-          );
-        }
-        if (validation.isValueValid === false) {
-          this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-          return reject(
-            new Helpers.Errors.RequestError(400, `USER: Update value is invalid: ${validation.invalidValue}`),
-          );
-        }
+        const message = describeInvalidUpdate(validation);
+        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
+        return reject(new Helpers.Errors.RequestError(400, `USER: ${message}`));
       }
 
       Model.getCoreModel(UserSchemaModel)

@@ -32,8 +32,14 @@ import AppSchemaModel from '../../../../../dist/model/core/app.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 import DeploymentSchemaModel from '../../../../../dist/model/core/deployment.js';
 import LambdaExecutionSchemaModel from '../../../../../dist/model/core/lambda-execution.js';
+import StandardModel from '../../../../../dist/model/type/standard.js';
 
 import { realQueryParser } from '../../../../query-parser.js';
+
+
+// A core model's own update validation, as the route runs it
+const realValidateUpdate = (ModelClass) => (body) =>
+  StandardModel.prototype.validateUpdate.call({ schemaData: ModelClass.Schema }, body);
 
 const [
   GetLambda,
@@ -364,6 +370,16 @@ describe('routes/api/lambda:UpdateLambda', () => {
 });
 
 describe('routes/api/lambda:BulkUpdateLambda', () => {
+  it('says an update in the batch is missing its value, rather than that its path is invalid', async () => {
+    stubModel({ lambda: { validateUpdate: realValidateUpdate(LambdaSchemaModel) } });
+    const route = createRoute(BulkUpdateLambda);
+
+    await assert.rejects(
+      route._validate(createReq({ body: [{ id: HEX_ID, body: [{ path: 'name' }] }] })),
+      (err) => err.code === 400 && err.message === 'LAMBDA: Update is missing its value',
+    );
+  });
+
   it('rejects a request with no body', async () => {
     stubModel();
     const route = createRoute(BulkUpdateLambda);

@@ -17,6 +17,7 @@ import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
+import { describeInvalidUpdate } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 import TrackingSchemaModel, { Tracking } from '../../model/core/tracking.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
@@ -117,18 +118,9 @@ class UpdateTracking extends Route {
       const { validation, body } = Model.getCoreModel(TrackingSchemaModel).validateUpdate(req.body);
       req.body = body;
       if (!validation.isValid) {
-        if (validation.isPathValid === false) {
-          this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-          return reject(
-            new Helpers.Errors.RequestError(400, `TRACKING: Update path is invalid: ${validation.invalidPath}`),
-          );
-        }
-        if (validation.isValueValid === false) {
-          this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-          return reject(
-            new Helpers.Errors.RequestError(400, `TRACKING: Update value is invalid: ${validation.invalidValue}`),
-          );
-        }
+        const message = describeInvalidUpdate(validation);
+        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
+        return reject(new Helpers.Errors.RequestError(400, `TRACKING: ${message}`));
       }
 
       Model.getCoreModel(TrackingSchemaModel)

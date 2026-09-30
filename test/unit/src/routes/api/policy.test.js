@@ -25,8 +25,14 @@ import PolicySchemaModel from '../../../../../dist/model/core/policy.js';
 import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 import AppSchemaModel from '../../../../../dist/model/core/app.js';
+import StandardModel from '../../../../../dist/model/type/standard.js';
 
 import { realQueryParser } from '../../../../query-parser.js';
+
+
+// A core model's own update validation, as the route runs it
+const realValidateUpdate = (ModelClass) => (body) =>
+  StandardModel.prototype.validateUpdate.call({ schemaData: ModelClass.Schema }, body);
 
 const [
   GetPolicy,
@@ -283,6 +289,16 @@ describe('routes/api/policy:AddPolicy', () => {
 });
 
 describe('routes/api/policy:UpdatePolicy', () => {
+  it('says an update is missing its value, rather than that its path is invalid', async () => {
+    stubModel({ policy: { validateUpdate: realValidateUpdate(PolicySchemaModel) } });
+    const route = createRoute(UpdatePolicy);
+
+    await assert.rejects(
+      route._validate(createReq({ body: [{ path: 'name' }] })),
+      (err) => err.code === 400 && err.message === 'POLICY: Update is missing its value',
+    );
+  });
+
   it('rejects when the update path is invalid', async () => {
     stubModel({
       policy: {

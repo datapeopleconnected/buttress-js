@@ -17,6 +17,7 @@ import { Request, Response } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
+import { describeInvalidUpdate } from '../../model/shared.js';
 import Datastore from '../../datastore/index.js';
 import * as Helpers from '../../helpers/index.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
@@ -147,21 +148,9 @@ class UpdateLambdaExecution extends Route {
       req.body = body;
 
       if (!validation.isValid) {
-        if (validation.isPathValid === false) {
-          this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-          return reject(
-            new Helpers.Errors.RequestError(400, `LAMBDA EXECUTION: Update path is invalid: ${validation.invalidPath}`),
-          );
-        }
-        if (validation.isValueValid === false) {
-          this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-          return reject(
-            new Helpers.Errors.RequestError(
-              400,
-              `LAMBDA EXECUTION: Update value is invalid: ${validation.invalidValue}`,
-            ),
-          );
-        }
+        const message = describeInvalidUpdate(validation);
+        this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
+        return reject(new Helpers.Errors.RequestError(400, `LAMBDA EXECUTION: ${message}`));
       }
 
       Model.getCoreModel(LambdaExecutionSchemaModel)

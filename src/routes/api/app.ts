@@ -18,6 +18,7 @@ import { Request, Response } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
+import { describeInvalidUpdate } from '../../model/shared.js';
 import Sugar from '../../helpers/sugar.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
@@ -782,18 +783,9 @@ class AppUpdate extends Route {
     const { validation, body } = Model.getCoreModel(AppSchemaModel).validateUpdate(req.body);
     req.body = body;
     if (!validation.isValid) {
-      if (validation.isPathValid === false) {
-        this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-        return Promise.reject(
-          new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`),
-        );
-      }
-      if (validation.isValueValid === false) {
-        this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-        return Promise.reject(
-          new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`),
-        );
-      }
+      const message = describeInvalidUpdate(validation);
+      this.log(`ERROR: ${message}`, Route.LogLevel.ERR);
+      return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: ${message}`));
     }
 
     const exists = await Model.getCoreModel(AppSchemaModel).exists(id);
