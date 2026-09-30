@@ -18,7 +18,7 @@ before working in an area rather than re-deriving them from scratch:
 | [.ai/data-layer.md](.ai/data-layer.md) | `ModelManager`/`Model`, `StandardModel`, the JSON schema system, datastore adapters (Mongo/Buttress/Empty) |
 | [.ai/access-control.md](.ai/access-control.md) | Policy engine: REST request-time middleware vs. SPR broadcast-time evaluation, `PolicyCache` |
 | [.ai/lambda-system.md](.ai/lambda-system.md) | `LambdaManager` (queueing/debouncing) + `LambdaRunner` (isolated-vm execution) |
-| [.ai/routing.md](.ai/routing.md) | `Routes`/`Route` request lifecycle, middleware chain, generated schema CRUD routes |
+| [.ai/routing.md](.ai/routing.md) | `Routes`/`Route` request lifecycle, middleware chain, generated schema CRUD routes, the error contract (`ApiError`) |
 | [.ai/development.md](.ai/development.md) | Build/lint/format/test commands, running a single test, config & env vars, Docker |
 | [.ai/performance.md](.ai/performance.md) | Benchmarking a build (`npm run bench`); I/O budgets: a failing budget test, adding a budget, how MongoDB/Redis/NRP calls are counted per request; the `Server-Timing` header |
 

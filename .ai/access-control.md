@@ -57,8 +57,10 @@ after token authentication. Flow:
    - Remaining policy configs are merged where possible (same verbs/schema/query → merge projections;
      same verbs/schema/no-projection → OR the queries together) into `parsedPolicyConfig[]`, stored on
      `req.context.ac.policyConfigs` for the route handler to apply to its DB query.
-5. No matching policy at any stage → throws `PolicyError` (401) → middleware turns it into a JSON error
-   response. **Default is deny, not allow.**
+5. No matching policy at any stage → throws `PolicyError` (403 `access_denied`, `property_access_denied` for
+   projections, 404 `unknown_schema`, 401 `app_not_found` for a token outliving its app) → the middleware passes
+   it to the error handler (see [routing.md](routing.md#errors-srchelperserrorsts)). **Default is deny, not
+   allow.**
 6. If the token has any policy with a `limit` (expiry) within one week, schedules a one-shot cleanup
    (`_queuePolicyLimitDeleteEvent`) that strips the token's matching `policyProperties` and deletes the
    policy when it expires.

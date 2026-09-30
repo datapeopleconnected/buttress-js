@@ -32,7 +32,7 @@ Every registered path gets this exact array wired in as Express middleware, in o
    API-endpoint token, or normal bearer/query token via `RoutesTokens`), then `req.context.authApp`,
    `authUser`, `authAppDataSharing`, `authLambda`.
 4. `AccessControl.accessControlPolicyMiddleware` — see [access-control.md](access-control.md).
-5. `_configCrossDomain` — CORS header logic; **also the point where a missing token becomes a 401** for
+5. `_configCrossDomain` — CORS header logic; **also the point where a missing token becomes a 401 `missing_token`** for
    non-system/app tokens, and where per-token `domains` allow-lists are enforced for user tokens.
    Entries that aren't strings are ignored, so they match no origin. The routes that write a token's
    domains (`POST user`'s `token.domains`, `POST user/:id/token`, `POST lambda`'s `auth.domains`) refuse
@@ -83,8 +83,10 @@ limited to the caller's app (every app's for a system token), rather than `Model
 
 - queries (`find`, `findOne`, `count`, `rmAll`) get `{[TenantKey]: app}` ANDed in as they reach the model, after
   `parseQuery`; `findById` gives `null` for another app's row; `exists` is scoped; `updateByPath`, `rm` and
-  `owned(id)` (the model itself, for its own by-id methods) refuse another app's row with 400 `invalid_id`;
-  `rmBulk` removes only the app's rows; `add` puts the app into the internals.
+  `owned(id)` (the model itself, for its own by-id methods) refuse another app's row as one that doesn't exist, 404
+  `not_found`, and an id that can't be one with 400 `invalid_id`; `findByIdOrFail(id)` and `assertExists(id)` do
+  the same for a route's own by-id checks; `rmBulk` removes only the app's rows; `add` puts the app into the
+  internals.
 - Each core model says which property names a row's app: `static TenantKey`, `_appId`, or `id` for `apps`.
 - `this.unscopedModel(CoreModel, reason)` is the explicit way to reach every app's rows.
 - A filter that names the caller's own app for a system token too (a policy name check, sync) stays in the
@@ -101,6 +103,26 @@ anything but the members that touch no rows, and refuses keeping or passing the 
 `test/unit/src/routes/api/core-routes-scoping.test.js` walks every core route's compiled code: a route that takes other
 than system tokens may use `unscopedModel` only where its list names the route, model and reason, so reaching every
 app from a new place is a change to that list.
+
+## Errors (`src/helpers/errors.ts`)
+
+A route, middleware or model refuses a request by throwing an `ApiError` from one of its factories: `badRequest`
+(400), `unauthorised` (401: no token, or one that isn't valid), `forbidden` (403: a valid token that isn't allowed),
+`notFound` (404), `entityNotFound(schema, id)` (404 `not_found`, for an id that names nothing the caller can
+reach), `methodNotAllowed`, `conflict`, `unavailable` and `internal(reason)` (500 `internal_error`, with the reason
+kept for the log only). Each takes a snake_case `code`, an optional message for people and optional `details`.
+`PolicyError` extends it. The validation refusals are `invalidEntityError` and `invalidUpdateError` in
+`src/model/shared.ts` (400 `missing_field`/`invalid_value`/`invalid_update`, with the schema and path).
+
+Everything reaches one handler, `RoutesMiddleware.logErrors`, mounted last: it answers `toApiError(err)`'s status
+and `{code, message, details?}`, and anything that isn't an `ApiError` as 500 `internal_error`, logging it. The
+body parsers' refusals (`_handleEarlyError`), the policy middleware, the CORS check, the admin routes and the lambda
+endpoints (which have the same handler on their own paths) pass errors to it rather than answering themselves. A
+refused bulk update item carries `{status, ...toBody()}` in its `validation`.
+
+Each code has one status: `test/unit/src/helpers/error-codes.test.js` reads the compiled code for every factory
+call and fails when a code is used with two statuses. The user-facing list is [docs/core/errors.md](../docs/core/errors.md),
+and `test/e2e/rest/error-contract.test.js` is the table of (condition → status, code) over a running server.
 
 ## Schema-routes (`src/routes/schema-routes/`)
 

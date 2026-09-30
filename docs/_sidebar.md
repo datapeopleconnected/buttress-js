@@ -18,6 +18,7 @@
 * Core Concepts
   * [Architecture](core/architecture.md)
   * [Access Control](core/access-control.md)
+  * [Errors](core/errors.md)
   * [Runtime Requirements](core/runtime-requirements.md)
 
 * Applications
