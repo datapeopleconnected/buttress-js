@@ -90,8 +90,10 @@ limited to the caller's app (every app's for a system token), rather than `Model
 - A filter that names the caller's own app for a system token too (a policy name check, sync) stays in the
   query, since the scoped model passes a system token through.
 
-As of 2026-09-30 `src/routes/api/policy.ts`, `lambda.ts` and `user.ts` have moved to it, plus the `add`s of the
-secure store and data sharing routes; the other routes still add `this._tenantFilter(req)` themselves.
+Every route in `src/routes/api` reaches core data this way. `Model.getCoreModel()` is left there only for a
+model's `schemaData`, `Constants`, `createId`, validation and `parseQuery`, which touch no rows. System-only routes
+(tracking, activity, most of the apps routes) use `unscopedModel(…, 'the route takes only system tokens')`.
+`ACM.find`/`ACM.count` take a scoped model as they do a schema model (`QueryableModel`).
 
 ## Schema-routes (`src/routes/schema-routes/`)
 
