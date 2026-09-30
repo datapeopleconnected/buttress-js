@@ -701,12 +701,19 @@ describe('routes/Route:_checkBasedPathLambda', () => {
 });
 
 describe('routes/Route:_findChangeOwners', () => {
-  // A core model whose records belong to the apps in `owners` (record id -> app id).
-  const stubCoreModel = (owners) =>
-    sinon.stub(Model, 'getCoreModelBySchemaName').returns({
+  // A core model whose records belong to the apps in `owners` (record id -> app id), and whose ids don't start with "x"
+  const stubCoreModel = (owners) => {
+    const model = {
       createId: (id) => id,
-      findOne: async ({ _id }) => (owners[_id] ? { id: _id, _appId: owners[_id] } : null),
-    });
+      isValidId: (id) => !String(id).startsWith('x'),
+      find: sinon.spy(async ({ _id }) =>
+        Readable.from(_id.$in.filter((id) => owners[id]).map((id) => ({ id, _appId: owners[id] }))),
+      ),
+      findOne: sinon.spy(async ({ _id }) => (owners[_id] ? { id: _id, _appId: owners[_id] } : null)),
+    };
+    sinon.stub(Model, 'getCoreModelBySchemaName').returns(model);
+    return model;
+  };
 
   it("takes an app record's owner from its own id, without a lookup", async () => {
     const lookup = stubCoreModel({});
@@ -716,7 +723,7 @@ describe('routes/Route:_findChangeOwners', () => {
     const owners = await route._findChangeOwners(createReq({ params: { id: 'app-x' } }));
 
     assert.deepStrictEqual([...owners], [['app-x', 'app-x']]);
-    assert.strictEqual(lookup.called, false);
+    assert.strictEqual(lookup.find.called || lookup.findOne.called, false);
   });
 
   it('looks up the app that owns any other core record', async () => {
@@ -753,6 +760,21 @@ describe('routes/Route:_findChangeOwners', () => {
     );
   });
 
+  it('looks the records of a core bulk update up at once, and skips ids that are not ids', async () => {
+    const model = stubCoreModel({ 'policy-1': 'app-a', 'policy-2': 'app-b' });
+    const route = createRoute({ schema: { name: 'policy' }, app: null });
+    route.verb = Route.Constants.Verbs.POST;
+    const ids = ['policy-1', 'policy-2', 'x-not-an-id', 'policy-3', 'policy-4'];
+    const req = createReq({ pathSpec: 'policy/bulk/update', body: ids.map((id) => ({ id, body: { path: 'name', value: 'a' } })) });
+
+    const owners = await route._findChangeOwners(req);
+
+    assert.strictEqual(model.find.callCount, 1);
+    assert.strictEqual(model.findOne.called, false);
+    assert.deepStrictEqual(model.find.firstCall.args[0], { _id: { $in: ['policy-1', 'policy-2', 'policy-3', 'policy-4'] } });
+    assert.deepStrictEqual([...owners], [['policy-1', 'app-a'], ['policy-2', 'app-b']]);
+  });
+
   it("looks nothing up for a schema route, whose data belongs to the route's app", async () => {
     const lookup = stubCoreModel({});
     const route = createRoute({ schema: { name: 'car' }, app: { id: 'app-1' } });
@@ -761,7 +783,7 @@ describe('routes/Route:_findChangeOwners', () => {
     const owners = await route._findChangeOwners(createReq({ params: { id: 'car-1' } }));
 
     assert.strictEqual(owners, undefined);
-    assert.strictEqual(lookup.called, false);
+    assert.strictEqual(lookup.find.called || lookup.findOne.called, false);
   });
 });
 

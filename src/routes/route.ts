@@ -727,15 +727,16 @@ export default class Route {
     const model = Model.getCoreModelBySchemaName(this.schemaName);
     if (!model) return owners;
 
-    for (const id of recordIds) {
-      let record: { _appId?: unknown } | null = null;
-      try {
-        record = (await model.findOne({ _id: model.createId(id) })) as { _appId?: unknown } | null;
-      } catch (_err) {
-        // Not an id this model can look up; nothing to find.
-      }
-      if (record?._appId) owners.set(id, String(record._appId));
-    }
+    // In one lookup; an id this model can't look up has nothing to find
+    const ids = recordIds.filter((id) => model.isValidId(id));
+    if (ids.length < 1) return owners;
+
+    const records = await Helpers.streamAll<{ id: unknown; _appId?: unknown }>(
+      await model.find({ _id: { $in: ids.map((id) => model.createId(id)) } }),
+    );
+    records.forEach((record) => {
+      if (record._appId) owners.set(String(record.id), String(record._appId));
+    });
 
     return owners;
   }
