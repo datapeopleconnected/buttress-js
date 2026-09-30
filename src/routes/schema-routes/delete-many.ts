@@ -84,7 +84,14 @@ export default class DeleteMany extends Route {
 
   override async _exec(req: Request, _res: Response, { ids, found }: { ids: string[]; found: AdapterDocument[] }) {
     await this._keepEntitiesBeingDeleted(req, ids, found);
-    await (await this.routeModel()).rmBulk(ids);
+    // A partner's record, found through a collection's remotes, is removed from its source
+    const sourceIds = new Map(found.map((entity) => [String(entity.id), entity.sourceId as string | undefined]));
+    await (
+      await this.routeModel()
+    ).rmBulk(
+      ids,
+      ids.map((id) => sourceIds.get(String(id))),
+    );
     return ids;
   }
 

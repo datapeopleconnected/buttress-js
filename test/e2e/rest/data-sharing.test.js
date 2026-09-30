@@ -330,6 +330,19 @@ describe('Data Sharing', async () => {
 
 			assert(!(await app2Cars('', {method: 'GET'})).some((car) => car.id === blue.id), 'the car is still on App2');
 		});
+
+		it('Should delete App1\'s and App2\'s own cars from App2 at once', async function() {
+			await createCar(testEnv.apps.app1, 'A bulk scrap car');
+			await createCar(testEnv.apps.app2, 'Our bulk scrap car');
+			const scraps = testEnv.cars.slice(-2);
+
+			await app2Cars('/bulk/delete', {method: 'POST', body: JSON.stringify(scraps.map((car) => car.id))});
+			scraps.forEach(forget);
+
+			const ids = scraps.map((car) => car.id);
+			assert(!(await app1Cars()).some((car) => ids.includes(car.id)), 'App1\'s car is still on App1');
+			assert(!(await app2Cars('', {method: 'GET'})).some((car) => ids.includes(car.id)), 'a car is still on App2');
+		});
 	});
 
 	describe('Handling mutiple agreement sources', async () => {
@@ -479,4 +492,22 @@ describe('Data Sharing', async () => {
 			assert((await app1CarsReadByApp2()).length > 0, 'app2 reads app1\'s cars again');
 		});
 	});
+
+	describe('Deleting every car through a collection with remotes', async () => {
+		it('Should delete App2\'s own cars and those of App1 and App3', async function() {
+			this.timeout(20000);
+			const carsOf = (app, apiPath = app.apiPath) => bjsReq({
+				url: `${ENDPOINT.REST}/${apiPath}/api/v1/car`,
+				method: 'GET',
+			}, app.token);
+			assert((await carsOf(testEnv.apps.app1)).length > 0, 'App1 has cars to begin with');
+
+			await bjsReq({url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/car`, method: 'DELETE'}, testEnv.apps.app2.token);
+
+			assert.deepStrictEqual(await carsOf(testEnv.apps.app1), []);
+			assert.deepStrictEqual(await carsOf(testEnv.apps.app3), []);
+			assert.deepStrictEqual(await carsOf(testEnv.apps.app2), []);
+		});
+	});
 });
+

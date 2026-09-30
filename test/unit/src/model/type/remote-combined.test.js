@@ -296,5 +296,56 @@ describe('model/type/RemoteCombinedModel', () => {
       assert.strictEqual(partner.connections, connections);
     });
   });
+
+  describe('removing in bulk', () => {
+    const createBulkModel = ({ unreachable = [] } = {}) => {
+      const removed = [];
+      const source = (name) => ({
+        rmBulk: async (ids) => removed.push([name, 'rmBulk', ids]),
+        rmAll: async (query) => removed.push([name, 'rmAll', query]),
+      });
+      const model = Object.create(RemoteCombinedModel.prototype);
+      model.app = { id: 'app-b' };
+      model._sdsRouting = {
+        get: async (appId, sourceId) => ({ 'app-a': 'agreement-1', 'app-c': 'agreement-2' })[sourceId],
+      };
+      model._localModel = source('local');
+      model._remoteModels = [{ dataSharingId: 'agreement-1', ...source('agreement-1') }];
+      if (!unreachable.includes('agreement-2')) model._remoteModels.push({ dataSharingId: 'agreement-2', ...source('agreement-2') });
+      model._unreachable = new Set(unreachable);
+      return { model, removed };
+    };
+
+    it('removes each record from its source', async () => {
+      const { model, removed } = createBulkModel();
+
+      await model.rmBulk(['own-1', 'a-1', 'c-1', 'a-2'], [undefined, 'app-a', 'app-c', 'app-a']);
+
+      assert.deepStrictEqual(removed.sort(), [
+        ['agreement-1', 'rmBulk', ['a-1', 'a-2']],
+        ['agreement-2', 'rmBulk', ['c-1']],
+        ['local', 'rmBulk', ['own-1']],
+      ]);
+    });
+
+    it('removes every record, its own and each partner\'s', async () => {
+      const { model, removed } = createBulkModel();
+
+      await model.rmAll({});
+
+      assert.deepStrictEqual(removed.sort(), [
+        ['agreement-1', 'rmAll', {}],
+        ['agreement-2', 'rmAll', {}],
+        ['local', 'rmAll', {}],
+      ]);
+    });
+
+    it("removes nothing, as unavailable, when a partner can't be reached", async () => {
+      const { model, removed } = createBulkModel({ unreachable: ['agreement-2'] });
+
+      await assert.rejects(() => model.rmAll({}), { code: 503 });
+      assert.deepStrictEqual(removed, []);
+    });
+  });
 });
 

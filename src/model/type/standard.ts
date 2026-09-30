@@ -502,9 +502,10 @@ export default class StandardModel<TDocument = AdapterDocument> {
 
   /**
    * @param {Array} ids - Array of entity ids to delete
+   * @param {Array} sourceIds - the source of each, used by federated models
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  rmBulk(ids: string[]) {
+  rmBulk(ids: string[], _sourceIds: (string | null | undefined)[] = []) {
     return this.adapter.rmBulk(ids);
   }
 

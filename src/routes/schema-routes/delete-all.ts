@@ -73,7 +73,11 @@ export default class DeleteAll extends Route {
     const ids = scopedEntities.map((entity) => String(entity.id));
     if (ids.length > 0) {
       await this._keepEntitiesBeingDeleted(req, ids, scopedEntities);
-      await model.rmBulk(ids);
+      // A partner's record, found through a collection's remotes, is removed from its source
+      await model.rmBulk(
+        ids,
+        scopedEntities.map((entity) => entity.sourceId as string | undefined),
+      );
     }
     return ids;
   }

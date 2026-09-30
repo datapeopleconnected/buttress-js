@@ -282,19 +282,43 @@ export default class RemoteCombinedModel extends StandardModel {
   }
 
   /**
+   * Removes each record from its source. Every source is found before any record is removed.
    * @param {array} ids
+   * @param {array} sourceIds - the source of each record, none for the app's own
    * @return {Promise}
    */
-  override async rmBulk(ids: string[]) {
-    return this.localModel.rmBulk(ids);
+  override async rmBulk(ids: string[], sourceIds: (string | null | undefined)[] = []) {
+    const bySource = new Map<string | null, string[]>();
+    ids.forEach((id, idx) => {
+      const sourceId = sourceIds[idx] ?? null;
+      bySource.set(sourceId, [...(bySource.get(sourceId) ?? []), id]);
+    });
+
+    const removals = await Promise.all(
+      [...bySource].map(async ([sourceId, idsOfSource]) => ({
+        model: await this._getTargetModel(sourceId),
+        ids: idsOfSource,
+      })),
+    );
+    for (const removal of removals) {
+      await removal.model.rmBulk(removal.ids);
+    }
   }
 
   /**
+   * Removes the app's own records and, through each agreement, the partner's that its policy lets the app remove. With a
+   * partner that can't be reached, nothing is removed.
    * @param {array} query
    * @return {Promise}
    */
   override async rmAll(query?: AdapterQuery) {
-    return this.localModel.rmAll(query);
+    if (this._unreachable.size > 0) throw new Helpers.Errors.RequestError(503, 'data_sharing_partner_unavailable');
+
+    const remotes = [...this._remoteModels];
+    await this.localModel.rmAll(query);
+    for (const remote of remotes) {
+      await remote.rmAll(query);
+    }
   }
 
   /**

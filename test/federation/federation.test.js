@@ -169,6 +169,14 @@ describe('Federation', function () {
       const onA = await a.call('GET', 'fed-a/api/v1/car', { token: env.appA.token });
       assert.ok(!onA.some((car) => car.id === env.cars[11].id), 'the car is still on a');
     });
+
+    it("deletes several of the partner's cars at once", async () => {
+      const ids = [env.cars[9].id, env.cars[10].id];
+      const res = await fromB('POST', 'car/bulk/delete', ids);
+      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+      const onA = await a.call('GET', 'fed-a/api/v1/car', { token: env.appA.token });
+      assert.ok(!onA.some((car) => ids.includes(car.id)), 'a car is still on a');
+    });
   });
 
   describe('Realtime', () => {
