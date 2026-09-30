@@ -19,7 +19,10 @@ Coordinates work; never executes lambda code itself. Talks to `LambdaRunner` wor
 - **Worker handshake**: workers reply `lambda:worker:available`; the manager assigns via
   `lambda:worker:execute` and tracks the assignment in `_workerMap` (workerId→executionId) and
   `_inflightExecutions`, so a second worker announcing for the same execution is ignored. Workers report
-  back `lambda:worker:finished`/`errored`/`overloaded`, each of which untracks the assignment.
+  back `lambda:worker:finished`/`errored`/`overloaded`, each of which untracks the assignment. Each queue
+  pass also gives up on an assignment older than the runner's timeout plus a minute
+  (`_expireLostAssignments()`): the worker is freed, and an execution still RUNNING or PENDING is set to
+  ERROR (`lambda_worker_lost`) and its API caller answered, never retried, so a lambda doesn't run twice.
 - **Path-mutation lambdas**: `_loadLambdaPathsMutation()` caches every executable lambda with a
   `PATH_MUTATION` trigger into `_pathsMutation` at boot (and on `rest:worker:rebuild-path-mutation-cache`,
   which the lambda routes publish when a path-watching lambda is updated, redeployed or deleted, or any lambda's
@@ -43,6 +46,10 @@ picks up `lambda:worker:announce` messages matching its own type (or if it's `AL
 types out over NRP (`lambdaProcessWorker:worker-initiated` → `lambdaProcessMain:worker-type`) and keeps which
 worker id has which. When a worker exits, its main publishes `lambdaProcessMain:worker-exited` and the primary
 main takes the type back, so the replacement gets it.
+
+An execution of a lambda whose `executable` is `false` isn't run: `handleLambdaExecutionMessage()` records it
+as ERROR (`lambda_is_not_executable`), answers an API caller 400, and still queues a cron's next run, so turning
+a lambda off pauses its cron.
 
 Execution (`execute()`), per invocation:
 
