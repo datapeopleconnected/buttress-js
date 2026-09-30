@@ -79,6 +79,13 @@ const createAdapter = () => {
     rm: async (id) => calls.push(['rm', id]),
     rmBulk: async (ids) => calls.push(['rmBulk', ids]),
     rmAll: async (query) => calls.push(['rmAll', query]),
+    // Stores the row as the model builds it from the body and its internals
+    add: async (body, parse) => {
+      const row = parse(body);
+      calls.push(['add', row]);
+      return row;
+    },
+    ID: { new: (id) => id ?? '6abd00000000000000000099' },
   };
   return adapter;
 };
@@ -173,6 +180,22 @@ describe('model/type/TenantScopedModel', () => {
       await assert.rejects(() => scoped().owned(rows[1].id), { code: 400, message: 'invalid_id' });
     });
 
+    it('adds a row for its own app, whatever app the caller names', async () => {
+      const model = createModel();
+
+      const row = await scoped(model).add({ name: 'new' }, { _appId: OTHER_APP });
+
+      assert.deepStrictEqual([row.name, row._appId], ['new', APP]);
+    });
+
+    it("keeps the model's other internals when it adds a row", async () => {
+      const model = createModel();
+
+      const row = await scoped(model).add({ name: 'new', _appId: OTHER_APP }, { _tokenId: 'token-1' });
+
+      assert.deepStrictEqual([row._appId, row._tokenId], [APP, 'token-1']);
+    });
+
     it('removes all of its own rows, and no others', async () => {
       const model = createModel();
 
@@ -197,6 +220,19 @@ describe('model/type/TenantScopedModel', () => {
       assert.strictEqual(await unscoped(model).owned(rows[1].id), model);
     });
 
+    it('adds a row for the app it names', async () => {
+      const row = await unscoped().add({ name: 'new' }, { _appId: OTHER_APP });
+
+      assert.strictEqual(row._appId, OTHER_APP);
+    });
+
+    it('refuses to add a row for no app', async () => {
+      const model = createModel();
+
+      await assert.rejects(() => unscoped(model).add({ name: 'new' }, {}), /the app it's for/);
+      assert.deepStrictEqual(model.adapter.calls, []);
+    });
+
     it("updates any app's row", async () => {
       const model = createModel();
 
@@ -207,6 +243,13 @@ describe('model/type/TenantScopedModel', () => {
   });
 
   describe('the apps collection', () => {
+    it('adds no app through the scoped model', async () => {
+      const model = new StandardModel({ name: 'apps', type: 'collection', properties: {} }, null, services);
+      model.adapter = createAdapter();
+
+      await assert.rejects(() => new TenantScopedModel(model, APP, 'id').add({ name: 'new' }, {}), /an app/);
+    });
+
     it('is scoped by the app\'s own id', async () => {
       const model = new StandardModel({ name: 'apps', type: 'collection', properties: {} }, null, services);
       model.adapter = createAdapter();

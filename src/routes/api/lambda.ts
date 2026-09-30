@@ -280,7 +280,11 @@ class AddLambda extends Route {
 
     // Every token has an app, so one of the above sets it
     const app = await Model.getCoreModel(AppSchemaModel).findById(appId as string);
-    const lambda = await Model.getCoreModel(LambdaSchemaModel).add(req.body.lambda, { auth: req.body.auth, app });
+    const lambda = await this.scoped(req, LambdaSchemaModel).add(req.body.lambda, {
+      _appId: appId as string,
+      auth: req.body.auth,
+      app,
+    });
 
     const hasPathMutation = lambda.trigger.some((t) => t.type === 'PATH_MUTATION');
     if (hasPathMutation) {
@@ -492,12 +496,8 @@ class ScheduleLambdaExecution extends Route {
     };
   }
 
-  override async _exec(
-    _req: Request,
-    _res: Response,
-    validate: { appId: string; execution: Partial<LambdaExecution> },
-  ) {
-    return await Model.getCoreModel(LambdaExecutionSchemaModel).add(validate.execution, validate.appId);
+  override async _exec(req: Request, _res: Response, validate: { appId: string; execution: Partial<LambdaExecution> }) {
+    return await this.scoped(req, LambdaExecutionSchemaModel).add(validate.execution, { _appId: validate.appId });
   }
 }
 routes.push(ScheduleLambdaExecution);

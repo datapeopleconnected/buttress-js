@@ -300,7 +300,7 @@ describe('routes/api/policy:AddPolicy', () => {
 
     const result = await route._exec(createReq(), {}, { appId: 'app-1' });
 
-    assert.ok(policyModel.add.calledWith({}, 'app-1'));
+    assert.ok(policyModel.add.calledWith({}, { _appId: 'app-1' }));
     assert.ok(nrp.emit.calledWith('app-policy:bust-cache', JSON.stringify({ appId: 'app-1' })));
     assert.deepStrictEqual(result, { id: 'policy-1' });
   });

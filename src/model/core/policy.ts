@@ -206,7 +206,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
    * @param {String} appId - app id
    * @return {Promise} - fulfilled with policy Object when the database request is completed
    */
-  override async add(body: PolicyAddBody, appId: string) {
+  override async add(body: PolicyAddBody, internals: { _appId: string }) {
     const policyConfig: PolicyConfig[] = [];
     if (body.config) {
       body.config.forEach((item) => {
@@ -234,7 +234,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
     };
 
     const rxsPolicy = await super.add(policyBody, {
-      _appId: appId,
+      _appId: internals._appId,
     });
     const policy = (await Helpers.streamFirst(rxsPolicy)) as Policy;
 

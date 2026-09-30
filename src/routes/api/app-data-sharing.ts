@@ -233,7 +233,10 @@ class AddDataSharing extends Route {
   }
 
   override async _exec(req: RequestWithBody<AppDataSharingAddBody>, _res: Response, _validate: boolean) {
-    const { dataSharing, token } = await Model.getCoreModel(AppDataSharingSchemaModel).add(req.body);
+    // The app _validate settled on: the caller's, or one a system token names
+    const { dataSharing, token } = await this.scoped(req, AppDataSharingSchemaModel).add(req.body, {
+      _appId: req.body.appId,
+    });
     // let dataSharing = (result.dataSharing) ? result.dataSharing : result;
     this.log(`Added App Data Sharing ${dataSharing.id}`);
 

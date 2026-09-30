@@ -137,7 +137,10 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with App Object when the database request is completed
    */
-  override async add(body: AppDataSharingAddBody): Promise<{ dataSharing: AppDataSharing; token: Token }> {
+  override async add(
+    body: AppDataSharingAddBody,
+    internals: { _appId: string },
+  ): Promise<{ dataSharing: AppDataSharing; token: Token }> {
     const appDataSharingBody = {
       id: body.id ? this.createId(body.id) : this.createId(),
       name: body.name,
@@ -153,7 +156,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
 
       policyConfig: body.policyConfig ? body.policyConfig : [],
 
-      _appId: this.createId(body.appId),
+      _appId: this.createId(internals._appId),
       _tokenId: null,
     };
 
@@ -204,7 +207,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
         },
         config: body.policyConfig,
       },
-      body._appId,
+      { _appId: body._appId },
     );
   }
 

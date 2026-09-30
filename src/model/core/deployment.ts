@@ -93,7 +93,7 @@ class DeploymentSchemaModel extends StandardModel<Deployment> {
    * @param {string} appId - the appId the deployment blongs to
    * @return {Promise} - fulfilled with lambda Object when the database request is completed
    */
-  override async add(body: DeploymentAddBody, appId: string) {
+  override async add(body: DeploymentAddBody, internals: { _appId: string }) {
     const deploymentBody = {
       lambdaId: body.lambdaId ? body.lambdaId : null,
       hash: body.hash ? body.hash : null,
@@ -101,7 +101,7 @@ class DeploymentSchemaModel extends StandardModel<Deployment> {
     };
 
     const rxsDeployment = await super.add(deploymentBody, {
-      _appId: appId,
+      _appId: internals._appId,
     });
     const deployment = (await Helpers.streamFirst(rxsDeployment)) as Deployment;
 

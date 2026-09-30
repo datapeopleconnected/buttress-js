@@ -202,8 +202,17 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
 
     const result = await route._exec(createReq({ body: { policyConfig: {} } }), {}, true);
 
-    assert.ok(dsModel.add.calledWith({ policyConfig: {} }));
+    assert.ok(dsModel.add.calledWith({ policyConfig: {} }, { _appId: 'app-1' }));
     assert.strictEqual(result.registrationToken, 'reg-token-value');
+  });
+
+  it('adds the agreement for the app a system token names', async () => {
+    const { dsModel } = stubModel();
+    const route = createRoute(AddDataSharing);
+
+    await route._exec(createReq({ token: { type: 'system' }, body: { policyConfig: {}, appId: 'app-2' } }), {}, true);
+
+    assert.ok(dsModel.add.calledWith(sinon.match.any, { _appId: 'app-2' }));
   });
 });
 

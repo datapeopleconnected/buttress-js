@@ -147,6 +147,25 @@ export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
   }
 
   /**
+   * Adds rows for the tenant. Its app goes into the model's internals, the fields only the server sets, over any app
+   * the caller names; a system token names the app itself.
+   * @param {object} body
+   * @param {object} internals - the model's own add internals, e.g. an execution's `_tokenId`
+   * @return {Promise}
+   */
+  async add(
+    body: Parameters<M['add']>[0],
+    internals: Partial<Parameters<M['add']>[1]> = {},
+  ): Promise<Awaited<ReturnType<M['add']>>> {
+    if (this.tenantKey === 'id') throw new Error('Adding an app goes through the apps model, not a scoped one');
+
+    const given = internals as { _appId?: string };
+    const appId = this.tenant ?? given._appId;
+    if (!appId) throw new Error(`Adding to ${this._model.schemaData.name} needs the app it's for`);
+    return (await this._model.add(body, { ...given, _appId: appId })) as Awaited<ReturnType<M['add']>>;
+  }
+
+  /**
    * The whole model, once the row is the tenant's, for the model's own methods that act on a row by id
    * (setDeployment, activate, updatePolicyProperties...). Another app's row is refused.
    * @param {string} id

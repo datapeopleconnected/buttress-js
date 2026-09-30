@@ -224,8 +224,8 @@ class AddPolicy extends Route {
   }
 
   override _exec(req: RequestWithBody<AddPolicyBody>, res: Response, validate: { appId: string }) {
-    return this.unscopedModel(PolicySchemaModel, "add stamps the caller's app id")
-      .add(req.body, validate.appId)
+    return this.scoped(req, PolicySchemaModel)
+      .add(req.body, { _appId: validate.appId })
       .then((policy) => {
         this._nrp?.emit(
           'app-policy:bust-cache',
@@ -398,7 +398,6 @@ class SyncPolicies extends Route {
   override async _exec(req: RequestWithBody<PolicyAddBody[]>, res: Response, validate: { appId: string }) {
     // The caller's app's policies, which a system token names too
     const policies = this.scoped(req, PolicySchemaModel);
-    const policyModel = this.unscopedModel(PolicySchemaModel, "add stamps the caller's app id");
     const oldPolicies = await Helpers.streamAll<Policy>(await policies.find({ _appId: validate.appId }));
 
     // Removed by id, which takes them out of the policy cache too, and before the new ones are added, so the old and
@@ -408,13 +407,13 @@ class SyncPolicies extends Route {
     const added: string[] = [];
     try {
       for (const policy of req.body) {
-        added.push((await policyModel.add(policy, validate.appId)).id.toString());
+        added.push((await policies.add(policy, { _appId: validate.appId })).id.toString());
       }
     } catch (err: unknown) {
       // The app is left with the policies it had, rather than some of the new ones
       try {
         if (added.length > 0) await policies.rmBulk(added);
-        for (const policy of oldPolicies) await policyModel.add(policy as PolicyAddBody, validate.appId);
+        for (const policy of oldPolicies) await policies.add(policy as PolicyAddBody, { _appId: validate.appId });
       } catch (restoreErr: unknown) {
         this.log(
           `[${this.name}] Failed to put back the app's policies: ${Helpers.getThrownErrorMessage(restoreErr)}`,

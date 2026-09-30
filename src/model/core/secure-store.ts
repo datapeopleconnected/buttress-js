@@ -78,7 +78,7 @@ class SecureStoreSchemaModel extends StandardModel<SecureStore> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - fulfilled with secure store value Object when the database request is completed
    */
-  override async add(body: SecureStoreAddBody, appId: string) {
+  override async add(body: SecureStoreAddBody, internals: { _appId: string }) {
     const data = {
       id: body.id ? body.id : null,
       name: body.name ? body.name : null,
@@ -86,7 +86,7 @@ class SecureStoreSchemaModel extends StandardModel<SecureStore> {
     };
 
     const rxsSecureStore = await super.add(data, {
-      _appId: appId,
+      _appId: internals._appId,
     });
     const secureStore = await Helpers.streamFirst<SecureStore>(rxsSecureStore);
 

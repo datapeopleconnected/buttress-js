@@ -83,7 +83,7 @@ class AddSecureStore extends Route {
   }
 
   override _exec(req: RequestWithBody<SecureStoreAddBody>, _res: Response, validate: { appId: string }) {
-    return Model.getCoreModel(SecureStoreSchemaModel).add(req.body, validate.appId);
+    return this.scoped(req, SecureStoreSchemaModel).add(req.body, { _appId: validate.appId });
   }
 }
 routes.push(AddSecureStore);
@@ -143,8 +143,9 @@ class AddManySecureStore extends Route {
   }
 
   override async _exec(req: RequestWithBody<SecureStoreAddBody[]>, _res: Response, validate: { appId: string }) {
+    const secureStores = this.scoped(req, SecureStoreSchemaModel);
     for await (const secureStore of req.body) {
-      await Model.getCoreModel(SecureStoreSchemaModel).add(secureStore, validate.appId);
+      await secureStores.add(secureStore, { _appId: validate.appId });
     }
 
     return true;

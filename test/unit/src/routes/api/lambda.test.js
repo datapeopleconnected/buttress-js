@@ -275,7 +275,9 @@ describe('routes/api/lambda:AddLambda', () => {
     await route._exec(createReq({ body: validLambdaBody }), {}, true);
 
     assert.ok(appModel.findById.calledWith('app-1'));
-    assert.ok(lambdaModel.add.calledWith(validLambdaBody.lambda, { auth: validLambdaBody.auth, app: { id: 'app-1' } }));
+    assert.ok(
+      lambdaModel.add.calledWith(validLambdaBody.lambda, { _appId: 'app-1', auth: validLambdaBody.auth, app: { id: 'app-1' } }),
+    );
   });
 
   it('notifies the path-mutation cache when the added lambda has a PATH_MUTATION trigger', async () => {
@@ -474,7 +476,7 @@ describe('routes/api/lambda:ScheduleLambdaExecution', () => {
     const validate = await route._validate(createReq({ params: { id: HEX_ID }, body: { executeAfter: 'now' } }));
     await route._exec(createReq(), {}, validate);
 
-    assert.ok(lambdaExecutionModel.add.calledWith(validate.execution, 'app-1'));
+    assert.ok(lambdaExecutionModel.add.calledWith(validate.execution, { _appId: 'app-1' }));
   });
 });
 

@@ -273,7 +273,7 @@ export default class AppSchemaModel extends StandardModel<App> {
           },
         ],
       },
-      body.id,
+      { _appId: body.id },
     );
 
     await this.__modelManager.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(token.id.toString(), {

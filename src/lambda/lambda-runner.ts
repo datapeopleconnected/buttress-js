@@ -744,10 +744,10 @@ export default class LambdaRunner {
         deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(execution.deploymentId),
         executeAfter: Sugar.Date.create(nextCronExpression),
         nextCronExpression,
-        // Ignored: add() takes the token id as its third argument, so the new execution doesn't keep it.
+        // Ignored: add() takes the token id in its internals, so the new execution doesn't keep it.
         _tokenId: execution._tokenId ? Model.getCoreModel(LambdaSchemaModel).createId(execution._tokenId) : null,
       } as LambdaExecutionAddBody,
-      execution._appId,
+      { _appId: execution._appId },
     );
 
     // const completeTriggerObj = {

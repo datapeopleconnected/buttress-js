@@ -136,7 +136,7 @@ describe('routes/api/secure-store:AddSecureStore', () => {
 
     route._exec(createReq({ body: { name: 'test' } }), {}, { appId: 'app-1' });
 
-    assert.ok(secureStoreModel.add.calledWith({ name: 'test' }, 'app-1'));
+    assert.ok(secureStoreModel.add.calledWith({ name: 'test' }, { _appId: 'app-1' }));
   });
 });
 
@@ -195,8 +195,8 @@ describe('routes/api/secure-store:AddManySecureStore', () => {
     const result = await route._exec(createReq({ body }), {}, { appId: 'app-1' });
 
     assert.strictEqual(secureStoreModel.add.callCount, 2);
-    assert.ok(secureStoreModel.add.firstCall.calledWith(body[0], 'app-1'));
-    assert.ok(secureStoreModel.add.secondCall.calledWith(body[1], 'app-1'));
+    assert.ok(secureStoreModel.add.firstCall.calledWith(body[0], { _appId: 'app-1' }));
+    assert.ok(secureStoreModel.add.secondCall.calledWith(body[1], { _appId: 'app-1' }));
     assert.strictEqual(result, true);
   });
 });
