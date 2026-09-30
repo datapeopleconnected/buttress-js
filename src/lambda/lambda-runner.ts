@@ -74,6 +74,10 @@ interface LambdaModule {
   packageName?: string;
   name: string;
   import?: string;
+  // For a lambda's own code, the lambda's id
+  lambdaId?: string;
+  // Built and loaded again for every run, rather than once
+  reload?: boolean;
 }
 
 export interface ExecutionResultMessage {
@@ -375,6 +379,7 @@ export default class LambdaRunner {
       modulesNames.forEach((m: { name: string }) => {
         lambdaModules[m.name] = m.name;
       });
+      const ownCode = modulesNames.find((m) => !m.packageName);
 
       this._jail.setSync('buttressOptions', new ivm.ExternalCopy(buttressOptions).copyInto());
 
@@ -391,7 +396,7 @@ export default class LambdaRunner {
           lambdaToken: lambdaToken.value,
           userId: executionUserId,
           appApiPath: apiPath,
-          fileName: `lambda_${lambda.id}`,
+          fileName: ownCode?.name,
           entryPoint: lambda.git.entryPoint,
           developmentEmailAddress: Config.lambda.developmentEmailAddress,
           userToken: userToken,
@@ -786,6 +791,9 @@ export default class LambdaRunner {
     const entryDir = path.dirname(lambda.git.entryFile as string);
     const entryFile = path.basename(lambda.git.entryFile as string);
     const lambdaDir = `${Config.paths.lambda.code}/lambda-${lambda.git.hash}/./${entryDir}`; // Again ugly /./ because... indolence
+    // A pinned hash's code never changes, so it's built and loaded once, under a name of its own so a redeploy's code is
+    // loaded in its place. HEAD moves with every pull, and dev reload picks up local edits, so either is built each run.
+    const reload = Config.lambda.devReload === 'TRUE' || String(lambda.git.hash).toUpperCase() === 'HEAD';
 
     modules.push(
       {
@@ -801,8 +809,10 @@ export default class LambdaRunner {
         name: 'Sugar',
       },
       {
-        name: `lambda_${lambda.id}`,
+        name: `lambda_${lambda.id}_${lambda.git.hash}`,
         import: `${lambdaDir}/${entryFile}`,
+        lambdaId: String(lambda.id),
+        reload,
       },
     );
 
@@ -813,7 +823,7 @@ export default class LambdaRunner {
     const entry: webpack.EntryObject = {};
     modules.forEach((m) => {
       const moduleName = m.packageName ? m.packageName.replace('/', '_') : m.name;
-      if (m.packageName && fs.existsSync(`${Config.paths.lambda.bundles}/${moduleName}.js`)) return;
+      if (!m.reload && fs.existsSync(`${Config.paths.lambda.bundles}/${moduleName}.js`)) return;
 
       entry[moduleName] = {
         // Every module has an import path or a package name.
@@ -824,6 +834,8 @@ export default class LambdaRunner {
         },
       };
     });
+
+    if (Object.keys(entry).length < 1) return Promise.resolve();
 
     Logging.logDebug(`[${this.name}] Bundling lambda modules: ${Object.keys(entry).join(', ')}`);
 
@@ -902,20 +914,22 @@ export default class LambdaRunner {
 
     for await (const mod of lambdaModules) {
       const isOwnCode = !mod.packageName;
+      const reload = mod.reload || (devReload && isOwnCode);
       // Own code has no package name, includes(undefined) is false.
       const alreadyRegistered =
         this._registeredBundles.includes(mod.packageName as string) || this._registeredBundles.includes(mod.name);
-      if (alreadyRegistered && !(devReload && isOwnCode)) continue;
+      if (alreadyRegistered && !reload) continue;
 
       const registeredName = mod.packageName ? mod.packageName : mod.name;
       const file = mod.packageName ? mod.packageName.replace('/', '_') : mod.name;
       try {
-        // A package bundle is compiled once and run in each app's context; own code is read again when reloading
-        let script = isOwnCode && devReload ? undefined : this._compiledBundles.get(file);
+        // A bundle is compiled once and run in each app's context, unless it's read again for every run
+        let script = reload ? undefined : this._compiledBundles.get(file);
         if (!script) {
           script = this._isolate.compileScriptSync(
             fs.readFileSync(`${Config.paths.lambda.bundles}/${file}.js`, 'utf8'),
           );
+          if (mod.lambdaId) this._releaseCompiledLambda(mod.lambdaId);
           this._compiledBundles.set(file, script);
         }
         script.runSync(this._context, { timeout: LambdaRunner.Constants.TIMEOUT });
@@ -925,6 +939,15 @@ export default class LambdaRunner {
       }
       // Only once it has run, so a bundle that threw is loaded again next time rather than skipped.
       if (!alreadyRegistered) this._registeredBundles.push(registeredName);
+    }
+  }
+
+  // Lets go of the builds of a lambda's code at other hashes, which a redeploy has replaced
+  _releaseCompiledLambda(lambdaId: string) {
+    for (const [file, script] of this._compiledBundles) {
+      if (!file.startsWith(`lambda_${lambdaId}_`)) continue;
+      script.release();
+      this._compiledBundles.delete(file);
     }
   }
 }

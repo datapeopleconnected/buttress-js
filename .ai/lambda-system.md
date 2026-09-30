@@ -50,10 +50,13 @@ Execution (`execute()`), per invocation:
 2. `_getLambdaModulesName()` + `bundleLambdaModules()` — webpack-bundles `@buttress/api`,
    `@buttress/snippets`, `sugar`, and the lambda's own entry file
    (`Config.paths.lambda.code/lambda-<gitHash>/<entryFile>`) into `Config.paths.lambda.bundles/*.js`,
-   skipping any bundle that already exists on disk. `_registerLambdaModules()` then
-   `compileScriptSync().runSync()`s each bundle into the **shared isolate context** created once in
-   `init()` (`ivm.Isolate` → `createContextSync()` → `this._jail`), tracked in `_registeredBundles` so a
-   module is only registered once per worker lifetime.
+   skipping any bundle that already exists on disk. The lambda's own code is the module
+   `lambda_<id>_<gitHash>`, so a redeploy's code is a new module rather than the old one again; it's rebuilt
+   for every run only when the hash is `HEAD` (which moves with each pull) or `LAMBDA_DEV_RELOAD=TRUE`.
+   `_registerLambdaModules()` then `compileScriptSync().runSync()`s each bundle into the executing app's
+   context (`_useAppContext()`: one context per app, least recently used let go past 32), tracked in that
+   context's `_registeredBundles` so a module is registered once per context. Compiled scripts are kept in
+   `_compiledBundles` and shared by the contexts; a lambda's older builds are released when a new one loads.
 3. Injects everything the lambda code needs as `ivm.ExternalCopy` globals: `buttressOptions`
    (pre-configured `@buttress/api` client pointed at this Buttress instance, authenticated as the
    resolved token), `lambdaInfo`, `lambdaData`/`lambdaQuery`/`lambdaRequestHeaders` (the triggering
@@ -74,8 +77,9 @@ but is commented out of the active `execute()` path — currently unused/dead un
 
 ## Key invariant
 
-Only one `isolated-vm` `Isolate`/`Context` exists per `LambdaRunner` (i.e. per worker process), reused
-across every execution that worker handles. A `LambdaRunner` has a `working` boolean guard — if it's
-`true` it declines new work (`lambda:worker:overloaded`) rather than running two lambdas concurrently in
-the same isolate. Don't assume lambda executions on the same worker are isolated from each other beyond
-what `Buttress.clean()` does at the start of the wrapper script.
+One `isolated-vm` `Isolate` exists per `LambdaRunner` (i.e. per worker process), with a `Context` per app,
+reused across every execution of that app's lambdas on that worker; a run that times out disposes the isolate
+and the runner starts a new one. A `LambdaRunner` has a `working` boolean guard — if it's `true` it declines
+new work (`lambda:worker:overloaded`) rather than running two lambdas concurrently in the same isolate. Don't
+assume executions of one app's lambdas on the same worker are isolated from each other beyond what
+`Buttress.clean()` does at the start of the wrapper script.

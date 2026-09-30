@@ -67,9 +67,9 @@ describe('lambda/LambdaRunner:_getLambdaModulesName', () => {
 
     assert.deepStrictEqual(
       modules.map((m) => m.name),
-      ['Buttress', 'LambdaSnippet', 'Sugar', 'lambda_lambda-1'],
+      ['Buttress', 'LambdaSnippet', 'Sugar', 'lambda_lambda-1_abc123'],
     );
-    const entry = modules.find((m) => m.name === 'lambda_lambda-1');
+    const entry = modules.find((m) => m.name === 'lambda_lambda-1_abc123');
     assert.ok(entry.import.endsWith('/src/index.js'));
   });
 });
@@ -737,6 +737,114 @@ describe('lambda/LambdaRunner:execute apps kept apart', () => {
     assert.strictEqual(await run('lb', 'app-b'), 'app-b');
     assert.strictEqual(await run('la', 'app-a'), 'app-a');
     assert.strictEqual(await run('lb', 'app-b'), 'app-b');
+    runner._isolate.dispose();
+  });
+});
+
+describe('lambda/LambdaRunner:execute deployed code', () => {
+  let savedPaths;
+  let savedDevReload;
+  let tmpDir;
+
+  beforeEach(() => {
+    savedPaths = { ...Config.paths.lambda };
+    savedDevReload = Config.lambda.devReload;
+    Config.lambda.devReload = 'FALSE';
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-deployed-'));
+    Config.paths.lambda.code = path.join(tmpDir, 'code');
+    Config.paths.lambda.bundles = path.join(tmpDir, 'bundles');
+    Config.paths.lambda.plugins = path.join(tmpDir, 'plugins');
+    [Config.paths.lambda.code, Config.paths.lambda.bundles, Config.paths.lambda.plugins].forEach((dir) =>
+      fs.mkdirSync(dir),
+    );
+    // The package bundles are already built, so only the lambda's own code is bundled
+    const bundle = (name, source) => fs.writeFileSync(path.join(Config.paths.lambda.bundles, `${name}.js`), source);
+    bundle('@buttress_api', 'var Buttress = { clean() {}, initialised: false, init: async () => {} };');
+    bundle('@buttress_snippets', 'var LambdaSnippet = {};');
+    bundle('sugar', 'var Sugar = {};');
+  });
+
+  afterEach(() => {
+    Object.assign(Config.paths.lambda, savedPaths);
+    Config.lambda.devReload = savedDevReload;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // Checks out code at a hash that sets the result to `by`
+  function checkout(hash, by) {
+    const dir = path.join(Config.paths.lambda.code, `lambda-${hash}`);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, 'index.js'),
+      `class Lambda { execute() { lambda.setResult({ by: '${by}' }); } }\nmodule.exports = Lambda;\n`,
+    );
+  }
+
+  async function createDeployedRunner() {
+    const { runner, nrp } = createRunner();
+    await runner.init();
+    stubModel(
+      new Map([
+        [SecureStoreSchemaModel, { findOne: async () => null }],
+        [AppSchemaModel, { createId: (v) => v }],
+        [LambdaSchemaModel, { createId: (v) => v }],
+        [TokenSchemaModel, { createId: (v) => v, find: async () => Readable.from([{ value: 'lambda-token' }]) }],
+        [
+          LambdaExecutionSchemaModel,
+          {
+            ...fakeExecutionModel({ updateById: sinon.stub().resolves() }),
+            findById: async (id) => ({ id, status: 'RUNNING', metadata: [] }),
+          },
+        ],
+      ]),
+    );
+    const run = async (hash) => {
+      nrp.emit.resetHistory();
+      const lambda = {
+        id: 'l1',
+        name: 'l1',
+        trigger: [],
+        git: { url: 'git@example.com:x.git', hash, entryFile: 'index.js', entryPoint: 'execute' },
+      };
+      const execution = { id: 'exec-1', lambdaId: 'l1', deploymentId: 'd', metadata: [] };
+      await runner.execute(lambda, execution, { id: 'app-1', apiPath: 'app' }, 'API_ENDPOINT', { reqId: 'r' });
+      const resultCall = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+      return JSON.parse(resultCall.args[1]).res.by;
+    };
+    return { runner, run };
+  }
+
+  it("runs a redeployed lambda's new code", async function () {
+    this.timeout(60000);
+    checkout('aaaaaaa', 'first');
+    checkout('bbbbbbb', 'second');
+    const { runner, run } = await createDeployedRunner();
+
+    assert.strictEqual(await run('aaaaaaa'), 'first');
+    assert.strictEqual(await run('bbbbbbb'), 'second');
+    runner._isolate.dispose();
+  });
+
+  it("builds a pinned hash's code once, and runs that build after", async function () {
+    this.timeout(60000);
+    checkout('aaaaaaa', 'first');
+    const { runner, run } = await createDeployedRunner();
+
+    assert.strictEqual(await run('aaaaaaa'), 'first');
+    // Nothing is left to build it from, so a second build would fail
+    fs.rmSync(path.join(Config.paths.lambda.code, 'lambda-aaaaaaa'), { recursive: true });
+    assert.strictEqual(await run('aaaaaaa'), 'first');
+    runner._isolate.dispose();
+  });
+
+  it('builds code deployed at HEAD again for every run, as HEAD moves', async function () {
+    this.timeout(60000);
+    checkout('HEAD', 'first');
+    const { runner, run } = await createDeployedRunner();
+
+    assert.strictEqual(await run('HEAD'), 'first');
+    checkout('HEAD', 'second');
+    assert.strictEqual(await run('HEAD'), 'second');
     runner._isolate.dispose();
   });
 });
