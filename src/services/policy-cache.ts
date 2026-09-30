@@ -32,11 +32,18 @@ import * as Helpers from '../helpers/index.js';
 import PolicySchemaModel from '../model/core/policy.js';
 import { RESTActivity } from '../types/bjs-nrp-objects.js';
 
+// How long a token stays connected without its Socket process renewing it, which it does every heartbeat
+export const CONNECTED_TOKEN_TTL_SECONDS = 1 * 3600;
+export const CONNECTED_TOKEN_HEARTBEAT_MS = (CONNECTED_TOKEN_TTL_SECONDS * 1000) / 4;
+
 export class PolicyCache {
   private _redisClient: RedisClientType;
   private _modelManager: typeof Model;
 
-  private _connectedTokensTTL = 1 * 3600; // 1 hour
+  private _connectedTokensTTL = CONNECTED_TOKEN_TTL_SECONDS;
+  // Each token's connection changes, run one at a time, so a token is never left connected, or disconnected, by two
+  // interleaving
+  private _tokenConnectionChanges = new Map<string, Promise<unknown>>();
   private _timeoutExpiredConnectedTokens?: NodeJS.Timeout;
 
   private _timeoutExpiredConnectedTokensInterval = 60000;
@@ -204,12 +211,65 @@ export class PolicyCache {
     const now = Math.floor(Date.now() / 1000);
     return score > now;
   }
+  private _connectedTokenExpiry() {
+    return Math.floor(Date.now() / 1000) + this._connectedTokensTTL;
+  }
+  private _changeTokenConnection<T>(tokenId: string, change: () => Promise<T>): Promise<T> {
+    const previous = this._tokenConnectionChanges.get(tokenId) ?? Promise.resolve();
+    const next = previous.catch(() => {}).then(change);
+    this._tokenConnectionChanges.set(tokenId, next);
+    const forget = () => {
+      if (this._tokenConnectionChanges.get(tokenId) === next) this._tokenConnectionChanges.delete(tokenId);
+    };
+    next.then(forget, forget);
+    return next;
+  }
+
   async addConnectedToken(tokenId: string) {
-    const expiryTime = Math.floor(Date.now() / 1000) + this._connectedTokensTTL; // Current time + 1 hour
-    await this._redisClient.zAdd(this._prefix(`connected-tokens`), [{ value: tokenId, score: expiryTime }]);
+    await this._redisClient.zAdd(this._prefix(`connected-tokens`), [
+      { value: tokenId, score: this._connectedTokenExpiry() },
+    ]);
   }
   async removeConnectedToken(tokenId: string) {
+    await this._changeTokenConnection(tokenId, () => this._disconnectToken(tokenId));
+  }
+  private async _disconnectToken(tokenId: string) {
     await this._redisClient.zRem(this._prefix(`connected-tokens`), tokenId);
+    await this._redisClient.del(this._prefix(`connected-token:${tokenId}:sockets`));
+  }
+
+  /**
+   * Adds one of a token's sockets, connecting the token, or renewing it.
+   */
+  async addConnectedSocket(tokenId: string, socketId: string) {
+    await this._changeTokenConnection(tokenId, async () => {
+      await this._redisClient.sAdd(this._prefix(`connected-token:${tokenId}:sockets`), socketId);
+      await this.addConnectedToken(tokenId);
+    });
+  }
+  /**
+   * Takes one of a token's sockets away, and disconnects the token once it has none left.
+   */
+  async removeConnectedSocket(tokenId: string, socketId: string) {
+    await this._changeTokenConnection(tokenId, async () => {
+      const sockets = this._prefix(`connected-token:${tokenId}:sockets`);
+      await this._redisClient.sRem(sockets, socketId);
+      if ((await this._redisClient.sCard(sockets)) < 1) await this._disconnectToken(tokenId);
+    });
+  }
+  /**
+   * Renews the connected tokens a Socket process still has sockets for. A token that isn't connected isn't connected by
+   * this: that takes a socket connecting, which works out its policies.
+   */
+  async renewConnectedTokens(tokenIds: string[]) {
+    if (tokenIds.length < 1) return;
+
+    const score = this._connectedTokenExpiry();
+    await this._redisClient.zAdd(
+      this._prefix(`connected-tokens`),
+      tokenIds.map((value) => ({ value, score })),
+      { condition: 'XX' },
+    );
   }
   async clearExpiredConnectedTokens() {
     const now = Math.floor(Date.now() / 1000);
@@ -219,14 +279,17 @@ export class PolicyCache {
 
     if (expiredTokens.length > 0) {
       Logging.logSilly(`Clearing expired connected tokens: ${expiredTokens.join(', ')}`);
-      await this._redisClient.zRemRangeByScore(this._prefix(`connected-tokens`), 0, now);
 
-      // Clean up the expired tokens from the cache
-      await expiredTokens.reduce(async (prev, tokenId) => {
-        await prev;
+      for (const tokenId of expiredTokens) {
+        await this._changeTokenConnection(tokenId, async () => {
+          // Unless a heartbeat or a socket has renewed it since
+          const score = await this._redisClient.zScore(this._prefix(`connected-tokens`), tokenId);
+          if (score !== null && score > now) return;
 
-        await this.clearTokenPolicies(tokenId);
-      }, Promise.resolve());
+          await this._disconnectToken(tokenId);
+          await this.clearTokenPolicies(tokenId);
+        });
+      }
     } else {
       Logging.logSilly(`No expired connected tokens to clear.`);
     }

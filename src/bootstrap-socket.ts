@@ -42,8 +42,13 @@ import * as Schema from './helpers/schema.js';
 
 import Datastore from './datastore/index.js';
 import { Datastore as DatastoreInstance } from './datastore/index.js';
-import { PolicyCache } from './services/policy-cache.js';
-import type { AppSchemaUpdatedMessage, DataShareActivatedMessage } from './services/nrp.js';
+import { CONNECTED_TOKEN_HEARTBEAT_MS, PolicyCache } from './services/policy-cache.js';
+import type {
+  AppSchemaUpdatedMessage,
+  DataShareActivatedMessage,
+  SocketConnectionMessage,
+  SocketHeartbeatMessage,
+} from './services/nrp.js';
 
 import { DataShareSocketSharePayload, RESTActivity } from './types/bjs-nrp-objects.js';
 
@@ -126,6 +131,8 @@ export default class BootstrapSocket extends Bootstrap {
   } = {};
 
   private _redisClient?: RedisClientType;
+  // Renews the tokens this process has sockets open for, so the SPR keeps them connected
+  private _socketHeartbeat?: NodeJS.Timeout;
   private _redisClientEmitter?: RedisClientType;
   private _redisClientIOPub?: RedisClientType;
   private _redisClientIOSub?: RedisClientType;
@@ -204,6 +211,8 @@ export default class BootstrapSocket extends Bootstrap {
       this._mainServer.close();
       this._mainServer = null;
     }
+
+    if (this._socketHeartbeat) clearInterval(this._socketHeartbeat);
 
     // Close down all socket.io connections / handlers. This comes before closing NRP, which the disconnect
     // handlers publish to, and the redis clients that socket.io's adapter uses.
@@ -388,6 +397,9 @@ export default class BootstrapSocket extends Bootstrap {
     await this.__registerNRPWorkerListeners();
     // await this.__registerNRPProcessListeners();
 
+    this._socketHeartbeat = setInterval(() => this._publishSocketHeartbeat(), CONNECTED_TOKEN_HEARTBEAT_MS);
+    this._socketHeartbeat.unref();
+
     Logging.logSilly(`Worker ready`);
   }
 
@@ -455,7 +467,10 @@ export default class BootstrapSocket extends Bootstrap {
     socket.join(socket.data.tokenId);
 
     // Fire off a worker event to notify that a connection has been made with the token.
-    this.__nrp?.emit('worker:socket:connection', socket.data.tokenId);
+    this.__nrp?.emit(
+      'worker:socket:connection',
+      JSON.stringify({ tokenId: socket.data.tokenId, socketId: socket.id } satisfies SocketConnectionMessage),
+    );
 
     if (token.type === 'dataSharing') {
       const remoteSchemas = Schema.decode(app.__schema).reduce((obj: Record<string, Schema.Schema>, item) => {
@@ -535,7 +550,10 @@ export default class BootstrapSocket extends Bootstrap {
     socket.on('disconnect', () => {
       Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
 
-      this.__nrp?.emit('worker:socket:disconnect', socket.data.tokenId);
+      this.__nrp?.emit(
+        'worker:socket:disconnect',
+        JSON.stringify({ tokenId: socket.data.tokenId, socketId: socket.id } satisfies SocketConnectionMessage),
+      );
     });
 
     next();
@@ -575,6 +593,28 @@ export default class BootstrapSocket extends Bootstrap {
   }
 
   async __registerNRPMainListeners() {}
+
+  /**
+   * Tells the SPR which tokens this process still has sockets open for, which renews them. A token whose sockets were
+   * all in a process that has gone isn't renewed, so it's taken off the connected tokens once it expires.
+   */
+  _publishSocketHeartbeat() {
+    if (!this.io) return;
+
+    const tokenIds = new Set<string>();
+    for (const namespace of this.io._nsps.values()) {
+      for (const socket of namespace.sockets.values()) {
+        const tokenId = (socket.data as { tokenId?: string }).tokenId;
+        if (tokenId) tokenIds.add(tokenId);
+      }
+    }
+    if (tokenIds.size < 1) return;
+
+    this.__nrp?.emit(
+      'worker:socket:heartbeat',
+      JSON.stringify({ tokenIds: [...tokenIds] } satisfies SocketHeartbeatMessage),
+    );
+  }
 
   /**
    * Closes the sockets of tokens that have been deleted, which would otherwise keep receiving activity. A token's

@@ -20,9 +20,14 @@ Backs both paths with Redis-cached policy state, all keys namespaced under `Conf
 - `policies` (hash) — policy id → serialized `Policy` document, populated lazily via `getPolicies()`.
 - `policy:<id>:tokens` / `connected-tokens` (sorted set, score = expiry epoch) — which tokens are
   currently connected to a socket and which policies apply to them; used by SPR to know who to notify.
+  `connected-token:<id>:sockets` holds each connected token's socket ids (`worker:socket:connection` /
+  `disconnect` send `{tokenId, socketId}`), so a token stays connected until its last socket closes. Each Socket
+  process publishes `worker:socket:heartbeat` with the tokens it has sockets for every 15 minutes, which renews
+  them (`ZADD XX`) within the hour's expiry; a token whose sockets were in a process that died expires. A token's
+  connection changes and the expiry sweep run one at a time in the SPR primary.
 - `policy:propertyIndex:<key>` — reverse index from a policy-selection property name to token ids, used
   by `invalidatePolicyAndTokensBySelection()` to mark affected tokens stale when a policy changes.
-- `app:<appId>:schema:<schemaName>` (+ `%ALL%` / `%APP_SCHEMA%`/`%CORE_SCHEMA%` wildcard variants) — index
+- `app:<appId>:schema:<schemaName>` (+ `%ALL%` / `%APP_SCHEMA%` wildcard variants; `%CORE_SCHEMA%` is written but not read) — index
   used by SPR's `getPoliciesByRestActivity()` to find candidate policies for an incoming activity without
   scanning every policy.
 

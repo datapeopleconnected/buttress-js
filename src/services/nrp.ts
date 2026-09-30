@@ -28,6 +28,21 @@ export interface AppSchemaUpdatedMessage {
 }
 
 /**
+ * The message published on `worker:socket:connection` and `worker:socket:disconnect`.
+ */
+export interface SocketConnectionMessage {
+  tokenId: string;
+  socketId: string;
+}
+
+/**
+ * The message a Socket process publishes on `worker:socket:heartbeat`: the tokens it has sockets open for.
+ */
+export interface SocketHeartbeatMessage {
+  tokenIds: string[];
+}
+
+/**
  * The message published on `dataShare:activated`.
  */
 export interface DataShareActivatedMessage {

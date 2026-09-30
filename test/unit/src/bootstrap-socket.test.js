@@ -356,3 +356,47 @@ describe('bootstrap-socket: data share connections', () => {
     assert.strictEqual(connections.length, 0);
   });
 });
+
+describe('bootstrap-socket: connected sockets', () => {
+  const app = { id: new ObjectId(), apiPath: 'app-one' };
+  const token = { id: new ObjectId(), value: 'app-one-token', type: 'app', _appId: app.id };
+
+  afterEach(() => sinon.restore());
+
+  it('tells the SPR which socket of a token connected and disconnected', async () => {
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      if (modelClass === TokenSchemaModel) return { findOne: async () => token };
+      if (modelClass === AppSchemaModel) return { findOne: async () => app };
+      throw new Error(`Unexpected core model ${modelClass.name}`);
+    });
+    const bootstrap = new BootstrapSocket();
+    bootstrap.__nrp = { emit: sinon.spy() };
+    const handlers = {};
+    const socket = { id: 'socket-1', nsp: { name: '/app-one' }, handshake: { auth: { token: token.value }, query: {} }, data: {} };
+    socket.join = () => {};
+    socket.on = (event, handler) => (handlers[event] = handler);
+
+    await bootstrap._workerHandleSocketConnection(socket, () => {});
+    handlers.disconnect();
+
+    const tokenId = token.id.toString();
+    assert.deepStrictEqual(
+      bootstrap.__nrp.emit.getCalls().map((call) => [call.args[0], JSON.parse(call.args[1])]),
+      [
+        ['worker:socket:connection', { tokenId, socketId: 'socket-1' }],
+        ['worker:socket:disconnect', { tokenId, socketId: 'socket-1' }],
+      ],
+    );
+  });
+
+  it('names the tokens of the sockets it has open in its heartbeat, once each', () => {
+    const bootstrap = new BootstrapSocket();
+    bootstrap.__nrp = { emit: sinon.spy() };
+    const sockets = (...tokenIds) => ({ sockets: new Map(tokenIds.map((tokenId, i) => [`s${i}`, { data: { tokenId } }])) });
+    bootstrap.io = { _nsps: new Map([['/app-one', sockets('t1', 't2', 't1')], ['/app-two', sockets('t3')]]) };
+
+    bootstrap._publishSocketHeartbeat();
+
+    assert.ok(bootstrap.__nrp.emit.calledOnceWith('worker:socket:heartbeat', JSON.stringify({ tokenIds: ['t1', 't2', 't3'] })));
+  });
+});

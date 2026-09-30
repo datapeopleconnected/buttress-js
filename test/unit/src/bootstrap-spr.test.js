@@ -579,6 +579,55 @@ describe('bootstrap-spr: deleted tokens', () => {
 describe('bootstrap-spr: socket connections', () => {
   afterEach(() => sinon.restore());
 
+  // The SPR primary's NRP listeners, with a policy cache that records what it's asked
+  async function listening(token) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const calls = [];
+    const handlers = {};
+    spr.__nrp = { on: async (channel, handler) => (handlers[channel] = handler), emit: () => {} };
+    spr._policyCache = {
+      getPoliciesByToken: async () => [],
+      addConnectedSocket: async (...args) => calls.push(['addConnectedSocket', ...args]),
+      removeConnectedSocket: async (...args) => calls.push(['removeConnectedSocket', ...args]),
+      addConnectedToken: async (...args) => calls.push(['addConnectedToken', ...args]),
+      removeConnectedToken: async (...args) => calls.push(['removeConnectedToken', ...args]),
+      renewConnectedTokens: async (...args) => calls.push(['renewConnectedTokens', ...args]),
+    };
+    sinon.stub(Model, 'getCoreModel').returns({ findOne: async () => token });
+    await spr.__registerNRPPrimaryListeners();
+    return { handlers, calls };
+  }
+
+  it('keeps track of each socket that connects and disconnects, and renews the tokens a heartbeat names', async () => {
+    const token = { id: new ObjectId(), type: 'user' };
+    const tokenId = token.id.toString();
+    const { handlers, calls } = await listening(token);
+
+    await handlers['worker:socket:connection'](JSON.stringify({ tokenId, socketId: 'socket-a' }));
+    await handlers['worker:socket:disconnect'](JSON.stringify({ tokenId, socketId: 'socket-a' }));
+    await handlers['worker:socket:heartbeat'](JSON.stringify({ tokenIds: [tokenId] }));
+
+    assert.deepStrictEqual(calls, [
+      ['addConnectedSocket', tokenId, 'socket-a'],
+      ['removeConnectedSocket', tokenId, 'socket-a'],
+      ['renewConnectedTokens', [tokenId]],
+    ]);
+  });
+
+  it('still takes a bare token id, as an older Socket process sends', async () => {
+    const token = { id: new ObjectId(), type: 'user' };
+    const tokenId = token.id.toString();
+    const { handlers, calls } = await listening(token);
+
+    await handlers['worker:socket:connection'](tokenId);
+    await handlers['worker:socket:disconnect'](tokenId);
+
+    assert.deepStrictEqual(calls, [
+      ['addConnectedToken', tokenId],
+      ['removeConnectedToken', tokenId],
+    ]);
+  });
+
   it("works out a token's policies on every connection, even one already connected, before renewing it", async () => {
     const spr = new BootstrapSocketPolicyRouter();
     const token = { id: new ObjectId(), type: 'user' };

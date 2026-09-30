@@ -111,16 +111,21 @@ const Redis = {
     return [...result];
   },
 
-  async zAdd(key, items) {
+  async zAdd(key, items, options = {}) {
     if (!this._data.has(key)) this._data.set(key, new Map());
     const zset = this._data.get(key);
     const arr = Array.isArray(items) ? items : [items];
     let count = 0;
     for (const { value, score } of arr) {
+      if (options.condition === 'XX' && !zset.has(value)) continue;
       if (!zset.has(value)) count++;
       zset.set(value, score);
     }
     return count;
+  },
+
+  async sCard(key) {
+    return this._data.get(key)?.size ?? 0;
   },
 
   async zRem(key, member) {
@@ -388,6 +393,59 @@ describe('services/policy-cache', () => {
       await Redis.zAdd(K('connected-tokens'), [{ value: 'expired-tok', score: past }]);
       await cache.clearExpiredConnectedTokens();
       assert.strictEqual(await cache.isTokenConnected('expired-tok'), false);
+    });
+
+    it('keeps a token connected while any of its sockets is open', async () => {
+      await cache.addConnectedSocket('tok1', 'socket-a');
+      await cache.addConnectedSocket('tok1', 'socket-b');
+
+      await cache.removeConnectedSocket('tok1', 'socket-a');
+      assert.strictEqual(await cache.isTokenConnected('tok1'), true);
+
+      await cache.removeConnectedSocket('tok1', 'socket-b');
+      assert.strictEqual(await cache.isTokenConnected('tok1'), false);
+      assert.strictEqual(await Redis.sCard(K('connected-token:tok1:sockets')), 0);
+    });
+
+    it('renews the tokens a heartbeat names that are still connected, and connects no others', async () => {
+      const soon = Math.floor(Date.now() / 1000) + 10;
+      await Redis.zAdd(K('connected-tokens'), [{ value: 'tok1', score: soon }]);
+
+      await cache.renewConnectedTokens(['tok1', 'tok2']);
+
+      assert.ok((await Redis.zScore(K('connected-tokens'), 'tok1')) > soon + 3000);
+      assert.strictEqual(await cache.isTokenConnected('tok2'), false);
+    });
+
+    it("leaves a token that's renewed while the sweep runs, and its policies", async () => {
+      const past = Math.floor(Date.now() / 1000) - 10;
+      await Redis.zAdd(K('connected-tokens'), [{ value: 'tok1', score: past }]);
+      await cache.connectTokenToPolicy('tok1', 'p1');
+      // A heartbeat arrives just after the sweep has found the token expired
+      const zRangeByScore = Redis.zRangeByScore;
+      Redis.zRangeByScore = async (...args) => {
+        const found = await zRangeByScore.apply(Redis, args);
+        cache.renewConnectedTokens(['tok1']);
+        return found;
+      };
+
+      try {
+        await cache.clearExpiredConnectedTokens();
+      } finally {
+        Redis.zRangeByScore = zRangeByScore;
+      }
+
+      assert.strictEqual(await cache.isTokenConnected('tok1'), true);
+      assert.deepStrictEqual(await Redis.sMembers(K('token:tok1:policies')), ['p1']);
+    });
+
+    it("forgets an expired token's sockets", async () => {
+      await cache.addConnectedSocket('tok1', 'socket-a');
+      await Redis.zAdd(K('connected-tokens'), [{ value: 'tok1', score: Math.floor(Date.now() / 1000) - 10 }]);
+
+      await cache.clearExpiredConnectedTokens();
+
+      assert.strictEqual(await Redis.sCard(K('connected-token:tok1:sockets')), 0);
     });
   });
 

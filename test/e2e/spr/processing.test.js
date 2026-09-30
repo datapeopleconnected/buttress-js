@@ -651,6 +651,37 @@ describe('Processing', async () => {
 		});
 	});
 
+	describe('Several sockets for one token', () => {
+		it("Should keep sending to a token's other sockets once one of them closes", async function () {
+			this.timeout(20000);
+			const user = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'two-tabs', { adminAccess: true });
+			const open = async () => {
+				const socket = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, { auth: { token: user.tokens[0].value }, forceNew: true });
+				await new Promise((resolve) => socket.on('connect', resolve));
+				return socket;
+			};
+			const closing = await open();
+			const staying = await open();
+			const received = [];
+			staying.on('db-activity', (packet) => received.push(packet.data.response?.name));
+
+			closing.close();
+			// Time for the disconnect to reach the SPR
+			await new Promise((r) => setTimeout(r, 1000));
+			await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name: 'two-tabs-car', userId: user.id }),
+			}, testEnv.apps.app1.token);
+			const start = Date.now();
+			while (!received.includes('two-tabs-car') && Date.now() - start < 5000) await new Promise((r) => setTimeout(r, 50));
+			staying.close();
+
+			assert(received.includes('two-tabs-car'), "the token's open socket got nothing once its other socket closed");
+		});
+	});
+
 	describe('System tokens', () => {
 		it("Should relay a system token's write to an app's data to that app's tokens, as that app's", async function () {
 			this.timeout(10000);

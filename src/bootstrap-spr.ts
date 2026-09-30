@@ -45,7 +45,7 @@ import { Policy } from './model/core/policy.js';
 import TokenSchemaModel, { Token } from './model/core/token.js';
 
 import { PolicyCache } from './services/policy-cache.js';
-import type { AppSchemaUpdatedMessage } from './services/nrp.js';
+import type { AppSchemaUpdatedMessage, SocketConnectionMessage, SocketHeartbeatMessage } from './services/nrp.js';
 import UserSchemaModel, { User } from './model/core/user.js';
 import StandardModel from './model/type/standard.js';
 import type { AdapterDocument } from './types/datastore.js';
@@ -177,8 +177,12 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     this.__nrp.on('rest:activity', (data) =>
       IOStats.run('spr', () => this._handleIncomingMessage(JSON.parse(data) as RESTActivity)),
     );
-    this.__nrp.on('worker:socket:connection', (tokenId) => this._socketConnection(tokenId));
-    this.__nrp.on('worker:socket:disconnect', (tokenId) => this._socketDisconnection(tokenId));
+    this.__nrp.on('worker:socket:connection', (message) => this._socketConnection(message));
+    this.__nrp.on('worker:socket:disconnect', (message) => this._socketDisconnection(message));
+    this.__nrp.on('worker:socket:heartbeat', async (json: string) => {
+      if (!this._policyCache) throw new Error('No Policy Cache');
+      await this._policyCache.renewConnectedTokens((JSON.parse(json) as SocketHeartbeatMessage).tokenIds);
+    });
     this.__nrp.on('token:deleted', (json: string) =>
       this._tokensDeleted((JSON.parse(json) as { tokenIds: string[] }).tokenIds),
     );
@@ -218,8 +222,9 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
   // - Its policies are looked up, from the cache, which works them out again if the token is stale or unknown. This is
   //   done for a token that's already connected too, so a new socket never renews a connection without them.
   // - It's added to, or its time renewed on, the list of connected tokens
-  private async _socketConnection(tokenId: string) {
+  private async _socketConnection(message: string) {
     if (!this._policyCache) throw new Error('No Policy Cache');
+    const { tokenId, socketId } = this._socketOf(message);
 
     // Look up the token by ID
     const token = (await Model.getCoreModel(TokenSchemaModel).findOne({ id: tokenId })) as Token;
@@ -230,17 +235,23 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     await this._policyCache.getPoliciesByToken(token);
 
-    // Store the token in the list of connected tokens
-    await this._policyCache.addConnectedToken(token.id.toString());
+    // Store the token in the list of connected tokens, with the socket
+    if (socketId) await this._policyCache.addConnectedSocket(token.id.toString(), socketId);
+    else await this._policyCache.addConnectedToken(token.id.toString());
   }
 
-  // If a token is disconnected
-  // - Remove the token from the list of connected tokens
-  // - Remove the token from the list of tokens associated with a policy
-  private async _socketDisconnection(tokenId: string) {
+  // A socket disconnected: the token stays connected until its last socket has
+  private async _socketDisconnection(message: string) {
     if (!this._policyCache) throw new Error('No Policy Cache');
+    const { tokenId, socketId } = this._socketOf(message);
 
-    await this._policyCache.removeConnectedToken(tokenId);
+    if (socketId) await this._policyCache.removeConnectedSocket(tokenId, socketId);
+    else await this._policyCache.removeConnectedToken(tokenId);
+  }
+
+  // A socket connection message, or the bare token id an older Socket process sends
+  private _socketOf(message: string): Partial<SocketConnectionMessage> & { tokenId: string } {
+    return message.startsWith('{') ? (JSON.parse(message) as SocketConnectionMessage) : { tokenId: message };
   }
 
   // The Socket processes close a deleted token's sockets. It's also taken off the connected list here, so nothing is
