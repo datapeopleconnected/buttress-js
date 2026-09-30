@@ -18,7 +18,7 @@ import { Request } from 'express';
 
 import * as Helpers from '../helpers/index.js';
 import { PolicyProjection } from '../model/core/policy.js';
-import type { Schema } from '../types/schema.js';
+import type { FlattenedSchema, Schema } from '../types/schema.js';
 
 import { ApplicablePolicyConfig, PolicyError } from './index.js';
 import type { RequestWithBody } from '../types/routes.js';
@@ -57,6 +57,38 @@ const projectValue = (value: unknown, keys: string[]): unknown => {
   const projected: Projectable = {};
   keys.forEach((key) => projectPath(value, projected, key.split('.')));
   return projected;
+};
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+// `path` is `key` or a path beneath it
+const isWithin = (path: string, key: string) => path === key || path.startsWith(`${key}.`);
+
+// A bulk update's body: the updates of each entity, by its id
+const isBulkUpdate = (body: unknown): body is Array<{ id: unknown; body: unknown }> =>
+  Array.isArray(body) && body.length > 0 && body.every((item) => isPlainObject(item) && 'id' in item && 'body' in item);
+
+/**
+ * Gives each property of an entity to create that the projection doesn't let through its default, in nested groups
+ * too. Properties the schema doesn't have are left for its validation.
+ */
+const resetUnprojected = (
+  entity: Record<string, unknown>,
+  projectionKeys: string[],
+  flattenedSchema: FlattenedSchema,
+  prefix = '',
+) => {
+  for (const key of Object.keys(entity)) {
+    const path = `${prefix}${key}`;
+    if (projectionKeys.some((projectionKey) => isWithin(path, projectionKey))) continue;
+
+    if (flattenedSchema[path]) {
+      entity[key] = Helpers.Schema.getPropDefault(flattenedSchema[path]);
+    } else if (isPlainObject(entity[key]) && Object.keys(flattenedSchema).some((p) => p.startsWith(`${path}.`))) {
+      resetUnprojected(entity[key], projectionKeys, flattenedSchema, `${path}.`);
+    }
+  }
 };
 
 /**
@@ -111,38 +143,23 @@ class Projection {
     }
 
     if (requestMethod === 'POST') {
-      const updatePaths = Object.keys(requestBody).map((key) => key);
-
-      if (projectionKeys.length > 0) {
-        const removedPaths = updatePaths
-          .filter((key) => projectionKeys.every((updateKey) => updateKey !== key))
-          .filter((path) => flattenedSchema[path]);
-
-        removedPaths.forEach((i) => {
-          // ? There maybe a required field here but the user does not have access to it.
-          const config = flattenedSchema[i];
-          // An array body has no schema paths, so doesn't get here
-          (requestBody as RequestBody)[i] = Helpers.Schema.getPropDefault(config);
-        });
+      if (projectionKeys.length > 0 && isBulkUpdate(requestBody)) {
+        // A bulk update is a POST, but writes by path as a PUT does
+        const paths = requestBody.flatMap((item) => (Array.isArray(item.body) ? item.body : [item.body]));
+        this.__refuseUnprojectedPaths(paths, projectionKeys, schema);
+      } else if (projectionKeys.length > 0) {
+        // One entity to create, or several
+        const entities = Array.isArray(requestBody) ? requestBody : [requestBody];
+        for (const entity of entities) {
+          if (isPlainObject(entity)) resetUnprojected(entity, projectionKeys, flattenedSchema);
+        }
       }
     } else if (requestMethod === 'PUT') {
       if (!Array.isArray(requestBody) && typeof requestBody === 'object') {
         requestBody = [requestBody];
       }
 
-      // Check to see if the any of the update paths don't exists within the projection keys,
-      // if they don't then we want to throw as the user doesn't have access.
-      const invalidPaths = requestBody
-        // Update bodies are UpdatePathBody[]
-        .map((elem) => elem.path as string)
-        .filter((updateKey) => !projectionKeys.some((key) => updateKey === key || updateKey.startsWith(`${key}.`)));
-
-      if (invalidPaths.length > 0) {
-        throw new PolicyError(
-          401,
-          `Can not access/edit properties (${invalidPaths.join(', ')}) of ${schema.name} without privileged access`,
-        );
-      }
+      this.__refuseUnprojectedPaths(requestBody, projectionKeys, schema);
     } else {
       if (projectionKeys.length > 0 && !this.__checkProjectionPath(requestBody as RequestBody, projectionKeys)) {
         return false;
@@ -150,6 +167,21 @@ class Projection {
     }
 
     return projection;
+  }
+
+  // An update path must be a projected property, or a path beneath one
+  __refuseUnprojectedPaths(updates: unknown[], projectionKeys: string[], schema: Schema) {
+    const invalidPaths = updates
+      .map((update) => (isPlainObject(update) ? update.path : undefined))
+      .map((path) => (typeof path === 'string' ? path : ''))
+      .filter((path) => !projectionKeys.some((key) => isWithin(path, key)));
+
+    if (invalidPaths.length > 0) {
+      throw new PolicyError(
+        401,
+        `Can not access/edit properties (${invalidPaths.join(', ')}) of ${schema.name} without privileged access`,
+      );
+    }
   }
 
   // The properties a policy config's projection lets through. None means it doesn't restrict properties.

@@ -192,3 +192,69 @@ describe('access-control/projection:filterPoliciesByPolicyProjection', () => {
     assert.strictEqual(result.length, 0);
   });
 });
+
+// A policy projection limits which properties a request can write, whatever route or body shape writes them
+describe('access-control/projection: writes limited by a policy projection', () => {
+  const schema = {
+    name: 'user',
+    properties: {
+      name: { __type: 'string', __default: null },
+      role: { __type: 'string', __default: 'USER' },
+      phone: {
+        landline: { __type: 'string', __default: null },
+        mobile: { __type: 'string', __default: null },
+      },
+    },
+  };
+  const policies = (keys, verbs = ['POST']) => [{
+    id: 'p1', name: 'test', appId: 'app1', env: null,
+    config: { verbs, schema: ['user'], query: {}, projection: { keys }, condition: null },
+  }];
+  const apply = (keys, body) =>
+    AccessControlProjection.filterPoliciesByPolicyProjection({ method: 'POST', body }, policies(keys), schema);
+
+  it('refuses a bulk update of a property outside the projection', async () => {
+    for (const body of [
+      [{ id: 'u1', body: { path: 'role', value: 'ADMIN' } }],
+      [{ id: 'u1', body: [{ path: 'name', value: 'x' }, { path: 'role', value: 'ADMIN' }] }],
+      [{ id: 'u1', body: { path: 'phone.landline', value: '1' } }],
+    ]) {
+      await assert.rejects(apply(['name'], body), /Can not access\/edit properties/, JSON.stringify(body));
+    }
+  });
+
+  it('allows a bulk update of the projected properties', async () => {
+    const body = [{ id: 'u1', body: [{ path: 'name', value: 'x' }, { path: 'phone.mobile', value: '2' }] }];
+
+    assert.strictEqual((await apply(['name', 'phone'], body)).length, 1);
+  });
+
+  it('resets the properties outside the projection on each entity a bulk add creates', async () => {
+    const body = [{ name: 'a', role: 'ADMIN' }, { name: 'b', role: 'ADMIN' }];
+
+    await apply(['name'], body);
+
+    assert.deepStrictEqual(body, [{ name: 'a', role: 'USER' }, { name: 'b', role: 'USER' }]);
+  });
+
+  it('resets the properties of a nested group outside the projection on a created entity', async () => {
+    const outside = { name: 'a', phone: { landline: '1', mobile: '2' } };
+    const partly = { name: 'a', phone: { landline: '1', mobile: '2' } };
+    const inside = { name: 'a', phone: { landline: '1', mobile: '2' } };
+
+    await apply(['name'], outside);
+    await apply(['name', 'phone.mobile'], partly);
+    await apply(['name', 'phone'], inside);
+
+    assert.deepStrictEqual(outside, { name: 'a', phone: { landline: null, mobile: null } });
+    assert.deepStrictEqual(partly, { name: 'a', phone: { landline: null, mobile: '2' } });
+    assert.deepStrictEqual(inside, { name: 'a', phone: { landline: '1', mobile: '2' } });
+  });
+
+  it('leaves a bulk delete, a list of ids, alone', async () => {
+    const body = ['u1', 'u2'];
+
+    assert.strictEqual((await apply(['name'], body)).length, 1);
+    assert.deepStrictEqual(body, ['u1', 'u2']);
+  });
+});

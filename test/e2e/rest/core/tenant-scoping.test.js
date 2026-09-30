@@ -83,7 +83,7 @@ describe('Core route tenant scoping', async () => {
 		for (const app of ['app1', 'app2']) {
 			await runStep(`allow policy properties on ${app}`, async () => updatePolicyPropertyList(ENDPOINT.REST, {
 				lambda: ['TEST_ACCESS'],
-				role: ['ADMIN', 'VIEWER', 'EDITOR', 'NOBODY'],
+				role: ['ADMIN', 'VIEWER', 'EDITOR', 'NOBODY', 'WRITER'],
 			}, testEnv.apps[app].token), scope);
 		}
 
@@ -521,6 +521,63 @@ describe('Core route tenant scoping', async () => {
 			}, testEnv.apps.app2.token);
 
 			await assert.rejects(readNotes(token), (err) => err instanceof BJSReqError && err.code === 401);
+		});
+	});
+	describe('Writes limited by a policy projection', () => {
+		const notes = (path = '') => `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note${path}`;
+		const json = { 'Content-Type': 'application/json' };
+
+		before(async function () {
+			this.timeout(20000);
+			const scope = 'Policy projection writes setup';
+
+			await runStep('create app2 policy that writes only the text', async () => createPolicy(ENDPOINT.REST, {
+				name: 'tenant-scoping-text-writer',
+				version: '1',
+				selection: { role: { '@eq': 'WRITER' } },
+				config: [{
+					verbs: ['GET', 'SEARCH', 'POST', 'PUT'],
+					schema: ['note'],
+					query: { access: '%FULL_ACCESS%' },
+					projection: { keys: ['text'] },
+				}],
+			}, testEnv.apps.app2.token), scope);
+
+			testEnv.users.app2Writer = await runStep('create app2 writer user', async () =>
+				createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'tenant-scoping-writer', { role: 'WRITER' })
+			, scope);
+		});
+
+		it('Should refuse a bulk update of a property the projection hides', async () => {
+			const token = testEnv.users.app2Writer.tokens[0].value;
+
+			await assert.rejects(bjsReq({
+				url: notes('/bulk/update'),
+				method: 'POST',
+				headers: json,
+				body: JSON.stringify([{ id: owned.note.id, body: [{ path: 'secret', value: 'by writer' }] }]),
+			}, token), (err) => err instanceof BJSReqError && err.code === 401);
+
+			const [note] = await bjsReq({ url: notes(), method: 'SEARCH', headers: json, body: JSON.stringify({ query: { id: owned.note.id } }) });
+			assert.strictEqual(note.secret, 'app2 secret');
+		});
+
+		it('Should create entities without the properties the projection hides', async () => {
+			const token = testEnv.users.app2Writer.tokens[0].value;
+
+			const [one] = await bjsReq({
+				url: notes(), method: 'POST', headers: json, body: JSON.stringify({ text: 'by writer', secret: 'set by writer' }),
+			}, token);
+			const many = await bjsReq({
+				url: notes('/bulk/add'), method: 'POST', headers: json, body: JSON.stringify([{ text: 'by writer 2', secret: 'set by writer' }]),
+			}, token);
+
+			const stored = await bjsReq({
+				url: notes(), method: 'SEARCH', headers: json,
+				body: JSON.stringify({ query: { id: { $in: [one.id, ...many.map((n) => n.id)] } } }),
+			});
+			assert.strictEqual(stored.length, 2);
+			for (const note of stored) assert.strictEqual(note.secret, null, JSON.stringify(note));
 		});
 	});
 });
