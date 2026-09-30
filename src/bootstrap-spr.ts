@@ -355,6 +355,12 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       // TODO: Entity needs to be flatterned for processing.
     }
 
+    // Not even system tokens get an activity marked not to broadcast
+    if (activity.broadcast === false) {
+      Logging.logSilly('Skipping message broadcast, broadcast is disabled');
+      return;
+    }
+
     if (activity.isSuper) {
       // TODO: Super tokens could be cached in redis, app tokens could be also be cached.
       const tokenModel = Model.getCoreModel(TokenSchemaModel);
@@ -370,11 +376,6 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         );
       }
 
-      return;
-    }
-
-    if (activity.broadcast === false) {
-      Logging.logSilly('Skipping message broadcast, broadcast is disabled');
       return;
     }
 

@@ -19,7 +19,7 @@ import assert from 'assert';
 import sinon from 'sinon';
 import { ObjectId } from 'bson';
 
-import BootstrapSocket from '../../../dist/bootstrap-socket.js';
+import BootstrapSocket, { relayedDataShareActivity } from '../../../dist/bootstrap-socket.js';
 import Logging from '../../../dist/helpers/logging.js';
 import Model from '../../../dist/model/index.js';
 import TokenSchemaModel from '../../../dist/model/core/token.js';
@@ -209,5 +209,50 @@ describe('bootstrap-socket: deleted tokens', () => {
       '/app-two token-1',
       '/app-two token-2',
     ]);
+  });
+});
+
+// A peer's activity, relayed into this instance for one of the app's remote schemas
+describe('bootstrap-socket:relayedDataShareActivity', () => {
+  const app = { id: 'local-app', apiPath: 'local-path' };
+  const remote = {
+    title: 'Private Activity', description: 'UPDATE car', visibility: 'private', broadcast: true,
+    path: '/car/1', pathSpec: 'car/:id', verb: 'put', permissions: 'write', params: { id: '1' },
+    timestamp: '2026-09-30T00:00:00.000Z', response: [{ path: 'name', value: 'x' }],
+    user: 'remote-user', clientSessionId: 'remote-session',
+    appAPIPath: 'remote-path', appId: 'remote-app', schemaName: 'car',
+  };
+
+  it("never relays an activity as a system token's copy or a core schema's", () => {
+    const activity = relayedDataShareActivity({ ...remote, isSuper: true, isCoreSchema: true }, app, 'car');
+
+    assert.strictEqual(activity.isSuper, false);
+    assert.strictEqual(activity.isCoreSchema, false);
+  });
+
+  it("gives the activity this app's id and path and drops the peer's user and session", () => {
+    const activity = relayedDataShareActivity(remote, app, 'car');
+
+    assert.strictEqual(activity.appId, 'local-app');
+    assert.strictEqual(activity.appAPIPath, 'local-path');
+    assert.strictEqual(activity.user, '');
+    assert.strictEqual(activity.clientSessionId, null);
+    assert.strictEqual(activity.isSameApp, false);
+    assert.deepStrictEqual(activity.response, remote.response);
+    assert.deepStrictEqual(activity.params, { id: '1' });
+  });
+
+  it('keeps only the fields an activity has', () => {
+    const activity = relayedDataShareActivity({ ...remote, tokens: ['t1'], extra: 'x' }, app, 'car');
+
+    assert.ok(!('tokens' in activity));
+    assert.ok(!('extra' in activity));
+  });
+
+  it('relays nothing that is not a write of the schema', () => {
+    for (const bad of [null, 'x', { ...remote, verb: 'get' }, { ...remote, verb: { $ne: 1 } }]) {
+      assert.strictEqual(relayedDataShareActivity(bad, app, 'car'), null, JSON.stringify(bad));
+    }
+    assert.deepStrictEqual(relayedDataShareActivity({ ...remote, params: 'x' }, app, 'car').params, {});
   });
 });

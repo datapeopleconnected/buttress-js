@@ -69,6 +69,53 @@ interface SocketData {
 }
 type AppSocket = sioSocket<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>;
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+/**
+ * The activity to relay into this instance for one a data share peer sent, for one of the app's remote schemas. Only
+ * the fields an activity has are taken from the peer, and it's always the app's own, never a system token's copy or a
+ * core schema's; the peer's user and client session mean nothing here. Anything that isn't a write gives null.
+ */
+export const relayedDataShareActivity = (
+  remote: unknown,
+  app: { id: string; apiPath: string },
+  schemaName: string,
+): RESTActivity | null => {
+  if (!isPlainObject(remote)) return null;
+  const { verb } = remote;
+  if (verb !== 'post' && verb !== 'put' && verb !== 'delete') return null;
+
+  const text = (value: unknown, otherwise = '') => (typeof value === 'string' ? value : otherwise);
+  const deletedEntities = Array.isArray(remote.deletedEntities)
+    ? remote.deletedEntities.filter(isPlainObject)
+    : undefined;
+
+  return {
+    title: text(remote.title),
+    description: text(remote.description),
+    visibility: text(remote.visibility, 'public'),
+    broadcast: remote.broadcast !== false,
+    path: text(remote.path),
+    pathSpec: text(remote.pathSpec),
+    verb,
+    permissions: text(remote.permissions),
+    params: isPlainObject(remote.params) ? remote.params : {},
+    timestamp: (typeof remote.timestamp === 'string' ? remote.timestamp : new Date().toISOString()) as unknown as Date,
+    response: remote.response,
+    user: '',
+    clientSessionId: null,
+    appAPIPath: app.apiPath,
+    appId: app.id,
+    isSuper: false,
+    // Set, so the activity isn't relayed on again
+    isSameApp: app.apiPath === remote.appAPIPath,
+    isCoreSchema: false,
+    schemaName,
+    ...(deletedEntities ? { deletedEntities } : {}),
+  };
+};
+
 export default class BootstrapSocket extends Bootstrap {
   private _dataShareSockets: {
     [key: string]: sioClientSocket[];
@@ -450,16 +497,8 @@ export default class BootstrapSocket extends Bootstrap {
           return;
         }
 
-        const schemaName = remoteActivity.schemaName;
-
-        const activity: RESTActivity = {
-          ...remoteActivity,
-          appId: app.id,
-          appAPIPath: app.apiPath,
-          isSameApp: app.apiPath === remoteActivity.appAPIPath,
-          isCoreSchema: Boolean(remoteActivity.isCoreSchema),
-          schemaName,
-        };
+        const activity = relayedDataShareActivity(remoteActivity, app, remoteActivity.schemaName);
+        if (!activity) return;
 
         this.__nrp?.emit('rest:activity', JSON.stringify(activity));
       });

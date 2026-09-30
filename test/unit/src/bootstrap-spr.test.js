@@ -602,3 +602,23 @@ describe('bootstrap-spr: socket connections', () => {
     ]);
   });
 });
+
+describe('bootstrap-spr: activities not to broadcast', () => {
+  afterEach(() => sinon.restore());
+
+  it("doesn't send an activity marked not to broadcast, even to system tokens", async () => {
+    const spr = new BootstrapSocketPolicyRouter();
+    const emitted = [];
+    spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
+    spr._policyCache = { getPoliciesByRestActivity: async () => [] };
+    sinon.stub(Model, 'getAppModel').resolves({ findById: async () => ({ id: 'car-1' }) });
+    sinon.stub(Model, 'getCoreModel').returns({ find: async () => [{ id: 'system-token', type: 'system' }] });
+
+    await spr._handleIncomingMessage({
+      broadcast: false, path: '/car/car-1', pathSpec: 'car/:id', verb: 'put', params: { id: 'car-1' },
+      response: [], appAPIPath: 'app', appId: 'app-1', isSuper: true, isCoreSchema: false, schemaName: 'car',
+    });
+
+    assert.deepStrictEqual(emitted, []);
+  });
+});
