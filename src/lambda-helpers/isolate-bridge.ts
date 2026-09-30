@@ -43,6 +43,14 @@ interface LambdaPlugin {
 // A lambda's log call arguments. Only the first is logged, the third and fourth go to Logging's level/id parameters.
 type LambdaLogArgs = [unknown, unknown?, string?, string?];
 
+export interface LambdaExecutionLog {
+  log: string;
+  type: string;
+}
+
+// How much of a run's logging is kept with its execution, which Mongo caps at 16 MB with everything else it holds
+const MAX_EXECUTION_LOG_BYTES = 1024 * 1024;
+
 /**
  * IsolateBridge
  * @class
@@ -56,12 +64,38 @@ class IsolateBridge {
   };
   _pluginBootstrap: string;
 
+  // What the executing lambda has logged, kept with its execution when it finishes
+  _executionLogs: LambdaExecutionLog[] = [];
+  _executionLogBytes = 0;
+  _droppedExecutionLogs = 0;
+
   /**
    * Constructor for Helpers
    */
   constructor() {
     this._plugins = {};
     this._pluginBootstrap = '';
+  }
+
+  /**
+   * Starts collecting a run's logs afresh.
+   */
+  startExecutionLogs() {
+    this._executionLogs = [];
+    this._executionLogBytes = 0;
+    this._droppedExecutionLogs = 0;
+  }
+
+  /**
+   * Gives the run's logs, with a note of how many were left out past the limit, and starts afresh.
+   */
+  takeExecutionLogs(): LambdaExecutionLog[] {
+    const logs = this._executionLogs;
+    if (this._droppedExecutionLogs > 0) {
+      logs.push({ log: `${this._droppedExecutionLogs} more log lines were left out`, type: 'warn' });
+    }
+    this.startExecutionLogs();
+    return logs;
   }
 
   registerPlugins() {
@@ -419,19 +453,21 @@ class IsolateBridge {
     );
   }
 
-  // ! Need to look into this method
-  _pushLambdaExecutionLog(_log: unknown, _type: string) {
-    throw new Error('Need to resolve where this.lambdaExecution.id is coming from');
-    // Model.getCoreModel(LambdaSchemaModel).update({
-    // 	id: Model.getCoreModel(LambdaSchemaModel).createId(this.lambdaExecution.id),
-    // }, {
-    // 	$push: {
-    // 		logs: {
-    // 			log,
-    // 			type,
-    // 		},
-    // 	},
-    // });
+  _pushLambdaExecutionLog(log: unknown, type: string) {
+    let text: string;
+    try {
+      text = typeof log === 'string' ? log : (JSON.stringify(log) ?? String(log));
+    } catch {
+      text = String(log);
+    }
+
+    const bytes = Buffer.byteLength(text);
+    if (this._executionLogBytes + bytes > MAX_EXECUTION_LOG_BYTES) {
+      this._droppedExecutionLogs++;
+      return;
+    }
+    this._executionLogBytes += bytes;
+    this._executionLogs.push({ log: text, type });
   }
 }
 export default new IsolateBridge();

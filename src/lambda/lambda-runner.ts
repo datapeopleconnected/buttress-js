@@ -59,7 +59,7 @@ import Model from '../model/index.js';
 import * as Helpers from '../helpers/index.js';
 import lambdaHelpers from '../lambda-helpers/helpers.js';
 import type { LambdaResult } from '../lambda-helpers/helpers.js';
-import type { IsolateJail } from '../lambda-helpers/isolate-bridge.js';
+import IsolateBridge, { type IsolateJail } from '../lambda-helpers/isolate-bridge.js';
 import { ExecPriority, LambdaExecutionMessage } from './lambda-manager.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import LambdaExecutionSchemaModel, { LambdaExecution, LambdaExecutionAddBody } from '../model/core/lambda-execution.js';
@@ -301,6 +301,7 @@ export default class LambdaRunner {
 
     // The app's own context, apart from other apps' lambdas
     this._useAppContext(String(app.id));
+    IsolateBridge.startExecutionLogs();
     // Reset lambdaHelpers lambdaResult
     lambdaHelpers.lambdaResult = null;
     // Host functions act for this lambda: metadata updates go to it, email templates come from its code folder
@@ -693,6 +694,9 @@ export default class LambdaRunner {
           status: 'COMPLETE',
           endedAt: Sugar.Date.create('now'),
         },
+        $push: {
+          logs: { $each: IsolateBridge.takeExecutionLogs() },
+        },
       },
     );
 
@@ -747,7 +751,7 @@ export default class LambdaRunner {
           endedAt: Sugar.Date.create('now'),
         },
         $push: {
-          logs: { $each: [{ log: log.message, type: log.type }] },
+          logs: { $each: [...IsolateBridge.takeExecutionLogs(), { log: log.message, type: log.type }] },
         },
       },
     );

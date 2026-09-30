@@ -347,7 +347,7 @@ describe('lambda/LambdaRunner:handleLambdaExecutionMessage a lambda that fails',
   });
 
   // Runs an API endpoint lambda that throws, in the runner's real isolate, as the manager hands it over
-  async function runFailingLambda(updateById, lambdaTokens = [{ value: 'lambda-token' }]) {
+  async function runFailingLambda(updateById, lambdaTokens = [{ value: 'lambda-token' }], body = "throw new Error('lambda broke');") {
     sinon.stub(Logging, 'logError');
     const { runner, nrp } = createRunner();
     await runner.init();
@@ -373,7 +373,7 @@ describe('lambda/LambdaRunner:handleLambdaExecutionMessage a lambda that fails',
     sinon.stub(runner, '_registerLambdaModules').callsFake(async () => {
       runner._context.evalSync(`
         globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
-        globalThis['lambda_failing'] = class { async execute() { throw new Error('lambda broke'); } };
+        globalThis['lambda_failing'] = class { async execute() { ${body} } };
       `);
     });
 
@@ -414,6 +414,19 @@ describe('lambda/LambdaRunner:handleLambdaExecutionMessage a lambda that fails',
     assert.match(JSON.parse(emitted('lambda:worker:errored').args[1]).errMessage, /lambda broke/);
   });
 
+  it('keeps what the lambda logged before it failed, ahead of why it failed', async function () {
+    this.timeout(10000);
+    sinon.stub(Logging, 'log');
+    const updateById = sinon.stub().resolves();
+
+    await runFailingLambda(updateById, undefined, "lambda.log('about to break'); throw new Error('lambda broke');");
+
+    const errorWrite = updateById.getCalls().find((call) => call.args[1].$set?.status === 'ERROR');
+    const logs = errorWrite.args[1].$push.logs.$each;
+    assert.deepStrictEqual(logs[0], { log: 'about to break', type: 'log' });
+    assert.match(logs[1].log, /lambda broke/);
+  });
+
   it('answers the API caller when the execution fails before the lambda runs', async function () {
     this.timeout(10000);
     const updateById = sinon.stub().resolves();
@@ -429,6 +442,106 @@ describe('lambda/LambdaRunner:handleLambdaExecutionMessage a lambda that fails',
     });
     assert.ok(updateById.calledWithMatch('exec-1', { $set: { status: 'ERROR' } }));
     assert.ok(nrp.emit.calledWith('lambda:worker:errored'));
+  });
+});
+
+describe('lambda/LambdaRunner:execute logs', () => {
+  let savedPlugins;
+  let tmpDir;
+
+  beforeEach(() => {
+    savedPlugins = Config.paths.lambda.plugins;
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-logs-'));
+    Config.paths.lambda.plugins = tmpDir;
+    ['log', 'logDebug', 'logWarn', 'logError'].forEach((level) => sinon.stub(Logging, level));
+  });
+
+  afterEach(() => {
+    Config.paths.lambda.plugins = savedPlugins;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // A runner that runs a lambda whose entry point is `body` in its real isolate, giving the update that completed it
+  async function createLoggingRunner() {
+    const { runner } = createRunner();
+    await runner.init();
+    const updateById = sinon.stub().resolves();
+    stubModel(
+      new Map([
+        [SecureStoreSchemaModel, { findOne: async () => null }],
+        [AppSchemaModel, { createId: (v) => v }],
+        [LambdaSchemaModel, { createId: (v) => v }],
+        [TokenSchemaModel, { createId: (v) => v, find: async () => Readable.from([{ value: 'lambda-token' }]) }],
+        [LambdaExecutionSchemaModel, {
+          ...fakeExecutionModel({ updateById }),
+          findById: async (id) => ({ id, status: 'RUNNING', metadata: [] }),
+        }],
+      ]),
+    );
+    sinon.stub(runner, '_getLambdaModulesName').returns([{ name: 'lambda_logging' }]);
+    sinon.stub(runner, 'bundleLambdaModules').resolves();
+    let body = '';
+    sinon.stub(runner, '_registerLambdaModules').callsFake(async () => {
+      runner._context.evalSync(`
+        globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
+        globalThis['lambda_logging'] = class { async execute() { ${body} } };
+      `);
+    });
+    const lambda = {
+      id: 'lambda-1', name: 'logging', trigger: [],
+      git: { url: 'git@example.com:x.git', hash: 'HEAD', entryFile: 'index.js', entryPoint: 'execute' },
+    };
+
+    const complete = async (lambdaBody) => {
+      body = lambdaBody;
+      updateById.resetHistory();
+      const execution = { id: 'exec-1', lambdaId: 'lambda-1', deploymentId: 'd', metadata: [] };
+      await runner.execute(lambda, execution, { id: 'app-1', apiPath: 'app' }, 'CRON', {});
+      return updateById.getCalls().find((call) => call.args[1].$set?.status === 'COMPLETE').args[1];
+    };
+    return { complete, dispose: () => runner._isolate.dispose() };
+  }
+
+  async function complete(body) {
+    const runner = await createLoggingRunner();
+    try {
+      return await runner.complete(body);
+    } finally {
+      runner.dispose();
+    }
+  }
+
+  it('saves what the lambda logged with its execution, in order', async function () {
+    this.timeout(10000);
+
+    const update = await complete("lambda.log('hello'); console.warn('careful'); lambda.logError({ code: 7 });");
+
+    assert.deepStrictEqual(update.$push.logs.$each, [
+      { log: 'hello', type: 'log' },
+      { log: 'careful', type: 'warn' },
+      { log: '{"code":7}', type: 'error' },
+    ]);
+  });
+
+  it('keeps each run to its own logs', async function () {
+    this.timeout(10000);
+    const runner = await createLoggingRunner();
+    await runner.complete("lambda.log('first run');");
+
+    const update = await runner.complete("lambda.log('second run');");
+
+    runner.dispose();
+    assert.deepStrictEqual(update.$push.logs.$each, [{ log: 'second run', type: 'log' }]);
+  });
+
+  it('stops saving logs past 1 MB, and says how many it left out', async function () {
+    this.timeout(10000);
+
+    const update = await complete("const line = 'x'.repeat(1024); for (let i = 0; i < 1100; i++) lambda.log(line);");
+
+    const logs = update.$push.logs.$each;
+    assert.ok(logs.length < 1100);
+    assert.deepStrictEqual(logs.at(-1), { log: `${1100 - (logs.length - 1)} more log lines were left out`, type: 'warn' });
   });
 });
 

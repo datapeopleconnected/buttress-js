@@ -64,7 +64,9 @@ Execution (`execute()`), per invocation:
 4. Runs a small wrapper script inside the isolate that does `Buttress.init(buttressOptions, true)`,
    `require()`s the bundled entry file (a shim resolving `lambdaModules` names to isolate globals),
    instantiates it, and calls `lambdaCode[entryPoint]()`.
-5. On success/failure updates `LambdaExecution.status` (`RUNNING`→`COMPLETE`/`ERROR`) and, for
+5. On success/failure updates `LambdaExecution.status` (`RUNNING`→`COMPLETE`/`ERROR`), in the same write
+   pushing onto its `logs` what the lambda logged (`lambda.log*`/`console.*`, collected by `IsolateBridge`, up
+   to 1 MB a run) and, on failure, why. A failure to record the error is only logged. For
    `API_ENDPOINT` lambdas, emits `lambda:worker:execution-result` (keyed by `reqId`) back to the REST
    process that's holding the HTTP response open — see `_queueLambdaAPIExecution` in
    [src/routes/lambda-setup.ts](../src/routes/lambda-setup.ts).

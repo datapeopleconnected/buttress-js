@@ -46,10 +46,16 @@ describe('lambda-helpers/IsolateBridge:registerPlugins', () => {
 });
 
 describe('lambda-helpers/IsolateBridge:_pushLambdaExecutionLog', () => {
-  it('always throws (the execution-id plumbing it needs was never resolved)', () => {
-    assert.throws(
-      () => IsolateBridge._pushLambdaExecutionLog('a log line', 'debug'),
-      /Need to resolve where this\.lambdaExecution\.id is coming from/,
-    );
+  it("keeps a run's log lines, as text, until they're taken", () => {
+    IsolateBridge.startExecutionLogs();
+
+    IsolateBridge._pushLambdaExecutionLog('a log line', 'debug');
+    IsolateBridge._pushLambdaExecutionLog({ code: 7 }, 'error');
+
+    assert.deepStrictEqual(IsolateBridge.takeExecutionLogs(), [
+      { log: 'a log line', type: 'debug' },
+      { log: '{"code":7}', type: 'error' },
+    ]);
+    assert.deepStrictEqual(IsolateBridge.takeExecutionLogs(), []);
   });
 });
