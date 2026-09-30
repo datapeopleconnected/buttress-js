@@ -766,6 +766,35 @@ describe('routes/Route:_findChangeOwners', () => {
 });
 
 describe('routes/Route:exec', () => {
+  it("logs each request's end with its own timer, when two run at once on the route", async () => {
+    const route = createRoute();
+    sinon.stub(route, '_authenticate').resolves();
+    sinon.stub(route, '_validate').resolves();
+    sinon.stub(route, '_findChangeOwners').resolves(new Map());
+    const release = {};
+    sinon.stub(route, '_exec').callsFake((req) => new Promise((resolve) => (release[req.context.id] = () => resolve({}))));
+    sinon.stub(route, '_respond').resolves();
+    sinon.stub(route, '_logActivity').resolves();
+    sinon.stub(route, '_boardcastData').resolves();
+    const logTimer = sinon.stub(Logging, 'logTimer');
+    const first = createReq();
+    const second = createReq();
+    second.context.id = 'req-2';
+    second.context.timer = { interval: 1, lapTime: 1 };
+
+    const running = [route.exec(first, createRes()), route.exec(second, createRes())];
+    await new Promise((resolve) => setImmediate(resolve));
+    release['req-1']();
+    release['req-2']();
+    await Promise.all(running);
+
+    const ends = logTimer.getCalls().filter((call) => String(call.args[0]).startsWith('Route:exec:end '));
+    assert.deepStrictEqual(ends.map((call) => [call.args[3], call.args[1]]), [
+      ['req-1', first.context.timer],
+      ['req-2', second.context.timer],
+    ]);
+  });
+
   it('finds the owners of the records it will change after validating and before changing them', async () => {
     const route = createRoute();
     const calls = [];

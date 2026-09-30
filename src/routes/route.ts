@@ -168,8 +168,6 @@ export default class Route {
 
   _redisClient: RedisClientType;
 
-  _timer?: Helpers.Timer;
-
   constructor(paths: string | string[], name: string, services: Services, schema: Schema | null, app?: App) {
     // this.model = model;
     this.schemaName = schema?.name;
@@ -233,7 +231,6 @@ export default class Route {
       req.context.id,
     );
     Logging.logTimer('Route:exec:start', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
-    this._timer = req.context.timer;
 
     if (!this._exec) {
       Logging.logTimer(
@@ -304,7 +301,12 @@ export default class Route {
       await this._boardcastData(req, res, result);
     }
 
-    Logging.logTimer(`Route:exec:end ${res.statusCode}`, this._timer, Logging.Constants.LogLevel.SILLY, req.context.id);
+    Logging.logTimer(
+      `Route:exec:end ${res.statusCode}`,
+      req.context.timer,
+      Logging.Constants.LogLevel.SILLY,
+      req.context.id,
+    );
   }
 
   /**
