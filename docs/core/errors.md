@@ -28,7 +28,7 @@ Each code is always answered with the same status.
 | 400 | The request is malformed or refused by the schema | `invalid_body`, `invalid_id`, `missing_id`, `missing_field`, `invalid_value`, `invalid_update`, `duplicate_id`, `invalid_date`, `apiPath_not_supported`, `token_in_url_not_supported` |
 | 401 | No token, or one that isn't valid: unknown, revoked, or its app or user has gone | `missing_token`, `invalid_token`, `app_not_found` |
 | 403 | The token is valid, but not allowed to do this | `insufficient_authority`, `access_denied`, `property_access_denied`, `data_sharing_inactive`, `origin_not_allowed` |
-| 404 | What the request names can't be found | `not_found`, `unknown_schema`, `unknown_lambda_endpoint` |
+| 404 | What the request names can't be found, or no route takes the request | `not_found`, `unknown_route`, `unknown_schema`, `unknown_lambda_endpoint` |
 | 405 | A lambda endpoint called with a method other than GET or POST | `method_not_allowed` |
 | 409 | The entity changed while it was being updated; try again | `update_conflict` |
 | 413, 415 | The body is too large, or in an encoding the server doesn't read | `body_too_large`, `unsupported_body_encoding` |
@@ -53,8 +53,9 @@ item it didn't apply in the item's `validation`, with the status its own request
 ## Changes from earlier releases
 
 Earlier releases answered errors as `{"statusMessage": …, "message": …}`, with the code in `message`, or as
-`{"message": …}`, plain text or HTML depending on where the request was refused. They now all answer with the body
-above. `statusMessage` is gone, and the code moved from `message` to `code`.
+`{"message": …}`, plain text or HTML depending on where the request was refused; a path no route took got
+Express's HTML page. They now all answer with the body above. `statusMessage` is gone, and the code moved from
+`message` to `code`.
 
 Statuses changed where the same condition was answered differently in different places:
 
