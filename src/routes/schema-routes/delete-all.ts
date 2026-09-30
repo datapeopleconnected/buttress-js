@@ -28,6 +28,10 @@ import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
 
+// The most deleted entities one activity names, and about how much of them it holds
+const BROADCAST_BATCH_SIZE = 1000;
+const BROADCAST_BATCH_BYTES = 1024 * 1024;
+
 /**
  * @class DeleteAll
  */
@@ -80,9 +84,46 @@ export default class DeleteAll extends Route {
   }
 
   // A delete of every entity goes out as it is. One limited by policy names the entities it deleted, for the SPR to
-  // relay as a delete of each.
+  // relay as a delete of each. They go in batches, as one message holding them all could pass what Redis lets a
+  // subscriber be sent, and cut the SPR off.
   override async _broadcast(req: Request, res: Response, result: unknown, path: string, isSuper = false) {
-    const deleted = Array.isArray(result) ? (result as string[]).map((id) => ({ id })) : result;
-    return super._broadcast(req, res, deleted, path, isSuper);
+    if (!Array.isArray(result)) return super._broadcast(req, res, result, path, isSuper);
+
+    const deletedEntities = req.context.deletedEntities;
+    const byId = new Map(deletedEntities?.map((entity) => [String(entity.id), entity]));
+
+    const batches: string[][] = [];
+    let batch: string[] = [];
+    let batchBytes = 0;
+    for (const id of result as string[]) {
+      const entityBytes = JSON.stringify(byId.get(id) ?? id).length;
+      if (
+        batch.length > 0 &&
+        (batch.length >= BROADCAST_BATCH_SIZE || batchBytes + entityBytes > BROADCAST_BATCH_BYTES)
+      ) {
+        batches.push(batch);
+        batch = [];
+        batchBytes = 0;
+      }
+      batch.push(id);
+      batchBytes += entityBytes;
+    }
+    if (batch.length > 0) batches.push(batch);
+
+    // Each batch is sent before the next is set on the request, with nothing awaited between, as the system tokens' and
+    // the scoped broadcasts of this request run side by side
+    for (const ids of batches) {
+      req.context.deletedEntities = deletedEntities
+        ? ids.map((id) => byId.get(id)).filter((entity) => entity !== undefined)
+        : undefined;
+      void super._broadcast(
+        req,
+        res,
+        ids.map((id) => ({ id })),
+        path,
+        isSuper,
+      );
+    }
+    req.context.deletedEntities = deletedEntities;
   }
 }

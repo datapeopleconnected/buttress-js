@@ -196,4 +196,55 @@ describe('schema-routes/DeleteAll:_respond/_broadcast', () => {
     assert.strictEqual(path, '/test-schema');
     assert.strictEqual(isSuper, true);
   });
+
+  describe('broadcasting a large policy-limited delete', () => {
+    // The route's real broadcast, publishing to a stand-in for NRP
+    function broadcastingRoute(docs) {
+      const route = createRoute(createFakeModel(docs));
+      route._nrp = { emit: sinon.spy() };
+      route.activityBroadcast = true;
+      route.core = false;
+      route._dataApp = () => ({ id: 'app-1', apiPath: 'app' });
+      const activities = () => route._nrp.emit.getCalls().map((call) => JSON.parse(call.args[1]));
+      return { route, activities };
+    }
+
+    it('sends the deleted entities in batches of at most 1000, each with the entities of its own ids', async () => {
+      const docs = Array.from({ length: 2500 }, (_, i) => ({ id: `note-${i}`, owner: 'bob' }));
+      const { route, activities } = broadcastingRoute(docs);
+
+      const { req, result } = await deleteAll(route, [{ query: { owner: 'bob' } }]);
+      const kept = req.context.deletedEntities;
+      await route._broadcast(req, {}, result, '/test-schema');
+
+      const sent = activities();
+      assert.deepStrictEqual(sent.map((a) => a.response.length), [1000, 1000, 500]);
+      for (const activity of sent) {
+        assert.deepStrictEqual(activity.deletedEntities.map((e) => e.id), activity.response.map((r) => r.id));
+      }
+      assert.strictEqual(new Set(sent.flatMap((a) => a.response.map((r) => r.id))).size, 2500);
+      assert.strictEqual(req.context.deletedEntities, kept);
+    });
+
+    it('keeps each batch to about a megabyte of entities', async () => {
+      const big = 'x'.repeat(600 * 1024);
+      const docs = Array.from({ length: 3 }, (_, i) => ({ id: `note-${i}`, owner: 'bob', body: big }));
+      const { route, activities } = broadcastingRoute(docs);
+
+      const { req, result } = await deleteAll(route, [{ query: { owner: 'bob' } }]);
+      await route._broadcast(req, {}, result, '/test-schema');
+
+      assert.deepStrictEqual(activities().map((a) => a.response.length), [1, 1, 1]);
+    });
+
+    it("sends a system token's copy in batches too, without the entities", async () => {
+      const docs = Array.from({ length: 1500 }, (_, i) => ({ id: `note-${i}`, owner: 'bob' }));
+      const { route, activities } = broadcastingRoute(docs);
+
+      const { req, result } = await deleteAll(route, [{ query: { owner: 'bob' } }]);
+      await route._broadcast(req, {}, result, '/test-schema', true);
+
+      assert.deepStrictEqual(activities().map((a) => [a.response.length, a.deletedEntities]), [[1000, undefined], [500, undefined]]);
+    });
+  });
 });
