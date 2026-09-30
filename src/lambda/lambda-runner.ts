@@ -874,10 +874,6 @@ export default class LambdaRunner {
         name: 'Buttress',
       },
       {
-        packageName: '@buttress/snippets',
-        name: 'LambdaSnippet',
-      },
-      {
         packageName: 'sugar',
         name: 'Sugar',
       },
@@ -1019,7 +1015,7 @@ export default class LambdaRunner {
     if (!this._context) throw new Error('Isolate not initialised');
 
     // In dev mode (LAMBDA_DEV_RELOAD=TRUE), always re-read and recompile a lambda's OWN code
-    // module — not the shared @buttress/api / @buttress/snippets / sugar package bundles, which
+    // module — not the shared @buttress/api / sugar package bundles, which
     // are genuinely static and still worth caching for the isolate's lifetime — so local edits to
     // lambda source take effect on every call instead of only the first one per process lifetime.
     // Off by default: this costs an extra fs read + isolate script compile per invocation, which

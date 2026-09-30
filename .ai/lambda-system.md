@@ -57,7 +57,7 @@ Execution (`execute()`), per invocation:
    (impersonation — e.g. an API endpoint call authenticated as a specific user), resolves that token +
    user too, and uses *that* token's value inside the sandbox instead of the lambda's own.
 2. `_getLambdaModulesName()` + `bundleLambdaModules()` — webpack-bundles `@buttress/api`,
-   `@buttress/snippets`, `sugar`, and the lambda's own entry file
+   `sugar`, any shared modules the lambda declares (`git.sharedModules`), and the lambda's own entry file
    (`Config.paths.lambda.code/lambda-<gitHash>/<entryFile>`) into `Config.paths.lambda.bundles/*.js`,
    skipping any bundle that already exists on disk. Each build runs in a `.build-*` folder of its own inside
    the bundles folder and its files are renamed into place only once it succeeds, so a worker that finds a
