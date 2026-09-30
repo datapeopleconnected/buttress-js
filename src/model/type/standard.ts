@@ -520,7 +520,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
    * @param {String} id - entity id to get
    * @return {Promise} - resolves to an array of Companies
    */
-  findById(id: string) {
+  findById(id: string, _sourceId: string | null = null) {
     return this.adapter.findById(id) as Promise<TDocument>;
   }
 

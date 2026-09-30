@@ -125,16 +125,24 @@ export default class RemoteCombinedModel extends StandardModel {
     if (!sourceId || sourceId === this.app.id.toString()) return this.localModel;
 
     const dataSharingId = await this._sdsRouting.get(this.app.id.toString(), sourceId);
-    if (dataSharingId) {
-      const model = this._remoteModels.find((remoteModel) => remoteModel.dataSharingId.toString() === dataSharingId);
-      if (!model) {
-        throw new Error('Unable to find remote model');
-      }
-
-      return model;
-    }
+    if (dataSharingId) return this._remoteModelThrough(dataSharingId);
 
     throw new Error(`Unable to resolve target model for sourceId: ${sourceId}`);
+  }
+
+  _remoteModelThrough(dataSharingId: string) {
+    const model = this._remoteModels.find((remoteModel) => remoteModel.dataSharingId.toString() === dataSharingId);
+    if (!model) throw new Error('Unable to find remote model');
+
+    return model;
+  }
+
+  /**
+   * @param {string} dataSharingId
+   * @return {boolean} - whether the collection reads a partner through the agreement
+   */
+  sharesThrough(dataSharingId: string) {
+    return this._remoteModels.some((remoteModel) => remoteModel.dataSharingId.toString() === dataSharingId);
   }
 
   /**
@@ -222,10 +230,18 @@ export default class RemoteCombinedModel extends StandardModel {
    * @param {string} sourceId
    * @return {Promise}
    */
-  override async findById(id: string, sourceId?: string) {
-    if (!sourceId) throw new Error('SourceId is required for findById');
-
+  override async findById(id: string, sourceId?: string | null) {
     return (await this._getTargetModel(sourceId)).findById(id);
+  }
+
+  /**
+   * A record of the partner an agreement reads, as a change the partner relayed names it
+   * @param {string} id
+   * @param {string} dataSharingId
+   * @return {Promise}
+   */
+  async findSharedById(id: string, dataSharingId: string) {
+    return this._remoteModelThrough(dataSharingId).findById(id);
   }
 
   /**

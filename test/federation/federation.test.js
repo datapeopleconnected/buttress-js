@@ -175,7 +175,7 @@ describe('Federation', function () {
     const sockets = [];
     after(() => sockets.forEach((socket) => socket.close()));
 
-    it("sends a change on the partner to the consumer's sockets (BUG-43)", async () => {
+    it("sends a change on the partner to the consumer's sockets", async () => {
       const token = await createAdminUser(b, env.appB, 'fed-b-watcher');
       const watcher = await b.connectSocket('fed-b', token);
       sockets.push(watcher);
@@ -218,7 +218,7 @@ describe('Federation', function () {
       assert.deepStrictEqual(res.body.map((car) => car.name), ['red one']);
     });
 
-    it('relays only what the policy shares (SEC-7; BUG-46: remotes are read once, at connect; BUG-43)', async () => {
+    it('relays only what the policy shares, to a collection given remotes after the agreement was active', async () => {
       const token = await createAdminUser(b, env.appB2, 'fed-b2-watcher');
       const watcher = await b.connectSocket('fed-b2', token);
       try {

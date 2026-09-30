@@ -25,6 +25,7 @@ import Model from '../../../dist/model/index.js';
 import TokenSchemaModel from '../../../dist/model/core/token.js';
 import AppSchemaModel from '../../../dist/model/core/app.js';
 import AppDataSharingSchemaModel from '../../../dist/model/core/app-data-sharing.js';
+import RemoteCombinedModel from '../../../dist/model/type/remote-combined.js';
 
 describe('bootstrap-socket:token authentication', () => {
   const app = { id: new ObjectId(), apiPath: 'app-one' };
@@ -443,3 +444,85 @@ describe('bootstrap-socket: a partner whose agreement is not active', () => {
     assert.ok(disconnect.calledOnceWith(['partner-token-id']));
   });
 });
+
+describe("bootstrap-socket: relaying a partner's activity", () => {
+  const app = { id: new ObjectId(), apiPath: 'app-one', __schema: '[]' };
+  const token = { id: new ObjectId(), value: 'partner-token', type: 'dataSharing', _appId: app.id };
+  const agreement = { id: 'ds-1', name: 'from-partner', active: true };
+  const activity = {
+    verb: 'post',
+    path: '/car',
+    pathSpec: 'car',
+    params: {},
+    response: { id: 'car-1', name: 'made on the partner', sourceId: 'partner-app' },
+    appAPIPath: 'partner',
+    appId: 'partner-app',
+    schemaName: 'car',
+  };
+
+  // The app's car collection, as this process's models have it once its schema is updated
+  const federatedCars = (dataSharingId) => {
+    const model = Object.create(RemoteCombinedModel.prototype);
+    model._remoteModels = [{ dataSharingId }];
+    return model;
+  };
+
+  afterEach(() => sinon.restore());
+
+  // Connects the partner's socket while the app's schema has no remotes, and gives what it relays of an activity
+  const relay = async (cars) => {
+    sinon.stub(Logging, 'log');
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      if (modelClass === TokenSchemaModel) return { findOne: async () => token };
+      if (modelClass === AppSchemaModel) return { findOne: async () => app };
+      if (modelClass === AppDataSharingSchemaModel) return { findOne: async () => agreement };
+      throw new Error(`Unexpected core model ${modelClass.name}`);
+    });
+    const bootstrap = new BootstrapSocket();
+    const relayed = [];
+    bootstrap.__nrp = { emit: (channel, json) => channel === 'rest:activity' && relayed.push(JSON.parse(json)) };
+    bootstrap._primaryDatastore = { ID: { new: (id) => id } };
+    const handlers = {};
+    const socket = { id: 'socket-1', nsp: { name: '/app-one' }, handshake: { auth: { token: token.value }, query: {} }, data: {} };
+    socket.join = () => {};
+    socket.on = (event, handler) => (handlers[event] = handler);
+    await bootstrap._workerHandleSocketConnection(socket, () => {});
+
+    sinon.stub(Model, 'getAppModel').callsFake(async (appId, name) => (name === 'car' ? cars : undefined));
+    await handlers['dataShareSocket:share']({ tokens: [], activity });
+    return relayed;
+  };
+
+  it('relays activity for a collection given remotes after the partner connected', async () => {
+    const relayed = await relay(federatedCars('ds-1'));
+
+    assert.deepStrictEqual(relayed.map((relayedActivity) => relayedActivity.response.name), ['made on the partner']);
+  });
+
+  it('says which agreement a relayed activity came through', async () => {
+    const [relayed] = await relay(federatedCars('ds-1'));
+
+    assert.strictEqual(relayed.dataShareId, 'ds-1');
+  });
+
+  it("doesn't relay activity for a collection that reads another agreement's partner", async () => {
+    assert.deepStrictEqual(await relay(federatedCars('ds-2')), []);
+  });
+
+  it("doesn't relay activity for a collection without remotes", async () => {
+    assert.deepStrictEqual(await relay({ findById: async () => null }), []);
+  });
+
+  it("brings a worker's models up to date when an app's schema is updated", async () => {
+    const initSchema = sinon.stub(Model, 'initSchema').resolves();
+    const handlers = {};
+    const bootstrap = new BootstrapSocket();
+    bootstrap.__nrp = { on: (channel, handler) => (handlers[channel] = handler), emit: () => {} };
+    await bootstrap.__registerNRPWorkerListeners();
+
+    await handlers['app-schema:updated'](JSON.stringify({ appId: String(app.id) }));
+
+    assert.ok(initSchema.calledOnceWith(String(app.id)));
+  });
+});
+

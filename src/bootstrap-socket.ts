@@ -38,8 +38,6 @@ import { dataSharingDestinationProblem } from './helpers/egress.js';
 
 import AccessControl from './access-control/index.js';
 
-import * as Schema from './helpers/schema.js';
-
 import Datastore from './datastore/index.js';
 import { Datastore as DatastoreInstance } from './datastore/index.js';
 import { CONNECTED_TOKEN_HEARTBEAT_MS, PolicyCache } from './services/policy-cache.js';
@@ -56,6 +54,7 @@ import TokenSchemaModel, { Token } from './model/core/token.js';
 import AppSchemaModel from './model/core/app.js';
 import AppDataSharingSchemaModel, { AppDataSharing } from './model/core/app-data-sharing.js';
 import UserSchemaModel from './model/core/user.js';
+import RemoteCombinedModel from './model/type/remote-combined.js';
 interface RequestStatusMessage {
   id: string;
   status: 'started' | 'completed' | 'failed';
@@ -88,6 +87,7 @@ export const relayedDataShareActivity = (
   remote: unknown,
   app: { id: string; apiPath: string },
   schemaName: string,
+  dataShareId?: string,
 ): RESTActivity | null => {
   if (!isPlainObject(remote)) return null;
   const { verb } = remote;
@@ -120,6 +120,7 @@ export const relayedDataShareActivity = (
     isCoreSchema: false,
     schemaName,
     ...(deletedEntities ? { deletedEntities } : {}),
+    ...(dataShareId ? { dataShareId } : {}),
   };
 };
 
@@ -467,21 +468,6 @@ export default class BootstrapSocket extends Bootstrap {
     socket.join(socket.data.tokenId);
 
     if (token.type === 'dataSharing') {
-      const remoteSchemas = Schema.decode(app.__schema).reduce((obj: Record<string, Schema.Schema>, item) => {
-        if (!item.remotes) return obj;
-
-        if (!Array.isArray(item.remotes)) {
-          obj[`${item.remotes.name}.${item.remotes.schema}`] = item;
-          return obj;
-        }
-
-        item.remotes.forEach((remote) => {
-          obj[`${remote.name}.${remote.schema}`] = item;
-        });
-
-        return obj;
-      }, {});
-
       Logging.logDebug(`Fetching data share with tokenId: ${socket.data.tokenId}`);
       const dataShare = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
         _tokenId: this._primaryDatastore.ID.new(socket.data.tokenId),
@@ -496,16 +482,20 @@ export default class BootstrapSocket extends Bootstrap {
 
       // Emit this activity to our instance.
       // This would result in the event being mutiplied
-      socket.on('dataShareSocket:share', (data: DataShareSocketSharePayload) => {
+      socket.on('dataShareSocket:share', async (data: DataShareSocketSharePayload) => {
         const remoteActivity = data.activity;
-        if (!remoteActivity?.schemaName || !remoteSchemas[`${dataShare.name}.${remoteActivity.schemaName}`]) {
+        const schemaName = remoteActivity?.schemaName;
+        // The app's collection as this process has it now, so remotes added after the partner connected count. A
+        // collection reads the partner's collection of its own name.
+        const model = schemaName ? await Model.getAppModel(String(app.id), schemaName) : undefined;
+        if (!schemaName || !(model instanceof RemoteCombinedModel) || !model.sharesThrough(String(dataShare.id))) {
           Logging.log(
-            `Skipping data sharing app doesn't use schema ${app.apiPath} ${dataShare.name}.${remoteActivity?.schemaName}, ${socket.id}`,
+            `Skipping data sharing app doesn't use schema ${app.apiPath} ${dataShare.name}.${schemaName}, ${socket.id}`,
           );
           return;
         }
 
-        const activity = relayedDataShareActivity(remoteActivity, app, remoteActivity.schemaName);
+        const activity = relayedDataShareActivity(remoteActivity, app, schemaName, String(dataShare.id));
         if (!activity) return;
 
         this.__nrp?.emit('rest:activity', JSON.stringify(activity));
@@ -585,11 +575,6 @@ export default class BootstrapSocket extends Bootstrap {
       const data = JSON.parse(json) as DataShareActivatedMessage;
       this._closeDataShareConnection(data.appDataSharingId);
     });
-
-    this.__nrp.on('app-schema:updated', async (json: string) => {
-      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
-      await Model.initSchema(data.appId);
-    });
   }
 
   async __registerNRPMainListeners() {}
@@ -634,6 +619,13 @@ export default class BootstrapSocket extends Bootstrap {
     if (!this.__nrp) throw new Error('No NRP instance');
 
     this.__nrp.on('spr:activity', (data) => this._workerOnSPRActivity(JSON.parse(data) as DataShareSocketSharePayload));
+
+    // Each process that takes sockets keeps its app models up to date, since a partner's activity is relayed only for a
+    // collection that reads the partner
+    this.__nrp.on('app-schema:updated', async (json: string) => {
+      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
+      await Model.initSchema(data.appId);
+    });
 
     // Every Socket process is told, and each closes its own sockets.
     this.__nrp.on('token:deleted', (json: string) => {

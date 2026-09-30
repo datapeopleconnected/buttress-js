@@ -45,9 +45,11 @@ import { Policy } from './model/core/policy.js';
 import TokenSchemaModel, { Token } from './model/core/token.js';
 
 import { PolicyCache } from './services/policy-cache.js';
+import { SourceDataSharingRouting } from './services/source-ds-routing.js';
 import type { AppSchemaUpdatedMessage, SocketConnectionMessage, SocketHeartbeatMessage } from './services/nrp.js';
 import UserSchemaModel, { User } from './model/core/user.js';
 import StandardModel from './model/type/standard.js';
+import RemoteCombinedModel from './model/type/remote-combined.js';
 import type { AdapterDocument } from './types/datastore.js';
 
 // Abstract policy cache
@@ -118,6 +120,8 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     // Register some services.
     this.__services.set('modelManager', Model);
     this.__services.set('policyCache', new PolicyCache(this._redisClient, Model));
+    // For a collection with remotes to find a partner's entity by its source
+    this.__services.set('sdsRouting', new SourceDataSharingRouting(this._redisClient));
 
     this._policyCache = this.__services.get('policyCache') as PolicyCache;
 
@@ -147,6 +151,11 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     if (this._policyCache) {
       this._policyCache.clean();
+    }
+
+    if (this.__services.has('sdsRouting')) {
+      (this.__services.get('sdsRouting') as SourceDataSharingRouting).clean();
+      this.__services.delete('sdsRouting');
     }
 
     // Close Datastore connections
@@ -336,7 +345,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     // A deleted entity can't be looked up, so the entities a delete removed come with the activity, as they were. They
     // are only for checking policies against, so they're taken off before the activity is sent anywhere.
-    const { deletedEntities, ...activity } = incoming;
+    const { deletedEntities, dataShareId, ...activity } = incoming;
 
     // Create a container that will be used to track the message event within the SPR and a timer.
     const activityMetadata: ActivityMetadata = {
@@ -369,7 +378,13 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         return;
       }
 
-      entity = await appModel.findById(entityId as string);
+      // A partner's change comes in through an agreement, and its entity is where that agreement reads. Anything else
+      // is found by its source, which is the app itself unless it names a partner.
+      const sourceId = activityParams.sourceId ?? activityResponse.sourceId;
+      entity =
+        dataShareId && appModel instanceof RemoteCombinedModel
+          ? await appModel.findSharedById(String(entityId), dataShareId)
+          : await appModel.findById(entityId as string, typeof sourceId === 'string' ? sourceId : null);
       // TODO: Entity needs to be flatterned for processing.
     }
 

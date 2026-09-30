@@ -201,7 +201,7 @@ export class ModelManager {
    * is an async function.
    */
   async getAppModel<T extends AnyModel>(appId: string, name: string): Promise<T> {
-    return this.models[appId][name] as unknown as T;
+    return this.models[appId]?.[name] as unknown as T;
   }
 
   /**

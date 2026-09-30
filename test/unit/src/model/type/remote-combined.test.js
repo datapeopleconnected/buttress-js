@@ -175,5 +175,40 @@ describe('model/type/RemoteCombinedModel', () => {
       assert.deepStrictEqual(removed, [['local', 'car-2']]);
     });
   });
+
+  describe('finding by id', () => {
+    const createFindingModel = () => {
+      const model = Object.create(RemoteCombinedModel.prototype);
+      model.app = { id: 'app-b' };
+      model._sdsRouting = { get: async (appId, sourceId) => (sourceId === 'app-a' ? 'agreement-1' : undefined) };
+      model._localModel = { findById: async (id) => ({ id, from: 'local' }) };
+      model._remoteModels = [
+        { dataSharingId: 'agreement-1', findById: async (id) => ({ id, from: 'agreement-1' }) },
+        { dataSharingId: 'agreement-2', findById: async (id) => ({ id, from: 'agreement-2' }) },
+      ];
+      return model;
+    };
+
+    it("finds a partner's record by its source", async () => {
+      assert.deepStrictEqual(await createFindingModel().findById('car-1', 'app-a'), { id: 'car-1', from: 'agreement-1' });
+    });
+
+    it('finds its own record locally', async () => {
+      assert.deepStrictEqual(await createFindingModel().findById('car-2'), { id: 'car-2', from: 'local' });
+    });
+
+    it('finds a record through the agreement it was shared by', async () => {
+      assert.deepStrictEqual(await createFindingModel().findSharedById('car-3', 'agreement-2'), {
+        id: 'car-3',
+        from: 'agreement-2',
+      });
+    });
+
+    it('tells whether it reads a partner through an agreement', () => {
+      const model = createFindingModel();
+
+      assert.deepStrictEqual([model.sharesThrough('agreement-2'), model.sharesThrough('agreement-3')], [true, false]);
+    });
+  });
 });
 

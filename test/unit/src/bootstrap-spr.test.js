@@ -23,6 +23,7 @@ import BootstrapSocketPolicyRouter from '../../../dist/bootstrap-spr.js';
 import Model from '../../../dist/model/index.js';
 import TokenSchemaModel from '../../../dist/model/core/token.js';
 import UserSchemaModel from '../../../dist/model/core/user.js';
+import RemoteCombinedModel from '../../../dist/model/type/remote-combined.js';
 
 describe('bootstrap-spr:class', () => {
 	it(`should create an instance of the BootstrapSocketPolicyRouter class`, () => {
@@ -699,3 +700,79 @@ describe('bootstrap-spr: core schema activity', () => {
     assert.strictEqual(spr._policyCache.getPoliciesByRestActivity.called, false);
   });
 });
+
+describe('bootstrap-spr:_handleIncomingMessage a collection with remotes', () => {
+	const APP_ID = new ObjectId().toString();
+	const PARTNER_ID = new ObjectId().toString();
+	const token = { id: new ObjectId(), type: 'app' };
+	const partnerCar = { id: new ObjectId().toString(), name: "the partner's car", sourceId: PARTNER_ID };
+	const ownCar = { id: new ObjectId().toString(), name: 'our car' };
+	const policy = {
+		id: 'policy-read',
+		name: 'read',
+		_appId: APP_ID,
+		env: null,
+		config: [{ verbs: ['GET'], schema: ['car'], query: { access: '%FULL_ACCESS%' }, condition: null }],
+	};
+
+	afterEach(() => sinon.restore());
+
+	// The app's car collection reads its own cars, and the partner's through agreement ds-1
+	const federatedCars = () => {
+		const model = Object.create(RemoteCombinedModel.prototype);
+		model.app = { id: APP_ID };
+		model._sdsRouting = { get: async (appId, sourceId) => (sourceId === PARTNER_ID ? 'ds-1' : undefined) };
+		model._localModel = { findById: async (id) => (id === ownCar.id ? ownCar : null) };
+		model._remoteModels = [{ dataSharingId: 'ds-1', findById: async (id) => (id === partnerCar.id ? partnerCar : null) }];
+		return model;
+	};
+
+	async function relay(activity) {
+		const spr = new BootstrapSocketPolicyRouter();
+		const emitted = [];
+		spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
+		spr._policyCache = {
+			getPoliciesByRestActivity: async () => [policy],
+			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
+		};
+		sinon.stub(Model, 'getAppModel').resolves(federatedCars());
+		sinon.stub(Model, 'getCoreModel').returns({ createId: (id) => new ObjectId(id), findOne: async () => token });
+
+		await spr._handleIncomingMessage({
+			broadcast: true,
+			verb: 'put',
+			response: [{ type: 'scalar', path: 'name', value: 'renamed' }],
+			appAPIPath: 'test-app',
+			appId: APP_ID,
+			isSuper: false,
+			isCoreSchema: false,
+			schemaName: 'car',
+			...activity,
+		});
+		return emitted.filter((e) => e.tokens?.includes(token.id.toString()));
+	}
+
+	it('relays a change a partner relayed, looking the entity up through its agreement', async () => {
+		const sent = await relay({ path: `/car/${partnerCar.id}`, pathSpec: 'car/:id', params: { id: partnerCar.id }, dataShareId: 'ds-1' });
+
+		assert.strictEqual(sent.length, 1);
+		assert.strictEqual(sent[0].dataShareId, undefined, "the agreement's id isn't sent on");
+	});
+
+	it("relays a change made here to a partner's entity, looking it up by its source", async () => {
+		const sent = await relay({
+			path: `/car/${PARTNER_ID}/${partnerCar.id}`,
+			pathSpec: 'car/:sourceId/:id',
+			params: { sourceId: PARTNER_ID, id: partnerCar.id },
+		});
+
+		assert.strictEqual(sent.length, 1);
+	});
+
+	it("relays a change to the app's own entity in the collection", async () => {
+		const sent = await relay({ path: `/car/${ownCar.id}`, pathSpec: 'car/:id', params: { id: ownCar.id } });
+
+		assert.strictEqual(sent.length, 1);
+	});
+});
+
