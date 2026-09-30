@@ -645,4 +645,20 @@ describe('Core route tenant scoping', async () => {
 			assert.strictEqual(app2.apiPath, testEnv.apps.app2.apiPath);
 		});
 	});
+	describe('Looking a user up by token', () => {
+		const byToken = (token, callerToken) => bjsReqPost(`${ENDPOINT.REST}/api/v1/user/get-by-token`, { token }, callerToken);
+
+		it("Should refuse another app's user token, as an unknown token", async () => {
+			await assert.rejects(byToken(testEnv.users.app2.tokens[0].value, testEnv.apps.app1.token),
+				(err) => err instanceof BJSReqError && err.code === 400 && err.message === 'invalid_token');
+		});
+
+		it("Should still find the caller's own user, and any app's for a system token", async () => {
+			const own = await byToken(testEnv.users.app1.tokens[0].value, testEnv.apps.app1.token);
+			const other = await byToken(testEnv.users.app2.tokens[0].value);
+
+			assert.strictEqual(own.id, testEnv.users.app1.id);
+			assert.strictEqual(other.id, testEnv.users.app2.id);
+		});
+	});
 });

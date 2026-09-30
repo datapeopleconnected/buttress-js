@@ -244,6 +244,17 @@ describe('routes/api/user:GetUserByToken', () => {
     await assert.rejects(route._validate(createReq({ body: {} })), /missing_field/);
   });
 
+  it("looks the token up in the caller's app, or in any app for a system token", async () => {
+    const findOne = sinon.stub().resolves(null);
+    stubModel({ token: { findOne } });
+    const route = createRoute(GetUserByToken);
+
+    await assert.rejects(route._validate(createReq({ body: { token: 'tok' }, token: { type: 'app' } })));
+    await assert.rejects(route._validate(createReq({ body: { token: 'tok' }, token: { type: 'system' } })));
+
+    assert.deepStrictEqual(findOne.args, [[{ value: { $eq: 'tok' }, _appId: 'app-1' }], [{ value: { $eq: 'tok' } }]]);
+  });
+
   it('rejects when the token is invalid', async () => {
     stubModel({ token: { findOne: async () => null } });
     const route = createRoute(GetUserByToken);
@@ -254,7 +265,7 @@ describe('routes/api/user:GetUserByToken', () => {
   it('rejects when no user owns the token', async () => {
     stubModel({
       token: { findOne: async () => ({ _userId: 'user-1', value: 'tok', policyProperties: {} }) },
-      user: { findById: async () => null },
+      user: { findOne: async () => null },
     });
     const route = createRoute(GetUserByToken);
 
@@ -267,7 +278,7 @@ describe('routes/api/user:GetUserByToken', () => {
   it('resolves the user with the matched token value', async () => {
     stubModel({
       token: { findOne: async () => ({ _userId: 'user-1', value: 'tok', policyProperties: { role: 'admin' } }) },
-      user: { findById: async () => ({ id: 'user-1', auth: [] }) },
+      user: { findOne: async () => ({ id: 'user-1', auth: [] }) },
     });
     const route = createRoute(GetUserByToken);
 

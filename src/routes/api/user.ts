@@ -290,17 +290,22 @@ class GetUserByToken extends Route {
       throw new Helpers.Errors.RequestError(400, `missing_field`);
     }
 
+    // A token of another app is answered as an unknown one, unless the caller is a system token
     const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({
       value: {
         $eq: token,
       },
+      ...this._tenantFilter(req),
     });
     if (!userToken) {
       this.log('ERROR: Invalid User Token', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `invalid_token`);
     }
 
-    const user = await Model.getCoreModel(UserSchemaModel).findById(userToken._userId);
+    const user = await Model.getCoreModel(UserSchemaModel).findOne({
+      _id: Model.getCoreModel(UserSchemaModel).createId(userToken._userId),
+      ...this._tenantFilter(req),
+    });
     if (!user) {
       this.log('ERROR: Can not find a user with the provided token', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(404, `user_not_found`);
