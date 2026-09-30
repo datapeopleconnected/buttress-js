@@ -22,6 +22,7 @@ import AccessControlSingleton, { PolicyError } from '../../../../dist/access-con
 import Model from '../../../../dist/model/index.js';
 import TokenSchemaModel from '../../../../dist/model/core/token.js';
 import PolicySchemaModel from '../../../../dist/model/core/policy.js';
+import { isPolicyExpired } from '../../../../dist/access-control/helpers.js';
 
 // Only the instance is exported (module-level singleton); grab the class off it so each
 // test gets a fresh, unshared instance instead of mutating shared access-control state.
@@ -273,6 +274,34 @@ function stubModelWith(map) {
 }
 
 describe('access-control/AccessControl:_queuePolicyLimitDeleteEvent', () => {
+  it('queues a policy whose limit came from the cache as a string, without throwing', async () => {
+    sinon.useFakeTimers(new Date('2025-06-01T00:00:00.000Z'));
+    const instance = createInstance();
+    instance._nrp = { emit: sinon.spy() };
+    stubModelWith(new Map());
+
+    const policy = { id: 'policy-1', name: 'expiring', limit: '2025-06-03T00:00:00.000Z', selection: {} };
+    assert.doesNotThrow(() => instance._queuePolicyLimitDeleteEvent([policy], { id: 'token-1', policyProperties: {} }, 'app1'));
+
+    assert.strictEqual(instance._queuedLimitedPolicy.length, 1);
+  });
+
+  it('queues two policies with the same name but different ids', async () => {
+    sinon.useFakeTimers(new Date('2025-06-01T00:00:00.000Z'));
+    const instance = createInstance();
+    instance._nrp = { emit: sinon.spy() };
+    stubModelWith(new Map());
+
+    const limit = new Date('2025-06-03T00:00:00.000Z');
+    instance._queuePolicyLimitDeleteEvent(
+      [{ id: 'policy-1', name: 'same', limit, selection: {} }, { id: 'policy-2', name: 'same', limit, selection: {} }],
+      { id: 'token-1', policyProperties: {} },
+      'app1',
+    );
+
+    assert.strictEqual(instance._queuedLimitedPolicy.length, 2);
+  });
+
   it('queues and then removes an expiring policy, busting the policy cache', async () => {
     const clock = sinon.useFakeTimers(new Date('2025-06-01T00:00:00.000Z'));
     const instance = createInstance();
@@ -281,10 +310,12 @@ describe('access-control/AccessControl:_queuePolicyLimitDeleteEvent', () => {
 
     const rm = sinon.stub().resolves();
     const setPolicyPropertiesById = sinon.stub().resolves();
+    // The token as stored when the limit is reached, which has gained a property since the request
+    const findOne = sinon.stub().resolves({ id: 'token-1', policyProperties: { role: 'admin', team: 'red' } });
     stubModelWith(
       new Map([
         [PolicySchemaModel, { rm }],
-        [TokenSchemaModel, { setPolicyPropertiesById }],
+        [TokenSchemaModel, { setPolicyPropertiesById, findOne, createId: (v) => v }],
       ]),
     );
 
@@ -303,7 +334,7 @@ describe('access-control/AccessControl:_queuePolicyLimitDeleteEvent', () => {
 
     assert.ok(rm.calledWith('policy-1'));
     assert.ok(nrp.emit.calledWith('app-policy:bust-cache'));
-    assert.deepStrictEqual(setPolicyPropertiesById.firstCall.args[1], {});
+    assert.deepStrictEqual(setPolicyPropertiesById.firstCall.args[1], { team: 'red' });
     assert.strictEqual(instance._queuedLimitedPolicy.length, 0, 'the queue entry should be cleared after it fires');
 
     clock.restore();
@@ -347,5 +378,17 @@ describe('access-control/AccessControl:_queuePolicyLimitDeleteEvent', () => {
     );
 
     assert.strictEqual(instance._queuedLimitedPolicy.length, 0);
+  });
+});
+
+describe('access-control/helpers:isPolicyExpired', () => {
+  it('is true only for a policy whose limit, as a Date or a string, has passed', () => {
+    const now = new Date('2025-06-01T00:00:00.000Z');
+
+    assert.strictEqual(isPolicyExpired({ limit: new Date('2025-05-31T00:00:00.000Z') }, now), true);
+    assert.strictEqual(isPolicyExpired({ limit: '2025-05-31T00:00:00.000Z' }, now), true);
+    assert.strictEqual(isPolicyExpired({ limit: '2025-06-02T00:00:00.000Z' }, now), false);
+    assert.strictEqual(isPolicyExpired({ limit: null }, now), false);
+    assert.strictEqual(isPolicyExpired({}, now), false);
   });
 });

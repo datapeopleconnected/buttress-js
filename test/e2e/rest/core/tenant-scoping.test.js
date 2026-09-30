@@ -83,7 +83,7 @@ describe('Core route tenant scoping', async () => {
 		for (const app of ['app1', 'app2']) {
 			await runStep(`allow policy properties on ${app}`, async () => updatePolicyPropertyList(ENDPOINT.REST, {
 				lambda: ['TEST_ACCESS'],
-				role: ['ADMIN', 'VIEWER', 'EDITOR', 'NOBODY', 'WRITER', 'SCOPED'],
+				role: ['ADMIN', 'VIEWER', 'EDITOR', 'NOBODY', 'WRITER', 'SCOPED', 'EXPIRED', 'LIMITED'],
 			}, testEnv.apps[app].token), scope);
 		}
 
@@ -684,6 +684,47 @@ describe('Core route tenant scoping', async () => {
 				const res = await fetch(url, { headers: { Authorization: `Bearer ${testEnv.apps.app1.token}` } });
 				assert.strictEqual(res.headers.get('referrer-policy'), 'no-referrer', url);
 			}
+		});
+	});
+	describe('Policies with a limit', () => {
+		const readNotes = (token) => bjsReq({ url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note`, method: 'GET' }, token);
+		const limitedPolicy = (role, limit) => ({
+			name: `tenant-scoping-${role.toLowerCase()}`,
+			version: '1',
+			selection: { role: { '@eq': role } },
+			config: [{ verbs: ['GET', 'SEARCH'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }],
+			limit,
+		});
+
+		before(async function () {
+			this.timeout(20000);
+			const scope = 'Policy limit setup';
+			const day = 24 * 60 * 60 * 1000;
+
+			await runStep('create an expired policy', async () =>
+				createPolicy(ENDPOINT.REST, limitedPolicy('EXPIRED', new Date(Date.now() - day).toISOString()), testEnv.apps.app2.token)
+			, scope);
+			await runStep('create a policy that expires in two days', async () =>
+				createPolicy(ENDPOINT.REST, limitedPolicy('LIMITED', new Date(Date.now() + 2 * day).toISOString()), testEnv.apps.app2.token)
+			, scope);
+			testEnv.users.app2Expired = await runStep('create app2 expired user', async () =>
+				createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'tenant-scoping-expired', { role: 'EXPIRED' })
+			, scope);
+			testEnv.users.app2Limited = await runStep('create app2 limited user', async () =>
+				createPolicyUser(ENDPOINT.REST, testEnv.apps.app2, 'tenant-scoping-limited', { role: 'LIMITED' })
+			, scope);
+		});
+
+		it('Should grant nothing through a policy whose limit has passed', async () => {
+			await assert.rejects(readNotes(testEnv.users.app2Expired.tokens[0].value),
+				(err) => err instanceof BJSReqError && err.code === 401);
+		});
+
+		it('Should keep granting through a policy with a limit to come, once it comes from the cache', async () => {
+			const token = testEnv.users.app2Limited.tokens[0].value;
+
+			assert.ok((await readNotes(token)).length > 0);
+			assert.ok((await readNotes(token)).length > 0);
 		});
 	});
 });

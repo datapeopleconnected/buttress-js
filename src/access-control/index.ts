@@ -32,7 +32,7 @@ import AccessControlConditions from './conditions.js';
 import AccessControlFilter from './filter.js';
 import AccessControlEnv from './env.js';
 import AccessControlProjection from './projection.js';
-import AccessControlHelpers, { filterPolicyConfigs } from './helpers.js';
+import AccessControlHelpers, { filterPolicyConfigs, isPolicyExpired, policyLimit } from './helpers.js';
 import { PolicyCache } from '../services/policy-cache.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import AppSchemaModel from '../model/core/app.js';
@@ -200,7 +200,8 @@ class AccessControl {
     if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
     // if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
 
-    const tokenPolicies = await this.__getTokenPolicies(token);
+    // A policy whose limit has run out grants nothing, whether or not it has been removed yet
+    const tokenPolicies = (await this.__getTokenPolicies(token)).filter((policy) => !isPolicyExpired(policy));
     Logging.logSilly(
       `Got ${tokenPolicies.length} matching policies for token ${token.type}:${token.id}`,
       req.context.id,
@@ -596,42 +597,51 @@ class AccessControl {
   }
 
   _queuePolicyLimitDeleteEvent(policies: Policy[], userToken: Token, appId: string) {
-    const limitedPolicies = policies.filter((p) => p.limit && Sugar.Date.isValid(p.limit));
-    if (limitedPolicies.length < 1) return;
+    policies.forEach((p) => {
+      const limit = policyLimit(p);
+      if (!limit) return;
 
-    limitedPolicies.forEach((p) => {
-      // Filtered to the policies with a limit
-      const nearlyExpired = Sugar.Date.create(p.limit as Date).getTime() - Sugar.Date.create().getTime();
+      const nearlyExpired = limit.getTime() - Date.now();
       if (this._oneWeekMilliseconds < nearlyExpired) return;
-      if (this._queuedLimitedPolicy.includes(p.name)) return;
+      const policyId = String(p.id);
+      if (this._queuedLimitedPolicy.includes(policyId)) return;
 
-      this._queuedLimitedPolicy.push(p.name);
-      const policyIdx = this._queuedLimitedPolicy.length - 1;
-      setTimeout(async () => {
-        await this.__removeUserPropertiesPolicySelection(userToken, p);
-        await Model.getCoreModel(PolicySchemaModel).rm(p.id);
+      this._queuedLimitedPolicy.push(policyId);
+      setTimeout(
+        async () => {
+          await this.__removeUserPropertiesPolicySelection(userToken, p);
+          await Model.getCoreModel(PolicySchemaModel).rm(p.id);
 
-        this._nrp?.emit(
-          'app-policy:bust-cache',
-          JSON.stringify({
-            appId,
-          }),
-        );
+          this._nrp?.emit(
+            'app-policy:bust-cache',
+            JSON.stringify({
+              appId,
+            }),
+          );
 
-        // this._nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
-        // 	userId: Model.getCoreModel(UserSchemaModel).create(userToken._userId),
-        // 	appId,
-        // }));
+          // this._nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
+          // 	userId: Model.getCoreModel(UserSchemaModel).create(userToken._userId),
+          // 	appId,
+          // }));
 
-        this._queuedLimitedPolicy.splice(policyIdx, 1);
-      }, nearlyExpired);
+          this._queuedLimitedPolicy = this._queuedLimitedPolicy.filter((id) => id !== policyId);
+        },
+        Math.max(0, nearlyExpired),
+        // A removal still to come doesn't keep the process running; the policy grants nothing past its limit anyway
+      ).unref();
     });
   }
 
   async __removeUserPropertiesPolicySelection(userToken: Token, policy: Policy) {
+    // The token as it's stored now, not as it was when the removal was queued, up to a week before
+    const stored = (await Model.getCoreModel(TokenSchemaModel).findOne({
+      _id: Model.getCoreModel(TokenSchemaModel).createId(String(userToken.id)),
+    })) as Token | null;
+    if (!stored) return;
+
     // The policy matched on its selection and the token's policy properties, see AccessControlPolicyMatch
-    const policySelectionKeys = Object.keys(policy.selection!);
-    const tokenPolicyProps = userToken.policyProperties!;
+    const policySelectionKeys = Object.keys(policy.selection ?? {});
+    const tokenPolicyProps = { ...(stored.policyProperties ?? {}) };
     policySelectionKeys.forEach((key) => {
       delete tokenPolicyProps[key];
     });

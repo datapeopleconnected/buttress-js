@@ -27,7 +27,12 @@ import IOStats from './helpers/io-stats.js';
 import Logging from './helpers/logging.js';
 
 import { ApplicablePolicyConfig } from './access-control/index.js';
-import { CombineEnvGroups, containsTokenLevelRef, filterPolicyConfigs } from './access-control/helpers.js';
+import {
+  CombineEnvGroups,
+  containsTokenLevelRef,
+  filterPolicyConfigs,
+  isPolicyExpired,
+} from './access-control/helpers.js';
 import AccessControlEnv, { ACEnv, ACPolicyEnvCombined } from './access-control/env.js';
 import AccessControlFilters, { UnresolvedEnvError } from './access-control/filter.js';
 import AccessControlConditions from './access-control/conditions.js';
@@ -389,6 +394,9 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     // then we need to check each token against the policy Query / Condition.
     Logging.logSilly(`Found ${policies.length} policies for event`);
     for (const policy of policies) {
+      // A policy whose limit has run out grants nothing, as on REST
+      if (isPolicyExpired(policy)) continue;
+
       // Narrow down the configs to ones that match on the schema & verbs of the activity.
       const configs = filterPolicyConfigs(policy, activity.schemaName, activity.verb, isCoreSchema, true);
 

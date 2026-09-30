@@ -352,3 +352,21 @@ export function containsTokenLevelRef(applicablePolicy: ApplicablePolicyConfig) 
 
   return outcome;
 }
+
+/**
+ * When a policy's limit runs out, or null if it has none. A cached policy has been through JSON, so its limit can be
+ * a string.
+ */
+export const policyLimit = (policy: { limit?: unknown }): Date | null => {
+  if (!policy.limit) return null;
+  const limit = new Date(policy.limit as string | number | Date);
+  return Number.isNaN(limit.getTime()) ? null : limit;
+};
+
+/**
+ * Whether a policy's limit has run out, so it grants nothing.
+ */
+export const isPolicyExpired = (policy: { limit?: unknown }, now: Date = new Date()) => {
+  const limit = policyLimit(policy);
+  return limit !== null && limit.getTime() <= now.getTime();
+};
