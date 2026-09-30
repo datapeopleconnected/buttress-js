@@ -22,10 +22,7 @@ import Datastore from '../../datastore/index.js';
 import * as Helpers from '../../helpers/index.js';
 
 import SecureStoreSchemaModel, { SecureStore, SecureStoreAddBody } from '../../model/core/secure-store.js';
-import AppSchemaModel from '../../model/core/app.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
-import LambdaSchemaModel from '../../model/core/lambda.js';
-import UserSchemaModel from '../../model/core/user.js';
 import { QueryParams } from '../../types/bjs-query.js';
 import { Services } from '../../bootstrap.js';
 import { UpdatePathBody } from '../../types/datastore.js';
@@ -52,38 +49,23 @@ class AddSecureStore extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const secureStoreExist = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
+    const secureStoreExist = await this.scoped(req, SecureStoreSchemaModel).findOne({
       name: req.body.name,
-      _appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
+      _appId: app.id,
     });
     if (secureStoreExist) {
       this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
     }
 
-    let appId = app.id;
-    if (!appId) {
-      const token = req.context.token;
-      if (token && token._appId) {
-        appId = token._appId;
-      }
-      if (token && token._lambdaId) {
-        const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(token._lambdaId);
-        appId = lambda._appId;
-      }
-      if (token && token._userId) {
-        const user = await Model.getCoreModel(UserSchemaModel).findById(token._userId);
-        appId = user._appId;
-      }
-    }
-
+    // Authentication refuses a token whose app it can't find, so the app always has an id
     return Promise.resolve({
-      appId,
+      appId: app.id,
     });
   }
 
   override _exec(req: RequestWithBody<SecureStoreAddBody>, _res: Response, validate: { appId: string }) {
-    return Model.getCoreModel(SecureStoreSchemaModel).add(req.body, validate.appId);
+    return this.scoped(req, SecureStoreSchemaModel).add(req.body, { _appId: validate.appId });
   }
 }
 routes.push(AddSecureStore);
@@ -127,9 +109,9 @@ class AddManySecureStore extends Route {
 
     // Names are unique within an app, as AddSecureStore checks
     for await (const secureStore of req.body) {
-      const secureStoreExist = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
+      const secureStoreExist = await this.scoped(req, SecureStoreSchemaModel).findOne({
         name: secureStore.name,
-        _appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
+        _appId: app.id,
       });
       if (secureStoreExist) {
         this.log(`ERROR: Secure Store with this name ${secureStore.name} already exists`, Route.LogLevel.ERR);
@@ -143,8 +125,9 @@ class AddManySecureStore extends Route {
   }
 
   override async _exec(req: RequestWithBody<SecureStoreAddBody[]>, _res: Response, validate: { appId: string }) {
+    const secureStores = this.scoped(req, SecureStoreSchemaModel);
     for await (const secureStore of req.body) {
-      await Model.getCoreModel(SecureStoreSchemaModel).add(secureStore, validate.appId);
+      await secureStores.add(secureStore, { _appId: validate.appId });
     }
 
     return true;
@@ -181,16 +164,14 @@ class GetSecureStore extends Route {
 
     const query = {
       _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
-      _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+      _appId: req.context.authApp.id,
     };
 
     // streamFirst() rejects rather than resolving falsy when the stream ends with no data,
     // so an empty result has to be caught here to surface the intended 400 error.
     let secureStore: SecureStore | null;
     try {
-      secureStore = await Helpers.streamFirst<SecureStore>(
-        await Model.getCoreModel(SecureStoreSchemaModel).find(query),
-      );
+      secureStore = await Helpers.streamFirst<SecureStore>(await this.scoped(req, SecureStoreSchemaModel).find(query));
     } catch (_err: unknown) {
       secureStore = null;
     }
@@ -238,11 +219,11 @@ class FindSecureStore extends Route {
       throw new Helpers.Errors.RequestError(400, `missing_field`);
     }
 
-    const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
+    const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
       name: {
         $eq: name,
       },
-      _appId: Model.getCoreModel(AppSchemaModel).createId(appId),
+      _appId: appId,
     });
 
     if (!secureStore) {
@@ -293,9 +274,9 @@ class UpdateSecureStore extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: ${message}`));
     }
 
-    const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
+    const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
       _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
-      _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+      _appId: req.context.authApp.id,
     });
     if (!secureStore) {
       this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
@@ -309,7 +290,7 @@ class UpdateSecureStore extends Route {
 
   // _validate replaced the body with the validated updates
   override _exec(req: RequestWithBody<UpdatePathBody[]>, res: Response, validate: { id: string }) {
-    return Model.getCoreModel(SecureStoreSchemaModel).updateByPath(req.body, validate.id);
+    return this.scoped(req, SecureStoreSchemaModel).updateByPath(req.body, validate.id);
   }
 }
 routes.push(UpdateSecureStore);
@@ -350,9 +331,9 @@ class BulkUpdateSecureStore extends Route {
         return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: ${message}`));
       }
 
-      const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
+      const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
         _id: Model.getCoreModel(SecureStoreSchemaModel).createId(item.id),
-        _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+        _appId: req.context.authApp.id,
       });
       if (!secureStore) {
         this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
@@ -365,7 +346,7 @@ class BulkUpdateSecureStore extends Route {
 
   override async _exec(req: Request, res: Response, validate: BulkUpdateItem<UpdatePathBody[]>[]) {
     for await (const item of validate) {
-      await Model.getCoreModel(SecureStoreSchemaModel).updateByPath(item.body, item.id, null);
+      await this.scoped(req, SecureStoreSchemaModel).updateByPath(item.body, item.id);
     }
     return true;
   }
@@ -411,7 +392,7 @@ class SearchSecureStoreList extends Route {
     }
 
     result.query.$and.push({
-      _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+      _appId: req.context.authApp.id,
     });
 
     result.query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(
@@ -423,7 +404,7 @@ class SearchSecureStoreList extends Route {
   }
 
   override _exec(req: Request, res: Response, validate: QueryParams<SecureStore>) {
-    return Model.getCoreModel(SecureStoreSchemaModel).find(
+    return this.scoped(req, SecureStoreSchemaModel).find(
       validate.query,
       {},
       validate.limit,
@@ -460,9 +441,9 @@ class DeleteSecureStore extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
     }
 
-    const secureStore = await Model.getCoreModel(SecureStoreSchemaModel).findOne({
+    const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
       _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
-      _appId: Model.getCoreModel(AppSchemaModel).createId(appId),
+      _appId: appId,
     });
 
     if (!secureStore) {
@@ -474,7 +455,7 @@ class DeleteSecureStore extends Route {
   }
 
   override async _exec(req: Request, res: Response, secureStore: SecureStore) {
-    await Model.getCoreModel(SecureStoreSchemaModel).rm(secureStore.id);
+    await this.scoped(req, SecureStoreSchemaModel).rm(secureStore.id);
     return true;
   }
 }
@@ -514,7 +495,7 @@ class SecureStoreCount extends Route {
     }
 
     result.query.$and.push({
-      _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+      _appId: req.context.authApp.id,
     });
 
     const query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(
@@ -528,7 +509,7 @@ class SecureStoreCount extends Route {
   }
 
   override _exec(req: Request, res: Response, validateResult: QueryParams<SecureStore>) {
-    return Model.getCoreModel(SecureStoreSchemaModel).count(validateResult.query);
+    return this.scoped(req, SecureStoreSchemaModel).count(validateResult.query);
   }
 }
 routes.push(SecureStoreCount);

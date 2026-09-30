@@ -24,7 +24,10 @@ import { parsedPolicyConfig } from './index.js';
 import { BjsQuery, QueryParams } from '../types/bjs-query.js';
 import StandardModel from '../model/type/standard.js';
 
-export async function find<T extends StandardModel<unknown>>(
+// What a find or count needs of a model: a schema model, or a core model scoped to an app (TenantScopedModel)
+export type QueryableModel = Pick<StandardModel<unknown>, 'parseQuery' | 'flatSchemaData' | 'find' | 'count'>;
+
+export async function find<T extends QueryableModel>(
   model: T,
   query: QueryParams<object>,
   ac: { policyConfigs: parsedPolicyConfig[] },
@@ -96,7 +99,7 @@ export async function find<T extends StandardModel<unknown>>(
   );
 }
 
-export async function count<T extends StandardModel<unknown>>(
+export async function count<T extends QueryableModel>(
   model: T,
   query: QueryParams<object>,
   ac: { policyConfigs: parsedPolicyConfig[] },

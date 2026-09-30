@@ -50,6 +50,14 @@ const [
 
 const HEX_ID = '507f1f77bcf86cd799439011';
 
+// A find that answers the scoped model's lookup of rows by id, as the datastore would when they're all the app's,
+// and gives `rows` for any other query
+const findRows = (rows = []) =>
+  sinon.stub().callsFake(async (query) => {
+    const byId = query?.$and?.find((part) => part.id?.$in);
+    return Readable.from(byId ? byId.id.$in.map((id) => ({ id })) : rows);
+  });
+
 function stubModel({ policy = {}, token = {}, app = {} } = {}) {
   const policyModel = {
     schemaData: { name: 'policies' },
@@ -130,13 +138,15 @@ describe('routes/api/policy:GetPolicy', () => {
 
   it("looks the policy up in the caller's app, or in any app for a system token", async () => {
     const findOne = sinon.stub().resolves({ id: HEX_ID });
-    stubModel({ policy: { findOne } });
+    const findById = sinon.stub().resolves({ id: HEX_ID });
+    stubModel({ policy: { findOne, findById } });
     const route = createRoute(GetPolicy);
 
     await route._validate(createReq({ params: { id: HEX_ID }, token: { type: 'app' } }));
     await route._validate(createReq({ params: { id: HEX_ID }, token: { type: 'system' } }));
 
-    assert.deepStrictEqual(findOne.args, [[{ _id: HEX_ID, _appId: 'app-1' }], [{ _id: HEX_ID }]]);
+    assert.deepStrictEqual(findOne.args, [[{ id: HEX_ID, _appId: 'app-1' }]]);
+    assert.deepStrictEqual(findById.args, [[HEX_ID]]);
   });
 
   it('resolves and returns the found policy unchanged', async () => {
@@ -211,24 +221,32 @@ describe('routes/api/policy:SearchPolicyList', () => {
   });
 
   it('scopes the search to the authenticated app for a non-system token', async () => {
-    stubModel();
+    const { policyModel } = stubModel();
     const route = createRoute(SearchPolicyList);
+    const req = createReq({ token: { type: 'user' } });
 
-    const result = await route._validate(createReq({ token: { type: 'user' } }));
+    await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
+    assert.deepStrictEqual(policyModel.find.firstCall.args[0], { _appId: 'app-1' });
   });
 
   it('finds using the built query params', async () => {
     const { policyModel } = stubModel();
     policyModel.find.returns('a-stream');
     const route = createRoute(SearchPolicyList);
-    const validate = { query: { $and: [] }, skip: 0, limit: 10, sort: {}, project: false };
+    const validate = { query: { name: { $eq: 'a' } }, skip: 0, limit: 10, sort: {}, project: false };
 
     const result = route._exec(createReq(), {}, validate);
 
     assert.strictEqual(result, 'a-stream');
-    assert.deepStrictEqual(policyModel.find.firstCall.args, [validate.query, {}, 10, 0, {}, false]);
+    assert.deepStrictEqual(policyModel.find.firstCall.args, [
+      { $and: [validate.query, { _appId: 'app-1' }] },
+      {},
+      10,
+      0,
+      {},
+      false,
+    ]);
   });
 });
 
@@ -282,7 +300,7 @@ describe('routes/api/policy:AddPolicy', () => {
 
     const result = await route._exec(createReq(), {}, { appId: 'app-1' });
 
-    assert.ok(policyModel.add.calledWith({}, 'app-1'));
+    assert.ok(policyModel.add.calledWith({}, { _appId: 'app-1' }));
     assert.ok(nrp.emit.calledWith('app-policy:bust-cache', JSON.stringify({ appId: 'app-1' })));
     assert.deepStrictEqual(result, { id: 'policy-1' });
   });
@@ -408,21 +426,21 @@ describe('routes/api/policy:PolicyCount', () => {
     const { policyModel } = stubModel();
     const route = createRoute(PolicyCount);
 
-    await route._exec(createReq(), {}, { query: { $and: [] } });
+    await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(policyModel.count.calledWith({ $and: [] }));
+    assert.ok(policyModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
   });
 
   it('scopes the count to the authenticated app for a non-system token', async () => {
-    stubModel();
+    const { policyModel } = stubModel();
     const route = createRoute(PolicyCount);
 
     const req = createReq({ token: { type: 'user' } });
     req.body = undefined;
 
-    const result = await route._validate(req);
+    await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
+    assert.ok(policyModel.count.calledWith({ _appId: 'app-1' }));
   });
 });
 
@@ -462,13 +480,13 @@ describe('routes/api/policy:SyncPolicies', () => {
   ];
 
   it("replaces the app's policies by id, so the policy cache lets the old ones go, and busts the cache", async () => {
-    const { policyModel } = stubModel({ policy: { find: sinon.stub().resolves(Readable.from(oldPolicies)) } });
+    const { policyModel } = stubModel({ policy: { find: findRows(oldPolicies) } });
     const nrp = { emit: sinon.spy() };
     const route = createRoute(SyncPolicies, { nrp });
 
     const result = await route._exec(createReq({ body: [validPolicy('a'), validPolicy('b')] }), {}, { appId: 'app-1' });
 
-    assert.ok(policyModel.find.calledWith({ _appId: 'app-1' }));
+    assert.ok(policyModel.find.calledWith({ $and: [{ _appId: 'app-1' }, { _appId: 'app-1' }] }));
     assert.ok(policyModel.rmBulk.calledOnceWith(['old-1', 'old-2']));
     assert.strictEqual(policyModel.rmAll.called, false);
     assert.deepStrictEqual(policyModel.add.getCalls().map((call) => call.args[0].name), ['a', 'b']);
@@ -481,7 +499,7 @@ describe('routes/api/policy:SyncPolicies', () => {
     add.onFirstCall().resolves({ id: 'new-1' });
     add.onSecondCall().rejects(new Error('mongo went away'));
     add.resolves({ id: 'restored' });
-    const { policyModel } = stubModel({ policy: { find: sinon.stub().resolves(Readable.from(oldPolicies)), add } });
+    const { policyModel } = stubModel({ policy: { find: findRows(oldPolicies), add } });
     const route = createRoute(SyncPolicies);
 
     await assert.rejects(
@@ -524,7 +542,7 @@ describe('routes/api/policy:DeleteTransientPolicy', () => {
 
     const result = await route._validate(createReq({ body: { name: 'transient' } }));
 
-    assert.ok(find.calledWith({ name: 'transient', _appId: 'app-1' }));
+    assert.ok(find.calledWith({ $and: [{ name: 'transient', _appId: 'app-1' }, { _appId: 'app-1' }] }));
     assert.deepStrictEqual(result, { appId: 'app-1', policy });
   });
 
@@ -598,7 +616,7 @@ describe('routes/api/policy:DeleteAppPolicies', () => {
   });
 
   it('bulk-removes the collected policy ids', async () => {
-    const { policyModel } = stubModel();
+    const { policyModel } = stubModel({ policy: { find: findRows() } });
     const route = createRoute(DeleteAppPolicies);
 
     const result = await route._exec(createReq(), {}, ['policy-1', 'policy-2']);

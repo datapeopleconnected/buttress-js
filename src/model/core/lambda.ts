@@ -20,6 +20,7 @@ const Config = createConfig() as unknown as Config;
 
 import Sugar from '../../helpers/sugar.js';
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 import * as Helpers from '../../helpers/index.js';
 import * as Git from '../../helpers/git.js';
 import { Schema } from '../../helpers/schema.js';
@@ -102,6 +103,8 @@ export type LambdaAddBody = {
 
 export default class LambdaModel extends StandardModel<Lambda> {
   static override name = 'Lambda';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   constructor(services: Services) {
     const schema = LambdaModel.Schema;
@@ -311,8 +314,15 @@ export default class LambdaModel extends StandardModel<Lambda> {
    * @param {Object} app - Lambda app
    * @return {Promise} - fulfilled with lambda Object when the database request is completed
    */
-  override async add(body: LambdaAddBody, internals: { auth: Partial<Token>; app: App }): Promise<Lambda> {
+  // The lambda's app, the app itself, which it's cloned for, and the token it's given
+  override async add(
+    body: LambdaAddBody,
+    internals: { _appId: string; auth: Partial<Token>; app: App },
+  ): Promise<Lambda> {
     const { auth, app } = internals;
+    if (String(app.id) !== String(internals._appId)) {
+      throw new Error(`[${LambdaModel.name}] The app to clone into isn't the app the lambda is added for`);
+    }
 
     if (!auth.policyProperties) {
       Logging.logError(`[${LambdaModel.name}] Missing policyProperties in auth`);
@@ -353,7 +363,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
     };
 
     const rxsLambda = await super.add(lambdaBody, {
-      _appId: app.id,
+      _appId: internals._appId,
     });
     const lambda = await Helpers.streamFirst<Lambda>(rxsLambda);
 
@@ -364,7 +374,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
         branch: lambda.git.branch,
         deployedAt: Sugar.Date.create('now'),
       },
-      app.id,
+      { _appId: internals._appId },
     );
 
     // Check if lambda has a cron trigger, if it does then create a execution doc.
@@ -379,7 +389,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
             executeAfter: Sugar.Date.create(),
             nextCronExpression: trigger.cron.periodicExecution,
           },
-          lambda._appId,
+          { _appId: lambda._appId },
         );
       }
     }
@@ -557,7 +567,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
             hash: gitHash,
             branch: branch,
           },
-          lambda._appId,
+          { _appId: lambda._appId },
         );
       } else {
         await this.__modelManager

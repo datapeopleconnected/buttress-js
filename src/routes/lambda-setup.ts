@@ -291,11 +291,10 @@ export class RoutesLambdaSetup {
         ? Model.getCoreModel(TokenSchemaModel).createId(callerToken.id)
         : null;
 
-    const lambdaExecution = (await Model.getCoreModel(LambdaExecutionSchemaModel).add(
-      LambdaExecutionData,
-      lambda._appId,
-      callerTokenId,
-    )) as LambdaExecution;
+    const lambdaExecution = (await Model.getCoreModel(LambdaExecutionSchemaModel).add(LambdaExecutionData, {
+      _appId: lambda._appId,
+      _tokenId: callerTokenId,
+    })) as LambdaExecution;
 
     res.lambdaExecution = lambdaExecution;
     res.triggerAPIType = triggerAPI.apiEndpoint.type;

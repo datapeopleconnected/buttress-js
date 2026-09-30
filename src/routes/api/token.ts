@@ -24,7 +24,6 @@ import TokenSchemaModel, { Token } from '../../model/core/token.js';
 
 import { QueryParams } from '../../types/bjs-query.js';
 import UserSchemaModel from '../../model/core/user.js';
-import AppSchemaModel from '../../model/core/app.js';
 import { Services } from '../../bootstrap.js';
 import type { CoreRouteClass, RequestWithBody, SearchBody } from '../../types/routes.js';
 
@@ -49,10 +48,9 @@ class GetTokenList extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
     }
 
+    // The scoped model limits the query to the caller's app
     const queryParams: QueryParams<Token> = {
-      query: {
-        _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
-      },
+      query: {},
       project: {
         id: 1,
         type: 1,
@@ -61,7 +59,6 @@ class GetTokenList extends Route {
     };
 
     if (req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      queryParams.query = {};
       queryParams.project = {};
     }
 
@@ -69,7 +66,7 @@ class GetTokenList extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: QueryParams<Token>) {
-    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
+    return ACM.find(this.scoped(req, TokenSchemaModel), validate, req.context.ac);
   }
 }
 routes.push(GetTokenList);
@@ -93,10 +90,9 @@ class SearchTokenList extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_auth_app`));
     }
 
+    // The scoped model limits the query to the caller's app
     const queryParams: QueryParams<Token> = {
-      query: {
-        $and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id) }],
-      },
+      query: { $and: [] },
       project: {
         id: 1,
         type: 1,
@@ -105,7 +101,6 @@ class SearchTokenList extends Route {
     };
 
     if (req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      queryParams.query = {};
       queryParams.project = {};
     }
 
@@ -121,7 +116,7 @@ class SearchTokenList extends Route {
   }
 
   override _exec(req: Request, res: Response, validate: QueryParams<Token>) {
-    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
+    return ACM.find(this.scoped(req, TokenSchemaModel), validate, req.context.ac);
   }
 }
 routes.push(SearchTokenList);
@@ -164,7 +159,7 @@ class DeleteAllTokens extends Route {
               $ne: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
             },
           };
-      await Model.getCoreModel(TokenSchemaModel).rmAll(query);
+      await this.scoped(req, TokenSchemaModel).rmAll(query);
     } else {
       if (req.params.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.APP) {
         this.log('ERROR: Cannot delete app tokens as app', Route.LogLevel.ERR);
@@ -181,10 +176,7 @@ class DeleteAllTokens extends Route {
             },
           };
 
-      await Model.getCoreModel(TokenSchemaModel).rmAll({
-        ...query,
-        _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
-      });
+      await this.scoped(req, TokenSchemaModel).rmAll(query);
     }
 
     return true;
@@ -217,10 +209,9 @@ class SearchUserToken extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_param_userId`));
     }
 
+    // The scoped model limits the query to the caller's app
     const queryParams: QueryParams<Token> = {
-      query: {
-        $and: [{ _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id) }],
-      },
+      query: { $and: [] },
       project: {
         id: 1,
         type: 1,
@@ -229,11 +220,11 @@ class SearchUserToken extends Route {
     };
 
     if (req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      queryParams.query = {};
       queryParams.project = {};
     }
 
-    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId);
+    // Another app's user is answered as an unknown one, unless the caller is a system token
+    const exists = await this.scoped(req, UserSchemaModel).exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_param_id`));
@@ -257,7 +248,7 @@ class SearchUserToken extends Route {
   }
 
   override _exec(req: Request, res: Response, validate: QueryParams<Token>) {
-    return ACM.find(Model.getCoreModel(TokenSchemaModel), validate, req.context.ac);
+    return ACM.find(this.scoped(req, TokenSchemaModel), validate, req.context.ac);
   }
 }
 routes.push(SearchUserToken);

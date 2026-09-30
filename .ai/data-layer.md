@@ -49,6 +49,10 @@ Key things to know:
   map to allowed update path regexes.
 - `__parseAddBody()` auto-generates `id` (via `adapter.ID.new()`) and, if the schema `extends` includes
   `timestamps`, stamps `createdAt`/`updatedAt`.
+- `add(body, internals)`: `internals` are the fields only the server sets, merged over the sanitised body, so
+  they win. A core model's row names its app as `internals._appId`, with the model's own internals beside it
+  (an execution's `_tokenId`, a lambda's `auth` and `app`, a token's `_userId`...); `App` and `Activity` are the
+  exceptions (an app is its own tenant; an activity takes its app from the request).
 
 ## Schema system
 

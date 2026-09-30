@@ -31,10 +31,14 @@ import { RESTActivity } from '../types/bjs-nrp-objects.js';
 import ActivitySchemaModel from '../model/core/activity.js';
 import TokenSchemaModel from '../model/core/token.js';
 import StandardModel from '../model/type/standard.js';
+import TenantScopedModel, { DocumentOf, TenantKey } from '../model/type/tenant-scoped.js';
 import { App } from '../model/core/app.js';
 import { Services } from '../bootstrap.js';
 import type { RequestWithBody } from '../types/routes.js';
 import type { AdapterDocument } from '../types/datastore.js';
+
+// A core model class, which says which property of its rows names their app
+type CoreModelClass<T> = (new (services: Services) => T) & { TenantKey: TenantKey };
 
 export interface NotifyLambdaPathChangeMessage {
   paths: string[];
@@ -440,17 +444,38 @@ export default class Route {
   }
 
   /**
-   * The filter that limits a lookup in a core collection, which every app shares, to the caller's app. A system
-   * token isn't limited.
+   * The app whose rows in a core collection, which every app shares, the caller reaches: its own, or every app's
+   * (null) for a system token.
    * @param {Request} req
-   * @return {{_appId?: string}}
+   * @return {string|null}
    */
-  _tenantFilter(req: Request): { _appId?: string } {
-    if (req.context.token?.type === TokenSchemaModel.Constants.Type.SYSTEM) return {};
+  _tenantOf(req: Request): string | null {
+    if (req.context.token?.type === TokenSchemaModel.Constants.Type.SYSTEM) return null;
 
     const appId = req.context.authApp?.id;
     if (!appId) throw new Helpers.Errors.RequestError(400, `no_authenticated_app`);
-    return { _appId: appId };
+    return appId;
+  }
+
+  /**
+   * A core model limited to the caller's app's rows, or every app's for a system token.
+   * @param {Request} req
+   * @param {class} modelClass - a core model class
+   * @return {TenantScopedModel}
+   */
+  scoped<T extends StandardModel<DocumentOf<T>>>(req: Request, modelClass: CoreModelClass<T>) {
+    return new TenantScopedModel(Model.getCoreModel(modelClass), this._tenantOf(req), modelClass.TenantKey);
+  }
+
+  /**
+   * A core model that reaches every app's rows, for a route that has to. The reason says why, where it's asked for.
+   * @param {class} modelClass - a core model class
+   * @param {string} reason
+   * @return {StandardModel}
+   */
+  unscopedModel<T extends StandardModel<DocumentOf<T>>>(modelClass: CoreModelClass<T>, reason: string): T {
+    if (!reason) throw new Error(`A reason is needed for unscoped access to ${modelClass.name}`);
+    return Model.getCoreModel(modelClass);
   }
 
   /**

@@ -414,7 +414,7 @@ export default class LambdaManager {
         deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(deployment.id),
         metadata: metadata,
       },
-      appId,
+      { _appId: appId },
     );
 
     return lambdaExecution;

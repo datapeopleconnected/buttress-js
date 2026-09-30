@@ -20,6 +20,7 @@ import * as Shared from '../shared.js';
 import { redactSecrets } from '../../helpers/redact.js';
 
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 import { Services } from '../../bootstrap.js';
 
 /**
@@ -69,6 +70,8 @@ export type ActivityAddBody = {
 
 class ActivitySchemaModel extends StandardModel<Activity> {
   static override name = 'Activity';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   constructor(services: Services) {
     const schema = ActivitySchemaModel.Schema;

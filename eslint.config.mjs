@@ -1,5 +1,7 @@
 import tseslint from 'typescript-eslint';
 
+import { coreModelAccessRestrictions } from './eslint/core-model-access.mjs';
+
 export default tseslint.config(
   ...tseslint.configs.recommended,
   {
@@ -29,5 +31,12 @@ export default tseslint.config(
       "max-len": ["error", { "code": 150, "ignoreStrings": true, "ignoreTemplateLiterals": true }],
     },
     ignores: ["dist/", "node_modules/", "deploy/"]
+  },
+  {
+    // Core routes reach core rows only through the model scoped to the caller's app, or an explicit unscoped one
+    files: ["src/routes/api/**/*.ts"],
+    rules: {
+      "no-restricted-syntax": ["error", ...coreModelAccessRestrictions],
+    },
   }
 );

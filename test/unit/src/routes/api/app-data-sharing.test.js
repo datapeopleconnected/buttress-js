@@ -63,6 +63,10 @@ function stubModel({ ds = {}, token = {} } = {}) {
     validate: () => ({ isValid: true }),
     isDuplicate: async () => false,
     findById: async () => null,
+    // The scoped model finds an agreement by id with findOne, which answers as findById does, as the datastore would
+    async findOne(query) {
+      return query && 'id' in query ? this.findById(query.id) : null;
+    },
     find: sinon.stub(),
     findAll: sinon.stub(),
     add: sinon.stub().resolves({
@@ -84,6 +88,10 @@ function stubModel({ ds = {}, token = {} } = {}) {
     Constants: { Type: { SYSTEM: 'system', DATA_SHARING: 'dataSharing' } },
     createTokenString: () => 'new-token-string',
     findById: async () => null,
+    async findOne(query) {
+      return query && 'id' in query ? this.findById(query.id) : null;
+    },
+    exists: sinon.stub().resolves(true),
     updateById: sinon.stub().resolves(),
     rm: sinon.stub().resolves(),
     rmBulk: sinon.stub().resolves(),
@@ -202,8 +210,17 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
 
     const result = await route._exec(createReq({ body: { policyConfig: {} } }), {}, true);
 
-    assert.ok(dsModel.add.calledWith({ policyConfig: {} }));
+    assert.ok(dsModel.add.calledWith({ policyConfig: {} }, { _appId: 'app-1' }));
     assert.strictEqual(result.registrationToken, 'reg-token-value');
+  });
+
+  it('adds the agreement for the app a system token names', async () => {
+    const { dsModel } = stubModel();
+    const route = createRoute(AddDataSharing);
+
+    await route._exec(createReq({ token: { type: 'system' }, body: { policyConfig: {}, appId: 'app-2' } }), {}, true);
+
+    assert.ok(dsModel.add.calledWith(sinon.match.any, { _appId: 'app-2' }));
   });
 });
 
@@ -302,10 +319,14 @@ describe('routes/api/app-data-sharing:UpdateAppDataSharingPolicy', () => {
   });
 
   it('rejects when the agreement is not scoped to the authenticated app', async () => {
-    stubModel({ ds: { exists: sinon.stub().resolves(false) } });
+    const findOne = sinon.stub().resolves(null);
+    stubModel({ ds: { findOne } });
     const route = createRoute(UpdateAppDataSharingPolicy);
 
     await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /unknown_data_sharing/);
+    assert.deepStrictEqual(findOne.firstCall.args[0], {
+      $and: [{ id: HEX_ID, _appId: 'app-1' }, { _appId: 'app-1' }],
+    });
   });
 
   it('updates the local policy for the agreement', async () => {
@@ -497,47 +518,55 @@ describe('routes/api/app-data-sharing:SearchAppDataSharingAgreement', () => {
   });
 
   it('scopes the search to the authenticated app for a non-system token', async () => {
-    stubModel();
+    const { dsModel } = stubModel();
     const route = createRoute(SearchAppDataSharingAgreement);
+    const req = createReq({ token: { type: 'app' } });
 
-    const result = await route._validate(createReq({ token: { type: 'app' } }));
+    await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
+    assert.deepStrictEqual(dsModel.find.firstCall.args[0], { _appId: 'app-1' });
   });
 
   it('finds using the built query params', () => {
     const { dsModel } = stubModel();
     dsModel.find.returns('a-stream');
     const route = createRoute(SearchAppDataSharingAgreement);
-    const validate = { query: { $and: [] }, skip: 0, limit: 10, sort: {}, project: false };
+    const validate = { query: { name: { $eq: 'a' } }, skip: 0, limit: 10, sort: {}, project: false };
 
     const result = route._exec(createReq(), {}, validate);
 
     assert.strictEqual(result, 'a-stream');
-    assert.deepStrictEqual(dsModel.find.firstCall.args, [validate.query, {}, 10, 0, {}, false]);
+    assert.deepStrictEqual(dsModel.find.firstCall.args, [
+      { $and: [validate.query, { _appId: 'app-1' }] },
+      {},
+      10,
+      0,
+      {},
+      false,
+    ]);
   });
 });
 
 describe('routes/api/app-data-sharing:AppDataSharingAgreementCount', () => {
   it('scopes the count to the authenticated app for a non-system token', async () => {
-    stubModel();
+    const { dsModel } = stubModel();
     const route = createRoute(AppDataSharingAgreementCount);
 
     const req = createReq({ token: { type: 'app' } });
     req.body = undefined;
 
-    const result = await route._validate(req);
+    await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
+    assert.ok(dsModel.count.calledWith({ _appId: 'app-1' }));
   });
 
   it('counts using the built query', async () => {
     const { dsModel } = stubModel();
     const route = createRoute(AppDataSharingAgreementCount);
 
-    await route._exec(createReq(), {}, { query: { $and: [] } });
+    await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(dsModel.count.calledWith({ $and: [] }));
+    assert.ok(dsModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
   });
 });
 

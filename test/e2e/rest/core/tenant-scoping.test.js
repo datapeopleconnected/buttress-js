@@ -300,6 +300,10 @@ describe('Core route tenant scoping', async () => {
 				url: api(`user/${testEnv.users.app2.id}/clear-local-data`), method: 'POST', headers: json, body: '{}',
 			})],
 			['DELETE user/:id', () => ({ url: api(`user/${testEnv.users.app2.id}`), method: 'DELETE' })],
+			// Answered as a user that doesn't exist, rather than with an empty list, which would say it's another app's
+			['SEARCH token/:userId', () => ({
+				url: api(`token/${testEnv.users.app2.id}`), method: 'SEARCH', headers: json, body: '{}',
+			}), 'invalid_param_id'],
 
 			['GET app-data-sharing/:id', () => ({ url: api(`app-data-sharing/${owned.agreement.id}`), method: 'GET' })],
 			['PUT app-data-sharing/:id', () => ({

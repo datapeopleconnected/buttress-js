@@ -17,6 +17,7 @@
 import Crypto from 'node:crypto';
 
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 import type { AdapterQuery } from '../../types/datastore.js';
 import * as Helpers from '../../helpers/index.js';
 import { PolicyCache } from '../../services/policy-cache.js';
@@ -65,6 +66,8 @@ type TokenAddInternals = {
 
 class TokenSchemaModel extends StandardModel<Token> {
   static override name = 'Token';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   __policyCache: PolicyCache;
 

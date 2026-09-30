@@ -285,7 +285,7 @@ class AdminRoutes {
       }
 
       // The admin-lambda-access app and user configs have `verbs` as a string rather than an array
-      await Model.getCoreModel(PolicySchemaModel).add(policy as PolicyAddBody, appId);
+      await Model.getCoreModel(PolicySchemaModel).add(policy as PolicyAddBody, { _appId: appId });
     }
   }
 
@@ -326,6 +326,7 @@ class AdminRoutes {
         // await Model.getCoreModel(LambdaSchemaModel).add(lambda, adminLambdaAuth, adminApp);
         // JSON imports type strings as string, rather than the literals LambdaAddBody wants
         await Model.getCoreModel(LambdaSchemaModel).add(lambda as LambdaAddBody, {
+          _appId: adminApp.id,
           auth: adminLambdaAuth,
           app: adminApp,
         });

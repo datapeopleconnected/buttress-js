@@ -30,8 +30,7 @@ import * as Git from '../../helpers/git.js';
 import Datastore from '../../datastore/index.js';
 import LambdaSchemaModel, { Lambda, LambdaAddBody } from '../../model/core/lambda.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
-import UserSchemaModel from '../../model/core/user.js';
-import AppSchemaModel from '../../model/core/app.js';
+import { App } from '../../model/core/app.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import DeploymentSchemaModel from '../../model/core/deployment.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
@@ -90,10 +89,7 @@ class GetLambda extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
     }
 
-    const lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
-      _id: Model.getCoreModel(LambdaSchemaModel).createId(id),
-      ...this._tenantFilter(req),
-    });
+    const lambda = await this.scoped(req, LambdaSchemaModel).findById(id);
     if (!lambda) {
       this.log(`[${this.name}] Cannot find a lambda with id ${id}`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_does_not_exist`));
@@ -149,11 +145,7 @@ class GetLambdaList extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `unable_to_get_app_id`));
     }
 
-    return req.context.token && req.context.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM
-      ? await Model.getCoreModel(LambdaSchemaModel).findAll()
-      : await Model.getCoreModel(LambdaSchemaModel).find({
-          _appId: Model.getCoreModel(LambdaSchemaModel).adapter.ID.new(appId),
-        });
+    return await this.scoped(req, LambdaSchemaModel).findAll();
   }
 }
 routes.push(GetLambdaList);
@@ -180,24 +172,14 @@ class SearchLambdaList extends Route {
       result.query.$and.push(req.body.query);
     }
 
-    // Before parseQuery, which drops an empty $and
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      result.query.$and?.push({
-        _appId: req.context.authApp?.id,
-      });
-    }
-
-    result.query = Model.getCoreModel(LambdaSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(LambdaSchemaModel).flatSchemaData,
-    );
+    const lambdas = this.scoped(req, LambdaSchemaModel);
+    result.query = lambdas.parseQuery(result.query, {}, lambdas.flatSchemaData);
 
     return result;
   }
 
   override _exec(req: Request, res: Response, validate: QueryParams<Lambda>) {
-    return Model.getCoreModel(LambdaSchemaModel).find(validate.query);
+    return this.scoped(req, LambdaSchemaModel).find(validate.query);
   }
 }
 routes.push(SearchLambdaList);
@@ -263,26 +245,13 @@ class AddLambda extends Route {
   }
 
   override async _exec(req: RequestWithBody<AddLambdaBody>, _res: Response, _validate: boolean) {
-    let appId = req.context.authApp?.id;
-    if (!appId) {
-      // const token = await this._getToken(req);
-      const token = req.context.token;
-      if (token && token._appId) {
-        appId = token._appId;
-      }
-      if (token && token._lambdaId) {
-        const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(token._lambdaId);
-        appId = lambda._appId;
-      }
-      if (token && token._userId) {
-        const user = await Model.getCoreModel(UserSchemaModel).findById(token._userId);
-        appId = user._appId;
-      }
-    }
-
-    // Every token has an app, so one of the above sets it
-    const app = await Model.getCoreModel(AppSchemaModel).findById(appId as string);
-    const lambda = await Model.getCoreModel(LambdaSchemaModel).add(req.body.lambda, { auth: req.body.auth, app });
+    // Authentication refuses a token whose app it can't find, so there's always one; _validate checked
+    const app = req.context.authApp as App;
+    const lambda = await this.scoped(req, LambdaSchemaModel).add(req.body.lambda, {
+      _appId: app.id,
+      auth: req.body.auth,
+      app,
+    });
 
     const hasPathMutation = lambda.trigger.some((t) => t.type === 'PATH_MUTATION');
     if (hasPathMutation) {
@@ -319,7 +288,8 @@ class UpdateLambda extends Route {
   override _validate(req: RequestWithBody<unknown>, _res: Response) {
     return new Promise<{ id: string }>((resolve, reject) => {
       const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const { validation, body } = Model.getCoreModel(LambdaSchemaModel).validateUpdate(req.body);
+      const lambdas = this.scoped(req, LambdaSchemaModel);
+      const { validation, body } = lambdas.validateUpdate(req.body);
       req.body = body;
 
       if (!validation.isValid) {
@@ -328,8 +298,8 @@ class UpdateLambda extends Route {
         return reject(new Helpers.Errors.RequestError(400, `LAMBDA: ${message}`));
       }
 
-      Model.getCoreModel(LambdaSchemaModel)
-        .exists(id, null, this._tenantFilter(req))
+      lambdas
+        .exists(id)
         .then((exists) => {
           if (!exists) {
             this.log('ERROR: Invalid LAMBDA ID', Route.LogLevel.ERR);
@@ -345,11 +315,12 @@ class UpdateLambda extends Route {
 
   // _validate replaced the body with the validated updates
   override async _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
-    const updated = await Model.getCoreModel(LambdaSchemaModel).updateByPath(req.body, validate.id);
+    const lambdas = this.scoped(req, LambdaSchemaModel);
+    const updated = await lambdas.updateByPath(req.body, validate.id);
 
-    const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(validate.id);
+    const lambda = (await lambdas.findById(validate.id)) as Lambda;
     if (req.body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
-      await Model.getCoreModel(LambdaSchemaModel).pullLambdaCode(lambda);
+      await (await lambdas.owned(lambda.id)).pullLambdaCode(lambda);
     }
     if (changesPathMutations(lambda, req.body)) this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
     return updated;
@@ -377,8 +348,9 @@ class BulkUpdateLambda extends Route {
       throw new Helpers.Errors.RequestError(400, `array_required`);
     }
 
+    const lambdas = this.scoped(req, LambdaSchemaModel);
     for await (const item of req.body) {
-      const { validation, body } = Model.getCoreModel(LambdaSchemaModel).validateUpdate(item.body);
+      const { validation, body } = lambdas.validateUpdate(item.body);
       item.body = body;
       if (!validation.isValid) {
         const message = describeInvalidUpdate(validation);
@@ -386,7 +358,7 @@ class BulkUpdateLambda extends Route {
         return Promise.reject(new Helpers.Errors.RequestError(400, `LAMBDA: ${message}`));
       }
 
-      const exists = await Model.getCoreModel(LambdaSchemaModel).exists(item.id, null, this._tenantFilter(req));
+      const exists = await lambdas.exists(item.id);
       if (!exists) {
         this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -397,12 +369,13 @@ class BulkUpdateLambda extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: BulkUpdateItem<UpdatePathBody[]>[]) {
+    const lambdas = this.scoped(req, LambdaSchemaModel);
     let pathMutationsChanged = false;
     for await (const item of validate) {
-      await Model.getCoreModel(LambdaSchemaModel).updateByPath(item.body, item.id);
-      const lambda = await Model.getCoreModel(LambdaSchemaModel).findById(item.id);
+      await lambdas.updateByPath(item.body, item.id);
+      const lambda = (await lambdas.findById(item.id)) as Lambda;
       if (item.body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
-        await Model.getCoreModel(LambdaSchemaModel).pullLambdaCode(lambda);
+        await (await lambdas.owned(lambda.id)).pullLambdaCode(lambda);
       }
       if (changesPathMutations(lambda, item.body)) pathMutationsChanged = true;
     }
@@ -440,13 +413,7 @@ class ScheduleLambdaExecution extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_post_body`));
     }
 
-    // This should be auto scoped to the app id.
-    const lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
-      id: Model.getCoreModel(LambdaSchemaModel).createId(id),
-      ...(req.context.authApp?.id
-        ? { _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id) }
-        : {}),
-    });
+    const lambda = await this.scoped(req, LambdaSchemaModel).findById(id);
     if (!lambda) {
       this.log('ERROR: Lambda not found', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
@@ -459,11 +426,12 @@ class ScheduleLambdaExecution extends Route {
     } = {
       lambdaId: lambda.id,
     };
+    const deployments = this.scoped(req, DeploymentSchemaModel);
     if (req.body.deploymentId) {
-      deploymentQuery.id = Model.getCoreModel(DeploymentSchemaModel).createId(req.body.deploymentId);
+      deploymentQuery.id = deployments.createId(req.body.deploymentId);
     }
 
-    const deployment = await Model.getCoreModel(DeploymentSchemaModel).findOne(deploymentQuery);
+    const deployment = await deployments.findOne(deploymentQuery);
     if (!deployment) {
       this.log('ERROR: Deployment not found', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
@@ -494,12 +462,8 @@ class ScheduleLambdaExecution extends Route {
     };
   }
 
-  override async _exec(
-    _req: Request,
-    _res: Response,
-    validate: { appId: string; execution: Partial<LambdaExecution> },
-  ) {
-    return await Model.getCoreModel(LambdaExecutionSchemaModel).add(validate.execution, validate.appId);
+  override async _exec(req: Request, _res: Response, validate: { appId: string; execution: Partial<LambdaExecution> }) {
+    return await this.scoped(req, LambdaExecutionSchemaModel).add(validate.execution, { _appId: validate.appId });
   }
 }
 routes.push(ScheduleLambdaExecution);
@@ -537,10 +501,8 @@ class EditLambdaDeployment extends Route {
         return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_deployment_hash`));
       }
 
-      const lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
-        _id: Model.getCoreModel(LambdaSchemaModel).createId(req.params.id),
-        ...this._tenantFilter(req),
-      });
+      const lambdas = this.scoped(req, LambdaSchemaModel);
+      const lambda = await lambdas.findById(req.params.id);
       if (!lambda) {
         this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
@@ -555,7 +517,7 @@ class EditLambdaDeployment extends Route {
         entryFilePath,
         entryPoint,
       };
-      await Model.getCoreModel(LambdaSchemaModel).pullLambdaCode(lambda, lambdaDeployInfo);
+      await (await lambdas.owned(lambda.id)).pullLambdaCode(lambda, lambdaDeployInfo);
 
       return Promise.resolve({
         hash,
@@ -579,7 +541,8 @@ class EditLambdaDeployment extends Route {
     validate: { hash: string; branch: string; entryFile: string; entryPoint: string; lambda: Lambda },
   ) {
     // The entry file and point the new code was checked for
-    const deployment = await Model.getCoreModel(LambdaSchemaModel).setDeployment(validate.lambda.id, {
+    const lambdas = await this.scoped(req, LambdaSchemaModel).owned(validate.lambda.id);
+    const deployment = await lambdas.setDeployment(validate.lambda.id, {
       'git.branch': validate.branch,
       'git.hash': validate.hash,
       'git.entryFile': validate.entryFile,
@@ -630,11 +593,7 @@ class SetLambdaPolicyProperties extends Route {
     }
 
     // A named route param, so a string
-    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(
-      req.params.id as string,
-      null,
-      this._tenantFilter(req),
-    );
+    const exists = await this.scoped(req, LambdaSchemaModel).exists(req.params.id as string);
     if (!exists) {
       this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -646,10 +605,7 @@ class SetLambdaPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
     }
 
-    const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
-      _lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(id),
-      ...this._tenantFilter(req),
-    });
+    const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: id });
     if (!lambdaToken) {
       this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `can_not_find_lambda_token`));
@@ -659,7 +615,8 @@ class SetLambdaPolicyProperties extends Route {
   }
 
   override async _exec(req: RequestWithBody<PolicyPropertiesBody>, res: Response, validate: Token) {
-    await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(validate.id.toString(), req.body);
+    const tokens = await this.scoped(req, TokenSchemaModel).owned(validate.id.toString());
+    await tokens.setPolicyPropertiesById(validate.id.toString(), req.body);
     return true;
   }
 }
@@ -703,11 +660,7 @@ class UpdateLambdaPolicyProperties extends Route {
     }
 
     // A named route param, so a string
-    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(
-      req.params.id as string,
-      null,
-      this._tenantFilter(req),
-    );
+    const exists = await this.scoped(req, LambdaSchemaModel).exists(req.params.id as string);
     if (!exists) {
       this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -719,10 +672,7 @@ class UpdateLambdaPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_field`));
     }
 
-    const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
-      _lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(id),
-      ...this._tenantFilter(req),
-    });
+    const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: id });
     if (!lambdaToken) {
       this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `can_not_find_lambda_token`));
@@ -734,7 +684,8 @@ class UpdateLambdaPolicyProperties extends Route {
   }
 
   override async _exec(req: RequestWithBody<PolicyPropertiesBody>, res: Response, validate: { token: Token }) {
-    await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate.token, req.body);
+    const tokens = await this.scoped(req, TokenSchemaModel).owned(validate.token.id.toString());
+    await tokens.updatePolicyProperties(validate.token, req.body);
     return true;
   }
 }
@@ -771,16 +722,13 @@ class ClearLambdaPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
     }
 
-    const exists = await Model.getCoreModel(LambdaSchemaModel).exists(id, null, this._tenantFilter(req));
+    const exists = await this.scoped(req, LambdaSchemaModel).exists(id);
     if (!exists) {
       this.log('ERROR: Invalid lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
 
-    const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
-      _lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(id),
-      ...this._tenantFilter(req),
-    });
+    const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: id });
     if (!lambdaToken) {
       this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `can_not_find_lambda_token`));
@@ -792,7 +740,8 @@ class ClearLambdaPolicyProperties extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: { token: Token }) {
-    await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.token.id);
+    const tokens = await this.scoped(req, TokenSchemaModel).owned(validate.token.id.toString());
+    await tokens.clearPolicyPropertiesById(validate.token.id);
     return true;
   }
 }
@@ -815,19 +764,13 @@ class DeleteLambda extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_lambda_id`));
     }
 
-    const lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
-      _id: Model.getCoreModel(LambdaSchemaModel).createId(req.params.id),
-      ...this._tenantFilter(req),
-    });
+    const lambda = await this.scoped(req, LambdaSchemaModel).findById(req.params.id);
     if (!lambda) {
       this.log('ERROR: Invalid Lambda ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_lambda_id`));
     }
 
-    const lambdaToken = await Model.getCoreModel(TokenSchemaModel).findOne({
-      _lambdaId: lambda.id,
-      ...this._tenantFilter(req),
-    });
+    const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: lambda.id });
     if (!lambdaToken) {
       this.log(`ERROR: Could not fetch lambda's token`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `could_fetch_lambda_token`));
@@ -841,19 +784,18 @@ class DeleteLambda extends Route {
 
   override async _exec(req: Request, res: Response, validate: { lambda: Lambda; token: Token }) {
     const deployments = await Helpers.streamAll<{ hash: string }>(
-      await Model.getCoreModel(DeploymentSchemaModel).find({
-        lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(validate.lambda.id),
-      }),
+      await this.scoped(req, DeploymentSchemaModel).find({ lambdaId: validate.lambda.id }),
     );
     const hashes = new Set([validate.lambda.git.hash, ...deployments.map((deployment) => deployment.hash)]);
 
-    await Model.getCoreModel(LambdaSchemaModel).rm(validate.lambda.id);
-    await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
+    await this.scoped(req, LambdaSchemaModel).rm(validate.lambda.id);
+    await this.scoped(req, TokenSchemaModel).rm(validate.token.id);
 
     // Code is checked out once for each hash, and shared by every lambda on it, whichever app it's in
+    const everyAppsLambdas = this.unscopedModel(LambdaSchemaModel, "a hash's code is shared by every app's lambdas");
     for (const hash of hashes) {
       if (!Git.isGitHash(hash)) continue;
-      if (await Model.getCoreModel(LambdaSchemaModel).findOne({ 'git.hash': hash })) continue;
+      if (await everyAppsLambdas.findOne({ 'git.hash': hash })) continue;
       fs.rmSync(`${Config.paths.lambda.code}/lambda-${hash}`, { recursive: true, force: true });
     }
 
@@ -895,24 +837,14 @@ class LambdaCount extends Route {
       result.query.$and.push(bodyQuery);
     }
 
-    // Before parseQuery, which drops an empty $and
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      result.query.$and?.push({
-        _appId: req.context.authApp?.id,
-      });
-    }
-
-    result.query = Model.getCoreModel(LambdaSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(LambdaSchemaModel).flatSchemaData,
-    );
+    const lambdas = this.scoped(req, LambdaSchemaModel);
+    result.query = lambdas.parseQuery(result.query, {}, lambdas.flatSchemaData);
 
     return result;
   }
 
   override _exec(req: Request, res: Response, validateResult: QueryParams<Lambda>) {
-    return Model.getCoreModel(LambdaSchemaModel).count(validateResult.query);
+    return this.scoped(req, LambdaSchemaModel).count(validateResult.query);
   }
 }
 routes.push(LambdaCount);

@@ -15,6 +15,7 @@
  */
 
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 
 import { Schema } from '../../helpers/schema.js';
 import { Services } from '../../bootstrap.js';
@@ -64,6 +65,8 @@ export type Tracking = {
 
 class TrackingSchemaModel extends StandardModel<Tracking> {
   static override name = 'Tracking';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   constructor(services: Services) {
     const schema = TrackingSchemaModel.Schema;

@@ -138,24 +138,29 @@ describe('routes/api/app:GetAppList', () => {
 
 describe('routes/api/app:SearchAppList', () => {
   it('scopes the search to the authenticated app for a non-system token', async () => {
-    stubModel();
+    const { appModel, tokenModel } = stubModel();
+    appModel.find.returns(Readable.from([], { objectMode: true }));
+    tokenModel.find.returns(Readable.from([], { objectMode: true }));
     const route = createRoute(SearchAppList);
+    const req = createReq({ token: { type: 'user' } });
 
-    const result = await route._validate(createReq({ token: { type: 'user' } }));
+    await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(result.query, { $and: [{ id: { $eq: 'app-1' } }] });
+    assert.deepStrictEqual(appModel.find.firstCall.args[0], { id: 'app-1' });
   });
 
   it('scopes the search to the authenticated app when there is no body', async () => {
-    stubModel();
+    const { appModel, tokenModel } = stubModel();
+    appModel.find.returns(Readable.from([], { objectMode: true }));
+    tokenModel.find.returns(Readable.from([], { objectMode: true }));
     const route = createRoute(SearchAppList);
 
     const req = createReq({ token: { type: 'app' } });
     req.body = undefined;
 
-    const result = await route._validate(req);
+    await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(result.query, { $and: [{ id: { $eq: 'app-1' } }] });
+    assert.deepStrictEqual(appModel.find.firstCall.args[0], { id: 'app-1' });
   });
 
   it('does not scope the search for a system token', async () => {
@@ -189,7 +194,7 @@ describe('routes/api/app:SearchAppList', () => {
 
     assert.strictEqual(result.find((a) => a.id === 'app-1').tokenValue, 'value-1');
     assert.ok(!('tokenValue' in result.find((a) => a.id === 'app-2')));
-    assert.deepStrictEqual(tokenModel.find.firstCall.args[0], { id: { $in: ['token-1'] } });
+    assert.deepStrictEqual(tokenModel.find.firstCall.args[0], { $and: [{ id: { $in: ['token-1'] } }, { _appId: 'app-1' }] });
   });
 
   it('gives a system token each returned app with its token value', async () => {
@@ -371,23 +376,23 @@ describe('routes/api/app:DeleteAllApps', () => {
 
 describe('routes/api/app:AppCount', () => {
   it('scopes the count to the authenticated app for a non-system token', async () => {
-    stubModel();
+    const { appModel } = stubModel();
     const route = createRoute(AppCount);
+    const req = createReq({ token: { type: 'user' }, body: {} });
 
-    const result = await route._validate(createReq({ token: { type: 'user' }, body: {} }));
+    await route._exec(req, {}, await route._validate(req));
 
-    // The queryless body itself is pushed as a query fragment, then further scoped to the
-    // authenticated app since the token isn't a system token.
-    assert.deepStrictEqual(result.query.$and, [{}, { id: { $eq: 'app-1' } }]);
+    // The queryless body itself is the query, then the scoped model limits it to the authenticated app
+    assert.deepStrictEqual(appModel.count.firstCall.args[0], { $and: [{ $and: [{}] }, { id: 'app-1' }] });
   });
 
   it('counts using the built query', async () => {
     const { appModel } = stubModel();
     const route = createRoute(AppCount);
 
-    await route._exec(createReq(), {}, { query: { $and: [] } });
+    await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(appModel.count.calledWith({ $and: [] }));
+    assert.ok(appModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { id: 'app-1' }] }));
   });
 });
 

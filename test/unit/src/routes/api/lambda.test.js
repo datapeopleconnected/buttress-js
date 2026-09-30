@@ -68,7 +68,10 @@ function stubModel({ lambda = {}, token = {}, user = {}, app = {}, deployment = 
     createId: (v) => v,
     adapter: { ID: { new: (v) => v } },
     findById: async () => null,
-    findOne: async () => null,
+    // The scoped model finds a lambda by id with findOne, which answers as findById does, as the datastore would
+    async findOne(query) {
+      return query && 'id' in query ? this.findById(query.id) : null;
+    },
     find: sinon.stub(),
     findAll: sinon.stub(),
     add: sinon.stub().resolves({ id: 'lambda-1', trigger: [] }),
@@ -85,6 +88,7 @@ function stubModel({ lambda = {}, token = {}, user = {}, app = {}, deployment = 
     Constants: { Type: { SYSTEM: 'system' } },
     createId: (v) => v,
     findOne: async () => null,
+    exists: sinon.stub().resolves(true),
     setPolicyPropertiesById: sinon.stub().resolves(),
     updatePolicyProperties: sinon.stub().resolves(),
     clearPolicyPropertiesById: sinon.stub().resolves(),
@@ -185,12 +189,13 @@ describe('routes/api/lambda:GetLambdaList', () => {
 
 describe('routes/api/lambda:SearchLambdaList', () => {
   it('scopes the search to the authenticated app for a non-system token', async () => {
-    stubModel();
+    const { lambdaModel } = stubModel();
     const route = createRoute(SearchLambdaList);
+    const req = createReq({ token: { type: 'user' } });
 
-    const result = await route._validate(createReq({ token: { type: 'user' } }));
+    await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
+    assert.deepStrictEqual(lambdaModel.find.firstCall.args[0], { _appId: 'app-1' });
   });
 
   it('finds using the built query', () => {
@@ -198,10 +203,10 @@ describe('routes/api/lambda:SearchLambdaList', () => {
     lambdaModel.find.returns('a-stream');
     const route = createRoute(SearchLambdaList);
 
-    const result = route._exec(createReq(), {}, { query: { $and: [] } });
+    const result = route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
     assert.strictEqual(result, 'a-stream');
-    assert.ok(lambdaModel.find.calledWith({ $and: [] }));
+    assert.ok(lambdaModel.find.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
   });
 });
 
@@ -269,13 +274,14 @@ describe('routes/api/lambda:AddLambda', () => {
   });
 
   it('adds the lambda scoped to the authenticated app', async () => {
-    const { lambdaModel, appModel } = stubModel({ app: { findById: sinon.stub().resolves({ id: 'app-1' }) } });
+    const { lambdaModel } = stubModel();
     const route = createRoute(AddLambda);
 
     await route._exec(createReq({ body: validLambdaBody }), {}, true);
 
-    assert.ok(appModel.findById.calledWith('app-1'));
-    assert.ok(lambdaModel.add.calledWith(validLambdaBody.lambda, { auth: validLambdaBody.auth, app: { id: 'app-1' } }));
+    assert.ok(
+      lambdaModel.add.calledWith(validLambdaBody.lambda, { _appId: 'app-1', auth: validLambdaBody.auth, app: { id: 'app-1' } }),
+    );
   });
 
   it('notifies the path-mutation cache when the added lambda has a PATH_MUTATION trigger', async () => {
@@ -474,7 +480,7 @@ describe('routes/api/lambda:ScheduleLambdaExecution', () => {
     const validate = await route._validate(createReq({ params: { id: HEX_ID }, body: { executeAfter: 'now' } }));
     await route._exec(createReq(), {}, validate);
 
-    assert.ok(lambdaExecutionModel.add.calledWith(validate.execution, 'app-1'));
+    assert.ok(lambdaExecutionModel.add.calledWith(validate.execution, { _appId: 'app-1' }));
   });
 });
 
@@ -671,7 +677,7 @@ describe('routes/api/lambda:ClearLambdaPolicyProperties', () => {
     await route._validate(createReq({ params: { id: HEX_ID }, body: {}, token: { type: 'app' } }));
 
     assert.deepStrictEqual(exists.firstCall.args, [HEX_ID, null, { _appId: 'app-1' }]);
-    assert.deepStrictEqual(findOne.firstCall.args, [{ _lambdaId: HEX_ID, _appId: 'app-1' }]);
+    assert.deepStrictEqual(findOne.firstCall.args[0], { $and: [{ _lambdaId: HEX_ID }, { _appId: 'app-1' }] });
   });
 
   it('clears the policy properties on the lambda token', async () => {
@@ -745,23 +751,23 @@ describe('routes/api/lambda:DeleteLambda', () => {
 
 describe('routes/api/lambda:LambdaCount', () => {
   it('scopes the count to the authenticated app for a non-system token', async () => {
-    stubModel();
+    const { lambdaModel } = stubModel();
     const route = createRoute(LambdaCount);
 
     const req = createReq({ token: { type: 'user' } });
     req.body = undefined;
 
-    const result = await route._validate(req);
+    await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
+    assert.ok(lambdaModel.count.calledWith({ _appId: 'app-1' }));
   });
 
   it('counts using the built query', async () => {
     const { lambdaModel } = stubModel();
     const route = createRoute(LambdaCount);
 
-    await route._exec(createReq(), {}, { query: { $and: [] } });
+    await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(lambdaModel.count.calledWith({ $and: [] }));
+    assert.ok(lambdaModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
   });
 });

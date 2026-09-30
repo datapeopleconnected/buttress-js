@@ -147,3 +147,16 @@ describe('model/core/LambdaSchemaModel:git source', () => {
     assert.strictEqual(gitIn(path.join(codeDir(), `lambda-${hash}`), 'rev-parse', 'HEAD'), hash);
   });
 });
+
+describe('model/core/LambdaSchemaModel:add', () => {
+  it("refuses an app other than the one it's adding the lambda for, before it clones anything", async () => {
+    const model = Object.create(LambdaSchemaModel.prototype);
+    model.gitCloneLambda = async () => assert.fail('the lambda was cloned');
+
+    await assert.rejects(
+      () => model.add({ name: 'l', git: {} }, { _appId: 'app-a', auth: { policyProperties: {} }, app: { id: 'app-b' } }),
+      /isn't the app/,
+    );
+  });
+});
+

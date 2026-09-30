@@ -15,6 +15,7 @@
  */
 import Sugar from '../../helpers/sugar.js';
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 import { PolicyCache } from '../../services/policy-cache.js';
 
 import * as Helpers from '../../helpers/index.js';
@@ -88,6 +89,8 @@ export type PolicyAddBody = {
 
 class PolicySchemaModel extends StandardModel<Policy> {
   static override name = 'Policy';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
   __policyCache: PolicyCache;
 
@@ -203,7 +206,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
    * @param {String} appId - app id
    * @return {Promise} - fulfilled with policy Object when the database request is completed
    */
-  override async add(body: PolicyAddBody, appId: string) {
+  override async add(body: PolicyAddBody, internals: { _appId: string }) {
     const policyConfig: PolicyConfig[] = [];
     if (body.config) {
       body.config.forEach((item) => {
@@ -231,7 +234,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
     };
 
     const rxsPolicy = await super.add(policyBody, {
-      _appId: appId,
+      _appId: internals._appId,
     });
     const policy = (await Helpers.streamFirst(rxsPolicy)) as Policy;
 

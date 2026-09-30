@@ -24,6 +24,7 @@ import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 
 import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 import TokenSchemaModel, { Token } from './token.js';
 import PolicySchemaModel from './policy.js';
 import AppDataSharingSchemaModel, { AppDataSharing } from './app-data-sharing.js';
@@ -68,6 +69,8 @@ type NonSystemAppAddBody = AppAddBody & {
 
 export default class AppSchemaModel extends StandardModel<App> {
   static override name = 'App';
+  // An app is its own row
+  static TenantKey: TenantKey = 'id';
 
   private _localSchema?: Schema[];
 
@@ -270,7 +273,7 @@ export default class AppSchemaModel extends StandardModel<App> {
           },
         ],
       },
-      body.id,
+      { _appId: body.id },
     );
 
     await this.__modelManager.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(token.id.toString(), {

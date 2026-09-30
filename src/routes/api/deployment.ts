@@ -19,7 +19,6 @@ import Route from '../route.js';
 import Model from '../../model/index.js';
 import DeploymentSchemaModel, { Deployment } from '../../model/core/deployment.js';
 import { QueryParams } from '../../types/bjs-query.js';
-import TokenSchemaModel from '../../model/core/token.js';
 import { Services } from '../../bootstrap.js';
 import type { CoreRouteClass, CountBody, RequestWithBody, SearchBody } from '../../types/routes.js';
 
@@ -47,24 +46,14 @@ class SearchDeploymentList extends Route {
       result.query.$and.push(req.body.query);
     }
 
-    // Before parseQuery, which drops an empty $and
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      result.query.$and?.push({
-        _appId: req.context.authApp?.id,
-      });
-    }
-
-    result.query = Model.getCoreModel(DeploymentSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(DeploymentSchemaModel).flatSchemaData,
-    );
+    const scoped = this.scoped(req, DeploymentSchemaModel);
+    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
 
     return result;
   }
 
   override _exec(req: Request, res: Response, validate: QueryParams<Deployment>) {
-    return Model.getCoreModel(DeploymentSchemaModel).find(validate.query);
+    return this.scoped(req, DeploymentSchemaModel).find(validate.query);
   }
 }
 routes.push(SearchDeploymentList);
@@ -98,24 +87,14 @@ class DeploymentCount extends Route {
       result.query.$and.push(bodyQuery);
     }
 
-    // Before parseQuery, which drops an empty $and
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      result.query.$and?.push({
-        _appId: req.context.authApp?.id,
-      });
-    }
-
-    result.query = Model.getCoreModel(DeploymentSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(DeploymentSchemaModel).flatSchemaData,
-    );
+    const scoped = this.scoped(req, DeploymentSchemaModel);
+    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
 
     return result;
   }
 
   override _exec(req: Request, res: Response, validateResult: QueryParams<Deployment>) {
-    return Model.getCoreModel(DeploymentSchemaModel).count(validateResult.query);
+    return this.scoped(req, DeploymentSchemaModel).count(validateResult.query);
   }
 }
 routes.push(DeploymentCount);

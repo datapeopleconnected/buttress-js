@@ -27,6 +27,9 @@ import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
 
+// Every tracking route takes only system tokens, which reach every app's entries
+const SYSTEM_ONLY = 'the route takes only system tokens';
+
 /**
  * @class GetTrackingList
  */
@@ -43,7 +46,7 @@ class GetTrackingList extends Route {
   }
 
   override _exec(_req: Request, _res: Response, _validate: boolean) {
-    return Model.getCoreModel(TrackingSchemaModel).findAll();
+    return this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY).findAll();
   }
 }
 routes.push(GetTrackingList);
@@ -90,7 +93,7 @@ class AddTracking extends Route {
   }
 
   override _exec(req: RequestWithBody<unknown>, _res: Response, _validate: boolean) {
-    return Model.getCoreModel(TrackingSchemaModel).add(req.body);
+    return this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY).add(req.body);
   }
 }
 routes.push(AddTracking);
@@ -123,7 +126,7 @@ class UpdateTracking extends Route {
         return reject(new Helpers.Errors.RequestError(400, `TRACKING: ${message}`));
       }
 
-      Model.getCoreModel(TrackingSchemaModel)
+      this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY)
         .exists(id)
         .then((exists) => {
           if (!exists) {
@@ -140,7 +143,7 @@ class UpdateTracking extends Route {
 
   // _validate replaced the body with the validated updates
   override _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
-    return Model.getCoreModel(TrackingSchemaModel).updateByPath(req.body, validate.id);
+    return this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY).updateByPath(req.body, validate.id);
   }
 }
 routes.push(UpdateTracking);
@@ -157,7 +160,7 @@ class DeleteTracking extends Route {
   }
 
   override async _validate(req: Request<{ id: string }>, _res: Response) {
-    const tracking = await Model.getCoreModel(TrackingSchemaModel).findById(req.params.id);
+    const tracking = await this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY).findById(req.params.id);
     if (!tracking) {
       this.log('ERROR: Invalid Tracking ID', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `invalid_id`);
@@ -167,7 +170,7 @@ class DeleteTracking extends Route {
   }
 
   override async _exec(req: Request, res: Response, tracking: Tracking) {
-    await Model.getCoreModel(TrackingSchemaModel).rm(tracking.id);
+    await this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY).rm(tracking.id);
     return true;
   }
 }
@@ -189,7 +192,7 @@ class DeleteAllTrackings extends Route {
   }
 
   override async _exec(_req: Request, _res: Response, _validate: boolean) {
-    await Model.getCoreModel(TrackingSchemaModel).rmAll({});
+    await this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY).rmAll({});
     return true;
   }
 }
