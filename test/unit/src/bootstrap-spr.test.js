@@ -618,3 +618,35 @@ describe('bootstrap-spr: activities not to broadcast', () => {
     assert.deepStrictEqual(emitted, []);
   });
 });
+
+// Core entities aren't sent over sockets (D-18)
+describe('bootstrap-spr: core schema activity', () => {
+  afterEach(() => sinon.restore());
+
+  it('sends nothing for a core schema activity, not even a delete to the system tokens', async () => {
+    const spr = new BootstrapSocketPolicyRouter();
+    const emitted = [];
+    spr.__nrp = { emit: (event, json) => emitted.push({ event, ...JSON.parse(json) }) };
+    spr._policyCache = { getPoliciesByRestActivity: sinon.stub().resolves([]), getConnectedTokenIdsByPolicyId: async () => [] };
+    const systemToken = { id: new ObjectId(), type: 'system' };
+    sinon.stub(Model, 'getCoreModel').returns({ find: async () => [systemToken] });
+    const user = { id: new ObjectId().toString() };
+
+    await spr._handleIncomingMessage({
+      verb: 'delete',
+      path: `/user/${user.id}`,
+      pathSpec: 'user/:id',
+      params: { id: user.id },
+      response: true,
+      deletedEntities: [user],
+      appId: new ObjectId().toString(),
+      schemaName: 'users',
+      isCoreSchema: true,
+      broadcast: true,
+      isSuper: true,
+    });
+
+    assert.deepStrictEqual(emitted, []);
+    assert.strictEqual(spr._policyCache.getPoliciesByRestActivity.called, false);
+  });
+});

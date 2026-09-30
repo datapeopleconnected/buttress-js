@@ -176,8 +176,8 @@ export class PolicyCache {
   }
 
   async getPoliciesByRestActivity(activity: RESTActivity): Promise<Policy[]> {
-    const isCoreSchema = false;
-    const schemaWildCard = isCoreSchema ? '%CORE_SCHEMA%' : '%APP_SCHEMA%';
+    // Only app schemas' activity is routed: the SPR doesn't send core entities over sockets
+    const schemaWildCard = '%APP_SCHEMA%';
 
     // The following code is stupid but will be refactored later.
     const direct = await this._redisClient.sMembers(

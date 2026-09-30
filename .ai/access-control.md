@@ -72,6 +72,10 @@ Runs only in the SPR primary process, triggered by the `rest:activity` NRP event
 it exists because by the time this runs, the write already happened and the question is purely "who
 should be told":
 
+Only app schemas' activity is routed. Core entities (users, tokens, policies, lambdas, apps…) are never sent
+over sockets: `__handleEntityActivity` drops an activity with `isCoreSchema`, and `%CORE_SCHEMA%` has no
+lookup in the policy cache (decided 2026-09-30).
+
 `__splitBulkActivity` first turns a bulk update/delete, and a delete-all that the caller's policies limited (its
 `response` lists the deleted ids), into one by-id activity per entity. A deleted entity can't be loaded, so the REST
 route sends it along as it was, in `deletedEntities` (`Route._keepEntitiesBeingDeleted`). A limited delete-all is split

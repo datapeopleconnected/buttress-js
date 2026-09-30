@@ -333,7 +333,11 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       timer: new Helpers.Timer(),
     };
 
-    const isCoreSchema = activity.isCoreSchema;
+    // Core entities (users, tokens, policies, lambdas...) aren't sent over sockets
+    if (activity.isCoreSchema) {
+      Logging.logSilly(`Skipping message broadcast, ${activity.schemaName} is a core schema`);
+      return;
+    }
 
     let entity: AdapterDocument | null = null;
     const activityParams = activity.params as Record<string, unknown>;
@@ -346,9 +350,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     if (entityId && activity.verb === 'delete') {
       entity = deletedEntities?.find((deleted) => String(deleted.id) === String(entityId)) ?? null;
     } else if (entityId) {
-      const appModel = isCoreSchema
-        ? await Model.getCoreModelByName<StandardModel>(activity.schemaName)
-        : await Model.getAppModel<StandardModel>(activity.appId, activity.schemaName);
+      const appModel = await Model.getAppModel<StandardModel>(activity.appId, activity.schemaName);
       if (!appModel) {
         Logging.logWarn(
           `Unable to broadcast entity, can not find ${activity.schemaName} for ${activity.appId} in the database`,
@@ -385,7 +387,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     }
 
     const policies = await this._policyCache.getPoliciesByRestActivity(activity);
-    if (policies.length < 0) {
+    if (policies.length < 1) {
       Logging.logSilly('Skipping message broadcast, no relevant policies found');
       return;
     }
@@ -398,7 +400,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       if (isPolicyExpired(policy)) continue;
 
       // Narrow down the configs to ones that match on the schema & verbs of the activity.
-      const configs = filterPolicyConfigs(policy, activity.schemaName, activity.verb, isCoreSchema, true);
+      const configs = filterPolicyConfigs(policy, activity.schemaName, activity.verb, false, true);
 
       for (const config of configs) {
         const applicablePolicy: ApplicablePolicyConfig = {
