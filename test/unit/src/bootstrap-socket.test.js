@@ -256,3 +256,37 @@ describe('bootstrap-socket:relayedDataShareActivity', () => {
     assert.deepStrictEqual(relayedDataShareActivity({ ...remote, params: 'x' }, app, 'car').params, {});
   });
 });
+
+// Activity forwarded to the instances an app shares data with
+describe('bootstrap-socket:_primaryForwardDataShareActivity', () => {
+  const activity = { appId: 'app-1', appAPIPath: 'app-one', verb: 'post', path: '/car', broadcast: true, response: { id: 'c1' } };
+
+  function forwarder() {
+    const socket = new BootstrapSocket();
+    const sent = { partnerA: [], partnerB: [] };
+    socket._dataShareSockets = {
+      'app-1': [
+        { socket: { emit: (event, payload) => sent.partnerA.push([event, payload]) }, tokenId: 'share-token-a' },
+        { socket: { emit: (event, payload) => sent.partnerB.push([event, payload]) }, tokenId: 'share-token-b' },
+      ],
+    };
+    return { socket, sent };
+  }
+
+  it("sends a partner only the activity addressed to its agreement's token, without this instance's token ids", () => {
+    const { socket, sent } = forwarder();
+
+    socket._primaryForwardDataShareActivity({ tokens: ['user-token', 'share-token-a'], activity });
+
+    assert.deepStrictEqual(sent.partnerA, [['dataShareSocket:share', { tokens: [], activity }]]);
+    assert.deepStrictEqual(sent.partnerB, []);
+  });
+
+  it("sends nothing for activity addressed only to this instance's own tokens", () => {
+    const { socket, sent } = forwarder();
+
+    socket._primaryForwardDataShareActivity({ tokens: ['user-token', 'system-token'], activity });
+
+    assert.deepStrictEqual(sent, { partnerA: [], partnerB: [] });
+  });
+});

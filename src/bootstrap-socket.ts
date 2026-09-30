@@ -117,8 +117,10 @@ export const relayedDataShareActivity = (
 };
 
 export default class BootstrapSocket extends Bootstrap {
+  // Each app's connections to the instances it shares data with, with the id of the token the agreement gives its
+  // partner, which the agreement's policy selects
   private _dataShareSockets: {
-    [key: string]: sioClientSocket[];
+    [key: string]: Array<{ socket: sioClientSocket; tokenId: string }>;
   } = {};
 
   private _redisClient?: RedisClientType;
@@ -249,7 +251,7 @@ export default class BootstrapSocket extends Bootstrap {
     }
 
     for await (const sockets of Object.values(this._dataShareSockets)) {
-      for await (const socket of sockets) {
+      for await (const { socket } of sockets) {
         Logging.logSilly('Closing data share socket');
         // destroy() is private in the sio-client types
         (socket as unknown as { destroy: () => void }).destroy();
@@ -682,20 +684,26 @@ export default class BootstrapSocket extends Bootstrap {
   /**
    * Sends an activity on to the remote instances the app shares data with. Only the primary Socket instance's main
    * process holds data share connections, so the activity goes to each remote once, however many workers there are.
+   * A partner gets only the activity the SPR sent the agreement's own token, which the agreement's policy selected
+   * and projected, and none of this instance's token ids.
    * @param {DataShareSocketSharePayload} data
    */
-  private _primaryForwardDataShareActivity(data: DataShareSocketSharePayload) {
+  _primaryForwardDataShareActivity(data: DataShareSocketSharePayload) {
     const { tokens, activity } = data;
     if (!tokens || tokens.length < 1) return;
     if (activity.broadcast === false) return;
     // An activity that came in over a data share has isSameApp set by the receiving side, so it isn't sent back.
     if (activity.isSameApp !== undefined) return;
 
-    const sockets = activity.appId ? this._dataShareSockets[activity.appId] : undefined;
-    if (!sockets) return;
+    const shares = activity.appId ? this._dataShareSockets[activity.appId] : undefined;
+    if (!shares) return;
 
-    Logging.logSilly(`[${activity.appAPIPath}][${activity.verb}] notifying data sharing on ${activity.path}`);
-    sockets.forEach((sock) => sock.emit('dataShareSocket:share', data));
+    for (const { socket, tokenId } of shares) {
+      if (!tokens.includes(tokenId)) continue;
+
+      Logging.logSilly(`[${activity.appAPIPath}][${activity.verb}] notifying data sharing on ${activity.path}`);
+      socket.emit('dataShareSocket:share', { tokens: [], activity });
+    }
   }
 
   __primaryClearUserLocalData() {
@@ -737,7 +745,7 @@ export default class BootstrapSocket extends Bootstrap {
       forceNew: true,
     });
 
-    this._dataShareSockets[dataShare._appId].push(socket);
+    this._dataShareSockets[dataShare._appId].push({ socket, tokenId: String(dataShare._tokenId) });
 
     socket.on('connect', () => {
       Logging.logSilly(`Data sharing ${dataShare.id} connected to ${url} with id ${socket.id}`);

@@ -53,12 +53,12 @@ const connectSocket = async (url, app) => {
 	return socket;
 };
 
-const postCar = async (app, name) => {
+const postCar = async (app, name, fields = {}) => {
 	const [car] = await bjsReq({
 		url: `${ENDPOINT.REST}/${app.apiPath}/api/v1/car`,
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ name }),
+		body: JSON.stringify({ name, ...fields }),
 	}, app.token);
 	return car;
 };
@@ -99,6 +99,18 @@ describe('Realtime Data Sharing', async () => {
 					__required: true,
 					__allowUpdate: true,
 				},
+				visibility: {
+					__type: 'string',
+					__default: 'shared',
+					__required: false,
+					__allowUpdate: true,
+				},
+				secret: {
+					__type: 'string',
+					__default: null,
+					__required: false,
+					__allowUpdate: true,
+				},
 			},
 		};
 
@@ -130,7 +142,13 @@ describe('Realtime Data Sharing', async () => {
 					apiPath: testEnv.apps.app2.apiPath,
 					token: null,
 				},
-				policyConfig,
+				// app1 shares only its shared cars, without their secrets
+				policyConfig: [{
+					verbs: ['%ALL%'],
+					schema: ['%ALL%'],
+					query: { visibility: { '@eq': 'shared' } },
+					projection: { keys: ['name', 'visibility'] },
+				}],
 			}, testEnv.apps.app1.token)
 		, 'Realtime Data Sharing setup');
 
@@ -210,6 +228,34 @@ describe('Realtime Data Sharing', async () => {
 			// Set by the receiving side, so the activity isn't forwarded back.
 			assert.strictEqual(forwarded.isSameApp, false);
 			assert.strictEqual(forwarded.response.name, car.name);
+		} finally {
+			await unsubscribe();
+		}
+	});
+
+	it("Should forward only what the agreement's policy shares", async function () {
+		this.timeout(20000);
+
+		const received = [];
+		const unsubscribe = await NRP_INSTANCE.subscribe('rest:activity', (raw) => {
+			const activity = JSON.parse(raw);
+			if (activity.appId === testEnv.apps.app2.id) received.push(activity);
+		});
+
+		try {
+			const hidden = await postCar(testEnv.apps.app1, 'data-share-private', { visibility: 'private', secret: 's1' });
+			const shared = await postCar(testEnv.apps.app1, 'data-share-shared', { secret: 's2' });
+
+			const deadline = Date.now() + 5000;
+			while (Date.now() < deadline && !received.some((activity) => activity.response?.id === shared.id)) {
+				await new Promise((resolve) => setTimeout(resolve, 50));
+			}
+			await new Promise((resolve) => setTimeout(resolve, 500));
+
+			const forwarded = received.filter((activity) => activity.response?.id === shared.id);
+			assert.strictEqual(forwarded.length > 0, true, 'the shared car should be forwarded');
+			for (const activity of forwarded) assert(!('secret' in activity.response), JSON.stringify(activity.response));
+			assert(!received.some((activity) => activity.response?.id === hidden.id), 'the private car was forwarded');
 		} finally {
 			await unsubscribe();
 		}
