@@ -59,7 +59,11 @@ Execution (`execute()`), per invocation:
 2. `_getLambdaModulesName()` + `bundleLambdaModules()` — webpack-bundles `@buttress/api`,
    `@buttress/snippets`, `sugar`, and the lambda's own entry file
    (`Config.paths.lambda.code/lambda-<gitHash>/<entryFile>`) into `Config.paths.lambda.bundles/*.js`,
-   skipping any bundle that already exists on disk. The lambda's own code is the module
+   skipping any bundle that already exists on disk. Each build runs in a `.build-*` folder of its own inside
+   the bundles folder and its files are renamed into place only once it succeeds, so a worker that finds a
+   bundle on disk never reads one another worker is still writing, or one from a failed build (webpack writes
+   a bundle even when the build has errors). A bad read used to stick: the compiled script is cached for the
+   isolate's lifetime and shared by every app's context. The lambda's own code is the module
    `lambda_<id>_<gitHash>`, so a redeploy's code is a new module rather than the old one again; it's rebuilt
    for every run only when the hash is `HEAD` (which moves with each pull) or `LAMBDA_DEV_RELOAD=TRUE`.
    `_registerLambdaModules()` then `compileScriptSync().runSync()`s each bundle into the executing app's

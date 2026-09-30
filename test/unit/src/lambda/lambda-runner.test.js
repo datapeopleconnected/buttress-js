@@ -730,6 +730,28 @@ module.exports = HelloWorld;
       runner.bundleLambdaModules([{ name: 'lambda_abc123', import: `${lambdaDir}/./index.js` }]),
       /Unable to bundle lambda modules: .*Can't resolve '\.\/missing\.js'/,
     );
+
+    // webpack writes a bundle even when the build has errors, and another worker would skip bundling and load it.
+    assert.deepStrictEqual(fs.readdirSync(Config.paths.lambda.bundles), []);
+  });
+
+  it('moves a finished bundle into place in one step, leaving no build folder behind', async function () {
+    this.timeout(30000);
+    const lambdaDir = `${Config.paths.lambda.code}/lambda-abc123`;
+    fs.mkdirSync(lambdaDir, { recursive: true });
+    fs.writeFileSync(`${lambdaDir}/index.js`, 'module.exports = 42;\n');
+    const { runner } = createRunner();
+    const renameSync = sinon.spy(fs, 'renameSync');
+
+    try {
+      await runner.bundleLambdaModules([{ name: 'lambda_abc123', import: `${lambdaDir}/./index.js` }]);
+    } finally {
+      renameSync.restore();
+    }
+
+    const bundle = path.resolve(`${Config.paths.lambda.bundles}/lambda_abc123.js`);
+    assert.ok(renameSync.calledWith(sinon.match.string, bundle), 'the bundle should be renamed into place');
+    assert.deepStrictEqual(fs.readdirSync(Config.paths.lambda.bundles), ['lambda_abc123.js']);
   });
 
   it('bundles a lambda that only causes a webpack warning', async function () {

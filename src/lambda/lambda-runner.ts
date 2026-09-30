@@ -891,6 +891,12 @@ export default class LambdaRunner {
 
     Logging.logDebug(`[${this.name}] Bundling lambda modules: ${Object.keys(entry).join(', ')}`);
 
+    // Built in a folder of its own and moved into place, so another worker never loads a bundle still being written,
+    // or one from a build that failed.
+    const bundlesDir = path.resolve(Config.paths.lambda.bundles);
+    fs.mkdirSync(bundlesDir, { recursive: true });
+    const buildDir = fs.mkdtempSync(path.join(bundlesDir, '.build-'));
+
     return new Promise<void>((resolve, reject) => {
       webpack(
         {
@@ -916,7 +922,7 @@ export default class LambdaRunner {
           },
           plugins: [new NodePolyfillPlugin()],
           output: {
-            path: path.resolve(Config.paths.lambda.bundles),
+            path: buildDir,
             chunkFormat: 'commonjs',
           },
         },
@@ -941,14 +947,27 @@ export default class LambdaRunner {
             return;
           }
 
+          try {
+            fs.readdirSync(buildDir).forEach((file) =>
+              fs.renameSync(path.join(buildDir, file), path.join(bundlesDir, file)),
+            );
+          } catch (renameErr: unknown) {
+            reject(renameErr);
+            return;
+          }
+
           resolve();
         },
       );
-    }).catch((error: unknown) => {
-      Logging.logError(`[${this.name}] Error whilst bundling lambda modules`);
-      Logging.logError(Helpers.getThrownErrorMessage(error));
-      throw error;
-    });
+    })
+      .finally(() => {
+        fs.rmSync(buildDir, { recursive: true, force: true });
+      })
+      .catch((error: unknown) => {
+        Logging.logError(`[${this.name}] Error whilst bundling lambda modules`);
+        Logging.logError(Helpers.getThrownErrorMessage(error));
+        throw error;
+      });
   }
 
   async _registerLambdaModules(lambdaModules: LambdaModule[]) {
