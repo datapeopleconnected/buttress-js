@@ -39,6 +39,14 @@ class LambdaTimeoutError extends Error {
   }
 }
 
+// A lambda that failed while running, whose execution has already been recorded as errored
+class LambdaExecutionFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'LambdaExecutionFailedError';
+  }
+}
+
 import ivm from 'isolated-vm';
 import { v4 as uuidv4 } from 'uuid';
 import webpack from 'webpack';
@@ -487,8 +495,12 @@ export default class LambdaRunner {
         );
       }
     } catch (err: unknown) {
-      await this._updateDBLambdaErrorExecution(execution);
       Logging.logDebug(err);
+      const failure = new LambdaExecutionFailedError(
+        `Failed to execute script for lambda:${lambda.name} - ${Helpers.getThrownErrorMessage(err)}`,
+      );
+      // Before the API caller is answered, so the execution is errored by the time they look
+      await this._recordExecutionError(execution, failure.message);
 
       if (type === 'API_ENDPOINT') {
         const errDetails = Helpers.getThrownErrorDetails(err);
@@ -512,8 +524,7 @@ export default class LambdaRunner {
         }
       }
 
-      const errMessage = Helpers.getThrownErrorMessage(err);
-      return Promise.reject(new Error(`Failed to execute script for lambda:${lambda.name} - ${errMessage}`));
+      return Promise.reject(failure);
     }
   }
 
@@ -575,11 +586,19 @@ export default class LambdaRunner {
       const errMessage = Helpers.getThrownErrorMessage(err);
       Logging.logError(errMessage);
 
-      if (execution) {
-        await this._updateDBLambdaErrorExecution(execution, {
-          message: errMessage,
-          type: 'ERROR',
-        });
+      if (execution && !(err instanceof LambdaExecutionFailedError)) {
+        await this._recordExecutionError(execution, errMessage);
+
+        // It failed before the lambda ran, so nothing has answered an API caller waiting on it yet
+        if (payload.lambdaType === 'API_ENDPOINT' && reqId) {
+          const message: ExecutionResultMessage = {
+            code: 500,
+            err: 'lambda_execution_failed',
+            reqId,
+            executionId: execution.id,
+          };
+          this.__nrp?.emit('lambda:worker:execution-result', JSON.stringify(message));
+        }
       }
 
       this.__nrp?.emit(
@@ -705,10 +724,21 @@ export default class LambdaRunner {
     }
   }
 
-  async _updateDBLambdaErrorExecution(
-    execution: LambdaExecution,
-    log: { message: string; type: string } | null = null,
-  ) {
+  /**
+   * Records the execution as errored, with why. A failure to record it is logged rather than thrown, so the manager and
+   * any API caller waiting on the execution are still told.
+   */
+  async _recordExecutionError(execution: LambdaExecution, message: string) {
+    try {
+      await this._updateDBLambdaErrorExecution(execution, { message, type: 'ERROR' });
+    } catch (err: unknown) {
+      Logging.logError(
+        `[${this.name}] Failed to record execution ${execution.id} as errored: ${Helpers.getThrownErrorMessage(err)}`,
+      );
+    }
+  }
+
+  async _updateDBLambdaErrorExecution(execution: LambdaExecution, log: { message: string; type: string }) {
     await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
       Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
       {
@@ -716,27 +746,11 @@ export default class LambdaRunner {
           status: 'ERROR',
           endedAt: Sugar.Date.create('now'),
         },
+        $push: {
+          logs: { $each: [{ log: log.message, type: log.type }] },
+        },
       },
     );
-    // if (type === 'CRON') {
-    // 	await Model.getCoreModel(LambdaSchemaModel).update({
-    // 		'id': Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
-    // 		'trigger.type': type,
-    // 	}, {$set: {'trigger.$.cron.status': 'ERROR'}});
-    // }
-    if (log) {
-      await Model.getCoreModel(LambdaExecutionSchemaModel).updateById(
-        Model.getCoreModel(LambdaExecutionSchemaModel).createId(execution.id),
-        {
-          $push: {
-            logs: {
-              log: log.message,
-              type: log.type,
-            },
-          },
-        },
-      );
-    }
   }
 
   async installLambdaPackages(lambda: Lambda, packageAllowList: { packageName: string; packageVersion: string }[]) {

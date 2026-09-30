@@ -31,6 +31,7 @@ import LambdaExecutionSchemaModel from '../../../../dist/model/core/lambda-execu
 import AppSchemaModel from '../../../../dist/model/core/app.js';
 import TokenSchemaModel from '../../../../dist/model/core/token.js';
 import SecureStoreSchemaModel from '../../../../dist/model/core/secure-store.js';
+import Logging from '../../../../dist/helpers/logging.js';
 
 const Config = createConfig();
 
@@ -327,6 +328,107 @@ describe('lambda/LambdaRunner:handleLambdaExecutionMessage', () => {
     assert.ok(nrp.emit.calledWith('lambda:worker:errored'));
     const [, payload] = nrp.emit.firstCall.args;
     assert.match(JSON.parse(payload).errMessage, /boom/);
+  });
+});
+
+describe('lambda/LambdaRunner:handleLambdaExecutionMessage a lambda that fails', () => {
+  let savedPlugins;
+  let tmpDir;
+
+  beforeEach(() => {
+    savedPlugins = Config.paths.lambda.plugins;
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-fails-'));
+    Config.paths.lambda.plugins = tmpDir;
+  });
+
+  afterEach(() => {
+    Config.paths.lambda.plugins = savedPlugins;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // Runs an API endpoint lambda that throws, in the runner's real isolate, as the manager hands it over
+  async function runFailingLambda(updateById, lambdaTokens = [{ value: 'lambda-token' }]) {
+    sinon.stub(Logging, 'logError');
+    const { runner, nrp } = createRunner();
+    await runner.init();
+    const lambda = {
+      id: 'lambda-1', _appId: 'app-1', name: 'failing', trigger: [],
+      git: { url: 'git@example.com:x.git', hash: 'HEAD', entryFile: 'index.js', entryPoint: 'execute' },
+    };
+    const execution = {
+      id: 'exec-1', lambdaId: 'lambda-1', deploymentId: 'd', status: 'PENDING',
+      metadata: [{ key: 'REQ_ID', value: 'req-1' }],
+    };
+    stubModel(
+      new Map([
+        [SecureStoreSchemaModel, { findOne: async () => null }],
+        [AppSchemaModel, { createId: (v) => v, findById: async () => ({ id: 'app-1', apiPath: 'app' }) }],
+        [LambdaSchemaModel, { createId: (v) => v, findById: async () => lambda }],
+        [TokenSchemaModel, { createId: (v) => v, find: async () => Readable.from(lambdaTokens) }],
+        [LambdaExecutionSchemaModel, fakeExecutionModel({ findOneResult: execution, updateById })],
+      ]),
+    );
+    sinon.stub(runner, '_getLambdaModulesName').returns([{ name: 'lambda_failing' }]);
+    sinon.stub(runner, 'bundleLambdaModules').resolves();
+    sinon.stub(runner, '_registerLambdaModules').callsFake(async () => {
+      runner._context.evalSync(`
+        globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
+        globalThis['lambda_failing'] = class { async execute() { throw new Error('lambda broke'); } };
+      `);
+    });
+
+    runner.working = true;
+    await runner.handleLambdaExecutionMessage({
+      lambdaId: 'lambda-1',
+      lambdaType: 'API_ENDPOINT',
+      executionId: 'exec-1',
+      workerId: runner.id,
+    });
+    runner._isolate.dispose();
+    return { runner, nrp };
+  }
+
+  it('records the execution as errored once, with why', async function () {
+    this.timeout(10000);
+    const updateById = sinon.stub().resolves();
+
+    await runFailingLambda(updateById);
+
+    const errorWrites = updateById.getCalls().filter((call) => call.args[1].$set?.status === 'ERROR');
+    assert.strictEqual(errorWrites.length, 1);
+    const logs = errorWrites[0].args[1].$push.logs.$each;
+    assert.ok(logs.some((entry) => entry.type === 'ERROR' && /lambda broke/.test(entry.log)));
+  });
+
+  it('still tells the manager and the API caller when recording the failure fails', async function () {
+    this.timeout(10000);
+    const updateById = sinon.stub().callsFake(async (_id, update) => {
+      if (update.$set?.status === 'ERROR') throw new Error('mongo went away');
+    });
+
+    const { runner, nrp } = await runFailingLambda(updateById);
+
+    assert.strictEqual(runner.working, false);
+    const emitted = (channel) => nrp.emit.getCalls().find((call) => call.args[0] === channel);
+    assert.match(JSON.parse(emitted('lambda:worker:execution-result').args[1]).err, /lambda broke/);
+    assert.match(JSON.parse(emitted('lambda:worker:errored').args[1]).errMessage, /lambda broke/);
+  });
+
+  it('answers the API caller when the execution fails before the lambda runs', async function () {
+    this.timeout(10000);
+    const updateById = sinon.stub().resolves();
+
+    const { nrp } = await runFailingLambda(updateById, []);
+
+    const result = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+    assert.deepStrictEqual(JSON.parse(result.args[1]), {
+      code: 500,
+      err: 'lambda_execution_failed',
+      reqId: 'req-1',
+      executionId: 'exec-1',
+    });
+    assert.ok(updateById.calledWithMatch('exec-1', { $set: { status: 'ERROR' } }));
+    assert.ok(nrp.emit.calledWith('lambda:worker:errored'));
   });
 });
 
