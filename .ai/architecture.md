@@ -34,8 +34,11 @@ Node `cluster`-based primary/worker model:
    worker via `notifyWorker(idx, payload, connection)` using IP-hash routing (`__indexFromIP`).
    Both skip a worker that has exited or disconnected, rather than letting `worker.send()` fail with an
    uncaught `Channel closed` error that takes the primary down; a connection meant for it is closed.
-   A worker that exits while the process is running is re-forked in the same slot. One that exits before
-   it sends `worker:initiated` isn't, as its replacement would most likely fail the same way. Workers keep
+   They also skip a worker that hasn't sent `worker:initiated` yet, as it isn't listening for messages.
+   A worker that exits while the process is running is re-forked in the same slot, after the subclass's
+   `__onWorkerExit()` hook gives back what it held (Lambda: its worker type). One that exits before it sends
+   `worker:initiated` isn't, as its replacement would most likely fail the same way; during start-up, that
+   fails `__spawnWorkers()` and so the process's `init()`, and the entry script exits 1. Workers keep
    Node's default of exiting on an uncaught exception; `unhandledRejection` is only logged.
 5. `BUTTRESS_APP_WORKERS=0` runs "single instance mode" — `__spawnWorkers()` just calls
    `__initWorker()` directly in the primary process instead of forking.

@@ -37,7 +37,10 @@ Coordinates work; never executes lambda code itself. Talks to `LambdaRunner` wor
 Each worker is typed at spawn time (`LambdaType`: `API_ENDPOINT` | `PATH_MUTATION` | `CRON` | `ALL`) —
 `BootstrapLambda.__getLambdaWorkerType()` assigns types round-robin up to
 `Config.lambda.{apiWorkers,pathMutationWorkers,cronWorkers}`, remaining workers get `ALL`. A worker only
-picks up `lambda:worker:announce` messages matching its own type (or if it's `ALL`).
+picks up `lambda:worker:announce` messages matching its own type (or if it's `ALL`). The primary main hands the
+types out over NRP (`lambdaProcessWorker:worker-initiated` → `lambdaProcessMain:worker-type`) and keeps which
+worker id has which. When a worker exits, its main publishes `lambdaProcessMain:worker-exited` and the primary
+main takes the type back, so the replacement gets it.
 
 Execution (`execute()`), per invocation:
 

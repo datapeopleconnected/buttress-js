@@ -19,8 +19,15 @@ import EventEmitter from 'node:events';
 import sinon from 'sinon';
 import cluster from 'node:cluster';
 
+import createConfig from '@dpc/node-env-obj';
+
 import Bootstrap from '../../../dist/bootstrap.js';
+import BootstrapLambda from '../../../dist/bootstrap-lambda.js';
 import Logging from '../../../dist/helpers/logging.js';
+import Model from '../../../dist/model/index.js';
+import LambdaManager from '../../../dist/lambda/lambda-manager.js';
+
+const Config = createConfig();
 
 // A stand-in for a cluster worker, which the tests make exit by emitting 'exit'
 function createWorker({ dead = false, connected = !dead } = {}) {
@@ -187,6 +194,27 @@ describe('bootstrap:notifyWorkers', () => {
 });
 
 describe('bootstrap:notifyWorker', () => {
+  it("closes a connection meant for a worker that hasn't finished starting, and sends one once it has", async () => {
+    sinon.stub(Logging, 'logWarn');
+    const worker = createWorker();
+    const bootstrap = new Bootstrap();
+    bootstrap.workers = [{ initiated: false, worker }];
+    const payload = { type: 'buttress:connection', payload: null };
+
+    const early = { destroy: sinon.spy() };
+    await bootstrap.notifyWorker(0, payload, early);
+
+    assert.strictEqual(worker.send.called, false);
+    assert.ok(early.destroy.calledOnce);
+
+    bootstrap.workers[0].initiated = true;
+    const later = { destroy: sinon.spy() };
+    await bootstrap.notifyWorker(0, payload, later);
+
+    assert.ok(worker.send.calledOnceWith(payload, later));
+    assert.strictEqual(later.destroy.called, false);
+  });
+
   it('closes a connection meant for a worker that has exited', async () => {
     sinon.stub(Logging, 'logWarn');
     const worker = createWorker({ dead: true });
@@ -212,12 +240,14 @@ describe('bootstrap:worker exit', () => {
     });
     const bootstrap = new Bootstrap();
     bootstrap.workerProcesses = workerProcesses;
-    bootstrap.__spawnWorkers();
-    return { bootstrap, forked };
+    const startup = bootstrap.__spawnWorkers();
+    // Tests that don't wait on it still mustn't leave it rejected and unhandled
+    startup.catch(() => {});
+    return { bootstrap, forked, startup };
   }
 
   function initiate(forked) {
-    forked.forEach((worker) => worker.emit('message', { type: 'worker:initiated', payload: null }));
+    forked.forEach((worker) => worker.emit('message', { type: 'worker:initiated', payload: { id: 'worker' } }));
   }
 
   it('replaces a worker that exits while the process is running', () => {
@@ -231,7 +261,12 @@ describe('bootstrap:worker exit', () => {
     assert.strictEqual(bootstrap.workers[1].worker, forked[2]);
     assert.strictEqual(bootstrap.workers[0].worker, forked[0]);
 
-    // The replacement is notified like any other worker
+    // The replacement is notified like any other worker, once it has started
+    sinon.stub(Logging, 'logWarn');
+    bootstrap.notifyWorkers({ type: 'app-routes:bust-cache', payload: {} });
+    assert.strictEqual(forked[2].send.called, false);
+
+    initiate([forked[2]]);
     bootstrap.notifyWorkers({ type: 'app-routes:bust-cache', payload: {} });
     assert.ok(forked[2].send.calledOnce);
   });
@@ -247,14 +282,42 @@ describe('bootstrap:worker exit', () => {
     assert.strictEqual(forked.length, 1);
   });
 
-  it("doesn't replace a worker that exits before it finished starting", () => {
+  it('fails to start when a worker exits before it finished starting', async () => {
+    const { forked, startup } = spawn(2);
+    initiate([forked[0]]);
+
+    forked[1].emit('exit', 1, null);
+
+    await assert.rejects(startup, { message: 'Worker 1 exited with code 1 before it finished starting' });
+    assert.strictEqual(forked.length, 2);
+  });
+
+  it('starts once every worker has finished starting', async () => {
+    const { forked, startup } = spawn(2);
+
+    initiate(forked);
+
+    await startup;
+  });
+
+  it("doesn't replace a replacement that exits before it finished starting", () => {
     const logError = sinon.stub(Logging, 'logError');
     const { forked } = spawn(1);
-
+    initiate(forked);
     forked[0].emit('exit', 1, null);
 
-    assert.strictEqual(forked.length, 1);
-    assert.match(logError.firstCall.args[0], /before it finished starting/);
+    forked[1].emit('exit', 1, null);
+
+    assert.strictEqual(forked.length, 2);
+    assert.match(logError.lastCall.args[0], /Worker 0 exited with code 1 before it finished starting/);
+  });
+
+  it('keeps the id a worker gives when it finished starting', () => {
+    const { bootstrap, forked } = spawn(1);
+
+    forked[0].emit('message', { type: 'worker:initiated', payload: { id: '7' } });
+
+    assert.strictEqual(bootstrap.workers[0].processId, '7');
   });
 
   it('logs an error a worker emits', () => {
@@ -264,5 +327,66 @@ describe('bootstrap:worker exit', () => {
     forked[0].emit('error', new Error('Channel closed'));
 
     assert.match(logError.firstCall.args[0], /Channel closed/);
+  });
+});
+
+describe('bootstrap-lambda:worker types', () => {
+  // Delivers each message published to every handler subscribed to its channel, as Redis would
+  function createNrp() {
+    const handlers = new Map();
+    return {
+      on: async (channel, handler) => handlers.set(channel, [...(handlers.get(channel) ?? []), handler]),
+      emit: async (channel, message) => (handlers.get(channel) ?? []).forEach((handler) => handler(message)),
+    };
+  }
+
+  const lambdaConfig = { ...Config.lambda };
+  const restApp = Config.rest.app;
+  afterEach(() => {
+    Object.assign(Config.lambda, lambdaConfig);
+    Config.rest.app = restApp;
+  });
+
+  it('gives a replacement lambda worker the type of the one that exited', async () => {
+    sinon.stub(Logging, 'logError');
+    Object.assign(Config.lambda, { apiWorkers: '1', pathMutationWorkers: '1', cronWorkers: '0' });
+    Config.rest.app = 'primary';
+    sinon.stub(Model, 'initCoreModels').resolves();
+    sinon.stub(LambdaManager.prototype, 'init').resolves();
+
+    const nrp = createNrp();
+    const types = new Map();
+    await nrp.on('lambdaProcessMain:worker-type', (json) => {
+      const { id, type } = JSON.parse(json);
+      types.set(id, type);
+    });
+
+    // Each forked worker asks for its type over NRP, as a lambda worker does, then reports that it has started
+    const forked = [];
+    sinon.stub(cluster, 'fork').callsFake(() => {
+      const worker = createWorker();
+      const id = `${forked.length + 1}`;
+      forked.push(worker);
+      setImmediate(async () => {
+        await nrp.emit('lambdaProcessWorker:worker-initiated', id);
+        worker.emit('message', { type: 'worker:initiated', payload: { id } });
+      });
+      return worker;
+    });
+
+    const main = new BootstrapLambda();
+    main.__nrp = nrp;
+    main.__services.set('nrp', nrp);
+    main.workerProcesses = 2;
+    await main.__initMain();
+
+    assert.deepStrictEqual(Object.fromEntries(types), { 1: 'API_ENDPOINT', 2: 'PATH_MUTATION' });
+
+    forked[0].emit('exit', 1, null);
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.strictEqual(forked.length, 3);
+    assert.strictEqual(types.get('3'), 'API_ENDPOINT');
   });
 });

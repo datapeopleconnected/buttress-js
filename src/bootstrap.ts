@@ -31,14 +31,23 @@ import { getThrownErrorMessage } from './helpers/index.js';
 
 export type Services = Map<string, unknown>;
 
-interface WorkerHolder {
+export interface WorkerHolder {
   initiated: boolean;
   worker: Worker;
+  // The id the worker gave once it finished starting
+  processId?: string;
 }
 
 export interface LocalProcessMessage {
   type: string;
   payload: unknown;
+}
+
+/**
+ * The payload a worker sends with `worker:initiated`.
+ */
+export interface WorkerInitiatedMessage {
+  id: string;
 }
 
 export default class Bootstrap extends EventEmitter {
@@ -56,6 +65,7 @@ export default class Bootstrap extends EventEmitter {
   protected __shutdown: boolean = false;
 
   private _resolveWorkersInitialised?: (value?: unknown) => void;
+  private _rejectWorkersInitialised?: (err: Error) => void;
 
   protected __services: Services = new Map();
 
@@ -145,7 +155,7 @@ export default class Bootstrap extends EventEmitter {
       if (process.send)
         process.send({
           type: 'worker:initiated',
-          payload: null,
+          payload: { id: this.id } satisfies WorkerInitiatedMessage,
         } satisfies LocalProcessMessage);
 
       process.on('message', (message: LocalProcessMessage, handle: unknown) =>
@@ -170,7 +180,9 @@ export default class Bootstrap extends EventEmitter {
   }
   private async _handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
     if (message.type === 'worker:initiated') {
-      this.workers[idx].initiated = true;
+      const holder = this.workers[idx];
+      holder.initiated = true;
+      holder.processId = (message.payload as WorkerInitiatedMessage | null)?.id;
       this._checkWorkersInitiated();
     }
 
@@ -185,8 +197,8 @@ export default class Bootstrap extends EventEmitter {
   }
 
   /**
-   * Sends a worker a message, and the handle with it. A connection handed to a worker that has gone is closed, so the
-   * client isn't left waiting on it.
+   * Sends a worker a message, and the handle with it. A connection handed to a worker that has gone, or hasn't finished
+   * starting, is closed, so the client isn't left waiting on it.
    */
   async notifyWorker(idx: number, payload: LocalProcessMessage, handle?: net.Socket) {
     if (!this._sendToWorker(idx, payload, handle)) handle?.destroy();
@@ -203,7 +215,8 @@ export default class Bootstrap extends EventEmitter {
   }
 
   /**
-   * Skips a worker that has exited or is exiting, as sending to it fails. Gives whether the message was sent.
+   * Skips a worker that has exited or is exiting, as sending to it fails, and one that hasn't finished starting, as it
+   * isn't listening for messages yet. Gives whether the message was sent.
    */
   private _sendToWorker(idx: number, payload: LocalProcessMessage, handle?: net.Socket) {
     const holder = this.workers[idx];
@@ -213,6 +226,10 @@ export default class Bootstrap extends EventEmitter {
     }
     if (!holder.worker.isConnected()) {
       Logging.logWarn(`Attempted to notify Worker ${idx} of ${payload.type}, but it has disconnected`);
+      return false;
+    }
+    if (!holder.initiated) {
+      Logging.logWarn(`Attempted to notify Worker ${idx} of ${payload.type}, but it hasn't finished starting`);
       return false;
     }
 
@@ -232,15 +249,18 @@ export default class Bootstrap extends EventEmitter {
 
     Logging.logVerbose(`Spawning ${this.workerProcesses} Workers`);
 
+    // Settled by _checkWorkersInitiated once every worker has sent worker:initiated, or by _handleWorkerExit if one
+    // exits before it does
+    const initialised = new Promise((resolve, reject) => {
+      this._resolveWorkersInitialised = resolve;
+      this._rejectWorkersInitialised = reject;
+    });
+
     for (let x = 0; x < this.workerProcesses; x++) {
       this._forkWorker(x);
     }
 
-    return new Promise((resolve) => {
-      // Hand off the resolve function to the _checkWorkersInitiated function
-      // this will be checked and called when all workers have sent the initiated message
-      this._resolveWorkersInitialised = resolve;
-    });
+    return initialised;
   }
 
   private _forkWorker(idx: number) {
@@ -256,20 +276,37 @@ export default class Bootstrap extends EventEmitter {
 
   /**
    * Replaces a worker that exits while the process is running, so the process keeps serving with its full count. One
-   * that exits before it's finished starting isn't replaced, as its replacement would most likely fail the same way.
+   * that exits before it's finished starting isn't replaced, as its replacement would most likely fail the same way,
+   * and fails the start-up if the process is still starting.
    */
   private _handleWorkerExit(idx: number, worker: Worker, code: number | null, signal: string | null) {
-    if (this.__shutdown || this.workers[idx]?.worker !== worker) return;
+    const holder = this.workers[idx];
+    if (this.__shutdown || holder?.worker !== worker) return;
+
+    this.__onWorkerExit(idx, holder);
 
     const reason = signal ? `signal ${signal}` : `code ${code}`;
-    if (!this.workers[idx].initiated) {
-      Logging.logError(`Worker ${idx} exited with ${reason} before it finished starting, so it won't be replaced`);
+    if (!holder.initiated) {
+      const message = `Worker ${idx} exited with ${reason} before it finished starting`;
+      if (this._rejectWorkersInitialised) {
+        this._rejectWorkersInitialised(new Error(message));
+        delete this._resolveWorkersInitialised;
+        delete this._rejectWorkersInitialised;
+        return;
+      }
+
+      Logging.logError(`${message}, so it won't be replaced`);
       return;
     }
 
     Logging.logError(`Worker ${idx} exited with ${reason}, replacing it`);
     this._forkWorker(idx);
   }
+
+  /**
+   * Called when a worker exits while the process is running, before it's replaced, to give back anything it held.
+   */
+  protected __onWorkerExit(_idx: number, _holder: WorkerHolder) {}
 
   protected async __stopWorkers() {
     await Promise.all(
@@ -290,5 +327,6 @@ export default class Bootstrap extends EventEmitter {
     if (!this._resolveWorkersInitialised || this.workers.some((worker) => !worker.initiated)) return;
     this._resolveWorkersInitialised();
     delete this._resolveWorkersInitialised;
+    delete this._rejectWorkersInitialised;
   }
 }

@@ -20,8 +20,9 @@ import { Request } from 'express';
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Bootstrap from './bootstrap.js';
+import Bootstrap, { WorkerHolder } from './bootstrap.js';
 import Logging from './helpers/logging.js';
+import { getThrownErrorMessage } from './helpers/index.js';
 import Model from './model/index.js';
 import Routes from './routes/index.js';
 import DatastoreManager, { Datastore } from './datastore/index.js';
@@ -36,6 +37,13 @@ export interface WorkerTypeMessage {
   type: string;
 }
 
+/**
+ * The message published on `lambdaProcessMain:worker-exited`.
+ */
+export interface WorkerExitedMessage {
+  id: string;
+}
+
 morgan.token('id', (req: Request) => req.context.id);
 export default class BootstrapLambda extends Bootstrap {
   routes?: Routes;
@@ -46,6 +54,8 @@ export default class BootstrapLambda extends Bootstrap {
   __apiWorkers: number;
   __pathMutationWorkers: number;
   __cronWorkers: number;
+  // The type handed to each worker, by the id it asked with, so a worker that exits can give its type back
+  private _lambdaWorkerTypes = new Map<string, LambdaType>();
 
   __lambdaManagerProcess?: LambdaManager;
   __lambdaWorkerProcess?: LambdaRunner;
@@ -108,9 +118,14 @@ export default class BootstrapLambda extends Bootstrap {
       Logging.logVerbose(`Primary Main LAMBDA`);
       await Model.initCoreModels();
 
-      this.__nrp?.on('lambdaProcessWorker:worker-initiated', (id) => {
-        const type = this.__getLambdaWorkerType();
+      await this.__nrp?.on('lambdaProcessWorker:worker-initiated', (id) => {
+        const type = this.__getLambdaWorkerType(id);
         this.__nrp?.emit('lambdaProcessMain:worker-type', JSON.stringify({ id, type } satisfies WorkerTypeMessage));
+      });
+      // The worker that replaces one that exited asks for a type too, so it gets the one given back
+      await this.__nrp?.on('lambdaProcessMain:worker-exited', (json) => {
+        const { id } = JSON.parse(json) as WorkerExitedMessage;
+        this.__releaseLambdaWorkerType(id);
       });
 
       this.__lambdaManagerProcess = new LambdaManager(this.__services);
@@ -146,7 +161,20 @@ export default class BootstrapLambda extends Bootstrap {
     await this.__lambdaWorkerProcess.init();
   }
 
-  __getLambdaWorkerType() {
+  /**
+   * Gives a worker that exited back its type, which is kept by the primary main, from this main or another's.
+   */
+  protected override __onWorkerExit(_idx: number, holder: WorkerHolder) {
+    if (!holder.processId) return;
+
+    this.__nrp
+      ?.emit('lambdaProcessMain:worker-exited', JSON.stringify({ id: holder.processId } satisfies WorkerExitedMessage))
+      .catch((err: unknown) =>
+        Logging.logError(`Failed to give back worker ${holder.processId}'s type: ${getThrownErrorMessage(err)}`),
+      );
+  }
+
+  __getLambdaWorkerType(id: string) {
     const APIWorkers = Number(Config.lambda.apiWorkers);
     const pathMutationWorkers = Number(Config.lambda.pathMutationWorkers);
     const cronWorkers = Number(Config.lambda.cronWorkers);
@@ -163,6 +191,16 @@ export default class BootstrapLambda extends Bootstrap {
       this.__cronWorkers++;
     }
 
+    this._lambdaWorkerTypes.set(id, type);
     return type;
+  }
+
+  __releaseLambdaWorkerType(id: string) {
+    const type = this._lambdaWorkerTypes.get(id);
+    this._lambdaWorkerTypes.delete(id);
+
+    if (type === LambdaType.API_ENDPOINT) this.__apiWorkers--;
+    else if (type === LambdaType.PATH_MUTATION) this.__pathMutationWorkers--;
+    else if (type === LambdaType.CRON) this.__cronWorkers--;
   }
 }
