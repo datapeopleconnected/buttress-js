@@ -36,3 +36,29 @@ export const redactUrl = (url: unknown) => {
     return '[url]';
   }
 };
+
+// Property names that hold credentials or secrets
+const SECRET_KEY = /^(password|token|tokenSecret|refreshToken|storeData|connectionString|secret|clientSecret|apiKey)$/i;
+const REDACTED = '[redacted]';
+
+const isSecretPath = (path: unknown) =>
+  typeof path === 'string' && path.split('.').some((part) => SECRET_KEY.test(part));
+
+/**
+ * A copy of a request body with the values of credential and secret properties replaced, at any depth, as are the
+ * values of updates to paths through them.
+ */
+export const redactSecrets = (body: unknown): unknown => {
+  if (Array.isArray(body)) return body.map((item) => redactSecrets(item));
+  if (typeof body !== 'object' || body === null) return body;
+
+  const record = body as Record<string, unknown>;
+  // An update by path
+  if (typeof record.path === 'string' && 'value' in record && isSecretPath(record.path)) {
+    return { ...record, value: REDACTED };
+  }
+
+  return Object.fromEntries(
+    Object.entries(record).map(([key, value]) => [key, SECRET_KEY.test(key) ? REDACTED : redactSecrets(value)]),
+  );
+};

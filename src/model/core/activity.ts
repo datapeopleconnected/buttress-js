@@ -17,6 +17,7 @@ import { Request, Response } from 'express';
 
 import { Schema, encode } from '../../helpers/schema.js';
 import * as Shared from '../shared.js';
+import { redactSecrets } from '../../helpers/redact.js';
 
 import StandardModel from '../type/standard.js';
 import { Services } from '../../bootstrap.js';
@@ -190,7 +191,8 @@ class ActivitySchemaModel extends StandardModel<Activity> {
       authType: body.auth,
       params: body.req.params,
       query: JSON.stringify(q),
-      body: encode(body.req.body), // HACK - Due to schema update results.
+      // Without its credentials and secrets, which the activity would keep indefinitely
+      body: encode(redactSecrets(body.req.body)), // HACK - Due to schema update results.
       timestamp: new Date(),
       _tokenId: body.req.context.token ? body.req.context.token.id : null,
       _userId: body.req.context.authUser ? body.req.context.authUser.id : null,
