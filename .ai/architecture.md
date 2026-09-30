@@ -125,6 +125,10 @@ Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" â€
   record's). Which DSA reaches a source is learnt from reads by `SourceDataSharingRouting`
   ([src/services/source-ds-routing.ts](../src/services/source-ds-routing.ts)) and kept in Redis
   (`sds-route:<appId>-<sourceId>` under `Config.redis.scope`), so every process and the next start share it.
+  A partner that can't be reached when the model is built is left out of its sources, and tried again on a new
+  connection (1 s doubling to 60 s) until it is. Meanwhile reads give the rest, a write to its records is a 503, and
+  `GET app/schema` gives the collection without the partner's properties. The consumer is a live proxy: it
+  stores none of a partner's data.
 - **Realtime**: the primary Socket instance's (`BUTTRESS_SOCKET_APP=primary`) main process opens an
   outbound `socket.io-client` connection per active DSA (`__primaryCreateDataShareConnection`), so only
   that process has them. It also listens for `spr:activity` and forwards each activity of an app with
