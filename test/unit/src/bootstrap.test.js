@@ -26,6 +26,7 @@ import BootstrapLambda from '../../../dist/bootstrap-lambda.js';
 import Logging from '../../../dist/helpers/logging.js';
 import Model from '../../../dist/model/index.js';
 import LambdaManager from '../../../dist/lambda/lambda-manager.js';
+import LambdaRunner from '../../../dist/lambda/lambda-runner.js';
 
 const Config = createConfig();
 
@@ -388,5 +389,35 @@ describe('bootstrap-lambda:worker types', () => {
 
     assert.strictEqual(forked.length, 3);
     assert.strictEqual(types.get('3'), 'API_ENDPOINT');
+  });
+
+  it('has a worker listen for its type before it asks for one', async () => {
+    sinon.stub(Model, 'initCoreModels').resolves();
+    sinon.stub(LambdaRunner.prototype, 'init').resolves();
+
+    // Subscribing takes a round trip, as it does with Redis, and the primary main answers at once
+    const handlers = new Map();
+    const nrp = {
+      on: async (channel, handler) => {
+        await new Promise((resolve) => setImmediate(resolve));
+        handlers.set(channel, [...(handlers.get(channel) ?? []), handler]);
+      },
+      emit: async (channel, message) => (handlers.get(channel) ?? []).forEach((handler) => handler(message)),
+    };
+    handlers.set('lambdaProcessWorker:worker-initiated', [
+      (id) => nrp.emit('lambdaProcessMain:worker-type', JSON.stringify({ id, type: 'CRON' })),
+    ]);
+
+    const worker = new BootstrapLambda();
+    worker.id = '1';
+    worker.workerProcesses = 1;
+    worker.__nrp = nrp;
+    worker.__services.set('nrp', nrp);
+
+    const started = worker.__initWorker().then(() => 'started');
+    const waiting = new Promise((resolve) => setTimeout(() => resolve('still waiting for a type'), 100));
+
+    assert.strictEqual(await Promise.race([started, waiting]), 'started');
+    assert.strictEqual(worker.__lambdaWorkerProcess.lambdaType, 'CRON');
   });
 });

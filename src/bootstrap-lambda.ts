@@ -143,17 +143,18 @@ export default class BootstrapLambda extends Bootstrap {
     let type = LambdaType.ALL;
 
     if (this.workerProcesses > 0) {
-      const typeAssignment = new Promise((resolve) => {
-        this.__nrp?.on('lambdaProcessMain:worker-type', (json: string) => {
-          const data = JSON.parse(json) as WorkerTypeMessage;
+      let resolveType: (type: LambdaType) => void;
+      const typeAssignment = new Promise<LambdaType>((resolve) => (resolveType = resolve));
+      // Listen before asking, as the primary main answers straight away
+      await this.__nrp?.on('lambdaProcessMain:worker-type', (json: string) => {
+        const data = JSON.parse(json) as WorkerTypeMessage;
 
-          if (data.id !== this.id) return;
-          resolve(data.type);
-        });
+        if (data.id !== this.id) return;
+        resolveType(data.type as LambdaType);
       });
 
       this.__nrp?.emit('lambdaProcessWorker:worker-initiated', this.id);
-      type = (await typeAssignment) as LambdaType;
+      type = await typeAssignment;
       Logging.logDebug(`Worker [${this.id}] assigned type: ${type}`);
     }
 
