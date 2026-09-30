@@ -100,4 +100,28 @@ describe('services/SourceDataSharingRouting', () => {
 
     assert.strictEqual(redis.calls, calls);
   });
+
+  it('keeps a route it was told about just before it stopped', async () => {
+    const routing = createRouting();
+    routing.inform('app-b', 'app-a', 'agreement-1');
+    routing.clean();
+
+    assert.strictEqual(await createRouting().get('app-b', 'app-a'), 'agreement-1');
+  });
+
+  it('stores a route again once storing it has failed', async () => {
+    const routing = createRouting();
+    const set = redis.set;
+    redis.set = async () => {
+      throw new Error('Redis is down');
+    };
+    routing.inform('app-b', 'app-a', 'agreement-1');
+    await clock.tickAsync(1000);
+    redis.set = set;
+
+    routing.inform('app-b', 'app-a', 'agreement-1');
+    await clock.tickAsync(1000);
+
+    assert.strictEqual(await createRouting().get('app-b', 'app-a'), 'agreement-1');
+  });
 });

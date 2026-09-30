@@ -19,7 +19,7 @@ import { RedisClientType } from '@redis/client';
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import { redisPrefix } from '../helpers/index.js';
+import { getThrownErrorMessage, redisPrefix } from '../helpers/index.js';
 import Logging from '../helpers/logging.js';
 
 /**
@@ -31,13 +31,7 @@ export class SourceDataSharingRouting {
   // The routes this process knows, by key
   private _routes = new Map<string, string>();
 
-  // Routes this process has learnt and not yet stored in Redis
-  private _unstored = new Map<string, string>();
-
   private _redisClient: RedisClientType;
-
-  private _storeTimeout?: NodeJS.Timeout;
-  private _storeTimeoutInterval = 100;
 
   // TODO: This needs reworking, we don't need to take in the sourceId from each chunk of data.
   //       we can just get the information when a data sharing agreement is setup and store it
@@ -65,6 +59,7 @@ export class SourceDataSharingRouting {
     return stored;
   }
 
+  // A route that's new to this process is stored straight away, so one learnt just before the process stops is kept
   inform(appId: string, sourceId: string, dataSharingId: string) {
     if (!appId || !sourceId || !dataSharingId) return;
 
@@ -72,30 +67,14 @@ export class SourceDataSharingRouting {
     if (this._routes.get(key) === dataSharingId) return;
 
     this._routes.set(key, dataSharingId);
-    this._unstored.set(key, dataSharingId);
-    this._setStoreTimeout();
+    this._redisClient.set(key, dataSharingId).catch((err: unknown) => {
+      // Forgotten, so the next read that names the source stores it again
+      if (this._routes.get(key) === dataSharingId) this._routes.delete(key);
+      Logging.logError(`Unable to store data sharing route ${key}: ${getThrownErrorMessage(err)}`);
+    });
   }
 
   clean() {
-    if (this._storeTimeout) clearTimeout(this._storeTimeout);
-    this._storeTimeout = undefined;
     this._routes.clear();
-    this._unstored.clear();
-  }
-
-  private async _storeRoutes() {
-    this._storeTimeout = undefined;
-
-    const routes = [...this._unstored.entries()];
-    this._unstored.clear();
-    await Promise.all(routes.map(([key, dataSharingId]) => this._redisClient.set(key, dataSharingId)));
-  }
-
-  private _setStoreTimeout() {
-    if (this._storeTimeout) return;
-    this._storeTimeout = setTimeout(
-      () => this._storeRoutes().catch((err: Error) => Logging.logError(`Unable to store data sharing routes: ${err}`)),
-      this._storeTimeoutInterval,
-    );
   }
 }
