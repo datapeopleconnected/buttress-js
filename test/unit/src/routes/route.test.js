@@ -129,8 +129,12 @@ describe('routes/Route:_authenticate', () => {
     await assert.rejects(
       () => route._authenticate(req, createRes()),
       (err) => {
-        assert.strictEqual(err.code, 400);
-        assert.strictEqual(err.message, 'apiPath_not_supported: requests act on the app of the token (super-app)');
+        assert.strictEqual(err.status, 400);
+        assert.deepStrictEqual(err.toBody(), {
+          code: 'apiPath_not_supported',
+          message: 'Requests act on the app of the token (super-app)',
+          details: { apiPath: 'super-app' },
+        });
         return true;
       },
     );
@@ -144,7 +148,7 @@ describe('routes/Route:_authenticate', () => {
 
       await assert.rejects(
         () => route._authenticate(req, createRes()),
-        (err) => err.code === 400 && err.message.startsWith('apiPath_not_supported'),
+        (err) => err.status === 400 && err.code === 'apiPath_not_supported',
       );
     }
   });
@@ -164,14 +168,14 @@ describe('routes/Route:_authenticate', () => {
     await assert.rejects(
       () => route._authenticate(req, createRes()),
       (err) => {
-        assert.strictEqual(err.code, 401);
-        assert.strictEqual(err.message, 'invalid_token');
+        assert.strictEqual(err.status, 401);
+        assert.strictEqual(err.code, 'missing_token');
         return true;
       },
     );
   });
 
-  it('rejects with 401 when the token type has insufficient authority', async () => {
+  it('rejects with 403 when the token type has insufficient authority', async () => {
     const route = createRoute();
     route.authType = Route.Constants.Type.SYSTEM;
     const req = createReq({ token: { type: 'user' } });
@@ -179,8 +183,8 @@ describe('routes/Route:_authenticate', () => {
     await assert.rejects(
       () => route._authenticate(req, createRes()),
       (err) => {
-        assert.strictEqual(err.code, 401);
-        assert.strictEqual(err.message, 'insufficient_authority');
+        assert.strictEqual(err.status, 403);
+        assert.strictEqual(err.code, 'insufficient_authority');
         return true;
       },
     );
@@ -209,7 +213,7 @@ describe('routes/Route:_authenticate', () => {
       const req = createReq({ token: { type }, authApp: { id: 'app-1' } });
       await assert.rejects(
         () => route._authenticate(req, createRes()),
-        (err) => err.code === 401 && err.message === 'insufficient_authority',
+        (err) => err.status === 403 && err.code === 'insufficient_authority',
         type,
       );
     }
@@ -849,7 +853,11 @@ describe('routes/Route:exec', () => {
     route._exec = undefined;
     const authenticate = sinon.stub(route, '_authenticate');
 
-    await assert.rejects(() => route.exec(createReq(), createRes()), /no exec function defined/);
+    await assert.rejects(() => route.exec(createReq(), createRes()), (err) => {
+      assert.strictEqual(err.status, 500);
+      assert.match(err.cause, /no exec function defined/);
+      return true;
+    });
     assert.strictEqual(authenticate.called, false);
   });
 
@@ -1021,10 +1029,12 @@ describe('routes/Route:scoped', () => {
     assert.strictEqual(scoped.tenant, null);
   });
 
-  it('refuses a caller with no app', () => {
+  // Authentication refuses a token without an app, so a route reached without one is a fault
+  it('refuses a caller with no app as an internal error', () => {
     assert.throws(() => createRoute().scoped(createReq({ token: { type: 'app' }, authApp: null }), PolicySchemaModel), {
-      code: 400,
-      message: 'no_authenticated_app',
+      status: 500,
+      code: 'internal_error',
+      cause: 'no_authenticated_app',
     });
   });
 

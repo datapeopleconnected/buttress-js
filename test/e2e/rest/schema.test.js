@@ -124,9 +124,9 @@ describe('Schema', async () => {
 				const res = await fetch(`${ENDPOINT.REST}/api/v1/app/schema${query}`, {
 					headers: {Authorization: `Bearer ${testEnv.apps.app1.token}`},
 				});
-				return [res.status, (await res.json()).message];
+				return [res.status, (await res.json()).code];
 			};
-			const refused = `apiPath_not_supported: requests act on the app of the token (${testEnv.apps.app1.apiPath})`;
+			const refused = 'apiPath_not_supported';
 
 			assert.deepStrictEqual(await status('?apiPath=another-app'), [400, refused]);
 			assert.deepStrictEqual(await status(`?apiPath=${testEnv.apps.app1.apiPath}&apiPath=another-app`), [400, refused]);
@@ -384,7 +384,7 @@ describe('Schema', async () => {
 			// MongoDB only rejects a non-array $in once the cursor runs, after the route has its stream.
 			await assert.rejects(() => searchNames({name: {$in: 'Rex-Case-Car'}}), (err) => {
 				assert.strictEqual(err.code, 500);
-				assert.strictEqual(err.message, 'Internal Server Error');
+				assert.deepStrictEqual(err.body, { code: 'internal_error', message: 'Internal server error' });
 				return true;
 			});
 

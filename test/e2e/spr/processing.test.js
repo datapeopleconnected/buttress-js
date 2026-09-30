@@ -812,7 +812,7 @@ describe('Processing', async () => {
 			const read = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`, {
 				headers: { Authorization: `Bearer ${user.tokens[0].value}` },
 			});
-			assert.strictEqual(read.status, 401);
+			assert.strictEqual(read.status, 403);
 
 			const received = await collectPostedCarActivity(ref, user.id, testEnv.apps.app1);
 

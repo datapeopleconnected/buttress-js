@@ -74,23 +74,40 @@ describe('routes/RoutesMiddleware:_createContext', () => {
 });
 
 describe('routes/RoutesMiddleware:logErrors', () => {
-  it('sends the error message and code for a RequestError', () => {
+  it('sends an ApiError with its status and body, without logging it as an error', () => {
     sinon.stub(Logging, 'logError');
     const middleware = createMiddleware();
     const req = createReq();
     const res = createRes();
     const next = sinon.spy();
-    const err = new Helpers.RequestError(400, 'invalid_input');
+    const err = Helpers.entityNotFound('policy', '6AB00000000000000000ABCD');
 
     middleware.logErrors(err, req, res, next);
 
-    assert(res.status.calledWith(400));
-    assert(res.json.calledWith({ statusMessage: 'invalid_input', message: 'invalid_input' }));
+    assert(res.status.calledWith(404));
+    assert.deepStrictEqual(res.json.firstCall.args[0], {
+      code: 'not_found',
+      message: 'No policy was found with that id',
+      details: { schema: 'policy', id: '6AB00000000000000000ABCD' },
+    });
     assert(next.notCalled);
     assert(Logging.logError.notCalled);
   });
 
-  it('logs and sends a generic JSON body for a non-RequestError, without leaking its message', () => {
+  it('sends a RequestError with its message as its code', () => {
+    sinon.stub(Logging, 'logError');
+    const middleware = createMiddleware();
+    const res = createRes();
+    const next = sinon.spy();
+
+    middleware.logErrors(new Helpers.RequestError(400, 'invalid_input'), createReq(), res, next);
+
+    assert(res.status.calledWith(400));
+    assert.deepStrictEqual(res.json.firstCall.args[0], { code: 'invalid_input', message: 'invalid_input' });
+    assert(next.notCalled);
+  });
+
+  it('logs and sends a generic JSON body for any other error, without leaking its message', () => {
     sinon.stub(Logging, 'logError');
     const middleware = createMiddleware();
     const req = createReq();
@@ -104,10 +121,21 @@ describe('routes/RoutesMiddleware:logErrors', () => {
     assert(res.status.calledWith(500));
     assert(res.json.calledOnce);
     const body = res.json.firstCall.args[0];
-    assert.strictEqual(body.message, 'Internal Server Error');
-    assert.strictEqual(body.statusMessage, 'Internal Server Error');
+    assert.deepStrictEqual(body, { code: 'internal_error', message: 'Internal server error' });
     assert(!JSON.stringify(body).includes('ECONNREFUSED'));
     assert(next.notCalled);
+  });
+
+  it('logs the reason of an internal ApiError and sends only the generic body', () => {
+    sinon.stub(Logging, 'logError');
+    const middleware = createMiddleware();
+    const res = createRes();
+
+    middleware.logErrors(Helpers.internal('no_authenticated_app'), createReq(), res, sinon.spy());
+
+    assert(Logging.logError.calledWith('no_authenticated_app', 'req-1'));
+    assert(res.status.calledWith(500));
+    assert.deepStrictEqual(res.json.firstCall.args[0], { code: 'internal_error', message: 'Internal server error' });
   });
 
   it('passes the error on without sending one when the response has already started', () => {
@@ -222,11 +250,20 @@ describe('routes/RoutesMiddleware:_configCrossDomain', () => {
     assert.ok(next.calledOnceWithExactly());
   });
 
-  it('refuses a token that holds a null domain with a 403, like any other domain it does not match', () => {
+  // The error handler answers it
+  const assertRefused = (next, status, code) => {
+    assert.ok(next.calledOnce);
+    const [err] = next.firstCall.args;
+    assert.ok(err instanceof Helpers.ApiError, `passed on ${err}`);
+    assert.strictEqual(err.status, status);
+    assert.strictEqual(err.code, code);
+  };
+
+  it('refuses a token that holds a null domain with 403 origin_not_allowed, like any other domain it does not match', () => {
     const { res, next } = run([null], 'https://app.example.com');
 
-    assert.ok(res.sendStatus.calledOnceWith(403));
-    assert.strictEqual(next.called, false);
+    assertRefused(next, 403, 'origin_not_allowed');
+    assert.ok(res.sendStatus.notCalled);
   });
 
   it('ignores the domains that are not strings and matches the rest', () => {
@@ -236,8 +273,20 @@ describe('routes/RoutesMiddleware:_configCrossDomain', () => {
   });
 
   it('refuses a token whose domains are not a list', () => {
-    const { res } = run(null, 'https://app.example.com');
+    const { next } = run(null, 'https://app.example.com');
 
-    assert.ok(res.sendStatus.calledOnceWith(403));
+    assertRefused(next, 403, 'origin_not_allowed');
+  });
+
+  it('refuses a request with no token with 401 missing_token', () => {
+    sinon.stub(Logging, 'logError');
+    const req = { method: 'GET', header: () => undefined, context: { id: 'req-1', timings: {}, token: null } };
+    const res = { header: sinon.stub(), status: sinon.stub(), json: sinon.stub() };
+    const next = sinon.spy();
+
+    createMiddleware()._configCrossDomain(req, res, next);
+
+    assertRefused(next, 401, 'missing_token');
+    assert.ok(res.status.notCalled);
   });
 });

@@ -352,7 +352,7 @@ describe('routes/Routes:_handleEarlyError', () => {
       const res = await post(body);
 
       assert.strictEqual(res.status, 400);
-      assert.deepStrictEqual(await res.json(), { statusMessage: 'invalid_body', message: 'invalid_body' });
+      assert.deepStrictEqual(await res.json(), { code: 'invalid_body', message: 'The request body could not be parsed' });
     });
   }
 
@@ -360,14 +360,14 @@ describe('routes/Routes:_handleEarlyError', () => {
     const res = await post(JSON.stringify({ a: 'x'.repeat(2048) }));
 
     assert.strictEqual(res.status, 413);
-    assert.strictEqual((await res.json()).message, 'body_too_large');
+    assert.strictEqual((await res.json()).code, 'body_too_large');
   });
 
   it('answers 415 unsupported_body_encoding for an unknown charset', async () => {
     const res = await post('{}', { 'Content-Type': 'application/json; charset=klingon' });
 
     assert.strictEqual(res.status, 415);
-    assert.strictEqual((await res.json()).message, 'unsupported_body_encoding');
+    assert.strictEqual((await res.json()).code, 'unsupported_body_encoding');
   });
 
   it('passes a valid body through to the route', async () => {

@@ -128,21 +128,9 @@ class Routes {
    * request carries on, as before. The body parsers' errors skip the middleware that creates the context.
    */
   _handleEarlyError(err: unknown, req: Request, res: Response, next: NextFunction) {
-    const parserError = err as { type?: unknown; status?: unknown; expose?: unknown } | undefined;
-    if (
-      typeof parserError?.type === 'string' &&
-      parserError.expose === true &&
-      typeof parserError.status === 'number' &&
-      parserError.status >= 400 &&
-      parserError.status < 500
-    ) {
-      const message =
-        parserError.status === 413
-          ? 'body_too_large'
-          : parserError.status === 415
-            ? 'unsupported_body_encoding'
-            : 'invalid_body';
-      res.status(parserError.status).json({ statusMessage: message, message });
+    const parserError = Helpers.Errors.fromBodyParserError(err);
+    if (parserError) {
+      res.status(parserError.status).json(parserError.toBody());
       return;
     }
 

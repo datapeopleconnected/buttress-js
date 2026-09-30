@@ -178,8 +178,11 @@ class Projection {
 
     if (invalidPaths.length > 0) {
       throw new PolicyError(
-        401,
+        403,
+        'property_access_denied',
         `Can not access/edit properties (${invalidPaths.join(', ')}) of ${schema.name} without privileged access`,
+        undefined,
+        { schema: schema.name, paths: invalidPaths },
       );
     }
   }

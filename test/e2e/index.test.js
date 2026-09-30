@@ -26,6 +26,7 @@ import './rest/schema.test.js';
 import './rest/data-sharing.test.js';
 import './rest/policy.test.js';
 import './rest/delete-all.test.js';
+import './rest/error-contract.test.js';
 
 import './spr/processing.test.js';
 import './spr/cache.test.js';

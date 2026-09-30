@@ -383,8 +383,8 @@ describe('Core route tenant scoping', async () => {
 			it(`Should refuse ${name}`, async () => {
 				await assert.rejects(asApp1(request()), (err) => {
 					assert.ok(err instanceof BJSReqError, err);
-					assert.strictEqual(err.code, 401, `answered ${err.code} ${err.message}`);
-					assert.strictEqual(err.message, 'insufficient_authority');
+					assert.strictEqual(err.code, 403, `answered ${err.code} ${err.message}`);
+					assert.strictEqual(err.body.code, 'insufficient_authority');
 					return true;
 				});
 			});
@@ -405,14 +405,14 @@ describe('Core route tenant scoping', async () => {
 		it("Should refuse another app's token", async () => {
 			const res = await call(testEnv.apps.app1.token);
 
-			assert.strictEqual(res.status, 401);
-			assert.strictEqual((await res.json()).message, 'insufficient_authority');
+			assert.strictEqual(res.status, 403);
+			assert.strictEqual((await res.json()).code, 'insufficient_authority');
 		});
 
 		it("Should refuse another app's user token", async () => {
 			const res = await call(testEnv.users.app1.tokens[0].value);
 
-			assert.strictEqual(res.status, 401);
+			assert.strictEqual(res.status, 403);
 		});
 
 		it('Should refuse a request with no token', async () => {
@@ -463,7 +463,7 @@ describe('Core route tenant scoping', async () => {
 			await assert.rejects(bjsReq({
 				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note`,
 				method: 'GET',
-			}, testEnv.users.app2Admin.tokens[0].value), (err) => err instanceof BJSReqError && err.code === 401);
+			}, testEnv.users.app2Admin.tokens[0].value), (err) => err instanceof BJSReqError && err.code === 403);
 		});
 	});
 	describe('Policy projections', () => {
@@ -536,7 +536,7 @@ describe('Core route tenant scoping', async () => {
 				body: JSON.stringify([{ path: 'selection', value: { role: { '@eq': 'NOBODY' } } }]),
 			}, testEnv.apps.app2.token);
 
-			await assert.rejects(readNotes(token), (err) => err instanceof BJSReqError && err.code === 401);
+			await assert.rejects(readNotes(token), (err) => err instanceof BJSReqError && err.code === 403);
 		});
 	});
 	describe('Writes limited by a policy projection', () => {
@@ -572,7 +572,7 @@ describe('Core route tenant scoping', async () => {
 				method: 'POST',
 				headers: json,
 				body: JSON.stringify([{ id: owned.note.id, body: [{ path: 'secret', value: 'by writer' }] }]),
-			}, token), (err) => err instanceof BJSReqError && err.code === 401);
+			}, token), (err) => err instanceof BJSReqError && err.code === 403);
 
 			const [note] = await bjsReq({ url: notes(), method: 'SEARCH', headers: json, body: JSON.stringify({ query: { id: owned.note.id } }) });
 			assert.strictEqual(note.secret, 'app2 secret');
@@ -721,7 +721,7 @@ describe('Core route tenant scoping', async () => {
 
 		it('Should grant nothing through a policy whose limit has passed', async () => {
 			await assert.rejects(readNotes(testEnv.users.app2Expired.tokens[0].value),
-				(err) => err instanceof BJSReqError && err.code === 401);
+				(err) => err instanceof BJSReqError && err.code === 403);
 		});
 
 		it('Should keep granting through a policy with a limit to come, once it comes from the cache', async () => {

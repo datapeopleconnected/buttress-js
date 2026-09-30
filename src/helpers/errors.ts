@@ -14,6 +14,126 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+export type ApiErrorDetails = Record<string, unknown>;
+
+// What the API answers an error with
+export interface ApiErrorBody {
+  code: string;
+  message: string;
+  details?: ApiErrorDetails;
+}
+
+// `invalid_id` reads as "Invalid id"
+const describeCode = (code: string) => `${code.charAt(0).toUpperCase()}${code.slice(1).replace(/_/g, ' ')}`;
+
+/**
+ * An error the API answers with its own status and body: a snake_case `code` for clients to match on, a `message` for
+ * people, and `details` naming what it's about where that helps. Anything else thrown is answered as a 500
+ * `internal_error`, as its message may carry internal details. A 500's reason is kept as its `cause`, for the log.
+ */
+export class ApiError extends Error {
+  status: number;
+  code: string;
+  details?: ApiErrorDetails;
+
+  constructor(status: number, code: string, message?: string, details?: ApiErrorDetails, cause?: unknown) {
+    super(message ?? describeCode(code), cause === undefined ? undefined : { cause });
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    if (details !== undefined) this.details = details;
+  }
+
+  toBody(): ApiErrorBody {
+    return this.details === undefined
+      ? { code: this.code, message: this.message }
+      : { code: this.code, message: this.message, details: this.details };
+  }
+}
+
+export const badRequest = (code: string, message?: string, details?: ApiErrorDetails) =>
+  new ApiError(400, code, message, details);
+
+// No token, or one that isn't known, has been revoked, or whose app or user has gone
+export const unauthorised = (code: string, message?: string, details?: ApiErrorDetails) =>
+  new ApiError(401, code, message, details);
+
+// A valid token that isn't allowed to do this
+export const forbidden = (code: string, message?: string, details?: ApiErrorDetails) =>
+  new ApiError(403, code, message, details);
+
+export const notFound = (code: string, message?: string, details?: ApiErrorDetails) =>
+  new ApiError(404, code, message, details);
+
+/**
+ * A well-formed id that names nothing the caller can reach: nothing at all, or another app's entity, which are
+ * answered alike.
+ */
+export const entityNotFound = (schema: string, id?: unknown) =>
+  new ApiError(
+    404,
+    'not_found',
+    `No ${schema} was found with that id`,
+    id === undefined ? { schema } : { schema, id: String(id) },
+  );
+
+export const methodNotAllowed = (code: string, message?: string, details?: ApiErrorDetails) =>
+  new ApiError(405, code, message, details);
+
+export const conflict = (code: string, message?: string, details?: ApiErrorDetails) =>
+  new ApiError(409, code, message, details);
+
+export const unavailable = (code: string, message?: string, details?: ApiErrorDetails) =>
+  new ApiError(503, code, message, details);
+
+/**
+ * Something that shouldn't happen went wrong on the server. The caller is told no more than that; `reason` goes to
+ * the log.
+ */
+export const internal = (reason: string) =>
+  new ApiError(500, 'internal_error', 'Internal server error', undefined, reason);
+
+// A body parser's refusal of a body that's malformed, too large or in an unknown encoding
+const bodyParserError = (err: unknown) => {
+  const parserError = err as { type?: unknown; status?: unknown; expose?: unknown } | undefined;
+  if (
+    typeof parserError?.type !== 'string' ||
+    parserError.expose !== true ||
+    typeof parserError.status !== 'number' ||
+    parserError.status < 400 ||
+    parserError.status >= 500
+  ) {
+    return null;
+  }
+
+  if (parserError.status === 413) return new ApiError(413, 'body_too_large', 'The request body is too large');
+  if (parserError.status === 415) {
+    return new ApiError(415, 'unsupported_body_encoding', 'The request body is in an unsupported encoding');
+  }
+  return new ApiError(parserError.status, 'invalid_body', 'The request body could not be parsed');
+};
+
+/**
+ * The ApiError to answer `err` with: itself, a body parser's refusal, or, for anything else, a 500 `internal_error`
+ * with `err` as its cause.
+ */
+export function toApiError(err: unknown): ApiError {
+  if (err instanceof ApiError) return err;
+  if (err instanceof RequestError) {
+    return new ApiError(err.code, /^[a-z][a-z0-9_]*$/.test(err.message) ? err.message : 'error', err.message);
+  }
+  return bodyParserError(err) ?? new ApiError(500, 'internal_error', 'Internal server error', undefined, err);
+}
+
+/** A body parser's refusal as an ApiError, or null for any other error. */
+export function fromBodyParserError(err: unknown): ApiError | null {
+  return bodyParserError(err);
+}
+
+/**
+ * @deprecated Throw an ApiError, from one of the factories above. Kept while the routes move over; `code` is the HTTP
+ * status. It's answered with its message as its code when that's one already (`invalid_id`), or as `error`.
+ */
 export class RequestError extends Error {
   code: number;
   constructor(code: number, message: string) {
@@ -138,6 +258,18 @@ export class UpstreamApiError extends Error {
 }
 
 export default {
+  ApiError,
+  badRequest,
+  unauthorised,
+  forbidden,
+  notFound,
+  entityNotFound,
+  methodNotAllowed,
+  conflict,
+  unavailable,
+  internal,
+  toApiError,
+  fromBodyParserError,
   RequestError,
   SchemaNotFound,
   SchemaInvalid,

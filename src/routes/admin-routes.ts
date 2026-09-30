@@ -54,6 +54,10 @@ const bearerToken = (req: Request) => {
   return token === '' ? null : token;
 };
 
+const tokenInURL = () => Helpers.Errors.badRequest('token_in_url_not_supported', 'A token in the URL is not supported');
+const missingToken = () => Helpers.Errors.unauthorised('missing_token', 'A token is required');
+const invalidToken = () => Helpers.Errors.unauthorised('invalid_token', 'The token is not valid');
+
 class AdminRoutes {
   _routes: string[];
 
@@ -73,7 +77,7 @@ class AdminRoutes {
       });
       if (!superToken) {
         Logging.logError('Buttress admin check can not find super token');
-        return res.status(404).send({ message: 'admin_app_not_found' });
+        throw Helpers.Errors.notFound('admin_app_not_found', 'The admin app was not found');
       }
 
       const superApp = await Model.getCoreModel(AppSchemaModel).findOne({
@@ -82,7 +86,7 @@ class AdminRoutes {
 
       if (!superApp) {
         Logging.logError('Buttress admin check can not find super app');
-        return res.status(404).send({ message: 'admin_app_not_found' });
+        throw Helpers.Errors.notFound('admin_app_not_found', 'The admin app was not found');
       }
 
       res.status(200).send({
@@ -93,16 +97,13 @@ class AdminRoutes {
     });
 
     // A token in a URL ends up in access logs and browser history, so it's refused rather than looked up
-    app.get('/api/v1/admin/activate/:superToken', (req: Request, res: Response) => {
-      res.status(400).send({ message: 'token_in_url_not_supported' });
+    app.get('/api/v1/admin/activate/:superToken', () => {
+      throw tokenInURL();
     });
 
     app.get('/api/v1/admin/activate', async (req: Request, res: Response) => {
       const tokenValue = bearerToken(req);
-      if (!tokenValue) {
-        Logging.logError('The used token does not exist');
-        return res.status(404).send({ message: 'invalid_token' });
-      }
+      if (!tokenValue) throw missingToken();
       const superToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         value: tokenValue,
         type: 'system',
@@ -110,7 +111,7 @@ class AdminRoutes {
 
       if (!superToken) {
         Logging.logError('The used token does not exist');
-        return res.status(404).send({ message: 'invalid_token' });
+        throw invalidToken();
       }
 
       const superApp = await Model.getCoreModel(AppSchemaModel).findOne({
@@ -119,7 +120,7 @@ class AdminRoutes {
 
       if (!superApp) {
         Logging.logError('Buttress admin activate can not find super app');
-        return res.status(404).send({ message: 'admin_app_not_found' });
+        throw Helpers.Errors.notFound('admin_app_not_found', 'The admin app was not found');
       }
 
       await this._updateAppPolicySelectorList(superApp);
@@ -128,68 +129,53 @@ class AdminRoutes {
     });
 
     app.post('/api/v1/admin/install-lambda', async (req: InstallLambdaRequest, res: Response) => {
-      if (req.query?.token !== undefined) return res.status(400).send({ message: 'token_in_url_not_supported' });
+      if (req.query?.token !== undefined) throw tokenInURL();
 
       const tokenValue = bearerToken(req);
       const lambdaToInstall: string[] | undefined = req.body.installLambda;
       const refreshAdminToken: unknown = req.body.refreshAdminToken;
-      if (!tokenValue) {
-        return res.status(401).send({ message: 'invalid_token' });
-      }
+      if (!tokenValue) throw missingToken();
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         value: tokenValue,
       });
-      if (!adminToken) {
-        return res.status(401).send({ message: 'invalid_token' });
-      }
+      if (!adminToken) throw invalidToken();
       if (adminToken.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-        return res.status(401).send({ message: 'unauthorised_token' });
+        throw Helpers.Errors.forbidden('insufficient_authority', 'Only a system token can install admin lambdas');
       }
       if (!lambdaToInstall || !Array.isArray(lambdaToInstall)) {
-        return res.status(400).send({ message: 'invalid_body' });
+        throw Helpers.Errors.badRequest('invalid_body', 'installLambda must be a list of admin lambda names');
       }
 
       const adminLambdaKeys = Object.keys(adminLambda);
       if (!lambdaToInstall.every((key): key is AdminLambdaKey => adminLambdaKeys.includes(key))) {
-        return res.status(404).send({ message: 'lambda_not_found' });
+        throw Helpers.Errors.notFound('lambda_not_found', 'No admin lambda has that name');
       }
 
-      try {
-        const adminApp = await Model.getCoreModel(AppSchemaModel).findOne({
-          _tokenId: Model.getCoreModel(TokenSchemaModel).createId(adminToken.id),
+      const adminApp = await Model.getCoreModel(AppSchemaModel).findOne({
+        _tokenId: Model.getCoreModel(TokenSchemaModel).createId(adminToken.id),
+      });
+
+      if (!adminApp) {
+        Logging.logError('Buttress admin install lambda can not find admin app');
+        throw Helpers.Errors.notFound('admin_app_not_found', 'The admin app was not found');
+      }
+
+      await this._createAdminPolicy(adminApp.id);
+      for await (const lambdaKey of lambdaToInstall) {
+        await this._createAdminLambda(adminLambda[lambdaKey]);
+      }
+
+      if (refreshAdminToken) {
+        await this._refreshAdminAppToken(adminToken, adminApp);
+
+        await Model.getCoreModel(AppSchemaModel).updateById(Model.getCoreModel(AppSchemaModel).createId(adminApp.id), {
+          $set: {
+            adminActive: true,
+          },
         });
-
-        if (!adminApp) {
-          Logging.logError('Buttress admin install lambda can not find admin app');
-          return res.status(404).send({ message: 'admin_app_not_found' });
-        }
-
-        await this._createAdminPolicy(adminApp.id);
-        for await (const lambdaKey of lambdaToInstall) {
-          await this._createAdminLambda(adminLambda[lambdaKey]);
-        }
-
-        if (refreshAdminToken) {
-          await this._refreshAdminAppToken(adminToken, adminApp);
-
-          await Model.getCoreModel(AppSchemaModel).updateById(
-            Model.getCoreModel(AppSchemaModel).createId(adminApp.id),
-            {
-              $set: {
-                adminActive: true,
-              },
-            },
-          );
-        }
-
-        res.status(200).send({ message: 'done' });
-      } catch (err: unknown) {
-        // A refusal's reason is kept, any other failure's detail stays in the log
-        const message = err instanceof Helpers.Errors.RequestError ? err.message : 'install_lambda_failed';
-        res.status(404).send({ message });
-
-        throw err;
       }
+
+      res.status(200).send({ message: 'done' });
     });
   }
 

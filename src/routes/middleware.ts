@@ -130,7 +130,7 @@ export class RoutesMiddleware {
 
     const clientSessionId = req.headers['x-client-session-id']?.toString() || null;
     if (clientSessionId && !(uuidValidate(clientSessionId) && uuidVersion(clientSessionId) === 4)) {
-      throw new Helpers.Errors.RequestError(400, 'invalid_client_session_id');
+      throw Helpers.Errors.badRequest('invalid_client_session_id', 'X-Client-Session-Id must be a v4 uuid');
     }
 
     req.context.clientSessionId = clientSessionId;
@@ -188,7 +188,7 @@ export class RoutesMiddleware {
             Logging.Constants.LogLevel.SILLY,
             req.context.id,
           );
-          throw new Helpers.Errors.RequestError(404, 'unknown_lambda_endpoint');
+          throw Helpers.Errors.notFound('unknown_lambda_endpoint', 'No lambda has that endpoint');
         }
 
         const [endpoint] = req.url.split(`/lambda/v1/${apiPath}/`).join('').split('?');
@@ -208,13 +208,13 @@ export class RoutesMiddleware {
             Logging.Constants.LogLevel.SILLY,
             req.context.id,
           );
-          throw new Helpers.Errors.RequestError(404, 'unknown_lambda_endpoint');
+          throw Helpers.Errors.notFound('unknown_lambda_endpoint', 'No lambda has that endpoint');
         }
 
         // A PRIVATE endpoint takes a token of the lambda's own app, or a system token
         if (req.context.authLambda.type === 'PRIVATE') {
           reqToken = await this._getProvidedToken(req);
-          if (!reqToken) throw new Helpers.Errors.RequestError(401, 'invalid_token');
+          if (!reqToken) throw Helpers.Errors.unauthorised('missing_token', 'A token is required');
 
           const isSystem = reqToken.type === TokenSchemaModelCore.Constants.Type.SYSTEM;
           if (!isSystem && String(reqToken._appId) !== String(apiLambdaApp.id)) {
@@ -224,7 +224,7 @@ export class RoutesMiddleware {
               Logging.Constants.LogLevel.SILLY,
               req.context.id,
             );
-            throw new Helpers.Errors.RequestError(401, 'insufficient_authority');
+            throw Helpers.Errors.forbidden('insufficient_authority', "The token can't call this lambda endpoint");
           }
         }
 
@@ -273,7 +273,7 @@ export class RoutesMiddleware {
           Logging.Constants.LogLevel.SILLY,
           req.context.id,
         );
-        throw new Helpers.Errors.RequestError(401, 'missing_token');
+        throw Helpers.Errors.unauthorised('missing_token', 'A token is required');
       }
 
       const token = req.context.token;
@@ -309,7 +309,7 @@ export class RoutesMiddleware {
             Logging.Constants.LogLevel.SILLY,
             req.context.id,
           );
-          throw new Helpers.Errors.RequestError(401, 'app_not_found');
+          throw Helpers.Errors.unauthorised('app_not_found', "The token's app was not found");
         }
         req.context.authApp = tokenApp;
         Logging.logTimer(
@@ -349,7 +349,7 @@ export class RoutesMiddleware {
             Logging.Constants.LogLevel.SILLY,
             req.context.id,
           );
-          throw new Helpers.Errors.RequestError(401, 'data_sharing_inactive');
+          throw Helpers.Errors.forbidden('data_sharing_inactive', 'The data sharing agreement is not active');
         }
       }
 
@@ -359,7 +359,7 @@ export class RoutesMiddleware {
 
         if (!user) {
           Logging.logSilly(`Request was made with a valid token but no user was found for token ${token.id}`);
-          throw new Helpers.Errors.RequestError(400, 'invalid_token');
+          throw Helpers.Errors.unauthorised('invalid_token', "The token's user was not found");
         }
       }
 
@@ -395,8 +395,8 @@ export class RoutesMiddleware {
     context.timings.configCrossDomain = context.timer?.interval ?? 0;
     Logging.logTimer('_configCrossDomain:start', context.timer, Logging.Constants.LogLevel.SILLY, context.id);
     if (!context.token) {
-      res.status(401).json({ message: 'Auth token is required' });
       Logging.logTimer('_configCrossDomain:end-no-auth', context.timer, Logging.Constants.LogLevel.SILLY, context.id);
+      next(Helpers.Errors.unauthorised('missing_token', 'A token is required'));
       return;
     }
     if (context.token.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.USER) {
@@ -446,7 +446,7 @@ export class RoutesMiddleware {
 
       if (domainIdx === -1) {
         Logging.logError(new Error(`Invalid Domain: ${origin}`));
-        res.sendStatus(403);
+        next(Helpers.Errors.forbidden('origin_not_allowed', "The request's origin isn't one of the token's domains"));
         Logging.logTimer(
           '_configCrossDomain:end-invalid-domain',
           context.timer,
@@ -477,27 +477,23 @@ export class RoutesMiddleware {
   }
 
   /**
-   * Sends the error response. The error isn't passed on once it's sent, as Express's final handler destroys the
-   * socket of a request whose response has started, and a client reusing the keep-alive connection would have its
-   * next request fail.
+   * Sends the error response: an ApiError's status and `{code, message, details?}`, or a 500 `internal_error` for
+   * anything else, whose message may carry internal details, and which is logged. The error isn't passed on once it's
+   * sent, as Express's final handler destroys the socket of a request whose response has started, and a client
+   * reusing the keep-alive connection would have its next request fail.
    */
   logErrors(err: unknown, req: Request, res: Response, next: NextFunction) {
     Logging.logSilly(`logErrors ${err}`);
-    const isRequestError = err instanceof Helpers.Errors.RequestError;
-    if (err && !isRequestError) {
-      Logging.logError(err, req.context.id);
+    const apiError = Helpers.Errors.toApiError(err);
+    if (apiError.status >= 500) {
+      Logging.logError(apiError === err && apiError.cause !== undefined ? apiError.cause : err, req.context.id);
     }
 
     // Part of the response has already gone, so the error can't be sent. Destroying the socket is how the client
     // learns the response is incomplete.
     if (res.headersSent) return next(err);
 
-    if (isRequestError) {
-      res.status(err.code).json({ statusMessage: err.message, message: err.message });
-    } else {
-      // Unhandled errors (DB drivers, etc.) may carry sensitive details, so only a generic message is sent.
-      res.status(500).json({ statusMessage: 'Internal Server Error', message: 'Internal Server Error' });
-    }
+    res.status(apiError.status).json(apiError.toBody());
   }
 }
 

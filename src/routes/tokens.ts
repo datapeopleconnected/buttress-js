@@ -92,7 +92,7 @@ export class RoutesTokens {
         Logging.Constants.LogLevel.SILLY,
         req.context.id,
       );
-      throw new Helpers.Errors.RequestError(401, 'missing_token');
+      throw Helpers.Errors.unauthorised('missing_token', 'A token is required');
     }
 
     const token = await this._getToken(req, tokenValue);
@@ -103,7 +103,7 @@ export class RoutesTokens {
         Logging.Constants.LogLevel.SILLY,
         req.context.id,
       );
-      throw new Helpers.Errors.RequestError(401, 'invalid_token');
+      throw Helpers.Errors.unauthorised('invalid_token', 'The token is not valid');
     }
 
     return token;

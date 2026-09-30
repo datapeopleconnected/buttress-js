@@ -481,7 +481,8 @@ describe('Data Sharing', async () => {
 				body: JSON.stringify({ newToken: 'a-token-of-the-partner' }),
 			});
 
-			assert.strictEqual(res.status, 401);
+			assert.strictEqual(res.status, 403);
+			assert.strictEqual((await res.json()).code, 'data_sharing_inactive');
 			assert.strictEqual(await app1CarsReadByApp2().then((names) => names.length), 0);
 		});
 

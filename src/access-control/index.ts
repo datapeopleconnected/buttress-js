@@ -21,6 +21,7 @@ import NodeRedisPubsub, { AppSchemaUpdatedMessage } from '../services/nrp.js';
 
 import Sugar from '../helpers/sugar.js';
 import { getThrownErrorMessage } from '../helpers/index.js';
+import { ApiError, ApiErrorDetails } from '../helpers/errors.js';
 import Model from '../model/index.js';
 import Logging from '../helpers/logging.js';
 import * as Schema from '../helpers/schema.js';
@@ -40,14 +41,13 @@ import AppSchemaModel from '../model/core/app.js';
 import { Schema as SchemaDefinition } from '../types/schema.js';
 import type { RequestWithBody } from '../types/routes.js';
 
-export class PolicyError extends Error {
-  statusCode: number;
+// A request the token's policies don't allow. `logTimerMsg` names the check that refused it, for the request's timer.
+export class PolicyError extends ApiError {
   logTimerMsg?: string;
 
-  constructor(statusCode: number, message: string, logTimerMsg?: string) {
-    super(message);
+  constructor(status: number, code: string, message: string, logTimerMsg?: string, details?: ApiErrorDetails) {
+    super(status, code, message, details);
     this.name = 'PolicyError';
-    this.statusCode = statusCode;
     this.logTimerMsg = logTimerMsg;
   }
 }
@@ -210,16 +210,12 @@ class AccessControl {
 
       req.context.ac.policyConfigs = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
     } catch (err: unknown) {
+      // The error handler answers it
       if (err instanceof PolicyError) {
         Logging.logTimer(err.logTimerMsg, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
         Logging.logError(err.message);
-        return res.status(err.statusCode).send({ message: err.message });
       }
-
-      const errMessage = getThrownErrorMessage(err);
-      Logging.logError(`Error in accessControlPolicyMiddleware: ${errMessage}`);
-      Logging.logError(errMessage);
-      return res.status(500).send({ message: 'Internal Server Error' });
+      return next(err);
     }
 
     if (user) {
@@ -268,7 +264,7 @@ class AccessControl {
       outcome = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
     } catch (err: unknown) {
       if (err instanceof PolicyError) {
-        Logging.logError(`getRoomStructure statusCode:${err.statusCode} message:${err.message}`);
+        Logging.logError(`getRoomStructure status:${err.status} message:${err.message}`);
         return {};
       }
 
@@ -391,7 +387,8 @@ class AccessControl {
     tokenPolicies = tokenPolicies.sort((a, b) => a.priority - b.priority);
     if (tokenPolicies.length < 1) {
       throw new PolicyError(
-        401,
+        403,
+        'access_denied',
         `Request does not have any policy associated to it`,
         '_accessControlPolicy:access-control-policy-not-allowed',
       );
@@ -418,7 +415,8 @@ class AccessControl {
 
     if (applicablePolicies.length < 1) {
       throw new PolicyError(
-        401,
+        403,
+        'access_denied',
         `Request does not have any policy rules matching the request verb ${requestVerb} and schema ${schemaName}`,
         '_accessControlPolicy:access-control-policy-not-allowed',
       );
@@ -429,9 +427,11 @@ class AccessControl {
 
     if (!schema) {
       throw new PolicyError(
-        401,
+        404,
+        'unknown_schema',
         `Request schema: ${schemaName} - does not exist in the app`,
         '_accessControlPolicy:access-control-policy-not-allowed',
+        { schema: schemaName },
       );
     }
 
@@ -440,7 +440,8 @@ class AccessControl {
     applicablePolicies = await AccessControlConditions.filterPoliciesByPolicyConditions(applicablePolicies, reqEnv);
     if (applicablePolicies.length < 1) {
       throw new PolicyError(
-        401,
+        403,
+        'access_denied',
         `Access control policy condition is not fulfilled to access ${schemaName}`,
         '_accessControlPolicy:conditions-not-fulfilled',
       );
@@ -450,7 +451,8 @@ class AccessControl {
     applicablePolicies = await AccessControlFilter.buildApplicablePoliciesQuery(applicablePolicies, reqEnv);
     if (applicablePolicies.length < 1) {
       throw new PolicyError(
-        401,
+        403,
+        'access_denied',
         `Access control policy query can not be applied to ${schemaName}`,
         '_accessControlPolicy:query-not-resolved',
       );
@@ -462,7 +464,8 @@ class AccessControl {
     );
     if (applicablePolicies.length < 1) {
       throw new PolicyError(
-        401,
+        403,
+        'property_access_denied',
         `Can not access/edit properties of ${schemaName} without privileged access`,
         '_accessControlPolicy:access-control-properties-permission-error',
       );
@@ -558,7 +561,14 @@ class AccessControl {
   async __cacheAppSchema(appId: string) {
     const app = await Model.getCoreModel(AppSchemaModel).findById(appId);
     // A token outliving its app
-    if (!app) throw new PolicyError(401, 'app_not_found', `__cacheAppSchema::app ${appId} not found`);
+    if (!app) {
+      throw new PolicyError(
+        401,
+        'app_not_found',
+        "The token's app was not found",
+        `__cacheAppSchema::app ${appId} not found`,
+      );
+    }
     this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type.indexOf('collection') === 0);
 
     Logging.logSilly(`Refreshed schema cache for app ${appId} got ${this._schemas[appId].length} schema`);

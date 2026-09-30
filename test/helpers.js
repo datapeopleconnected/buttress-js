@@ -22,13 +22,15 @@ export const ENDPOINT = {
 	SOCK: Config.url.ws,
 };
 
+// `code` is the HTTP status; `body` is the error body, `{code, message, details?}`
 export class BJSReqError extends Error {
-	constructor(code, message) {
+	constructor(code, message, body = null) {
 		super(message);
 		this.name = 'BJSReqError';
 		this.code = code;
+		this.body = body;
 	}
-} 
+}
 
 export const bjsReq = async (opts, token=Config.testToken, text = false) => {
 	opts.headers = opts.headers || {};
@@ -39,7 +41,7 @@ export const bjsReq = async (opts, token=Config.testToken, text = false) => {
 		// Log out the body
 		if (response.headers.get('content-type')?.includes('application/json')) {
 			const body = await response.json();
-			throw new BJSReqError(response.status, body.message || body);
+			throw new BJSReqError(response.status, body.message || body, body);
 		}
 
 		console.error('error', await response.text());

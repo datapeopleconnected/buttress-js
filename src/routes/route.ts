@@ -135,6 +135,10 @@ export type RouteVerb = (typeof Constants.Verbs)[keyof typeof Constants.Verbs];
 const AuthTypeOrder = Object.values(Constants.Type);
 const authTypeIdx = (type: string) => AuthTypeOrder.indexOf(type);
 
+// A valid token that can't call the route
+const insufficientAuthority = () =>
+  Helpers.Errors.forbidden('insufficient_authority', "The token can't call this route");
+
 export default class Route {
   verb: RouteVerb = Constants.Verbs.GET;
   authType: string = Constants.Type.USER;
@@ -243,7 +247,7 @@ export default class Route {
         Logging.Constants.LogLevel.SILLY,
         req.context.id,
       );
-      throw new Helpers.Errors.RequestError(500, 'Tried to exec route but no exec function defined');
+      throw Helpers.Errors.internal('Tried to exec route but no exec function defined');
     }
 
     await this._authenticate(req, res);
@@ -453,7 +457,7 @@ export default class Route {
     if (req.context.token?.type === TokenSchemaModel.Constants.Type.SYSTEM) return null;
 
     const appId = req.context.authApp?.id;
-    if (!appId) throw new Helpers.Errors.RequestError(400, `no_authenticated_app`);
+    if (!appId) throw Helpers.Errors.internal('no_authenticated_app');
     return appId;
   }
 
@@ -799,7 +803,7 @@ export default class Route {
           Logging.Constants.LogLevel.SILLY,
           req.context.id,
         );
-        return reject(new Helpers.Errors.RequestError(401, 'invalid_token'));
+        return reject(Helpers.Errors.unauthorised('missing_token', 'A token is required'));
       }
 
       if (this.authType && authTypeIdx(req.context.token.type) < authTypeIdx(this.authType)) {
@@ -814,7 +818,7 @@ export default class Route {
           Logging.Constants.LogLevel.SILLY,
           req.context.id,
         );
-        return reject(new Helpers.Errors.RequestError(401, 'insufficient_authority'));
+        return reject(insufficientAuthority());
       }
 
       // Every route acts on the token's own app; ?apiPath= isn't honoured. Refuse anything but the token's own app,
@@ -824,17 +828,16 @@ export default class Route {
       if (apiPath !== undefined && apiPath !== '' && authApiPath !== undefined && apiPath !== authApiPath) {
         this.log(`EAUTH: ?apiPath=${apiPath} names another app than ${authApiPath}`, Logging.Constants.LogLevel.ERR);
         return reject(
-          new Helpers.Errors.RequestError(
-            400,
-            `apiPath_not_supported: requests act on the app of the token (${authApiPath})`,
-          ),
+          Helpers.Errors.badRequest('apiPath_not_supported', `Requests act on the app of the token (${authApiPath})`, {
+            apiPath: authApiPath,
+          }),
         );
       }
       // An app's routes act on that app's data, so only its own tokens and system tokens can call them
       const tokenIsSystem = req.context.token.type === TokenSchemaModel.Constants.Type.SYSTEM;
       if (this.appId && !tokenIsSystem && req.context.authApp?.id !== this.appId) {
         this.log(`EAUTH: TOKEN IS NOT FOR THIS APP`, Logging.Constants.LogLevel.ERR, req.context.id);
-        return reject(new Helpers.Errors.RequestError(401, 'insufficient_authority'));
+        return reject(insufficientAuthority());
       }
 
       /**

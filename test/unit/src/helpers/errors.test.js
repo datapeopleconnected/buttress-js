@@ -19,6 +19,92 @@ import assert from 'assert';
 
 import Errors from '../../../../dist/helpers/errors.js';
 
+describe('helpers/errors:ApiError', () => {
+  it('answers with its code, message and details', () => {
+    const err = new Errors.ApiError(400, 'invalid_value', 'The limit must be a number', { path: 'limit' });
+
+    assert(err instanceof Error);
+    assert.strictEqual(err.status, 400);
+    assert.deepStrictEqual(err.toBody(), {
+      code: 'invalid_value',
+      message: 'The limit must be a number',
+      details: { path: 'limit' },
+    });
+  });
+
+  it('leaves details out of the body when it has none, and reads its code as the message when given none', () => {
+    assert.deepStrictEqual(new Errors.ApiError(400, 'invalid_id').toBody(), { code: 'invalid_id', message: 'Invalid id' });
+  });
+
+  for (const [factory, status] of [
+    ['badRequest', 400],
+    ['unauthorised', 401],
+    ['forbidden', 403],
+    ['notFound', 404],
+    ['methodNotAllowed', 405],
+    ['conflict', 409],
+    ['unavailable', 503],
+  ]) {
+    it(`${factory} answers ${status}`, () => {
+      const err = Errors[factory]('some_code', 'Some message');
+
+      assert(err instanceof Errors.ApiError);
+      assert.strictEqual(err.status, status);
+      assert.deepStrictEqual(err.toBody(), { code: 'some_code', message: 'Some message' });
+    });
+  }
+
+  it('entityNotFound answers 404 not_found, naming the schema and id', () => {
+    const err = Errors.entityNotFound('policy', '6AB00000000000000000ABCD');
+
+    assert.strictEqual(err.status, 404);
+    assert.deepStrictEqual(err.toBody(), {
+      code: 'not_found',
+      message: 'No policy was found with that id',
+      details: { schema: 'policy', id: '6AB00000000000000000ABCD' },
+    });
+  });
+
+  it('internal answers 500 internal_error, keeping its reason out of the body', () => {
+    const err = Errors.internal('no_authenticated_app');
+
+    assert.strictEqual(err.status, 500);
+    assert.deepStrictEqual(err.toBody(), { code: 'internal_error', message: 'Internal server error' });
+    assert.strictEqual(err.cause, 'no_authenticated_app');
+  });
+});
+
+describe('helpers/errors:toApiError', () => {
+  it('gives an ApiError back as it is', () => {
+    const err = Errors.forbidden('insufficient_authority');
+
+    assert.strictEqual(Errors.toApiError(err), err);
+  });
+
+  it('answers any other error as a 500 internal_error without its message, keeping it as the cause', () => {
+    const cause = new TypeError('connect ECONNREFUSED 127.0.0.1:27017');
+    const err = Errors.toApiError(cause);
+
+    assert.strictEqual(err.status, 500);
+    assert.deepStrictEqual(err.toBody(), { code: 'internal_error', message: 'Internal server error' });
+    assert.strictEqual(err.cause, cause);
+  });
+
+  for (const [status, code] of [
+    [400, 'invalid_body'],
+    [413, 'body_too_large'],
+    [415, 'unsupported_body_encoding'],
+  ]) {
+    it(`answers a body parser's ${status} as ${code}`, () => {
+      const err = Errors.toApiError(Object.assign(new Error('parser'), { type: 'entity.parse.failed', status, expose: true }));
+
+      assert.strictEqual(err.status, status);
+      assert.strictEqual(err.code, code);
+      assert.strictEqual(Errors.fromBodyParserError(new Error('not a parser error')), null);
+    });
+  }
+});
+
 describe('helpers/errors:RequestError', () => {
   it('should set name and code', () => {
     const err = new Errors.RequestError(404, 'Not found');

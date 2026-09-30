@@ -217,7 +217,7 @@ describe('Realtime', async () => {
 						},
 						testEnv.apps.app1.token,
 					),
-					(error) => error.code === 400 && error.message === 'invalid_client_session_id',
+					(error) => error.code === 400 && error.body?.code === 'invalid_client_session_id',
 				);
 			});
 

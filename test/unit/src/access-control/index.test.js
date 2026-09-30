@@ -69,7 +69,8 @@ describe('access-control/AccessControl:__getOutcome', () => {
       () => instance.__getOutcome([], createReq(), 'user', 'app1'),
       (err) => {
         assert.ok(err instanceof PolicyError);
-        assert.strictEqual(err.statusCode, 401);
+        assert.strictEqual(err.status, 403);
+        assert.strictEqual(err.code, 'access_denied');
         assert.match(err.message, /does not have any policy associated/);
         return true;
       },
@@ -92,6 +93,8 @@ describe('access-control/AccessControl:__getOutcome', () => {
       () => instance.__getOutcome(tokenPolicies, createReq({ method: 'GET' }), 'user', 'app1'),
       (err) => {
         assert.ok(err instanceof PolicyError);
+        assert.strictEqual(err.status, 403);
+        assert.strictEqual(err.code, 'access_denied');
         assert.match(err.message, /does not have any policy rules matching the request verb GET/);
         return true;
       },
@@ -114,6 +117,9 @@ describe('access-control/AccessControl:__getOutcome', () => {
       () => instance.__getOutcome(tokenPolicies, createReq(), 'user', 'app1'),
       (err) => {
         assert.ok(err instanceof PolicyError);
+        assert.strictEqual(err.status, 404);
+        assert.strictEqual(err.code, 'unknown_schema');
+        assert.deepStrictEqual(err.details, { schema: 'user' });
         assert.match(err.message, /does not exist in the app/);
         return true;
       },
@@ -144,6 +150,8 @@ describe('access-control/AccessControl:__getOutcome', () => {
       () => instance.__getOutcome(tokenPolicies, createReq(), 'user', 'app1'),
       (err) => {
         assert.ok(err instanceof PolicyError);
+        assert.strictEqual(err.status, 403);
+        assert.strictEqual(err.code, 'access_denied');
         assert.match(err.message, /condition is not fulfilled/);
         return true;
       },
@@ -196,6 +204,8 @@ describe('access-control/AccessControl:__getOutcome', () => {
       () => instance.__getOutcome(tokenPolicies, req, 'user', 'app1'),
       (err) => {
         assert.ok(err instanceof PolicyError);
+        assert.strictEqual(err.status, 403);
+        assert.strictEqual(err.code, 'property_access_denied');
         assert.match(err.message, /Can not access\/edit properties/);
         return true;
       },
@@ -267,14 +277,18 @@ describe('access-control/AccessControl:accessControlPolicyMiddleware', () => {
     req.originalUrl = '/api/v1/car';
     req.context.timings = {};
     req.context.token = { id: 'token-1', type: 'user', _appId: 'app-gone' };
-    const res = { status: (code) => ((res.code = code), res), send: (body) => (res.body = body) };
+    const res = { status: sinon.stub(), send: sinon.stub(), json: sinon.stub() };
     const next = sinon.spy();
 
     await instance.accessControlPolicyMiddleware(req, res, next);
 
-    assert.strictEqual(res.code, 401);
-    assert.deepStrictEqual(res.body, { message: 'app_not_found' });
-    assert.strictEqual(next.called, false);
+    // The error handler answers it
+    assert.ok(next.calledOnce);
+    const [err] = next.firstCall.args;
+    assert.ok(err instanceof PolicyError, `passed on ${err}`);
+    assert.strictEqual(err.status, 401);
+    assert.deepStrictEqual(err.toBody(), { code: 'app_not_found', message: "The token's app was not found" });
+    assert.ok(res.status.notCalled);
   });
 });
 

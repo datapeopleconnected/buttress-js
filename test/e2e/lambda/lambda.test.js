@@ -304,7 +304,7 @@ describe('Lambda', async () => {
 					const result = await response.json();
 
 					assert.strictEqual(response.status, 400, query);
-					assert.strictEqual(result.message, 'token_in_url_not_supported');
+					assert.strictEqual(result.code, 'token_in_url_not_supported');
 				}
 			});
 		});

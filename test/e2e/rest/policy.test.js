@@ -97,7 +97,7 @@ const expectEventuallyDeniedRequest = async (requestFn, expectedMessage = null, 
       if (err instanceof BJSReqError) {
         lastDeniedError = err;
 
-        if (err.code === 401 && (expectedMessages.length < 1
+        if (err.code === 403 && (expectedMessages.length < 1
           || expectedMessages.some((msg) => err.message.includes(msg)))) {
           return;
         }
@@ -117,7 +117,7 @@ const expectEventuallyDeniedRequest = async (requestFn, expectedMessage = null, 
   }
 
   if (lastDeniedError) {
-    assert(lastDeniedError.code === 401, `Expected 401 but got ${lastDeniedError.code}`);
+    assert(lastDeniedError.code === 403, `Expected 403 but got ${lastDeniedError.code}`);
     if (expectedMessages.length > 0) {
       assert(expectedMessages.some((msg) => lastDeniedError.message.includes(msg)), `Got ${lastDeniedError.message}`);
     }

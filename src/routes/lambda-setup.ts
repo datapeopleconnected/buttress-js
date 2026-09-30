@@ -110,21 +110,18 @@ export class RoutesLambdaSetup {
     this.app.all(`/lambda/v1/${apiPath}/*endpoint`, this._preRouteMiddleware, async (req: Request, res: Response) => {
       // A token in a URL ends up in access logs and browser history
       if (req.query?.token !== undefined) {
-        res.status(400).send({ message: 'token_in_url_not_supported' });
-        return;
+        throw Helpers.Errors.badRequest('token_in_url_not_supported', 'A token in the URL is not supported');
       }
 
       const endpointParam = req.params.endpoint;
       const endpoint = Array.isArray(endpointParam) ? endpointParam.join('/') : endpointParam;
 
       if (req.method === 'POST' && (!req.body || Object.values(req.body as object).length < 1)) {
-        res.status(400).send({ message: 'missing_request_body' });
-        return;
+        throw Helpers.Errors.badRequest('missing_request_body', 'A POST to a lambda endpoint needs a body');
       }
 
       if (req.method !== 'POST' && req.method !== 'GET') {
-        res.status(405).send({ message: 'method_not_allowed' });
-        return;
+        throw Helpers.Errors.methodNotAllowed('method_not_allowed', 'A lambda endpoint takes GET or POST');
       }
 
       // Waiting before the call is queued, as its result can come back before queueing it has finished
@@ -138,16 +135,7 @@ export class RoutesLambdaSetup {
       let lambdaExecutionId: string | undefined;
       try {
         const result = await this._queueLambdaAPIExecution(endpoint, apiPath, req);
-        if (result.errCode && result.errMessage) {
-          res.status(result.errCode).send({ message: result.errMessage });
-          return;
-        }
-
-        lambdaExecutionId = result.lambdaExecution?.id;
-        if (!lambdaExecutionId) {
-          res.status(500).send({ message: 'lambda_execution_id_missing' });
-          return;
-        }
+        lambdaExecutionId = result.lambdaExecution.id;
 
         res.set('Cache-Control', 'no-store');
 
@@ -196,20 +184,10 @@ export class RoutesLambdaSetup {
   }
 
   async _queueLambdaAPIExecution(endpointOrId: string, apiPath: string, req: RequestWithBody<unknown>) {
-    const res: {
-      errCode?: number;
-      errMessage?: string;
-      triggerAPIType?: string;
-      lambdaExecution?: LambdaExecution;
-    } = {};
     let lambda: Lambda | null = null;
 
     const lambdaApp = await Model.getCoreModel(AppSchemaModel).findByApiPath(apiPath);
-    if (!lambdaApp) {
-      res.errCode = 404;
-      res.errMessage = 'app_not_found';
-      return res;
-    }
+    if (!lambdaApp) throw Helpers.Errors.notFound('app_not_found', 'No app has that api path');
 
     lambda = await Model.getCoreModel(LambdaSchemaModel).findOne({
       $or: [
@@ -229,15 +207,9 @@ export class RoutesLambdaSetup {
       },
     });
 
-    if (!lambda) {
-      res.errCode = 404;
-      res.errMessage = 'lambda_not_found';
-      return res;
-    }
+    if (!lambda) throw Helpers.Errors.notFound('lambda_not_found', 'No lambda has that endpoint');
     if (!lambda.executable) {
-      res.errCode = 400;
-      res.errMessage = 'lambda_is_not_executable';
-      return res;
+      throw Helpers.Errors.badRequest('lambda_is_not_executable', 'The lambda is turned off');
     }
 
     // The trigger the request is for: the one at its url, or any, for a request that names the lambda by id; and with
@@ -246,20 +218,14 @@ export class RoutesLambdaSetup {
     const atUrl = apiTriggers.filter((t) => t.apiEndpoint.url === endpointOrId);
     const triggerAPI = (atUrl.length > 0 ? atUrl : apiTriggers).find((t) => t.apiEndpoint.method === req.method);
     if (!triggerAPI) {
-      res.errCode = 404;
-      res.errMessage = 'api_method_not_found';
-      return res;
+      throw Helpers.Errors.notFound('api_method_not_found', `The endpoint has no ${req.method} trigger`);
     }
 
     const deployment = await Model.getCoreModel(DeploymentSchemaModel).findOne({
       lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
       hash: lambda.git.hash,
     });
-    if (!deployment) {
-      res.errCode = 404;
-      res.errMessage = 'deployment_not_found';
-      return res;
-    }
+    if (!deployment) throw Helpers.Errors.notFound('deployment_not_found', "The lambda's deployment was not found");
 
     const LambdaExecutionData = {
       triggerType: 'API_ENDPOINT',
@@ -296,9 +262,6 @@ export class RoutesLambdaSetup {
       _tokenId: callerTokenId,
     })) as LambdaExecution;
 
-    res.lambdaExecution = lambdaExecution;
-    res.triggerAPIType = triggerAPI.apiEndpoint.type;
-
     const data: LambdaExecutionMessage = {
       executionId: lambdaExecution.id,
       lambdaId: lambda.id,
@@ -307,11 +270,9 @@ export class RoutesLambdaSetup {
       lambdaExecBehavior: triggerAPI.apiEndpoint.type,
     };
 
-    if (!res.errCode && !res.errMessage) {
-      this._nrp?.emit('rest:worker:exec-lambda-api', JSON.stringify(data));
-    }
+    this._nrp?.emit('rest:worker:exec-lambda-api', JSON.stringify(data));
 
-    return res;
+    return { lambdaExecution, triggerAPIType: triggerAPI.apiEndpoint.type };
   }
 }
 

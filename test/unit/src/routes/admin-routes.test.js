@@ -21,6 +21,29 @@ import sinon from 'sinon';
 import AdminRoutes from '../../../../dist/routes/admin-routes.js';
 import Model from '../../../../dist/model/index.js';
 import TokenSchemaModel from '../../../../dist/model/core/token.js';
+import { toApiError } from '../../../../dist/helpers/errors.js';
+
+// Calls `handler` with `req`, returning the status and body it sent, or that the error handler would send for what
+// it threw: the routes are added before it, and Express passes it a handler's rejection.
+async function callHandler(handler, req) {
+  const res = {
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    send(body) {
+      this.body = body;
+      return this;
+    },
+  };
+  try {
+    await handler({ query: {}, params: {}, body: {}, headers: {}, ...req }, res);
+  } catch (err) {
+    const apiError = toApiError(err);
+    return { statusCode: apiError.status, body: apiError.toBody(), thrown: err };
+  }
+  return res;
+}
 
 describe('routes/admin-routes:token lookups', () => {
   const handlers = {};
@@ -50,21 +73,8 @@ describe('routes/admin-routes:token lookups', () => {
 
   afterEach(() => sinon.restore());
 
-  // Calls the handler registered for `path` with `req`, returning the status and body it sent.
-  async function call(path, req) {
-    const res = {
-      status(code) {
-        this.statusCode = code;
-        return this;
-      },
-      send(body) {
-        this.body = body;
-        return this;
-      },
-    };
-    await handlers[path]({ query: {}, params: {}, body: {}, headers: {}, ...req }, res);
-    return res;
-  }
+  const call = (path, req) => callHandler(handlers[path], req);
+  const urlToken = { code: 'token_in_url_not_supported', message: 'A token in the URL is not supported' };
 
   const bearer = (token) => ({ authorization: `Bearer ${token}` });
 
@@ -72,12 +82,12 @@ describe('routes/admin-routes:token lookups', () => {
     for (const token of ['system-token', ['a', 'b'], { $ne: null }]) {
       const res = await call('/api/v1/admin/install-lambda', { query: { token }, body: { installLambda: [] } });
       assert.strictEqual(res.statusCode, 400, `accepted ${JSON.stringify(token)}`);
-      assert.deepStrictEqual(res.body, { message: 'token_in_url_not_supported' });
+      assert.deepStrictEqual(res.body, urlToken);
     }
 
     const res = await call('/api/v1/admin/activate/:superToken', { params: { superToken: 'system-token' } });
     assert.strictEqual(res.statusCode, 400);
-    assert.deepStrictEqual(res.body, { message: 'token_in_url_not_supported' });
+    assert.deepStrictEqual(res.body, urlToken);
 
     assert.deepStrictEqual(lookups, []);
   });
@@ -87,20 +97,37 @@ describe('routes/admin-routes:token lookups', () => {
       const install = await call('/api/v1/admin/install-lambda', { headers, body: { installLambda: [] } });
       const activate = await call('/api/v1/admin/activate', { headers });
 
-      assert.strictEqual(install.statusCode, 401, JSON.stringify(headers));
-      assert.deepStrictEqual(install.body, { message: 'invalid_token' });
-      assert.strictEqual(activate.statusCode, 404, JSON.stringify(headers));
-      assert.deepStrictEqual(activate.body, { message: 'invalid_token' });
+      for (const res of [install, activate]) {
+        assert.strictEqual(res.statusCode, 401, JSON.stringify(headers));
+        assert.deepStrictEqual(res.body, { code: 'missing_token', message: 'A token is required' });
+      }
     }
 
     assert.deepStrictEqual(lookups, []);
   });
 
-  it('looks up the bearer token of the Authorization header', async () => {
-    await call('/api/v1/admin/install-lambda', { headers: bearer('install-token') });
-    await call('/api/v1/admin/activate', { headers: bearer('activate-token') });
+  it('looks up the bearer token of the Authorization header, refusing one it does not find with 401', async () => {
+    const install = await call('/api/v1/admin/install-lambda', { headers: bearer('install-token') });
+    const activate = await call('/api/v1/admin/activate', { headers: bearer('activate-token') });
 
     assert.deepStrictEqual(lookups, [{ value: 'install-token' }, { value: 'activate-token', type: 'system' }]);
+    for (const res of [install, activate]) {
+      assert.strictEqual(res.statusCode, 401);
+      assert.strictEqual(res.body.code, 'invalid_token');
+    }
+  });
+
+  it('refuses a token that is not a system token with 403', async () => {
+    Model.getCoreModel.restore();
+    sinon.stub(Model, 'getCoreModel').returns({
+      Constants: TokenSchemaModel.Constants,
+      findOne: async () => ({ id: 'app-token', type: 'app' }),
+    });
+
+    const res = await call('/api/v1/admin/install-lambda', { headers: bearer('app-token'), body: { installLambda: [] } });
+
+    assert.strictEqual(res.statusCode, 403);
+    assert.strictEqual(res.body.code, 'insufficient_authority');
   });
 });
 
@@ -114,33 +141,26 @@ describe('routes/admin-routes:install-lambda failures', () => {
 
   afterEach(() => sinon.restore());
 
-  it("answers a failed install with a fixed message, not the failure's detail", async () => {
+  it("answers a failed install as an internal error, not with the failure's detail", async () => {
     sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
       if (modelClass === TokenSchemaModel) {
-        return { Constants: TokenSchemaModel.Constants, findOne: async () => ({ id: 'system-token', type: 'system' }) };
+        return {
+          Constants: TokenSchemaModel.Constants,
+          createId: (id) => id,
+          findOne: async () => ({ id: 'system-token', type: 'system' }),
+        };
       }
       return { findOne: async () => { throw new Error('connect failed: mongodb://user:pw@db.internal'); } };
     });
-    const res = {
-      status(code) {
-        this.statusCode = code;
-        return this;
-      },
-      send(body) {
-        this.body = body;
-        return this;
-      },
-    };
 
-    await handlers['/api/v1/admin/install-lambda']({
-      query: {},
+    const res = await callHandler(handlers['/api/v1/admin/install-lambda'], {
       headers: { authorization: 'Bearer system' },
-      params: {},
       body: { installLambda: [] },
-    }, res)
-      .catch(() => {});
+    });
 
-    assert.strictEqual(res.statusCode, 404);
-    assert.deepStrictEqual(res.body, { message: 'install_lambda_failed' });
+    assert.strictEqual(res.statusCode, 500);
+    assert.deepStrictEqual(res.body, { code: 'internal_error', message: 'Internal server error' });
+    // Nothing was sent before it threw, so the error handler can answer
+    assert.match(res.thrown.message, /connect failed/);
   });
 });

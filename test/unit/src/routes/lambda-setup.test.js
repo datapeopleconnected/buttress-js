@@ -70,13 +70,15 @@ describe('routes/RoutesLambdaSetup: calling a lambda endpoint', () => {
   }
 
   // Calls the app's endpoint with `method` on `endpoint`, for a lambda with `triggers`, giving the response
-  async function call({ triggers, method = 'GET', endpoint = 'hello', result = { res: { hello: 'world' } } }) {
+  // Calls the app's endpoint with `method` on `endpoint`, for a lambda with `triggers`, giving the response, or
+  // `{thrown}` for an error passed on to the error handler
+  async function call({ triggers, method = 'GET', endpoint = 'hello', result = { res: { hello: 'world' } }, query = {}, lambda = true }) {
     const executionAdd = sinon.stub().resolves({ id: 'exec-1' });
     const models = new Map([
       [AppSchemaModel, { findByApiPath: async () => ({ id: 'app-1' }) }],
       [LambdaSchemaModel, {
         createId: (v) => v,
-        findOne: async () => ({ id: 'lambda-1', _appId: 'app-1', executable: true, git: { hash: 'HEAD' }, trigger: triggers }),
+        findOne: async () => (lambda ? { id: 'lambda-1', _appId: 'app-1', executable: true, git: { hash: 'HEAD' }, trigger: triggers } : null),
       }],
       [TokenSchemaModel, { createId: (v) => v }],
       [DeploymentSchemaModel, { createId: (v) => v, findOne: async () => ({ id: 'deployment-1' }) }],
@@ -90,7 +92,7 @@ describe('routes/RoutesLambdaSetup: calling a lambda endpoint', () => {
     const handler = app.all.firstCall.args[2];
 
     const req = {
-      method, params: { endpoint }, query: {}, headers: {}, body: method === 'POST' ? { a: 1 } : undefined,
+      method, params: { endpoint }, query, headers: {}, body: method === 'POST' ? { a: 1 } : undefined,
       context: { id: 'req-1' },
     };
     const res = { headers: {} };
@@ -100,9 +102,9 @@ describe('routes/RoutesLambdaSetup: calling a lambda endpoint', () => {
       res.send = (body) => resolve(Object.assign(res, { body }));
       res.redirect = (url) => resolve(Object.assign(res, { redirectedTo: url }));
     });
-    handler(req, res);
+    const thrown = handler(req, res).then(() => new Promise(() => {}), (err) => ({ thrown: err }));
     const waiting = new Promise((resolve) => setTimeout(() => resolve('still waiting'), 200));
-    return { res: await Promise.race([answered, waiting]), executionAdd };
+    return { res: await Promise.race([answered, thrown, waiting]), executionAdd };
   }
 
   it('answers a SYNC call whose result comes back straight away', async () => {
@@ -128,6 +130,21 @@ describe('routes/RoutesLambdaSetup: calling a lambda endpoint', () => {
     });
     assert.strictEqual(priority, 90);
   });
+
+  for (const [label, opts, status, code] of [
+    ['a token in the URL', { query: { token: 'x' } }, 400, 'token_in_url_not_supported'],
+    ['a method other than GET or POST', { method: 'PUT' }, 405, 'method_not_allowed'],
+    ['an endpoint no lambda has', { lambda: false }, 404, 'lambda_not_found'],
+    ['a method the endpoint has no trigger for', { method: 'POST' }, 404, 'api_method_not_found'],
+  ]) {
+    it(`passes ${label} on to the error handler as ${status} ${code}`, async () => {
+      const { res } = await call({ triggers: [apiTrigger('hello', 'GET', 'SYNC')], ...opts });
+
+      assert.ok(res.thrown, `answered ${res.code}`);
+      assert.strictEqual(res.thrown.status, status);
+      assert.strictEqual(res.thrown.code, code);
+    });
+  }
 
   it("encodes a redirect's query", async () => {
     const result = { res: { redirect: true, url: 'https://example.com/done', query: { next: '/a b&c=d', n: 1 } } };
