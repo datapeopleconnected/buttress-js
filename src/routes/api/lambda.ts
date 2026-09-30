@@ -569,7 +569,9 @@ class EditLambdaDeployment extends Route {
     } catch (err: unknown) {
       const errMessage = Helpers.getThrownErrorMessage(err);
       this.log(`[${this.name}] ${errMessage}`, Route.LogLevel.ERR);
-      return Promise.reject(new Helpers.Errors.RequestError(400, errMessage));
+      // A refusal's reason is kept. Any other failure, such as git's, would give away commands and paths
+      const message = err instanceof Helpers.Errors.RequestError ? err.message : 'lambda_deployment_failed';
+      return Promise.reject(new Helpers.Errors.RequestError(400, message));
     }
   }
 

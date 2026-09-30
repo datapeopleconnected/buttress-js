@@ -415,6 +415,33 @@ describe('routes/api/lambda:ScheduleLambdaExecution', () => {
 });
 
 describe('routes/api/lambda:EditLambdaDeployment', () => {
+  it("answers a deployment that fails with a fixed message, not the failure's detail", async () => {
+    const lambda = { id: 'lambda-1', git: { entryFile: 'index.js', entryPoint: 'execute' } };
+    const failure = new Error('Command failed: git checkout main\nfatal: /srv/buttress/app_data/lambda/code/lambda-abc');
+    stubModel({ lambda: { findOne: async () => lambda, pullLambdaCode: sinon.stub().rejects(failure) } });
+    const route = createRoute(EditLambdaDeployment);
+
+    await assert.rejects(
+      route._validate(createReq({ params: { id: HEX_ID }, body: { branch: 'main', hash: 'abc1234' } })),
+      (err) => err.code === 400 && err.message === 'lambda_deployment_failed',
+    );
+  });
+
+  it('keeps the message of a deployment refused for a reason of its own', async () => {
+    const lambda = { id: 'lambda-1', git: { entryFile: 'index.js', entryPoint: 'execute' } };
+    const refusal = Object.assign(new Error('invalid_lambda_git_branch'), { code: 400, name: 'RequestError' });
+    const { RequestError } = await import('../../../../../dist/helpers/errors.js');
+    stubModel({
+      lambda: { findOne: async () => lambda, pullLambdaCode: sinon.stub().rejects(new RequestError(400, refusal.message)) },
+    });
+    const route = createRoute(EditLambdaDeployment);
+
+    await assert.rejects(
+      route._validate(createReq({ params: { id: HEX_ID }, body: { branch: 'main', hash: 'abc1234' } })),
+      (err) => err.code === 400 && err.message === 'invalid_lambda_git_branch',
+    );
+  });
+
   it('rejects when the branch is missing', async () => {
     stubModel();
     const route = createRoute(EditLambdaDeployment);

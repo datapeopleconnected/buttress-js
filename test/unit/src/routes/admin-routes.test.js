@@ -98,3 +98,39 @@ describe('routes/admin-routes:token lookups', () => {
     assert.deepStrictEqual(lookups, [{ value: 'install-token' }, { value: 'activate-token', type: 'system' }]);
   });
 });
+
+describe('routes/admin-routes:install-lambda failures', () => {
+  const handlers = {};
+
+  before(async () => {
+    const register = (path, handler) => (handlers[path] = handler);
+    await AdminRoutes.initAdminRoutes({ get: register, post: register });
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("answers a failed install with a fixed message, not the failure's detail", async () => {
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      if (modelClass === TokenSchemaModel) {
+        return { Constants: TokenSchemaModel.Constants, findOne: async () => ({ id: 'system-token', type: 'system' }) };
+      }
+      return { findOne: async () => { throw new Error('connect failed: mongodb://user:pw@db.internal'); } };
+    });
+    const res = {
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      send(body) {
+        this.body = body;
+        return this;
+      },
+    };
+
+    await handlers['/api/v1/admin/install-lambda']({ query: { token: 'system' }, params: {}, body: { installLambda: [] } }, res)
+      .catch(() => {});
+
+    assert.strictEqual(res.statusCode, 404);
+    assert.deepStrictEqual(res.body, { message: 'install_lambda_failed' });
+  });
+});

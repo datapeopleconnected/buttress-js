@@ -172,7 +172,9 @@ class AdminRoutes {
 
         res.status(200).send({ message: 'done' });
       } catch (err: unknown) {
-        res.status(404).send({ message: Helpers.getThrownErrorMessage(err) });
+        // A refusal's reason is kept, any other failure's detail stays in the log
+        const message = err instanceof Helpers.Errors.RequestError ? err.message : 'install_lambda_failed';
+        res.status(404).send({ message });
 
         throw err;
       }
