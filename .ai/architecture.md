@@ -121,8 +121,9 @@ Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" â€
   ([src/datastore/adapters/buttress.ts](../src/datastore/adapters/buttress.ts)), built from the DSA's
   `remoteApp` details (`Helpers.DataSharing.createDataSharingConnectionString`). Reads go to the local
   model and every remote, merged by `SortedStreams`. A partner's record carries its `sourceId` (the app it
-  came from), and a write to it names it (`PUT <schema>/:sourceId/:id`; delete-one takes the found
-  record's). Which DSA reaches a source is learnt from reads by `SourceDataSharingRouting`
+  came from), and a write to it names it (`PUT <schema>/:sourceId/:id`; the delete routes take the
+  found records'). A delete of every record also goes through each DSA, for the partner's policy to
+  scope. Which DSA reaches a source is learnt from reads by `SourceDataSharingRouting`
   ([src/services/source-ds-routing.ts](../src/services/source-ds-routing.ts)) and kept in Redis
   (`sds-route:<appId>-<sourceId>` under `Config.redis.scope`), so every process and the next start share it.
   A partner that can't be reached when the model is built is left out of its sources, and tried again on a new
