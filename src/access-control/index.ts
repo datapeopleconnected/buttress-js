@@ -197,17 +197,17 @@ class AccessControl {
     // 	}
     // }
 
-    if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
-    // if (!this._policies[appId]) await this.__cacheAppPolicies(appId);
-
     // A policy whose limit has run out grants nothing, whether or not it has been removed yet
-    const tokenPolicies = (await this.__getTokenPolicies(token)).filter((policy) => !isPolicyExpired(policy));
-    Logging.logSilly(
-      `Got ${tokenPolicies.length} matching policies for token ${token.type}:${token.id}`,
-      req.context.id,
-    );
-
+    let tokenPolicies: Policy[] = [];
     try {
+      if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
+
+      tokenPolicies = (await this.__getTokenPolicies(token)).filter((policy) => !isPolicyExpired(policy));
+      Logging.logSilly(
+        `Got ${tokenPolicies.length} matching policies for token ${token.type}:${token.id}`,
+        req.context.id,
+      );
+
       req.context.ac.policyConfigs = await this.__getOutcome(tokenPolicies, req, schemaName, appId);
     } catch (err: unknown) {
       if (err instanceof PolicyError) {
@@ -557,6 +557,8 @@ class AccessControl {
 
   async __cacheAppSchema(appId: string) {
     const app = await Model.getCoreModel(AppSchemaModel).findById(appId);
+    // A token outliving its app
+    if (!app) throw new PolicyError(401, 'app_not_found', `__cacheAppSchema::app ${appId} not found`);
     this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type.indexOf('collection') === 0);
 
     Logging.logSilly(`Refreshed schema cache for app ${appId} got ${this._schemas[appId].length} schema`);

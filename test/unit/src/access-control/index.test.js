@@ -22,7 +22,9 @@ import AccessControlSingleton, { PolicyError } from '../../../../dist/access-con
 import Model from '../../../../dist/model/index.js';
 import TokenSchemaModel from '../../../../dist/model/core/token.js';
 import PolicySchemaModel from '../../../../dist/model/core/policy.js';
+import AppSchemaModel from '../../../../dist/model/core/app.js';
 import { isPolicyExpired } from '../../../../dist/access-control/helpers.js';
+import Logging from '../../../../dist/helpers/logging.js';
 
 // Only the instance is exported (module-level singleton); grab the class off it so each
 // test gets a fresh, unshared instance instead of mutating shared access-control state.
@@ -249,6 +251,30 @@ describe('access-control/AccessControl:__getOutcome', () => {
 
     assert.strictEqual(outcome.length, 1, 'same-query policies should merge into one config');
     assert.deepStrictEqual(outcome[0].projection, { name: 1, email: 1 });
+  });
+});
+
+describe('access-control/AccessControl:accessControlPolicyMiddleware', () => {
+  it("refuses a token whose app no longer exists, rather than failing the request", async () => {
+    sinon.stub(Model, 'getCoreModel').callsFake((model) => {
+      if (model === TokenSchemaModel) return { Constants: { Type: { SYSTEM: 'system' } } };
+      if (model === AppSchemaModel) return { findById: async () => null };
+      throw new Error(`Unexpected model requested in test: ${model?.name}`);
+    });
+    sinon.stub(Logging, 'logError');
+    const instance = createInstance({ coreSchema: [userSchema] });
+    const req = createReq();
+    req.originalUrl = '/api/v1/car';
+    req.context.timings = {};
+    req.context.token = { id: 'token-1', type: 'user', _appId: 'app-gone' };
+    const res = { status: (code) => ((res.code = code), res), send: (body) => (res.body = body) };
+    const next = sinon.spy();
+
+    await instance.accessControlPolicyMiddleware(req, res, next);
+
+    assert.strictEqual(res.code, 401);
+    assert.deepStrictEqual(res.body, { message: 'app_not_found' });
+    assert.strictEqual(next.called, false);
   });
 });
 
