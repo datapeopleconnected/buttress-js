@@ -458,16 +458,6 @@ export default class Route {
   }
 
   /**
-   * The filter that limits a lookup in a core collection to the caller's app. A system token isn't limited.
-   * @param {Request} req
-   * @return {{_appId?: string}}
-   */
-  _tenantFilter(req: Request): { _appId?: string } {
-    const tenant = this._tenantOf(req);
-    return tenant === null ? {} : { _appId: tenant };
-  }
-
-  /**
    * A core model limited to the caller's app's rows, or every app's for a system token.
    * @param {Request} req
    * @param {class} modelClass - a core model class
