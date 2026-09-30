@@ -616,4 +616,33 @@ describe('Core route tenant scoping', async () => {
 			assert.strictEqual(created.text, 'scoped');
 		});
 	});
+	describe('App api paths', () => {
+		const json = { 'Content-Type': 'application/json' };
+
+		it("Should refuse to create an app with another app's api path, a reserved one, or one that isn't a plain name", async () => {
+			for (const [apiPath, message] of [
+				[testEnv.apps.app1.apiPath, 'duplicate_api_path'],
+				[testEnv.apps.app1.apiPath.toUpperCase(), 'duplicate_api_path'],
+				['lambda', 'reserved_api_path'],
+				['plugin-thing', 'reserved_api_path'],
+				['a/b', 'invalid_api_path'],
+				['', 'invalid_api_path'],
+			]) {
+				await assert.rejects(createApp(ENDPOINT.REST, 'Clashing App', apiPath),
+					(err) => err instanceof BJSReqError && err.code === 400 && err.message === message, apiPath);
+			}
+		});
+
+		it("Should refuse to move an app to another app's api path", async () => {
+			await assert.rejects(bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/app/${testEnv.apps.app1.id}`,
+				method: 'PUT',
+				headers: json,
+				body: JSON.stringify([{ path: 'apiPath', value: testEnv.apps.app2.apiPath }]),
+			}, testEnv.apps.app1.token), (err) => err instanceof BJSReqError && err.code === 400 && err.message === 'duplicate_api_path');
+
+			const [app2] = await bjsReq({ url: `${ENDPOINT.REST}/api/v1/app`, method: 'SEARCH' }, testEnv.apps.app2.token);
+			assert.strictEqual(app2.apiPath, testEnv.apps.app2.apiPath);
+		});
+	});
 });

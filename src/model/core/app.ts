@@ -282,6 +282,27 @@ export default class AppSchemaModel extends StandardModel<App> {
       .setPolicyPropertiesList(body.id.toString(), appPolicyPropertiesList);
   }
 
+  /**
+   * Why an app can't have `apiPath`, or null if it can. An api path names the app in its URLs, so it's letters,
+   * digits, `_` and `-`, starting with a letter or digit; isn't one of the names Buttress's own routes use; and is
+   * another app's in no case, as routes match without case.
+   * @param {unknown} apiPath
+   * @param {string} [appId] - the app the api path is for, when it already exists
+   * @return {Promise<string|null>}
+   */
+  async apiPathProblem(apiPath: unknown, appId?: string): Promise<string | null> {
+    if (typeof apiPath !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(apiPath)) return 'invalid_api_path';
+
+    const name = apiPath.toLowerCase();
+    if (['api', 'lambda', 'admin', 'check', 'core'].includes(name) || name.startsWith('plugin-')) {
+      return 'reserved_api_path';
+    }
+
+    const apps = await Helpers.streamAll<App>(await super.find({}));
+    const taken = apps.some((app) => app.apiPath?.toLowerCase() === name && String(app.id) !== String(appId));
+    return taken ? 'duplicate_api_path' : null;
+  }
+
   async findByApiPath(apiPath: string) {
     Logging.logSilly(`Find by ApiPath ${apiPath}`);
     const app = await super.findOne({ apiPath: apiPath });

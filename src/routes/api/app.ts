@@ -223,14 +223,19 @@ class AddApp extends Route {
       }
 
       Model.getCoreModel(AppSchemaModel)
-        .isDuplicate(req.body)
+        .apiPathProblem(req.body.apiPath)
+        .then((problem) => {
+          if (problem) throw new Helpers.Errors.RequestError(400, problem);
+          return Model.getCoreModel(AppSchemaModel).isDuplicate(req.body);
+        })
         .then((res) => {
           if (res === true) {
             this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
             return reject(new Helpers.Errors.RequestError(400, `duplicate`));
           }
           resolve(true);
-        });
+        })
+        .catch(reject);
     });
   }
 
@@ -795,6 +800,13 @@ class AppUpdate extends Route {
     if (!exists) {
       this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
+    }
+
+    // A new api path has to be one the app can have
+    for (const update of (Array.isArray(body) ? body : [body]) as UpdatePathBody[]) {
+      if (update.path !== 'apiPath') continue;
+      const problem = await Model.getCoreModel(AppSchemaModel).apiPathProblem(update.value, id);
+      if (problem) return Promise.reject(new Helpers.Errors.RequestError(400, problem));
     }
     return {
       id,

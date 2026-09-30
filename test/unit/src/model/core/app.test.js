@@ -16,6 +16,7 @@
 
 import { describe, it } from 'mocha';
 import assert from 'assert';
+import { Readable } from 'node:stream';
 
 import AppSchemaModel from '../../../../../dist/model/core/app.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
@@ -95,5 +96,27 @@ describe('model/core/AppSchemaModel', () => {
         assert.ok(getCoreModelCalls.includes(expected), `${expected.name} should still be part of the cascade`);
       }
     });
+  });
+});
+
+describe('model/core/AppSchemaModel:apiPathProblem', () => {
+  const model = Object.create(AppSchemaModel.prototype);
+  model.adapter = { find: () => Readable.from([{ id: 'app-1', apiPath: 'shop' }], { objectMode: true }) };
+
+  it('accepts a plain, unused api path, or the app keeping its own', async () => {
+    assert.strictEqual(await model.apiPathProblem('new-app_2'), null);
+    assert.strictEqual(await model.apiPathProblem('shop', 'app-1'), null);
+  });
+
+  it("refuses another app's api path, whatever its case", async () => {
+    assert.strictEqual(await model.apiPathProblem('shop'), 'duplicate_api_path');
+    assert.strictEqual(await model.apiPathProblem('SHOP', 'app-2'), 'duplicate_api_path');
+  });
+
+  it('refuses a reserved or malformed api path', async () => {
+    for (const apiPath of ['api', 'Lambda', 'core', 'plugin-x']) assert.strictEqual(await model.apiPathProblem(apiPath), 'reserved_api_path');
+    for (const apiPath of ['', '-x', 'a/b', 'a.b', '../x', 'a b', null, { $ne: 1 }]) {
+      assert.strictEqual(await model.apiPathProblem(apiPath), 'invalid_api_path', JSON.stringify(apiPath));
+    }
   });
 });

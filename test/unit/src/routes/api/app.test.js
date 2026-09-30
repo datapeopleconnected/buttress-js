@@ -51,6 +51,7 @@ function stubModel({ app = {}, token = {} } = {}) {
     ...realQueryParser(AppSchemaModel),
     validate: () => ({ isValid: true }),
     isDuplicate: async () => false,
+    apiPathProblem: async () => null,
     add: async () => ({ app: { id: 'app-1', apiPath: 'test-app' }, token: { value: 'token-value' } }),
     findById: async () => null,
     findOne: async () => null,

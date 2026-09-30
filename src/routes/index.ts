@@ -62,6 +62,8 @@ class Routes {
   id: string;
 
   _routerMap: Record<string, Router>;
+  // The app each app router key belongs to
+  _routerOwners: Record<string, string> = {};
   _routerOrder: string[];
   _dispatcherMounted: boolean;
   _errorHandlerMounted: boolean;
@@ -293,7 +295,17 @@ class Routes {
    * @param {string} key
    * @param {object} router - express router object
    */
-  _registerRouter(key: string, router: Router) {
+  _registerRouter(key: string, router: Router, ownerId?: string) {
+    // An app's router isn't replaced by another app's registered under the same key
+    const owner = this._routerOwners[key];
+    if (owner && ownerId && owner !== ownerId) {
+      Logging.logError(
+        `Routes:_registerRouter ${key} belongs to app ${owner}, not registering app ${ownerId}'s routes`,
+      );
+      return;
+    }
+    if (ownerId) this._routerOwners[key] = ownerId;
+
     if (this._routerMap[key]) {
       Logging.logSilly(`Routes:_registerRouter Reregister ${key}`);
       this._routerMap[key] = router;
@@ -312,6 +324,7 @@ class Routes {
 
     Logging.logSilly(`Routes:_deregisterRouter Deregister ${key}`);
     delete this._routerMap[key];
+    delete this._routerOwners[key];
     this._routerOrder = this._routerOrder.filter((k) => k !== key);
   }
 
@@ -381,7 +394,7 @@ class Routes {
         return this._initSchemaRoutes(appRouter, app, schema);
       });
 
-    this._registerRouter(app.apiPath, appRouter);
+    this._registerRouter(app.apiPath, appRouter, String(app.id));
   }
 
   createPluginRoutes(pluginName: string, routes: PluginRouteClass[]) {
