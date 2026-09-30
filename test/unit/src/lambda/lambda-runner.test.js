@@ -31,6 +31,7 @@ import LambdaExecutionSchemaModel from '../../../../dist/model/core/lambda-execu
 import AppSchemaModel from '../../../../dist/model/core/app.js';
 import TokenSchemaModel from '../../../../dist/model/core/token.js';
 import SecureStoreSchemaModel from '../../../../dist/model/core/secure-store.js';
+import DeploymentSchemaModel from '../../../../dist/model/core/deployment.js';
 import Logging from '../../../../dist/helpers/logging.js';
 
 const Config = createConfig();
@@ -328,6 +329,63 @@ describe('lambda/LambdaRunner:handleLambdaExecutionMessage', () => {
     assert.ok(nrp.emit.calledWith('lambda:worker:errored'));
     const [, payload] = nrp.emit.firstCall.args;
     assert.match(JSON.parse(payload).errMessage, /boom/);
+  });
+});
+
+describe("lambda/LambdaRunner:handleLambdaExecutionMessage a lambda that isn't executable", () => {
+  // Hands the runner an execution of a disabled lambda, as the manager does
+  async function handOver(execution, lambdaType) {
+    sinon.stub(Logging, 'logError');
+    const { runner, nrp } = createRunner();
+    const updateById = sinon.stub().resolves();
+    const add = sinon.stub().resolves();
+    const lambda = { id: 'lambda-1', _appId: 'app-1', name: 'disabled', executable: false, trigger: [] };
+    stubModel(
+      new Map([
+        [LambdaSchemaModel, { createId: (v) => v, findById: async () => lambda }],
+        [AppSchemaModel, { createId: (v) => v, findById: async () => ({ id: 'app-1' }) }],
+        [LambdaExecutionSchemaModel, { ...fakeExecutionModel({ findOneResult: execution, updateById }), add }],
+        [DeploymentSchemaModel, { createId: (v) => v }],
+      ]),
+    );
+    const execute = sinon.stub(runner, 'execute').resolves();
+
+    runner.working = true;
+    await runner.handleLambdaExecutionMessage({ lambdaId: 'lambda-1', lambdaType, executionId: 'exec-1', workerId: 'w1' });
+    return { runner, nrp, updateById, add, execute };
+  }
+
+  it("doesn't run it, records why, and still queues the next run of its cron", async () => {
+    const execution = {
+      id: 'exec-1', lambdaId: 'lambda-1', deploymentId: 'd', _appId: 'app-1', metadata: [],
+      nextCronExpression: 'in 1 hour',
+    };
+
+    const { runner, nrp, updateById, add, execute } = await handOver(execution, 'CRON');
+
+    assert.strictEqual(execute.called, false);
+    assert.strictEqual(runner.working, false);
+    assert.ok(updateById.calledWithMatch('exec-1', { $set: { status: 'ERROR' } }));
+    const logs = updateById.firstCall.args[1].$push.logs.$each;
+    assert.ok(logs.some((entry) => /lambda_is_not_executable/.test(entry.log)));
+    assert.ok(add.calledOnce);
+    assert.strictEqual(add.firstCall.args[0].nextCronExpression, 'in 1 hour');
+    assert.ok(nrp.emit.calledWith('lambda:worker:errored'));
+  });
+
+  it('answers an API caller waiting on it that the lambda is not executable', async () => {
+    const execution = { id: 'exec-1', lambdaId: 'lambda-1', metadata: [{ key: 'REQ_ID', value: 'req-1' }] };
+
+    const { nrp, add } = await handOver(execution, 'API_ENDPOINT');
+
+    const result = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+    assert.deepStrictEqual(JSON.parse(result.args[1]), {
+      code: 400,
+      err: 'lambda_is_not_executable',
+      reqId: 'req-1',
+      executionId: 'exec-1',
+    });
+    assert.strictEqual(add.called, false);
   });
 });
 

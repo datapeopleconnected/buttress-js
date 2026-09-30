@@ -39,6 +39,14 @@ class LambdaTimeoutError extends Error {
   }
 }
 
+// A lambda that has been turned off, whose executions are skipped
+class LambdaNotExecutableError extends Error {
+  constructor() {
+    super('lambda_is_not_executable');
+    this.name = 'LambdaNotExecutableError';
+  }
+}
+
 // A lambda that failed while running, whose execution has already been recorded as errored
 class LambdaExecutionFailedError extends Error {
   constructor(message: string) {
@@ -577,6 +585,12 @@ export default class LambdaRunner {
       const headers = execution.metadata.find((m) => m.key === 'HEADERS')?.value || undefined;
       reqId = execution.metadata.find((m) => m.key === 'REQ_ID')?.value || undefined;
 
+      // A lambda that's been turned off doesn't run. Its cron keeps its schedule, so it runs again once turned back on.
+      if (lambda.executable === false) {
+        await this._queueNextCronExecution(execution);
+        throw new LambdaNotExecutableError();
+      }
+
       this._lambdaExecution = execution;
       await this.execute(lambda, execution, app, triggerType, {
         body,
@@ -605,9 +619,10 @@ export default class LambdaRunner {
 
         // It failed before the lambda ran, so nothing has answered an API caller waiting on it yet
         if (payload.lambdaType === 'API_ENDPOINT' && reqId) {
+          const notExecutable = err instanceof LambdaNotExecutableError;
           const message: ExecutionResultMessage = {
-            code: 500,
-            err: 'lambda_execution_failed',
+            code: notExecutable ? 400 : 500,
+            err: notExecutable ? err.message : 'lambda_execution_failed',
             reqId,
             executionId: execution.id,
           };
@@ -713,32 +728,38 @@ export default class LambdaRunner {
       },
     );
 
-    if (execution.nextCronExpression) {
-      await Model.getCoreModel(LambdaExecutionSchemaModel).add(
-        {
-          triggerType: 'CRON',
-          priority: ExecPriority.CRON,
-          lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(execution.lambdaId),
-          deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(execution.deploymentId),
-          executeAfter: Sugar.Date.create(execution.nextCronExpression),
-          nextCronExpression: execution.nextCronExpression,
-          // Ignored: add() takes the token id as its third argument, so the new execution doesn't keep it.
-          _tokenId: execution._tokenId ? Model.getCoreModel(LambdaSchemaModel).createId(execution._tokenId) : null,
-        } as LambdaExecutionAddBody,
-        execution._appId,
-      );
+    await this._queueNextCronExecution(execution);
+  }
 
-      // const completeTriggerObj = {
-      // 	'trigger.$.cron.status': 'PENDING',
-      // 	'trigger.$.cron.executionTime': Sugar.Date.create(trigger.periodicExecution),
-      // };
-      // await Model.getCoreModel(LambdaSchemaModel).update({
-      // 	'id': Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
-      // 	'trigger.type': type,
-      // }, {
-      // 	$set: completeTriggerObj,
-      // });
-    }
+  // Queues the next run of a cron lambda's execution
+  async _queueNextCronExecution(execution: LambdaExecution) {
+    const nextCronExpression = execution.nextCronExpression;
+    if (!nextCronExpression) return;
+
+    await Model.getCoreModel(LambdaExecutionSchemaModel).add(
+      {
+        triggerType: 'CRON',
+        priority: ExecPriority.CRON,
+        lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(execution.lambdaId),
+        deploymentId: Model.getCoreModel(DeploymentSchemaModel).createId(execution.deploymentId),
+        executeAfter: Sugar.Date.create(nextCronExpression),
+        nextCronExpression,
+        // Ignored: add() takes the token id as its third argument, so the new execution doesn't keep it.
+        _tokenId: execution._tokenId ? Model.getCoreModel(LambdaSchemaModel).createId(execution._tokenId) : null,
+      } as LambdaExecutionAddBody,
+      execution._appId,
+    );
+
+    // const completeTriggerObj = {
+    // 	'trigger.$.cron.status': 'PENDING',
+    // 	'trigger.$.cron.executionTime': Sugar.Date.create(trigger.periodicExecution),
+    // };
+    // await Model.getCoreModel(LambdaSchemaModel).update({
+    // 	'id': Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
+    // 	'trigger.type': type,
+    // }, {
+    // 	$set: completeTriggerObj,
+    // });
   }
 
   /**
