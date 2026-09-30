@@ -40,6 +40,8 @@ export class RoutesLambdaSetup {
   // Answers an error from an endpoint's middleware. Lambda endpoints are added after the app's own error handler, so
   // they need one of their own.
   _errorHandler?: express.ErrorRequestHandler;
+  // The api paths whose lambda endpoints are registered, so each is registered once
+  _configuredApiPaths = new Set<string>();
 
   constructor(
     app: express.Application,
@@ -86,6 +88,9 @@ export class RoutesLambdaSetup {
   }
 
   async __configureAppLambdaEndpoints(apiPath: string) {
+    if (this._configuredApiPaths.has(apiPath)) return;
+    this._configuredApiPaths.add(apiPath);
+
     this.app.all(`/lambda/v1/${apiPath}/*endpoint`, this._preRouteMiddleware, async (req: Request, res: Response) => {
       // A token in a URL ends up in access logs and browser history
       if (req.query?.token !== undefined) {
