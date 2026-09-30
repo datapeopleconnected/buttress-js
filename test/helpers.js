@@ -63,11 +63,14 @@ export const createLambda = async (ENDPOINT, lambda, auth, token) => await bjsRe
 export const createUser = async (ENDPOINT, userData, authData, token) => await bjsReqPost(`${ENDPOINT}/api/v1/user`, {auth: [userData], token: authData, policyProperties: userData.policyProperties}, token);
 export const createPolicy = async (ENDPOINT, policy, token) => await bjsReqPost(`${ENDPOINT}/api/v1/policy`, policy, token);
 
+// Users with the same key must still get a different appId and email, or the second one is refused as a duplicate
+let policyUserCount = 0;
 export const createPolicyUser = async (ENDPOINT, app, key, policyProperties) => {
+  const suffix = `${Date.now()}-${++policyUserCount}`;
   const user = await createUser(ENDPOINT, {
     app: 'app-test',
-    appId: `${key}-${Math.floor(Math.random() * 1000)}`,
-    email: `${key}+${Math.floor(Math.random() * 1000)}@buttressjs.com`,
+    appId: `${key}-${suffix}`,
+    email: `${key}+${suffix}@buttressjs.com`,
   }, {
     domains: [Config.app.host],
     policyProperties,
