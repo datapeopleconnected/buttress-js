@@ -31,16 +31,27 @@ afterEach(() => {
 });
 
 describe('routes/RoutesLambdaSetup:__configureAppLambdaEndpoints', () => {
-  it("registers an app's lambda endpoints once, however often it's asked to", async () => {
-    const app = { all: sinon.spy(), use: sinon.spy() };
-    const setup = new RoutesLambdaSetup(app, undefined, [], () => {});
+  it("registers an app's lambda endpoints as a router of their own, once, however often it's asked to", async () => {
+    const registered = [];
+    const setup = new RoutesLambdaSetup(undefined, [], (key, router) => registered.push([key, router]));
 
     await setup.__configureAppLambdaEndpoints('app-one');
     await setup.__configureAppLambdaEndpoints('app-one');
     await setup.__configureAppLambdaEndpoints('app-two');
 
-    assert.deepStrictEqual(app.all.args.map(([path]) => path), ['/lambda/v1/app-one/*endpoint', '/lambda/v1/app-two/*endpoint']);
-    assert.strictEqual(app.use.callCount, 2);
+    assert.deepStrictEqual(registered.map(([key]) => key), ['lambda:app-one', 'lambda:app-two']);
+    assert.strictEqual(typeof registered[0][1], 'function');
+  });
+
+  it('registers them again once an app with the api path has gone', async () => {
+    const registered = [];
+    const setup = new RoutesLambdaSetup(undefined, [], (key) => registered.push(key));
+
+    await setup.__configureAppLambdaEndpoints('app-one');
+    setup.forget('app-one');
+    await setup.__configureAppLambdaEndpoints('app-one');
+
+    assert.deepStrictEqual(registered, ['lambda:app-one', 'lambda:app-one']);
   });
 });
 
@@ -86,10 +97,8 @@ describe('routes/RoutesLambdaSetup: calling a lambda endpoint', () => {
     ]);
     sinon.stub(Model, 'getCoreModel').callsFake((model) => models.get(model));
 
-    const app = { all: sinon.spy(), use: sinon.spy() };
-    const setup = new RoutesLambdaSetup(app, createNrp(result), [], () => {});
-    await setup.__configureAppLambdaEndpoints('app-one');
-    const handler = app.all.firstCall.args[2];
+    const setup = new RoutesLambdaSetup(createNrp(result), [], () => {});
+    const handler = setup._endpointHandler('app-one');
 
     const req = {
       method, params: { endpoint }, query, headers: {}, body: method === 'POST' ? { a: 1 } : undefined,

@@ -135,6 +135,8 @@ describe('Error contract', async () => {
 	const table = [
 		['a malformed JSON body', () => [notes(), { method: 'POST', headers: json, body: '{"text":' }, appToken()],
 			400, 'invalid_body'],
+		['a path no route takes', () => [`${ENDPOINT.REST}/api/v1/nothing-here`, { method: 'GET' }, appToken()],
+			404, 'unknown_route', { method: 'GET', path: '/api/v1/nothing-here' }],
 		['no token', () => [notes(), { method: 'GET' }], 401, 'missing_token'],
 		['a token nobody has', () => [notes(), { method: 'GET' }, 'not-a-token-anybody-has'], 401, 'invalid_token'],
 		['?apiPath= naming another app', () => [`${ENDPOINT.REST}/api/v1/app/schema?apiPath=another-app`, { method: 'GET' }, appToken()],

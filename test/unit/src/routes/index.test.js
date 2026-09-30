@@ -58,6 +58,21 @@ describe('routes/Routes:init', () => {
 
     assert.strictEqual(routes._routerMap['myapp'], undefined);
   });
+
+  it("removes a deleted app's lambda endpoints, so an app given its api path later gets its own", async () => {
+    const { routes } = createRoutes();
+    const listeners = {};
+    const nrp = { on: (evt, cb) => (listeners[evt] = cb), emit: sinon.spy() };
+    await routes.init({ get: (key) => (key === 'nrp' ? nrp : undefined) });
+    await routes._lambdaSetupHelper.__configureAppLambdaEndpoints('myapp');
+    assert.ok(routes._routerMap['lambda:myapp']);
+
+    listeners['rest:worker:app-deleted'](JSON.stringify({ appId: 'app-1', apiPath: 'myapp' }));
+
+    assert.strictEqual(routes._routerMap['lambda:myapp'], undefined);
+    await routes._lambdaSetupHelper.__configureAppLambdaEndpoints('myapp');
+    assert.ok(routes._routerMap['lambda:myapp']);
+  });
 });
 
 describe('routes/Routes:_initIndexPage', () => {
@@ -101,14 +116,14 @@ describe('routes/Routes:_initIndexPage', () => {
       assert.match(await res.text(), /<html/i);
     });
 
-    it(`returns 404 at ${pagePath} when BUTTRESS_APP_INDEX_PAGE is FALSE`, async () => {
+    it(`returns 404 unknown_route at ${pagePath} when BUTTRESS_APP_INDEX_PAGE is FALSE`, async () => {
       Config.app.indexPage = 'FALSE';
       await listen();
 
       const res = await fetch(`${baseUrl}${pagePath}`);
 
       assert.strictEqual(res.status, 404);
-      assert.doesNotMatch(await res.text(), /<html/i);
+      assert.strictEqual((await res.json()).code, 'unknown_route');
     });
   }
 });
@@ -157,13 +172,57 @@ describe('routes/Routes:_registerRouter/_deregisterRouter/_getRouter', () => {
 });
 
 describe('routes/Routes:_mountErrorHandler', () => {
-  it('mounts the error handler exactly once', () => {
+  it('mounts the unknown route answer and the error handler exactly once', () => {
     const { routes, app } = createRoutes();
 
     routes._mountErrorHandler();
     routes._mountErrorHandler();
 
-    assert.strictEqual(app.use.callCount, 1);
+    assert.strictEqual(app.use.callCount, 2);
+  });
+
+  describe('on a real app', () => {
+    let server;
+    let routes;
+    let baseUrl;
+
+    // The dispatcher, then the unknown route answer and the error handler, as the REST process mounts them
+    beforeEach(async () => {
+      const app = Express();
+      routes = new Routes(app);
+      routes._mountRouterDispatcher();
+      routes._mountErrorHandler();
+      server = await new Promise((resolve) => {
+        const s = app.listen(0, () => resolve(s));
+      });
+      baseUrl = `http://127.0.0.1:${server.address().port}`;
+    });
+
+    afterEach(async () => {
+      await new Promise((resolve) => server.close(resolve));
+    });
+
+    it('answers a request no route takes with 404 unknown_route, as JSON', async () => {
+      const res = await fetch(`${baseUrl}/nothing/here`, { method: 'DELETE' });
+
+      assert.strictEqual(res.status, 404);
+      assert.match(res.headers.get('content-type'), /^application\/json/);
+      assert.deepStrictEqual(await res.json(), {
+        code: 'unknown_route',
+        message: 'No route takes DELETE /nothing/here',
+        details: { method: 'DELETE', path: '/nothing/here' },
+      });
+    });
+
+    it('reaches a router registered after they are mounted, as an app added later is', async () => {
+      const router = Express.Router();
+      router.get('/later', (req, res) => res.json({ reached: true }));
+      routes._registerRouter('later', router);
+
+      const res = await fetch(`${baseUrl}/later`);
+
+      assert.deepStrictEqual(await res.json(), { reached: true });
+    });
   });
 });
 

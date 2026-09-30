@@ -33,29 +33,23 @@ import { withoutCredentialHeaders } from '../helpers/redact.js';
 
 const SYNC_LAMBDA_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
+// Adds an app's router to the ones Routes dispatches to, ahead of the unknown route answer and the error handler
+export type RegisterRouter = (key: string, router: express.Router) => void;
+
 export class RoutesLambdaSetup {
-  app: express.Application;
   _nrp?: NRP;
   _preRouteMiddleware: express.RequestHandler[];
-  // Answers an error from an endpoint's middleware. Lambda endpoints are added after the app's own error handler, so
-  // they need one of their own.
-  _errorHandler?: express.ErrorRequestHandler;
+  _registerRouter?: RegisterRouter;
   // The api paths whose lambda endpoints are registered, so each is registered once
   _configuredApiPaths = new Set<string>();
   // Lambda results this process is waiting on, by request id, and the one subscription that hands them over
   _pendingResults = new Map<string, (result: ExecutionResultMessage) => void>();
   _resultsSubscription?: Promise<unknown>;
 
-  constructor(
-    app: express.Application,
-    nrp: NRP | undefined,
-    preRouteMiddleware: express.RequestHandler[],
-    errorHandler?: express.ErrorRequestHandler,
-  ) {
-    this.app = app;
+  constructor(nrp: NRP | undefined, preRouteMiddleware: express.RequestHandler[], registerRouter?: RegisterRouter) {
     this._nrp = nrp;
     this._preRouteMiddleware = preRouteMiddleware;
-    this._errorHandler = errorHandler;
+    this._registerRouter = registerRouter;
   }
 
   async _setupLambdaEndpoints() {
@@ -103,11 +97,32 @@ export class RoutesLambdaSetup {
     return this._resultsSubscription;
   }
 
+  /**
+   * Registers the app's lambda endpoints, `/lambda/v1/<apiPath>/...`, as a router of their own, `lambda:<apiPath>`.
+   * Routes dispatches to it ahead of its unknown route answer and error handler, which answers its errors, however
+   * long after boot the app was added.
+   * @param {string} apiPath
+   */
   async __configureAppLambdaEndpoints(apiPath: string) {
     if (this._configuredApiPaths.has(apiPath)) return;
     this._configuredApiPaths.add(apiPath);
 
-    this.app.all(`/lambda/v1/${apiPath}/*endpoint`, this._preRouteMiddleware, async (req: Request, res: Response) => {
+    const router = express.Router();
+    router.all(`/lambda/v1/${apiPath}/*endpoint`, this._preRouteMiddleware, this._endpointHandler(apiPath));
+    this._registerRouter?.(`lambda:${apiPath}`, router);
+  }
+
+  /**
+   * Lets the api path's endpoints be registered again, once the app that had it has gone
+   * @param {string} apiPath
+   */
+  forget(apiPath: string) {
+    this._configuredApiPaths.delete(apiPath);
+  }
+
+  // Calls the lambda the request names, answering with its result or the execution's id
+  _endpointHandler(apiPath: string) {
+    return async (req: Request, res: Response) => {
       // A token in a URL ends up in access logs and browser history
       if (req.query?.token !== undefined) {
         throw Helpers.Errors.badRequest('token_in_url_not_supported', 'A token in the URL is not supported');
@@ -178,9 +193,7 @@ export class RoutesLambdaSetup {
           executionId: lambdaExecutionId,
         });
       }
-    });
-    // Express passes an error only to error handlers added with use(), not to route handlers
-    if (this._errorHandler) this.app.use(`/lambda/v1/${apiPath}`, this._errorHandler);
+    };
   }
 
   async _queueLambdaAPIExecution(endpointOrId: string, apiPath: string, req: RequestWithBody<unknown>) {

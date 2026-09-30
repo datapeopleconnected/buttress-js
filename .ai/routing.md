@@ -15,8 +15,14 @@ middleware (`_mountRouterDispatcher` → `_dispatchRouters`). Router keys in pra
   `app-schema:updated` arrives over NRP (see `BootstrapRest.__handleMessageFromMain`).
 - `'plugin-<pluginName>'` — one per plugin that declares `routes`, see
   [architecture.md](architecture.md#plugin-system).
+- `'lambda:<apiPath>'` — one per app, its `API_ENDPOINT` lambdas under `/lambda/v1/<apiPath>/...`, registered by
+  `RoutesLambdaSetup` at boot and when an app is added (see [Lambda API endpoints](#lambda-api-endpoints--tokens)).
 
-`_deregisterRouter` runs on `rest:worker:app-deleted` (app removed).
+After the dispatcher, `_mountErrorHandler` mounts a 404 `unknown_route` answer for a request no router took, and the
+error handler. Routers registered later are still dispatched to ahead of them, since the dispatcher reads the map
+on each request.
+
+`_deregisterRouter` runs on `rest:worker:app-deleted` (app removed), for the app's router and its `lambda:` one.
 
 ### Middleware chain (`_preRouteMiddleware`, applied to every route individually)
 
@@ -137,8 +143,9 @@ only custom validation via their JSON schema).
 
 ## Lambda API endpoints & tokens
 
-[src/routes/lambda-setup.ts](../src/routes/lambda-setup.ts) (`RoutesLambdaSetup`) mounts one Express
-route per `API_ENDPOINT`-trigger lambda under `/lambda/v1/<apiPath>/<endpoint url>`, holds the HTTP
+[src/routes/lambda-setup.ts](../src/routes/lambda-setup.ts) (`RoutesLambdaSetup`) registers a router per app,
+`lambda:<apiPath>`, whose one route takes `/lambda/v1/<apiPath>/<endpoint url>` for the app's `API_ENDPOINT`-trigger
+lambdas; its errors reach the one error handler. It holds the HTTP
 response open for a SYNC endpoint, and resolves it when `lambda:worker:execution-result` arrives for the
 matching `reqId`. One subscription per process hands results to the waiting requests
 (`_pendingResults`), and a request is waiting before its execution is queued (`_queueLambdaAPIExecution`), so

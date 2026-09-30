@@ -57,6 +57,12 @@ export interface AppDeletedMessage {
 type PluginRouteClass = new (schema: null, app: null, services: Services) => Route;
 type RouteClass = CoreRouteClass | PluginRouteClass;
 
+// A request no route takes
+const unknownRoute = (req: Request) =>
+  Helpers.Errors.notFound('unknown_route', `No route takes ${req.method} ${req.path}`, {
+    method: req.method,
+    path: req.path,
+  });
 class Routes {
   app: express.Application;
   id: string;
@@ -88,7 +94,7 @@ class Routes {
     this._errorHandlerMounted = false;
 
     this._tokensHelper = new RoutesTokens();
-    this._lambdaSetupHelper = new RoutesLambdaSetup(app, undefined, []);
+    this._lambdaSetupHelper = new RoutesLambdaSetup(undefined, []);
     this._middlewareHelper = new RoutesMiddleware(this._routerMap, this._tokensHelper);
 
     this._preRouteMiddleware = [
@@ -106,11 +112,8 @@ class Routes {
     this._nrp = services.get('nrp') as NRP;
     if (!this._nrp) throw new Error('Routes: NRP not found in services');
 
-    this._lambdaSetupHelper = new RoutesLambdaSetup(
-      this.app,
-      this._nrp,
-      this._preRouteMiddleware,
-      (err, req, res, next) => this.logErrors(err, req, res, next),
+    this._lambdaSetupHelper = new RoutesLambdaSetup(this._nrp, this._preRouteMiddleware, (key, router) =>
+      this._registerRouter(key, router),
     );
     this._middlewareHelper = new RoutesMiddleware(this._routerMap, this._tokensHelper);
 
@@ -118,6 +121,8 @@ class Routes {
       const exec = JSON.parse(json) as AppDeletedMessage;
       if (!exec.apiPath) return;
       this._deregisterRouter(exec.apiPath);
+      this._deregisterRouter(`lambda:${exec.apiPath}`);
+      this._lambdaSetupHelper.forget(exec.apiPath);
     });
   }
 
@@ -148,7 +153,7 @@ class Routes {
       res.set('Referrer-Policy', 'no-referrer');
       next();
     });
-    this.app.get('/favicon.ico', (req: Request, res: Response) => res.sendStatus(404));
+    this.app.get('/favicon.ico', (req: Request, res: Response) => res.status(404).json(unknownRoute(req).toBody()));
     this._initIndexPage();
 
     this.app.use((req: Request, _res: Response, next: NextFunction) => {
@@ -221,7 +226,9 @@ class Routes {
         res.sendFile('index.html', { root: path.join(__dirname, '../static') }),
       );
     } else {
-      this.app.get(['/', '/index.html'], (req: Request, res: Response) => res.sendStatus(404));
+      this.app.get(['/', '/index.html'], (req: Request, res: Response) =>
+        res.status(404).json(unknownRoute(req).toBody()),
+      );
     }
   }
 
@@ -254,9 +261,14 @@ class Routes {
     this._dispatcherMounted = true;
   }
 
+  /**
+   * Mounts, last, the answer to a request no route took, 404 unknown_route, and the error handler. Routers registered
+   * later, such as an app's routes or lambda endpoints, are dispatched to ahead of them.
+   */
   _mountErrorHandler() {
     if (this._errorHandlerMounted) return;
 
+    this.app.use((req: Request, _res: Response, next: NextFunction) => next(unknownRoute(req)));
     const logErrors = (err: unknown, req: Request, res: Response, next: NextFunction) =>
       this.logErrors(err, req, res, next);
     this.app.use(logErrors);
