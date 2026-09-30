@@ -77,6 +77,22 @@ Route flags a subclass typically sets: `verb`, `authType`, `permissions`, `activ
 `activityTitle`/`activityDescription`, `redactResults`, `addSourceId`. Schema-generated routes call
 `__configureSchemaRoute()` which sets `core = false`, `redactResults = true`, `addSourceId = true`.
 
+**Core collections are shared by every app**, so a core route reaches them through
+`this.scoped(req, CoreModel)`, a `TenantScopedModel` ([src/model/type/tenant-scoped.ts](../src/model/type/tenant-scoped.ts))
+limited to the caller's app (every app's for a system token), rather than `Model.getCoreModel()`:
+
+- queries (`find`, `findOne`, `count`, `rmAll`) get `{[TenantKey]: app}` ANDed in as they reach the model, after
+  `parseQuery`; `findById` gives `null` for another app's row; `exists` is scoped; `updateByPath`, `rm` and
+  `owned(id)` (the model itself, for its own by-id methods) refuse another app's row with 400 `invalid_id`;
+  `rmBulk` removes only the app's rows; `add` puts the app into the internals.
+- Each core model says which property names a row's app: `static TenantKey`, `_appId`, or `id` for `apps`.
+- `this.unscopedModel(CoreModel, reason)` is the explicit way to reach every app's rows.
+- A filter that names the caller's own app for a system token too (a policy name check, sync) stays in the
+  query, since the scoped model passes a system token through.
+
+As of 2026-09-30 only `src/routes/api/policy.ts` has moved to it, plus the `add`s of the secure store, lambda,
+execution and data sharing routes; the other routes still add `this._tenantFilter(req)` themselves.
+
 ## Schema-routes (`src/routes/schema-routes/`)
 
 Twelve generic route classes (`add-one`, `add-many`, `get-one`, `get-many`, `get-list`, `search-list`,
