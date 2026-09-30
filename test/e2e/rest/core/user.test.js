@@ -222,6 +222,46 @@ describe('User API', async () => {
 				assert.match(error.message, /invalid_domains/);
 			}
 		});
+
+		describe('Duplicates', () => {
+			const add = (auth) => bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ auth }),
+			}, testEnv.apps.app1.token);
+			const refused = async (auth) => {
+				try {
+					await add(auth);
+					return false;
+				} catch (error) {
+					if (!(error instanceof BJSReqError)) throw error;
+					assert.match(error.message, /user_already_exists_with_that_name/);
+					return true;
+				}
+			};
+
+			before(async () => {
+				await add([
+					{ app: 'dup-google', appId: 'dup-g-1', email: 'dup-a@example.com' },
+					{ app: 'dup-github', appId: 'dup-h-1', email: 'dup-b@example.com' },
+				]);
+			});
+
+			it('Should refuse a user whose auth has the app and email, or app and id, of one auth entry of an existing user', async () => {
+				assert.strictEqual(await refused([{ app: 'dup-google', appId: 'dup-g-2', email: 'dup-a@example.com' }]), true);
+				assert.strictEqual(await refused([{ app: 'dup-github', appId: 'dup-h-1', email: 'dup-new@example.com' }]), true);
+			});
+
+			it("Should add a user whose auth matches an existing user's app in one auth entry and email in another", async () => {
+				assert.strictEqual(await refused([{ app: 'dup-google', appId: 'dup-g-3', email: 'dup-b@example.com' }]), false);
+			});
+
+			it('Should add a user whose auth gives no email, beside an existing user with none', async () => {
+				await add([{ app: 'dup-noemail', appId: 'dup-n-1' }]);
+				assert.strictEqual(await refused([{ app: 'dup-noemail', appId: 'dup-n-2' }]), false);
+			});
+		});
 	});
 
 	describe('KeepAlive', () => {

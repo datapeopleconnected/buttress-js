@@ -505,9 +505,16 @@ class AddUser extends Route {
 
     const existingUsers: User[] = [];
     for await (const auth of req.body.auth) {
+      // A user with an auth entry for the same app and the same id or email, both in that one entry. Only what the
+      // auth gives is matched, as a missing field would match every entry without one.
+      const identifiers = [
+        auth.appId !== undefined && auth.appId !== null ? { appId: auth.appId } : null,
+        auth.email !== undefined && auth.email !== null ? { email: auth.email } : null,
+      ].filter((identifier) => identifier !== null);
+      if (identifiers.length < 1) continue;
+
       const user = await Model.getCoreModel(UserSchemaModel).findOne({
-        'auth.app': auth.app,
-        $or: [{ 'auth.appId': auth.appId }, { 'auth.email': auth.email }],
+        auth: { $elemMatch: { app: auth.app, $or: identifiers } },
         _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
       });
       if (user) {
