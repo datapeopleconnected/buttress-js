@@ -62,38 +62,43 @@ describe('routes/admin-routes:token lookups', () => {
         return this;
       },
     };
-    await handlers[path]({ query: {}, params: {}, body: {}, ...req }, res);
+    await handlers[path]({ query: {}, params: {}, body: {}, headers: {}, ...req }, res);
     return res;
   }
 
-  // Express 5 parses a repeated ?token= into an array, and Express 4's extended parser made ?token[$ne]= an object.
-  const notStrings = [{ $ne: null }, { $regex: '.' }, ['a', 'b'], ''];
+  const bearer = (token) => ({ authorization: `Bearer ${token}` });
 
-  it('refuses a ?token= on install-lambda that is not a string, without looking it up', async () => {
-    for (const token of notStrings) {
+  it('refuses a token given in the URL, without looking it up', async () => {
+    for (const token of ['system-token', ['a', 'b'], { $ne: null }]) {
       const res = await call('/api/v1/admin/install-lambda', { query: { token }, body: { installLambda: [] } });
+      assert.strictEqual(res.statusCode, 400, `accepted ${JSON.stringify(token)}`);
+      assert.deepStrictEqual(res.body, { message: 'token_in_url_not_supported' });
+    }
 
-      assert.strictEqual(res.statusCode, 401, `accepted ${JSON.stringify(token)}`);
-      assert.deepStrictEqual(res.body, { message: 'invalid_token' });
+    const res = await call('/api/v1/admin/activate/:superToken', { params: { superToken: 'system-token' } });
+    assert.strictEqual(res.statusCode, 400);
+    assert.deepStrictEqual(res.body, { message: 'token_in_url_not_supported' });
+
+    assert.deepStrictEqual(lookups, []);
+  });
+
+  it('refuses a request without a bearer token, without looking one up', async () => {
+    for (const headers of [{}, { authorization: '' }, { authorization: 'Basic abc' }, bearer('')]) {
+      const install = await call('/api/v1/admin/install-lambda', { headers, body: { installLambda: [] } });
+      const activate = await call('/api/v1/admin/activate', { headers });
+
+      assert.strictEqual(install.statusCode, 401, JSON.stringify(headers));
+      assert.deepStrictEqual(install.body, { message: 'invalid_token' });
+      assert.strictEqual(activate.statusCode, 404, JSON.stringify(headers));
+      assert.deepStrictEqual(activate.body, { message: 'invalid_token' });
     }
 
     assert.deepStrictEqual(lookups, []);
   });
 
-  it('refuses a super token on activate that is not a string, without looking it up', async () => {
-    for (const superToken of notStrings) {
-      const res = await call('/api/v1/admin/activate/:superToken', { params: { superToken } });
-
-      assert.strictEqual(res.statusCode, 404, `accepted ${JSON.stringify(superToken)}`);
-      assert.deepStrictEqual(res.body, { message: 'invalid_token' });
-    }
-
-    assert.deepStrictEqual(lookups, []);
-  });
-
-  it('still looks up a token that is a string', async () => {
-    await call('/api/v1/admin/install-lambda', { query: { token: 'install-token' } });
-    await call('/api/v1/admin/activate/:superToken', { params: { superToken: 'activate-token' } });
+  it('looks up the bearer token of the Authorization header', async () => {
+    await call('/api/v1/admin/install-lambda', { headers: bearer('install-token') });
+    await call('/api/v1/admin/activate', { headers: bearer('activate-token') });
 
     assert.deepStrictEqual(lookups, [{ value: 'install-token' }, { value: 'activate-token', type: 'system' }]);
   });
@@ -127,7 +132,12 @@ describe('routes/admin-routes:install-lambda failures', () => {
       },
     };
 
-    await handlers['/api/v1/admin/install-lambda']({ query: { token: 'system' }, params: {}, body: { installLambda: [] } }, res)
+    await handlers['/api/v1/admin/install-lambda']({
+      query: {},
+      headers: { authorization: 'Bearer system' },
+      params: {},
+      body: { installLambda: [] },
+    }, res)
       .catch(() => {});
 
     assert.strictEqual(res.statusCode, 404);

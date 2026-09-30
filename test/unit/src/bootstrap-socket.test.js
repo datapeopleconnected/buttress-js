@@ -76,7 +76,7 @@ describe('bootstrap-socket:token authentication', () => {
   });
 
   it('refuses a missing or empty token, without looking it up', async () => {
-    for (const handshake of [{}, { query: { token: '' } }]) {
+    for (const handshake of [{}, { auth: { token: '' } }]) {
       const { next } = await connect(handshake);
 
       assert.strictEqual(next.firstCall.args[0]?.message, 'invalid-token', `accepted ${JSON.stringify(handshake)}`);
@@ -92,10 +92,11 @@ describe('bootstrap-socket:token authentication', () => {
     assert.ok(socket.join.calledOnceWith(token.id.toString()));
   });
 
-  it('still accepts a token in the query string', async () => {
-    const { next } = await connect({ query: { token: 'app-one-token' } });
+  it('refuses a token in the query string, without looking it up', async () => {
+    const { next, socket } = await connect({ query: { token: 'app-one-token' } });
 
-    assert.deepStrictEqual(next.firstCall.args, []);
+    assert.strictEqual(next.firstCall.args[0].message, 'token-in-query-not-supported');
+    assert.ok(socket.join.notCalled);
   });
 });
 
@@ -165,15 +166,11 @@ describe('bootstrap-socket:namespace authentication', () => {
     assert.deepStrictEqual(next.firstCall.args, []);
   });
 
-  it('warns about a token in the query string, naming the token but never its value', async () => {
-    const warn = sinon.stub(Logging, 'logWarn');
+  it('refuses a token in the query string on a namespace, without looking it up', async () => {
+    const { next, lookups } = await connect('/app-one', 'app-one-token', { inQuery: true });
 
-    await connect('/app-one', 'app-one-token', { inQuery: true });
-
-    const warnings = warn.args.map(([message]) => message);
-    assert.strictEqual(warnings.length, 1);
-    assert.match(warnings[0], new RegExp(`token ${tokens[0].id}.*query string`));
-    assert.doesNotMatch(warnings[0], /app-one-token/);
+    assert.strictEqual(next.firstCall.args[0].message, 'token-in-query-not-supported');
+    assert.deepStrictEqual(lookups, []);
   });
 
   it('does not warn about a token sent as auth', async () => {

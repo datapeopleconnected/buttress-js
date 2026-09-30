@@ -155,6 +155,11 @@ class Routes {
    * @return {promise}
    */
   async initRoutes() {
+    // A browser following a link from a response doesn't send its URL on
+    this.app.use((req: Request, res: Response, next: NextFunction) => {
+      res.set('Referrer-Policy', 'no-referrer');
+      next();
+    });
     this.app.get('/favicon.ico', (req: Request, res: Response) => res.sendStatus(404));
     this._initIndexPage();
 

@@ -673,4 +673,12 @@ describe('Core route tenant scoping', async () => {
 			assert.strictEqual(other.id, testEnv.users.app2.id);
 		});
 	});
+	describe('Responses', () => {
+		it('Should tell browsers not to send the URL on as a referrer', async () => {
+			for (const url of [`${ENDPOINT.REST}/api/v1/app`, `${ENDPOINT.REST}/api/v1/check/admin`]) {
+				const res = await fetch(url, { headers: { Authorization: `Bearer ${testEnv.apps.app1.token}` } });
+				assert.strictEqual(res.headers.get('referrer-policy'), 'no-referrer', url);
+			}
+		});
+	});
 });

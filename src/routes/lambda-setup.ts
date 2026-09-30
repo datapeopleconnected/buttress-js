@@ -87,6 +87,12 @@ export class RoutesLambdaSetup {
 
   async __configureAppLambdaEndpoints(apiPath: string) {
     this.app.all(`/lambda/v1/${apiPath}/*endpoint`, this._preRouteMiddleware, async (req: Request, res: Response) => {
+      // A token in a URL ends up in access logs and browser history
+      if (req.query?.token !== undefined) {
+        res.status(400).send({ message: 'token_in_url_not_supported' });
+        return;
+      }
+
       const endpointParam = req.params.endpoint;
       const endpoint = Array.isArray(endpointParam) ? endpointParam.join('/') : endpointParam;
 

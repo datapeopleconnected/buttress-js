@@ -407,8 +407,12 @@ export default class BootstrapSocket extends Bootstrap {
   }
 
   private async _workerHandleSocketConnection(socket: AppSocket, next: (err?: Error) => void) {
-    // DEPRECATED: We should phase out accepting token via query and only use the auth headers.
-    const rawToken: unknown = socket.handshake.auth.token || socket.handshake.query.token;
+    // A token in the query string ends up in access logs, so only auth.token is taken
+    if (socket.handshake.query?.token !== undefined) {
+      Logging.logWarn(`Token sent in the query string, closing connection: ${socket.id}`);
+      return next(new Error('token-in-query-not-supported'));
+    }
+    const rawToken: unknown = socket.handshake.auth.token;
     // The client sends auth as JSON, so the token can be anything. A query object such as {$ne: null} would find
     // whichever token Mongo returned first, so only a string is looked up.
     if (typeof rawToken !== 'string' || rawToken === '') {
@@ -425,15 +429,6 @@ export default class BootstrapSocket extends Bootstrap {
 
     socket.data.type = token.type;
     socket.data.tokenId = token.id.toString();
-
-    // A token in the query string ends up in proxy access logs. It stops working in the next tagged release, so name
-    // the token (never its value) to find the clients still sending one.
-    if (!socket.handshake.auth.token) {
-      Logging.logWarn(
-        `Socket ${socket.id} sent token ${socket.data.tokenId} in the query string, which is deprecated and stops ` +
-          `working in the next tagged release; send it as auth.token`,
-      );
-    }
 
     Logging.logDebug(`Fetching app with appId: ${token._appId}`);
     const app = await Model.getCoreModel(AppSchemaModel).findOne({ id: token._appId });

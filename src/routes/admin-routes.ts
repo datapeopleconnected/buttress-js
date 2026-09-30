@@ -46,11 +46,19 @@ type PolicyPropertiesListArray = Extract<App['policyPropertiesList'][string], un
 
 // TODO: This file might be able to be rolled into routes.
 
+// The token of an `Authorization: Bearer <token>` header, or null
+const bearerToken = (req: Request) => {
+  const header = req.headers?.authorization;
+  if (typeof header !== 'string' || !header.startsWith('Bearer ')) return null;
+  const token = header.slice('Bearer '.length).trim();
+  return token === '' ? null : token;
+};
+
 class AdminRoutes {
   _routes: string[];
 
   constructor() {
-    this._routes = ['/api/v1/check/admin', '/api/v1/admin/activate/:superToken', '/api/v1/admin/install-lambda'];
+    this._routes = ['/api/v1/check/admin', '/api/v1/admin/activate', '/api/v1/admin/install-lambda'];
   }
 
   /**
@@ -84,10 +92,14 @@ class AdminRoutes {
       });
     });
 
-    app.get('/api/v1/admin/activate/:superToken', async (req: Request, res: Response) => {
-      const tokenValue = req.params.superToken;
-      // Only a string is looked up, so the value can't be read as query operators that match some other token.
-      if (typeof tokenValue !== 'string' || tokenValue === '') {
+    // A token in a URL ends up in access logs and browser history, so it's refused rather than looked up
+    app.get('/api/v1/admin/activate/:superToken', (req: Request, res: Response) => {
+      res.status(400).send({ message: 'token_in_url_not_supported' });
+    });
+
+    app.get('/api/v1/admin/activate', async (req: Request, res: Response) => {
+      const tokenValue = bearerToken(req);
+      if (!tokenValue) {
         Logging.logError('The used token does not exist');
         return res.status(404).send({ message: 'invalid_token' });
       }
@@ -116,12 +128,12 @@ class AdminRoutes {
     });
 
     app.post('/api/v1/admin/install-lambda', async (req: InstallLambdaRequest, res: Response) => {
-      const tokenValue = req.query.token;
+      if (req.query?.token !== undefined) return res.status(400).send({ message: 'token_in_url_not_supported' });
+
+      const tokenValue = bearerToken(req);
       const lambdaToInstall: string[] | undefined = req.body.installLambda;
       const refreshAdminToken: unknown = req.body.refreshAdminToken;
-      // The query parser makes a repeated ?token= an array (and qs made ?token[$ne]= an object), so only a string
-      // is looked up.
-      if (typeof tokenValue !== 'string' || tokenValue === '') {
+      if (!tokenValue) {
         return res.status(401).send({ message: 'invalid_token' });
       }
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
