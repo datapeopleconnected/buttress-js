@@ -105,3 +105,48 @@ describe('lambda-helpers/Helpers:updateMetadata', () => {
     assert.strictEqual(updateById.callCount, 0);
   });
 });
+
+// fetch() from a live isolate, as a lambda calls it
+describe('lambda-helpers/Helpers:fetch destinations', () => {
+  let isolate;
+  let context;
+  let savedPlugins;
+  let savedAllowed;
+  let tmpDir;
+
+  const fetchFromLambda = (url) =>
+    context.eval(`fetch(${JSON.stringify(url)}).then(() => 'fetched', (err) => 'refused: ' + (err && err.message))`, {
+      promise: true, copy: true, timeout: 5000,
+    });
+
+  before(async () => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-fetch-'));
+    savedPlugins = Config.paths.lambda.plugins;
+    savedAllowed = Config.lambda.allowedHosts;
+    Config.paths.lambda.plugins = tmpDir;
+    isolate = new ivm.Isolate();
+    context = await isolate.createContext();
+    await LambdaHelpers._createIsolateContext(isolate, context, context.global);
+  });
+
+  after(() => {
+    isolate.dispose();
+    Config.paths.lambda.plugins = savedPlugins;
+    Config.lambda.allowedHosts = savedAllowed;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("refuses a host that isn't on the lambda allow-list, or is at a private address", async () => {
+    Config.lambda.allowedHosts = 'api.example.com, 127.0.0.1';
+
+    assert.match(await fetchFromLambda('http://127.0.0.1:1/x'), /fetch_address_not_allowed/);
+    assert.match(await fetchFromLambda('http://169.254.169.254/latest/meta-data'), /fetch_host_not_allowed/);
+  });
+
+  it('goes anywhere, as before, with no allow-list', async () => {
+    Config.lambda.allowedHosts = '';
+
+    const outcome = await fetchFromLambda('http://127.0.0.1:1/x');
+    assert.doesNotMatch(outcome, /not_allowed/);
+  });
+});

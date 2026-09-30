@@ -34,6 +34,7 @@ import Model from './model/index.js';
 import * as Helpers from './helpers/index.js';
 import Logging from './helpers/logging.js';
 import { redactUrl, tokenFingerprint } from './helpers/redact.js';
+import { dataSharingDestinationProblem } from './helpers/egress.js';
 
 import AccessControl from './access-control/index.js';
 
@@ -727,6 +728,13 @@ export default class BootstrapSocket extends Bootstrap {
 
     if (dataShare.remoteApp.ws) {
       url = `${dataShare.remoteApp.ws}/${dataShare.remoteApp.apiPath}`;
+    }
+
+    // Only to hosts the operator allows, when they've set a list
+    const destination = await dataSharingDestinationProblem([url]);
+    if (destination) {
+      Logging.logError(`Data sharing ${dataShare.id} not connecting to ${redactUrl(url)}: ${destination}`);
+      return;
     }
 
     Logging.logSilly(

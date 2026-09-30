@@ -26,6 +26,9 @@ import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 
 import { realQueryParser } from '../../../../query-parser.js';
+import createConfig from '@dpc/node-env-obj';
+
+const Config = createConfig();
 
 const [
   GetAppDataSharing,
@@ -124,6 +127,31 @@ describe('routes/api/app-data-sharing:GetAppDataSharing', () => {
 });
 
 describe('routes/api/app-data-sharing:AddDataSharing', () => {
+  describe('with a data sharing allow-list', () => {
+    let saved;
+    beforeEach(() => {
+      saved = Config.dataSharing.allowedHosts;
+      Config.dataSharing.allowedHosts = '93.184.216.34';
+    });
+    afterEach(() => {
+      Config.dataSharing.allowedHosts = saved;
+    });
+
+    it("refuses a remote app at a host that isn't on it, or without a scheme", async () => {
+      for (const [remoteApp, message] of [
+        [{ endpoint: 'https://8.8.8.8', apiPath: 'x' }, 'data_sharing_host_not_allowed'],
+        [{ endpoint: 'http://169.254.169.254', apiPath: 'x' }, 'data_sharing_host_not_allowed'],
+        [{ endpoint: '93.184.216.34', apiPath: 'x' }, 'data_sharing_invalid_url'],
+        [{ endpoint: 'https://93.184.216.34', ws: 'ws://127.0.0.1:8010', apiPath: 'x' }, 'data_sharing_host_not_allowed'],
+      ]) {
+        stubModel();
+        const route = createRoute(AddDataSharing);
+        await assert.rejects(route._validate(createReq({ body: { policyConfig: {}, remoteApp } })), (err) => err.message === message, JSON.stringify(remoteApp));
+        sinon.restore();
+      }
+    });
+  });
+
   it('rejects when there is no authenticated app', async () => {
     stubModel();
     const route = createRoute(AddDataSharing);

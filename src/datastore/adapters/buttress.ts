@@ -29,6 +29,7 @@ import ObjectIdHelper, { isObjectId } from './object-id.js';
 
 import { AdapterQuery } from '../../types/datastore.js';
 import { Schema } from '../../types/schema.js';
+import { dataSharingDestinationProblem } from '../../helpers/egress.js';
 
 // The collection calls made against a remote Buttress. @buttress/api types these results as `any`, and
 // its declarations don't allow some of the arguments used here (an object `sort`, `count` without a sort).
@@ -80,6 +81,8 @@ export default class Buttress extends AbstractAdapter {
     if (!token) throw new Error('Missing token in Buttress connection string');
 
     const buttressUrl = `${protocol}://${this.uri.host}`;
+    const destination = await dataSharingDestinationProblem([buttressUrl]);
+    if (destination) throw new Error(`data_sharing_${destination}`);
     const apiPath = this.uri.pathname.replace(/^\/+/, '');
     await this._apiCall('connect', () => {
       if (!this.__connection) throw new Error('Buttress connection not initialized');

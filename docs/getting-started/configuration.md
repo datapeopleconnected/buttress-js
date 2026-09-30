@@ -38,6 +38,7 @@ The table below lists commonly used runtime parameters.
 | BUTTRESS_LOGGING_SLOW_TIME | int | 2 | |
 | BUTTRESS_LOGGING_SERVER_TIMING | boolean | FALSE | Adds a `Server-Timing` header to API responses, with how long token auth, access control, validation and execution took. Exposes internal timings, so leave it off for public-facing instances |
 | BUTTRESS_TIMEOUT_SHUTDOWN | int | 8 | Seconds a process has to finish in-flight work after SIGTERM/SIGINT before it exits anyway |
+| BUTTRESS_DATA_SHARING_ALLOWED_HOSTS | string | (empty) | Comma-separated hosts data sharing agreements may connect to (`*` for any host, `*.example.com` for its subdomains). Empty lets them connect anywhere. When set, an agreement's endpoint and socket URL need an `http(s)://` or `ws(s)://` scheme and a listed host, and a host at a loopback, private, link-local or shared address is refused even if listed. Agreements outside it get a 400 `data_sharing_<reason>` and aren't connected |
 
 ## Lambda Runtime Parameters
 
@@ -47,7 +48,8 @@ The table below lists commonly used runtime parameters.
 | LAMBDA_PATH_MUTATION_WORKERS | int | inherited | Path-mutation worker count |
 | LAMBDA_CRON_WORKERS | int | inherited | Cron worker count |
 | BUTTRESS_TIMEOUT_LAMBDA | int | 5 | Lambda manager timeout |
-| BUTTRESS_TIMEOUT_LAMBDAS_RUNNER | int | 10 | Lambda runner timeout |
+| BUTTRESS_TIMEOUT_LAMBDAS_RUNNER | int | 10 | Seconds a lambda execution may run before it's stopped |
+| BUTTRESS_LAMBDA_ALLOWED_HOSTS | string | (empty) | Comma-separated hosts lambdas' `fetch()` and `generatePDF()` may reach, as for BUTTRESS_DATA_SHARING_ALLOWED_HOSTS. Empty lets them reach anywhere. When set, a fetch elsewhere, or to a loopback, private, link-local or shared address, fails with `fetch_<reason>`, and a PDF's HTML can't load resources from there |
 
 ## Notes
 

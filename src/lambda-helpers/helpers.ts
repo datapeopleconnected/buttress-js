@@ -27,6 +27,7 @@ import lambdaMail from './mail.js';
 import Model from '../model/index.js';
 import Logging from '../helpers/logging.js';
 import { redactUrl } from '../helpers/redact.js';
+import { allowedAddressLookup, checkDestination, parseAllowedHosts } from '../helpers/egress.js';
 import { Errors } from '../helpers/index.js';
 import { isGitHash } from '../helpers/git.js';
 import IsolateBridge from './isolate-bridge.js';
@@ -64,6 +65,7 @@ interface NodeHttpFetchResponse {
 function nodeHttpFetch(
   url: URL,
   options: { method?: string; headers?: Record<string, string>; body?: unknown },
+  lookup?: ReturnType<typeof allowedAddressLookup>,
 ): Promise<NodeHttpFetchResponse> {
   return new Promise((resolve, reject) => {
     // Recompute Content-Length from the actual bytes rather than trust the caller-supplied header
@@ -88,6 +90,7 @@ function nodeHttpFetch(
         // agent:false forces a fresh socket per request — pooled keep-alive sockets get reset by the
         // far end in docker environments, possibly due to the use of the SEARCH method header.
         agent: false,
+        ...(lookup ? { lookup } : {}),
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -346,7 +349,12 @@ class Helpers {
 
           data.options = data.options || {};
 
-          const response = await nodeHttpFetch(data.url as URL, data.options);
+          // Only to a host the operator allows, when they've set a list, and never to the instance's own network then
+          const allowedHosts = parseAllowedHosts(Config.lambda.allowedHosts);
+          const problem = await checkDestination(data.url as URL, allowedHosts);
+          if (problem) throw new Errors.CodedError(`fetch_${problem}`, 403);
+
+          const response = await nodeHttpFetch(data.url as URL, data.options, allowedAddressLookup(allowedHosts));
 
           const output: {
             ok?: boolean;
@@ -712,6 +720,20 @@ class Helpers {
           if (!htmlString) throw new Error(`Missing HTML string for pdf generation`);
           const browser = await puppeteer.launch({ headless: true });
           const page = await browser.newPage();
+
+          // What the HTML loads goes only where a lambda's fetch() may, when the operator has set a list
+          const allowedHosts = parseAllowedHosts(Config.lambda.allowedHosts);
+          if (allowedHosts.length > 0) {
+            await page.setRequestInterception(true);
+            page.on('request', (request) => {
+              const url = request.url();
+              if (url.startsWith('data:') || url === 'about:blank') return void request.continue();
+              checkDestination(url, allowedHosts).then(
+                (problem) => void (problem ? request.abort() : request.continue()),
+                () => void request.abort(),
+              );
+            });
+          }
 
           // Set the HTML content and wait for initial document load.
           await page.setContent(htmlString, { waitUntil: 'load' });

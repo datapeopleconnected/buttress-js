@@ -30,6 +30,7 @@ import { QueryParams } from '../../types/bjs-query.js';
 import { Services } from '../../bootstrap.js';
 import { UpdatePathBody } from '../../types/datastore.js';
 import type { BulkUpdateItem, CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
+import { dataSharingDestinationProblem, remoteAppUrlsOf } from '../../helpers/egress.js';
 
 // What the activate route (ActivateAppDataSharing) responds with. A remote whose side of the agreement is already
 // active responds `true` instead, which has no `status` so is treated as not activated.
@@ -209,6 +210,10 @@ class AddDataSharing extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_policy`));
     }
 
+    // Only to hosts the operator allows, when they've set a list
+    const destination = await dataSharingDestinationProblem([req.body.remoteApp?.endpoint, req.body.remoteApp?.ws]);
+    if (destination) return Promise.reject(new Helpers.Errors.RequestError(400, `data_sharing_${destination}`));
+
     const result = await Model.getCoreModel(AppDataSharingSchemaModel).isDuplicate(req.body);
     if (result === true) {
       this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
@@ -293,6 +298,9 @@ class UpdateAppDataSharing extends Route {
       }
     }
 
+    const destination = await dataSharingDestinationProblem(remoteAppUrlsOf(body as unknown[]));
+    if (destination) throw new Helpers.Errors.RequestError(400, `data_sharing_${destination}`);
+
     return {
       dataSharingId,
     };
@@ -354,6 +362,9 @@ class BulkUpdateAppDataSharing extends Route {
           );
         }
       }
+
+      const destination = await dataSharingDestinationProblem(remoteAppUrlsOf(item.body as unknown[]));
+      if (destination) return Promise.reject(new Helpers.Errors.RequestError(400, `data_sharing_${destination}`));
     }
 
     return true;

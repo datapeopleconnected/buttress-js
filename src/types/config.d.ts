@@ -34,6 +34,12 @@ interface Config {
     cronWorkers: string;
     developmentEmailAddress: string;
     devReload: string;
+    // Comma-separated hosts lambdas' fetch() and PDF rendering may reach; empty for any (helpers/egress.ts)
+    allowedHosts: string;
+  };
+  dataSharing: {
+    // Comma-separated hosts data sharing agreements may connect to; empty for any (helpers/egress.ts)
+    allowedHosts: string;
   };
   logging: {
     level: string;

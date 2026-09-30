@@ -37,6 +37,8 @@
     "LAMBDA_CRON_WORKERS": "%LAMBDA_CRON_WORKERS%",
 
     "LAMBDA_DEVELOPMENT_EMAIL_ADDRESS": "",
+    "BUTTRESS_LAMBDA_ALLOWED_HOSTS": "",
+    "BUTTRESS_DATA_SHARING_ALLOWED_HOSTS": "",
     "LAMBDA_DEV_RELOAD": "FALSE"
   },
   "global": {
@@ -58,7 +60,11 @@
       "pathMutationWorkers": "%LAMBDA_PATH_MUTATION_WORKERS%",
       "cronWorkers": "%LAMBDA_CRON_WORKERS%",
       "developmentEmailAddress": "%LAMBDA_DEVELOPMENT_EMAIL_ADDRESS%",
-      "devReload": "%LAMBDA_DEV_RELOAD%"
+      "devReload": "%LAMBDA_DEV_RELOAD%",
+      "allowedHosts": "%BUTTRESS_LAMBDA_ALLOWED_HOSTS%"
+    },
+    "dataSharing": {
+      "allowedHosts": "%BUTTRESS_DATA_SHARING_ALLOWED_HOSTS%"
     },
     "logging": {
       "level": "%BUTTRESS_LOGGING_LEVEL%",
