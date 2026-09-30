@@ -14,9 +14,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it, afterEach } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { Readable } from 'node:stream';
+import createConfig from '@dpc/node-env-obj';
 
 import LambdaRoutes from '../../../../../dist/routes/api/lambda.js';
 import Model from '../../../../../dist/model/index.js';
@@ -47,6 +52,8 @@ const [
 ] = LambdaRoutes;
 
 const HEX_ID = '507f1f77bcf86cd799439011';
+
+const Config = createConfig();
 
 function stubModel({ lambda = {}, token = {}, user = {}, app = {}, deployment = {}, lambdaExecution = {} } = {}) {
   const lambdaModel = {
@@ -653,9 +660,38 @@ describe('routes/api/lambda:DeleteLambda', () => {
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /could_fetch_lambda_token/);
   });
 
-  // _exec() shells out to `rm -rf` against the real lambda code path (via child_process.exec bound
-  // at module load time, not interceptable without proxyquire-style module mocking), so it's left
-  // to e2e coverage rather than faked here in a way that would just be testing a reimplementation.
+  describe('code folders', () => {
+    let savedCode;
+    let tmpDir;
+    const folder = (hash) => path.join(Config.paths.lambda.code, `lambda-${hash}`);
+
+    beforeEach(() => {
+      savedCode = Config.paths.lambda.code;
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-delete-'));
+      Config.paths.lambda.code = tmpDir;
+      ['aaaaaaa', 'bbbbbbb', 'ccccccc', 'ddddddd'].forEach((hash) => fs.mkdirSync(folder(hash)));
+    });
+
+    afterEach(() => {
+      Config.paths.lambda.code = savedCode;
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("removes the code of each hash the lambda was deployed at that no other lambda is on, and leaves the rest", async () => {
+      // Another lambda, possibly another app's, is on bbbbbbb; ddddddd was never this lambda's
+      const { lambdaModel } = stubModel({
+        lambda: { findOne: async (query) => (query['git.hash'] === 'bbbbbbb' ? { id: 'other-lambda' } : null) },
+        deployment: { find: async () => Readable.from([{ hash: 'bbbbbbb' }, { hash: 'ccccccc' }]) },
+      });
+      const route = createRoute(DeleteLambda);
+      const lambda = { id: 'lambda-1', trigger: [], git: { hash: 'aaaaaaa' } };
+
+      await route._exec(createReq(), {}, { lambda, token: { id: 'token-1' } });
+
+      assert.ok(lambdaModel.rm.calledWith('lambda-1'));
+      assert.deepStrictEqual(fs.readdirSync(tmpDir).sort(), ['lambda-bbbbbbb', 'lambda-ddddddd']);
+    });
+  });
 });
 
 describe('routes/api/lambda:LambdaCount', () => {

@@ -24,6 +24,7 @@ import Route from '../route.js';
 import Model from '../../model/index.js';
 import Sugar from '../../helpers/sugar.js';
 import * as Helpers from '../../helpers/index.js';
+import * as Git from '../../helpers/git.js';
 
 import Datastore from '../../datastore/index.js';
 import LambdaSchemaModel, { Lambda, LambdaAddBody } from '../../model/core/lambda.js';
@@ -845,9 +846,22 @@ class DeleteLambda extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: { lambda: Lambda; token: Token }) {
-    fs.rmSync(`${Config.paths.lambda.code}/lambda-${validate.lambda.id}`, { recursive: true, force: true });
+    const deployments = await Helpers.streamAll<{ hash: string }>(
+      await Model.getCoreModel(DeploymentSchemaModel).find({
+        lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(validate.lambda.id),
+      }),
+    );
+    const hashes = new Set([validate.lambda.git.hash, ...deployments.map((deployment) => deployment.hash)]);
+
     await Model.getCoreModel(LambdaSchemaModel).rm(validate.lambda.id);
     await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
+
+    // Code is checked out once for each hash, and shared by every lambda on it, whichever app it's in
+    for (const hash of hashes) {
+      if (!Git.isGitHash(hash)) continue;
+      if (await Model.getCoreModel(LambdaSchemaModel).findOne({ 'git.hash': hash })) continue;
+      fs.rmSync(`${Config.paths.lambda.code}/lambda-${hash}`, { recursive: true, force: true });
+    }
 
     if (validate.lambda.trigger.some((t) => t.type === 'PATH_MUTATION')) {
       this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
