@@ -81,6 +81,7 @@ npm run test:e2e          # wipes the test DB/Redis, boots a real Buttress in IN
 npm run test:io-budgets   # as test:e2e, but only the I/O budget suite (see performance.md)
 npm run bench             # measure dist/'s REST performance into bench-results/ (see performance.md)
 npm run bench:compare -- a.json b.json   # compare two bench results
+npm run test:federation   # boots two Buttress instances and tests data sharing between them
 ```
 
 - **Unit tests import `dist/`** (see e.g. [test/unit/src/helpers/schema.test.js](../test/unit/src/helpers/schema.test.js)
@@ -98,6 +99,19 @@ npm run bench:compare -- a.json b.json   # compare two bench results
 - Env used for tests is `.test.env` (`NODE_ENV=test`) — see `helpers/config.ts`, which loads
   `.${NODE_ENV}.env` from the repo root via `@dpc/node-env-obj`. Performance tools (`npm run bench` and
   the I/O budget suite) are in [performance.md](performance.md).
+- **Federation:** `npm run test:federation` builds, then runs [test/federation/](../test/federation) with mocha
+  (without `.mocharc.cjs`). [setup.mjs](../test/federation/setup.mjs) installs and starts two stacks, a and b, each
+  its own REST, Socket and SPR processes from `dist/bin` ([stacks.mjs](../test/federation/stacks.mjs)), on ports
+  8200/8210 and 8300/8310 (`FEDERATION_BASE_PORT`), with its own `app_data` folder under the OS temp folder and its
+  own app code, so its own database (`bjs-fed-<a|b>-prod`) and Redis prefix (`bjs-fed-<a|b>:`). It clears only
+  those, before and after. MongoDB and Redis come from `FEDERATION_MONGO_URL` and `FEDERATION_REDIS_URL`
+  (default localhost). Redis pub/sub isn't split by key prefix for socket.io's adapter, so the stacks' apps use
+  different api paths. The suite pairs an app on each stack through the real agreement handshake and covers reads,
+  writes, restarts, realtime both ways, policy-limited sharing, deactivation and a partner offline at boot; a test
+  that fails because of a known gap names its plan item. `FEDERATION_WORKERS=2` runs the stacks with workers,
+  `FEDERATION_LOG_LEVEL=silly` logs more, and each stack's logs are kept (and named) when a test fails or
+  `FEDERATION_KEEP=1`. The singletons (`Model`, `Datastore`, `Config`) are why the stacks are processes, not
+  bootstraps in the mocha process as in e2e.
 - **Coverage:** `coverage:unit` (the CI coverage job) and `coverage` use c8, whose figures read high: it
   counts licence headers, comments and types as covered lines in any file that loads, and only counts
   branches inside functions that ran. For real numbers use `npm run coverage:istanbul` (add `-- unit` or

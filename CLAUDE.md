@@ -35,6 +35,7 @@ npm run check            # tsc --noEmit && lint && format && licence-check — f
 npm run test             # build + test:unit + test:e2e (needs MongoDB + Redis reachable)
 npm run test:unit        # mocha over test/unit/**/* (imports compiled dist/, run build first)
 npm run bench            # measure dist/'s REST performance; bench:compare -- a.json b.json compares two runs
+npm run test:federation  # two instances sharing data through real agreements (see .ai/development.md)
 npm run docker:run-full  # Buttress + MongoDB + Redis via docker-compose
 ```
 
