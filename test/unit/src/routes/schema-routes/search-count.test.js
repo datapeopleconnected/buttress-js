@@ -51,6 +51,17 @@ describe('schema-routes/SearchCount:_validate', () => {
     assert.deepStrictEqual(result.queryParams.query, { $and: [{ ownerId: 'user-1' }] });
   });
 
+  it('takes actualCount from a queryless body as the flag it is, not as a field to match', async () => {
+    const route = createRoute(createFakeModel());
+    const result = await route._validate({ body: { actualCount: true, ownerId: 'user-1' } }, {});
+
+    assert.deepStrictEqual(result.queryParams.query, { $and: [{ ownerId: 'user-1' }] });
+    assert.strictEqual(result.actualCount, true);
+
+    const flagOnly = await route._validate({ body: { actualCount: true } }, {});
+    assert.deepStrictEqual(flagOnly.queryParams.query, { $and: [{}] });
+  });
+
   it('honours an explicit actualCount flag', async () => {
     const route = createRoute(createFakeModel());
     const result = await route._validate({ body: { actualCount: true, query: {} } }, {});

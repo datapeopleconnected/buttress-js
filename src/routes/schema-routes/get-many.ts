@@ -54,22 +54,22 @@ export default class GetMany extends Route {
     this.activityBroadcast = false;
   }
 
-  override _validate(req: RequestWithBody<GetManyBody>, _res: Response) {
-    return new Promise<GetManyQuery>((resolve, reject) => {
-      const _ids: string[] | undefined = req.body.query.ids;
-      const project: Record<string, 1 | -1> | false = req.body && req.body.project ? req.body.project : false;
+  override async _validate(req: RequestWithBody<GetManyBody | undefined>, _res: Response): Promise<GetManyQuery> {
+    const _ids: unknown = req.body?.query?.ids;
+    const project: Record<string, 1 | -1> | false = req.body?.project ? req.body.project : false;
 
-      if (!_ids) {
-        this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
-        return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
-      }
-      if (!_ids.length) {
-        this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
-        return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
-      }
+    if (!Array.isArray(_ids) || _ids.length < 1) {
+      this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, 'invalid_id');
+    }
 
-      resolve({ ids: _ids, project: project });
-    });
+    const model = await this.routeModel();
+    if (!_ids.every((id) => model.isValidId(id))) {
+      this.log(`ERROR: Invalid ${this.schemaName} ID provided`, Route.LogLevel.ERR, req.context.id);
+      throw new Helpers.Errors.RequestError(400, 'invalid_id');
+    }
+
+    return { ids: _ids as string[], project: project };
   }
 
   override async _exec(req: Request, _res: Response, query: GetManyQuery) {

@@ -508,7 +508,9 @@ class SecureStoreCount extends Route {
     if (req.body && req.body.query) {
       result.query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      result.query.$and.push(req.body);
+      // A body with no query is the query, apart from the count's own flag
+      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
+      result.query.$and.push(bodyQuery);
     }
 
     result.query.$and.push({

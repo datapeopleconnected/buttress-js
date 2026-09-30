@@ -394,6 +394,16 @@ describe('routes/api/policy:BulkUpdatePolicy', () => {
 });
 
 describe('routes/api/policy:PolicyCount', () => {
+  it("doesn't match on actualCount, which a queryless body may carry", async () => {
+    stubModel();
+    const route = createRoute(PolicyCount);
+
+    const result = await route._validate(createReq({ body: { actualCount: true, name: 'readers' } }));
+
+    assert.ok(!JSON.stringify(result.query).includes('actualCount'), JSON.stringify(result.query));
+    assert.ok(JSON.stringify(result.query).includes('readers'));
+  });
+
   it('counts using the built query', async () => {
     const { policyModel } = stubModel();
     const route = createRoute(PolicyCount);

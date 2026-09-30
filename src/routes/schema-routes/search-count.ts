@@ -76,7 +76,9 @@ export default class SearchCount extends Route {
     if (req.body?.query) {
       query.$and.push(req.body.query);
     } else if (req.body && !req.body.query) {
-      query.$and.push(req.body);
+      // A body with no query is the query, apart from the count's own flag
+      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
+      query.$and.push(bodyQuery);
     }
 
     query = model.parseQuery(query, {}, model.flatSchemaData);

@@ -24,6 +24,7 @@ import { streamAll } from '../../../../../dist/helpers/index.js';
 function createFakeModel(docs) {
   return {
     createId: (id) => id,
+    isValidId: (id) => typeof id === 'string' && id.startsWith('doc-'),
     flatSchemaData: {},
     parseQuery: (query) => query,
     find(query) {
@@ -58,6 +59,15 @@ describe('schema-routes/GetMany', () => {
     { id: 'doc-2', ownerId: 'user-2' },
     { id: 'doc-3', ownerId: 'user-1' },
   ];
+
+  it('refuses a request with no query, or an id that is not one, as an invalid id', async () => {
+    const route = createRoute(createFakeModel(docs));
+    const request = (body) => route._validate({ body, context: { id: 'req-1', ac: { policyConfigs: [{}] } } }, {});
+
+    for (const body of [{}, { query: {} }, { query: { ids: [] } }, { query: { ids: ['doc-1', 'not-an-id'] } }, undefined]) {
+      await assert.rejects(request(body), (err) => err.code === 400 && err.message === 'invalid_id', JSON.stringify(body));
+    }
+  });
 
   it('returns all requested docs when the token has full access', async () => {
     const route = createRoute(createFakeModel(docs));
