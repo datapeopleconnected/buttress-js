@@ -95,6 +95,13 @@ model's `schemaData`, `Constants`, `createId`, validation and `parseQuery`, whic
 (tracking, activity, most of the apps routes) use `unscopedModel(…, 'the route takes only system tokens')`.
 `ACM.find`/`ACM.count` take a scoped model as they do a schema model (`QueryableModel`).
 
+Two checks keep it so. ESLint's `no-restricted-syntax` on `src/routes/api/**` refuses `Model.getCoreModel(X)` for
+anything but the members that touch no rows, and refuses keeping or passing the model itself
+([eslint/core-model-access.mjs](../eslint/core-model-access.mjs), tested in `test/unit/eslint/`). And
+`test/unit/src/routes/api/core-routes-scoping.test.js` walks every core route's compiled code: a route that takes other
+than system tokens may use `unscopedModel` only where its list names the route, model and reason, so reaching every
+app from a new place is a change to that list.
+
 ## Schema-routes (`src/routes/schema-routes/`)
 
 Twelve generic route classes (`add-one`, `add-many`, `get-one`, `get-many`, `get-list`, `search-list`,
