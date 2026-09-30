@@ -69,7 +69,7 @@ describe('lambda/LambdaRunner:_getLambdaModulesName', () => {
 
     assert.deepStrictEqual(
       modules.map((m) => m.name),
-      ['Buttress', 'LambdaSnippet', 'Sugar', 'lambda_lambda-1_abc123'],
+      ['Buttress', 'Sugar', 'lambda_lambda-1_abc123'],
     );
     const entry = modules.find((m) => m.name === 'lambda_lambda-1_abc123');
     assert.ok(entry.import.endsWith('/src/index.js'));
@@ -89,9 +89,9 @@ describe('lambda/LambdaRunner:_getLambdaModulesName', () => {
     const modules = runner._getLambdaModulesName(lambda);
 
     const names = modules.map((m) => m.name);
-    assert.deepStrictEqual(names.slice(0, 4), ['Buttress', 'LambdaSnippet', 'Sugar', 'shared_Snippet_abc123']);
-    assert.match(names[4], /^lambda_lambda-1_abc123_[0-9a-f]{8}$/);
-    const shared = modules[3];
+    assert.deepStrictEqual(names.slice(0, 3), ['Buttress', 'Sugar', 'shared_Snippet_abc123']);
+    assert.match(names[3], /^lambda_lambda-1_abc123_[0-9a-f]{8}$/);
+    const shared = modules[2];
     assert.ok(shared.import.endsWith('/lambda-abc123/./_snippets/index.js'));
     assert.strictEqual(shared.sharedEntryFile, path.resolve(`${Config.paths.lambda.code}/lambda-abc123/_snippets/index.js`));
   });
@@ -1200,7 +1200,6 @@ describe('lambda/LambdaRunner:execute deployed code', () => {
     // The package bundles are already built, so only the lambda's own code is bundled
     const bundle = (name, source) => fs.writeFileSync(path.join(Config.paths.lambda.bundles, `${name}.js`), source);
     bundle('@buttress_api', 'var Buttress = { clean() {}, initialised: false, init: async () => {} };');
-    bundle('@buttress_snippets', 'var LambdaSnippet = {};');
     bundle('sugar', 'var Sugar = {};');
   });
 
