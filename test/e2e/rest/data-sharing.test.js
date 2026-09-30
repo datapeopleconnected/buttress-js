@@ -375,4 +375,53 @@ describe('Data Sharing', async () => {
 			}
 		});
 	});
+
+	describe('Deactivating an agreement', async () => {
+		// The names of app1's cars that app2 can read through its agreement
+		const app1CarsReadByApp2 = async () => {
+			try {
+				const cars = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/car`,
+					method: 'GET',
+				}, testEnv.apps.app2.token);
+				return cars.filter((car) => car.sourceId === testEnv.apps.app1.id).map((car) => car.name);
+			} catch (err) {
+				return [];
+			}
+		};
+		const setActive = (active) => bjsReq({
+			url: `${ENDPOINT.REST}/api/v1/app-data-sharing/${active ? 'reactivate' : 'deactivate'}/${testEnv.agreements['app1-to-app2'].id}`,
+			method: 'PUT',
+		}, testEnv.apps.app1.token);
+
+		it('Should stop the partner reading the app\'s data once the app deactivates its agreement', async function() {
+			this.timeout(20000);
+			assert((await app1CarsReadByApp2()).length > 0, 'app2 reads app1\'s cars to begin with');
+
+			await setActive(false);
+
+			assert.deepStrictEqual(await app1CarsReadByApp2(), []);
+		});
+
+		it('Should not let the partner activate an agreement the app deactivated', async function() {
+			const res = await fetch(`${ENDPOINT.REST}/api/v1/app-data-sharing/activate`, {
+				method: 'POST',
+				headers: {
+					Authorization: `Bearer ${testEnv.agreements['app2-to-app1'].remoteApp.token}`,
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({ newToken: 'a-token-of-the-partner' }),
+			});
+
+			assert.strictEqual(res.status, 401);
+			assert.strictEqual(await app1CarsReadByApp2().then((names) => names.length), 0);
+		});
+
+		it('Should let the partner read the app\'s data again once the app reactivates its agreement', async function() {
+			this.timeout(20000);
+			await setActive(true);
+
+			assert((await app1CarsReadByApp2()).length > 0, 'app2 reads app1\'s cars again');
+		});
+	});
 });

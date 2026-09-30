@@ -482,6 +482,13 @@ class ActivateAppDataSharing extends Route {
           throw new Helpers.Errors.RequestError(500, `no_datasharing`);
         }
 
+        // The partner completes the handshake once. An agreement that has been active, and so has the partner's
+        // token, was deactivated by this app, and only this app can reactivate it.
+        if (!dataSharing.active && dataSharing.remoteApp?.token) {
+          this.log(`ERROR: Partner tried to activate deactivated agreement ${dataSharing.id}`, Route.LogLevel.ERR);
+          throw new Helpers.Errors.RequestError(401, `data_sharing_inactive`);
+        }
+
         return {
           token,
           dataSharing,

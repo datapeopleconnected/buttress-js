@@ -333,6 +333,26 @@ export class RoutesMiddleware {
         );
       }
 
+      // A partner's token works only while its agreement is active. An agreement that has never been active (it has no
+      // token of the partner's yet) lets the partner complete the handshake: its client reads the app's schema, then
+      // activates the agreement. One this app has deactivated takes nothing.
+      const agreement = req.context.authAppDataSharing;
+      if (token.type === TokenSchemaModelCore.Constants.Type.DATA_SHARING && !agreement?.active) {
+        const pending = Boolean(agreement) && !agreement?.remoteApp?.token;
+        const isHandshake =
+          (req.method === 'POST' && req.path === `${Config.app.apiPrefix}/app-data-sharing/activate`) ||
+          (req.method === 'GET' && req.path === `${Config.app.apiPrefix}/app/schema`);
+        if (!pending || !isHandshake) {
+          Logging.logTimer(
+            '_authenticateToken:end-data-sharing-inactive',
+            req.context.timer,
+            Logging.Constants.LogLevel.SILLY,
+            req.context.id,
+          );
+          throw new Helpers.Errors.RequestError(401, 'data_sharing_inactive');
+        }
+      }
+
       let user: User | null = null;
       if (token._userId) {
         user = await Model.getCoreModel(UserSchemaModel).findById(token._userId);

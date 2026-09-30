@@ -466,12 +466,6 @@ export default class BootstrapSocket extends Bootstrap {
     // Join them to a room based on the tokenId.
     socket.join(socket.data.tokenId);
 
-    // Fire off a worker event to notify that a connection has been made with the token.
-    this.__nrp?.emit(
-      'worker:socket:connection',
-      JSON.stringify({ tokenId: socket.data.tokenId, socketId: socket.id } satisfies SocketConnectionMessage),
-    );
-
     if (token.type === 'dataSharing') {
       const remoteSchemas = Schema.decode(app.__schema).reduce((obj: Record<string, Schema.Schema>, item) => {
         if (!item.remotes) return obj;
@@ -546,6 +540,12 @@ export default class BootstrapSocket extends Bootstrap {
 
       socket.emit('bjs-request-subscribe-ack', data);
     });
+
+    // Once the socket has passed every check, so a refused one isn't counted as connected
+    this.__nrp?.emit(
+      'worker:socket:connection',
+      JSON.stringify({ tokenId: socket.data.tokenId, socketId: socket.id } satisfies SocketConnectionMessage),
+    );
 
     socket.on('disconnect', () => {
       Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
@@ -639,6 +639,14 @@ export default class BootstrapSocket extends Bootstrap {
     this.__nrp.on('token:deleted', (json: string) => {
       const { tokenIds } = JSON.parse(json) as { tokenIds: string[] };
       this._disconnectTokenSockets(tokenIds);
+    });
+    // A partner connected with a deactivated agreement's token loses its sockets, as it would its REST access
+    this.__nrp.on('dataShare:deactivated', async (json: string) => {
+      const { appDataSharingId } = JSON.parse(json) as DataShareActivatedMessage;
+      const dataShare = (await Model.getCoreModel(AppDataSharingSchemaModel).findById(
+        appDataSharingId,
+      )) as AppDataSharing | null;
+      if (dataShare?._tokenId) this._disconnectTokenSockets([String(dataShare._tokenId)]);
     });
 
     this.__nrp.on('sock:worker:request-status', async (json: string) => {

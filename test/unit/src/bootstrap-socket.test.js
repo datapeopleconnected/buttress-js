@@ -400,3 +400,46 @@ describe('bootstrap-socket: connected sockets', () => {
     assert.ok(bootstrap.__nrp.emit.calledOnceWith('worker:socket:heartbeat', JSON.stringify({ tokenIds: ['t1', 't2', 't3'] })));
   });
 });
+
+describe('bootstrap-socket: a partner whose agreement is not active', () => {
+  const app = { id: new ObjectId(), apiPath: 'app-one', __schema: '[]' };
+  const token = { id: new ObjectId(), value: 'partner-token', type: 'dataSharing', _appId: app.id };
+
+  afterEach(() => sinon.restore());
+
+  it("refuses its socket, and doesn't count it as connected", async () => {
+    sinon.stub(Logging, 'logWarn');
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      if (modelClass === TokenSchemaModel) return { findOne: async () => token };
+      if (modelClass === AppSchemaModel) return { findOne: async () => app };
+      // Only an active agreement is found
+      if (modelClass === AppDataSharingSchemaModel) return { findOne: async () => null };
+      throw new Error(`Unexpected core model ${modelClass.name}`);
+    });
+    const bootstrap = new BootstrapSocket();
+    bootstrap.__nrp = { emit: sinon.spy() };
+    bootstrap._primaryDatastore = { ID: { new: (id) => id } };
+    const socket = { id: 'socket-1', nsp: { name: '/app-one' }, handshake: { auth: { token: token.value }, query: {} }, data: {} };
+    socket.join = () => {};
+    socket.on = () => {};
+    const next = sinon.spy();
+
+    await bootstrap._workerHandleSocketConnection(socket, next);
+
+    assert.match(next.firstCall.args[0].message, /invalid-data-share/);
+    assert.strictEqual(bootstrap.__nrp.emit.calledWith('worker:socket:connection'), false);
+  });
+
+  it('closes the sockets of an agreement once it is deactivated', async () => {
+    sinon.stub(Model, 'getCoreModel').returns({ findById: async () => ({ id: 'ds-1', _tokenId: 'partner-token-id' }) });
+    const handlers = {};
+    const bootstrap = new BootstrapSocket();
+    bootstrap.__nrp = { on: (channel, handler) => (handlers[channel] = handler), emit: () => {} };
+    const disconnect = sinon.stub(bootstrap, '_disconnectTokenSockets');
+    await bootstrap.__registerNRPWorkerListeners();
+
+    await handlers['dataShare:deactivated'](JSON.stringify({ appDataSharingId: 'ds-1' }));
+
+    assert.ok(disconnect.calledOnceWith(['partner-token-id']));
+  });
+});
