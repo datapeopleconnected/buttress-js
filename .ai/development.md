@@ -87,6 +87,12 @@ npm run test:federation   # boots two Buttress instances and tests data sharing 
 - **Unit tests import `dist/`** (see e.g. [test/unit/src/helpers/schema.test.js](../test/unit/src/helpers/schema.test.js)
   which does `import * as Helpers from '../../../../dist/helpers/index.js'`). If you edit `src/` and run
   `npm run test:unit` directly (skipping `npm run build`), you're testing stale compiled output.
+- **Don't stub `parseQuery`** in a route or access-control test: a pass-through hides what parsing does (operators
+  become `$eq`, an empty `$and` goes, a bad id becomes `null`). For an app's schema model, use
+  `createSchemaModel(schema, rows)` from [test/schema-model.js](../test/schema-model.js): a real `StandardModel` over an
+  in-memory datastore that evaluates the parsed query (and throws on an operator it doesn't know), keeps the `rows`
+  array it's given up to date, and records its `calls`. Rows need ObjectId-hex ids (`newId()`). For a core model with
+  the rest stubbed, spread `realQueryParser(CoreModel)` from [test/query-parser.js](../test/query-parser.js).
 - To run a **single unit test file**: `npm run build && NODE_ENV=test npx mocha --timeout 2000 test/unit/src/access-control/filter.test.js`
   (mocha config is in [.mocharc.cjs](../.mocharc.cjs) — `require: ["test/hooks.js"]` sets up logging
   capture per test via `mochaHooks`).

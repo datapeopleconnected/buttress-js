@@ -17,45 +17,27 @@
 import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
-import { Readable } from 'stream';
 
 import Route from '../../../../../dist/routes/route.js';
 import DeleteAll from '../../../../../dist/routes/schema-routes/delete-all.js';
+import { createSchemaModel, newId } from '../../../../schema-model.js';
+
+// A real schema model, so the route and access control run the real parseQuery, over rows in memory
+const schema = {
+  name: 'test-schema',
+  properties: {
+    owner: { __type: 'string' },
+    shared: { __type: 'string' },
+    body: { __type: 'string' },
+  },
+};
+const NOTE_1 = newId();
+const NOTE_2 = newId();
+const NOTE_3 = newId();
+const NOTE_4 = newId();
 
 function createFakeModel(docs) {
-  return {
-    createId: (id) => id,
-    flatSchemaData: {},
-    parseQuery: (query) => query,
-    find(query) {
-      const matches = docs.filter((doc) => matchesQuery(doc, query));
-      return Readable.from(matches, { objectMode: true });
-    },
-    async rmBulk(ids) {
-      for (const id of ids) {
-        const idx = docs.findIndex((d) => d.id === id);
-        if (idx >= 0) docs.splice(idx, 1);
-      }
-      return true;
-    },
-    async rmAll() {
-      docs.splice(0, docs.length);
-      return true;
-    },
-  };
-}
-
-function matchesQuery(doc, query) {
-  if (!query || Object.keys(query).length === 0) return true;
-  if (query.$and) return query.$and.every((q) => matchesQuery(doc, q));
-  if (query.$or) return query.$or.some((q) => matchesQuery(doc, q));
-  return Object.keys(query).every((key) => {
-    const cond = query[key];
-    if (cond && typeof cond === 'object' && !Array.isArray(cond) && '$in' in cond) {
-      return cond.$in.some((v) => `${v}` === `${doc[key]}`);
-    }
-    return `${doc?.[key]}` === `${cond}`;
-  });
+  return createSchemaModel(schema, docs).model;
 }
 
 function createRoute(model) {
@@ -66,9 +48,9 @@ function createRoute(model) {
 }
 
 const makeDocs = () => [
-  { id: 'note-1', owner: 'alice', shared: 'no' },
-  { id: 'note-2', owner: 'bob', shared: 'no' },
-  { id: 'note-3', owner: 'bob', shared: 'yes' },
+  { id: NOTE_1, owner: 'alice', shared: 'no' },
+  { id: NOTE_2, owner: 'bob', shared: 'no' },
+  { id: NOTE_3, owner: 'bob', shared: 'yes' },
 ];
 
 async function deleteAll(route, policyConfigs) {
@@ -115,24 +97,24 @@ describe('schema-routes/DeleteAll', () => {
     const { result } = await deleteAll(createRoute(model), [{ query: { owner: 'alice' } }]);
 
     assert.strictEqual(rmAll.callCount, 0);
-    assert.deepStrictEqual(result, ['note-1']);
-    assert.deepStrictEqual(docs.map((d) => d.id), ['note-2', 'note-3']);
+    assert.deepStrictEqual(result, [NOTE_1]);
+    assert.deepStrictEqual(docs.map((d) => d.id), [NOTE_2, NOTE_3]);
   });
 
   it('deletes the entities any of several policy configs selects, once each, and nothing else', async () => {
-    const docs = [...makeDocs(), { id: 'note-4', owner: 'alice', shared: 'yes' }];
+    const docs = [...makeDocs(), { id: NOTE_4, owner: 'alice', shared: 'yes' }];
     const model = createFakeModel(docs);
     const rmBulk = sinon.spy(model, 'rmBulk');
 
-    // note-4 is selected by both configs.
+    // NOTE_4 is selected by both configs.
     const { result } = await deleteAll(createRoute(model), [
       { query: { owner: 'alice' } },
       { query: { shared: 'yes' }, projection: { keys: ['owner'] } },
     ]);
 
-    assert.deepStrictEqual(result.sort(), ['note-1', 'note-3', 'note-4']);
-    assert.deepStrictEqual(rmBulk.firstCall.args[0].sort(), ['note-1', 'note-3', 'note-4']);
-    assert.deepStrictEqual(docs.map((d) => d.id), ['note-2']);
+    assert.deepStrictEqual(result.sort(), [NOTE_1, NOTE_3, NOTE_4]);
+    assert.deepStrictEqual(rmBulk.firstCall.args[0].sort(), [NOTE_1, NOTE_3, NOTE_4]);
+    assert.deepStrictEqual(docs.map((d) => d.id), [NOTE_2]);
   });
 
   it('deletes nothing when the policy query selects no entity', async () => {
@@ -153,8 +135,8 @@ describe('schema-routes/DeleteAll', () => {
     const { req } = await deleteAll(createRoute(createFakeModel(makeDocs())), [{ query: { owner: 'bob' } }]);
 
     assert.deepStrictEqual(req.context.deletedEntities, [
-      { id: 'note-2', owner: 'bob', shared: 'no' },
-      { id: 'note-3', owner: 'bob', shared: 'yes' },
+      { id: NOTE_2, owner: 'bob', shared: 'no' },
+      { id: NOTE_3, owner: 'bob', shared: 'yes' },
     ]);
   });
 
@@ -192,7 +174,7 @@ describe('schema-routes/DeleteAll:_respond/_broadcast', () => {
 
     assert.strictEqual(respond.firstCall.args[2], true);
     const [, , broadcastResult, path, isSuper] = broadcast.firstCall.args;
-    assert.deepStrictEqual(broadcastResult, [{ id: 'note-2' }, { id: 'note-3' }]);
+    assert.deepStrictEqual(broadcastResult, [{ id: NOTE_2 }, { id: NOTE_3 }]);
     assert.strictEqual(path, '/test-schema');
     assert.strictEqual(isSuper, true);
   });
@@ -210,7 +192,7 @@ describe('schema-routes/DeleteAll:_respond/_broadcast', () => {
     }
 
     it('sends the deleted entities in batches of at most 1000, each with the entities of its own ids', async () => {
-      const docs = Array.from({ length: 2500 }, (_, i) => ({ id: `note-${i}`, owner: 'bob' }));
+      const docs = Array.from({ length: 2500 }, (_, i) => ({ id: newId(), owner: 'bob' }));
       const { route, activities } = broadcastingRoute(docs);
 
       const { req, result } = await deleteAll(route, [{ query: { owner: 'bob' } }]);
@@ -228,7 +210,7 @@ describe('schema-routes/DeleteAll:_respond/_broadcast', () => {
 
     it('keeps each batch to about a megabyte of entities', async () => {
       const big = 'x'.repeat(600 * 1024);
-      const docs = Array.from({ length: 3 }, (_, i) => ({ id: `note-${i}`, owner: 'bob', body: big }));
+      const docs = Array.from({ length: 3 }, (_, i) => ({ id: newId(), owner: 'bob', body: big }));
       const { route, activities } = broadcastingRoute(docs);
 
       const { req, result } = await deleteAll(route, [{ query: { owner: 'bob' } }]);
@@ -238,7 +220,7 @@ describe('schema-routes/DeleteAll:_respond/_broadcast', () => {
     });
 
     it("sends a system token's copy in batches too, without the entities", async () => {
-      const docs = Array.from({ length: 1500 }, (_, i) => ({ id: `note-${i}`, owner: 'bob' }));
+      const docs = Array.from({ length: 1500 }, (_, i) => ({ id: newId(), owner: 'bob' }));
       const { route, activities } = broadcastingRoute(docs);
 
       const { req, result } = await deleteAll(route, [{ query: { owner: 'bob' } }]);

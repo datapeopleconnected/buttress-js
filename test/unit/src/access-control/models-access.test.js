@@ -19,15 +19,7 @@ import assert from 'assert';
 import { Readable } from 'node:stream';
 
 import * as ACM from '../../../../dist/access-control/models-access.js';
-
-function readableOf(items) {
-  const stream = new Readable({ objectMode: true, read() {} });
-  process.nextTick(() => {
-    items.forEach((item) => stream.push(item));
-    stream.push(null);
-  });
-  return stream;
-}
+import { createSchemaModel, newId } from '../../../schema-model.js';
 
 async function drain(stream) {
   const items = [];
@@ -39,99 +31,59 @@ async function drain(stream) {
   return items;
 }
 
+// A real schema model, so policies' queries go through the real parseQuery, over rows in memory
+const schema = { name: 'notes', properties: { tag: { __type: 'string' }, when: { __type: 'date' } } };
+const rowsTagged = (...tags) => tags.map((tag) => ({ id: newId(), tag }));
+const policies = (...queries) => ({ policyConfigs: queries.map((query) => ({ appId: 'app-1', query })) });
+
 describe('access-control/models-access:find', () => {
   it('streams and merges results from every policy config when all succeed', async () => {
-    const model = {
-      flatSchemaData: {},
-      parseQuery: (query) => query,
-      find: (query) => readableOf([{ id: `${query.tag}-a` }, { id: `${query.tag}-b` }]),
-    };
-    const ac = {
-      policyConfigs: [{ appId: 'app-1', query: { tag: 'one' } }, { appId: 'app-1', query: { tag: 'two' } }],
-    };
+    const { model } = createSchemaModel(schema, rowsTagged('one', 'one', 'two', 'two', 'three'));
 
-    // An empty raw query means `mergeQueryFiltersWithAccessControl` returns each policy config's
-    // own query unchanged (see filter.ts:359), so the mock's flat `query.tag` reads are meaningful.
-    const stream = await ACM.find(model, { query: {} }, ac);
-    const items = await drain(stream);
+    // An empty raw query means `mergeQueryFiltersWithAccessControl` returns each policy config's own query unchanged
+    const items = await drain(await ACM.find(model, { query: {} }, policies({ tag: 'one' }, { tag: 'two' })));
 
-    assert.strictEqual(items.length, 4);
+    assert.deepStrictEqual(items.map((item) => item.tag).sort(), ['one', 'one', 'two', 'two']);
   });
 
   it('merges the results of a model whose find is async, as a federated model is', async () => {
-    const model = {
-      flatSchemaData: {},
-      parseQuery: (query) => query,
-      find: async (query) => readableOf([{ id: `${query.tag}-a` }]),
-    };
-    const ac = {
-      policyConfigs: [{ appId: 'app-1', query: { tag: 'one' } }, { appId: 'app-1', query: { tag: 'two' } }],
-    };
+    const { model } = createSchemaModel(schema, rowsTagged('one', 'two'));
+    const find = model.find.bind(model);
+    model.find = async (...args) => find(...args);
 
-    const items = await drain(await ACM.find(model, { query: {} }, ac));
+    const items = await drain(await ACM.find(model, { query: {} }, policies({ tag: 'one' }, { tag: 'two' })));
 
-    assert.deepStrictEqual(items.map((item) => item.id).sort(), ['one-a', 'two-a']);
+    assert.deepStrictEqual(items.map((item) => item.tag).sort(), ['one', 'two']);
   });
 
   it('rejects instead of silently returning a partial stream when one policy config fails to parse', async () => {
-    const model = {
-      flatSchemaData: {},
-      parseQuery: (query) => {
-        if (query.shouldFail) throw new TypeError("Cannot read properties of undefined (reading '__type')");
-        return query;
-      },
-      find: (query) => readableOf([{ id: `${query.tag}-a` }]),
-    };
-    const ac = {
-      policyConfigs: [
-        { appId: 'app-1', query: { tag: 'one' } },
-        { appId: 'app-1', query: { tag: 'two', shouldFail: true } },
-      ],
-    };
+    const { model } = createSchemaModel(schema, rowsTagged('one'));
 
     await assert.rejects(
-      () => ACM.find(model, { query: {} }, ac),
-      /Cannot read properties of undefined/,
+      () => ACM.find(model, { query: {} }, policies({ tag: 'one' }, { when: 'not a date' })),
+      (err) => err.code === 400 && err.message === 'invalid_date: when',
     );
   });
 
   it('does not start any datastore find() call when a later policy config fails to parse', async () => {
-    const model = {
-      flatSchemaData: {},
-      parseQuery: (query) => {
-        if (query.shouldFail) throw new Error('bad policy query');
-        return query;
-      },
-      find: () => {
-        assert.fail('find() should not be called when a sibling policy config fails to parse');
-      },
-    };
-    const ac = {
-      policyConfigs: [
-        { appId: 'app-1', query: { tag: 'one' } },
-        { appId: 'app-1', query: { shouldFail: true } },
-      ],
-    };
+    const { model, datastore } = createSchemaModel(schema, rowsTagged('one'));
 
-    await assert.rejects(() => ACM.find(model, { query: {} }, ac));
+    await assert.rejects(() => ACM.find(model, { query: {} }, policies({ tag: 'one' }, { when: 'not a date' })));
+
+    assert.deepStrictEqual(datastore.calls, []);
   });
 
   it("fails the merged stream with a policy's find error, and stops the other finds", async () => {
     const err = new Error('$in needs an array');
+    const { model, datastore } = createSchemaModel(schema);
+    // Each policy's find is a stream held open, by the tag its parsed query asks for
     const streams = {};
-    const model = {
-      flatSchemaData: {},
-      parseQuery: (query) => query,
-      find: (query) => {
-        streams[query.tag] = new Readable({ objectMode: true, read() {} });
-        return streams[query.tag];
-      },
-    };
-    const ac = {
-      policyConfigs: [{ appId: 'app-1', query: { tag: 'one' } }, { appId: 'app-1', query: { tag: 'two' } }],
+    datastore.find = (query) => {
+      streams[query.tag.$eq] = new Readable({ objectMode: true, read() {} });
+      return streams[query.tag.$eq];
     };
 
-    const stream = await ACM.find(model, { query: {} }, ac);
+    const stream = await ACM.find(model, { query: {} }, policies({ tag: 'one' }, { tag: 'two' }));
     const drained = drain(stream);
     streams.two.destroy(err);
 

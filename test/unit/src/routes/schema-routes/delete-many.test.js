@@ -17,41 +17,28 @@
 import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
-import { Readable } from 'stream';
 
 import Route from '../../../../../dist/routes/route.js';
 import DeleteMany from '../../../../../dist/routes/schema-routes/delete-many.js';
 import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { createSchemaModel, newId } from '../../../../schema-model.js';
+
+// A real schema model, so the route and access control run the real parseQuery, over rows in memory
+const schema = {
+  name: 'test-schema',
+  properties: {
+    ownerId: { __type: 'id' },
+    value: { __type: 'string', __default: null, __allowUpdate: true },
+  },
+};
+const DOC_1 = newId();
+const DOC_2 = newId();
+const DOC_3 = newId();
+const USER_1 = newId();
+const USER_2 = newId();
 
 function createFakeModel(docs) {
-  return {
-    createId: (id) => id,
-    flatSchemaData: {},
-    parseQuery: (query) => query,
-    find(query) {
-      const matches = docs.filter((doc) => matchesQuery(doc, query));
-      return Readable.from(matches, { objectMode: true });
-    },
-    async rmBulk(ids) {
-      for (const id of ids) {
-        const idx = docs.findIndex((d) => d.id === id);
-        if (idx >= 0) docs.splice(idx, 1);
-      }
-      return true;
-    },
-  };
-}
-
-function matchesQuery(doc, query) {
-  if (!query || Object.keys(query).length === 0) return true;
-  if (query.$and) return query.$and.every((q) => matchesQuery(doc, q));
-  return Object.keys(query).every((key) => {
-    const cond = query[key];
-    if (cond && typeof cond === 'object' && !Array.isArray(cond) && '$in' in cond) {
-      return cond.$in.some((v) => `${v}` === `${doc[key]}`);
-    }
-    return `${doc?.[key]}` === `${cond}`;
-  });
+  return createSchemaModel(schema, docs).model;
 }
 
 function createRoute(model) {
@@ -63,22 +50,22 @@ function createRoute(model) {
 
 describe('schema-routes/DeleteMany', () => {
   const makeDocs = () => [
-    { id: 'doc-1', ownerId: 'user-1' },
-    { id: 'doc-2', ownerId: 'user-2' },
-    { id: 'doc-3', ownerId: 'user-1' },
+    { id: DOC_1, ownerId: USER_1 },
+    { id: DOC_2, ownerId: USER_2 },
+    { id: DOC_3, ownerId: USER_1 },
   ];
 
   it('deletes every requested entity when the token has full access', async () => {
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
-    const req = { body: ['doc-1', 'doc-3'], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+    const req = { body: [DOC_1, DOC_3], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
     const validate = await route._validate(req, {});
     await route._exec(req, {}, validate);
 
     assert.deepStrictEqual(
       docs.map((d) => d.id),
-      ['doc-2'],
+      [DOC_2],
     );
   });
 
@@ -86,8 +73,8 @@ describe('schema-routes/DeleteMany', () => {
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
     const req = {
-      body: ['doc-1', 'doc-3'],
-      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: 'user-1' } }] } },
+      body: [DOC_1, DOC_3],
+      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } },
     };
 
     const validate = await route._validate(req, {});
@@ -95,20 +82,20 @@ describe('schema-routes/DeleteMany', () => {
 
     assert.deepStrictEqual(
       docs.map((d) => d.id),
-      ['doc-2'],
+      [DOC_2],
     );
   });
 
   it('keeps the entities it deletes, as they were, for the SPR to check against policies', async () => {
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
-    const req = { body: ['doc-1', 'doc-3'], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+    const req = { body: [DOC_1, DOC_3], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
     await route._exec(req, {}, await route._validate(req, {}));
 
     assert.deepStrictEqual(req.context.deletedEntities, [
-      { id: 'doc-1', ownerId: 'user-1' },
-      { id: 'doc-3', ownerId: 'user-1' },
+      { id: DOC_1, ownerId: USER_1 },
+      { id: DOC_3, ownerId: USER_1 },
     ]);
   });
 
@@ -116,12 +103,12 @@ describe('schema-routes/DeleteMany', () => {
     const model = createFakeModel(makeDocs());
     const find = sinon.spy(model, 'find');
     const route = createRoute(model);
-    const req = { body: ['doc-1', 'doc-3'], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+    const req = { body: [DOC_1, DOC_3], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
     await route._exec(req, {}, await route._validate(req, {}));
 
     assert.strictEqual(find.callCount, 1);
-    assert.deepStrictEqual(req.context.deletedEntities.map((entity) => entity.id), ['doc-1', 'doc-3']);
+    assert.deepStrictEqual(req.context.deletedEntities.map((entity) => entity.id), [DOC_1, DOC_3]);
   });
 
   it('reads the entities again, whole, when a policy restricts fields', async () => {
@@ -129,7 +116,7 @@ describe('schema-routes/DeleteMany', () => {
     const find = sinon.spy(model, 'find');
     const route = createRoute(model);
     const req = {
-      body: ['doc-1', 'doc-3'],
+      body: [DOC_1, DOC_3],
       context: { id: 'req-1', ac: { policyConfigs: [{ projection: { keys: ['ownerId'] } }] } },
     };
 
@@ -139,13 +126,13 @@ describe('schema-routes/DeleteMany', () => {
   });
 
   it('rejects the whole batch and deletes nothing when any requested id is outside the access-control policy scope', async () => {
-    // doc-2 belongs to user-2; the policy only scopes to user-1's records, so the whole
-    // batch (including doc-1, which the caller *is* allowed to delete) must be rejected.
+    // DOC_2 belongs to USER_2; the policy only scopes to USER_1's records, so the whole
+    // batch (including DOC_1, which the caller *is* allowed to delete) must be rejected.
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
     const req = {
-      body: ['doc-1', 'doc-2'],
-      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: 'user-1' } }] } },
+      body: [DOC_1, DOC_2],
+      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } },
     };
 
     await assert.rejects(
@@ -159,7 +146,7 @@ describe('schema-routes/DeleteMany', () => {
 
     assert.deepStrictEqual(
       docs.map((d) => d.id).sort(),
-      ['doc-1', 'doc-2', 'doc-3'],
+      [DOC_1, DOC_2, DOC_3],
       'no entity should be deleted when any id in the batch is outside the access-control scope',
     );
   });
@@ -171,8 +158,8 @@ describe('schema-routes/DeleteMany:_respond/_broadcast', () => {
   it('still responds true, but broadcasts the deleted ids once each', async () => {
     const respond = sinon.stub(Route.prototype, '_respond').resolves();
     const broadcast = sinon.stub(Route.prototype, '_broadcast').resolves();
-    const route = createRoute(createFakeModel([{ id: 'doc-1' }, { id: 'doc-2' }]));
-    const req = { body: ['doc-1', 'doc-2', 'doc-1'], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+    const route = createRoute(createFakeModel([{ id: DOC_1 }, { id: DOC_2 }]));
+    const req = { body: [DOC_1, DOC_2, DOC_1], context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
     const result = await route._exec(req, {}, await route._validate(req, {}));
     await route._respond(req, {}, result);
@@ -180,7 +167,7 @@ describe('schema-routes/DeleteMany:_respond/_broadcast', () => {
 
     assert.strictEqual(respond.firstCall.args[2], true);
     const [, , broadcastResult, path, isSuper] = broadcast.firstCall.args;
-    assert.deepStrictEqual(broadcastResult, [{ id: 'doc-1' }, { id: 'doc-2' }]);
+    assert.deepStrictEqual(broadcastResult, [{ id: DOC_1 }, { id: DOC_2 }]);
     assert.strictEqual(path, '/test-schema/bulk/delete');
     assert.strictEqual(isSuper, true);
   });

@@ -16,46 +16,27 @@
 
 import { describe, it } from 'mocha';
 import assert from 'assert';
-import { Readable } from 'stream';
 
 import UpdateOne from '../../../../../dist/routes/schema-routes/update-one.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
 import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { createSchemaModel, newId } from '../../../../schema-model.js';
+
+// A real schema model, so the route and access control run the real parseQuery, over rows in memory
+const schema = {
+  name: 'test-schema',
+  properties: {
+    ownerId: { __type: 'id' },
+    value: { __type: 'string', __default: null, __allowUpdate: true },
+  },
+};
+const DOC_1 = newId();
+const DOC_2 = newId();
+const USER_1 = newId();
+const USER_2 = newId();
 
 function createFakeModel(docs) {
-  return {
-    createId: (id) => id,
-    flatSchemaData: {},
-    parseQuery: (query) => query,
-    find(query) {
-      const matches = docs.filter((doc) => matchesQuery(doc, query));
-      return Readable.from(matches, { objectMode: true });
-    },
-    validateUpdate(body) {
-      return { validation: { isValid: true }, body };
-    },
-    async exists(id) {
-      return docs.some((doc) => doc.id === id);
-    },
-    async updateByPath(body, id) {
-      const doc = docs.find((d) => d.id === id);
-      if (!doc) return null;
-      doc.value = body.value;
-      return doc;
-    },
-  };
-}
-
-function matchesQuery(doc, query) {
-  if (!query || Object.keys(query).length === 0) return true;
-  if (query.$and) return query.$and.every((q) => matchesQuery(doc, q));
-  return Object.keys(query).every((key) => {
-    const cond = query[key];
-    if (cond && typeof cond === 'object' && !Array.isArray(cond) && '$in' in cond) {
-      return cond.$in.some((v) => `${v}` === `${doc[key]}`);
-    }
-    return `${doc?.[key]}` === `${cond}`;
-  });
+  return createSchemaModel(schema, docs).model;
 }
 
 function createRoute(model) {
@@ -67,15 +48,15 @@ function createRoute(model) {
 
 describe('schema-routes/UpdateOne', () => {
   const makeDocs = () => [
-    { id: 'doc-1', ownerId: 'user-1', value: 'original' },
-    { id: 'doc-2', ownerId: 'user-2', value: 'original' },
+    { id: DOC_1, ownerId: USER_1, value: 'original' },
+    { id: DOC_2, ownerId: USER_2, value: 'original' },
   ];
 
   it('updates the entity when the token has full access', async () => {
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
     const req = {
-      params: { id: 'doc-1' },
+      params: { id: DOC_1 },
       body: { path: 'value', value: 'updated' },
       context: { id: 'req-1', ac: { policyConfigs: [{}] } },
     };
@@ -83,32 +64,32 @@ describe('schema-routes/UpdateOne', () => {
     const validate = await route._validate(req, {});
     await route._exec(req, {}, validate);
 
-    assert.strictEqual(docs.find((d) => d.id === 'doc-1').value, 'updated');
+    assert.strictEqual(docs.find((d) => d.id === DOC_1).value, 'updated');
   });
 
   it('updates the entity when it matches the access-control policy query', async () => {
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
     const req = {
-      params: { id: 'doc-1' },
+      params: { id: DOC_1 },
       body: { path: 'value', value: 'updated' },
-      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: 'user-1' } }] } },
+      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } },
     };
 
     const validate = await route._validate(req, {});
     await route._exec(req, {}, validate);
 
-    assert.strictEqual(docs.find((d) => d.id === 'doc-1').value, 'updated');
+    assert.strictEqual(docs.find((d) => d.id === DOC_1).value, 'updated');
   });
 
   it('rejects with a 400 and leaves the entity untouched when it exists but is outside the access-control policy scope', async () => {
-    // doc-2 exists, but belongs to user-2 while the policy only scopes to user-1's records.
+    // DOC_2 exists, but belongs to USER_2 while the policy only scopes to USER_1's records.
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
     const req = {
-      params: { id: 'doc-2' },
+      params: { id: DOC_2 },
       body: { path: 'value', value: 'updated' },
-      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: 'user-1' } }] } },
+      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } },
     };
 
     await assert.rejects(
@@ -120,7 +101,7 @@ describe('schema-routes/UpdateOne', () => {
       },
     );
 
-    assert.strictEqual(docs.find((d) => d.id === 'doc-2').value, 'original');
+    assert.strictEqual(docs.find((d) => d.id === DOC_2).value, 'original');
   });
 });
 
@@ -141,8 +122,8 @@ describe('schema-routes/UpdateOne: refusal messages', () => {
       ['modelManager', {}],
     ]);
     const validator = new StandardModel(schema, null, services);
-    const model = { ...createFakeModel([{ id: 'doc-1' }]), validateUpdate: (b) => validator.validateUpdate(b) };
-    const req = { params: { id: 'doc-1' }, body, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+    const model = { ...createFakeModel([{ id: DOC_1 }]), validateUpdate: (b) => validator.validateUpdate(b) };
+    const req = { params: { id: DOC_1 }, body, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
     const err = await createRoute(model)._validate(req, {}).then(
       () => null,

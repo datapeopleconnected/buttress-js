@@ -17,38 +17,26 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
-import { Readable } from 'stream';
 
 import DeleteOne from '../../../../../dist/routes/schema-routes/delete-one.js';
 import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { createSchemaModel, newId } from '../../../../schema-model.js';
+
+// A real schema model, so the route and access control run the real parseQuery, over rows in memory
+const schema = {
+  name: 'test-schema',
+  properties: {
+    ownerId: { __type: 'id' },
+    value: { __type: 'string', __default: null, __allowUpdate: true },
+  },
+};
+const DOC_1 = newId();
+const DOC_2 = newId();
+const USER_1 = newId();
+const USER_2 = newId();
 
 function createFakeModel(docs) {
-  return {
-    createId: (id) => id,
-    flatSchemaData: {},
-    parseQuery: (query) => query,
-    find(query) {
-      const matches = docs.filter((doc) => matchesQuery(doc, query));
-      return Readable.from(matches, { objectMode: true });
-    },
-    async rm(id) {
-      const idx = docs.findIndex((d) => d.id === id);
-      if (idx >= 0) docs.splice(idx, 1);
-      return true;
-    },
-  };
-}
-
-function matchesQuery(doc, query) {
-  if (!query || Object.keys(query).length === 0) return true;
-  if (query.$and) return query.$and.every((q) => matchesQuery(doc, q));
-  return Object.keys(query).every((key) => {
-    const cond = query[key];
-    if (cond && typeof cond === 'object' && !Array.isArray(cond) && '$in' in cond) {
-      return cond.$in.some((v) => `${v}` === `${doc[key]}`);
-    }
-    return `${doc?.[key]}` === `${cond}`;
-  });
+  return createSchemaModel(schema, docs).model;
 }
 
 function createRoute(model) {
@@ -60,41 +48,41 @@ function createRoute(model) {
 
 describe('schema-routes/DeleteOne', () => {
   const makeDocs = () => [
-    { id: 'doc-1', ownerId: 'user-1' },
-    { id: 'doc-2', ownerId: 'user-2' },
+    { id: DOC_1, ownerId: USER_1 },
+    { id: DOC_2, ownerId: USER_2 },
   ];
 
   it('deletes the entity when the token has full access', async () => {
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
-    const req = { params: { id: 'doc-1' }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+    const req = { params: { id: DOC_1 }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
     const validate = await route._validate(req, {});
     await route._exec(req, {}, validate);
 
-    assert.ok(!docs.some((d) => d.id === 'doc-1'));
+    assert.ok(!docs.some((d) => d.id === DOC_1));
   });
 
   it('keeps the entity it deletes, as it was, for the SPR to check against policies', async () => {
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
-    const req = { params: { id: 'doc-1' }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+    const req = { params: { id: DOC_1 }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
     await route._exec(req, {}, await route._validate(req, {}));
 
-    assert.deepStrictEqual(req.context.deletedEntities, [{ id: 'doc-1', ownerId: 'user-1' }]);
+    assert.deepStrictEqual(req.context.deletedEntities, [{ id: DOC_1, ownerId: USER_1 }]);
   });
 
   it('keeps the entity it found in scope rather than reading it again, when no policy restricts fields', async () => {
     const model = createFakeModel(makeDocs());
     const find = sinon.spy(model, 'find');
     const route = createRoute(model);
-    const req = { params: { id: 'doc-1' }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+    const req = { params: { id: DOC_1 }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
     await route._exec(req, {}, await route._validate(req, {}));
 
     assert.strictEqual(find.callCount, 1);
-    assert.deepStrictEqual(req.context.deletedEntities, [{ id: 'doc-1', ownerId: 'user-1' }]);
+    assert.deepStrictEqual(req.context.deletedEntities, [{ id: DOC_1, ownerId: USER_1 }]);
   });
 
   it('reads the entity again, whole, when a policy restricts fields', async () => {
@@ -102,7 +90,7 @@ describe('schema-routes/DeleteOne', () => {
     const find = sinon.spy(model, 'find');
     const route = createRoute(model);
     const req = {
-      params: { id: 'doc-1' },
+      params: { id: DOC_1 },
       context: { id: 'req-1', ac: { policyConfigs: [{ projection: { keys: ['name'] } }] } },
     };
 
@@ -116,23 +104,23 @@ describe('schema-routes/DeleteOne', () => {
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
     const req = {
-      params: { id: 'doc-1' },
-      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: 'user-1' } }] } },
+      params: { id: DOC_1 },
+      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } },
     };
 
     const validate = await route._validate(req, {});
     await route._exec(req, {}, validate);
 
-    assert.ok(!docs.some((d) => d.id === 'doc-1'));
+    assert.ok(!docs.some((d) => d.id === DOC_1));
   });
 
   it('rejects with a 400 and leaves the entity intact when it exists but is outside the access-control policy scope', async () => {
-    // doc-2 exists, but belongs to user-2 while the policy only scopes to user-1's records.
+    // DOC_2 exists, but belongs to USER_2 while the policy only scopes to USER_1's records.
     const docs = makeDocs();
     const route = createRoute(createFakeModel(docs));
     const req = {
-      params: { id: 'doc-2' },
-      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: 'user-1' } }] } },
+      params: { id: DOC_2 },
+      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } },
     };
 
     await assert.rejects(
@@ -145,7 +133,7 @@ describe('schema-routes/DeleteOne', () => {
     );
 
     assert.ok(
-      docs.some((d) => d.id === 'doc-2'),
+      docs.some((d) => d.id === DOC_2),
       'entity outside the access-control scope must not be deleted',
     );
   });

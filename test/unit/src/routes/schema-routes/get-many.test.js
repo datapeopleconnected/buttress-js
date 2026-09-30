@@ -16,34 +16,27 @@
 
 import { describe, it } from 'mocha';
 import assert from 'assert';
-import { Readable } from 'stream';
 
 import GetMany from '../../../../../dist/routes/schema-routes/get-many.js';
 import { streamAll } from '../../../../../dist/helpers/index.js';
+import { createSchemaModel, newId } from '../../../../schema-model.js';
+
+// A real schema model, so the route and access control run the real parseQuery, over rows in memory
+const schema = {
+  name: 'test-schema',
+  properties: {
+    ownerId: { __type: 'id' },
+    value: { __type: 'string', __default: null, __allowUpdate: true },
+  },
+};
+const DOC_1 = newId();
+const DOC_2 = newId();
+const DOC_3 = newId();
+const USER_1 = newId();
+const USER_2 = newId();
 
 function createFakeModel(docs) {
-  return {
-    createId: (id) => id,
-    isValidId: (id) => typeof id === 'string' && id.startsWith('doc-'),
-    flatSchemaData: {},
-    parseQuery: (query) => query,
-    find(query) {
-      const matches = docs.filter((doc) => matchesQuery(doc, query));
-      return Readable.from(matches, { objectMode: true });
-    },
-  };
-}
-
-function matchesQuery(doc, query) {
-  if (!query || Object.keys(query).length === 0) return true;
-  if (query.$and) return query.$and.every((q) => matchesQuery(doc, q));
-  return Object.keys(query).every((key) => {
-    const cond = query[key];
-    if (cond && typeof cond === 'object' && !Array.isArray(cond) && '$in' in cond) {
-      return cond.$in.some((v) => `${v}` === `${doc[key]}`);
-    }
-    return `${doc?.[key]}` === `${cond}`;
-  });
+  return createSchemaModel(schema, docs).model;
 }
 
 function createRoute(model) {
@@ -55,16 +48,16 @@ function createRoute(model) {
 
 describe('schema-routes/GetMany', () => {
   const docs = [
-    { id: 'doc-1', ownerId: 'user-1' },
-    { id: 'doc-2', ownerId: 'user-2' },
-    { id: 'doc-3', ownerId: 'user-1' },
+    { id: DOC_1, ownerId: USER_1 },
+    { id: DOC_2, ownerId: USER_2 },
+    { id: DOC_3, ownerId: USER_1 },
   ];
 
   it('refuses a request with no query, or an id that is not one, as an invalid id', async () => {
     const route = createRoute(createFakeModel(docs));
     const request = (body) => route._validate({ body, context: { id: 'req-1', ac: { policyConfigs: [{}] } } }, {});
 
-    for (const body of [{}, { query: {} }, { query: { ids: [] } }, { query: { ids: ['doc-1', 'not-an-id'] } }, undefined]) {
+    for (const body of [{}, { query: {} }, { query: { ids: [] } }, { query: { ids: [DOC_1, 'not-an-id'] } }, undefined]) {
       await assert.rejects(request(body), (err) => err.code === 400 && err.message === 'invalid_id', JSON.stringify(body));
     }
   });
@@ -72,27 +65,27 @@ describe('schema-routes/GetMany', () => {
   it('returns all requested docs when the token has full access', async () => {
     const route = createRoute(createFakeModel(docs));
     const req = {
-      body: { query: { ids: ['doc-1', 'doc-2', 'doc-3'] } },
+      body: { query: { ids: [DOC_1, DOC_2, DOC_3] } },
       context: { id: 'req-1', ac: { policyConfigs: [{}] } },
     };
 
     const validate = await route._validate(req, {});
     const result = await streamAll(await route._exec(req, {}, validate));
 
-    assert.deepStrictEqual(result.map((d) => d.id).sort(), ['doc-1', 'doc-2', 'doc-3']);
+    assert.deepStrictEqual(result.map((d) => d.id).sort(), [DOC_1, DOC_2, DOC_3]);
   });
 
   it('only returns the subset of requested docs that fall within the access-control policy scope', async () => {
-    // doc-2 belongs to user-2, so it must be excluded even though it was requested by id.
+    // DOC_2 belongs to USER_2, so it must be excluded even though it was requested by id.
     const route = createRoute(createFakeModel(docs));
     const req = {
-      body: { query: { ids: ['doc-1', 'doc-2', 'doc-3'] } },
-      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: 'user-1' } }] } },
+      body: { query: { ids: [DOC_1, DOC_2, DOC_3] } },
+      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } },
     };
 
     const validate = await route._validate(req, {});
     const result = await streamAll(await route._exec(req, {}, validate));
 
-    assert.deepStrictEqual(result.map((d) => d.id).sort(), ['doc-1', 'doc-3']);
+    assert.deepStrictEqual(result.map((d) => d.id).sort(), [DOC_1, DOC_3]);
   });
 });

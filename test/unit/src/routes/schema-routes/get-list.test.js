@@ -16,26 +16,26 @@
 
 import { describe, it } from 'mocha';
 import assert from 'assert';
-import { Readable } from 'stream';
 
 import GetList from '../../../../../dist/routes/schema-routes/get-list.js';
 import { streamAll } from '../../../../../dist/helpers/index.js';
+import { createSchemaModel, newId } from '../../../../schema-model.js';
 
-function matchesQuery(doc, query) {
-  if (!query || Object.keys(query).length === 0) return true;
-  if (query.$and) return query.$and.every((q) => matchesQuery(doc, q));
-  return Object.keys(query).every((key) => `${doc?.[key]}` === `${query[key]}`);
-}
+// A real schema model, so the route and access control run the real parseQuery, over rows in memory
+const schema = {
+  name: 'test-schema',
+  properties: {
+    ownerId: { __type: 'id' },
+    value: { __type: 'string', __default: null, __allowUpdate: true },
+  },
+};
+const DOC_1 = newId();
+const DOC_2 = newId();
+const USER_1 = newId();
+const USER_2 = newId();
 
 function createFakeModel(docs) {
-  return {
-    flatSchemaData: {},
-    parseQuery: (query) => query,
-    find(query) {
-      const matches = docs.filter((doc) => matchesQuery(doc, query));
-      return Readable.from(matches, { objectMode: true });
-    },
-  };
+  return createSchemaModel(schema, docs).model;
 }
 
 function createRoute(model) {
@@ -54,18 +54,18 @@ function createReq({ body = {}, ac = { policyConfigs: [{}] } } = {}) {
 }
 
 describe('schema-routes/GetList:_validate', () => {
-  it('wraps a request query in $and', async () => {
+  it('wraps a request query in $and, parsed', async () => {
     const route = createRoute(createFakeModel([]));
-    const result = await route._validate(createReq({ body: { query: { ownerId: 'user-1' } } }), {});
+    const result = await route._validate(createReq({ body: { query: { ownerId: USER_1 } } }), {});
 
-    assert.deepStrictEqual(result.query, { $and: [{ ownerId: 'user-1' }] });
+    assert.deepStrictEqual(result.query, { $and: [{ ownerId: { $eq: USER_1 } }] });
   });
 
-  it('defaults to an empty $and query and no projection when the body is empty', async () => {
+  it('defaults to an empty query, as parsing drops an empty $and, and no projection when the body is empty', async () => {
     const route = createRoute(createFakeModel([]));
     const result = await route._validate(createReq(), {});
 
-    assert.deepStrictEqual(result.query, { $and: [] });
+    assert.deepStrictEqual(result.query, {});
     assert.strictEqual(result.project, false);
   });
 
@@ -86,20 +86,20 @@ describe('schema-routes/GetList:_validate', () => {
 
 describe('schema-routes/GetList:_exec', () => {
   const docs = [
-    { id: 'doc-1', ownerId: 'user-1' },
-    { id: 'doc-2', ownerId: 'user-2' },
+    { id: DOC_1, ownerId: USER_1 },
+    { id: DOC_2, ownerId: USER_2 },
   ];
 
   it('returns docs scoped to the access-control policy', async () => {
     const route = createRoute(createFakeModel(docs));
-    const req = createReq({ ac: { policyConfigs: [{ query: { ownerId: 'user-1' } }] } });
+    const req = createReq({ ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } });
     const validateResult = { query: {}, project: false };
 
     const result = await streamAll(await route._exec(req, {}, validateResult));
 
     assert.deepStrictEqual(
       result.map((d) => d.id),
-      ['doc-1'],
+      [DOC_1],
     );
   });
 });

@@ -16,28 +16,27 @@
 
 import { describe, it } from 'mocha';
 import assert from 'assert';
-import { Readable } from 'stream';
 
 import SearchList from '../../../../../dist/routes/schema-routes/search-list.js';
 import { streamAll } from '../../../../../dist/helpers/index.js';
 import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { createSchemaModel, newId } from '../../../../schema-model.js';
 
-function matchesQuery(doc, query) {
-  if (!query || Object.keys(query).length === 0) return true;
-  if (query.$and) return query.$and.every((q) => matchesQuery(doc, q));
-  if (query.$or) return query.$or.some((q) => matchesQuery(doc, q));
-  return Object.keys(query).every((key) => `${doc?.[key]}` === `${query[key]}`);
-}
+// A real schema model, so the route and access control run the real parseQuery, over rows in memory
+const schema = {
+  name: 'test-schema',
+  properties: {
+    ownerId: { __type: 'id' },
+    value: { __type: 'string', __default: null, __allowUpdate: true },
+  },
+};
+const DOC_1 = newId();
+const DOC_2 = newId();
+const USER_1 = newId();
+const USER_2 = newId();
 
 function createFakeModel(docs) {
-  return {
-    flatSchemaData: {},
-    parseQuery: (query) => query,
-    find(query) {
-      const matches = docs.filter((doc) => matchesQuery(doc, query));
-      return Readable.from(matches, { objectMode: true });
-    },
-  };
+  return createSchemaModel(schema, docs).model;
 }
 
 function createRoute(model) {
@@ -75,18 +74,18 @@ describe('schema-routes/SearchList:_validate', () => {
     assert.strictEqual(result.project, false);
   });
 
-  it('wraps the request query in $and', async () => {
+  it('wraps the request query in $and, parsed', async () => {
     const route = createRoute(createFakeModel([]));
-    const result = await route._validate({ body: { query: { ownerId: 'user-1' } } }, {});
+    const result = await route._validate({ body: { query: { ownerId: USER_1 } } }, {});
 
-    assert.deepStrictEqual(result.query, { $and: [{ ownerId: 'user-1' }] });
+    assert.deepStrictEqual(result.query, { $and: [{ ownerId: { $eq: USER_1 } }] });
   });
 });
 
 describe('schema-routes/SearchList:_exec', () => {
   const docs = [
-    { id: 'doc-1', ownerId: 'user-1' },
-    { id: 'doc-2', ownerId: 'user-2' },
+    { id: DOC_1, ownerId: USER_1 },
+    { id: DOC_2, ownerId: USER_2 },
   ];
 
   it('returns every doc under a single unrestricted policy', async () => {
@@ -95,29 +94,29 @@ describe('schema-routes/SearchList:_exec', () => {
 
     const result = await streamAll(await route._exec({ context: { ac: { policyConfigs: [{}] } } }, {}, validateResult));
 
-    assert.deepStrictEqual(result.map((d) => d.id).sort(), ['doc-1', 'doc-2']);
+    assert.deepStrictEqual(result.map((d) => d.id).sort(), [DOC_1, DOC_2]);
   });
 
   it('scopes results to the access-control policy query', async () => {
     const route = createRoute(createFakeModel(docs));
     const validateResult = { query: {}, skip: 0, limit: 0, sort: {}, project: false };
-    const ac = { policyConfigs: [{ query: { ownerId: 'user-1' } }] };
+    const ac = { policyConfigs: [{ query: { ownerId: USER_1 } }] };
 
     const result = await streamAll(await route._exec({ context: { ac } }, {}, validateResult));
 
     assert.deepStrictEqual(
       result.map((d) => d.id),
-      ['doc-1'],
+      [DOC_1],
     );
   });
 
   it('unions results across multiple policy scopes', async () => {
     const route = createRoute(createFakeModel(docs));
     const validateResult = { query: {}, skip: 0, limit: 0, sort: {}, project: false };
-    const ac = { policyConfigs: [{ query: { ownerId: 'user-1' } }, { query: { ownerId: 'user-2' } }] };
+    const ac = { policyConfigs: [{ query: { ownerId: USER_1 } }, { query: { ownerId: USER_2 } }] };
 
     const result = await streamAll(await route._exec({ context: { ac } }, {}, validateResult));
 
-    assert.deepStrictEqual(result.map((d) => d.id).sort(), ['doc-1', 'doc-2']);
+    assert.deepStrictEqual(result.map((d) => d.id).sort(), [DOC_1, DOC_2]);
   });
 });

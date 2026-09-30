@@ -16,35 +16,20 @@
 
 import { describe, it } from 'mocha';
 import assert from 'assert';
-import { Readable } from 'stream';
 
 import GetOne from '../../../../../dist/routes/schema-routes/get-one.js';
 import { RequestError } from '../../../../../dist/helpers/errors.js';
+import { createSchemaModel, newId } from '../../../../schema-model.js';
 
-// A tiny in-memory stand-in for StandardModel, just enough surface area for
-// GetOne._validate/_exec to run against (createId, find, parseQuery/flatSchemaData).
+// A real schema model, so the route and access control run the real parseQuery, over rows in memory
+const schema = { name: 'test-schema', properties: { ownerId: { __type: 'id' } } };
+const USER_1 = newId();
+const USER_2 = newId();
+const DOC_1 = newId();
+const DOC_2 = newId();
+
 function createFakeModel(docs) {
-  return {
-    createId: (id) => id,
-    flatSchemaData: {},
-    parseQuery: (query) => query,
-    find(query) {
-      const matches = docs.filter((doc) => matchesQuery(doc, query));
-      return Readable.from(matches, { objectMode: true });
-    },
-  };
-}
-
-function matchesQuery(doc, query) {
-  if (!query || Object.keys(query).length === 0) return true;
-  if (query.$and) return query.$and.every((q) => matchesQuery(doc, q));
-  return Object.keys(query).every((key) => {
-    const cond = query[key];
-    if (cond && typeof cond === 'object' && !Array.isArray(cond) && '$in' in cond) {
-      return cond.$in.some((v) => `${v}` === `${doc[key]}`);
-    }
-    return `${doc?.[key]}` === `${cond}`;
-  });
+  return createSchemaModel(schema, docs).model;
 }
 
 function createRoute(model) {
@@ -56,39 +41,39 @@ function createRoute(model) {
 
 describe('schema-routes/GetOne', () => {
   const docs = [
-    { id: 'doc-1', ownerId: 'user-1' },
-    { id: 'doc-2', ownerId: 'user-2' },
+    { id: DOC_1, ownerId: USER_1 },
+    { id: DOC_2, ownerId: USER_2 },
   ];
 
   it('returns the entity when the token has full access (no policy query)', async () => {
     const route = createRoute(createFakeModel(docs));
-    const req = { params: { id: 'doc-1' }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+    const req = { params: { id: DOC_1 }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
     const validate = await route._validate(req, {});
     const entity = await route._exec(req, {}, validate);
 
-    assert.strictEqual(entity.id, 'doc-1');
+    assert.strictEqual(entity.id, DOC_1);
   });
 
   it('returns the entity when it matches the access-control policy query', async () => {
     const route = createRoute(createFakeModel(docs));
     const req = {
-      params: { id: 'doc-1' },
-      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: 'user-1' } }] } },
+      params: { id: DOC_1 },
+      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } },
     };
 
     const validate = await route._validate(req, {});
     const entity = await route._exec(req, {}, validate);
 
-    assert.strictEqual(entity.id, 'doc-1');
+    assert.strictEqual(entity.id, DOC_1);
   });
 
   it('rejects with a 400 when the entity exists but is outside the access-control policy scope', async () => {
-    // doc-2 exists, but belongs to user-2 while the policy only scopes to user-1's records.
+    // DOC_2 exists, but belongs to USER_2 while the policy only scopes to USER_1's records.
     const route = createRoute(createFakeModel(docs));
     const req = {
-      params: { id: 'doc-2' },
-      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: 'user-1' } }] } },
+      params: { id: DOC_2 },
+      context: { id: 'req-1', ac: { policyConfigs: [{ query: { ownerId: USER_1 } }] } },
     };
 
     const validate = await route._validate(req, {});
@@ -104,7 +89,7 @@ describe('schema-routes/GetOne', () => {
 
   it('rejects with a 400 when the id does not exist at all', async () => {
     const route = createRoute(createFakeModel(docs));
-    const req = { params: { id: 'doc-999' }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
+    const req = { params: { id: newId() }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };
 
     const validate = await route._validate(req, {});
     await assert.rejects(
