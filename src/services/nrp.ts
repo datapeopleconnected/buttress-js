@@ -17,6 +17,8 @@
 import * as redis from '@redis/client';
 
 import IOStats from '../helpers/io-stats.js';
+import Logging from '../helpers/logging.js';
+import { getThrownErrorMessage } from '../helpers/index.js';
 
 /**
  * The message published on `app-schema:updated`.
@@ -110,7 +112,7 @@ export class NodeRedisPubsub {
    */
   async subscribe(
     channel: string,
-    handler: (message: string, originalChannel?: string) => void,
+    handler: (message: string, originalChannel?: string) => unknown,
   ): Promise<() => Promise<void>> {
     if (channel === 'error') {
       this.errorHandler = handler as (error: string) => void;
@@ -119,17 +121,30 @@ export class NodeRedisPubsub {
       return () => Promise.resolve();
     }
 
-    await this.receiver.pSubscribe(this.prefix + channel, handler);
+    // A handler that throws would take the client's pub/sub routing down with it, and every other channel with it, so
+    // its errors, and an async handler's rejections, are logged here instead
+    const logFailure = (err: unknown) =>
+      Logging.logError(`NRP handler for ${channel} failed: ${getThrownErrorMessage(err)}`);
+    const guarded = (message: string, originalChannel?: string) => {
+      try {
+        const result = handler(message, originalChannel);
+        if (result instanceof Promise) result.catch(logFailure);
+      } catch (err: unknown) {
+        logFailure(err);
+      }
+    };
+
+    await this.receiver.pSubscribe(this.prefix + channel, guarded);
 
     return () => {
-      return this.receiver.pUnsubscribe(this.prefix + channel, handler);
+      return this.receiver.pUnsubscribe(this.prefix + channel, guarded);
     };
   }
 
   /**
    * Alias for subscribe method
    */
-  on(channel: string, handler: (message: string, originalChannel?: string) => void): Promise<() => void> {
+  on(channel: string, handler: (message: string, originalChannel?: string) => unknown): Promise<() => void> {
     return this.subscribe(channel, handler);
   }
 
