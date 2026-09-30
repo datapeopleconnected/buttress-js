@@ -120,3 +120,22 @@ describe('model/core/AppSchemaModel:apiPathProblem', () => {
     }
   });
 });
+
+describe('model/core/AppSchemaModel:mergeRemoteSchema', () => {
+  it("gives a collection with remotes as it is while its partner can't be reached", async () => {
+    const agreement = {
+      name: 'from-partner',
+      active: true,
+      // Nothing listens on the discard port
+      remoteApp: { endpoint: 'http://127.0.0.1:9', apiPath: 'partner', token: 'partner-token' },
+    };
+    const model = Object.create(AppSchemaModel.prototype);
+    model.__modelManager = { getCoreModel: () => ({ find: async () => Readable.from([agreement]) }) };
+    const collections = [{ name: 'car', type: 'collection', properties: {}, remotes: [{ name: 'from-partner', schema: 'car' }] }];
+
+    const merged = await model.mergeRemoteSchema({ context: { authApp: { id: 'app-1' } } }, collections);
+
+    assert.deepStrictEqual(merged.map((schema) => schema.name), ['car']);
+  });
+});
+

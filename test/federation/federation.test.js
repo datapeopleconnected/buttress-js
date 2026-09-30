@@ -243,17 +243,31 @@ describe('Federation', function () {
     });
   });
 
-  describe('A partner offline at boot', () => {
+  describe('A partner offline at boot', function () {
+    this.timeout(120000);
     after(async () => {
       if (!a.processes.rest) await a.start();
     });
 
-    it('starts, and serves its own data, while its partner is down (BUG-41)', async () => {
+    it('starts, and serves its own data, while its partner is down', async () => {
       await a.stop();
       await b.restart();
 
       const own = await b.request('GET', 'api/v1/app/schema', { token: env.appB.token });
       assert.strictEqual(own.status, 200, JSON.stringify(own.body));
+      const cars = await b.request('GET', 'fed-b2/api/v1/car', { token: env.appB2.token });
+      assert.strictEqual(cars.status, 200, JSON.stringify(cars.body));
+      assert.deepStrictEqual(cars.body, []);
+    });
+
+    it("reads its partner's data once the partner is back", async () => {
+      await a.start();
+
+      // b tries a partner it couldn't reach again, waiting up to a minute between tries
+      await waitFor("a2's cars on b2", async () => {
+        const cars = await b.request('GET', 'fed-b2/api/v1/car', { token: env.appB2.token });
+        return cars.status === 200 && cars.body.some((car) => car.name === 'red one');
+      }, 90000);
     });
   });
 });

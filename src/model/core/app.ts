@@ -391,23 +391,32 @@ export default class AppSchemaModel extends StandardModel<App> {
 
         // TODO: Should being using an adapter via the datastore.
         const api = ButtressAPI.new();
-        await api.init({
-          buttressUrl: DSA.remoteApp.endpoint,
-          apiPath: DSA.remoteApp.apiPath,
-          appToken: DSA.remoteApp.token,
-          allowUnauthorized: true, // Move along, nothing to see here...
-          version: 1,
-        });
+        let remoteSchema: Schema[];
+        try {
+          await api.init({
+            buttressUrl: DSA.remoteApp.endpoint,
+            apiPath: DSA.remoteApp.apiPath,
+            appToken: DSA.remoteApp.token,
+            allowUnauthorized: true, // Move along, nothing to see here...
+            version: 1,
+          });
 
-        if (!api.App) {
-          throw new Error('Unable to load DSA due to missing App API');
+          if (!api.App) {
+            throw new Error('Unable to load DSA due to missing App API');
+          }
+
+          remoteSchema = (await api.App.getSchema(false, {
+            params: {
+              only: dataSharingSchema[DSAName].join(','),
+            },
+          })) as Schema[];
+        } catch (err: unknown) {
+          // The app's schema is still given while a partner is down, without the partner's properties
+          Logging.logWarn(
+            `Unable to merge the schema of data sharing ${DSA.id} partner: ${Helpers.getThrownErrorMessage(err)}`,
+          );
+          continue;
         }
-
-        const remoteSchema = (await api.App.getSchema(false, {
-          params: {
-            only: dataSharingSchema[DSAName].join(','),
-          },
-        })) as Schema[];
 
         remoteSchema.forEach((rs) => {
           schemaWithRemoteRef

@@ -14,7 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it, afterEach } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
+import sinon from 'sinon';
 import assert from 'assert';
 import { Readable } from 'stream';
 
@@ -208,6 +209,91 @@ describe('model/type/RemoteCombinedModel', () => {
       const model = createFindingModel();
 
       assert.deepStrictEqual([model.sharesThrough('agreement-2'), model.sharesThrough('agreement-3')], [true, false]);
+    });
+  });
+
+  describe("a partner that can't be reached", () => {
+    let clock;
+    beforeEach(() => {
+      // Only timeouts, since streams need their immediates
+      clock = sinon.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    });
+    afterEach(() => clock.restore());
+
+    const services = new Map([
+      ['nrp', { on: async () => () => {} }],
+      ['modelManager', {}],
+    ]);
+    const unreachable = () => Object.assign(new Error('connect ECONNREFUSED 127.0.0.1:8200'), { code: 'ECONNREFUSED' });
+
+    // A partner's datastore whose connections fail until it's up. Each connection is new, as a Buttress adapter's
+    // clone is.
+    const createPartner = (dataSharingId) => {
+      const partner = { up: false, connections: 0 };
+      partner.datastore = {
+        dataSharingId,
+        adapter: {
+          cloneAdapterConnection: () => {
+            partner.connections++;
+            return {
+              connect: async () => {
+                if (!partner.up) throw unreachable();
+              },
+              setCollection: async () => {},
+              find: async () => Readable.from([{ id: 'car-a', sourceId: 'app-a' }]),
+            };
+          },
+        },
+      };
+      return partner;
+    };
+    const createModel = async (partner) => {
+      const app = { id: ObjectIdHelper.new() };
+      const model = new RemoteCombinedModel({ name: 'car', type: 'collection', properties: {} }, app, services);
+      model._sdsRouting = { inform: () => {}, get: async () => partner.datastore.dataSharingId };
+      await model.initAdapter(null, [partner.datastore]);
+      model._localModel = { find: async () => Readable.from([{ id: 'car-b' }]) };
+      return model;
+    };
+
+    it('starts without it, and reads only its own records', async () => {
+      const model = await createModel(createPartner('agreement-1'));
+
+      const cars = await (await model.find({})).toArray();
+
+      assert.deepStrictEqual(cars.map((car) => car.id), ['car-b']);
+      await model.destroy();
+    });
+
+    it("refuses a write to the partner's record as unavailable", async () => {
+      const model = await createModel(createPartner('agreement-1'));
+
+      await assert.rejects(() => model.updateByPath([{ path: 'name', value: 'x' }], 'car-a', 'app-a'), { code: 503 });
+      await model.destroy();
+    });
+
+    it('reads the partner once it can be reached, on a new connection', async () => {
+      const partner = createPartner('agreement-1');
+      const model = await createModel(partner);
+
+      partner.up = true;
+      await clock.tickAsync(60000);
+      const cars = await (await model.find({})).toArray();
+
+      assert.deepStrictEqual(cars.map((car) => car.id).sort(), ['car-a', 'car-b']);
+      assert.ok(partner.connections > 1);
+      await model.destroy();
+    });
+
+    it('stops trying once it is let go of', async () => {
+      const partner = createPartner('agreement-1');
+      const model = await createModel(partner);
+
+      await model.destroy();
+      const connections = partner.connections;
+      await clock.tickAsync(600000);
+
+      assert.strictEqual(partner.connections, connections);
     });
   });
 });

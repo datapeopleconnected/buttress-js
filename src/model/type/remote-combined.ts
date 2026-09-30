@@ -28,6 +28,11 @@ import { Datastore } from '../../datastore/index.js';
 import ButtressAdapter from '../../datastore/adapters/buttress.js';
 import { ChunkSentEvent } from '../../helpers/stream.js';
 import { AdapterDocument, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
+import Logging from '../../helpers/logging.js';
+
+// How long to wait before trying a partner that couldn't be reached again, doubling each time up to the most
+const REMOTE_RETRY_FIRST_MS = 1000;
+const REMOTE_RETRY_MOST_MS = 60000;
 
 /**
  * @class RemoteCombinedModel
@@ -41,6 +46,11 @@ export default class RemoteCombinedModel extends StandardModel {
 
   _sdsRouting: SourceDataSharingRouting;
 
+  // The agreements whose partner couldn't be reached, which are tried again until they are
+  private _unreachable: Set<string>;
+  private _retryTimeouts: Set<NodeJS.Timeout>;
+  private _destroyed: boolean;
+
   constructor(schemaData: Schema, app: App | null, services: Services) {
     if (!app) throw new Error('App is required for RemoteCombinedModel');
 
@@ -52,6 +62,10 @@ export default class RemoteCombinedModel extends StandardModel {
     this._localModel = null;
 
     this._remoteModels = [];
+
+    this._unreachable = new Set();
+    this._retryTimeouts = new Set();
+    this._destroyed = false;
 
     this._sdsRouting = services.get('sdsRouting') as SourceDataSharingRouting;
   }
@@ -70,35 +84,90 @@ export default class RemoteCombinedModel extends StandardModel {
     }
 
     for await (const remoteDatastore of remoteDatastores) {
-      // The model manager sets the data sharing id of each remote datastore
-      const model = new RemoteModel(
-        this.schemaData,
-        this.app,
-        remoteDatastore.dataSharingId as string,
-        this.__services,
-      );
+      await this._connectRemote(remoteDatastore, REMOTE_RETRY_FIRST_MS);
+    }
+  }
 
-      // TODO: handle a model which is unable to connect.
-      const adapter = remoteDatastore.adapter.cloneAdapterConnection();
-      model.adapter = adapter;
+  /**
+   * Adds a partner's collection to the sources. A partner that can't be reached is left out, so the app's own records
+   * are still served, and tried again later on a new connection.
+   * @param {Datastore} remoteDatastore
+   * @param {number} retryIn - how long to wait before trying again, if it can't be reached
+   */
+  private async _connectRemote(remoteDatastore: Datastore, retryIn: number) {
+    // The model manager sets the data sharing id of each remote datastore
+    const dataSharingId = String(remoteDatastore.dataSharingId);
 
+    // Each attempt gets a new connection, as a Buttress client that failed to connect never tries again
+    const adapter = remoteDatastore.adapter.cloneAdapterConnection();
+    let remoteSchema: Schema | undefined;
+    try {
       // We want api call to return a stream directly without any tampering.
-      model.adapter.returnPausedStream = true;
+      adapter.returnPausedStream = true;
 
-      await model.adapter.connect();
-      await model.adapter.setCollection(`${this.schemaData.name}`);
+      await adapter.connect();
+      await adapter.setCollection(`${this.schemaData.name}`);
 
       // TODO: this shouldn't be necessary when using a standard model.
       if (adapter instanceof ButtressAdapter) {
         const remoteSchemas = await adapter.getSchema(false, [this.schemaData.name]);
-        if (remoteSchemas && remoteSchemas.length > 0) {
-          delete this.schemaData.remotes;
-          this.schemaData = Helpers.mergeDeep(this.schemaData, remoteSchemas.pop() as Schema);
-        }
+        remoteSchema = remoteSchemas?.pop();
       }
+    } catch (err: unknown) {
+      // A partner without the collection won't gain it by being asked again
+      if (err instanceof Helpers.Errors.SchemaNotFound) throw err;
 
-      this._remoteModels.push(model);
+      this._unreachable.add(dataSharingId);
+      Logging.logWarn(
+        `Partner of data sharing ${dataSharingId} for ${this.schemaData.name} unreachable, trying again in ` +
+          `${retryIn / 1000}s: ${Helpers.getThrownErrorMessage(err)}`,
+      );
+      this._retryRemote(remoteDatastore, retryIn);
+      return;
     }
+
+    if (this._destroyed) return;
+
+    if (remoteSchema) {
+      delete this.schemaData.remotes;
+      this.schemaData = Helpers.mergeDeep(this.schemaData, remoteSchema);
+    }
+
+    const model = new RemoteModel(this.schemaData, this.app, dataSharingId, this.__services);
+    model.adapter = adapter;
+    this._remoteModels.push(model);
+    if (this._unreachable.delete(dataSharingId)) {
+      Logging.log(`Partner of data sharing ${dataSharingId} for ${this.schemaData.name} reached`);
+    }
+  }
+
+  private _retryRemote(remoteDatastore: Datastore, delay: number) {
+    const timeout = setTimeout(() => {
+      this._retryTimeouts.delete(timeout);
+      if (this._destroyed) return;
+
+      this._connectRemote(remoteDatastore, Math.min(delay * 2, REMOTE_RETRY_MOST_MS)).catch((err: unknown) =>
+        Logging.logError(
+          `Unable to add partner of data sharing ${remoteDatastore.dataSharingId} for ${this.schemaData.name}: ` +
+            Helpers.getThrownErrorMessage(err),
+        ),
+      );
+    }, delay);
+    // A partner that's still down doesn't keep the process running
+    timeout.unref();
+    this._retryTimeouts.add(timeout);
+  }
+
+  /**
+   * Stops trying partners that couldn't be reached, and lets go of the partners' models.
+   */
+  override async destroy() {
+    this._destroyed = true;
+    this._retryTimeouts.forEach((timeout) => clearTimeout(timeout));
+    this._retryTimeouts.clear();
+
+    await Promise.all(this._remoteModels.map((model) => model.destroy()));
+    await super.destroy();
   }
 
   override createId(id?: string) {
@@ -132,6 +201,9 @@ export default class RemoteCombinedModel extends StandardModel {
 
   _remoteModelThrough(dataSharingId: string) {
     const model = this._remoteModels.find((remoteModel) => remoteModel.dataSharingId.toString() === dataSharingId);
+    if (!model && this._unreachable.has(dataSharingId)) {
+      throw new Helpers.Errors.RequestError(503, 'data_sharing_partner_unavailable');
+    }
     if (!model) throw new Error('Unable to find remote model');
 
     return model;
@@ -274,7 +346,9 @@ export default class RemoteCombinedModel extends StandardModel {
 
     sources.push(await this.localModel.find(query, excludes, sourceLimit, 0, sort, project));
 
-    for await (const remote of this._remoteModels) {
+    // The partners reached when the read began, so one reached during it doesn't move the sources along
+    const remotes = [...this._remoteModels];
+    for await (const remote of remotes) {
       sources.push(await remote.find(query, excludes, sourceLimit, 0, sort, project));
     }
 
@@ -292,7 +366,7 @@ export default class RemoteCombinedModel extends StandardModel {
         ? this._sdsRouting.inform(
             this.app.id.toString(),
             data.chunk.sourceId as string,
-            this._remoteModels[data.sourceIdx - 1].dataSharingId.toString(),
+            remotes[data.sourceIdx - 1].dataSharingId.toString(),
           )
         : null;
     });
@@ -307,7 +381,8 @@ export default class RemoteCombinedModel extends StandardModel {
     // Make a call out to each of the remotes, and merge the streams into on single stream.
     const sources: Stream.Readable[] = [];
 
-    for await (const remote of this._remoteModels) {
+    const remotes = [...this._remoteModels];
+    for await (const remote of remotes) {
       sources.push(await remote.findAll());
     }
 
@@ -318,7 +393,7 @@ export default class RemoteCombinedModel extends StandardModel {
       this._sdsRouting.inform(
         this.app.id.toString(),
         data.chunk.sourceId as string,
-        this._remoteModels[data.sourceIdx].dataSharingId.toString(),
+        remotes[data.sourceIdx].dataSharingId.toString(),
       ),
     );
 
