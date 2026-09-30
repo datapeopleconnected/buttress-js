@@ -16,14 +16,28 @@
 
 import { RedisClientType } from '@redis/client';
 
+import createConfig from '@dpc/node-env-obj';
+const Config = createConfig() as unknown as Config;
+
+import { redisPrefix } from '../helpers/index.js';
+import Logging from '../helpers/logging.js';
+
+/**
+ * Which data sharing agreement reaches each source of a federated app's records. A record read through an agreement
+ * names its source, so each read records the route, and a write to a record by its source takes it. Routes are kept in
+ * Redis, so every process and worker of the instance, and the next start, can route a source that any of them read.
+ */
 export class SourceDataSharingRouting {
-  // This map is used to buffer incoming keys to check.
-  private _tempCheckMap = new Map<string, string>();
+  // The routes this process knows, by key
+  private _routes = new Map<string, string>();
+
+  // Routes this process has learnt and not yet stored in Redis
+  private _unstored = new Map<string, string>();
 
   private _redisClient: RedisClientType;
 
-  private _informCheckTimeout?: NodeJS.Timeout;
-  private _informCheckTimeoutInterval = 100;
+  private _storeTimeout?: NodeJS.Timeout;
+  private _storeTimeoutInterval = 100;
 
   // TODO: This needs reworking, we don't need to take in the sourceId from each chunk of data.
   //       we can just get the information when a data sharing agreement is setup and store it
@@ -31,52 +45,57 @@ export class SourceDataSharingRouting {
 
   constructor(redisClient: RedisClientType) {
     this._redisClient = redisClient;
-
-    this._processInformCheck();
   }
 
   getKey(appId: string, sourceId: string) {
-    return `${appId}-${sourceId}`;
+    return redisPrefix(Config.redis.scope, `sds-route:${appId}-${sourceId}`);
   }
 
   async get(appId: string, sourceId: string) {
     if (!appId || !sourceId) return undefined;
 
     const key = this.getKey(appId, sourceId);
-    if (this._tempCheckMap.has(key)) return this._tempCheckMap.get(key);
+    const known = this._routes.get(key);
+    if (known) return known;
 
-    await this._redisClient.get(key);
+    const stored = await this._redisClient.get(key);
+    if (!stored) return undefined;
+
+    this._routes.set(key, stored);
+    return stored;
   }
 
   inform(appId: string, sourceId: string, dataSharingId: string) {
+    if (!appId || !sourceId || !dataSharingId) return;
+
     const key = this.getKey(appId, sourceId);
-    if (!this._tempCheckMap.has(key)) {
-      this._tempCheckMap.set(key, dataSharingId);
-      this._setInformCheckTimeout();
-    }
+    if (this._routes.get(key) === dataSharingId) return;
+
+    this._routes.set(key, dataSharingId);
+    this._unstored.set(key, dataSharingId);
+    this._setStoreTimeout();
   }
 
   clean() {
-    if (this._informCheckTimeout) clearTimeout(this._informCheckTimeout);
-    this._tempCheckMap.clear();
+    if (this._storeTimeout) clearTimeout(this._storeTimeout);
+    this._storeTimeout = undefined;
+    this._routes.clear();
+    this._unstored.clear();
   }
 
-  private async _processInformCheck() {
-    if (this._tempCheckMap.size < 1) return;
-    for await (const [key, value] of this._tempCheckMap.entries()) {
-      const current = await this._redisClient.get(`sds-route:${key}`);
-      if (current === value) {
-        continue;
-      }
+  private async _storeRoutes() {
+    this._storeTimeout = undefined;
 
-      await this._redisClient.set(`sds-route:${key}`, value);
-    }
-
-    this._setInformCheckTimeout();
+    const routes = [...this._unstored.entries()];
+    this._unstored.clear();
+    await Promise.all(routes.map(([key, dataSharingId]) => this._redisClient.set(key, dataSharingId)));
   }
 
-  private _setInformCheckTimeout() {
-    if (this._informCheckTimeout) clearTimeout(this._informCheckTimeout);
-    this._informCheckTimeout = setTimeout(() => this._processInformCheck(), this._informCheckTimeoutInterval);
+  private _setStoreTimeout() {
+    if (this._storeTimeout) return;
+    this._storeTimeout = setTimeout(
+      () => this._storeRoutes().catch((err: Error) => Logging.logError(`Unable to store data sharing routes: ${err}`)),
+      this._storeTimeoutInterval,
+    );
   }
 }

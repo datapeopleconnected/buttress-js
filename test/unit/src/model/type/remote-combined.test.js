@@ -14,10 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
+import { Readable } from 'stream';
 
 import RemoteCombinedModel from '../../../../../dist/model/type/remote-combined.js';
+import { SourceDataSharingRouting } from '../../../../../dist/services/source-ds-routing.js';
 
 // RemoteCombinedModel's real constructor/initAdapter need a live app + datastore
 // connections, so bypass them and set only the fields count() actually touches.
@@ -52,6 +54,62 @@ describe('model/type/RemoteCombinedModel', () => {
       const total = await model.count({});
 
       assert.strictEqual(total, 7);
+    });
+  });
+
+  // App b's collection reads app a's records through agreement-1. Each routing service shares one Redis, as the
+  // processes and workers of an instance do.
+  describe('routing to a partner', () => {
+    const routings = [];
+    afterEach(() => routings.splice(0).forEach((routing) => routing.clean()));
+
+    const createRedis = () => {
+      const data = new Map();
+      return {
+        get: async (key) => (data.has(key) ? data.get(key) : null),
+        set: async (key, value) => data.set(key, value) && 'OK',
+      };
+    };
+    const createRouting = (redis) => {
+      const routing = new SourceDataSharingRouting(redis);
+      routings.push(routing);
+      return routing;
+    };
+    const createFederatedModel = (routing, partnerCars) => {
+      const model = Object.create(RemoteCombinedModel.prototype);
+      model.app = { id: 'app-b' };
+      model._sdsRouting = routing;
+      model._localModel = { find: async () => Readable.from([]) };
+      model._remoteModels = [
+        {
+          dataSharingId: 'agreement-1',
+          find: async () => Readable.from(partnerCars),
+          updateByPath: async (body, id) => ({ agreement: 'agreement-1', id, body }),
+        },
+      ];
+      return model;
+    };
+    const waitForRoutesStored = () => new Promise((resolve) => setTimeout(resolve, 150));
+
+    it("routes a lone partner's records once they're read", async () => {
+      const routing = createRouting(createRedis());
+      const model = createFederatedModel(routing, [{ id: 'car-1', sourceId: 'app-a' }]);
+
+      await (await model.find({})).toArray();
+
+      assert.strictEqual(await routing.get('app-b', 'app-a'), 'agreement-1');
+    });
+
+    it('updates a partner record that another process read', async () => {
+      const redis = createRedis();
+      const reader = createFederatedModel(createRouting(redis), [{ id: 'car-1', sourceId: 'app-a' }]);
+      await (await reader.find({})).toArray();
+      await waitForRoutesStored();
+
+      const writer = createFederatedModel(createRouting(redis), []);
+      const result = await writer.updateByPath([{ path: 'name', value: 'renamed' }], 'car-1', 'app-a');
+
+      assert.deepStrictEqual(result, { agreement: 'agreement-1', id: 'car-1', body: [{ path: 'name', value: 'renamed' }] });
     });
   });
 });
