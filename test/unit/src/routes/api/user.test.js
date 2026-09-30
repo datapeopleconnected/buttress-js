@@ -57,7 +57,10 @@ function stubModel({ user = {}, token = {}, app = {} } = {}) {
     findAll: sinon.stub(),
     find: sinon.stub(),
     findById: async () => null,
-    findOne: async () => null,
+    // The scoped model finds a user by id with findOne, which answers as findById does, as the datastore would
+    async findOne(query) {
+      return query && 'id' in query ? this.findById(query.id) : null;
+    },
     getByAuthAppId: async () => null,
     add: sinon.stub().resolves({ id: 'user-1', auth: [], tokens: [] }),
     exists: sinon.stub().resolves(true),
@@ -72,6 +75,7 @@ function stubModel({ user = {}, token = {}, app = {} } = {}) {
     Constants: { Type: { SYSTEM: 'system', USER: 'user' } },
     createId: (v) => v,
     findOne: async () => null,
+    exists: sinon.stub().resolves(true),
     findUserAuthTokens: sinon.stub().returns(Readable.from([], { objectMode: true })),
     add: sinon
       .stub()
@@ -166,7 +170,7 @@ describe('routes/api/user:GetUser', () => {
     await route._validate(req);
 
     const [query] = userModel.findOne.firstCall.args;
-    assert.strictEqual(query.$or[0].id.$eq, 'user-1');
+    assert.deepStrictEqual(query, { id: 'user-1', _appId: 'app-1' });
   });
 
   it('rejects when the user cannot be found', async () => {
@@ -252,7 +256,10 @@ describe('routes/api/user:GetUserByToken', () => {
     await assert.rejects(route._validate(createReq({ body: { token: 'tok' }, token: { type: 'app' } })));
     await assert.rejects(route._validate(createReq({ body: { token: 'tok' }, token: { type: 'system' } })));
 
-    assert.deepStrictEqual(findOne.args, [[{ value: { $eq: 'tok' }, _appId: 'app-1' }], [{ value: { $eq: 'tok' } }]]);
+    assert.deepStrictEqual(
+      findOne.args.map(([query]) => query),
+      [{ $and: [{ value: { $eq: 'tok' } }, { _appId: 'app-1' }] }, { value: { $eq: 'tok' } }],
+    );
   });
 
   it('rejects when the token is invalid', async () => {
@@ -580,7 +587,7 @@ describe('routes/api/user:DeleteAllUsers', () => {
 
     const result = await route._exec(createReq(), {}, { appId: 'app-1' });
 
-    assert.ok(userModel.rmAll.calledWith({ _appId: 'app-1' }));
+    assert.ok(userModel.rmAll.calledWith({ $and: [{ _appId: 'app-1' }, { _appId: 'app-1' }] }));
     assert.strictEqual(result, true);
   });
 });
@@ -684,46 +691,54 @@ describe('routes/api/user:SearchUserList', () => {
   });
 
   it('scopes the search to the authenticated app for a non-system token', async () => {
-    stubModel();
+    const { userModel } = stubModel();
     const route = createRoute(SearchUserList);
+    const req = createReq({ token: { type: 'user' } });
 
-    const result = await route._validate(createReq({ token: { type: 'user' } }));
+    await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
+    assert.deepStrictEqual(userModel.find.firstCall.args[0], { _appId: 'app-1' });
   });
 
   it('finds using the built query params', () => {
     const { userModel } = stubModel();
     userModel.find.returns('a-stream');
     const route = createRoute(SearchUserList);
-    const validate = { query: { $and: [] }, skip: 0, limit: 10, sort: {}, project: false };
+    const validate = { query: { name: { $eq: 'a' } }, skip: 0, limit: 10, sort: {}, project: false };
 
     const result = route._exec(createReq(), {}, validate);
 
     assert.strictEqual(result, 'a-stream');
-    assert.deepStrictEqual(userModel.find.firstCall.args, [validate.query, {}, 10, 0, {}, false]);
+    assert.deepStrictEqual(userModel.find.firstCall.args, [
+      { $and: [validate.query, { _appId: 'app-1' }] },
+      {},
+      10,
+      0,
+      {},
+      false,
+    ]);
   });
 });
 
 describe('routes/api/user:UserCount', () => {
   it('scopes the count to the authenticated app for a non-system token', async () => {
-    stubModel();
+    const { userModel } = stubModel();
     const route = createRoute(UserCount);
 
     const req = createReq({ token: { type: 'user' } });
     req.body = undefined;
 
-    const result = await route._validate(req);
+    await route._exec(req, {}, await route._validate(req));
 
-    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: 'app-1' } }] });
+    assert.ok(userModel.count.calledWith({ _appId: 'app-1' }));
   });
 
   it('counts using the built query', async () => {
     const { userModel } = stubModel();
     const route = createRoute(UserCount);
 
-    await route._exec(createReq(), {}, { query: { $and: [] } });
+    await route._exec(createReq(), {}, { query: { name: { $eq: 'a' } } });
 
-    assert.ok(userModel.count.calledWith({ $and: [] }));
+    assert.ok(userModel.count.calledWith({ $and: [{ name: { $eq: 'a' } }, { _appId: 'app-1' }] }));
   });
 });

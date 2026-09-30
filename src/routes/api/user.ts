@@ -20,11 +20,9 @@ import Model from '../../model/index.js';
 import { describeInvalidUpdate } from '../../model/shared.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
-import Datastore from '../../datastore/index.js';
 import TokenSchemaModel, { PolicyProperties, Token } from '../../model/core/token.js';
 import UserSchemaModel, { User, UserAddBody, UserAuth } from '../../model/core/user.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
-import AppSchemaModel from '../../model/core/app.js';
 import { QueryParams } from '../../types/bjs-query.js';
 import { UpdatePathBody } from '../../types/datastore.js';
 import { Services } from '../../bootstrap.js';
@@ -87,14 +85,8 @@ class GetUserList extends Route {
     });
   }
 
-  override _exec(req: Request, _res: Response, validate: { appId: string }) {
-    if (req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      return Model.getCoreModel(UserSchemaModel).findAll();
-    }
-
-    return Model.getCoreModel(UserSchemaModel).find({
-      _appId: Model.getCoreModel(UserSchemaModel).createId(validate.appId),
-    });
+  override _exec(req: Request, _res: Response, _validate: { appId: string }) {
+    return this.scoped(req, UserSchemaModel).findAll();
   }
 }
 routes.push(GetUserList);
@@ -146,19 +138,7 @@ class GetUser extends Route {
       throw new Helpers.Errors.RequestError(400, `inavlid_id`);
     }
 
-    const isSystemToken = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
-    user = await Model.getCoreModel(UserSchemaModel).findOne({
-      $or: [
-        {
-          id: {
-            $eq: userId,
-          },
-        },
-      ],
-      ...(req.context.authApp.id && !isSystemToken
-        ? { _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id) }
-        : {}),
-    });
+    user = await this.scoped(req, UserSchemaModel).findById(userId);
 
     if (!user) {
       this.log(`[${this.name}] Could not fetch user data using ${userId}`, Route.LogLevel.ERR);
@@ -167,7 +147,10 @@ class GetUser extends Route {
 
     if (userTokens.length < 1 && user) {
       userTokens = await Helpers.streamAll(
-        await Model.getCoreModel(TokenSchemaModel).findUserAuthTokens(user.id, req.context.authApp.id),
+        await this.unscopedModel(
+          TokenSchemaModel,
+          'findUserAuthTokens is limited to the app it is given',
+        ).findUserAuthTokens(user.id, req.context.authApp.id),
       );
     }
     if (userTokens.length < 1) {
@@ -228,11 +211,10 @@ class FindUser extends Route {
     }
 
     // The id param's a string, only wildcard route params are arrays
-    const _user = await Model.getCoreModel(UserSchemaModel).getByAuthAppId(
-      authApp,
-      req.params.id as string,
-      req.context.authApp.id,
-    );
+    const _user = await this.unscopedModel(
+      UserSchemaModel,
+      'getByAuthAppId is limited to the app it is given',
+    ).getByAuthAppId(authApp, req.params.id as string, req.context.authApp.id);
     if (!_user) {
       this.log(`[${this.name}] Could not fetch user`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
@@ -245,7 +227,10 @@ class FindUser extends Route {
     };
 
     const userTokens = await Helpers.streamAll<Token>(
-      await Model.getCoreModel(TokenSchemaModel).findUserAuthTokens(_user.id, req.context.authApp.id),
+      await this.unscopedModel(
+        TokenSchemaModel,
+        'findUserAuthTokens is limited to the app it is given',
+      ).findUserAuthTokens(_user.id, req.context.authApp.id),
     );
     output.tokens =
       userTokens.length > 0
@@ -292,21 +277,17 @@ class GetUserByToken extends Route {
     }
 
     // A token of another app is answered as an unknown one, unless the caller is a system token
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({
+    const userToken = await this.scoped(req, TokenSchemaModel).findOne({
       value: {
         $eq: token,
       },
-      ...this._tenantFilter(req),
     });
     if (!userToken) {
       this.log('ERROR: Invalid User Token', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `invalid_token`);
     }
 
-    const user = await Model.getCoreModel(UserSchemaModel).findOne({
-      _id: Model.getCoreModel(UserSchemaModel).createId(userToken._userId),
-      ...this._tenantFilter(req),
-    });
+    const user = await this.scoped(req, UserSchemaModel).findById(userToken._userId);
     if (!user) {
       this.log('ERROR: Can not find a user with the provided token', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(404, `user_not_found`);
@@ -362,10 +343,7 @@ class CreateUserAuthToken extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const user = await Model.getCoreModel(UserSchemaModel).findOne({
-      _id: Model.getCoreModel(UserSchemaModel).createId(req.params.id),
-      ...this._tenantFilter(req),
-    });
+    const user = await this.scoped(req, UserSchemaModel).findById(req.params.id);
     if (!user) {
       this.log(`[${this.name}] User not found`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(404, `user_not_found`));
@@ -387,9 +365,9 @@ class CreateUserAuthToken extends Route {
   }
 
   override async _exec(req: RequestWithBody<Partial<Token>>, res: Response, validate: { appId: string; user: User }) {
-    const rxsToken = await Model.getCoreModel(TokenSchemaModel).add(req.body, {
-      _appId: Datastore.getInstance('core').ID.new(validate.appId),
-      _userId: Datastore.getInstance('core').ID.new(validate.user.id),
+    const rxsToken = await this.scoped(req, TokenSchemaModel).add(req.body, {
+      _appId: validate.appId,
+      _userId: validate.user.id,
     });
     const token = await Helpers.streamFirst<Token>(rxsToken);
 
@@ -513,9 +491,10 @@ class AddUser extends Route {
       ].filter((identifier) => identifier !== null);
       if (identifiers.length < 1) continue;
 
-      const user = await Model.getCoreModel(UserSchemaModel).findOne({
+      // Within the caller's app, which a system token names too
+      const user = await this.scoped(req, UserSchemaModel).findOne({
         auth: { $elemMatch: { app: auth.app, $or: identifiers } },
-        _appId: Model.getCoreModel(AppSchemaModel).createId(req.context.authApp.id),
+        _appId: req.context.authApp.id,
       });
       if (user) {
         existingUsers.push(user);
@@ -550,9 +529,7 @@ class AddUser extends Route {
   }
 
   override async _exec(req: RequestWithBody<UserAddBody>, _res: Response, validate: { appId: string }) {
-    const user = await Model.getCoreModel(UserSchemaModel).add(req.body, {
-      _appId: Model.getCoreModel(AppSchemaModel).createId(validate.appId),
-    });
+    const user = await this.scoped(req, UserSchemaModel).add(req.body, { _appId: validate.appId });
 
     return {
       id: user.id,
@@ -585,7 +562,8 @@ class UpdateUser extends Route {
         return reject(new Helpers.Errors.RequestError(400, `missing_field`));
       }
 
-      const { validation, body } = Model.getCoreModel(UserSchemaModel).validateUpdate(req.body);
+      const users = this.scoped(req, UserSchemaModel);
+      const { validation, body } = users.validateUpdate(req.body);
       req.body = body;
       if (!validation.isValid) {
         const message = describeInvalidUpdate(validation);
@@ -593,8 +571,8 @@ class UpdateUser extends Route {
         return reject(new Helpers.Errors.RequestError(400, `USER: ${message}`));
       }
 
-      Model.getCoreModel(UserSchemaModel)
-        .exists(id, null, this._tenantFilter(req))
+      users
+        .exists(id)
         .then((exists) => {
           if (!exists) {
             this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
@@ -610,7 +588,7 @@ class UpdateUser extends Route {
 
   // _validate replaced the body with the validated updates
   override _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
-    return Model.getCoreModel(UserSchemaModel).updateByPath(req.body, validate.id);
+    return this.scoped(req, UserSchemaModel).updateByPath(req.body, validate.id);
   }
 }
 routes.push(UpdateUser);
@@ -655,8 +633,9 @@ class SetUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId, null, this._tenantFilter(req));
+    const users = this.scoped(req, UserSchemaModel);
+    const userId = users.createId(id);
+    const exists = await users.exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -668,7 +647,7 @@ class SetUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
     }
 
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ ...tokenQuery, ...this._tenantFilter(req) });
+    const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -685,7 +664,8 @@ class SetUserPolicyProperties extends Route {
   }
 
   override async _exec(req: RequestWithBody<PostedPolicyProperties>, res: Response, validate: { tokenId: string }) {
-    await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(validate.tokenId, req.body);
+    const tokens = await this.scoped(req, TokenSchemaModel).owned(validate.tokenId);
+    await tokens.setPolicyPropertiesById(validate.tokenId, req.body);
 
     // this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
     // 	userId: req.params.id,
@@ -752,8 +732,9 @@ class UpdateUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId, null, this._tenantFilter(req));
+    const users = this.scoped(req, UserSchemaModel);
+    const userId = users.createId(id);
+    const exists = await users.exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -765,7 +746,7 @@ class UpdateUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
     }
 
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ ...tokenQuery, ...this._tenantFilter(req) });
+    const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_token_not_found`));
@@ -780,7 +761,8 @@ class UpdateUserPolicyProperties extends Route {
   }
 
   override async _exec(req: RequestWithBody<PostedPolicyProperties>, res: Response, validate: Token) {
-    await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(validate, req.body);
+    const tokens = await this.scoped(req, TokenSchemaModel).owned(String(validate.id));
+    await tokens.updatePolicyProperties(validate, req.body);
 
     // this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
     // 	userId: req.params.id,
@@ -846,8 +828,9 @@ class RemoveUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId, null, this._tenantFilter(req));
+    const users = this.scoped(req, UserSchemaModel);
+    const userId = users.createId(id);
+    const exists = await users.exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -859,7 +842,7 @@ class RemoveUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
     }
 
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ ...tokenQuery, ...this._tenantFilter(req) });
+    const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -884,10 +867,8 @@ class RemoveUserPolicyProperties extends Route {
       }
     });
     // BUG: policyProps is null if the token has no policy properties, which updatePolicyProperties throws on
-    await Model.getCoreModel(TokenSchemaModel).updatePolicyProperties(
-      validate.userToken,
-      policyProps as Record<string, unknown>,
-    );
+    const tokens = await this.scoped(req, TokenSchemaModel).owned(String(validate.userToken.id));
+    await tokens.updatePolicyProperties(validate.userToken, policyProps as Record<string, unknown>);
 
     this._nrp?.emit(
       'worker:socket:evaluateUserRooms',
@@ -938,8 +919,9 @@ class ClearUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const userId = Model.getCoreModel(UserSchemaModel).createId(id);
-    const exists = await Model.getCoreModel(UserSchemaModel).exists(userId, null, this._tenantFilter(req));
+    const users = this.scoped(req, UserSchemaModel);
+    const userId = users.createId(id);
+    const exists = await users.exists(userId);
     if (!exists) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -951,7 +933,7 @@ class ClearUserPolicyProperties extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_token_param`));
     }
 
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({ ...tokenQuery, ...this._tenantFilter(req) });
+    const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -965,7 +947,8 @@ class ClearUserPolicyProperties extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: { userId: string; appId: string; userToken: Token }) {
-    await Model.getCoreModel(TokenSchemaModel).clearPolicyPropertiesById(validate.userToken.id);
+    const tokens = await this.scoped(req, TokenSchemaModel).owned(String(validate.userToken.id));
+    await tokens.clearPolicyPropertiesById(validate.userToken.id);
 
     this._nrp?.emit(
       'worker:socket:evaluateUserRooms',
@@ -1003,7 +986,8 @@ class DeleteAllUsers extends Route {
   }
 
   override async _exec(req: Request, _res: Response, validate: { appId: string }) {
-    await Model.getCoreModel(UserSchemaModel).rmAll({ _appId: validate.appId });
+    // The caller's app's users, which a system token names too
+    await this.scoped(req, UserSchemaModel).rmAll({ _appId: validate.appId });
     return true;
   }
 }
@@ -1032,19 +1016,13 @@ class DeleteUser extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_token`));
     }
 
-    const user = await Model.getCoreModel(UserSchemaModel).findOne({
-      _id: Model.getCoreModel(UserSchemaModel).createId(id),
-      ...this._tenantFilter(req),
-    });
+    const user = await this.scoped(req, UserSchemaModel).findById(id);
     if (!user) {
       this.log('ERROR: Invalid User ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
 
-    const userToken = await Model.getCoreModel(TokenSchemaModel).findOne({
-      _userId: user.id,
-      ...this._tenantFilter(req),
-    });
+    const userToken = await this.scoped(req, TokenSchemaModel).findOne({ _userId: user.id });
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `user_not_found`));
@@ -1062,10 +1040,10 @@ class DeleteUser extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: { user: User; token: Token }) {
-    await Model.getCoreModel(UserSchemaModel).rm(validate.user.id);
+    await this.scoped(req, UserSchemaModel).rm(validate.user.id);
 
     if (validate.token) {
-      await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
+      await this.scoped(req, TokenSchemaModel).rm(validate.token.id);
     }
 
     return true;
@@ -1096,11 +1074,8 @@ class clearUserLocalData extends Route {
         return reject(new Helpers.Errors.RequestError(400, `missing_field`));
       }
 
-      Model.getCoreModel(UserSchemaModel)
-        .findOne({
-          _id: Model.getCoreModel(UserSchemaModel).createId(req.params.id),
-          ...this._tenantFilter(req),
-        })
+      this.scoped(req, UserSchemaModel)
+        .findById(req.params.id)
         .then((user) => {
           if (user) {
             return resolve(user);
@@ -1161,24 +1136,14 @@ class SearchUserList extends Route {
       result.query.$and.push(req.body.query);
     }
 
-    // Before parseQuery, which drops an empty $and
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      result.query.$and?.push({
-        _appId: req.context.authApp?.id,
-      });
-    }
-
-    result.query = Model.getCoreModel(UserSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(UserSchemaModel).flatSchemaData,
-    );
+    const users = this.scoped(req, UserSchemaModel);
+    result.query = users.parseQuery(result.query, {}, users.flatSchemaData);
 
     return result;
   }
 
   override _exec(req: Request, res: Response, validate: QueryParams<User>) {
-    return Model.getCoreModel(UserSchemaModel).find(
+    return this.scoped(req, UserSchemaModel).find(
       validate.query,
       {},
       validate.limit,
@@ -1219,24 +1184,14 @@ class UserCount extends Route {
       result.query.$and.push(bodyQuery);
     }
 
-    // Before parseQuery, which drops an empty $and
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      result.query.$and?.push({
-        _appId: req.context.authApp?.id,
-      });
-    }
-
-    result.query = Model.getCoreModel(UserSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(UserSchemaModel).flatSchemaData,
-    );
+    const users = this.scoped(req, UserSchemaModel);
+    result.query = users.parseQuery(result.query, {}, users.flatSchemaData);
 
     return result;
   }
 
   override async _exec(req: Request, res: Response, validateResult: QueryParams<User>) {
-    return Model.getCoreModel(UserSchemaModel).count(validateResult.query);
+    return this.scoped(req, UserSchemaModel).count(validateResult.query);
   }
 }
 routes.push(UserCount);
