@@ -530,16 +530,49 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
 
     const result = await route._validate(createReq({ params: { id: HEX_ID }, body: { branch: 'main', hash: 'abc' } }));
 
-    assert.deepStrictEqual(result, { branch: 'main', hash: 'abc', lambda });
+    assert.deepStrictEqual(result, { branch: 'main', hash: 'abc', entryFile: 'index.js', entryPoint: 'execute', lambda });
+  });
+
+  it('saves a new entry file and point, which the deployment was checked against', async () => {
+    const lambda = { id: 'lambda-1', trigger: [], git: { entryFile: 'index.js', entryPoint: 'execute' } };
+    const { lambdaModel } = stubModel({ lambda: { findOne: async () => lambda } });
+    const route = createRoute(EditLambdaDeployment);
+    const body = { branch: 'main', hash: 'abc1234', entryFile: 'src/main.js', entryPoint: 'run' };
+
+    const validated = await route._validate(createReq({ params: { id: HEX_ID }, body }));
+    await route._exec(createReq(), {}, validated);
+
+    assert.deepStrictEqual(lambdaModel.pullLambdaCode.firstCall.args[1], {
+      branch: 'main',
+      hash: 'abc1234',
+      entryFilePath: 'src/main.js',
+      entryPoint: 'run',
+    });
+    assert.ok(
+      lambdaModel.setDeployment.calledWith('lambda-1', {
+        'git.branch': 'main',
+        'git.hash': 'abc1234',
+        'git.entryFile': 'src/main.js',
+        'git.entryPoint': 'run',
+      }),
+    );
   });
 
   it('sets the new deployment info on exec', async () => {
     const { lambdaModel } = stubModel();
     const route = createRoute(EditLambdaDeployment);
 
-    await route._exec(createReq(), {}, { branch: 'main', hash: 'abc', lambda: { id: 'lambda-1', trigger: [] } });
+    const validated = { branch: 'main', hash: 'abc', entryFile: 'index.js', entryPoint: 'execute' };
+    await route._exec(createReq(), {}, { ...validated, lambda: { id: 'lambda-1', trigger: [] } });
 
-    assert.ok(lambdaModel.setDeployment.calledWith('lambda-1', { 'git.branch': 'main', 'git.hash': 'abc' }));
+    assert.ok(
+      lambdaModel.setDeployment.calledWith('lambda-1', {
+        'git.branch': 'main',
+        'git.hash': 'abc',
+        'git.entryFile': 'index.js',
+        'git.entryPoint': 'execute',
+      }),
+    );
   });
 });
 

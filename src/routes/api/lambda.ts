@@ -575,6 +575,8 @@ class EditLambdaDeployment extends Route {
       return Promise.resolve({
         hash,
         branch,
+        entryFile: entryFilePath,
+        entryPoint,
         lambda,
       });
     } catch (err: unknown) {
@@ -586,10 +588,17 @@ class EditLambdaDeployment extends Route {
     }
   }
 
-  override async _exec(req: Request, res: Response, validate: { hash: string; branch: string; lambda: Lambda }) {
+  override async _exec(
+    req: Request,
+    res: Response,
+    validate: { hash: string; branch: string; entryFile: string; entryPoint: string; lambda: Lambda },
+  ) {
+    // The entry file and point the new code was checked for
     const deployment = await Model.getCoreModel(LambdaSchemaModel).setDeployment(validate.lambda.id, {
       'git.branch': validate.branch,
       'git.hash': validate.hash,
+      'git.entryFile': validate.entryFile,
+      'git.entryPoint': validate.entryPoint,
     });
     // The manager keeps each path-watching lambda's hash
     if (changesPathMutations(validate.lambda)) this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');

@@ -558,7 +558,10 @@ export default class LambdaModel extends StandardModel<Lambda> {
    * @param {Object} data - lambda new data deplyoment
    * @return {Promise} - resolves when save operation is completed
    */
-  async setDeployment(lambdaId: string, data: { 'git.branch': string; 'git.hash': string }) {
+  async setDeployment(
+    lambdaId: string,
+    data: { 'git.branch': string; 'git.hash': string; 'git.entryFile'?: string; 'git.entryPoint'?: string },
+  ) {
     const lambdaLastDeployment = {
       hash: data['git.hash'],
       deployedAt: Sugar.Date.create('now'),
