@@ -20,11 +20,13 @@ import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
 import ActivitySchemaModel, { Activity } from '../../model/core/activity.js';
 import TokenSchemaModel from '../../model/core/token.js';
-import AppSchemaModel from '../../model/core/app.js';
 import { Services } from '../../bootstrap.js';
 import type { CoreRouteClass } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
+
+// Every activity route takes only system tokens, which reach every app's activity
+const SYSTEM_ONLY = 'the route takes only system tokens';
 
 /**
  * @class GetActivityList
@@ -43,7 +45,7 @@ class GetActivityList extends Route {
 
   override _exec(req: Request, _res: Response, _validate: boolean) {
     if (req.context.token && req.context.token.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      return Model.getCoreModel(ActivitySchemaModel).findAll();
+      return this.unscopedModel(ActivitySchemaModel, SYSTEM_ONLY).findAll();
     }
 
     const appId = req.context.authApp?.id;
@@ -52,8 +54,8 @@ class GetActivityList extends Route {
       throw new Helpers.Errors.RequestError(400, `invalid_token`);
     }
 
-    return Model.getCoreModel(ActivitySchemaModel).find({
-      _appId: Model.getCoreModel(AppSchemaModel).createId(appId),
+    // Only a system token reaches this route today, but another would see its app's public activity
+    return this.scoped(req, ActivitySchemaModel).find({
       visibility: Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PUBLIC,
     });
   }
@@ -77,7 +79,7 @@ class GetActivity extends Route {
       throw new Helpers.Errors.RequestError(400, `missing_required_fields`);
     }
 
-    const activity = await Model.getCoreModel(ActivitySchemaModel).findById(req.params.id);
+    const activity = await this.unscopedModel(ActivitySchemaModel, SYSTEM_ONLY).findById(req.params.id);
 
     if (!activity) {
       this.log('ERROR: Invalid Activity ID', Route.LogLevel.ERR, req.context.id);
@@ -109,7 +111,7 @@ class DeleteAllActivity extends Route {
   }
 
   override _exec(_req: Request, _res: Response, _validate: boolean) {
-    return Model.getCoreModel(ActivitySchemaModel)
+    return this.unscopedModel(ActivitySchemaModel, SYSTEM_ONLY)
       .rmAll({})
       .then(() => true);
   }
