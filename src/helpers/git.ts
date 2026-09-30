@@ -63,6 +63,41 @@ export const assertLambdaGitSource = (source: { name?: unknown; url?: unknown; b
   if ('hash' in source && !isGitHash(source.hash)) throw new RequestError(400, 'invalid_lambda_git_hash');
 };
 
+export type LambdaSharedModule = { name: string; entryFile: string };
+
+// Becomes part of a global's name in the isolate
+const SHARED_MODULE_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const MAX_SHARED_MODULES = 16;
+
+// A .js file inside the lambda's checkout
+const isSharedModuleEntryFile = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  value.length <= 512 &&
+  value.endsWith('.js') &&
+  !value.startsWith('/') &&
+  !/[\s\u0000-\u001f\u007f\\]/.test(value) &&
+  !value.split('/').includes('..');
+
+/**
+ * Refuses a lambda's shared modules unless each has a plain name of its own and a .js entry file inside the checkout,
+ * with a 400.
+ */
+export const assertLambdaSharedModules = (modules: unknown): LambdaSharedModule[] => {
+  if (modules === undefined || modules === null) return [];
+  if (!Array.isArray(modules) || modules.length > MAX_SHARED_MODULES) {
+    throw new RequestError(400, 'invalid_lambda_shared_modules');
+  }
+
+  const names = new Set<string>();
+  (modules as Array<{ name?: unknown; entryFile?: unknown } | null>).forEach((mod) => {
+    const name = mod?.name;
+    const valid = typeof name === 'string' && SHARED_MODULE_NAME.test(name) && isSharedModuleEntryFile(mod?.entryFile);
+    if (!valid || names.has(name)) throw new RequestError(400, 'invalid_lambda_shared_module');
+    names.add(name);
+  });
+  return modules as LambdaSharedModule[];
+};
+
 /**
  * Runs git in `cwd` with `args` as its argument list, without a shell.
  */
