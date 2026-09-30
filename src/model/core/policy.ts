@@ -83,6 +83,7 @@ export type PolicyAddBody = {
   env?: PolicyEnv | null;
   config?: Partial<PolicyConfig>[];
   limit?: string | number | Date | null;
+  version?: string | null;
 };
 
 class PolicySchemaModel extends StandardModel<Policy> {
@@ -226,6 +227,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
       env: body.env ? body.env : {},
       config: policyConfig,
       limit: body.limit ? Sugar.Date.create(body.limit) : null,
+      version: body.version ?? null,
     };
 
     const rxsPolicy = await super.add(policyBody, {

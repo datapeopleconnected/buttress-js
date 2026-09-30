@@ -17,6 +17,7 @@
 import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
+import { Readable } from 'node:stream';
 
 import PolicySchemaModel from '../../../../../dist/model/core/policy.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
@@ -63,5 +64,24 @@ describe('model/core/PolicySchemaModel: policy cache', () => {
     await model.updateById(HEX_ID, { $set: { name: 'renamed' } });
 
     assert.deepStrictEqual(invalidated, [HEX_ID]);
+  });
+});
+
+describe('model/core/PolicySchemaModel: adding a policy', () => {
+  afterEach(() => sinon.restore());
+
+  it('stores the version it is given', async () => {
+    const services = new Map([
+      ['nrp', { on: () => {}, emit: () => {} }],
+      ['modelManager', {}],
+      ['policyCache', { invalidatePolicyAndTokensBySelection: async () => {} }],
+    ]);
+    const model = new PolicySchemaModel(services);
+    model.adapter = { ID: { isValid: () => true, new: (v) => v ?? HEX_ID } };
+    const add = sinon.stub(StandardModel.prototype, 'add').callsFake(async (body) => Readable.from([{ ...body, id: HEX_ID }]));
+
+    await model.add({ name: 'readers', selection: {}, config: [], version: '1.2.3' }, 'app-1');
+
+    assert.strictEqual(add.firstCall.args[0].version, '1.2.3');
   });
 });

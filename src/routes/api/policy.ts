@@ -24,7 +24,7 @@ import Datastore from '../../datastore/index.js';
 import PolicySchemaModel, { Policy, PolicyAddBody } from '../../model/core/policy.js';
 import TokenSchemaModel from '../../model/core/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
-import AppSchemaModel from '../../model/core/app.js';
+import AppSchemaModel, { App } from '../../model/core/app.js';
 import { QueryParams } from '../../types/bjs-query.js';
 import { Services } from '../../bootstrap.js';
 import { UpdatePathBody } from '../../types/datastore.js';
@@ -351,6 +351,21 @@ class BulkUpdatePolicy extends Route {
 routes.push(BulkUpdatePolicy);
 
 /**
+ * Why a policy can't be added to `app`, or null if it can: it needs a name, a selection and config, a selection of
+ * properties the app lists, and a version.
+ */
+const newPolicyProblem = async (app: App, policy: PolicyAddBody) => {
+  if (!policy?.selection || !policy.name || !policy.config || policy.config.length < 1) return 'missing_field';
+
+  const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, policy.selection);
+  if (!policyCheck.passed) return 'invalid_policy_selection';
+
+  if (!policy.version) return 'invalid_policy_no_version';
+
+  return null;
+};
+
+/**
  * @class SyncPolicies
  */
 class SyncPolicies extends Route {
@@ -374,11 +389,19 @@ class SyncPolicies extends Route {
       throw new Helpers.Errors.RequestError(400, `invalid_field`);
     }
 
+    // Checked as adding each one is, before any are replaced
+    const names = new Set<string>();
     for (const policy of req.body) {
-      if (!policy.selection || !policy.name) {
-        this.log(`[${this.name}] Missing required field`, Route.LogLevel.ERR);
-        throw new Helpers.Errors.RequestError(400, `missing_field`);
+      const problem = await newPolicyProblem(app, policy);
+      if (problem) {
+        this.log(`[${this.name}] ${problem}: ${policy?.name}`, Route.LogLevel.ERR);
+        throw new Helpers.Errors.RequestError(400, problem);
       }
+      if (names.has(policy.name as string)) {
+        this.log(`[${this.name}] Policy with name ${policy.name} is given twice`, Route.LogLevel.ERR);
+        throw new Helpers.Errors.RequestError(400, `policy_with_name_already_exists`);
+      }
+      names.add(policy.name as string);
     }
 
     return {
@@ -387,12 +410,30 @@ class SyncPolicies extends Route {
   }
 
   override async _exec(req: RequestWithBody<PolicyAddBody[]>, res: Response, validate: { appId: string }) {
-    await Model.getCoreModel(PolicySchemaModel).rmAll({
-      _appId: validate.appId,
-    });
+    const policyModel = Model.getCoreModel(PolicySchemaModel);
+    const oldPolicies = await Helpers.streamAll<Policy>(await policyModel.find({ _appId: validate.appId }));
 
-    for await (const policy of req.body) {
-      await Model.getCoreModel(PolicySchemaModel).add(policy, validate.appId);
+    // Removed by id, which takes them out of the policy cache too, and before the new ones are added, so the old and
+    // new never grant access together
+    if (oldPolicies.length > 0) await policyModel.rmBulk(oldPolicies.map((policy) => policy.id.toString()));
+
+    const added: string[] = [];
+    try {
+      for (const policy of req.body) {
+        added.push((await policyModel.add(policy, validate.appId)).id.toString());
+      }
+    } catch (err: unknown) {
+      // The app is left with the policies it had, rather than some of the new ones
+      try {
+        if (added.length > 0) await policyModel.rmBulk(added);
+        for (const policy of oldPolicies) await policyModel.add(policy as PolicyAddBody, validate.appId);
+      } catch (restoreErr: unknown) {
+        this.log(
+          `[${this.name}] Failed to put back the app's policies: ${Helpers.getThrownErrorMessage(restoreErr)}`,
+          Route.LogLevel.ERR,
+        );
+      }
+      throw err;
     }
 
     this._nrp?.emit(

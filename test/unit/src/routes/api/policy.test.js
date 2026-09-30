@@ -431,21 +431,56 @@ describe('routes/api/policy:SyncPolicies', () => {
     await assert.rejects(route._validate(createReq({ body: [{ name: 'test' }] })), /missing_field/);
   });
 
-  it('replaces every policy for the app and busts the cache', async () => {
-    const { policyModel } = stubModel();
+  const validPolicy = (name) => ({ name, selection: { role: { '@eq': 'admin' } }, config: [{ verbs: ['GET'] }], version: '1' });
+  const app = { id: 'app-1', policyPropertiesList: { role: ['admin', 'user'] } };
+
+  it('checks each policy as adding one does: its version, its selection, and a name of its own', async () => {
+    stubModel();
+    const route = createRoute(SyncPolicies);
+    const sync = (body) => route._validate(createReq({ body, authApp: app }));
+
+    await sync([validPolicy('a'), validPolicy('b')]);
+    await assert.rejects(sync([{ ...validPolicy('a'), version: undefined }]), /invalid_policy_no_version/);
+    await assert.rejects(sync([{ ...validPolicy('a'), selection: { role: { '@eq': 'owner' } } }]), /invalid_policy_selection/);
+    await assert.rejects(sync([{ ...validPolicy('a'), config: [] }]), /missing_field/);
+    await assert.rejects(sync([validPolicy('a'), validPolicy('a')]), /policy_with_name_already_exists/);
+  });
+
+  const oldPolicies = [
+    { id: 'old-1', name: 'x', selection: {}, config: [], version: '1' },
+    { id: 'old-2', name: 'y', selection: {}, config: [], version: '1' },
+  ];
+
+  it("replaces the app's policies by id, so the policy cache lets the old ones go, and busts the cache", async () => {
+    const { policyModel } = stubModel({ policy: { find: sinon.stub().resolves(Readable.from(oldPolicies)) } });
     const nrp = { emit: sinon.spy() };
     const route = createRoute(SyncPolicies, { nrp });
-    const body = [
-      { name: 'a', selection: {} },
-      { name: 'b', selection: {} },
-    ];
 
-    const result = await route._exec(createReq({ body }), {}, { appId: 'app-1' });
+    const result = await route._exec(createReq({ body: [validPolicy('a'), validPolicy('b')] }), {}, { appId: 'app-1' });
 
-    assert.ok(policyModel.rmAll.calledWith({ _appId: 'app-1' }));
-    assert.strictEqual(policyModel.add.callCount, 2);
+    assert.ok(policyModel.find.calledWith({ _appId: 'app-1' }));
+    assert.ok(policyModel.rmBulk.calledOnceWith(['old-1', 'old-2']));
+    assert.strictEqual(policyModel.rmAll.called, false);
+    assert.deepStrictEqual(policyModel.add.getCalls().map((call) => call.args[0].name), ['a', 'b']);
     assert.ok(nrp.emit.calledWith('app-policy:bust-cache'));
     assert.strictEqual(result, true);
+  });
+
+  it('puts the old policies back when adding the new ones fails part-way', async () => {
+    const add = sinon.stub();
+    add.onFirstCall().resolves({ id: 'new-1' });
+    add.onSecondCall().rejects(new Error('mongo went away'));
+    add.resolves({ id: 'restored' });
+    const { policyModel } = stubModel({ policy: { find: sinon.stub().resolves(Readable.from(oldPolicies)), add } });
+    const route = createRoute(SyncPolicies);
+
+    await assert.rejects(
+      route._exec(createReq({ body: [validPolicy('a'), validPolicy('b')] }), {}, { appId: 'app-1' }),
+      /mongo went away/,
+    );
+
+    assert.deepStrictEqual(policyModel.rmBulk.secondCall.args[0], ['new-1']);
+    assert.deepStrictEqual(add.getCalls().slice(2).map((call) => call.args[0].id), ['old-1', 'old-2']);
   });
 });
 
