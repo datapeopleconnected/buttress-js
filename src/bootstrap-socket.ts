@@ -119,10 +119,10 @@ export const relayedDataShareActivity = (
 };
 
 export default class BootstrapSocket extends Bootstrap {
-  // Each app's connections to the instances it shares data with, with the id of the token the agreement gives its
-  // partner, which the agreement's policy selects
+  // Each app's connections to the instances it shares data with: one for each agreement, with the id of the token the
+  // agreement gives its partner, which the agreement's policy selects
   private _dataShareSockets: {
-    [key: string]: Array<{ socket: sioClientSocket; tokenId: string }>;
+    [key: string]: Array<{ socket: sioClientSocket; tokenId: string; dataShareId: string }>;
   } = {};
 
   private _redisClient?: RedisClientType;
@@ -553,8 +553,19 @@ export default class BootstrapSocket extends Bootstrap {
     // this.__nrp.on('clearUserLocalData', (json) => this.__primaryClearUserLocalData(json));
     this.__nrp.on('dataShare:activated', async (json: string) => {
       const data = JSON.parse(json) as DataShareActivatedMessage;
-      const dataShare = await Model.getCoreModel(AppDataSharingSchemaModel).findById(data.appDataSharingId);
+      const dataShare = (await Model.getCoreModel(AppDataSharingSchemaModel).findById(
+        data.appDataSharingId,
+      )) as AppDataSharing | null;
+      if (!dataShare?.active) {
+        this._closeDataShareConnection(data.appDataSharingId);
+        return;
+      }
       await this.__primaryCreateDataShareConnection(dataShare);
+    });
+    // Also published when an agreement is deleted
+    this.__nrp.on('dataShare:deactivated', (json: string) => {
+      const data = JSON.parse(json) as DataShareActivatedMessage;
+      this._closeDataShareConnection(data.appDataSharingId);
     });
 
     this.__nrp.on('app-schema:updated', async (json: string) => {
@@ -740,18 +751,19 @@ export default class BootstrapSocket extends Bootstrap {
     Logging.logSilly(
       `Attempting to connect to ${redactUrl(url)} with token ${tokenFingerprint(dataShare.remoteApp.token)}`,
     );
+    // An agreement activated again, e.g. with a new token, replaces its connection
+    this._closeDataShareConnection(String(dataShare.id));
     if (!this._dataShareSockets[dataShare._appId]) {
       this._dataShareSockets[dataShare._appId] = [];
     }
 
-    const socket = sioClient(url, {
-      auth: {
-        token: dataShare.remoteApp.token,
-      },
-      forceNew: true,
-    });
+    const socket = this._connectDataShare(url, dataShare.remoteApp.token);
 
-    this._dataShareSockets[dataShare._appId].push({ socket, tokenId: String(dataShare._tokenId) });
+    this._dataShareSockets[dataShare._appId].push({
+      socket,
+      tokenId: String(dataShare._tokenId),
+      dataShareId: String(dataShare.id),
+    });
 
     socket.on('connect', () => {
       Logging.logSilly(`Data sharing ${dataShare.id} connected to ${url} with id ${socket.id}`);
@@ -759,5 +771,30 @@ export default class BootstrapSocket extends Bootstrap {
     socket.on('disconnect', () => {
       Logging.logSilly(`Data sharing ${dataShare.id} disconnected from ${url} with id ${socket.id}`);
     });
+  }
+
+  _connectDataShare(url: string, token: string) {
+    return sioClient(url, {
+      auth: {
+        token,
+      },
+      forceNew: true,
+    });
+  }
+
+  /**
+   * Closes the connection an agreement has to its partner, if it has one.
+   * @param {string} dataShareId
+   */
+  _closeDataShareConnection(dataShareId: string) {
+    for (const [appId, shares] of Object.entries(this._dataShareSockets)) {
+      const share = shares.find((s) => s.dataShareId === dataShareId);
+      if (!share) continue;
+
+      Logging.logSilly(`Closing the data sharing ${dataShareId} connection`);
+      // destroy() is private in the sio-client types
+      (share.socket as unknown as { destroy: () => void }).destroy();
+      this._dataShareSockets[appId] = shares.filter((s) => s !== share);
+    }
   }
 }

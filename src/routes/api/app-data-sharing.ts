@@ -28,6 +28,7 @@ import AppDataSharingSchemaModel, { AppDataSharing, AppDataSharingAddBody } from
 import ActivitySchemaModel from '../../model/core/activity.js';
 import { QueryParams } from '../../types/bjs-query.js';
 import { Services } from '../../bootstrap.js';
+import type { DataShareActivatedMessage } from '../../services/nrp.js';
 import { UpdatePathBody } from '../../types/datastore.js';
 import type { BulkUpdateItem, CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
 import { dataSharingDestinationProblem, remoteAppUrlsOf } from '../../helpers/egress.js';
@@ -885,6 +886,11 @@ class DeleteDataSharingAgreement extends Route {
   override async _exec(req: Request, res: Response, validate: { appDataSharing: AppDataSharing; token: Token }) {
     await Model.getCoreModel(AppDataSharingSchemaModel).rm(validate.appDataSharing.id);
     await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
+    // The Socket primary closes its connection to the partner
+    this._nrp?.emit(
+      'dataShare:deactivated',
+      JSON.stringify({ appDataSharingId: validate.appDataSharing.id } satisfies DataShareActivatedMessage),
+    );
     return true;
   }
 }
@@ -925,6 +931,13 @@ class DeleteAllDataSharingAgreement extends Route {
   override async _exec(req: Request, res: Response, validate: { dsIds: string[]; tokenIds: string[] }) {
     await Model.getCoreModel(AppDataSharingSchemaModel).rmBulk(validate.dsIds);
     await Model.getCoreModel(TokenSchemaModel).rmBulk(validate.tokenIds);
+    // The Socket primary closes their connections to partners
+    for (const appDataSharingId of validate.dsIds) {
+      this._nrp?.emit(
+        'dataShare:deactivated',
+        JSON.stringify({ appDataSharingId } satisfies DataShareActivatedMessage),
+      );
+    }
 
     return true;
   }

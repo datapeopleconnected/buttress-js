@@ -561,6 +561,16 @@ describe('routes/api/app-data-sharing:DeleteDataSharingAgreement', () => {
     assert.ok(tokenModel.rm.calledWith('token-1'));
     assert.strictEqual(result, true);
   });
+
+  it('has the Socket processes close its connection to the partner', async () => {
+    stubModel();
+    const nrp = { emit: sinon.spy() };
+    const route = createRoute(DeleteDataSharingAgreement, { nrp });
+
+    await route._exec(createReq(), {}, { appDataSharing: { id: 'ds-1' }, token: { id: 'token-1' } });
+
+    assert.ok(nrp.emit.calledWith('dataShare:deactivated', JSON.stringify({ appDataSharingId: 'ds-1' })));
+  });
 });
 
 describe('routes/api/app-data-sharing:DeleteAllDataSharingAgreement', () => {
@@ -587,5 +597,18 @@ describe('routes/api/app-data-sharing:DeleteAllDataSharingAgreement', () => {
     assert.ok(dsModel.rmBulk.calledWith(['ds-1', 'ds-2']));
     assert.ok(tokenModel.rmBulk.calledWith(['token-1', 'token-2']));
     assert.strictEqual(result, true);
+  });
+
+  it('has the Socket processes close the connection of every agreement', async () => {
+    stubModel();
+    const nrp = { emit: sinon.spy() };
+    const route = createRoute(DeleteAllDataSharingAgreement, { nrp });
+
+    await route._exec(createReq(), {}, { dsIds: ['ds-1', 'ds-2'], tokenIds: ['token-1', 'token-2'] });
+
+    assert.deepStrictEqual(
+      nrp.emit.getCalls().map((call) => call.args),
+      ['ds-1', 'ds-2'].map((id) => ['dataShare:deactivated', JSON.stringify({ appDataSharingId: id })]),
+    );
   });
 });

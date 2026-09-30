@@ -24,6 +24,7 @@ import Logging from '../../../dist/helpers/logging.js';
 import Model from '../../../dist/model/index.js';
 import TokenSchemaModel from '../../../dist/model/core/token.js';
 import AppSchemaModel from '../../../dist/model/core/app.js';
+import AppDataSharingSchemaModel from '../../../dist/model/core/app-data-sharing.js';
 
 describe('bootstrap-socket:token authentication', () => {
   const app = { id: new ObjectId(), apiPath: 'app-one' };
@@ -285,5 +286,73 @@ describe('bootstrap-socket:_primaryForwardDataShareActivity', () => {
     socket._primaryForwardDataShareActivity({ tokens: ['user-token', 'system-token'], activity });
 
     assert.deepStrictEqual(sent, { partnerA: [], partnerB: [] });
+  });
+});
+
+describe('bootstrap-socket: data share connections', () => {
+  afterEach(() => sinon.restore());
+
+  const share = (id, active = true) => ({
+    id,
+    _appId: 'app-1',
+    _tokenId: `${id}-token`,
+    active,
+    remoteApp: { endpoint: 'https://partner.example.com', apiPath: 'partner', token: `${id}-remote-token` },
+  });
+
+  // The primary Socket main, which holds the connections to partners, here stand-ins, with its NRP listeners
+  async function socketMain({ shares = {} } = {}) {
+    sinon.stub(Model, 'getCoreModel').callsFake((model) => {
+      if (model === AppDataSharingSchemaModel) return { findById: async (id) => shares[id] ?? null };
+      throw new Error(`Unexpected model requested in test: ${model?.name}`);
+    });
+    const handlers = {};
+    const main = new BootstrapSocket();
+    main.__nrp = { on: async (channel, handler) => (handlers[channel] = handler), emit: sinon.spy() };
+    const connections = [];
+    main._connectDataShare = (url, token) => {
+      const connection = { url, token, on: () => {}, destroy: sinon.spy() };
+      connections.push(connection);
+      return connection;
+    };
+    await main.__registerNRPPrimaryListeners();
+    const publish = (channel, id) => handlers[channel](JSON.stringify({ appDataSharingId: id }));
+    return { main, connections, publish };
+  }
+
+  const open = (main) => Object.values(main._dataShareSockets).flat().map(({ dataShareId }) => dataShareId);
+
+  it('replaces the connection of an agreement activated again, rather than adding another', async () => {
+    const { main, connections, publish } = await socketMain({ shares: { 'ds-1': share('ds-1') } });
+
+    await publish('dataShare:activated', 'ds-1');
+    await publish('dataShare:activated', 'ds-1');
+
+    assert.deepStrictEqual(open(main), ['ds-1']);
+    assert.strictEqual(connections.length, 2);
+    assert.ok(connections[0].destroy.calledOnce);
+    assert.strictEqual(connections[1].destroy.called, false);
+  });
+
+  it('closes the connection of an agreement that is deactivated, and keeps the others', async () => {
+    const shares = { 'ds-1': share('ds-1'), 'ds-2': share('ds-2') };
+    const { main, connections, publish } = await socketMain({ shares });
+    await publish('dataShare:activated', 'ds-1');
+    await publish('dataShare:activated', 'ds-2');
+
+    await publish('dataShare:deactivated', 'ds-1');
+
+    assert.deepStrictEqual(open(main), ['ds-2']);
+    assert.ok(connections[0].destroy.calledOnce);
+  });
+
+  it("doesn't connect for an agreement that is gone or no longer active", async () => {
+    const { main, connections, publish } = await socketMain({ shares: { 'ds-2': share('ds-2', false) } });
+
+    await publish('dataShare:activated', 'ds-1');
+    await publish('dataShare:activated', 'ds-2');
+
+    assert.deepStrictEqual(open(main), []);
+    assert.strictEqual(connections.length, 0);
   });
 });

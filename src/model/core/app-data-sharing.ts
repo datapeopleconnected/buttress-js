@@ -245,7 +245,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
    * @param {String} newToken - The new token which will be used to talk to the remote app
    * @return {Promise} - resolves when save operation is completed
    */
-  activate(appDataSharingId: string, newToken: string | null = null) {
+  async activate(appDataSharingId: string, newToken: string | null = null) {
     const update: { $set: { active: boolean; 'remoteApp.token'?: string } } = {
       $set: {
         active: true,
@@ -256,25 +256,26 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
       update.$set['remoteApp.token'] = newToken;
     }
 
+    const result = await this.updateById(this.createId(appDataSharingId), update);
+    // Once saved, as the Socket primary connects with what it reads back
     this.__nrp?.emit('dataShare:activated', JSON.stringify({ appDataSharingId: appDataSharingId }));
-
-    return this.updateById(this.createId(appDataSharingId), update);
+    return result;
   }
 
   /**
    * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
    * @return {Promise} - resolves when save operation is completed
    */
-  deactivate(appDataSharingId: string) {
+  async deactivate(appDataSharingId: string) {
     const update = {
       $set: {
         active: false,
       },
     };
 
-    // TODO implement socket deactivation
+    const result = await this.updateById(this.createId(appDataSharingId), update);
+    // The Socket primary closes its connection to the partner
     this.__nrp?.emit('dataShare:deactivated', JSON.stringify({ appDataSharingId: appDataSharingId }));
-
-    return this.updateById(this.createId(appDataSharingId), update);
+    return result;
   }
 }
