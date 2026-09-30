@@ -390,7 +390,9 @@ describe('lambda/LambdaRunner:_registerLambdaModules failure', () => {
     await assert.rejects(runner._registerLambdaModules([ownCodeMod]), /module is not defined/);
     await runner._registerLambdaModules([ownCodeMod]);
 
-    assert.strictEqual(compileScriptSync.callCount, 2);
+    // Compiled once, and run again
+    assert.strictEqual(compileScriptSync.callCount, 1);
+    assert.strictEqual(runSync.callCount, 2);
     assert.deepStrictEqual(runner._registeredBundles, [ownCodeMod.name]);
   });
 });
@@ -477,6 +479,7 @@ describe('lambda/LambdaRunner:execute', () => {
     runner._isolate = {};
     runner._context = {};
     runner._jail = { setSync: sinon.spy() };
+    sinon.stub(runner, '_useAppContext');
     const updateById = sinon.stub().resolves();
     stubModel(
       new Map([
@@ -664,5 +667,108 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
 
     assert.strictEqual(seen.userToken, 'caller-token-value');
     assert.deepStrictEqual(seen.headers, { 'x-trace': 't' });
+  });
+});
+
+describe('lambda/LambdaRunner:execute apps kept apart', () => {
+  let savedPaths;
+  let tmpDir;
+
+  beforeEach(() => {
+    savedPaths = { ...Config.paths.lambda };
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-apps-'));
+    const bundles = path.join(tmpDir, 'bundles');
+    fs.mkdirSync(bundles);
+    fs.mkdirSync(path.join(tmpDir, 'plugins'));
+    Config.paths.lambda.plugins = path.join(tmpDir, 'plugins');
+    Config.paths.lambda.bundles = bundles;
+    fs.writeFileSync(path.join(bundles, 'buttress_stub.js'),
+      'globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };');
+    // App A's lambda puts its own class where app B's lambda module goes
+    fs.writeFileSync(path.join(bundles, 'lambda_la.js'), `globalThis['lambda_la'] = class {
+      async execute() {
+        globalThis['lambda_lb'] = class { async execute() { lambda.setResult({ by: 'app-a' }); } };
+        lambda.setResult({ by: 'app-a' });
+      }
+    };`);
+    fs.writeFileSync(path.join(bundles, 'lambda_lb.js'),
+      `globalThis['lambda_lb'] = class { async execute() { lambda.setResult({ by: 'app-b' }); } };`);
+  });
+
+  afterEach(() => {
+    Object.assign(Config.paths.lambda, savedPaths);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("runs each app's lambdas apart from other apps', so one can't replace another's code", async function () {
+    this.timeout(10000);
+    const { runner, nrp } = createRunner();
+    await runner.init();
+    stubModel(
+      new Map([
+        [SecureStoreSchemaModel, { findOne: async () => null }],
+        [AppSchemaModel, { createId: (v) => v }],
+        [LambdaSchemaModel, { createId: (v) => v }],
+        [TokenSchemaModel, { createId: (v) => v, find: async () => Readable.from([{ value: 'lambda-token' }]) }],
+        [LambdaExecutionSchemaModel, {
+          ...fakeExecutionModel({ updateById: sinon.stub().resolves() }),
+          findById: async (id) => ({ id, status: 'RUNNING', metadata: [] }),
+        }],
+      ]),
+    );
+    sinon.stub(runner, 'bundleLambdaModules').resolves();
+    sinon.stub(runner, '_getLambdaModulesName').callsFake((lambda) => [
+      { name: 'buttress_stub', packageName: 'buttress_stub' },
+      { name: `lambda_${lambda.id}` },
+    ]);
+
+    const run = async (lambdaId, appId) => {
+      nrp.emit.resetHistory();
+      const lambda = {
+        id: lambdaId, name: lambdaId, trigger: [],
+        git: { url: 'git@example.com:x.git', hash: 'HEAD', entryFile: 'index.js', entryPoint: 'execute' },
+      };
+      const execution = { id: `exec-${lambdaId}`, lambdaId, deploymentId: 'd', metadata: [] };
+      await runner.execute(lambda, execution, { id: appId, apiPath: appId }, 'API_ENDPOINT', { reqId: 'r' });
+      const resultCall = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+      return JSON.parse(resultCall.args[1]).res.by;
+    };
+
+    assert.strictEqual(await run('lb', 'app-b'), 'app-b');
+    assert.strictEqual(await run('la', 'app-a'), 'app-a');
+    assert.strictEqual(await run('lb', 'app-b'), 'app-b');
+    runner._isolate.dispose();
+  });
+});
+
+describe('lambda/LambdaRunner:_useAppContext', () => {
+  let savedPlugins;
+  let tmpDir;
+
+  beforeEach(() => {
+    savedPlugins = Config.paths.lambda.plugins;
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-contexts-'));
+    Config.paths.lambda.plugins = tmpDir;
+  });
+
+  afterEach(() => {
+    Config.paths.lambda.plugins = savedPlugins;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('keeps an app its own context, and lets the least recently used go past the limit', async () => {
+    const { runner } = createRunner();
+    await runner.init();
+    sinon.stub(LambdaRunner, 'Constants').get(() => ({ TIMEOUT: 10000, APP_CONTEXTS: 2 }));
+
+    runner._useAppContext('app-1');
+    const first = runner._context;
+    runner._useAppContext('app-2');
+    runner._useAppContext('app-1');
+    assert.strictEqual(runner._context, first);
+
+    runner._useAppContext('app-3');
+    assert.deepStrictEqual([...runner._appContexts.keys()], ['app-1', 'app-3']);
+    runner._isolate.dispose();
   });
 });

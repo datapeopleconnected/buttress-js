@@ -108,6 +108,12 @@ export default class LambdaRunner {
   _registeredBundles: string[] = [];
   _compiledLambdas: unknown[] = [];
 
+  // A context for each app whose lambdas have run, most recently used last, so one app's lambdas never share globals or
+  // loaded modules with another's. _context, _jail and _registeredBundles are those of the app executing.
+  _appContexts: Map<string, { context: ivm.Context; jail: IsolateJail; registeredBundles: string[] }> = new Map();
+  // Bundle scripts compiled in the isolate, to run in each app's context
+  _compiledBundles: Map<string, ivm.Script> = new Map();
+
   private __nrp?: NodeRedisPubsub;
 
   constructor(services: Services, type: LambdaType) {
@@ -134,6 +140,8 @@ export default class LambdaRunner {
 
     return {
       TIMEOUT: timeout * 1000,
+      // How many apps' contexts a runner keeps
+      APP_CONTEXTS: 32,
     };
   }
 
@@ -155,12 +163,43 @@ export default class LambdaRunner {
         process.abort();
       },
     });
-    this._context = this._isolate.createContextSync();
-    this._jail = this._context.global;
-    this._registeredBundles = [];
+    this._appContexts = new Map();
+    this._compiledBundles = new Map();
     this._compiledLambdas = [];
+    ({ context: this._context, jail: this._jail, registeredBundles: this._registeredBundles } = this._newContext());
+  }
 
-    lambdaHelpers._createIsolateContext(this._isolate, this._context, this._jail);
+  // A context with the host functions lambdas use
+  _newContext() {
+    if (!this._isolate) throw new Error('Isolate not initialised');
+
+    const context = this._isolate.createContextSync();
+    const jail = context.global;
+    lambdaHelpers._createIsolateContext(this._isolate, context, jail);
+    return { context, jail, registeredBundles: [] as string[] };
+  }
+
+  /**
+   * Makes the app's context the one lambdas run in, creating it the first time. The least recently used context is let
+   * go once there are more than LambdaRunner.Constants.APP_CONTEXTS.
+   * @param {string} appId
+   */
+  _useAppContext(appId: string) {
+    let appContext = this._appContexts.get(appId);
+    if (appContext) {
+      this._appContexts.delete(appId);
+    } else {
+      appContext = this._newContext();
+    }
+    this._appContexts.set(appId, appContext);
+
+    while (this._appContexts.size > LambdaRunner.Constants.APP_CONTEXTS) {
+      const [oldestId, oldest] = this._appContexts.entries().next().value as [string, { context: ivm.Context }];
+      this._appContexts.delete(oldestId);
+      oldest.context.release();
+    }
+
+    ({ context: this._context, jail: this._jail, registeredBundles: this._registeredBundles } = appContext);
   }
 
   /**
@@ -248,6 +287,8 @@ export default class LambdaRunner {
       );
     }
 
+    // The app's own context, apart from other apps' lambdas
+    this._useAppContext(String(app.id));
     // Reset lambdaHelpers lambdaResult
     lambdaHelpers.lambdaResult = null;
     // Host functions act for this lambda: metadata updates go to it, email templates come from its code folder
@@ -869,9 +910,15 @@ export default class LambdaRunner {
       const registeredName = mod.packageName ? mod.packageName : mod.name;
       const file = mod.packageName ? mod.packageName.replace('/', '_') : mod.name;
       try {
-        this._isolate
-          .compileScriptSync(fs.readFileSync(`${Config.paths.lambda.bundles}/${file}.js`, 'utf8'))
-          .runSync(this._context, { timeout: LambdaRunner.Constants.TIMEOUT });
+        // A package bundle is compiled once and run in each app's context; own code is read again when reloading
+        let script = isOwnCode && devReload ? undefined : this._compiledBundles.get(file);
+        if (!script) {
+          script = this._isolate.compileScriptSync(
+            fs.readFileSync(`${Config.paths.lambda.bundles}/${file}.js`, 'utf8'),
+          );
+          this._compiledBundles.set(file, script);
+        }
+        script.runSync(this._context, { timeout: LambdaRunner.Constants.TIMEOUT });
       } catch (err: unknown) {
         Logging.logError(`Error registering lambda module ${mod.name}`);
         throw err;
