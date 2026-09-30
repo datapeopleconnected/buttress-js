@@ -31,6 +31,9 @@ import { UpdatePathBody } from '../../types/datastore.js';
 import { Services } from '../../bootstrap.js';
 import type { CoreRouteClass, CountBody, RequestWithBody, SearchBody } from '../../types/routes.js';
 
+// Why a system-only route reaches every app
+const SYSTEM_ONLY = 'the route takes only system tokens';
+
 /**
  * @class GetAppList
  */
@@ -53,11 +56,7 @@ class GetAppList extends Route {
       throw new Helpers.Errors.RequestError(400, `invalid_token`);
     }
 
-    if (req.context.token?.type !== Route.Constants.Type.SYSTEM) {
-      return Model.getCoreModel(AppSchemaModel).find({ id: appId });
-    }
-
-    return Model.getCoreModel(AppSchemaModel).findAll();
+    return this.scoped(req, AppSchemaModel).findAll();
   }
 }
 
@@ -82,24 +81,14 @@ class SearchAppList extends Route {
       result.query.$and.push(req.body.query);
     }
 
-    // Before parseQuery, which drops an empty $and
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      result.query.$and?.push({
-        id: req.context.authApp?.id,
-      });
-    }
-
-    result.query = Model.getCoreModel(AppSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(AppSchemaModel).flatSchemaData,
-    );
+    const scoped = this.scoped(req, AppSchemaModel);
+    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
 
     return result;
   }
 
   override async _exec(req: Request, res: Response, validate: QueryParams<App>) {
-    const appsDB = await Helpers.streamAll<App>(await Model.getCoreModel(AppSchemaModel).find(validate.query));
+    const appsDB = await Helpers.streamAll<App>(await this.scoped(req, AppSchemaModel).find(validate.query));
 
     // A system token gets every app's token value, any other token only its own app's
     const isSystem = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
@@ -107,7 +96,7 @@ class SearchAppList extends Route {
 
     const tokenIds = appsDB.filter(withToken).map((app) => Model.getCoreModel(TokenSchemaModel).createId(app._tokenId));
     const appTokens = await Helpers.streamAll<Token>(
-      await Model.getCoreModel(TokenSchemaModel).find({
+      await this.scoped(req, TokenSchemaModel).find({
         id: {
           $in: tokenIds,
         },
@@ -154,7 +143,7 @@ class GetApp extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
 
-    const app = await Model.getCoreModel(AppSchemaModel).findById(id);
+    const app = await this.unscopedModel(AppSchemaModel, SYSTEM_ONLY).findById(id);
     if (!app) {
       this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -164,7 +153,7 @@ class GetApp extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: App & { tokenValue?: string }) {
-    const appToken: Token | null = await Model.getCoreModel(TokenSchemaModel).findById(
+    const appToken: Token | null = await this.unscopedModel(TokenSchemaModel, SYSTEM_ONLY).findById(
       Model.getCoreModel(TokenSchemaModel).createId(validate._tokenId),
     );
     validate.tokenValue = appToken?.value;
@@ -223,11 +212,12 @@ class AddApp extends Route {
         }
       }
 
-      Model.getCoreModel(AppSchemaModel)
+      const apps = this.unscopedModel(AppSchemaModel, SYSTEM_ONLY);
+      apps
         .apiPathProblem(req.body.apiPath)
         .then((problem) => {
           if (problem) throw new Helpers.Errors.RequestError(400, problem);
-          return Model.getCoreModel(AppSchemaModel).isDuplicate(req.body);
+          return apps.isDuplicate(req.body);
         })
         .then((res) => {
           if (res === true) {
@@ -242,7 +232,7 @@ class AddApp extends Route {
 
   override _exec(req: RequestWithBody<AppAddBody>, _res: Response, _validate: boolean) {
     return new Promise((resolve, reject) => {
-      Model.getCoreModel(AppSchemaModel)
+      this.unscopedModel(AppSchemaModel, SYSTEM_ONLY)
         .add(req.body)
         .then((res) => {
           this._nrp?.emit('app:configure-lambda-endpoints', res.app.apiPath);
@@ -274,7 +264,7 @@ class DeleteApp extends Route {
       throw new Helpers.Errors.RequestError(400, `missing_field`);
     }
 
-    const app = await Model.getCoreModel(AppSchemaModel).findById(id);
+    const app = await this.unscopedModel(AppSchemaModel, SYSTEM_ONLY).findById(id);
     if (!app) {
       this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `invalid_id`);
@@ -284,7 +274,7 @@ class DeleteApp extends Route {
   }
 
   override async _exec(req: Request, res: Response, app: App) {
-    await Model.getCoreModel(AppSchemaModel).rm(app);
+    await this.unscopedModel(AppSchemaModel, SYSTEM_ONLY).rm(app);
     return true;
   }
 }
@@ -307,7 +297,7 @@ class DeleteAllApps extends Route {
   override async _exec(_req: Request, _res: Response, _validate: boolean) {
     // Get a list of system tokens
     const systemTokens = await Helpers.streamAll<Token>(
-      await Model.getCoreModel(TokenSchemaModel).find(
+      await this.unscopedModel(TokenSchemaModel, SYSTEM_ONLY).find(
         {
           type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
         },
@@ -320,21 +310,15 @@ class DeleteAllApps extends Route {
     );
 
     const systemApps = systemTokens.map((t) => t._appId.toString());
-    const appApps = await Model.getCoreModel(AppSchemaModel).find(
-      { id: { $nin: systemApps } },
-      {},
-      0,
-      0,
-      {},
-      { id: 1, _tokenId: 1 },
-    );
+    const apps = this.unscopedModel(AppSchemaModel, SYSTEM_ONLY);
+    const appApps = await apps.find({ id: { $nin: systemApps } }, {}, 0, 0, {}, { id: 1, _tokenId: 1 });
 
     for await (const app of appApps as AsyncIterable<Pick<App, 'id' | '_tokenId'>>) {
       if (systemApps.includes(app.id.toString())) continue;
 
       Logging.logDebug(`Deleting app: ${app.id}`);
       // BUG: apiPath isn't projected, so rm can't tell the REST workers which app's routes to deregister
-      await Model.getCoreModel(AppSchemaModel).rm(app as App);
+      await apps.rm(app as App);
     }
 
     return true;
@@ -413,7 +397,9 @@ class GetAppSchema extends Route {
   override async _exec(req: Request, res: Response, collections: Schema[]) {
     const mergedSchema = req.query.rawSchema
       ? collections
-      : await Model.getCoreModel(AppSchemaModel).mergeRemoteSchema(req, collections);
+      : await (
+          await this.scoped(req, AppSchemaModel).owned(String(req.context.authApp?.id))
+        ).mergeRemoteSchema(req, collections);
 
     // Quicky, remove extends as nobody needs it outside of buttress
     mergedSchema.forEach((s) => delete s.extends);
@@ -501,16 +487,17 @@ class UpdateAppSchema extends Route {
     );
 
     try {
-      compiledSchema = await Model.getCoreModel(AppSchemaModel).mergeRemoteSchema(req, compiledSchema);
+      const apps = await this.scoped(req, AppSchemaModel).owned(req.context.authApp.id);
+      compiledSchema = await apps.mergeRemoteSchema(req, compiledSchema);
 
       // Merge any schema extends
-      compiledSchema = Helpers.Schema.merge(compiledSchema, Model.getCoreModel(AppSchemaModel).localSchema || []);
+      compiledSchema = Helpers.Schema.merge(compiledSchema, apps.localSchema || []);
 
       // building the schema to check for any timeseries
       compiledSchema = await Helpers.Schema.buildCollections(compiledSchema);
 
       // merging the built timeseries to get the extends schemas
-      compiledSchema = Helpers.Schema.merge(compiledSchema, Model.getCoreModel(AppSchemaModel).localSchema || []);
+      compiledSchema = Helpers.Schema.merge(compiledSchema, apps.localSchema || []);
 
       return {
         appId: req.context.authApp.id,
@@ -524,11 +511,11 @@ class UpdateAppSchema extends Route {
   }
 
   override async _exec(
-    _req: Request,
+    req: Request,
     _res: Response,
     { appId, rawSchema, compiledSchema }: { appId: string; rawSchema: string; compiledSchema: Schema[] },
   ) {
-    await Model.getCoreModel(AppSchemaModel).updateSchema(appId, compiledSchema, rawSchema);
+    await (await this.scoped(req, AppSchemaModel).owned(appId)).updateSchema(appId, compiledSchema, rawSchema);
 
     const a = compiledSchema
       .filter((s) => s.type === 'collection')
@@ -572,7 +559,7 @@ class GetAppPolicyPropertyList extends Route {
     }
 
     if (apiPath) {
-      app = await Model.getCoreModel(AppSchemaModel).findOne({
+      app = await this.scoped(req, AppSchemaModel).findOne({
         apiPath: {
           $eq: apiPath,
         },
@@ -659,7 +646,8 @@ class SetAppPolicyPropertyList extends Route {
     const update = Object.assign({}, req.body);
     if (update.query) delete update.query;
 
-    await Model.getCoreModel(AppSchemaModel).setPolicyPropertiesList(appId.toString(), update);
+    const apps = await this.scoped(req, AppSchemaModel).owned(appId.toString());
+    await apps.setPolicyPropertiesList(appId.toString(), update);
     return update;
   }
 }
@@ -693,24 +681,14 @@ class AppCount extends Route {
       result.query.$and.push(bodyQuery);
     }
 
-    // Before parseQuery, which drops an empty $and
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      result.query.$and?.push({
-        id: req.context.authApp?.id,
-      });
-    }
-
-    result.query = Model.getCoreModel(AppSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(AppSchemaModel).flatSchemaData,
-    );
+    const scoped = this.scoped(req, AppSchemaModel);
+    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
 
     return result;
   }
 
-  override _exec(_req: Request, _res: Response, validateResult: QueryParams<App>) {
-    return Model.getCoreModel(AppSchemaModel).count(validateResult.query);
+  override _exec(req: Request, _res: Response, validateResult: QueryParams<App>) {
+    return this.scoped(req, AppSchemaModel).count(validateResult.query);
   }
 }
 
@@ -734,7 +712,7 @@ class AppUpdateOAuth extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
     }
 
-    const app = await Model.getCoreModel(AppSchemaModel).findById(req.params.id);
+    const app = await this.unscopedModel(AppSchemaModel, SYSTEM_ONLY).findById(req.params.id);
     if (!app) {
       this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -748,7 +726,7 @@ class AppUpdateOAuth extends Route {
     _validate: boolean,
   ) {
     const oAuth = Array.isArray(req.body.value) ? req.body.value : [req.body.value];
-    await Model.getCoreModel(AppSchemaModel).updateOAuth(req.params.id, oAuth);
+    await this.unscopedModel(AppSchemaModel, SYSTEM_ONLY).updateOAuth(req.params.id, oAuth);
     return true;
   }
 }
@@ -790,7 +768,7 @@ class AppUpdate extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: ${message}`));
     }
 
-    const exists = await Model.getCoreModel(AppSchemaModel).exists(id);
+    const exists = await this.scoped(req, AppSchemaModel).exists(id);
     if (!exists) {
       this.log('ERROR: Invalid App ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -799,7 +777,8 @@ class AppUpdate extends Route {
     // A new api path has to be one the app can have
     for (const update of (Array.isArray(body) ? body : [body]) as UpdatePathBody[]) {
       if (update.path !== 'apiPath') continue;
-      const problem = await Model.getCoreModel(AppSchemaModel).apiPathProblem(update.value, id);
+      const apps = this.unscopedModel(AppSchemaModel, 'an api path is checked against every app');
+      const problem = await apps.apiPathProblem(update.value, id);
       if (problem) return Promise.reject(new Helpers.Errors.RequestError(400, problem));
     }
     return {
@@ -809,7 +788,7 @@ class AppUpdate extends Route {
 
   // _validate replaced the body with the validated updates
   override _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
-    return Model.getCoreModel(AppSchemaModel).updateByPath(req.body, validate.id);
+    return this.scoped(req, AppSchemaModel).updateByPath(req.body, validate.id);
   }
 }
 
