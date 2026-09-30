@@ -58,6 +58,21 @@ describe('access-control/models-access:find', () => {
     assert.strictEqual(items.length, 4);
   });
 
+  it('merges the results of a model whose find is async, as a federated model is', async () => {
+    const model = {
+      flatSchemaData: {},
+      parseQuery: (query) => query,
+      find: async (query) => readableOf([{ id: `${query.tag}-a` }]),
+    };
+    const ac = {
+      policyConfigs: [{ appId: 'app-1', query: { tag: 'one' } }, { appId: 'app-1', query: { tag: 'two' } }],
+    };
+
+    const items = await drain(await ACM.find(model, { query: {} }, ac));
+
+    assert.deepStrictEqual(items.map((item) => item.id).sort(), ['one-a', 'two-a']);
+  });
+
   it('rejects instead of silently returning a partial stream when one policy config fails to parse', async () => {
     const model = {
       flatSchemaData: {},

@@ -117,7 +117,7 @@ describe('Federation', function () {
       assert.deepStrictEqual(res.body.map((car) => car.name).sort(), env.cars.map((car) => car.name).sort());
     });
 
-    it("finds the partner's cars by a query (BUG-20)", async () => {
+    it("finds the partner's cars by a query", async () => {
       const res = await fromB('SEARCH', 'car', { query: { colour: { $eq: 'red' } } });
       assert.strictEqual(res.status, 200, JSON.stringify(res.body));
       assert.strictEqual(res.body.length, SEED / 2);
@@ -136,7 +136,7 @@ describe('Federation', function () {
       assert.strictEqual(res.body, SEED);
     });
 
-    it("gets one of the partner's cars by id (BUG-20: get has no :sourceId route)", async () => {
+    it("gets one of the partner's cars by id", async () => {
       const res = await fromB('GET', `car/${env.cars[3].id}`);
       assert.strictEqual(res.status, 200, JSON.stringify(res.body));
       assert.strictEqual(res.body.name, 'car 3');
@@ -149,25 +149,25 @@ describe('Federation', function () {
     // A partner's record is addressed by its source, the partner app
     const partnerCar = (car) => `car/${car.sourceId}/${car.id}`;
 
-    it("updates one of the partner's cars (BUG-42: a read never records a lone partner's records)", async () => {
+    it("updates one of the partner's cars", async () => {
       await fromB('GET', 'car');
       const res = await fromB('PUT', partnerCar(env.cars[0]), { path: 'name', value: 'renamed from b' });
       assert.strictEqual(res.status, 200, JSON.stringify(res.body));
       assert.strictEqual(await nameOnA(env.cars[0].id), 'renamed from b');
     });
 
-    it("updates one of the partner's cars after a restart, without a read first (BUG-42)", async () => {
+    it("updates one of the partner's cars after a restart, without a read first", async () => {
       await b.restart(['rest']);
       const res = await fromB('PUT', partnerCar(env.cars[1]), { path: 'name', value: 'renamed after restart' });
       assert.strictEqual(res.status, 200, JSON.stringify(res.body));
       assert.strictEqual(await nameOnA(env.cars[1].id), 'renamed after restart');
     });
 
-    it("deletes one of the partner's cars (BUG-20: delete has no :sourceId route)", async () => {
+    it("deletes one of the partner's cars", async () => {
       const res = await fromB('DELETE', `car/${env.cars[11].id}`);
       assert.strictEqual(res.status, 200, JSON.stringify(res.body));
-      const onA = await a.request('GET', `fed-a/api/v1/car/${env.cars[11].id}`, { token: env.appA.token });
-      assert.strictEqual(onA.status, 404);
+      const onA = await a.call('GET', 'fed-a/api/v1/car', { token: env.appA.token });
+      assert.ok(!onA.some((car) => car.id === env.cars[11].id), 'the car is still on a');
     });
   });
 
@@ -185,7 +185,7 @@ describe('Federation', function () {
       await waitFor("a's new car on b's socket", () => watcher.received.some((activity) => activity.response?.name === 'made on a'));
     });
 
-    it("sends a change made through the consumer to the partner's sockets (needs the update, BUG-42)", async () => {
+    it("sends a change made through the consumer to the partner's sockets", async () => {
       const token = await createAdminUser(a, env.appA, 'fed-a-watcher');
       const watcher = await a.connectSocket('fed-a', token);
       sockets.push(watcher);

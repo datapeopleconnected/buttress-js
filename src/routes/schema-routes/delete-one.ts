@@ -75,7 +75,8 @@ export default class DeleteOne extends Route {
 
   override async _exec(req: Request, _res: Response, entity: AdapterDocument) {
     await this._keepEntitiesBeingDeleted(req, [entity.id], [entity]);
-    await (await this.routeModel()).rm(entity.id);
+    // A partner's record, found through a collection's remotes, is removed from its source
+    await (await this.routeModel()).rm(entity.id, entity.sourceId as string | undefined);
     return true;
   }
 }

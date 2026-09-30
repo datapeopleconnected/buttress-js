@@ -107,6 +107,15 @@ export default class RemoteCombinedModel extends StandardModel {
     return this.localModel.adapter.ID.new(id);
   }
 
+  // Ids are checked and converted as the local datastore's are. The model has no adapter of its own.
+  override isValidId(id: unknown) {
+    return this.localModel.isValidId(id);
+  }
+
+  override convertStringToId<T>(id?: T) {
+    return this.localModel.convertStringToId(id);
+  }
+
   get localModel() {
     if (!this._localModel) throw new Error('Local model not set up yet');
     return this._localModel;
@@ -184,14 +193,12 @@ export default class RemoteCombinedModel extends StandardModel {
   }
 
   /**
-   * @param {object} entity
-   * @param {string} sourceId
+   * @param {string} id
+   * @param {string} sourceId - the source of a partner's record, none for the app's own
    * @return {Promise}
    */
-  override async rm(entity: { id: string }, sourceId?: string) {
-    if (!sourceId) throw new Error('SourceId is required for rm');
-
-    return (await this._getTargetModel(sourceId)).rm(entity.id);
+  override async rm(id: string, sourceId?: string | null) {
+    return (await this._getTargetModel(sourceId)).rm(id);
   }
 
   /**
@@ -246,16 +253,20 @@ export default class RemoteCombinedModel extends StandardModel {
     // Make a call out to each of the remotes, and merge the streams into on single stream.
     const sources: Stream.Readable[] = [];
 
-    sources.push(await this.localModel.find(query, excludes, limit, skip, sort, project));
+    // A page of the merged list is within the first skip + limit of each source's, and is skipped to once merged
+    const sourceLimit = limit ? skip + limit : 0;
+
+    sources.push(await this.localModel.find(query, excludes, sourceLimit, 0, sort, project));
 
     for await (const remote of this._remoteModels) {
-      sources.push(await remote.find(query, excludes, limit, skip, sort, project));
+      sources.push(await remote.find(query, excludes, sourceLimit, 0, sort, project));
     }
 
     const combinedStream = new Helpers.Stream.SortedStreams<AdapterDocument>(
       sources,
       (a, b) => Helpers.compareByProps(sortMap, a, b),
       limit,
+      skip,
     );
 
     // When a chunk is sent, we'll inform the routing service of the sourceId.

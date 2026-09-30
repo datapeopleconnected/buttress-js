@@ -43,23 +43,32 @@ export async function find<T extends StandardModel<unknown>>(
       }),
     );
 
+    // A federated model's find is async, so every find is awaited, together, before their streams are merged. If one
+    // fails, the streams of the others aren't needed.
+    const settled = await Promise.allSettled(
+      preparedQueries.map(
+        async (combined) =>
+          (await model.find(
+            combined.query,
+            {},
+            combined.limit,
+            combined.skip,
+            combined.sort,
+            combined.project,
+          )) as Stream.Readable,
+      ),
+    );
+    const results = settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+    const failed = settled.find((result) => result.status === 'rejected');
+    if (failed) {
+      results.forEach((result) => result.destroy());
+      throw failed.reason;
+    }
+
     const resStream = new Stream.PassThrough({ objectMode: true });
 
-    let openStreams = 0;
-    // Still not awaiting each find() before starting the next — this is the part worth running
-    // concurrently (the actual per-document datastore stream), now that every policy's query is
-    // already known to be valid.
-    const results = preparedQueries.map((combined) => {
-      // Not awaited, so this only works for models whose find is synchronous, a federated model's isn't
-      const result = model.find(
-        combined.query,
-        {},
-        combined.limit,
-        combined.skip,
-        combined.sort,
-        combined.project,
-      ) as Stream.Readable;
-
+    let openStreams = results.length;
+    results.forEach((result) => {
       result.pipe(resStream, { end: false });
       result.on('end', () => {
         openStreams--;
@@ -67,9 +76,6 @@ export async function find<T extends StandardModel<unknown>>(
       });
       // pipe() doesn't pass errors on, so one policy's failed find fails the merged stream.
       result.on('error', (err) => resStream.destroy(err));
-
-      openStreams++;
-      return result;
     });
 
     // Once the merged stream is done with, failed or not, the finds still running aren't needed.

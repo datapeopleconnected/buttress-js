@@ -492,10 +492,11 @@ export default class StandardModel<TDocument = AdapterDocument> {
 
   /**
    * @param {string} id - id to be deleted
+   * @param {string} sourceId - used by federated models
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  // Takes `unknown` as subclasses (App, RemoteCombined) take an entity rather than its id
-  rm(id: unknown): Promise<unknown> {
+  // Takes `unknown` as App takes an entity rather than its id
+  rm(id: unknown, _sourceId: string | null = null): Promise<unknown> {
     return this.adapter.rm(id as string);
   }
 

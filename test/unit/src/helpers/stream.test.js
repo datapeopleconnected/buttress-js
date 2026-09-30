@@ -53,4 +53,36 @@ describe('helpers/stream:SortedStreams', () => {
 
     assert.ok(sources.every((source) => source.destroyed));
   });
+
+  it('ends at its limit, whatever its sources still send', async () => {
+    const sources = [createSource(), createSource()];
+    const combined = new SortedStreams(sources, undefined, 2);
+    [1, 3, 5, null].forEach((n) => sources[0].push(n));
+    [2, 4, 6, null].forEach((n) => sources[1].push(n));
+
+    assert.deepStrictEqual(await combined.toArray(), [1, 2]);
+  });
+
+  it('skips the first of its merged items', async () => {
+    const sources = [createSource(), createSource()];
+    const combined = new SortedStreams(sources, undefined, 2, 2);
+    [1, 3, 5, null].forEach((n) => sources[0].push(n));
+    [2, 4, 6, null].forEach((n) => sources[1].push(n));
+
+    assert.deepStrictEqual(await combined.toArray(), [3, 4]);
+  });
+
+  it('keeps every item its sources send before it is read', async () => {
+    const sources = [createSource(), createSource()];
+    const combined = new SortedStreams(sources);
+    for (let n = 0; n < 40; n += 2) {
+      sources[0].push(n);
+      sources[1].push(n + 1);
+    }
+    sources.forEach((source) => source.push(null));
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    assert.deepStrictEqual(await combined.toArray(), Array.from({ length: 40 }, (_, n) => n));
+  });
 });
+

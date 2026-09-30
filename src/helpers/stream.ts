@@ -48,7 +48,15 @@ export class SortedStreams<T = unknown> extends Readable {
 
   public limit: number;
 
-  constructor(sources: Readable[], compareFn?: (a: T, b: T) => number, limit: number = 0) {
+  // How many of the merged chunks to drop before sending any, so a page of the merged list can be read from sources
+  // that each give their first skip + limit chunks
+  public skip: number;
+
+  private _skipped: number;
+
+  private _ended: boolean;
+
+  constructor(sources: Readable[], compareFn?: (a: T, b: T) => number, limit: number = 0, skip: number = 0) {
     super({ objectMode: true });
 
     this._compareFn = compareFn || this._defaultCompare;
@@ -69,6 +77,9 @@ export class SortedStreams<T = unknown> extends Readable {
 
     this.sent = 0;
     this.limit = limit;
+    this.skip = skip;
+    this._skipped = 0;
+    this._ended = false;
 
     // this._lastChunkSent = null;
 
@@ -104,43 +115,38 @@ export class SortedStreams<T = unknown> extends Readable {
   }
 
   _tryToSendIt() {
-    const holder = this._dequeue();
+    while (!this._ended && !this._pauseUntilRead) {
+      const holder = this._dequeue();
 
-    if (this._pauseUntilRead) return;
+      // If dequeue returns null, it means our queue isn't ready yet.
+      if (holder === null) {
+        // If the queue is empty and all sources are closed, then we're done.
+        if (this._queue.length === 0 && this._sourcesClosed) this._end();
+        return;
+      }
 
-    // If dequeue returns null, it means our queue isn't ready yet.
-    if (holder === null) {
-      // If the queue is empty and all sources are closed, then we're done.
-      if (this._queue.length === 0 && this._sourcesClosed) return this.push(null);
-      return;
+      this._sources[holder.sourceIdx].queued--;
+
+      if (this._skipped < this.skip) {
+        this._skipped++;
+        continue;
+      }
+
+      // A push past the reader's buffer is still taken, it only asks us to wait for the next read before another.
+      if (!this.push(holder.chunk)) this._pauseUntilRead = true;
+
+      this.emit('chunkSent', { chunk: holder.chunk, sourceIdx: holder.sourceIdx } satisfies ChunkSentEvent<T>);
+      this.sent++;
+
+      // We've reached out send limit, we'll close out.
+      if (this.limit && this.sent >= this.limit) this._end();
     }
+  }
 
-    // TODO:
-    //  - Check the current value with the last, if it's greater than our current index.
-    //    - Set flag to check next value from all open sources.
-    //    ... When all open sources send the next value ...
-    //    - Set another flag that check has been complete.
-    //    - Pick the next value from the list.
-
-    // const pos = (this._lastChunkSent === null) ? 0 : this._compareFn(holder.chunk, this._lastChunkSent);
-    // console.log(pos, holder.chunk.name || null, this._lastChunkSent || null);
-
-    // Try to send it down the wire, if we can't, pause the stream until next read.
-    if (!this.push(holder.chunk)) {
-      this._pauseUntilRead = true;
-
-      return;
-    }
-
-    this.emit('chunkSent', { chunk: holder.chunk, sourceIdx: holder.sourceIdx } satisfies ChunkSentEvent<T>);
-
-    this._sources[holder.sourceIdx].queued--;
-    this.sent++;
-
-    // this._lastChunkSent = holder.chunk;
-
-    // We've reached out send limit, we'll close out.
-    if (this.limit && this.sent >= this.limit) return this.push(null);
+  // Ends the stream once. Chunks its sources send after that are dropped.
+  _end() {
+    this._ended = true;
+    this.push(null);
   }
 
   // Source event handlers

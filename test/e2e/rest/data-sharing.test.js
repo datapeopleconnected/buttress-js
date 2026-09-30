@@ -275,6 +275,61 @@ describe('Data Sharing', async () => {
 			assert(result.id !== null && result.id !== undefined);
 			assert.strictEqual(result.name, 'A purple car');
 		});
+
+		const app2Cars = (urlPath, opts = {}) => bjsReq({
+			url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/car${urlPath}`,
+			headers: {'Content-Type': 'application/json'},
+			...opts,
+		}, testEnv.apps.app2.token);
+		const app1Cars = () => bjsReq({
+			url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+			method: 'GET',
+		}, testEnv.apps.app1.token);
+		const forget = (car) => testEnv.cars.splice(testEnv.cars.indexOf(car), 1);
+
+		it('Should find cars from App2 by a query, from App2 and App1', async function() {
+			const cars = await app2Cars('', {method: 'SEARCH', body: JSON.stringify({query: {name: {$eq: 'A red car'}}})});
+
+			assert.deepStrictEqual(cars.map((car) => car.id), [testEnv.cars[0].id]);
+		});
+
+		it('Should get one of App1\'s cars by id from App2', async function() {
+			const car = await app2Cars(`/${testEnv.cars[0].id}`, {method: 'GET'});
+
+			assert.strictEqual(car.name, 'A red car');
+			assert.strictEqual(car.sourceId, testEnv.apps.app1.id);
+		});
+
+		it('Should update one of App1\'s cars from App2 by its source', async function() {
+			const [red] = testEnv.cars;
+			await app2Cars(`/${testEnv.apps.app1.id}/${red.id}`, {
+				method: 'PUT',
+				body: JSON.stringify({path: 'name', value: 'A dark red car'}),
+			});
+			red.name = 'A dark red car';
+
+			const onApp1 = (await app1Cars()).find((car) => car.id === red.id);
+			assert.strictEqual(onApp1.name, 'A dark red car');
+		});
+
+		it('Should delete one of App1\'s cars from App2 by its id', async function() {
+			await createCar(testEnv.apps.app1, 'A scrap car');
+			const scrap = testEnv.cars.at(-1);
+
+			assert.strictEqual(await app2Cars(`/${scrap.id}`, {method: 'DELETE'}), true);
+			forget(scrap);
+
+			assert(!(await app1Cars()).some((car) => car.id === scrap.id), 'the car is still on App1');
+		});
+
+		it('Should delete one of App2\'s own cars from its collection with remotes', async function() {
+			const blue = testEnv.cars.find((car) => car.name === 'A blue car');
+
+			assert.strictEqual(await app2Cars(`/${blue.id}`, {method: 'DELETE'}), true);
+			forget(blue);
+
+			assert(!(await app2Cars('', {method: 'GET'})).some((car) => car.id === blue.id), 'the car is still on App2');
+		});
 	});
 
 	describe('Handling mutiple agreement sources', async () => {

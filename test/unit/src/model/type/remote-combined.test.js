@@ -19,6 +19,8 @@ import assert from 'assert';
 import { Readable } from 'stream';
 
 import RemoteCombinedModel from '../../../../../dist/model/type/remote-combined.js';
+import StandardModel from '../../../../../dist/model/type/standard.js';
+import ObjectIdHelper from '../../../../../dist/datastore/adapters/object-id.js';
 import { SourceDataSharingRouting } from '../../../../../dist/services/source-ds-routing.js';
 
 // RemoteCombinedModel's real constructor/initAdapter need a live app + datastore
@@ -112,4 +114,66 @@ describe('model/type/RemoteCombinedModel', () => {
       assert.deepStrictEqual(result, { agreement: 'agreement-1', id: 'car-1', body: [{ path: 'name', value: 'renamed' }] });
     });
   });
+
+  describe('querying', () => {
+    // A source that honours limit and skip, as a datastore does
+    const createSource = (cars) => ({
+      find: async (query, excludes, limit, skip) => Readable.from(cars.slice(skip, limit ? skip + limit : undefined)),
+    });
+    const createQueryModel = (localCars, partnerCars) => {
+      const model = Object.create(RemoteCombinedModel.prototype);
+      model.app = { id: 'app-b' };
+      model._sdsRouting = { inform: () => {} };
+      const localModel = Object.create(StandardModel.prototype);
+      localModel.adapter = { ID: ObjectIdHelper };
+      model._localModel = Object.assign(localModel, createSource(localCars));
+      model._remoteModels = [{ dataSharingId: 'agreement-1', ...createSource(partnerCars) }];
+      return model;
+    };
+
+    it('parses a query by id', () => {
+      const model = createQueryModel([], []);
+      const id = ObjectIdHelper.new();
+
+      assert.deepStrictEqual(model.parseQuery({ id }, {}, { id: { __type: 'id' } }), { id: { $eq: id } });
+    });
+
+    it('pages through its sources as one list', async () => {
+      const cars = (...ns) => ns.map((n) => ({ id: `car-${n}`, n }));
+      const model = createQueryModel(cars(1, 3, 5), cars(2, 4, 6));
+
+      const page = await (await model.find({}, {}, 2, 2, { n: 1 })).toArray();
+
+      assert.deepStrictEqual(page.map((car) => car.n), [3, 4]);
+    });
+  });
+
+  describe('removing', () => {
+    const createRemovingModel = () => {
+      const removed = [];
+      const model = Object.create(RemoteCombinedModel.prototype);
+      model.app = { id: 'app-b' };
+      model._sdsRouting = { get: async (appId, sourceId) => (sourceId === 'app-a' ? 'agreement-1' : undefined) };
+      model._localModel = { rm: async (id) => removed.push(['local', id]) };
+      model._remoteModels = [{ dataSharingId: 'agreement-1', rm: async (id) => removed.push(['agreement-1', id]) }];
+      return { model, removed };
+    };
+
+    it("removes a partner's record from the partner", async () => {
+      const { model, removed } = createRemovingModel();
+
+      await model.rm('car-1', 'app-a');
+
+      assert.deepStrictEqual(removed, [['agreement-1', 'car-1']]);
+    });
+
+    it('removes its own record locally', async () => {
+      const { model, removed } = createRemovingModel();
+
+      await model.rm('car-2');
+
+      assert.deepStrictEqual(removed, [['local', 'car-2']]);
+    });
+  });
 });
+
