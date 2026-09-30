@@ -190,15 +190,15 @@ export default class StandardModel<TDocument = AdapterDocument> {
         if (command.length > 0) {
           output['$or'] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
         }
-      } else if (property === '$and' && Array.isArray(command)) {
+      } else if ((property === '$and' || property === '$nor') && Array.isArray(command)) {
         if (command.length > 0) {
-          output['$and'] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
+          output[property] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
         }
       } else if (typeof command === 'object' && command !== null && !this.isValidId(command)) {
         const operators = command as Record<string, unknown>;
         for (let operator in operators) {
           if (!{}.hasOwnProperty.call(operators, operator)) continue;
-          const operand = operators[operator];
+          let operand = operators[operator];
           let operandOptions: string | undefined = undefined;
 
           switch (operator) {
@@ -230,8 +230,10 @@ export default class StandardModel<TDocument = AdapterDocument> {
               operator = '$regex';
               operandOptions = 'i';
               break;
+            // The property holds the text, which is matched as it is
             case '$inProp':
               operator = '$regex';
+              if (typeof operand === 'string') operand = operand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
               break;
 
             default:
@@ -286,8 +288,9 @@ export default class StandardModel<TDocument = AdapterDocument> {
       const itemSchema = propSchema.__schema;
       if (propSchema.__type === 'array' && itemSchema && typeof operand === 'object' && operand !== null) {
         const operands = operand as Record<string, Record<string, unknown>>;
+        // An operand keyed by the items' properties has their ids converted; any other, e.g. $in's list, is left
         Object.keys(operands).forEach((op) => {
-          if (itemSchema[op].__type === 'id') {
+          if (itemSchema[op]?.__type === 'id' && typeof operands[op] === 'object' && operands[op] !== null) {
             Object.keys(operands[op]).forEach((key) => {
               operands[op][key] = this.convertStringToId(operands[op][key]);
             });
@@ -297,6 +300,8 @@ export default class StandardModel<TDocument = AdapterDocument> {
 
       if (propSchema.__type === 'date' && typeof operand === 'string') {
         operand = new Date(operand);
+        // Stored, an invalid date is the start of 1970, which every later date is after
+        if (isNaN((operand as Date).getTime())) throw new Helpers.Errors.RequestError(400, `invalid_date: ${property}`);
       }
 
       if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {

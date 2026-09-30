@@ -171,6 +171,30 @@ describe('model/type/StandardModel:parseQuery', () => {
     const result = model.parseQuery({ name: { $eq: 'env.currentUserName' } }, { currentUserName: 'Alice' });
     assert.deepStrictEqual(result, { name: { $eq: 'Alice' } });
   });
+  it('matches $inProp as the text it is, not as a pattern', () => {
+    const model = createModel();
+    assert.deepStrictEqual(model.parseQuery({ name: { $inProp: 'a.b(c' } }), { name: { $regex: 'a\\.b\\(c' } });
+  });
+
+  it('recurses into $nor arrays, as into $or and $and', () => {
+    const model = createModel();
+    const result = model.parseQuery({ $nor: [{ name: 'a' }, { age: { $gt: 3 } }] });
+    assert.deepStrictEqual(result, { $nor: [{ name: { $eq: 'a' } }, { age: { $gt: 3 } }] });
+  });
+
+  it("takes an operator on an array of objects, whose operand isn't keyed by the items' properties", () => {
+    const model = createModel();
+    const lines = { __type: 'array', __schema: { ownerId: { __type: 'id' }, label: { __type: 'string' } } };
+    assert.deepStrictEqual(model.parseQuery({ lines: { $in: ['x'] } }, {}, { lines }), { lines: { $in: ['x'] } });
+  });
+
+  it('refuses a date it cannot read, rather than matching every dated entity', () => {
+    const model = createModel();
+    assert.throws(
+      () => model.parseQuery({ createdAt: { $gtDate: 'not a date' } }, {}, { createdAt: { __type: 'date' } }),
+      (err) => err.code === 400 && err.message === 'invalid_date: createdAt',
+    );
+  });
 });
 
 describe('model/type/StandardModel:validate', () => {
