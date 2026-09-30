@@ -96,19 +96,54 @@ describe('model/core/LambdaSchemaModel:git source', () => {
 
   it('refuses a url that is not a repository address', async () => {
     await assertRefused(model.gitFolderClone(hash, 'main', 'x', `${repo}; touch ${marker}`), 'invalid_lambda_git_url');
-    await assertRefused(model.gitFolderClone(hash, 'main', 'x', `--upload-pack=touch ${marker}`), 'invalid_lambda_git_url');
-    await assertRefused(model.gitFolderClone(hash, 'main', 'x', `ext::sh -c touch% ${marker}`), 'invalid_lambda_git_url');
+    await assertRefused(
+      model.gitFolderClone(hash, 'main', 'x', `--upload-pack=touch ${marker}`),
+      'invalid_lambda_git_url',
+    );
+    await assertRefused(
+      model.gitFolderClone(hash, 'main', 'x', `ext::sh -c touch% ${marker}`),
+      'invalid_lambda_git_url',
+    );
   });
 
   it('refuses a deployment branch that is not a plain branch name for an existing checkout', async () => {
     await model.gitFolderClone(hash, 'main', 'deployed', repo);
     fs.renameSync(path.join(codeDir(), 'lambda-deployed'), path.join(codeDir(), `lambda-${hash}`));
-    const lambda = { name: 'deployed', git: { url: repo, branch: 'main', hash, entryFile: 'index.js', entryPoint: 'run' } };
+    const lambda = {
+      name: 'deployed',
+      git: { url: repo, branch: 'main', hash, entryFile: 'index.js', entryPoint: 'run' },
+    };
 
     await assertRefused(
       model.pullLambdaCode(lambda, { branch: `main; touch ${marker}`, hash }),
       'invalid_lambda_git_branch',
     );
     assert.ok(fs.existsSync(path.join(codeDir(), `lambda-${hash}`)));
+  });
+
+  it("deploys a new hash into that hash's folder, leaving the deployed hash's folder as it was", async () => {
+    fs.writeFileSync(path.join(repo, 'index.js'), 'export function run() { return 2; }\n');
+    gitIn(repo, '-c', 'user.name=test', '-c', 'user.email=test@example.com', 'commit', '-q', '-am', 'second');
+    const nextHash = gitIn(repo, 'rev-parse', 'HEAD');
+
+    await model.gitFolderClone(hash, 'main', 'deployed', repo);
+    fs.renameSync(path.join(codeDir(), 'lambda-deployed'), path.join(codeDir(), `lambda-${hash}`));
+    const lambda = { id: 'lambda-1', _appId: 'app-1', name: 'deployed', git: { url: repo, branch: 'main', hash } };
+    const deployments = { findOne: async () => null, add: async () => {} };
+    const deploying = Object.assign(Object.create(model), {
+      createId: (id) => id,
+      __modelManager: { getCoreModel: () => deployments },
+    });
+
+    await deploying.pullLambdaCode(lambda, {
+      branch: 'main',
+      hash: nextHash,
+      entryFilePath: 'index.js',
+      entryPoint: 'run',
+    });
+
+    assert.ok(fs.existsSync(path.join(codeDir(), `lambda-${nextHash}`)), "the new hash's folder is missing");
+    assert.strictEqual(gitIn(path.join(codeDir(), `lambda-${nextHash}`), 'rev-parse', 'HEAD'), nextHash);
+    assert.strictEqual(gitIn(path.join(codeDir(), `lambda-${hash}`), 'rev-parse', 'HEAD'), hash);
   });
 });

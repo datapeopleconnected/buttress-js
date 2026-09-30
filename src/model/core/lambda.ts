@@ -482,7 +482,7 @@ export default class LambdaModel extends StandardModel<Lambda> {
       const lambdaFolderName = `lambda-${gitHash}`;
       if (!fs.existsSync(`${Config.paths.lambda.code}/${lambdaFolderName}`)) {
         await this.gitFolderClone(gitHash, branch, lambda.name, lambda.git.url);
-        this._moveLambdaFolder(lambda.name, lambda.git.hash as string);
+        this._moveLambdaFolder(lambda.name, gitHash as string);
       } else {
         const checkoutDir = `${Config.paths.lambda.code}/${lambdaFolderName}`;
         await Git.git(['fetch'], checkoutDir);
