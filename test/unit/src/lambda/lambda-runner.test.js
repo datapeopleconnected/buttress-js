@@ -591,3 +591,78 @@ describe('lambda/LambdaRunner:execute timeout', () => {
     });
   }
 });
+
+describe('lambda/LambdaRunner:execute caller credentials', () => {
+  let savedPlugins;
+  let tmpDir;
+
+  beforeEach(() => {
+    savedPlugins = Config.paths.lambda.plugins;
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-caller-'));
+    Config.paths.lambda.plugins = tmpDir;
+  });
+
+  afterEach(() => {
+    Config.paths.lambda.plugins = savedPlugins;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // What a lambda is given of the call, as it reports it from its real isolate
+  async function given(trigger, execution) {
+    const { runner, nrp } = createRunner();
+    await runner.init();
+    const callerToken = { id: 'caller-token', value: 'caller-token-value', type: 'app' };
+    stubModel(
+      new Map([
+        [SecureStoreSchemaModel, { findOne: async () => null }],
+        [AppSchemaModel, { createId: (v) => v }],
+        [LambdaSchemaModel, { createId: (v) => v }],
+        [TokenSchemaModel, {
+          createId: (v) => v,
+          find: async (query) => Readable.from([query._id ? callerToken : { value: 'lambda-token' }]),
+        }],
+        [LambdaExecutionSchemaModel, {
+          ...fakeExecutionModel({ updateById: sinon.stub().resolves() }),
+          findById: async (id) => ({ id, status: 'RUNNING', metadata: [] }),
+        }],
+      ]),
+    );
+    sinon.stub(runner, '_getLambdaModulesName').returns([{ name: 'lambda_lambda-1' }]);
+    sinon.stub(runner, 'bundleLambdaModules').resolves();
+    sinon.stub(runner, '_registerLambdaModules').callsFake(async () => {
+      runner._context.evalSync(`
+        globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
+        globalThis['lambda_lambda-1'] = class {
+          async execute() { lambda.setResult({ userToken: lambdaInfo.userToken ?? null, headers: lambda.req.headers }); }
+        };
+      `);
+    });
+    const lambda = {
+      id: 'lambda-1', name: 'hello-world', trigger: [trigger],
+      git: { url: 'git@example.com:hello-world.git', hash: 'HEAD', entryFile: 'index.js', entryPoint: 'execute' },
+    };
+    const headers = JSON.stringify({ authorization: 'Bearer caller-token-value', cookie: 'session=s', 'x-trace': 't' });
+    const exec = { id: 'exec-1', lambdaId: 'lambda-1', deploymentId: 'deployment-1', metadata: [], ...execution };
+
+    await runner.execute(lambda, exec, { id: 'app-1', apiPath: 'test' }, 'API_ENDPOINT', { reqId: 'req-1', headers });
+    runner._isolate.dispose();
+    const resultCall = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+    return JSON.parse(resultCall.args[1]).res;
+  }
+
+  it("gives an endpoint that doesn't use the caller's token neither the token nor its credential headers", async function () {
+    this.timeout(10000);
+    const seen = await given({ type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } }, {});
+
+    assert.strictEqual(seen.userToken, null);
+    assert.deepStrictEqual(seen.headers, { 'x-trace': 't' });
+  });
+
+  it("gives an endpoint that uses the caller's token that token, without the credential headers", async function () {
+    this.timeout(10000);
+    const seen = await given({ type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: true } }, { _tokenId: 'caller-token' });
+
+    assert.strictEqual(seen.userToken, 'caller-token-value');
+    assert.deepStrictEqual(seen.headers, { 'x-trace': 't' });
+  });
+});

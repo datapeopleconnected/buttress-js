@@ -29,6 +29,7 @@ import TokenSchemaModel, { Token } from '../model/core/token.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
 import LambdaExecutionSchemaModel, { LambdaExecution, LambdaExecutionAddBody } from '../model/core/lambda-execution.js';
 import type { RequestWithBody } from '../types/routes.js';
+import { withoutCredentialHeaders } from '../helpers/redact.js';
 
 const SYNC_LAMBDA_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -267,11 +268,17 @@ export class RoutesLambdaSetup {
 
     if (req.body) LambdaExecutionData.metadata.push({ key: 'BODY', value: JSON.stringify(req.body) });
     if (req.query) LambdaExecutionData.metadata.push({ key: 'QUERY', value: JSON.stringify(req.query) });
-    if (req.headers) LambdaExecutionData.metadata.push({ key: 'HEADERS', value: JSON.stringify(req.headers) });
+    // Kept for the lambda, which is tenant code, so without the caller's credentials
+    if (req.headers) {
+      const headers = withoutCredentialHeaders(req.headers);
+      LambdaExecutionData.metadata.push({ key: 'HEADERS', value: JSON.stringify(headers) });
+    }
 
+    // An endpoint that uses the caller's token runs as the caller only for a token of the lambda's own app
+    const callerToken = req.context.token;
     const callerTokenId =
-      triggerAPI.apiEndpoint.useCallerToken && req.context.token
-        ? Model.getCoreModel(TokenSchemaModel).createId(req.context.token.id)
+      triggerAPI.apiEndpoint.useCallerToken && callerToken && String(callerToken._appId) === String(lambda._appId)
+        ? Model.getCoreModel(TokenSchemaModel).createId(callerToken.id)
         : null;
 
     const lambdaExecution = (await Model.getCoreModel(LambdaExecutionSchemaModel).add(

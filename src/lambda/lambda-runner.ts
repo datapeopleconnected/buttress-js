@@ -60,6 +60,7 @@ import TokenSchemaModel, { Token } from '../model/core/token.js';
 import UserSchemaModel, { User } from '../model/core/user.js';
 import DeploymentSchemaModel from '../model/core/deployment.js';
 import SecureStoreSchemaModel from '../model/core/secure-store.js';
+import { withoutCredentialHeaders } from '../helpers/redact.js';
 
 export enum LambdaType {
   API_ENDPOINT = 'API_ENDPOINT',
@@ -255,13 +256,12 @@ export default class LambdaRunner {
 
     const reqBody: unknown = data.body ? JSON.parse(data.body) : {};
     const reqQuery = (data.query ? JSON.parse(data.query) : {}) as Record<string, unknown>;
-    const reqHeaders = (data.headers ? JSON.parse(data.headers) : {}) as IncomingHttpHeaders;
+    // Without the caller's credentials, which executions stored before they were left out may still have
+    const reqHeaders = withoutCredentialHeaders(
+      (data.headers ? JSON.parse(data.headers) : {}) as IncomingHttpHeaders,
+    ) as IncomingHttpHeaders;
 
     const appLambdaEnv = await this._getAppLambdaEnvironment(app);
-    const callerToken = reqHeaders?.authorization || reqQuery?.token;
-    // A repeated ?token= arrives as an array, so a token that isn't a string is dropped rather than passed on.
-    let userToken: string | undefined = typeof callerToken === 'string' ? callerToken : undefined;
-    userToken = userToken ? userToken.replace('Bearer ', '') : userToken;
     const rxsLambdaToken = await Model.getCoreModel(TokenSchemaModel).find({
       _appId: Model.getCoreModel(AppSchemaModel).createId(app.id),
       _lambdaId: Model.getCoreModel(LambdaSchemaModel).createId(lambda.id),
@@ -274,6 +274,7 @@ export default class LambdaRunner {
     }
 
     let executionUserId: string | null = null;
+    let userToken: string | undefined;
     let executionToken = lambdaToken;
     if (execution._tokenId) {
       const rxsExecToken = await Model.getCoreModel(TokenSchemaModel).find({
@@ -286,6 +287,9 @@ export default class LambdaRunner {
         );
       }
       executionToken = execToken;
+      // Only an endpoint that uses the caller's token is given it
+      const callerTrigger = lambda.trigger.find((t) => t.type === type);
+      if (type === 'API_ENDPOINT' && callerTrigger?.apiEndpoint?.useCallerToken) userToken = execToken.value;
 
       if (execToken.type === 'user') {
         const rxsUser = await Model.getCoreModel(UserSchemaModel).find({

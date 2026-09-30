@@ -62,3 +62,14 @@ export const redactSecrets = (body: unknown): unknown => {
     Object.entries(record).map(([key, value]) => [key, SECRET_KEY.test(key) ? REDACTED : redactSecrets(value)]),
   );
 };
+
+// Request headers that carry the caller's credentials
+const CREDENTIAL_HEADERS = ['authorization', 'cookie', 'proxy-authorization', 'x-api-key'];
+
+/**
+ * A request's headers without those that carry the caller's credentials.
+ */
+export const withoutCredentialHeaders = <T extends Record<string, unknown>>(headers: T): Partial<T> =>
+  Object.fromEntries(
+    Object.entries(headers).filter(([name]) => !CREDENTIAL_HEADERS.includes(name.toLowerCase())),
+  ) as Partial<T>;

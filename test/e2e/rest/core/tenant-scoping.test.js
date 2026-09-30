@@ -417,6 +417,18 @@ describe('Core route tenant scoping', async () => {
 			assert.strictEqual(res.status, 401);
 		});
 
+		it("Should keep no credential headers of the call in the lambda's execution", async () => {
+			const res = await fetch(endpoint(), {
+				headers: { Authorization: `Bearer ${testEnv.users.app2.tokens[0].value}`, Cookie: 'session=s3cr3t', 'X-Api-Key': 'k3y', 'X-Trace': 'kept' },
+			});
+			const { executionId } = await res.json();
+
+			const execution = await bjsReq({ url: `${ENDPOINT.REST}/api/v1/lambda-execution/${executionId}`, method: 'GET' });
+			const headers = JSON.parse(execution.metadata.find((m) => m.key === 'HEADERS').value);
+			for (const name of ['authorization', 'cookie', 'x-api-key']) assert.ok(!(name in headers), `kept ${name}`);
+			assert.strictEqual(headers['x-trace'], 'kept');
+		});
+
 		it("Should still run for the app's own tokens and a system token", async () => {
 			for (const token of [testEnv.users.app2.tokens[0].value, testEnv.apps.app2.token, Config.testToken]) {
 				const res = await call(token);
