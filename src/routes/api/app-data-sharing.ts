@@ -55,7 +55,11 @@ interface DataSharingActivationResult {
  * @param {string} dataSharingTokenId
  * @return {object} dataSharing
  */
-const activateDataSharing = async (dataSharing: AppDataSharing, dataSharingTokenId: string) => {
+const activateDataSharing = async (
+  dataSharing: AppDataSharing,
+  dataSharingTokenId: string,
+  models: { agreements: AppDataSharingSchemaModel; tokens: TokenSchemaModel },
+) => {
   // Create new token
   const newToken = Model.getCoreModel(TokenSchemaModel).createTokenString();
 
@@ -78,11 +82,11 @@ const activateDataSharing = async (dataSharing: AppDataSharing, dataSharingToken
   if (!activationResult || !activationResult.status) return dataSharing;
 
   // Flag our data sharing agreement as active & update the remote app token with the new one.
-  await Model.getCoreModel(AppDataSharingSchemaModel).activate(dataSharing.id, activationResult.token);
+  await models.agreements.activate(dataSharing.id, activationResult.token);
   dataSharing.remoteApp.token = activationResult.token;
 
   // Update our data sharing agreement token with the new value.
-  await Model.getCoreModel(TokenSchemaModel).updateById(dataSharingTokenId, { $set: { value: newToken } });
+  await models.tokens.updateById(dataSharingTokenId, { $set: { value: newToken } });
 
   // Rebuild the connection string with the new token
   connectionString = Helpers.DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
@@ -115,6 +119,9 @@ const activateDataSharing = async (dataSharing: AppDataSharing, dataSharingToken
 
 const routes: CoreRouteClass[] = [];
 
+// Why a system-only route reaches every app
+const SYSTEM_ONLY = 'the route takes only system tokens';
+
 /**
  * @class GetAppDataSharing
  */
@@ -142,10 +149,7 @@ class GetAppDataSharing extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_app_data_sharing_id`));
     }
 
-    const appDataSharing = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
-      _id: Model.getCoreModel(AppDataSharingSchemaModel).createId(id),
-      ...this._tenantFilter(req),
-    });
+    const appDataSharing = await this.scoped(req, AppDataSharingSchemaModel).findById(id);
     if (!appDataSharing) {
       this.log(`[${this.name}] Cannot find a app data sharing with id ${id}`, Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `app_data_sharing_does_not_exist`));
@@ -216,7 +220,10 @@ class AddDataSharing extends Route {
     const destination = await dataSharingDestinationProblem([req.body.remoteApp?.endpoint, req.body.remoteApp?.ws]);
     if (destination) return Promise.reject(new Helpers.Errors.RequestError(400, `data_sharing_${destination}`));
 
-    const result = await Model.getCoreModel(AppDataSharingSchemaModel).isDuplicate(req.body);
+    const result = await this.unscopedModel(
+      AppDataSharingSchemaModel,
+      'isDuplicate compares the body, app included',
+    ).isDuplicate(req.body);
     if (result === true) {
       this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
       return Promise.reject(new Helpers.Errors.RequestError(400, `duplicate`));
@@ -242,7 +249,10 @@ class AddDataSharing extends Route {
 
     if (dataSharing.remoteApp.token) {
       this.log(`Activating data sharing agreement ${dataSharing.id}`);
-      return await activateDataSharing(dataSharing, token.id);
+      return await activateDataSharing(dataSharing, token.id, {
+        agreements: await this.scoped(req, AppDataSharingSchemaModel).owned(dataSharing.id),
+        tokens: await this.scoped(req, TokenSchemaModel).owned(token.id),
+      });
     }
 
     return Object.assign(dataSharing, {
@@ -280,11 +290,7 @@ class UpdateAppDataSharing extends Route {
       throw new Helpers.Errors.RequestError(400, `missing_data_sharing_id`);
     }
 
-    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).exists(
-      dataSharingId,
-      null,
-      this._tenantFilter(req),
-    );
+    const exists = await this.scoped(req, AppDataSharingSchemaModel).exists(dataSharingId);
     if (!exists) {
       this.log('ERROR: Invalid App Data Sharing ID', Route.LogLevel.ERR);
       throw new Helpers.Errors.RequestError(400, `invalid_id`);
@@ -309,7 +315,7 @@ class UpdateAppDataSharing extends Route {
   // _validate replaced the body with the validated updates
   override async _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { dataSharingId: string }) {
     // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-    return Model.getCoreModel(AppDataSharingSchemaModel).updateByPath(req.body, validate.dataSharingId);
+    return this.scoped(req, AppDataSharingSchemaModel).updateByPath(req.body, validate.dataSharingId);
   }
 }
 routes.push(UpdateAppDataSharing);
@@ -340,7 +346,7 @@ class BulkUpdateAppDataSharing extends Route {
     }
 
     for await (const item of req.body) {
-      const exists = await Model.getCoreModel(AppDataSharingSchemaModel).exists(item.id, null, this._tenantFilter(req));
+      const exists = await this.scoped(req, AppDataSharingSchemaModel).exists(item.id);
       if (!exists) {
         this.log('ERROR: Invalid App Data Sharing ID', Route.LogLevel.ERR);
         return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
@@ -365,7 +371,7 @@ class BulkUpdateAppDataSharing extends Route {
   override async _exec(req: RequestWithBody<BulkUpdateItem<UpdatePathBody[]>[]>, _res: Response, _validate: boolean) {
     for await (const item of req.body) {
       // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-      await Model.getCoreModel(AppDataSharingSchemaModel).updateByPath(item.body, item.id);
+      await this.scoped(req, AppDataSharingSchemaModel).updateByPath(item.body, item.id);
     }
 
     return true;
@@ -404,12 +410,11 @@ class UpdateAppDataSharingPolicy extends Route {
       }
 
       // Lookup
-      Model.getCoreModel(AppDataSharingSchemaModel)
-        .exists(req.params.dataSharingId, null, {
-          _appId: appId,
-        })
+      // The caller's app's agreement, which a system token names too
+      this.scoped(req, AppDataSharingSchemaModel)
+        .findOne({ id: req.params.dataSharingId, _appId: appId })
         .then((res) => {
-          if (res !== true) {
+          if (!res) {
             this.log(`${this.schemaName}: unknown data sharing`, Route.LogLevel.ERR, req.context.id);
             return reject(new Helpers.Errors.RequestError(400, `unknown_data_sharing`));
           }
@@ -428,8 +433,9 @@ class UpdateAppDataSharingPolicy extends Route {
     validate: { appId: string },
   ) {
     // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-    return Model.getCoreModel(AppDataSharingSchemaModel)
-      .updatePolicy(validate.appId, req.params.dataSharingId, 'local', req.body)
+    return this.scoped(req, AppDataSharingSchemaModel)
+      .owned(req.params.dataSharingId)
+      .then((agreements) => agreements.updatePolicy(validate.appId, req.params.dataSharingId, 'local', req.body))
       .then(() => true);
   }
 }
@@ -477,7 +483,8 @@ class ActivateAppDataSharing extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_token`));
     }
 
-    return Model.getCoreModel(AppDataSharingSchemaModel)
+    // The token's app is the agreement's
+    return this.scoped(req, AppDataSharingSchemaModel)
       .findById(token._appDataSharingId)
       .then((dataSharing) => {
         if (!dataSharing) {
@@ -509,9 +516,11 @@ class ActivateAppDataSharing extends Route {
     const newLocalToken = Model.getCoreModel(TokenSchemaModel).createTokenString();
 
     const { newToken } = req.body;
-    await Model.getCoreModel(AppDataSharingSchemaModel).activate(dataSharing.id, newToken);
+    await (await this.scoped(req, AppDataSharingSchemaModel).owned(dataSharing.id)).activate(dataSharing.id, newToken);
 
-    await Model.getCoreModel(TokenSchemaModel).updateById(token.id.toString(), {
+    await (
+      await this.scoped(req, TokenSchemaModel).owned(token.id.toString())
+    ).updateById(token.id.toString(), {
       $set: { value: newLocalToken },
     });
 
@@ -554,10 +563,7 @@ class ReactivateAppDataSharing extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_id`));
     }
 
-    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
-      _id: Model.getCoreModel(AppDataSharingSchemaModel).createId(dataSharingId),
-      ...this._tenantFilter(req),
-    });
+    const exists = await this.scoped(req, AppDataSharingSchemaModel).findById(dataSharingId);
 
     if (!exists) {
       this.log(
@@ -571,9 +577,10 @@ class ReactivateAppDataSharing extends Route {
     return exists;
   }
 
-  override _exec(_req: Request, _res: Response, dataSharing: AppDataSharing) {
-    return Model.getCoreModel(AppDataSharingSchemaModel)
-      .activate(dataSharing.id)
+  override _exec(req: Request, _res: Response, dataSharing: AppDataSharing) {
+    return this.scoped(req, AppDataSharingSchemaModel)
+      .owned(dataSharing.id)
+      .then((agreements) => agreements.activate(dataSharing.id))
       .then(() => true);
   }
 }
@@ -607,10 +614,7 @@ class DeactivateAppDataSharing extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_id`));
     }
 
-    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
-      _id: Model.getCoreModel(AppDataSharingSchemaModel).createId(dataSharingId),
-      ...this._tenantFilter(req),
-    });
+    const exists = await this.scoped(req, AppDataSharingSchemaModel).findById(dataSharingId);
 
     if (!exists) {
       this.log(
@@ -625,8 +629,9 @@ class DeactivateAppDataSharing extends Route {
   }
 
   override _exec(req: Request, res: Response, dataSharing: AppDataSharing) {
-    return Model.getCoreModel(AppDataSharingSchemaModel)
-      .deactivate(dataSharing.id)
+    return this.scoped(req, AppDataSharingSchemaModel)
+      .owned(dataSharing.id)
+      .then((agreements) => agreements.deactivate(dataSharing.id))
       .then(() => true);
   }
 }
@@ -657,10 +662,7 @@ class StatusAppDataSharing extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_id`));
     }
 
-    const exists = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
-      _id: Model.getCoreModel(AppDataSharingSchemaModel).createId(dataSharingId),
-      ...this._tenantFilter(req),
-    });
+    const exists = await this.scoped(req, AppDataSharingSchemaModel).findById(dataSharingId);
 
     if (!exists) {
       this.log(
@@ -703,13 +705,7 @@ class GetAllAppDataSharing extends Route {
   }
 
   override _exec(req: Request, _res: Response) {
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      return Model.getCoreModel(AppDataSharingSchemaModel).find({
-        _appId: req.context.authApp?.id,
-      });
-    }
-
-    return Model.getCoreModel(AppDataSharingSchemaModel).findAll();
+    return this.scoped(req, AppDataSharingSchemaModel).findAll();
   }
 }
 routes.push(GetAllAppDataSharing);
@@ -753,24 +749,14 @@ class SearchAppDataSharingAgreement extends Route {
       result.query.$and?.push(req.body.query);
     }
 
-    // Before parseQuery, which drops an empty $and
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      result.query.$and?.push({
-        _appId: req.context.authApp?.id,
-      });
-    }
-
-    result.query = Model.getCoreModel(AppDataSharingSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(AppDataSharingSchemaModel).flatSchemaData,
-    );
+    const scoped = this.scoped(req, AppDataSharingSchemaModel);
+    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
 
     return result;
   }
 
   override _exec(req: Request, res: Response, validate: QueryParams<AppDataSharing>) {
-    return Model.getCoreModel(AppDataSharingSchemaModel).find(
+    return this.scoped(req, AppDataSharingSchemaModel).find(
       validate.query,
       {},
       validate.limit,
@@ -815,24 +801,14 @@ class AppDataSharingAgreementCount extends Route {
       result.query.$and.push(bodyQuery);
     }
 
-    // Before parseQuery, which drops an empty $and
-    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
-      result.query.$and?.push({
-        _appId: req.context.authApp?.id,
-      });
-    }
-
-    result.query = Model.getCoreModel(AppDataSharingSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(AppDataSharingSchemaModel).flatSchemaData,
-    );
+    const scoped = this.scoped(req, AppDataSharingSchemaModel);
+    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
 
     return result;
   }
 
-  override _exec(_req: Request, _res: Response, validateResult: QueryParams<AppDataSharing>) {
-    return Model.getCoreModel(AppDataSharingSchemaModel).count(validateResult.query);
+  override _exec(req: Request, _res: Response, validateResult: QueryParams<AppDataSharing>) {
+    return this.scoped(req, AppDataSharingSchemaModel).count(validateResult.query);
   }
 }
 routes.push(AppDataSharingAgreementCount);
@@ -861,16 +837,13 @@ class DeleteDataSharingAgreement extends Route {
       return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_id`));
     }
 
-    const appDataSharing = await Model.getCoreModel(AppDataSharingSchemaModel).findOne({
-      _id: Model.getCoreModel(AppDataSharingSchemaModel).createId(req.params.id),
-      ...this._tenantFilter(req),
-    });
+    const appDataSharing = await this.scoped(req, AppDataSharingSchemaModel).findById(req.params.id);
     if (!appDataSharing) {
       this.log('ERROR: Invalid App Data Sharing ID', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
     }
 
-    const appDataSharingToken = await Model.getCoreModel(TokenSchemaModel).findById(appDataSharing._tokenId);
+    const appDataSharingToken = await this.scoped(req, TokenSchemaModel).findById(appDataSharing._tokenId);
     if (!appDataSharingToken) {
       this.log('ERROR: Could not fetch Data Sharing token', Route.LogLevel.ERR);
       return Promise.reject(new Helpers.Errors.RequestError(400, `could_not_fetch_data_sharing_token`));
@@ -883,8 +856,8 @@ class DeleteDataSharingAgreement extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: { appDataSharing: AppDataSharing; token: Token }) {
-    await Model.getCoreModel(AppDataSharingSchemaModel).rm(validate.appDataSharing.id);
-    await Model.getCoreModel(TokenSchemaModel).rm(validate.token.id);
+    await this.scoped(req, AppDataSharingSchemaModel).rm(validate.appDataSharing.id);
+    await this.scoped(req, TokenSchemaModel).rm(validate.token.id);
     // The Socket primary closes its connection to the partner
     this._nrp?.emit(
       'dataShare:deactivated',
@@ -912,7 +885,14 @@ class DeleteAllDataSharingAgreement extends Route {
   }
 
   override async _validate(_req: Request, _res: Response) {
-    const dsFind = await Model.getCoreModel(AppDataSharingSchemaModel).find({}, {}, 0, 0, {}, { id: 1, _tokenId: 1 });
+    const dsFind = await this.unscopedModel(AppDataSharingSchemaModel, SYSTEM_ONLY).find(
+      {},
+      {},
+      0,
+      0,
+      {},
+      { id: 1, _tokenId: 1 },
+    );
 
     return (await Helpers.streamAll<AppDataSharing>(dsFind)).reduce(
       (arr: { dsIds: string[]; tokenIds: string[] }, ds) => {
@@ -928,8 +908,8 @@ class DeleteAllDataSharingAgreement extends Route {
   }
 
   override async _exec(req: Request, res: Response, validate: { dsIds: string[]; tokenIds: string[] }) {
-    await Model.getCoreModel(AppDataSharingSchemaModel).rmBulk(validate.dsIds);
-    await Model.getCoreModel(TokenSchemaModel).rmBulk(validate.tokenIds);
+    await this.unscopedModel(AppDataSharingSchemaModel, SYSTEM_ONLY).rmBulk(validate.dsIds);
+    await this.unscopedModel(TokenSchemaModel, SYSTEM_ONLY).rmBulk(validate.tokenIds);
     // The Socket primary closes their connections to partners
     for (const appDataSharingId of validate.dsIds) {
       this._nrp?.emit(
