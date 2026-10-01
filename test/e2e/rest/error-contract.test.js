@@ -65,6 +65,7 @@ describe('Error contract', async () => {
 				properties: {
 					text: { __type: 'string', __default: null, __required: true, __allowUpdate: true },
 					due: { __type: 'date', __default: null, __required: false, __allowUpdate: true },
+					done: { __type: 'boolean', __default: false, __required: false, __allowUpdate: true },
 				},
 			}], testEnv.apps[app].token), scope);
 		}
@@ -181,6 +182,10 @@ describe('Error contract', async () => {
 			404, 'not_found'],
 
 		// Bodies the schema refuses
+		['a note whose done flag is not a boolean', () => [notes(), post({ text: 'a', done: 'banana' }), appToken()],
+			400, 'invalid_value', { schema: 'note', path: 'done' }],
+		['a search on a flag it cannot read', () => [notes(), { method: 'SEARCH', headers: json, body: JSON.stringify({ query: { done: 'banana' } }) }, appToken()],
+			400, 'invalid_value', { path: 'done', expected: 'boolean' }],
 		['a note without its required text', () => [notes(), post({}), appToken()],
 			400, 'missing_field', { schema: 'note', path: 'text' }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],
@@ -194,7 +199,7 @@ describe('Error contract', async () => {
 		["a note the caller's policy wouldn't let it read", () => [notes(), post({ text: 'not mine' }), writerToken()],
 			403, 'access_denied', { schema: 'note', index: 0 }],
 		['a search on a date it cannot read', () => [notes(), { method: 'SEARCH', headers: json, body: JSON.stringify({ query: { due: { $gtDate: 'not a date' } } }) }, appToken()],
-			400, 'invalid_date', { path: 'due' }],
+			400, 'invalid_value', { path: 'due', expected: 'date' }],
 	];
 
 	for (const [condition, request, status, code, details] of table) {

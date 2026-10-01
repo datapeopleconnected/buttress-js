@@ -105,6 +105,52 @@ describe('model/type/StandardModel:createId/isValidId/convertStringToId', () => 
   });
 });
 
+// A query value is converted as a body's would be, through the same codecs (D-2)
+describe('model/type/StandardModel:parseQuery values', () => {
+  const flagSchema = {
+    name: 'flag',
+    type: 'collection',
+    extends: [],
+    properties: {
+      on: { __type: 'boolean', __default: false, __allowUpdate: true },
+      count: { __type: 'number', __default: 0, __allowUpdate: true },
+      ref: { __type: 'uuid', __default: null, __allowUpdate: true },
+      ownerId: { __type: 'id', __allowUpdate: true },
+    },
+  };
+  const UUID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+
+  it('converts a boolean or number given as text, as a body would be', () => {
+    const model = createModel(flagSchema);
+
+    assert.deepStrictEqual(model.parseQuery({ on: 'yes' }), { on: { $eq: true } });
+    assert.deepStrictEqual(model.parseQuery({ on: { $ne: '0' } }), { on: { $ne: false } });
+    assert.deepStrictEqual(model.parseQuery({ count: { $gt: '5' } }), { count: { $gt: 5 } });
+    assert.deepStrictEqual(model.parseQuery({ count: { $in: ['1', 2] } }), { count: { $in: [1, 2] } });
+    assert.deepStrictEqual(model.parseQuery({ ref: UUID }), { ref: { $eq: UUID } });
+  });
+
+  it('leaves a null to match a property that has no value', () => {
+    assert.deepStrictEqual(createModel(flagSchema).parseQuery({ on: null }), { on: { $eq: null } });
+  });
+
+  for (const [query, path, expected] of [
+    [{ on: 'banana' }, 'on', 'boolean'],
+    [{ count: { $lt: 'many' } }, 'count', 'number'],
+    [{ ref: { $in: [UUID, 'not-a-uuid'] } }, 'ref', 'uuid'],
+    // It matched every entity without an owner, as the value was dropped to null
+    [{ ownerId: 'not-an-id' }, 'ownerId', 'id'],
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 invalid_value, rather than matching what it shouldn't`, () => {
+      assert.throws(() => createModel(flagSchema).parseQuery(query), {
+        status: 400,
+        code: 'invalid_value',
+        details: { path, expected },
+      });
+    });
+  }
+});
+
 describe('model/type/StandardModel:parseQuery', () => {
   it('turns a direct value compare into $eq', () => {
     const model = createModel();
@@ -160,12 +206,6 @@ describe('model/type/StandardModel:parseQuery', () => {
     assert.deepStrictEqual(result, { ownerId: { $eq: { id: HEX_ID } } });
   });
 
-  it('leaves an invalid id operand unconverted rather than throwing', () => {
-    const model = createModel();
-    const result = model.parseQuery({ ownerId: { $eq: 'not-an-id' } }, {}, model.flatSchemaData);
-    assert.deepStrictEqual(result, { ownerId: { $eq: 'not-an-id' } });
-  });
-
   it('resolves an #env-style path operand against envFlat', () => {
     const model = createModel();
     const result = model.parseQuery({ name: { $eq: 'env.currentUserName' } }, { currentUserName: 'Alice' });
@@ -192,7 +232,7 @@ describe('model/type/StandardModel:parseQuery', () => {
     const model = createModel();
     assert.throws(
       () => model.parseQuery({ createdAt: { $gtDate: 'not a date' } }, {}, { createdAt: { __type: 'date' } }),
-      (err) => err.status === 400 && err.code === 'invalid_date' && err.details.path === 'createdAt',
+      (err) => err.status === 400 && err.code === 'invalid_value' && err.details.path === 'createdAt' && err.details.expected === 'date',
     );
   });
 });

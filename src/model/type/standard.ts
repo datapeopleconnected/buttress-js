@@ -16,6 +16,7 @@
 import Sugar from '../../helpers/sugar.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
+import { decode, isDecodeError } from '../../helpers/codecs.js';
 
 import * as Shared from '../shared.js';
 import NodeRedisPubsub from '../../services/nrp.js';
@@ -28,6 +29,16 @@ import AbstractAdapter, { AdapterFindResult } from '../../datastore/abstract-ada
 import { Datastore } from '../../datastore/index.js';
 import { AdapterDocument, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
 import { FlattenedSchema, FlattenedSchemaProperty } from '../../types/schema.js';
+
+// The types a compared query value is read as, and the operators that compare
+const QUERY_TYPES = new Set(['boolean', 'number', 'uuid', 'date', 'id']);
+const COMPARISONS = new Set(['$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$in', '$nin', '$all']);
+
+const invalidQueryValue = (property: string, type: string) =>
+  Helpers.Errors.badRequest('invalid_value', `The value for ${property} is not a valid ${type}`, {
+    path: property,
+    expected: type,
+  });
 
 // A query after parseQuery, with each property's operators resolved to their datastore form
 export type ParsedQuery = Record<string, unknown>;
@@ -251,6 +262,28 @@ export default class StandardModel<TDocument = AdapterDocument> {
     return output;
   }
 
+  /**
+   * A query value, or each of a list of them, read as `type`. Null is left, to match a property with no value.
+   * @param {string} property
+   * @param {string} type
+   * @param {unknown} operand
+   * @return {unknown}
+   */
+  __decodeOperand(property: string, type: string, operand: unknown): unknown {
+    if (Array.isArray(operand)) return operand.map((item) => this.__decodeOperand(property, type, item));
+    if (operand === null || operand === undefined) return operand;
+
+    // An id is the model's adapter's, as it's stored
+    if (type === 'id') {
+      if (this.isValidId(operand)) return this.convertStringToId(operand);
+      throw invalidQueryValue(property, type);
+    }
+
+    const decoded = decode(type, operand);
+    if (isDecodeError(decoded)) throw invalidQueryValue(property, type);
+    return decoded.value;
+  }
+
   parseQueryProperty(
     property: string,
     operator: string,
@@ -298,36 +331,14 @@ export default class StandardModel<TDocument = AdapterDocument> {
         });
       }
 
-      if (propSchema.__type === 'date' && typeof operand === 'string') {
-        operand = new Date(operand);
-        // Stored, an invalid date is the start of 1970, which every later date is after
-        if (isNaN((operand as Date).getTime())) {
-          throw Helpers.Errors.badRequest('invalid_date', `Invalid date for ${property}`, { path: property });
-        }
-      }
-
-      if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && typeof operand === 'string') {
-        try {
-          operand = this.convertStringToId(operand);
-        } catch (e) {
-          // If the operand is not a valid ID, we can ignore it or throw an error based on your requirements.
-          // For now, we will just log it.
-          Logging.logDebug(`Invalid ID format for property ${property}: ${operand} ${e}`);
-          operand = null;
-        }
-      }
-      if ((propSchema.__type === 'id' || propSchema.__itemtype === 'id') && Array.isArray(operand)) {
-        operand = operand.map((o: unknown) => {
-          try {
-            return this.convertStringToId(o);
-          } catch (e) {
-            // If the operand is not a valid ID, we can ignore it or throw an error based on your requirements.
-            // For now, we will just log it.
-            Logging.logDebug(`Invalid ID format for property ${property}: ${o} ${e}`);
-            return null;
-          }
-        });
-      }
+      // A compared value is read as a body's would be, so a boolean or number given as text matches, and one that
+      // can't be read is refused rather than compared as something else
+      const type = QUERY_TYPES.has(propSchema.__type)
+        ? propSchema.__type
+        : propSchema.__type === 'array' && propSchema.__itemtype && QUERY_TYPES.has(propSchema.__itemtype)
+          ? propSchema.__itemtype
+          : undefined;
+      if (type && COMPARISONS.has(operator)) operand = this.__decodeOperand(property, type, operand);
     }
 
     if (!output[property]) {

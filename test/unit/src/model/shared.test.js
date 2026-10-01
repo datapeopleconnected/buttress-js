@@ -17,7 +17,7 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import { validateUpdate } from '../../../../dist/model/shared.js';
+import { validateSchemaObject, validateUpdate } from '../../../../dist/model/shared.js';
 
 // Validation adds its own context to each update
 const pathsAndValues = (body) => body.map(({ path, value }) => ({ path, value }));
@@ -139,5 +139,54 @@ describe('model/shared:validateUpdate paths beneath a typed object', () => {
     for (const path of ['meta.removeMe', 'meta.remover.x']) {
       assert.deepStrictEqual(validate([{ path, value: 1 }]).validation, { isValid: true }, path);
     }
+  });
+});
+
+// Bodies and updates convert values through the same codecs (D-2)
+describe('model/shared: values converted as the schema types them', () => {
+  const flags = {
+    name: 'flag',
+    type: 'collection',
+    properties: {
+      on: { __type: 'boolean', __default: false, __allowUpdate: true },
+      ref: { __type: 'uuid', __default: null, __allowUpdate: true },
+    },
+  };
+  const UUID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+
+  for (const [given, stored] of [
+    ['yes', true],
+    ['no', false],
+    ['1', true],
+    [0, false],
+  ]) {
+    it(`takes ${JSON.stringify(given)} as ${stored} in a body and in an update`, () => {
+      const body = { on: given };
+      assert.strictEqual(validateSchemaObject(flags, body).isValid, true);
+
+      const { validation, body: updates } = validateUpdate({}, flags)({ path: 'on', value: given });
+      assert.strictEqual(validation.isValid, true);
+      assert.strictEqual(updates[0].value, stored);
+    });
+  }
+
+  for (const [path, given] of [
+    ['on', 'banana'],
+    ['on', 2],
+    ['ref', 'not-a-uuid'],
+  ]) {
+    it(`refuses ${JSON.stringify(given)} for ${path} in a body and in an update`, () => {
+      const created = validateSchemaObject(flags, { [path]: given });
+      assert.strictEqual(created.isValid, false);
+      assert.strictEqual(created.invalid.length, 1);
+
+      const { validation } = validateUpdate({}, flags)({ path, value: given });
+      assert.strictEqual(validation.isValid, false);
+      assert.strictEqual(validation.isValueValid, false);
+    });
+  }
+
+  it('takes a uuid in its usual form', () => {
+    assert.strictEqual(validateSchemaObject(flags, { ref: UUID }).isValid, true);
   });
 });

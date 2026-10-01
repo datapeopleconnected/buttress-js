@@ -19,6 +19,7 @@ import Logging from './logging.js';
 import Sugar from './sugar.js';
 
 import Errors from './errors.js';
+import { decode as decodeValue, isDecodeError } from './codecs.js';
 
 import Plugins from '../plugins/index.js';
 import Datastore from '../datastore/index.js';
@@ -200,110 +201,18 @@ const __getPropDefault = (config: PropertyConfig) => {
 };
 export const getPropDefault = __getPropDefault;
 
+/**
+ * Whether `prop.value` is a value of the property's type, which it's converted to in place, through the type's codec.
+ * A null value has no type to check.
+ */
 const __validateProp = (prop: { value?: unknown }, config: PropertyConfig) => {
-  // TODO: This function needs a refactor, we shouldn't be modifying the prop ref.
+  if (prop.value === null) return true;
 
-  let type = typeof prop.value;
-  let valid = false;
+  const decoded = decodeValue(config.__type, prop.value, config);
+  if (isDecodeError(decoded)) return false;
 
-  if (prop.value === null) {
-    return true; // Pass if value is null value
-  }
-
-  switch (config.__type) {
-    case 'boolean':
-      if (type === 'string') {
-        const bool = prop.value === 'true' || prop.value === 'yes';
-        prop.value = bool;
-        type = typeof prop.value;
-      }
-      if (type === 'number') {
-        const bool = prop.value === 1;
-        prop.value = bool;
-        type = typeof prop.value;
-      }
-      valid = type === config.__type;
-      break;
-    case 'number':
-      if (type === 'string') {
-        const number = Number(prop.value);
-        if (Number.isNaN(number) === false) {
-          prop.value = number;
-          type = typeof prop.value;
-        }
-      }
-      valid = type === config.__type;
-      break;
-    case 'id':
-      if (type === 'string') {
-        try {
-          prop.value = Datastore.getInstance('core').ID.new(prop.value as string);
-          valid = type === 'string';
-        } catch (_err) {
-          valid = false;
-        }
-      } else if (type === 'object') {
-        if (Datastore.getInstance('core').ID.isValid(prop.value)) {
-          try {
-            prop.value = Datastore.getInstance('core').ID.new(prop.value as string);
-            valid = true;
-          } catch (_err) {
-            valid = false;
-          }
-        } else {
-          valid = false;
-        }
-      } else {
-        valid = false;
-      }
-      break;
-    case 'uuid':
-      if (type === 'string') {
-        try {
-          // TODO: FIX THIS!
-          // valid = /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(prop.value);
-          valid = true;
-        } catch (e) {
-          Logging.logDebug(e);
-          valid = false;
-        }
-      } else {
-        valid = false;
-      }
-      break;
-    case 'object':
-      valid = type === config.__type;
-      break;
-    case 'string':
-      if (type === 'number') {
-        prop.value = String(prop.value);
-        type = typeof prop.value;
-      }
-
-      valid = type === 'string';
-      if (config.__enum && Array.isArray(config.__enum)) {
-        valid = !prop.value || config.__enum.indexOf(prop.value) !== -1;
-      }
-      break;
-    case 'array':
-      valid = Array.isArray(prop.value);
-      break;
-    case 'date':
-      if (prop.value === null) {
-        valid = true;
-      } else {
-        const date = new Date(prop.value as string | number | Date);
-        valid = Sugar.Date.isValid(date);
-        if (valid) {
-          prop.value = date;
-        }
-      }
-      break;
-    default:
-      valid = false;
-  }
-
-  return valid;
+  prop.value = decoded.value;
+  return true;
 };
 export const validateProp = __validateProp;
 

@@ -95,6 +95,28 @@ An array of primitives uses `__itemtype` instead:
 }
 ```
 
+## How Values Are Read
+
+A value is read as its property's `__type` the same way wherever it's given: in a body you create, in an update,
+or in a query that compares it (`$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$all`, and a bare
+value). A value that can't be read is refused with a 400, `invalid_value`, naming the property and the type it
+expected. `null` is always taken, as no value.
+
+| `__type` | Takes |
+| :- | :- |
+| `boolean` | `true` and `false`; `"true"`/`"false"`, `"yes"`/`"no"` and `"1"`/`"0"`, in any case; `1` and `0` |
+| `number` | a number, or text that reads as one (`"4.5"`) |
+| `string` | text, or a number, which is stored as text; one of `__enum`'s values when it has one |
+| `date` | a date as text or a number of milliseconds |
+| `id` | a 24-character hex id |
+| `uuid` | a uuid in its usual form, `8-4-4-4-12` hex characters |
+| `array` | a list |
+| `object` | an object |
+
+Earlier releases stored any other text, or any number but `1`, as `false` for a `boolean`, took any text as a
+`uuid`, and compared a query value as it was given, so `"true"` matched no `boolean` and an id that couldn't be one
+matched every entity without one.
+
 ## Time Series Properties
 
 Tagging a property with `__timeSeries: "<group>"` pulls it out of the main collection into its own
