@@ -105,10 +105,12 @@ export default class AppSchemaModel extends StandardModel<App> {
           __default: null,
           __allowUpdate: true,
         },
+        // Checked before it's set too, ignoring case; the index stops two requests both taking it (D-25)
         apiPath: {
           __type: 'string',
           __default: null,
           __allowUpdate: true,
+          __unique: true,
         },
         policyPropertiesList: {
           __type: 'object',

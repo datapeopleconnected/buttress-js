@@ -101,11 +101,13 @@ class TokenSchemaModel extends StandardModel<Token> {
           __enum: type,
           __allowUpdate: true,
         },
+        // Looked up by value on every request a cached token doesn't answer (D-14, D-25)
         value: {
           __type: 'string',
           __default: null,
           __required: true,
           __allowUpdate: true,
+          __unique: true,
         },
         domains: {
           __type: 'array',

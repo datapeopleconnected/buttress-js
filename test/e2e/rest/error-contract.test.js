@@ -75,6 +75,8 @@ describe('Error contract', async () => {
 				strict: true,
 				properties: {
 					label: { __type: 'string', __default: null, __required: false, __allowUpdate: true },
+					// No two crates share one
+					code: { __type: 'string', __default: null, __required: false, __allowUpdate: true, __unique: true },
 				},
 			}], testEnv.apps[app].token), scope);
 		}
@@ -242,6 +244,20 @@ describe('Error contract', async () => {
 			if (details !== undefined) assert.deepStrictEqual(body.details, typeof details === 'function' ? details() : details);
 		});
 	}
+
+	it('Should refuse a second crate with the code of the first, and take any number without one', async () => {
+		const crates = `${ENDPOINT.REST}/${testEnv.apps.app.apiPath}/api/v1/crate`;
+		await bjsReqPost(crates, { label: 'first', code: 'C-1' }, appToken());
+		await bjsReqPost(crates, { label: 'no code' }, appToken());
+		await bjsReqPost(crates, { label: 'no code either' }, appToken());
+
+		const res = await fetch(crates, { ...post({ label: 'second', code: 'C-1' }), headers: { ...json, Authorization: `Bearer ${appToken()}` } });
+
+		assert.strictEqual(res.status, 400);
+		const body = await res.json();
+		assert.strictEqual(body.code, 'duplicate');
+		assert.deepStrictEqual(body.details, { path: 'code' });
+	});
 
 	it('Should drop a field a schema that is not strict does not define', async () => {
 		const [note] = [].concat(await bjsReqPost(notes(), { text: 'kept', extra: 1 }, appToken()));

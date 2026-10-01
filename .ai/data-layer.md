@@ -88,7 +88,10 @@ Every value is read as its `__type` through one codec per type, `decode()` in
 [src/helpers/codecs.ts](../src/helpers/codecs.ts): bodies (`validateProp`/`checkProp` in `helpers/schema.ts`),
 update values, and compared query values (`StandardModel.__decodeOperand`). Validation lists every problem as an
 issue, `{path, code, expected?, received?}`, which `invalidEntityError`/`invalidUpdateError` put in the error's
-`details.issues`. A schema with `strict: true` refuses fields it doesn't define on create.
+`details.issues`. A schema with `strict: true` refuses fields it doesn't define on create. A `__private` property never
+leaves in a response (`Route._respond` strips it, `Helpers.Schema.stripPrivate`); a `__unique` one gets a unique
+partial index from the Mongo adapter's `updateSchema()` when the model starts (a failed build is logged, D-25), and a
+write that breaks it is 400 `duplicate` (`uniquePathOf` reads the index name, `unique_<path>`).
 
 ## Datastore adapters
 

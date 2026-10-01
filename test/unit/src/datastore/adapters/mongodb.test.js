@@ -782,3 +782,61 @@ describe('datastore/adapters/mongodb:findById', () => {
     assert.strictEqual(await adapterWith(true).findById('not-an-id'), null);
   });
 });
+
+// A property with __unique has a unique index, built when the model starts; a write that breaks it is refused (D-25)
+describe('datastore/adapters/MongodbAdapter: unique properties', () => {
+  const schema = {
+    name: 'crate',
+    type: 'collection',
+    properties: {
+      code: { __type: 'string', __default: null, __unique: true },
+      ownerId: { __type: 'id', __default: null, __unique: true },
+      meta: { serial: { __type: 'number', __default: null, __unique: true } },
+      label: { __type: 'string', __default: null },
+      items: { __type: 'array', __schema: { sku: { __type: 'string', __unique: true } } },
+    },
+  };
+  const createAdapter = (createIndex) => {
+    const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});
+    adapter.collection = { createIndex };
+    return adapter;
+  };
+
+  it('builds a unique index for each, of the values of its type, leaving out array item properties', async () => {
+    const built = [];
+    await createAdapter(async (keys, options) => built.push([keys, options])).updateSchema(schema);
+
+    assert.deepStrictEqual(built, [
+      [{ code: 1 }, { unique: true, name: 'unique_code', partialFilterExpression: { code: { $type: 'string' } } }],
+      [{ ownerId: 1 }, { unique: true, name: 'unique_ownerId', partialFilterExpression: { ownerId: { $type: 'objectId' } } }],
+      [{ 'meta.serial': 1 }, { unique: true, name: 'unique_meta.serial', partialFilterExpression: { 'meta.serial': { $type: 'number' } } }],
+    ]);
+  });
+
+  it('carries on without an index it can not build, as when stored values already repeat', async () => {
+    let calls = 0;
+    await createAdapter(async () => {
+      calls++;
+      throw Object.assign(new Error('E11000 duplicate key error'), { code: 11000 });
+    }).updateSchema(schema);
+
+    assert.strictEqual(calls, 3);
+  });
+
+  it('refuses a write that repeats a unique value with 400 duplicate, naming the property', async () => {
+    const adapter = createAdapter(async () => {});
+    const duplicate = Object.assign(new Error('E11000 duplicate key error collection: test.crates index: unique_code dup key: { code: "a" }'), {
+      code: 11000,
+      errmsg: 'E11000 duplicate key error collection: test.crates index: unique_code dup key: { code: "a" }',
+    });
+
+    await assert.rejects(() => adapter._write(async () => { throw duplicate; }), {
+      status: 400,
+      code: 'duplicate',
+      details: { path: 'code' },
+    });
+    const refused = await adapter._undoFailedAdd({ writeErrors: [{ index: 0, code: 11000, errmsg: duplicate.errmsg }] }, [{ _id: new ObjectId(ID) }]);
+    assert.strictEqual(refused.status, 400);
+    assert.deepStrictEqual(refused.details, { path: 'code' });
+  });
+});

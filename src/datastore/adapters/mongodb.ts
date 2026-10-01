@@ -70,6 +70,36 @@ const REMOVE_AT = '$removeAt';
 const refuseUpdate = (reason: string) =>
   Helpers.Errors.badRequest('invalid_update', `Update can't be applied: ${reason}`);
 
+// A `__unique` property's index is named for it, so a write that breaks it can be refused naming the property
+const UNIQUE_INDEX = 'unique_';
+
+// The BSON type a value of each schema type is stored as. A unique index covers only those, so entities without a
+// value don't collide.
+const STORED_TYPES: Record<string, string> = {
+  string: 'string',
+  uuid: 'string',
+  number: 'number',
+  boolean: 'bool',
+  date: 'date',
+  id: 'objectId',
+};
+
+/**
+ * The `__unique` property a duplicate key error is for, from the index it names, or null for any other error, such as
+ * a reused id.
+ * @param {unknown} err - an error, or one write error of a bulk write
+ * @return {string|null}
+ */
+const uniquePathOf = (err: unknown) => {
+  const { code, errmsg, message } = (err ?? {}) as { code?: unknown; errmsg?: unknown; message?: unknown };
+  if (code !== 11000) return null;
+  const index = /index: (\S+) dup key/.exec(String(errmsg ?? message))?.[1];
+  return index?.startsWith(UNIQUE_INDEX) ? index.slice(UNIQUE_INDEX.length) : null;
+};
+
+const duplicateValue = (path: string) =>
+  Helpers.Errors.badRequest('duplicate', `Another entity has the same ${path}`, { path });
+
 const readOp = (op: UpdateOp) => {
   const [operator] = Object.keys(op);
   const [path] = Object.keys(op[operator]);
@@ -267,8 +297,42 @@ export default class MongodbAdapter extends AbstractAdapter {
     return ObjectIdHelper;
   }
 
-  override updateSchema(schemaData: Schema) {
+  override async updateSchema(schemaData: Schema) {
     this._ids.setSchema(schemaData.properties);
+    await this._buildUniqueIndexes(schemaData);
+  }
+
+  /**
+   * Builds a unique index for each of the schema's `__unique` properties, but those of array items, of the values of
+   * its type. One that can't be built, as when stored values already repeat, is logged, and the collection is used
+   * without it (D-25).
+   * @param {Object} schemaData
+   */
+  async _buildUniqueIndexes(schemaData: Schema) {
+    const flat = Helpers.getFlattenedSchema(schemaData);
+    const withinArray = (path: string) =>
+      path
+        .split('.')
+        .slice(0, -1)
+        .some((_, idx, segments) => flat[segments.slice(0, idx + 1).join('.')]?.__type === 'array');
+    const unique = Object.entries(flat).filter(([path, config]) => config.__unique === true && !withinArray(path));
+
+    for (const [path, config] of unique) {
+      try {
+        await this.collection?.createIndex(
+          { [path]: 1 },
+          {
+            unique: true,
+            name: `${UNIQUE_INDEX}${path}`,
+            partialFilterExpression: { [path]: { $type: STORED_TYPES[config.__type] ?? 'string' } },
+          },
+        );
+      } catch (err: unknown) {
+        Logging.logError(
+          `Unable to make ${schemaData.name}.${path} unique, carrying on without: ${Helpers.getThrownErrorMessage(err)}`,
+        );
+      }
+    }
   }
 
   override add(body: AdapterDocument | AdapterDocument[], modifier: (item: AdapterDocument) => AdapterDocument) {
@@ -347,6 +411,8 @@ export default class MongodbAdapter extends AbstractAdapter {
       }
     }
 
+    const uniquePath = uniquePathOf(writeError);
+    if (uniquePath) return duplicateValue(uniquePath);
     if (writeError.code === 11000) {
       const { _id } = documents[writeError.index];
       return new Helpers.Errors.DuplicateIdError(writeError.index, isObjectId(_id) ? _id.toHexString() : String(_id));
@@ -563,6 +629,8 @@ export default class MongodbAdapter extends AbstractAdapter {
     try {
       return await write();
     } catch (err: unknown) {
+      const uniquePath = uniquePathOf(err);
+      if (uniquePath) throw duplicateValue(uniquePath);
       const { code, errmsg, message } = (err ?? {}) as { code?: unknown; errmsg?: unknown; message?: unknown };
       if (typeof code !== 'number' || !DATA_CONFLICT_CODES.includes(code)) throw err;
       throw refuseUpdate(String(errmsg ?? message).replace(/^.*caused by :: /, ''));
