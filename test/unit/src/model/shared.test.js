@@ -17,7 +17,7 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import { validateSchemaObject, validateUpdate } from '../../../../dist/model/shared.js';
+import { invalidEntityError, invalidUpdateError, validateSchemaObject, validateUpdate } from '../../../../dist/model/shared.js';
 
 // Validation adds its own context to each update
 const pathsAndValues = (body) => body.map(({ path, value }) => ({ path, value }));
@@ -188,5 +188,106 @@ describe('model/shared: values converted as the schema types them', () => {
 
   it('takes a uuid in its usual form', () => {
     assert.strictEqual(validateSchemaObject(flags, { ref: UUID }).isValid, true);
+  });
+});
+
+// Every problem with a body or an update is listed, as {path, code, expected?, received?}
+describe('model/shared: validation issues', () => {
+  const crate = {
+    name: 'crate',
+    type: 'collection',
+    properties: {
+      label: { __type: 'string', __required: true, __allowUpdate: true },
+      colour: { __type: 'string', __enum: ['red', 'blue'], __default: null, __allowUpdate: true },
+      weight: { __type: 'number', __default: 0, __allowUpdate: true },
+      tags: { __type: 'array', __itemtype: 'string', __default: [], __allowUpdate: true },
+      items: {
+        __type: 'array',
+        __allowUpdate: true,
+        __schema: { sku: { __type: 'string', __required: true, __allowUpdate: true } },
+      },
+    },
+  };
+
+  it('lists every problem with a body', () => {
+    const validation = validateSchemaObject(crate, {
+      colour: 'green',
+      weight: 'heavy',
+      tags: ['a', null],
+      items: [{ sku: 'x' }, {}, 'loose'],
+    });
+
+    assert.strictEqual(validation.isValid, false);
+    assert.deepStrictEqual(
+      validation.issues.sort((a, b) => a.path.localeCompare(b.path)),
+      [
+        { path: 'colour', code: 'enum', expected: ['red', 'blue'], received: 'string' },
+        { path: 'items.1.sku', code: 'required' },
+        { path: 'items.2', code: 'type', expected: 'object', received: 'string' },
+        { path: 'label', code: 'required' },
+        { path: 'tags.1', code: 'type', expected: 'string', received: 'null' },
+        { path: 'weight', code: 'type', expected: 'number', received: 'string' },
+      ],
+    );
+  });
+
+  it('lists every refused update of a request', () => {
+    const { validation } = validateUpdate({}, crate)([
+      { path: 'weight', value: 'heavy' },
+      { path: 'colour', value: 'green' },
+      { path: 'label', value: 'fine' },
+      { path: 'nothing', value: 1 },
+      { value: 1 },
+    ]);
+
+    assert.strictEqual(validation.isValid, false);
+    assert.deepStrictEqual(validation.issues, [
+      { path: 'weight', code: 'type', expected: 'number', received: 'string' },
+      { path: 'colour', code: 'enum', expected: ['red', 'blue'], received: 'string' },
+      { path: 'nothing', code: 'unknown_path' },
+      { path: '', code: 'required', expected: 'path' },
+    ]);
+  });
+});
+
+describe('model/shared: validation errors', () => {
+  const crate = {
+    name: 'crate',
+    type: 'collection',
+    properties: {
+      label: { __type: 'string', __required: true, __allowUpdate: true },
+      weight: { __type: 'number', __default: 0, __allowUpdate: true },
+    },
+  };
+
+  it("refuses a body with its first problem's code, listing every issue", () => {
+    const err = invalidEntityError('crate', validateSchemaObject(crate, { weight: 'heavy' }), 2);
+
+    assert.strictEqual(err.status, 400);
+    assert.strictEqual(err.code, 'missing_field');
+    assert.strictEqual(err.message, 'crate: Missing field: label at index 2');
+    assert.deepStrictEqual(err.details, {
+      schema: 'crate',
+      path: 'label',
+      index: 2,
+      issues: [
+        { path: 'label', code: 'required' },
+        { path: 'weight', code: 'type', expected: 'number', received: 'string' },
+      ],
+    });
+  });
+
+  it('refuses updates as invalid_update, listing every issue', () => {
+    const { validation } = validateUpdate({}, crate)([{ path: 'weight', value: 'heavy' }, { path: 'nothing', value: 1 }]);
+    const err = invalidUpdateError('crate', validation);
+
+    assert.strictEqual(err.code, 'invalid_update');
+    assert.deepStrictEqual(err.details, {
+      schema: 'crate',
+      issues: [
+        { path: 'weight', code: 'type', expected: 'number', received: 'string' },
+        { path: 'nothing', code: 'unknown_path' },
+      ],
+    });
   });
 });

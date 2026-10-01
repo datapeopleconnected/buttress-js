@@ -17,7 +17,7 @@
 import StandardModel from '../type/standard.js';
 import { TenantKey } from '../type/tenant-scoped.js';
 
-import { Schema } from '../../helpers/schema.js';
+import { Schema, SchemaValidationResult } from '../../helpers/schema.js';
 import { Services } from '../../bootstrap.js';
 
 /**
@@ -197,23 +197,18 @@ class TrackingSchemaModel extends StandardModel<Tracking> {
    * @return {Object} - returns an object with validation context
    */
   override __doValidation(body: Partial<Tracking>) {
-    const res: {
-      isValid: boolean;
-      missing: string[];
-      invalid: string[];
-    } = {
+    const res: SchemaValidationResult = {
       isValid: true,
       missing: [],
       invalid: [],
+      issues: [],
     };
 
-    if (!body.name) {
+    for (const field of ['name', 'type'] as const) {
+      if (body[field]) continue;
       res.isValid = false;
-      res.missing.push('name');
-    }
-    if (!body.type) {
-      res.isValid = false;
-      res.missing.push('type');
+      res.missing.push(field);
+      res.issues.push({ path: field, code: 'required' });
     }
 
     return res;

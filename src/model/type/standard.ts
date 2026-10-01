@@ -151,25 +151,9 @@ export default class StandardModel<TDocument = AdapterDocument> {
   }
 
   __doValidation(body: unknown) {
-    const res: {
-      isValid: boolean;
-      missing: string[];
-      invalid: string[];
-    } = {
-      isValid: true,
-      missing: [],
-      invalid: [],
-    };
-
-    const app = Shared.validateSchemaObject(this.schemaData, body);
-    if (app.isValid === false) {
-      res.isValid = false;
-      res.invalid = res.invalid.concat(app.invalid);
-      res.missing = res.missing.concat(app.missing);
-    }
-
-    return res;
+    return Shared.validateSchemaObject(this.schemaData, body);
   }
+
   validate(body: unknown) {
     if (body instanceof Array === false) {
       body = [body];

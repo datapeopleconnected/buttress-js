@@ -17,6 +17,7 @@
 import Logging from '../helpers/logging.js';
 import * as Helpers from '../helpers/index.js';
 import { FlattenedSchema, FlattenedSchemaProperty, Schema } from '../types/schema.js';
+import type { ValidationIssue } from '../helpers/schema.js';
 import { UpdatePathBody, UpdatePathContexts } from '../types/datastore.js';
 
 export interface UpdateValidationResult {
@@ -28,6 +29,8 @@ export interface UpdateValidationResult {
   invalidValue: string;
   isValueValid: boolean;
   invalidValid: string;
+  // Every problem, of the request's every update when validateUpdate gives it
+  issues: ValidationIssue[];
 }
 
 /* ********************************************************************************
@@ -42,6 +45,7 @@ export const validateSchemaObject = function (schema: Schema | false, body: unkn
       isValid: true,
       missing: [],
       invalid: [],
+      issues: [],
     };
 
   const flattenedSchema = Helpers.getFlattenedSchema(schema);
@@ -75,6 +79,7 @@ interface ArrayItemCheck {
   value: unknown;
   missingRequired?: string;
   invalidValue?: string;
+  issues?: ValidationIssue[];
 }
 
 const isTypedArray = (config: FlattenedSchemaProperty | false | null | undefined) =>
@@ -109,7 +114,13 @@ const getItemFieldConfig = (flattenedSchema: FlattenedSchema, path: string): Fla
 const checkArrayItem = (config: FlattenedSchemaProperty, item: unknown, path: string): ArrayItemCheck => {
   if (config.__schema) {
     const notObject = Helpers.Schema.describeNonObjectItem(path, item);
-    if (notObject) return { value: item, invalidValue: notObject };
+    if (notObject) {
+      return {
+        value: item,
+        invalidValue: notObject,
+        issues: [{ path, code: 'type', expected: 'object', received: Helpers.Schema.describeType(item) }],
+      };
+    }
 
     const validation = Helpers.Schema.validate(
       config.__schema,
@@ -119,16 +130,28 @@ const checkArrayItem = (config: FlattenedSchemaProperty, item: unknown, path: st
     );
     if (validation.isValid === true) return { value: item };
 
-    return { value: item, missingRequired: validation.missing[0], invalidValue: validation.invalid[0] };
+    return {
+      value: item,
+      missingRequired: validation.missing[0],
+      invalidValue: validation.invalid[0],
+      issues: validation.issues,
+    };
   }
 
   const itemtype = config.__itemtype ?? '';
   const nullItem = Helpers.Schema.describeNullItem(path, item, itemtype);
-  if (nullItem) return { value: item, invalidValue: nullItem };
+  if (nullItem) {
+    return {
+      value: item,
+      invalidValue: nullItem,
+      issues: [{ path, code: 'type', expected: itemtype, received: 'null' }],
+    };
+  }
 
   const prop = { value: item };
-  if (!Helpers.Schema.validateProp(prop, { __type: itemtype })) {
-    return { value: item, invalidValue: `${path}:${String(item)}[${typeof item}] [${itemtype}]` };
+  const issue = Helpers.Schema.checkProp(prop, { __type: itemtype }, path);
+  if (issue) {
+    return { value: item, invalidValue: `${path}:${String(item)}[${typeof item}] [${itemtype}]`, issues: [issue] };
   }
 
   return { value: prop.value };
@@ -154,7 +177,10 @@ export const describeInvalidUpdate = (validation: UpdateValidationResult) => {
  * @return {ApiError}
  */
 export const invalidUpdateError = (schema: string | undefined, validation: UpdateValidationResult) =>
-  Helpers.Errors.badRequest('invalid_update', `${schema}: ${describeInvalidUpdate(validation)}`, { schema });
+  Helpers.Errors.badRequest('invalid_update', `${schema}: ${describeInvalidUpdate(validation)}`, {
+    schema,
+    ...(validation.issues ? { issues: validation.issues } : {}),
+  });
 
 /**
  * The error for an entity validate() refused: 400 missing_field for its first missing field, or invalid_value for its
@@ -166,11 +192,14 @@ export const invalidUpdateError = (schema: string | undefined, validation: Updat
  */
 export const invalidEntityError = (
   schema: string | undefined,
-  validation: { missing?: string[]; invalid?: string[] },
+  validation: { missing?: string[]; invalid?: string[]; issues?: ValidationIssue[] },
   index?: number,
 ) => {
   const at = index === undefined ? '' : ` at index ${index}`;
-  const where = index === undefined ? {} : { index };
+  const where = {
+    ...(index === undefined ? {} : { index }),
+    ...(validation.issues ? { issues: validation.issues } : {}),
+  };
   const [missing] = validation.missing ?? [];
   if (missing !== undefined) {
     return Helpers.Errors.badRequest('missing_field', `${schema}: Missing field: ${missing}${at}`, {
@@ -228,11 +257,13 @@ export const doValidateUpdate = function (pathContext: UpdatePathContexts, flatt
       invalidValue: '',
       isValueValid: false,
       invalidValid: '',
+      issues: [],
     };
 
     // A request with no body, or an item of an array that isn't an update, has nothing to read a path from
     if (!body || typeof body !== 'object') {
       res.missingRequired = 'path';
+      res.issues.push({ path: '', code: 'required', expected: 'path' });
       return res;
     }
     // Not the value, which can be a secret
@@ -241,6 +272,7 @@ export const doValidateUpdate = function (pathContext: UpdatePathContexts, flatt
     const fullPath = body.path;
     if (!fullPath || typeof fullPath !== 'string') {
       res.missingRequired = 'path';
+      res.issues.push({ path: '', code: 'required', expected: 'path' });
       return res;
     }
 
@@ -250,6 +282,7 @@ export const doValidateUpdate = function (pathContext: UpdatePathContexts, flatt
 
     if (body.value === undefined) {
       res.missingRequired = 'value';
+      res.issues.push({ path: fullPath, code: 'required', expected: 'value' });
       return res;
     }
 
@@ -286,6 +319,7 @@ export const doValidateUpdate = function (pathContext: UpdatePathContexts, flatt
 
     if (validPath === false) {
       res.invalidPath = `${fullPath} <> ${Object.getOwnPropertyNames(pathContext)}`;
+      res.issues.push({ path: fullPath, code: 'unknown_path' });
       return res;
     }
 
@@ -294,6 +328,12 @@ export const doValidateUpdate = function (pathContext: UpdatePathContexts, flatt
     const context = pathContext[body.contextPath as string];
     if (body.value !== null && context.values.length > 0 && context.values.indexOf(body.value) === -1) {
       res.invalidValue = `${body.value} <> ${context.values}`;
+      res.issues.push({
+        path: fullPath,
+        code: 'enum',
+        expected: context.values,
+        received: Helpers.Schema.describeType(body.value),
+      });
       return res;
     }
 
@@ -313,9 +353,13 @@ export const doValidateUpdate = function (pathContext: UpdatePathContexts, flatt
       body.value = checks[0].value;
     } else if (config?.__type === 'array') {
       // An array with no item type takes any value: one to append, or an array to replace it with.
-    } else if (config && !config.__schema && !Helpers.Schema.validateProp(body, config)) {
-      res.invalidValue = `${fullPath} failed schema test`;
-      return res;
+    } else if (config && !config.__schema) {
+      const issue = Helpers.Schema.checkProp(body, config, fullPath);
+      if (issue) {
+        res.invalidValue = `${fullPath} failed schema test`;
+        res.issues.push(issue);
+        return res;
+      }
     }
 
     const failed = checks.find((check) => check.missingRequired || check.invalidValue);
@@ -327,6 +371,7 @@ export const doValidateUpdate = function (pathContext: UpdatePathContexts, flatt
       if (failed.invalidValue) {
         res.invalidValue = failed.invalidValue;
       }
+      res.issues = checks.flatMap((check) => check.issues ?? []);
       return res;
     }
 
@@ -401,8 +446,12 @@ export const validateUpdate = function (pathContext: UpdatePathContexts, schema:
       .map(doValidateUpdate(extendedPathContext, flattenedSchema))
       .filter((v) => v.isValid === false);
 
+    // The first refused update says why, with every refused update's issues
     return {
-      validation: validation.length >= 1 ? validation[0] : ({ isValid: true } as const),
+      validation:
+        validation.length >= 1
+          ? { ...validation[0], issues: validation.flatMap((v) => v.issues) }
+          : ({ isValid: true } as const),
       body: body as UpdatePathBody[],
     };
   };

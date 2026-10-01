@@ -38,10 +38,23 @@ export interface FlattenedBodyProperty {
   value: unknown;
 }
 
+/**
+ * One problem with a body or an update: the path it's at, what's wrong (`required`, `type`, `enum`,
+ * `unknown_path`), what was expected, and the type of what was given. The value itself isn't kept, as it can be a
+ * secret.
+ */
+export interface ValidationIssue {
+  path: string;
+  code: string;
+  expected?: unknown;
+  received?: string;
+}
+
 export interface SchemaValidationResult {
   isValid: boolean;
   missing: string[];
   invalid: string[];
+  issues: ValidationIssue[];
 }
 
 // The parts of a schema property that are used to default and validate a value.
@@ -205,15 +218,36 @@ export const getPropDefault = __getPropDefault;
  * Whether `prop.value` is a value of the property's type, which it's converted to in place, through the type's codec.
  * A null value has no type to check.
  */
-const __validateProp = (prop: { value?: unknown }, config: PropertyConfig) => {
-  if (prop.value === null) return true;
+const __validateProp = (prop: { value?: unknown }, config: PropertyConfig) => checkProp(prop, config) === null;
+
+/**
+ * As validateProp, but gives the issue with the value, or null when it's valid.
+ * @param {object} prop - `{value}`, converted in place
+ * @param {object} config - the property's schema
+ * @param {string} path - where the value is, for the issue
+ * @return {ValidationIssue|null}
+ */
+export const checkProp = (
+  prop: { value?: unknown },
+  config: PropertyConfig,
+  path: string = '',
+): ValidationIssue | null => {
+  if (prop.value === null) return null;
 
   const decoded = decodeValue(config.__type, prop.value, config);
-  if (isDecodeError(decoded)) return false;
+  if (isDecodeError(decoded)) {
+    return decoded.error === 'enum'
+      ? { path, code: 'enum', expected: config.__enum, received: describeType(prop.value) }
+      : { path, code: 'type', expected: config.__type, received: describeType(prop.value) };
+  }
 
   prop.value = decoded.value;
-  return true;
+  return null;
 };
+
+// The type of a value as an issue gives it
+export const describeType = (value: unknown) =>
+  value === null ? 'null' : Array.isArray(value) ? 'array' : value instanceof Date ? 'date' : typeof value;
 export const validateProp = __validateProp;
 
 const describeItemType = (item: unknown) => (item === null ? 'null' : Array.isArray(item) ? 'array' : typeof item);
@@ -246,6 +280,7 @@ const __validate = (
     isValid: true,
     missing: [],
     invalid: [],
+    issues: [],
   };
 
   for (const property in schema) {
@@ -299,6 +334,7 @@ const __validate = (
         res.isValid = false;
         Logging.logWarn(`Missing required ${property}`);
         res.missing.push(`${parentProperty}${property}`);
+        res.issues.push({ path: `${parentProperty}${property}`, code: 'required' });
         continue;
       }
 
@@ -314,10 +350,13 @@ const __validate = (
       values.push(propVal);
     }
 
-    if (!__validateProp(propVal, config)) {
-      Logging.logWarn(`Invalid ${property}: ${propVal.value} [${typeof propVal.value}]`);
+    const given = propVal.value;
+    const issue = checkProp(propVal, config, `${parentProperty}${property}`);
+    if (issue) {
+      Logging.logWarn(`Invalid ${property}: ${given} [${typeof given}]`);
       res.isValid = false;
-      res.invalid.push(`${parentProperty}${property}:${propVal.value}[${typeof propVal.value}]`);
+      res.invalid.push(`${parentProperty}${property}:${given}[${typeof given}]`);
+      res.issues.push(issue);
       continue;
     }
 
@@ -329,6 +368,12 @@ const __validate = (
         if (notObject) {
           res.isValid = false;
           res.invalid.push(notObject);
+          res.issues.push({
+            path: `${parentProperty}${property}.${idx}`,
+            code: 'type',
+            expected: 'object',
+            received: describeType(v),
+          });
           return;
         }
 
@@ -338,21 +383,26 @@ const __validate = (
         res.isValid = false;
         res.missing = res.missing.concat(itemRes.missing);
         res.invalid = res.invalid.concat(itemRes.invalid);
+        res.issues = res.issues.concat(itemRes.issues);
       });
     } else if (config.__type === 'array' && config.__itemtype) {
       const items = propVal.value as unknown[];
       for (const idx in items) {
         if (!{}.hasOwnProperty.call(items, idx)) continue;
         const nullItem = describeNullItem(`${parentProperty}${property}.${idx}`, items[idx], config.__itemtype);
+        const itemPath = `${parentProperty}${property}.${idx}`;
         if (nullItem) {
           res.isValid = false;
           res.invalid.push(nullItem);
+          res.issues.push({ path: itemPath, code: 'type', expected: config.__itemtype, received: 'null' });
           continue;
         }
         const prop = {
           value: items[idx],
         };
-        if (!__validateProp(prop, { __type: config.__itemtype })) {
+        const itemIssue = checkProp(prop, { __type: config.__itemtype }, itemPath);
+        if (itemIssue) {
+          res.issues.push(itemIssue);
           Logging.logWarn(
             `Invalid ${property}.${idx}: ${prop.value} [${typeof prop.value}] expected [${config.__itemtype}]`,
           );

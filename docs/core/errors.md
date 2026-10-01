@@ -35,6 +35,28 @@ Each code is always answered with the same status.
 | 500 | An unexpected failure on the server | `internal_error` |
 | 503 | A data sharing partner the request needs can't be reached | `data_sharing_partner_unavailable` |
 
+## Validation
+
+A body or update the schema refuses is answered with the code of its first problem (`missing_field`,
+`invalid_value`, `invalid_update`, `duplicate_id`), and `details.issues` lists every problem:
+
+```json
+{
+  "code": "invalid_update",
+  "message": "note: Update value is invalid: done failed schema test",
+  "details": {
+    "schema": "note",
+    "issues": [
+      { "path": "done", "code": "type", "expected": "boolean", "received": "string" },
+      { "path": "nothing", "code": "unknown_path" }
+    ]
+  }
+}
+```
+
+An issue's `code` is `required`, `type`, `enum` or `unknown_path`; `expected` is the type, the listed values or the
+missing key, and `received` the type of what was given. The value itself isn't repeated.
+
 ## Ids
 
 An id that can't be one is answered `400 invalid_id`. A well-formed id that names nothing the caller can reach is

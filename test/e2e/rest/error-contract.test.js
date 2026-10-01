@@ -183,17 +183,24 @@ describe('Error contract', async () => {
 
 		// Bodies the schema refuses
 		['a note whose done flag is not a boolean', () => [notes(), post({ text: 'a', done: 'banana' }), appToken()],
-			400, 'invalid_value', { schema: 'note', path: 'done' }],
+			400, 'invalid_value', {
+				schema: 'note', path: 'done', issues: [{ path: 'done', code: 'type', expected: 'boolean', received: 'string' }],
+			}],
 		['a search on a flag it cannot read', () => [notes(), { method: 'SEARCH', headers: json, body: JSON.stringify({ query: { done: 'banana' } }) }, appToken()],
 			400, 'invalid_value', { path: 'done', expected: 'boolean' }],
 		['a note without its required text', () => [notes(), post({}), appToken()],
-			400, 'missing_field', { schema: 'note', path: 'text' }],
+			400, 'missing_field', { schema: 'note', path: 'text', issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],
-			400, 'missing_field', { schema: 'note', path: 'text', index: 1 }],
+			400, 'missing_field', { schema: 'note', path: 'text', index: 1, issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes that gives an id twice', () => [notes('/bulk/add'), post([{ id: NOBODYS_ID, text: 'a' }, { id: NOBODYS_ID, text: 'b' }]), appToken()],
 			400, 'duplicate_id', { schema: 'note', id: NOBODYS_ID, index: 1 }],
 		['an update to a path the note has not got', () => [notes(`/${testEnv.note.id}`), put({ path: 'nothing', value: 1 }), appToken()],
-			400, 'invalid_update'],
+			400, 'invalid_update', { schema: 'note', issues: [{ path: 'nothing', code: 'unknown_path' }] }],
+		['a note update that lists every problem', () => [notes(`/${testEnv.note.id}`), put([{ path: 'done', value: 'banana' }, { path: 'nothing', value: 1 }]), appToken()],
+			400, 'invalid_update', {
+				schema: 'note',
+				issues: [{ path: 'done', code: 'type', expected: 'boolean', received: 'string' }, { path: 'nothing', code: 'unknown_path' }],
+			}],
 		['a policy update to a path policies have not got', () => [core(`policy/${testEnv.policy.id}`), put([{ path: 'nothing', value: 1 }]), appToken()],
 			400, 'invalid_update'],
 		["a note the caller's policy wouldn't let it read", () => [notes(), post({ text: 'not mine' }), writerToken()],
@@ -232,7 +239,7 @@ describe('Error contract', async () => {
 		assert.strictEqual(res.status, 200);
 		const [invalid, missing] = await res.json();
 		assert.deepStrictEqual({ ...invalid.validation, message: undefined }, {
-			status: 400, code: 'invalid_update', message: undefined, details: { schema: 'note' },
+			status: 400, code: 'invalid_update', message: undefined, details: { schema: 'note', issues: [{ path: 'nothing', code: 'unknown_path' }] },
 		});
 		assert.deepStrictEqual(missing.validation, {
 			status: 404, code: 'not_found', message: 'No note was found with that id', details: { schema: 'note', id: NOBODYS_ID },
