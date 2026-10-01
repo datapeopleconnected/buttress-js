@@ -219,6 +219,8 @@ describe('Error contract', async () => {
 				schema: 'lambda', path: 'trigger.0.apiEndpoint.method',
 				issues: [{ path: 'trigger.0.apiEndpoint.method', code: 'enum', expected: ['GET', 'POST'], received: 'string' }],
 			}],
+		['a user whose auth entry is not an object', () => [core('user'), post({ auth: [null] }), Config.testToken],
+			400, 'invalid_value', { schema: 'users', path: 'auth.0', issues: [{ path: 'auth.0', code: 'type', expected: 'object', received: 'null' }] }],
 		['a note without its required text', () => [notes(), post({}), appToken()],
 			400, 'missing_field', { schema: 'note', path: 'text', issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],

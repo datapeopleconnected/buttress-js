@@ -57,9 +57,11 @@ export type UserAuthBody = {
   profileImgUrl?: string;
   bannerImgUrl?: string;
   email?: string;
+  locale?: string;
   token?: string;
   tokenSecret?: string;
   refreshToken?: string;
+  extras?: string;
 };
 
 // A user as posted to the API, with an optional token to create for them
@@ -276,45 +278,55 @@ export default class UserSchemaModel extends StandardModel<User> {
    * @param {Object} body - body passed through from a POST request
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  override async add(body: UserAddBody, internals: { _appId: string }): Promise<UserWithTokens> {
-    const userBody: {
-      id: string;
-      auth: Array<{
-        app?: string;
-        appId: string | null;
-        username?: string;
-        password?: string;
-        profileUrl?: string;
-        images: {
-          profile?: string;
-          banner?: string;
-        };
-        email?: string;
-        token?: string;
-        tokenSecret?: string;
-        refreshToken?: string;
-      }>;
-    } = {
-      id: body.id ? this.createId(body.id) : this.createId(),
-      auth: [],
-    };
-    body.auth.forEach((item) => {
-      userBody.auth.push({
-        app: item.app,
-        appId: item.appId ? item.appId : null,
-        username: item.username,
-        password: item.password,
-        profileUrl: item.profileUrl,
-        images: {
-          profile: item.profileImgUrl,
-          banner: item.bannerImgUrl,
+  /**
+   * A user as AddUser takes one, which add stores as `Schema` reads it: each auth entry's fields are text, and its
+   * images are given as `profileImgUrl` and `bannerImgUrl`. The token to create for them is checked by the route.
+   */
+  static get AddSchema(): Schema {
+    const text = { __type: 'string', __allowUpdate: true } as const;
+    return {
+      name: 'users',
+      type: 'collection',
+      core: true,
+      properties: {
+        id: { __type: 'id', __allowUpdate: false },
+        auth: {
+          __type: 'array',
+          __required: true,
+          __allowUpdate: true,
+          __schema: Object.fromEntries(
+            [
+              'app',
+              'appId',
+              'username',
+              'password',
+              'profileUrl',
+              'profileImgUrl',
+              'bannerImgUrl',
+              'email',
+              'locale',
+              'token',
+              'tokenSecret',
+              'refreshToken',
+              'extras',
+            ].map((field) => [field, text]),
+          ),
         },
-        email: item.email,
-        token: item.token,
-        tokenSecret: item.tokenSecret,
-        refreshToken: item.refreshToken,
-      });
-    });
+      },
+    };
+  }
+
+  override async add(body: UserAddBody, internals: { _appId: string }): Promise<UserWithTokens> {
+    // Stored as the schema reads it, with its defaults for what's left out
+    const userBody = {
+      id: body.id ? this.createId(body.id) : this.createId(),
+      auth: body.auth.map(({ profileImgUrl, bannerImgUrl, ...item }) => ({
+        ...item,
+        // The id the auth app has for the user, which finding them matches, or none
+        appId: item.appId ? item.appId : null,
+        images: { profile: profileImgUrl, banner: bannerImgUrl },
+      })),
+    };
 
     const rxsUser = await super.add(userBody, {
       _appId: internals._appId,

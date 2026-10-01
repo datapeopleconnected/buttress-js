@@ -375,6 +375,29 @@ describe('routes/api/user:AddUser', () => {
     await assert.rejects(route._validate(createReq({ body: { auth: [] } })), { code: 'invalid_user_auth' });
   });
 
+  it("refuses an auth entry that isn't an object, or whose fields aren't text, before it looks for a duplicate", async () => {
+    const findOne = sinon.stub().resolves(null);
+    stubModel({ user: { findOne } });
+    const route = createRoute(AddUser);
+    const body = { auth: [{ app: 'google', email: { $ne: null } }, null, 'x'] };
+
+    await assert.rejects(route._validate(createReq({ body })), {
+      status: 400,
+      code: 'invalid_value',
+      message: 'users: Invalid value: auth.0.email:[object Object][object]',
+      details: {
+        schema: 'users',
+        path: 'auth.0.email',
+        issues: [
+          { path: 'auth.0.email', code: 'type', expected: 'string', received: 'object' },
+          { path: 'auth.1', code: 'type', expected: 'object', received: 'null' },
+          { path: 'auth.2', code: 'type', expected: 'object', received: 'string' },
+        ],
+      },
+    });
+    assert.strictEqual(findOne.called, false);
+  });
+
   it('rejects when a matching user already exists', async () => {
     stubModel({ user: { findOne: async () => ({ id: 'existing' }) } });
     const route = createRoute(AddUser);

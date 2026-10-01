@@ -17,7 +17,7 @@ import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { invalidUpdateError } from '../../model/shared.js';
+import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import TokenSchemaModel, { PolicyProperties, Token } from '../../model/core/token.js';
@@ -473,6 +473,14 @@ class AddUser extends Route {
     if (!Array.isArray(req.body.auth) || (Array.isArray(req.body.auth) && req.body.auth.length < 1)) {
       this.log(`[${this.name}] Invalid user auth block`, Route.LogLevel.ERR);
       return Promise.reject(Helpers.Errors.badRequest('invalid_user_auth'));
+    }
+
+    // Each auth entry is an object of text, before any of it is looked for
+    const validation = validateSchemaObject(UserSchemaModel.AddSchema, req.body);
+    if (!validation.isValid) {
+      const err = invalidEntityError(UserSchemaModel.AddSchema.name, validation);
+      this.log(`[${this.name}] ${err.message}`, Route.LogLevel.ERR);
+      return Promise.reject(err);
     }
 
     const existingUsers: User[] = [];
