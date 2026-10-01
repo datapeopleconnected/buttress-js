@@ -25,7 +25,7 @@ Each code is always answered with the same status.
 
 | Status | Means | Codes include |
 | --- | --- | --- |
-| 400 | The request is malformed or refused by the schema | `invalid_body`, `invalid_id`, `missing_id`, `missing_field`, `invalid_value`, `invalid_update`, `duplicate_id`, `unknown_path`, `apiPath_not_supported`, `token_in_url_not_supported` |
+| 400 | The request is malformed or refused by the schema | `invalid_body`, `invalid_id`, `missing_id`, `missing_field`, `invalid_value`, `invalid_update`, `duplicate_id`, `unknown_path`, `invalid_schema`, `apiPath_not_supported`, `token_in_url_not_supported` |
 | 401 | No token, or one that isn't valid: unknown, revoked, or its app or user has gone | `missing_token`, `invalid_token`, `app_not_found` |
 | 403 | The token is valid, but not allowed to do this | `insufficient_authority`, `access_denied`, `property_access_denied`, `data_sharing_inactive`, `origin_not_allowed` |
 | 404 | What the request names can't be found, or no route takes the request | `not_found`, `unknown_route`, `unknown_schema`, `unknown_lambda_endpoint` |
@@ -56,7 +56,8 @@ problem:
 }
 ```
 
-An issue's `code` is `required`, `type`, `enum` or `unknown_path`; `expected` is the type, the listed values or the
+An issue's `code` is `required`, `type`, `enum`, `unknown_path` or `immutable` (a property that doesn't allow
+updates); a schema refused when it's saved, `invalid_schema`, also uses `invalid_name`; `expected` is the type, the listed values or the
 missing key, and `received` the type of what was given. The value itself isn't repeated.
 
 ## Ids

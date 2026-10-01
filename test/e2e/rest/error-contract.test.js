@@ -199,6 +199,8 @@ describe('Error contract', async () => {
 			400, 'invalid_value', { path: 'done', expected: 'boolean' }],
 		['a field a strict schema does not define', () => [`${ENDPOINT.REST}/${testEnv.apps.app.apiPath}/api/v1/crate`, post({ label: 'a', extra: 1 }), appToken()],
 			400, 'unknown_path', { schema: 'crate', path: 'extra', issues: [{ path: 'extra', code: 'unknown_path' }] }],
+		['a schema with a misspelt property key', () => [core('app/schema'), put([{ name: 'note', type: 'collection', properties: { text: { __type: 'string', __requried: true } } }]), appToken()],
+			400, 'invalid_schema', { schema: 'note', issues: [{ path: 'text.__requried', code: 'unknown_path' }] }],
 		['a note without its required text', () => [notes(), post({}), appToken()],
 			400, 'missing_field', { schema: 'note', path: 'text', issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],

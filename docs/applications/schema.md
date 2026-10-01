@@ -209,6 +209,17 @@ The response is a 200 whenever the request itself is well formed. The `x-bulk-re
 ## Managing Schemas
 Schemas can be updated, extended, or deleted using the ButtressJS API. The `Schema` class provides methods for merging, validating, and encoding schemas.
 
+An app's schemas are checked when they're saved (`PUT /api/v1/app/schema`), and refused with a 400,
+`invalid_schema`, listing each problem in `details.issues`, rather than saved to misbehave later:
+
+- a `__type` or `__itemtype` that isn't one of the types above;
+- a key a property definition doesn't have, such as a misspelt `__requried`, or `required` without its
+  underscores;
+- `__required` or `__allowUpdate` that isn't `true` or `false`, an `__enum` that isn't a list, or a `__schema` on
+  anything but an `array`;
+- a property name that's empty, has a dot, or starts with `_` (those are the server's) or `$`;
+- an object with definition keys but no `__type`.
+
 ## Best Practices
 - Use meaningful names for schemas and properties.
 - Leverage the `extends` field to avoid duplication.

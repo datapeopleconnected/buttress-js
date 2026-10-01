@@ -26,6 +26,7 @@ import AppSchemaModel, { App, AppAddBody } from '../../model/core/app.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import { Schema } from '../../helpers/schema.js';
+import { checkSchemaDefinition } from '../../helpers/schema-definition.js';
 import { QueryParams } from '../../types/bjs-query.js';
 import { UpdatePathBody } from '../../types/datastore.js';
 import { Services } from '../../bootstrap.js';
@@ -443,6 +444,17 @@ class UpdateAppSchema extends Route {
         if (!Helpers.Schema.validTypes.includes(schema.type)) {
           this.log(`ERROR: Invalid schema type (${schema.type})`, Route.LogLevel.ERR);
           return Promise.reject(Helpers.Errors.badRequest('schema_invalid_type'));
+        }
+
+        const issues = checkSchemaDefinition(schema);
+        if (issues.length > 0) {
+          this.log(`ERROR: Invalid property definitions in ${schema.name}`, Route.LogLevel.ERR);
+          return Promise.reject(
+            Helpers.Errors.badRequest('invalid_schema', `${schema.name}: Invalid property definitions`, {
+              schema: schema.name,
+              issues,
+            }),
+          );
         }
 
         checkedSchema.push(schema);

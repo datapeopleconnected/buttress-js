@@ -35,7 +35,7 @@ const [
   DeleteApp,
   DeleteAllApps,
   GetAppSchema,
-  ,
+  UpdateAppSchema,
   GetAppPolicyPropertyList,
   SetAppPolicyPropertyList,
   AppCount,
@@ -614,5 +614,30 @@ describe('routes/api/app:GetAppSchema ?core=', () => {
       () => coreNames('users,widgets'),
       (err) => err instanceof ApiError && err.status === 400 && err.message === 'Unknown core schema: widgets',
     );
+  });
+});
+
+describe('routes/api/app:UpdateAppSchema', () => {
+  it('refuses a schema whose property definitions are wrong, listing each problem, before saving anything', async () => {
+    const { appModel } = stubModel();
+    const route = createRoute(UpdateAppSchema);
+    const body = [
+      { name: 'car', type: 'collection', properties: { name: { __type: 'string' } } },
+      { name: 'note', type: 'collection', properties: { text: { __type: 'strnig', __requried: true } } },
+    ];
+
+    await assert.rejects(route._validate(createReq({ body })), {
+      status: 400,
+      code: 'invalid_schema',
+      message: 'note: Invalid property definitions',
+      details: {
+        schema: 'note',
+        issues: [
+          { path: 'text.__type', code: 'enum', expected: ['string', 'number', 'boolean', 'date', 'id', 'uuid', 'object', 'array'] },
+          { path: 'text.__requried', code: 'unknown_path' },
+        ],
+      },
+    });
+    assert.strictEqual(appModel.updateSchema?.called ?? false, false);
   });
 });
