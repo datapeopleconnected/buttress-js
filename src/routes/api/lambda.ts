@@ -444,6 +444,14 @@ class ScheduleLambdaExecution extends Route {
       execution.nextCronExpression = lambdaCronTrigger.cron.periodicExecution;
     }
 
+    // The metadata is the caller's, so the execution is read as the schema types it
+    const validation = validateSchemaObject(LambdaExecutionSchemaModel.Schema, execution);
+    if (!validation.isValid) {
+      const err = invalidEntityError(LambdaExecutionSchemaModel.Schema.name, validation);
+      this.log(`[${this.name}] ${err.message}`, Route.LogLevel.ERR);
+      return Promise.reject(err);
+    }
+
     return {
       appId: lambda._appId,
       execution,

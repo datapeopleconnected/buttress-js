@@ -205,16 +205,6 @@ class LambdaExecutionSchemaModel extends StandardModel<LambdaExecution> {
     internals: { _appId: string; _tokenId?: string | null },
   ): Promise<LambdaExecution> {
     const { _appId: appId, _tokenId: tokenId } = internals;
-    const executionBody = {
-      lambdaId: body.lambdaId ? body.lambdaId : null,
-      deploymentId: body.deploymentId ? body.deploymentId : null,
-      triggerType: body.triggerType ? body.triggerType : null,
-      priority: body.priority ? body.priority : 0,
-      logs: body.logs ? body.logs : [],
-      executeAfter: body.executeAfter ? body.executeAfter : null,
-      nextCronExpression: body.nextCronExpression ? body.nextCronExpression : null,
-      metadata: body.metadata ? body.metadata : [],
-    };
 
     if (!appId) throw new Error('appId is required to create a lambda execution');
 
@@ -223,7 +213,8 @@ class LambdaExecutionSchemaModel extends StandardModel<LambdaExecution> {
     };
     if (tokenId) stored._tokenId = this.__modelManager.getCoreModel(TokenSchemaModel).createId(tokenId);
 
-    const rxsExecution = await super.add(executionBody, stored);
+    // Stored as the schema reads it, pending, with its defaults for what's left out
+    const rxsExecution = await super.add(body, stored);
     const execution = await Helpers.streamFirst<LambdaExecution>(rxsExecution);
 
     return execution;

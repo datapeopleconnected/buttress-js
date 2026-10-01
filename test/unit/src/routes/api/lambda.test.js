@@ -497,6 +497,28 @@ describe('routes/api/lambda:ScheduleLambdaExecution', () => {
     );
   });
 
+  it("refuses metadata that isn't a list of keys and values", async () => {
+    stubModel({
+      lambda: { findOne: async () => ({ id: '6abd03000000000000000001', _appId: '6abd05000000000000000001', trigger: [] }) },
+      deployment: { findOne: async () => ({ id: '6abd06000000000000000001' }) },
+    });
+    const route = createRoute(ScheduleLambdaExecution);
+    const body = { executeAfter: 'now', metadata: [{ key: 'k' }, 'x'] };
+
+    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body })), {
+      status: 400,
+      code: 'missing_field',
+      details: {
+        schema: 'lambdaExecution',
+        path: 'metadata.0.value',
+        issues: [
+          { path: 'metadata.0.value', code: 'required' },
+          { path: 'metadata.1', code: 'type', expected: 'object', received: 'string' },
+        ],
+      },
+    });
+  });
+
   it('schedules the execution against the resolved deployment', async () => {
     const { lambdaExecutionModel } = stubModel({
       lambda: { findOne: async () => ({ id: '6abd03000000000000000001', _appId: '6abd05000000000000000001', trigger: [] }) },
