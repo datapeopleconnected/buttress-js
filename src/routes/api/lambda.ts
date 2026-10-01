@@ -22,7 +22,7 @@ const Config = createConfig() as unknown as Config;
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { invalidUpdateError } from '../../model/shared.js';
+import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
 import Sugar from '../../helpers/sugar.js';
 import * as Helpers from '../../helpers/index.js';
 import * as Git from '../../helpers/git.js';
@@ -227,6 +227,13 @@ class AddLambda extends Route {
       }
 
       Git.assertLambdaSharedModules(req.body.lambda.git.sharedModules);
+
+      const validation = validateSchemaObject(LambdaSchemaModel.Schema, req.body.lambda);
+      if (!validation.isValid) {
+        const err = invalidEntityError(LambdaSchemaModel.Schema.name, validation);
+        this.log(`[${this.name}] ${err.message}`, Route.LogLevel.ERR);
+        return Promise.reject(err);
+      }
 
       return Promise.resolve(true);
     } catch (err: unknown) {

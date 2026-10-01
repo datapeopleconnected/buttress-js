@@ -91,6 +91,10 @@ bjs lambda list-property
 
 - API endpoint lambdas are invoked via configured lambda endpoint routes.
 - Use `PUBLIC` only when endpoint exposure is explicitly required.
+- A lambda that's added is read as the lambda schema types it, and a value that isn't of its type, or a trigger
+  setting that isn't one it takes (an `apiEndpoint.method` other than `GET` or `POST`, say), is refused with a 400,
+  `invalid_value` (`missing_field` for a `metadata` item without its `key` or `value`), with every problem in
+  `details.issues`. Earlier releases stored such values as they were given.
 - Earlier releases stored a lambda added without a `type` with none, and its API endpoint took calls without a token.
   It's now stored `PRIVATE`, and a lambda already stored without a type is treated as `PRIVATE`: set its `type` to
   `PUBLIC` if it should keep taking calls without a token.

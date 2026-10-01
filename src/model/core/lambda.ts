@@ -331,36 +331,17 @@ export default class LambdaModel extends StandardModel<Lambda> {
 
     await this.gitCloneLambda(body, auth.policyProperties, app);
 
-    let deployments: {
-      hash: string | null;
-      deployedAt: Date;
-    }[] = [];
-    if (body.git.deployments) {
-      deployments = body.git.deployments;
-    }
-
-    deployments.push({
-      hash: body.git.hash ? body.git.hash : null,
-      deployedAt: Sugar.Date.create('now'),
-    });
-
+    // Stored as the schema reads it, with its defaults for what's left out; the deployments are the ones its git lists,
+    // then this one
     const lambdaBody = {
-      name: body.name ? body.name : null,
+      ...body,
       // Left to the schema's default, PRIVATE, when it isn't given
       type: body.type || undefined,
-      deployments: deployments,
-
-      git: {
-        url: body.git.url ? body.git.url : null,
-        hash: body.git.hash ? body.git.hash : null,
-        branch: body.git.branch ? body.git.branch : null,
-        entryFile: body.git.entryFile ? body.git.entryFile : null,
-        entryPoint: body.git.entryPoint ? body.git.entryPoint : null,
-        sharedModules: Git.assertLambdaSharedModules(body.git.sharedModules),
-      },
-
-      trigger: body.trigger ? body.trigger : [],
-      metadata: body.metadata ? body.metadata : [],
+      deployments: [
+        ...(body.git.deployments ?? []),
+        { hash: body.git.hash ? body.git.hash : null, deployedAt: Sugar.Date.create('now') },
+      ],
+      git: { ...body.git, sharedModules: Git.assertLambdaSharedModules(body.git.sharedModules) },
     };
 
     const rxsLambda = await super.add(lambdaBody, {

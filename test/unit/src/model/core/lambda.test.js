@@ -24,6 +24,8 @@ import createConfig from '@dpc/node-env-obj';
 
 import LambdaSchemaModel from '../../../../../dist/model/core/lambda.js';
 
+import { createSchemaModel } from '../../../../schema-model.js';
+
 const Config = createConfig();
 
 // Runs the lambda model's git operations against a real local repository. Values that aren't a plain name,
@@ -160,3 +162,80 @@ describe('model/core/LambdaSchemaModel:add', () => {
   });
 });
 
+// What's stored for a lambda, through the real model over a datastore in memory; cloning, the lambda's deployment,
+// executions and token are other tests'
+describe('model/core/LambdaSchemaModel: what a lambda is stored as', () => {
+  const APP_ID = '6abd05000000000000000001';
+
+  function createModel() {
+    const added = [];
+    const services = new Map([
+      ['nrp', { on: () => () => {}, emit: () => {} }],
+      ['modelManager', { getCoreModel: () => ({ add: async (body) => (added.push(body), { id: '6abd06000000000000000001' }) }) }],
+    ]);
+    const model = new LambdaSchemaModel(services);
+    const { datastore } = createSchemaModel({ name: 'unused', properties: {} });
+    model.adapter = datastore;
+    model.gitCloneLambda = async () => {};
+    model._moveLambdaFolder = () => {};
+    return { model, datastore, added };
+  }
+
+  it("stores the lambda's own properties, with its deployment and the schema's defaults for the rest", async () => {
+    const { model, datastore } = createModel();
+    const before = Date.now();
+
+    const lambda = await model.add(
+      {
+        name: 'hello',
+        git: { url: 'https://git', branch: 'main', hash: 'abc123', entryFile: 'index.js', entryPoint: 'run', other: 1 },
+        trigger: [{ type: 'API_ENDPOINT', apiEndpoint: { method: 'GET', url: 'hello' } }],
+        metadata: [{ key: 'k', value: 'v' }],
+        other: 'dropped',
+      },
+      { _appId: APP_ID, auth: { policyProperties: {} }, app: { id: APP_ID } },
+    );
+
+    const [row] = datastore.rows;
+    const { deployments, ...rest } = row;
+    assert.deepStrictEqual(rest, {
+      id: lambda.id,
+      name: 'hello',
+      type: 'PRIVATE',
+      executable: true,
+      git: { url: 'https://git', hash: 'abc123', branch: 'main', entryFile: 'index.js', entryPoint: 'run', sharedModules: [] },
+      trigger: [
+        {
+          type: 'API_ENDPOINT',
+          cron: { executionTime: null, periodicExecution: null, status: 'PENDING' },
+          apiEndpoint: { method: 'GET', url: 'hello', type: 'ASYNC', useCallerToken: false, redirect: false },
+          pathMutation: { paths: [] },
+        },
+      ],
+      metadata: [{ key: 'k', value: 'v' }],
+      _appId: APP_ID,
+    });
+    assert.strictEqual(deployments.length, 1);
+    assert.strictEqual(deployments[0].hash, 'abc123');
+    assert(deployments[0].deployedAt instanceof Date && deployments[0].deployedAt.getTime() >= before);
+  });
+
+  it('stores the deployments its git lists before its own, and the type it is given', async () => {
+    const { model, datastore } = createModel();
+    const deployedAt = new Date('2026-01-01T00:00:00.000Z');
+
+    await model.add(
+      {
+        name: 'hello',
+        type: 'PUBLIC',
+        git: { url: 'u', branch: 'main', hash: 'def456', entryFile: 'i.js', entryPoint: 'run', deployments: [{ hash: 'abc123', deployedAt }] },
+        trigger: [],
+      },
+      { _appId: APP_ID, auth: { policyProperties: {} }, app: { id: APP_ID } },
+    );
+
+    assert.strictEqual(datastore.rows[0].type, 'PUBLIC');
+    assert.deepStrictEqual(datastore.rows[0].deployments.map((d) => d.hash), ['abc123', 'def456']);
+    assert.deepStrictEqual(datastore.rows[0].deployments[0].deployedAt, deployedAt);
+  });
+});

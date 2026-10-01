@@ -207,6 +207,18 @@ describe('Error contract', async () => {
 			400, 'invalid_policy', { issues: [{ path: 'config.0.query', code: 'required' }] }],
 		['a policy whose priority is not a number', () => [core('policy'), post({ name: 'bad-priority', version: '1', priority: 'high', selection: { role: { '@eq': 'NOBODY' } }, config: [{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }] }), appToken()],
 			400, 'invalid_value', { schema: 'policy', path: 'priority', issues: [{ path: 'priority', code: 'type', expected: 'number', received: 'string' }] }],
+		['a lambda whose endpoint method is not one it takes', () => [core('lambda'), post({
+			lambda: {
+				name: 'bad-method',
+				git: { url: Config.paths.root, branch: 'develop', hash: 'HEAD', entryFile: 'test/data/lambda/hello-world.cjs', entryPoint: 'execute' },
+				trigger: [{ type: 'API_ENDPOINT', apiEndpoint: { method: 'PUT', url: 'bad-method' } }],
+			},
+			auth: { domains: ['localhost'], policyProperties: {} },
+		}), appToken()],
+			400, 'invalid_value', {
+				schema: 'lambda', path: 'trigger.0.apiEndpoint.method',
+				issues: [{ path: 'trigger.0.apiEndpoint.method', code: 'enum', expected: ['GET', 'POST'], received: 'string' }],
+			}],
 		['a note without its required text', () => [notes(), post({}), appToken()],
 			400, 'missing_field', { schema: 'note', path: 'text', issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],

@@ -265,6 +265,32 @@ describe('routes/api/lambda:AddLambda', () => {
     });
   }
 
+  it("refuses a lambda whose values aren't of its schema's types, listing each", async () => {
+    stubModel();
+    const route = createRoute(AddLambda);
+    const lambda = {
+      ...validLambdaBody.lambda,
+      type: 'SECRET',
+      trigger: [{ type: 'API_ENDPOINT', apiEndpoint: { method: 'PUT', url: 'hello' } }],
+      metadata: [{ key: 'k' }],
+    };
+
+    await assert.rejects(route._validate(createReq({ body: { ...validLambdaBody, lambda } })), {
+      status: 400,
+      code: 'missing_field',
+      message: 'lambda: Missing field: metadata.0.value',
+      details: {
+        schema: 'lambda',
+        path: 'metadata.0.value',
+        issues: [
+          { path: 'type', code: 'enum', expected: ['PRIVATE', 'PUBLIC'], received: 'string' },
+          { path: 'trigger.0.apiEndpoint.method', code: 'enum', expected: ['GET', 'POST'], received: 'string' },
+          { path: 'metadata.0.value', code: 'required' },
+        ],
+      },
+    });
+  });
+
   it('resolves true once fully validated', async () => {
     stubModel();
     const route = createRoute(AddLambda);
