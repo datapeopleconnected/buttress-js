@@ -346,7 +346,8 @@ export default class LambdaModel extends StandardModel<Lambda> {
 
     const lambdaBody = {
       name: body.name ? body.name : null,
-      type: body.type ? body.type : null,
+      // Left to the schema's default, PRIVATE, when it isn't given
+      type: body.type || undefined,
       deployments: deployments,
 
       git: {

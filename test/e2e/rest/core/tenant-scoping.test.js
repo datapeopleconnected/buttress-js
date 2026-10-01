@@ -136,6 +136,22 @@ describe('Core route tenant scoping', async () => {
 			policyProperties: { lambda: 'TEST_ACCESS' },
 		}, testEnv.apps.app2.token), scope);
 
+		owned.untypedLambda = await runStep('create app2 lambda without a type', async () => createLambda(ENDPOINT.REST, {
+			name: 'tenant-scoping-untyped',
+			git: {
+				url: Config.paths.root,
+				branch: 'develop',
+				hash: 'HEAD',
+				entryFile: 'test/data/lambda/hello-world.cjs',
+				entryPoint: 'execute',
+			},
+			trigger: [{ type: 'API_ENDPOINT', apiEndpoint: { method: 'GET', url: 'tenant-scoping/untyped', type: 'ASYNC' } }],
+		}, {
+			domains: ['localhost'],
+			permissions: [{ route: '*', permission: '*' }],
+			policyProperties: { lambda: 'TEST_ACCESS' },
+		}, testEnv.apps.app2.token), scope);
+
 		owned.execution = await runStep('schedule app2 lambda execution', async () =>
 			bjsReqPost(`${ENDPOINT.REST}/api/v1/lambda/${owned.lambda.id}/schedule`, {
 				executeAfter: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
@@ -438,6 +454,30 @@ describe('Core route tenant scoping', async () => {
 				assert.strictEqual(res.status, 200);
 				assert.ok((await res.json()).executionId);
 			}
+		});
+	});
+	describe('Lambda endpoints without a type are PRIVATE', () => {
+		const call = (token) => fetch(`${ENDPOINT.REST}/lambda/v1/${testEnv.apps.app2.apiPath}/tenant-scoping/untyped`, {
+			headers: token ? { Authorization: `Bearer ${token}` } : {},
+		});
+
+		it('Should store a lambda added without a type as PRIVATE, and refuse a call to it with no token', async () => {
+			assert.strictEqual(owned.untypedLambda.type, 'PRIVATE');
+
+			assert.strictEqual((await call(null)).status, 401);
+		});
+
+		it('Should take only a token for the endpoint of a lambda whose type is null', async () => {
+			await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/lambda/${owned.untypedLambda.id}`,
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ path: 'type', value: null }),
+			}, testEnv.apps.app2.token);
+
+			assert.strictEqual((await call(null)).status, 401);
+			assert.strictEqual((await call(testEnv.apps.app1.token)).status, 403);
+			assert.strictEqual((await call(testEnv.apps.app2.token)).status, 200);
 		});
 	});
 	describe('Policy queries that refer to env values that are not set', () => {

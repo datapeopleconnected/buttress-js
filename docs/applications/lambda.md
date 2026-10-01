@@ -13,7 +13,7 @@ Lambdas are app-scoped serverless functions deployed from git and executed in an
 | Property | Type | Required | Description |
 | :- | :- | :-: | :- |
 | name | string | yes | Lambda name |
-| type | string | no | `PRIVATE` or `PUBLIC` |
+| type | string | no | `PRIVATE` (the default) or `PUBLIC`. Only a `PUBLIC` lambda's API endpoint takes calls without a token; any other takes a token of the lambda's app, or a system token |
 | git | object | yes | Repository details (`url`, `branch`, `hash`, `entryFile`, `entryPoint`) |
 | trigger | array | yes | Trigger configuration list |
 | policyProperties | object | yes | Policy properties attached to lambda execution context |
@@ -91,4 +91,7 @@ bjs lambda list-property
 
 - API endpoint lambdas are invoked via configured lambda endpoint routes.
 - Use `PUBLIC` only when endpoint exposure is explicitly required.
+- Earlier releases stored a lambda added without a `type` with none, and its API endpoint took calls without a token.
+  It's now stored `PRIVATE`, and a lambda already stored without a type is treated as `PRIVATE`: set its `type` to
+  `PUBLIC` if it should keep taking calls without a token.
 - Keep lambda git inputs pinned and auditable.

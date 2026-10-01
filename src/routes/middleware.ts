@@ -211,8 +211,9 @@ export class RoutesMiddleware {
           throw Helpers.Errors.notFound('unknown_lambda_endpoint', 'No lambda has that endpoint');
         }
 
-        // A PRIVATE endpoint takes a token of the lambda's own app, or a system token
-        if (req.context.authLambda.type === 'PRIVATE') {
+        // Only a PUBLIC endpoint takes calls without a token. Any other takes a token of the lambda's own app, or a
+        // system token, so a lambda stored without a type is PRIVATE, as its schema's default is.
+        if (req.context.authLambda.type !== 'PUBLIC') {
           reqToken = await this._getProvidedToken(req);
           if (!reqToken) throw Helpers.Errors.unauthorised('missing_token', 'A token is required');
 
