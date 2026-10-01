@@ -118,10 +118,28 @@ expected. `null` is always taken, as no value.
 | `uuid` | a uuid in its usual form, `8-4-4-4-12` hex characters |
 | `array` | a list |
 | `object` | an object |
+| a nested object (no `__type`) | an object, whose own properties are read as above |
 
 Earlier releases stored any other text, or any number but `1`, as `false` for a `boolean`, took any text as a
 `uuid`, and compared a query value as it was given, so `"true"` matched no `boolean` and an id that couldn't be one
 matched every entity without one.
+
+### Creating an Entity
+
+A create stores the schema's properties, each read as above, and nothing else. A property that's left out takes its
+`__default`, or its type's: `0` for a `number`, `false` for a `boolean`, `null` for an `id` or `uuid`, the time it was
+created for a `date`, `[]` for an `array` and `{}` for an `object`. A `string` without a `__default` is left out, and
+only `__required` makes leaving a property out an error. A value that's the same as the property's `__default` is
+made as the default is, at any depth, so `"new"` given for an `id` with `__default: "new"` is a new id.
+
+An array of items with a `__schema` reads each item through it, so each item keeps only its own properties and takes
+their defaults. `null` for it stores no items, `[]`, and a `__default` for it is read through the item schema too.
+A nested object's properties take their defaults when it's left out or `null`.
+
+Earlier releases refused a `string` without a `__default` that was left out, though it wasn't required; failed with
+a 500 for `null` given for an array of items, or for an array of items within a nested object; stored `{}` given for
+an `object` as `null`; stored an array of items that was left out as `[]`, whatever its `__default`; and replaced a
+nested object given as anything but an object with its properties' defaults, where it's now refused.
 
 ## Time Series Properties
 

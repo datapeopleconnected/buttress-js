@@ -78,14 +78,21 @@ Two schema sources get merged for every app:
 A schema entry with a `remotes` field (`{name, schema}` or an array of those) is a **federated**
 collection — see `_initSchemaModel()` in `model/index.ts` and [architecture.md](architecture.md).
 
-`Helpers.getFlattenedSchema()` / `Helpers.Schema.getFlattenedBody()` flatten nested schema/body objects
-into dotted-path maps — this flattened form is what `validateSchemaObject`, `sanitizeSchemaObject`, and
-`parseQuery` all operate on ([src/model/shared.ts](../src/model/shared.ts)). It leaves the schema as it is; an array's
-flattened `__schema` is in the result. A model flattens its schema once, when it's set (`flatSchemaData`), and
-validation, updates and queries use that.
+`Helpers.getFlattenedSchema()` flattens a nested schema into a dotted-path map — this flattened form is what
+creates, updates and `parseQuery` all operate on. It leaves the schema as it is; an array's flattened `__schema` is in
+the result. A model flattens its schema once, when it's set (`flatSchemaData`), and validation, updates and queries
+use that.
+
+A create's body is read in one pass by `parseDocument()` ([src/model/parse-document.ts](../src/model/parse-document.ts)),
+which walks the flattened schema as a tree (cached per flattened schema) and gives `{value, issues, missing,
+invalid}`: the value to store, with defaults and each value read as its type, and every problem. It never changes the
+body. `validateSchemaObject` (the issues, plus a `strict` schema's unknown fields) and `sanitizeSchemaObject` (the
+value) in [src/model/shared.ts](../src/model/shared.ts) are both views of it, so what's checked and what's stored can't
+disagree; the Mongo adapter reads an array item an update writes through it too. A nested object (a property without
+`__type`) that's given something other than an object or null is refused.
 
 Every value is read as its `__type` through one codec per type, `decode()` in
-[src/helpers/codecs.ts](../src/helpers/codecs.ts): bodies (`validateProp`/`checkProp` in `helpers/schema.ts`),
+[src/helpers/codecs.ts](../src/helpers/codecs.ts): bodies (`checkProp` in `helpers/schema.ts`),
 update values, and compared query values (`StandardModel.__decodeOperand`). Validation lists every problem as an
 issue, `{path, code, expected?, received?}`, which `invalidEntityError`/`invalidUpdateError` put in the error's
 `details.issues`. A schema with `strict: true` refuses fields it doesn't define on create. A `__private` property never

@@ -19,6 +19,7 @@ import { FlattenedSchema, FlattenedSchemaProperty, Schema } from '../types/schem
 import type { ValidationIssue } from '../helpers/schema.js';
 import { UpdatePathBody } from '../types/datastore.js';
 import { isUpdatePathRefusal, resolveUpdatePath } from './update-paths.js';
+import { parseDocument } from './parse-document.js';
 
 export interface UpdateValidationResult {
   isValid: boolean;
@@ -38,8 +39,18 @@ export interface UpdateValidationResult {
  * APP-SPECIFIC SCHEMA
  *
  **********************************************************************************/
-export const validateSchemaObject = function (schema: Schema | false, body: unknown) {
-  // const schema = __getCollectionSchema(collection);
+/**
+ * Checks a body to create an entity with. `body` isn't changed.
+ * @param {Object} schema - schema object
+ * @param {unknown} body
+ * @param {FlattenedSchema} [flattenedSchema] - the schema flattened, when it's been flattened already
+ * @return {Object}
+ */
+export const validateSchemaObject = function (
+  schema: Schema | false,
+  body: unknown,
+  flattenedSchema: FlattenedSchema = schema ? Helpers.getFlattenedSchema(schema) : {},
+) {
   if (schema === false)
     return {
       isValid: true,
@@ -48,10 +59,8 @@ export const validateSchemaObject = function (schema: Schema | false, body: unkn
       issues: [],
     };
 
-  const flattenedSchema = Helpers.getFlattenedSchema(schema);
-  const flattenedBody = Helpers.Schema.getFlattenedBody(body);
-
-  const validation = Helpers.Schema.validate(flattenedSchema, flattenedBody, '', body);
+  const { issues, missing, invalid } = parseDocument(flattenedSchema, body);
+  const validation = { isValid: issues.length < 1, missing, invalid, issues };
   if (!schema.strict) return validation;
 
   const unknown = findUnknownPaths(flattenedSchema, body, '', true);
@@ -107,18 +116,21 @@ const findUnknownPaths = (
 };
 
 /**
+ * What's stored for a body an entity is created with: the schema's properties, read as their types, with defaults
+ * for what's left out. `body` isn't changed.
  * @param {Object} schema - schema object
  * @param {Object} body - object containing properties to be applied
+ * @param {FlattenedSchema} [flattenedSchema] - the schema flattened, when it's been flattened already
  * @return {Object} - returns an object with only validated properties
  */
-export const sanitizeSchemaObject = function (schema: Schema | false, body: unknown) {
-  // const schema = __getCollectionSchema(collection);
+export const sanitizeSchemaObject = function (
+  schema: Schema | false,
+  body: unknown,
+  flattenedSchema: FlattenedSchema = schema ? Helpers.getFlattenedSchema(schema) : {},
+) {
   if (schema === false) return {};
 
-  const flattenedSchema = Helpers.getFlattenedSchema(schema);
-  const flattenedBody = Helpers.Schema.getFlattenedBody(body);
-
-  return Helpers.Schema.sanitizeObject(flattenedSchema, flattenedBody, body);
+  return parseDocument(flattenedSchema, body).value;
 };
 
 /* ********************************************************************************
@@ -152,13 +164,8 @@ const checkArrayItem = (config: FlattenedSchemaProperty, item: unknown, path: st
       };
     }
 
-    const validation = Helpers.Schema.validate(
-      config.__schema,
-      Helpers.Schema.getFlattenedBody(item),
-      `${path}.`,
-      item,
-    );
-    if (validation.isValid === true) return { value: item };
+    const validation = parseDocument(config.__schema, item, `${path}.`);
+    if (validation.issues.length < 1) return { value: item };
 
     return {
       value: item,

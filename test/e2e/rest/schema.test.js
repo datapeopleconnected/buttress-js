@@ -442,6 +442,23 @@ describe('Schema', async () => {
 						__default: null,
 						__allowUpdate: true,
 					},
+					callsign: {
+						__type: 'string',
+						__allowUpdate: true,
+					},
+					crew: {
+						roster: {
+							__type: 'array',
+							__allowUpdate: true,
+							__schema: {
+								role: {
+									__type: 'string',
+									__default: 'crew',
+									__allowUpdate: true,
+								},
+							},
+						},
+					},
 				},
 			}];
 
@@ -473,6 +490,36 @@ describe('Schema', async () => {
 			assert.strictEqual(typeof item.engine[0].position, 'string');
 			assert.strictEqual(typeof item.engine[0].items, 'number');
 			testEnv.spaceship = item;
+		});
+
+		it('Should add an entity with no items, items in a nested object, and no text it does not require', async () => {
+			const [item] = await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({name: 'spaceship-2', engine: null, crew: {roster: [{}, {role: 'pilot'}]}}),
+			}, testEnv.apps.app2.token);
+
+			assert.deepStrictEqual(item.engine, []);
+			assert.deepStrictEqual(item.crew, {roster: [{role: 'crew'}, {role: 'pilot'}]});
+			assert.strictEqual(item.callsign, undefined);
+
+			await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship/${item.id}`,
+				method: 'DELETE',
+			}, testEnv.apps.app2.token);
+		});
+
+		it('Should refuse to add an entity with a nested object that is not one', async () => {
+			await assert.rejects(
+				() => bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/spaceship`,
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify({name: 'spaceship-invalid', crew: 'everyone'}),
+				}, testEnv.apps.app2.token),
+				(err) => err.code === 400 && err.message === 'spaceship: Invalid value: crew:everyone[string]',
+			);
 		});
 
 		it('Should refuse to add an entity with an invalid array item, naming it', async () => {

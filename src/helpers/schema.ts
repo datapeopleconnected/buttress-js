@@ -15,7 +15,6 @@
  */
 import crypto from 'node:crypto';
 
-import Logging from './logging.js';
 import Sugar from './sugar.js';
 
 import Errors from './errors.js';
@@ -29,14 +28,6 @@ import { FlattenedSchema, Properties, PropertyDefinition, Schema } from '../type
 import { v4 as uuidv4 } from 'uuid';
 
 export type { Schema };
-
-/**
- * A single value from a body, keyed by its dotted path.
- */
-export interface FlattenedBodyProperty {
-  path: string;
-  value: unknown;
-}
 
 /**
  * One problem with a body or an update: the path it's at, what's wrong (`required`, `type`, `enum`,
@@ -69,81 +60,6 @@ interface PropertyConfig {
  * SCHEMA HELPERS
  *
  **********************************************************************************/
-const __getFlattenedBody = (body: unknown) => {
-  const bodyObj = body as Record<string, unknown>;
-  const __buildFlattenedBody = (
-    property: string,
-    parent: Record<string, unknown>,
-    path: string[],
-    flattened: FlattenedBodyProperty[],
-  ) => {
-    if (/^_/.test(property)) return; // ignore internals
-    path.push(property);
-
-    if (
-      typeof parent[property] !== 'object' ||
-      parent[property] instanceof Date ||
-      Array.isArray(parent[property]) ||
-      parent[property] === null ||
-      Datastore.getInstance('core').ID.instanceOf(bodyObj[property])
-    ) {
-      flattened.push({
-        path: path.join('.'),
-        value: parent[property],
-      });
-      path.pop();
-      return;
-    }
-
-    const child = parent[property] as Record<string, unknown>;
-
-    // Treat an empty object as null
-    if (typeof child === 'object') {
-      const keys = Object.keys(child);
-      if (keys.length < 1) {
-        flattened.push({
-          path: path.join('.'),
-          value: null,
-        });
-      }
-    }
-
-    for (const childProp in child) {
-      if (!{}.hasOwnProperty.call(child, childProp)) continue;
-      __buildFlattenedBody(childProp, child, path, flattened);
-    }
-
-    path.pop();
-    return;
-  };
-
-  const flattened: FlattenedBodyProperty[] = [];
-  const path: string[] = [];
-  for (const property in bodyObj) {
-    if (!{}.hasOwnProperty.call(bodyObj, property)) continue;
-    __buildFlattenedBody(property, bodyObj, path, flattened);
-  }
-
-  return flattened;
-};
-export const getFlattenedBody = __getFlattenedBody;
-
-const __getObjProperty = (obj: unknown, path: string) => {
-  const parts = path.split('.');
-
-  let current = obj;
-  parts.forEach((part) => {
-    if (!current) return;
-    if (current && typeof current === 'object' && current !== null && (current as Record<string, unknown>)[part]) {
-      current = (current as Record<string, unknown>)[part];
-    } else {
-      current = undefined;
-    }
-  });
-
-  return current;
-};
-
 const __getPropDefault = (config: PropertyConfig) => {
   let res: unknown;
   switch (config.__type) {
@@ -215,13 +131,8 @@ const __getPropDefault = (config: PropertyConfig) => {
 export const getPropDefault = __getPropDefault;
 
 /**
- * Whether `prop.value` is a value of the property's type, which it's converted to in place, through the type's codec.
- * A null value has no type to check.
- */
-const __validateProp = (prop: { value?: unknown }, config: PropertyConfig) => checkProp(prop, config) === null;
-
-/**
- * As validateProp, but gives the issue with the value, or null when it's valid.
+ * Reads `prop.value` as the property's type, through the type's codec, converting it in place. Gives the issue with
+ * the value, or null when it's valid. A null value has no type to check.
  * @param {object} prop - `{value}`, converted in place
  * @param {object} config - the property's schema
  * @param {string} path - where the value is, for the issue
@@ -248,7 +159,6 @@ export const checkProp = (
 // The type of a value as an issue gives it
 export const describeType = (value: unknown) =>
   value === null ? 'null' : Array.isArray(value) ? 'array' : value instanceof Date ? 'date' : typeof value;
-export const validateProp = __validateProp;
 
 const describeItemType = (item: unknown) => (item === null ? 'null' : Array.isArray(item) ? 'array' : typeof item);
 
@@ -268,157 +178,6 @@ export const describeNonObjectItem = (path: string, item: unknown) => {
  */
 export const describeNullItem = (path: string, item: unknown, itemtype: string) =>
   item === null ? `${path}:null[null] [${itemtype}]` : null;
-
-const __validate = (
-  schema: FlattenedSchema,
-  values: FlattenedBodyProperty[],
-  parentProperty: string,
-  body?: unknown,
-): SchemaValidationResult => {
-  const bodyObj = body as Record<string, unknown> | undefined;
-  const res: SchemaValidationResult = {
-    isValid: true,
-    missing: [],
-    invalid: [],
-    issues: [],
-  };
-
-  for (const property in schema) {
-    if (!{}.hasOwnProperty.call(schema, property)) continue;
-    let propVal = values.find((v) => v.path === property);
-    const config = schema[property];
-
-    const path = property.split('.');
-    let isSubPropOfArray = false;
-    if (path.length > 1) {
-      path.reduce((prev, next, idx, arr) => {
-        const np = idx !== 0 ? `${prev}.${next}` : next;
-        if (idx !== arr.length - 1 && schema[np] && schema[np].__type === 'array') {
-          isSubPropOfArray = true;
-        }
-        return np;
-      }, '');
-    }
-    if (isSubPropOfArray) continue;
-
-    if (propVal === undefined || (propVal && propVal.value === config.__default)) {
-      // NOTE: This feels wrong
-      if (bodyObj && bodyObj[property] && schema && schema[property] && schema[property].__type === 'object') {
-        const bodyValue = bodyObj[property] as Record<string, unknown>;
-        const definedObjectKeys = Object.keys(schema)
-          .filter((key) => key !== property)
-          .map((v) => v.replace(`${property}.`, ''));
-        const blankObjectValues = Object.keys(bodyValue).reduce((arr: Record<string, unknown>, key) => {
-          if (!definedObjectKeys.includes(key) || property !== key) {
-            arr[key] = bodyValue[key];
-          }
-
-          return arr;
-        }, {});
-
-        if (blankObjectValues) {
-          values.push({
-            path: property,
-            value: blankObjectValues,
-          });
-        } else {
-          values.push({
-            path: property,
-            value: __getPropDefault(config),
-          });
-        }
-        continue;
-      }
-
-      if (config.__required && propVal === undefined && (config.__default === null || config.__default === undefined)) {
-        res.isValid = false;
-        Logging.logWarn(`Missing required ${property}`);
-        res.missing.push(`${parentProperty}${property}`);
-        res.issues.push({ path: `${parentProperty}${property}`, code: 'required' });
-        continue;
-      }
-
-      const defaultValue = __getPropDefault(config);
-      if (bodyObj && propVal && propVal.value === config.__default) {
-        bodyObj[property] = defaultValue;
-      }
-
-      propVal = {
-        path: property,
-        value: defaultValue,
-      };
-      values.push(propVal);
-    }
-
-    const given = propVal.value;
-    const issue = checkProp(propVal, config, `${parentProperty}${property}`);
-    if (issue) {
-      Logging.logWarn(`Invalid ${property}: ${given} [${typeof given}]`);
-      res.isValid = false;
-      res.invalid.push(`${parentProperty}${property}:${given}[${typeof given}]`);
-      res.issues.push(issue);
-      continue;
-    }
-
-    if (config.__type === 'array' && config.__schema) {
-      const itemSchema = config.__schema;
-      // validateProp has checked it's an array (or null)
-      (propVal.value as unknown[]).forEach((v, idx) => {
-        const notObject = describeNonObjectItem(`${parentProperty}${property}.${idx}`, v);
-        if (notObject) {
-          res.isValid = false;
-          res.invalid.push(notObject);
-          res.issues.push({
-            path: `${parentProperty}${property}.${idx}`,
-            code: 'type',
-            expected: 'object',
-            received: describeType(v),
-          });
-          return;
-        }
-
-        const itemRes = __validate(itemSchema, __getFlattenedBody(v), `${parentProperty}${property}.${idx}.`, v);
-        if (itemRes.isValid) return;
-
-        res.isValid = false;
-        res.missing = res.missing.concat(itemRes.missing);
-        res.invalid = res.invalid.concat(itemRes.invalid);
-        res.issues = res.issues.concat(itemRes.issues);
-      });
-    } else if (config.__type === 'array' && config.__itemtype) {
-      const items = propVal.value as unknown[];
-      for (const idx in items) {
-        if (!{}.hasOwnProperty.call(items, idx)) continue;
-        const nullItem = describeNullItem(`${parentProperty}${property}.${idx}`, items[idx], config.__itemtype);
-        const itemPath = `${parentProperty}${property}.${idx}`;
-        if (nullItem) {
-          res.isValid = false;
-          res.invalid.push(nullItem);
-          res.issues.push({ path: itemPath, code: 'type', expected: config.__itemtype, received: 'null' });
-          continue;
-        }
-        const prop = {
-          value: items[idx],
-        };
-        const itemIssue = checkProp(prop, { __type: config.__itemtype }, itemPath);
-        if (itemIssue) {
-          res.issues.push(itemIssue);
-          Logging.logWarn(
-            `Invalid ${property}.${idx}: ${prop.value} [${typeof prop.value}] expected [${config.__itemtype}]`,
-          );
-          res.isValid = false;
-          res.invalid.push(
-            `${parentProperty}${property}.${idx}:${prop.value}[${typeof prop.value}] [${config.__itemtype}]`,
-          );
-        }
-        items[idx] = prop.value;
-      }
-    }
-  }
-
-  return res;
-};
-export const validate = __validate;
 
 const __prepareSchemaResult = (result: unknown, sourceId: string | null = null, projection: boolean = false) => {
   const _prepare = (chunk: unknown, path: string | null): unknown => {
@@ -495,132 +254,6 @@ const omitPath = (value: unknown, segments: string[]): unknown => {
  */
 export const stripPrivate = (result: unknown, privatePaths: string[][]): unknown =>
   privatePaths.reduce((value, segments) => omitPath(value, segments), result);
-
-// `path` is consumed (shifted) as the object is inflated.
-const __inflateObject = (parent: unknown, path: string[], value: unknown): unknown => {
-  if (path.length === 0) {
-    parent = value;
-    return parent;
-  }
-
-  const parentObj = parent as Record<string, unknown>;
-  if (path.length > 1) {
-    const parentKey = path.shift() as string;
-    if (!parentObj[parentKey]) {
-      parentObj[parentKey] = {};
-    }
-    __inflateObject(parentObj[parentKey], path, value);
-    return parentObj;
-  }
-
-  parentObj[path.shift() as string] = value;
-  return parentObj;
-};
-
-function __unflattenObject(data: Record<string, unknown>) {
-  const result: Record<string, unknown> = {};
-  for (const i of Object.keys(data)) {
-    const keys = i.split('.');
-    keys.reduce(function (r: Record<string, unknown>, e, j) {
-      return (r[e] || (r[e] = isNaN(Number(keys[j + 1])) ? (keys.length - 1 == j ? data[i] : {}) : [])) as Record<
-        string,
-        unknown
-      >;
-    }, result);
-  }
-  return result;
-}
-export const unflattenObject = __unflattenObject;
-
-// TODO: Need to handle flatterned array paths
-// TODO: Shared has simliar code, this may be a duplicate
-/**
- * @param {Object} schemaFlat - a flatterned schema
- * @param {Array} values - Array of values, path/value
- * @param {Object} body
- * @return {Object} - A fully populated object using schema defaults and values provided.
- */
-export const sanitizeObject = (schemaFlat: FlattenedSchema, values: FlattenedBodyProperty[], body: unknown = null) => {
-  const res: Record<string, unknown> = {};
-  const objects: Record<string, unknown> = {};
-
-  for (const property in schemaFlat) {
-    if (!{}.hasOwnProperty.call(schemaFlat, property)) continue;
-    let propVal: Partial<FlattenedBodyProperty> | undefined = values.find((v) => v.path === property);
-    const config = schemaFlat[property];
-
-    if (property === 'source') {
-      // Source is a special case, we don't actually want it in our objects that get saved
-      // as Buttress adds this property to objects to give the client ha hit on whhere the
-      // object came from.
-      continue;
-    }
-
-    const path = property.split('.');
-    let isSubPropOfArray = false;
-    if (path.length > 1) {
-      path.reduce((prev, next, idx, arr) => {
-        const np = idx !== 0 ? `${prev}.${next}` : next;
-        if (idx !== arr.length - 1 && schemaFlat[np] && schemaFlat[np].__type === 'array') {
-          isSubPropOfArray = true;
-        }
-        return np;
-      }, '');
-    }
-    if (isSubPropOfArray) continue;
-
-    const root = path.shift();
-
-    if (body && propVal === undefined && schemaFlat[property].__type === 'object') {
-      const getChild = (obj: unknown, str: string) => (obj as Record<string, unknown> | undefined)?.[str];
-      const value = property.split('.').reduce(getChild, body);
-      propVal = {};
-      propVal.path = property.split('.').pop();
-      propVal.value = value ? value : __getPropDefault(config);
-    }
-
-    if (propVal === undefined) {
-      propVal = {
-        path: property,
-        value: __getPropDefault(config),
-      };
-    }
-
-    if (propVal === undefined) continue;
-    __validateProp(propVal, config);
-
-    let value = propVal.value;
-    if (config.__type === 'array' && config.__schema) {
-      const itemSchema = config.__schema;
-      if (!body || !__getObjProperty(body, property)) {
-        value = [];
-      } else {
-        value = (value as unknown[]).map((item) => sanitizeArrayItem(itemSchema, item));
-        if (root && property.split('.').length > 1) {
-          objects[root] = __inflateObject(objects[root], path, value);
-          value = objects[root];
-        }
-      }
-    } else if ((root && path.length > 0) || schemaFlat[property].__type === 'object') {
-      if (!root) throw new Error("root is required but condition wasn't set to handle it being undefined");
-      if (!objects[root]) {
-        objects[root] = {};
-      }
-      objects[root] = __inflateObject(objects[root], path, value);
-      value = objects[root];
-    }
-
-    if (root !== undefined) res[root] = value;
-  }
-  return res;
-};
-
-/**
- * Cleans one item of an array that has an item `__schema`. The item is also passed as the body, so object properties
- * keep their values as they do when a whole entity is added.
- */
-export const sanitizeArrayItem = (itemSchemaFlat: FlattenedSchema, item: unknown) =>
-  sanitizeObject(itemSchemaFlat, __getFlattenedBody(item), item);
 
 const __getSchemaKeys = (obj: FlattenedSchema): string[] => {
   return Object.keys(obj).reduce((arr: string[], key) => {

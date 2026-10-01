@@ -38,6 +38,7 @@ import Logging from '../../helpers/logging.js';
 import AbstractAdapter from '../abstract-adapter.js';
 import MongodbIds from './mongodb-ids.js';
 import ObjectIdHelper, { isObjectId } from './object-id.js';
+import { parseDocument } from '../../model/parse-document.js';
 
 import { BjsQuery } from '../../types/bjs-query.js';
 import {
@@ -471,7 +472,7 @@ export default class MongodbAdapter extends AbstractAdapter {
         {
           let value: unknown = null;
           if (schemaConfig && schemaConfig.__schema) {
-            value = Helpers.Schema.sanitizeArrayItem(schemaConfig.__schema, body.value);
+            value = parseDocument(schemaConfig.__schema, body.value).value;
           } else {
             value = body.value;
           }
@@ -531,9 +532,9 @@ export default class MongodbAdapter extends AbstractAdapter {
           if (schemaConfig && schemaConfig.__schema && Array.isArray(body.value)) {
             // An array value replaces the whole array (see StandardModel.updateByPath), so each element is an item.
             const itemSchema = schemaConfig.__schema;
-            value = body.value.map((item) => Helpers.Schema.sanitizeArrayItem(itemSchema, item));
+            value = body.value.map((item) => parseDocument(itemSchema, item).value);
           } else if (schemaConfig && schemaConfig.__schema) {
-            value = Helpers.Schema.sanitizeArrayItem(schemaConfig.__schema, body.value);
+            value = parseDocument(schemaConfig.__schema, body.value).value;
           } else {
             value = body.value;
           }

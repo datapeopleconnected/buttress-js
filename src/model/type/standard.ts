@@ -152,7 +152,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
   }
 
   __doValidation(body: unknown) {
-    return Shared.validateSchemaObject(this.schemaData, body);
+    return Shared.validateSchemaObject(this.schemaData, body, this.flatSchemaData);
   }
 
   validate(body: unknown) {
@@ -350,9 +350,11 @@ export default class StandardModel<TDocument = AdapterDocument> {
    */
   __parseAddBody(body: AdapterDocument, internals?: unknown): AdapterDocument {
     const entity: AdapterDocument = Object.assign({}, internals);
+    const document = Shared.sanitizeSchemaObject(this.schemaData, body, this.flatSchemaData);
 
     if (body.id) {
-      entity.id = this.adapter.ID.new(body.id as string);
+      // As the schema reads it, so an id given as its `'new'` default is a new one
+      entity.id = this.adapter.ID.new((document.id ?? body.id) as string);
     } else {
       entity.id = this.adapter.ID.new();
     }
@@ -362,7 +364,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
       entity.updatedAt = body.updatedAt ? Sugar.Date.create(body.updatedAt as string | number | Date) : null;
     }
 
-    return Object.assign(Shared.sanitizeSchemaObject(this.schemaData, body), entity);
+    return Object.assign(document, entity);
   }
   // Subclasses take their own body and internals, and can resolve to other than a stream
   add(body: unknown, internals?: unknown): Promise<unknown> {

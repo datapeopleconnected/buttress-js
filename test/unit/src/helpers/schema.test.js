@@ -18,8 +18,9 @@ import { describe, it } from 'mocha';
 import assert from 'assert';
 
 import * as Helpers from '../../../../dist/helpers/index.js';
+import { parseDocument } from '../../../../dist/model/parse-document.js';
 
-describe('helpers.schema:sanitizeObject', () => {
+describe('model/parse-document:parseDocument', () => {
 	const schema = {
 		name: 'example-schema',
 		properties: {
@@ -65,12 +66,8 @@ describe('helpers.schema:sanitizeObject', () => {
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
 	let result = null;
 
-	it('should have function, sanitizeObject', async () => {
-		assert(typeof Helpers.Schema.sanitizeObject === 'function');
-	});
-
-	it('should execute the sanitizeObject function', async () => {
-		result = Helpers.Schema.sanitizeObject(flattenedSchema, []);
+	it('should parse an empty body', async () => {
+		result = parseDocument(flattenedSchema, {}).value;
 		assert(result !== null);
 	});
 
@@ -92,82 +89,11 @@ describe('helpers.schema:sanitizeObject', () => {
 	});
 });
 
-describe('helpers.schema:getFlattenedBody', () => {
-	const body = {
-		name: 'example-object',
-		age: 31,
-		testSubObject: {
-			id: '64f092cb7b7d65a36cf64a51',
-			node: true,
-			fruit: 'orange',
-		},
-		unstructured: true,
-		array: [
-			'car',
-			'bike',
-			{ arraySubOject: 'yes', arraySubOjectSubObject: { thisCouldGoOn: true } },
-		],
-	};
-
-	let result = null;
-
-	it('should have function, getFlattenedBody', async () => {
-		assert(typeof Helpers.Schema.getFlattenedBody === 'function');
-	});
-
-	it('should execute the getFlattenedBody function', async () => {
-		result = Helpers.Schema.getFlattenedBody(body);
-		assert(result !== null);
-	});
-
-	it('result should have property name which matches body value', async () => {
-		const { value } = result.find((r) => r.path === 'name');
-		assert(value !== undefined && value === body.name);
-	});
-
-	it('result should have property age which matches body value', async () => {
-		const { value } = result.find((r) => r.path === 'age');
-		assert(value !== undefined && value === body.age);
-	});
-
-	it('result should have property unstructured which matches body value', async () => {
-		const { value } = result.find((r) => r.path === 'unstructured');
-		assert(value !== undefined && value === body.unstructured);
-	});
-
-	it('result should have sub object property id flattened', async () => {
-		const { value } = result.find((r) => r.path === 'testSubObject.id');
-		assert(value !== undefined && value === body.testSubObject.id);
-	});
-
-	it('result should have sub object property fruit flattened', async () => {
-		const { value } = result.find((r) => r.path === 'testSubObject.fruit');
-		assert(value !== undefined && value === body.testSubObject.fruit);
-	});
-
-	it('result should have an array with length matching 3', async () => {
-		const { value } = result.find((r) => r.path === 'array');
-		assert(value !== undefined && value.length === 3);
-	});
-
-	it('result array should have matching sub values', async () => {
-		const { value } = result.find((r) => r.path === 'array');
-		assert(value[0] === 'car');
-		assert(value[1] === 'bike');
-
-		// Sub array objects aren't flattened
-		assert(value[2].arraySubOject === body.array[2].arraySubOject);
-		assert(value[2].arraySubOjectSubObject.thisCouldGoOn === body.array[2].arraySubOjectSubObject.thisCouldGoOn);
-	});
-});
-
-describe('helpers.schema:validate - array sub-schema field name collision', () => {
+describe('model/parse-document:parseDocument - array sub-schema field name collision', () => {
 	// Regression test: a top-level field (`status`) and an array-of-objects field's own sub-schema
-	// field of the same name (`parties[].status`) must validate independently. `__validate`
-	// recurses into the array sub-schema passing the *current element* as `body`, not the
-	// top-level document — if that recursion is ever passed the outer `body` reference again, the
-	// sub-schema field's default silently overwrites the top-level field of the same name whenever
-	// the sub-schema value already equals its own default (see the schema.ts:366 fix this guards).
+	// field of the same name (`parties[].status`) must be read independently: each item is read
+	// on its own, so the sub-schema field's default never overwrites the top-level field of the
+	// same name, whether or not the sub-schema value equals its own default.
 	const schema = {
 		name: 'example-relationship',
 		properties: {
@@ -196,12 +122,12 @@ describe('helpers.schema:validate - array sub-schema field name collision', () =
 			status: 'ACTIVE',
 			parties: [{ status: 'ACCEPTED' }],
 		};
-		const flattenedBody = Helpers.Schema.getFlattenedBody(body);
+		const { value, issues } = parseDocument(flattenedSchema, body);
 
-		Helpers.Schema.validate(flattenedSchema, flattenedBody, '', body);
-
-		assert.strictEqual(body.status, 'ACTIVE');
-		assert.strictEqual(body.parties[0].status, 'ACCEPTED');
+		assert.deepStrictEqual(issues, []);
+		assert.strictEqual(value.status, 'ACTIVE');
+		assert.strictEqual(value.parties[0].status, 'ACCEPTED');
+		assert.deepStrictEqual(body, { status: 'ACTIVE', parties: [{ status: 'ACCEPTED' }] });
 	});
 });
 
