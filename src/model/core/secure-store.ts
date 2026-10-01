@@ -60,7 +60,7 @@ class SecureStoreSchemaModel extends StandardModel<SecureStore> {
         },
         storeData: {
           __type: 'object',
-          __default: null,
+          __default: {},
           __required: false,
           __allowUpdate: true,
         },
@@ -79,15 +79,13 @@ class SecureStoreSchemaModel extends StandardModel<SecureStore> {
    * @return {Promise} - fulfilled with secure store value Object when the database request is completed
    */
   override async add(body: SecureStoreAddBody, internals: { _appId: string }) {
-    const data = {
-      id: body.id ? body.id : null,
-      name: body.name ? body.name : null,
-      storeData: body.storeData ? body.storeData : {},
-    };
-
-    const rxsSecureStore = await super.add(data, {
-      _appId: internals._appId,
-    });
+    // Stored as the schema reads it; no data, null included, is an empty object
+    const rxsSecureStore = await super.add(
+      { ...body, storeData: body.storeData || undefined },
+      {
+        _appId: internals._appId,
+      },
+    );
     const secureStore = await Helpers.streamFirst<SecureStore>(rxsSecureStore);
 
     return secureStore;

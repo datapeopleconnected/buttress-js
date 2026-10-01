@@ -105,6 +105,26 @@ describe('routes/api/secure-store:AddSecureStore', () => {
     await assert.rejects(route._validate(createReq({ body: {} })), { code: 'missing_field' });
   });
 
+  it("refuses a name that isn't text, or data that isn't an object, before it looks for the name", async () => {
+    const findOne = sinon.stub().resolves(null);
+    stubModel({ secureStore: { findOne } });
+    const route = createRoute(AddSecureStore);
+
+    await assert.rejects(route._validate(createReq({ body: { name: { $ne: null }, storeData: 'x' } })), {
+      status: 400,
+      code: 'invalid_value',
+      details: {
+        schema: 'secureStore',
+        path: 'name',
+        issues: [
+          { path: 'name', code: 'type', expected: 'string', received: 'object' },
+          { path: 'storeData', code: 'type', expected: 'object', received: 'string' },
+        ],
+      },
+    });
+    assert.strictEqual(findOne.called, false);
+  });
+
   it('rejects when a secure store with the same name already exists', async () => {
     stubModel({ secureStore: { findOne: async () => ({ id: 'existing' }) } });
     const route = createRoute(AddSecureStore);

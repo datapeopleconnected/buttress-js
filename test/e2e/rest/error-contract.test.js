@@ -221,6 +221,8 @@ describe('Error contract', async () => {
 			}],
 		['a user whose auth entry is not an object', () => [core('user'), post({ auth: [null] }), Config.testToken],
 			400, 'invalid_value', { schema: 'users', path: 'auth.0', issues: [{ path: 'auth.0', code: 'type', expected: 'object', received: 'null' }] }],
+		['a secure store whose name is not text', () => [core('secure-store'), post({ name: { $ne: null } }), appToken()],
+			400, 'invalid_value', { schema: 'secureStore', path: 'name', issues: [{ path: 'name', code: 'type', expected: 'string', received: 'object' }] }],
 		['a note without its required text', () => [notes(), post({}), appToken()],
 			400, 'missing_field', { schema: 'note', path: 'text', issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],

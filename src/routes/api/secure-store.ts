@@ -17,7 +17,7 @@ import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { invalidUpdateError } from '../../model/shared.js';
+import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
 import Datastore from '../../datastore/index.js';
 import * as Helpers from '../../helpers/index.js';
 
@@ -49,6 +49,14 @@ class AddSecureStore extends Route {
     if (!app || !req.body?.name) {
       this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
       return Promise.reject(Helpers.Errors.badRequest('missing_field'));
+    }
+
+    // Read as the schema types it, before its name is looked for
+    const validation = validateSchemaObject(SecureStoreSchemaModel.Schema, req.body);
+    if (!validation.isValid) {
+      const err = invalidEntityError(SecureStoreSchemaModel.Schema.name, validation);
+      this.log(`[${this.name}] ${err.message}`, Route.LogLevel.ERR);
+      return Promise.reject(err);
     }
 
     const secureStoreExist = await this.scoped(req, SecureStoreSchemaModel).findOne({
