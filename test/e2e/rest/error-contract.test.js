@@ -201,6 +201,8 @@ describe('Error contract', async () => {
 			400, 'unknown_path', { schema: 'crate', path: 'extra', issues: [{ path: 'extra', code: 'unknown_path' }] }],
 		['a schema with a misspelt property key', () => [core('app/schema'), put([{ name: 'note', type: 'collection', properties: { text: { __type: 'string', __requried: true } } }]), appToken()],
 			400, 'invalid_schema', { schema: 'note', issues: [{ path: 'text.__requried', code: 'unknown_path' }] }],
+		['a policy whose config has no query', () => [core('policy'), post({ name: 'no-query', version: '1', selection: { role: { '@eq': 'NOBODY' } }, config: [{ verbs: ['GET'], schema: ['note'] }] }), appToken()],
+			400, 'invalid_policy', { issues: [{ path: 'config.0.query', code: 'required' }] }],
 		['a note without its required text', () => [notes(), post({}), appToken()],
 			400, 'missing_field', { schema: 'note', path: 'text', issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],

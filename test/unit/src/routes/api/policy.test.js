@@ -273,6 +273,19 @@ describe('routes/api/policy:AddPolicy', () => {
     await assert.rejects(route._validate(createReq({ body })), { code: 'policy_with_name_already_exists' });
   });
 
+  it('refuses a policy whose config has no query, which would grant nothing', async () => {
+    stubModel();
+    const route = createRoute(AddPolicy);
+    const body = { name: 'test', selection: {}, config: [{ verbs: ['GET'], schema: ['note'] }], version: '1' };
+    const authApp = { id: '6abd05000000000000000001', policyPropertiesList: {} };
+
+    await assert.rejects(route._validate(createReq({ body, authApp })), {
+      status: 400,
+      code: 'invalid_policy',
+      details: { issues: [{ path: 'config.0.query', code: 'required' }] },
+    });
+  });
+
   it('rejects when the version property is missing', async () => {
     stubModel();
     const route = createRoute(AddPolicy);
@@ -285,7 +298,8 @@ describe('routes/api/policy:AddPolicy', () => {
   it('resolves with the app id once validated', async () => {
     stubModel();
     const route = createRoute(AddPolicy);
-    const body = { name: 'test', selection: {}, config: [{}], version: 1 };
+    const config = [{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }];
+    const body = { name: 'test', selection: {}, config, version: 1 };
     const authApp = { id: '6abd05000000000000000001', policyPropertiesList: {} };
 
     const result = await route._validate(createReq({ body, authApp }));
@@ -307,6 +321,17 @@ describe('routes/api/policy:AddPolicy', () => {
 });
 
 describe('routes/api/policy:UpdatePolicy', () => {
+  it("refuses an update that takes a config's query away", async () => {
+    stubModel({ policy: { validateUpdate: realValidateUpdate(PolicySchemaModel) } });
+    const route = createRoute(UpdatePolicy);
+
+    await assert.rejects(route._validate(createReq({ body: [{ path: 'config.0.query', value: null }] })), {
+      status: 400,
+      code: 'invalid_policy',
+      details: { issues: [{ path: 'config.0.query', code: 'required' }] },
+    });
+  });
+
   it('says an update is missing its value, rather than that its path is invalid', async () => {
     stubModel({ policy: { validateUpdate: realValidateUpdate(PolicySchemaModel) } });
     const route = createRoute(UpdatePolicy);
@@ -459,7 +484,12 @@ describe('routes/api/policy:SyncPolicies', () => {
     await assert.rejects(route._validate(createReq({ body: [{ name: 'test' }] })), { code: 'missing_field' });
   });
 
-  const validPolicy = (name) => ({ name, selection: { role: { '@eq': 'admin' } }, config: [{ verbs: ['GET'] }], version: '1' });
+  const validPolicy = (name) => ({
+    name,
+    selection: { role: { '@eq': 'admin' } },
+    config: [{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }],
+    version: '1',
+  });
   const app = { id: '6abd05000000000000000001', policyPropertiesList: { role: ['admin', 'user'] } };
 
   it('checks each policy as adding one does: its version, its selection, and a name of its own', async () => {
@@ -471,6 +501,7 @@ describe('routes/api/policy:SyncPolicies', () => {
     await assert.rejects(sync([{ ...validPolicy('a'), version: undefined }]), { code: 'invalid_policy_no_version' });
     await assert.rejects(sync([{ ...validPolicy('a'), selection: { role: { '@eq': 'owner' } } }]), { code: 'invalid_policy_selection' });
     await assert.rejects(sync([{ ...validPolicy('a'), config: [] }]), { code: 'missing_field' });
+    await assert.rejects(sync([{ ...validPolicy('a'), config: [{ verbs: ['GET'] }] }]), { code: 'invalid_policy' });
     await assert.rejects(sync([validPolicy('a'), validPolicy('a')]), { code: 'policy_with_name_already_exists' });
   });
 

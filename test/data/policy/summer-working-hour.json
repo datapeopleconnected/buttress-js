@@ -16,6 +16,9 @@
       "schema": [
         "organisation"
       ],
+      "query": {
+        "access": "%FULL_ACCESS%"
+      },
       "env": {
         "startTime": "01:00",
         "endTime": "01:01"

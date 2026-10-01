@@ -14,6 +14,12 @@ By default, requests without matching policy access are denied.
 | priority | number | no | Evaluation precedence |
 | selection | object | yes | Selector against token policy properties |
 | config | array | yes | Access definitions (verbs, endpoints, schema, query, projection, condition) |
+
+A policy is checked when it's added, synced or updated, and refused with a 400, `invalid_policy`, listing each
+problem in `details.issues`, when a config would grant nothing or fail when it's evaluated. Each config needs
+`verbs`, a list of `GET`, `SEARCH`, `POST`, `PUT`, `DELETE` or `%ALL%`; `schema`, a list of schema names; and a
+`query` object (`{"access": "%FULL_ACCESS%"}` for every entity). A `projection` is `{"keys": [...]}`, and a
+`condition` or `env` is an object. Earlier releases saved a config without a query, and it granted nothing.
 | limit | date | no | Optional policy expiry |
 
 ## CLI Commands

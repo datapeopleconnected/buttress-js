@@ -18,6 +18,8 @@ import { Response, Request } from 'express';
 import Route from '../route.js';
 import Model from '../../model/index.js';
 import { invalidUpdateError } from '../../model/shared.js';
+import { checkPolicyConfig, checkPolicyConfigUpdate } from '../../access-control/policy-definition.js';
+import type { ValidationIssue } from '../../helpers/schema.js';
 import * as Helpers from '../../helpers/index.js';
 
 import Datastore from '../../datastore/index.js';
@@ -194,15 +196,10 @@ class AddPolicy extends Route {
         return Promise.reject(Helpers.Errors.badRequest('policy_with_name_already_exists'));
       }
 
-      const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body.selection);
-      if (!policyCheck.passed) {
-        this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-        return Promise.reject(Helpers.Errors.badRequest('invalid_policy_selection'));
-      }
-
-      if (!req.body.version) {
-        this.log(`[${this.name}] a version property is required: ${req.body.name}`, Route.LogLevel.ERR);
-        return Promise.reject(Helpers.Errors.badRequest('invalid_policy_no_version'));
+      const problem = await newPolicyProblem(app, req.body as PolicyAddBody);
+      if (problem) {
+        this.log(`[${this.name}] ${problem.code}: ${req.body.name}`, Route.LogLevel.ERR);
+        return Promise.reject(problem);
       }
 
       return Promise.resolve({
@@ -254,6 +251,9 @@ class UpdatePolicy extends Route {
         return reject(err);
       }
 
+      const problem = policyUpdateProblem(body);
+      if (problem) return reject(problem);
+
       policies
         .assertExists(req.params.id)
         .then(() => resolve(true))
@@ -300,6 +300,9 @@ class BulkUpdatePolicy extends Route {
         return Promise.reject(err);
       }
 
+      const problem = policyUpdateProblem(body);
+      if (problem) return Promise.reject(problem);
+
       await policies.assertExists(item.id);
     }
 
@@ -317,18 +320,31 @@ class BulkUpdatePolicy extends Route {
 routes.push(BulkUpdatePolicy);
 
 /**
- * Why a policy can't be added to `app`, or null if it can: it needs a name, a selection and config, a selection of
- * properties the app lists, and a version.
+ * The error to refuse a policy for when it's added to `app`, or null if it can be: it needs a name, a selection and
+ * config, a selection of properties the app lists, a version, and configs that can grant something.
  */
 const newPolicyProblem = async (app: App, policy: PolicyAddBody) => {
-  if (!policy?.selection || !policy.name || !policy.config || policy.config.length < 1) return 'missing_field';
+  if (!policy?.selection || !policy.name || !policy.config || policy.config.length < 1) {
+    return Helpers.Errors.badRequest('missing_field');
+  }
 
   const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, policy.selection);
-  if (!policyCheck.passed) return 'invalid_policy_selection';
+  if (!policyCheck.passed) return Helpers.Errors.badRequest('invalid_policy_selection');
 
-  if (!policy.version) return 'invalid_policy_no_version';
+  if (!policy.version) return Helpers.Errors.badRequest('invalid_policy_no_version');
 
-  return null;
+  const issues = checkPolicyConfig(policy.config);
+  return issues.length > 0 ? invalidPolicy(policy.name, issues) : null;
+};
+
+// A policy whose configs would grant nothing, or fail when they're evaluated
+const invalidPolicy = (name: string | undefined, issues: ValidationIssue[]) =>
+  Helpers.Errors.badRequest('invalid_policy', `${name ?? 'policy'}: Invalid policy config`, { issues });
+
+// The error for updates that write configs that would grant nothing, or null
+const policyUpdateProblem = (updates: UpdatePathBody | UpdatePathBody[]) => {
+  const issues = (Array.isArray(updates) ? updates : [updates]).flatMap((update) => checkPolicyConfigUpdate(update));
+  return issues.length > 0 ? invalidPolicy(undefined, issues) : null;
 };
 
 /**
@@ -360,8 +376,8 @@ class SyncPolicies extends Route {
     for (const policy of req.body) {
       const problem = await newPolicyProblem(app, policy);
       if (problem) {
-        this.log(`[${this.name}] ${problem}: ${policy?.name}`, Route.LogLevel.ERR);
-        throw Helpers.Errors.badRequest(problem);
+        this.log(`[${this.name}] ${problem.code}: ${policy?.name}`, Route.LogLevel.ERR);
+        throw problem;
       }
       if (names.has(policy.name as string)) {
         this.log(`[${this.name}] Policy with name ${policy.name} is given twice`, Route.LogLevel.ERR);
