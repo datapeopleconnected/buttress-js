@@ -27,7 +27,8 @@ import { Services } from '../../bootstrap.js';
 import { ModelManager } from '../index.js';
 import AbstractAdapter, { AdapterFindResult } from '../../datastore/abstract-adapter.js';
 import { Datastore } from '../../datastore/index.js';
-import { AdapterDocument, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
+import { AdapterDocument, AdapterQuery, UpdatePathBody, UpdatePathContext } from '../../types/datastore.js';
+import { isUpdatePathRefusal, resolveUpdatePath } from '../update-paths.js';
 import { FlattenedSchema, FlattenedSchemaProperty } from '../../types/schema.js';
 
 // The types a compared query value is read as, and the operators that compare
@@ -400,8 +401,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
    * @return {promise}
    */
   validateUpdate(body: unknown) {
-    const sharedFn = Shared.validateUpdate({}, this.schemaData);
-    return sharedFn(body);
+    return Shared.validateUpdate(this.schemaData, this.flatSchemaData)(body);
   }
 
   /**
@@ -422,32 +422,22 @@ export default class StandardModel<TDocument = AdapterDocument> {
     }
 
     if (this.schemaData.extends && this.schemaData.extends.includes('timestamps')) {
-      body.push({
-        path: 'updatedAt',
-        value: new Date(),
-        contextPath: '^updatedAt$',
-      });
+      body.push({ path: 'updatedAt', value: new Date() });
     }
 
-    // const schema = __getCollectionSchema(collectionName);
-    const flattenedSchema = this.schemaData ? Helpers.getFlattenedSchema(this.schemaData) : false;
-    const extendedPathContext = Shared.extendPathContext({}, flattenedSchema || {}, '');
-
     const updates = body.map((update) => {
-      let config = flattenedSchema === false ? false : flattenedSchema[update.path];
-      if (!config && flattenedSchema) {
-        config = flattenedSchema[update.path.replace(/\.\d+/g, '')];
-      }
+      // The update's been validated, but the server's own (updatedAt) may write a property clients can't
+      const resolved = resolveUpdatePath(this.flatSchemaData, update.path);
+      const kind = isUpdatePathRefusal(resolved) ? 'scalar' : resolved.kind;
+      // An array given for the whole array replaces it rather than being added as one item
+      const context: UpdatePathContext = {
+        type: kind === 'vector-add' && Array.isArray(update.value) ? 'scalar' : kind,
+        values: isUpdatePathRefusal(resolved) ? [] : resolved.values,
+      };
+      const schemaConfig =
+        this.flatSchemaData[update.path] ?? this.flatSchemaData[update.path.replace(/\.\d+/g, '')] ?? false;
 
-      // If we're doing a vector-add operation but the user has provided an array as the value then we want to
-      // update the whole property.
-      // The update's been validated, so it has a context path.
-      let context = extendedPathContext[update.contextPath as string];
-      if (context.type === 'vector-add' && Array.isArray(update.value)) {
-        context = { type: 'scalar', values: [] };
-      }
-
-      return { body: update, context, schemaConfig: config };
+      return { body: update, context, schemaConfig };
     });
 
     // An adapter that can apply the request's updates together does, so they all take effect or none do.

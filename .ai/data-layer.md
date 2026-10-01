@@ -43,10 +43,13 @@ Key things to know:
   `$rex`/`$rexi`→`$regex` (with `i` flag for `$rexi`), `$inProp`→`$regex`. It also auto-converts string
   operands to `ObjectId`s for properties whose schema type is `id`, and to `Date` for `__type: 'date'`.
   This is the layer that both REST query params and Access Control query injection go through.
-- `updateByPath()` implements Buttress's **path-based PUT** semantics (`{path, value, contextPath}`
-  updates), used for partial/vector updates (`vector-add`, `vector-rm`, `scalar-increment`) — see
-  `extendPathContext()` in [src/model/shared.ts](../src/model/shared.ts) for how a schema's properties
-  map to allowed update path regexes.
+- `updateByPath()` implements Buttress's **path-based PUT** semantics (`{path, value}` updates), used for
+  partial/vector updates (`vector-add`, `vector-rm`, `scalar-increment`). `resolveUpdatePath()` in
+  [src/model/update-paths.ts](../src/model/update-paths.ts) walks a path's segments against the flattened schema
+  and gives the property it writes, how (its kind), its enum values and whether it writes the property, one array
+  item or a path beneath an object or item; or refuses it as `unknown_path` or `immutable` (`__allowUpdate:
+  false`). `validateUpdate()` (shared.ts) checks values through it, and `updateByPath()` hands the adapter its
+  kind.
 - `__parseAddBody()` auto-generates `id` (via `adapter.ID.new()`) and, if the schema `extends` includes
   `timestamps`, stamps `createdAt`/`updatedAt`.
 - `add(body, internals)`: `internals` are the fields only the server sets, merged over the sanitised body, so
@@ -77,7 +80,15 @@ collection — see `_initSchemaModel()` in `model/index.ts` and [architecture.md
 
 `Helpers.getFlattenedSchema()` / `Helpers.Schema.getFlattenedBody()` flatten nested schema/body objects
 into dotted-path maps — this flattened form is what `validateSchemaObject`, `sanitizeSchemaObject`, and
-`parseQuery` all operate on ([src/model/shared.ts](../src/model/shared.ts)).
+`parseQuery` all operate on ([src/model/shared.ts](../src/model/shared.ts)). It leaves the schema as it is; an array's
+flattened `__schema` is in the result. A model flattens its schema once, when it's set (`flatSchemaData`), and
+validation, updates and queries use that.
+
+Every value is read as its `__type` through one codec per type, `decode()` in
+[src/helpers/codecs.ts](../src/helpers/codecs.ts): bodies (`validateProp`/`checkProp` in `helpers/schema.ts`),
+update values, and compared query values (`StandardModel.__decodeOperand`). Validation lists every problem as an
+issue, `{path, code, expected?, received?}`, which `invalidEntityError`/`invalidUpdateError` put in the error's
+`details.issues`. A schema with `strict: true` refuses fields it doesn't define on create.
 
 ## Datastore adapters
 

@@ -18,6 +18,8 @@ import { describe, it } from 'mocha';
 import assert from 'assert';
 
 import { invalidEntityError, invalidUpdateError, validateSchemaObject, validateUpdate } from '../../../../dist/model/shared.js';
+import { resolveUpdatePath } from '../../../../dist/model/update-paths.js';
+import { getFlattenedSchema } from '../../../../dist/helpers/index.js';
 
 // Validation adds its own context to each update
 const pathsAndValues = (body) => body.map(({ path, value }) => ({ path, value }));
@@ -32,7 +34,7 @@ const schema = (core) => ({
 describe('model/shared:validateUpdate', () => {
   for (const core of [true, false]) {
     describe(core ? 'on a core schema' : 'on an app schema', () => {
-      const validate = validateUpdate({}, schema(core));
+      const validate = validateUpdate(schema(core));
 
       it('takes a single update', () => {
         const { validation, body } = validate({ path: 'priority', value: 1 });
@@ -67,9 +69,7 @@ describe('model/shared:validateUpdate', () => {
 
 describe('model/shared:validateUpdate paths', () => {
   const HEX_ID = '5f0000000000000000000000';
-  const validate = validateUpdate(
-    {},
-    {
+  const thing = {
       name: 'thing',
       type: 'collection',
       properties: {
@@ -84,18 +84,26 @@ describe('model/shared:validateUpdate paths', () => {
         specification: { env: { __type: 'string', __allowUpdate: true } },
         'a+b': { __type: 'string', __allowUpdate: true },
       },
-    },
-  );
+    };
+  const validate = validateUpdate(thing);
+  const flat = getFlattenedSchema(thing);
+  // The property the path writes to
   const accepts = (path, value) => {
     const { validation, body } = validate({ path, value });
     assert.strictEqual(validation.isValid, true, `refused ${path}`);
-    return body[0].contextPath;
+    return resolveUpdatePath(flat, body[0].path).property;
   };
   const refuses = (path, value) => {
     const { validation } = validate({ path, value });
     assert.strictEqual(validation.isValid, false, `accepted ${path}`);
     assert.strictEqual(validation.isPathValid, false, `${path} was refused for its value, not its path`);
   };
+
+  it('says a property that does not allow updates is immutable', () => {
+    assert.deepStrictEqual(validate({ path: 'ownerId', value: HEX_ID }).validation.issues, [
+      { path: 'ownerId', code: 'immutable' },
+    ]);
+  });
 
   it('refuses a property that does not allow updates, even when its name contains an object property', () => {
     refuses('ownerId', HEX_ID);
@@ -109,8 +117,8 @@ describe('model/shared:validateUpdate paths', () => {
   });
 
   it('takes a path beneath an object property that declares no properties', () => {
-    assert.strictEqual(accepts('owner.name', 'x'), '^owner$');
-    assert.strictEqual(accepts('meta.a.b', 1), '^meta$');
+    assert.strictEqual(accepts('owner.name', 'x'), 'owner');
+    assert.strictEqual(accepts('meta.a.b', 1), 'meta');
   });
 
   it('refuses a path that is not a declared property, or an update operation beneath an object property', () => {
@@ -121,15 +129,15 @@ describe('model/shared:validateUpdate paths', () => {
   });
 
   it('still takes the declared paths', () => {
-    assert.strictEqual(accepts('owner', { name: 'x' }), '^owner$');
-    assert.strictEqual(accepts('datastore.name', 'x'), '^datastore\\.name$');
-    assert.strictEqual(accepts('specification.env', 'x'), '^specification\\.env$');
-    assert.strictEqual(accepts('a+b', 'x'), '^a\\+b$');
+    assert.strictEqual(accepts('owner', { name: 'x' }), 'owner');
+    assert.strictEqual(accepts('datastore.name', 'x'), 'datastore.name');
+    assert.strictEqual(accepts('specification.env', 'x'), 'specification.env');
+    assert.strictEqual(accepts('a+b', 'x'), 'a+b');
   });
 });
 
 describe('model/shared:validateUpdate paths beneath a typed object', () => {
-  const validate = validateUpdate({}, {
+  const validate = validateUpdate({
     name: 'thing',
     type: 'collection',
     properties: { meta: { __type: 'object', __default: {}, __allowUpdate: true } },
@@ -164,7 +172,7 @@ describe('model/shared: values converted as the schema types them', () => {
       const body = { on: given };
       assert.strictEqual(validateSchemaObject(flags, body).isValid, true);
 
-      const { validation, body: updates } = validateUpdate({}, flags)({ path: 'on', value: given });
+      const { validation, body: updates } = validateUpdate(flags)({ path: 'on', value: given });
       assert.strictEqual(validation.isValid, true);
       assert.strictEqual(updates[0].value, stored);
     });
@@ -180,7 +188,7 @@ describe('model/shared: values converted as the schema types them', () => {
       assert.strictEqual(created.isValid, false);
       assert.strictEqual(created.invalid.length, 1);
 
-      const { validation } = validateUpdate({}, flags)({ path, value: given });
+      const { validation } = validateUpdate(flags)({ path, value: given });
       assert.strictEqual(validation.isValid, false);
       assert.strictEqual(validation.isValueValid, false);
     });
@@ -232,7 +240,7 @@ describe('model/shared: validation issues', () => {
   });
 
   it('lists every refused update of a request', () => {
-    const { validation } = validateUpdate({}, crate)([
+    const { validation } = validateUpdate(crate)([
       { path: 'weight', value: 'heavy' },
       { path: 'colour', value: 'green' },
       { path: 'label', value: 'fine' },
@@ -278,7 +286,7 @@ describe('model/shared: validation errors', () => {
   });
 
   it('refuses updates as invalid_update, listing every issue', () => {
-    const { validation } = validateUpdate({}, crate)([{ path: 'weight', value: 'heavy' }, { path: 'nothing', value: 1 }]);
+    const { validation } = validateUpdate(crate)([{ path: 'weight', value: 'heavy' }, { path: 'nothing', value: 1 }]);
     const err = invalidUpdateError('crate', validation);
 
     assert.strictEqual(err.code, 'invalid_update');

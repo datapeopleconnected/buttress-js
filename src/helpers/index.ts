@@ -298,7 +298,10 @@ export const mergeDeep = <T extends object>(...objects: T[]): T => {
   }, {}) as T;
 };
 
-// NOTE: Converts the `__schema` of any array properties to its flattened form, in place.
+/**
+ * The schema's properties keyed by their dotted paths. An array's `__schema` is given flattened in the result, and
+ * its item properties are also listed beneath the array's key (`items.sku`). The schema itself is left as it is.
+ */
 export const getFlattenedSchema = (schema: { properties?: Properties }) => {
   const __buildFlattenedSchema = (property: string, parent: Properties, path: string[], flattened: FlattenedSchema) => {
     path.push(property);
@@ -312,8 +315,10 @@ export const getFlattenedSchema = (schema: { properties?: Properties }) => {
         __buildFlattenedSchema(childProp, arraySchema, path, flattened);
       }
 
-      prop.__schema = getFlattenedSchema({ properties: arraySchema });
-      flattened[path.join('.')] = prop as FlattenedSchemaProperty;
+      flattened[path.join('.')] = {
+        ...prop,
+        __schema: getFlattenedSchema({ properties: arraySchema }),
+      } as FlattenedSchemaProperty;
     } else if (typeof prop === 'object' && !prop.__type) {
       // Handle Object
       const nested = prop as Properties;
@@ -449,40 +454,6 @@ export const checkAppPolicyProperty = async (
   }
 
   return res;
-};
-
-// NOTE: __updateObjectPath doesn't return anything, so this returns an array update unchanged and
-// `undefined` for a single update.
-export const updateCoreSchemaObject = (update: unknown, extendedPathContext: Record<string, unknown>) => {
-  const __updateObjectPath = (body: { path: string; value: unknown }): void => {
-    // Not an update, validation reports it
-    if (!body || typeof body.path !== 'string') return;
-    const bodyPath = body.path.replace(pattern, '');
-    if (!Array.isArray(body) && body.value && typeof body.value === 'object' && !Array.isArray(body.value)) {
-      const bodyValue = body.value as Record<string, unknown>;
-      body = Object.keys(bodyValue).reduce((arr: { path: string; value: unknown }[], key) => {
-        const extendedPath = `${bodyPath}.${key}`;
-        if (!extendedPathContextKeys.some((key) => key.includes(extendedPath))) return arr;
-
-        arr.push({
-          path: `${body.path}.${key}`,
-          value: bodyValue[key],
-        });
-
-        return arr;
-      }, []) as unknown as { path: string; value: unknown };
-    }
-  };
-
-  const extendedPathContextKeys = Object.keys(extendedPathContext);
-  const pattern = /\.\d+/g;
-  if (Array.isArray(update)) {
-    (update as { path: string; value: unknown }[]).forEach((item) => __updateObjectPath(item));
-  } else {
-    update = __updateObjectPath(update as { path: string; value: unknown });
-  }
-
-  return update;
 };
 
 export const compareByProps = (

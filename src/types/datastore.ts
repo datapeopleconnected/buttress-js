@@ -43,7 +43,7 @@ export type AdapterQuery = Record<string, unknown>;
 export type AdapterAddModifier = (item: AdapterDocument) => AdapterDocument;
 
 /**
- * How an update-by-path operation should be applied, see `extendPathContext` in `model/shared.ts`.
+ * How an update-by-path operation should be applied, see `resolveUpdatePath` in `model/update-paths.ts`.
  */
 export interface UpdatePathContext {
   type: 'scalar' | 'scalar-increment' | 'vector-add' | 'vector-rm';
@@ -51,19 +51,11 @@ export interface UpdatePathContext {
 }
 
 /**
- * Update-by-path contexts, keyed on a regular expression matching the paths they apply to.
- */
-export type UpdatePathContexts = Record<string, UpdatePathContext>;
-
-/**
  * A single update-by-path operation, as sent in the body of an update request.
  */
 export interface UpdatePathBody {
   path: string;
   value: unknown;
-  // Set during validation, to the key of the matching path context (false until one's found).
-  contextPath?: string | false;
-  contextParams?: string[];
   sourceId?: string;
 }
 

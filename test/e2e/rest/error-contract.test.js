@@ -66,6 +66,7 @@ describe('Error contract', async () => {
 					text: { __type: 'string', __default: null, __required: true, __allowUpdate: true },
 					due: { __type: 'date', __default: null, __required: false, __allowUpdate: true },
 					done: { __type: 'boolean', __default: false, __required: false, __allowUpdate: true },
+					serial: { __type: 'string', __default: null, __required: false, __allowUpdate: false },
 				},
 			}, {
 				// It refuses fields it doesn't define
@@ -206,6 +207,8 @@ describe('Error contract', async () => {
 			400, 'duplicate_id', { schema: 'note', id: NOBODYS_ID, index: 1 }],
 		['an update to a path the note has not got', () => [notes(`/${testEnv.note.id}`), put({ path: 'nothing', value: 1 }), appToken()],
 			400, 'invalid_update', { schema: 'note', issues: [{ path: 'nothing', code: 'unknown_path' }] }],
+		['an update to a property that does not allow updates', () => [notes(`/${testEnv.note.id}`), put({ path: 'serial', value: 'x' }), appToken()],
+			400, 'invalid_update', { schema: 'note', issues: [{ path: 'serial', code: 'immutable' }] }],
 		['a note update that lists every problem', () => [notes(`/${testEnv.note.id}`), put([{ path: 'done', value: 'banana' }, { path: 'nothing', value: 1 }]), appToken()],
 			400, 'invalid_update', {
 				schema: 'note',
