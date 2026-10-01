@@ -13,14 +13,20 @@ By default, requests without matching policy access are denied.
 | merge | boolean | no | Merge behavior when multiple policies apply |
 | priority | number | no | Evaluation precedence |
 | selection | object | yes | Selector against token policy properties |
+| env | object | no | Values a config's query can use |
 | config | array | yes | Access definitions (verbs, endpoints, schema, query, projection, condition) |
+| limit | date | no | Optional policy expiry |
 
 A policy is checked when it's added, synced or updated, and refused with a 400, `invalid_policy`, listing each
 problem in `details.issues`, when a config would grant nothing or fail when it's evaluated. Each config needs
 `verbs`, a list of `GET`, `SEARCH`, `POST`, `PUT`, `DELETE` or `%ALL%`; `schema`, a list of schema names; and a
 `query` object (`{"access": "%FULL_ACCESS%"}` for every entity). A `projection` is `{"keys": [...]}`, and a
 `condition` or `env` is an object. Earlier releases saved a config without a query, and it granted nothing.
-| limit | date | no | Optional policy expiry |
+
+A policy that's added or synced is then read as the table types it, as an app's schema reads an entity, and a value
+that isn't of its type is refused with a 400, `invalid_value`, naming it, with every problem in `details.issues`:
+a `priority` that isn't a number, say, or a `limit` that isn't a date. Earlier releases stored such values as they
+were given.
 
 ## CLI Commands
 

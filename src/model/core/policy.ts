@@ -13,7 +13,6 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Sugar from '../../helpers/sugar.js';
 import StandardModel from '../type/standard.js';
 import { TenantKey } from '../type/tenant-scoped.js';
 import { PolicyCache } from '../../services/policy-cache.js';
@@ -117,6 +116,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
         },
         version: {
           __type: 'string',
+          __default: null,
           __required: true,
           __allowUpdate: true,
         },
@@ -134,8 +134,8 @@ class PolicySchemaModel extends StandardModel<Policy> {
         },
         env: {
           __type: 'object',
-          __default: null,
-          __required: true,
+          __default: {},
+          __required: false,
           __allowUpdate: true,
         },
         config: {
@@ -151,7 +151,7 @@ class PolicySchemaModel extends StandardModel<Policy> {
             endpoints: {
               __type: 'array',
               __itemtype: 'string',
-              __required: true,
+              __required: false,
               __allowUpdate: true,
             },
             schema: {
@@ -163,19 +163,19 @@ class PolicySchemaModel extends StandardModel<Policy> {
             env: {
               __type: 'object',
               __default: null,
-              __required: true,
+              __required: false,
               __allowUpdate: true,
             },
             condition: {
               __type: 'object',
               __default: null,
-              __required: true,
+              __required: false,
               __allowUpdate: true,
             },
             projection: {
               __type: 'object',
               __default: null,
-              __required: true,
+              __required: false,
               __allowUpdate: true,
             },
             query: {
@@ -202,38 +202,13 @@ class PolicySchemaModel extends StandardModel<Policy> {
   }
 
   /**
+   * Stores a policy as the schema reads it, with its defaults for what it leaves out.
    * @param {Object} body - policy object
    * @param {String} appId - app id
    * @return {Promise} - fulfilled with policy Object when the database request is completed
    */
   override async add(body: PolicyAddBody, internals: { _appId: string }) {
-    const policyConfig: PolicyConfig[] = [];
-    if (body.config) {
-      body.config.forEach((item) => {
-        policyConfig.push({
-          verbs: item.verbs ? item.verbs : [],
-          endpoints: item.endpoints ? item.endpoints : [],
-          schema: item.schema ? item.schema : [],
-          env: item.env ? item.env : null,
-          condition: item.condition ? item.condition : null,
-          projection: item.projection ? item.projection : null,
-          query: item.query ? item.query : null,
-        });
-      });
-    }
-
-    const policyBody = {
-      id: body.id ? this.createId(body.id) : this.createId(),
-      name: body.name ? body.name : null,
-      priority: body.priority ? body.priority : 0,
-      selection: body.selection ? body.selection : {},
-      env: body.env ? body.env : {},
-      config: policyConfig,
-      limit: body.limit ? Sugar.Date.create(body.limit) : null,
-      version: body.version ?? null,
-    };
-
-    const rxsPolicy = await super.add(policyBody, {
+    const rxsPolicy = await super.add(body, {
       _appId: internals._appId,
     });
     const policy = (await Helpers.streamFirst(rxsPolicy)) as Policy;

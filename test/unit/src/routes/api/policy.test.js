@@ -295,6 +295,29 @@ describe('routes/api/policy:AddPolicy', () => {
     await assert.rejects(route._validate(createReq({ body, authApp })), { code: 'invalid_policy_no_version' });
   });
 
+  it("refuses a policy whose values aren't of their types, listing each", async () => {
+    stubModel();
+    const route = createRoute(AddPolicy);
+    const config = [{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }];
+    const body = { name: 'test', selection: {}, config, version: '1', priority: 'high', env: 'x', limit: 'whenever' };
+    const authApp = { id: '6abd05000000000000000001', policyPropertiesList: {} };
+
+    await assert.rejects(route._validate(createReq({ body, authApp })), {
+      status: 400,
+      code: 'invalid_value',
+      message: 'policy: Invalid value: priority:high[string]',
+      details: {
+        schema: 'policy',
+        path: 'priority',
+        issues: [
+          { path: 'priority', code: 'type', expected: 'number', received: 'string' },
+          { path: 'env', code: 'type', expected: 'object', received: 'string' },
+          { path: 'limit', code: 'type', expected: 'date', received: 'string' },
+        ],
+      },
+    });
+  });
+
   it('resolves with the app id once validated', async () => {
     stubModel();
     const route = createRoute(AddPolicy);
@@ -509,6 +532,23 @@ describe('routes/api/policy:SyncPolicies', () => {
     { id: 'old-1', name: 'x', selection: {}, config: [], version: '1' },
     { id: 'old-2', name: 'y', selection: {}, config: [], version: '1' },
   ];
+
+  it("refuses a policy whose values aren't of their types, before any are replaced", async () => {
+    const { policyModel } = stubModel();
+    const route = createRoute(SyncPolicies);
+    const config = [{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }];
+    const body = [
+      { name: 'a', selection: {}, config, version: '1' },
+      { name: 'b', selection: {}, config, version: '1', priority: 'high' },
+    ];
+    const authApp = { id: '6abd05000000000000000001', policyPropertiesList: {} };
+
+    await assert.rejects(route._validate(createReq({ body, authApp })), {
+      code: 'invalid_value',
+      details: { schema: 'policy', path: 'priority', issues: [{ path: 'priority', code: 'type', expected: 'number', received: 'string' }] },
+    });
+    assert.strictEqual(policyModel.rmBulk.called, false);
+  });
 
   it("replaces the app's policies by id, so the policy cache lets the old ones go, and busts the cache", async () => {
     const { policyModel } = stubModel({ policy: { find: findRows(oldPolicies) } });

@@ -17,7 +17,7 @@ import { Response, Request } from 'express';
 
 import Route from '../route.js';
 import Model from '../../model/index.js';
-import { invalidUpdateError } from '../../model/shared.js';
+import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
 import { checkPolicyConfig, checkPolicyConfigUpdate } from '../../access-control/policy-definition.js';
 import type { ValidationIssue } from '../../helpers/schema.js';
 import * as Helpers from '../../helpers/index.js';
@@ -321,7 +321,8 @@ routes.push(BulkUpdatePolicy);
 
 /**
  * The error to refuse a policy for when it's added to `app`, or null if it can be: it needs a name, a selection and
- * config, a selection of properties the app lists, a version, and configs that can grant something.
+ * config, a selection of properties the app lists, a version, configs that can grant something, and values of the
+ * policy schema's types.
  */
 const newPolicyProblem = async (app: App, policy: PolicyAddBody) => {
   if (!policy?.selection || !policy.name || !policy.config || policy.config.length < 1) {
@@ -334,7 +335,10 @@ const newPolicyProblem = async (app: App, policy: PolicyAddBody) => {
   if (!policy.version) return Helpers.Errors.badRequest('invalid_policy_no_version');
 
   const issues = checkPolicyConfig(policy.config);
-  return issues.length > 0 ? invalidPolicy(policy.name, issues) : null;
+  if (issues.length > 0) return invalidPolicy(policy.name, issues);
+
+  const validation = validateSchemaObject(PolicySchemaModel.Schema, policy);
+  return validation.isValid ? null : invalidEntityError(PolicySchemaModel.Schema.name, validation);
 };
 
 // A policy whose configs would grant nothing, or fail when they're evaluated

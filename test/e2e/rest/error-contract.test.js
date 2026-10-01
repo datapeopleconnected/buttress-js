@@ -205,6 +205,8 @@ describe('Error contract', async () => {
 			400, 'invalid_schema', { schema: 'note', issues: [{ path: 'text.__requried', code: 'unknown_path' }] }],
 		['a policy whose config has no query', () => [core('policy'), post({ name: 'no-query', version: '1', selection: { role: { '@eq': 'NOBODY' } }, config: [{ verbs: ['GET'], schema: ['note'] }] }), appToken()],
 			400, 'invalid_policy', { issues: [{ path: 'config.0.query', code: 'required' }] }],
+		['a policy whose priority is not a number', () => [core('policy'), post({ name: 'bad-priority', version: '1', priority: 'high', selection: { role: { '@eq': 'NOBODY' } }, config: [{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }] }), appToken()],
+			400, 'invalid_value', { schema: 'policy', path: 'priority', issues: [{ path: 'priority', code: 'type', expected: 'number', received: 'string' }] }],
 		['a note without its required text', () => [notes(), post({}), appToken()],
 			400, 'missing_field', { schema: 'note', path: 'text', issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],

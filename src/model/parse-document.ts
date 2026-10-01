@@ -167,9 +167,9 @@ const parseNested = (children: SchemaNode[], given: unknown, path: string, probl
 };
 
 /**
- * The properties `nodes` describe, read from `body`. Fields they don't describe are left out, as are `_`-prefixed
- * keys, which only the server sets. An entity's or an item's `source` is checked but never stored: Buttress gives
- * it on what it returns.
+ * The properties `nodes` describe, read from `body`. Fields they don't describe are left out. A `_`-prefixed property
+ * is only the server's to set, so it's never read from a body nor asked for: it takes its default. An entity's or an
+ * item's `source` is checked but never stored: Buttress gives it on what it returns.
  */
 const parseObject = (
   nodes: SchemaNode[],
@@ -183,11 +183,14 @@ const parseObject = (
 
   for (const node of nodes) {
     const path = `${prefix}${node.key}`;
-    const raw = node.key.startsWith('_') ? undefined : given[node.key];
+    const internal = node.key.startsWith('_');
+    const raw = internal ? undefined : given[node.key];
     const parsed =
       'children' in node
         ? parseNested(node.children, raw, path, problems)
-        : parseProperty(node.config, raw, path, problems);
+        : internal
+          ? defaultOf(node.config)
+          : parseProperty(node.config, raw, path, problems);
 
     if (isEntity && node.key === 'source') continue;
     value[node.key] = parsed;

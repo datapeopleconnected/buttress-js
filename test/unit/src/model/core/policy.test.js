@@ -22,6 +22,8 @@ import { Readable } from 'node:stream';
 import PolicySchemaModel from '../../../../../dist/model/core/policy.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
 
+import { createSchemaModel } from '../../../../schema-model.js';
+
 const HEX_ID = '507f1f77bcf86cd799439011';
 
 // The policy cache is brought up to date before a policy change resolves
@@ -83,5 +85,75 @@ describe('model/core/PolicySchemaModel: adding a policy', () => {
     await model.add({ name: 'readers', selection: {}, config: [], version: '1.2.3' }, 'app-1');
 
     assert.strictEqual(add.firstCall.args[0].version, '1.2.3');
+  });
+});
+
+// What's stored for a policy, through the real model over a datastore in memory
+describe('model/core/PolicySchemaModel: what a policy is stored as', () => {
+  const APP_ID = '6abd05000000000000000001';
+
+  function createModel() {
+    const services = new Map([
+      ['nrp', { on: () => {}, emit: () => {} }],
+      ['modelManager', {}],
+      ['policyCache', { invalidatePolicyAndTokensBySelection: async () => {} }],
+    ]);
+    const model = new PolicySchemaModel(services);
+    const { datastore } = createSchemaModel({ name: 'unused', properties: {} });
+    model.adapter = datastore;
+    return { model, datastore };
+  }
+
+  it("stores the policy's own properties, read as their types, with defaults for the rest", async () => {
+    const { model, datastore } = createModel();
+
+    const policy = await model.add(
+      {
+        id: HEX_ID,
+        name: 'readers',
+        selection: { role: { '@eq': 'APP' } },
+        priority: '3',
+        config: [{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' }, extra: 1 }],
+        other: 'dropped',
+      },
+      { _appId: APP_ID },
+    );
+
+    const stored = {
+      id: HEX_ID,
+      name: 'readers',
+      version: null,
+      priority: 3,
+      selection: { role: { '@eq': 'APP' } },
+      env: {},
+      config: [
+        {
+          verbs: ['GET'],
+          endpoints: [],
+          schema: ['note'],
+          env: null,
+          condition: null,
+          projection: null,
+          query: { access: '%FULL_ACCESS%' },
+        },
+      ],
+      limit: null,
+      _appId: APP_ID,
+    };
+    assert.deepStrictEqual(datastore.rows, [stored]);
+    assert.deepStrictEqual(policy, stored);
+  });
+
+  it('stores the version, env and limit it is given', async () => {
+    const { model, datastore } = createModel();
+
+    await model.add(
+      { name: 'readers', selection: {}, config: [], version: '1.2.3', env: { a: 1 }, limit: '2030-01-01T00:00:00.000Z' },
+      { _appId: APP_ID },
+    );
+
+    assert.strictEqual(datastore.rows[0].version, '1.2.3');
+    assert.deepStrictEqual(datastore.rows[0].env, { a: 1 });
+    assert.deepStrictEqual(datastore.rows[0].limit, new Date('2030-01-01T00:00:00.000Z'));
   });
 });

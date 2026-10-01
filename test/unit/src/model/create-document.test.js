@@ -144,6 +144,13 @@ describe('model/shared: creating an entity', () => {
       });
     });
 
+    it('never asks for a property starting with _, which only the server sets', () => {
+      const properties = { _appId: { __type: 'id', __required: true }, label: { __type: 'string' } };
+
+      assert.deepStrictEqual(check(properties, { label: 'a', _appId: 'x' }), valid);
+      assert.deepStrictEqual(stored(properties, { label: 'a', _appId: 'x' }), { _appId: null, label: 'a' });
+    });
+
     it('takes a missing required property that has a default', () => {
       assert.deepStrictEqual(check({ label: { __type: 'string', __required: true, __default: 'x' } }, {}), valid);
     });
