@@ -35,7 +35,7 @@ export type DeploymentAddBody = {
   lambdaId?: string | null;
   hash?: string | null;
   branch?: string | null;
-  // Not stored, a new deployment's deployedAt defaults to now
+  // When it was deployed, now when it isn't given
   deployedAt?: Date;
 };
 
@@ -94,13 +94,8 @@ class DeploymentSchemaModel extends StandardModel<Deployment> {
    * @return {Promise} - fulfilled with lambda Object when the database request is completed
    */
   override async add(body: DeploymentAddBody, internals: { _appId: string }) {
-    const deploymentBody = {
-      lambdaId: body.lambdaId ? body.lambdaId : null,
-      hash: body.hash ? body.hash : null,
-      branch: body.branch ? body.branch : null,
-    };
-
-    const rxsDeployment = await super.add(deploymentBody, {
+    // Stored as the schema reads it, deployed now unless it says when
+    const rxsDeployment = await super.add(body, {
       _appId: internals._appId,
     });
     const deployment = (await Helpers.streamFirst(rxsDeployment)) as Deployment;
