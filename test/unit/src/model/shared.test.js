@@ -291,3 +291,56 @@ describe('model/shared: validation errors', () => {
     });
   });
 });
+
+// A schema can refuse fields it doesn't define on create (D-3); others drop them
+describe('model/shared: strict schemas', () => {
+  const crate = (strict) => ({
+    name: 'crate',
+    type: 'collection',
+    ...(strict ? { strict: true } : {}),
+    properties: {
+      label: { __type: 'string', __default: null, __allowUpdate: true },
+      meta: { __type: 'object', __default: null, __allowUpdate: true },
+      git: { url: { __type: 'string', __default: null, __allowUpdate: true } },
+      items: {
+        __type: 'array',
+        __allowUpdate: true,
+        __schema: { sku: { __type: 'string', __default: null, __allowUpdate: true } },
+      },
+    },
+  });
+  const body = () => ({
+    id: '507f1f77bcf86cd799439011',
+    sourceId: 'app-1',
+    _internal: 1,
+    label: 'a',
+    meta: { anything: { goes: true } },
+    git: { url: 'u', branch: 'b' },
+    items: [{ sku: 'x', colour: 'red' }],
+    extra: 1,
+  });
+
+  it('refuses each field it does not define, anywhere in the body', () => {
+    const validation = validateSchemaObject(crate(true), body());
+
+    assert.strictEqual(validation.isValid, false);
+    assert.deepStrictEqual(validation.issues, [
+      { path: 'git.branch', code: 'unknown_path' },
+      { path: 'items.0.colour', code: 'unknown_path' },
+      { path: 'extra', code: 'unknown_path' },
+    ]);
+  });
+
+  it('refuses the body as unknown_path, naming the first such field', () => {
+    const err = invalidEntityError('crate', validateSchemaObject(crate(true), { label: 'a', extra: 1 }));
+
+    assert.strictEqual(err.status, 400);
+    assert.strictEqual(err.code, 'unknown_path');
+    assert.strictEqual(err.message, 'crate: Unknown field: extra');
+    assert.deepStrictEqual(err.details, { schema: 'crate', path: 'extra', issues: [{ path: 'extra', code: 'unknown_path' }] });
+  });
+
+  it('takes the same body, dropping what it does not define, when the schema is not strict', () => {
+    assert.strictEqual(validateSchemaObject(crate(false), body()).isValid, true);
+  });
+});

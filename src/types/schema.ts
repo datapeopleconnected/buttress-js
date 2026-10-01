@@ -59,5 +59,7 @@ export interface Schema {
   extends?: string[];
   remotes?: Remotes | Remotes[];
   type: 'collection' | 'template';
+  // Refuse a create that gives fields the schema doesn't define, rather than dropping them
+  strict?: boolean;
   properties: Properties;
 }

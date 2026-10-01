@@ -19,6 +19,10 @@ A schema in ButtressJS is defined as a JSON object with the following key compon
 - **extends**: (Optional) A list of schemas to inherit properties from.
 - **remotes**: (Optional) One or more federation data sharing agreements this collection reads/writes
   through — see [Federation](../federation/).
+- **strict**: (Optional) `true` to refuse a create that gives a field the schema doesn't define, with a 400
+  `unknown_path` naming it. Without it such fields are dropped, so a client can post back an entity it read. A
+  property typed `object` takes anything beneath it; `id`, `sourceId` and `_`-prefixed keys are always taken. An
+  update to a path the schema doesn't define is refused either way.
 
 ### Example
 ```json

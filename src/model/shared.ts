@@ -51,7 +51,59 @@ export const validateSchemaObject = function (schema: Schema | false, body: unkn
   const flattenedSchema = Helpers.getFlattenedSchema(schema);
   const flattenedBody = Helpers.Schema.getFlattenedBody(body);
 
-  return Helpers.Schema.validate(flattenedSchema, flattenedBody, '', body);
+  const validation = Helpers.Schema.validate(flattenedSchema, flattenedBody, '', body);
+  if (!schema.strict) return validation;
+
+  const unknown = findUnknownPaths(flattenedSchema, body, '', true);
+  if (unknown.length < 1) return validation;
+  return { ...validation, isValid: false, issues: [...validation.issues, ...unknown] };
+};
+
+// Set by the server, or ignored, so a strict schema doesn't refuse them: the entity's id, the app it came from in a
+// federated collection, and `_`-prefixed internals
+const ENVELOPE = new Set(['id', 'sourceId']);
+
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date);
+
+/**
+ * The fields of `body` the schema doesn't define, for a strict schema. A property typed `object` owns everything
+ * beneath it; the items of an array with a `__schema` are checked against it.
+ * @param {Object} schemaFlat - the flattened schema, or an array's flattened item schema
+ * @param {unknown} body
+ * @param {string} prefix - the path of `body` within the entity
+ * @param {boolean} top - whether `body` is the entity itself, which may have the envelope fields
+ * @param {string} within - the path of `body` within the schema, for a nested object's properties
+ * @return {ValidationIssue[]}
+ */
+const findUnknownPaths = (
+  schemaFlat: FlattenedSchema,
+  body: unknown,
+  prefix: string,
+  top: boolean,
+  within: string = '',
+): ValidationIssue[] => {
+  if (!isPlainObject(body)) return [];
+
+  return Object.entries(body).flatMap(([key, value]): ValidationIssue[] => {
+    if (key.startsWith('_') || (top && !within && ENVELOPE.has(key))) return [];
+
+    const schemaPath = `${within}${key}`;
+    const path = `${prefix}${schemaPath}`;
+    const config = schemaFlat[schemaPath];
+    if (config) {
+      if (config.__type !== 'array' || !config.__schema || !Array.isArray(value)) return [];
+      const itemSchema = config.__schema;
+      return value.flatMap((item, idx) => findUnknownPaths(itemSchema, item, `${path}.${idx}.`, false));
+    }
+
+    // A nested object with properties of its own
+    if (isPlainObject(value) && Object.keys(schemaFlat).some((name) => name.startsWith(`${schemaPath}.`))) {
+      return findUnknownPaths(schemaFlat, value, prefix, top, `${schemaPath}.`);
+    }
+
+    return [{ path, code: 'unknown_path' }];
+  });
 };
 
 /**
@@ -214,6 +266,15 @@ export const invalidEntityError = (
     return Helpers.Errors.badRequest('invalid_value', `${schema}: Invalid value: ${invalid}${at}`, {
       schema,
       path: invalid.split(':')[0],
+      ...where,
+    });
+  }
+
+  const unknown = validation.issues?.find((issue) => issue.code === 'unknown_path');
+  if (unknown) {
+    return Helpers.Errors.badRequest('unknown_path', `${schema}: Unknown field: ${unknown.path}${at}`, {
+      schema,
+      path: unknown.path,
       ...where,
     });
   }

@@ -25,7 +25,7 @@ Each code is always answered with the same status.
 
 | Status | Means | Codes include |
 | --- | --- | --- |
-| 400 | The request is malformed or refused by the schema | `invalid_body`, `invalid_id`, `missing_id`, `missing_field`, `invalid_value`, `invalid_update`, `duplicate_id`, `apiPath_not_supported`, `token_in_url_not_supported` |
+| 400 | The request is malformed or refused by the schema | `invalid_body`, `invalid_id`, `missing_id`, `missing_field`, `invalid_value`, `invalid_update`, `duplicate_id`, `unknown_path`, `apiPath_not_supported`, `token_in_url_not_supported` |
 | 401 | No token, or one that isn't valid: unknown, revoked, or its app or user has gone | `missing_token`, `invalid_token`, `app_not_found` |
 | 403 | The token is valid, but not allowed to do this | `insufficient_authority`, `access_denied`, `property_access_denied`, `data_sharing_inactive`, `origin_not_allowed` |
 | 404 | What the request names can't be found, or no route takes the request | `not_found`, `unknown_route`, `unknown_schema`, `unknown_lambda_endpoint` |
@@ -38,7 +38,9 @@ Each code is always answered with the same status.
 ## Validation
 
 A body or update the schema refuses is answered with the code of its first problem (`missing_field`,
-`invalid_value`, `invalid_update`, `duplicate_id`), and `details.issues` lists every problem:
+`invalid_value`, `invalid_update`, `duplicate_id`, or `unknown_path` for a field a
+[strict](../applications/schema.md#schema-structure) schema doesn't define), and `details.issues` lists every
+problem:
 
 ```json
 {

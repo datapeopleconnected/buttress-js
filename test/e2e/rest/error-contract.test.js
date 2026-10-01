@@ -59,13 +59,21 @@ describe('Error contract', async () => {
 		, scope);
 
 		for (const app of ['app', 'other']) {
-			await runStep(`add the note schema to ${app}`, async () => updateSchema(ENDPOINT.REST, [{
+			await runStep(`add the note and crate schemas to ${app}`, async () => updateSchema(ENDPOINT.REST, [{
 				name: 'note',
 				type: 'collection',
 				properties: {
 					text: { __type: 'string', __default: null, __required: true, __allowUpdate: true },
 					due: { __type: 'date', __default: null, __required: false, __allowUpdate: true },
 					done: { __type: 'boolean', __default: false, __required: false, __allowUpdate: true },
+				},
+			}, {
+				// It refuses fields it doesn't define
+				name: 'crate',
+				type: 'collection',
+				strict: true,
+				properties: {
+					label: { __type: 'string', __default: null, __required: false, __allowUpdate: true },
 				},
 			}], testEnv.apps[app].token), scope);
 		}
@@ -188,6 +196,8 @@ describe('Error contract', async () => {
 			}],
 		['a search on a flag it cannot read', () => [notes(), { method: 'SEARCH', headers: json, body: JSON.stringify({ query: { done: 'banana' } }) }, appToken()],
 			400, 'invalid_value', { path: 'done', expected: 'boolean' }],
+		['a field a strict schema does not define', () => [`${ENDPOINT.REST}/${testEnv.apps.app.apiPath}/api/v1/crate`, post({ label: 'a', extra: 1 }), appToken()],
+			400, 'unknown_path', { schema: 'crate', path: 'extra', issues: [{ path: 'extra', code: 'unknown_path' }] }],
 		['a note without its required text', () => [notes(), post({}), appToken()],
 			400, 'missing_field', { schema: 'note', path: 'text', issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],
@@ -225,6 +235,13 @@ describe('Error contract', async () => {
 			if (details !== undefined) assert.deepStrictEqual(body.details, typeof details === 'function' ? details() : details);
 		});
 	}
+
+	it('Should drop a field a schema that is not strict does not define', async () => {
+		const [note] = [].concat(await bjsReqPost(notes(), { text: 'kept', extra: 1 }, appToken()));
+
+		assert.strictEqual(note.text, 'kept');
+		assert.strictEqual(note.extra, undefined);
+	});
 
 	it("Should report each refused item of a bulk update with the status and body its request would have had", async () => {
 		const res = await fetch(notes('/bulk/update'), {
