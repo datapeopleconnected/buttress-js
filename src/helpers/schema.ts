@@ -467,6 +467,35 @@ const __prepareSchemaResult = (result: unknown, sourceId: string | null = null, 
 };
 export const prepareSchemaResult = __prepareSchemaResult;
 
+const isPlainRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null &&
+  typeof value === 'object' &&
+  (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
+
+// `value` without the property at `segments`, through any arrays on the way, as a copy where anything is left out
+const omitPath = (value: unknown, segments: string[]): unknown => {
+  if (Array.isArray(value)) return value.map((item) => omitPath(item, segments));
+  if (!isPlainRecord(value) || segments.length < 1) return value;
+
+  const [head, ...rest] = segments;
+  if (!(head in value)) return value;
+  if (rest.length < 1) {
+    const { [head]: _omitted, ...others } = value;
+    return others;
+  }
+  return { ...value, [head]: omitPath(value[head], rest) };
+};
+
+/**
+ * A result without its schema's `__private` properties, e.g. a user's `auth.password`, for a response. What it's
+ * given isn't changed.
+ * @param {unknown} result - an entity, or a list of them
+ * @param {string[][]} privatePaths - each private property's path, split into its segments
+ * @return {unknown}
+ */
+export const stripPrivate = (result: unknown, privatePaths: string[][]): unknown =>
+  privatePaths.reduce((value, segments) => omitPath(value, segments), result);
+
 // `path` is consumed (shifted) as the object is inflated.
 const __inflateObject = (parent: unknown, path: string[], value: unknown): unknown => {
   if (path.length === 0) {

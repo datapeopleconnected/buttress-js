@@ -20,7 +20,7 @@ const PROPERTY_TYPES = ['string', 'number', 'boolean', 'date', 'id', 'uuid', 'ob
 const ITEM_TYPES = PROPERTY_TYPES.filter((type) => type !== 'array');
 
 // What each key of a property definition takes; `__schema` only an array's
-const BOOLEAN_KEYS = ['__required', '__allowUpdate'];
+const BOOLEAN_KEYS = ['__required', '__allowUpdate', '__private', '__unique'];
 const DEFINITION_KEYS = new Set([
   '__type',
   '__default',

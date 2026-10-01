@@ -30,7 +30,8 @@ describe('helpers/schema-definition:checkSchemaDefinition', () => {
   it('takes a schema using every kind of property', () => {
     assert.deepStrictEqual(
       check({
-        name: { __type: 'string', __default: null, __required: true, __allowUpdate: true },
+        name: { __type: 'string', __default: null, __required: true, __allowUpdate: true, __unique: true },
+        secret: { __type: 'string', __private: true },
         colour: { __type: 'string', __enum: ['red', 'blue'], __default: 'red' },
         count: { __type: 'number', __default: 0 },
         on: { __type: 'boolean' },

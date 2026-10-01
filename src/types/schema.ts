@@ -23,6 +23,10 @@ export type PropertyDefinition = {
   __itemtype?: string;
   __allowUpdate?: boolean;
   __timeSeries?: string;
+  // Never given back in a response
+  __private?: boolean;
+  // No two entities may have the same value, which a datastore index enforces
+  __unique?: boolean;
 };
 
 export type ArraySchema = {
@@ -48,6 +52,8 @@ export type FlattenedSchemaProperty = {
   __enum?: unknown[];
   __itemtype?: string;
   __allowUpdate?: boolean;
+  __private?: boolean;
+  __unique?: boolean;
   __schema?: Record<string, FlattenedSchemaProperty>;
 };
 

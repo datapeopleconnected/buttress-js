@@ -166,6 +166,8 @@ export default class Route {
   // The api path of the app whose schema route this is, if it is one.
   appApiPath?: string;
   schemaName?: string;
+  // The paths of the schema's `__private` properties, which no response gives
+  _privatePaths: string[][];
 
   paths: string[];
 
@@ -179,6 +181,12 @@ export default class Route {
   constructor(paths: string | string[], name: string, services: Services, schema: Schema | null, app?: App) {
     // this.model = model;
     this.schemaName = schema?.name;
+    // Array item properties are flattened beneath their array's key too (`auth.password`)
+    this._privatePaths = schema
+      ? Object.entries(Helpers.getFlattenedSchema(schema))
+          .filter(([, config]) => config.__private === true)
+          .map(([path]) => path.split('.'))
+      : [];
     this.appId = app?.id;
     this.appApiPath = app?.apiPath;
 
@@ -343,9 +351,10 @@ export default class Route {
         chunkCount++;
 
         if (chunkCount % this.timingChunkSample === 0) req.context.timings.stream.push(req.context.timer.interval);
-        return this.redactResults
+        const prepared = this.redactResults
           ? Helpers.Schema.prepareSchemaResult(chunk, this.addSourceId ? this._dataApp(req).id : null)
           : chunk;
+        return Helpers.Schema.stripPrivate(prepared, this._privatePaths);
       });
 
       res.set('Content-Type', 'application/json');
@@ -369,11 +378,10 @@ export default class Route {
       return result;
     }
 
-    if (this.redactResults) {
-      res.json(Helpers.Schema.prepareSchemaResult(result, this.addSourceId ? this._dataApp(req).id : null));
-    } else {
-      res.json(result);
-    }
+    const prepared = this.redactResults
+      ? Helpers.Schema.prepareSchemaResult(result, this.addSourceId ? this._dataApp(req).id : null)
+      : result;
+    res.json(Helpers.Schema.stripPrivate(prepared, this._privatePaths));
 
     this._close(req);
 

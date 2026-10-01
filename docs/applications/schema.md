@@ -63,6 +63,7 @@ Every property is described by these keys:
 | `__itemtype` | For `__type: "array"` of primitives — the type of each item (e.g. `"string"`, `"id"`) |
 | `__schema` | For `__type: "array"` of objects — the property definitions for each array item |
 | `__timeSeries` | See [Time Series Properties](#time-series-properties) below |
+| `__private` | `true` to keep the property out of every response, though it's stored and can be set; a user's `auth[].password` is one |
 
 A property without `__type` is treated as a **nested object** — give it its own map of sub-properties
 directly, the same way you'd describe a top-level schema's `properties`:

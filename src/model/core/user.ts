@@ -150,10 +150,12 @@ export default class UserSchemaModel extends StandardModel<User> {
               __default: '',
               __allowUpdate: true,
             },
+            // Never given back (D-24)
             password: {
               __type: 'string',
               __default: '',
               __allowUpdate: true,
+              __private: true,
             },
             profileUrl: {
               __type: 'string',

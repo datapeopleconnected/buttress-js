@@ -264,6 +264,38 @@ describe('User API', async () => {
 		});
 	});
 
+	// A user's password is kept, but never given back (D-24)
+	describe('Passwords', () => {
+		let added = null;
+		const auth = { app: 'app-private', appId: 'private-1', email: 'private+1@example.com', password: 'hunter2', token: 'provider-token' };
+
+		before(async () => {
+			added = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ auth: [auth] }),
+			}, testEnv.apps.app1.token);
+		});
+
+		it('Should give no password back, in an added, got, searched or found user', async () => {
+			const got = await bjsReq({ url: `${ENDPOINT.REST}/api/v1/user/${added.id}`, method: 'GET' }, testEnv.apps.app1.token);
+			const searched = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user`,
+				method: 'SEARCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ query: { id: added.id } }),
+			}, testEnv.apps.app1.token);
+			const found = await bjsReq({ url: `${ENDPOINT.REST}/api/v1/user/${auth.app}/${auth.appId}`, method: 'GET' }, testEnv.apps.app1.token);
+
+			for (const [label, user] of [['added', added], ['got', got], ['searched', searched[0]], ['found', found]]) {
+				assert.strictEqual(user.auth[0].password, undefined, label);
+				assert.strictEqual(user.auth[0].email, auth.email, label);
+				assert.strictEqual(user.auth[0].token, auth.token, `${label}: provider tokens are still given`);
+			}
+		});
+	});
+
 	describe('KeepAlive', () => {
 		// A request over the agent, resolving with the response and the socket it used. It goes straight to the REST
 		// process, rather than to ENDPOINT.REST, which may be a proxy with connections of its own.

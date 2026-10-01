@@ -232,3 +232,39 @@ describe('helpers.Schema:extend', () => {
 		assert.strictEqual(result.properties.createdAt.__default, 'child-default');
 	});
 });
+
+describe('helpers.schema:stripPrivate', () => {
+  const user = () => ({
+    id: 'u1',
+    auth: [
+      { app: 'google', password: 'secret', token: 't1' },
+      { app: 'github', token: 't2' },
+    ],
+    profile: { password: 'kept, not private here' },
+  });
+
+  it('leaves out the private paths, through arrays, keeping everything else', () => {
+    assert.deepStrictEqual(Helpers.Schema.stripPrivate(user(), [['auth', 'password']]), {
+      id: 'u1',
+      auth: [
+        { app: 'google', token: 't1' },
+        { app: 'github', token: 't2' },
+      ],
+      profile: { password: 'kept, not private here' },
+    });
+  });
+
+  it('strips each of a list of results, and changes none of what it was given', () => {
+    const given = [user(), user()];
+
+    const stripped = Helpers.Schema.stripPrivate(given, [['auth', 'password']]);
+
+    assert.strictEqual(stripped[1].auth[0].password, undefined);
+    assert.deepStrictEqual(given, [user(), user()]);
+  });
+
+  it('gives a value with no private paths back as it is', () => {
+    const value = user();
+    assert.strictEqual(Helpers.Schema.stripPrivate(value, []), value);
+  });
+});

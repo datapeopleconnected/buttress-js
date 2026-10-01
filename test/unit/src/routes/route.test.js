@@ -103,6 +103,50 @@ afterEach(() => {
   sinon.restore();
 });
 
+// A schema can keep a property out of every response (D-24)
+describe('routes/Route:_respond private properties', () => {
+  const schema = {
+    name: 'user',
+    type: 'collection',
+    properties: {
+      name: { __type: 'string' },
+      auth: { __type: 'array', __schema: { app: { __type: 'string' }, password: { __type: 'string', __private: true } } },
+    },
+  };
+  const stored = () => ({ id: 'u1', name: 'a', auth: [{ app: 'google', password: 'secret' }] });
+
+  for (const redactResults of [true, false]) {
+    it(`leaves them out of a result${redactResults ? '' : ', when results are not redacted'}`, async () => {
+      const route = createRoute({ schema });
+      route.redactResults = redactResults;
+      route.addSourceId = false;
+      const res = createRes();
+
+      await route._respond(createReq(), res, stored());
+
+      assert.deepStrictEqual(res.json.firstCall.args[0], { id: 'u1', name: 'a', auth: [{ app: 'google' }] });
+    });
+  }
+
+  it('leaves them out of each entity of a stream', async () => {
+    const route = createRoute({ schema });
+    route.addSourceId = false;
+    const out = new PassThrough();
+    let body = '';
+    out.on('data', (chunk) => (body += chunk));
+    const res = Object.assign(out, { statusCode: 200, set: sinon.stub() });
+    const finished = new Promise((resolve) => out.on('end', resolve));
+
+    await route._respond(createReq(), res, Readable.from([stored(), stored()]));
+    await finished;
+
+    assert.deepStrictEqual(JSON.parse(body), [
+      { id: 'u1', name: 'a', auth: [{ app: 'google' }] },
+      { id: 'u1', name: 'a', auth: [{ app: 'google' }] },
+    ]);
+  });
+});
+
 describe('routes/Route:constructor', () => {
   it('throws when NRP is missing from services', () => {
     const services = { get: (key) => (key === 'modelManager' ? {} : undefined) };
