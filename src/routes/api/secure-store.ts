@@ -16,17 +16,15 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
-import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
+import { CoreBulkUpdate, CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
 import Model from '../../model/index.js';
-import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
+import { invalidEntityError, validateSchemaObject } from '../../model/shared.js';
 import Datastore from '../../datastore/index.js';
 import * as Helpers from '../../helpers/index.js';
 
 import SecureStoreSchemaModel, { SecureStore, SecureStoreAddBody } from '../../model/core/secure-store.js';
-import ActivitySchemaModel from '../../model/core/activity.js';
 import { Services } from '../../bootstrap.js';
-import { UpdatePathBody } from '../../types/datastore.js';
-import type { BulkUpdateItem, CoreRouteClass, RequestWithBody } from '../../types/routes.js';
+import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
 
@@ -253,115 +251,33 @@ routes.push(FindSecureStore);
 /**
  * @class UpdateSecureStore
  */
-class UpdateSecureStore extends Route {
-  constructor(services: Services) {
-    super('secure-store/:id', 'UPDATE SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
-    if (!req.context.authApp?.id) {
-      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw Helpers.Errors.internal('no_authenticated_app');
-    }
-
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log(`[${this.name}] Missing required secure store ID`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-    }
-
-    const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(req.body);
-    req.body = body;
-    if (!validation.isValid) {
-      const err = invalidUpdateError(this.schemaName, validation);
-      this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-      return Promise.reject(err);
-    }
-
-    if (!Model.getCoreModel(SecureStoreSchemaModel).isValidId(id)) return Promise.reject(invalidId());
-    const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
-      _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
-      _appId: req.context.authApp.id,
-    });
-    if (!secureStore) {
-      this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.entityNotFound('secureStore', id));
-    }
-
-    return {
-      id,
-    };
-  }
-
-  // _validate replaced the body with the validated updates
-  override _exec(req: RequestWithBody<UpdatePathBody[]>, res: Response, validate: { id: string }) {
-    return this.scoped(req, SecureStoreSchemaModel).updateByPath(req.body, validate.id);
-  }
+class UpdateSecureStore extends CoreUpdateByPath<SecureStoreSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'secure-store/:id',
+    name: 'UPDATE SECURE STORE',
+    model: SecureStoreSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+    // A system token too reaches only its own app's secure stores
+    scope: 'own-app',
+  };
 }
 routes.push(UpdateSecureStore);
 
 /**
  * @class BulkUpdateSecureStore
  */
-class BulkUpdateSecureStore extends Route {
-  constructor(services: Services) {
-    super(
-      'secure-store/bulk/update',
-      'BULK UPDATE SECURE STORE',
-      services,
-      Model.getCoreModel(SecureStoreSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.POST;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
-  }
-
-  override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
-    if (!req.context.authApp?.id) {
-      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw Helpers.Errors.internal('no_authenticated_app');
-    }
-
-    if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
-      this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
-      throw Helpers.Errors.badRequest('array_required');
-    }
-
-    for await (const item of req.body) {
-      const { validation, body } = Model.getCoreModel(SecureStoreSchemaModel).validateUpdate(item.body);
-      item.body = body;
-      if (!validation.isValid) {
-        const err = invalidUpdateError(this.schemaName, validation);
-        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-        return Promise.reject(err);
-      }
-
-      if (!Model.getCoreModel(SecureStoreSchemaModel).isValidId(item.id)) return Promise.reject(invalidId());
-      const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
-        _id: Model.getCoreModel(SecureStoreSchemaModel).createId(item.id),
-        _appId: req.context.authApp.id,
-      });
-      if (!secureStore) {
-        this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
-        return Promise.reject(Helpers.Errors.entityNotFound('secureStore', item.id));
-      }
-    }
-
-    return req.body as BulkUpdateItem<UpdatePathBody[]>[];
-  }
-
-  override async _exec(req: Request, res: Response, validate: BulkUpdateItem<UpdatePathBody[]>[]) {
-    for await (const item of validate) {
-      await this.scoped(req, SecureStoreSchemaModel).updateByPath(item.body, item.id);
-    }
-    return true;
-  }
+class BulkUpdateSecureStore extends CoreBulkUpdate<SecureStoreSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'secure-store/bulk/update',
+    name: 'BULK UPDATE SECURE STORE',
+    model: SecureStoreSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+    // A system token too reaches only its own app's secure stores
+    scope: 'own-app',
+    activityBroadcast: false,
+  };
 }
 routes.push(BulkUpdateSecureStore);
 

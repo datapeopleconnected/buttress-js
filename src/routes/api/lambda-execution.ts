@@ -16,15 +16,12 @@
 import { Request, Response } from 'express';
 
 import Route from '../route.js';
-import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
+import { CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
 import Model from '../../model/index.js';
-import { invalidUpdateError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
-import ActivitySchemaModel from '../../model/core/activity.js';
 import { Services } from '../../bootstrap.js';
-import { UpdatePathBody } from '../../types/datastore.js';
-import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
+import type { CoreRouteClass } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
 
@@ -101,46 +98,14 @@ routes.push(GetLambdaExecutionStatus);
 /**
  * @class UpdateLambdaExecution
  */
-class UpdateLambdaExecution extends Route {
-  constructor(services: Services) {
-    super(
-      'lambda-execution/:id',
-      'UPDATE LAMBDA EXECUTION',
-      services,
-      Model.getCoreModel(LambdaExecutionSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override _validate(req: RequestWithBody<unknown>, _res: Response) {
-    return new Promise<{ id: string }>((resolve, reject) => {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const executions = this.scoped(req, LambdaExecutionSchemaModel);
-      const { validation, body } = executions.validateUpdate(req.body);
-      req.body = body;
-
-      if (!validation.isValid) {
-        const err = invalidUpdateError(this.schemaName, validation);
-        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-        return reject(err);
-      }
-
-      executions
-        .assertExists(id)
-        .then(() => resolve({ id }))
-        .catch(reject);
-    });
-  }
-
-  // _validate replaced the body with the validated updates
-  override async _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
-    return this.scoped(req, LambdaExecutionSchemaModel).updateByPath(req.body, validate.id);
-  }
+class UpdateLambdaExecution extends CoreUpdateByPath<LambdaExecutionSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'lambda-execution/:id',
+    name: 'UPDATE LAMBDA EXECUTION',
+    model: LambdaExecutionSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.WRITE,
+  };
 }
 routes.push(UpdateLambdaExecution);
 

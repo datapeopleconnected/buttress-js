@@ -16,9 +16,9 @@
 import { Request, Response } from 'express';
 
 import Route from '../route.js';
-import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
+import { CoreBulkUpdate, CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
 import Model from '../../model/index.js';
-import { invalidEntityError, invalidUpdateError } from '../../model/shared.js';
+import { invalidEntityError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 
 import Datastore from '../../datastore/index.js';
@@ -27,11 +27,10 @@ import DatastoreFactory from '../../datastore/adapter-factory.js';
 import ButtressAdapater from '../../datastore/adapters/buttress.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import AppDataSharingSchemaModel, { AppDataSharing, AppDataSharingAddBody } from '../../model/core/app-data-sharing.js';
-import ActivitySchemaModel from '../../model/core/activity.js';
 import { Services } from '../../bootstrap.js';
 import type { DataShareActivatedMessage } from '../../services/nrp.js';
 import { UpdatePathBody } from '../../types/datastore.js';
-import type { BulkUpdateItem, CoreRouteClass, RequestWithBody } from '../../types/routes.js';
+import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 import { dataSharingDestinationProblem, remoteAppUrlsOf } from '../../helpers/egress.js';
 
 // What the activate route (ActivateAppDataSharing) responds with. A remote whose side of the agreement is already
@@ -250,53 +249,20 @@ routes.push(AddDataSharing);
 /**
  * @class UpdateAppDataSharing
  */
-class UpdateAppDataSharing extends Route {
-  constructor(services: Services) {
-    super(
-      'app-data-sharing/:dataSharingId',
-      'UPDATE APP DATA SHARING AGREEMENT',
-      services,
-      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
+class UpdateAppDataSharing extends CoreUpdateByPath<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing/:dataSharingId',
+    name: 'UPDATE APP DATA SHARING AGREEMENT',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+    idParam: 'dataSharingId',
+  };
 
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
-    const dataSharingId = Array.isArray(req.params.dataSharingId)
-      ? req.params.dataSharingId[0]
-      : req.params.dataSharingId;
-    if (!dataSharingId) {
-      this.log('ERROR: missing data sharing id', Route.LogLevel.ERR);
-      throw Helpers.Errors.badRequest('missing_id', 'An id is required');
-    }
-
-    await this.scoped(req, AppDataSharingSchemaModel).assertExists(dataSharingId);
-
-    const { validation, body } = Model.getCoreModel(AppDataSharingSchemaModel).validateUpdate(req.body);
-    req.body = body;
-    if (!validation.isValid) {
-      const err = invalidUpdateError(this.schemaName, validation);
-      this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-      throw err;
-    }
-
-    const destination = await dataSharingDestinationProblem(remoteAppUrlsOf(body as unknown[]));
-    if (destination) throw destinationRefused(destination);
-
-    return {
-      dataSharingId,
-    };
-  }
-
-  // _validate replaced the body with the validated updates
-  override async _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { dataSharingId: string }) {
-    // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-    return this.scoped(req, AppDataSharingSchemaModel).updateByPath(req.body, validate.dataSharingId);
+  // The partner it would reach has to be one the operator allows
+  protected override async updateProblem(_req: Request, updates: UpdatePathBody[]) {
+    const destination = await dataSharingDestinationProblem(remoteAppUrlsOf(updates));
+    return destination ? destinationRefused(destination) : null;
   }
 }
 routes.push(UpdateAppDataSharing);
@@ -304,54 +270,19 @@ routes.push(UpdateAppDataSharing);
 /**
  * @class BulkUpdateAppDataSharing
  */
-class BulkUpdateAppDataSharing extends Route {
-  constructor(services: Services) {
-    super(
-      'app-data-sharing/bulk/update',
-      'BULK UPDATE APP DATA SHARING AGREEMENT',
-      services,
-      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.POST;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
+class BulkUpdateAppDataSharing extends CoreBulkUpdate<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing/bulk/update',
+    name: 'BULK UPDATE APP DATA SHARING AGREEMENT',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+  };
 
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
-    if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
-      this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
-      throw Helpers.Errors.badRequest('array_required');
-    }
-
-    for await (const item of req.body) {
-      await this.scoped(req, AppDataSharingSchemaModel).assertExists(item.id);
-
-      const { validation, body } = Model.getCoreModel(AppDataSharingSchemaModel).validateUpdate(item.body);
-      item.body = body;
-      if (!validation.isValid) {
-        const err = invalidUpdateError(this.schemaName, validation);
-        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-        return Promise.reject(err);
-      }
-
-      const destination = await dataSharingDestinationProblem(remoteAppUrlsOf(item.body as unknown[]));
-      if (destination) return Promise.reject(destinationRefused(destination));
-    }
-
-    return true;
-  }
-
-  // _validate replaced each item's body with the validated updates
-  override async _exec(req: RequestWithBody<BulkUpdateItem<UpdatePathBody[]>[]>, _res: Response, _validate: boolean) {
-    for await (const item of req.body) {
-      // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-      await this.scoped(req, AppDataSharingSchemaModel).updateByPath(item.body, item.id);
-    }
-
-    return true;
+  // The partner it would reach has to be one the operator allows
+  protected override async updateProblem(_req: Request, updates: UpdatePathBody[]) {
+    const destination = await dataSharingDestinationProblem(remoteAppUrlsOf(updates));
+    return destination ? destinationRefused(destination) : null;
   }
 }
 routes.push(BulkUpdateAppDataSharing);

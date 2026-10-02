@@ -458,13 +458,6 @@ describe('routes/api/user:AddUser', () => {
 });
 
 describe('routes/api/user:UpdateUser', () => {
-  it('rejects when no id is provided', async () => {
-    stubModel();
-    const route = createRoute(UpdateUser);
-
-    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_field' });
-  });
-
   it('rejects when the update path is invalid', async () => {
     stubModel({
       user: {

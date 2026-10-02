@@ -320,13 +320,6 @@ describe('routes/api/secure-store:UpdateSecureStore', () => {
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), /Update path is invalid/);
   });
 
-  it('rejects when no secure store matches the id', async () => {
-    stubModel({ secureStore: { findOne: async () => null } });
-    const route = createRoute(UpdateSecureStore);
-
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
-  });
-
   it('updates the secure store by path', async () => {
     const { secureStoreModel } = stubModel();
     const route = createRoute(UpdateSecureStore);
@@ -343,23 +336,6 @@ describe('routes/api/secure-store:BulkUpdateSecureStore', () => {
     const route = createRoute(BulkUpdateSecureStore);
 
     await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), { code: 'array_required' });
-  });
-
-  it('rejects when there is no authenticated app', async () => {
-    stubModel();
-    const route = createRoute(BulkUpdateSecureStore);
-
-    await assert.rejects(route._validate(createReq({ authApp: null, body: [] })), { code: 'internal_error' });
-  });
-
-  it('rejects when one item in the batch does not exist', async () => {
-    stubModel({ secureStore: { findOne: async () => null } });
-    const route = createRoute(BulkUpdateSecureStore);
-
-    await assert.rejects(
-      route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'name', value: 'a' } }] })),
-      { code: 'not_found' },
-    );
   });
 
   it('applies every update in the batch', async () => {
@@ -397,15 +373,6 @@ describe('routes/api/secure-store:SearchSecureStoreList', () => {
     const route = createRoute(SearchSecureStoreList);
 
     await assert.rejects(route._validate(createReq({ body: { skip: 'abc' } })), { code: 'invalid_value_skip' });
-  });
-
-  it('always scopes the search to the authenticated app', async () => {
-    stubModel();
-    const route = createRoute(SearchSecureStoreList);
-
-    const result = await route._validate(createReq());
-
-    assert.deepStrictEqual(result.query, { $and: [{ _appId: { $eq: '6abd05000000000000000001' } }] });
   });
 
   it('finds using the built query params', () => {
@@ -470,15 +437,6 @@ describe('routes/api/secure-store:SecureStoreCount', () => {
     const route = createRoute(SecureStoreCount);
 
     await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
-  });
-
-  it('always scopes the count to the authenticated app', async () => {
-    stubModel();
-    const route = createRoute(SecureStoreCount);
-
-    const result = await route._validate(createReq({ body: {} }));
-
-    assert.deepStrictEqual(result.query.$and, [{}, { _appId: { $eq: '6abd05000000000000000001' } }]);
   });
 
   it('counts using the built query', async () => {

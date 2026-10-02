@@ -21,9 +21,10 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import Route from '../route.js';
-import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
+import type TenantScopedModel from '../../model/type/tenant-scoped.js';
+import { CoreBulkUpdate, CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
 import Model from '../../model/index.js';
-import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
+import { invalidEntityError, validateSchemaObject } from '../../model/shared.js';
 import Sugar from '../../helpers/sugar.js';
 import * as Helpers from '../../helpers/index.js';
 import * as Git from '../../helpers/git.js';
@@ -39,7 +40,7 @@ import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/la
 import { Services } from '../../bootstrap.js';
 
 import { UpdatePathBody } from '../../types/datastore.js';
-import type { BulkUpdateItem, RequestWithBody } from '../../types/routes.js';
+import type { RequestWithBody } from '../../types/routes.js';
 
 // Should contain a list of route classes that extend Route.
 type LambdaRouteConstructor = new (services: Services) => Route;
@@ -248,51 +249,40 @@ const changesPathMutations = (lambda: Lambda, updates: UpdatePathBody[] = []) =>
   lambda.trigger.some((t) => t.type === 'PATH_MUTATION') || updates.some((update) => /^trigger\b/.test(update.path));
 
 /**
- * @class UpdateLambda
+ * Pulls a lambda's code again when an update changes its git hash. Says whether the updates may have changed which
+ * paths the Lambda manager runs the lambdas for.
  */
-class UpdateLambda extends Route {
-  constructor(services: Services) {
-    super('lambda/:id', 'UPDATE LAMBDA', services, Model.getCoreModel(LambdaSchemaModel).schemaData);
-
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override _validate(req: RequestWithBody<unknown>, _res: Response) {
-    return new Promise<{ id: string }>((resolve, reject) => {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      const lambdas = this.scoped(req, LambdaSchemaModel);
-      const { validation, body } = lambdas.validateUpdate(req.body);
-      req.body = body;
-
-      if (!validation.isValid) {
-        const err = invalidUpdateError(this.schemaName, validation);
-        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-        return reject(err);
-      }
-
-      lambdas
-        .assertExists(id)
-        .then(() => resolve({ id }))
-        .catch(reject);
-    });
-  }
-
-  // _validate replaced the body with the validated updates
-  override async _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
-    const lambdas = this.scoped(req, LambdaSchemaModel);
-    const updated = await lambdas.updateByPath(req.body, validate.id);
-
-    const lambda = (await lambdas.findById(validate.id)) as Lambda;
-    if (req.body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
+const pullUpdatedLambdas = async (
+  lambdas: TenantScopedModel<LambdaSchemaModel>,
+  updated: { id: string; body: UpdatePathBody[] }[],
+) => {
+  let pathMutationsChanged = false;
+  for (const { id, body } of updated) {
+    const lambda = (await lambdas.findById(id)) as Lambda;
+    if (body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
       await (await lambdas.owned(lambda.id)).pullLambdaCode(lambda);
     }
-    if (changesPathMutations(lambda, req.body)) this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
-    return updated;
+    if (changesPathMutations(lambda, body)) pathMutationsChanged = true;
+  }
+  return pathMutationsChanged;
+};
+
+/**
+ * @class UpdateLambda
+ */
+class UpdateLambda extends CoreUpdateByPath<LambdaSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'lambda/:id',
+    name: 'UPDATE LAMBDA',
+    model: LambdaSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+  };
+
+  protected override async afterUpdates(req: Request, updated: { id: string; body: UpdatePathBody[] }[]) {
+    if (await pullUpdatedLambdas(this.rows(req), updated)) {
+      this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
+    }
   }
 }
 routes.push(UpdateLambda);
@@ -300,52 +290,19 @@ routes.push(UpdateLambda);
 /**
  * @class BulkUpdateLambda
  */
-class BulkUpdateLambda extends Route {
-  constructor(services: Services) {
-    super('lambda/bulk/update', 'BULK UPDATE LAMBDA', services, Model.getCoreModel(LambdaSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.POST;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
+class BulkUpdateLambda extends CoreBulkUpdate<LambdaSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'lambda/bulk/update',
+    name: 'BULK UPDATE LAMBDA',
+    model: LambdaSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+  };
 
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
-    if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
-      this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
-      throw Helpers.Errors.badRequest('array_required');
+  protected override async afterUpdates(req: Request, updated: { id: string; body: UpdatePathBody[] }[]) {
+    if (await pullUpdatedLambdas(this.rows(req), updated)) {
+      this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
     }
-
-    const lambdas = this.scoped(req, LambdaSchemaModel);
-    for await (const item of req.body) {
-      const { validation, body } = lambdas.validateUpdate(item.body);
-      item.body = body;
-      if (!validation.isValid) {
-        const err = invalidUpdateError(this.schemaName, validation);
-        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-        return Promise.reject(err);
-      }
-
-      await lambdas.assertExists(item.id);
-    }
-
-    return req.body as BulkUpdateItem<UpdatePathBody[]>[];
-  }
-
-  override async _exec(req: Request, res: Response, validate: BulkUpdateItem<UpdatePathBody[]>[]) {
-    const lambdas = this.scoped(req, LambdaSchemaModel);
-    let pathMutationsChanged = false;
-    for await (const item of validate) {
-      await lambdas.updateByPath(item.body, item.id);
-      const lambda = (await lambdas.findById(item.id)) as Lambda;
-      if (item.body.some((update) => update.path.replace(/\./g, '_').toUpperCase() === 'GIT_HASH')) {
-        await (await lambdas.owned(lambda.id)).pullLambdaCode(lambda);
-      }
-      if (changesPathMutations(lambda, item.body)) pathMutationsChanged = true;
-    }
-    if (pathMutationsChanged) this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
-    return true;
   }
 }
 routes.push(BulkUpdateLambda);

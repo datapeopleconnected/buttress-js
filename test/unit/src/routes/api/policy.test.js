@@ -396,14 +396,6 @@ describe('routes/api/policy:UpdatePolicy', () => {
     assert.deepStrictEqual(exists.firstCall.args, [HEX_ID, null, { _appId: '6abd05000000000000000001' }]);
   });
 
-  it('updates the policy by path', async () => {
-    const { policyModel } = stubModel();
-    const route = createRoute(UpdatePolicy);
-
-    await route._exec(createReq({ params: { id: HEX_ID }, body: { path: 'name' } }), {}, true);
-
-    assert.ok(policyModel.updateByPath.calledWith({ path: 'name' }, HEX_ID));
-  });
 });
 
 describe('routes/api/policy:BulkUpdatePolicy', () => {

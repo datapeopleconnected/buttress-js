@@ -16,20 +16,19 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
-import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
+import { CoreBulkUpdate, CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
 import Model from '../../model/index.js';
-import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
+import { invalidEntityError, validateSchemaObject } from '../../model/shared.js';
 import { checkPolicyConfig, checkPolicyConfigUpdate } from '../../access-control/policy-definition.js';
 import type { ValidationIssue } from '../../helpers/schema.js';
 import * as Helpers from '../../helpers/index.js';
 
 import Datastore from '../../datastore/index.js';
 import PolicySchemaModel, { Policy, PolicyAddBody } from '../../model/core/policy.js';
-import ActivitySchemaModel from '../../model/core/activity.js';
 import { App } from '../../model/core/app.js';
 import { Services } from '../../bootstrap.js';
 import { UpdatePathBody } from '../../types/datastore.js';
-import type { BulkUpdateItem, CoreRouteClass, RequestWithBody } from '../../types/routes.js';
+import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
 
@@ -191,43 +190,18 @@ routes.push(AddPolicy);
 /**
  * @class UpdatePolicy
  */
-class UpdatePolicy extends Route {
-  constructor(services: Services) {
-    super('policy/:id', 'UPDATE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
+class UpdatePolicy extends CoreUpdateByPath<PolicySchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'policy/:id',
+    name: 'UPDATE POLICY',
+    model: PolicySchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+  };
 
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override _validate(req: RequestWithBody<unknown, { id: string }>, _res: Response) {
-    return new Promise<boolean>((resolve, reject) => {
-      const policies = this.scoped(req, PolicySchemaModel);
-      const { validation, body } = policies.validateUpdate(req.body);
-      req.body = body;
-      if (!validation.isValid) {
-        const err = invalidUpdateError(this.schemaName, validation);
-        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-        return reject(err);
-      }
-
-      const problem = policyUpdateProblem(body);
-      if (problem) return reject(problem);
-
-      policies
-        .assertExists(req.params.id)
-        .then(() => resolve(true))
-        .catch(reject);
-    });
-  }
-
-  // _validate replaced the body with the validated updates
-  override _exec(req: RequestWithBody<UpdatePathBody[], { id: string }>, _res: Response, _validate: boolean) {
-    // Update Policy cache
-
-    return this.scoped(req, PolicySchemaModel).updateByPath(req.body, req.params.id);
+  // A config an update writes has to be able to grant something
+  protected override updateProblem(_req: Request, updates: UpdatePathBody[]) {
+    return policyUpdateProblem(updates);
   }
 }
 routes.push(UpdatePolicy);
@@ -235,48 +209,18 @@ routes.push(UpdatePolicy);
 /**
  * @class BulkUpdatePolicy
  */
-class BulkUpdatePolicy extends Route {
-  constructor(services: Services) {
-    super('policy/bulk/update', 'UPDATE POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.POST;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
+class BulkUpdatePolicy extends CoreBulkUpdate<PolicySchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'policy/bulk/update',
+    name: 'UPDATE POLICY',
+    model: PolicySchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+  };
 
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
-    if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
-      this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
-      throw Helpers.Errors.badRequest('array_required');
-    }
-
-    const policies = this.scoped(req, PolicySchemaModel);
-    for await (const item of req.body) {
-      const { validation, body } = policies.validateUpdate(item.body);
-      item.body = body;
-      if (!validation.isValid) {
-        const err = invalidUpdateError(this.schemaName, validation);
-        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-        return Promise.reject(err);
-      }
-
-      const problem = policyUpdateProblem(body);
-      if (problem) return Promise.reject(problem);
-
-      await policies.assertExists(item.id);
-    }
-
-    return req.body as BulkUpdateItem<UpdatePathBody[]>[];
-  }
-
-  override async _exec(req: Request, res: Response, validate: BulkUpdateItem<UpdatePathBody[]>[]) {
-    const policies = this.scoped(req, PolicySchemaModel);
-    for await (const item of validate) {
-      await policies.updateByPath(item.body, item.id);
-    }
-    return true;
+  // A config an update writes has to be able to grant something
+  protected override updateProblem(_req: Request, updates: UpdatePathBody[]) {
+    return policyUpdateProblem(updates);
   }
 }
 routes.push(BulkUpdatePolicy);

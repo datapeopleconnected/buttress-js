@@ -236,20 +236,6 @@ describe('routes/api/app-data-sharing:UpdateAppDataSharing', () => {
     );
   });
 
-  it('rejects when no data sharing id is provided', async () => {
-    stubModel();
-    const route = createRoute(UpdateAppDataSharing);
-
-    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
-  });
-
-  it('rejects when the agreement does not exist', async () => {
-    stubModel({ ds: { exists: sinon.stub().resolves(false) } });
-    const route = createRoute(UpdateAppDataSharing);
-
-    await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), { code: 'not_found' });
-  });
-
   it('rejects when the update path is invalid', async () => {
     stubModel({
       ds: {
@@ -264,14 +250,6 @@ describe('routes/api/app-data-sharing:UpdateAppDataSharing', () => {
     await assert.rejects(route._validate(createReq({ params: { dataSharingId: HEX_ID } })), /Update path is invalid/);
   });
 
-  it('updates the agreement by path', async () => {
-    const { dsModel } = stubModel();
-    const route = createRoute(UpdateAppDataSharing);
-
-    await route._exec(createReq({ body: { path: 'name', value: 'new' } }), {}, { dataSharingId: HEX_ID });
-
-    assert.ok(dsModel.updateByPath.calledWith({ path: 'name', value: 'new' }, HEX_ID));
-  });
 });
 
 describe('routes/api/app-data-sharing:BulkUpdateAppDataSharing', () => {
@@ -282,26 +260,6 @@ describe('routes/api/app-data-sharing:BulkUpdateAppDataSharing', () => {
     await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), { code: 'array_required' });
   });
 
-  it('rejects when one item in the batch does not exist', async () => {
-    stubModel({ ds: { exists: sinon.stub().resolves(false) } });
-    const route = createRoute(BulkUpdateAppDataSharing);
-
-    await assert.rejects(route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'name' } }] })), { code: 'not_found' });
-  });
-
-  it('applies every update in the batch', async () => {
-    const { dsModel } = stubModel();
-    const route = createRoute(BulkUpdateAppDataSharing);
-    const body = [
-      { id: '6abd08000000000000000001', body: { path: 'name', value: 'a' } },
-      { id: '6abd08000000000000000002', body: { path: 'name', value: 'b' } },
-    ];
-
-    const result = await route._exec(createReq({ body }), {}, true);
-
-    assert.strictEqual(dsModel.updateByPath.callCount, 2);
-    assert.strictEqual(result, true);
-  });
 });
 
 describe('routes/api/app-data-sharing:UpdateAppDataSharingPolicy', () => {

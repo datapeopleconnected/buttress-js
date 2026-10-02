@@ -21,9 +21,12 @@ import Model from '../model/index.js';
 import * as Helpers from '../helpers/index.js';
 import StandardModel from '../model/type/standard.js';
 import { DocumentOf } from '../model/type/tenant-scoped.js';
+import { invalidUpdateError } from '../model/shared.js';
+import ActivitySchemaModel from '../model/core/activity.js';
 import { Services } from '../bootstrap.js';
 import { BjsQuery, QueryParams } from '../types/bjs-query.js';
-import type { CountBody, RequestWithBody, SearchListBody } from '../types/routes.js';
+import { UpdatePathBody } from '../types/datastore.js';
+import type { BulkUpdateItem, CountBody, RequestWithBody, SearchListBody } from '../types/routes.js';
 
 /**
  * Which rows a core route reaches: the caller's app's, or every app's for a system token (`token`, as
@@ -40,6 +43,10 @@ export interface CoreRouteConfig {
   authType: string;
   permissions: string;
   scope?: CoreScope;
+  // The route param that names the row, for a route by id: `id` unless it says
+  idParam?: string;
+  // Whether a write's activity is broadcast, as it is unless it says
+  activityBroadcast?: boolean;
 }
 
 type CoreRouteClassWithConfig = { config: CoreRouteConfig };
@@ -70,21 +77,15 @@ abstract class CoreModelRoute<M extends StandardModel<DocumentOf<M>>> extends Ro
     return this.config.model as CoreModelClass<M>;
   }
 
-  protected get scope(): CoreScope {
-    return this.config.scope ?? 'token';
+  // The model, limited to the rows the route reaches for the caller
+  protected rows(req: Request) {
+    return this.config.scope === 'own-app'
+      ? this.ownAppScoped(req, this.modelClass)
+      : this.scoped(req, this.modelClass);
   }
 
   protected parse(req: Request, parts: DocumentQuery<M>[]): DocumentQuery<M> {
-    if (this.scope === 'own-app') {
-      const appId = req.context.authApp?.id;
-      if (!appId) {
-        this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-        throw Helpers.Errors.internal('no_authenticated_app');
-      }
-      parts.push({ [this.modelClass.TenantKey]: appId } as DocumentQuery<M>);
-    }
-
-    const model = this.scoped(req, this.modelClass);
+    const model = this.rows(req);
     return model.parseQuery({ $and: parts } as DocumentQuery<M>, {}, model.flatSchemaData) as DocumentQuery<M>;
   }
 }
@@ -120,14 +121,7 @@ export class CoreSearch<M extends StandardModel<DocumentOf<M>>> extends CoreMode
   }
 
   override _exec(req: Request, _res: Response, validate: QueryParams<DocumentOf<M> & object>) {
-    return this.scoped(req, this.modelClass).find(
-      validate.query,
-      {},
-      validate.limit,
-      validate.skip,
-      validate.sort,
-      validate.project,
-    );
+    return this.rows(req).find(validate.query, {}, validate.limit, validate.skip, validate.sort, validate.project);
   }
 }
 
@@ -158,6 +152,98 @@ export class CoreCount<M extends StandardModel<DocumentOf<M>>> extends CoreModel
   }
 
   override _exec(req: Request, _res: Response, validate: QueryParams<DocumentOf<M> & object>) {
-    return this.scoped(req, this.modelClass).count(validate.query);
+    return this.rows(req).count(validate.query);
+  }
+}
+
+// A row's updates, as a route has checked them
+type CheckedUpdates = { id: string; body: UpdatePathBody[] };
+
+/**
+ * Writes updates by path to a core model's rows. Each row's updates are read through the schema, then a resource's
+ * own rules (`updateProblem`), and the row has to be one the caller reaches, before any is written; `afterUpdates`
+ * then has what was written.
+ */
+abstract class CoreUpdates<M extends StandardModel<DocumentOf<M>>> extends CoreModelRoute<M> {
+  constructor(services: Services) {
+    super(services);
+    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
+    this.activityBroadcast = this.config.activityBroadcast ?? true;
+  }
+
+  // A resource's own rules for updates its schema takes: the error to refuse them with, or null
+  protected updateProblem(_req: Request, _updates: UpdatePathBody[]): Promise<Error | null> | Error | null {
+    return null;
+  }
+
+  // What a resource does once its rows are updated
+  protected async afterUpdates(_req: Request, _updated: CheckedUpdates[]): Promise<void> {}
+
+  protected async checkUpdates(req: Request, id: string, given: unknown): Promise<UpdatePathBody[]> {
+    const model = this.rows(req);
+    const { validation, body } = model.validateUpdate(given);
+    if (!validation.isValid) {
+      const err = invalidUpdateError(this.schemaName, validation);
+      this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
+      throw err;
+    }
+
+    const problem = await this.updateProblem(req, body);
+    if (problem) throw problem;
+
+    await model.assertExists(id);
+    return body;
+  }
+}
+
+/**
+ * Updates one core row by path: `PUT <path>/:id` with an update or a list of them.
+ */
+export class CoreUpdateByPath<M extends StandardModel<DocumentOf<M>>> extends CoreUpdates<M> {
+  constructor(services: Services) {
+    super(services);
+    this.verb = Route.Constants.Verbs.PUT;
+  }
+
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
+    const param = req.params[this.config.idParam ?? 'id'];
+    const id = Array.isArray(param) ? param[0] : param;
+    // The updates as they're checked
+    req.body = await this.checkUpdates(req, id, req.body);
+    return { id };
+  }
+
+  override async _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
+    const updated = await this.rows(req).updateByPath(req.body, validate.id);
+    await this.afterUpdates(req, [{ id: validate.id, body: req.body }]);
+    return updated;
+  }
+}
+
+/**
+ * Updates core rows by path: `POST <path>/bulk/update` with `[{id, body}]`, every item checked before any is written.
+ */
+export class CoreBulkUpdate<M extends StandardModel<DocumentOf<M>>> extends CoreUpdates<M> {
+  constructor(services: Services) {
+    super(services);
+    this.verb = Route.Constants.Verbs.POST;
+  }
+
+  override async _validate(req: RequestWithBody<BulkUpdateItem[]>, _res: Response) {
+    if (!Array.isArray(req.body) || req.body.some((item) => !item || typeof item !== 'object')) {
+      this.log(`[${this.name}] Expected an array of {id, body} updates`, Route.LogLevel.ERR);
+      throw Helpers.Errors.badRequest('array_required');
+    }
+
+    // Each item's updates as they're checked, which the request's activity keeps too
+    for (const item of req.body) item.body = await this.checkUpdates(req, item.id, item.body);
+    return req.body as CheckedUpdates[];
+  }
+
+  override async _exec(req: Request, _res: Response, validate: CheckedUpdates[]) {
+    const model = this.rows(req);
+    for (const item of validate) await model.updateByPath(item.body, item.id);
+    await this.afterUpdates(req, validate);
+    return true;
   }
 }

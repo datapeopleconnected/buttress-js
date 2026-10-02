@@ -16,13 +16,13 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
+import { CoreRouteConfig, CoreUpdateByPath } from '../core-routes.js';
 import Model from '../../model/index.js';
-import { invalidEntityError, invalidUpdateError } from '../../model/shared.js';
+import { invalidEntityError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 import TrackingSchemaModel, { Tracking } from '../../model/core/tracking.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import { Services } from '../../bootstrap.js';
-import { UpdatePathBody } from '../../types/datastore.js';
 import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
@@ -90,44 +90,18 @@ class AddTracking extends Route {
 }
 routes.push(AddTracking);
 
-class UpdateTracking extends Route {
+class UpdateTracking extends CoreUpdateByPath<TrackingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'tracking/:id',
+    name: 'UPDATE TRACKING',
+    model: TrackingSchemaModel,
+    authType: Route.Constants.Type.SYSTEM,
+    permissions: Route.Constants.Permissions.WRITE,
+  };
+
   constructor(services: Services) {
-    super('tracking/:id', 'UPDATE TRACKING', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.SYSTEM;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
+    super(services);
     this.activity = false;
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override _validate(req: RequestWithBody<unknown>, _res: Response) {
-    return new Promise<{ id: string }>((resolve, reject) => {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (!id) {
-        this.log('ERROR: Missing required Tracking ID', Route.LogLevel.ERR);
-        return reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-      }
-
-      const { validation, body } = Model.getCoreModel(TrackingSchemaModel).validateUpdate(req.body);
-      req.body = body;
-      if (!validation.isValid) {
-        const err = invalidUpdateError(this.schemaName, validation);
-        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-        return reject(err);
-      }
-
-      this.scoped(req, TrackingSchemaModel)
-        .assertExists(id)
-        .then(() => resolve({ id }))
-        .catch(reject);
-    });
-  }
-
-  // _validate replaced the body with the validated updates
-  override _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
-    return this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY).updateByPath(req.body, validate.id);
   }
 }
 routes.push(UpdateTracking);

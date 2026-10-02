@@ -480,6 +480,19 @@ export default class Route {
   }
 
   /**
+   * A core model limited to the caller's app's rows whatever the token, a system token's included: for rows a system
+   * token mustn't reach in other apps, such as secure stores.
+   * @param {Request} req
+   * @param {class} modelClass - a core model class
+   * @return {TenantScopedModel}
+   */
+  ownAppScoped<T extends StandardModel<DocumentOf<T>>>(req: Request, modelClass: CoreModelClass<T>) {
+    const appId = req.context.authApp?.id;
+    if (!appId) throw Helpers.Errors.internal('no_authenticated_app');
+    return new TenantScopedModel(Model.getCoreModel(modelClass), appId, modelClass.TenantKey);
+  }
+
+  /**
    * A core model that reaches every app's rows, for a route that has to. The reason says why, where it's asked for.
    * @param {class} modelClass - a core model class
    * @param {string} reason

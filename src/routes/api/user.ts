@@ -16,15 +16,14 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
-import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
+import { CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
 import Model from '../../model/index.js';
-import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
+import { invalidEntityError, validateSchemaObject } from '../../model/shared.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import TokenSchemaModel, { PolicyProperties, Token } from '../../model/core/token.js';
 import UserSchemaModel, { User, UserAddBody, UserAuth } from '../../model/core/user.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
-import { UpdatePathBody } from '../../types/datastore.js';
 import { Services } from '../../bootstrap.js';
 import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
@@ -545,45 +544,14 @@ routes.push(AddUser);
 /**
  * @class UpdateUser
  */
-class UpdateUser extends Route {
-  constructor(services: Services) {
-    super('user/:id', 'UPDATE USER', services, Model.getCoreModel(UserSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override _validate(req: RequestWithBody<unknown>, _res: Response) {
-    return new Promise<{ id: string }>((resolve, reject) => {
-      const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-      if (!id) {
-        this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
-        return reject(Helpers.Errors.badRequest('missing_field'));
-      }
-
-      const users = this.scoped(req, UserSchemaModel);
-      const { validation, body } = users.validateUpdate(req.body);
-      req.body = body;
-      if (!validation.isValid) {
-        const err = invalidUpdateError(this.schemaName, validation);
-        this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
-        return reject(err);
-      }
-
-      users
-        .assertExists(id)
-        .then(() => resolve({ id }))
-        .catch(reject);
-    });
-  }
-
-  // _validate replaced the body with the validated updates
-  override _exec(req: RequestWithBody<UpdatePathBody[]>, _res: Response, validate: { id: string }) {
-    return this.scoped(req, UserSchemaModel).updateByPath(req.body, validate.id);
-  }
+class UpdateUser extends CoreUpdateByPath<UserSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'user/:id',
+    name: 'UPDATE USER',
+    model: UserSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.WRITE,
+  };
 }
 routes.push(UpdateUser);
 
