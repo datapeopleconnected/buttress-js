@@ -21,6 +21,7 @@ import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
 import { Services } from '../../bootstrap.js';
+import { UpdatePathBody } from '../../types/datastore.js';
 import type { CoreRouteClass } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
@@ -86,6 +87,20 @@ class UpdateLambdaExecution extends CoreUpdateByPath<LambdaExecutionSchemaModel>
     authType: Route.Constants.Type.LAMBDA,
     permissions: Route.Constants.Permissions.WRITE,
   };
+
+  // Only a CRON execution's status can be changed. Setting an API or path-mutation execution back to
+  // PENDING would run it again, with whatever its metadata now holds.
+  protected override async updateProblem(req: Request, updates: UpdatePathBody[]) {
+    if (!updates.some((update) => update.path === 'status')) return null;
+
+    const execution = await this.rows(req).findByIdOrFail(this.idOf(req));
+    if (execution.triggerType === 'CRON') return null;
+
+    return Helpers.Errors.badRequest(
+      'lambda_execution_status_not_updatable',
+      `The status of a ${execution.triggerType} execution can't be changed`,
+    );
+  }
 }
 routes.push(UpdateLambdaExecution);
 

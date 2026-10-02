@@ -93,7 +93,7 @@ class LambdaExecutionSchemaModel extends StandardModel<LambdaExecution> {
           __default: 'CRON',
           __enum: ['CRON', 'PATH_MUTATION', 'API_ENDPOINT'],
           __required: true,
-          __allowUpdate: true,
+          __allowUpdate: false,
         },
         status: {
           __type: 'string',
