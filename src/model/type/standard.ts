@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import Sugar from '../../helpers/sugar.js';
+import { ALIASES } from '../../access-control/operators.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import { decode, isDecodeError } from '../../helpers/codecs.js';
@@ -190,56 +191,30 @@ export default class StandardModel<TDocument = AdapterDocument> {
         if (command.length > 0) {
           output[property] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
         }
-      } else if (typeof command === 'object' && command !== null && !this.isValidId(command)) {
+      } else if (
+        typeof command === 'object' &&
+        command !== null &&
+        !Array.isArray(command) &&
+        !this.isValidId(command)
+      ) {
         const operators = command as Record<string, unknown>;
         for (let operator in operators) {
           if (!{}.hasOwnProperty.call(operators, operator)) continue;
           let operand = operators[operator];
           let operandOptions: string | undefined = undefined;
 
-          switch (operator) {
-            case '$not':
-              operator = '$ne';
-              break;
-
-            case '$elMatch':
-              operator = '$elemMatch';
-              break;
-            case '$gtDate':
-              operator = '$gt';
-              break;
-            case '$ltDate':
-              operator = '$lt';
-              break;
-            case '$gteDate':
-              operator = '$gte';
-              break;
-            case '$lteDate':
-              operator = '$lte';
-              break;
-
-            // $rex is case-sensitive and $rexi isn't, as in the SPR, policy selection and crag.
-            case '$rex':
-              operator = '$regex';
-              break;
-            case '$rexi':
-              operator = '$regex';
-              operandOptions = 'i';
-              break;
-            // The property holds the text, which is matched as it is
-            case '$inProp':
-              operator = '$regex';
-              if (typeof operand === 'string') operand = operand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              break;
-
-            default:
-            // TODO: Throw an error if operator isn't supported
+          // The query DSL's names for MongoDB's operators; one it doesn't know is passed on as it is
+          const alias = ALIASES[operator];
+          if (alias) {
+            operator = alias.operator;
+            operandOptions = alias.options;
+            if (alias.operand) operand = alias.operand(operand);
           }
 
           output = this.parseQueryProperty(property, operator, operand, operandOptions, output, envFlat, schemaFlat);
         }
       } else {
-        // Direct compare
+        // Direct compare; a list is the whole value, as MongoDB compares one
         output = this.parseQueryProperty(property, '$eq', command, null, output, envFlat, schemaFlat);
       }
     }

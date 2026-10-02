@@ -36,5 +36,7 @@ import './sock/data-sharing.test.js';
 
 import './lambda/lambda.test.js';
 
+import './access-control/operators.test.js';
+
 import './perf/io-budgets.test.js';
 
