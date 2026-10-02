@@ -14,11 +14,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
+import sinon from 'sinon';
 import { Readable } from 'node:stream';
 
 import AppSchemaModel from '../../../../../dist/model/core/app.js';
+import StandardModel from '../../../../../dist/model/type/standard.js';
+import { restProcessIdentity } from '../../../../../dist/services/schema-applied.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 import TrackingSchemaModel from '../../../../../dist/model/core/tracking.js';
 import AppDataSharingSchemaModel from '../../../../../dist/model/core/app-data-sharing.js';
@@ -114,7 +117,8 @@ describe('model/core/AppSchemaModel:apiPathProblem', () => {
   });
 
   it('refuses a reserved or malformed api path', async () => {
-    for (const apiPath of ['api', 'Lambda', 'core', 'plugin-x']) assert.strictEqual(await model.apiPathProblem(apiPath), 'reserved_api_path');
+    for (const apiPath of ['api', 'Lambda', 'core', 'plugin-x'])
+      assert.strictEqual(await model.apiPathProblem(apiPath), 'reserved_api_path');
     for (const apiPath of ['', '-x', 'a/b', 'a.b', '../x', 'a b', null, { $ne: 1 }]) {
       assert.strictEqual(await model.apiPathProblem(apiPath), 'invalid_api_path', JSON.stringify(apiPath));
     }
@@ -131,11 +135,66 @@ describe('model/core/AppSchemaModel:mergeRemoteSchema', () => {
     };
     const model = Object.create(AppSchemaModel.prototype);
     model.__modelManager = { getCoreModel: () => ({ find: async () => Readable.from([agreement]) }) };
-    const collections = [{ name: 'car', type: 'collection', properties: {}, remotes: [{ name: 'from-partner', schema: 'car' }] }];
+    const collections = [
+      { name: 'car', type: 'collection', properties: {}, remotes: [{ name: 'from-partner', schema: 'car' }] },
+    ];
 
     const merged = await model.mergeRemoteSchema({ context: { authApp: { id: 'app-1' } } }, collections);
 
-    assert.deepStrictEqual(merged.map((schema) => schema.name), ['car']);
+    assert.deepStrictEqual(
+      merged.map((schema) => schema.name),
+      ['car'],
+    );
   });
 });
 
+describe('model/core/AppSchemaModel:updateSchema', () => {
+  afterEach(() => sinon.restore());
+
+  // A pub/sub that announces a change as applied once the model has announced it, if asked to
+  const createUpdater = ({ answers }) => {
+    const handlers = new Map();
+    const published = [];
+    const nrp = {
+      on: async (channel, handler) => handlers.set(channel, handler),
+      emit: (channel, json) => {
+        published.push([channel, JSON.parse(json)]);
+        if (channel === 'app-schema:updated' && answers) {
+          const { changeId, appId } = JSON.parse(json);
+          if (changeId)
+            setImmediate(() =>
+              handlers.get('app-schema:applied')(JSON.stringify({ changeId, appId, ...restProcessIdentity() })),
+            );
+        }
+      },
+    };
+    sinon.stub(StandardModel.prototype, 'updateById').resolves();
+    sinon.stub(StandardModel.prototype, 'findById').resolves({ __rawSchema: '[]' });
+    const model = Object.create(AppSchemaModel.prototype);
+    model.__nrp = nrp;
+    return { model, published };
+  };
+
+  it('answers once the workers have the change, when asked to wait for them', async () => {
+    const { model, published } = createUpdater({ answers: true });
+    let done = false;
+
+    const update = model.updateSchema('app-1', [], '[]', { waitForWorkers: true }).then(() => (done = true));
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.strictEqual(done, false, 'answered before the workers had it');
+
+    await update;
+    const [, message] = published.find(([channel]) => channel === 'app-schema:updated');
+    assert.strictEqual(message.appId, 'app-1');
+    assert.strictEqual(typeof message.changeId, 'string');
+  });
+
+  it('answers as soon as the change is announced when not asked to wait', async () => {
+    const { model, published } = createUpdater({ answers: false });
+
+    await model.updateSchema('app-1', [], '[]');
+
+    const [, message] = published.find(([channel]) => channel === 'app-schema:updated');
+    assert.strictEqual(message.changeId, undefined);
+  });
+});

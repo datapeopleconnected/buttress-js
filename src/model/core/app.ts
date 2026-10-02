@@ -13,6 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { randomUUID } from 'node:crypto';
+
 import { Request } from 'express';
 
 import ButtressExport from '@buttress/api';
@@ -36,6 +38,8 @@ import SecureStoreSchemaModel from './secure-store.js';
 import TrackingSchemaModel from './tracking.js';
 import { AppDeletedMessage } from '../../routes/index.js';
 import { Services } from '../../bootstrap.js';
+import type { AppSchemaUpdatedMessage } from '../../services/nrp.js';
+import { SchemaAppliedWaiter } from '../../services/schema-applied.js';
 
 // A type rather than an interface, so it's assignable to AdapterDocument
 export type App = {
@@ -73,6 +77,7 @@ export default class AppSchemaModel extends StandardModel<App> {
   static TenantKey: TenantKey = 'id';
 
   private _localSchema?: Schema[];
+  private __schemaAppliedWaiter?: SchemaAppliedWaiter;
 
   constructor(services: Services) {
     const schema = AppSchemaModel.Schema;
@@ -327,9 +332,17 @@ export default class AppSchemaModel extends StandardModel<App> {
    * @param {string} appId - app id which needs to be updated
    * @param {object} compiledSchema - schema object for the app
    * @param {object} rawSchema - encoded raw app schema
+   * @param {object} [options]
+   * @param {boolean} [options.waitForWorkers] - resolve only once this REST process's workers have the new models and
+   *   routes, so a request after it finds them, rather than as soon as the change is saved and announced
    * @return {Promise} - resolves when save operation is completed, rejects if metadata already exists
    */
-  async updateSchema(appId: string, compiledSchema: Schema[], rawSchema?: string) {
+  async updateSchema(
+    appId: string,
+    compiledSchema: Schema[],
+    rawSchema?: string,
+    options: { waitForWorkers?: boolean } = {},
+  ) {
     Logging.logSilly(`Update Schema ${appId}`);
 
     await super.updateById(appId, { $set: { __schema: Helpers.Schema.encode(compiledSchema) } });
@@ -338,8 +351,15 @@ export default class AppSchemaModel extends StandardModel<App> {
       await super.updateById(appId, { $set: { __rawSchema: rawSchema } });
     }
 
+    // Listening starts before the change is announced, so the answer can't be missed
+    const changeId = options.waitForWorkers && this.__nrp ? randomUUID() : undefined;
+    const applied = changeId ? await this.__getSchemaAppliedWaiter().expect(changeId) : undefined;
+
     Logging.logSilly(`Emitting app-schema:updated ${appId}`);
-    this.__nrp?.emit('app-schema:updated', JSON.stringify({ appId: appId }));
+    this.__nrp?.emit(
+      'app-schema:updated',
+      JSON.stringify({ appId: appId, changeId } satisfies AppSchemaUpdatedMessage),
+    );
     this.__nrp?.emit(
       'app:update-schema',
       JSON.stringify({
@@ -348,7 +368,13 @@ export default class AppSchemaModel extends StandardModel<App> {
       }),
     );
     const updatedSchema = (await super.findById(appId))?.__rawSchema;
+    await applied?.();
     return updatedSchema;
+  }
+
+  private __getSchemaAppliedWaiter() {
+    if (!this.__nrp) throw new Error('NRP not found whilst waiting on a schema change');
+    return (this.__schemaAppliedWaiter ??= new SchemaAppliedWaiter(this.__nrp));
   }
 
   async mergeRemoteSchema(req: Request, collections: Schema[]) {

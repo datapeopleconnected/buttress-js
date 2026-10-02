@@ -36,7 +36,8 @@ import * as Schema from './helpers/schema.js';
 import type { Schema as SchemaDefinition } from './types/schema.js';
 
 import { SourceDataSharingRouting } from './services/source-ds-routing.js';
-import type { AppSchemaUpdatedMessage } from './services/nrp.js';
+import type { AppSchemaUpdatedMessage, AppSchemaAppliedMessage } from './services/nrp.js';
+import { SchemaChangeAcks, restProcessIdentity } from './services/schema-applied.js';
 
 import DatastoreManager, { Datastore } from './datastore/index.js';
 import Plugins from './plugins/index.js';
@@ -75,6 +76,9 @@ export default class BootstrapRest extends Bootstrap {
 
   // Hands requests from plugins to the Express app. Plugins is a singleton, so clean() has to remove this again.
   private _onPluginRequest?: (req: http.IncomingMessage, res: http.ServerResponse) => void;
+
+  // What each schema change that's waited on is still waiting for its workers to apply
+  private _schemaAcks = new SchemaChangeAcks((changeId, appId) => this._announceSchemaApplied(changeId, appId));
 
   constructor(installMode = false) {
     super();
@@ -125,6 +129,8 @@ export default class BootstrapRest extends Bootstrap {
   }
 
   override async clean() {
+    this._schemaAcks.clear();
+
     // Stop taking requests, and let the in-flight ones finish while the connections they use are still open
     if (this._onPluginRequest) {
       Logging.logSilly('Removing plugin request listener');
@@ -179,15 +185,29 @@ export default class BootstrapRest extends Bootstrap {
 
     if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');
 
-    this.__nrp.on('app-schema:updated', (json) => {
+    this.__nrp.on('app-schema:updated', async (json) => {
       const data = JSON.parse(json) as AppSchemaUpdatedMessage;
       Logging.logDebug(`App Schema Updated: ${data.appId}`);
-      this.notifyWorkers({
+
+      const { changeId } = data;
+      // Workers that are starting, or gone, aren't told, so aren't waited for
+      if (changeId && this.workerProcesses > 0) {
+        const told = this.workers.flatMap((holder, idx) =>
+          holder.initiated && holder.worker.isConnected() ? [idx] : [],
+        );
+        this._schemaAcks.start(changeId, told, data.appId);
+      }
+
+      await this.notifyWorkers({
         type: 'app-schema:updated',
         payload: {
           appId: data.appId,
+          changeId,
         },
       });
+
+      // With no workers the change is applied here, by the time notifyWorkers returns
+      if (changeId && this.workerProcesses === 0) this._announceSchemaApplied(changeId, data.appId);
     });
     this.__nrp.on('app-routes:bust-cache', () => {
       Logging.logDebug(`App Routes: Bust token cache`);
@@ -266,22 +286,56 @@ export default class BootstrapRest extends Bootstrap {
   override async __handleMessageFromMain(message: LocalProcessMessage) {
     if (message.type === 'app-schema:updated') {
       if (!this.routes) return Logging.logDebug(`Skipping app schema update, router not created yet`);
-      const payload = message.payload as { appId: string };
+      const payload = message.payload as { appId: string; changeId?: string };
 
       if (!payload || !payload.appId) {
         return Logging.logWarn(`Skipping app schema update, no appId provided`);
       }
 
       Logging.logDebug(`App Schema Updated: ${payload.appId}`);
-      await Model.initSchema(payload.appId);
-      await this.routes.regenerateAppRoutes(payload.appId);
-      Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
+      try {
+        await Model.initSchema(payload.appId);
+        await this.routes.regenerateAppRoutes(payload.appId);
+        Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
+      } finally {
+        // Told even when it failed, so whoever waits isn't held up for the timeout as well
+        if (payload.changeId && cluster.isWorker) {
+          process.send?.({
+            type: 'app-schema:applied',
+            payload: { changeId: payload.changeId },
+          } satisfies LocalProcessMessage);
+        }
+      }
     } else if (message.type === 'app-routes:bust-cache') {
       if (!this.routes) return Logging.logDebug(`Skipping token cache bust, router not created yet`);
       // TODO: Maybe do this better than
       await this.routes.loadTokens();
       Logging.logDebug(`App Routes: cache bust`);
     }
+  }
+
+  override async __handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
+    if (message.type === 'app-schema:applied') {
+      const payload = message.payload as { changeId?: string } | null;
+      if (payload?.changeId) this._schemaAcks.ack(payload.changeId, idx);
+      return;
+    }
+
+    await super.__handleMessageFromWorker(idx, message);
+  }
+
+  override __onWorkerExit(idx: number) {
+    this._schemaAcks.workerGone(idx);
+  }
+
+  /**
+   * Says this process's workers have the schema change, to the worker that's waiting on it.
+   */
+  private _announceSchemaApplied(changeId: string, appId: string) {
+    this.__nrp?.emit(
+      'app-schema:applied',
+      JSON.stringify({ changeId, appId, ...restProcessIdentity() } satisfies AppSchemaAppliedMessage),
+    );
   }
 
   async __systemInstall() {

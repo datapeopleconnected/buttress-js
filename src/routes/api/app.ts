@@ -499,7 +499,10 @@ class UpdateAppSchema extends Route {
     _res: Response,
     { appId, rawSchema, compiledSchema }: { appId: string; rawSchema: string; compiledSchema: Schema[] },
   ) {
-    await (await this.scoped(req, AppSchemaModel).owned(appId)).updateSchema(appId, compiledSchema, rawSchema);
+    // Answered once the workers have the schema's routes, as a client uses them as soon as it's answered
+    await (
+      await this.scoped(req, AppSchemaModel).owned(appId)
+    ).updateSchema(appId, compiledSchema, rawSchema, { waitForWorkers: true });
 
     const a = compiledSchema
       .filter((s) => s.type === 'collection')

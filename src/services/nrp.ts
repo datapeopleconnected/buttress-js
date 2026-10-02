@@ -25,6 +25,19 @@ import { getThrownErrorMessage } from '../helpers/index.js';
  */
 export interface AppSchemaUpdatedMessage {
   appId: string;
+  // Set by a change whose maker waits to hear its REST process's workers have applied it
+  changeId?: string;
+}
+
+/**
+ * The message a REST process publishes on `app-schema:applied`, once every one of its workers has rebuilt its models
+ * and routes for the change with that id. The host and pid say which REST process.
+ */
+export interface AppSchemaAppliedMessage {
+  changeId: string;
+  appId: string;
+  host: string;
+  pid: number;
 }
 
 /**

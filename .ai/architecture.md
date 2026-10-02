@@ -40,6 +40,13 @@ Node `cluster`-based primary/worker model:
    `worker:initiated` isn't, as its replacement would most likely fail the same way; during start-up, that
    fails `__spawnWorkers()` and so the process's `init()`, and the entry script exits 1. Workers keep
    Node's default of exiting on an uncaught exception; `unhandledRejection` is only logged.
+   `PUT app/schema` waits on that fan-out (`services/schema-applied.ts`): the worker that took it publishes
+   `app-schema:updated` with a `changeId` and listens for `app-schema:applied`. Its REST main tells each worker
+   (`app-schema:updated` over IPC), each worker replies `app-schema:applied` over IPC once `Model.initSchema` and
+   `regenerateAppRoutes` are done (even if they threw), and the main publishes `app-schema:applied` with its
+   host and pid when every worker it told has replied, has exited, or 10 s have passed. A worker only takes the
+   announcement from its own main, so other REST processes aren't waited for. Nothing else is: policy changes
+   (`app-policy:bust-cache`), Socket and SPR still catch up asynchronously.
 5. `BUTTRESS_APP_WORKERS=0` runs "single instance mode" — `__spawnWorkers()` just calls
    `__initWorker()` directly in the primary process instead of forking.
 6. Shutdown — the entry scripts call `shutdownOnSignals()`, so SIGTERM/SIGINT runs `clean()` and then

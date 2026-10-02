@@ -19,6 +19,7 @@ import assert from 'assert';
 import sinon from 'sinon';
 import createConfig from '@dpc/node-env-obj';
 import Express from 'express';
+import cluster from 'node:cluster';
 
 import BootstrapRest, { parseTrustProxy } from '../../../dist/bootstrap-rest.js';
 import DatastoreManager from '../../../dist/datastore/index.js';
@@ -132,5 +133,79 @@ describe('bootstrap-rest:parseTrustProxy', () => {
 		});
 
 		assert.strictEqual(req.ip, '203.0.113.7');
+	});
+});
+
+describe('bootstrap-rest:schema changes waited on', () => {
+	const originalSend = process.send;
+	afterEach(() => {
+		sinon.restore();
+		process.send = originalSend;
+	});
+
+	// A worker that has its routes, and the send it answers its main with
+	const createWorker = (regenerate) => {
+		const bootstrapRest = new BootstrapRest();
+		bootstrapRest.routes = { regenerateAppRoutes: regenerate };
+		sinon.stub(Model, 'initSchema').resolves();
+		sinon.stub(cluster, 'isWorker').value(true);
+		const send = sinon.stub();
+		process.send = send;
+		return { bootstrapRest, send };
+	};
+	const updated = (changeId) => ({ type: 'app-schema:updated', payload: { appId: 'app-1', changeId } });
+
+	it(`should tell its main a worker has the routes of a change that's waited on`, async () => {
+		const { bootstrapRest, send } = createWorker(sinon.stub().resolves());
+
+		await bootstrapRest.__handleMessageFromMain(updated('c1'));
+
+		sinon.assert.calledOnceWithExactly(send, { type: 'app-schema:applied', payload: { changeId: 'c1' } });
+	});
+
+	it(`should tell its main even when the worker could not build the routes`, async () => {
+		const { bootstrapRest, send } = createWorker(sinon.stub().rejects(new Error('bad routes')));
+
+		await assert.rejects(bootstrapRest.__handleMessageFromMain(updated('c1')), /bad routes/);
+
+		sinon.assert.calledOnceWithExactly(send, { type: 'app-schema:applied', payload: { changeId: 'c1' } });
+	});
+
+	it(`should say nothing for a change nobody waits on`, async () => {
+		const { bootstrapRest, send } = createWorker(sinon.stub().resolves());
+
+		await bootstrapRest.__handleMessageFromMain(updated(undefined));
+
+		sinon.assert.notCalled(send);
+	});
+
+	it(`should announce a change once every worker has the routes`, async () => {
+		const bootstrapRest = new BootstrapRest();
+		bootstrapRest.__nrp = { emit: sinon.stub() };
+		bootstrapRest._schemaAcks.start('c1', [0, 1], 'app-1');
+		const applied = (idx) =>
+			bootstrapRest.__handleMessageFromWorker(idx, { type: 'app-schema:applied', payload: { changeId: 'c1' } });
+
+		await applied(0);
+		sinon.assert.notCalled(bootstrapRest.__nrp.emit);
+
+		await applied(1);
+		sinon.assert.calledOnce(bootstrapRest.__nrp.emit);
+		const [channel, json] = bootstrapRest.__nrp.emit.firstCall.args;
+		assert.strictEqual(channel, 'app-schema:applied');
+		const message = JSON.parse(json);
+		assert.strictEqual(message.changeId, 'c1');
+		assert.strictEqual(message.appId, 'app-1');
+		assert.strictEqual(message.pid, process.pid);
+	});
+
+	it(`should stop waiting on a worker that exits`, () => {
+		const bootstrapRest = new BootstrapRest();
+		bootstrapRest.__nrp = { emit: sinon.stub() };
+		bootstrapRest._schemaAcks.start('c1', [0], 'app-1');
+
+		bootstrapRest.__onWorkerExit(0);
+
+		sinon.assert.calledOnce(bootstrapRest.__nrp.emit);
 	});
 });

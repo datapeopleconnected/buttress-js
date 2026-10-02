@@ -240,6 +240,12 @@ An app's schemas are checked when they're saved (`PUT /api/v1/app/schema`), and 
 - a property name that's empty, has a dot, or starts with `_` (those are the server's) or `$`;
 - an object with definition keys but no `__type`.
 
+`PUT /api/v1/app/schema` answers once the REST workers of the process that took the request have the new schema's
+routes, so a client can use a collection it has just added straight away. Earlier releases answered as soon as the
+change was saved, and a request straight after could reach a worker that didn't have the route yet and fail with a 404.
+If a worker is slow, the request answers after 10 seconds anyway. Other REST processes, and Socket and SPR, pick the
+change up as they always have, a moment later.
+
 ## Best Practices
 - Use meaningful names for schemas and properties.
 - Leverage the `extends` field to avoid duplication.
