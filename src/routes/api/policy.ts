@@ -16,6 +16,7 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
+import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
 import { checkPolicyConfig, checkPolicyConfigUpdate } from '../../access-control/policy-definition.js';
@@ -26,10 +27,9 @@ import Datastore from '../../datastore/index.js';
 import PolicySchemaModel, { Policy, PolicyAddBody } from '../../model/core/policy.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
 import { App } from '../../model/core/app.js';
-import { QueryParams } from '../../types/bjs-query.js';
 import { Services } from '../../bootstrap.js';
 import { UpdatePathBody } from '../../types/datastore.js';
-import type { BulkUpdateItem, CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
+import type { BulkUpdateItem, CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
 
@@ -116,52 +116,14 @@ routes.push(GetPolicyList);
 /**
  * @class SearchPolicyList
  */
-class SearchPolicyList extends Route {
-  constructor(services: Services) {
-    super('policy', 'SEARCH POLICY LIST', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override async _validate(req: RequestWithBody<SearchListBody<Policy> | undefined>, _res: Response) {
-    // The search options are read off the body, and an array has a sort method of its own
-    if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
-
-    const result: QueryParams<Policy> = {
-      query: {},
-      // parseInt takes numbers too, it converts them to a string first
-      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
-      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
-      sort: req.body && req.body.sort ? req.body.sort : {},
-      project: req.body && req.body.project ? req.body.project : false,
-    };
-    result.query.$and = [];
-
-    if (isNaN(result.skip ?? 0)) throw Helpers.Errors.badRequest('invalid_value_skip');
-    if (isNaN(result.limit ?? 0)) throw Helpers.Errors.badRequest('invalid_value_limit');
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    }
-
-    const policies = this.scoped(req, PolicySchemaModel);
-    result.query = policies.parseQuery(result.query, {}, policies.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validate: QueryParams<Policy>) {
-    return this.scoped(req, PolicySchemaModel).find(
-      validate.query,
-      {},
-      validate.limit,
-      validate.skip,
-      validate.sort,
-      validate.project,
-    );
-  }
+class SearchPolicyList extends CoreSearch<PolicySchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'policy',
+    name: 'SEARCH POLICY LIST',
+    model: PolicySchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.LIST,
+  };
 }
 routes.push(SearchPolicyList);
 
@@ -437,41 +399,14 @@ class SyncPolicies extends Route {
 /**
  * @class PolicyCount
  */
-class PolicyCount extends Route {
-  constructor(services: Services) {
-    super(`policy/count`, `COUNT POLICIES`, services, Model.getCoreModel(PolicySchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.SEARCH;
-
-    this.activityDescription = `COUNT POLICIES`;
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<CountBody<Policy> | undefined>, _res: Response) {
-    const result: QueryParams<Policy> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    } else if (req.body && !req.body.query) {
-      // A body with no query is the query, apart from the count's own flag
-      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
-      result.query.$and.push(bodyQuery);
-    }
-
-    const policies = this.scoped(req, PolicySchemaModel);
-    result.query = policies.parseQuery(result.query, {}, policies.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validateResult: QueryParams<Policy>) {
-    return this.scoped(req, PolicySchemaModel).count(validateResult.query);
-  }
+class PolicyCount extends CoreCount<PolicySchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'policy/count',
+    name: 'COUNT POLICIES',
+    model: PolicySchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.SEARCH,
+  };
 }
 routes.push(PolicyCount);
 

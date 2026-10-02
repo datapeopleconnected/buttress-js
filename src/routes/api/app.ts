@@ -17,6 +17,7 @@
 import { Request, Response } from 'express';
 
 import Route from '../route.js';
+import { CoreCount, CoreRouteConfig } from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, invalidUpdateError } from '../../model/shared.js';
 import Sugar from '../../helpers/sugar.js';
@@ -30,7 +31,7 @@ import { checkSchemaDefinition } from '../../helpers/schema-definition.js';
 import { QueryParams } from '../../types/bjs-query.js';
 import { UpdatePathBody } from '../../types/datastore.js';
 import { Services } from '../../bootstrap.js';
-import type { CoreRouteClass, CountBody, RequestWithBody, SearchBody } from '../../types/routes.js';
+import type { CoreRouteClass, RequestWithBody, SearchBody } from '../../types/routes.js';
 
 // Why a system-only route reaches every app
 const SYSTEM_ONLY = 'the route takes only system tokens';
@@ -638,41 +639,14 @@ class SetAppPolicyPropertyList extends Route {
 /**
  * @class AppCount
  */
-class AppCount extends Route {
-  constructor(services: Services) {
-    super(`app/count`, `COUNT APPS`, services, Model.getCoreModel(AppSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.SYSTEM;
-    this.permissions = Route.Constants.Permissions.SEARCH;
-
-    this.activityDescription = `COUNT APPS`;
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<CountBody<App> | undefined>, _res: Response) {
-    const result: QueryParams<App> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    } else if (req.body && !req.body.query) {
-      // A body with no query is the query, apart from the count's own flag
-      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
-      result.query.$and.push(bodyQuery);
-    }
-
-    const scoped = this.scoped(req, AppSchemaModel);
-    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, _res: Response, validateResult: QueryParams<App>) {
-    return this.scoped(req, AppSchemaModel).count(validateResult.query);
-  }
+class AppCount extends CoreCount<AppSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app/count',
+    name: 'COUNT APPS',
+    model: AppSchemaModel,
+    authType: Route.Constants.Type.SYSTEM,
+    permissions: Route.Constants.Permissions.SEARCH,
+  };
 }
 
 /**

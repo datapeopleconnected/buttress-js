@@ -16,6 +16,7 @@
 import { Request, Response } from 'express';
 
 import Route from '../route.js';
+import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, invalidUpdateError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
@@ -27,11 +28,10 @@ import ButtressAdapater from '../../datastore/adapters/buttress.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import AppDataSharingSchemaModel, { AppDataSharing, AppDataSharingAddBody } from '../../model/core/app-data-sharing.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
-import { QueryParams } from '../../types/bjs-query.js';
 import { Services } from '../../bootstrap.js';
 import type { DataShareActivatedMessage } from '../../services/nrp.js';
 import { UpdatePathBody } from '../../types/datastore.js';
-import type { BulkUpdateItem, CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
+import type { BulkUpdateItem, CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 import { dataSharingDestinationProblem, remoteAppUrlsOf } from '../../helpers/egress.js';
 
 // What the activate route (ActivateAppDataSharing) responds with. A remote whose side of the agreement is already
@@ -670,103 +670,28 @@ routes.push(GetAllAppDataSharing);
 /**
  * @class SearchAppDataSharingAgreement
  */
-class SearchAppDataSharingAgreement extends Route {
-  constructor(services: Services) {
-    super(
-      'app-data-sharing',
-      'SEARCH APP DATA SHARING AGREEMENT LIST',
-      services,
-      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override async _validate(req: RequestWithBody<SearchListBody<AppDataSharing> | undefined>, _res: Response) {
-    // The search options are read off the body, and an array has a sort method of its own
-    if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
-
-    const result: QueryParams<AppDataSharing> = {
-      query: {
-        $and: [],
-      },
-      // parseInt takes numbers too, it converts them to a string first
-      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
-      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
-      sort: req.body && req.body.sort ? req.body.sort : {},
-      project: req.body && req.body.project ? req.body.project : false,
-    };
-
-    if (isNaN(result.skip ?? 0)) throw Helpers.Errors.badRequest('invalid_value_skip');
-    if (isNaN(result.limit ?? 0)) throw Helpers.Errors.badRequest('invalid_value_limit');
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and?.push(req.body.query);
-    }
-
-    const scoped = this.scoped(req, AppDataSharingSchemaModel);
-    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validate: QueryParams<AppDataSharing>) {
-    return this.scoped(req, AppDataSharingSchemaModel).find(
-      validate.query,
-      {},
-      validate.limit,
-      validate.skip,
-      validate.sort,
-      validate.project,
-    );
-  }
+class SearchAppDataSharingAgreement extends CoreSearch<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing',
+    name: 'SEARCH APP DATA SHARING AGREEMENT LIST',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.LIST,
+  };
 }
 routes.push(SearchAppDataSharingAgreement);
 
 /**
  * @class AppDataSharingAgreementCount
  */
-class AppDataSharingAgreementCount extends Route {
-  constructor(services: Services) {
-    super(
-      'app-data-sharing/count',
-      'COUNT APP DATA SHARING AGREEMENT',
-      services,
-      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.SEARCH;
-
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<CountBody<AppDataSharing> | undefined>, _res: Response) {
-    const result: QueryParams<AppDataSharing> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    } else if (req.body && !req.body.query) {
-      // A body with no query is the query, apart from the count's own flag
-      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
-      result.query.$and.push(bodyQuery);
-    }
-
-    const scoped = this.scoped(req, AppDataSharingSchemaModel);
-    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, _res: Response, validateResult: QueryParams<AppDataSharing>) {
-    return this.scoped(req, AppDataSharingSchemaModel).count(validateResult.query);
-  }
+class AppDataSharingAgreementCount extends CoreCount<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing/count',
+    name: 'COUNT APP DATA SHARING AGREEMENT',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.SEARCH,
+  };
 }
 routes.push(AppDataSharingAgreementCount);
 

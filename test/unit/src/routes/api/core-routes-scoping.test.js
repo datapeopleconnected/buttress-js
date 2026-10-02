@@ -37,11 +37,17 @@ const EVERY_APP = {
   GetUser: [['TokenSchemaModel', 'findUserAuthTokens is limited to the app it is given']],
 };
 
-// A route's own code, without its comments, which may hold code that no longer runs
-const codeOf = (RouteClass) =>
-  RouteClass.toString()
+// A route's own code, and that of the classes between it and Route (the core route bases), without comments, which
+// may hold code that no longer runs
+const codeOf = (RouteClass) => {
+  const classes = [];
+  for (let cls = RouteClass; cls && cls !== Route; cls = Object.getPrototypeOf(cls)) classes.push(cls);
+  return classes
+    .map((cls) => cls.toString())
+    .join('\n')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '');
+};
 
 // Each unscopedModel(Model, reason) in a route's own code, the reason as written: a string, or a constant's name
 const unscopedUses = (source) =>

@@ -16,6 +16,7 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
+import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
 import Datastore from '../../datastore/index.js';
@@ -23,10 +24,9 @@ import * as Helpers from '../../helpers/index.js';
 
 import SecureStoreSchemaModel, { SecureStore, SecureStoreAddBody } from '../../model/core/secure-store.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
-import { QueryParams } from '../../types/bjs-query.js';
 import { Services } from '../../bootstrap.js';
 import { UpdatePathBody } from '../../types/datastore.js';
-import type { BulkUpdateItem, CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
+import type { BulkUpdateItem, CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
 
@@ -368,63 +368,16 @@ routes.push(BulkUpdateSecureStore);
 /**
  * @class SearchSecureStoreList
  */
-class SearchSecureStoreList extends Route {
-  constructor(services: Services) {
-    super('secure-store', 'SEARCH SECURE STORE LIST', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override async _validate(req: RequestWithBody<SearchListBody<SecureStore> | undefined>, _res: Response) {
-    // The search options are read off the body, and an array has a sort method of its own
-    if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
-
-    if (!req.context.authApp?.id) {
-      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw Helpers.Errors.internal('no_authenticated_app');
-    }
-
-    const result: QueryParams<SecureStore> = {
-      query: {},
-      // parseInt takes numbers too, it converts them to a string first
-      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
-      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
-      sort: req.body && req.body.sort ? req.body.sort : {},
-      project: req.body && req.body.project ? req.body.project : false,
-    };
-    result.query.$and = [];
-
-    if (isNaN(result.skip ?? 0)) throw Helpers.Errors.badRequest('invalid_value_skip');
-    if (isNaN(result.limit ?? 0)) throw Helpers.Errors.badRequest('invalid_value_limit');
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    }
-
-    result.query.$and.push({
-      _appId: req.context.authApp.id,
-    });
-
-    result.query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(SecureStoreSchemaModel).flatSchemaData,
-    );
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validate: QueryParams<SecureStore>) {
-    return this.scoped(req, SecureStoreSchemaModel).find(
-      validate.query,
-      {},
-      validate.limit,
-      validate.skip,
-      validate.sort,
-      validate.project,
-    );
-  }
+class SearchSecureStoreList extends CoreSearch<SecureStoreSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'secure-store',
+    name: 'SEARCH SECURE STORE LIST',
+    model: SecureStoreSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.LIST,
+    // A system token too reaches only its own app's secure stores
+    scope: 'own-app',
+  };
 }
 routes.push(SearchSecureStoreList);
 
@@ -477,53 +430,16 @@ routes.push(DeleteSecureStore);
 /**
  * @class SecureStoreCount
  */
-class SecureStoreCount extends Route {
-  constructor(services: Services) {
-    super('secure-store/count', 'COUNT SECURE STORES', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.SEARCH;
-
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<CountBody<SecureStore> | undefined>, _res: Response) {
-    if (!req.context.authApp) {
-      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw Helpers.Errors.internal('no_authenticated_app');
-    }
-
-    const result: QueryParams<SecureStore> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    } else if (req.body && !req.body.query) {
-      // A body with no query is the query, apart from the count's own flag
-      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
-      result.query.$and.push(bodyQuery);
-    }
-
-    result.query.$and.push({
-      _appId: req.context.authApp.id,
-    });
-
-    const query = Model.getCoreModel(SecureStoreSchemaModel).parseQuery(
-      result.query,
-      {},
-      Model.getCoreModel(SecureStoreSchemaModel).flatSchemaData,
-    );
-
-    result.query = query;
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validateResult: QueryParams<SecureStore>) {
-    return this.scoped(req, SecureStoreSchemaModel).count(validateResult.query);
-  }
+class SecureStoreCount extends CoreCount<SecureStoreSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'secure-store/count',
+    name: 'COUNT SECURE STORES',
+    model: SecureStoreSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.SEARCH,
+    // A system token too reaches only its own app's secure stores
+    scope: 'own-app',
+  };
 }
 routes.push(SecureStoreCount);
 

@@ -13,89 +13,39 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { Request, Response } from 'express';
 
 import Route from '../route.js';
-import Model from '../../model/index.js';
-import DeploymentSchemaModel, { Deployment } from '../../model/core/deployment.js';
-import { QueryParams } from '../../types/bjs-query.js';
-import { Services } from '../../bootstrap.js';
-import type { CoreRouteClass, CountBody, RequestWithBody, SearchBody } from '../../types/routes.js';
+import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
+import DeploymentSchemaModel from '../../model/core/deployment.js';
+import type { CoreRouteClass } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
 
 /**
  * @class SearchDeploymentList
  */
-class SearchDeploymentList extends Route {
-  constructor(services: Services) {
-    super('deployment', 'SEARCH DEPLOYMENT LIST', services, Model.getCoreModel(DeploymentSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override async _validate(req: RequestWithBody<SearchBody<Deployment> | undefined>, _res: Response) {
-    const result: QueryParams<Deployment> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    }
-
-    const scoped = this.scoped(req, DeploymentSchemaModel);
-    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validate: QueryParams<Deployment>) {
-    return this.scoped(req, DeploymentSchemaModel).find(validate.query);
-  }
+class SearchDeploymentList extends CoreSearch<DeploymentSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'deployment',
+    name: 'SEARCH DEPLOYMENT LIST',
+    model: DeploymentSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.LIST,
+  };
 }
 routes.push(SearchDeploymentList);
 
 /**
  * @class DeploymentCount
  */
-class DeploymentCount extends Route {
-  constructor(services: Services) {
-    super(`deployment/count`, `COUNT DEPLOYMENTS`, services, Model.getCoreModel(DeploymentSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.SEARCH;
-
-    this.activityDescription = `COUNT DEPLOYMENTS`;
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<CountBody<Deployment> | undefined>, _res: Response) {
-    const result: QueryParams<Deployment> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    } else if (req.body && !req.body.query) {
-      // A body with no query is the query, apart from the count's own flag
-      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
-      result.query.$and.push(bodyQuery);
-    }
-
-    const scoped = this.scoped(req, DeploymentSchemaModel);
-    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validateResult: QueryParams<Deployment>) {
-    return this.scoped(req, DeploymentSchemaModel).count(validateResult.query);
-  }
+class DeploymentCount extends CoreCount<DeploymentSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'deployment/count',
+    name: 'COUNT DEPLOYMENTS',
+    model: DeploymentSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.SEARCH,
+  };
 }
 routes.push(DeploymentCount);
 

@@ -59,6 +59,21 @@ export const matches = (row, query = {}) =>
     });
   });
 
+// Orders rows as a MongoDB sort does, by each key in turn, 1 ascending and -1 descending
+const bySort = (sort) => (a, b) => {
+  for (const [key, direction] of Object.entries(sort)) {
+    const order = compare(valueAt(a, key), valueAt(b, key));
+    if (order !== 0) return order * direction;
+  }
+  return 0;
+};
+
+// A row with only the keys an inclusion projection names, and its id
+const projectRow = (row, project) => {
+  if (!project || Object.keys(project).length < 1) return row;
+  return Object.fromEntries(Object.entries(row).filter(([key]) => key === 'id' || project[key]));
+};
+
 /**
  * A real StandardModel for a schema, so routes run the real parseQuery and the rest of the model, over a datastore in
  * memory. The datastore keeps `rows`, the array it's given, changing it in place as rows are added, updated and
@@ -89,10 +104,11 @@ export function createSchemaModel(schema, rows = []) {
     select(query) {
       return this.rows.filter((row) => matches(row, query));
     },
-    find(query, excludes, limit = 0, skip = 0) {
+    find(query, excludes, limit = 0, skip = 0, sort = null, project = null) {
       this.record('find', query);
-      const found = this.select(query).slice(skip, limit ? skip + limit : undefined);
-      return Readable.from(found.map((row) => ({ ...row })), { objectMode: true });
+      const sorted = sort && Object.keys(sort).length > 0 ? [...this.select(query)].sort(bySort(sort)) : this.select(query);
+      const found = sorted.slice(skip, limit ? skip + limit : undefined);
+      return Readable.from(found.map((row) => projectRow({ ...row }, project)), { objectMode: true });
     },
     async findOne(query) {
       this.record('findOne', query);

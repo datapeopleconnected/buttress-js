@@ -110,6 +110,14 @@ anything but the members that touch no rows, and refuses keeping or passing the 
 than system tokens may use `unscopedModel` only where its list names the route, model and reason, so reaching every
 app from a new place is a change to that list.
 
+**Core route bases** ([src/routes/core-routes.ts](../src/routes/core-routes.ts), R4). A route class extends
+`CoreSearch<M>` or `CoreCount<M>` and gives only a `static config`, `{path, name, model, authType, permissions,
+scope?}`; the base reads it off the class (so a route made with `Object.create` in a test has it too). A search takes
+`{query, skip, limit, sort, project}`, as a schema search does, and refuses a list body with 400 `invalid_body`; a
+count takes `{query}` or the body as its query, without `actualCount`. Both reach rows through `this.scoped()`;
+`scope: 'own-app'` also limits a system token to its own app (secure-store). App and token search attach tokens, so
+they keep their own code. The scoping walk test reads the bases' code with each route's.
+
 ## Errors (`src/helpers/errors.ts`)
 
 A route, middleware or model refuses a request by throwing an `ApiError` from one of its factories: `badRequest`

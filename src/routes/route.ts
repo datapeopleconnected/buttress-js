@@ -38,7 +38,7 @@ import type { RequestWithBody } from '../types/routes.js';
 import type { AdapterDocument } from '../types/datastore.js';
 
 // A core model class, which says which property of its rows names their app
-type CoreModelClass<T> = (new (services: Services) => T) & { TenantKey: TenantKey };
+export type CoreModelClass<T> = (new (services: Services) => T) & { TenantKey: TenantKey };
 
 export interface NotifyLambdaPathChangeMessage {
   paths: string[];

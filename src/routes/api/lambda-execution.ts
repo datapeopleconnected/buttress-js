@@ -16,15 +16,15 @@
 import { Request, Response } from 'express';
 
 import Route from '../route.js';
+import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidUpdateError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
-import { QueryParams } from '../../types/bjs-query.js';
 import { Services } from '../../bootstrap.js';
 import { UpdatePathBody } from '../../types/datastore.js';
-import type { CoreRouteClass, CountBody, RequestWithBody, SearchBody } from '../../types/routes.js';
+import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
 
@@ -147,85 +147,28 @@ routes.push(UpdateLambdaExecution);
 /**
  * @class SearchExecutionList
  */
-class SearchExecutionList extends Route {
-  constructor(services: Services) {
-    super(
-      'lambda-execution',
-      'SEARCH LAMBDA EXECUTION LIST',
-      services,
-      Model.getCoreModel(LambdaExecutionSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.SEARCH;
-  }
-
-  override async _validate(req: RequestWithBody<SearchBody<LambdaExecution> | undefined>, _res: Response) {
-    const result: QueryParams<LambdaExecution> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    }
-
-    const scoped = this.scoped(req, LambdaExecutionSchemaModel);
-    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validate: QueryParams<LambdaExecution>) {
-    return this.scoped(req, LambdaExecutionSchemaModel).find(validate.query);
-  }
+class SearchExecutionList extends CoreSearch<LambdaExecutionSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'lambda-execution',
+    name: 'SEARCH LAMBDA EXECUTION LIST',
+    model: LambdaExecutionSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.SEARCH,
+  };
 }
 routes.push(SearchExecutionList);
 
 /**
  * @class LambdaExecutionCount
  */
-class LambdaExecutionCount extends Route {
-  constructor(services: Services) {
-    super(
-      `lambda-execution/count`,
-      `COUNT LAMBDA EXECUTION`,
-      services,
-      Model.getCoreModel(LambdaExecutionSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.SEARCH;
-
-    this.activityDescription = `COUNT LAMBDA EXECUTION`;
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<CountBody<LambdaExecution> | undefined>, _res: Response) {
-    const result: QueryParams<LambdaExecution> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    } else if (req.body && !req.body.query) {
-      // A body with no query is the query, apart from the count's own flag
-      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
-      result.query.$and.push(bodyQuery);
-    }
-
-    const scoped = this.scoped(req, LambdaExecutionSchemaModel);
-    result.query = scoped.parseQuery(result.query, {}, scoped.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validateResult: QueryParams<LambdaExecution>) {
-    return this.scoped(req, LambdaExecutionSchemaModel).count(validateResult.query);
-  }
+class LambdaExecutionCount extends CoreCount<LambdaExecutionSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'lambda-execution/count',
+    name: 'COUNT LAMBDA EXECUTION',
+    model: LambdaExecutionSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.SEARCH,
+  };
 }
 routes.push(LambdaExecutionCount);
 

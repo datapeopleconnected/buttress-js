@@ -21,6 +21,7 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import Route from '../route.js';
+import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
 import Sugar from '../../helpers/sugar.js';
@@ -37,9 +38,8 @@ import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/la
 
 import { Services } from '../../bootstrap.js';
 
-import { QueryParams } from '../../types/bjs-query.js';
 import { UpdatePathBody } from '../../types/datastore.js';
-import type { BulkUpdateItem, CountBody, RequestWithBody, SearchBody } from '../../types/routes.js';
+import type { BulkUpdateItem, RequestWithBody } from '../../types/routes.js';
 
 // Should contain a list of route classes that extend Route.
 type LambdaRouteConstructor = new (services: Services) => Route;
@@ -143,34 +143,14 @@ routes.push(GetLambdaList);
 /**
  * @class SearchLambdaList
  */
-class SearchLambdaList extends Route {
-  constructor(services: Services) {
-    super('lambda', 'SEARCH LAMBDA LIST', services, Model.getCoreModel(LambdaSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override async _validate(req: RequestWithBody<SearchBody<Lambda> | undefined>, _res: Response) {
-    const result: QueryParams<Lambda> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    }
-
-    const lambdas = this.scoped(req, LambdaSchemaModel);
-    result.query = lambdas.parseQuery(result.query, {}, lambdas.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validate: QueryParams<Lambda>) {
-    return this.scoped(req, LambdaSchemaModel).find(validate.query);
-  }
+class SearchLambdaList extends CoreSearch<LambdaSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'lambda',
+    name: 'SEARCH LAMBDA LIST',
+    model: LambdaSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.LIST,
+  };
 }
 routes.push(SearchLambdaList);
 
@@ -795,41 +775,14 @@ routes.push(DeleteLambda);
 /**
  * @class LambdaCount
  */
-class LambdaCount extends Route {
-  constructor(services: Services) {
-    super(`lambda/count`, `COUNT LAMBDAS`, services, Model.getCoreModel(LambdaSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.SEARCH;
-
-    this.activityDescription = `COUNT LAMBDAS`;
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<CountBody<Lambda> | undefined>, _res: Response) {
-    const result: QueryParams<Lambda> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    } else if (req.body && !req.body.query) {
-      // A body with no query is the query, apart from the count's own flag
-      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
-      result.query.$and.push(bodyQuery);
-    }
-
-    const lambdas = this.scoped(req, LambdaSchemaModel);
-    result.query = lambdas.parseQuery(result.query, {}, lambdas.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validateResult: QueryParams<Lambda>) {
-    return this.scoped(req, LambdaSchemaModel).count(validateResult.query);
-  }
+class LambdaCount extends CoreCount<LambdaSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'lambda/count',
+    name: 'COUNT LAMBDAS',
+    model: LambdaSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.SEARCH,
+  };
 }
 routes.push(LambdaCount);
 

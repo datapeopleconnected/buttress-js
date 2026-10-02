@@ -16,6 +16,7 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
+import { CoreCount, CoreRouteConfig, CoreSearch } from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, invalidUpdateError, validateSchemaObject } from '../../model/shared.js';
 import Logging from '../../helpers/logging.js';
@@ -23,10 +24,9 @@ import * as Helpers from '../../helpers/index.js';
 import TokenSchemaModel, { PolicyProperties, Token } from '../../model/core/token.js';
 import UserSchemaModel, { User, UserAddBody, UserAuth } from '../../model/core/user.js';
 import ActivitySchemaModel from '../../model/core/activity.js';
-import { QueryParams } from '../../types/bjs-query.js';
 import { UpdatePathBody } from '../../types/datastore.js';
 import { Services } from '../../bootstrap.js';
-import type { CoreRouteClass, CountBody, RequestWithBody, SearchListBody } from '../../types/routes.js';
+import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
 const routes: CoreRouteClass[] = [];
 
@@ -1070,93 +1070,28 @@ routes.push(clearUserLocalData);
 /**
  * @class SearchUserList
  */
-class SearchUserList extends Route {
-  constructor(services: Services) {
-    super('user', 'SEARCH USER LIST', services, Model.getCoreModel(UserSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override async _validate(req: RequestWithBody<SearchListBody<User> | undefined>, _res: Response) {
-    // The search options are read off the body, and an array has a sort method of its own
-    if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
-
-    const result: QueryParams<User> = {
-      query: {},
-      // parseInt takes numbers too, it converts them to a string first
-      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
-      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
-      sort: req.body && req.body.sort ? req.body.sort : {},
-      project: req.body && req.body.project ? req.body.project : false,
-    };
-    result.query.$and = [];
-
-    if (isNaN(result.skip ?? 0)) throw Helpers.Errors.badRequest('invalid_value_skip');
-    if (isNaN(result.limit ?? 0)) throw Helpers.Errors.badRequest('invalid_value_limit');
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    }
-
-    const users = this.scoped(req, UserSchemaModel);
-    result.query = users.parseQuery(result.query, {}, users.flatSchemaData);
-
-    return result;
-  }
-
-  override _exec(req: Request, res: Response, validate: QueryParams<User>) {
-    return this.scoped(req, UserSchemaModel).find(
-      validate.query,
-      {},
-      validate.limit,
-      validate.skip,
-      validate.sort,
-      validate.project,
-    );
-  }
+class SearchUserList extends CoreSearch<UserSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'user',
+    name: 'SEARCH USER LIST',
+    model: UserSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.LIST,
+  };
 }
 routes.push(SearchUserList);
 
 /**
  * @class UserCount
  */
-class UserCount extends Route {
-  constructor(services: Services) {
-    super(`user/count`, `COUNT USERS`, services, Model.getCoreModel(UserSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.SEARCH;
-
-    this.activityDescription = `COUNT USERS`;
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<CountBody<User> | undefined>, _res: Response) {
-    const result: QueryParams<User> = {
-      query: {},
-    };
-    result.query.$and = [];
-
-    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-    if (req.body && req.body.query) {
-      result.query.$and.push(req.body.query);
-    } else if (req.body && !req.body.query) {
-      // A body with no query is the query, apart from the count's own flag
-      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
-      result.query.$and.push(bodyQuery);
-    }
-
-    const users = this.scoped(req, UserSchemaModel);
-    result.query = users.parseQuery(result.query, {}, users.flatSchemaData);
-
-    return result;
-  }
-
-  override async _exec(req: Request, res: Response, validateResult: QueryParams<User>) {
-    return this.scoped(req, UserSchemaModel).count(validateResult.query);
-  }
+class UserCount extends CoreCount<UserSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'user/count',
+    name: 'COUNT USERS',
+    model: UserSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.SEARCH,
+  };
 }
 routes.push(UserCount);
 
