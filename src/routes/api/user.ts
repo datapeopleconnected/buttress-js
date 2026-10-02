@@ -362,7 +362,7 @@ class CreateUserAuthToken extends Route {
     // 	await Model.getCoreModel(UserSchemaModel).updateApps(user, req.context.authApp.id);
     // }
 
-    this._nrp?.emit('app-routes:bust-cache', '{}');
+    this._notify('app-routes:bust-cache', '{}');
 
     return {
       value: token.value,
@@ -574,7 +574,7 @@ abstract class UserTokenPolicyProperties extends CoreTokenPolicyProperties<UserS
   protected override async afterChange(req: Request, id: string) {
     if (this.config.policyProperties !== 'remove' && this.config.policyProperties !== 'clear') return;
 
-    this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({ userId: id, appId: req.context.authApp?.id }));
+    this._notify('worker:socket:evaluateUserRooms', JSON.stringify({ userId: id, appId: req.context.authApp?.id }));
   }
 }
 
@@ -733,7 +733,7 @@ class clearUserLocalData extends Route {
   }
 
   override async _exec(req: RequestWithBody<{ collections?: unknown }>, res: Response, user: User) {
-    this._nrp?.emit(
+    this._notify(
       'clearUserLocalData',
       JSON.stringify({
         appAPIPath: req.context.authApp ? req.context.authApp.apiPath : '',

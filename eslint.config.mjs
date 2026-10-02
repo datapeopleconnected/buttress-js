@@ -33,6 +33,14 @@ export default tseslint.config(
     ignores: ["dist/", "node_modules/", "deploy/"]
   },
   {
+    // A promise a route neither awaits nor catches ends the process when it rejects
+    files: ["src/routes/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-floating-promises": "error",
+      "@typescript-eslint/no-misused-promises": "error",
+    },
+  },
+  {
     // Core routes reach core rows only through the model scoped to the caller's app, or an explicit unscoped one
     files: ["src/routes/api/**/*.ts"],
     rules: {

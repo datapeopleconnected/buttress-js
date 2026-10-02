@@ -117,12 +117,16 @@ class Routes {
     );
     this._middlewareHelper = new RoutesMiddleware(this._routerMap, this._tokensHelper);
 
-    this._nrp?.on('rest:worker:app-deleted', (json: string) => {
-      const exec = JSON.parse(json) as AppDeletedMessage;
-      if (!exec.apiPath) return;
-      this._deregisterRouter(exec.apiPath);
-      this._deregisterRouter(`lambda:${exec.apiPath}`);
-      this._lambdaSetupHelper.forget(exec.apiPath);
+    Promise.resolve(
+      this._nrp?.on('rest:worker:app-deleted', (json: string) => {
+        const exec = JSON.parse(json) as AppDeletedMessage;
+        if (!exec.apiPath) return;
+        this._deregisterRouter(exec.apiPath);
+        this._deregisterRouter(`lambda:${exec.apiPath}`);
+        this._lambdaSetupHelper.forget(exec.apiPath);
+      }),
+    ).catch((err: unknown) => {
+      Logging.logError(`Failed to listen for rest:worker:app-deleted: ${Helpers.getThrownErrorMessage(err)}`);
     });
   }
 

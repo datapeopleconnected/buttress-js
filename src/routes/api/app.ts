@@ -214,7 +214,7 @@ class AddApp extends Route {
       this.unscopedModel(AppSchemaModel, SYSTEM_ONLY)
         .add(req.body)
         .then((res) => {
-          this._nrp?.emit('app:configure-lambda-endpoints', res.app.apiPath);
+          this._notify('app:configure-lambda-endpoints', res.app.apiPath);
 
           return Object.assign(res.app, { token: res.token.value });
         })

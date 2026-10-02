@@ -134,7 +134,7 @@ class AddPolicy extends Route {
     return this.scoped(req, PolicySchemaModel)
       .add(req.body, { _appId: validate.appId })
       .then((policy) => {
-        this._nrp?.emit(
+        this._notify(
           'app-policy:bust-cache',
           JSON.stringify({
             appId: validate.appId,
@@ -288,7 +288,7 @@ class SyncPolicies extends Route {
       throw err;
     }
 
-    this._nrp?.emit(
+    this._notify(
       'app-policy:bust-cache',
       JSON.stringify({
         appId: validate.appId,
@@ -373,7 +373,7 @@ class DeleteTransientPolicy extends Route {
 
     await this.scoped(req, PolicySchemaModel).rm(validate.policy.id.toString());
 
-    this._nrp?.emit(
+    this._notify(
       'app-policy:bust-cache',
       JSON.stringify({
         appId: validate.appId,
@@ -381,7 +381,7 @@ class DeleteTransientPolicy extends Route {
     );
 
     // Trigger socket process to re-evaluate rooms
-    this._nrp?.emit(
+    this._notify(
       'worker:socket:evaluateUserRooms',
       JSON.stringify({
         appId: validate.appId,
@@ -427,7 +427,7 @@ class DeletePolicy extends Route {
   override async _exec(req: Request, res: Response, validate: { appId: string; policy: Policy }) {
     await this.scoped(req, PolicySchemaModel).rm(validate.policy.id.toString());
 
-    this._nrp?.emit(
+    this._notify(
       'app-policy:bust-cache',
       JSON.stringify({
         appId: validate.appId,

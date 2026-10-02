@@ -517,6 +517,46 @@ describe('routes/Route:_broadcast', () => {
   });
 });
 
+// A message that can't be published is logged: the request has done its work, and a rejection left unhandled would
+// end the process
+describe('routes/Route: a message that cannot be published', () => {
+  const unhandledDuring = async (run) => {
+    const seen = [];
+    const record = (err) => seen.push(err);
+    process.on('unhandledRejection', record);
+    try {
+      await run();
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    } finally {
+      process.off('unhandledRejection', record);
+    }
+    return seen;
+  };
+  const failingNrp = () => ({ on: () => {}, emit: sinon.stub().rejects(new Error('redis is down')) });
+
+  it("doesn't leave the activity broadcast's rejection unhandled", async () => {
+    const route = createRoute({ app: null, nrp: failingNrp() });
+    route.verb = Route.Constants.Verbs.POST;
+    route.activityBroadcast = true;
+    sinon.stub(route, '_checkBasedPathLambda').resolves();
+    const logged = sinon.stub(Logging, 'logError');
+
+    const unhandled = await unhandledDuring(() => route._boardcastData(createReq(), createRes(), { name: 'test' }));
+
+    assert.deepStrictEqual(unhandled, []);
+    assert.ok(logged.called);
+  });
+
+  it("doesn't leave a notification's rejection unhandled", async () => {
+    const route = createRoute({ nrp: failingNrp() });
+    sinon.stub(Logging, 'logError');
+
+    const unhandled = await unhandledDuring(async () => route._notify('app-routes:bust-cache', '{}'));
+
+    assert.deepStrictEqual(unhandled, []);
+  });
+});
+
 describe('routes/Route:_checkBasedPathLambda', () => {
   it('does nothing when the route has no schemaName', () => {
     const route = createRoute({ schema: null });

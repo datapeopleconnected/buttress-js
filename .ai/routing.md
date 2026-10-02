@@ -135,6 +135,11 @@ test has it too).
   tokens, and the app, policy and data-sharing delete-alls clean up after themselves, so they keep their own code.
   DeleteAppPolicies removes every app's policies for a system token, unlike DeleteAllUsers (D-30). The scoping walk test reads the bases' code with each route's.
 
+**Work a request doesn't wait for.** NRP publishes return promises that reject when Redis does, and a rejection left
+unhandled ends the process. A route publishes with `this._notify(channel, message)`, which logs a failed publish, and
+starts other work it doesn't wait for with `this._unawaited(step, promise)` (logging and broadcasting the activity).
+ESLint's `no-floating-promises` and `no-misused-promises` are errors in `src/routes`.
+
 ## Errors (`src/helpers/errors.ts`)
 
 A route, middleware or model refuses a request by throwing an `ApiError` from one of its factories: `badRequest`

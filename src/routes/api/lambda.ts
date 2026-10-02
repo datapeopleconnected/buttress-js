@@ -193,7 +193,7 @@ class AddLambda extends Route {
 
     const hasPathMutation = lambda.trigger.some((t) => t.type === 'PATH_MUTATION');
     if (hasPathMutation) {
-      this._nrp?.emit('rest:worker:add-path-mutation', JSON.stringify(lambda));
+      this._notify('rest:worker:add-path-mutation', JSON.stringify(lambda));
     }
 
     return lambda;
@@ -241,7 +241,7 @@ class UpdateLambda extends CoreUpdateByPath<LambdaSchemaModel> {
 
   protected override async afterUpdates(req: Request, updated: { id: string; body: UpdatePathBody[] }[]) {
     if (await pullUpdatedLambdas(this.rows(req), updated)) {
-      this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
+      this._notify('rest:worker:rebuild-path-mutation-cache', '');
     }
   }
 }
@@ -261,7 +261,7 @@ class BulkUpdateLambda extends CoreBulkUpdate<LambdaSchemaModel> {
 
   protected override async afterUpdates(req: Request, updated: { id: string; body: UpdatePathBody[] }[]) {
     if (await pullUpdatedLambdas(this.rows(req), updated)) {
-      this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
+      this._notify('rest:worker:rebuild-path-mutation-cache', '');
     }
   }
 }
@@ -440,7 +440,7 @@ class EditLambdaDeployment extends Route {
       'git.entryPoint': validate.entryPoint,
     });
     // The manager keeps each path-watching lambda's hash
-    if (changesPathMutations(validate.lambda)) this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
+    if (changesPathMutations(validate.lambda)) this._notify('rest:worker:rebuild-path-mutation-cache', '');
     return deployment;
   }
 }
@@ -554,7 +554,7 @@ class DeleteLambda extends Route {
     }
 
     if (validate.lambda.trigger.some((t) => t.type === 'PATH_MUTATION')) {
-      this._nrp?.emit('rest:worker:rebuild-path-mutation-cache', '');
+      this._notify('rest:worker:rebuild-path-mutation-cache', '');
     }
 
     return true;

@@ -410,7 +410,7 @@ export default class Route {
 
     // Fire and forget
     if (this.activity) {
-      this._addLogActivity(req, req.context.pathSpec as string, this.verb);
+      this._unawaited('Logging the activity', this._addLogActivity(req, req.context.pathSpec as string, this.verb));
     }
 
     Logging.logTimer('_logActivity:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
@@ -528,9 +528,9 @@ export default class Route {
     // Replace API version prefix
     const path = `/${pathArr.join('/')}`.replace(Config.app.apiPrefix, '');
 
-    this._broadcast(req, res, result, path, true);
+    this._unawaited('Broadcasting the activity', this._broadcast(req, res, result, path, true));
 
-    this._broadcast(req, res, result, path);
+    this._unawaited('Broadcasting the activity', this._broadcast(req, res, result, path));
 
     await this._checkBasedPathLambda(req);
 
@@ -557,7 +557,7 @@ export default class Route {
     const dataApp = this._dataApp(req);
     const emit = (_result: unknown) => {
       if (this.activityBroadcast === true) {
-        this._nrp?.emit(
+        this._notify(
           'rest:activity',
           JSON.stringify({
             title: this.activityTitle,
@@ -754,7 +754,7 @@ export default class Route {
       if (hasValues) message.values.push(values[idx]);
     });
 
-    messages.forEach((message) => this._nrp?.emit('rest:worker:notifyLambdaPathChange', JSON.stringify(message)));
+    messages.forEach((message) => this._notify('rest:worker:notifyLambdaPathChange', JSON.stringify(message)));
   }
 
   /**
@@ -929,6 +929,25 @@ export default class Route {
    * @param {string} log - log text
    * @param {enum} level - NONE, ERR, WARN, INFO
    */
+  /**
+   * Tells the other processes something over NRP, without waiting for it. A message that can't be published is logged:
+   * the request has done its work by then, and a rejection left unhandled would end the process.
+   * @param {string} channel
+   * @param {string} message
+   */
+  _notify(channel: string, message: string) {
+    Promise.resolve(this._nrp?.emit(channel, message)).catch((err: unknown) => {
+      Logging.logError(`[${this.name}] Failed to publish ${channel}: ${Helpers.getThrownErrorMessage(err)}`);
+    });
+  }
+
+  // A step a request doesn't wait for, its failure logged rather than left to end the process
+  _unawaited(step: string, promise: Promise<unknown>) {
+    Promise.resolve(promise).catch((err: unknown) => {
+      Logging.logError(`[${this.name}] ${step} failed: ${Helpers.getThrownErrorMessage(err)}`);
+    });
+  }
+
   log(log: string, level?: string, reqId?: string) {
     level = level || Logging.Constants.LogLevel.INFO;
     Logging.log(log, level, reqId);

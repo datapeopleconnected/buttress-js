@@ -648,7 +648,7 @@ class DeleteDataSharingAgreement extends Route {
     await this.scoped(req, AppDataSharingSchemaModel).rm(validate.appDataSharing.id);
     await this.scoped(req, TokenSchemaModel).rm(validate.token.id);
     // The Socket primary closes its connection to the partner
-    this._nrp?.emit(
+    this._notify(
       'dataShare:deactivated',
       JSON.stringify({ appDataSharingId: validate.appDataSharing.id } satisfies DataShareActivatedMessage),
     );
@@ -701,10 +701,7 @@ class DeleteAllDataSharingAgreement extends Route {
     await this.unscopedModel(TokenSchemaModel, SYSTEM_ONLY).rmBulk(validate.tokenIds);
     // The Socket primary closes their connections to partners
     for (const appDataSharingId of validate.dsIds) {
-      this._nrp?.emit(
-        'dataShare:deactivated',
-        JSON.stringify({ appDataSharingId } satisfies DataShareActivatedMessage),
-      );
+      this._notify('dataShare:deactivated', JSON.stringify({ appDataSharingId } satisfies DataShareActivatedMessage));
     }
 
     return true;

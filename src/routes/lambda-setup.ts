@@ -17,6 +17,7 @@
 import express, { Request, Response } from 'express';
 
 import * as Helpers from '../helpers/index.js';
+import Logging from '../helpers/logging.js';
 import Model from '../model/index.js';
 
 import NRP from '../services/nrp.js';
@@ -75,12 +76,12 @@ export class RoutesLambdaSetup {
     );
     const appApiPaths = apps.map((app) => app.apiPath);
 
-    appApiPaths.forEach((apiPath) => {
-      this.__configureAppLambdaEndpoints(apiPath);
-    });
+    appApiPaths.forEach((apiPath) => this.__configureEndpointsOf(apiPath));
 
-    this._nrp?.on('app:configure-lambda-endpoints', (apiPath: string) => {
-      this.__configureAppLambdaEndpoints(apiPath);
+    Promise.resolve(
+      this._nrp?.on('app:configure-lambda-endpoints', (apiPath: string) => this.__configureEndpointsOf(apiPath)),
+    ).catch((err: unknown) => {
+      Logging.logError(`Failed to listen for app:configure-lambda-endpoints: ${Helpers.getThrownErrorMessage(err)}`);
     });
   }
 
@@ -103,6 +104,13 @@ export class RoutesLambdaSetup {
    * long after boot the app was added.
    * @param {string} apiPath
    */
+  // Sets an app's lambda endpoints up, a failure logged rather than left to end the process
+  __configureEndpointsOf(apiPath: string) {
+    Promise.resolve(this.__configureAppLambdaEndpoints(apiPath)).catch((err: unknown) => {
+      Logging.logError(`Failed to set up the lambda endpoints of ${apiPath}: ${Helpers.getThrownErrorMessage(err)}`);
+    });
+  }
+
   async __configureAppLambdaEndpoints(apiPath: string) {
     if (this._configuredApiPaths.has(apiPath)) return;
     this._configuredApiPaths.add(apiPath);
@@ -283,7 +291,9 @@ export class RoutesLambdaSetup {
       lambdaExecBehavior: triggerAPI.apiEndpoint.type,
     };
 
-    this._nrp?.emit('rest:worker:exec-lambda-api', JSON.stringify(data));
+    Promise.resolve(this._nrp?.emit('rest:worker:exec-lambda-api', JSON.stringify(data))).catch((err: unknown) => {
+      Logging.logError(`Failed to publish rest:worker:exec-lambda-api: ${Helpers.getThrownErrorMessage(err)}`);
+    });
 
     return { lambdaExecution, triggerAPIType: triggerAPI.apiEndpoint.type };
   }
