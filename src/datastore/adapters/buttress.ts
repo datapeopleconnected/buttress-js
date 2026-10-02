@@ -40,7 +40,7 @@ interface ButtressCollection {
   update(id: string, details: unknown): Promise<unknown>;
   remove(id: string): Promise<unknown>;
   bulkRemove(ids: unknown): Promise<unknown>;
-  removeAll(query?: unknown): Promise<unknown>;
+  removeAll(): Promise<unknown>;
   getAll(): Promise<unknown>;
   bulkGet(ids: unknown): Promise<unknown>;
   search(
@@ -266,11 +266,18 @@ export default class Buttress extends AbstractAdapter {
   }
 
   /**
-   * @param {object} query
+   * @param {object} query - a partner's delete-all takes no filter, and removes everything its policies let this token
+   *   remove, so only a query that matches nothing in particular is sent that way. One that filters removes the
+   *   entities it matches, by id.
    * @return {Promise}
    */
   override async rmAll(query?: AdapterQuery) {
-    const result = await this._resolvedApiCall('rmAll', () => this.collection.removeAll(query));
+    if (query && Object.keys(query).length > 0) {
+      const matched = await Helpers.streamAll<{ id: string }>(await this.find(query));
+      return matched.length > 0 ? this.rmBulk(matched.map((entity) => entity.id)) : true;
+    }
+
+    const result = await this._resolvedApiCall('rmAll', () => this.collection.removeAll());
     return this.handleResult(result);
   }
 
