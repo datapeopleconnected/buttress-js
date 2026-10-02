@@ -120,8 +120,8 @@ test has it too).
   `invalid_body`; a count takes `{query}` or the body as its query, without `actualCount`.
 - An update by path (`PUT <path>/:id`) and a bulk update (`POST <path>/bulk/update`, `[{id, body}]`) check each row's
   updates with `validateUpdate` (400 `invalid_update`), then the route's `updateProblem` hook (policy configs,
-  data-sharing destinations), then that the row is one the caller reaches (`assertExists`), before anything is
-  written; `afterUpdates` then gets every row written (lambda pulls code and rebuilds the path-mutation cache once).
+  data-sharing destinations), then that the rows are ones the caller reaches (`assertExists`, or for a bulk update
+  `assertAllExist`, one `$in` query naming the first missing id), before anything is written; `afterUpdates` then gets every row written (lambda pulls code and rebuilds the path-mutation cache once).
 - A get-one is `findByIdOrFail` (404 `not_found`, 400 `invalid_id`), its `present(row)` hook giving what's sent
   (activity sends its `body`); a get-list lists the rows the caller reaches, only those `?ids=a,b` names where the
   route `takesIds` (policy, lambda; D-29); a delete-all is `rmAll` over them.

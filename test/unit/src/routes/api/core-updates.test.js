@@ -143,6 +143,16 @@ describe('routes/api: core updates', () => {
         assert.notDeepStrictEqual(valueOf(ModelClass, MINE, update.path), update.value);
       });
 
+      it("checks every item's row in one query, naming the first that isn't the app's", async () => {
+        const { datastore } = datastores.get(ModelClass);
+        const route = new (routeNamed(bulk))(services);
+        const items = [{ id: MINE, body: [update] }, { id: NOBODYS, body: [update] }, { id: THEIRS, body: [update] }];
+
+        await assert.rejects(route._validate(post(items), {}), { status: 404, code: 'not_found', details: { schema: ModelClass.Schema.name, id: NOBODYS } });
+        assert.strictEqual(datastore.calls.filter(([call]) => call === 'exists').length, 0);
+        assert.strictEqual(datastore.calls.filter(([call]) => call === 'find').length, 1);
+      });
+
       it('refuses a body that is not a list of updates', async () => {
         for (const body of [{ id: MINE }, [null], 'x']) {
           await assert.rejects(run(bulk, post(body)), { status: 400, code: 'array_required' });

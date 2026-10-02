@@ -178,7 +178,7 @@ type CheckedUpdates = { id: string; body: UpdatePathBody[] };
 
 /**
  * Writes updates by path to a core model's rows. Each row's updates are read through the schema, then a resource's
- * own rules (`updateProblem`), and the row has to be one the caller reaches, before any is written; `afterUpdates`
+ * own rules (`updateProblem`), and the rows have to be ones the caller reaches, before any is written; `afterUpdates`
  * then has what was written.
  */
 abstract class CoreUpdates<M extends StandardModel<DocumentOf<M>>> extends CoreModelRoute<M> {
@@ -196,9 +196,9 @@ abstract class CoreUpdates<M extends StandardModel<DocumentOf<M>>> extends CoreM
   // What a resource does once its rows are updated
   protected async afterUpdates(_req: Request, _updated: CheckedUpdates[]): Promise<void> {}
 
-  protected async checkUpdates(req: Request, id: string, given: unknown): Promise<UpdatePathBody[]> {
-    const model = this.rows(req);
-    const { validation, body } = model.validateUpdate(given);
+  // A row's updates as the schema reads them, refused if it or the route's rules can't take them
+  protected async checkUpdateBody(req: Request, given: unknown): Promise<UpdatePathBody[]> {
+    const { validation, body } = this.rows(req).validateUpdate(given);
     if (!validation.isValid) {
       const err = invalidUpdateError(this.schemaName, validation);
       this.log(`ERROR: ${err.message}`, Route.LogLevel.ERR);
@@ -208,7 +208,6 @@ abstract class CoreUpdates<M extends StandardModel<DocumentOf<M>>> extends CoreM
     const problem = await this.updateProblem(req, body);
     if (problem) throw problem;
 
-    await model.assertExists(id);
     return body;
   }
 }
@@ -225,7 +224,8 @@ export class CoreUpdateByPath<M extends StandardModel<DocumentOf<M>>> extends Co
   override async _validate(req: RequestWithBody<unknown>, _res: Response) {
     const id = this.idOf(req);
     // The updates as they're checked
-    req.body = await this.checkUpdates(req, id, req.body);
+    req.body = await this.checkUpdateBody(req, req.body);
+    await this.rows(req).assertExists(id);
     return { id };
   }
 
@@ -251,8 +251,9 @@ export class CoreBulkUpdate<M extends StandardModel<DocumentOf<M>>> extends Core
       throw Helpers.Errors.badRequest('array_required');
     }
 
-    // Each item's updates as they're checked, which the request's activity keeps too
-    for (const item of req.body) item.body = await this.checkUpdates(req, item.id, item.body);
+    // Each item's updates as they're checked, which the request's activity keeps too; then every row, in one query
+    for (const item of req.body) item.body = await this.checkUpdateBody(req, item.body);
+    await this.rows(req).assertAllExist(req.body.map((item) => item.id));
     return req.body as CheckedUpdates[];
   }
 

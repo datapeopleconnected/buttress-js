@@ -406,13 +406,6 @@ describe('routes/api/policy:BulkUpdatePolicy', () => {
     );
   });
 
-  it('rejects when one item in the batch does not exist', async () => {
-    stubModel({ policy: { exists: sinon.stub().resolves(false) } });
-    const route = createRoute(BulkUpdatePolicy);
-
-    await assert.rejects(route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'name' } }] })), { code: 'not_found' });
-  });
-
   it('applies every update in the batch', async () => {
     const { policyModel } = stubModel();
     const route = createRoute(BulkUpdatePolicy);

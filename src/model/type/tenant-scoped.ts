@@ -139,6 +139,22 @@ export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
     if (!(await this.exists(id))) throw this._notFound(id);
   }
 
+  /**
+   * As assertExists for each id, in one query: the first id that can't be one is 400 invalid_id, and the first that
+   * names no row of the tenant's 404 not_found.
+   * @param {string[]} ids
+   */
+  async assertAllExist(ids: string[]) {
+    if (ids.some((id) => !this._model.isValidId(id))) throw invalidId();
+
+    const found = await Helpers.streamAll<{ id: unknown }>(
+      await this.find({ id: { $in: ids } }, {}, 0, 0, null, { id: 1 }),
+    );
+    const foundIds = new Set(found.map((row) => String(row.id)));
+    const missing = ids.find((id) => !foundIds.has(String(id)));
+    if (missing !== undefined) throw this._notFound(missing);
+  }
+
   count(query?: AdapterQuery) {
     return this._model.count(this.scope(query));
   }

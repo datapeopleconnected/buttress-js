@@ -406,13 +406,6 @@ describe('routes/api/lambda:BulkUpdateLambda', () => {
     await assert.rejects(route._validate(Object.assign(createReq(), { body: undefined })), { code: 'array_required' });
   });
 
-  it('rejects when one item in the batch does not exist', async () => {
-    stubModel({ lambda: { exists: sinon.stub().resolves(false) } });
-    const route = createRoute(BulkUpdateLambda);
-
-    await assert.rejects(route._validate(createReq({ body: [{ id: HEX_ID, body: { path: 'name' } }] })), { code: 'not_found' });
-  });
-
   it('has the path-mutation cache rebuilt once when a lambda in the batch watches paths', async () => {
     stubModel({ lambda: { findById: async () => ({ id: HEX_ID, trigger: [{ type: 'PATH_MUTATION' }] }) } });
     const nrp = { emit: sinon.spy() };
