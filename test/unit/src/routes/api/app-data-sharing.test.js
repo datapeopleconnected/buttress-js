@@ -126,13 +126,6 @@ afterEach(() => {
 });
 
 describe('routes/api/app-data-sharing:GetAppDataSharing', () => {
-  it('rejects when no id is provided', async () => {
-    stubModel();
-    const route = createRoute(GetAppDataSharing);
-
-    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
-  });
-
   it('rejects when no data sharing agreement is found', async () => {
     stubModel({ ds: { findOne: async () => null } });
     const route = createRoute(GetAppDataSharing);
@@ -442,25 +435,6 @@ describe('routes/api/app-data-sharing:StatusAppDataSharing', () => {
   });
 });
 
-describe('routes/api/app-data-sharing:GetAllAppDataSharing', () => {
-  it('scopes the list to the authenticated app for a non-system token', () => {
-    const { dsModel } = stubModel();
-    const route = createRoute(GetAllAppDataSharing);
-
-    route._exec(createReq({ token: { type: 'app' } }), {});
-
-    assert.ok(dsModel.find.calledWith({ _appId: '6abd05000000000000000001' }));
-  });
-
-  it('returns every agreement for a system token', () => {
-    const { dsModel } = stubModel();
-    const route = createRoute(GetAllAppDataSharing);
-
-    route._exec(createReq({ token: { type: 'system' } }), {});
-
-    assert.ok(dsModel.findAll.calledOnce);
-  });
-});
 
 describe('routes/api/app-data-sharing:SearchAppDataSharingAgreement', () => {
   it('rejects an array body', async () => {

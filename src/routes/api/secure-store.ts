@@ -16,10 +16,16 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
-import { CoreBulkUpdate, CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
+import {
+  CoreBulkUpdate,
+  CoreCount,
+  CoreGetOne,
+  CoreRouteConfig,
+  CoreSearch,
+  CoreUpdateByPath,
+} from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, validateSchemaObject } from '../../model/shared.js';
-import Datastore from '../../datastore/index.js';
 import * as Helpers from '../../helpers/index.js';
 
 import SecureStoreSchemaModel, { SecureStore, SecureStoreAddBody } from '../../model/core/secure-store.js';
@@ -146,54 +152,16 @@ routes.push(AddManySecureStore);
 /**
  * @class GetSecureStore
  */
-class GetSecureStore extends Route {
-  constructor(services: Services) {
-    super('secure-store/:id', 'GET SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.READ;
-  }
-
-  override async _validate(req: Request, _res: Response) {
-    if (!req.context.authApp?.id) {
-      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      throw Helpers.Errors.internal('no_authenticated_app');
-    }
-
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log(`[${this.name}] Missing required secure store id`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-    }
-    if (!Datastore.getInstance('core').ID.isValid(id)) {
-      this.log(`[${this.name}] Invalid secure store id`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('invalid_id', 'The id is not valid'));
-    }
-
-    const query = {
-      _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
-      _appId: req.context.authApp.id,
-    };
-
-    // streamFirst() rejects rather than resolving falsy when the stream ends with no data,
-    // so an empty result has to be caught here to surface the intended 400 error.
-    let secureStore: SecureStore | null;
-    try {
-      secureStore = await Helpers.streamFirst<SecureStore>(await this.scoped(req, SecureStoreSchemaModel).find(query));
-    } catch (_err: unknown) {
-      secureStore = null;
-    }
-    if (!secureStore) {
-      this.log(`[${this.name}] Cannot find a secure store with id ${id}`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.entityNotFound('secureStore', id));
-    }
-
-    return secureStore;
-  }
-
-  override _exec(req: Request, res: Response, validate: SecureStore) {
-    return validate;
-  }
+class GetSecureStore extends CoreGetOne<SecureStoreSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'secure-store/:id',
+    name: 'GET SECURE STORE',
+    model: SecureStoreSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.READ,
+    // A system token too reaches only its own app's secure stores
+    scope: 'own-app',
+  };
 }
 routes.push(GetSecureStore);
 

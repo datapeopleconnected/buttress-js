@@ -16,14 +16,21 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
-import { CoreBulkUpdate, CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
+import {
+  CoreBulkUpdate,
+  CoreCount,
+  CoreGetList,
+  CoreGetOne,
+  CoreRouteConfig,
+  CoreSearch,
+  CoreUpdateByPath,
+} from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, validateSchemaObject } from '../../model/shared.js';
 import { checkPolicyConfig, checkPolicyConfigUpdate } from '../../access-control/policy-definition.js';
 import type { ValidationIssue } from '../../helpers/schema.js';
 import * as Helpers from '../../helpers/index.js';
 
-import Datastore from '../../datastore/index.js';
 import PolicySchemaModel, { Policy, PolicyAddBody } from '../../model/core/policy.js';
 import { App } from '../../model/core/app.js';
 import { Services } from '../../bootstrap.js';
@@ -38,77 +45,29 @@ type AddPolicyBody = PolicyAddBody & { version?: string };
 /**
  * @class GetPolicy
  */
-class GetPolicy extends Route {
-  constructor(services: Services) {
-    super('policy/:id', 'GET POLICY', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.READ;
-  }
-
-  override async _validate(req: Request, _res: Response) {
-    const rawId = req.params.id;
-    const id = Array.isArray(rawId) ? rawId[0] : rawId;
-    if (!id) {
-      this.log(`[${this.name}] Missing required policy id`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-    }
-
-    return this.scoped(req, PolicySchemaModel).findByIdOrFail(id);
-  }
-
-  override _exec(req: Request, res: Response, policy: Policy) {
-    return policy;
-  }
+class GetPolicy extends CoreGetOne<PolicySchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'policy/:id',
+    name: 'GET POLICY',
+    model: PolicySchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.READ,
+  };
 }
 routes.push(GetPolicy);
 
 /**
  * @class GetPolicyList
  */
-class GetPolicyList extends Route {
-  constructor(services: Services) {
-    super('policy', 'GET POLICY LIST', services, Model.getCoreModel(PolicySchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override _validate(req: Request, _res: Response) {
-    const rawIds = req.query.ids;
-    const ids = Array.isArray(rawIds) ? rawIds : typeof rawIds === 'string' ? rawIds.split(',').filter(Boolean) : [];
-
-    const appId = req.context.authApp?.id;
-    if (!appId) {
-      this.log(`[${this.name}] Missing app id`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.internal('missing_app_id'));
-    }
-
-    if (ids.length > 0) {
-      ids.forEach((id) => {
-        try {
-          Datastore.getInstance('core').ID.new(id.toString());
-        } catch (_err) {
-          this.log(`POLICY: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
-          throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
-        }
-      });
-    }
-
-    return Promise.resolve({
-      appId,
-      ids,
-    });
-  }
-
-  override _exec(req: Request, res: Response, validate: { appId: string; ids: string[] }) {
-    if (validate.ids.length > 0) {
-      // TODO: needs to be scoped by appId - Disabled until fixed.
-      // return Model.getCoreModel(PolicySchemaModel).findByIds(validate.ids);
-    }
-
-    return this.scoped(req, PolicySchemaModel).findAll();
-  }
+class GetPolicyList extends CoreGetList<PolicySchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'policy',
+    name: 'GET POLICY LIST',
+    model: PolicySchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.LIST,
+    takesIds: true,
+  };
 }
 routes.push(GetPolicyList);
 
@@ -497,6 +456,7 @@ class DeleteAppPolicies extends Route {
       throw Helpers.Errors.internal('missing_app_id');
     }
 
+    // Every app's policies for a system token, unlike DeleteAllUsers, which keeps one to its own app (D-30)
     const rxsPolicies = await this.scoped(req, PolicySchemaModel).findAll();
 
     const policies = await Helpers.streamAll<Policy>(rxsPolicies);

@@ -28,6 +28,12 @@ that isn't of its type is refused with a 400, `invalid_value`, naming it, with e
 a `priority` that isn't a number, say, or a `limit` that isn't a date. Earlier releases stored such values as they
 were given.
 
+## Listing and Removing
+
+`GET /api/v1/policy` lists the app's policies; `?ids=a,b` lists only those of them. Earlier releases checked the ids
+and listed every policy. `DELETE /api/v1/policy` removes the app's policies; with a system token it removes every
+app's.
+
 ## CLI Commands
 
 Create from a JSON file:

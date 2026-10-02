@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it, before, after, beforeEach } from 'mocha';
+import { describe, it, afterEach, beforeEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 
@@ -69,8 +69,7 @@ describe('routes/api: core updates', () => {
     for (const ModelClass of [...COLLECTIONS.map(([, , M]) => M), TrackingSchemaModel]) {
       datastores.set(ModelClass, createSchemaModel(ModelClass.Schema, rows()));
     }
-  });
-  before(() => {
+    // Stubbed for each test, as other test files restore sinon after every test
     sinon.stub(Model, 'getCoreModel').callsFake((ModelClass) =>
       datastores.get(ModelClass)?.model ?? { schemaData: ModelClass.Schema, Constants: ModelClass.Constants },
     );
@@ -79,7 +78,7 @@ describe('routes/api: core updates', () => {
       ['modelManager', Model],
     ]);
   });
-  after(() => sinon.restore());
+  afterEach(() => sinon.restore());
 
   const run = async (name, req) => {
     const route = new (routeNamed(name))(services);

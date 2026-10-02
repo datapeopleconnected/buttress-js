@@ -111,9 +111,10 @@ than system tokens may use `unscopedModel` only where its list names the route, 
 app from a new place is a change to that list.
 
 **Core route bases** ([src/routes/core-routes.ts](../src/routes/core-routes.ts), R4). A route class extends
-`CoreSearch`, `CoreCount`, `CoreUpdateByPath` or `CoreBulkUpdate` (each `<M>`, the core model) and gives a `static
-config`, `{path, name, model, authType, permissions, scope?, idParam?, activityBroadcast?}`; the base reads it off the
-class (so a route made with `Object.create` in a test has it too).
+`CoreSearch`, `CoreCount`, `CoreUpdateByPath`, `CoreBulkUpdate`, `CoreGetOne`, `CoreGetList` or `CoreDeleteAll`
+(each `<M>`, the core model) and gives a `static config`, `{path, name, model, authType, permissions, scope?,
+idParam?, activityBroadcast?, takesIds?}`; the base reads it off the class (so a route made with `Object.create` in a
+test has it too).
 
 - A search takes `{query, skip, limit, sort, project}`, as a schema search does, and refuses a list body with 400
   `invalid_body`; a count takes `{query}` or the body as its query, without `actualCount`.
@@ -121,10 +122,14 @@ class (so a route made with `Object.create` in a test has it too).
   updates with `validateUpdate` (400 `invalid_update`), then the route's `updateProblem` hook (policy configs,
   data-sharing destinations), then that the row is one the caller reaches (`assertExists`), before anything is
   written; `afterUpdates` then gets every row written (lambda pulls code and rebuilds the path-mutation cache once).
+- A get-one is `findByIdOrFail` (404 `not_found`, 400 `invalid_id`), its `present(row)` hook giving what's sent
+  (activity sends its `body`); a get-list lists the rows the caller reaches, only those `?ids=a,b` names where the
+  route `takesIds` (policy, lambda; D-29); a delete-all is `rmAll` over them.
 - Rows are reached through `this.scoped()`, or `this.ownAppScoped()` for `scope: 'own-app'`, which limits a system
   token to its own app too (secure-store).
-- App and token search attach tokens, and AppUpdate checks its api path against every app, so they keep their own
-  code. The scoping walk test reads the bases' code with each route's.
+- App and token search attach tokens, AppUpdate checks its api path against every app, GetUser and FindUser attach
+  tokens, and the app, policy and data-sharing delete-alls clean up after themselves, so they keep their own code.
+  DeleteAppPolicies removes every app's policies for a system token, unlike DeleteAllUsers (D-30). The scoping walk test reads the bases' code with each route's.
 
 ## Errors (`src/helpers/errors.ts`)
 

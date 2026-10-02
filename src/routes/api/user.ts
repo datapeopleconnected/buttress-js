@@ -16,7 +16,14 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
-import { CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
+import {
+  CoreCount,
+  CoreDeleteAll,
+  CoreGetList,
+  CoreRouteConfig,
+  CoreSearch,
+  CoreUpdateByPath,
+} from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, validateSchemaObject } from '../../model/shared.js';
 import Logging from '../../helpers/logging.js';
@@ -69,28 +76,14 @@ function getTokenQueryfromParams(req: Request, userId: string) {
 /**
  * @class GetUserList
  */
-class GetUserList extends Route {
-  constructor(services: Services) {
-    super('user', 'GET USER LIST', services, Model.getCoreModel(UserSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override _validate(req: Request, _res: Response) {
-    if (!req.context.authApp) {
-      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
-    }
-
-    return Promise.resolve({
-      appId: req.context.authApp.id,
-    });
-  }
-
-  override _exec(req: Request, _res: Response, _validate: { appId: string }) {
-    return this.scoped(req, UserSchemaModel).findAll();
-  }
+class GetUserList extends CoreGetList<UserSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'user',
+    name: 'GET USER LIST',
+    model: UserSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.LIST,
+  };
 }
 routes.push(GetUserList);
 
@@ -912,30 +905,16 @@ routes.push(ClearUserPolicyProperties);
 /**
  * @class DeleteAllUsers
  */
-class DeleteAllUsers extends Route {
-  constructor(services: Services) {
-    super('user', 'DELETE ALL USERS', services, Model.getCoreModel(UserSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.DEL;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.DELETE;
-  }
-
-  override async _validate(req: Request, _res: Response) {
-    if (!req.context.authApp) {
-      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
-    }
-
-    return {
-      appId: req.context.authApp.id,
-    };
-  }
-
-  override async _exec(req: Request, _res: Response, validate: { appId: string }) {
-    // The caller's app's users, which a system token names too
-    await this.scoped(req, UserSchemaModel).rmAll({ _appId: validate.appId });
-    return true;
-  }
+class DeleteAllUsers extends CoreDeleteAll<UserSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'user',
+    name: 'DELETE ALL USERS',
+    model: UserSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.DELETE,
+    // A system token too removes only its own app's users
+    scope: 'own-app',
+  };
 }
 routes.push(DeleteAllUsers);
 

@@ -22,14 +22,21 @@ const Config = createConfig() as unknown as Config;
 
 import Route from '../route.js';
 import type TenantScopedModel from '../../model/type/tenant-scoped.js';
-import { CoreBulkUpdate, CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
+import {
+  CoreBulkUpdate,
+  CoreCount,
+  CoreGetList,
+  CoreGetOne,
+  CoreRouteConfig,
+  CoreSearch,
+  CoreUpdateByPath,
+} from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError, validateSchemaObject } from '../../model/shared.js';
 import Sugar from '../../helpers/sugar.js';
 import * as Helpers from '../../helpers/index.js';
 import * as Git from '../../helpers/git.js';
 
-import Datastore from '../../datastore/index.js';
 import LambdaSchemaModel, { Lambda, LambdaAddBody } from '../../model/core/lambda.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import { App } from '../../model/core/app.js';
@@ -71,73 +78,29 @@ type EditLambdaDeploymentBody = {
 /**
  * @class GetLambda
  */
-class GetLambda extends Route {
-  constructor(services: Services) {
-    super('lambda/:id', 'GET LAMBDA', services, Model.getCoreModel(LambdaSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.READ;
-  }
-
-  override async _validate(req: Request, _res: Response) {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-    }
-
-    return this.scoped(req, LambdaSchemaModel).findByIdOrFail(id);
-  }
-
-  override async _exec(_req: Request, _res: Response, lambda: Lambda) {
-    return lambda;
-  }
+class GetLambda extends CoreGetOne<LambdaSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'lambda/:id',
+    name: 'GET LAMBDA',
+    model: LambdaSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.READ,
+  };
 }
 routes.push(GetLambda);
 
 /**
  * @class GetLambdaList
  */
-class GetLambdaList extends Route {
-  constructor(services: Services) {
-    super('lambda', 'GET LAMBDA LIST', services, Model.getCoreModel(LambdaSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override _validate(req: Request, _res: Response) {
-    const rawIds = req.query.ids;
-    const ids = Array.isArray(rawIds) ? rawIds : typeof rawIds === 'string' ? rawIds.split(',').filter(Boolean) : [];
-
-    if (ids.length > 0) {
-      ids.forEach((id) => {
-        try {
-          Datastore.getInstance('core').ID.new(id.toString());
-        } catch (_err) {
-          this.log(`LAMBDA: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
-          throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
-        }
-      });
-    }
-
-    return Promise.resolve(ids);
-  }
-
-  override async _exec(req: Request, res: Response, ids: unknown[]) {
-    if (ids.length > 0) {
-      // TODO: needs to be scoped by appId - Disabled until fixed.
-      // return Model.getCoreModel(LambdaSchemaModel).findByIds(ids);
-    }
-
-    const appId = req.context.authApp?.id;
-    if (!appId) {
-      this.log(`[${this.name}] Unable to get app id from request context`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('unable_to_get_app_id'));
-    }
-
-    return await this.scoped(req, LambdaSchemaModel).findAll();
-  }
+class GetLambdaList extends CoreGetList<LambdaSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'lambda',
+    name: 'GET LAMBDA LIST',
+    model: LambdaSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.LIST,
+    takesIds: true,
+  };
 }
 routes.push(GetLambdaList);
 

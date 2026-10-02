@@ -90,6 +90,8 @@ bjs lambda list-property
 ## Notes
 
 - API endpoint lambdas are invoked via configured lambda endpoint routes.
+- `GET /api/v1/lambda` lists the app's lambdas; `?ids=a,b` lists only those of them. Earlier releases checked the ids
+  and listed every lambda. A lambda search takes `skip`, `limit`, `sort` and `project`, as any search does.
 - Use `PUBLIC` only when endpoint exposure is explicitly required.
 - A lambda that's added is read as the lambda schema types it, and a value that isn't of its type, or a trigger
   setting that isn't one it takes (an `apiEndpoint.method` other than `GET` or `POST`, say), is refused with a 400,

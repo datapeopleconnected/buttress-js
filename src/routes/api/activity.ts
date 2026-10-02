@@ -16,6 +16,7 @@
 import { Request, Response } from 'express';
 
 import Route from '../route.js';
+import { CoreDeleteAll, CoreGetOne, CoreRouteConfig } from '../core-routes.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
 import ActivitySchemaModel, { Activity } from '../../model/core/activity.js';
@@ -65,27 +66,18 @@ routes.push(GetActivityList);
 /**
  * @class GetActivity
  */
-class GetActivity extends Route {
-  constructor(services: Services) {
-    super('activity/:id', 'GET ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.SYSTEM;
-    this.permissions = Route.Constants.Permissions.READ;
-  }
+class GetActivity extends CoreGetOne<ActivitySchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'activity/:id',
+    name: 'GET ACTIVITY',
+    model: ActivitySchemaModel,
+    authType: Route.Constants.Type.SYSTEM,
+    permissions: Route.Constants.Permissions.READ,
+  };
 
-  override async _validate(req: Request<{ id: string }>, _res: Response) {
-    if (!req.params.id) {
-      this.log('ERROR: Missing required field', Route.LogLevel.ERR, req.context.id);
-      throw Helpers.Errors.badRequest('missing_required_fields');
-    }
-
-    const activity = await this.scoped(req, ActivitySchemaModel).findByIdOrFail(req.params.id);
-
-    return activity;
-  }
-
-  override _exec(req: Request, res: Response, activity: Activity) {
-    return Promise.resolve(activity.body);
+  // An activity is given as the body it recorded
+  protected override present(activity: Activity) {
+    return activity.body;
   }
 }
 routes.push(GetActivity);
@@ -93,23 +85,14 @@ routes.push(GetActivity);
 /**
  * @class DeleteAllActivity
  */
-class DeleteAllActivity extends Route {
-  constructor(services: Services) {
-    super('activity', 'DELETE ALL ACTIVITY', services, Model.getCoreModel(ActivitySchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.DEL;
-    this.authType = Route.Constants.Type.SYSTEM;
-    this.permissions = Route.Constants.Permissions.DELETE;
-  }
-
-  override async _validate(_req: Request, _res: Response) {
-    return true;
-  }
-
-  override _exec(_req: Request, _res: Response, _validate: boolean) {
-    return this.unscopedModel(ActivitySchemaModel, SYSTEM_ONLY)
-      .rmAll({})
-      .then(() => true);
-  }
+class DeleteAllActivity extends CoreDeleteAll<ActivitySchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'activity',
+    name: 'DELETE ALL ACTIVITY',
+    model: ActivitySchemaModel,
+    authType: Route.Constants.Type.SYSTEM,
+    permissions: Route.Constants.Permissions.DELETE,
+  };
 }
 routes.push(DeleteAllActivity);
 

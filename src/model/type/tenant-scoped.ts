@@ -55,6 +55,10 @@ export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
     return this._model.flatSchemaData;
   }
 
+  isValidId(id: unknown) {
+    return this._model.isValidId(id);
+  }
+
   // The clause that limits a query to the tenant's rows, empty for a system token
   get clause(): AdapterQuery {
     return this.tenant === null ? {} : { [this.tenantKey]: this.tenant };

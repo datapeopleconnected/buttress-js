@@ -132,13 +132,6 @@ afterEach(() => {
 });
 
 describe('routes/api/lambda:GetLambda', () => {
-  it('rejects when no id is provided', async () => {
-    stubModel();
-    const route = createRoute(GetLambda);
-
-    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
-  });
-
   it('rejects when the id is invalid', async () => {
     stubModel();
     const route = createRoute(GetLambda);
@@ -160,13 +153,6 @@ describe('routes/api/lambda:GetLambdaList', () => {
     const route = createRoute(GetLambdaList);
 
     assert.throws(() => route._validate(createReq({ query: { ids: 'not-an-id' } })), { code: 'invalid_id' });
-  });
-
-  it('rejects exec when there is no app id in context', async () => {
-    stubModel();
-    const route = createRoute(GetLambdaList);
-
-    await assert.rejects(route._exec(createReq({ authApp: null }), {}, []), { code: 'unable_to_get_app_id' });
   });
 
   it('returns every lambda for a system token', async () => {

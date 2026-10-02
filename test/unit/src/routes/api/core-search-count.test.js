@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it, before, after } from 'mocha';
+import { describe, it, afterEach, beforeEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 
@@ -65,7 +65,8 @@ describe('routes/api: core searches and counts', () => {
   const routeNamed = (name) => Routes.flat().find((RouteClass) => RouteClass.name === name);
   let services;
 
-  before(() => {
+  // Stubbed for each test, as other test files restore sinon after every test
+  beforeEach(() => {
     for (const [, , ModelClass] of COLLECTIONS) models.set(ModelClass, createSchemaModel(ModelClass.Schema, rows()).model);
     sinon.stub(Model, 'getCoreModel').callsFake((ModelClass) =>
       models.get(ModelClass) ?? { schemaData: ModelClass.Schema, Constants: ModelClass.Constants },
@@ -75,7 +76,7 @@ describe('routes/api: core searches and counts', () => {
       ['modelManager', Model],
     ]);
   });
-  after(() => sinon.restore());
+  afterEach(() => sinon.restore());
 
   const search = async (name, req) => {
     const route = new (routeNamed(name))(services);

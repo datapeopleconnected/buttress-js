@@ -118,6 +118,9 @@ export function createSchemaModel(schema, rows = []) {
       this.record('findById', id);
       return this.rows.find((row) => same(row.id, id)) ?? null;
     },
+    findAll() {
+      return this.find({});
+    },
     findAllById(ids) {
       return this.find({ id: { $in: ids } });
     },

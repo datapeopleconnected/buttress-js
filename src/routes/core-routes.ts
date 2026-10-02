@@ -47,6 +47,8 @@ export interface CoreRouteConfig {
   idParam?: string;
   // Whether a write's activity is broadcast, as it is unless it says
   activityBroadcast?: boolean;
+  // Whether a list takes `?ids=a,b` to list only those rows
+  takesIds?: boolean;
 }
 
 type CoreRouteClassWithConfig = { config: CoreRouteConfig };
@@ -82,6 +84,12 @@ abstract class CoreModelRoute<M extends StandardModel<DocumentOf<M>>> extends Ro
     return this.config.scope === 'own-app'
       ? this.ownAppScoped(req, this.modelClass)
       : this.scoped(req, this.modelClass);
+  }
+
+  // The id the route's param gives
+  protected idOf(req: Request) {
+    const param = req.params[this.config.idParam ?? 'id'];
+    return Array.isArray(param) ? param[0] : param;
   }
 
   protected parse(req: Request, parts: DocumentQuery<M>[]): DocumentQuery<M> {
@@ -206,8 +214,7 @@ export class CoreUpdateByPath<M extends StandardModel<DocumentOf<M>>> extends Co
   }
 
   override async _validate(req: RequestWithBody<unknown>, _res: Response) {
-    const param = req.params[this.config.idParam ?? 'id'];
-    const id = Array.isArray(param) ? param[0] : param;
+    const id = this.idOf(req);
     // The updates as they're checked
     req.body = await this.checkUpdates(req, id, req.body);
     return { id };
@@ -244,6 +251,78 @@ export class CoreBulkUpdate<M extends StandardModel<DocumentOf<M>>> extends Core
     const model = this.rows(req);
     for (const item of validate) await model.updateByPath(item.body, item.id);
     await this.afterUpdates(req, validate);
+    return true;
+  }
+}
+
+/**
+ * Gives one core row: `GET <path>/:id`, 404 `not_found` for an id naming no row the caller reaches.
+ */
+export class CoreGetOne<M extends StandardModel<DocumentOf<M>>> extends CoreModelRoute<M> {
+  constructor(services: Services) {
+    super(services);
+    this.verb = Route.Constants.Verbs.GET;
+  }
+
+  // What's given for the row, the row itself unless a route says
+  protected present(row: DocumentOf<M>): unknown {
+    return row;
+  }
+
+  override _validate(req: Request, _res: Response) {
+    return this.rows(req).findByIdOrFail(this.idOf(req));
+  }
+
+  override _exec(_req: Request, _res: Response, row: DocumentOf<M>) {
+    return this.present(row);
+  }
+}
+
+/**
+ * Lists the core rows the caller reaches: `GET <path>`, and `?ids=a,b` for only those, where the route takes them.
+ */
+export class CoreGetList<M extends StandardModel<DocumentOf<M>>> extends CoreModelRoute<M> {
+  constructor(services: Services) {
+    super(services);
+    this.verb = Route.Constants.Verbs.GET;
+  }
+
+  override _validate(req: Request, _res: Response) {
+    if (!this.config.takesIds) return [];
+
+    const given = req.query.ids;
+    const ids = (Array.isArray(given) ? given : typeof given === 'string' ? given.split(',') : [])
+      .map((id) => String(id))
+      .filter(Boolean);
+    const model = this.rows(req);
+    if (ids.some((id) => !model.isValidId(id))) {
+      this.log(`[${this.name}] Invalid id in ${ids.join(',')}`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
+    }
+    return ids;
+  }
+
+  override _exec(req: Request, _res: Response, ids: string[]) {
+    const model = this.rows(req);
+    return ids.length > 0 ? model.findByIds(ids) : model.findAll();
+  }
+}
+
+/**
+ * Removes every core row the caller reaches: `DELETE <path>`.
+ */
+export class CoreDeleteAll<M extends StandardModel<DocumentOf<M>>> extends CoreModelRoute<M> {
+  constructor(services: Services) {
+    super(services);
+    this.verb = Route.Constants.Verbs.DEL;
+  }
+
+  override _validate(_req: Request, _res: Response) {
+    return true;
+  }
+
+  override async _exec(req: Request, _res: Response, _validate: boolean) {
+    await this.rows(req).rmAll({});
     return true;
   }
 }

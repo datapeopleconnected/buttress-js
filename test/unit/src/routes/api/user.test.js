@@ -122,13 +122,6 @@ afterEach(() => {
 });
 
 describe('routes/api/user:GetUserList', () => {
-  it('rejects when there is no authenticated app', async () => {
-    stubModel();
-    const route = createRoute(GetUserList);
-
-    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
-  });
-
   it('returns every user for a system token', () => {
     const { userModel } = stubModel();
     const route = createRoute(GetUserList);
@@ -594,24 +587,6 @@ describe('routes/api/user:ClearUserPolicyProperties', () => {
   });
 });
 
-describe('routes/api/user:DeleteAllUsers', () => {
-  it('rejects when there is no authenticated app', async () => {
-    stubModel();
-    const route = createRoute(DeleteAllUsers);
-
-    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
-  });
-
-  it('removes every user scoped to the app', async () => {
-    const { userModel } = stubModel();
-    const route = createRoute(DeleteAllUsers);
-
-    const result = await route._exec(createReq(), {}, { appId: '6abd05000000000000000001' });
-
-    assert.ok(userModel.rmAll.calledWith({ $and: [{ _appId: '6abd05000000000000000001' }, { _appId: '6abd05000000000000000001' }] }));
-    assert.strictEqual(result, true);
-  });
-});
 
 describe('routes/api/user:DeleteUser', () => {
   it('rejects when no id is provided', async () => {

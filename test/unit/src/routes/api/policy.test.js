@@ -115,13 +115,6 @@ afterEach(() => {
 });
 
 describe('routes/api/policy:GetPolicy', () => {
-  it('rejects when no id is provided', async () => {
-    stubModel();
-    const route = createRoute(GetPolicy);
-
-    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
-  });
-
   it('rejects when the id is not a valid ObjectId', async () => {
     stubModel();
     const route = createRoute(GetPolicy);
@@ -161,13 +154,6 @@ describe('routes/api/policy:GetPolicy', () => {
 });
 
 describe('routes/api/policy:GetPolicyList', () => {
-  it('rejects when there is no authenticated app', async () => {
-    stubModel();
-    const route = createRoute(GetPolicyList);
-
-    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
-  });
-
   it('rejects when a requested id is not a valid ObjectId', () => {
     stubModel();
     const route = createRoute(GetPolicyList);
@@ -175,15 +161,6 @@ describe('routes/api/policy:GetPolicyList', () => {
     // Unlike the other guards in this route, the id-format check throws synchronously from
     // inside a forEach rather than rejecting a promise (_validate isn't declared async).
     assert.throws(() => route._validate(createReq({ query: { ids: 'not-an-id' } })), { code: 'invalid_id' });
-  });
-
-  it('parses a comma-separated ids query string', async () => {
-    stubModel();
-    const route = createRoute(GetPolicyList);
-
-    const result = await route._validate(createReq({ query: { ids: `${HEX_ID},${HEX_ID}` } }));
-
-    assert.strictEqual(result.ids.length, 2);
   });
 
   it('returns every policy for a system token', async () => {

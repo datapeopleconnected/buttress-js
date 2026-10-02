@@ -222,20 +222,6 @@ describe('routes/api/secure-store:AddManySecureStore', () => {
 });
 
 describe('routes/api/secure-store:GetSecureStore', () => {
-  it('rejects when there is no authenticated app', async () => {
-    stubModel();
-    const route = createRoute(GetSecureStore);
-
-    await assert.rejects(route._validate(createReq({ authApp: null })), { code: 'internal_error' });
-  });
-
-  it('rejects when no id is provided', async () => {
-    stubModel();
-    const route = createRoute(GetSecureStore);
-
-    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_id' });
-  });
-
   it('rejects when the id is not a valid ObjectId', async () => {
     stubModel();
     const route = createRoute(GetSecureStore);
@@ -250,16 +236,6 @@ describe('routes/api/secure-store:GetSecureStore', () => {
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID } })), { code: 'not_found' });
   });
 
-  it('resolves the matching secure store', async () => {
-    stubModel({
-      secureStore: { find: sinon.stub().returns(Readable.from([{ id: HEX_ID, name: 'test' }], { objectMode: true })) },
-    });
-    const route = createRoute(GetSecureStore);
-
-    const result = await route._validate(createReq({ params: { id: HEX_ID } }));
-
-    assert.strictEqual(result.name, 'test');
-  });
 });
 
 describe('routes/api/secure-store:FindSecureStore', () => {

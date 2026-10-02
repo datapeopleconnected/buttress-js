@@ -16,7 +16,15 @@
 import { Request, Response } from 'express';
 
 import Route from '../route.js';
-import { CoreBulkUpdate, CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
+import {
+  CoreBulkUpdate,
+  CoreCount,
+  CoreGetList,
+  CoreGetOne,
+  CoreRouteConfig,
+  CoreSearch,
+  CoreUpdateByPath,
+} from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
@@ -131,32 +139,14 @@ const SYSTEM_ONLY = 'the route takes only system tokens';
 /**
  * @class GetAppDataSharing
  */
-class GetAppDataSharing extends Route {
-  constructor(services: Services) {
-    super(
-      'app-data-sharing/:id',
-      'GET APP DATA SHARING',
-      services,
-      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.READ;
-  }
-
-  override async _validate(req: Request, _res: Response) {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log(`[${this.name}] Missing required app data sharing id`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-    }
-
-    return this.scoped(req, AppDataSharingSchemaModel).findByIdOrFail(id);
-  }
-
-  override _exec(req: Request, res: Response, AppDataSharing: AppDataSharing) {
-    return AppDataSharing;
-  }
+class GetAppDataSharing extends CoreGetOne<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing/:id',
+    name: 'GET APP DATA SHARING',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.READ,
+  };
 }
 routes.push(GetAppDataSharing);
 
@@ -575,26 +565,14 @@ routes.push(StatusAppDataSharing);
 /**
  * @class GetAllAppDataSharing
  */
-class GetAllAppDataSharing extends Route {
-  constructor(services: Services) {
-    super(
-      'app-data-sharing',
-      'APP DATA SHARING AGREEMENT LIST',
-      services,
-      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override async _validate() {
-    return true;
-  }
-
-  override _exec(req: Request, _res: Response) {
-    return this.scoped(req, AppDataSharingSchemaModel).findAll();
-  }
+class GetAllAppDataSharing extends CoreGetList<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing',
+    name: 'APP DATA SHARING AGREEMENT LIST',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.LIST,
+  };
 }
 routes.push(GetAllAppDataSharing);
 

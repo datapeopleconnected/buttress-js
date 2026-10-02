@@ -16,7 +16,7 @@
 import { Response, Request } from 'express';
 
 import Route from '../route.js';
-import { CoreRouteConfig, CoreUpdateByPath } from '../core-routes.js';
+import { CoreDeleteAll, CoreGetList, CoreRouteConfig, CoreUpdateByPath } from '../core-routes.js';
 import Model from '../../model/index.js';
 import { invalidEntityError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
@@ -33,21 +33,14 @@ const SYSTEM_ONLY = 'the route takes only system tokens';
 /**
  * @class GetTrackingList
  */
-class GetTrackingList extends Route {
-  constructor(services: Services) {
-    super('tracking', 'GET TRACKING LIST', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.SYSTEM;
-    this.permissions = Route.Constants.Permissions.LIST;
-  }
-
-  override _validate(_req: Request, _res: Response) {
-    return Promise.resolve(true);
-  }
-
-  override _exec(_req: Request, _res: Response, _validate: boolean) {
-    return this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY).findAll();
-  }
+class GetTrackingList extends CoreGetList<TrackingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'tracking',
+    name: 'GET TRACKING LIST',
+    model: TrackingSchemaModel,
+    authType: Route.Constants.Type.SYSTEM,
+    permissions: Route.Constants.Permissions.LIST,
+  };
 }
 routes.push(GetTrackingList);
 
@@ -133,22 +126,14 @@ routes.push(DeleteTracking);
 /**
  * @class DeleteAllTrackings
  */
-class DeleteAllTrackings extends Route {
-  constructor(services: Services) {
-    super('tracking', 'DELETE ALL TRACKINGS', services, Model.getCoreModel(TrackingSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.DEL;
-    this.authType = Route.Constants.Type.SYSTEM;
-    this.permissions = Route.Constants.Permissions.DELETE;
-  }
-
-  override async _validate(_req: Request, _res: Response) {
-    return true;
-  }
-
-  override async _exec(_req: Request, _res: Response, _validate: boolean) {
-    await this.unscopedModel(TrackingSchemaModel, SYSTEM_ONLY).rmAll({});
-    return true;
-  }
+class DeleteAllTrackings extends CoreDeleteAll<TrackingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'tracking',
+    name: 'DELETE ALL TRACKINGS',
+    model: TrackingSchemaModel,
+    authType: Route.Constants.Type.SYSTEM,
+    permissions: Route.Constants.Permissions.DELETE,
+  };
 }
 routes.push(DeleteAllTrackings);
 

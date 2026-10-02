@@ -16,7 +16,7 @@
 import { Request, Response } from 'express';
 
 import Route from '../route.js';
-import { CoreCount, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
+import { CoreCount, CoreGetOne, CoreRouteConfig, CoreSearch, CoreUpdateByPath } from '../core-routes.js';
 import Model from '../../model/index.js';
 import * as Helpers from '../../helpers/index.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
@@ -28,34 +28,14 @@ const routes: CoreRouteClass[] = [];
 /**
  * @class GetLambdaExecution
  */
-class GetLambdaExecution extends Route {
-  constructor(services: Services) {
-    super(
-      'lambda-execution/:id',
-      'GET LAMBDA EXECUTION',
-      services,
-      Model.getCoreModel(LambdaExecutionSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.GET;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.READ;
-  }
-
-  override async _validate(req: Request, _res: Response) {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log(`[${this.name}] Missing required lambda execution id`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-    }
-
-    const lambdaExecution = await this.scoped(req, LambdaExecutionSchemaModel).findByIdOrFail(id);
-
-    return lambdaExecution;
-  }
-
-  override _exec(req: Request, res: Response, lambdaExecution: LambdaExecution) {
-    return lambdaExecution;
-  }
+class GetLambdaExecution extends CoreGetOne<LambdaExecutionSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'lambda-execution/:id',
+    name: 'GET LAMBDA EXECUTION',
+    model: LambdaExecutionSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.READ,
+  };
 }
 routes.push(GetLambdaExecution);
 
