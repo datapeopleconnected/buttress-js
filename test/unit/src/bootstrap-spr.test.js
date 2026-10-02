@@ -24,6 +24,10 @@ import Model from '../../../dist/model/index.js';
 import TokenSchemaModel from '../../../dist/model/core/token.js';
 import UserSchemaModel from '../../../dist/model/core/user.js';
 import RemoteCombinedModel from '../../../dist/model/type/remote-combined.js';
+import { realQueryParser } from '../../query-parser.js';
+
+// An app's cars, which a policy's query is read against as REST reads it, through parseQuery
+const carModel = realQueryParser({ Schema: { name: 'car', type: 'collection', properties: {} } });
 
 describe('bootstrap-spr:class', () => {
 	it(`should create an instance of the BootstrapSocketPolicyRouter class`, () => {
@@ -78,6 +82,7 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 	};
 
 	const findIn = (docs) => ({
+		...carModel,
 		createId: (id) => new ObjectId(id),
 		find: async (query) => docs.filter((doc) => doc.type === query.type),
 		findOne: async (query) => docs.find((doc) => doc.id.equals(query._id)) || null,
@@ -179,6 +184,25 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 		assert.strictEqual(first.clientSessionId, CLIENT_SESSION_ID);
 		assert.strictEqual(first.schemaName, 'car');
 		assert.strictEqual(first.appAPIPath, 'test-app');
+	});
+
+	// A policy's query reads an entity in realtime as a REST read would (D-31), a bare value included
+	it('relays the entities a query of bare values reads, as a REST read would', async () => {
+		const byName = {
+			id: 'policy-by-name',
+			name: 'by-name',
+			_appId: APP_ID,
+			env: null,
+			config: [{ verbs: ['GET'], schema: ['car'], query: { name: 'owned' } }],
+		};
+		const { spr, received } = createSPR({ policies: [byName], connections: { [byName.id]: [tokens.fullAccess] } });
+
+		await spr._handleIncomingMessage(activity({ response: bulkUpdateResponse }));
+
+		assert.deepStrictEqual(
+			received(tokens.fullAccess).map((a) => a.params.id),
+			[cars.owned.id.toString()],
+		);
 	});
 
 	it('relays only the entities a token-level policy selects', async () => {
@@ -381,7 +405,7 @@ describe('bootstrap-spr:_handleIncomingMessage projection', () => {
 			getPoliciesByRestActivity: async () => [namePolicy(keys)],
 			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
 		};
-		sinon.stub(Model, 'getAppModel').resolves({ findById: async () => car });
+		sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
 
 		await spr._handleIncomingMessage({
 			broadcast: true,
@@ -493,7 +517,7 @@ describe('bootstrap-spr:_handleIncomingMessage conditions and queries', () => {
 			getPoliciesByRestActivity: async () => policies,
 			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
 		};
-		sinon.stub(Model, 'getAppModel').resolves({ findById: async () => car });
+		sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
 		sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
 			const docs = modelClass === TokenSchemaModel ? [token] : [user];
 			return {
@@ -657,7 +681,7 @@ describe('bootstrap-spr: activities not to broadcast', () => {
     const emitted = [];
     spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
     spr._policyCache = { getPoliciesByRestActivity: async () => [] };
-    sinon.stub(Model, 'getAppModel').resolves({ findById: async () => ({ id: 'car-1' }) });
+    sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => ({ id: 'car-1' }) });
     sinon.stub(Model, 'getCoreModel').returns({ find: async () => [{ id: 'system-token', type: 'system' }] });
 
     await spr._handleIncomingMessage({
@@ -724,7 +748,7 @@ describe('bootstrap-spr:_handleIncomingMessage a collection with remotes', () =>
 		model._sdsRouting = { get: async (appId, sourceId) => (sourceId === PARTNER_ID ? 'ds-1' : undefined) };
 		model._localModel = { findById: async (id) => (id === ownCar.id ? ownCar : null) };
 		model._remoteModels = [{ dataSharingId: 'ds-1', findById: async (id) => (id === partnerCar.id ? partnerCar : null) }];
-		return model;
+		return Object.assign(model, carModel);
 	};
 
 	async function relay(activity) {

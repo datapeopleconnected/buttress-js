@@ -15,6 +15,7 @@
  */
 
 import { FlattenedSchema } from '../types/schema.js';
+import { isObjectId } from '../datastore/adapters/object-id.js';
 
 /**
  * The query operators, as REST compiles them for MongoDB and as realtime matches them in memory. The in-memory match
@@ -89,8 +90,11 @@ export const ALIASES: Record<string, OperatorAlias> = Object.fromEntries(
 
 export const LOGICAL_OPERATORS = ['$and', '$or', '$nor'] as const;
 
+// An object of fields: not a list, a date or an id
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date);
+  value !== null &&
+  typeof value === 'object' &&
+  (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);
 
 const isOperatorObject = (value: unknown): value is Record<string, unknown> =>
   isPlainObject(value) && Object.keys(value).length > 0 && Object.keys(value).every((key) => key.startsWith('$'));
@@ -114,6 +118,9 @@ const valuesAt = (value: unknown, segments: string[]): unknown[] => {
   return isPlainObject(value) ? valuesAt(value[head], rest) : [];
 };
 
+// An id is its hex string, as ids are outside the MongoDB adapter
+const asCompared = (value: unknown) => (isObjectId(value) ? value.toHexString() : value);
+
 // MongoDB compares values of one type only: numbers with numbers, text with text, dates with dates...
 const typeOf = (value: unknown) =>
   value === null
@@ -126,7 +133,8 @@ const typeOf = (value: unknown) =>
           ? 'object'
           : typeof value;
 
-const isEqual = (a: unknown, b: unknown): boolean => {
+const isEqual = (x: unknown, y: unknown): boolean => {
+  const [a, b] = [asCompared(x), asCompared(y)];
   const type = typeOf(a);
   if (type !== typeOf(b)) return false;
   if (type === 'date') return (a as Date).getTime() === (b as Date).getTime();
@@ -146,7 +154,8 @@ const isEqual = (a: unknown, b: unknown): boolean => {
 };
 
 // The order of two values of one type, or null for values MongoDB doesn't compare
-const order = (a: unknown, b: unknown): number | null => {
+const order = (x: unknown, y: unknown): number | null => {
+  const [a, b] = [asCompared(x), asCompared(y)];
   const type = typeOf(a);
   if (type !== typeOf(b)) return null;
   if (type === 'number' || type === 'string' || type === 'boolean') {

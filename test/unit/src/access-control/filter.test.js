@@ -18,6 +18,7 @@ import { describe, it } from 'mocha';
 import assert from 'assert';
 
 import FilterInstance, { Filter as FilterClass } from '../../../../dist/access-control/filter.js';
+import { createSchemaModel } from '../../../schema-model.js';
 
 const Filter = FilterInstance;
 
@@ -257,61 +258,64 @@ describe('access-control/filter:buildPolicyQuery', () => {
   });
 });
 
+// A model with no schema of its own, so its values are compared as given
+const { model: untyped } = createSchemaModel({ name: 'untyped', properties: {} });
+
 describe('access-control/filter:evaluateQueryAgainstEntity', () => {
   it('should return true for %FULL_ACCESS% query', () => {
-    const result = Filter.evaluateQueryAgainstEntity({ access: '%FULL_ACCESS%' }, { name: 'test' });
+    const result = Filter.evaluateQueryAgainstEntity({ access: '%FULL_ACCESS%' }, { name: 'test' }, untyped);
     assert.strictEqual(result, true);
   });
 
   it('should return true when entity matches simple $eq query', () => {
-    const result = Filter.evaluateQueryAgainstEntity({ name: { $eq: 'test' } }, { name: 'test' });
+    const result = Filter.evaluateQueryAgainstEntity({ name: { $eq: 'test' } }, { name: 'test' }, untyped);
     assert.strictEqual(result, true);
   });
 
   it('should return false when entity does not match $eq query', () => {
-    const result = Filter.evaluateQueryAgainstEntity({ name: { $eq: 'other' } }, { name: 'test' });
+    const result = Filter.evaluateQueryAgainstEntity({ name: { $eq: 'other' } }, { name: 'test' }, untyped);
     assert.strictEqual(result, false);
   });
 
   it('should return true when entity matches $and query', () => {
     const query = { $and: [{ age: { $gt: 18 } }, { country: { $eq: 'USA' } }] };
     const entity = { age: 25, country: 'USA' };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, true);
   });
 
   it('should return false when entity fails $and query', () => {
     const query = { $and: [{ age: { $gt: 18 } }, { country: { $eq: 'USA' } }] };
     const entity = { age: 15, country: 'USA' };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, false);
   });
 
   it('should return true when entity matches $or query', () => {
     const query = { $or: [{ age: { $gt: 18 } }, { role: { $eq: 'admin' } }] };
     const entity = { age: 15, role: 'admin' };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, true);
   });
 
   it('should return false when entity fails $or query', () => {
     const query = { $or: [{ age: { $gt: 18 } }, { role: { $eq: 'admin' } }] };
     const entity = { age: 15, role: 'user' };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, false);
   });
 
-  it('should handle nested/flattened entity fields', () => {
-    const entity = { 'address.city': 'London', name: 'test' };
+  it('should handle nested entity fields', () => {
+    const entity = { address: { city: 'London' }, name: 'test' };
     const query = { 'address.city': { $eq: 'London' } };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, true);
   });
 
   it('should return false when query field is missing from entity', () => {
     const entity = { name: 'test' };
     const query = { missingField: { $eq: 'value' } };
-    const result = Filter.evaluateQueryAgainstEntity(query, entity);
+    const result = Filter.evaluateQueryAgainstEntity(query, entity, untyped);
     assert.strictEqual(result, false);
   });
 });
@@ -322,12 +326,71 @@ describe('access-control/filter:evaluateQueryAgainstEntity $or branches', () => 
   };
 
   it('needs every field of a branch to match, as MongoDB does', () => {
-    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T9', visibility: 'shared', _ownerId: 'U9' }), false);
-    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T1', visibility: 'private', _ownerId: 'U9' }), false);
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T9', visibility: 'shared', _ownerId: 'U9' }, untyped), false);
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T1', visibility: 'private', _ownerId: 'U9' }, untyped), false);
   });
 
   it('matches when one branch matches in full', () => {
-    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T1', visibility: 'shared', _ownerId: 'U9' }), true);
-    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T9', visibility: 'private', _ownerId: 'U1' }), true);
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T1', visibility: 'shared', _ownerId: 'U9' }, untyped), true);
+    assert.strictEqual(Filter.evaluateQueryAgainstEntity(query, { _teamId: 'T9', visibility: 'private', _ownerId: 'U1' }, untyped), true);
+  });
+});
+
+// Realtime reads an entity as a REST query would (D-31): the query parsed as REST parses it, and matched as MongoDB
+// matches it (see test/e2e/access-control/operators.test.js)
+describe('access-control/filter:evaluateQueryAgainstEntity as REST reads the entity', () => {
+  const { model } = createSchemaModel({
+    name: 'crate',
+    properties: {
+      name: { __type: 'string' },
+      count: { __type: 'number' },
+      at: { __type: 'date' },
+      tags: { __type: 'array', __itemtype: 'string' },
+      lines: { __type: 'array', __schema: { sku: { __type: 'string' }, qty: { __type: 'number' } } },
+    },
+  });
+  const entity = { id: '6abd0b000000000000000001', name: 'Ada', count: 10, at: '2026-03-01T00:00:00.000Z', tags: ['a', 'b'], lines: [{ sku: 'X', qty: 7 }] };
+  const reads = (query) => Filter.evaluateQueryAgainstEntity(query, entity, model);
+
+  it('compares text exactly', () => {
+    assert.strictEqual(reads({ name: { $eq: 'Ada' } }), true);
+    assert.strictEqual(reads({ name: { $eq: 'ada' } }), false);
+  });
+
+  it('takes a bare value as the value to equal', () => {
+    assert.strictEqual(reads({ name: 'Ada' }), true);
+    assert.strictEqual(reads({ name: 'Bob' }), false);
+  });
+
+  it("matches an array field by any of its items", () => {
+    assert.strictEqual(reads({ tags: 'b' }), true);
+    assert.strictEqual(reads({ tags: { $in: ['a', 'z'] } }), true);
+    assert.strictEqual(reads({ tags: { $nin: ['b'] } }), false);
+  });
+
+  it('reads $exists as whether the field is there', () => {
+    assert.strictEqual(reads({ name: { $exists: true } }), true);
+    assert.strictEqual(reads({ nothing: { $exists: false } }), true);
+    assert.strictEqual(reads({ nothing: { $exists: true } }), false);
+  });
+
+  it("matches a field it hasn't got by $ne and $nin", () => {
+    assert.strictEqual(reads({ nothing: { $ne: 'x' } }), true);
+    assert.strictEqual(reads({ nothing: { $nin: ['x'] } }), true);
+  });
+
+  it('matches $elMatch and $inProp', () => {
+    assert.strictEqual(reads({ lines: { $elMatch: { sku: 'X', qty: { $gt: 5 } } } }), true);
+    assert.strictEqual(reads({ name: { $inProp: 'd' } }), true);
+  });
+
+  it('reads compared values and dates as their types', () => {
+    assert.strictEqual(reads({ count: { $gt: '3' } }), true);
+    assert.strictEqual(reads({ at: { $gtDate: '2026-01-01T00:00:00.000Z' } }), true);
+    assert.strictEqual(reads({ at: { $ltDate: '2026-01-01T00:00:00.000Z' } }), false);
+  });
+
+  it("doesn't read the entity for a query that can't be read", () => {
+    assert.strictEqual(reads({ count: { $gt: 'lots' } }), false);
   });
 });

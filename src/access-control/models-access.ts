@@ -16,7 +16,7 @@
 
 import { Stream } from 'node:stream';
 
-import AccessControlFilter from './filter.js';
+import AccessControlFilter, { QueryModel } from './filter.js';
 
 import { PolicyConfig } from '../model/core/policy.js';
 import { parsedPolicyConfig } from './index.js';
@@ -146,13 +146,17 @@ export function reachesEveryEntity(ac: { policyConfigs: parsedPolicyConfig[] }) 
  * Whether the caller's policies let it create `entity`, given as it will be stored: a config's query must read it, as
  * it would have to for the caller to read or change it.
  */
-export function canCreate(ac: { policyConfigs: parsedPolicyConfig[] }, entity: Record<string, unknown>) {
+export function canCreate(
+  ac: { policyConfigs: parsedPolicyConfig[] },
+  entity: Record<string, unknown>,
+  model: QueryModel,
+) {
   if (reachesEveryEntity(ac)) return true;
   return ac.policyConfigs.some(
     (policyConfig) =>
       !policyConfig.query ||
       Object.keys(policyConfig.query).length < 1 ||
-      AccessControlFilter.evaluateQueryAgainstEntity(policyConfig.query, entity),
+      AccessControlFilter.evaluateQueryAgainstEntity(policyConfig.query, entity, model),
   );
 }
 

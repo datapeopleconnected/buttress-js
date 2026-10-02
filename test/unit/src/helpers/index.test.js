@@ -287,8 +287,9 @@ describe('helpers.flattenedObject', () => {
 		}
 
 		const secondFlattenedObj = Helpers.flattenedObject(email);
-		const value = Filter.__getValueByPath(secondFlattenedObj, 'data.value.text');
-		assert.strictEqual(value.length, 2);
+		// Each item of an array has a key of its own, so both texts are there
+		const texts = Object.keys(secondFlattenedObj).filter((key) => key.replace(/\.\d+/g, '') === 'data.value.text');
+		assert.strictEqual(texts.length, 2);
 	});
 });
 

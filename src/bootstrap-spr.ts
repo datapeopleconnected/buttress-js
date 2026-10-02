@@ -369,17 +369,18 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         : {};
     const entityId = activityParams.id ? activityParams.id : activityResponse.id;
 
+    // The entity's model, whose schema a policy's query is read against, as REST reads it
+    const appModel = entityId ? await Model.getAppModel<StandardModel>(activity.appId, activity.schemaName) : null;
+    if (entityId && !appModel) {
+      Logging.logWarn(
+        `Unable to broadcast entity, can not find ${activity.schemaName} for ${activity.appId} in the database`,
+      );
+      return;
+    }
+
     if (entityId && activity.verb === 'delete') {
       entity = deletedEntities?.find((deleted) => String(deleted.id) === String(entityId)) ?? null;
-    } else if (entityId) {
-      const appModel = await Model.getAppModel<StandardModel>(activity.appId, activity.schemaName);
-      if (!appModel) {
-        Logging.logWarn(
-          `Unable to broadcast entity, can not find ${activity.schemaName} for ${activity.appId} in the database`,
-        );
-        return;
-      }
-
+    } else if (entityId && appModel) {
       // A partner's change comes in through an agreement, and its entity is where that agreement reads. Anything else
       // is found by its source, which is the app itself unless it names a partner.
       const sourceId = activityParams.sourceId ?? activityResponse.sourceId;
@@ -464,6 +465,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
               applicablePolicy,
               activity,
               entity,
+              appModel,
               env,
               activityMetadata,
             );
@@ -492,6 +494,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
           applicablePolicy,
           activity,
           entity,
+          appModel,
           env,
           activityMetadata,
         );
@@ -531,6 +534,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     applicablePolicy: ApplicablePolicyConfig,
     activity: RESTActivity,
     entity: Record<string, unknown> | null,
+    model: StandardModel | null,
     env: ACPolicyEnvCombined,
     activityMetadata: ActivityMetadata,
   ): Promise<false | RESTActivity> {
@@ -564,7 +568,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       return false;
     }
 
-    if (!entity) {
+    if (!entity || !model) {
       Logging.logWarn('Unable to broadcast entity, can not find entity');
       return false;
     }
@@ -581,7 +585,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     // ? How does this work if it's a core schema?
     const readsEntity = (q: NonNullable<typeof query>) =>
-      Object.keys(q).length === 0 || AccessControlFilters.evaluateQueryAgainstEntity(q, entity);
+      Object.keys(q).length === 0 || AccessControlFilters.evaluateQueryAgainstEntity(q, entity, model);
     const broadcast = query ? readsEntity(query) : false;
     if (!broadcast && activity.verb === 'post') {
       Logging.logTimer(
