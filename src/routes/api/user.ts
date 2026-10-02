@@ -22,6 +22,7 @@ import {
   CoreGetList,
   CoreRouteConfig,
   CoreSearch,
+  CoreTokenPolicyProperties,
   CoreUpdateByPath,
 } from '../core-routes.js';
 import Model from '../../model/index.js';
@@ -30,7 +31,6 @@ import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import TokenSchemaModel, { PolicyProperties, Token } from '../../model/core/token.js';
 import UserSchemaModel, { User, UserAddBody, UserAuth } from '../../model/core/user.js';
-import ActivitySchemaModel from '../../model/core/activity.js';
 import { Services } from '../../bootstrap.js';
 import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
@@ -548,357 +548,90 @@ class UpdateUser extends CoreUpdateByPath<UserSchemaModel> {
 }
 routes.push(UpdateUser);
 
-// Policy properties as posted, _validate checks them against the app's policy property list
-type PostedPolicyProperties = Record<string, unknown>;
-
 /**
  * @class SetUserPolicyProperties
  */
-class SetUserPolicyProperties extends Route {
-  constructor(services: Services) {
-    super(
-      'user/:id/policy-property/:tokenId',
-      'SET USER POLICY PROPERTY',
-      services,
-      Model.getCoreModel(UserSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<PostedPolicyProperties | undefined>, _res: Response) {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    const app = req.context.authApp;
-    if (!app) {
-      this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    if (!req.body) {
-      this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    const users = this.scoped(req, UserSchemaModel);
-    await users.assertExists(id);
-    const userId = users.createId(id);
-
-    const tokenQuery = getTokenQueryfromParams(req, userId);
+/**
+ * A user's token's policy properties, the token named by the `:tokenId` param, its id or its value. Sockets look at
+ * the user's rooms again when properties are taken away.
+ */
+abstract class UserTokenPolicyProperties extends CoreTokenPolicyProperties<UserSchemaModel> {
+  protected override async findToken(req: Request, id: string) {
+    const tokenQuery = getTokenQueryfromParams(req, this.scoped(req, UserSchemaModel).createId(id));
     if (!tokenQuery) {
       this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('invalid_token_param'));
+      throw Helpers.Errors.badRequest('invalid_token_param');
     }
 
     const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
     if (!userToken) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
-      return Promise.reject(userTokenNotFound());
+      throw userTokenNotFound();
     }
-    const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
-    if (!policyCheck.passed) {
-      this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('invalid_field'));
-    }
-
-    return Promise.resolve({
-      tokenId: userToken.id,
-    });
+    return userToken;
   }
 
-  override async _exec(req: RequestWithBody<PostedPolicyProperties>, res: Response, validate: { tokenId: string }) {
-    const tokens = await this.scoped(req, TokenSchemaModel).owned(validate.tokenId);
-    await tokens.setPolicyPropertiesById(validate.tokenId, req.body);
+  protected override async afterChange(req: Request, id: string) {
+    if (this.config.policyProperties !== 'remove' && this.config.policyProperties !== 'clear') return;
 
-    // this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
-    // 	userId: req.params.id,
-    // 	appId: req.context.authApp.id,
-    // }));
-
-    // TODO: Do we really need to wait for the socket to respond?
-    // await new Promise((resolve) => {
-    // 	const id = uuidv4();
-
-    // 	this._nrp.emit('worker:socket:evaluateUserRooms', {
-    // 		id,
-    // 		userId: req.params.id,
-    // 		appId: req.context.authApp.id,
-    // 	});
-
-    // 	let unsubscribe = null;
-    // 	unsubscribe = this._nrp.on('updatedUserSocketRooms', (res) => {
-    // 		if (res.id !== id) return;
-    // 		unsubscribe();
-    // 		resolve();
-    // 	});
-    // });
-
-    return true;
+    this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({ userId: id, appId: req.context.authApp?.id }));
   }
+}
+
+class SetUserPolicyProperties extends UserTokenPolicyProperties {
+  static override config: CoreRouteConfig = {
+    path: 'user/:id/policy-property/:tokenId',
+    name: 'SET USER POLICY PROPERTY',
+    model: UserSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.WRITE,
+    policyProperties: 'set',
+  };
 }
 routes.push(SetUserPolicyProperties);
 
 /**
  * @class UpdateUserPolicyProperties
  */
-class UpdateUserPolicyProperties extends Route {
-  constructor(services: Services) {
-    super(
-      'user/:id/update-policy-property/:tokenId',
-      'UPDATE USER POLICY PROPERTY',
-      services,
-      Model.getCoreModel(UserSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<PostedPolicyProperties | undefined>, _res: Response) {
-    const app = req.context.authApp;
-    if (!app) {
-      this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    if (!req.body) {
-      this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    const users = this.scoped(req, UserSchemaModel);
-    await users.assertExists(id);
-    const userId = users.createId(id);
-
-    const tokenQuery = getTokenQueryfromParams(req, userId);
-    if (!tokenQuery) {
-      this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('invalid_token_param'));
-    }
-
-    const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
-    if (!userToken) {
-      this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
-      return Promise.reject(userTokenNotFound());
-    }
-    const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
-    if (!policyCheck.passed) {
-      this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('invalid_field'));
-    }
-
-    return Promise.resolve(userToken);
-  }
-
-  override async _exec(req: RequestWithBody<PostedPolicyProperties>, res: Response, validate: Token) {
-    const tokens = await this.scoped(req, TokenSchemaModel).owned(String(validate.id));
-    await tokens.updatePolicyProperties(validate, req.body);
-
-    // this._nrp?.emit('worker:socket:evaluateUserRooms', JSON.stringify({
-    // 	userId: req.params.id,
-    // 	appId: req.context.authApp.id,
-    // }));
-
-    // TODO: Do we really need to wait for the socket to respond?
-    // await new Promise((resolve) => {
-    // 	const id = uuidv4();
-
-    // 	this._nrp.emit('worker:socket:evaluateUserRooms', {
-    // 		id,
-    // 		userId: req.params.id,
-    // 		appId: req.context.authApp.id,
-    // 	});
-
-    // 	let unsubscribe = null;
-    // 	unsubscribe = this._nrp.on('updatedUserSocketRooms', (res) => {
-    // 		if (res.id !== id) return;
-    // 		unsubscribe();
-    // 		resolve();
-    // 	});
-    // });
-
-    return true;
-  }
+class UpdateUserPolicyProperties extends UserTokenPolicyProperties {
+  static override config: CoreRouteConfig = {
+    path: 'user/:id/update-policy-property/:tokenId',
+    name: 'UPDATE USER POLICY PROPERTY',
+    model: UserSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.WRITE,
+    policyProperties: 'update',
+  };
 }
 routes.push(UpdateUserPolicyProperties);
 
 /**
  * @class RemoveUserPolicyProperties
  */
-class RemoveUserPolicyProperties extends Route {
-  constructor(services: Services) {
-    super(
-      'user/:id/remove-policy-property/:tokenId',
-      'REMOVE USER POLICY PROPERTY',
-      services,
-      Model.getCoreModel(UserSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<PostedPolicyProperties | undefined>, _res: Response) {
-    if (!req.context.authApp) {
-      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
-    }
-
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    if (!req.body) {
-      this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    const users = this.scoped(req, UserSchemaModel);
-    await users.assertExists(id);
-    const userId = users.createId(id);
-
-    const tokenQuery = getTokenQueryfromParams(req, userId);
-    if (!tokenQuery) {
-      this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('invalid_token_param'));
-    }
-
-    const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
-    if (!userToken) {
-      this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
-      return Promise.reject(userTokenNotFound());
-    }
-
-    return Promise.resolve({
-      appId: req.context.authApp.id,
-      userToken,
-    });
-  }
-
-  override async _exec(
-    req: RequestWithBody<PostedPolicyProperties>,
-    res: Response,
-    validate: { appId: string; userToken: Token },
-  ) {
-    const reqPolicyProps = req.body;
-    const policyProps = validate.userToken.policyProperties;
-    Object.keys(reqPolicyProps).forEach((key) => {
-      if (policyProps && policyProps[key] && policyProps[key] === reqPolicyProps[key]) {
-        delete policyProps[key];
-      }
-    });
-    // BUG: policyProps is null if the token has no policy properties, which updatePolicyProperties throws on
-    const tokens = await this.scoped(req, TokenSchemaModel).owned(String(validate.userToken.id));
-    await tokens.updatePolicyProperties(validate.userToken, policyProps as Record<string, unknown>);
-
-    this._nrp?.emit(
-      'worker:socket:evaluateUserRooms',
-      JSON.stringify({
-        userId: req.params.id,
-        appId: validate.appId,
-      }),
-    );
-
-    return true;
-  }
+class RemoveUserPolicyProperties extends UserTokenPolicyProperties {
+  static override config: CoreRouteConfig = {
+    path: 'user/:id/remove-policy-property/:tokenId',
+    name: 'REMOVE USER POLICY PROPERTY',
+    model: UserSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.WRITE,
+    policyProperties: 'remove',
+  };
 }
 routes.push(RemoveUserPolicyProperties);
 
 /**
  * @class ClearUserPolicyProperties
  */
-class ClearUserPolicyProperties extends Route {
-  constructor(services: Services) {
-    super(
-      'user/:id/clear-policy-property/:tokenId',
-      'CLEAR USER POLICY PROPERTY',
-      services,
-      Model.getCoreModel(UserSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.LAMBDA;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = false;
-  }
-
-  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
-    if (!req.context.authApp) {
-      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
-    }
-
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log('ERROR: Missing User ID', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    if (!req.body) {
-      this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    const users = this.scoped(req, UserSchemaModel);
-    await users.assertExists(id);
-    const userId = users.createId(id);
-
-    const tokenQuery = getTokenQueryfromParams(req, userId);
-    if (!tokenQuery) {
-      this.log('ERROR: Invalid Token ID', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('invalid_token_param'));
-    }
-
-    const userToken = await this.scoped(req, TokenSchemaModel).findOne(tokenQuery);
-    if (!userToken) {
-      this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
-      return Promise.reject(userTokenNotFound());
-    }
-
-    return Promise.resolve({
-      userId,
-      appId: req.context.authApp.id,
-      userToken,
-    });
-  }
-
-  override async _exec(req: Request, res: Response, validate: { userId: string; appId: string; userToken: Token }) {
-    const tokens = await this.scoped(req, TokenSchemaModel).owned(String(validate.userToken.id));
-    await tokens.clearPolicyPropertiesById(validate.userToken.id);
-
-    this._nrp?.emit(
-      'worker:socket:evaluateUserRooms',
-      JSON.stringify({
-        userId: validate.userId,
-        appId: validate.appId,
-      }),
-    );
-
-    return true;
-  }
+class ClearUserPolicyProperties extends UserTokenPolicyProperties {
+  static override config: CoreRouteConfig = {
+    path: 'user/:id/clear-policy-property/:tokenId',
+    name: 'CLEAR USER POLICY PROPERTY',
+    model: UserSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.WRITE,
+    policyProperties: 'clear',
+  };
 }
 routes.push(ClearUserPolicyProperties);
 

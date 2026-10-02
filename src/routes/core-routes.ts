@@ -23,6 +23,7 @@ import StandardModel from '../model/type/standard.js';
 import { DocumentOf } from '../model/type/tenant-scoped.js';
 import { invalidUpdateError } from '../model/shared.js';
 import ActivitySchemaModel from '../model/core/activity.js';
+import TokenSchemaModel, { Token } from '../model/core/token.js';
 import { Services } from '../bootstrap.js';
 import { BjsQuery, QueryParams } from '../types/bjs-query.js';
 import { UpdatePathBody } from '../types/datastore.js';
@@ -49,7 +50,15 @@ export interface CoreRouteConfig {
   activityBroadcast?: boolean;
   // Whether a list takes `?ids=a,b` to list only those rows
   takesIds?: boolean;
+  // What a policy-property route does to the token's policy properties
+  policyProperties?: PolicyPropertiesChange;
 }
+
+/**
+ * A change to a token's policy properties: `set` replaces them, `update` merges the body into them, `remove` takes
+ * away each the body gives with the same value, and `clear` empties them.
+ */
+export type PolicyPropertiesChange = 'set' | 'update' | 'remove' | 'clear';
 
 type CoreRouteClassWithConfig = { config: CoreRouteConfig };
 
@@ -323,6 +332,80 @@ export class CoreDeleteAll<M extends StandardModel<DocumentOf<M>>> extends CoreM
 
   override async _exec(req: Request, _res: Response, _validate: boolean) {
     await this.rows(req).rmAll({});
+    return true;
+  }
+}
+
+/**
+ * Changes the policy properties of a core row's token: `PUT <path>`, with the properties. The row (a lambda, a user)
+ * has to be one the caller reaches, and its token is the route's to find; properties that are set or merged in have
+ * to be ones the app lists. `afterChange` then has the row and its token.
+ */
+export abstract class CoreTokenPolicyProperties<M extends StandardModel<DocumentOf<M>>> extends CoreModelRoute<M> {
+  constructor(services: Services) {
+    super(services);
+    this.verb = Route.Constants.Verbs.PUT;
+    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
+    this.activityBroadcast = true;
+  }
+
+  // The row's token, or the error to refuse the request with
+  protected abstract findToken(req: Request, id: string): Promise<Token>;
+
+  protected async afterChange(_req: Request, _id: string, _token: Token): Promise<void> {}
+
+  private get change(): PolicyPropertiesChange {
+    const change = this.config.policyProperties;
+    if (!change) throw new Error(`[${this.name}] says no policyProperties change`);
+    return change;
+  }
+
+  override async _validate(req: RequestWithBody<Record<string, unknown> | undefined>, _res: Response) {
+    if (!req.body) {
+      this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
+      throw Helpers.Errors.badRequest('missing_field');
+    }
+
+    const id = this.idOf(req);
+    await this.rows(req).assertExists(id);
+    const token = await this.findToken(req, id);
+
+    if (this.change === 'set' || this.change === 'update') {
+      const policyCheck = await Helpers.checkAppPolicyProperty(req.context.authApp?.policyPropertiesList, req.body);
+      if (!policyCheck.passed) {
+        this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+        throw Helpers.Errors.badRequest('invalid_field');
+      }
+    }
+
+    return token;
+  }
+
+  override async _exec(req: RequestWithBody<Record<string, unknown>>, _res: Response, token: Token) {
+    const tokenId = String(token.id);
+    const tokens = await this.scoped(req, TokenSchemaModel).owned(tokenId);
+    switch (this.change) {
+      case 'set':
+        await tokens.setPolicyPropertiesById(tokenId, req.body);
+        break;
+      case 'update':
+        await tokens.updatePolicyProperties(token, req.body);
+        break;
+      case 'remove': {
+        // A token with none has none to take away
+        const properties = token.policyProperties ?? {};
+        for (const [key, value] of Object.entries(req.body)) {
+          if (properties[key] && properties[key] === value) delete properties[key];
+        }
+        await tokens.updatePolicyProperties({ ...token, policyProperties: properties }, properties);
+        break;
+      }
+      case 'clear':
+        await tokens.clearPolicyPropertiesById(tokenId);
+        break;
+    }
+
+    await this.afterChange(req, this.idOf(req), token);
     return true;
   }
 }

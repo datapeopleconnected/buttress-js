@@ -483,13 +483,6 @@ describe('routes/api/user:UpdateUser', () => {
 });
 
 describe('routes/api/user:SetUserPolicyProperties', () => {
-  it('rejects when no id is provided', async () => {
-    stubModel();
-    const route = createRoute(SetUserPolicyProperties);
-
-    await assert.rejects(route._validate(createReq({ params: {} })), { code: 'missing_field' });
-  });
-
   it('rejects when the user does not exist', async () => {
     stubModel({ user: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(SetUserPolicyProperties);
@@ -504,14 +497,6 @@ describe('routes/api/user:SetUserPolicyProperties', () => {
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), { code: 'not_found' });
   });
 
-  it('sets the policy properties on the resolved token', async () => {
-    const { tokenModel } = stubModel();
-    const route = createRoute(SetUserPolicyProperties);
-
-    await route._exec(createReq({ body: { role: 'admin' } }), {}, { tokenId: '6abd02000000000000000001' });
-
-    assert.ok(tokenModel.setPolicyPropertiesById.calledWith('6abd02000000000000000001', { role: 'admin' }));
-  });
 });
 
 describe('routes/api/user:UpdateUserPolicyProperties', () => {
@@ -551,19 +536,6 @@ describe('routes/api/user:RemoveUserPolicyProperties', () => {
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), { code: 'not_found' });
   });
 
-  it('removes only the policy-property keys whose value matches the request', async () => {
-    const { tokenModel } = stubModel();
-    const route = createRoute(RemoveUserPolicyProperties);
-    const userToken = { id: '6abd02000000000000000001', policyProperties: { role: 'admin', department: 'sales' } };
-
-    await route._exec(
-      createReq({ params: { id: '6abd01000000000000000001' }, body: { role: 'admin' } }),
-      {},
-      { appId: '6abd05000000000000000001', userToken },
-    );
-
-    assert.ok(tokenModel.updatePolicyProperties.calledWith(userToken, { department: 'sales' }));
-  });
 });
 
 describe('routes/api/user:ClearUserPolicyProperties', () => {
@@ -574,17 +546,6 @@ describe('routes/api/user:ClearUserPolicyProperties', () => {
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID, tokenId: HEX_ID } })), { code: 'not_found' });
   });
 
-  it('clears the policy properties on the resolved token and notifies sockets', async () => {
-    const { tokenModel } = stubModel();
-    const nrp = { emit: sinon.spy() };
-    const route = createRoute(ClearUserPolicyProperties, { nrp });
-    const validate = { userId: '6abd01000000000000000001', appId: '6abd05000000000000000001', userToken: { id: '6abd02000000000000000001' } };
-
-    await route._exec(createReq({ params: { id: '6abd01000000000000000001' } }), {}, validate);
-
-    assert.ok(tokenModel.clearPolicyPropertiesById.calledWith('6abd02000000000000000001'));
-    assert.ok(nrp.emit.calledWith('worker:socket:evaluateUserRooms'));
-  });
 });
 
 

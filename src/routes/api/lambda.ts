@@ -29,6 +29,7 @@ import {
   CoreGetOne,
   CoreRouteConfig,
   CoreSearch,
+  CoreTokenPolicyProperties,
   CoreUpdateByPath,
 } from '../core-routes.js';
 import Model from '../../model/index.js';
@@ -40,7 +41,6 @@ import * as Git from '../../helpers/git.js';
 import LambdaSchemaModel, { Lambda, LambdaAddBody } from '../../model/core/lambda.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import { App } from '../../model/core/app.js';
-import ActivitySchemaModel from '../../model/core/activity.js';
 import DeploymentSchemaModel from '../../model/core/deployment.js';
 import LambdaExecutionSchemaModel, { LambdaExecution } from '../../model/core/lambda-execution.js';
 
@@ -52,9 +52,6 @@ import type { RequestWithBody } from '../../types/routes.js';
 // Should contain a list of route classes that extend Route.
 type LambdaRouteConstructor = new (services: Services) => Route;
 const routes: LambdaRouteConstructor[] = [];
-
-// The body of a set or update policy property request, e.g. `{ role: { '@eq': 'ADMIN' } }`
-type PolicyPropertiesBody = Record<string, unknown>;
 
 type AddLambdaBody = {
   lambda: LambdaAddBody & { policyProperties?: Token['policyProperties'] };
@@ -452,186 +449,59 @@ routes.push(EditLambdaDeployment);
 /**
  * @class SetLambdaPolicyProperties
  */
-class SetLambdaPolicyProperties extends Route {
-  constructor(services: Services) {
-    super(
-      'lambda/:id/policy-property',
-      'SET LAMBDA POLICY PROPERTY',
-      services,
-      Model.getCoreModel(LambdaSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override async _validate(req: RequestWithBody<PolicyPropertiesBody>, _res: Response) {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-    }
-
-    const app = req.context.authApp;
-    if (!app) {
-      this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    if (!req.body) {
-      this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    // A named route param, so a string
-    await this.scoped(req, LambdaSchemaModel).assertExists(req.params.id as string);
-
-    const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
-    if (!policyCheck.passed) {
-      this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('invalid_field'));
-    }
-
+/**
+ * A lambda's token's policy properties, the token found by the lambda it was made for
+ */
+abstract class LambdaTokenPolicyProperties extends CoreTokenPolicyProperties<LambdaSchemaModel> {
+  protected override async findToken(req: Request, id: string) {
     const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: id });
     if (!lambdaToken) {
       this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
-      return Promise.reject(
-        Helpers.Errors.notFound('not_found', "The lambda's token was not found", { schema: 'token' }),
-      );
+      throw Helpers.Errors.notFound('not_found', "The lambda's token was not found", { schema: 'token' });
     }
-
-    return Promise.resolve(lambdaToken);
+    return lambdaToken;
   }
+}
 
-  override async _exec(req: RequestWithBody<PolicyPropertiesBody>, res: Response, validate: Token) {
-    const tokens = await this.scoped(req, TokenSchemaModel).owned(validate.id.toString());
-    await tokens.setPolicyPropertiesById(validate.id.toString(), req.body);
-    return true;
-  }
+class SetLambdaPolicyProperties extends LambdaTokenPolicyProperties {
+  static override config: CoreRouteConfig = {
+    path: 'lambda/:id/policy-property',
+    name: 'SET LAMBDA POLICY PROPERTY',
+    model: LambdaSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+    policyProperties: 'set',
+  };
 }
 routes.push(SetLambdaPolicyProperties);
 
 /**
  * @class UpdateLambdaPolicyProperties
  */
-class UpdateLambdaPolicyProperties extends Route {
-  constructor(services: Services) {
-    super(
-      'lambda/:id/update-policy-property',
-      'UPDATE LAMBDA POLICY PROPERTY',
-      services,
-      Model.getCoreModel(LambdaSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override async _validate(req: RequestWithBody<PolicyPropertiesBody>, _res: Response) {
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-    }
-
-    const app = req.context.authApp;
-    if (!app) {
-      this.log('ERROR: No app associated with the request', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    if (!req.body) {
-      this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    // A named route param, so a string
-    await this.scoped(req, LambdaSchemaModel).assertExists(req.params.id as string);
-
-    const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, req.body);
-    if (!policyCheck.passed) {
-      this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('invalid_field'));
-    }
-
-    const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: id });
-    if (!lambdaToken) {
-      this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
-      return Promise.reject(
-        Helpers.Errors.notFound('not_found', "The lambda's token was not found", { schema: 'token' }),
-      );
-    }
-
-    return Promise.resolve({
-      token: lambdaToken,
-    });
-  }
-
-  override async _exec(req: RequestWithBody<PolicyPropertiesBody>, res: Response, validate: { token: Token }) {
-    const tokens = await this.scoped(req, TokenSchemaModel).owned(validate.token.id.toString());
-    await tokens.updatePolicyProperties(validate.token, req.body);
-    return true;
-  }
+class UpdateLambdaPolicyProperties extends LambdaTokenPolicyProperties {
+  static override config: CoreRouteConfig = {
+    path: 'lambda/:id/update-policy-property',
+    name: 'UPDATE LAMBDA POLICY PROPERTY',
+    model: LambdaSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+    policyProperties: 'update',
+  };
 }
 routes.push(UpdateLambdaPolicyProperties);
 
 /**
  * @class ClearLambdaPolicyProperties
  */
-class ClearLambdaPolicyProperties extends Route {
-  constructor(services: Services) {
-    super(
-      'lambda/:id/clear-policy-property',
-      'REMOVE LAMBDA POLICY PROPERTY',
-      services,
-      Model.getCoreModel(LambdaSchemaModel).schemaData,
-    );
-    this.verb = Route.Constants.Verbs.PUT;
-    this.authType = Route.Constants.Type.APP;
-    this.permissions = Route.Constants.Permissions.WRITE;
-
-    this.activityVisibility = Model.getCoreModel(ActivitySchemaModel).Constants.Visibility.PRIVATE;
-    this.activityBroadcast = true;
-  }
-
-  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
-    if (!req.body) {
-      this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
-    }
-
-    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    if (!id) {
-      this.log(`[${this.name}] Missing required lambda id`, Route.LogLevel.ERR);
-      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-    }
-
-    await this.scoped(req, LambdaSchemaModel).assertExists(id);
-
-    const lambdaToken = await this.scoped(req, TokenSchemaModel).findOne({ _lambdaId: id });
-    if (!lambdaToken) {
-      this.log('ERROR: Can not find a token for lambda', Route.LogLevel.ERR);
-      return Promise.reject(
-        Helpers.Errors.notFound('not_found', "The lambda's token was not found", { schema: 'token' }),
-      );
-    }
-
-    return Promise.resolve({
-      token: lambdaToken,
-    });
-  }
-
-  override async _exec(req: Request, res: Response, validate: { token: Token }) {
-    const tokens = await this.scoped(req, TokenSchemaModel).owned(validate.token.id.toString());
-    await tokens.clearPolicyPropertiesById(validate.token.id);
-    return true;
-  }
+class ClearLambdaPolicyProperties extends LambdaTokenPolicyProperties {
+  static override config: CoreRouteConfig = {
+    path: 'lambda/:id/clear-policy-property',
+    name: 'REMOVE LAMBDA POLICY PROPERTY',
+    model: LambdaSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+    policyProperties: 'clear',
+  };
 }
 routes.push(ClearLambdaPolicyProperties);
 

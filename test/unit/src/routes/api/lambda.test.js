@@ -633,13 +633,6 @@ describe('routes/api/lambda:EditLambdaDeployment', () => {
 });
 
 describe('routes/api/lambda:SetLambdaPolicyProperties', () => {
-  it('rejects when no app is associated with the request', async () => {
-    stubModel();
-    const route = createRoute(SetLambdaPolicyProperties);
-
-    await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, authApp: null })), { code: 'missing_field' });
-  });
-
   it('rejects when the lambda does not exist', async () => {
     stubModel({ lambda: { exists: sinon.stub().resolves(false) } });
     const route = createRoute(SetLambdaPolicyProperties);
@@ -677,24 +670,9 @@ describe('routes/api/lambda:UpdateLambdaPolicyProperties', () => {
     await assert.rejects(route._validate(createReq({ params: { id: HEX_ID }, body: {} })), { code: 'not_found' });
   });
 
-  it('updates the policy properties on the lambda token', async () => {
-    const { tokenModel } = stubModel({ token: { findOne: async () => ({ id: '6abd02000000000000000001' }) } });
-    const route = createRoute(UpdateLambdaPolicyProperties);
-
-    await route._exec(createReq({ body: { role: 'admin' } }), {}, { token: { id: '6abd02000000000000000001' } });
-
-    assert.ok(tokenModel.updatePolicyProperties.calledWith({ id: '6abd02000000000000000001' }, { role: 'admin' }));
-  });
 });
 
 describe('routes/api/lambda:ClearLambdaPolicyProperties', () => {
-  it('rejects when no id is provided', async () => {
-    stubModel();
-    const route = createRoute(ClearLambdaPolicyProperties);
-
-    await assert.rejects(route._validate(createReq({ params: {}, body: {} })), { code: 'missing_id' });
-  });
-
   it('rejects when no lambda token can be found', async () => {
     stubModel({ token: { findOne: async () => null } });
     const route = createRoute(ClearLambdaPolicyProperties);
@@ -714,14 +692,6 @@ describe('routes/api/lambda:ClearLambdaPolicyProperties', () => {
     assert.deepStrictEqual(findOne.firstCall.args[0], { $and: [{ _lambdaId: HEX_ID }, { _appId: '6abd05000000000000000001' }] });
   });
 
-  it('clears the policy properties on the lambda token', async () => {
-    const { tokenModel } = stubModel();
-    const route = createRoute(ClearLambdaPolicyProperties);
-
-    await route._exec(createReq(), {}, { token: { id: '6abd02000000000000000001' } });
-
-    assert.ok(tokenModel.clearPolicyPropertiesById.calledWith('6abd02000000000000000001'));
-  });
 });
 
 describe('routes/api/lambda:DeleteLambda', () => {

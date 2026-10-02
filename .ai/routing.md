@@ -111,9 +111,9 @@ than system tokens may use `unscopedModel` only where its list names the route, 
 app from a new place is a change to that list.
 
 **Core route bases** ([src/routes/core-routes.ts](../src/routes/core-routes.ts), R4). A route class extends
-`CoreSearch`, `CoreCount`, `CoreUpdateByPath`, `CoreBulkUpdate`, `CoreGetOne`, `CoreGetList` or `CoreDeleteAll`
-(each `<M>`, the core model) and gives a `static config`, `{path, name, model, authType, permissions, scope?,
-idParam?, activityBroadcast?, takesIds?}`; the base reads it off the class (so a route made with `Object.create` in a
+`CoreSearch`, `CoreCount`, `CoreUpdateByPath`, `CoreBulkUpdate`, `CoreGetOne`, `CoreGetList`, `CoreDeleteAll` or
+`CoreTokenPolicyProperties` (each `<M>`, the core model) and gives a `static config`, `{path, name, model, authType,
+permissions, scope?, idParam?, activityBroadcast?, takesIds?, policyProperties?}`; the base reads it off the class (so a route made with `Object.create` in a
 test has it too).
 
 - A search takes `{query, skip, limit, sort, project}`, as a schema search does, and refuses a list body with 400
@@ -125,6 +125,10 @@ test has it too).
 - A get-one is `findByIdOrFail` (404 `not_found`, 400 `invalid_id`), its `present(row)` hook giving what's sent
   (activity sends its `body`); a get-list lists the rows the caller reaches, only those `?ids=a,b` names where the
   route `takesIds` (policy, lambda; D-29); a delete-all is `rmAll` over them.
+- A policy-property route (`set`, `update`, `remove` or `clear`, its `policyProperties`) checks the row exists, finds
+  its token with the owner's `findToken` (a lambda's by `_lambdaId`, a user's by `:tokenId`, id or value), checks
+  set or merged properties against the app's list (400 `invalid_field`), then changes the token; `afterChange`
+  follows (a user's sockets look at its rooms again after a remove or clear).
 - Rows are reached through `this.scoped()`, or `this.ownAppScoped()` for `scope: 'own-app'`, which limits a system
   token to its own app too (secure-store).
 - App and token search attach tokens, AppUpdate checks its api path against every app, GetUser and FindUser attach

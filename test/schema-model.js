@@ -145,6 +145,12 @@ export function createSchemaModel(schema, rows = []) {
       return Readable.from(added, { objectMode: true });
     },
     // Applies each update that sets a value; others are only recorded
+    async updateById(id, update) {
+      this.record('updateById', id, update);
+      const row = this.rows.find((candidate) => same(candidate.id, id));
+      if (row) Object.assign(row, update.$set ?? {});
+      return { acknowledged: true, modifiedCount: row ? 1 : 0 };
+    },
     async updateByPaths(id, updates) {
       this.record('updateByPaths', id, updates.map((update) => update.body));
       const row = this.rows.find((candidate) => same(candidate.id, id));
