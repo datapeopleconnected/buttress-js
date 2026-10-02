@@ -67,7 +67,7 @@ import Logging from '../helpers/logging.js';
 import Model from '../model/index.js';
 import * as Helpers from '../helpers/index.js';
 import * as Git from '../helpers/git.js';
-import lambdaHelpers from '../lambda-helpers/helpers.js';
+import lambdaHelpers, { CALLER_TOKEN_PLACEHOLDER } from '../lambda-helpers/helpers.js';
 import type { LambdaResult } from '../lambda-helpers/helpers.js';
 import IsolateBridge, { type IsolateJail } from '../lambda-helpers/isolate-bridge.js';
 import { ExecPriority, LambdaExecutionMessage } from './lambda-manager.js';
@@ -319,6 +319,7 @@ export default class LambdaRunner {
     // Host functions act for this lambda: metadata updates go to it, email templates come from its code folder
     lambdaHelpers.lambdaId = lambda.id.toString();
     lambdaHelpers.lambdaGitHash = lambda.git.hash;
+    lambdaHelpers.caller = null;
 
     const reqBody: unknown = data.body ? JSON.parse(data.body) : {};
     const reqQuery = (data.query ? JSON.parse(data.query) : {}) as Record<string, unknown>;
@@ -340,7 +341,7 @@ export default class LambdaRunner {
     }
 
     let executionUserId: string | null = null;
-    let userToken: string | undefined;
+    let callerToken: string | undefined;
     let executionToken = lambdaToken;
     if (execution._tokenId) {
       const rxsExecToken = await Model.getCoreModel(TokenSchemaModel).find({
@@ -352,10 +353,11 @@ export default class LambdaRunner {
           new Error(`Unable to find lambda token for lambda ${lambda.name}, execution ${execution.id}`),
         );
       }
-      executionToken = execToken;
-      // Only an endpoint that uses the caller's token is given it
+      // Only an endpoint that uses the caller's token runs as the caller. The token stays on the host, where
+      // _fetch uses it for the lambda's calls to this instance that don't name a token of their own.
       const callerTrigger = this._executionTrigger(lambda, execution, type);
-      if (type === 'API_ENDPOINT' && callerTrigger?.apiEndpoint?.useCallerToken) userToken = execToken.value;
+      if (type === 'API_ENDPOINT' && callerTrigger?.apiEndpoint?.useCallerToken) callerToken = execToken.value;
+      else executionToken = execToken;
 
       if (execToken.type === 'user') {
         const rxsUser = await Model.getCoreModel(UserSchemaModel).find({
@@ -372,9 +374,11 @@ export default class LambdaRunner {
     const apiPath = app.apiPath;
     // const appAllowList = app.allowList;
     const trigger = this._executionTrigger(lambda, execution, type);
+    const buttressUrl = `${Config.app.protocol}://${Config.app.host}`;
+    if (callerToken) lambdaHelpers.caller = { token: callerToken, origin: new URL(buttressUrl).origin };
     const buttressOptions = {
-      buttressUrl: `${Config.app.protocol}://${Config.app.host}`,
-      appToken: executionToken.value,
+      buttressUrl,
+      appToken: callerToken ? CALLER_TOKEN_PLACEHOLDER : executionToken.value,
       apiPath: apiPath,
       allowUnauthorized: true,
     };
@@ -419,7 +423,6 @@ export default class LambdaRunner {
           fileName: ownCode?.name,
           entryPoint: lambda.git.entryPoint,
           developmentEmailAddress: Config.lambda.developmentEmailAddress,
-          userToken: userToken,
         }).copyInto(),
       );
       this._jail.setSync('lambdaData', new ivm.ExternalCopy(reqBody).copyInto());

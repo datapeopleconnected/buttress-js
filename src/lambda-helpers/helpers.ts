@@ -193,12 +193,43 @@ interface DecryptRequest {
  * Helpers
  * @class
  */
+/**
+ * What a lambda that runs as its caller has as its default token. A request that sends it is made as the caller,
+ * and one that sends any other token, such as the lambda's own, is made as that token.
+ */
+export const CALLER_TOKEN_PLACEHOLDER = 'BUTTRESS_CALLER';
+
+/**
+ * Makes a request to this Buttress instance as the caller when it carries the placeholder token, in its place.
+ * Any other request is left as it is, so the caller's token only ever goes to this instance.
+ */
+export const asCaller = (
+  url: URL,
+  headers: Record<string, string> | undefined,
+  caller: { token: string; origin: string },
+): { url: URL; headers: Record<string, string> } => {
+  const asIs = { url, headers: headers ?? {} };
+  if (url.origin !== caller.origin) return asIs;
+
+  const entry = Object.entries(headers ?? {}).find(([name]) => name.toLowerCase() === 'authorization');
+  if (!entry || entry[1].replace(/^Bearer /, '') !== CALLER_TOKEN_PLACEHOLDER) return asIs;
+
+  // The deprecated ?token= would otherwise let the request say a different token than its header
+  const asCallerUrl = new URL(url);
+  asCallerUrl.searchParams.delete('token');
+  return { url: asCallerUrl, headers: { ...headers, [entry[0]]: `Bearer ${caller.token}` } };
+};
+
 class Helpers {
   lambdaResult: LambdaResult | null;
 
   // The lambda that's executing, set by the runner: its id, and the git hash whose code folder holds its email templates
   lambdaId: string | null;
   lambdaGitHash: string | null;
+
+  // Set by the runner for an endpoint that runs as its caller: the caller's token, which stays out of the isolate,
+  // and the origin of this Buttress instance, the only place _fetch uses it
+  caller: { token: string; origin: string } | null;
 
   successfulHTTPScode: number[];
   /**
@@ -208,6 +239,7 @@ class Helpers {
     this.lambdaResult = null;
     this.lambdaId = null;
     this.lambdaGitHash = null;
+    this.caller = null;
 
     this.successfulHTTPScode = [200, 201, 202];
   }
@@ -348,6 +380,12 @@ class Helpers {
           }
 
           data.options = data.options || {};
+
+          if (this.caller) {
+            const request = asCaller(data.url as URL, data.options.headers, this.caller);
+            data.url = request.url;
+            data.options.headers = request.headers;
+          }
 
           // Only to a host the operator allows, when they've set a list, and never to the instance's own network then
           const allowedHosts = parseAllowedHosts(Config.lambda.allowedHosts);

@@ -72,8 +72,14 @@ Execution (`execute()`), per invocation:
    `_compiledBundles` and shared by the contexts; a lambda's older builds are released when a new one loads.
 3. Injects everything the lambda code needs as `ivm.ExternalCopy` globals: `buttressOptions`
    (pre-configured `@buttress/api` client pointed at this Buttress instance, authenticated as the
-   resolved token), `lambdaInfo`, `lambdaData`/`lambdaQuery`/`lambdaRequestHeaders` (the triggering
+   the lambda's own token), `lambdaInfo`, `lambdaData`/`lambdaQuery`/`lambdaRequestHeaders` (the triggering
    request, for `API_ENDPOINT`), `lambdaExecution`.
+   An `API_ENDPOINT` trigger with `useCallerToken` runs as its caller, but the caller's token never enters the
+   isolate: the runner keeps it on `lambdaHelpers.caller`, and the lambda's default `appToken` is the placeholder
+   `BUTTRESS_CALLER`. The host `_fetch` replaces that placeholder in the `Authorization` header of a request to
+   this instance (origin match) with `Bearer <caller token>`, dropping a `?token=`. A call that names a token of
+   its own, e.g. `save(data, { token: lambdaInfo.lambdaToken })`, and requests to other hosts are untouched. This is per worker process, like `lambdaId`, so it relies on a runner
+   executing one lambda at a time.
 4. Runs a small wrapper script inside the isolate that does `Buttress.init(buttressOptions, true)`,
    `require()`s the bundled entry file (a shim resolving `lambdaModules` names to isolate globals),
    instantiates it, and calls `lambdaCode[entryPoint]()`.

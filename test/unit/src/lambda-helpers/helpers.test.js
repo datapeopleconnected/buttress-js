@@ -24,7 +24,7 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import LambdaHelpers from '../../../../dist/lambda-helpers/helpers.js';
+import LambdaHelpers, { asCaller, CALLER_TOKEN_PLACEHOLDER } from '../../../../dist/lambda-helpers/helpers.js';
 
 describe('lambda-helpers/Helpers:initial state', () => {
   it('starts with no lambda result recorded', () => {
@@ -33,5 +33,60 @@ describe('lambda-helpers/Helpers:initial state', () => {
 
   it('treats 200/201/202 as the successful HTTP status codes for lambda fetch()', () => {
     assert.deepStrictEqual(LambdaHelpers.successfulHTTPScode, [200, 201, 202]);
+  });
+});
+
+describe('lambda-helpers/asCaller', () => {
+  const caller = { token: 'caller-token', origin: 'https://buttress.example.com' };
+  const placeholder = `Bearer ${CALLER_TOKEN_PLACEHOLDER}`;
+
+  it("replaces the placeholder token on a request to this instance with the caller's", () => {
+    const { url, headers } = asCaller(
+      new URL('https://buttress.example.com/app/api/v1/thing?token=other&x=1'),
+      { authorization: placeholder, 'X-Trace': 't' },
+      caller,
+    );
+
+    assert.strictEqual(url.href, 'https://buttress.example.com/app/api/v1/thing?x=1');
+    assert.deepStrictEqual(headers, { authorization: 'Bearer caller-token', 'X-Trace': 't' });
+  });
+
+  it('replaces the placeholder sent without the Bearer prefix', () => {
+    const { headers } = asCaller(
+      new URL('https://buttress.example.com/x'),
+      { Authorization: CALLER_TOKEN_PLACEHOLDER },
+      caller,
+    );
+
+    assert.deepStrictEqual(headers, { Authorization: 'Bearer caller-token' });
+  });
+
+  it("leaves a request with a token of the lambda's own as it is", () => {
+    const original = { Authorization: 'Bearer lambda-own-token' };
+    const target = new URL('https://buttress.example.com/x?token=t');
+    const { url, headers } = asCaller(target, original, caller);
+
+    assert.strictEqual(url.href, target.href);
+    assert.deepStrictEqual(headers, original);
+  });
+
+  it('leaves a request with no token as it is', () => {
+    const { headers } = asCaller(new URL('https://buttress.example.com/x'), undefined, caller);
+
+    assert.deepStrictEqual(headers, {});
+  });
+
+  it("leaves a request to another host as it is, without the caller's token", () => {
+    const original = { Authorization: placeholder };
+    const { headers } = asCaller(new URL('https://other.example.com/x'), original, caller);
+
+    assert.deepStrictEqual(headers, original);
+  });
+
+  it('does not treat a host that merely starts with this instance as this instance', () => {
+    const original = { Authorization: placeholder };
+    const { headers } = asCaller(new URL('https://buttress.example.com.evil.test/x'), original, caller);
+
+    assert.deepStrictEqual(headers, original);
   });
 });

@@ -33,6 +33,7 @@ import TokenSchemaModel from '../../../../dist/model/core/token.js';
 import SecureStoreSchemaModel from '../../../../dist/model/core/secure-store.js';
 import DeploymentSchemaModel from '../../../../dist/model/core/deployment.js';
 import Logging from '../../../../dist/helpers/logging.js';
+import lambdaHelpers from '../../../../dist/lambda-helpers/helpers.js';
 
 const Config = createConfig();
 
@@ -1136,7 +1137,7 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
       runner._context.evalSync(`
         globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
         globalThis['lambda_lambda-1'] = class {
-          async execute() { lambda.setResult({ userToken: lambdaInfo.userToken ?? null, headers: lambda.req.headers }); }
+          async execute() { lambda.setResult({ userToken: lambdaInfo.userToken ?? null, appToken: buttressOptions.appToken, headers: lambda.req.headers }); }
         };
       `);
     });
@@ -1147,10 +1148,17 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
     const headers = JSON.stringify({ authorization: 'Bearer caller-token-value', cookie: 'session=s', 'x-trace': 't' });
     const exec = { id: 'exec-1', lambdaId: 'lambda-1', deploymentId: 'deployment-1', metadata: [], ...execution };
 
-    await runner.execute(lambda, exec, { id: 'app-1', apiPath: 'test' }, 'API_ENDPOINT', { reqId: 'req-1', headers });
-    runner._isolate.dispose();
+    const savedApp = { protocol: Config.app.protocol, host: Config.app.host };
+    Config.app.protocol = 'http';
+    Config.app.host = 'buttress.test';
+    try {
+      await runner.execute(lambda, exec, { id: 'app-1', apiPath: 'test' }, 'API_ENDPOINT', { reqId: 'req-1', headers });
+    } finally {
+      Object.assign(Config.app, savedApp);
+      runner._isolate.dispose();
+    }
     const resultCall = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
-    return JSON.parse(resultCall.args[1]).res;
+    return { ...JSON.parse(resultCall.args[1]).res, hostCaller: lambdaHelpers.caller };
   }
 
   it("gives an endpoint that doesn't use the caller's token neither the token nor its credential headers", async function () {
@@ -1158,6 +1166,7 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
     const seen = await given({ type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } }, {});
 
     assert.strictEqual(seen.userToken, null);
+    assert.strictEqual(seen.hostCaller, null);
     assert.deepStrictEqual(seen.headers, { 'x-trace': 't' });
   });
 
@@ -1171,14 +1180,18 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
 
     const seen = await given(triggers, { _tokenId: 'caller-token', metadata });
 
-    assert.strictEqual(seen.userToken, 'caller-token-value');
+    assert.strictEqual(seen.hostCaller.token, 'caller-token-value');
   });
 
-  it("gives an endpoint that uses the caller's token that token, without the credential headers", async function () {
+  it("keeps the caller's token on the host for an endpoint that uses it, giving the lambda a placeholder for it", async function () {
     this.timeout(10000);
     const seen = await given({ type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: true } }, { _tokenId: 'caller-token' });
 
-    assert.strictEqual(seen.userToken, 'caller-token-value');
+    assert.strictEqual(seen.hostCaller.token, 'caller-token-value');
+    assert.strictEqual(seen.userToken, null);
+    assert.strictEqual(seen.appToken, 'BUTTRESS_CALLER');
+    const { hostCaller, ...inIsolate } = seen;
+    assert.ok(!JSON.stringify(inIsolate).includes('caller-token-value'));
     assert.deepStrictEqual(seen.headers, { 'x-trace': 't' });
   });
 });
