@@ -943,7 +943,14 @@ export default class LambdaRunner {
               },
             ],
           },
-          plugins: [new NodePolyfillPlugin()],
+          plugins: [
+            // A lambda, or a package it bundles such as @buttress/api, can import a built-in as `node:crypto`. webpack
+            // doesn't read that scheme for this target, so it's imported by its plain name, which the polyfills above give.
+            new webpack.NormalModuleReplacementPlugin(/^node:/, (resource: { request: string }) => {
+              resource.request = resource.request.replace(/^node:/, '');
+            }),
+            new NodePolyfillPlugin(),
+          ],
           output: {
             path: buildDir,
             chunkFormat: 'commonjs',

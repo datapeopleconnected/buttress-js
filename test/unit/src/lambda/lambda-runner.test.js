@@ -838,6 +838,19 @@ module.exports = HelloWorld;
     assert.ok(fs.existsSync(`${Config.paths.lambda.bundles}/lambda_abc123.js`));
   });
 
+  it('bundles a lambda that imports a built-in with the node: scheme', async function () {
+    this.timeout(30000);
+    const lambdaDir = `${Config.paths.lambda.code}/lambda-abc123`;
+    fs.mkdirSync(lambdaDir, { recursive: true });
+    // @buttress/api imports node:crypto, which webpack can't read for a lambda's target until the scheme is removed
+    fs.writeFileSync(`${lambdaDir}/index.js`, "module.exports = require('node:crypto').createHash;\n");
+    const { runner } = createRunner();
+
+    await runner.bundleLambdaModules([{ name: 'lambda_abc123', import: `${lambdaDir}/./index.js` }]);
+
+    assert.ok(fs.existsSync(`${Config.paths.lambda.bundles}/lambda_abc123.js`));
+  });
+
   it('bundles a shared module once and has lambdas use its global rather than their own copy', async function () {
     this.timeout(30000);
     const checkoutDir = `${Config.paths.lambda.code}/lambda-abc123`;
