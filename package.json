@@ -52,7 +52,7 @@
     "url": "https://github.com/datapeopleconnected/buttress-js/issues"
   },
   "dependencies": {
-    "@buttress/api": "3.0.0-53",
+    "@buttress/api": "3.0.0-54",
     "@dpc/node-env-obj": "npm:@jsr/dpc__node-env-obj@^0.3.3",
     "@hashgraph/sdk": "^2.81.0",
     "@redis/client": "^5.12.1",
