@@ -927,8 +927,9 @@ export default class LambdaRunner {
           entry: entry,
           ...(sharedGlobals.size > 0 ? { externals: [LambdaRunner._sharedModuleExternal(sharedGlobals)] } : {}),
           resolve: {
-            fallback: {
-              crypto: require.resolve('crypto-browserify'),
+            // The polyfill with what a lambda's isolate can give it, see crypto-shim.cjs
+            alias: {
+              crypto: require.resolve('./crypto-shim.cjs'),
             },
           },
           module: {

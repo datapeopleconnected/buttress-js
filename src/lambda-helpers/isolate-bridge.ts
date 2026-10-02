@@ -242,6 +242,29 @@ class IsolateBridge {
 				});
 			}
 			
+			// WebCrypto's synchronous half, which the packages a lambda bundles read their randomness from. The bytes come
+			// from the host, as the isolate has none of its own.
+			const randomBytes = (size) => {
+				const hex = _cryptoRandomBytesSync(size);
+				const bytes = new Uint8Array(size);
+				for (let i = 0; i < size; i++) bytes[i] = parseInt(hex.substr(i * 2, 2), 16);
+				return bytes;
+			};
+			global.crypto = {
+				getRandomValues: (array) => {
+					if (array.byteLength > 65536) throw new Error('getRandomValues: more than 65536 bytes requested');
+					new Uint8Array(array.buffer, array.byteOffset, array.byteLength).set(randomBytes(array.byteLength));
+					return array;
+				},
+				randomUUID: () => {
+					const bytes = randomBytes(16);
+					bytes[6] = (bytes[6] & 0x0f) | 0x40;
+					bytes[8] = (bytes[8] & 0x3f) | 0x80;
+					const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+					return [hex.slice(0, 8), hex.slice(8, 12), hex.slice(12, 16), hex.slice(16, 20), hex.slice(20)].join('-');
+				},
+			};
+
 			global.cryptoCreateSign = (data) => {
 				return new Promise((resolve, reject) => {
 					_cryptoCreateSign.applyIgnored(

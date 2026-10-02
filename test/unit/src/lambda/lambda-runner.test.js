@@ -663,6 +663,39 @@ describe('lambda/LambdaRunner:execute logs', () => {
     assert.deepStrictEqual(update.$push.logs.$each, [{ log: 'second run', type: 'log' }]);
   });
 
+  it('gives a lambda randomness from the host, as the web crypto functions', async function () {
+    this.timeout(10000);
+
+    const update = await complete(`
+      const filled = crypto.getRandomValues(new Uint8Array(32));
+      lambda.log(String(filled.some((byte) => byte !== 0)));
+      lambda.log(crypto.randomUUID());
+      lambda.log(crypto.randomUUID());
+    `);
+
+    const [filled, first, second] = update.$push.logs.$each.map((entry) => entry.log);
+    assert.strictEqual(filled, 'true');
+    assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.match(second, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    assert.notStrictEqual(first, second);
+  });
+
+  it('refuses a lambda more random bytes than the web crypto allows at once', async function () {
+    this.timeout(10000);
+
+    const update = await complete(`
+      try {
+        crypto.getRandomValues(new Uint8Array(65537));
+      } catch (err) {
+        lambda.log(err.message);
+      }
+    `);
+
+    assert.deepStrictEqual(update.$push.logs.$each, [
+      { log: 'getRandomValues: more than 65536 bytes requested', type: 'log' },
+    ]);
+  });
+
   it('stops saving logs past 1 MB, and says how many it left out', async function () {
     this.timeout(10000);
 
@@ -849,6 +882,33 @@ module.exports = HelloWorld;
     await runner.bundleLambdaModules([{ name: 'lambda_abc123', import: `${lambdaDir}/./index.js` }]);
 
     assert.ok(fs.existsSync(`${Config.paths.lambda.bundles}/lambda_abc123.js`));
+  });
+
+  it('gives a bundled lambda crypto.randomUUID, which the browser polyfill lacks', async function () {
+    this.timeout(30000);
+    const lambdaDir = `${Config.paths.lambda.code}/lambda-abc123`;
+    fs.mkdirSync(lambdaDir, { recursive: true });
+    // @buttress/api calls randomUUID from node:crypto for a uuid property's default
+    fs.writeFileSync(
+      `${lambdaDir}/index.js`,
+      `const { randomUUID, randomBytes } = require('node:crypto');
+module.exports = () => ({ uuid: randomUUID(), bytes: randomBytes(8).length });
+`,
+    );
+    const { runner } = createRunner();
+    await runner.init();
+
+    try {
+      await runner.bundleLambdaModules([{ name: 'lambda_abc123', import: `${lambdaDir}/./index.js` }]);
+      runner._context.evalSync(fs.readFileSync(`${Config.paths.lambda.bundles}/lambda_abc123.js`, 'utf8'));
+
+      const result = JSON.parse(runner._context.evalSync('JSON.stringify(lambda_abc123())'));
+
+      assert.match(result.uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      assert.strictEqual(result.bytes, 8);
+    } finally {
+      runner._isolate.dispose();
+    }
   });
 
   it('bundles a shared module once and has lambdas use its global rather than their own copy', async function () {

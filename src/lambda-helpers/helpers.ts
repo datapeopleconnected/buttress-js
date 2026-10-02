@@ -592,6 +592,15 @@ class Helpers {
         }
       }),
     );
+    // Called from the isolate and answered at once, as the isolate's crypto.getRandomValues and randomUUID are
+    // synchronous. The isolate has no source of randomness of its own.
+    jail.setSync(
+      '_cryptoRandomBytesSync',
+      new ivm.Callback((size: number) => {
+        if (!Number.isInteger(size) || size < 0 || size > 65536) throw new RangeError('invalid_random_size');
+        return crypto.randomBytes(size).toString('hex');
+      }),
+    );
     jail.setSync(
       '_cryptoCreateHash',
       new ivm.Reference<HostFunction<CreateHashRequest>>(async (data, resolve, reject) => {

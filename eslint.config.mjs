@@ -3,6 +3,10 @@ import tseslint from 'typescript-eslint';
 import { coreModelAccessRestrictions } from './eslint/core-model-access.mjs';
 
 export default tseslint.config(
+  {
+    // Plain JavaScript that webpack bundles into lambdas for their isolate, not code Node runs here
+    ignores: ["src/lambda/crypto-shim.cjs"],
+  },
   ...tseslint.configs.recommended,
   {
     // Type-aware linting, needed by the no-unsafe-* rules
