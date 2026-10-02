@@ -133,9 +133,11 @@ export class PolicyCache {
       return this.rehydrateToken(token);
     }
 
-    // HACK: Re-run selection
-    const policies = await this.getPolicies(policyIds);
-    return AccessControlPolicyMatch.getTokenPolicies(policies, token);
+    // The token's set was worked out from the token as it's stored, and is worked out again whenever the token's policy
+    // properties or a policy's selection change, so it isn't selected again here. A request's token is held in memory
+    // by each worker and reloaded a moment after a change, so selecting by it would drop a policy a change had just
+    // given the token.
+    return this.getPolicies(policyIds);
   }
 
   async rehydrateToken(token: Token): Promise<Policy[]> {

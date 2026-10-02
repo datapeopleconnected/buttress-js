@@ -325,6 +325,18 @@ describe('services/policy-cache', () => {
       assert.strictEqual(result.length, 1);
       assert.strictEqual(result[0].id, 'p1');
     });
+
+    // A worker keeps the tokens it loaded in memory, and reloads them a moment after a token's policy properties change,
+    // so the token a request carries can be older than the set the cache has worked out from the stored one
+    it("should give the policies cached for the token, whatever policy properties the request's copy of it has", async () => {
+      await Redis.sAdd(K('token:tok1:policies'), 'p1');
+      await Redis.hSet(K('policies'), 'p1', JSON.stringify(policy1));
+      const staleToken = { ...token, policyProperties: {} };
+
+      const result = await cache.getPoliciesByToken(staleToken);
+
+      assert.deepStrictEqual(result.map((policy) => policy.id), ['p1']);
+    });
   });
 
   describe('rehydrateToken', () => {
