@@ -30,6 +30,7 @@ import LambdaSchemaModel from '../../../../dist/model/core/lambda.js';
 import LambdaExecutionSchemaModel from '../../../../dist/model/core/lambda-execution.js';
 import AppSchemaModel from '../../../../dist/model/core/app.js';
 import TokenSchemaModel from '../../../../dist/model/core/token.js';
+import UserSchemaModel from '../../../../dist/model/core/user.js';
 import SecureStoreSchemaModel from '../../../../dist/model/core/secure-store.js';
 import DeploymentSchemaModel from '../../../../dist/model/core/deployment.js';
 import Logging from '../../../../dist/helpers/logging.js';
@@ -1112,13 +1113,14 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
   });
 
   // What a lambda is given of the call, as it reports it from its real isolate
-  async function given(trigger, execution) {
+  async function given(trigger, execution, callerTokenType = 'app') {
     const { runner, nrp } = createRunner();
     await runner.init();
-    const callerToken = { id: 'caller-token', value: 'caller-token-value', type: 'app' };
+    const callerToken = { id: 'caller-token', value: 'caller-token-value', type: callerTokenType, _userId: 'user-1' };
     stubModel(
       new Map([
         [SecureStoreSchemaModel, { findOne: async () => null }],
+        [UserSchemaModel, { createId: (v) => v, find: async () => Readable.from([{ id: 'user-1' }]) }],
         [AppSchemaModel, { createId: (v) => v }],
         [LambdaSchemaModel, { createId: (v) => v }],
         [TokenSchemaModel, {
@@ -1137,7 +1139,7 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
       runner._context.evalSync(`
         globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
         globalThis['lambda_lambda-1'] = class {
-          async execute() { lambda.setResult({ userToken: lambdaInfo.userToken ?? null, appToken: buttressOptions.appToken, headers: lambda.req.headers }); }
+          async execute() { lambda.setResult({ userId: lambdaInfo.userId, userToken: lambdaInfo.userToken ?? null, appToken: buttressOptions.appToken, headers: lambda.req.headers }); }
         };
       `);
     });
@@ -1168,6 +1170,35 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
     assert.strictEqual(seen.userToken, null);
     assert.strictEqual(seen.hostCaller, null);
     assert.deepStrictEqual(seen.headers, { 'x-trace': 't' });
+  });
+
+  it("tells an endpoint that uses the caller's token who called it, without giving it their token", async function () {
+    this.timeout(10000);
+    const seen = await given(
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: true } },
+      { _tokenId: 'caller-token' },
+      'user',
+    );
+
+    assert.strictEqual(seen.userId, 'user-1');
+    assert.strictEqual(seen.userToken, null);
+    assert.strictEqual(seen.hostCaller.token, 'caller-token-value');
+    const { hostCaller, ...inIsolate } = seen;
+    assert.ok(!JSON.stringify(inIsolate).includes('caller-token-value'));
+  });
+
+  it("has no user to tell an endpoint that doesn't use the caller's token", async function () {
+    this.timeout(10000);
+    const seen = await given({ type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } }, {});
+
+    assert.ok(seen.userId === null || seen.userId === undefined);
+  });
+
+  it("has no user to tell an endpoint called with an app token", async function () {
+    this.timeout(10000);
+    const seen = await given({ type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: true } }, { _tokenId: 'caller-token' });
+
+    assert.ok(seen.userId === null || seen.userId === undefined);
   });
 
   it("goes by the endpoint the call was made to, of a lambda's several", async function () {
