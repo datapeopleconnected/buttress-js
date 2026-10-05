@@ -18,7 +18,7 @@ import { Stream } from 'node:stream';
 
 import AccessControlFilter, { QueryModel } from './filter.js';
 import AccessControlProjection from './projection.js';
-import { asQueried, matchQuery } from './operators.js';
+import { asQueried, matchQuery, toMongoQuery } from './operators.js';
 
 import { PolicyConfig } from '../model/core/policy.js';
 import { parsedPolicyConfig } from './index.js';
@@ -75,7 +75,10 @@ async function findThroughGrants<T extends QueryableModel>(
 ) {
   // Every grant's query is read before anything is found, so one that can't be fails the request
   const grants = policyConfigs.map((policyConfig) => ({
-    query: model.parseQuery(policyConfig.query ?? {}, {}, model.flatSchemaData) as Record<string, unknown>,
+    // Matched in memory as MongoDB matches, so in MongoDB's terms, as the adapter gives them
+    query: toMongoQuery(
+      model.parseQuery(policyConfig.query ?? {}, {}, model.flatSchemaData) as Record<string, unknown>,
+    ),
     keys: grantKeys(policyConfig),
   }));
 

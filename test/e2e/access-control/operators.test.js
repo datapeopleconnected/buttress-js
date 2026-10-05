@@ -23,7 +23,7 @@ import Datastore from '../../../dist/datastore/index.js';
 import MongodbIds from '../../../dist/datastore/adapters/mongodb-ids.js';
 import { sanitizeSchemaObject } from '../../../dist/model/shared.js';
 import { Filter } from '../../../dist/access-control/filter.js';
-import { matchQuery, asQueried } from '../../../dist/access-control/operators.js';
+import { matchQuery, asQueried, toMongoQuery } from '../../../dist/access-control/operators.js';
 import { createSchemaModel } from '../../schema-model.js';
 
 // The in-memory matcher realtime uses, checked against MongoDB itself: each query is parsed as REST parses it, run in
@@ -154,7 +154,8 @@ describe('access-control/operators: matching as MongoDB does', () => {
 
   for (const query of QUERIES) {
     it(`matches ${JSON.stringify(query)} as MongoDB does`, async () => {
-      const parsed = model.parseQuery(Filter.convertQueryPrefixOperators(query), {}, model.flatSchemaData);
+      // A Buttress query, read as REST reads it, then put in MongoDB's terms as the MongoDB adapter puts it
+      const parsed = toMongoQuery(model.parseQuery(Filter.convertQueryPrefixOperators(query), {}, model.flatSchemaData));
 
       const stored = await collection.find(ids.toStored(parsed)).toArray();
       const expected = stored.map((doc) => ids.fromStored(doc).id).sort();

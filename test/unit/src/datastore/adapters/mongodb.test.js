@@ -21,6 +21,7 @@ import sinon from 'sinon';
 import { ObjectId } from 'bson';
 import { MongoClient } from 'mongodb';
 import createConfig from '@dpc/node-env-obj';
+import { Readable } from 'node:stream';
 
 import MongodbAdapter, { applyUpdateOps, mergeUpdateOps } from '../../../../../dist/datastore/adapters/mongodb.js';
 import { Datastore } from '../../../../../dist/datastore/index.js';
@@ -530,6 +531,41 @@ describe('datastore/adapters/MongodbAdapter: one request, one write', () => {
       () => update(model, { path: 'tags', value: 'a' }),
       (err) => err.status === 400 && err.message === "Update can't be applied: Cannot create field 'x' in element {meta: null}",
     );
+  });
+});
+
+// The adapter is where a Buttress query becomes MongoDB's: the model hands it the query in Buttress's terms
+describe('datastore/adapters/MongodbAdapter: queries', () => {
+  function createAdapter() {
+    const adapter = new MongodbAdapter(new URL('mongodb://localhost/test'), {});
+    const filters = [];
+    const cursor = { skip: () => cursor, limit: () => cursor, sort: () => cursor, project: () => cursor, stream: () => Readable.from([]) };
+    adapter.collection = {
+      find: (filter) => {
+        filters.push(filter);
+        return cursor;
+      },
+      countDocuments: async (filter) => {
+        filters.push(filter);
+        return 0;
+      },
+    };
+    adapter.updateSchema({ name: 'car', type: 'collection', properties: { name: { __type: 'string' } } });
+    return { adapter, filters };
+  }
+
+  it("gives MongoDB a Buttress query in MongoDB's terms, to find and to count", async () => {
+    const { adapter, filters } = createAdapter();
+
+    for await (const _doc of adapter.find({ name: { $rexi: '^red' }, $or: [{ age: { $not: 3 } }] })) {
+      // nothing stored
+    }
+    await adapter.count({ name: { $rex: 'x' } });
+
+    assert.deepStrictEqual(filters, [
+      { name: { $regex: '^red', $options: 'i' }, $or: [{ age: { $ne: 3 } }] },
+      { name: { $regex: 'x' } },
+    ]);
   });
 });
 

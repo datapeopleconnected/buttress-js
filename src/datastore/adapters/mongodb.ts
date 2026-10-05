@@ -37,6 +37,7 @@ import Logging from '../../helpers/logging.js';
 
 import AbstractAdapter from '../abstract-adapter.js';
 import MongodbIds from './mongodb-ids.js';
+import { toMongoQuery } from '../../access-control/operators.js';
 import ObjectIdHelper, { isObjectId } from './object-id.js';
 import { parseDocument } from '../../model/parse-document.js';
 
@@ -812,7 +813,7 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
    * @return {Promise} - resolves to an array of docs
    */
   override async findOne<T extends object>(query: BjsQuery<T> | AdapterQuery, excludes: AdapterQuery = {}) {
-    const doc = await this.collection?.findOne(this._query(query), this._query(excludes) as FindOptions);
+    const doc = await this.collection?.findOne(this._query(query), this._ids.toStored(excludes) as FindOptions);
 
     return doc ? this._modifyDocument(doc) : null;
   }
@@ -878,8 +879,9 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
     });
   }
 
-  // A query with its ids as ObjectIds and `id` as `_id`
+  // A Buttress query as MongoDB takes it: MongoDB's operator names (toMongoQuery), its ids as ObjectIds and `id` as
+  // `_id`. The adapter is the only place a query becomes MongoDB's.
   _query(query: AdapterQuery | undefined): Filter<Document> {
-    return this._ids.toStored(query) as Filter<Document>;
+    return this._ids.toStored(query ? toMongoQuery(query as Record<string, unknown>) : query) as Filter<Document>;
   }
 }

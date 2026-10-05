@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { ALIASES, matchQuery } from './operators.js';
+import { ALIASES, matchQuery, toMongoQuery } from './operators.js';
 import Sugar from '../helpers/sugar.js';
 
 /**
@@ -54,11 +54,8 @@ export function matchCriterion(value: unknown, operator: string, operand: unknow
     if (value === undefined || operand === undefined) return false;
   }
 
-  const condition: Record<string, unknown> = { [alias.operator]: alias.operand ? alias.operand(operand) : operand };
-  if (alias.options) condition.$options = alias.options;
-
   try {
-    return matchQuery({ value: condition }, { value });
+    return matchQuery(toMongoQuery({ value: { [operator]: operand } }), { value });
   } catch (_err) {
     // A $regex whose pattern isn't one
     return false;

@@ -18,12 +18,13 @@ import { FlattenedSchema } from '../types/schema.js';
 import { isObjectId } from '../datastore/adapters/object-id.js';
 
 /**
- * The query operators, as REST compiles them for MongoDB and as realtime matches them in memory. The in-memory match
- * decides as MongoDB does, so a policy's query reaches the same entities either way (R5, D-31).
+ * The query operators. A Buttress query, the query DSL a client sends and a partner is sent, and the policy language,
+ * names them `$op` or `@op`; `StandardModel.parseQuery` checks one and reads its values, and gives it back in those
+ * names. MongoDB's own query is made from it only where it's needed, by `toMongoQuery`: in the MongoDB adapter, and for
+ * `matchQuery`, which decides in memory as MongoDB does, so a policy's query reaches the same entities in realtime as
+ * on REST (R5, D-31).
  *
- * The query DSL and the policy language name them `$op` and `@op`; `ALIASES` gives each name's MongoDB operator, with
- * its options and how its operand is written. `matchQuery` takes a query as REST parses it: MongoDB's operators, with
- * the operands read as their properties' types (`StandardModel.parseQuery`).
+ * `ALIASES` gives each name its MongoDB operator, with its options and how its operand is written.
  */
 
 export type MongoOperator =
@@ -242,9 +243,60 @@ const matchOperators = (values: unknown[], operators: Record<string, unknown>): 
     }
   });
 
+// An object of operators in a Buttress query: every key an operator's name, `$op` or `@op`
+const isButtressOperators = (value: unknown): value is Record<string, unknown> =>
+  isPlainObject(value) &&
+  Object.keys(value).length > 0 &&
+  Object.keys(value).every((key) => key.startsWith('$') || key.startsWith('@'));
+
+// One field's condition in MongoDB's terms: a value is left as it is, an object of fields included
+const toMongoCondition = (condition: unknown): unknown => {
+  if (!isButtressOperators(condition)) return condition;
+
+  const output: Record<string, unknown> = {};
+  for (const [name, operand] of Object.entries(condition)) {
+    const alias = Object.hasOwn(ALIASES, name) ? ALIASES[name] : undefined;
+    // A name the registry doesn't have is the datastore's own, such as $options
+    if (!alias) {
+      output[name] = operand;
+      continue;
+    }
+
+    if (alias.operator === '$elemMatch' && isPlainObject(operand)) {
+      output.$elemMatch = isButtressOperators(operand) ? toMongoCondition(operand) : toMongoQuery(operand);
+    } else {
+      output[alias.operator] = alias.operand ? alias.operand(operand) : operand;
+    }
+    if (alias.options) output.$options = alias.options;
+  }
+  return output;
+};
+
+/**
+ * A Buttress query in MongoDB's terms, as the MongoDB adapter gives it MongoDB: each operator by MongoDB's name, with
+ * its options and its operand as MongoDB takes them (`$rexi` is `$regex` with `$options: 'i'`, `$not` is `$ne`,
+ * `$gtDate` is `$gt`), and `@and`, `@or` and `@nor` as `$and`, `$or` and `$nor`. Values are left as they are.
+ * @param {object} query - as `StandardModel.parseQuery` gives it
+ * @return {object}
+ */
+export function toMongoQuery(query: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(query).map(([key, condition]) => {
+      const logical = Object.hasOwn(LOGICAL_ALIASES, key) ? LOGICAL_ALIASES[key] : undefined;
+      if (!logical) return [key, toMongoCondition(condition)];
+
+      const parts = Array.isArray(condition)
+        ? condition.map((part) => (isPlainObject(part) ? toMongoQuery(part) : part))
+        : condition;
+      return [logical, parts];
+    }),
+  );
+}
+
 /**
  * Whether a document matches a query as MongoDB would decide: each field's condition and each logical operator, all
- * of them. The query is as `StandardModel.parseQuery` gives it, and the document's values as `asQueried` reads them.
+ * of them. The query is MongoDB's (`toMongoQuery` of what `StandardModel.parseQuery` gives), and the document's values
+ * as `asQueried` reads them.
  * @param {object} query
  * @param {object} document
  * @return {boolean}

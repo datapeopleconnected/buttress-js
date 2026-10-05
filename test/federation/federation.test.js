@@ -124,6 +124,14 @@ describe('Federation', function () {
       assert.ok(res.body.every((car) => car.colour === 'red'));
     });
 
+    // The partner is sent the query in Buttress's terms, as the consumer was
+    it("finds the partner's cars by a pattern, ignoring case", async () => {
+      const res = await fromB('SEARCH', 'car', { query: { colour: { $rexi: '^RED$' } } });
+      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+      assert.strictEqual(res.body.length, SEED / 2);
+      assert.ok(res.body.every((car) => car.colour === 'red'));
+    });
+
     it("pages through the partner's cars", async () => {
       const res = await fromB('SEARCH', 'car', { query: {}, limit: 5, skip: 5, sort: { n: 1 } });
       assert.strictEqual(res.status, 200, JSON.stringify(res.body));

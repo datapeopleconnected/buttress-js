@@ -42,7 +42,8 @@ const invalidQueryValue = (property: string, type: string) =>
     expected: type,
   });
 
-// A query after parseQuery, with each property's operators resolved to their datastore form
+// A query after parseQuery: a Buttress query, its operators in their `$` names and its values read as their
+// properties' types. The MongoDB adapter gives it MongoDB's names (toMongoQuery).
 export type ParsedQuery = Record<string, unknown>;
 
 /* ********************************************************************************
@@ -198,24 +199,18 @@ export default class StandardModel<TDocument = AdapterDocument> {
         !this.isValidId(command)
       ) {
         const operators = command as Record<string, unknown>;
-        for (let operator in operators) {
+        for (const operator in operators) {
           if (!{}.hasOwnProperty.call(operators, operator)) continue;
-          let operand = operators[operator];
-          let operandOptions: string | undefined = undefined;
 
-          // The query DSL's names for MongoDB's operators; one it doesn't know is passed on as it is
-          const alias = ALIASES[operator];
-          if (alias) {
-            operator = alias.operator;
-            operandOptions = alias.options;
-            if (alias.operand) operand = alias.operand(operand);
-          }
-
-          output = this.parseQueryProperty(property, operator, operand, operandOptions, output, envFlat, schemaFlat);
+          // An operator keeps its Buttress name, `@op` given as `$op`: the query stays a Buttress query, and only the
+          // MongoDB adapter gives it MongoDB's names (toMongoQuery). One the registry doesn't know is passed on.
+          const name =
+            Object.hasOwn(ALIASES, operator) && operator.startsWith('@') ? `$${operator.slice(1)}` : operator;
+          output = this.parseQueryProperty(property, name, operators[operator], output, envFlat, schemaFlat);
         }
       } else {
         // Direct compare; a list is the whole value, as MongoDB compares one
-        output = this.parseQueryProperty(property, '$eq', command, null, output, envFlat, schemaFlat);
+        output = this.parseQueryProperty(property, '$eq', command, output, envFlat, schemaFlat);
       }
     }
 
@@ -248,7 +243,6 @@ export default class StandardModel<TDocument = AdapterDocument> {
     property: string,
     operator: string,
     operand: unknown,
-    operandOptions?: string | null,
     output: Record<string, unknown> = {},
     envFlat: Record<string, unknown> = {},
     schemaFlat: FlattenedSchema = {},
@@ -275,7 +269,10 @@ export default class StandardModel<TDocument = AdapterDocument> {
       // throw Helpers.Errors.badRequest('unknown_property', `Unknown property ${property} in query`);
     }
 
-    if (operator === '$elemMatch' && propSchema && propSchema.__schema) {
+    // What the operator is for MongoDB, which says how its operand is read
+    const mongoOperator = Object.hasOwn(ALIASES, operator) ? ALIASES[operator].operator : operator;
+
+    if (mongoOperator === '$elemMatch' && propSchema && propSchema.__schema) {
       operand = this.parseQuery(operand as Record<string, unknown>, envFlat, propSchema.__schema);
     } else if (propSchema) {
       const itemSchema = propSchema.__schema;
@@ -298,17 +295,13 @@ export default class StandardModel<TDocument = AdapterDocument> {
         : propSchema.__type === 'array' && propSchema.__itemtype && QUERY_TYPES.has(propSchema.__itemtype)
           ? propSchema.__itemtype
           : undefined;
-      if (type && COMPARISONS.has(operator)) operand = this.__decodeOperand(property, type, operand);
+      if (type && COMPARISONS.has(mongoOperator)) operand = this.__decodeOperand(property, type, operand);
     }
 
     if (!output[property]) {
       output[property] = {};
     }
     const propertyOutput = output[property] as Record<string, unknown>;
-
-    if (operandOptions) {
-      propertyOutput[`$options`] = operandOptions;
-    }
 
     if (operator.indexOf('$') !== 0) {
       propertyOutput[`$${operator}`] = operand;

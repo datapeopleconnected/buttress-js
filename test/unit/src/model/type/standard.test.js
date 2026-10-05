@@ -171,21 +171,34 @@ describe('model/type/StandardModel:parseQuery', () => {
     assert.deepStrictEqual(model.parseQuery({ age: { $gt: 18 } }), { age: { $gt: 18 } });
   });
 
-  it('renames $not to $ne', () => {
+  // A parsed query is still a Buttress query; only the MongoDB adapter gives it MongoDB's names (toMongoQuery)
+  it("keeps $not, which the MongoDB adapter gives as $ne", () => {
     const model = createModel();
-    assert.deepStrictEqual(model.parseQuery({ age: { $not: 18 } }), { age: { $ne: 18 } });
+    assert.deepStrictEqual(model.parseQuery({ age: { $not: 18 } }), { age: { $not: 18 } });
   });
 
-  it('renames date-range operators and converts the operand to a Date', () => {
+  it('keeps the date-range operators, with the operand read as a Date', () => {
     const model = createModel();
     const result = model.parseQuery({ createdAt: { $gtDate: '2025-01-01' } }, {}, { createdAt: { __type: 'date' } });
-    assert.deepStrictEqual(result, { createdAt: { $gt: new Date('2025-01-01') } });
+    assert.deepStrictEqual(result, { createdAt: { $gtDate: new Date('2025-01-01') } });
   });
 
-  it('rewrites $rex into a case-sensitive $regex, and $rexi into a case-insensitive one', () => {
+  it('keeps $rex and $rexi, and $inProp with the text it looks for', () => {
     const model = createModel();
-    assert.deepStrictEqual(model.parseQuery({ name: { $rex: '^wid' } }), { name: { $regex: '^wid' } });
-    assert.deepStrictEqual(model.parseQuery({ name: { $rexi: '^wid' } }), { name: { $regex: '^wid', $options: 'i' } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $rex: '^wid' } }), { name: { $rex: '^wid' } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $rexi: '^wid' } }), { name: { $rexi: '^wid' } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $inProp: 'a.b' } }), { name: { $inProp: 'a.b' } });
+  });
+
+  it("gives an operator's @ name as its $ name", () => {
+    const model = createModel();
+    assert.deepStrictEqual(model.parseQuery({ name: { '@rexi': '^wid', '@not': 'x' } }), { name: { $rexi: '^wid', $not: 'x' } });
+  });
+
+  it('gives the same query when it reads one it has already read', () => {
+    const model = createModel();
+    const once = model.parseQuery({ name: { $rexi: '^wid' }, createdAt: { $gtDate: '2025-01-01' } }, {}, { name: { __type: 'string' }, createdAt: { __type: 'date' } });
+    assert.deepStrictEqual(model.parseQuery(once, {}, { name: { __type: 'string' }, createdAt: { __type: 'date' } }), once);
   });
 
   it('recurses into $or/$and arrays', () => {
@@ -211,9 +224,10 @@ describe('model/type/StandardModel:parseQuery', () => {
     const result = model.parseQuery({ name: { $eq: 'env.currentUserName' } }, { currentUserName: 'Alice' });
     assert.deepStrictEqual(result, { name: { $eq: 'Alice' } });
   });
-  it('matches $inProp as the text it is, not as a pattern', () => {
+  // The MongoDB adapter escapes it, so it's matched as the text it is (toMongoQuery)
+  it("keeps $inProp's text as it is", () => {
     const model = createModel();
-    assert.deepStrictEqual(model.parseQuery({ name: { $inProp: 'a.b(c' } }), { name: { $regex: 'a\\.b\\(c' } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $inProp: 'a.b(c' } }), { name: { $inProp: 'a.b(c' } });
   });
 
   it('recurses into $nor arrays, as into $or and $and', () => {

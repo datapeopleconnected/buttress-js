@@ -20,7 +20,7 @@ import * as Helpers from '../helpers/index.js';
 import Logging from '../helpers/logging.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
-import { asQueried, LOGICAL_ALIASES, matchQuery } from './operators.js';
+import { asQueried, LOGICAL_ALIASES, matchQuery, toMongoQuery } from './operators.js';
 import { isObjectId } from '../datastore/adapters/object-id.js';
 import type StandardModel from '../model/type/standard.js';
 
@@ -136,7 +136,7 @@ export class Filter {
       );
       return false;
     }
-    return matchQuery(parsed, asQueried(entity, model.flatSchemaData));
+    return matchQuery(toMongoQuery(parsed), asQueried(entity, model.flatSchemaData));
   }
 
   mergeQueryFilters(

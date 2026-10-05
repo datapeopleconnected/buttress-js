@@ -293,6 +293,13 @@ describe('Data Sharing', async () => {
 			assert.deepStrictEqual(cars.map((car) => car.id), [testEnv.cars[0].id]);
 		});
 
+		// The partner is sent the query in Buttress's terms, as App2 was, and reads it as its own client's
+		it('Should find cars from App2 by a pattern ignoring case, from App2 and App1', async function() {
+			const cars = await app2Cars('', {method: 'SEARCH', body: JSON.stringify({query: {name: {$rexi: '^A RED'}}})});
+
+			assert.deepStrictEqual(cars.map((car) => car.id), [testEnv.cars[0].id]);
+		});
+
 		it('Should get one of App1\'s cars by id from App2', async function() {
 			const car = await app2Cars(`/${testEnv.cars[0].id}`, {method: 'GET'});
 

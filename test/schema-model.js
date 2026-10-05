@@ -19,9 +19,10 @@ import { Readable } from 'node:stream';
 import ObjectIdHelper from '../dist/datastore/adapters/object-id.js';
 import StandardModel from '../dist/model/type/standard.js';
 import RemoteCombinedModel from '../dist/model/type/remote-combined.js';
+import { toMongoQuery } from '../dist/access-control/operators.js';
 
-// Evaluates a query as StandardModel.parseQuery leaves it, in MongoDB's language. An operator it doesn't know throws,
-// so a test never passes against a query nothing understood.
+// Evaluates a query in MongoDB's language, as the MongoDB adapter gives one (toMongoQuery of what StandardModel.parseQuery
+// leaves). An operator it doesn't know throws, so a test never passes against a query nothing understood.
 const compare = (value, operand) => (value === operand ? 0 : value > operand ? 1 : -1);
 const same = (value, operand) => String(value) === String(operand);
 const OPERATORS = {
@@ -102,8 +103,10 @@ export function createSchemaModel(schema, rows = []) {
     record(call, ...args) {
       this.calls.push([call, ...args]);
     },
+    // A Buttress query, which the datastore reads in MongoDB's terms, as the MongoDB adapter does
     select(query) {
-      return this.rows.filter((row) => matches(row, query));
+      const mongoQuery = toMongoQuery(query ?? {});
+      return this.rows.filter((row) => matches(row, mongoQuery));
     },
     find(query, excludes, limit = 0, skip = 0, sort = null, project = null) {
       this.record('find', query);
@@ -175,7 +178,8 @@ export function createSchemaModel(schema, rows = []) {
     },
     async rmAll(query) {
       this.record('rmAll', query);
-      this.removeWhere((row) => matches(row, query));
+      const mongoQuery = toMongoQuery(query ?? {});
+      this.removeWhere((row) => matches(row, mongoQuery));
     },
   };
   model.adapter = datastore;
