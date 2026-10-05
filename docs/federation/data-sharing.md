@@ -100,3 +100,11 @@ way a local write would, subject to the DSA's `policyConfig`.
   use separate tokens.
 - Deactivate an agreement rather than deleting it if you expect to need it again — deleting removes the
   underlying token too.
+
+## Upgrading
+
+A federated collection sends a search's query on to each partner as a Buttress query, which the partner checks as it
+checks its own clients' queries. A partner on this release refuses an operator it doesn't know with a 400,
+`unknown_operator`, and that includes `$options`, which earlier releases send for a `$rexi` search (as `$regex` with
+`$options: "i"`). So upgrade the instances that read through an agreement before the partners they read from. An
+instance on this release sends `$rexi` as it is, which earlier releases read too.
