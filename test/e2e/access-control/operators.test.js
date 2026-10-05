@@ -87,6 +87,9 @@ const QUERIES = [
   { nothing: null },
   { nothing: { $ne: 'x' } },
   { nothing: { $nin: ['x'] } },
+  // Names an object has from Object.prototype, which no document has
+  { constructor: { $exists: true } },
+  { toString: { $exists: false } },
   { active: true },
   { active: 'true' },
   { active: { $ne: true } },

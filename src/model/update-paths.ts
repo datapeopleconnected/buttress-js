@@ -52,13 +52,16 @@ const isIncrementable = (config: FlattenedSchemaProperty) =>
  * the array, with an index, not as their own keys.
  */
 const matchKey = (schemaFlat: FlattenedSchema, segments: string[]) => {
+  // The schema's own keys, not names an object has from Object.prototype
+  const own = (key: string) => (Object.hasOwn(schemaFlat, key) ? schemaFlat[key] : undefined);
+
   for (let length = segments.length; length > 0; length--) {
     const key = segments.slice(0, length).join('.');
-    if (!schemaFlat[key]) continue;
+    if (!own(key)) continue;
 
     const withinArray = segments
       .slice(0, length - 1)
-      .some((_, idx) => schemaFlat[segments.slice(0, idx + 1).join('.')]?.__type === 'array');
+      .some((_, idx) => own(segments.slice(0, idx + 1).join('.'))?.__type === 'array');
     if (withinArray) continue;
 
     return { key, rest: segments.slice(length) };

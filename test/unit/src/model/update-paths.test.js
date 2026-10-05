@@ -110,6 +110,11 @@ describe('model/update-paths:resolveUpdatePath', () => {
     'items.123456789012',
     'name.x',
     '',
+    // Names an object has from Object.prototype aren't the schema's
+    'constructor',
+    'toString',
+    '__proto__',
+    'items.0.constructor',
   ]) {
     it(`refuses ${JSON.stringify(path)} as an unknown path`, () => {
       assert.deepStrictEqual(resolve(path), { error: 'unknown_path' });

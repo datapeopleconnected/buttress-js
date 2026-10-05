@@ -227,6 +227,8 @@ export default class StandardModel<TDocument = AdapterDocument> {
       }
       // Any other operator's name in a property's place names no property
       if (property.startsWith('$') || property.startsWith('@')) throw unknownQueryOperator(property, property);
+      // Nor does a path naming __proto__: a schema can't have one
+      if (property.split('.').includes('__proto__')) throw unknownQueryPath(property);
       if (checkPaths && !isQueryPath(schemaFlat, property)) throw unknownQueryPath(property);
 
       if (hasOperatorNames(command)) {
@@ -310,7 +312,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
 
     // Convert id
     let propSchema: FlattenedSchemaProperty | undefined = undefined;
-    if (schemaFlat[property]) {
+    if (Object.hasOwn(schemaFlat, property)) {
       propSchema = schemaFlat[property];
     } else if (Object.keys(schemaFlat).length > 0) {
       // throw Helpers.Errors.badRequest('unknown_property', `Unknown property ${property} in query`);
@@ -361,7 +363,8 @@ export default class StandardModel<TDocument = AdapterDocument> {
       if (type && COMPARISONS.has(mongoOperator)) operand = this.__decodeOperand(property, type, operand);
     }
 
-    if (!output[property]) {
+    // The property's own entry, not one an object has from Object.prototype (a field named `constructor`)
+    if (!Object.hasOwn(output, property)) {
       output[property] = {};
     }
     const propertyOutput = output[property] as Record<string, unknown>;

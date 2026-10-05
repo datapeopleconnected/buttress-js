@@ -128,6 +128,10 @@ export const isValueOperators = (value: unknown): value is Record<string, unknow
     (key) => (key.startsWith('$') || key.startsWith('@')) && !Object.hasOwn(LOGICAL_ALIASES, key),
   );
 
+// A document's own field, not a name an object has from Object.prototype
+const ownField = (document: Record<string, unknown>, name: string) =>
+  Object.hasOwn(document, name) ? document[name] : undefined;
+
 /**
  * The values a dotted path reaches in a document, as MongoDB reaches them: through each object of an array on the way
  * (or the item a numeric segment names), and at the end an array as well as each of its items. Nothing for a path the
@@ -142,9 +146,9 @@ const valuesAt = (value: unknown, segments: string[]): unknown[] => {
   const [head, ...rest] = segments;
   if (Array.isArray(value)) {
     const byIndex = /^\d+$/.test(head) ? valuesAt(value[Number(head)], rest) : [];
-    return [...byIndex, ...value.flatMap((item) => (isPlainObject(item) ? valuesAt(item[head], rest) : []))];
+    return [...byIndex, ...value.flatMap((item) => (isPlainObject(item) ? valuesAt(ownField(item, head), rest) : []))];
   }
-  return isPlainObject(value) ? valuesAt(value[head], rest) : [];
+  return isPlainObject(value) ? valuesAt(ownField(value, head), rest) : [];
 };
 
 // An id is its hex string, as ids are outside the MongoDB adapter
@@ -380,7 +384,7 @@ export function asQueried(entity: unknown, schemaFlat: FlattenedSchema): unknown
     return Object.fromEntries(
       Object.entries(value).map(([key, field]) => {
         const path = `${prefix}${key}`;
-        const config = flat[path];
+        const config = Object.hasOwn(flat, path) ? flat[path] : undefined;
         if (config?.__type === 'date' || (config?.__type === 'array' && config.__itemtype === 'date')) {
           return [key, asDate(field)];
         }

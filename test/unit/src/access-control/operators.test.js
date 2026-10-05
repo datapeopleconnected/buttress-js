@@ -76,6 +76,13 @@ describe('access-control/operators:matchQuery', () => {
     assert.strictEqual(matchQuery({ tags: { $all: ['a'] } }, { tags: ['a', 'b'] }), true);
   });
 
+  it("reads only a document's own fields, as MongoDB does", () => {
+    assert.strictEqual(matchQuery({ constructor: { $exists: true } }, { name: 'a' }), false);
+    assert.strictEqual(matchQuery({ toString: { $exists: false } }, { name: 'a' }), true);
+    assert.strictEqual(matchQuery({ 'lines.constructor': { $exists: true } }, { lines: [{ sku: 'a' }] }), false);
+    assert.strictEqual(matchQuery({ constructor: 'own' }, { constructor: 'own' }), true);
+  });
+
   it("matches an $elemMatch of an item query with its own $or by the items' fields, as MongoDB does", () => {
     const query = { lines: { $elemMatch: { $or: [{ sku: 'a' }, { qty: 2 }] } } };
     assert.strictEqual(matchQuery(query, { lines: [{ sku: 'b', qty: 2 }] }), true);

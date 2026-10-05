@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 
@@ -236,6 +236,37 @@ describe('model/type/StandardModel:parseQuery operators', () => {
   });
 });
 
+// A query's names are read as its own: one naming __proto__ names no property a schema can have, and a field named
+// after one of an object's own properties is a field
+describe("model/type/StandardModel:parseQuery names Object.prototype has", () => {
+  afterEach(() => {
+    for (const name of ['$eq', '$gt', '$in']) {
+      delete Object.prototype[name];
+      delete Object[name];
+    }
+  });
+
+  for (const query of [
+    JSON.parse('{"__proto__": {"$gt": 1}}'),
+    JSON.parse('{"$or": [{"__proto__": {"$in": [1]}}]}'),
+    { 'address.__proto__.city': 'x' },
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 unknown_path, leaving Object.prototype as it is`, () => {
+      assert.throws(() => createModel().parseQuery(query), { status: 400, code: 'unknown_path' });
+      assert.strictEqual(Object.prototype.$gt, undefined);
+      assert.strictEqual(Object.prototype.$in, undefined);
+    });
+  }
+
+  it("reads a field named after one of an object's own properties as a field", () => {
+    assert.deepStrictEqual(createModel().parseQuery({ constructor: { $gt: 1 }, toString: 'x' }), {
+      constructor: { $gt: 1 },
+      toString: { $eq: 'x' },
+    });
+    assert.strictEqual(Object.$gt, undefined);
+  });
+});
+
 // A strict schema refuses a query on a path it doesn't have, as it refuses a create giving one; any other schema
 // queries it as given, so a client can reach data its schema no longer declares (R3 step 7)
 describe('model/type/StandardModel:parseQuery paths', () => {
@@ -280,6 +311,8 @@ describe('model/type/StandardModel:parseQuery paths', () => {
     [{ 'tags.colour': 'x' }, 'tags.colour'],
     [{ $or: [{ name: 'a' }, { colour: 'red' }] }, 'colour'],
     [{ lines: { $elMatch: { colour: 'x' } } }, 'colour'],
+    [{ constructor: 'x' }, 'constructor'],
+    [{ toString: { $exists: true } }, 'toString'],
   ]) {
     it(`refuses ${JSON.stringify(query)} with 400 unknown_path when the schema is strict`, () => {
       assert.throws(() => strict().parseQuery(query), { status: 400, code: 'unknown_path', details: { path } });
