@@ -139,6 +139,21 @@ describe('access-control/projection:filterGrantsByRequest', () => {
     assert.strictEqual(result.length, 1);
   });
 
+  // A query a partner is sent nests the grants' $or in an $and with the request's
+  it('checks the fields of a read query at any depth of $and, $or and $nor', async () => {
+    const grants = [{
+      id: 'p1', name: 'test', appId: 'app1', env: null,
+      config: { verbs: ['SEARCH'], schema: ['user'], query: {}, projection: { keys: ['name', 'email'] }, condition: null },
+    }];
+    const search = async (query) =>
+      (await AccessControlProjection.filterGrantsByRequest({ method: 'SEARCH', body: { query } }, grants, schema)).length;
+
+    assert.strictEqual(await search({ $and: [{ name: { $eq: 'a' } }, { $or: [{ email: { $eq: 'b' } }, { name: 'c' }] }] }), 1);
+    assert.strictEqual(await search({ $nor: [{ $and: [{ email: { $eq: 'b' } }] }] }), 1);
+    assert.strictEqual(await search({ $and: [{ name: { $eq: 'a' } }, { $or: [{ age: { $gt: 1 } }] }] }), 0);
+    assert.strictEqual(await search({ $nor: [{ age: { $gt: 1 } }] }), 0);
+  });
+
   it('passes a grant it lets through on as it is', async () => {
     const policies = [{
       id: 'p1', name: 'test', appId: 'app1', env: null,

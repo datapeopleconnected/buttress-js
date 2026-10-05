@@ -100,7 +100,7 @@ class Projection {
   private _ignoredQueryKeys: string[];
 
   constructor() {
-    this.logicalOperator = ['$and', '$or'];
+    this.logicalOperator = ['$and', '$or', '$nor'];
 
     this._ignoredQueryKeys = ['__crPath', 'project', 'id'];
   }
@@ -237,29 +237,25 @@ class Projection {
     return [{ ...result, value: projectValue(result.value, childKeys) }];
   }
 
+  // Whether a read's query names only properties the projection keys let through, at any depth of its $and, $or and $nor
   __checkProjectionPath(requestBody: RequestBody, projectionKeys: string[]) {
     const query = requestBody.query ? (requestBody.query as RequestBody) : requestBody;
-    const paths = Object.keys(query).filter((key) => key && !this._ignoredQueryKeys.includes(key));
-    let queryKeys: string[] = [];
 
-    paths.forEach((path) => {
-      if (this.logicalOperator.includes(path)) {
-        (query[path] as RequestBody[]).forEach((p) => {
-          queryKeys = queryKeys.concat(Object.keys(p));
-        });
-        return;
-      }
-
-      if (typeof path === 'object' && !Array.isArray(path)) {
-        queryKeys = queryKeys.concat(Object.keys(path));
-      } else {
-        queryKeys = queryKeys.concat(path);
-      }
-    });
-
-    return queryKeys.every(
-      (key) => projectionKeys.includes(key) || projectionKeys.some((k) => key.startsWith(k) && key[k.length] === '.'),
+    return this.__queryFields(query).every((key) =>
+      projectionKeys.some((projectionKey) => isWithin(key, projectionKey)),
     );
+  }
+
+  // The properties a query names, within its logical operators too; an id and the request's own keys aren't properties
+  __queryFields(query: RequestBody): string[] {
+    return Object.entries(query).flatMap(([key, value]) => {
+      if (this.logicalOperator.includes(key)) {
+        return Array.isArray(value)
+          ? value.flatMap((part) => (isPlainObject(part) ? this.__queryFields(part) : []))
+          : [];
+      }
+      return key && !this._ignoredQueryKeys.includes(key) ? [key] : [];
+    });
   }
 }
 export default new Projection();
