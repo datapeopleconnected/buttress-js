@@ -103,6 +103,8 @@ const QUERIES = [
   { tags: { $in: ['a', 'c'] } },
   { tags: { $nin: ['b'] } },
   { tags: { $all: ['a', 'b'] } },
+  { tags: { $all: [] } },
+  { scores: { $all: [] } },
   { tags: { $ne: 'b' } },
   { tags: ['a', 'b'] },
   { tags: [] },

@@ -17,7 +17,7 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import { toMongoQuery } from '../../../../dist/access-control/operators.js';
+import { matchQuery, toMongoQuery } from '../../../../dist/access-control/operators.js';
 
 // A Buttress query in MongoDB's terms, as the MongoDB adapter gives it MongoDB, and as realtime matches it
 describe('access-control/operators:toMongoQuery', () => {
@@ -58,5 +58,15 @@ describe('access-control/operators:toMongoQuery', () => {
 
   it("leaves a name the registry doesn't have as it is, for the datastore", () => {
     assert.deepStrictEqual(toMongoQuery({ name: { $regex: 'a', $options: 'i' } }), { name: { $regex: 'a', $options: 'i' } });
+  });
+});
+
+// A query in MongoDB's terms matched in memory, as MongoDB matches it (test/e2e/access-control/operators.test.js checks
+// it against MongoDB itself)
+describe('access-control/operators:matchQuery', () => {
+  it('matches nothing for $all of an empty list, as MongoDB does', () => {
+    assert.strictEqual(matchQuery({ tags: { $all: [] } }, { tags: ['a', 'b'] }), false);
+    assert.strictEqual(matchQuery({ tags: { $all: [] } }, { tags: [] }), false);
+    assert.strictEqual(matchQuery({ tags: { $all: ['a'] } }, { tags: ['a', 'b'] }), true);
   });
 });

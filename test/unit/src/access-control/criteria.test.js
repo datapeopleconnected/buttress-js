@@ -64,6 +64,8 @@ describe('access-control/criteria:matchCriterion', () => {
     ['admin', '@nin', ['user', 'guest'], true],
     ['admin', '@nin', ['admin'], false],
     [undefined, '@nin', ['admin'], true],
+    [['admin', 'user'], '@all', ['admin'], true],
+    [['admin', 'user'], '@all', [], false],
     ['premium', '@exists', true, true],
     [undefined, '@exists', true, false],
     [undefined, '@exists', false, true],

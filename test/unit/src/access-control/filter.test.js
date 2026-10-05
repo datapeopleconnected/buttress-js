@@ -405,4 +405,10 @@ describe('access-control/filter:evaluateQueryAgainstEntity as REST reads the ent
   it("doesn't read the entity for a query that can't be read", () => {
     assert.strictEqual(reads({ count: { $gt: 'lots' } }), false);
   });
+
+  it('reads no entity for $all of an empty list, as MongoDB reads none', async () => {
+    assert.strictEqual(reads({ tags: { $all: [] } }), false);
+    // The list a policy's query takes from the env can be empty
+    assert.strictEqual(reads(await Filter.buildPolicyQuery({ tags: { '@all': '#env.user.tags' } }, { user: { tags: [] } })), false);
+  });
 });

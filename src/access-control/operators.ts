@@ -222,8 +222,11 @@ const matchOperators = (values: unknown[], operators: Record<string, unknown>): 
         return asList(operand).some((item) => equals(values, item));
       case '$nin':
         return !asList(operand).some((item) => equals(values, item));
-      case '$all':
-        return asList(operand).every((item) => equals(values, item));
+      case '$all': {
+        // MongoDB's $all of an empty list matches nothing
+        const list = asList(operand);
+        return list.length > 0 && list.every((item) => equals(values, item));
+      }
       case '$exists':
         return values.length > 0 === Boolean(operand);
       case '$regex': {
