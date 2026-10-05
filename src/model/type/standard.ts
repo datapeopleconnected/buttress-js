@@ -20,6 +20,7 @@ import {
   isPlainObject,
   isValueOperators,
   LOGICAL_ALIASES,
+  operandProblem,
 } from '../../access-control/operators.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
@@ -61,17 +62,6 @@ const unknownQueryPath = (path: string) =>
 
 // An operator in its `$` name: `@op` is `$op`
 const operatorName = (operator: string) => (operator.startsWith('@') ? `$${operator.slice(1)}` : operator);
-
-// Text JavaScript reads as a pattern
-const isPattern = (value: unknown) => {
-  if (typeof value !== 'string') return false;
-  try {
-    new RegExp(value);
-    return true;
-  } catch (_err) {
-    return false;
-  }
-};
 
 // A query after parseQuery: a Buttress query, its operators in their `$` names and its values read as their
 // properties' types. The MongoDB adapter gives it MongoDB's names (toMongoQuery).
@@ -321,24 +311,19 @@ export default class StandardModel<TDocument = AdapterDocument> {
     // What the operator is for MongoDB, which says how its operand is read
     const mongoOperator = Object.hasOwn(ALIASES, operator) ? ALIASES[operator].operator : operator;
 
-    // An operand MongoDB couldn't take is refused, rather than failing the request when MongoDB reads it
-    if (['$in', '$nin', '$all'].includes(mongoOperator) && !Array.isArray(operand)) {
-      throw invalidQueryValue(property, 'array');
-    }
-    if (mongoOperator === '$regex') {
-      // $inProp looks for text, the others for a pattern
-      if (operator === '$inProp' && typeof operand !== 'string') throw invalidQueryValue(property, 'string');
-      if (operator !== '$inProp' && !isPattern(operand)) throw invalidQueryValue(property, 'pattern');
-    }
+    // An operand MongoDB couldn't take is refused, rather than failing the request when MongoDB reads it, by the rules
+    // a policy's query is checked by when it's saved
+    const expected = operandProblem(operator, operand);
+    if (expected) throw invalidQueryValue(property, expected);
 
     if (mongoOperator === '$elemMatch') {
-      if (!isPlainObject(operand)) throw invalidQueryValue(property, 'object');
       // The operators a value of the list must pass, or a query an item must match, its own $or, $and and $nor
       // included, read against the items' schema. An item's query is checked against the items' schema, when the
       // array has one
-      operand = isValueOperators(operand)
-        ? this.__parseOperators(property, operand)
-        : this.parseQuery(operand, envFlat, propSchema?.__schema ?? {}, checkPaths && Boolean(propSchema?.__schema));
+      const itemQuery = operand as Record<string, unknown>;
+      operand = isValueOperators(itemQuery)
+        ? this.__parseOperators(property, itemQuery)
+        : this.parseQuery(itemQuery, envFlat, propSchema?.__schema ?? {}, checkPaths && Boolean(propSchema?.__schema));
     } else if (propSchema) {
       const itemSchema = propSchema.__schema;
       if (propSchema.__type === 'array' && itemSchema && typeof operand === 'object' && operand !== null) {

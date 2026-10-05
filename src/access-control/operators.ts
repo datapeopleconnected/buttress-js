@@ -128,6 +128,43 @@ export const isValueOperators = (value: unknown): value is Record<string, unknow
     (key) => (key.startsWith('$') || key.startsWith('@')) && !Object.hasOwn(LOGICAL_ALIASES, key),
   );
 
+// Text JavaScript reads as a pattern
+export const isPattern = (value: unknown) => {
+  if (typeof value !== 'string') return false;
+  try {
+    new RegExp(value);
+    return true;
+  } catch (_err) {
+    return false;
+  }
+};
+
+/**
+ * What an operator's operand has to be when the one given can't be taken, as MongoDB would refuse it: a list for $in,
+ * $nin and $all, text for $inProp, a pattern for $regex's other names, an object for $elMatch. Null when it can be.
+ * A search's query (StandardModel.parseQuery) and a policy's, when it's saved, are checked by it.
+ * @param {string} operator - `$op` or `@op`
+ * @param {unknown} operand
+ * @return {string|null}
+ */
+export function operandProblem(operator: string, operand: unknown): string | null {
+  const alias = Object.hasOwn(ALIASES, operator) ? ALIASES[operator] : undefined;
+  switch (alias?.operator) {
+    case '$in':
+    case '$nin':
+    case '$all':
+      return Array.isArray(operand) ? null : 'array';
+    case '$regex':
+      // $inProp looks for text, the others for a pattern
+      if (operator === '$inProp' || operator === '@inProp') return typeof operand === 'string' ? null : 'string';
+      return isPattern(operand) ? null : 'pattern';
+    case '$elemMatch':
+      return isPlainObject(operand) ? null : 'object';
+    default:
+      return null;
+  }
+}
+
 // Where a path reaches a field a document hasn't got: null to a comparison with null, and not there to $exists
 const MISSING = Symbol('missing');
 

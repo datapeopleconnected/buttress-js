@@ -112,6 +112,102 @@ describe('access-control/policy-definition:checkPolicyConfig operators', () => {
   });
 });
 
+// An operand an operator can't take is refused when the policy is saved, as a search giving one is, rather than the
+// config granting nothing when it's evaluated (R3 step 7)
+describe('access-control/policy-definition:checkPolicyConfig operands', () => {
+  it("refuses an operand the operator can't take", () => {
+    assert.deepStrictEqual(
+      checkPolicyConfig([
+        { ...valid(), query: { tags: { '@in': 'red' }, name: { '@rex': '(' }, sku: { '@inProp': 5 }, lines: { '@elMatch': 'x' } } },
+      ]),
+      [
+        { path: 'config.0.query.tags', code: 'type', expected: 'array' },
+        { path: 'config.0.query.name', code: 'type', expected: 'pattern' },
+        { path: 'config.0.query.sku', code: 'type', expected: 'string' },
+        { path: 'config.0.query.lines', code: 'type', expected: 'object' },
+      ],
+    );
+  });
+
+  it('refuses a logical operator not given a list of one or more queries', () => {
+    for (const [query, path] of [
+      [{ '@or': { a: 1 } }, 'config.0.query.@or'],
+      [{ '@and': [] }, 'config.0.query.@and'],
+      [{ '@nor': ['x'] }, 'config.0.query.@nor'],
+      [{ '@or': [{ '@and': '#env.x' }] }, 'config.0.query.@and'],
+    ]) {
+      assert.deepStrictEqual(checkPolicyConfig([{ ...valid(), query }]), [{ path, code: 'type', expected: 'array' }], JSON.stringify(query));
+    }
+  });
+
+  it('checks the operands in an @elMatch, and takes an #env value for any operand, as it is read later', () => {
+    assert.deepStrictEqual(
+      checkPolicyConfig([
+        {
+          ...valid(),
+          query: {
+            scores: { '@elMatch': { '@in': 3 } },
+            lines: { '@elMatch': { sku: { '@rex': '(' } } },
+            tags: { '@in': '#env.user.tags' },
+            name: { '@rex': '#env.pattern' },
+          },
+        },
+      ]),
+      [
+        { path: 'config.0.query.scores', code: 'type', expected: 'array' },
+        { path: 'config.0.query.sku', code: 'type', expected: 'pattern' },
+      ],
+    );
+  });
+
+  it("refuses a condition's criterion that isn't an object of one or more operators, a logical operator without a list, and an operand an operator can't take", () => {
+    assert.deepStrictEqual(
+      checkPolicyConfig([
+        {
+          ...valid(),
+          condition: {
+            '#env.x': {},
+            '#env.y': 'z',
+            '@or': 'w',
+            '#env.role': { '@in': 'admin' },
+            '#env.user.role': { '@in': '#env.roles' },
+          },
+        },
+      ]),
+      [
+        { path: 'config.0.condition.#env.x', code: 'required' },
+        { path: 'config.0.condition.#env.y', code: 'type', expected: 'object' },
+        { path: 'config.0.condition.@or', code: 'type', expected: 'array' },
+        { path: 'config.0.condition.#env.role', code: 'type', expected: 'array' },
+      ],
+    );
+  });
+
+  it('checks the operands an update writes to a config', () => {
+    assert.deepStrictEqual(checkPolicyConfigUpdate({ path: 'config.0.query', value: { tags: { '@in': 'x' } } }), [
+      { path: 'config.0.query.tags', code: 'type', expected: 'array' },
+    ]);
+  });
+
+  it('takes the operands each operator can, in a query and in a condition', () => {
+    assert.deepStrictEqual(
+      checkPolicyConfig([
+        {
+          ...valid(),
+          query: {
+            tags: { '@in': ['a'], '@nin': [], '@all': ['b'] },
+            name: { '@rexi': '^a', '@inProp': 'a.b' },
+            lines: { '@elMatch': { sku: 'x' } },
+            '@or': [{ a: 1 }],
+          },
+        },
+        { ...valid(), condition: { '@and': [{ '#env.appId': { '@in': ['x'] } }], '#env.date.now': { '@gtDate': '2025-01-01' } } },
+      ]),
+      [],
+    );
+  });
+});
+
 describe('access-control/policy-definition:checkPolicyConfigUpdate', () => {
   it('checks the configs, one config or one field of a config, that an update writes', () => {
     assert.deepStrictEqual(checkPolicyConfigUpdate({ path: 'config', value: [valid()] }), []);
