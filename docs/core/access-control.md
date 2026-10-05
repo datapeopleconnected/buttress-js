@@ -52,6 +52,29 @@ deleted — Buttress does this automatically for its own APIs (creating a token,
 editing a policy), so it only matters if you're writing code that mutates these collections directly rather
 than through the model layer.
 
+## Token domains
+
+A user token's `domains` say which web origins may use it. Every REST request made with a user token is checked, and
+one from an origin that isn't allowed is answered 403 `origin_not_allowed`. Other tokens aren't checked, and neither
+are Socket.IO connections.
+
+- The origin is the request's `Origin` header, or its `Host` if it has no `Origin`, without the `http://` or
+  `https://`: a host, with its port if it has one (`app.example.com`, `localhost:3000`). An `http://` or `https://`
+  in a domain is ignored too.
+- A domain without a `*` allows the origin that is the same text.
+- In any other domain, `*` stands for any run of characters, and the domain has to match the whole origin:
+  - `*` on its own allows every origin;
+  - `*.example.com` allows `app.example.com` and `app.eu.example.com`, but not `app.example.com.evil.io`, or
+    `example.com` itself, which needs its own entry;
+  - a port is part of the origin, so `*.example.com` doesn't allow `app.example.com:8443`. List
+    `*.example.com:8443`, or end a domain with `:*` to allow any port (`localhost:*`).
+- The instance's own host, `BUTTRESS_HOST_URL`, is always allowed.
+
+Earlier releases matched a domain with a `*` anywhere in the origin, so `*.example.com` also allowed
+`app.example.com.evil.io` and `app.example.com:8443`. A token that relied on such a partial match is now refused
+with 403 `origin_not_allowed`. No route changes a token's domains, so give the user a new token whose `domains` list
+every origin it's used from (`POST /api/v1/user/:id/token`).
+
 ## Practical Guidance
 
 - Use least-privilege policies by default; there's no implicit access to fall back on.

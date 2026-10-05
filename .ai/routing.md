@@ -40,6 +40,10 @@ Every registered path gets this exact array wired in as Express middleware, in o
 4. `AccessControl.accessControlPolicyMiddleware` — see [access-control.md](access-control.md).
 5. `_configCrossDomain` — CORS header logic; **also the point where a missing token becomes a 401 `missing_token`** for
    non-system/app tokens, and where per-token `domains` allow-lists are enforced for user tokens.
+   The origin (`Origin`, else `Host`) loses its `http(s)://` and keeps its port. A domain without `*` has to equal it;
+   one with `*` has to match all of it, each `*` any run of characters and the rest literal, so `*.example.com`
+   takes neither `example.com` nor `a.example.com:8443`
+   (see [docs/core/access-control.md](../docs/core/access-control.md#token-domains)).
    Entries that aren't strings are ignored, so they match no origin. The routes that write a token's
    domains (`POST user`'s `token.domains`, `POST user/:id/token`, `POST lambda`'s `auth.domains`) refuse
    anything but a list of non-empty strings with `400 invalid_domains` (`Helpers.isDomainList`).

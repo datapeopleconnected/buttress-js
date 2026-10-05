@@ -265,6 +265,69 @@ describe('routes/RoutesMiddleware:_configCrossDomain', () => {
     assertRefused(next, 403, 'origin_not_allowed');
   });
 
+  it('lets through a request from an exact domain, without reading it as a pattern', () => {
+    const { next } = run(['other.example.com', 'app.example.com'], 'https://app.example.com');
+
+    assert.ok(next.calledOnceWithExactly());
+  });
+
+  it('lets through a subdomain of a *. domain, giving its origin as Access-Control-Allow-Origin', () => {
+    const { res, next } = run(['*.example.com'], 'https://app.eu.example.com');
+
+    assert.ok(next.calledOnceWithExactly());
+    assert.ok(res.header.calledWith('Access-Control-Allow-Origin', 'https://app.eu.example.com'));
+  });
+
+  it('refuses a look-alike origin that only starts like a subdomain of a *. domain', () => {
+    const { res, next } = run(['*.example.com'], 'https://app.example.com.evil.io');
+
+    assertRefused(next, 403, 'origin_not_allowed');
+    assert.ok(res.header.notCalled);
+  });
+
+  it('refuses the bare domain of a *. domain, which has to be listed itself', () => {
+    const { next } = run(['*.example.com'], 'https://example.com');
+
+    assertRefused(next, 403, 'origin_not_allowed');
+  });
+
+  it("keeps the origin's port, so a domain naming that port lets it through", () => {
+    const { next } = run(['*.example.com:8443'], 'https://app.example.com:8443');
+
+    assert.ok(next.calledOnceWithExactly());
+  });
+
+  it('refuses an origin whose port its domain does not name', () => {
+    const { next } = run(['*.example.com'], 'https://app.example.com:8443');
+
+    assertRefused(next, 403, 'origin_not_allowed');
+  });
+
+  it('lets through any port for a domain ending in :*', () => {
+    const { next } = run(['localhost:*'], 'http://localhost:3000');
+
+    assert.ok(next.calledOnceWithExactly());
+  });
+
+  it("matches a pattern's other characters as themselves, not as a regular expression", () => {
+    // Read as a regular expression, [::1] is a character class, which `host1:8080` matches
+    const { next } = run(['[::1]:*'], 'http://host1:8080');
+
+    assertRefused(next, 403, 'origin_not_allowed');
+  });
+
+  it('lets through an IPv6 origin that matches a pattern', () => {
+    const { next } = run(['[::1]:*'], 'http://[::1]:8080');
+
+    assert.ok(next.calledOnceWithExactly());
+  });
+
+  it('lets through any origin for a token with the * domain', () => {
+    const { next } = run(['*'], 'https://app.example.com.evil.io');
+
+    assert.ok(next.calledOnceWithExactly());
+  });
+
   it('refuses a request with no token with 401 missing_token', () => {
     sinon.stub(Logging, 'logError');
     const req = { method: 'GET', header: () => undefined, context: { id: 'req-1', timings: {}, token: null } };

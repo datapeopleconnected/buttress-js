@@ -441,8 +441,14 @@ export class RoutesMiddleware {
       const domainIdx = domains.findIndex((d) => {
         if (d.indexOf('*') === -1) return d === origin;
 
-        const rex = new RegExp(d.replace(/\./g, '\\.').replace(/\*/g, '.*'));
-        return rex.test(origin);
+        // The whole origin has to match, each `*` standing for any run of characters and everything else for itself,
+        // so `*.example.com` takes `a.example.com` but not `a.example.com.evil.io`, `example.com` or
+        // `a.example.com:8443`.
+        const pattern = d
+          .split('*')
+          .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+          .join('.*');
+        return new RegExp(`^${pattern}$`).test(origin);
       });
 
       if (domainIdx === -1) {
