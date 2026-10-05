@@ -291,13 +291,21 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
   /**
    * Handles each entity's part of an activity. An entity's activities are relayed in the order they arrive, each after
    * the one before it is done, while other entities' go alongside; one that fails is logged, and the next still goes.
+   * Each entity of a bulk activity takes its place in its queue as the activity arrives, so a later activity can't
+   * overtake it, and they're still handled one after another.
    */
   private async _handleIncomingMessage(activity: RESTActivity) {
-    for (const entityActivity of this.__splitBulkActivity(activity)) {
-      await this._entityActivities.push(this.__entityKey(entityActivity), () =>
-        this.__handleEntityActivity(entityActivity),
-      );
-    }
+    let previous: Promise<void> = Promise.resolve();
+    const handled = this.__splitBulkActivity(activity).map((entityActivity) => {
+      // A queue's job settles when it's done, failed or not
+      const after = previous;
+      previous = this._entityActivities.push(this.__entityKey(entityActivity), async () => {
+        await after;
+        return this.__handleEntityActivity(entityActivity);
+      });
+      return previous;
+    });
+    await Promise.all(handled);
   }
 
   // The entity an activity is for; a delete of every entity is for the collection

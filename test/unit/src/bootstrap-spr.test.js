@@ -948,6 +948,66 @@ describe('bootstrap-spr:_handleIncomingMessage order', () => {
     assert.deepStrictEqual(relayed, ['other', 'slow']);
   });
 
+  // A bulk update of A (read slowly) and B, then an update of B alone: B's part of the bulk was queued only once A's
+  // was done, so the later update overtook it
+  const bulkUpdate = (name, ids) => ({
+    ...update(name),
+    path: '/car/bulk/update',
+    pathSpec: 'car/bulk/update',
+    verb: 'post',
+    params: {},
+    response: ids.map((id) => ({ id: id.toString(), results: [{ type: 'scalar', path: 'name', value: name }] })),
+  });
+
+  function createBulkSPR(readOf) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const relayed = [];
+    spr.__nrp = {
+      emit: (event, json) => {
+        const { activity } = JSON.parse(json);
+        relayed.push(`${activity.params.id}:${activity.response[0].value}`);
+      },
+    };
+    spr._policyCache = withConnections({
+      getPoliciesByRestActivity: async () => [policy],
+      getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
+    });
+    sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: readOf });
+    return { spr, relayed };
+  }
+
+  it("relays a bulk activity's change to an entity before a later change to it", async () => {
+    const other = { id: new ObjectId(), name: 'other' };
+    const { spr, relayed } = createBulkSPR(async (id) =>
+      String(id) === other.id.toString() ? new Promise((resolve) => setTimeout(() => resolve(other), 30)) : car,
+    );
+
+    await Promise.all([
+      spr._handleIncomingMessage(bulkUpdate('bulk', [other.id, car.id])),
+      spr._handleIncomingMessage(update('after')),
+    ]);
+
+    assert.deepStrictEqual(
+      relayed.filter((entry) => entry.startsWith(car.id.toString())),
+      [`${car.id}:bulk`, `${car.id}:after`],
+    );
+  });
+
+  it("handles a bulk activity's entities one after another", async () => {
+    let reading = 0;
+    let most = 0;
+    const { spr } = createBulkSPR(async () => {
+      most = Math.max(most, ++reading);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      reading--;
+      return car;
+    });
+
+    await spr._handleIncomingMessage(bulkUpdate('bulk', [new ObjectId(), new ObjectId(), car.id]));
+
+    assert.strictEqual(most, 1);
+  });
+
   it('relays the next activity for an entity when one fails, logging the failure', async () => {
     const { spr, relayed } = createSPR(async () => {
       throw new Error('the datastore went away');
