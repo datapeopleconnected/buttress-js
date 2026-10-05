@@ -14,9 +14,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-
 import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
+import net from 'node:net';
 import { Readable } from 'node:stream';
 import sinon from 'sinon';
 
@@ -84,5 +84,34 @@ describe('datastore/adapters/buttress:rmAll', () => {
 
     sinon.assert.notCalled(collection.bulkRemove);
     sinon.assert.notCalled(collection.removeAll);
+  });
+});
+
+describe('datastore/adapters/buttress:connect', () => {
+  let server;
+  afterEach(() => new Promise((resolve) => (server ? server.close(resolve) : resolve())));
+
+  // A partner that drops every connection, counting how many times it's asked
+  const startDroppingPartner = () =>
+    new Promise((resolve) => {
+      const partner = { attempts: 0 };
+      server = net.createServer((socket) => {
+        partner.attempts++;
+        socket.destroy();
+      });
+      server.listen(0, '127.0.0.1', () => {
+        partner.port = server.address().port;
+        resolve(partner);
+      });
+    });
+
+  // The data sharing model tries a partner it can't reach again later, so the connection isn't retried as well
+  it("fails straight away, without retrying, when the partner can't be reached", async () => {
+    const partner = await startDroppingPartner();
+    const adapter = new ButtressAdapter(new URL(`butt://127.0.0.1:${partner.port}/partner?token=t`), {});
+
+    await assert.rejects(adapter.connect());
+
+    assert.strictEqual(partner.attempts, 1);
   });
 });

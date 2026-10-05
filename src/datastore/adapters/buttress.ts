@@ -92,6 +92,9 @@ export default class Buttress extends AbstractAdapter {
         appToken: token,
         apiPath,
         version: 1,
+        // A partner that can't be reached is left out and tried again later by the data sharing model, rather than
+        // holding up boot, or a request, through the API's retries and their backoff
+        maxRetries: 0,
       });
     });
     Logging.logDebug(`connected to: ${this.uri.host}/${apiPath}`);
