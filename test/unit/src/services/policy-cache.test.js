@@ -185,6 +185,21 @@ const Redis = {
     return existed ? 1 : 0;
   },
 
+  async get(key) {
+    return this._data.get(key) ?? null;
+  },
+
+  async set(key, value, options = {}) {
+    const previous = this._data.get(key) ?? null;
+    this._data.set(key, value);
+    return options.GET ? previous : 'OK';
+  },
+
+  // As node-redis 5 gives them, a page of keys at a time
+  async *scanIterator({ MATCH = '*' } = {}) {
+    const pattern = new RegExp(`^${MATCH.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
+    yield [...this._data.keys()].filter((key) => pattern.test(key));
+  },
 };
 
 function mockModel(findResult) {
@@ -803,6 +818,25 @@ describe('services/policy-cache: invalidating a policy', () => {
 
     assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
     assert.deepStrictEqual(await Redis.sMembers(K(`token:${admin.id}:policies`)), []);
+  });
+
+  it("works out every cached token's policies again, once, when the selection rules have changed", async () => {
+    // A policy cached for the token by rules that ignored case: its stored role is 'admin', the selection's 'ADMIN'
+    db.policies = [adminPolicy({ selection: { role: { '@eq': 'ADMIN' } } })];
+
+    const marked = await cache.markStaleIfSelectionRulesChanged();
+    // A request meanwhile works the token's policies out again
+    assert.deepStrictEqual(marked, [admin.id]);
+    assert.ok((await Redis.sMembers(K(`token:${admin.id}:policies`))).includes('STALE'));
+
+    await cache.reselectTokens(marked);
+    assert.deepStrictEqual(await Redis.sMembers(K(`token:${admin.id}:policies`)), []);
+    assert.deepStrictEqual(await cache.getConnectedTokenIdsByPolicyId('p1'), []);
+
+    // The rules haven't changed since, so a set cached after isn't worked out again
+    await Redis.sAdd(K(`token:${admin.id}:policies`), 'p1');
+    assert.deepStrictEqual(await cache.markStaleIfSelectionRulesChanged(), []);
+    assert.deepStrictEqual(await Redis.sMembers(K(`token:${admin.id}:policies`)), ['p1']);
   });
 
   it("forgets a token's policies when it's reselected after being deleted", async () => {

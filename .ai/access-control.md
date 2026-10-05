@@ -27,6 +27,10 @@ Backs both paths with Redis-cached policy state, all keys namespaced under `Conf
   connection changes and the expiry sweep run one at a time in the SPR primary.
 - `policy:propertyIndex:<key>` — reverse index from a policy-selection property name to token ids, used
   by `invalidatePolicyAndTokensBySelection()` to mark affected tokens stale when a policy changes.
+- `policy:selectionRules` — the `SELECTION_RULES_VERSION` the cached `token:<id>:policies` sets were selected by. The
+  primary REST main process swaps it at start-up (`markStaleIfSelectionRulesChanged`); when it differed, every cached
+  token is marked stale before requests are served and then reselected in the background (`reselectTokens`). Bump
+  the version whenever `AccessControlPolicyMatch.selects` changes what it selects.
 - `app:<appId>:schema:<schemaName>` (+ `%ALL%` / `%APP_SCHEMA%` wildcard variants; `%CORE_SCHEMA%` is written but not read) — index
   used by SPR's `getPoliciesByRestActivity()` to find candidate policies for an incoming activity without
   scanning every policy.

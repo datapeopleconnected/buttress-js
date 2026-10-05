@@ -37,6 +37,11 @@ import { RESTActivity } from '../types/bjs-nrp-objects.js';
 export const CONNECTED_TOKEN_TTL_SECONDS = 1 * 3600;
 export const CONNECTED_TOKEN_HEARTBEAT_MS = (CONNECTED_TOKEN_TTL_SECONDS * 1000) / 4;
 
+// The rules by which a selection selects a token, see AccessControlPolicyMatch.selects. Changed when they change, so the
+// policies cached for each token are worked out again (reselectIfSelectionRulesChanged). 2: every key, exactly (D-32,
+// D-35), and @and/@or.
+export const SELECTION_RULES_VERSION = '2';
+
 export class PolicyCache {
   private _redisClient: RedisClientType;
   private _modelManager: typeof Model;
@@ -452,6 +457,43 @@ export class PolicyCache {
     }
 
     await this.rehydrateToken(token);
+  }
+
+  /**
+   * Marks the policies cached for every token stale if they were selected by other rules than
+   * SELECTION_RULES_VERSION's, once across every process sharing this Redis, so a request works them out again. A
+   * token's cached policies are used as they are (getPoliciesByToken), so a policy the old rules gave it would otherwise
+   * stay. Gives the tokens marked, for reselectTokens to correct the links realtime sends activity by.
+   * @return {Promise<string[]>}
+   */
+  async markStaleIfSelectionRulesChanged(): Promise<string[]> {
+    const previous = await this._redisClient.set(this._prefix('policy:selectionRules'), SELECTION_RULES_VERSION, {
+      GET: true,
+    });
+    if (previous === SELECTION_RULES_VERSION) return [];
+
+    const prefix = this._prefix('token:');
+    const tokenIds: string[] = [];
+    for await (const keys of this._redisClient.scanIterator({ MATCH: `${prefix}*:policies`, COUNT: 1000 })) {
+      tokenIds.push(...keys.map((key) => key.slice(prefix.length, -':policies'.length)));
+    }
+    Logging.log(
+      `Selection rules changed (${previous ?? 'none'} to ${SELECTION_RULES_VERSION}), reselecting ${tokenIds.length} tokens`,
+    );
+
+    await Promise.all(tokenIds.map((tokenId) => this.setTokenIdAsStale(tokenId)));
+    return tokenIds;
+  }
+
+  /**
+   * Works out each token's policies again, one at a time.
+   * @param {string[]} tokenIds
+   * @return {Promise}
+   */
+  async reselectTokens(tokenIds: string[]) {
+    for (const tokenId of tokenIds) {
+      await this.reselectToken(tokenId);
+    }
   }
 
   private async _markTokensSelectableByPolicy(policy: Policy, skipTokenIds: string[]) {

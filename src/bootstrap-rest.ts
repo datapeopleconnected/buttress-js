@@ -229,6 +229,14 @@ export default class BootstrapRest extends Bootstrap {
       }
 
       await this.__updateAppSchema();
+
+      // Policies cached by older selection rules are marked stale before any request is served, then each token is
+      // reselected while it runs
+      const policyCache = this.__services.get('policyCache') as PolicyCache;
+      const staleTokenIds = await policyCache.markStaleIfSelectionRulesChanged();
+      policyCache.reselectTokens(staleTokenIds).catch((err: unknown) => {
+        Logging.logError(`Unable to reselect the tokens' cached policies: ${getThrownErrorMessage(err)}`);
+      });
     } else {
       Logging.logVerbose(`Secondary Main REST`);
     }
