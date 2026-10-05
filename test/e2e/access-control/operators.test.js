@@ -53,13 +53,13 @@ const id = (n) => `6abd0b00000000000000000${n}`;
 // Stored as a create stores them: every property, with its default where it's left out
 const documents = [
   { id: id(1), name: 'Ada', count: 3, active: true, at: '2026-01-01T00:00:00.000Z', owner: OWNER, tags: ['a', 'b'], scores: [1, 5],
-    lines: [{ sku: 'X', qty: 2 }, { sku: 'Y', qty: 7 }], meta: { level: 2 }, address: { city: 'Leeds' } },
+    lines: [{ sku: 'X', qty: 2 }, { sku: 'Y', qty: 7 }], meta: { level: 2, parts: [{ n: 1 }, { m: 2 }] }, address: { city: 'Leeds' } },
   { id: id(2), name: 'bob', count: 10, active: false, at: '2026-06-01T00:00:00.000Z', owner: OTHER_OWNER, tags: ['b'], scores: [],
     lines: [{ sku: 'Y', qty: 1 }], meta: null, address: { city: 'York' } },
   { id: id(3), name: 'Cy', count: null, active: null, at: null, owner: null, tags: [], scores: [10],
     lines: [], meta: {}, address: { city: null } },
   { id: id(4), name: 'ada', count: 3.5, active: true, at: '2025-12-31T23:59:59.000Z', owner: OWNER, tags: ['c'], scores: [3, 4],
-    lines: [{ sku: 'X', qty: 9 }], meta: { level: 5 }, address: { city: 'leeds' } },
+    lines: [{ sku: 'X', qty: 9 }], meta: { level: 5, parts: [1, 2] }, address: { city: 'leeds' } },
 ];
 
 // Queries in the query DSL a policy or a search gives, before REST parses them
@@ -122,6 +122,13 @@ const QUERIES = [
   { lines: { $elMatch: { sku: 'X', $or: [{ qty: 2 }, { qty: 9 }] } } },
   { lines: { $elMatch: { $and: [{ sku: 'Y' }, { qty: { $lt: 5 } }] } } },
   { 'meta.level': { $gt: 1 } },
+  // A field a document of an array hasn't got, an array's items that aren't documents, a value that isn't a document
+  { 'meta.parts.n': null },
+  { 'meta.parts.n': { $ne: null } },
+  { 'meta.parts.n': { $exists: true } },
+  { 'meta.parts.n': { $exists: false } },
+  { 'meta.parts.1': null },
+  { 'meta.level.x': null },
   { meta: null },
   { 'address.city': 'Leeds' },
   { 'address.city': { $rexi: 'LEE' } },

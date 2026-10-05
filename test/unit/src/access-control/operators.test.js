@@ -76,6 +76,28 @@ describe('access-control/operators:matchQuery', () => {
     assert.strictEqual(matchQuery({ tags: { $all: ['a'] } }, { tags: ['a', 'b'] }), true);
   });
 
+  // The documents each query matches are MongoDB's own answers
+  it("reads a field a document hasn't got as null, passing over an array's items that aren't documents, as MongoDB does", () => {
+    const documents = {
+      partly: { a: [{ b: 1 }, { c: 2 }] },
+      whole: { a: [{ b: 1 }] },
+      values: { a: [1, 2] },
+      empty: { a: [] },
+      scalar: { a: 5 },
+      nulled: { a: [null] },
+      nested: { a: [[{ b: 1 }]] },
+    };
+    const matched = (query) =>
+      Object.entries(documents)
+        .filter(([, document]) => matchQuery(query, document))
+        .map(([name]) => name);
+
+    assert.deepStrictEqual(matched({ 'a.b': null }), ['partly', 'scalar']);
+    assert.deepStrictEqual(matched({ 'a.b': { $ne: null } }), ['whole', 'values', 'empty', 'nulled', 'nested']);
+    assert.deepStrictEqual(matched({ 'a.b': { $exists: true } }), ['partly', 'whole']);
+    assert.deepStrictEqual(matched({ 'a.1': null }), ['partly', 'whole', 'scalar']);
+  });
+
   it("reads only a document's own fields, as MongoDB does", () => {
     assert.strictEqual(matchQuery({ constructor: { $exists: true } }, { name: 'a' }), false);
     assert.strictEqual(matchQuery({ toString: { $exists: false } }, { name: 'a' }), true);

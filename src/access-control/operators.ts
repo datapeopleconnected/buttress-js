@@ -128,28 +128,33 @@ export const isValueOperators = (value: unknown): value is Record<string, unknow
     (key) => (key.startsWith('$') || key.startsWith('@')) && !Object.hasOwn(LOGICAL_ALIASES, key),
   );
 
-// A document's own field, not a name an object has from Object.prototype
-const ownField = (document: Record<string, unknown>, name: string) =>
-  Object.hasOwn(document, name) ? document[name] : undefined;
+// Where a path reaches a field a document hasn't got: null to a comparison with null, and not there to $exists
+const MISSING = Symbol('missing');
 
 /**
- * The values a dotted path reaches in a document, as MongoDB reaches them: through each object of an array on the way
- * (or the item a numeric segment names), and at the end an array as well as each of its items. Nothing for a path the
- * document hasn't got.
+ * The values a dotted path reaches in a document, as MongoDB reaches them: through each document of an array on the way
+ * (and the item a numeric segment names), and at the end an array as well as each of its items. A document without
+ * the field gives MISSING, as does a value that isn't a document where a field is looked for, but an array's items that
+ * aren't documents are passed over.
  */
-const valuesAt = (value: unknown, segments: string[]): unknown[] => {
+const valuesAt = (value: unknown, segments: string[], inArray = false): unknown[] => {
   if (segments.length < 1) {
-    if (value === undefined) return [];
+    if (value === undefined) return inArray ? [] : [MISSING];
     return Array.isArray(value) ? [value, ...value] : [value];
   }
 
   const [head, ...rest] = segments;
   if (Array.isArray(value)) {
-    const byIndex = /^\d+$/.test(head) ? valuesAt(value[Number(head)], rest) : [];
-    return [...byIndex, ...value.flatMap((item) => (isPlainObject(item) ? valuesAt(ownField(item, head), rest) : []))];
+    const byIndex = /^\d+$/.test(head) ? valuesAt(value[Number(head)], rest, true) : [];
+    return [...byIndex, ...value.flatMap((item) => (isPlainObject(item) ? fieldAt(item, head, rest) : []))];
   }
-  return isPlainObject(value) ? valuesAt(ownField(value, head), rest) : [];
+  if (isPlainObject(value)) return fieldAt(value, head, rest);
+  return inArray ? [] : [MISSING];
 };
+
+// A document's own field, not a name an object has from Object.prototype, and what the rest of the path reaches in it
+const fieldAt = (document: Record<string, unknown>, name: string, rest: string[]) =>
+  Object.hasOwn(document, name) ? valuesAt(document[name], rest) : [MISSING];
 
 // An id is its hex string, as ids are outside the MongoDB adapter
 const asCompared = (value: unknown) => (isObjectId(value) ? value.toHexString() : value);
@@ -198,9 +203,11 @@ const order = (x: unknown, y: unknown): number | null => {
   return null;
 };
 
-// A field equal to the operand: one of its values is, and null for a field that's null or that it hasn't got
+// A field equal to the operand: one of its values is, and null for a field that's null or that a document hasn't got
 const equals = (values: unknown[], operand: unknown) =>
-  operand === null ? values.length < 1 || values.includes(null) : values.some((value) => isEqual(value, operand));
+  operand === null
+    ? values.some((value) => value === null || value === MISSING)
+    : values.some((value) => isEqual(value, operand));
 
 const compares = (values: unknown[], operand: unknown, passes: (order: number) => boolean, orEqualNull: boolean) => {
   if (operand === null) return orEqualNull && equals(values, null);
@@ -244,7 +251,7 @@ const matchOperators = (values: unknown[], operators: Record<string, unknown>): 
         return list.length > 0 && list.every((item) => equals(values, item));
       }
       case '$exists':
-        return values.length > 0 === Boolean(operand);
+        return values.some((value) => value !== MISSING) === Boolean(operand);
       case '$regex': {
         const pattern = new RegExp(String(operand), typeof operators.$options === 'string' ? operators.$options : '');
         return values.some((value) => typeof value === 'string' && pattern.test(value));
