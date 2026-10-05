@@ -4,392 +4,328 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, noimageindex, nocache" />
-    <title>ButtressJS</title>
+    <meta name="color-scheme" content="light dark" />
+    <title>Buttress</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
-    />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
     <style>
       :root {
-        --bg-top: #071a2f;
-        --bg-bottom: #12395d;
-        --surface: rgba(255, 255, 255, 0.14);
-        --surface-border: rgba(255, 255, 255, 0.32);
-        --text-main: #f4fbff;
-        --text-muted: #b8d1e3;
-        --accent: #58d3c5;
-        --accent-strong: #3ebeb0;
-        --halo: rgba(88, 211, 197, 0.45);
+        --page: #ebebeb;
+        --text: #222222;
+        --muted: #5c5c5c;
+        --logo: #222222;
+        --panel: #222222;
+        --on-panel: #ebebeb;
+        --on-panel-muted: #a6a6a6;
+        --led: #5fd4dc;
+        --led-idle: rgba(235, 235, 235, 0.09);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #141415;
+          --text: #ebebeb;
+          --muted: #a6a6a6;
+          --logo: #ebebeb;
+          --panel: #262628;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
       }
 
       html,
       body {
         margin: 0;
-        padding: 0;
-        width: 100%;
         min-height: 100%;
       }
 
       body {
-        position: relative;
-        overflow: hidden;
-        color: var(--text-main);
-        font-family: 'Space Grotesk', sans-serif;
-        background:
-          radial-gradient(circle at 18% 24%, rgba(88, 211, 197, 0.2), transparent 28%),
-          radial-gradient(circle at 82% 72%, rgba(130, 186, 255, 0.23), transparent 34%),
-          linear-gradient(155deg, var(--bg-top), var(--bg-bottom));
+        background: var(--page);
+        color: var(--text);
+        font-family: Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+        line-height: 1.5;
       }
 
-      .scene {
-        position: relative;
-        z-index: 1;
-        min-height: 100vh;
+      .page {
+        width: min(1200px, 100% - 32px);
+        margin: 0 auto;
+        padding: clamp(1.5rem, 6vh, 4.5rem) 0 2rem;
         display: grid;
-        place-items: center;
-        padding: 2rem;
+        grid-template-columns: minmax(0, 45fr) minmax(0, 55fr);
+        gap: 2rem;
       }
 
-      .noise {
-        position: absolute;
-        inset: 0;
-        z-index: 0;
-        opacity: 0.12;
-        pointer-events: none;
-        background-image: radial-gradient(rgba(255, 255, 255, 0.4) 0.6px, transparent 0.6px);
-        background-size: 3px 3px;
+      /* The logo stands on the panel below it, as in the brand artwork */
+      .intro {
+        display: flex;
+        flex-direction: column;
       }
 
-      .card {
-        width: min(680px, 100%);
-        border-radius: 24px;
-        border: 1px solid var(--surface-border);
-        background: var(--surface);
-        backdrop-filter: blur(8px);
-        box-shadow: 0 18px 65px rgba(0, 0, 0, 0.28);
-        padding: clamp(1.4rem, 3vw, 2.2rem);
-        text-align: left;
-        animation: card-in 800ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+      .logo {
+        margin: 0 0 0.5rem;
+        line-height: 0;
       }
 
-      .kicker {
+      .logo svg {
+        width: min(428px, 60%);
+        height: auto;
+        fill: var(--logo);
+      }
+
+      .panel {
+        flex: 1;
+        min-height: 28rem;
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        background: var(--panel);
+        color: var(--on-panel);
+      }
+
+      .statement {
         margin: 0;
-        font-size: 0.82rem;
-        letter-spacing: 0.22em;
-        text-transform: uppercase;
-        color: var(--text-muted);
-        font-family: 'IBM Plex Mono', monospace;
-      }
-
-      .title {
-        margin: 0.4rem 0 0;
-        font-size: clamp(2.2rem, 9vw, 5rem);
-        line-height: 0.95;
-        font-weight: 700;
-        color: var(--text-main);
-      }
-
-      .title sub {
-        vertical-align: baseline;
-        font-size: clamp(1rem, 3.6vw, 1.9rem);
+        font-size: clamp(1.6rem, 2.9vw, 2.6rem);
         font-weight: 500;
-        color: var(--accent);
-        margin-left: 0.25rem;
+        line-height: 1.22;
+        letter-spacing: -0.01em;
       }
 
-      .lead {
-        margin: 1rem 0 0;
-        max-width: 42ch;
-        color: var(--text-muted);
-        line-height: 1.55;
-        font-size: clamp(0.98rem, 2.2vw, 1.1rem);
-      }
-
-      .cta-row {
-        margin-top: 1.5rem;
+      .links {
+        margin-top: 2rem;
         display: flex;
         flex-wrap: wrap;
-        gap: 0.8rem;
+        gap: 0.75rem;
       }
 
-      .button-link {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 999px;
+      .button {
+        padding: 0.6rem 1.1rem;
+        border: 1px solid var(--on-panel);
+        color: var(--on-panel);
+        font-weight: 500;
         text-decoration: none;
-        font-weight: 600;
-        transition:
-          transform 180ms ease,
-          box-shadow 180ms ease,
-          background-color 180ms ease;
       }
 
-      .button-link.primary {
-        padding: 0.7rem 1rem;
-        color: #02232a;
-        background: var(--accent);
-        box-shadow: 0 0 0 0 var(--halo);
+      .button.primary {
+        background: var(--on-panel);
+        color: var(--panel);
       }
 
-      .button-link.secondary {
-        padding: 0.66rem 0.98rem;
-        color: var(--text-main);
-        border: 1px solid rgba(255, 255, 255, 0.35);
+      .button:hover {
+        background: var(--on-panel-muted);
+        border-color: var(--on-panel-muted);
+        color: var(--panel);
       }
 
-      .button-link:hover {
-        transform: translateY(-1px);
+      .button:focus-visible {
+        outline: 2px solid var(--led);
+        outline-offset: 3px;
       }
 
-      .button-link.primary:hover {
-        background: var(--accent-strong);
-        box-shadow: 0 0 0 10px rgba(88, 211, 197, 0.18);
+      .activity {
+        padding: 1.5rem;
+        border-radius: 14px;
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        background: var(--panel);
+        color: var(--on-panel);
       }
 
-      .button-link.secondary:hover {
-        border-color: rgba(255, 255, 255, 0.58);
+      .activity-head,
+      .activity-foot {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 1rem;
+        color: var(--on-panel-muted);
+        font-size: 0.875rem;
+        font-variant-numeric: tabular-nums;
       }
 
-      .meta {
-        margin-top: 1.25rem;
-        padding-top: 1rem;
-        border-top: 1px solid rgba(255, 255, 255, 0.25);
-        color: var(--text-muted);
-        font-size: 0.92rem;
+      .activity-head h2 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--on-panel);
       }
 
-      .meta a,
-      .meta a:hover,
-      .meta a:visited {
-        color: var(--accent);
+      .status::before {
+        content: '';
+        display: inline-block;
+        width: 0.5rem;
+        height: 0.5rem;
+        margin-right: 0.45rem;
+        border-radius: 50%;
+        background: var(--on-panel-muted);
       }
 
-      #canvas {
-        position: absolute;
-        inset: 0;
-        z-index: 0;
+      .status.live::before {
+        background: var(--led);
       }
 
-      @keyframes card-in {
-        0% {
-          opacity: 0;
-          transform: translateY(20px) scale(0.985);
+      /* One column per second, one lit dot per event */
+      .matrix {
+        flex: 1;
+        display: flex;
+        align-items: center;
+      }
+
+      .columns {
+        width: 100%;
+        display: flex;
+        gap: 3px;
+      }
+
+      .columns div {
+        flex: 1;
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 3px;
+      }
+
+      .columns span {
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: var(--led-idle);
+      }
+
+      .columns span.on {
+        background: var(--led);
+      }
+
+      footer {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: 0.5rem 2rem;
+        font-size: 0.875rem;
+        color: var(--muted);
+      }
+
+      footer a {
+        color: inherit;
+      }
+
+      @media (max-width: 820px) {
+        .page {
+          grid-template-columns: minmax(0, 1fr);
         }
 
-        100% {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
-      }
-
-      @media (max-width: 760px) {
-        .scene {
-          padding: 1.2rem;
-        }
-
-        .card {
-          border-radius: 18px;
-        }
-
-        .cta-row {
-          flex-direction: column;
-          align-items: stretch;
-        }
-
-        .button-link {
-          width: 100%;
+        .panel {
+          min-height: 20rem;
         }
       }
     </style>
   </head>
 
   <body>
-    <div class="noise" aria-hidden="true"></div>
-    <main class="scene">
-      <section class="card" aria-label="ButtressJS introduction">
-        <p class="kicker">Federated data platform</p>
-        <header>
-          <h1 class="title">Buttress<sub>JS</sub></h1>
-        </header>
-        <p class="lead">
-          The open source engine for secure real-time data collaboration across teams, environments, and applications.
-        </p>
-        <div class="cta-row">
-          <a
-            class="button-link primary"
-            href="https://github.com/datapeopleconnected/buttress-js"
-            target="_blank"
-            rel="noopener noreferrer"
-            >View on GitHub</a
-          >
-          <a
-            class="button-link secondary"
-            href="https://datapeopleconnected.github.io/buttress-js/#/"
-            target="_blank"
-            rel="noopener noreferrer"
-            >Read the docs</a
-          >
+    <main class="page">
+      <section class="intro">
+        <h1 class="logo">
+          <svg viewBox="0 0 428 82" role="img" aria-label="buttress">
+            <!-- The wordmark is cut out of the block, so the page shows through it (brand/buttress-logo.svg) -->
+            <mask id="wordmark">
+              <rect width="428" height="82" fill="#fff" />
+              <path
+                fill="#000"
+                d="m49 72h10.95v-7.44h0.65c1.75 3.44 5.41 8.27 13.53 8.27 11.13 0 19.46-8.82 19.46-24.38 0-15.74-8.58-24.29-19.49-24.29-8.33 0-11.81 5.01-13.5 8.42H60.13V9.03H49ZM59.92 48.39c0-9.16 3.94-15.1 11.1-15.1 7.41 0 11.22 6.3 11.22 15.1 0 8.86-3.87 15.31-11.22 15.31-7.1 0-11.1-6.15-11.1-15.31zm71.54 3.75c0 7.19-5.13 10.76-10.05 10.76-5.35 0-8.92-3.78-8.92-9.78V24.77h-11.13v30.07c0 11.35 6.46 17.77 15.74 17.77 7.07 0 12.05-3.72 14.21-9.01h0.49V72h10.79V24.77h-11.13zM175.87 24.77h-9.32V13.46h-11.13V24.77h-6.7v8.61h6.7v26.26c-0.06 8.89 6.4 13.25 14.76 13.01 3.17-0.09 5.35-0.71 6.55-1.11l-1.88-8.7c-0.61 0.15-1.88 0.43-3.26 0.43-2.8 0-5.04-0.98-5.04-5.47V33.38h9.32zm31.17 0h-9.32V13.46h-11.13V24.77h-6.7v8.61h6.7v26.26c-0.06 8.89 6.4 13.25 14.76 13.01 3.17-0.09 5.35-0.71 6.55-1.11l-1.88-8.7c-0.61 0.15-1.88 0.43-3.26 0.43-2.8 0-5.04-0.98-5.04-5.47V33.38h9.32zm7.58 47.23h11.13V44.24c0-6 4.52-10.24 10.64-10.24 1.88 0 4.21 0.34 5.17 0.65V24.4c-1.01-0.18-2.77-0.31-4-0.31-5.41 0-9.93 3.07-11.65 8.55h-0.49v-7.87h-10.79zm51.55 0.92c11.01 0 18.57-5.38 20.54-13.59l-10.39-1.17c-1.51 4-5.2 6.09-9.99 6.09-7.19 0-11.96-4.74-12.05-12.82h32.9V48.02c0-16.57-9.96-23.86-21.58-23.86-13.53 0-22.35 9.93-22.35 24.51 0 14.82 8.7 24.26 22.94 24.26zm-11.87-28.99c0.34-6.03 4.8-11.1 11.44-11.1 6.4 0 10.7 4.67 10.76 11.1zm77.87-6.67c-1.54-7.99-7.93-13.1-19-13.1-11.38 0-19.12 5.6-19.09 14.33-0.03 6.89 4.21 11.44 13.28 13.31l8.06 1.69c4.34 0.95 6.36 2.71 6.36 5.38 0 3.23-3.51 5.66-8.79 5.66-5.1 0-8.42-2.21-9.38-6.46l-10.85 1.05c1.38 8.67 8.67 13.81 20.26 13.81 11.81 0 20.14-6.12 20.17-15.07-0.03-6.73-4.37-10.85-13.28-12.79l-8.06-1.72c-4.8-1.08-6.7-2.74-6.67-5.47-0.03-3.2 3.51-5.41 8.15-5.41 5.13 0 7.84 2.8 8.7 5.9zm45.8 0c-1.54-7.99-7.93-13.1-19-13.1-11.38 0-19.12 5.6-19.09 14.33-0.03 6.89 4.21 11.44 13.28 13.31l8.06 1.69c4.34 0.95 6.36 2.71 6.36 5.38 0 3.23-3.51 5.66-8.79 5.66-5.1 0-8.42-2.21-9.38-6.46l-10.85 1.05c1.38 8.67 8.67 13.81 20.26 13.81 11.81 0 20.14-6.12 20.17-15.07-0.03-6.73-4.37-10.85-13.28-12.79l-8.06-1.72c-4.8-1.08-6.7-2.74-6.67-5.47-0.03-3.2 3.51-5.41 8.15-5.41 5.13 0 7.84 2.8 8.7 5.9z"
+              />
+            </mask>
+            <path d="M0 82V54L13 39V29H32V82Z" />
+            <rect x="36" width="357" height="82" mask="url(#wordmark)" />
+            <path d="M428 82V54L415 39V29H397V82Z" />
+          </svg>
+        </h1>
+
+        <div class="panel">
+          <p class="statement">
+            The digital spine designed to unlock interoperability, strengthen infrastructure and deliver real-world
+            impact.
+          </p>
+          <nav class="links" aria-label="Project links">
+            <a class="button primary" href="https://datapeopleconnected.github.io/buttress-js/#/">Documentation</a>
+            <a class="button" href="https://github.com/datapeopleconnected/buttress-js">Source on GitHub</a>
+          </nav>
         </div>
-        <footer class="meta">Built in the open. Self-host friendly. Ready for production data flows.</footer>
       </section>
+
+      <section class="activity" aria-labelledby="activity-title">
+        <div class="activity-head">
+          <h2 id="activity-title">Activity on this instance</h2>
+          <span class="status" id="status">Offline</span>
+        </div>
+        <div class="matrix" aria-hidden="true"><div class="columns" id="columns"></div></div>
+        <div class="activity-foot">
+          <span>60s ago</span>
+          <span id="total">0 events</span>
+          <span>now</span>
+        </div>
+      </section>
+
+      <footer>
+        <span>Open Source Federated Data Platform</span>
+        <span> AGPL-3.0 licensed, by <a href="https://github.com/datapeopleconnected">Data People Connected</a> </span>
+      </footer>
     </main>
 
-    <canvas id="canvas" aria-hidden="true"></canvas>
     <script src="/socket.io/socket.io.js" defer></script>
     <script>
       'use strict';
 
-      const MAX_PARTICLES = 200;
+      // Chart the realtime activity the Socket process reports on /stats
+      window.addEventListener('DOMContentLoaded', () => {
+        const SECONDS = 60;
+        const ROWS = 16;
 
-      const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+        const columnsEl = document.getElementById('columns');
+        const statusEl = document.getElementById('status');
+        const totalEl = document.getElementById('total');
 
-      class Stats {
-        constructor(id) {
-          this.canvas = document.getElementById(id);
-          this.context = this.canvas.getContext('2d');
+        const counts = new Array(SECONDS).fill(0);
+        const dots = counts.map(() => {
+          const column = columnsEl.appendChild(document.createElement('div'));
+          return Array.from({ length: ROWS }, () => column.appendChild(document.createElement('span')));
+        });
+        let total = 0;
 
-          this.width = window.innerWidth;
-          this.height = window.innerHeight;
+        const render = () => {
+          // Scale down only once a second has more events than the column has dots
+          const scale = Math.min(1, ROWS / Math.max(...counts));
+          counts.forEach((count, i) => {
+            const lit = count ? Math.max(1, Math.round(count * scale)) : 0;
+            dots[i].forEach((dot, row) => dot.classList.toggle('on', row < lit));
+          });
+          totalEl.textContent = `${total} event${total === 1 ? '' : 's'}`;
+        };
 
-          this.paused = false;
-          this.time = 0;
-          this.lastTime = 0;
-          this.delta = 0;
-          this.particles = [];
+        render();
+        if (typeof io !== 'function') return;
 
-          this.init();
-        }
+        const setStatus = (live) => {
+          statusEl.textContent = live ? 'Live' : 'Offline';
+          statusEl.classList.toggle('live', live);
+        };
 
-        init() {
-          this.resize();
-          this._loop();
+        const socket = io('/stats');
+        socket.on('connect', () => setStatus(true));
+        socket.on('disconnect', () => setStatus(false));
+        socket.on('activity', () => {
+          counts[SECONDS - 1]++;
+          total++;
+          render();
+        });
 
-          for (let i = 0; i < 50; i++) {
-            this.addParticle();
-          }
-        }
-
-        addParticle() {
-          if (this.particles.length < MAX_PARTICLES) {
-            this.particles.push(new Particle(this.width, this.height));
-          }
-        }
-
-        _loop() {
-          window.requestAnimationFrame(() => this._loop());
-
-          this.time = performance.now();
-          this.delta = this.time - this.lastTime;
-
-          if (!this.paused) {
-            this._update(this.delta);
-            this._render();
-          }
-
-          this.lastTime = this.time;
-        }
-
-        _update(delta) {
-          for (let i = this.particles.length - 1; i >= 0; i--) {
-            this.particles[i].update(delta);
-
-            if (this.particles[i].life < 1) {
-              this.particles.splice(i, 1);
-            }
-          }
-        }
-
-        _render() {
-          this.context.clearRect(0, 0, this.width, this.height);
-
-          for (let a = 0; a < this.particles.length; a++) {
-            for (let b = a + 1; b < this.particles.length; b++) {
-              const dx = this.particles[b].x - this.particles[a].x;
-              const dy = this.particles[b].y - this.particles[a].y;
-              const distance = Math.sqrt(dx * dx + dy * dy);
-              const opacity = clamp(1 - distance / 300, 0, 1);
-
-              if (opacity > 0) {
-                this.context.lineWidth = 0.55;
-                this.context.strokeStyle = `rgba(244, 251, 255, ${opacity})`;
-                this.context.beginPath();
-                this.context.moveTo(this.particles[a].x, this.particles[a].y);
-                this.context.lineTo(this.particles[b].x, this.particles[b].y);
-                this.context.stroke();
-              }
-            }
-          }
-
-          for (let i = 0; i < this.particles.length; i++) {
-            this.particles[i].render(this.context);
-          }
-        }
-
-        resize() {
-          this.width = this.canvas.width = window.innerWidth;
-          this.height = this.canvas.height = window.innerHeight;
-        }
-      }
-
-      class Particle {
-        constructor(width, height) {
-          this.x = Math.random() * width;
-          this.y = Math.random() * height;
-
-          this.boundRight = width;
-          this.boundBottom = height;
-
-          this.speed = (Math.random() * 1 + 0.7) / 100;
-          this.directionAngle = Math.random() * Math.PI * 2;
-          this.radius = Math.random() * 1.8 + 1.6;
-
-          this.life = 100;
-          this.decay = (Math.random() * 16 + 2) / 5000;
-
-          this.vectorX = Math.cos(this.directionAngle) * this.speed;
-          this.vectorY = Math.sin(this.directionAngle) * this.speed;
-          this.opacity = this.life / 100;
-        }
-
-        update(delta) {
-          this._checkBounds();
-          this.x += this.vectorX * delta;
-          this.y += this.vectorY * delta;
-
-          this.life -= this.decay * delta;
-          this.opacity = this.life < 1 ? 0 : this.life / 100;
-        }
-
-        render(ctx) {
-          ctx.beginPath();
-          ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-          ctx.closePath();
-          ctx.fillStyle = `rgba(244, 251, 255, ${this.opacity})`;
-          ctx.shadowColor = 'rgba(88, 211, 197, 0.35)';
-          ctx.shadowBlur = 8;
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        }
-
-        _checkBounds() {
-          if (this.x >= this.boundRight || this.x <= 0) this.vectorX *= -1;
-          if (this.y >= this.boundBottom || this.y <= 0) this.vectorY *= -1;
-          if (this.x > this.boundRight) this.x = this.boundRight;
-          if (this.y > this.boundBottom) this.y = this.boundBottom;
-          if (this.x < 0) this.x = 0;
-          if (this.y < 0) this.y = 0;
-        }
-      }
-
-      const stats = new Stats('canvas');
-      window.addEventListener('resize', () => stats.resize());
-
-      if (typeof io === 'function') {
-        io('/stats').on('activity', () => stats.addParticle());
-      }
+        setInterval(() => {
+          counts.shift();
+          counts.push(0);
+          render();
+        }, 1000);
+      });
     </script>
   </body>
 </html>
