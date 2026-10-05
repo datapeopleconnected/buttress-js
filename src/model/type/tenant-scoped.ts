@@ -74,8 +74,13 @@ export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
     return { $and: [query, this.clause] };
   }
 
-  parseQuery(query: Record<string, unknown>, envFlat?: Record<string, unknown>, schemaFlat?: FlattenedSchema) {
-    return this._model.parseQuery(query, envFlat, schemaFlat);
+  parseQuery(
+    query: Record<string, unknown>,
+    envFlat?: Record<string, unknown>,
+    schemaFlat?: FlattenedSchema,
+    checkPaths?: boolean,
+  ) {
+    return this._model.parseQuery(query, envFlat, schemaFlat, checkPaths);
   }
 
   createId(id?: string) {

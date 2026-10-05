@@ -29,6 +29,9 @@ import StandardModel from '../model/type/standard.js';
 // What a find or count needs of a model: a schema model, or a core model scoped to an app (TenantScopedModel)
 export type QueryableModel = Pick<StandardModel<unknown>, 'parseQuery' | 'flatSchemaData' | 'find' | 'count'>;
 
+// The client's query is checked against a strict schema's paths by its route, so the query put together here, a
+// policy's query in it, isn't: a policy's query naming a path the schema doesn't have reads nothing, rather than
+// refusing the client's request with a path it didn't send
 export async function find<T extends QueryableModel>(
   model: T,
   query: QueryParams<object>,
@@ -39,7 +42,7 @@ export async function find<T extends QueryableModel>(
   const policyConfig = ac.policyConfigs[0] || {};
   const combined = await combineQueriesWithAc(query, policyConfig);
   return model.find(
-    model.parseQuery(combined.query, {}, model.flatSchemaData),
+    model.parseQuery(combined.query, {}, model.flatSchemaData, false),
     {},
     combined.limit,
     combined.skip,
@@ -77,7 +80,7 @@ async function findThroughGrants<T extends QueryableModel>(
   const grants = policyConfigs.map((policyConfig) => ({
     // Matched in memory as MongoDB matches, so in MongoDB's terms, as the adapter gives them
     query: toMongoQuery(
-      model.parseQuery(policyConfig.query ?? {}, {}, model.flatSchemaData) as Record<string, unknown>,
+      model.parseQuery(policyConfig.query ?? {}, {}, model.flatSchemaData, false) as Record<string, unknown>,
     ),
     keys: grantKeys(policyConfig),
   }));
@@ -87,7 +90,7 @@ async function findThroughGrants<T extends QueryableModel>(
     { query: anyGrantQuery(policyConfigs) },
   );
   const found = (await model.find(
-    model.parseQuery(combined.query, {}, model.flatSchemaData),
+    model.parseQuery(combined.query, {}, model.flatSchemaData, false),
     {},
     combined.limit,
     combined.skip,
@@ -193,7 +196,7 @@ export async function count<T extends QueryableModel>(
   const reads = ac.policyConfigs.length > 0 ? { query: anyGrantQuery(ac.policyConfigs) } : {};
   const combined = await combineQueriesWithAc(query, reads);
 
-  return model.count(model.parseQuery(combined.query));
+  return model.count(model.parseQuery(combined.query, {}, model.flatSchemaData, false));
 }
 
 /**

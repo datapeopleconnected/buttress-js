@@ -108,6 +108,39 @@ const resolveSegments = (schemaFlat: FlattenedSchema, segments: string[]): Resol
   return { error: 'unknown_path' };
 };
 
+// Whether a query's path, as segments, is one the schema has
+const querySegments = (schemaFlat: FlattenedSchema, segments: string[]): boolean => {
+  const match = matchKey(schemaFlat, segments);
+  // A nested object, compared whole, whose properties are flattened beneath it
+  if (!match) return Object.keys(schemaFlat).some((key) => key.startsWith(`${segments.join('.')}.`));
+
+  const { key, rest } = match;
+  const config = schemaFlat[key];
+  // A property typed object owns everything beneath it
+  if (rest.length === 0 || config.__type === 'object') return true;
+  if (config.__type !== 'array') return false;
+
+  // An array's item, or, through an item (an index or every item), one of its properties
+  const withinItem = INDEX.test(rest[0]) ? rest.slice(1) : rest;
+  if (withinItem.length === 0) return true;
+  if (config.__schema) return querySegments(config.__schema, withinItem);
+  return !config.__itemtype;
+};
+
+/**
+ * Whether a query's path is one the schema has: a property, a nested object or one of its properties, a path beneath
+ * a property typed object, an array's item (`tags.0`) or an item's property (`lines.sku`, `lines.0.sku`), or a path
+ * into the items of an array that doesn't type them. `_`-prefixed internals always are.
+ * @param {Object} schemaFlat - the model's flattened schema, or an array's flattened item schema
+ * @param {string} path - e.g. `lines.0.sku`
+ * @return {boolean}
+ */
+export function isQueryPath(schemaFlat: FlattenedSchema, path: string): boolean {
+  if (typeof path !== 'string' || path === '') return false;
+  if (path.startsWith('_')) return true;
+  return querySegments(schemaFlat, path.split('.'));
+}
+
 /**
  * What an update path writes to, and how, in the schema; or why it can't be updated.
  * @param {Object} schemaFlat - the model's flattened schema

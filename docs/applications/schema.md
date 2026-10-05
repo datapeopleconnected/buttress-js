@@ -21,8 +21,10 @@ A schema in ButtressJS is defined as a JSON object with the following key compon
   through — see [Federation](../federation/).
 - **strict**: (Optional) `true` to refuse a create that gives a field the schema doesn't define, with a 400
   `unknown_path` naming it. Without it such fields are dropped, so a client can post back an entity it read. A
-  property typed `object` takes anything beneath it; `id`, `sourceId` and `_`-prefixed keys are always taken. An
-  update to a path the schema doesn't define is refused either way.
+  property typed `object` takes anything beneath it; `id`, `sourceId` and `_`-prefixed keys are always taken. A
+  search naming a path the schema doesn't define is refused the same way; without `strict` it's searched as given,
+  so a client can reach data stored before a property left the schema. An update to a path the schema doesn't
+  define is refused either way.
 
 ### Example
 ```json
@@ -271,7 +273,9 @@ operator (`$where`, `$expr` and other MongoDB operators included); one giving an
 such as `$in` without a list or a pattern that isn't one, with a 400, `invalid_value`. Earlier releases sent both on,
 and the request failed with a 500.
 
-A property's value is read as described in [How Values Are Read](#how-values-are-read).
+A property's value is read as described in [How Values Are Read](#how-values-are-read). A schema with `strict: true`
+refuses a search on a path it doesn't define with a 400, `unknown_path`; a path beneath a property typed `object`, an
+array's items (`tags.0`, `lines.sku`) and `id` and `sourceId` are paths it defines.
 
 ## Managing Schemas
 Schemas can be updated, extended, or deleted using the ButtressJS API. The `Schema` class provides methods for merging, validating, and encoding schemas.

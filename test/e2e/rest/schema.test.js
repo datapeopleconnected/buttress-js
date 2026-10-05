@@ -810,4 +810,50 @@ describe('Schema', async () => {
 			assert.deepStrictEqual((await getSpaceship()).tags, ['a', 'b', 'c', 'd', 'e']);
 		});
 	});
+
+	// A strict schema refuses a search on a path it doesn't define, as it refuses a create giving one
+	describe('Searching a strict schema', async () => {
+		const searchGadgets = (query) => bjsReq({
+			url: `${ENDPOINT.REST}/${testEnv.apps.strict.apiPath}/api/v1/gadget`,
+			method: 'SEARCH',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify({query}),
+		}, testEnv.apps.strict.token);
+
+		before(async function() {
+			this.timeout(20000);
+			testEnv.apps.strict = await runStep('create the strict app', async () =>
+				createApp(ENDPOINT.REST, 'Test Strict App', 'test-strict-app')
+			, 'Strict search setup');
+			await runStep('add the strict gadget schema', async () => updateSchema(ENDPOINT.REST, [{
+				name: 'gadget',
+				type: 'collection',
+				strict: true,
+				properties: {
+					name: {__type: 'string', __default: null, __required: true, __allowUpdate: true},
+					specs: {__type: 'object', __default: null, __required: false, __allowUpdate: true},
+				},
+			}], testEnv.apps.strict.token), 'Strict search setup');
+			await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.strict.apiPath}/api/v1/gadget`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({name: 'Widget', specs: {weight: 3}}),
+			}, testEnv.apps.strict.token);
+		});
+
+		it('Should refuse a search on a path the schema doesn\'t define, with 400 unknown_path', async () => {
+			await assert.rejects(() => searchGadgets({colour: 'red'}), (err) => {
+				assert.strictEqual(err.code, 400);
+				assert.strictEqual(err.body.code, 'unknown_path');
+				assert.deepStrictEqual(err.body.details, {path: 'colour'});
+				return true;
+			});
+		});
+
+		it('Should search the paths the schema defines, and beneath a property typed object', async () => {
+			assert.deepStrictEqual((await searchGadgets({name: 'Widget'})).map((gadget) => gadget.name), ['Widget']);
+			assert.deepStrictEqual((await searchGadgets({'specs.weight': 3})).map((gadget) => gadget.name), ['Widget']);
+		});
+	});
 });

@@ -29,7 +29,7 @@ import { ModelManager } from '../index.js';
 import AbstractAdapter, { AdapterFindResult } from '../../datastore/abstract-adapter.js';
 import { Datastore } from '../../datastore/index.js';
 import { AdapterDocument, AdapterQuery, UpdatePathBody, UpdatePathContext } from '../../types/datastore.js';
-import { isUpdatePathRefusal, resolveUpdatePath } from '../update-paths.js';
+import { isQueryPath, isUpdatePathRefusal, resolveUpdatePath } from '../update-paths.js';
 import { FlattenedSchema, FlattenedSchemaProperty } from '../../types/schema.js';
 
 // The types a compared query value is read as, and the operators that compare
@@ -48,6 +48,10 @@ const unknownQueryOperator = (path: string, operator: string) =>
     path,
     received: operator,
   });
+
+// A strict schema's query names a path it doesn't have: refused, as a create giving one is (R3 step 7)
+const unknownQueryPath = (path: string) =>
+  Helpers.Errors.badRequest('unknown_path', `The query names a path the schema doesn't have: ${path}`, { path });
 
 // An operator in its `$` name: `@op` is `$op`
 const operatorName = (operator: string) => (operator.startsWith('@') ? `$${operator.slice(1)}` : operator);
@@ -197,6 +201,8 @@ export default class StandardModel<TDocument = AdapterDocument> {
     query: Record<string, unknown>,
     envFlat: Record<string, unknown> = {},
     schemaFlat: FlattenedSchema = this.flatSchemaData,
+    // A strict schema's query names only paths the schema has
+    checkPaths: boolean = this.schemaData?.strict === true,
   ): ParsedQuery {
     let output: Record<string, unknown> = {};
 
@@ -209,12 +215,13 @@ export default class StandardModel<TDocument = AdapterDocument> {
       if (Object.hasOwn(LOGICAL_ALIASES, property)) {
         if (!Array.isArray(command) || !command.every(isPlainObject)) throw invalidQueryValue(property, 'array');
         if (command.length > 0) {
-          output[LOGICAL_ALIASES[property]] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
+          output[LOGICAL_ALIASES[property]] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat, checkPaths));
         }
         continue;
       }
       // Any other operator's name in a property's place names no property
       if (property.startsWith('$') || property.startsWith('@')) throw unknownQueryOperator(property, property);
+      if (checkPaths && !isQueryPath(schemaFlat, property)) throw unknownQueryPath(property);
 
       if (hasOperatorNames(command)) {
         // An operator keeps its Buttress name, in its `$` form: the query stays a Buttress query, and only the MongoDB
@@ -228,11 +235,12 @@ export default class StandardModel<TDocument = AdapterDocument> {
             output,
             envFlat,
             schemaFlat,
+            checkPaths,
           );
         }
       } else {
         // A value, compared whole as MongoDB compares it: a list, an object of fields, a date
-        output = this.parseQueryProperty(property, '$eq', command, output, envFlat, schemaFlat);
+        output = this.parseQueryProperty(property, '$eq', command, output, envFlat, schemaFlat, checkPaths);
       }
     }
 
@@ -278,6 +286,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
     output: Record<string, unknown> = {},
     envFlat: Record<string, unknown> = {},
     schemaFlat: FlattenedSchema = {},
+    checkPaths: boolean = false,
   ) {
     // Check to see if operand is a path and fetch value
     if (operand && (operand as string).indexOf && (operand as string).indexOf('.') !== -1) {
@@ -317,9 +326,10 @@ export default class StandardModel<TDocument = AdapterDocument> {
     if (mongoOperator === '$elemMatch') {
       if (!isPlainObject(operand)) throw invalidQueryValue(property, 'object');
       // The operators a value of the list must pass, or a query an item must match, read against the items' schema
+      // An item's query is checked against the items' schema, when the array has one
       operand = hasOperatorNames(operand)
         ? this.__parseOperators(property, operand)
-        : this.parseQuery(operand, envFlat, propSchema?.__schema ?? {});
+        : this.parseQuery(operand, envFlat, propSchema?.__schema ?? {}, checkPaths && Boolean(propSchema?.__schema));
     } else if (propSchema) {
       const itemSchema = propSchema.__schema;
       if (propSchema.__type === 'array' && itemSchema && typeof operand === 'object' && operand !== null) {

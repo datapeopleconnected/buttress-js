@@ -213,6 +213,61 @@ describe('model/type/StandardModel:parseQuery operators', () => {
   });
 });
 
+// A strict schema refuses a query on a path it doesn't have, as it refuses a create giving one; any other schema
+// queries it as given, so a client can reach data its schema no longer declares (R3 step 7)
+describe('model/type/StandardModel:parseQuery paths', () => {
+  const fields = {
+    name: { __type: 'string', __default: null },
+    address: { city: { __type: 'string', __default: null } },
+    meta: { __type: 'object', __default: null },
+    lines: { __type: 'array', __schema: { sku: { __type: 'string', __default: null } } },
+    tags: { __type: 'array', __itemtype: 'string' },
+    things: { __type: 'array' },
+    id: { __type: 'id' },
+    sourceId: { __type: 'id' },
+  };
+  const strict = () => createModel({ name: 'part', type: 'collection', strict: true, properties: structuredClone(fields) });
+  const lax = () => createModel({ name: 'part', type: 'collection', properties: structuredClone(fields) });
+
+  for (const query of [
+    { name: 'a' },
+    { 'address.city': 'Leeds' },
+    { address: { city: 'Leeds' } },
+    { 'meta.anything.at.all': 1 },
+    { 'lines.sku': 'X' },
+    { 'lines.0.sku': 'X' },
+    { lines: { $elMatch: { sku: 'X' } } },
+    { 'tags.0': 'a' },
+    { 'things.colour': 'red' },
+    { things: { $elMatch: { colour: 'red' } } },
+    { id: '507f1f77bcf86cd799439011' },
+    { sourceId: '507f1f77bcf86cd799439011' },
+    { _appId: 'internal' },
+  ]) {
+    it(`takes ${JSON.stringify(query)}, a path the strict schema has`, () => {
+      assert.doesNotThrow(() => strict().parseQuery(query));
+    });
+  }
+
+  for (const [query, path] of [
+    [{ colour: 'red' }, 'colour'],
+    [{ 'address.street': 'x' }, 'address.street'],
+    [{ 'name.first': 'x' }, 'name.first'],
+    [{ 'lines.colour': 'x' }, 'lines.colour'],
+    [{ 'tags.colour': 'x' }, 'tags.colour'],
+    [{ $or: [{ name: 'a' }, { colour: 'red' }] }, 'colour'],
+    [{ lines: { $elMatch: { colour: 'x' } } }, 'colour'],
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 unknown_path when the schema is strict`, () => {
+      assert.throws(() => strict().parseQuery(query), { status: 400, code: 'unknown_path', details: { path } });
+    });
+
+    it(`takes ${JSON.stringify(query)} as given when the schema isn't strict`, () => {
+      assert.doesNotThrow(() => lax().parseQuery(query));
+    });
+  }
+});
+
 describe('model/type/StandardModel:parseQuery', () => {
   it('turns a direct value compare into $eq', () => {
     const model = createModel();

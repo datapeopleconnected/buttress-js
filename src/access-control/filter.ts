@@ -143,7 +143,8 @@ export class Filter {
 
     let parsed: Record<string, unknown>;
     try {
-      parsed = model.parseQuery(fields, {}, model.flatSchemaData) as Record<string, unknown>;
+      // A policy's query naming a path a strict schema doesn't have reads nothing, rather than failing
+      parsed = model.parseQuery(fields, {}, model.flatSchemaData, false) as Record<string, unknown>;
     } catch (err: unknown) {
       Logging.logWarn(
         `A policy query couldn't be read against ${model.schemaData?.name}: ${Helpers.getThrownErrorMessage(err)}`,

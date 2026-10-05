@@ -207,6 +207,22 @@ describe('access-control/models-access:count', () => {
   });
 });
 
+// A strict schema checks the paths of the client's query, at the route; a policy's query naming a path the schema
+// doesn't have reads nothing, rather than refusing the client's request with a path it didn't send
+describe('access-control/models-access: a strict schema', () => {
+  const strict = { name: 'notes', strict: true, properties: { tag: { __type: 'string' } } };
+
+  it("reads nothing through a policy query on a path the schema doesn't have", async () => {
+    const { model } = createSchemaModel(strict, rowsTagged('one'));
+
+    assert.deepStrictEqual(await drain(await ACM.find(model, { query: {} }, policies({ owner: 'alice' }))), []);
+    const both = await drain(await ACM.find(model, { query: {} }, policies({ owner: 'alice' }, { tag: 'one' })));
+    assert.deepStrictEqual(both.map((item) => item.tag), ['one']);
+    assert.strictEqual(await ACM.count(model, { query: {} }, policies({ owner: 'alice' })), 0);
+    assert.strictEqual(ACM.canCreate(policies({ owner: 'alice' }), { tag: 'one' }, model), false);
+  });
+});
+
 describe('access-control/models-access:reachesEveryEntity', () => {
   it('is true when there are no policy configs, as for a system token', () => {
     assert.strictEqual(ACM.reachesEveryEntity({ policyConfigs: [] }), true);
