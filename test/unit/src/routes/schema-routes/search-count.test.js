@@ -92,7 +92,8 @@ describe('schema-routes/SearchCount:_exec', () => {
     assert.strictEqual(counts(datastore).length, 1);
   });
 
-  it('sums per-policy counts when actualCount is requested across multiple policies', async () => {
+  // An entity two of them reach was counted twice (BUG-17)
+  it('counts what every policy reaches in one $or count, when actualCount is requested too', async () => {
     const { model, datastore } = createModel(byOwner());
     const route = createRoute(model);
     const validateResult = { queryParams: { query: {} }, actualCount: true };
@@ -101,7 +102,7 @@ describe('schema-routes/SearchCount:_exec', () => {
     const result = await route._exec({ context: { ac } }, {}, validateResult);
 
     assert.strictEqual(result, 4);
-    assert.strictEqual(counts(datastore).length, 2);
+    assert.strictEqual(counts(datastore).length, 1);
   });
 
   it('combines multiple policies into a single $or count when actualCount is not requested', async () => {

@@ -17,11 +17,13 @@
 import { Stream } from 'node:stream';
 
 import AccessControlFilter, { QueryModel } from './filter.js';
+import AccessControlProjection from './projection.js';
+import { asQueried, matchQuery } from './operators.js';
 
 import { PolicyConfig } from '../model/core/policy.js';
 import { parsedPolicyConfig } from './index.js';
 
-import { BjsQuery, QueryParams } from '../types/bjs-query.js';
+import { QueryParams } from '../types/bjs-query.js';
 import StandardModel from '../model/type/standard.js';
 
 // What a find or count needs of a model: a schema model, or a core model scoped to an app (TenantScopedModel)
@@ -32,60 +34,7 @@ export async function find<T extends QueryableModel>(
   query: QueryParams<object>,
   ac: { policyConfigs: parsedPolicyConfig[] },
 ) {
-  if (ac.policyConfigs.length > 1) {
-    // Resolve + parse every policy's query up front, awaited via Promise.all, before the stream is
-    // ever created. A policy config that fails to parse (e.g. a query shape that doesn't match the
-    // target schema) rejects this function's promise, so the caller's normal error handling responds
-    // with a proper error. Previously this loop used `forEach(async ...)` so a rejection here became
-    // an unhandled promise rejection: the returned stream would silently `end()` early, having only
-    // ever included the OTHER policies' results, with a 200 response and no indication anything failed.
-    const preparedQueries = await Promise.all(
-      ac.policyConfigs.map(async (policyConfig) => {
-        const combined = await combineQueriesWithAc(query, policyConfig);
-        return { ...combined, query: model.parseQuery(combined.query, {}, model.flatSchemaData) };
-      }),
-    );
-
-    // A federated model's find is async, so every find is awaited, together, before their streams are merged. If one
-    // fails, the streams of the others aren't needed.
-    const settled = await Promise.allSettled(
-      preparedQueries.map(
-        async (combined) =>
-          (await model.find(
-            combined.query,
-            {},
-            combined.limit,
-            combined.skip,
-            combined.sort,
-            combined.project,
-          )) as Stream.Readable,
-      ),
-    );
-    const results = settled.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
-    const failed = settled.find((result) => result.status === 'rejected');
-    if (failed) {
-      results.forEach((result) => result.destroy());
-      throw failed.reason;
-    }
-
-    const resStream = new Stream.PassThrough({ objectMode: true });
-
-    let openStreams = results.length;
-    results.forEach((result) => {
-      result.pipe(resStream, { end: false });
-      result.on('end', () => {
-        openStreams--;
-        if (openStreams === 0) resStream.end();
-      });
-      // pipe() doesn't pass errors on, so one policy's failed find fails the merged stream.
-      result.on('error', (err) => resStream.destroy(err));
-    });
-
-    // Once the merged stream is done with, failed or not, the finds still running aren't needed.
-    resStream.once('close', () => results.forEach((result) => result.destroy()));
-
-    return resStream;
-  }
+  if (ac.policyConfigs.length > 1) return findThroughGrants(model, query, ac.policyConfigs);
 
   const policyConfig = ac.policyConfigs[0] || {};
   const combined = await combineQueriesWithAc(query, policyConfig);
@@ -99,35 +48,147 @@ export async function find<T extends QueryableModel>(
   );
 }
 
+// The entities any of several grants reads: their queries OR'd, {} if one reads every entity
+const anyGrantQuery = (policyConfigs: parsedPolicyConfig[]) =>
+  policyConfigs
+    .map((policyConfig) => policyConfig.query ?? {})
+    .reduce((reads, next) => AccessControlFilter.mergeQueryFilters(reads, next, '$or'));
+
+// The properties a grant reads, or null for every one
+const grantKeys = (policyConfig: parsedPolicyConfig) => {
+  const keys = Object.entries(policyConfig.projection ?? {})
+    .filter(([, value]) => Boolean(value))
+    .map(([key]) => key);
+  return keys.length > 0 ? keys : null;
+};
+
+/**
+ * The entities several grants read, in one find, so the request's skip, limit and sort hold across them and an entity
+ * two of them read comes once (BUG-17). The find reads entities whole, for their grants' queries to be matched against
+ * them as MongoDB matches them (D-31); each then keeps the properties of the grants that read it, within the request's
+ * projection.
+ */
+async function findThroughGrants<T extends QueryableModel>(
+  model: T,
+  query: QueryParams<object>,
+  policyConfigs: parsedPolicyConfig[],
+) {
+  // Every grant's query is read before anything is found, so one that can't be fails the request
+  const grants = policyConfigs.map((policyConfig) => ({
+    query: model.parseQuery(policyConfig.query ?? {}, {}, model.flatSchemaData) as Record<string, unknown>,
+    keys: grantKeys(policyConfig),
+  }));
+
+  const combined = await combineQueriesWithAc(
+    { ...query, project: undefined },
+    { query: anyGrantQuery(policyConfigs) },
+  );
+  const found = (await model.find(
+    model.parseQuery(combined.query, {}, model.flatSchemaData),
+    {},
+    combined.limit,
+    combined.skip,
+    combined.sort,
+    fetchProjection(grants, query.project),
+  )) as Stream.Readable;
+
+  const projected = new Stream.Transform({
+    objectMode: true,
+    transform(entity: Record<string, unknown>, _enc, cb) {
+      const asStored = asQueried(entity, model.flatSchemaData);
+      const reading = grants.filter((grant) => matchQuery(grant.query, asStored));
+      // Found by the OR of the grants, so one reads it; were none to, it isn't given
+      if (reading.length < 1) return cb();
+
+      const keys = reading.some((grant) => !grant.keys)
+        ? null
+        : [...new Set(reading.flatMap((grant) => grant.keys ?? []))];
+      cb(
+        null,
+        projectEntity(entity, keys ? Object.keys(intersectProjection(query.project, keys)) : null, query.project),
+      );
+    },
+  });
+
+  // Fails the projected stream with the find's error, and stops the find if the projected stream is destroyed first
+  return Stream.pipeline(found, projected, () => {});
+}
+
+// The properties a query tests, within its $and, $or and $nor too
+const queryFields = (query: Record<string, unknown>): string[] =>
+  Object.entries(query).flatMap(([key, value]) => {
+    if (key === '$and' || key === '$or' || key === '$nor') {
+      return Array.isArray(value)
+        ? value.flatMap((part) =>
+            part && typeof part === 'object' ? queryFields(part as Record<string, unknown>) : [],
+          )
+        : [];
+    }
+    return key.startsWith('$') ? [] : [key];
+  });
+
+/**
+ * What the find for several grants reads of each entity: every property a grant reads, or, when one reads every
+ * property, what the request projects (everything if it projects nothing); and the fields the grants' queries test,
+ * for them to be matched. A path within another that's read isn't named too, as MongoDB refuses both.
+ */
+function fetchProjection(grants: { query: Record<string, unknown>; keys: string[] | null }[], requested: unknown) {
+  const requestedKeys =
+    requested && typeof requested === 'object'
+      ? Object.entries(requested as Record<string, unknown>)
+          .filter(([, value]) => value === 1 || value === true)
+          .map(([key]) => key)
+      : [];
+
+  const readsEverything = grants.some((grant) => !grant.keys);
+  if (readsEverything && requestedKeys.length < 1) return false;
+
+  const read = readsEverything ? requestedKeys : grants.flatMap((grant) => grant.keys ?? []);
+  const paths = [...new Set([...read, ...grants.flatMap((grant) => queryFields(grant.query))])];
+  const outermost = paths.filter((path) => !paths.some((other) => other !== path && isWithin(path, other)));
+  return Object.fromEntries(outermost.map((path) => [path, 1]));
+}
+
+/**
+ * An entity with only the properties `keys` names, and its id and sourceId, as a MongoDB projection gives it; or, with
+ * no keys, as the request's own projection gives it.
+ */
+function projectEntity(entity: Record<string, unknown>, keys: string[] | null, requested: unknown) {
+  if (keys) return AccessControlProjection.__projectEntity(entity, keys);
+
+  const entries =
+    requested && typeof requested === 'object' ? Object.entries(requested as Record<string, unknown>) : [];
+  const included = entries.filter(([, value]) => value === 1 || value === true).map(([key]) => key);
+  if (included.length > 0) return AccessControlProjection.__projectEntity(entity, included);
+
+  const excluded = entries.filter(([, value]) => value === 0 || value === false).map(([key]) => key);
+  if (excluded.length < 1) return entity;
+  const kept = structuredClone(entity);
+  excluded.forEach((path) => removePath(kept, path.split('.')));
+  return kept;
+}
+
+// Removes what a dotted path names, as an exclusion projection does, from each item of an array on the way too
+function removePath(value: unknown, [head, ...rest]: string[]) {
+  if (Array.isArray(value)) {
+    value.forEach((item) => removePath(item, [head, ...rest]));
+    return;
+  }
+  if (!value || typeof value !== 'object') return;
+  const record = value as Record<string, unknown>;
+  if (rest.length < 1) delete record[head];
+  else removePath(record[head], rest);
+}
+
 export async function count<T extends QueryableModel>(
   model: T,
   query: QueryParams<object>,
   ac: { policyConfigs: parsedPolicyConfig[] },
-  actualCount: boolean = false,
+  // Counted per policy config before, an entity two of them read twice; now always the entities the request reaches
+  _actualCount: boolean = false,
 ) {
-  if (ac.policyConfigs.length > 1) {
-    if (actualCount) {
-      let count = 0;
-
-      for (const policyConfig of ac.policyConfigs) {
-        const combined = await combineQueriesWithAc(query, policyConfig);
-        count += await model.count(model.parseQuery(combined.query));
-      }
-
-      return count;
-    } else {
-      const queries: { $or: BjsQuery<object>[] } = { $or: [] };
-      for (const policyConfig of ac.policyConfigs) {
-        const combined = await combineQueriesWithAc(query, policyConfig);
-        queries.$or.push(combined.query);
-      }
-
-      return model.count(model.parseQuery(queries));
-    }
-  }
-
-  const policyConfig = ac.policyConfigs[0] || {};
-  const combined = await combineQueriesWithAc(query, policyConfig);
+  const reads = ac.policyConfigs.length > 0 ? { query: anyGrantQuery(ac.policyConfigs) } : {};
+  const combined = await combineQueriesWithAc(query, reads);
 
   return model.count(model.parseQuery(combined.query));
 }
@@ -160,7 +221,10 @@ export function canCreate(
   );
 }
 
-export async function combineQueriesWithAc(raw: QueryParams<object>, policyConfig: PolicyConfig & { appId: string }) {
+export async function combineQueriesWithAc(
+  raw: QueryParams<object>,
+  policyConfig: Partial<Pick<PolicyConfig, 'query' | 'projection'>>,
+) {
   const query: QueryParams<object> = {
     query: raw.query,
     skip: raw.skip,

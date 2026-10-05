@@ -73,23 +73,137 @@ describe('access-control/models-access:find', () => {
     assert.deepStrictEqual(datastore.calls, []);
   });
 
-  it("fails the merged stream with a policy's find error, and stops the other finds", async () => {
+  it("fails the stream with the find's error", async () => {
     const err = new Error('$in needs an array');
     const { model, datastore } = createSchemaModel(schema);
-    // Each policy's find is a stream held open, by the tag its parsed query asks for
-    const streams = {};
-    datastore.find = (query) => {
-      streams[query.tag.$eq] = new Readable({ objectMode: true, read() {} });
-      return streams[query.tag.$eq];
+    let found;
+    datastore.find = () => {
+      found = new Readable({ objectMode: true, read() {} });
+      return found;
     };
 
     const stream = await ACM.find(model, { query: {} }, policies({ tag: 'one' }, { tag: 'two' }));
     const drained = drain(stream);
-    streams.two.destroy(err);
+    found.destroy(err);
 
     await assert.rejects(drained, (thrown) => thrown === err);
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.ok(streams.one.destroyed, "the other policy's find should be destroyed");
+  });
+});
+
+// Several grants are read in one find (BUG-17): an entity comes once, the request's paging holds across them, and it
+// keeps the properties of the grants whose query reads it
+describe('access-control/models-access:find through several grants', () => {
+  const people = { name: 'people', properties: {
+    tag: { __type: 'string' }, name: { __type: 'string' }, email: { __type: 'string' },
+  } };
+  const person = (tag, n) => ({ id: newId(), tag, name: `name-${n}`, email: `email-${n}` });
+  const grant = (query, keys) => ({ appId: 'app-1', query, projection: keys ? Object.fromEntries(keys.map((k) => [k, 1])) : null });
+
+  it('reads an entity two grants reach once', async () => {
+    const { model, datastore } = createSchemaModel(schema, rowsTagged('one', 'two'));
+    const items = await drain(await ACM.find(model, { query: {} }, policies({ tag: 'one' }, { tag: { $in: ['one', 'two'] } })));
+
+    assert.deepStrictEqual(items.map((item) => item.tag).sort(), ['one', 'two']);
+    assert.strictEqual(datastore.calls.filter(([call]) => call === 'find').length, 1);
+  });
+
+  it("holds the request's limit, skip and sort across the grants", async () => {
+    const { model } = createSchemaModel(schema, rowsTagged('e', 'a', 'd', 'b', 'c'));
+    const ac = policies({ tag: { $in: ['a', 'b', 'c'] } }, { tag: { $in: ['c', 'd', 'e'] } });
+
+    const items = await drain(await ACM.find(model, { query: {}, sort: { tag: 1 }, skip: 1, limit: 3 }, ac));
+
+    assert.deepStrictEqual(items.map((item) => item.tag), ['b', 'c', 'd']);
+  });
+
+  it('gives each entity the properties of the grants that read it', async () => {
+    const rows = [person('one', 1), person('two', 2), person('both', 3)];
+    const { model } = createSchemaModel(people, rows);
+    const ac = { policyConfigs: [grant({ tag: { $in: ['one', 'both'] } }, ['name']), grant({ tag: { $in: ['two', 'both'] } }, ['email'])] };
+
+    const items = await drain(await ACM.find(model, { query: {}, sort: { name: 1 } }, ac));
+
+    assert.deepStrictEqual(items, [
+      { id: rows[0].id, name: 'name-1' },
+      { id: rows[1].id, email: 'email-2' },
+      { id: rows[2].id, name: 'name-3', email: 'email-3' },
+    ]);
+  });
+
+  it("reads only the grants' properties and the fields their queries test", async () => {
+    const rows = [person('one', 1), person('two', 2)];
+    const { model, datastore } = createSchemaModel(people, rows);
+    const projects = [];
+    const find = datastore.find.bind(datastore);
+    datastore.find = (...args) => {
+      projects.push(args[5]);
+      return find(...args);
+    };
+    const ac = { policyConfigs: [grant({ tag: 'one' }, ['name']), grant({ $or: [{ tag: 'two' }, { email: 'x' }] }, ['name'])] };
+
+    const items = await drain(await ACM.find(model, { query: {}, sort: { name: 1 } }, ac));
+
+    assert.deepStrictEqual(projects, [{ name: 1, tag: 1, email: 1 }]);
+    assert.deepStrictEqual(items, [{ id: rows[0].id, name: 'name-1' }, { id: rows[1].id, name: 'name-2' }]);
+  });
+
+  it('reads a property once, not also a path within it', async () => {
+    const addressed = { name: 'people', properties: {
+      tag: { __type: 'string' }, address: { city: { __type: 'string' }, street: { __type: 'string' } },
+    } };
+    const { model, datastore } = createSchemaModel(addressed, [{ id: newId(), tag: 'one', address: { city: 'x' } }]);
+    const projects = [];
+    const find = datastore.find.bind(datastore);
+    datastore.find = (...args) => {
+      projects.push(args[5]);
+      return find(...args);
+    };
+    const ac = { policyConfigs: [grant({ 'address.city': 'x' }, ['address']), grant({ tag: 'one' }, ['tag'])] };
+
+    await drain(await ACM.find(model, { query: {} }, ac));
+
+    assert.deepStrictEqual(projects, [{ address: 1, tag: 1 }]);
+  });
+
+  it("reads what the request projects and the queries' fields when a grant reads every property", async () => {
+    const { model, datastore } = createSchemaModel(people, [person('one', 1)]);
+    const projects = [];
+    const find = datastore.find.bind(datastore);
+    datastore.find = (...args) => {
+      projects.push(args[5]);
+      return find(...args);
+    };
+    const ac = { policyConfigs: [grant({ tag: 'one' }, ['name']), grant({ email: 'x' })] };
+
+    await drain(await ACM.find(model, { query: {}, project: { name: 1 } }, ac));
+    await drain(await ACM.find(model, { query: {} }, ac));
+
+    assert.deepStrictEqual(projects, [{ name: 1, tag: 1, email: 1 }, false]);
+  });
+
+  it("gives every property, within the request's projection, of an entity a grant reads whole", async () => {
+    const rows = [person('one', 1), person('two', 2)];
+    const { model } = createSchemaModel(people, rows);
+    const ac = { policyConfigs: [grant({ tag: 'one' }, ['name']), grant({ tag: 'two' })] };
+
+    const whole = await drain(await ACM.find(model, { query: {}, sort: { name: 1 } }, ac));
+    assert.deepStrictEqual(whole, [{ id: rows[0].id, name: 'name-1' }, rows[1]]);
+
+    const projected = await drain(await ACM.find(model, { query: {}, sort: { name: 1 }, project: { email: 1, name: 1 } }, ac));
+    assert.deepStrictEqual(projected, [
+      { id: rows[0].id, name: 'name-1' },
+      { id: rows[1].id, name: 'name-2', email: 'email-2' },
+    ]);
+  });
+});
+
+describe('access-control/models-access:count', () => {
+  it('counts an entity two grants reach once, whether or not the count is the actual one', async () => {
+    const { model } = createSchemaModel(schema, rowsTagged('one', 'two', 'three'));
+    const ac = policies({ tag: 'one' }, { tag: { $in: ['one', 'two'] } });
+
+    assert.strictEqual(await ACM.count(model, { query: {} }, ac), 2);
+    assert.strictEqual(await ACM.count(model, { query: {} }, ac, true), 2);
   });
 });
 

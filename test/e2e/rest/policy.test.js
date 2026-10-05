@@ -666,7 +666,8 @@ describe('Policy', async () => {
     });
   });
 
-  // Policy which has mutiple non-mergable policies can return multiple results
+  // A token whose policy configs can't be merged (pt1-1: every car's name; Car 0's name and colour) gets each car once,
+  // with the properties of every config that reads it (BUG-17)
   describe('Multi-Policy results', async () => {
     before(async function() {
       // Create a user to test with.
@@ -687,7 +688,7 @@ describe('Policy', async () => {
       // Delete the user
     });
 
-    it ('Should return multiple results', async function() {
+    it ('Should return each car once, with the properties of every config that reads it', async function() {
       const [ token ] = testEnv.users.multiPol1.tokens;
       const cars = await bjsReq({
         url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
@@ -695,11 +696,18 @@ describe('Policy', async () => {
         headers: {'mode': 'no-cors'},
       }, token.value);
 
-      // The results should contain two items with name "Car 0". One will include colour
-      const car0 = cars.filter((car) => car.name === 'Car 0');
-      assert(car0.length === 2, `Expected 2 but got ${car0.length}`);
-      const car0colourIdx = car0.findIndex((car) => car.color !== undefined);
-      assert(car0colourIdx !== -1, `Expected one of the cars to have a colour but got ${car0[car0colourIdx].color}`);
+      const ids = cars.map((car) => car.id);
+      assert.strictEqual(new Set(ids).size, ids.length, `A car came back more than once: ${ids.join(', ')}`);
+      assert.strictEqual(cars.length, testEnv.cars.filter((car) => car.name.startsWith('Car ')).length);
+
+      // Car 0 has its colour, from the config that reads Car 0; the others have only their names
+      const [car0, ...others] = [...cars].sort((a, b) => (a.name === 'Car 0' ? -1 : b.name === 'Car 0' ? 1 : 0));
+      assert.strictEqual(car0.name, 'Car 0');
+      assert.strictEqual(car0.color, testEnv.cars.find((car) => car.name === 'Car 0').color);
+      for (const car of others) {
+        // Every row also names the app it came from
+        assert.deepStrictEqual(Object.keys(car).filter((key) => key !== 'sourceId').sort(), ['id', 'name'], JSON.stringify(car));
+      }
     });
   });
 
