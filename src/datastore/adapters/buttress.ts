@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -16,275 +14,350 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Stream from 'stream';
-import {ObjectId} from 'bson';
-import ButtressAPI, {Errors as BAPIErrors} from '@buttress/api';
+import Stream from 'node:stream';
+import ButtressExport, { Errors as BAPIErrors } from '@buttress/api';
+// TODO: Look into why the export from @buttress/api is not working as expected.
+const { default: ButtressAPI } = ButtressExport;
 
-import Errors from '../../helpers/errors';
-import {parseJsonArrayStream} from '../../helpers/stream';
-import Logging from '../../helpers/logging';
+import Errors from '../../helpers/errors.js';
+import * as Helpers from '../../helpers/index.js';
+import { parseJsonArrayStream } from '../../helpers/stream.js';
+import Logging from '../../helpers/logging.js';
 
-import AbstractAdapter from '../abstract-adapter';
+import AbstractAdapter from '../abstract-adapter.js';
+import ObjectIdHelper, { isObjectId } from './object-id.js';
 
-class AdapterId {
-	static new(id: string) {
-		return new ObjectId(id);
-	}
+import { AdapterQuery } from '../../types/datastore.js';
+import { Schema } from '../../types/schema.js';
+import { dataSharingDestinationProblem } from '../../helpers/egress.js';
 
-	static isValid(id: string) {
-		return ObjectId.isValid(id);
-	}
-
-	static instanceOf(id: string | ObjectId) {
-		return id instanceof ObjectId;
-	}
+// The collection calls made against a remote Buttress. @buttress/api types these results as `any`, and
+// its declarations don't allow some of the arguments used here (an object `sort`, `count` without a sort).
+interface ButtressCollection {
+  get(id: unknown): Promise<unknown>;
+  save(details: unknown, options?: { stream?: boolean }): Promise<unknown>;
+  bulkSave(details: unknown[], options?: { stream?: boolean }): Promise<unknown>;
+  update(id: string, details: unknown): Promise<unknown>;
+  remove(id: string): Promise<unknown>;
+  bulkRemove(ids: unknown): Promise<unknown>;
+  removeAll(): Promise<unknown>;
+  getAll(): Promise<unknown>;
+  bulkGet(ids: unknown): Promise<unknown>;
+  search(
+    query: unknown,
+    limit?: number,
+    skip?: number,
+    sort?: unknown,
+    options?: { project?: unknown; stream?: boolean },
+  ): Promise<unknown>;
+  count(query: unknown): Promise<unknown>;
 }
 
-export default class Buttress extends AbstractAdapter {
-	init: boolean;
-	initPendingResolve: Function[];
+export default class Buttress extends AbstractAdapter<URL> {
+  init: boolean;
+  initPendingResolve: ((value?: unknown) => void)[];
+  collectionName?: string;
 
-	protected __connection: any;
+  protected override __connection: typeof ButtressAPI | null;
 
-	collection: any;
+  // Set by setCollection, which is called before any of the collection methods
+  declare collection: ButtressCollection;
 
-	constructor(uri, options, connection = null) {
-		super(uri, options, connection);
+  constructor(uri: URL, options?: URLSearchParams, connection: typeof ButtressAPI | null = null) {
+    super(uri, options, connection);
 
-		this.__connection = ButtressAPI.new();
+    this.__connection = ButtressAPI.new();
 
-		this.init = false;
-		this.initPendingResolve = [];
-	}
+    this.init = false;
+    this.initPendingResolve = [];
+  }
 
-	async connect() {
-		if (this.init) return this.__connection;
+  override async connect() {
+    if (this.init) return this.__connection;
 
-		const protocol = this.uri.protocol === 'butts:' ? 'https' : 'http';
+    const protocol = this.uri.protocol === 'butts:' ? 'https' : 'http';
 
-		await this.__connection.init({
-			buttressUrl: `${protocol}://${this.uri.host}`,
-			appToken: this.uri.searchParams.get('token'),
-			apiPath: this.uri.pathname,
-		});
-		Logging.logDebug(`connected to: ${this.uri.host}${this.uri.pathname}`);
+    const token = this.uri.searchParams.get('token');
+    if (!token) throw new Error('Missing token in Buttress connection string');
 
-		// this.collection = this.buttress.getCollection(collection);
-		// this.setCollection(this.uri.pathname.replace(/\//g, ''));
-		this.init = true;
-		this.initPendingResolve.forEach((r) => r());
-	}
+    const buttressUrl = `${protocol}://${this.uri.host}`;
+    const destination = await dataSharingDestinationProblem([buttressUrl]);
+    if (destination) throw new Error(`data_sharing_${destination}`);
+    const apiPath = this.uri.pathname.replace(/^\/+/, '');
+    await this._apiCall('connect', () => {
+      if (!this.__connection) throw new Error('Buttress connection not initialized');
 
-	cloneAdapterConnection() {
-		return new Buttress(this.uri, this.options, this.__connection);
-	}
+      return this.__connection.init({
+        buttressUrl,
+        appToken: token,
+        apiPath,
+        version: 1,
+        // A partner that can't be reached is left out and tried again later by the data sharing model, rather than
+        // holding up boot, or a request, through the API's retries and their backoff
+        maxRetries: 0,
+      });
+    });
+    Logging.logDebug(`connected to: ${this.uri.host}/${apiPath}`);
 
-	async close() {
-		// TODO: Handle closing down socket connections??
-		this.__connection = null;
-		this.init = false;
-		this.initPendingResolve = [];
-	}
+    // this.collection = this.buttress.getCollection(collection);
+    // this.setCollection(this.uri.pathname.replace(/\//g, ''));
+    this.init = true;
+    this.initPendingResolve.forEach((r) => r());
+  }
 
-	async setCollection(collectionName: string) {
-		try {
-			this.collection = this.__connection.getCollection(collectionName);
-		} catch (err: unknown) {
-			if (err instanceof BAPIErrors.SchemaNotFound) throw new Errors.SchemaNotFound((err).message);
-			else throw err;
-		}
-	}
+  override cloneAdapterConnection() {
+    return new Buttress(this.uri, this.options, this.__connection);
+  }
 
-	async getSchema(rawSchema = false, only = []) {
-		await this.resolveAfterInit();
-		return await this.__connection.App.getSchema(rawSchema, {
-			params: {
-				only: only.join(','),
-			},
-		});
-	}
+  override async close() {
+    // TODO: Handle closing down socket connections??
+    this.__connection = null;
+    this.init = false;
+    this.initPendingResolve = [];
+  }
 
-	async activateDataSharing(registrationToken, newToken) {
-		await this.resolveAfterInit();
-		return await this.__connection.AppDataSharing.activate(registrationToken, newToken);
-	}
+  override async setCollection(collectionName: string) {
+    try {
+      this.collectionName = collectionName;
+      this.collection = await this._apiCall('setCollection', () => {
+        if (!this.__connection) throw new Error('Buttress connection not initialized');
+        return Promise.resolve(this.__connection.getCollection(collectionName) as unknown as ButtressCollection);
+      });
+    } catch (err: unknown) {
+      if (err instanceof BAPIErrors.SchemaNotFound) throw new Errors.SchemaNotFound(err.message);
+      else throw err;
+    }
+  }
 
-	get ID() {
-		return AdapterId;
-	}
+  async getSchema(rawSchema = false, only: string[] = []) {
+    return this._resolvedApiCall<Schema[]>('getSchema', () => {
+      if (!this.__connection) throw new Error('Buttress connection not initialized');
+      if (!this.__connection.App) throw new Error('Buttress App not initialized');
 
-	resolveAfterInit() {
-		if (this.init) return Promise.resolve();
-		return new Promise((resolve) => {
-			this.initPendingResolve.push(resolve);
-		});
-	}
+      return this.__connection.App.getSchema(rawSchema, {
+        params: {
+          only: only.join(','),
+        },
+      });
+    });
+  }
 
-	convertBSONObjects(target) {
-		if (target instanceof ObjectId) {
-			return target.toString();
-		} else if (Array.isArray(target)) {
-			return target.map((value) => this.convertBSONObjects(value));
-		} else if (typeof target === 'object' && target !== null) {
-			for (const key in target) {
-				if (!{}.hasOwnProperty.call(target, key)) continue;
-				target[key] = this.convertBSONObjects(target[key]);
-			}
-		}
-		return target;
-	}
+  async activateDataSharing(registrationToken: string, newToken: string): Promise<unknown> {
+    await this.resolveAfterInit();
+    if (!this.__connection) throw new Error('Buttress connection not initialized');
+    if (!this.__connection.AppDataSharing) throw new Error('Buttress AppDataSharing not initialized');
+    return await this.__connection.AppDataSharing.activate(registrationToken, newToken);
+  }
 
-	handleResult(result: Stream.Readable | any) {
-		if (result instanceof Stream.Readable && result.readable) {
-			// Stream will be an array of objects, parse them out.
-			return result.pipe(parseJsonArrayStream());
-		}
+  override get ID() {
+    return ObjectIdHelper;
+  }
 
-		return result;
-	}
+  resolveAfterInit() {
+    if (this.init) return Promise.resolve();
+    return new Promise<unknown>((resolve) => {
+      this.initPendingResolve.push(resolve);
+    });
+  }
 
-	async batchUpdateProcess(id, body) {
-		await this.resolveAfterInit();
-		const result = await this.collection.update(id, body);
-		return this.handleResult(result);
-	}
+  private async _apiCall<T>(operation: string, call: () => Promise<T>) {
+    try {
+      return await call();
+    } catch (err: unknown) {
+      Logging.logError(
+        `[ButtressAdapter.${operation}] target:${this.uri.host}${this.uri.pathname} collection:${this.collectionName || 'unknown'}`,
+      );
+      Logging.logError(Helpers.getThrownErrorMessage(err));
+      throw err;
+    }
+  }
 
-	/**
-	 * @param {object} body
-	 * @return {Promise}
-	 */
-	async add(body) {
-		body = this.convertBSONObjects(body);
-		await this.resolveAfterInit();
+  private async _resolvedApiCall<T>(operation: string, call: () => Promise<T>) {
+    await this.resolveAfterInit();
+    return this._apiCall(operation, call);
+  }
 
-		const result = (Array.isArray(body)) ? await this.collection.bulkSave(body, {stream: true}) :
-			await this.collection.save(body, {stream: true});
+  // Replaces any ObjectIds with their string form, so they can be sent to the remote. The value's static
+  // type is kept, as it's only used to build requests.
+  convertBSONObjects<T>(target: T): T {
+    if (isObjectId(target)) {
+      return target.toString() as T;
+    } else if (Array.isArray(target)) {
+      return target.map((value: unknown) => this.convertBSONObjects(value)) as T;
+    } else if (typeof target === 'object' && target !== null) {
+      const obj = target as Record<string, unknown>;
+      for (const key in obj) {
+        if (!{}.hasOwnProperty.call(obj, key)) continue;
+        obj[key] = this.convertBSONObjects(obj[key]);
+      }
+    }
+    return target;
+  }
 
-		return this.handleResult(result);
-	}
+  handleResult(result: Stream.Readable | unknown) {
+    if (result instanceof Stream.Readable && result.readable) {
+      // Stream will be an array of objects, parse them out. Unlike pipe(), pipeline() fails the parsed stream with
+      // the remote stream's error.
+      return Stream.pipeline(result, parseJsonArrayStream(), (err) => {
+        if (err) Logging.logSilly(`Error in remote stream: ${err.message}`);
+      });
+    }
 
-	/**
-	 * @param {string} id
-	 * @return {Boolean}
-	 */
-	async exists(id) {
-		id = this.convertBSONObjects(id);
-		await this.resolveAfterInit();
-		const result = await this.collection.get(id);
-		return (result) ? true : false;
-	}
+    return result;
+  }
 
-	/**
-	 * @param {object} details
-	 * @return {Promise}
-	 */
-	isDuplicate() {
-		return Promise.resolve(false);
-	}
+  override async batchUpdateProcess(id: string, body: unknown) {
+    const result = await this._resolvedApiCall('batchUpdateProcess', () => this.collection.update(id, body));
+    return this.handleResult(result);
+  }
 
-	/**
-	 * @param {string} id
-	 * @return {Promise}
-	 */
-	async rm(id: string) {
-		// entity = this.convertBSONObjects(entity);
-		await this.resolveAfterInit();
-		const result = await this.collection.remove(id);
-		return this.handleResult(result);
-	}
+  /**
+   * @param {object} body
+   * @return {Promise}
+   */
+  override async add(body: unknown) {
+    body = this.convertBSONObjects(body);
+    const result = await this._resolvedApiCall('add', () =>
+      Array.isArray(body)
+        ? this.collection.bulkSave(body, { stream: true })
+        : this.collection.save(body, { stream: true }),
+    );
 
-	/**
-	 * @param {array} ids
-	 * @return {Promise}
-	 */
-	async rmBulk(ids) {
-		ids = this.convertBSONObjects(ids);
-		await this.resolveAfterInit();
-		const result = await this.collection.bulkRemove(ids);
-		return this.handleResult(result);
-	}
+    return this.handleResult(result);
+  }
 
-	/**
-	 * @param {object} query
-	 * @return {Promise}
-	 */
-	async rmAll(query) {
-		await this.resolveAfterInit();
-		const result = await this.collection.removeAll(query);
-		return this.handleResult(result);
-	}
+  /**
+   * @param {string} id
+   * @return {Boolean}
+   */
+  override async exists(id: string) {
+    id = this.convertBSONObjects(id);
+    const result = await this._resolvedApiCall('exists', () => this.collection.get(id));
+    return result ? true : false;
+  }
 
-	/**
-	 * @param {string} id
-	 * @return {Promise}
-	 */
-	async findById(id) {
-		id = this.convertBSONObjects(id);
-		await this.resolveAfterInit();
-		const result = await this.collection.get(id);
-		return this.handleResult(result);
-	}
+  /**
+   * @param {object} details
+   * @return {Promise}
+   */
+  override isDuplicate() {
+    return Promise.resolve(false);
+  }
 
-	/**
-	 * @param {Object} query - mongoDB query
-	 * @param {Object} excludes - mongoDB query excludes
-	 * @param {Int} limit - should return a stream
-	 * @param {Int} skip - should return a stream
-	 * @param {Object} sort - mongoDB sort object
-	 * @param {Boolean} project - mongoDB project ids
-	 * @return {Promise} - resolves to an array of docs
-	 */
-	async find(query, excludes = {}, limit = 0, skip = 0, sort, project = null) {
-		// Logging.logSilly(`find: ${this.collectionName} ${query}`);
-		query = this.convertBSONObjects(query);
+  override findStoredIds(_ids: string[]) {
+    return Promise.resolve([]);
+  }
 
-		// Stream this?
-		await this.resolveAfterInit();
-		const result = await this.collection.search(query, limit, skip, sort, {
-			project,
-			stream: true,
-		});
+  /**
+   * @param {string} id
+   * @return {Promise}
+   */
+  override async rm(id: string) {
+    // entity = this.convertBSONObjects(entity);
+    const result = await this._resolvedApiCall('rm', () => this.collection.remove(id));
+    return this.handleResult(result);
+  }
 
-		return this.handleResult(result);
-	}
+  /**
+   * @param {array} ids
+   * @return {Promise}
+   */
+  override async rmBulk(ids: string[]) {
+    ids = this.convertBSONObjects(ids);
+    const result = await this._resolvedApiCall('rmBulk', () => this.collection.bulkRemove(ids));
+    return this.handleResult(result);
+  }
 
-	/**
-	 * @return {Promise}
-	 */
-	async findAll() {
-		await this.resolveAfterInit();
-		const result = await this.collection.getAll();
-		return this.handleResult(result);
-	}
+  /**
+   * @param {object} query - a partner's delete-all takes no filter, and removes everything its policies let this token
+   *   remove, so only a query that matches nothing in particular is sent that way. One that filters removes the
+   *   entities it matches, by id.
+   * @return {Promise}
+   */
+  override async rmAll(query?: AdapterQuery) {
+    if (query && Object.keys(query).length > 0) {
+      const matched = await Helpers.streamAll<{ id: string }>(await this.find(query));
+      return matched.length > 0 ? this.rmBulk(matched.map((entity) => entity.id)) : true;
+    }
 
-	/**
-	 * @param {Array} ids - mongoDB query
-	 * @return {Promise}
-	 */
-	async findAllById(ids) {
-		ids = this.convertBSONObjects(ids);
-		await this.resolveAfterInit();
-		const result = await this.collection.bulkGet(ids);
-		return this.handleResult(result);
-	}
+    const result = await this._resolvedApiCall('rmAll', () => this.collection.removeAll());
+    return this.handleResult(result);
+  }
 
-	/**
-	 * @param {Object} query - mongoDB query
-	 * @return {Promise}
-	 */
-	async count(query) {
-		query = this.convertBSONObjects(query);
-		await this.resolveAfterInit();
-		const result = await this.collection.count(query);
-		return this.handleResult(result);
-	}
+  /**
+   * @param {string} id
+   * @return {Promise}
+   */
+  override async findById(id: string) {
+    id = this.convertBSONObjects(id);
+    const result = await this._resolvedApiCall('findById', () => this.collection.get(id));
+    return this.handleResult(result);
+  }
 
-	/**
-	 * @return {Promise}
-	 */
-	async drop() {
-		await this.resolveAfterInit();
-		const result = await this.collection.removeAll();
-		return this.handleResult(result);
-	}
-};
+  /**
+   * @param {Object} query - mongoDB query
+   * @param {Object} excludes - mongoDB query excludes
+   * @param {Int} limit - should return a stream
+   * @param {Int} skip - should return a stream
+   * @param {Object} sort - mongoDB sort object
+   * @param {Boolean} project - mongoDB project ids
+   * @return {Promise} - resolves to an array of docs
+   */
+  override async find(
+    query: AdapterQuery,
+    _excludes: AdapterQuery | null = {},
+    limit = 0,
+    skip = 0,
+    sort?: Record<string, unknown> | null,
+    project: Record<string, unknown> | null | false = null,
+  ) {
+    // Logging.logSilly(`find: ${this.collectionName} ${query}`);
+    query = this.convertBSONObjects(query);
+
+    const result = await this._resolvedApiCall('find', () =>
+      this.collection.search(query, limit, skip, sort, {
+        project,
+        stream: true,
+      }),
+    );
+
+    // Requested as a stream
+    return this.handleResult(result) as Stream.Readable;
+  }
+
+  /**
+   * @return {Promise}
+   */
+  override async findAll() {
+    const result = await this._resolvedApiCall('findAll', () => this.collection.getAll());
+    return this.handleResult(result) as Stream.Readable;
+  }
+
+  /**
+   * @param {Array} ids - mongoDB query
+   * @return {Promise}
+   */
+  override async findAllById(ids: string[]) {
+    ids = this.convertBSONObjects(ids);
+    const result = await this._resolvedApiCall('findAllById', () => this.collection.bulkGet(ids));
+    return this.handleResult(result) as Stream.Readable;
+  }
+
+  /**
+   * @param {Object} query - mongoDB query
+   * @return {Promise}
+   */
+  override async count(query?: AdapterQuery) {
+    query = this.convertBSONObjects(query);
+    const result = await this._resolvedApiCall('count', () => this.collection.count(query));
+    return this.handleResult(result) as number;
+  }
+
+  /**
+   * @return {Promise}
+   */
+  override async drop() {
+    const result = await this._resolvedApiCall('drop', () => this.collection.removeAll());
+    return this.handleResult(result);
+  }
+}

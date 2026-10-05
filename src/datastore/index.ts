@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,85 +14,89 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { createHash } from 'crypto';
+import { createHash } from 'node:crypto';
 
-// import createConfig from 'node-env-obj';
+// import createConfig from '@dpc/node-env-obj';
 // const Config = createConfig() as unknown as Config;
 
-import Factory from './adapter-factory';
+import Factory from './adapter-factory.js';
 
-import Logging from '../helpers/logging';
+import Logging from '../helpers/logging.js';
+
+import EmptyAdapter from './adapters/empty.js';
+import MongodbAdapter from './adapters/mongodb.js';
+import ButtressAdapter from './adapters/buttress.js';
 
 const datastores: {
-	[key: string]: Datastore;
+  [key: string]: Datastore;
 } = {};
 
 interface DatastoreConfig {
-	connectionString: string;
-	options?: string;
+  connectionString: string;
+  options?: string;
 }
 
 /**
  * This class is used to manage the lifecycle of an adapter
  */
 export class Datastore {
-	private _adapter: any;
-	private _hash?: string;
+  private _adapter: MongodbAdapter | ButtressAdapter | EmptyAdapter;
+  private _hash?: string;
 
-	dataSharingId?: string;
+  dataSharingId?: string;
 
-	constructor(config: DatastoreConfig) {
-		this.setAdapter(config);
-	}
+  constructor(config: DatastoreConfig) {
+    this._adapter = Factory.create(config.connectionString, config.options);
+  }
 
-	setAdapter(config: DatastoreConfig) {
-		this._adapter = Factory.create(config.connectionString, config.options);
-	}
+  setAdapter(config: DatastoreConfig) {
+    this._adapter = Factory.create(config.connectionString, config.options);
+  }
 
-	setHash(hash) {
-		this._hash = hash;
-	}
+  setHash(hash: string) {
+    this._hash = hash;
+  }
 
-	connect() {
-		Logging.logSilly(`Attempting to connect to datastore ${this._adapter.uri}`);
-		return this.adapter.connect();
-	}
+  connect() {
+    Logging.logSilly(`Attempting to connect to datastore ${this._adapter.redactedUri}`);
+    return this.adapter.connect();
+  }
 
-	get ID() {
-		return this.adapter.ID;
-	}
+  get ID() {
+    return this.adapter.ID;
+  }
 
-	get adapter() {
-		return this._adapter;
-	}
+  get adapter() {
+    return this._adapter;
+  }
 
-	get hash() {
-		return this._hash;
-	}
+  get hash() {
+    return this._hash;
+  }
 }
 
 export default {
-	hashConfig(config: DatastoreConfig) {
-		return createHash('sha1').update(Buffer.from(config.connectionString)).digest('base64');
-	},
-	createInstance(config: DatastoreConfig, core = false) {
-		const hash = (core) ? 'core' : this.hashConfig(config);
-		if (datastores[hash]) return datastores[hash];
+  hashConfig(config: DatastoreConfig) {
+    return createHash('sha1').update(Buffer.from(config.connectionString)).digest('base64');
+  },
+  createInstance(config: DatastoreConfig, core = false) {
+    const hash = core ? 'core' : this.hashConfig(config);
+    if (datastores[hash]) return datastores[hash];
 
-		datastores[hash] = new Datastore(config);
-		datastores[hash].setHash(hash);
-		return datastores[hash];
-	},
-	getInstance(hash) {
-		return datastores[hash];
-	},
-	clean: async () => {
-		for await (const key of Object.keys(datastores)) {
-			if (datastores[key] && datastores[key].adapter && datastores[key].adapter.close) {
-				await datastores[key].adapter.close();
-			}
-			delete datastores[key];
-		}
-	},
-	datastores,
+    datastores[hash] = new Datastore(config);
+    datastores[hash].setHash(hash);
+    return datastores[hash];
+  },
+  getInstance(hash: string) {
+    return datastores[hash];
+  },
+  clean: async () => {
+    for await (const key of Object.keys(datastores)) {
+      if (datastores[key] && datastores[key].adapter) {
+        await datastores[key].adapter.close();
+      }
+      delete datastores[key];
+    }
+  },
+  datastores,
 };

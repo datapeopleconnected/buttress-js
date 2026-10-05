@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,18 +14,20 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Activity from './activity';
-import AppDataSharing from './app-data-sharing';
-import App from './app';
-import Deployment from './deployment';
-import Lambda from './lambda';
-import LambdaExecution from './lambda-execution';
-import Policy from './policy';
-import SecureStore from './secure-store';
-import status from './status';
-import Token from './token';
-import Tracking from './tracking';
-import User from './user';
+import Activity from './activity.js';
+import AppDataSharing from './app-data-sharing.js';
+import App from './app.js';
+import Deployment from './deployment.js';
+import Lambda from './lambda.js';
+import LambdaExecution from './lambda-execution.js';
+import Policy from './policy.js';
+import SecureStore from './secure-store.js';
+import status from './status.js';
+import Token from './token.js';
+import Tracking from './tracking.js';
+import User from './user.js';
+
+import type { CoreRouteClass } from '../../types/routes.js';
 
 export const Routes = [
   Activity,
@@ -40,4 +42,4 @@ export const Routes = [
   Token,
   Tracking,
   User,
-];
+] satisfies CoreRouteClass[][];

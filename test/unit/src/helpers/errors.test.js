@@ -1,0 +1,237 @@
+/**
+ * Buttress - The federated real-time open data platform
+ * Copyright (C) 2016-2026 Data People Connected LTD.
+ * <https://www.dpc-ltd.com/>
+ *
+ * This file is part of Buttress.
+ * Buttress is free software: you can redistribute it and/or modify it under the
+ * terms of the GNU Affero General Public Licence as published by the Free Software
+ * Foundation, either version 3 of the Licence, or (at your option) any later version.
+ * Buttress is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
+ * without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ * See the GNU Affero General Public Licence for more details.
+ * You should have received a copy of the GNU Affero General Public Licence along with
+ * this program. If not, see <http://www.gnu.org/licenses/>.
+ */
+
+import { describe, it } from 'mocha';
+import assert from 'assert';
+
+import Errors from '../../../../dist/helpers/errors.js';
+
+describe('helpers/errors:ApiError', () => {
+  it('answers with its code, message and details', () => {
+    const err = new Errors.ApiError(400, 'invalid_value', 'The limit must be a number', { path: 'limit' });
+
+    assert(err instanceof Error);
+    assert.strictEqual(err.status, 400);
+    assert.deepStrictEqual(err.toBody(), {
+      code: 'invalid_value',
+      message: 'The limit must be a number',
+      details: { path: 'limit' },
+    });
+  });
+
+  it('leaves details out of the body when it has none, and reads its code as the message when given none', () => {
+    assert.deepStrictEqual(new Errors.ApiError(400, 'invalid_id').toBody(), { code: 'invalid_id', message: 'Invalid id' });
+  });
+
+  for (const [factory, status] of [
+    ['badRequest', 400],
+    ['unauthorised', 401],
+    ['forbidden', 403],
+    ['notFound', 404],
+    ['methodNotAllowed', 405],
+    ['conflict', 409],
+    ['unavailable', 503],
+  ]) {
+    it(`${factory} answers ${status}`, () => {
+      const err = Errors[factory]('some_code', 'Some message');
+
+      assert(err instanceof Errors.ApiError);
+      assert.strictEqual(err.status, status);
+      assert.deepStrictEqual(err.toBody(), { code: 'some_code', message: 'Some message' });
+    });
+  }
+
+  it('entityNotFound answers 404 not_found, naming the schema and id', () => {
+    const err = Errors.entityNotFound('policy', '6AB00000000000000000ABCD');
+
+    assert.strictEqual(err.status, 404);
+    assert.deepStrictEqual(err.toBody(), {
+      code: 'not_found',
+      message: 'No policy was found with that id',
+      details: { schema: 'policy', id: '6AB00000000000000000ABCD' },
+    });
+  });
+
+  it('internal answers 500 internal_error, keeping its reason out of the body', () => {
+    const err = Errors.internal('no_authenticated_app');
+
+    assert.strictEqual(err.status, 500);
+    assert.deepStrictEqual(err.toBody(), { code: 'internal_error', message: 'Internal server error' });
+    assert.strictEqual(err.cause, 'no_authenticated_app');
+  });
+});
+
+describe('helpers/errors:toApiError', () => {
+  it('gives an ApiError back as it is', () => {
+    const err = Errors.forbidden('insufficient_authority');
+
+    assert.strictEqual(Errors.toApiError(err), err);
+  });
+
+  it('answers any other error as a 500 internal_error without its message, keeping it as the cause', () => {
+    const cause = new TypeError('connect ECONNREFUSED 127.0.0.1:27017');
+    const err = Errors.toApiError(cause);
+
+    assert.strictEqual(err.status, 500);
+    assert.deepStrictEqual(err.toBody(), { code: 'internal_error', message: 'Internal server error' });
+    assert.strictEqual(err.cause, cause);
+  });
+
+  for (const [status, code] of [
+    [400, 'invalid_body'],
+    [413, 'body_too_large'],
+    [415, 'unsupported_body_encoding'],
+  ]) {
+    it(`answers a body parser's ${status} as ${code}`, () => {
+      const err = Errors.toApiError(Object.assign(new Error('parser'), { type: 'entity.parse.failed', status, expose: true }));
+
+      assert.strictEqual(err.status, status);
+      assert.strictEqual(err.code, code);
+      assert.strictEqual(Errors.fromBodyParserError(new Error('not a parser error')), null);
+    });
+  }
+});
+
+describe('helpers/errors:SchemaNotFound', () => {
+  it('should set name and message', () => {
+    const err = new Errors.SchemaNotFound('Schema user not found');
+    assert(err instanceof Error);
+    assert(err instanceof Errors.SchemaNotFound);
+    assert.strictEqual(err.name, 'SchemaNotFound');
+    assert.strictEqual(err.message, 'Schema user not found');
+  });
+});
+
+describe('helpers/errors:SchemaInvalid', () => {
+  it('should set name and message', () => {
+    const err = new Errors.SchemaInvalid('Schema is invalid');
+    assert(err instanceof Error);
+    assert(err instanceof Errors.SchemaInvalid);
+    assert.strictEqual(err.name, 'SchemaInvalid');
+    assert.strictEqual(err.message, 'Schema is invalid');
+  });
+});
+
+describe('helpers/errors:RouteMissingModel', () => {
+  it('should set name and message', () => {
+    const err = new Errors.RouteMissingModel('Model not found');
+    assert(err instanceof Error);
+    assert(err instanceof Errors.RouteMissingModel);
+    assert.strictEqual(err.name, 'RouteMissingModel');
+    assert.strictEqual(err.message, 'Model not found');
+  });
+});
+
+describe('helpers/errors:UnsupportedDatastore', () => {
+  it('should set name and message', () => {
+    const err = new Errors.UnsupportedDatastore('MongoDB not configured');
+    assert(err instanceof Error);
+    assert(err instanceof Errors.UnsupportedDatastore);
+    assert.strictEqual(err.name, 'UnsupportedDatastore');
+    assert.strictEqual(err.message, 'MongoDB not configured');
+  });
+});
+
+describe('helpers/errors:NotYetImplemented', () => {
+  it('should set name and message', () => {
+    const err = new Errors.NotYetImplemented('Feature coming soon');
+    assert(err instanceof Error);
+    assert(err instanceof Errors.NotYetImplemented);
+    assert.strictEqual(err.name, 'NotYetImplemented');
+    assert.strictEqual(err.message, 'Feature coming soon');
+  });
+});
+
+describe('helpers/errors:InvalidRequest', () => {
+  it('should set name, message and code', () => {
+    const err = new Errors.InvalidRequest('Bad request', 400);
+    assert(err instanceof Error);
+    assert(err instanceof Errors.InvalidRequest);
+    assert.strictEqual(err.name, 'InvalidRequest');
+    assert.strictEqual(err.message, 'Bad request');
+    assert.strictEqual(err.code, 400);
+  });
+});
+
+describe('helpers/errors:Unauthenticated', () => {
+  it('should set name, message, status and code', () => {
+    const err = new Errors.Unauthenticated('Invalid credentials', 'UNAUTHENTICATED', 401);
+    assert(err instanceof Error);
+    assert(err instanceof Errors.Unauthenticated);
+    assert.strictEqual(err.name, 'Unauthenticated');
+    assert.strictEqual(err.message, 'Invalid credentials');
+    assert.strictEqual(err.status, 'UNAUTHENTICATED');
+    assert.strictEqual(err.code, 401);
+  });
+});
+
+describe('helpers/errors:InvalidToken', () => {
+  it('should set name, message and code', () => {
+    const err = new Errors.InvalidToken('Token expired', 401);
+    assert(err instanceof Error);
+    assert(err instanceof Errors.InvalidToken);
+    assert.strictEqual(err.name, 'InvalidToken');
+    assert.strictEqual(err.message, 'Token expired');
+    assert.strictEqual(err.code, 401);
+  });
+});
+
+describe('helpers/errors:CodedError', () => {
+  it('should set name, message and code', () => {
+    const err = new Errors.CodedError('Lambda error', 500);
+    assert(err instanceof Error);
+    assert(err instanceof Errors.CodedError);
+    assert.strictEqual(err.name, 'GENERIC_LAMBDA_ERROR');
+    assert.strictEqual(err.message, 'Lambda error');
+    assert.strictEqual(err.code, 500);
+  });
+});
+
+describe('helpers/errors:UpstreamApiError', () => {
+  it('should set name, message, code and httpStatus', () => {
+    const err = new Errors.UpstreamApiError('Token expired', 'INVALID_CREDENTIALS', 401);
+    assert(err instanceof Error);
+    assert(err instanceof Errors.UpstreamApiError);
+    assert.strictEqual(err.name, 'UPSTREAM_API_ERROR');
+    assert.strictEqual(err.message, 'Token expired');
+    assert.strictEqual(err.code, 'INVALID_CREDENTIALS');
+    assert.strictEqual(err.httpStatus, 401);
+  });
+
+  it('should default retryable from httpStatus when not given explicitly', () => {
+    assert.strictEqual(new Errors.UpstreamApiError('m', 'C', 429).retryable, true);
+    assert.strictEqual(new Errors.UpstreamApiError('m', 'C', 500).retryable, true);
+    assert.strictEqual(new Errors.UpstreamApiError('m', 'C', 503).retryable, true);
+    assert.strictEqual(new Errors.UpstreamApiError('m', 'C', 400).retryable, false);
+    assert.strictEqual(new Errors.UpstreamApiError('m', 'C', 401).retryable, false);
+  });
+
+  it('should let an explicit retryable override the httpStatus default', () => {
+    const err = new Errors.UpstreamApiError('m', 'C', 429, { retryable: false });
+    assert.strictEqual(err.retryable, false);
+  });
+
+  it('should carry through a multi-error array when given', () => {
+    const errors = [{ code: 'FIELD_A', message: 'bad field A', path: '/a' }];
+    const err = new Errors.UpstreamApiError('Multiple errors', 'BAD_REQUEST', 400, { errors });
+    assert.deepStrictEqual(err.errors, errors);
+  });
+
+  it('should leave errors undefined when not given', () => {
+    const err = new Errors.UpstreamApiError('m', 'C', 400);
+    assert.strictEqual(err.errors, undefined);
+  });
+});

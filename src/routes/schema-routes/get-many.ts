@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,62 +14,70 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
+import { Response, Request } from 'express';
+import { QueryParams } from '../../types/bjs-query.js';
+import type { RequestWithBody } from '../../types/routes.js';
+
+import Route from '../route.js';
+import * as Helpers from '../../helpers/index.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
+
+import * as ACM from '../../access-control/models-access.js';
+
+interface GetManyQuery {
+  ids: string[];
+  project: Record<string, 1 | -1> | false;
+}
+
+type GetManyBody = {
+  query: { ids?: string[] };
+  project?: Record<string, 1 | -1>;
+};
 
 /**
  * @class GetMany
  */
 export default class GetMany extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/load`, `BULK GET ${schema.name}`, services);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.permissions = Route.Constants.Permissions.READ;
+    super(`${schemaRoutePath}/bulk/load`, `BULK GET ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.permissions = Route.Constants.Permissions.READ;
 
-		this.activityDescription = `BULK GET ${schema.name}`;
-		this.activityBroadcast = false;
+    this.activityDescription = `BULK GET ${schema.name}`;
+    this.activityBroadcast = false;
+  }
 
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
+  override async _validate(req: RequestWithBody<GetManyBody | undefined>, _res: Response): Promise<GetManyQuery> {
+    const _ids: unknown = req.body?.query?.ids;
+    const project: Record<string, 1 | -1> | false = req.body?.project ? req.body.project : false;
 
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
+    if (!Array.isArray(_ids) || _ids.length < 1) {
+      this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('array_required', 'Expected query.ids to be a list of ids');
+    }
 
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
-	}
+    const model = await this.routeModel();
+    if (!_ids.every((id) => model.isValidId(id))) {
+      this.log(`ERROR: Invalid ${this.schemaName} ID provided`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('invalid_id', 'The ids are not all valid');
+    }
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			const _ids = req.body.query.ids;
-			const project = (req.body && req.body.project)? req.body.project : false;
+    return { ids: _ids as string[], project: project };
+  }
 
-			if (!_ids) {
-				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
-				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
-			}
-			if (!_ids.length) {
-				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
-				return reject(new Helpers.Errors.RequestError(400, 'invalid_id'));
-			}
-
-			resolve({ids: _ids, project: project});
-		});
-	}
-
-	_exec(req, res, query) {
-		return this.model.find(
-			{id: {$in: query.ids.map((id) => this.model.createId(id))}},
-			{}, 0, 0, null, query.project,
-		);
-	}
-};
+  override async _exec(req: Request, _res: Response, query: GetManyQuery) {
+    const model = await this.routeModel();
+    const findParams: QueryParams<{ id: unknown }> = {
+      query: { id: { $in: query.ids.map((id) => model.createId(id)) } },
+      project: query.project,
+    };
+    return ACM.find(model, findParams, req.context.ac);
+  }
+}

@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,162 +14,319 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import os from 'os';
-import cluster, {Worker} from 'cluster';
-import EventEmitter from 'events';
-import NRP from 'node-redis-pubsub';
+import sourceMapSupport from 'source-map-support';
+sourceMapSupport.install();
 
-import createConfig from 'node-env-obj';
+import net from 'node:net';
+import os from 'node:os';
+import cluster, { Worker } from 'node:cluster';
+import EventEmitter from 'node:events';
+import NodeRedisPubsub from './services/nrp.js';
+
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Logging from './helpers/logging';
+import Logging from './helpers/logging.js';
+import { getThrownErrorMessage } from './helpers/index.js';
 
-interface WorkerHolder {
-	initiated: boolean;
-	worker: Worker;
+export type Services = Map<string, unknown>;
+
+export interface WorkerHolder {
+  initiated: boolean;
+  worker: Worker;
+  // The id the worker gave once it finished starting
+  processId?: string;
 }
 
 export interface LocalProcessMessage {
-	type: string;
-	payload: any;
+  type: string;
+  payload: unknown;
+}
+
+/**
+ * The payload a worker sends with `worker:initiated`.
+ */
+export interface WorkerInitiatedMessage {
+  id: string;
 }
 
 export default class Bootstrap extends EventEmitter {
-	id: string;
+  private static __unhandledRejectionHandlerRegistered = false;
+  private static __onUnhandledRejection = (error: unknown) => Logging.logError(error);
 
-	workerProcesses: number;
+  id: string;
 
-	workers: WorkerHolder[] = [];
+  workerProcesses: number;
 
-	protected __nrp?: NRP.NodeRedisPubSub;
+  workers: WorkerHolder[] = [];
 
-	protected __shutdown: boolean = false;
+  protected __nrp?: NodeRedisPubsub;
 
-	private _resolveWorkersInitialised?: Function;
-	
-	protected __services: Map<string, unknown> = new Map();
+  protected __shutdown: boolean = false;
 
-	constructor() {
-		super();
+  private _resolveWorkersInitialised?: (value?: unknown) => void;
+  private _rejectWorkersInitialised?: (err: Error) => void;
 
-		const ConfigWorkerCount = parseInt(Config.app.workers);
-		this.workerProcesses = (isNaN(ConfigWorkerCount)) ? os.cpus().length : ConfigWorkerCount;
+  protected __services: Services = new Map();
 
-		this.id = (cluster.isWorker && cluster.worker) ? `${cluster.worker.id}` : 'MAIN';
-	}
+  constructor() {
+    super();
 
-	async init(): Promise<boolean> {
-		this.__shutdown = false;
+    const ConfigWorkerCount = parseInt(Config.app.workers);
+    this.workerProcesses = isNaN(ConfigWorkerCount) ? os.cpus().length : ConfigWorkerCount;
 
-		this.__services.set('nrp', NRP(Config.redis));
-		this.__nrp = this.__services.get('nrp') as NRP.NodeRedisPubSub;
+    this.id = cluster.isWorker && cluster.worker ? `${cluster.worker.id}` : 'MAIN';
+  }
 
-		return true;
-	}
+  async init(): Promise<boolean> {
+    this.__shutdown = false;
 
-	async clean() {
-		Logging.logDebug('Shutting down all connections');
-		Logging.logSilly('Bootstrap:clean');
+    this.__services.set('nrp', new NodeRedisPubsub(Config.redis));
+    this.__nrp = this.__services.get('nrp') as NodeRedisPubsub;
+    this.__nrp.on('error', (data: string) => Logging.logError(data));
+    await this.__nrp.connect();
 
-		this.__shutdown = true;
+    return true;
+  }
 
-		// Kill worker processes
-		for (let x = 0; x < this.workers.length; x++) {
-			Logging.logSilly(`Killing worker ${x}`);
-			this.workers[x].worker.kill();
-		}
+  async clean() {
+    Logging.logDebug('Shutting down all connections');
+    Logging.logSilly('Bootstrap:clean');
 
-		// Close out the NRP connection
-		if (this.__nrp) {
-			Logging.logSilly('Closing node redis pubsub connection');
-			this.__nrp.quit();
-		}
-	}
+    this.__shutdown = true;
 
-	protected async __createCluster() {
-		if (cluster.isMaster) {
-			Logging.log(`Init Main Process`);
-			await this.__initMaster();
-			process.on('unhandledRejection', (error) => Logging.logError(error));
-		} else {
-			Logging.log(`Init Worker Process [${cluster.worker?.id}]`);
-			await this.__initWorker();
-			if(process.send) process.send({
-				type: 'worker:initiated',
-				payload: null,
-			} as LocalProcessMessage);
+    // Stop the worker processes, waiting for them to finish their in-flight work
+    await this.__stopWorkers();
 
-			process.on('message', (message: LocalProcessMessage) => this._handleMessageFromMain(message));
-			process.on('unhandledRejection', (error) => Logging.logError(error));
-		}
+    // Close out the NRP connection, once it's sent anything still pending
+    if (this.__nrp) {
+      Logging.logSilly('Closing node redis pubsub connection');
+      await this.__nrp.quit();
+    }
+  }
 
-		return cluster.isMaster;
-	}
+  /**
+   * Shut down cleanly on SIGTERM or SIGINT, then exit. Only the entry scripts call this: the e2e tests
+   * run several bootstraps in one process and call clean() themselves.
+   */
+  shutdownOnSignals() {
+    const timeout = (parseInt(Config.timeout.shutdown) || 8) * 1000;
 
-	protected async __initMaster() {
-		throw new Error('Not Yet Implemented');
-	}
+    const onSignal = async (signal: NodeJS.Signals) => {
+      // The signal can arrive more than once: buttress.sh may send it twice, and Ctrl+C signals every process
+      if (this.__shutdown) return;
+      this.__shutdown = true;
 
-	protected async __initWorker() {
-		throw new Error('Not Yet Implemented');
-	}
+      Logging.log(`Received ${signal}, shutting down`);
 
-	// Handle any logic needed for bootstrap before calling the main handler
-	private async _handleMessageFromMain(message: LocalProcessMessage) {
-		await this.__handleMessageFromMain(message);
-	}
-	private async _handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
-		if (message.type === 'worker:initiated') {
-			this.workers[idx].initiated = true;
-			this._checkWorkersInitiated();
-		}
+      // Don't let in-flight work hold up the exit for longer than a container's stop grace period
+      setTimeout(() => {
+        Logging.logError(`Shutdown didn't finish within ${timeout / 1000}s, exiting`);
+        process.exit(1);
+      }, timeout).unref();
 
-		await this.__handleMessageFromWorker(idx, message);
-	}
+      let code = 0;
+      try {
+        await this.clean();
+      } catch (err: unknown) {
+        Logging.logError(getThrownErrorMessage(err));
+        code = 1;
+      }
 
-	protected async __handleMessageFromMain(message: LocalProcessMessage) {
-		Logging.logSilly(`Unhandled message from Main: ${JSON.stringify(message)}`);
-	}
-	protected async __handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
-		Logging.logSilly(`Unhandled message from Worker [${idx}]: ${JSON.stringify(message)}`);
-	}
+      process.exit(code);
+    };
 
-	async notifyWorkers(payload: LocalProcessMessage) {
-		if (this.workerProcesses > 0) {
-			Logging.logDebug(`notifying ${this.workers.length} Workers of ${payload.type}`);
-			this.workers.forEach((w) => w.worker.send(payload));
-		} else {
-			Logging.logSilly(`single instance mode notification`);
-			await this._handleMessageFromMain(payload);
-		}
-	}
+    process.on('SIGTERM', onSignal);
+    process.on('SIGINT', onSignal);
+  }
 
-	protected async __spawnWorkers() {
-		if (this.workerProcesses === 0) {
-			Logging.logWarn(`Running in SINGLE Instance mode, BUTTRESS_APP_WORKERS has been set to 0`);
-			return await this.__initWorker();
-		}
+  protected async __createCluster() {
+    if (!Bootstrap.__unhandledRejectionHandlerRegistered) {
+      process.on('unhandledRejection', Bootstrap.__onUnhandledRejection);
+      Bootstrap.__unhandledRejectionHandlerRegistered = true;
+    }
 
-		Logging.logVerbose(`Spawning ${this.workerProcesses} Workers`);
+    if (cluster.isPrimary) {
+      Logging.log(`Init Main Process`);
+      await this.__initMain();
+    } else {
+      Logging.log(`Init Worker Process [${cluster.worker?.id}]`);
+      await this.__initWorker();
+      if (process.send)
+        process.send({
+          type: 'worker:initiated',
+          payload: { id: this.id } satisfies WorkerInitiatedMessage,
+        } satisfies LocalProcessMessage);
 
-		for (let x = 0; x < this.workerProcesses; x++) {
-			this.workers[x] = {
-				initiated: false,
-				worker: cluster.fork(),
-			};
-			this.workers[x].worker.on('message', (message: LocalProcessMessage) => this._handleMessageFromWorker(x, message));
-		}
+      process.on('message', (message: LocalProcessMessage, handle: unknown) =>
+        this._handleMessageFromMain(message, handle),
+      );
+    }
 
-		return new Promise((resolve) => {
-			// Hand off the resolve function to the _checkWorkersInitiated function
-			// this will be checked and called when all workers have sent the initiated message
-			this._resolveWorkersInitialised = resolve;
-		});
-	}
+    return cluster.isPrimary;
+  }
 
-	private _checkWorkersInitiated() {
-		if (!this._resolveWorkersInitialised || this.workers.some((worker) => !worker.initiated)) return;
-		this._resolveWorkersInitialised();
-		delete this._resolveWorkersInitialised;
-	}
+  protected async __initMain() {
+    throw new Error('Not Yet Implemented');
+  }
+
+  protected async __initWorker() {
+    throw new Error('Not Yet Implemented');
+  }
+
+  // Handle any logic needed for bootstrap before calling the main handler
+  private async _handleMessageFromMain(message: LocalProcessMessage, handle?: unknown) {
+    await this.__handleMessageFromMain(message, handle);
+  }
+  private async _handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
+    if (message.type === 'worker:initiated') {
+      const holder = this.workers[idx];
+      holder.initiated = true;
+      holder.processId = (message.payload as WorkerInitiatedMessage | null)?.id;
+      this._checkWorkersInitiated();
+    }
+
+    await this.__handleMessageFromWorker(idx, message);
+  }
+
+  protected async __handleMessageFromMain(message: LocalProcessMessage, _handle?: unknown) {
+    Logging.logSilly(`Unhandled message from Main: ${JSON.stringify(message)}`);
+  }
+  protected async __handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
+    Logging.logSilly(`Unhandled message from Worker [${idx}]: ${JSON.stringify(message)}`);
+  }
+
+  /**
+   * Sends a worker a message, and the handle with it. A connection handed to a worker that has gone, or hasn't finished
+   * starting, is closed, so the client isn't left waiting on it.
+   */
+  async notifyWorker(idx: number, payload: LocalProcessMessage, handle?: net.Socket) {
+    if (!this._sendToWorker(idx, payload, handle)) handle?.destroy();
+  }
+
+  async notifyWorkers(payload: LocalProcessMessage, handle?: net.Socket) {
+    if (this.workerProcesses > 0) {
+      Logging.logDebug(`notifying ${this.workers.length} Workers of ${payload.type}`);
+      this.workers.forEach((_holder, idx) => this._sendToWorker(idx, payload, handle));
+    } else {
+      Logging.logSilly(`single instance mode notification`);
+      await this._handleMessageFromMain(payload, handle);
+    }
+  }
+
+  /**
+   * Skips a worker that has exited or is exiting, as sending to it fails, and one that hasn't finished starting, as it
+   * isn't listening for messages yet. Gives whether the message was sent.
+   */
+  private _sendToWorker(idx: number, payload: LocalProcessMessage, handle?: net.Socket) {
+    const holder = this.workers[idx];
+    if (!holder) {
+      Logging.logWarn(`Attempted to notify Worker ${idx} of ${payload.type}, but it does not exist`);
+      return false;
+    }
+    if (!holder.worker.isConnected()) {
+      Logging.logWarn(`Attempted to notify Worker ${idx} of ${payload.type}, but it has disconnected`);
+      return false;
+    }
+    if (!holder.initiated) {
+      Logging.logWarn(`Attempted to notify Worker ${idx} of ${payload.type}, but it hasn't finished starting`);
+      return false;
+    }
+
+    Logging.logDebug(`notifying Worker ${idx} of ${payload.type}`);
+    // Without a callback, a failed send is emitted as an 'error' event instead
+    holder.worker.send(payload, handle, (err: Error | null) => {
+      if (err) Logging.logError(`Failed to notify Worker ${idx} of ${payload.type}: ${err.message}`);
+    });
+    return true;
+  }
+
+  protected async __spawnWorkers() {
+    if (this.workerProcesses === 0) {
+      Logging.logWarn(`Running in SINGLE Instance mode, BUTTRESS_APP_WORKERS has been set to 0`);
+      return await this.__initWorker();
+    }
+
+    Logging.logVerbose(`Spawning ${this.workerProcesses} Workers`);
+
+    // Settled by _checkWorkersInitiated once every worker has sent worker:initiated, or by _handleWorkerExit if one
+    // exits before it does
+    const initialised = new Promise((resolve, reject) => {
+      this._resolveWorkersInitialised = resolve;
+      this._rejectWorkersInitialised = reject;
+    });
+
+    for (let x = 0; x < this.workerProcesses; x++) {
+      this._forkWorker(x);
+    }
+
+    return initialised;
+  }
+
+  private _forkWorker(idx: number) {
+    const worker = cluster.fork();
+    this.workers[idx] = { initiated: false, worker };
+
+    worker.on('message', (message: LocalProcessMessage) => this._handleMessageFromWorker(idx, message));
+    worker.on('error', (err: Error) => Logging.logError(`Worker ${idx}: ${err.message}`));
+    worker.once('exit', (code: number | null, signal: string | null) =>
+      this._handleWorkerExit(idx, worker, code, signal),
+    );
+  }
+
+  /**
+   * Replaces a worker that exits while the process is running, so the process keeps serving with its full count. One
+   * that exits before it's finished starting isn't replaced, as its replacement would most likely fail the same way,
+   * and fails the start-up if the process is still starting.
+   */
+  private _handleWorkerExit(idx: number, worker: Worker, code: number | null, signal: string | null) {
+    const holder = this.workers[idx];
+    if (this.__shutdown || holder?.worker !== worker) return;
+
+    this.__onWorkerExit(idx, holder);
+
+    const reason = signal ? `signal ${signal}` : `code ${code}`;
+    if (!holder.initiated) {
+      const message = `Worker ${idx} exited with ${reason} before it finished starting`;
+      if (this._rejectWorkersInitialised) {
+        this._rejectWorkersInitialised(new Error(message));
+        delete this._resolveWorkersInitialised;
+        delete this._rejectWorkersInitialised;
+        return;
+      }
+
+      Logging.logError(`${message}, so it won't be replaced`);
+      return;
+    }
+
+    Logging.logError(`Worker ${idx} exited with ${reason}, replacing it`);
+    this._forkWorker(idx);
+  }
+
+  /**
+   * Called when a worker exits while the process is running, before it's replaced, to give back anything it held.
+   */
+  protected __onWorkerExit(_idx: number, _holder: WorkerHolder) {}
+
+  protected async __stopWorkers() {
+    await Promise.all(
+      this.workers.map(({ worker }, x) => {
+        if (worker.isDead()) return;
+
+        Logging.logSilly(`Stopping worker ${x}`);
+        const exited = new Promise((resolve) => worker.once('exit', resolve));
+        // Signal the worker directly: worker.kill() disconnects it first, which closes its servers before
+        // its shutdown code runs, and so waits for any keep-alive connections to time out.
+        worker.process.kill('SIGTERM');
+        return exited;
+      }),
+    );
+  }
+
+  private _checkWorkersInitiated() {
+    if (!this._resolveWorkersInitialised || this.workers.some((worker) => !worker.initiated)) return;
+    this._resolveWorkersInitialised();
+    delete this._resolveWorkersInitialised;
+    delete this._rejectWorkersInitialised;
+  }
 }

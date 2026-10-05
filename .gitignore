@@ -2,11 +2,13 @@
 .idea
 .vscode
 .public
+.nvm-node
 
 # Logs
 logs
 *.log
 npm-debug.log*
+bench-results
 
 # Runtime data
 pids
@@ -56,5 +58,7 @@ app_data/*
 
 # Bundles
 bundles
-
 plugins
+
+# Personal files
+.private

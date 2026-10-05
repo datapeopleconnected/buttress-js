@@ -1,47 +1,58 @@
 [
-	{
-		"name": "admin-user",
-		"selection": {
-			"role": {
-				"@eq": "ADMIN"
-			}
-		},
-		"config": [{
-			"endpoints": ["%ALL%"],
-			"query": [{
-				"schema": ["%ALL%"],
-				"access": "%FULL_ACCESS%"
-			}]
-		}]
-	},
-	{
-		"name": "admin-lambda-access",
-		"selection": {
-			"role": {
-				"@eq": "ADMIN_LAMBDA"
-			}
-		},
-		"config": [{
-			"endpoints": ["GET"],
-			"query": [{
-				"schema": ["app"],
-				"id": {
-					"@eq": null
-				}
-			}, {
-				"schema": ["user"],
-				"_appId": {
-					"@eq": null
-				}
-			}]
-		}, {
-			"endpoints": ["SEARCH"],
-			"query": [{
-				"schema": ["token", "user"],
-				"_appId": {
-					"@eq": null
-				}
-			}]
-		}]
-	}
+  {
+    "name": "admin-user",
+    "selection": {
+      "role": {
+        "@eq": "ADMIN"
+      }
+    },
+    "config": [
+      {
+        "verbs": ["%ALL%"],
+        "schema": ["%ALL%"],
+        "query": {
+          "access": "%FULL_ACCESS%"
+        }
+      }
+    ]
+  },
+  {
+    "name": "admin-lambda-access",
+    "selection": {
+      "role": {
+        "@eq": "ADMIN_LAMBDA"
+      }
+    },
+    "config": [
+      {
+        "verbs": "GET",
+        "schema": ["app"],
+        "query": {
+          "id": {
+            "@eq": null
+          }
+        }
+      },
+      {
+        "verbs": "GET",
+        "schema": ["user"],
+        "query": {
+          "_appId": {
+            "@eq": null
+          }
+        }
+      },
+      {
+        "verbs": ["SEARCH"],
+        "schema": ["token", "user"],
+        "query": [
+          {
+            "_appId": {
+              "@eq": null
+            }
+          }
+        ]
+      }
+    ]
+  }
 ]

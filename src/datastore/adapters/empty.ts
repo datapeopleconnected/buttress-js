@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -13,30 +13,20 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import { ObjectId } from 'bson';
 
-import AbstractAdapter from '../abstract-adapter';
-
-class AdapterId {
-	static new(id: string) {
-		return new ObjectId(id);
-	}
-
-	static isValid(id: string) {
-		return ObjectId.isValid(id);
-	}
-
-	static instanceOf(id: string | ObjectId) {
-		return id instanceof ObjectId;
-	}
-}
+import AbstractAdapter from '../abstract-adapter.js';
+import ObjectIdHelper from './object-id.js';
 
 export default class EmptyAdapter extends AbstractAdapter {
-	get ID() {
-		return AdapterId;
-	}
+  override get ID() {
+    return ObjectIdHelper;
+  }
 
-	async connect() {
-		return Promise.resolve();
-	}
-};
+  override async connect() {
+    return;
+  }
+
+  override async close() {
+    return;
+  }
+}

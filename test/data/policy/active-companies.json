@@ -1,0 +1,24 @@
+{
+  "name": "active-companies",
+  "version": "1",
+  "selection": {
+    "grade": {
+      "@eq": 3
+    }
+  },
+  "config": [
+    {
+      "verbs": [
+        "GET", "SEARCH"
+      ],
+      "schema": [
+        "organisation"
+      ],
+      "query": {
+        "status": {
+          "@eq": "ACTIVE"
+        }
+      }
+    }
+  ]
+}

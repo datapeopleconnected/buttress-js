@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -15,17 +13,21 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import StandardModel from './standard';
+import StandardModel from './standard.js';
+
+import { Schema } from '../../types/schema.js';
+import { App } from '../core/app.js';
+import { Services } from '../../bootstrap.js';
 
 /**
  * @class RemoteModel
  */
 export default class RemoteModel extends StandardModel {
-	dataSharingId: string;
+  dataSharingId: string;
 
-	constructor(schemaData, app, dataSharingId: string, services) {
-		super(schemaData, app, services);
+  constructor(schemaData: Schema, app: App | null, dataSharingId: string, services: Services) {
+    super(schemaData, app, services);
 
-		this.dataSharingId = dataSharingId;
-	}
+    this.dataSharingId = dataSharingId;
+  }
 }

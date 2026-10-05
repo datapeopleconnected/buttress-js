@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,64 +14,80 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
+import { Response, Request } from 'express';
+
+import Route from '../route.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
+
+import * as ACM from '../../access-control/models-access.js';
+
+import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
+import type { CountBody, RequestWithBody } from '../../types/routes.js';
+
+interface validateResult {
+  queryParams: QueryParams<object>;
+  actualCount: boolean;
+}
 
 /**
  * @class Count
  */
 export default class SearchCount extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/count`, `COUNT ${schema.name}`, services);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.permissions = Route.Constants.Permissions.SEARCH;
+    super(`${schemaRoutePath}/count`, `COUNT ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.permissions = Route.Constants.Permissions.SEARCH;
 
-		this.activityDescription = `COUNT ${schema.name}`;
-		this.activityBroadcast = false;
+    this.activityDescription = `COUNT ${schema.name}`;
+    this.activityBroadcast = false;
+  }
 
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
+  override async _validate(
+    req: RequestWithBody<(CountBody<object> & { actualCount?: boolean }) | undefined>,
+    _res: Response,
+  ) {
+    const model = await this.routeModel();
 
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
+    const result: validateResult = {
+      queryParams: {
+        query: {},
+      },
+      actualCount: false,
+    };
 
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
-	}
+    let query: BjsQuery<object> = {};
 
-	async _validate(req, res, token) {
-		const result = {
-			query: {},
-		};
+    if (!query.$and) {
+      query.$and = [];
+    }
 
-		let query: any = {};
+    if (req.body?.actualCount) {
+      result.actualCount = true;
+    }
 
-		if (!query.$and) {
-			query.$and = [];
-		}
+    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+    if (req.body?.query) {
+      query.$and.push(req.body.query);
+    } else if (req.body && !req.body.query) {
+      // A body with no query is the query, apart from the count's own flag
+      const { actualCount: _actualCount, ...bodyQuery } = req.body as Record<string, unknown>;
+      query.$and.push(bodyQuery);
+    }
 
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			query.$and.push(req.body.query);
-		} else if (req.body && !req.body.query) {
-			query.$and.push(req.body);
-		}
+    query = model.parseQuery(query, {}, model.flatSchemaData);
+    result.queryParams.query = query;
+    return result;
+  }
 
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
-		result.query = query;
-		return result;
-	}
-
-	_exec(req, res, validateResult) {
-		return this.model.count(validateResult.query);
-	}
-};
+  override async _exec(req: Request, _res: Response, validateResult: validateResult) {
+    const model = await this.routeModel();
+    return ACM.count(model, validateResult.queryParams, req.context.ac, validateResult.actualCount);
+  }
+}

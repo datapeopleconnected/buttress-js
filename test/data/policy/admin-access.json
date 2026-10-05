@@ -1,0 +1,16 @@
+{
+  "name": "admin-access",
+  "version": "1",
+  "selection": {
+    "adminAccess": {
+      "@eq": true
+    }
+  },
+  "config": [{
+    "verbs": ["GET", "SEARCH", "PUT", "POST", "DELETE"],
+    "schema": ["%ALL%"],
+    "query": {
+      "access": "%FULL_ACCESS%"
+    }
+  }]
+}

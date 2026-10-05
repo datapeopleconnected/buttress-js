@@ -1,0 +1,36 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run E2E Setup Step 1",
+      "type": "shell",
+      "command": "${workspaceRoot}/.nvm-node test/before-e2e.js",
+      "options": {
+        "env": {
+          "NODE_ENV": "test"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run E2E Setup Step 2",
+      "type": "shell",
+      "command": "${workspaceRoot}/.nvm-node ./dist/bin/app.js",
+      "options": {
+        "env": {
+          "INSTALL_MODE": "true",
+          "NODE_ENV": "test"
+        }
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Run E2E Setup",
+      "dependsOn": [
+        "Run E2E Setup Step 1",
+        "Run E2E Setup Step 2"
+      ],
+      "problemMatcher": []
+    }
+  ]
+}

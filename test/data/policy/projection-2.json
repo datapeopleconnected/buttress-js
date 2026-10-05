@@ -1,0 +1,29 @@
+{
+  "name": "projection-2",
+  "version": 1,
+  "priority": 2,
+  "merge": true,
+  "selection": {
+    "policyProjection": {
+      "@gte": 2
+    }
+  },
+  "config": [
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "organisation"
+      ],
+      "projection": {
+        "keys": [
+          "status"
+        ]
+      },
+      "query": {
+        "access": "%FULL_ACCESS%"
+      }
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "env-test-2",
+  "version": 1,
+  "priority": 1,
+  "selection": {
+    "envTest": {
+      "@eq": 2
+    }
+  },
+  "env": {
+    "startDate": "01/07/2022"
+  },
+  "config": [
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "car"
+      ],
+      "query": {
+        "createdAt": {
+          "@gtDate": "#env.startDate"
+        }
+      }
+    }
+  ]
+}

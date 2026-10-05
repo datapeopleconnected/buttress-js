@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -25,42 +25,52 @@ interface Config {
     host: string;
     apiPrefix: string;
     workers: string;
-  }
+    trustProxy: string;
+    indexPage: string;
+  };
   lambda: {
     apiWorkers: string;
     pathMutationWorkers: string;
     cronWorkers: string;
     developmentEmailAddress: string;
-  }
+    devReload: string;
+    // Comma-separated hosts lambdas' fetch() and PDF rendering may reach; empty for any (helpers/egress.ts)
+    allowedHosts: string;
+  };
+  dataSharing: {
+    // Comma-separated hosts data sharing agreements may connect to; empty for any (helpers/egress.ts)
+    allowedHosts: string;
+  };
   logging: {
     level: string;
     slow: string;
     slowTime: string;
-  }
+    serverTiming: string;
+  };
   listenPorts: {
     rest: string;
     sock: string;
-  }
+  };
   datastore: {
     connectionString: string;
     options: string;
-  }
+  };
   timeout: {
     lambda: string;
     lambdasRunner: string;
     lambdaManager: string;
-  }
+    shutdown: string;
+  };
   redis: {
-    port: string;
-    host: string;
+    url: string;
     scope: string;
-  }
+  };
   sio: {
     app: string;
-  }
+  };
   rest: {
     app: string;
-  }
+  };
   paths: {
     logs: string;
     appData: string;
@@ -69,6 +79,6 @@ interface Config {
       code: string;
       plugins: string;
       bundles: string;
-    }
-  }
+    };
+  };
 }

@@ -1,78 +1,57 @@
-# Introduction
-TODO
+# Secure Store
 
-# Create a Secure Store Key
-The following steps are going to detail how to a secure store key within Buttress.
+Secure Store provides app-scoped encrypted object storage for sensitive values used by lambdas and services.
 
-## Secure Store Details
-The following parameters are required and need to be configured in the file above.
+## Object Shape
 
-| Property | Type | Field Type | Description
-| :- | :- | :- | :-
-| name | String | required | Secure store key name
-| storeData | Array(Object) | required | Secure store key data
+| Property | Type | Required | Description |
+| :- | :- | :-: | :- |
+| name | string | yes | Secure store key name |
+| storeData | object/array | yes | Arbitrary payload |
 
-## Using the CLI
-To create a secure store key using the CLI need to run the following line; Replace "filePath" with the path to the json file that contains your secure store keys that your trying to create
+## CLI Commands
+
+Create keys from a JSON file:
+
 ```bash
-bjs secure-store create --filePath="filePath"
+bjs secure-store create --filePath="./secure-store.json"
 ```
 
-To list all of the properties in the cli that are needed to create a secure store key run the following command
+List available properties:
+
 ```bash
 bjs secure-store list-property
 ```
 
-### File Example
+## Example
+
+```json
+[
+  {
+    "name": "google-credentials",
+    "storeData": {
+      "client_id": "CLIENT_ID",
+      "client_secret": "CLIENT_SECRET",
+      "redirect_uri": "REDIRECT_URI",
+      "scope": "SCOPE"
+    }
+  },
+  {
+    "name": "allowed-members",
+    "storeData": [
+      {
+        "identifierEmail": "person@example.org",
+        "policySelectors": {
+          "role": "developer"
+        }
+      }
+    ]
+  }
+]
 ```
-[{
-  "name": "google-credentials",
-  "storeData": [{
-    "client_id": "CLIENT_ID",
-    "client_secret": "CLIENT_SECRET",
-    "redirect_uri": "REDIRECT_URI",
-    "scope": "SCOPE"
-  }]
-}, {
-  "name": "allowed-members",
-  "storeData": [{
-    "identifierEmail": "tomc@dpc-ltd.com",
-    "policySelectors": {
-      "role": "developer"
-    }
-  }, {
-    "identifierEmail": "mahmoud@dpc-ltd.com",
-    "policySelectors": {
-      "role": "developer"
-    }
-  }, {
-    "identifierEmail": "spencer@dpc-ltd.com",
-    "policySelectors": {
-      "role": "developer"
-    }
-  }, {
-    "identifierEmail": "chris@dpc-ltd.com",
-    "policySelectors": {
-      "role": "developer"
-    }
-  }, {
-    "identifierEmail": "brian.bishop@dpc-ltd.com",
-    "policySelectors": {
-      "role": "developer"
-    }
-  }]
-}, {
-  "name": "google-service-account",
-  "storeData": [{
-    "iss": "ISS",
-    "sub": "SUB",
-    "private_key": "PRIVATE_KEY"
-  }]
-}, {
-  "name": "domains",
-  "storeData": [{
-    appURL: '%APP_URL%',
-    buttressURL: '%BUTTRESS_URL_INSTANCE%'
-  }]
-}]
-```
+
+## Security Guidance
+
+- Do not commit real secret values to source control.
+- Scope stored data per app and per function purpose.
+- Rotate secrets and update dependent lambdas after changes.

@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -16,310 +14,434 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import path from 'path';
-import fs from 'fs';
-import http from 'http';
-import cluster from 'cluster';
-import Express from 'express';
-import {RedisClient, createClient} from 'redis';
-import cors from 'cors';
-import methodOverride from 'method-override';
-import bodyParser from 'body-parser';
+import path from 'node:path';
+import fs from 'node:fs';
+import http from 'node:http';
+import cluster from 'node:cluster';
+import { fileURLToPath } from 'node:url';
 
-import createConfig from 'node-env-obj';
+import Express from 'express';
+import { createClient, RedisClientType } from '@redis/client';
+import cors from 'cors';
+
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
-import Bootstrap, {LocalProcessMessage} from './bootstrap';
-import Model from './model';
-import Routes from './routes';
-import Logging from './helpers/logging';
-import Schema from './schema';
-import {shortId} from './helpers';
+import Bootstrap, { LocalProcessMessage } from './bootstrap.js';
+import Model from './model/index.js';
+import Routes from './routes/index.js';
+import Logging from './helpers/logging.js';
+import { getThrownErrorMessage } from './helpers/index.js';
+import * as Schema from './helpers/schema.js';
+import type { Schema as SchemaDefinition } from './types/schema.js';
 
-import {SourceDataSharingRouting} from './services/source-ds-routing';
+import { SourceDataSharingRouting } from './services/source-ds-routing.js';
+import type { AppSchemaUpdatedMessage, AppSchemaAppliedMessage } from './services/nrp.js';
+import { SchemaChangeAcks, restProcessIdentity } from './services/schema-applied.js';
 
-import DatastoreManager, {Datastore} from './datastore';
-import Plugins from './plugins';
-import AccessControl from './access-control';
+import DatastoreManager, { Datastore } from './datastore/index.js';
+import Plugins from './plugins/index.js';
+import AccessControl from './access-control/index.js';
+import { PolicyCache } from './services/policy-cache.js';
+import AppSchemaModel, { App, AppAddBody } from './model/core/app.js';
+import TokenSchemaModel from './model/core/token.js';
+import { BULK_REFUSED_HEADER } from './routes/schema-routes/update-many.js';
 
-// morgan.token('id', (req) => req.id);
+// Express's types don't include app.handle()
+type ExpressApp = Express.Express & {
+  handle: (req: http.IncomingMessage, res: http.ServerResponse) => void;
+};
+
+// morgan.token('id', (req) => req.context.id);
+
+/**
+ * Config values are always strings, and Express reads a string `trust proxy` as a list of addresses, so '1' would
+ * only trust 0.0.0.1. Digits become a hop count and true/false become booleans; anything else, such as 'loopback'
+ * or a list of subnets, is left for Express to parse.
+ */
+export function parseTrustProxy(value: string): number | boolean | string {
+  const trimmed = value.trim();
+  if (/^\d+$/.test(trimmed)) return Number(trimmed);
+  if (/^(true|false)$/i.test(trimmed)) return trimmed.toLowerCase() === 'true';
+  return trimmed;
+}
 
 Error.stackTraceLimit = Infinity;
 export default class BootstrapRest extends Bootstrap {
-	routes?: Routes;
-	primaryDatastore: Datastore;
+  routes?: Routes;
+  primaryDatastore: Datastore;
 
-	_restServer?: http.Server;
-	_installMode: boolean;
+  _restServer?: http.Server;
+  _installMode: boolean;
 
-	constructor(installMode = false) {
-		super();
+  // Hands requests from plugins to the Express app. Plugins is a singleton, so clean() has to remove this again.
+  private _onPluginRequest?: (req: http.IncomingMessage, res: http.ServerResponse) => void;
 
-		this.primaryDatastore = DatastoreManager.createInstance(Config.datastore, true);
+  // What each schema change that's waited on is still waiting for its workers to apply
+  private _schemaAcks = new SchemaChangeAcks((changeId, appId) => this._announceSchemaApplied(changeId, appId));
 
-		this._installMode = process.env.INSTALL_MODE === 'true' || installMode || false;
-	}
+  constructor(installMode = false) {
+    super();
 
-	async init(): Promise<boolean> {
-		await super.init();
+    this.primaryDatastore = DatastoreManager.createInstance(Config.datastore, true);
 
-		Logging.logDebug(`Connecting to primary datastore...`);
-		await this.primaryDatastore.connect();
+    this._installMode = process.env.INSTALL_MODE === 'true' || installMode || false;
+  }
 
-		// Register some services.
-		this.__services.set('redisClient', createClient({
-			port: parseInt(Config.redis.port, 10) || 6379,
-			host: Config.redis.host,
-			prefix: Config.redis.scope
-		}));
+  override async init(): Promise<boolean> {
+    await super.init();
 
-		const redisClient = this.__services.get('redisClient') as RedisClient;
-		if (redisClient === undefined) throw new Error('Redis client not found whilst trying to init BootstrapRest');
+    Logging.logDebug(`Connecting to primary datastore...`);
+    await this.primaryDatastore.connect();
 
-		this.__services.set('sdsRouting', new SourceDataSharingRouting(redisClient));
-		this.__services.set('modelManager', Model);
+    if (!this.__nrp) throw new Error('NRP not found whilst trying to init BootstrapRest');
 
-		// Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
-		Logging.logDebug(`Init process libs...`);
-		await Model.init(this.__services);
-		await AccessControl.init(this.__nrp);
-		await Plugins.initialise(
-			Plugins.APP_TYPE.REST,
-			(cluster.isMaster) ? Plugins.PROCESS_ROLE.MAIN : Plugins.PROCESS_ROLE.WORKER,
-			(Config.rest.app === 'primary') ? Plugins.INFRASTRUCTURE_ROLE.PRIMARY : Plugins.INFRASTRUCTURE_ROLE.SECONDARY,
-		);
+    // Register some services.
+    this.__services.set(
+      'redisClient',
+      createClient({
+        url: Config.redis.url,
+      }),
+    );
 
-		return await this.__createCluster();
-	}
+    const redisClient = this.__services.get('redisClient') as RedisClientType;
+    if (redisClient === undefined) throw new Error('Redis client not found whilst trying to init BootstrapRest');
+    await redisClient.connect();
 
-	async clean() {
-		await super.clean();
-		Logging.logDebug('Shutting down all connections');
-		Logging.logSilly('BootstrapRest:clean');
+    this.__services.set('policyCache', new PolicyCache(redisClient, Model));
+    const policyCache = this.__services.get('policyCache') as PolicyCache;
+    if (policyCache === undefined) throw new Error('PolicyCache not found whilst trying to init BootstrapRest');
 
-		// TODO: Handle requests that are in flight and shut them down.
+    this.__services.set('sdsRouting', new SourceDataSharingRouting(redisClient));
+    this.__services.set('modelManager', Model);
 
-		// this.routes.clean();
+    // Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
+    Logging.logDebug(`Init process libs...`);
+    await Model.init(this.__services);
+    await AccessControl.init(this.__nrp, policyCache);
+    await Plugins.initialise(
+      Plugins.APP_TYPE.REST,
+      cluster.isPrimary ? Plugins.PROCESS_ROLE.MAIN : Plugins.PROCESS_ROLE.WORKER,
+      Config.rest.app === 'primary' ? Plugins.INFRASTRUCTURE_ROLE.PRIMARY : Plugins.INFRASTRUCTURE_ROLE.SECONDARY,
+    );
 
-		if (this.__services.has('redisClient') !== undefined) {
-			Logging.logSilly('Closing _redisClientRest client');
-			(this.__services.get('redisClient') as RedisClient).quit();
-			this.__services.delete('redisClient');
-		}
+    return await this.__createCluster();
+  }
 
-		if (this.__services.has('sdsRouting') !== undefined) {
-			Logging.logSilly('Closing _sdsRouting');
-			(this.__services.get('sdsRouting') as SourceDataSharingRouting).clean();
-			this.__services.delete('sdsRouting');
-		}
+  override async clean() {
+    this._schemaAcks.clear();
 
-		// Destory all models
-		await Model.clean();
+    // Stop taking requests, and let the in-flight ones finish while the connections they use are still open
+    if (this._onPluginRequest) {
+      Logging.logSilly('Removing plugin request listener');
+      Plugins.off('request', this._onPluginRequest);
+      this._onPluginRequest = undefined;
+    }
+    if (this._restServer) {
+      Logging.logSilly('Closing express server');
+      await this._closeRestServer(this._restServer);
+      this._restServer = undefined;
+      Logging.logSilly(`Express server closed`);
+    }
 
-		if (this._restServer) {
-			Logging.logSilly('Closing express server');
-			this._restServer.close((err) => (err) ? process.exit(1) : Logging.logSilly(`Express server closed`));
-		}
+    await super.clean();
+    Logging.logDebug('Shutting down all connections');
+    Logging.logSilly('BootstrapRest:clean');
 
-		// Close Datastore connections
-		Logging.logSilly('Closing down all datastore connections');
-		await DatastoreManager.clean();
-	}
+    // this.routes.clean();
 
-	async __initMaster() {
-		const isPrimary = Config.rest.app === 'primary';
+    if (this.__services.has('redisClient')) {
+      Logging.logSilly('Closing _redisClientRest client');
+      (this.__services.get('redisClient') as RedisClientType).quit();
+      this.__services.delete('redisClient');
+    }
 
-		if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');
+    if (this.__services.has('sdsRouting')) {
+      Logging.logSilly('Closing _sdsRouting');
+      (this.__services.get('sdsRouting') as SourceDataSharingRouting).clean();
+      this.__services.delete('sdsRouting');
+    }
 
-		this.__nrp.on('app-schema:updated', (data: any) => {
-			data = JSON.parse(data);
-			Logging.logDebug(`App Schema Updated: ${data.appId}`);
-			this.notifyWorkers({
-				type: 'app-schema:updated',
-				payload: {
-					appId: data.appId
-				},
-			});
-		});
-		this.__nrp.on('app-routes:bust-cache', () => {
-			Logging.logDebug(`App Routes: Bust token cache`);
-			this.notifyWorkers({
-				type: 'app-routes:bust-cache',
-				payload: {}
-			});
-		});
+    // Destory all models
+    await Model.clean();
 
-		if (isPrimary) {
-			Logging.logVerbose(`Primary Main REST`);
-			await Model.initCoreModels();
-			await this.__systemInstall();
+    // Close Datastore connections
+    Logging.logSilly('Closing down all datastore connections');
+    await DatastoreManager.clean();
+  }
 
-			// If we're running in install mode we'll just shutdown now.
-			if (this._installMode) {
-				Logging.log(`Install complete. Shutting down...`);
-				process.exit(0);
-			}
+  /**
+   * Resolves once the server has stopped and its open requests have finished. Keep-alive connections are
+   * closed as soon as they're idle, rather than left open until they time out.
+   */
+  private async _closeRestServer(server: http.Server) {
+    const closeIdle = setInterval(() => server.closeIdleConnections(), 100);
+    await new Promise((resolve) => server.close(resolve));
+    clearInterval(closeIdle);
+  }
 
-			await this.__updateAppSchema();
-		} else {
-			Logging.logVerbose(`Secondary Main REST`);
-		}
+  override async __initMain() {
+    const isPrimary = Config.rest.app === 'primary';
 
-		await this.__spawnWorkers();
-	}
+    if (this.__nrp === undefined) throw new Error('NRP not found whilst trying to init BootstrapRest');
 
-	async __initWorker() {
-		Plugins.initRoutes(this.routes);
+    this.__nrp.on('app-schema:updated', async (json) => {
+      const data = JSON.parse(json) as AppSchemaUpdatedMessage;
+      Logging.logDebug(`App Schema Updated: ${data.appId}`);
 
-		const app = Express();
-		// app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
-		app.enable('trust proxy');
-		app.use(bodyParser.json({limit: '20mb'}));
-		app.use(bodyParser.urlencoded({extended: true}));
-		app.use(methodOverride());
-		app.use(cors({
-			origin: true,
-			methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,SEARCH',
-			credentials: true,
-		}));
-		app.use(Express.static(`${Config.paths.appData}/public`));
-		
-		// @ts-expect-error - Calling a private function within the class, this is the only way it's exposed.
-		Plugins.on('request', (req, res) => app.handle(req, res));
+      const { changeId } = data;
+      // Workers that are starting, or gone, aren't told, so aren't waited for
+      if (changeId && this.workerProcesses > 0) {
+        const told = this.workers.flatMap((holder, idx) =>
+          holder.initiated && holder.worker.isConnected() ? [idx] : [],
+        );
+        this._schemaAcks.start(changeId, told, data.appId);
+      }
 
-		await Model.initCoreModels();
+      await this.notifyWorkers({
+        type: 'app-schema:updated',
+        payload: {
+          appId: data.appId,
+          changeId,
+        },
+      });
 
-		const localSchema = this._getLocalSchemas();
-		Model.getModel('App').setLocalSchema(localSchema);
+      // With no workers the change is applied here, by the time notifyWorkers returns
+      if (changeId && this.workerProcesses === 0) this._announceSchemaApplied(changeId, data.appId);
+    });
+    this.__nrp.on('app-routes:bust-cache', () => {
+      Logging.logDebug(`App Routes: Bust token cache`);
+      this.notifyWorkers({
+        type: 'app-routes:bust-cache',
+        payload: {},
+      });
+    });
 
-		this.routes = new Routes(app);
+    if (isPrimary) {
+      Logging.logVerbose(`Primary Main REST`);
+      await Model.initCoreModels();
+      await this.__systemInstall();
 
-		await this.routes.init(this.__services);
-		await this.routes.initRoutes();
+      // If we're running in install mode we'll just shutdown now.
+      if (this._installMode) {
+        Logging.log(`Install complete. Shutting down...`);
+        process.exit(0);
+      }
 
-		this._restServer = await app.listen(Config.listenPorts.rest);
+      await this.__updateAppSchema();
+    } else {
+      Logging.logVerbose(`Secondary Main REST`);
+    }
 
-		await Model.initSchema();
-		await this.routes.initAppRoutes();
-	}
+    await this.__spawnWorkers();
+  }
 
-	async __handleMessageFromMain(message: LocalProcessMessage) {
-		if (message.type === 'app-schema:updated') {
-			if (!this.routes) return Logging.logDebug(`Skipping app schema update, router not created yet`);
-			Logging.logDebug(`App Schema Updated: ${message.payload.appId}`);
-			await Model.initSchema(message.payload.appId);
-			await this.routes.regenerateAppRoutes(message.payload.appId);
-			Logging.logDebug(`Models & Routes regenereated: ${message.payload.appId}`);
-		} else if (message.type === 'app-routes:bust-cache') {
-			if (!this.routes) return Logging.logDebug(`Skipping token cache bust, router not created yet`);
-			// TODO: Maybe do this better than
-			Logging.logDebug(`App Routes: cache bust`);
-			await this.routes.loadTokens();
-		}
-	}
+  override async __initWorker() {
+    const app = Express();
+    // app.use(morgan(`:date[iso] [${this.id}] [:id] :method :status :url :res[content-length] - :response-time ms - :remote-addr`));
 
-	async __systemInstall() {
-		Logging.log('Checking for existing apps.');
-		const pathName = path.join(Config.paths.appData, 'super.json');
+    const trustProxy = parseTrustProxy(Config.app.trustProxy);
+    if (trustProxy) {
+      app.set('trust proxy', trustProxy);
+      Logging.logVerbose(`Trust proxy enabled for REST server, ${trustProxy}`);
+    }
 
-		let superApp: any = null;
+    app.use(Express.json({ limit: '20mb' }));
+    app.use(Express.urlencoded({ extended: true }));
+    app.use(
+      cors({
+        origin: true,
+        methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,SEARCH',
+        credentials: true,
+        // So browser clients on another origin can read it.
+        exposedHeaders: [BULK_REFUSED_HEADER],
+      }),
+    );
+    app.use(Express.static(`${Config.paths.appData}/public`));
 
-		try {
-			const appCount = await Model.getModel('App').count();
-			if (appCount > 0) {
-				Logging.log('Existing apps found - Skipping install.');
+    // Calling a private function within the class, this is the only way it's exposed.
+    this._onPluginRequest = (req, res) => (app as ExpressApp).handle(req, res);
+    Plugins.on('request', this._onPluginRequest);
 
-				if (fs.existsSync(pathName)) {
-					Logging.logWarn(`--------------------------------------------------------`);
-					Logging.logWarn(' !!WARNING!!');
-					Logging.logWarn(' Super token file still exists on the file system.');
-					Logging.logWarn(' Please capture this token and remove delete the file:');
-					Logging.logWarn(` rm ${pathName}`);
-					Logging.logWarn(`--------------------------------------------------------`);
-				}
+    await Model.initCoreModels();
 
-				return;
-			}
+    const localSchema = this._getLocalSchemas();
+    Model.getCoreModel(AppSchemaModel).setLocalSchema(localSchema);
 
-			superApp = await Model.getModel('App').add({
-				name: `${Config.app.title} TEST`,
-				apiPath: 'bjs',
-				domain: '',
-			}, {
-				type: Model.getModel('Token').Constants.Type.SYSTEM,
-			});
+    this.routes = new Routes(app);
 
-			if (!superApp) {
-				Logging.logError('Failed to create super app.');
-				throw new Error('Failed to create super app.');
-			}
+    await this.routes.init(this.__services);
 
-		} catch (err) {
-			Logging.logError(err);
-			Logging.logError('Failed to create super app.');
-			throw err;
-		}
+    if (!this.routes) throw new Error('Routes not found whilst trying to init BootstrapRest');
+    Plugins.initRoutes(this.routes);
 
-		await new Promise<void>((resolve, reject) => {
-			const app = Object.assign(superApp.app, {token: superApp.token.value});
+    await this.routes.initRoutes();
 
-			if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, {recursive: true});
+    this._restServer = await app.listen(Config.listenPorts.rest);
 
-			fs.writeFile(pathName, JSON.stringify(app), (err) => {
-				if (err) return reject(err);
-				Logging.log(`--------------------------------------------------------`);
-				Logging.log(` SUPER APP CREATED: ${superApp.app.id}`);
-				Logging.log(``);
-				Logging.log(` Token can be found at the following path:`);
-				Logging.log(` ${pathName}`);
-				Logging.log(``);
-				Logging.log(` IMPORTANT:`);
-				Logging.log(` Please delete this file once you've captured the token`);
-				Logging.log(`--------------------------------------------------------`);
-				resolve();
-			});
-		});
-	}
+    await Model.initSchema();
+    await this.routes.initAppRoutes();
+  }
 
-	/**
-	 * @return {Array} - content of json files loaded from local system
-	 */
-	_getLocalSchemas() {
-		const filenames = fs.readdirSync(`${__dirname}/schema`);
+  override async __handleMessageFromMain(message: LocalProcessMessage) {
+    if (message.type === 'app-schema:updated') {
+      if (!this.routes) return Logging.logDebug(`Skipping app schema update, router not created yet`);
+      const payload = message.payload as { appId: string; changeId?: string };
 
-		const files: any[] = [];
-		for (let x = 0; x < filenames.length; x++) {
-			const file = filenames[x];
-			if (path.extname(file) === '.json') {
-				files.push(require(`${__dirname}/schema/${path.basename(file, '.js')}`));
-			}
-		}
-		return files;
-	}
+      if (!payload || !payload.appId) {
+        return Logging.logWarn(`Skipping app schema update, no appId provided`);
+      }
 
-	async __updateAppSchema() {
-		// Load local defined schemas into super app
-		const localSchema = this._getLocalSchemas();
+      Logging.logDebug(`App Schema Updated: ${payload.appId}`);
+      try {
+        await Model.initSchema(payload.appId);
+        await this.routes.regenerateAppRoutes(payload.appId);
+        Logging.logDebug(`Models & Routes regenereated: ${payload.appId}`);
+      } finally {
+        // Told even when it failed, so whoever waits isn't held up for the timeout as well
+        if (payload.changeId && cluster.isWorker) {
+          process.send?.({
+            type: 'app-schema:applied',
+            payload: { changeId: payload.changeId },
+          } satisfies LocalProcessMessage);
+        }
+      }
+    } else if (message.type === 'app-routes:bust-cache') {
+      if (!this.routes) return Logging.logDebug(`Skipping token cache bust, router not created yet`);
+      // TODO: Maybe do this better than
+      await this.routes.loadTokens();
+      Logging.logDebug(`App Routes: cache bust`);
+    }
+  }
 
-		// Add local schema to Model.getModel('App')
-		Model.getModel('App').setLocalSchema(localSchema);
+  override async __handleMessageFromWorker(idx: number, message: LocalProcessMessage) {
+    if (message.type === 'app-schema:applied') {
+      const payload = message.payload as { changeId?: string } | null;
+      if (payload?.changeId) this._schemaAcks.ack(payload.changeId, idx);
+      return;
+    }
 
-		const rxsApps = await Model.getModel('App').findAll();
-		for await (const app of rxsApps) {
-			const appSchema = Schema.decode(app.__schema);
-			const appShortId = shortId(app.id);
-			Logging.log(`Adding ${localSchema.length} local schema for ${appShortId}:${app.name}:${appSchema.length}`);
-			localSchema.forEach((cS) => {
-				const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);
-				const schema = appSchema[appSchemaIdx];
-				if (!schema) {
-					return appSchema.push(cS);
-				}
-				schema.properties = Object.assign(schema.properties, cS.properties);
-				appSchema[appSchemaIdx] = schema;
-			});
+    await super.__handleMessageFromWorker(idx, message);
+  }
 
-			await Model.getModel('App').updateSchema(app.id, appSchema);
-		}
-	}
+  override __onWorkerExit(idx: number) {
+    this._schemaAcks.workerGone(idx);
+  }
+
+  /**
+   * Says this process's workers have the schema change, to the worker that's waiting on it.
+   */
+  private _announceSchemaApplied(changeId: string, appId: string) {
+    this.__nrp?.emit(
+      'app-schema:applied',
+      JSON.stringify({ changeId, appId, ...restProcessIdentity() } satisfies AppSchemaAppliedMessage),
+    );
+  }
+
+  async __systemInstall() {
+    Logging.log('Checking for existing apps.');
+    const pathName = path.join(Config.paths.appData, 'super.json');
+
+    try {
+      const appCount = await Model.getCoreModel(AppSchemaModel).count();
+      if (appCount > 0) {
+        Logging.log('Existing apps found - Skipping install.');
+
+        if (fs.existsSync(pathName)) {
+          Logging.logWarn(`--------------------------------------------------------`);
+          Logging.logWarn(' !!WARNING!!');
+          Logging.logWarn(' Super token file still exists on the file system.');
+          Logging.logWarn(' Please capture this token and remove delete the file:');
+          Logging.logWarn(` rm ${pathName}`);
+          Logging.logWarn(`--------------------------------------------------------`);
+        }
+
+        return;
+      }
+
+      // domain isn't in the app schema, add() drops it
+      const superApp = await Model.getCoreModel(AppSchemaModel).add(
+        {
+          name: `${Config.app.title} TEST`,
+          apiPath: 'bjs',
+          domain: '',
+        } as AppAddBody,
+        {
+          type: Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM,
+        },
+      );
+
+      await new Promise<void>((resolve, reject) => {
+        const appData = Object.assign(superApp.app, { token: superApp.token.value });
+
+        if (!fs.existsSync(Config.paths.appData)) fs.mkdirSync(Config.paths.appData, { recursive: true });
+
+        fs.writeFile(pathName, JSON.stringify(appData), (err) => {
+          if (err) return reject(err);
+          Logging.log(`--------------------------------------------------------`);
+          Logging.log(` SUPER APP CREATED: ${superApp.app.id}`);
+          Logging.log(``);
+          Logging.log(` Token can be found at the following path:`);
+          Logging.log(` ${pathName}`);
+          Logging.log(``);
+          Logging.log(` IMPORTANT:`);
+          Logging.log(` Please delete this file once you've captured the token`);
+          Logging.log(`--------------------------------------------------------`);
+          resolve();
+        });
+      });
+    } catch (err: unknown) {
+      Logging.logError(getThrownErrorMessage(err));
+      Logging.logError('Failed to create super app.');
+      throw err;
+    }
+  }
+
+  /**
+   * @return {Array} - content of json files loaded from local system
+   */
+  _getLocalSchemas(): SchemaDefinition[] {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+
+    const filenames = fs.readdirSync(`${__dirname}/schema`);
+
+    const files: SchemaDefinition[] = [];
+    for (let x = 0; x < filenames.length; x++) {
+      const file = filenames[x];
+      if (path.extname(file) === '.json') {
+        // Load the file using fs
+        const filePath = path.join(__dirname, 'schema', file);
+        const fileContent = fs.readFileSync(filePath, 'utf8');
+        const jsonData = JSON.parse(fileContent) as SchemaDefinition;
+        files.push(jsonData);
+      }
+    }
+
+    return files;
+  }
+
+  async __updateAppSchema() {
+    // Load local defined schemas into super app
+    const localSchema = this._getLocalSchemas();
+
+    Model.getCoreModel(AppSchemaModel).setLocalSchema(localSchema);
+
+    const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
+    for await (const app of rxsApps as AsyncIterable<App>) {
+      const appSchema = Schema.decode(app.__schema);
+      Logging.log(`Adding ${localSchema.length} local schema for ${app.id}:${app.name}:${appSchema.length}`);
+      localSchema.forEach((cS) => {
+        const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);
+        const schema = appSchema[appSchemaIdx];
+        if (!schema) {
+          return appSchema.push(cS);
+        }
+        schema.properties = Object.assign(schema.properties, cS.properties);
+        appSchema[appSchemaIdx] = schema;
+      });
+
+      await Model.getCoreModel(AppSchemaModel).updateSchema(app.id, appSchema);
+    }
+  }
 }

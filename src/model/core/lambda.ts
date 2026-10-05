@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -15,469 +13,593 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import fs from 'fs';
-import path from 'path';
-import util from 'util';
-
-import {exec as cpExec} from 'child_process';
-const exec = util.promisify(cpExec);
-
-import createConfig from 'node-env-obj';
+import fs from 'node:fs';
+import path from 'node:path';
+import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
-import Sugar from 'sugar';
-import StandardModel from '../type/standard';
-import * as Helpers from '../../helpers';
-import Logging from '../../helpers/logging';
 
-export default class LambdaSchemaModel extends StandardModel {
+import Sugar from '../../helpers/sugar.js';
+import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
+import * as Helpers from '../../helpers/index.js';
+import * as Git from '../../helpers/git.js';
+import { Schema } from '../../helpers/schema.js';
+import Logging from '../../helpers/logging.js';
+import { Services } from '../../bootstrap.js';
 
-	name: string;
+import DeploymentSchemaModel from './deployment.js';
+import LambdaExecutionSchemaModel from './lambda-execution.js';
+import TokenSchemaModel, { PolicyProperties, Token } from './token.js';
+import LambdaSchemaModel from './lambda.js';
+import { App } from './app.js';
 
-	constructor(services) {
-		const schema = LambdaSchemaModel.Schema;
-		super(schema, null, services);
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type Lambda = {
+  id: string;
+  name: string;
+  type: 'PRIVATE' | 'PUBLIC';
+  executable: boolean;
+  deployments: Array<{
+    hash: string | null;
+    deployedAt: Date | null;
+  }>;
+  git: {
+    url: string | null;
+    hash: string | null;
+    branch: string | null;
+    entryFile: string | null;
+    entryPoint: string | null;
+    // Modules in the checkout bundled once per hash and shared as globals, rather than bundled into each lambda
+    sharedModules?: Git.LambdaSharedModule[];
+  };
+  trigger: Array<{
+    type: 'CRON' | 'PATH_MUTATION' | 'API_ENDPOINT';
+    cron: {
+      executionTime: string | null;
+      periodicExecution: string | null;
+      status: 'PENDING' | 'RUNNING' | 'ERROR';
+    };
+    apiEndpoint: {
+      method: 'GET' | 'POST';
+      url: string | null;
+      type: 'ASYNC' | 'SYNC';
+      useCallerToken: boolean;
+      redirect: boolean;
+    };
+    pathMutation: {
+      paths: Array<string>;
+    };
+  }>;
+  metadata: Array<{
+    key: string | null;
+    value: string | null;
+  }>;
+  _appId: string;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
-		this.name = 'LAMBDA';
-	}
+type LambdaTrigger = Lambda['trigger'][number];
 
-	static get Schema() {
-		return {
-			name: 'lambda',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				name: {
-					__type: 'string',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				type: {
-					__type: 'string',
-					__default: 'PRIVATE',
-					__enum: [
-						'PRIVATE',
-						'PUBLIC',
-					],
-					__required: true,
-					__allowUpdate: true,
-				},
-				executable: {
-					__type: 'boolean',
-					__default: true,
-					__required: false,
-					__allowUpdate: true,
-				},
-				deployments: {
-					__type: 'array',
-					__allowUpdate: true,
-					__schema: {
-						hash: {
-							__type: 'string',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-						deployedAt: {
-							__type: 'date',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-					},
-				},
-				git: {
-					url: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-					hash: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-					branch: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-					entryFile: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-					entryPoint: {
-						__type: 'string',
-						__default: null,
-						__required: true,
-						__allowUpdate: true,
-					},
-				},
-				trigger: {
-					__type: 'array',
-					__allowUpdate: true,
-					__schema: {
-						type: {
-							__type: 'string',
-							__default: 'CRON',
-							__enum: [
-								'CRON',
-								'PATH_MUTATION',
-								'API_ENDPOINT',
-							],
-							__required: true,
-							__allowUpdate: true,
-						},
-						cron: {
-							executionTime: {
-								__type: 'string',
-								__default: null,
-								__required: false,
-								__allowUpdate: true,
-							},
-							periodicExecution: {
-								__type: 'string',
-								__default: null,
-								__required: false,
-								__allowUpdate: true,
-							},
-							status: {
-								__type: 'string',
-								__default: 'PENDING',
-								__enum: [
-									'PENDING',
-									'RUNNING',
-									'ERROR',
-								],
-								__required: false,
-								__allowUpdate: true,
-							},
-						},
-						apiEndpoint: {
-							method: {
-								__type: 'string',
-								__default: 'GET',
-								__enum: [
-									'GET',
-									'POST',
-								],
-								__required: false,
-								__allowUpdate: true,
-							},
-							url: {
-								__type: 'string',
-								__default: null,
-								__required: false,
-								__allowUpdate: true,
-							},
-							type: {
-								__type: 'string',
-								__default: 'ASYNC',
-								__enum: [
-									'ASYNC',
-									'SYNC',
-								],
-								__required: false,
-								__allowUpdate: true,
-							},
-							useCallerToken: {
-								__type: 'boolean',
-								__default: false,
-								__required: false,
-								__allowUpdate: true,
-							},
-							redirect: {
-								__type: 'boolean',
-								__default: false,
-								__required: false,
-								__allowUpdate: true,
-							},
-						},
-						pathMutation: {
-							paths: {
-								__type: 'array',
-								__itemtype: 'string',
-								__required: false,
-								__allowUpdate: true,
-							},
-						},
-					},
-				},
-				metadata: {
-					__type: 'array',
-					__allowUpdate: true,
-					__schema: {
-						key: {
-							__type: 'string',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-						value: {
-							__type: 'string',
-							__default: null,
-							__required: true,
-							__allowUpdate: true,
-						},
-					},
-				},
-				_appId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-			},
-		};
-	}
+// A trigger as posted to the API, with the settings for its type, the schema defaults the rest
+export type LambdaTriggerBody =
+  | { type?: 'CRON'; cron?: Partial<LambdaTrigger['cron']> }
+  | { type: 'PATH_MUTATION'; pathMutation?: Partial<LambdaTrigger['pathMutation']> }
+  | { type: 'API_ENDPOINT'; apiEndpoint: Partial<LambdaTrigger['apiEndpoint']> };
 
+// A lambda as posted to the API, the add route checks its name, git and trigger fields are set
+export type LambdaAddBody = {
+  name: string;
+  type?: Lambda['type'];
+  git: Lambda['git'] & {
+    deployments?: {
+      hash: string | null;
+      deployedAt: Date;
+    }[];
+  };
+  trigger: LambdaTriggerBody[];
+  metadata?: Lambda['metadata'];
+};
 
-	/**
-	 * @param {Object} body - body passed through from a POST request
-	 * @param {Object} auth - OPTIONAL authentication details for a lambda token
-	 * @param {Object} app - Lambda app
-	 * @return {Promise} - fulfilled with lambda Object when the database request is completed
-	 */
-	async add(body, internals?: any) {
-		const {auth, app} = internals;
+export default class LambdaModel extends StandardModel<Lambda> {
+  static override name = 'Lambda';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
-		await this.gitCloneLambda(body, auth, app);
+  constructor(services: Services) {
+    const schema = LambdaModel.Schema;
+    super(schema, null, services);
+  }
 
-		let deployments: any[] = [];
-		if (body.git.deployments) {
-			deployments = body.git.deployments;
-		}
+  static get Schema(): Schema {
+    return {
+      name: 'lambda',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        name: {
+          __type: 'string',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        type: {
+          __type: 'string',
+          __default: 'PRIVATE',
+          __enum: ['PRIVATE', 'PUBLIC'],
+          __required: true,
+          __allowUpdate: true,
+        },
+        executable: {
+          __type: 'boolean',
+          __default: true,
+          __required: false,
+          __allowUpdate: true,
+        },
+        deployments: {
+          __type: 'array',
+          __allowUpdate: true,
+          __schema: {
+            hash: {
+              __type: 'string',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+            deployedAt: {
+              __type: 'date',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+          },
+        },
+        git: {
+          url: {
+            __type: 'string',
+            __default: null,
+            __required: true,
+            __allowUpdate: true,
+          },
+          hash: {
+            __type: 'string',
+            __default: null,
+            __required: true,
+            __allowUpdate: true,
+          },
+          branch: {
+            __type: 'string',
+            __default: null,
+            __required: true,
+            __allowUpdate: true,
+          },
+          entryFile: {
+            __type: 'string',
+            __default: null,
+            __required: true,
+            __allowUpdate: true,
+          },
+          entryPoint: {
+            __type: 'string',
+            __default: null,
+            __required: true,
+            __allowUpdate: true,
+          },
+          sharedModules: {
+            __type: 'array',
+            __allowUpdate: true,
+            __schema: {
+              name: {
+                __type: 'string',
+                __default: null,
+                __required: true,
+                __allowUpdate: true,
+              },
+              entryFile: {
+                __type: 'string',
+                __default: null,
+                __required: true,
+                __allowUpdate: true,
+              },
+            },
+          },
+        },
+        trigger: {
+          __type: 'array',
+          __allowUpdate: true,
+          __schema: {
+            type: {
+              __type: 'string',
+              __default: 'CRON',
+              __enum: ['CRON', 'PATH_MUTATION', 'API_ENDPOINT'],
+              __required: true,
+              __allowUpdate: true,
+            },
+            cron: {
+              executionTime: {
+                __type: 'string',
+                __default: null,
+                __required: false,
+                __allowUpdate: true,
+              },
+              periodicExecution: {
+                __type: 'string',
+                __default: null,
+                __required: false,
+                __allowUpdate: true,
+              },
+              status: {
+                __type: 'string',
+                __default: 'PENDING',
+                __enum: ['PENDING', 'RUNNING', 'ERROR'],
+                __required: false,
+                __allowUpdate: true,
+              },
+            },
+            apiEndpoint: {
+              method: {
+                __type: 'string',
+                __default: 'GET',
+                __enum: ['GET', 'POST'],
+                __required: false,
+                __allowUpdate: true,
+              },
+              url: {
+                __type: 'string',
+                __default: null,
+                __required: false,
+                __allowUpdate: true,
+              },
+              type: {
+                __type: 'string',
+                __default: 'ASYNC',
+                __enum: ['ASYNC', 'SYNC'],
+                __required: false,
+                __allowUpdate: true,
+              },
+              useCallerToken: {
+                __type: 'boolean',
+                __default: false,
+                __required: false,
+                __allowUpdate: true,
+              },
+              redirect: {
+                __type: 'boolean',
+                __default: false,
+                __required: false,
+                __allowUpdate: true,
+              },
+            },
+            pathMutation: {
+              paths: {
+                __type: 'array',
+                __itemtype: 'string',
+                __required: false,
+                __allowUpdate: true,
+              },
+            },
+          },
+        },
+        metadata: {
+          __type: 'array',
+          __allowUpdate: true,
+          __schema: {
+            key: {
+              __type: 'string',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+            value: {
+              __type: 'string',
+              __default: null,
+              __required: true,
+              __allowUpdate: true,
+            },
+          },
+        },
+        _appId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+      },
+    };
+  }
 
-		deployments.push({
-			hash: (body.git.hash) ? body.git.hash : null,
-			deployedAt: Sugar.Date.create('now'),
-		});
+  /**
+   * @param {Object} body - body passed through from a POST request
+   * @param {Object} auth - OPTIONAL authentication details for a lambda token
+   * @param {Object} app - Lambda app
+   * @return {Promise} - fulfilled with lambda Object when the database request is completed
+   */
+  // The lambda's app, the app itself, which it's cloned for, and the token it's given
+  override async add(
+    body: LambdaAddBody,
+    internals: { _appId: string; auth: Partial<Token>; app: App },
+  ): Promise<Lambda> {
+    const { auth, app } = internals;
+    if (String(app.id) !== String(internals._appId)) {
+      throw new Error(`[${LambdaModel.name}] The app to clone into isn't the app the lambda is added for`);
+    }
 
-		const lambdaBody = {
-			name: (body.name) ? body.name : null,
-			type: (body.type) ? body.type : null,
-			deployments: deployments,
+    if (!auth.policyProperties) {
+      Logging.logError(`[${LambdaModel.name}] Missing policyProperties in auth`);
+      throw Helpers.Errors.badRequest('missing_policy_properties');
+    }
 
-			git: {
-				url: (body.git.url) ? body.git.url : null,
-				hash: (body.git.hash) ? body.git.hash : null,
-				branch: (body.git.branch) ? body.git.branch : null,
-				entryFile: (body.git.entryFile) ? body.git.entryFile : null,
-				entryPoint: (body.git.entryPoint) ? body.git.entryPoint : null,
-			},
+    await this.gitCloneLambda(body, auth.policyProperties, app);
 
-			trigger: (body.trigger) ? body.trigger : [],
-			metadata: (body.metadata) ? body.metadata : [],
-		};
+    // Stored as the schema reads it, with its defaults for what's left out; the deployments are the ones its git lists,
+    // then this one
+    const lambdaBody = {
+      ...body,
+      // Left to the schema's default, PRIVATE, when it isn't given
+      type: body.type || undefined,
+      deployments: [
+        ...(body.git.deployments ?? []),
+        { hash: body.git.hash ? body.git.hash : null, deployedAt: Sugar.Date.create('now') },
+      ],
+      git: { ...body.git, sharedModules: Git.assertLambdaSharedModules(body.git.sharedModules) },
+    };
 
-		const rxsLambda = await super.add(lambdaBody, {
-			_appId: app.id,
-		});
-		const lambda: any = await Helpers.streamFirst(rxsLambda);
+    const rxsLambda = await super.add(lambdaBody, {
+      _appId: internals._appId,
+    });
+    const lambda = await Helpers.streamFirst<Lambda>(rxsLambda);
 
-		const deployment = await this.__modelManager.Deployment.add({
-			lambdaId: lambda.id,
-			hash: lambda.git.hash,
-			branch: lambda.git.branch,
-			deployedAt: Sugar.Date.create('now'),
-		}, app.id);
+    const deployment = await this.__modelManager.getCoreModel(DeploymentSchemaModel).add(
+      {
+        lambdaId: lambda.id,
+        hash: lambda.git.hash,
+        branch: lambda.git.branch,
+        deployedAt: Sugar.Date.create('now'),
+      },
+      { _appId: internals._appId },
+    );
 
-		// Check if lambda has a cron trigger, if it does then create a execution doc.
-		const cronTrigger = lambda.trigger.filter((t) => t.type === 'CRON');
-		for await (const trigger of cronTrigger) {
-			if (trigger.cron.periodicExecution) {
-				await this.__modelManager.LambdaExecution.add({
-					triggerType: 'CRON',
-					lambdaId: lambda.id,
-					deploymentId: deployment.id,
-					executeAfter: Sugar.Date.create(),
-					nextCronExpression: trigger.cron.periodicExecution,
-				}, lambda._appId);
-			}
-		}
+    // Check if lambda has a cron trigger, if it does then create a execution doc.
+    const cronTrigger = lambda.trigger.filter((t) => t.type === 'CRON');
+    for await (const trigger of cronTrigger) {
+      if (trigger.cron.periodicExecution) {
+        await this.__modelManager.getCoreModel(LambdaExecutionSchemaModel).add(
+          {
+            triggerType: 'CRON',
+            lambdaId: lambda.id,
+            deploymentId: deployment.id,
+            executeAfter: Sugar.Date.create(),
+            nextCronExpression: trigger.cron.periodicExecution,
+          },
+          { _appId: lambda._appId },
+        );
+      }
+    }
 
-		auth.type = this.__modelManager.Token.Constants.Type.LAMBDA;
-		await this.__modelManager.Token.add(auth, {
-			_appId: app.id,
-			_lambdaId: lambda.id,
-		});
+    auth.type = TokenSchemaModel.Constants.Type.LAMBDA;
+    await this.__modelManager.getCoreModel(TokenSchemaModel).add(auth, {
+      _appId: app.id,
+      _lambdaId: lambda.id,
+    });
 
-		await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.git.hash}; mv lambda-${lambda.name} lambda-${lambda.git.hash}`);
+    if (!fs.existsSync(`${Config.paths.lambda.code}/lambda-${lambda.git.hash}`)) {
+      this._moveLambdaFolder(lambda.name, lambda.git.hash as string);
+    }
 
-		return lambda;
-	}
+    return lambda;
+  }
 
+  /**
+   * Cloning lambda project
+   * @param {Object} lambda
+   * @param {Object} auth
+   * @param {Object} app
+   * @return {Promise}
+   */
+  async gitCloneLambda(lambda: LambdaAddBody, policyProperties: NonNullable<PolicyProperties>, app: App) {
+    const name = lambda?.name;
+    const url = lambda?.git?.url;
+    const branch = lambda?.git?.branch;
+    const gitHash = lambda?.git?.hash;
+    Git.assertLambdaGitSource({ name, url, branch, hash: gitHash });
 
-	/**
-	 * Cloning lambda project
-	 * @param {Object} lambda
-	 * @param {Object} auth
-	 * @param {Object} app
-	 * @return {Promise}
-	 */
-	async gitCloneLambda(lambda, auth, app) {
-		const name = lambda?.name;
-		const url = lambda?.git?.url;
-		const branch = lambda?.git?.branch;
-		const gitHash = lambda?.git?.hash;
-		const entryFile = lambda?.git?.entryFile;
+    try {
+      const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, policyProperties);
+      if (!policyCheck.passed) {
+        Logging.logError(`[${LambdaModel.name}] ${policyCheck.errMessage}`);
+        throw Helpers.Errors.badRequest('invalid_field');
+      }
 
-		try {
-			const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, auth.policyProperties);
-			if (!policyCheck.passed) {
-				Logging.logError(`[${this.name}] ${policyCheck.errMessage}`);
-				throw new Helpers.Errors.RequestError(400, `invalid_field`);
-			}
+      const apiTrigger = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
+      let lambdaExists: Lambda | null = null;
+      if (apiTrigger && apiTrigger.apiEndpoint.url) {
+        lambdaExists = await this.__modelManager.getCoreModel(LambdaSchemaModel).findOne({
+          'trigger.apiEndpoint.url': {
+            $eq: apiTrigger.apiEndpoint.url,
+          },
+          _appId: {
+            $eq: app.id,
+          },
+        });
+      }
 
-			const apiTrigger = lambda.trigger.find((t) => t.type === 'API_ENDPOINT');
-			let lambdaExists = null;
-			if (apiTrigger && apiTrigger.apiEndpoint.url) {
-				lambdaExists = await this.__modelManager.Lambda.findOne({
-					'trigger.apiEndpoint.url': {
-						$eq: apiTrigger.apiEndpoint.url,
-					},
-					'_appId': {
-						$eq: app.id,
-					},
-				});
-			}
+      if (lambdaExists) {
+        Logging.logError(`[${LambdaModel.name}] Lambda with the same API url already exists`);
+        throw Helpers.Errors.badRequest('duplicate_item');
+      }
 
-			if (lambdaExists) {
-				Logging.logError(`[${this.name}] Lambda with the same API url already exists`);
-				throw new Helpers.Errors.RequestError(400, `duplicate_item`);
-			}
+      await this.gitFolderClone(gitHash, branch, name, url);
+    } catch (err: unknown) {
+      this._removeLambdaFolder(name);
 
-			await this.gitFolderClone(gitHash, branch, name, url, entryFile);
-		} catch (err) {
-			if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
-				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
-			}
+      Logging.logError(`[${LambdaModel.name}] ${Helpers.getThrownErrorMessage(err)}`);
+      throw err;
+    }
+  }
 
-			if (err instanceof Error) {
-				Logging.logError(`[${this.name}] ${err.message}`);
-			}
-			throw err;
-		}
-	}
+  async gitFolderClone(gitHash: string | null, branch: string | null, name: string, url: string | null) {
+    Git.assertLambdaGitSource({ name, url, branch, hash: gitHash });
+    const codeDir = Config.paths.lambda.code;
+    if (fs.existsSync(`${codeDir}/lambda-${gitHash}`)) return;
 
-	async gitFolderClone(gitHash, branch, name, url, entryFile) {
-		// Check to see if the requested git hash exists or just make sure the branch exists if we're using HEAD.
-		const exPramChkBranch = (gitHash !== 'HEAD') ? `git branch ${branch} --contains ${gitHash}` : `git ls-remote --heads origin ${branch}`;
-		const result = await exec(`cd ${Config.paths.lambda.code}; git clone --filter=blob:limit=1m ${url} lambda-${name};
-			cd lambda-${name}; ${exPramChkBranch}`);
-		if (!result.stdout) {
-			if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${name}`)) {
-				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${name}`);
-			}
-			Logging.logError(`[${this.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
-			throw new Helpers.Errors.RequestError(400, `missing_field`);
-		}
+    const lambdaDir = `${codeDir}/lambda-${name}`;
+    await Git.git(['clone', '--filter=blob:limit=1m', '--', url as string, `lambda-${name}`], codeDir);
 
-		// TODO it should only clone the lambda file from the repo
-		await exec(`cd ${Config.paths.lambda.code}/lambda-${name}; git checkout ${gitHash}`);
-	}
+    // Check to see if the requested git hash exists or just make sure the branch exists if we're using HEAD.
+    const checkBranch =
+      gitHash !== 'HEAD'
+        ? ['branch', branch as string, '--contains', gitHash as string]
+        : ['ls-remote', '--heads', 'origin', branch as string];
+    const result = await Git.git(checkBranch, lambdaDir);
+    if (!result.stdout) {
+      this._removeLambdaFolder(name);
+      Logging.logError(`[${LambdaModel.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
+      throw Helpers.Errors.badRequest('incorrect_lambda_hash_or_branch');
+    }
 
-	async pullLambdaCode(lambda, lambdaDeployInfo: any = {}) {
-		try {
-			const branch = (lambdaDeployInfo.branch) ? lambdaDeployInfo.branch : lambda.git.branch;
-			const gitHash = (lambdaDeployInfo.hash) ? lambdaDeployInfo.hash : lambda.git.hash;
-			const entryFilePath = (lambdaDeployInfo.entryFilePath) ? lambdaDeployInfo.entryFilePath : lambda.git.entryFile;
-			const entryPoint = (lambdaDeployInfo.entryPoint) ? lambdaDeployInfo.entryPoint : lambda.git.entryPoint;
+    // TODO it should only clone the lambda file from the repo
+    await Git.git(['checkout', gitHash as string], lambdaDir);
+  }
 
-			// TODO: Refactor below code into a seperate file for handling managment of lambda deployments.
-			const lambdaFolderName = `lambda-${gitHash}`;
-			if (!fs.existsSync(`${Config.paths.lambda.code}/${lambdaFolderName}`)) {
-				await this.gitFolderClone(gitHash, branch, lambda.name, lambda.git.url, entryFilePath);
-				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.git.hash}; mv lambda-${lambda.name} lambda-${lambda.git.hash}`);
-			} else {
-				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git fetch`);
-				const checkoutRes = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${branch}`);
-				if (!checkoutRes.stdout) {
-					Logging.log(`[${this.name}] Lambda ${branch} does not exist`);
-					return Promise.reject(new Helpers.Errors.RequestError(400, `branch_${branch}_does_not_exist_for_lambda`));
-				}
+  // The folder a lambda's code is cloned into before it's moved to its hash's folder. The name is checked first.
+  _removeLambdaFolder(name: string) {
+    if (!Git.isLambdaName(name)) return;
+    fs.rmSync(`${Config.paths.lambda.code}/lambda-${name}`, { recursive: true, force: true });
+  }
 
-				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git pull`);
-				const results = await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git branch ${branch} --contains ${gitHash}`);
-				if (!results.stdout) {
-					Logging.log(`[${this.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
-					return Promise.reject(new Helpers.Errors.RequestError(400, `lambda_${gitHash}_does_not_exist_on_branch_${branch}`));
-				}
+  _moveLambdaFolder(name: string, gitHash: string) {
+    Git.assertLambdaGitSource({ name, hash: gitHash });
+    const hashDir = `${Config.paths.lambda.code}/lambda-${gitHash}`;
+    fs.rmSync(hashDir, { recursive: true, force: true });
+    fs.renameSync(`${Config.paths.lambda.code}/lambda-${name}`, hashDir);
+  }
 
-				await exec(`cd ${Config.paths.lambda.code}/${lambdaFolderName}; git checkout ${gitHash}`);
+  async pullLambdaCode(
+    lambda: Lambda,
+    lambdaDeployInfo: {
+      branch?: string;
+      hash?: string;
+      entryFilePath?: string;
+      entryPoint?: string;
+    } = {},
+  ) {
+    const branch = lambdaDeployInfo.branch ? lambdaDeployInfo.branch : lambda.git.branch;
+    const gitHash = lambdaDeployInfo.hash ? lambdaDeployInfo.hash : lambda.git.hash;
+    Git.assertLambdaGitSource({ name: lambda.name, url: lambda.git.url, branch, hash: gitHash });
 
-				const entryDir = path.dirname(entryFilePath);
-				const lambdaDir = `${Config.paths.lambda.code}/${lambdaFolderName}/./${entryDir}`; // Ugly `/./` because I am lazy
-				const files = fs.readdirSync(lambdaDir);
-				const entryFile = entryFilePath.split('/').pop();
-				if (entryFilePath && !files.includes(entryFile)) {
-					Logging.log(`[${this.name}] No such file ${entryFile} - ${lambda.name} ${gitHash} ${branch}`);
-					throw new Helpers.Errors.RequestError(404, `entry_file_not_found`);
-				}
+    try {
+      const entryFilePath = lambdaDeployInfo.entryFilePath ? lambdaDeployInfo.entryFilePath : lambda.git.entryFile;
+      const entryPoint = lambdaDeployInfo.entryPoint ? lambdaDeployInfo.entryPoint : lambda.git.entryPoint;
 
-				for await (const file of files) {
-					if (path.extname(file) !== '.js') continue;
+      // TODO: Refactor below code into a seperate file for handling managment of lambda deployments.
+      const lambdaFolderName = `lambda-${gitHash}`;
+      if (!fs.existsSync(`${Config.paths.lambda.code}/${lambdaFolderName}`)) {
+        await this.gitFolderClone(gitHash, branch, lambda.name, lambda.git.url);
+        this._moveLambdaFolder(lambda.name, gitHash as string);
+      } else {
+        const checkoutDir = `${Config.paths.lambda.code}/${lambdaFolderName}`;
+        await Git.git(['fetch'], checkoutDir);
+        const checkoutRes = await Git.git(['checkout', branch as string], checkoutDir);
+        if (!checkoutRes.stdout) {
+          Logging.log(`[${LambdaModel.name}] Lambda ${branch} does not exist`);
+          return Promise.reject(
+            Helpers.Errors.badRequest('branch_not_found', `The lambda's repository has no branch ${branch}`, {
+              branch,
+            }),
+          );
+        }
 
-					const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
-					if (entryFile === file && entryPoint && !content.includes(entryPoint)) {
-						Logging.log(`[${this.name}] No such function ${entryPoint} - ${lambda.name}`);
-						throw new Helpers.Errors.RequestError(404, `entry_point_not_found`);
-					}
-				}
-			}
+        await Git.git(['pull'], checkoutDir);
+        const results = await Git.git(['branch', branch as string, '--contains', gitHash as string], checkoutDir);
+        if (!results.stdout) {
+          Logging.log(`[${LambdaModel.name}] Lambda hash:${gitHash} does not exist on ${branch} branch`);
+          return Promise.reject(
+            Helpers.Errors.badRequest('hash_not_on_branch', `The commit ${gitHash} is not on the branch ${branch}`, {
+              hash: gitHash,
+              branch,
+            }),
+          );
+        }
 
-			const deployment = await this.__modelManager.Deployment.findOne({
-				lambdaId: this.createId(lambda.id),
-				hash: gitHash,
-			});
-			if (!deployment) {
-				await this.__modelManager.Deployment.add({
-					lambdaId: lambda.id,
-					hash: gitHash,
-					branch: branch,
-				}, lambda._appId);
-			} else {
-				await this.__modelManager.Deployment.update({
-					id: this.__modelManager.Deployment.createId(deployment.id),
-				}, {$set: {deployedAt: Sugar.Date.create('now')}});
-			}
-		} catch (err) {
-			if (fs.existsSync(`${Config.paths.lambda.code}/lambda-${lambda.name}`)) {
-				await exec(`cd ${Config.paths.lambda.code}; rm -rf lambda-${lambda.name}`);
-			}
+        await Git.git(['checkout', gitHash as string], checkoutDir);
 
-			if (err instanceof Error) {
-				Logging.logError(`[${this.name}] ${err.message}`);
-			}
-			throw err;
-		}
-	}
+        // A stored lambda has an entry file, the schema requires it
+        const entryDir = path.dirname(entryFilePath as string);
+        const lambdaDir = `${Config.paths.lambda.code}/${lambdaFolderName}/./${entryDir}`; // Ugly `/./` because I am lazy
+        const files = fs.readdirSync(lambdaDir);
+        // split always returns at least one part
+        const entryFile = (entryFilePath as string).split('/').pop() as string;
+        if (entryFilePath && !files.includes(entryFile)) {
+          Logging.log(`[${LambdaModel.name}] No such file ${entryFile} - ${lambda.name} ${gitHash} ${branch}`);
+          throw Helpers.Errors.notFound('entry_file_not_found', 'The entry file was not found in the repository', {
+            entryFile: entryFilePath,
+          });
+        }
 
-	/**
-	 * @param {String} lambdaId - lambda id which needs to be updated
-	 * @param {Object} data - lambda new data deplyoment
-	 * @return {Promise} - resolves when save operation is completed
-	 */
-	async setDeployment(lambdaId, data) {
-		const lambdaLastDeployment = {
-			hash: data['git.hash'],
-			deployedAt: Sugar.Date.create('now'),
-		};
-		await super.updateById(this.createId(lambdaId), {
-			$set: data,
-		});
+        for await (const file of files) {
+          if (path.extname(file) !== '.js') continue;
 
-		await super.updateById(this.createId(lambdaId), {
-			$push: {
-				'deployments': lambdaLastDeployment,
-			},
-		});
+          const content = fs.readFileSync(`${lambdaDir}/${file}`, 'utf8');
+          if (entryFile === file && entryPoint && !content.includes(entryPoint)) {
+            Logging.log(`[${LambdaModel.name}] No such function ${entryPoint} - ${lambda.name}`);
+            throw Helpers.Errors.notFound('entry_point_not_found', 'The entry point was not found in the entry file', {
+              entryPoint,
+            });
+          }
+        }
+      }
 
-		return lambdaLastDeployment;
-	}
+      const deployment = await this.__modelManager.getCoreModel(DeploymentSchemaModel).findOne({
+        lambdaId: this.createId(lambda.id),
+        hash: gitHash,
+      });
+      if (!deployment) {
+        await this.__modelManager.getCoreModel(DeploymentSchemaModel).add(
+          {
+            lambdaId: lambda.id,
+            hash: gitHash,
+            branch: branch,
+          },
+          { _appId: lambda._appId },
+        );
+      } else {
+        await this.__modelManager
+          .getCoreModel(DeploymentSchemaModel)
+          .updateById(this.__modelManager.getCoreModel(DeploymentSchemaModel).createId(deployment.id), {
+            $set: { deployedAt: Sugar.Date.create('now') },
+          });
+      }
+    } catch (err: unknown) {
+      this._removeLambdaFolder(lambda.name);
+
+      Logging.logError(`[${LambdaModel.name}] ${Helpers.getThrownErrorMessage(err)}`);
+      throw err;
+    }
+  }
+
+  /**
+   * @param {String} lambdaId - lambda id which needs to be updated
+   * @param {Object} data - lambda new data deplyoment
+   * @return {Promise} - resolves when save operation is completed
+   */
+  async setDeployment(
+    lambdaId: string,
+    data: { 'git.branch': string; 'git.hash': string; 'git.entryFile'?: string; 'git.entryPoint'?: string },
+  ) {
+    const lambdaLastDeployment = {
+      hash: data['git.hash'],
+      deployedAt: Sugar.Date.create('now'),
+    };
+    await super.updateById(this.createId(lambdaId), {
+      $set: data,
+    });
+
+    await super.updateById(this.createId(lambdaId), {
+      $push: {
+        deployments: lambdaLastDeployment,
+      },
+    });
+
+    return lambdaLastDeployment;
+  }
 }

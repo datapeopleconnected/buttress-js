@@ -2,7 +2,7 @@
 
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -16,47 +16,37 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import cluster from 'cluster';
-import Sugar from 'sugar';
-import createConfig from 'node-env-obj';
+import cluster from 'node:cluster';
+import Config from '../helpers/config.js';
+import { getThrownErrorMessage } from '../helpers/index.js';
 
-const env = (process.env.ENV_FILE) ? process.env.ENV_FILE : process.env.NODE_ENV;
-
-const Config = createConfig({
-	envFile: `.${env}.env`,
-	envPath: '../../',
-	configPath: '../',
-}) as unknown as Config;
-
-Sugar.Date.setLocale('en-GB');
-
-import Logging from '../helpers/logging';
-import BootstrapRest from '../bootstrap-rest';
+import Logging from '../helpers/logging.js';
+import BootstrapRest from '../bootstrap-rest.js';
 
 Logging.init('REST');
 
-if (cluster.isMaster) Logging.startupMessage();
+if (cluster.isPrimary) Logging.startupMessage();
 
 (async () => {
-	try {
-		const app = new BootstrapRest();
-		const isMaster = await app.init();
+  try {
+    const app = new BootstrapRest();
+    app.shutdownOnSignals();
+    const isMain = await app.init();
 
-		if (isMaster) {
-			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Master v${Config.app.version} listening on port ` +
-				`${Config.listenPorts.rest} in ${Config.env} mode.`);
-			Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
-		} else {
-			Logging.log(`${Config.app.title}:${Config.app.code} REST Server Worker v${Config.app.version} ` +
-				`in ${Config.env} mode.`);
-		}
-	} catch (err) {
-		if (err instanceof Error || typeof err === 'string') {
-			Logging.logError(err);
-		} else {
-			console.error(err);
-		}
+    if (isMain) {
+      Logging.log(
+        `${Config.app.title}:${Config.app.code} REST Server Main v${Config.app.version} listening on port ` +
+          `${Config.listenPorts.rest} in ${Config.env} mode.`,
+      );
+      Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
+    } else {
+      Logging.log(
+        `${Config.app.title}:${Config.app.code} REST Server Worker v${Config.app.version} ` + `in ${Config.env} mode.`,
+      );
+    }
+  } catch (err: unknown) {
+    Logging.logError(getThrownErrorMessage(err));
 
-		process.exit(1);
-	}
+    process.exit(1);
+  }
 })();

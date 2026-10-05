@@ -1,0 +1,16 @@
+{
+  "name": "policy-selection-array",
+  "version": "1",
+  "selection": {
+    "policySelection": {
+      "@eq": "array"
+    }
+  },
+  "config": [{
+    "verbs": ["GET", "SEARCH"],
+    "schema": ["organisation"],
+    "query": {
+      "access": "%FULL_ACCESS%"
+    }
+  }]
+}

@@ -1,0 +1,42 @@
+{
+  "name": "override-access",
+  "version": "1",
+  "selection": {
+    "securityClearance": {
+      "@eq": 100
+    }
+  },
+  "config": [
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "organisation"
+      ],
+      "env": {
+        "switchState": {
+          "collection": "switch",
+          "type": "string",
+          "query": {
+            "id": {
+              "@eq": "62b09ee325c88db16d9da6ca"
+            }
+          },
+          "output": {
+            "key": "state",
+            "type": "string"
+          }
+        }
+      },
+      "condition": {
+        "#env.switchState": {
+          "@eq": "ON"
+        }
+      },
+      "query": {
+        "access": "%FULL_ACCESS%"
+      }
+    }
+  ]
+}

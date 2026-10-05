@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,10 +14,10 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it} = require('mocha');
-const assert = require('assert');
+import { describe, it } from 'mocha';
+import assert from 'assert';
 
-const Helpers = require('../../../dist/helpers');
+import * as Helpers from '../../../dist/helpers/index.js';
 
 describe('helpers:getFlattenedSchema', () => {
 	const schema = {

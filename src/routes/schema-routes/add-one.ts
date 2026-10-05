@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -13,73 +13,85 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response } from 'express';
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
-import Plugins from '../../plugins';
+import Route from '../route.js';
+import { takenIdError, findBatchProblem, refuseEntitiesOutsidePolicy } from './add-many.js';
+import { invalidEntityError } from '../../model/shared.js';
+import * as Helpers from '../../helpers/index.js';
+import Plugins from '../../plugins/index.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
+import type { RequestWithBody } from '../../types/routes.js';
 
 /**
  * @class AddOne
  */
 export default class AddOne extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `ADD ${schema.name}`, services);
-		this.__configureSchemaRoute();
+    super(`${schemaRoutePath}`, `ADD ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
 
-		this.verb = Route.Constants.Verbs.POST;
-		this.permissions = Route.Constants.Permissions.ADD;
+    this.verb = Route.Constants.Verbs.POST;
+    this.permissions = Route.Constants.Permissions.ADD;
 
-		this.activityDescription = `ADD ${schema.name}`;
-		this.activityBroadcast = true;
+    this.activityDescription = `ADD ${schema.name}`;
+    this.activityBroadcast = true;
+  }
 
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
+    const model = await this.routeModel();
 
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model.getModel(schemaCollection);
+    // An array of entities is stored as bulk/add stores it, so it's checked in the same way.
+    if (Array.isArray(req.body)) {
+      const problem = await findBatchProblem(model, req.body, this.schemaName);
+      if (problem) {
+        this.log(problem.message, Route.LogLevel.ERR, req.context.id);
+        throw problem;
+      }
+      refuseEntitiesOutsidePolicy(model, req.body, req.context.ac, this.schemaName);
+      return true;
+    }
 
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
-	}
+    const validation = model.validate(req.body);
+    if (!validation.isValid) {
+      const err = invalidEntityError(this.schemaName, validation);
+      this.log(err.message, Route.LogLevel.ERR, req.context.id);
+      throw err;
+    }
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			const validation = this.model.validate(req.body);
-			if (!validation.isValid) {
-				if (validation.missing.length > 0) {
-					this.log(`${this.schema.name}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
-					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Missing field: ${validation.missing[0]}`));
-				}
-				if (validation.invalid.length > 0) {
-					this.log(`${this.schema.name}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
-					return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Invalid value: ${validation.invalid[0]}`));
-				}
+    refuseEntitiesOutsidePolicy(model, [req.body], req.context.ac, this.schemaName);
 
-				this.log(`${this.schema.name}: Unhandled Error`, Route.LogLevel.ERR, req.id);
-				return reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Unhandled error.`));
-			}
+    const isDuplicate = await model.isDuplicate(req.body);
+    if (isDuplicate === true) {
+      this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('duplicate');
+    }
 
-			this.model.isDuplicate(req.body)
-				.then((res) => {
-					if (res === true) {
-						this.log(`${this.schema.name}: Duplicate entity`, Route.LogLevel.ERR, req.id);
-						return reject(new Helpers.Errors.RequestError(400, `duplicate`));
-					}
-					resolve(true);
-				});
-		});
-	}
+    return true;
+  }
 
-	async _exec(req, res, validate) {
-		const result = await this.model.add(req.body);
-		return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, this.schema.data);
-	}
-};
+  override async _exec(req: RequestWithBody<unknown>, _res: Response, _validate: boolean) {
+    const model = await this.routeModel();
+    let result;
+    try {
+      result = await model.add(req.body);
+    } catch (err) {
+      // The id was taken by another request after the duplicate check.
+      if (!(err instanceof Helpers.Errors.DuplicateIdError)) throw err;
+      if (Array.isArray(req.body)) {
+        const problem = takenIdError(err, req.body, this.schemaName);
+        this.log(problem.message, Route.LogLevel.ERR, req.context.id);
+        throw problem;
+      }
+      this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('duplicate');
+    }
+    return await Plugins.apply_filters('schemaRoutes:addOne:exec', result, model.schemaData);
+  }
+}

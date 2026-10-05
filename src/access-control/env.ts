@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -15,183 +13,242 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { ObjectId } from 'bson';
+import { Request } from 'express';
 
-import {ObjectId} from 'bson';
-import * as Helpers from '../helpers';
+import * as Helpers from '../helpers/index.js';
 
-import Model from '../model';
+import { PolicyEnvQuery } from '../model/core/policy.js';
 
-class PolicyEnv {
-	private _globalQueryEnv: {[index: string]: string} = {};
+import Model from '../model/index.js';
+import { Filter } from './filter.js';
+import { User } from '../model/core/user.js';
+import { isObjectId } from '../datastore/adapters/object-id.js';
 
-	queryOperator: {[index: string]: string};
+type DynamicRow = Record<string, unknown>;
 
-	constructor() {
-		this.queryOperator = {
-			'@eq': '$eq',
-			'@not': '$not',
-			'@gt': '$gt',
-			'@lt': '$lt',
-			'@gte': '$gte',
-			'@lte': '$lte',
-			'@gtDate': '$gtDate',
-			'@gteDate': '$gteDate',
-			'@ltDate': '$ltDate',
-			'@lteDate': '$lteDate',
-			'@rex': '$rex',
-			'@rexi': '$rexi',
-			'@in': '$in',
-			'@nin': '$nin',
-			'@exists': '$exists',
-			'@inProp': '$inProp',
-			'@elMatch': '$elMatch',
-		};
-	}
+// Ids are strings outside the datastore adapters; this gives a valid id in its canonical (hex) form
+function toIdIfValid(value: unknown): unknown {
+  if (isObjectId(value)) return value.toHexString();
+  if (typeof value === 'string' && ObjectId.isValid(value)) return new ObjectId(value).toHexString();
+  return value;
+}
 
-	async getQueryEnvironmentVar(environmentKey, envVars, appId, authUser, conditionFlag = false) {
-		if ((!environmentKey || !environmentKey.includes('env')) && !conditionFlag) return environmentKey;
+const isId = (value: unknown) => typeof value === 'string' && ObjectId.isValid(value);
 
-		const path = environmentKey.replace('env', '').split('.').filter((v) => v);
-		const queryValue = path.reduce((obj, str) => obj?.[str], envVars);
+export interface ACBaseEnv {
+  date: {
+    now: string;
+  };
+}
 
-		let root: string | null = null;
-		if (typeof queryValue === 'string') {
-			[root] = queryValue.split('.');
-		} else if (typeof queryValue === 'object') {
-			root = queryValue.collection;
-		}
+export interface ACEnv extends ACBaseEnv {
+  ipAddress: string | null;
+  user: User | null;
+  appId: string | null;
+}
 
-		const isUserSchema = await this.__isUserSchema(root);
-		const isAppSchema = await this.__isAppSchema(root, appId);
-		if (isUserSchema) {
-			return this.__getUserSchemaEnvValue(root, authUser, queryValue);
-		}
+export interface ACPolicyEnvCombined extends ACEnv {
+  // Policy env definitions, and the values they've been resolved to
+  [custom: string]: unknown;
+}
 
-		if (isAppSchema) {
-			return this.__getAppSchemaEnvValue(appId, authUser, envVars, queryValue);
-		}
+export class PolicyEnv {
+  static strPrefix = '#env.';
 
-		return this._globalQueryEnv?.[queryValue];
-	}
+  private _globalQueryEnv: { [index: string]: string } = {};
 
-	async __isUserSchema(schema) {
-		if (!schema) return false;
-		return Model.coreSchema.some((s) => s.toUpperCase() === schema.toUpperCase()) && schema.toUpperCase() === 'USER';
-	}
+  generateBaseGlobalEnvs(): ACBaseEnv {
+    return {
+      date: {
+        now: new Date().toISOString(),
+      },
+    };
+  }
 
-	async __isAppSchema(schema, appId) {
-		if (!schema) return false;
-		const appShortId = Helpers.shortId(appId);
-		return (Model[`${appShortId}-${schema}`]) ? true : false;
-	}
+  generateRequestGlobalEnvs(req: Request | null, appId: string, authUser: User | null): ACEnv {
+    return {
+      ...this.generateBaseGlobalEnvs(),
+      // SPR checks activity without a request, so there's no address there
+      ipAddress: req ? this.__requestIPAddress(req) : null,
+      user: authUser,
+      appId: appId,
+    };
+  }
 
-	async __getUserSchemaEnvValue(schema, authUser, path) {
-		path = path.replace(schema, '');
-		return this.__getObjValueByPath(authUser, path);
-	}
+  /**
+   * Get the value of an environment variable.
+   * @param key The key of the environment variable.
+   * @param envVars The environment variables object - **Important:** This object will be modified to include the resolved environment variables.
+   * @returns The value of the environment variable or the key itself if not found.
+   */
+  async getEnvValue(key: unknown, envVars: ACPolicyEnvCombined | null): Promise<unknown> {
+    if (!key || typeof key !== 'string' || !key.startsWith(PolicyEnv.strPrefix)) return key;
 
-	async __getAppSchemaEnvValue(appId, user, envVars, envObj) {
-		const schema = envObj.collection;
-		const query = this.__replaceOperatorKey(envObj.query);
-		const output = envObj.output;
-		const outputType = envObj.type;
-		const lookUpObject = {
-			user,
-		};
+    const path = key.replace(PolicyEnv.strPrefix, '');
+    const value = Helpers.get(path, envVars);
 
-		const appShortId = Helpers.shortId(appId);
-		for await (const key of Object.keys(query)) {
-			if (typeof query[key] !== 'object') throw new Error(`env query needs to be a query object ${query[key]}`);
-			const operator = Object.values(this.queryOperator).find((op) => Object.keys(query[key]).every((key) => key === op));
-			if (!operator) throw new Error(`Can not find an operator for ${query[key]}`);
+    if (typeof value === 'object' && value !== null && 'collection' in value) {
+      // The value was found in envVars, so they aren't null
+      return this.getQueryEnvironmentVar(key, envVars as ACPolicyEnvCombined);
+    }
 
-			const dbQuery = query[key][operator];
-			if (typeof dbQuery !== 'string') continue;
+    if (typeof value === 'string' && value.startsWith(PolicyEnv.strPrefix)) {
+      return this.getEnvValue(value, envVars);
+    }
 
-			const queryValue = dbQuery.split('.');
-			const [queryCollection] = queryValue;
-			if (lookUpObject[queryCollection]) {
-				query[key][operator] = await this.__getObjValueByPath(lookUpObject[queryCollection], dbQuery.replace(queryCollection, ''));
-			} else if (queryCollection === 'env') {
-				const envVariable = dbQuery.replace(`${queryCollection}.`, '');
-				const envRes = await this.__getAppSchemaEnvValue(appId, user, envVars, envVars[envVariable]);
-				query[key][operator] = envRes;
-			}
-		}
+    // if (value?.constructor?.name === 'ObjectId') return value.toString();
+    return value;
+  }
 
-		const res = await (Model[`${appShortId}-${schema}`]).find(query);
-		const result = await Helpers.streamAll(res);
-		if (!result) return false;
+  async getQueryEnvironmentVar(
+    environmentKey: string,
+    envVars: ACPolicyEnvCombined,
+    conditionFlag = false,
+  ): Promise<unknown> {
+    if ((!environmentKey || !environmentKey.startsWith(PolicyEnv.strPrefix)) && !conditionFlag) return environmentKey;
 
-		if (outputType === 'string' || outputType === 'id') {
-			return result.reduce((item, obj) => {
-				item = obj[output.key];
-				if (output.type === 'id') {
-					item = new ObjectId(item);
-				}
+    const path = environmentKey
+      .replace(PolicyEnv.strPrefix, '')
+      .split('.')
+      .filter((v) => v);
+    const queryValue = path.reduce<unknown>((obj, str) => (obj as DynamicRow | undefined)?.[str], envVars);
 
-				return item;
-			}, '');
-		}
+    // getEnvValue only calls this for a PolicyEnvQuery
+    let root: string | null = null;
+    if (typeof queryValue === 'string') {
+      [root] = queryValue.split('.');
+    } else if (typeof queryValue === 'object') {
+      root = (queryValue as PolicyEnvQuery).collection;
+    }
 
-		if (outputType === 'array' && result.length > 0) {
-			return result.reduce((arr, obj) => {
-				if (output.type === 'id' && Array.isArray(obj[output.key])) {
-					obj[output.key] = obj[output.key].map((id) => new ObjectId(id));
-				} else if (output.type === 'id') {
-					obj[output.key] = new ObjectId(obj[output.key]);
-				}
+    if (root) {
+      const isAppSchema = await this.__isAppSchema(root, envVars.appId);
+      if (isAppSchema) {
+        return this.__queryAppSchemaEnvValue(queryValue as PolicyEnvQuery, environmentKey, envVars);
+      }
+    }
 
-				arr = arr.concat(obj[output.key]);
-				return arr;
-			}, []);
-		}
-		if (outputType === 'boolean' && result.length > 0) {
-			return result.every((obj) => obj[output.key]);
-		}
+    // A value that isn't a string is converted to one for the lookup
+    const value = this._globalQueryEnv[queryValue as string];
+    // An array lookup that can't be made finds nothing, as an array, which $in and $nin need
+    if (value === undefined && (queryValue as PolicyEnvQuery | null)?.type === 'array') return [];
 
-		return (result.length > 0 && result[output]) ? result[output] : false;
-	}
+    return value;
+  }
 
-	__getObjValueByPath(obj, path) {
-		const keys = path.split('.').filter((v) => v);
-		let value = obj;
-		for (const key of keys) {
-			value = value[key];
-			path = path.replace(key, '');
+  async __isAppSchema(schema: string, appId: string | null) {
+    if (!schema || !appId) return false;
+    const model = await Model.getAppModel(appId, schema);
+    return model ? true : false;
+  }
 
-			if (typeof value === 'object' && !Array.isArray(value)) {
-				return this.__getObjValueByPath(value, path);
-			}
+  async __findAndReplaceValues(query: unknown, envVars: ACPolicyEnvCombined) {
+    if (typeof query !== 'object' || query === null) {
+      return;
+    }
 
-			if (Array.isArray(value)) {
-				return this.__getArrObjValue(value, path);
-			}
-		}
+    const paths = this.__findPaths(query);
+    for await (const path of paths) {
+      const dbQuery = path.reduce<unknown>((current, key) => current && (current as DynamicRow)[key], query);
+      const realValue = await this.getEnvValue(dbQuery, envVars);
 
-		return value;
-	}
+      this.__setObjectValueByPath(query, path, realValue);
+    }
 
-	__getArrObjValue(arr, path) {
-		return arr.reduce((arr, value) => {
-			arr.push(this.__getObjValueByPath(value, path));
+    return query;
+  }
 
-			return arr;
-		}, []);
-	}
+  __setObjectValueByPath(obj: object, path: (string | number)[], value: unknown) {
+    const lastKey = path.pop();
+    const parent = path.reduce<DynamicRow>((current, key) => current[key] as DynamicRow, obj as DynamicRow);
+    if (parent && lastKey) {
+      parent[lastKey] = value;
+    }
+  }
 
-	__replaceOperatorKey(obj) {
-		if (!obj || typeof obj !== 'object') {
-			return obj; // Return the input if it's not an object
-		}
+  __findPaths(data: unknown, currentPath: (string | number)[] = [], paths: (string | number)[][] = []) {
+    if (typeof data === 'object' && data !== null) {
+      if (Array.isArray(data)) {
+        data.forEach((item: unknown, index: number) => {
+          this.__findPaths(item, [...currentPath, index], paths);
+        });
+      } else {
+        for (const key in data) {
+          if (Object.prototype.hasOwnProperty.call(data, key)) {
+            this.__findPaths((data as DynamicRow)[key], [...currentPath, key], paths);
+          }
+        }
+      }
+    } else {
+      // This is an "end value," so we store its full path.
+      paths.push(currentPath);
+    }
+    return paths;
+  }
 
-		const newObj = {};
-		for (const key of Object.keys(obj)) {
-			const value = obj[key];
-			const updatedKey = this.queryOperator[key] || key;
-			newObj[updatedKey] = this.__replaceOperatorKey(value); // Recursively update nested objects
-		}
-		return newObj;
-	}
+  async __queryAppSchemaEnvValue(envObj: PolicyEnvQuery, envKey: string, envVars: ACPolicyEnvCombined) {
+    const schema = envObj.collection;
+    const query = Filter.convertQueryPrefixOperators(envObj.query);
+    const output = envObj.output;
+    const outputType = envObj.type;
+
+    // Check the envVar to see if
+    if (envVars[envKey]) return envVars[envKey];
+    await this.__findAndReplaceValues(query, envVars);
+
+    // __isAppSchema has checked the appId
+    const model = await Model.getAppModel(envVars.appId as string, schema);
+    const res = await model.find(query);
+    const result = await Helpers.streamAll<DynamicRow>(res);
+
+    if (outputType === 'string' || outputType === 'id') {
+      return result.reduce<unknown>((item, obj) => {
+        item = obj[output.key];
+        if (output.type === 'id') {
+          // TODO: Shouldn't be directly accessing ObjectId, this should go through an adapter.
+          item = toIdIfValid(item);
+        }
+
+        return item;
+      }, '');
+    }
+
+    if (outputType === 'array' && result.length > 0) {
+      return result.reduce<unknown[]>((arr, obj) => {
+        const outputValue = obj[output.key];
+
+        // Only valid ids, whether an entity holds one or an array of them
+        if (output.type === 'id') {
+          const values: unknown[] = Array.isArray(outputValue) ? outputValue : [outputValue];
+          arr = arr.concat(values.map(toIdIfValid).filter(isId));
+          return arr;
+        }
+
+        arr = arr.concat(outputValue);
+        return arr;
+      }, []);
+    }
+    if (outputType === 'boolean' && result.length > 0) {
+      return result.every((obj) => Boolean(obj[output.key]));
+    }
+
+    const outputValue = result.length > 0 ? result[0][output.key] : outputType === 'array' ? [] : '';
+
+    envVars[envKey] = outputValue;
+
+    return outputValue;
+  }
+
+  /**
+   * The requester's address, as Express works it out through the trust proxy setting (BUTTRESS_TRUST_PROXY), or null
+   * once the client has gone. An IPv4 client of a server listening on IPv6 shows as ::ffff:<address>, so it's given
+   * as the IPv4 address a policy would name.
+   */
+  __requestIPAddress(req: Request): string | null {
+    const ip = req.ip;
+    if (!ip) return null;
+    return ip.replace(/^::ffff:(\d{1,3}(\.\d{1,3}){3})$/i, '$1');
+  }
 }
 export default new PolicyEnv();

@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,69 +14,67 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { RedisClient } from 'redis';
+import { RedisClientType } from '@redis/client';
 
+import createConfig from '@dpc/node-env-obj';
+const Config = createConfig() as unknown as Config;
+
+import { getThrownErrorMessage, redisPrefix } from '../helpers/index.js';
+import Logging from '../helpers/logging.js';
+
+/**
+ * Which data sharing agreement reaches each source of a federated app's records. A record read through an agreement
+ * names its source, so each read records the route, and a write to a record by its source takes it. Routes are kept in
+ * Redis, so every process and worker of the instance, and the next start, can route a source that any of them read.
+ */
 export class SourceDataSharingRouting {
-  // This map is used to buffer incoming keys to check.
-  private _tempCheckMap = new Map();
+  // The routes this process knows, by key
+  private _routes = new Map<string, string>();
 
-  private _redisClient: RedisClient;
-
-  private _informCheckTimeout?: NodeJS.Timeout;
-  private _informCheckTimeoutInterval = 100;
+  private _redisClient: RedisClientType;
 
   // TODO: This needs reworking, we don't need to take in the sourceId from each chunk of data.
   //       we can just get the information when a data sharing agreement is setup and store it
   //       in the main datastore. This can then be cached and kept in check.
 
-  constructor(redisClient: RedisClient) {
+  constructor(redisClient: RedisClientType) {
     this._redisClient = redisClient;
-
-    this._proecssInformCheck();
   }
 
   getKey(appId: string, sourceId: string) {
-    return `${appId}-${sourceId}`;
+    return redisPrefix(Config.redis.scope, `sds-route:${appId}-${sourceId}`);
   }
 
   async get(appId: string, sourceId: string) {
     if (!appId || !sourceId) return undefined;
 
     const key = this.getKey(appId, sourceId);
-    if (this._tempCheckMap.has(key)) return this._tempCheckMap.get(key);
+    const known = this._routes.get(key);
+    if (known) return known;
 
-    await this._redisClient.get(key);
+    const stored = await this._redisClient.get(key);
+    if (!stored) return undefined;
+
+    this._routes.set(key, stored);
+    return stored;
   }
 
+  // A route that's new to this process is stored straight away, so one learnt just before the process stops is kept
   inform(appId: string, sourceId: string, dataSharingId: string) {
+    if (!appId || !sourceId || !dataSharingId) return;
+
     const key = this.getKey(appId, sourceId);
-    if (!this._tempCheckMap.has(key)) {
-      this._tempCheckMap.set(key, dataSharingId);
-      this._setInformCheckTimeout();
-    }
+    if (this._routes.get(key) === dataSharingId) return;
+
+    this._routes.set(key, dataSharingId);
+    this._redisClient.set(key, dataSharingId).catch((err: unknown) => {
+      // Forgotten, so the next read that names the source stores it again
+      if (this._routes.get(key) === dataSharingId) this._routes.delete(key);
+      Logging.logError(`Unable to store data sharing route ${key}: ${getThrownErrorMessage(err)}`);
+    });
   }
 
   clean() {
-    if (this._informCheckTimeout) clearTimeout(this._informCheckTimeout);
-    this._tempCheckMap.clear();
-  }
-
-  private async _proecssInformCheck() {
-    if (this._tempCheckMap.size < 1) return;
-    for await (const [key, value] of this._tempCheckMap.entries()) {
-      const current = await new Promise((resolve, reject) => this._redisClient.get(`sds-route:${key}`, (err, res) => (err ? reject(err) : resolve(res))));
-      if (current === value) {
-        continue;
-      }
-
-      await new Promise((resolve, reject) => this._redisClient.set(`sds-route:${key}`, value, (err, res) => (err ? reject(err) : resolve(res))));
-    }
-
-    this._setInformCheckTimeout();
-  }
-
-  private _setInformCheckTimeout() {
-    if (this._informCheckTimeout) clearTimeout(this._informCheckTimeout);
-    this._informCheckTimeout = setTimeout(() => this._proecssInformCheck(), this._informCheckTimeoutInterval);
+    this._routes.clear();
   }
 }

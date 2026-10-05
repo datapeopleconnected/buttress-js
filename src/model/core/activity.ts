@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -15,162 +13,203 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Logging from '../../helpers/logging';
-import Schema from '../../schema';
-import * as Shared from '../shared';
+import { Request, Response } from 'express';
 
-import StandardModel from '../type/standard';
+import { Schema, encode } from '../../helpers/schema.js';
+import * as Shared from '../shared.js';
+import { redactSecrets } from '../../helpers/redact.js';
+
+import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
+import { Services } from '../../bootstrap.js';
 
 /**
  * Constants
-*/
+ */
 const visibility = ['public', 'private'];
 const Visibility = {
-	PUBLIC: visibility[0],
-	PRIVATE: visibility[1],
+  PUBLIC: visibility[0],
+  PRIVATE: visibility[1],
 };
 
-class ActivitySchemaModel extends StandardModel {
-	constructor(services) {
-		const schema = ActivitySchemaModel.Schema;
-		super(schema, null, services);
-	}
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type Activity = {
+  id: string;
+  timestamp: Date;
+  title: string;
+  description: string;
+  visibility: string;
+  path: string;
+  verb: string;
+  authType: string;
+  permissions: string;
+  params: Record<string, unknown>;
+  query: string;
+  body: string;
+  _tokenId: string | null;
+  _appId: string | null;
+  _userId: string | null;
+};
 
-	static get Constants() {
-		return {
-			Visibility: Visibility,
-		};
-	}
-	get Constants() {
-		return ActivitySchemaModel.Constants;
-	}
+// A type rather than an interface, so it's usable as the document __parseAddBody takes
+export type ActivityAddBody = {
+  req: Request;
+  // Route passes an empty object, the response isn't recorded
+  res: Partial<Response>;
+  activityTitle: string;
+  activityDescription: string;
+  activityVisibility: string;
+  path: string;
+  verb: string;
+  auth?: string;
+  permissions: string;
+  // Passed by Route but not recorded, the activity takes its params from req
+  params?: Request['params'];
+  id?: string;
+};
 
-	static get Schema() {
-		return {
-			name: 'activities',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				timestamp: {
-					__type: 'date',
-					__default: 'now',
-					__allowUpdate: false,
-				},
-				title: {
-					__type: 'string',
-					__default: '',
-					__allowUpdate: false,
-				},
-				description: {
-					__type: 'text',
-					__default: '',
-					__allowUpdate: false,
-				},
-				visibility: {
-					__type: 'string',
-					__default: 'private',
-					__enum: visibility,
-					__allowUpdate: false,
-				},
-				path: {
-					__type: 'string',
-					__default: '',
-					__allowUpdate: false,
-				},
-				verb: {
-					__type: 'string',
-					__default: '',
-					__allowUpdate: false,
-				},
-				authType: {
-					__type: 'string',
-					__default: '',
-					__allowUpdate: false,
-				},
-				permissions: {
-					__type: 'string',
-					__default: '',
-					__allowUpdate: false,
-				},
-				params: {
-					id: {
-						__type: 'id',
-						__default: null,
-						__allowUpdate: false,
-					},
-				},
-				body: {
-					__type: 'text',
-					__default: '',
-					__allowUpdate: false,
-				},
-				_tokenId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-				_appId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-				_userId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-			},
-		};
-	}
+class ActivitySchemaModel extends StandardModel<Activity> {
+  static override name = 'Activity';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
-	/**
-	 * @param {Object} body - body passed through from a POST request
-	 * @return {Promise} - fulfilled with App Object when the database request is completed
-	 */
-	__parseAddBody(body) {
-		const user = body.req.authUser;
-		const userName = user ? `${user.id}` : 'App';
+  constructor(services: Services) {
+    const schema = ActivitySchemaModel.Schema;
+    super(schema, null, services);
+  }
 
-		body.activityTitle = body.activityTitle.replace('%USER_NAME%', userName);
-		body.activityDescription = body.activityDescription.replace('%USER_NAME%', userName);
+  static get Constants() {
+    return {
+      Visibility: Visibility,
+    };
+  }
+  get Constants() {
+    return ActivitySchemaModel.Constants;
+  }
 
-		const q = Object.assign({}, body.req.query);
-		delete q.token;
-		delete q.urq;
+  static get Schema(): Schema {
+    return {
+      name: 'activities',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        timestamp: {
+          __type: 'date',
+          __default: 'now',
+          __allowUpdate: false,
+        },
+        title: {
+          __type: 'string',
+          __default: '',
+          __allowUpdate: false,
+        },
+        description: {
+          __type: 'string',
+          __default: '',
+          __allowUpdate: false,
+        },
+        visibility: {
+          __type: 'string',
+          __default: 'private',
+          __enum: visibility,
+          __allowUpdate: false,
+        },
+        path: {
+          __type: 'string',
+          __default: '',
+          __allowUpdate: false,
+        },
+        verb: {
+          __type: 'string',
+          __default: '',
+          __allowUpdate: false,
+        },
+        authType: {
+          __type: 'string',
+          __default: '',
+          __allowUpdate: false,
+        },
+        permissions: {
+          __type: 'string',
+          __default: '',
+          __allowUpdate: false,
+        },
+        params: {
+          __type: 'object',
+          __default: {},
+          __allowUpdate: false,
+        },
+        query: {
+          __type: 'string',
+          __allowUpdate: false,
+        },
+        body: {
+          __type: 'string',
+          __default: '',
+          __allowUpdate: false,
+        },
+        _tokenId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+        _appId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+        _userId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+      },
+    };
+  }
 
-		const md: any = {
-			title: body.activityTitle,
-			description: body.activityDescription,
-			visibility: body.activityVisibility,
-			path: body.path,
-			verb: body.verb,
-			permissions: body.permissions,
-			authType: body.auth,
-			params: body.req.params,
-			query: q,
-			body: Schema.encode(body.req.body), // HACK - Due to schema update results.
-			timestamp: new Date(),
-			_tokenId: body.req.token.id,
-			_userId: (body.req.authUser) ? body.req.authUser.id : null,
-			_appId: body.req.authApp.id,
-		};
+  /**
+   * @param {Object} body - body passed through from a POST request
+   * @return {Promise} - fulfilled with App Object when the database request is completed
+   */
+  override __parseAddBody(body: ActivityAddBody) {
+    const user = body.req.context.authUser;
+    const userName = user ? `${user.id}` : 'App';
 
-		if (body.id) {
-			md.id = this.adapter.ID.new(body.id);
-		}
+    body.activityTitle = body.activityTitle.replace('%USER_NAME%', userName);
+    body.activityDescription = body.activityDescription.replace('%USER_NAME%', userName);
 
-		delete body.req;
-		delete body.res;
+    const q = { ...body.req.query };
+    delete q.token;
+    delete q.urq;
 
-		return Shared.sanitizeSchemaObject(ActivitySchemaModel.Schema, body);
-	}
+    const md: Partial<Activity> = {
+      id: body.id,
+      title: body.activityTitle,
+      description: body.activityDescription,
+      visibility: body.activityVisibility,
+      path: body.path,
+      verb: body.verb,
+      permissions: body.permissions,
+      authType: body.auth,
+      params: body.req.params,
+      query: JSON.stringify(q),
+      // Without its credentials and secrets, which the activity would keep indefinitely
+      body: encode(redactSecrets(body.req.body)), // HACK - Due to schema update results.
+      timestamp: new Date(),
+      _tokenId: body.req.context.token ? body.req.context.token.id : null,
+      _userId: body.req.context.authUser ? body.req.context.authUser.id : null,
+      _appId: body.req.context.authApp ? body.req.context.authApp.id : null,
+    };
 
-	add(body, internals) {
-		body.req.body = Schema.encode(body.req.body);
+    return Shared.sanitizeSchemaObject(ActivitySchemaModel.Schema, md);
+  }
 
-		return super.add(body);
-	}
+  override add(body: ActivityAddBody) {
+    body.req.body = encode(body.req.body);
+
+    return super.add(body);
+  }
 }
 
 /**

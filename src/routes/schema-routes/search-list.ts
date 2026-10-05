@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -13,72 +13,74 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
+import Route from '../route.js';
+import * as Helpers from '../../helpers/index.js';
+
+import * as ACM from '../../access-control/models-access.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
+import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
+import type { RequestWithBody, SearchListBody } from '../../types/routes.js';
 
 /**
  * @class SearchList
  */
 export default class SearchList extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}`, `SEARCH ${schema.name} LIST`, services);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.permissions = Route.Constants.Permissions.LIST;
+    super(`${schemaRoutePath}`, `SEARCH ${schema.name} LIST`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.SEARCH;
+    this.permissions = Route.Constants.Permissions.LIST;
 
-		this.activityDescription = `SEARCH ${schema.name} LIST`;
-		this.activityBroadcast = false;
+    this.activityDescription = `SEARCH ${schema.name} LIST`;
+    this.activityBroadcast = false;
+  }
 
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
+  override async _validate(req: RequestWithBody<SearchListBody<object> | undefined>, _res: Response) {
+    // The search options are read off the body, and an array has a sort method of its own
+    if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
 
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
+    const model = await this.routeModel();
 
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
-	}
+    const result: QueryParams<object> = {
+      query: {},
+      // parseInt takes numbers too, it converts them to a string first
+      skip: req.body && req.body.skip ? parseInt(req.body.skip as string) : 0,
+      limit: req.body && req.body.limit ? parseInt(req.body.limit as string) : 0,
+      sort: req.body && req.body.sort ? req.body.sort : {},
+      project: req.body && req.body.project ? req.body.project : false,
+    };
 
-	async _validate(req, res, token) {
-		const result = {
-			query: {},
-			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
-			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
-			sort: (req.body && req.body.sort) ? req.body.sort : {},
-			project: (req.body && req.body.project)? req.body.project : false,
-		};
+    if (isNaN(result.skip ?? 0)) throw Helpers.Errors.badRequest('invalid_value_skip');
+    if (isNaN(result.limit ?? 0)) throw Helpers.Errors.badRequest('invalid_value_limit');
 
-		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-		if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
+    let query: BjsQuery<object> = {};
 
-		let query: any = {};
+    if (!query.$and) {
+      query.$and = [];
+    }
 
-		if (!query.$and) {
-			query.$and = [];
-		}
+    // TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
+    if (req.body && req.body.query) {
+      query.$and.push(req.body.query);
+    }
 
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			query.$and.push(req.body.query);
-		}
+    query = model.parseQuery(query, {}, model.flatSchemaData);
 
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
+    result.query = query;
+    return result;
+  }
 
-		result.query = query;
-		return result;
-	}
+  override async _exec(req: Request, _res: Response, validateResult: QueryParams<object>) {
+    const model = await this.routeModel();
 
-	_exec(req, res, validateResult) {
-		return this.model.find(validateResult.query, {},
-			validateResult.limit, validateResult.skip, validateResult.sort, validateResult.project);
-	}
-};
+    return ACM.find(model, validateResult, req.context.ac);
+  }
+}

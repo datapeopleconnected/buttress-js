@@ -1,8 +1,6 @@
-'use strict'; // eslint-disable-line max-lines
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -16,46 +14,52 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import EventEmitter from 'events';
-import plugins from'./index';
+import EventEmitter from 'node:events';
+
+import plugins from './index.js';
 
 class ButtressPlugin extends EventEmitter {
 	appType?: string;
 	processRole?: string;
 	infrastructureRole?: string;
 
-	constructor() {
+	// The loader constructs each plugin with the process it's loaded into
+	constructor(appType?: string, processRole?: string, infrastructureRole?: string) {
 		super();
+
+		this.appType = appType;
+		this.processRole = processRole;
+		this.infrastructureRole = infrastructureRole;
 	}
 
 	async initialise() {
 		if (this.appType === plugins.APP_TYPE.REST) {
-			this.initialiseRest();
+			await this.initialiseRest();
 		} else if (this.appType === plugins.APP_TYPE.SOCKET) {
-			this.initialiseSocket();
+			await this.initialiseSocket();
 		} else if (this.appType === plugins.APP_TYPE.LAMBDA) {
-			this.initialiseLambda();
+			await this.initialiseLambda();
 		}
 	}
 
-	initialiseRest() {
+	initialiseRest(): void | Promise<void> {
 		throw new Error('Not implemented');
 	}
 
-	initialiseSocket() {
+	initialiseSocket(): void | Promise<void> {
 		throw new Error('Not implemented');
 	}
 
-	initialiseLambda() {
+	initialiseLambda(): void | Promise<void> {
 		throw new Error('Not implemented');
 	}
 
-	addAction(name, callback, priority = 10) {
-		this.emit('add-action', {name, callback, priority});
+	addAction(name: string, callback: (...args: unknown[]) => unknown, priority = 10) {
+		this.emit('add-action', { name, callback, priority });
 	}
 
-	addFilter(name, callback, priority = 10) {
-		this.emit('add-filter', {name, callback, priority});
+	addFilter(name: string, callback: (...args: unknown[]) => unknown, priority = 10) {
+		this.emit('add-filter', { name, callback, priority });
 	}
 }
 

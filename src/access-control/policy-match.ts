@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -16,63 +14,69 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import AccessControlHelpers from './helpers';
+import AccessControlHelpers from './helpers.js';
+
+import { Policy, PolicySelection } from '../model/core/policy.js';
+import { Token } from '../model/core/token.js';
 
 /**
  * @class PolicyMatch
  */
 class PolicyMatch {
-	constructor() {}
+  constructor() {}
 
-	__getTokenPolicies(policies, token) {
-		return policies.reduce((arr, p) => {
-			if (!p.selection) return arr;
+  getTokenPolicies(policies: Policy[], token?: Token) {
+    return policies.reduce((arr: Policy[], p) => {
+      if (!p.selection) return arr;
 
-			const match = this.__checkPolicySelection(p, token);
-			if (!match) return arr;
+      const match = this.__checkPolicySelection(p, token);
+      if (!match) return arr;
 
-			arr = arr.concat(p);
-			return arr;
-		}, []);
-	}
+      arr = arr.concat(p);
+      return arr;
+    }, []);
+  }
 
-	__checkPolicySelection(p, token) {
-		let match = false;
-		const selection = p.selection;
+  __checkPolicySelection(p: Policy, token?: Token): boolean {
+    const selection = p.selection;
 
-		if (token.type === 'dataSharing') {
-			const eq = (part, value) => part && part['@eq'] && part['@eq'].toString() === value.toString();
-			return eq(selection['#tokenType'], 'DATA_SHARING') && eq(selection['id'], token.id);
-		}
+    if (!token || selection === null) return false;
 
-		if (!token || !token.policyProperties) return;
+    if (token.type === 'dataSharing') {
+      const eq = (part: PolicySelection[string] | undefined, value: string) =>
+        part && part['@eq'] && part['@eq'].toString() === value.toString();
+      // eq() can be falsy without being false, the caller only checks for truthiness
+      return (eq(selection['#tokenType'], 'DATA_SHARING') as boolean) && (eq(selection['id'], token.id) as boolean);
+    }
 
-		const policyProperties = token.policyProperties;
-		const matches = Object.keys(selection).reduce((arr: boolean[], key) => {
-			if (!(key in policyProperties)) return arr;
-			const [selectionCriterionKey] = Object.keys(selection[key]);
-			let [rhs] = Object.values(selection[key]);
-			let lhs = policyProperties[key];
-			lhs = (!Array.isArray(lhs)) ? [lhs] : lhs;
-			if (typeof rhs === 'string') rhs = rhs.toUpperCase();
-			lhs = lhs.map((s) => {
-				if (typeof lhs === 'string') s = s.toUpperCase();
-				return s;
-			});
+    if (!token.policyProperties) return false;
 
-			lhs.reduce((flag: boolean, val) => {
-				flag = AccessControlHelpers.evaluateOperation(val, rhs, selectionCriterionKey);
-				if (flag) {
-					match = flag;
-					return;
-				}
-			}, false);
-			arr.push(match);
+    const policyProperties = token.policyProperties;
+    const matches = Object.keys(selection)
+      .reduce((arr: boolean[], key) => {
+        if (!(key in policyProperties)) return arr;
+        const [selectionCriterionKey] = Object.keys(selection[key]);
+        let [rhs] = Object.values(selection[key]);
+        let lhs = policyProperties[key];
+        lhs = !Array.isArray(lhs) ? [lhs] : lhs;
+        if (typeof rhs === 'string') rhs = rhs.toUpperCase();
 
-			return arr;
-		}, []);
+        lhs = lhs.map((s) => {
+          if (typeof s === 'string') s = s.toUpperCase();
+          return s;
+        });
 
-		return (matches.length > 0) ? matches.every((v) => v) : match;
-	}
+        const selectionMatches = lhs.reduce((acc: Array<boolean>, val) => {
+          acc.push(AccessControlHelpers.evaluateOperation(val, rhs, selectionCriterionKey));
+          return acc;
+        }, []);
+        arr.push(...selectionMatches);
+
+        return arr;
+      }, [])
+      .flat();
+
+    return matches.length > 0 ? matches.some((v) => v) : false;
+  }
 }
 export default new PolicyMatch();

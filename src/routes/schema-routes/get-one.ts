@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -13,75 +13,91 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Request, Response } from 'express';
+import { BjsQuery, QueryParams } from '../../types/bjs-query.js';
+import { AdapterDocument } from '../../types/datastore.js';
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
+import Route from '../route.js';
+import * as Helpers from '../../helpers/index.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
+
+import * as ACM from '../../access-control/models-access.js';
 
 /**
  * @class GetOne
  */
 export default class GetOne extends Route {
-	constructor(schema: any, appShort: string, services: any) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/:id`, `GET ${schema.name}`, services);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.GET;
-		this.permissions = Route.Constants.Permissions.READ;
+    super(`${schemaRoutePath}/:id`, `GET ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.GET;
+    this.permissions = Route.Constants.Permissions.READ;
 
-		this.activityDescription = `GET ${schema.name}`;
-		this.activityBroadcast = false;
+    this.activityDescription = `GET ${schema.name}`;
+    this.activityBroadcast = false;
+  }
 
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
+  override async _validate(req: Request, _res: Response) {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      this.log(`${this.schemaName}: Missing ID`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('missing_id', 'An id is required');
+    }
 
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
+    const model = await this.routeModel();
 
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
-	}
+    let objectId: string | null = null;
+    // const project = req.body && req.body.project ? req.body.project : false;
 
-	async _validate(req, res, token) {
-		let objectId = null;
-		const project = (req.body && req.body.project)? req.body.project : false;
+    try {
+      objectId = model.createId(id);
+    } catch (_err) {
+      this.log(`${this.schemaName}: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
+    }
 
-		try {
-			objectId = this.model.createId(req.params.id);
-		} catch (err) {
-			this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, 'invalid_id');
-		}
+    const query: BjsQuery<{ id: string }> = { id: objectId };
+    // if (req.body.query && Object.keys(req.body.query).length > 0) {
+    //   query = model.parseQuery(req.body.query, {}, model.flatSchemaData);
+    //   query.id = objectId;
+    // }
 
-		let query = {id: objectId};
-		if (req.body.query && Object.keys(req.body.query).length > 0) {
-			query = req.body.query;
+    return {
+      query,
+      project: false,
+    };
+  }
 
-			query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
-			query.id = objectId;
-		}
+  override async _exec(req: Request, _res: Response, validate: { query: BjsQuery<{ id: string }>; project: false }) {
+    const model = await this.routeModel();
 
-		return {
-			query,
-			project,
-		};
-	}
+    const findParams: QueryParams<{ id: string }> = {
+      query: validate.query,
+      limit: 1,
+      skip: 0,
+      project: validate.project,
+    };
+    const rxsEntity = await ACM.find(model, findParams, req.context.ac);
 
-	async _exec(req, res, validate) {
-		const rxsEntity = await this.model.find(validate.query, {}, 1, 0, null, validate.project);
-		const entity = await Helpers.streamFirst(rxsEntity);
+    let entity: AdapterDocument | null;
+    try {
+      entity = await Helpers.streamFirst<AdapterDocument>(rxsEntity);
+    } catch (_err) {
+      entity = null;
+    }
 
-		if (!entity) {
-			this.log(`${this.schema.name}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, 'invalid_id or access_control_not_fullfilled');
-		}
+    if (!entity) {
+      // One outside the caller's policies is answered as one that doesn't exist
+      this.log(`${this.schemaName}: Invalid ID: ${req.params.id}`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', req.params.id);
+    }
 
-		return entity;
-	}
-};
+    return entity;
+  }
+}

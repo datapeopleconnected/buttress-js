@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -15,49 +13,74 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
 
-import {ObjectId} from 'bson';
+import Route from '../route.js';
+import {
+  CoreBulkUpdate,
+  CoreCount,
+  CoreGetOne,
+  CoreRouteConfig,
+  CoreSearch,
+  CoreUpdateByPath,
+} from '../core-routes.js';
+import Model from '../../model/index.js';
+import { invalidEntityError, validateSchemaObject } from '../../model/shared.js';
+import * as Helpers from '../../helpers/index.js';
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
+import SecureStoreSchemaModel, { SecureStore, SecureStoreAddBody } from '../../model/core/secure-store.js';
+import { Services } from '../../bootstrap.js';
+import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
+
+const invalidId = () => Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
 
 /**
  * @class AddSecureStore
  */
 class AddSecureStore extends Route {
-	constructor(services) {
-		super('secure-store', 'ADD SECURE STORE', services);
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.ADD;
-	}
+  constructor(services: Services) {
+    super('secure-store', 'ADD SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.POST;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.ADD;
+  }
 
-	async _validate(req, res, token) {
-		const app = req.authApp;
+  override async _validate(req: RequestWithBody<SecureStoreAddBody>, _res: Response) {
+    const app = req.context.authApp;
 
-		if (!app || !req.body.name) {
-			this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
-		}
+    if (!app || !req.body?.name) {
+      this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
+    }
 
-		const secureStoreExist = await Model.getModel('SecureStore').findOne({
-			name: req.body.name,
-			_appId: Model.getModel('App').createId(req.authApp.id),
-		});
-		if (secureStoreExist) {
-			this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
-		}
+    // Read as the schema types it, before its name is looked for
+    const validation = validateSchemaObject(SecureStoreSchemaModel.Schema, req.body);
+    if (!validation.isValid) {
+      const err = invalidEntityError(SecureStoreSchemaModel.Schema.name, validation);
+      this.log(`[${this.name}] ${err.message}`, Route.LogLevel.ERR);
+      return Promise.reject(err);
+    }
 
-		return Promise.resolve(true);
-	}
+    const secureStoreExist = await this.scoped(req, SecureStoreSchemaModel).findOne({
+      name: req.body.name,
+      _appId: app.id,
+    });
+    if (secureStoreExist) {
+      this.log('ERROR: Secure Store with this name already exists', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('already_exist'));
+    }
 
-	_exec(req, res, validate) {
-		return Model.getModel('SecureStore').add(req, req.body);
-	}
+    // Authentication refuses a token whose app it can't find, so the app always has an id
+    return Promise.resolve({
+      appId: app.id,
+    });
+  }
+
+  override _exec(req: RequestWithBody<SecureStoreAddBody>, _res: Response, validate: { appId: string }) {
+    return this.scoped(req, SecureStoreSchemaModel).add(req.body, { _appId: validate.appId });
+  }
 }
 routes.push(AddSecureStore);
 
@@ -65,87 +88,80 @@ routes.push(AddSecureStore);
  * @class AddManySecureStore
  */
 class AddManySecureStore extends Route {
-	constructor(services) {
-		super('secure-store/bulk/add', 'ADD SECURE STORE', services);
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.ADD;
-	}
+  constructor(services: Services) {
+    super('secure-store/bulk/add', 'ADD SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.POST;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.ADD;
+  }
 
-	async _validate(req, res, token) {
-		const app = req.authApp;
+  override async _validate(req: RequestWithBody<SecureStoreAddBody[]>, _res: Response) {
+    const app = req.context.authApp;
 
-		if (!app) {
-			this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
-		}
+    if (!app) {
+      this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
+    }
 
-		if (!Array.isArray(req.body)) {
-			this.log(`[${this.name}] Invalid request body`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_body`));
-		}
+    if (!Array.isArray(req.body)) {
+      this.log(`[${this.name}] Invalid request body`, Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('invalid_body'));
+    }
 
-		const missingField = req.body.find((ss) => !ss.name);
-		if (missingField) {
-			this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
-		}
+    const missingField = req.body.find((ss) => !ss.name);
+    if (missingField) {
+      this.log(`[${this.name}] Missing required secure store field`, Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('missing_field'));
+    }
 
-		for await (const secureStore of req.body) {
-			const secureStoreExist = await Model.getModel('SecureStore').findOne({name: secureStore.name});
-			if (secureStoreExist) {
-				this.log(`ERROR: Secure Store with this name ${secureStore.name} already exists`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `already_exist`));
-			}
-		}
+    const names = req.body.map((ss) => ss.name);
+    const repeated = names.find((name, idx) => names.indexOf(name) !== idx);
+    if (repeated) {
+      this.log(`ERROR: Secure Store name ${repeated} is given more than once`, Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('already_exist'));
+    }
 
-		return Promise.resolve(true);
-	}
+    // Names are unique within an app, as AddSecureStore checks
+    for await (const secureStore of req.body) {
+      const secureStoreExist = await this.scoped(req, SecureStoreSchemaModel).findOne({
+        name: secureStore.name,
+        _appId: app.id,
+      });
+      if (secureStoreExist) {
+        this.log(`ERROR: Secure Store with this name ${secureStore.name} already exists`, Route.LogLevel.ERR);
+        return Promise.reject(Helpers.Errors.badRequest('already_exist'));
+      }
+    }
 
-	async _exec(req, res, validate) {
-		for await (const secureStore of req.body) {
-			await Model.getModel('SecureStore').add(req, secureStore);
-		}
+    return Promise.resolve({
+      appId: app.id,
+    });
+  }
 
-		return true;
-	}
+  override async _exec(req: RequestWithBody<SecureStoreAddBody[]>, _res: Response, validate: { appId: string }) {
+    const secureStores = this.scoped(req, SecureStoreSchemaModel);
+    for await (const secureStore of req.body) {
+      await secureStores.add(secureStore, { _appId: validate.appId });
+    }
+
+    return true;
+  }
 }
 routes.push(AddManySecureStore);
 
 /**
  * @class GetSecureStore
  */
-class GetSecureStore extends Route {
-	constructor(services) {
-		super('secure-store/:id', 'GET SECURE STORE', services);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.LAMBDA;
-		this.permissions = Route.Constants.Permissions.READ;
-	}
-
-	async _validate(req, res, token) {
-		const id = req.params.id;
-		if (!id) {
-			this.log(`[${this.name}] Missing required secure store id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
-		}
-		if (!ObjectId.isValid(id)) {
-			this.log(`[${this.name}] Invalid secure store id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
-		}
-
-		const secureStore = await Model.getModel('SecureStore').findById(id);
-		if (!secureStore) {
-			this.log(`[${this.name}] Cannot find a secure store with id ${id}`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `secure_store_does_not_exist`));
-		}
-
-		return secureStore;
-	}
-
-	_exec(req, res, validate) {
-		return validate;
-	}
+class GetSecureStore extends CoreGetOne<SecureStoreSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'secure-store/:id',
+    name: 'GET SECURE STORE',
+    model: SecureStoreSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.READ,
+    // A system token too reaches only its own app's secure stores
+    scope: 'own-app',
+  };
 }
 routes.push(GetSecureStore);
 
@@ -153,168 +169,99 @@ routes.push(GetSecureStore);
  * @class FindSecureStore
  */
 class FindSecureStore extends Route {
-	constructor(services) {
-		super('secure-store/name/:name', 'FIND SECURE STORE BY NAME', services);
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.LAMBDA;
-		this.permissions = Route.Constants.Permissions.READ;
-	}
+  constructor(services: Services) {
+    super(
+      'secure-store/name/:name',
+      'FIND SECURE STORE BY NAME',
+      services,
+      Model.getCoreModel(SecureStoreSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.LAMBDA;
+    this.permissions = Route.Constants.Permissions.READ;
+  }
 
-	async _validate(req, res, token) {
-		const name = req.params.name;
-		if (!name) {
-			this.log(`[${this.name}] Missing request parameter`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_field`));
-		}
+  override async _validate(req: RequestWithBody<unknown, { name: string }>, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw Helpers.Errors.internal('no_authenticated_app');
+    }
 
-		const secureStore = await Model.getModel('SecureStore').findOne({
-			name: {
-				$eq: name,
-			},
-		});
+    const appId = req.context.authApp.id;
 
-		if (!secureStore) return Promise.reject(new Helpers.Errors.RequestError(404, `not_found`));
+    const name = req.params.name;
+    if (!name) {
+      this.log(`[${this.name}] Missing request parameter`, Route.LogLevel.ERR);
+      throw Helpers.Errors.badRequest('missing_field');
+    }
 
-		return Promise.resolve(secureStore);
-	}
+    const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
+      name: {
+        $eq: name,
+      },
+      _appId: appId,
+    });
 
-	_exec(req, res, validate) {
-		return validate;
-	}
+    if (!secureStore) {
+      this.log(`[${this.name}] Cannot find a secure store with name ${name}`, Route.LogLevel.ERR);
+      throw Helpers.Errors.notFound('not_found', 'No secure store has that name', { schema: 'secureStore', name });
+    }
+
+    return secureStore;
+  }
+
+  override _exec(req: Request, res: Response, validate: SecureStore) {
+    return validate;
+  }
 }
 routes.push(FindSecureStore);
 
 /**
  * @class UpdateSecureStore
  */
-class UpdateSecureStore extends Route {
-	constructor(services) {
-		super('secure-store/:id', 'UPDATE SECURE STORE', services);
-		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
-
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
-	}
-
-	async _validate(req, res, token) {
-		const {validation, body} = Model.getModel('SecureStore').validateUpdate(req.body);
-		req.body = body;
-		if (!validation.isValid) {
-			if (validation.isPathValid === false) {
-				this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`));
-			}
-			if (validation.isValueValid === false) {
-				this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`));
-			}
-		}
-
-		const exists = await Model.getModel('SecureStore').exists(req.params.id);
-		if (!exists) {
-			this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-		}
-		return true;
-	}
-
-	_exec(req, res, validate) {
-		return Model.getModel('SecureStore').updateByPath(req.body, req.params.id, null, 'SecureStore');
-	}
+class UpdateSecureStore extends CoreUpdateByPath<SecureStoreSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'secure-store/:id',
+    name: 'UPDATE SECURE STORE',
+    model: SecureStoreSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+    // A system token too reaches only its own app's secure stores
+    scope: 'own-app',
+  };
 }
 routes.push(UpdateSecureStore);
 
 /**
  * @class BulkUpdateSecureStore
  */
-class BulkUpdateSecureStore extends Route {
-	constructor(services) {
-		super('secure-store/bulk/update', 'BULK UPDATE SECURE STORE', services);
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
-
-	async _validate(req, res, token) {
-		for await (const item of req.body) {
-			const {validation, body} = Model.getModel('SecureStore').validateUpdate(item.body);
-			item.body = body;
-			if (!validation.isValid) {
-				if (validation.isPathValid === false) {
-					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-					return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`));
-				}
-				if (validation.isValueValid === false) {
-					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-					return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`));
-				}
-			}
-
-			const exists = await Model.getModel('SecureStore').exists(item.id);
-			if (!exists) {
-				this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-			}
-		}
-
-		return req.body;
-	}
-
-	async _exec(req, res, validate) {
-		for await (const item of validate) {
-			await Model.getModel('SecureStore').updateByPath(item.body, item.id, null, 'SecureStore');
-		}
-		return true;
-	}
+class BulkUpdateSecureStore extends CoreBulkUpdate<SecureStoreSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'secure-store/bulk/update',
+    name: 'BULK UPDATE SECURE STORE',
+    model: SecureStoreSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+    // A system token too reaches only its own app's secure stores
+    scope: 'own-app',
+    activityBroadcast: false,
+  };
 }
 routes.push(BulkUpdateSecureStore);
 
 /**
  * @class SearchSecureStoreList
  */
-class SearchSecureStoreList extends Route {
-	constructor(services) {
-		super('secure-store', 'SEARCH SECURE STORE LIST', services);
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.LAMBDA;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
-
-	async _validate(req, res, token) {
-		const result: {
-			query: any,
-			skip: number,
-			limit: number,
-			sort: any,
-			project: any,
-		} = {
-			query: {
-				$and: [],
-			},
-			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
-			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
-			sort: (req.body && req.body.sort) ? req.body.sort : {},
-			project: (req.body && req.body.project)? req.body.project : false,
-		};
-
-		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-		if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
-
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			result.query.$and.push(req.body.query);
-		}
-
-		result.query = Model.getModel('SecureStore').parseQuery(result.query, {}, Model.getModel('SecureStore').flatSchemaData);
-		return result;
-	}
-
-	_exec(req, res, validate) {
-		return Model.getModel('SecureStore').find(validate.query, {},
-			validate.limit, validate.skip, validate.sort, validate.project);
-	}
+class SearchSecureStoreList extends CoreSearch<SecureStoreSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'secure-store',
+    name: 'SEARCH SECURE STORE LIST',
+    model: SecureStoreSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.LIST,
+    // A system token too reaches only its own app's secure stores
+    scope: 'own-app',
+  };
 }
 routes.push(SearchSecureStoreList);
 
@@ -322,76 +269,61 @@ routes.push(SearchSecureStoreList);
  * @class DeleteSecureStore
  */
 class DeleteSecureStore extends Route {
-	constructor(services) {
-		super('secure-store/:id', 'DELETE SECURE STORE', services);
-		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
+  constructor(services: Services) {
+    super('secure-store/:id', 'DELETE SECURE STORE', services, Model.getCoreModel(SecureStoreSchemaModel).schemaData);
+    this.verb = Route.Constants.Verbs.DEL;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.WRITE;
+  }
 
-	async _validate(req) {
-		if (!req.params.id) {
-			this.log('ERROR: Missing required secure store ID', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_secure_store_id`));
-		}
+  override async _validate(req: Request, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw Helpers.Errors.internal('no_authenticated_app');
+    }
 
-		const secureStore = await Model.getModel('SecureStore').findById(req.params.id);
-		if (!secureStore) {
-			this.log('ERROR: Invalid Secure Store ID', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_secure_store_id`));
-		}
+    const appId = req.context.authApp.id;
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
-		return secureStore;
-	}
+    if (!id) {
+      this.log('ERROR: Missing required secure store ID', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
+    }
 
-	async _exec(req, res, secureStore) {
-		await Model.getModel('SecureStore').rm(secureStore.id);
-		return true;
-	}
+    if (!Model.getCoreModel(SecureStoreSchemaModel).isValidId(id)) throw invalidId();
+    const secureStore = await this.scoped(req, SecureStoreSchemaModel).findOne({
+      _id: Model.getCoreModel(SecureStoreSchemaModel).createId(id),
+      _appId: appId,
+    });
+
+    if (!secureStore) {
+      this.log(`[${this.name}] Cannot find a secure store with ID ${id}`, Route.LogLevel.ERR);
+      throw Helpers.Errors.entityNotFound('secureStore', id);
+    }
+
+    return secureStore;
+  }
+
+  override async _exec(req: Request, res: Response, secureStore: SecureStore) {
+    await this.scoped(req, SecureStoreSchemaModel).rm(secureStore.id);
+    return true;
+  }
 }
 routes.push(DeleteSecureStore);
 
 /**
  * @class SecureStoreCount
  */
-class SecureStoreCount extends Route {
-	constructor(services) {
-		super('secure-store/count', 'COUNT SECURE STORES', services);
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.LAMBDA;
-		this.permissions = Route.Constants.Permissions.SEARCH;
-
-		this.activityBroadcast = false;
-
-		this.model = Model.getModel('SecureStore');
-	}
-
-	async _validate(req, res, token) {
-		const result = {
-			query: {},
-		};
-
-		let query: any = {};
-
-		if (!query.$and) {
-			query.$and = [];
-		}
-
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			query.$and.push(req.body.query);
-		} else if (req.body && !req.body.query) {
-			query.$and.push(req.body);
-		}
-
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
-		result.query = query;
-		return result;
-	}
-
-	_exec(req, res, validateResult) {
-		return Model.getModel('SecureStore').count(validateResult.query);
-	}
+class SecureStoreCount extends CoreCount<SecureStoreSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'secure-store/count',
+    name: 'COUNT SECURE STORES',
+    model: SecureStoreSchemaModel,
+    authType: Route.Constants.Type.LAMBDA,
+    permissions: Route.Constants.Permissions.SEARCH,
+    // A system token too reaches only its own app's secure stores
+    scope: 'own-app',
+  };
 }
 routes.push(SecureStoreCount);
 

@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,12 +14,13 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it} = require('mocha');
-const assert = require('assert');
+import { describe, it } from 'mocha';
+import assert from 'assert';
 
-const Helpers = require('../../../../dist/helpers');
+import * as Helpers from '../../../../dist/helpers/index.js';
+import { parseDocument } from '../../../../dist/model/parse-document.js';
 
-describe('helpers.schema:sanitizeObject', () => {
+describe('model/parse-document:parseDocument', () => {
 	const schema = {
 		name: 'example-schema',
 		properties: {
@@ -65,12 +66,8 @@ describe('helpers.schema:sanitizeObject', () => {
 	const flattenedSchema = Helpers.getFlattenedSchema(schema);
 	let result = null;
 
-	it('should have function, sanitizeObject', async () => {
-		assert(typeof Helpers.Schema.sanitizeObject === 'function');
-	});
-
-	it('should execute the sanitizeObject function', async () => {
-		result = Helpers.Schema.sanitizeObject(flattenedSchema, []);
+	it('should parse an empty body', async () => {
+		result = parseDocument(flattenedSchema, {}).value;
 		assert(result !== null);
 	});
 
@@ -92,71 +89,108 @@ describe('helpers.schema:sanitizeObject', () => {
 	});
 });
 
-describe('helpers.schema:getFlattenedBody', () => {
-	const body = {
-		name: 'example-object',
-		age: 31,
-		testSubObject: {
-			id: '64f092cb7b7d65a36cf64a51',
-			node: true,
-			fruit: 'orange',
+describe('model/parse-document:parseDocument - array sub-schema field name collision', () => {
+	// Regression test: a top-level field (`status`) and an array-of-objects field's own sub-schema
+	// field of the same name (`parties[].status`) must be read independently: each item is read
+	// on its own, so the sub-schema field's default never overwrites the top-level field of the
+	// same name, whether or not the sub-schema value equals its own default.
+	const schema = {
+		name: 'example-relationship',
+		properties: {
+			status: {
+				__type: 'string',
+				__default: 'ACTIVE',
+				__required: true,
+			},
+			parties: {
+				__type: 'array',
+				__schema: {
+					status: {
+						__type: 'string',
+						__default: 'ACCEPTED',
+						__required: true,
+					},
+				},
+			},
 		},
-		unstructured: true,
-		array: [
-			'car',
-			'bike',
-			{arraySubOject: 'yes', arraySubOjectSubObject: {thisCouldGoOn: true}},
-		],
 	};
 
-	let result = null;
+	const flattenedSchema = Helpers.getFlattenedSchema(schema);
 
-	it('should have function, getFlattenedBody', async () => {
-		assert(typeof Helpers.Schema.getFlattenedBody === 'function');
+	it("does not let an array sub-schema field's default clobber a same-named top-level field", () => {
+		const body = {
+			status: 'ACTIVE',
+			parties: [{ status: 'ACCEPTED' }],
+		};
+		const { value, issues } = parseDocument(flattenedSchema, body);
+
+		assert.deepStrictEqual(issues, []);
+		assert.strictEqual(value.status, 'ACTIVE');
+		assert.strictEqual(value.parties[0].status, 'ACCEPTED');
+		assert.deepStrictEqual(body, { status: 'ACTIVE', parties: [{ status: 'ACCEPTED' }] });
+	});
+});
+
+describe('helpers.Schema:extend', () => {
+	it('should pull in a property from the extended schema that the child does not define', () => {
+		const schemas = [
+			{ name: 'timestamps', properties: { createdAt: { __type: 'date', __default: 'parent-default' } } },
+			{ name: 'thing', extends: ['timestamps'], properties: {} },
+		];
+
+		const result = Helpers.Schema.extend(schemas, schemas[1]);
+
+		assert.strictEqual(result.properties.createdAt.__default, 'parent-default');
 	});
 
-	it('should execute the getFlattenedBody function', async () => {
-		result = Helpers.Schema.getFlattenedBody(body);
-		assert(result !== null);
-	});
+	it("should keep the child's own property instead of the extended schema's same-named property", () => {
+		const schemas = [
+			{ name: 'timestamps', properties: { createdAt: { __type: 'date', __default: 'parent-default' } } },
+			{
+				name: 'thing',
+				extends: ['timestamps'],
+				properties: { createdAt: { __type: 'date', __default: 'child-default' } },
+			},
+		];
 
-	it('result should have property name which matches body value', async () => {
-		const {value} = result.find((r) => r.path === 'name');
-		assert(value !== undefined && value === body.name);
-	});
+		const result = Helpers.Schema.extend(schemas, schemas[1]);
 
-	it('result should have property age which matches body value', async () => {
-		const {value} = result.find((r) => r.path === 'age');
-		assert(value !== undefined && value === body.age);
+		assert.strictEqual(result.properties.createdAt.__default, 'child-default');
 	});
+});
 
-	it('result should have property unstructured which matches body value', async () => {
-		const {value} = result.find((r) => r.path === 'unstructured');
-		assert(value !== undefined && value === body.unstructured);
-	});
+describe('helpers.schema:stripPrivate', () => {
+  const user = () => ({
+    id: 'u1',
+    auth: [
+      { app: 'google', password: 'secret', token: 't1' },
+      { app: 'github', token: 't2' },
+    ],
+    profile: { password: 'kept, not private here' },
+  });
 
-	it('result should have sub object property id flattened', async () => {
-		const {value} = result.find((r) => r.path === 'testSubObject.id');
-		assert(value !== undefined && value === body.testSubObject.id);
-	});
+  it('leaves out the private paths, through arrays, keeping everything else', () => {
+    assert.deepStrictEqual(Helpers.Schema.stripPrivate(user(), [['auth', 'password']]), {
+      id: 'u1',
+      auth: [
+        { app: 'google', token: 't1' },
+        { app: 'github', token: 't2' },
+      ],
+      profile: { password: 'kept, not private here' },
+    });
+  });
 
-	it('result should have sub object property fruit flattened', async () => {
-		const {value} = result.find((r) => r.path === 'testSubObject.fruit');
-		assert(value !== undefined && value === body.testSubObject.fruit);
-	});
+  it('strips each of a list of results, and changes none of what it was given', () => {
+    const given = [user(), user()];
 
-	it('result should have an array with length matching 3', async () => {
-		const {value} = result.find((r) => r.path === 'array');
-		assert(value !== undefined && value.length === 3);
-	});
+    const stripped = Helpers.Schema.stripPrivate(given, [['auth', 'password']]);
 
-	it('result array should have matching sub values', async () => {
-		const {value} = result.find((r) => r.path === 'array');
-		assert(value[0] === 'car');
-		assert(value[1] === 'bike');
+    assert.strictEqual(stripped[1].auth[0].password, undefined);
+    assert.deepStrictEqual(given, [user(), user()]);
+  });
 
-		// Sub array objects aren't flattened
-		assert(value[2].arraySubOject === body.array[2].arraySubOject);
-		assert(value[2].arraySubOjectSubObject.thisCouldGoOn === body.array[2].arraySubOjectSubObject.thisCouldGoOn);
-	});
+  it('gives a value with no private paths back as it is', () => {
+    const value = user();
+    assert.strictEqual(Helpers.Schema.stripPrivate(value, []), value);
+  });
 });

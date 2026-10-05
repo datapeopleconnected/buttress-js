@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,49 +14,153 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const fetch = require('cross-fetch');
-const Config = require('node-env-obj')();
+// const fetch = require('cross-fetch');
+import Config from './config.js';
 
-const bjsReq = async (opts, token=Config.testToken, floop = false) => {
-	const req = await fetch(`${opts.url}?token=${token}`, opts);
-	if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from ${opts.url}`);
-	return (floop) ? await req.text() : await req.json();
+export const ENDPOINT = {
+	REST: Config.url.rest,
+	SOCK: Config.url.ws,
 };
-const bjsReqPost = async (url, body, token) => await bjsReq({
+
+// `code` is the HTTP status; `body` is the error body, `{code, message, details?}`
+export class BJSReqError extends Error {
+	constructor(code, message, body = null) {
+		super(message);
+		this.name = 'BJSReqError';
+		this.code = code;
+		this.body = body;
+	}
+}
+
+export const bjsReq = async (opts, token=Config.testToken, text = false) => {
+	opts.headers = opts.headers || {};
+	opts.headers['Authorization'] = `Bearer ${token}`;
+
+	const response = await fetch(`${opts.url}`, opts);
+	if (response.status !== 200) {
+		// Log out the body
+		if (response.headers.get('content-type')?.includes('application/json')) {
+			const body = await response.json();
+			throw new BJSReqError(response.status, body.message || body, body);
+		}
+
+		console.error('error', await response.text());
+		throw new BJSReqError(response.status, `Received non-200 (${response.status}) from ${opts.url}`);
+	}
+	return (text) ? await response.text() : await response.json();
+};
+export const bjsReqPost = async (url, body, token) => await bjsReq({
 	url,
 	method: 'POST',
 	headers: {'Content-Type': 'application/json'},
 	body: JSON.stringify(body),
 }, token);
 
-const createApp = async (ENDPOINT, name, apiPath, token) => await bjsReqPost(`${ENDPOINT}/api/v1/app`, {name, apiPath}, token);
-const createLambda = async (ENDPOINT, lambda, auth, token) => await bjsReqPost(`${ENDPOINT}/api/v1/lambda`, {lambda, auth}, token);
-
-const updateSchema = async (ENDPOINT, schema, token) => bjsReq({
-	url: `${ENDPOINT}/api/v1/app/schema`,
-	method: 'PUT',
-	headers: {'Content-Type': 'application/json'},
-	body: JSON.stringify(schema),
+export const createApp = async (ENDPOINT, name, apiPath, policyPropertiesList, token) => await bjsReqPost(`${ENDPOINT}/api/v1/app`, {
+	name,
+	apiPath,
+	policyPropertiesList: policyPropertiesList || {},
 }, token);
-const updatePolicyPropertyList = async (ENDPOINT, list, token) => bjsReq({
+export const createLambda = async (ENDPOINT, lambda, auth, token) => await bjsReqPost(`${ENDPOINT}/api/v1/lambda`, {lambda, auth}, token);
+export const createUser = async (ENDPOINT, userData, authData, token) => await bjsReqPost(`${ENDPOINT}/api/v1/user`, {auth: [userData], token: authData, policyProperties: userData.policyProperties}, token);
+export const createPolicy = async (ENDPOINT, policy, token) => await bjsReqPost(`${ENDPOINT}/api/v1/policy`, policy, token);
+
+// Users with the same key must still get a different appId and email, or the second one is refused as a duplicate
+let policyUserCount = 0;
+export const createPolicyUser = async (ENDPOINT, app, key, policyProperties) => {
+  const suffix = `${Date.now()}-${++policyUserCount}`;
+  const user = await createUser(ENDPOINT, {
+    app: 'app-test',
+    appId: `${key}-${suffix}`,
+    email: `${key}+${suffix}@buttressjs.com`,
+  }, {
+    domains: [Config.app.host],
+    policyProperties,
+  }, app.token);
+
+	// for await (const token of user.tokens) {
+	// 	// Query the token 
+	// 	const res = await bjsReq({
+	// 		url: `${ENDPOINT}/api/v1/token`,
+	// 		method: 'SEARCH',
+	// 	}, app.token);
+	// }
+
+	// // Fetch the tokenIds. We need it for testing.
+	// console.log(user);
+
+  return user;
+}
+
+export const deleteApp = async (ENDPOINT, appId, token) => bjsReq({
+	url: `${ENDPOINT}/api/v1/app/${appId}`,
+	method: 'DELETE',
+}, token);
+
+export const updateSchema = async (ENDPOINT, schema, token) => {
+	const res = await bjsReq({
+		url: `${ENDPOINT}/api/v1/app/schema`,
+		method: 'PUT',
+		headers: {'Content-Type': 'application/json'},
+		body: JSON.stringify(schema),
+	}, token);
+	await new Promise((resolve) => setTimeout(resolve, 100)); // Give the routes time to regen.
+	return res;
+};
+export const updatePolicyPropertyList = async (ENDPOINT, list, token) => bjsReq({
 	url: `${ENDPOINT}/api/v1/app/policy-property-list/true`,
 	method: 'PUT',
 	headers: {'Content-Type': 'application/json'},
 	body: JSON.stringify(list),
 }, token);
-const registerDataSharing = async (ENDPOINT, agreement, token) => bjsReq({
+export const registerDataSharing = async (ENDPOINT, agreement, token) => bjsReq({
 	url: `${ENDPOINT}/api/v1/app-data-sharing`,
 	method: 'POST',
 	headers: {'Content-Type': 'application/json'},
 	body: JSON.stringify(agreement),
 }, token);
 
-module.exports = {
-	bjsReq,
-	bjsReqPost,
-	createApp,
-	createLambda,
-	updateSchema,
-	updatePolicyPropertyList,
-	registerDataSharing,
+export const updateUserPolicyProperties = async (ENDPOINT, userId, body, userToken, apiToken) => bjsReq({
+	url: `${ENDPOINT}/api/v1/user/${userId}/policy-property/${userToken}`,
+	method: 'PUT',
+	headers: {'Content-Type': 'application/json'},
+	body: JSON.stringify(body),
+}, apiToken);
+
+export const extractPolicyPropertyListFromPolicies = (policies) => {
+	return policies.reduce((list, policy) => {
+		if (policy.selection) {
+			Object.keys(policy.selection).forEach((key) => {
+				if (!list[key]) list[key] = [];
+				if (typeof policy.selection[key] === 'object') {
+					list[key].push(...Object.values(policy.selection[key]));
+				} else {
+					list[key].push(policy.selection[key]);
+				}
+			});
+		}
+		return list;
+	}, {});
 };
+
+// export default {
+// 	BJSReqError,
+// 	bjsReq,
+// 	bjsReqPost,
+
+// 	extractPolicyPropertyListFromPolicies,
+
+// 	createApp,
+// 	createUser,
+// 	createPolicy,
+// 	createLambda,
+// 	createPolicyUser,
+
+// 	updateSchema,
+// 	updatePolicyPropertyList,
+// 	updateUserPolicyProperties,
+
+// 	registerDataSharing,
+
+// 	deleteApp,
+// };

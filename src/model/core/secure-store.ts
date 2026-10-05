@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -16,82 +14,82 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import StandardModel from '../type/standard';
-import * as Helpers from '../../helpers';
+import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 
-class SecureStoreSchemaModel extends StandardModel {
-	constructor(services) {
-		const schema = SecureStoreSchemaModel.Schema;
-		super(schema, null, services);
-	}
+import * as Helpers from '../../helpers/index.js';
+import { Schema } from '../../helpers/schema.js';
+import { Services } from '../../bootstrap.js';
 
-	static get Schema() {
-		return {
-			name: 'secureStore',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				name: {
-					__type: 'string',
-					__itemtype: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				storeData: {
-					__type: 'object',
-					__default: null,
-					__required: false,
-					__allowUpdate: true,
-				},
-				_appId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-			},
-		};
-	}
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type SecureStore = {
+  id: string;
+  name: string;
+  storeData: Record<string, unknown>;
+  _appId: string;
+};
 
-	/**
-	 * @param {Object} req - request object
-	 * @param {Object} body - body passed through from a POST request
-	 * @return {Promise} - fulfilled with secure store value Object when the database request is completed
-	 */
-	async add(req, body) {
-		const data = {
-			id: (body.id) ? body.id : null,
-			name: (body.name) ? body.name : null,
-			storeData: (body.storeData) ? body.storeData : {},
-		};
+// A secure store as posted to the API
+export type SecureStoreAddBody = {
+  id?: string | null;
+  name?: string | null;
+  storeData?: Record<string, unknown> | null;
+};
 
-		// TODO This logic should be moved out to the route, to keep req logic
-		// with the http handling. appId should just be passed through with the
-		// body.
-		let appId = req.authApp.id;
-		if (!appId) {
-			// const token = await this._getToken(req);
-			const token = req.token;
-			if (token && token._appId) {
-				appId = token._appId;
-			}
-			if (token && token._lambdaId) {
-				const lambda = await this.__modelManager.Lambda.findById(token._lambdaId);
-				appId = lambda._appId;
-			}
-			if (token && token._userId) {
-				const user = await this.__modelManager.User.findById(token._userId);
-				appId = user._appId;
-			}
-		}
+class SecureStoreSchemaModel extends StandardModel<SecureStore> {
+  static override name = 'SecureStore';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
-		const rxsSecureStore = await super.add(data, {
-			_appId: appId,
-		});
-		const secureStore = await Helpers.streamFirst(rxsSecureStore);
+  constructor(services: Services) {
+    const schema = SecureStoreSchemaModel.Schema;
+    super(schema, null, services);
+  }
 
-		return secureStore;
-	}
+  static get Schema(): Schema {
+    return {
+      name: 'secureStore',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        name: {
+          __type: 'string',
+          __required: true,
+          __allowUpdate: true,
+        },
+        storeData: {
+          __type: 'object',
+          __default: {},
+          __required: false,
+          __allowUpdate: true,
+        },
+        _appId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+      },
+    };
+  }
+
+  /**
+   * @param {Object} req - request object
+   * @param {Object} body - body passed through from a POST request
+   * @return {Promise} - fulfilled with secure store value Object when the database request is completed
+   */
+  override async add(body: SecureStoreAddBody, internals: { _appId: string }) {
+    // Stored as the schema reads it; no data, null included, is an empty object
+    const rxsSecureStore = await super.add(
+      { ...body, storeData: body.storeData || undefined },
+      {
+        _appId: internals._appId,
+      },
+    );
+    const secureStore = await Helpers.streamFirst<SecureStore>(rxsSecureStore);
+
+    return secureStore;
+  }
 }
 
 /**

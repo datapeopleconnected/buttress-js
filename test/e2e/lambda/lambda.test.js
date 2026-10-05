@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,19 +14,19 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {describe, it, before, after} = require('mocha');
-const assert = require('assert');
+import { describe, it, before, after } from 'mocha';
+import assert from 'assert';
 
-const Config = require('node-env-obj')();
+import Config from '../../config.js';
 
-const {createApp, createLambda, updatePolicyPropertyList, bjsReq, bjsReqPost} = require('../../helpers');
+import { createApp, createLambda, updatePolicyPropertyList, bjsReq, bjsReqPost, ENDPOINT } from '../../helpers.js';
+import { runStep } from '../helpers.js';
 
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
-const {default: BootstrapLambda} = require('../../../dist/bootstrap-lambda');
+import BootstrapRest from '../../../dist/bootstrap-rest.js';
+import BootstrapLambda from '../../../dist/bootstrap-lambda.js';
 
 let LAMBDA_PROCESS = null;
 let REST_PROCESS = null;
-const ENDPOINT = `https://test.local.buttressjs.com`;
 
 const testEnv = {
 	apps: {},
@@ -52,16 +52,26 @@ const getExecResult = async (url, query, attempt=0) => {
 // This suite of tests will run against the REST API
 describe('Lambda', async () => {
 	before(async function() {
-		LAMBDA_PROCESS = new BootstrapLambda();
-		REST_PROCESS = new BootstrapRest();
+		this.timeout(60000);
 
-		await REST_PROCESS.init();
-		await LAMBDA_PROCESS.init();
+		await runStep('init REST process', async () => {
+			REST_PROCESS = new BootstrapRest();
+			await REST_PROCESS.init();
+		}, 'Lambda setup');
 
-		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test Lambda App', 'test-lambda-app');
-		await updatePolicyPropertyList(ENDPOINT, {
-			lambda: ['TEST_ACCESS'],
-		}, testEnv.apps.app1.token);
+		await runStep('init Lambda process', async () => {
+			LAMBDA_PROCESS = new BootstrapLambda();
+			await LAMBDA_PROCESS.init();
+		}, 'Lambda setup');
+
+		testEnv.apps.app1 = await runStep('create app1', async () =>
+			createApp(ENDPOINT.REST, 'Test Lambda App', 'test-lambda-app')
+		, 'Lambda setup');
+		await runStep('update policy property list', async () =>
+			updatePolicyPropertyList(ENDPOINT.REST, {
+				lambda: ['TEST_ACCESS'],
+			}, testEnv.apps.app1.token)
+		, 'Lambda setup');
 	});
 
 	after(async function() {
@@ -71,14 +81,14 @@ describe('Lambda', async () => {
 
 	describe('Basic', async () => {
 		it('Should create a lambda \'hello-world\' in the test app', async function() {
-			testEnv.lambdas['api-hello-world'] = await createLambda(ENDPOINT, {
+			testEnv.lambdas['api-hello-world'] = await createLambda(ENDPOINT.REST, {
 				name: 'api-hello-world',
 				type: 'PUBLIC',
 				git: {
 					url: Config.paths.root,
 					branch: 'develop',
 					hash: 'HEAD',
-					entryFile: 'test/data/lambda/hello-world.js',
+					entryFile: 'test/data/lambda/hello-world.cjs',
 					entryPoint: 'execute',
 				},
 				trigger: [{
@@ -96,20 +106,43 @@ describe('Lambda', async () => {
 			}, testEnv.apps.app1.token);
 		});
 
+		it('Should refuse a lambda whose git branch is not a branch name', async function() {
+			await assert.rejects(createLambda(ENDPOINT.REST, {
+				name: 'bad-branch',
+				type: 'PUBLIC',
+				git: {
+					url: Config.paths.root,
+					branch: 'develop; true',
+					hash: 'HEAD',
+					entryFile: 'test/data/lambda/hello-world.cjs',
+					entryPoint: 'execute',
+				},
+				trigger: [],
+			}, {
+				domains: ['localhost'],
+				permissions: [{route: '*', permission: '*'}],
+				policyProperties: {lambda: 'TEST_ACCESS'},
+			}, testEnv.apps.app1.token), (err) => {
+				assert.strictEqual(err.code, 400);
+				assert.strictEqual(err.body.code, 'invalid_lambda_git_branch');
+				return true;
+			});
+		});
+
 		// TODO: Basics tests to do with the lambda process
 	});
 
 	describe('Trigger', async () => {
 		describe('Cron', async () => {
 			it('Should create a cron lambda', async function() {
-				testEnv.lambdas['cron-test'] = await createLambda(ENDPOINT, {
+				testEnv.lambdas['cron-test'] = await createLambda(ENDPOINT.REST, {
 					name: 'cron-test',
 					type: 'PUBLIC',
 					git: {
 						url: Config.paths.root,
 						branch: 'develop',
 						hash: 'HEAD',
-						entryFile: 'test/data/lambda/hello-world.js',
+						entryFile: 'test/data/lambda/hello-world.cjs',
 						entryPoint: 'execute',
 					},
 					trigger: [{
@@ -130,7 +163,7 @@ describe('Lambda', async () => {
 			it('Should change the cron execution status from pending to complete.', async function() {
 				this.timeout(20000);
 
-				const result = await getExecResult(`${ENDPOINT}/api/v1/lambda-execution`, {
+				const result = await getExecResult(`${ENDPOINT.REST}/api/v1/lambda-execution`, {
 					lambdaId: {
 						$eq: testEnv.lambdas['cron-test'].id,
 					},
@@ -143,7 +176,7 @@ describe('Lambda', async () => {
 			});
 
 			it('Should create a single lambda exeuction.', async function() {
-				const exec = await bjsReqPost(`${ENDPOINT}/api/v1/lambda/${testEnv.lambdas['cron-test'].id}/schedule`, {
+				const exec = await bjsReqPost(`${ENDPOINT.REST}/api/v1/lambda/${testEnv.lambdas['cron-test'].id}/schedule`, {
 					executeAfter: new Date().toISOString(),
 				}, testEnv.apps.app1.token);
 
@@ -157,7 +190,7 @@ describe('Lambda', async () => {
 			it('Should change the scheduled execution status from pending to complete.', async function() {
 				this.timeout(20000);
 
-				const result = await getExecResult(`${ENDPOINT}/api/v1/lambda-execution`, {
+				const result = await getExecResult(`${ENDPOINT.REST}/api/v1/lambda-execution`, {
 					id: {
 						$eq: testEnv.exec['cron-test-schedule'].id,
 					},
@@ -172,14 +205,14 @@ describe('Lambda', async () => {
 
 		describe('Path Mutation', async () => {
 			it('Should create a path mutation lambda', async function() {
-				testEnv.lambdas['path-mutation'] = await createLambda(ENDPOINT, {
+				testEnv.lambdas['path-mutation'] = await createLambda(ENDPOINT.REST, {
 					name: 'path-mutation',
 					type: 'PUBLIC',
 					git: {
 						url: Config.paths.root,
 						branch: 'develop',
 						hash: 'HEAD',
-						entryFile: 'test/data/lambda/hello-world.js',
+						entryFile: 'test/data/lambda/hello-world.cjs',
 						entryPoint: 'execute',
 					},
 					trigger: [{
@@ -199,7 +232,7 @@ describe('Lambda', async () => {
 				this.timeout(20000);
 
 				const [updateResult] = await bjsReq({
-					url: `${ENDPOINT}/api/v1/app/${testEnv.apps.app1.id}`,
+					url: `${ENDPOINT.REST}/api/v1/app/${testEnv.apps.app1.id}`,
 					method: 'PUT',
 					headers: {'Content-Type': 'application/json'},
 					body: JSON.stringify([{
@@ -213,7 +246,7 @@ describe('Lambda', async () => {
 				assert.strictEqual(updateResult.value, 'Test Lambda App 2');
 
 				// Verify path mutation lambda ran
-				const verifyLambdaRan = await getExecResult(`${ENDPOINT}/api/v1/lambda-execution`, {
+				const verifyLambdaRan = await getExecResult(`${ENDPOINT.REST}/api/v1/lambda-execution`, {
 					lambdaId: {
 						$eq: testEnv.lambdas['path-mutation'].id,
 					},
@@ -224,14 +257,55 @@ describe('Lambda', async () => {
 				assert.notEqual(verifyLambdaRan, undefined);
 				assert.strictEqual(verifyLambdaRan.status, 'COMPLETE');
 			});
+
+			it(`Should trigger the app's path mutation lambda when a super token changes the app's name`, async function() {
+				this.timeout(20000);
+
+				const executions = () => bjsReq({
+					url: `${ENDPOINT.REST}/api/v1/lambda-execution`,
+					method: 'SEARCH',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify({query: {lambdaId: {$eq: testEnv.lambdas['path-mutation'].id}}}),
+				}, testEnv.apps.app1.token);
+				const before = (await executions()).length;
+
+				// The change comes from the super app, but the record belongs to app1.
+				await bjsReq({
+					url: `${ENDPOINT.REST}/api/v1/app/${testEnv.apps.app1.id}`,
+					method: 'PUT',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify([{path: 'name', value: 'Test Lambda App 3'}]),
+				}, Config.testToken);
+
+				let after = before;
+				for (let attempt = 0; attempt < 16 && after === before; attempt++) {
+					await new Promise((resolve) => setTimeout(resolve, 500));
+					after = (await executions()).length;
+				}
+				assert.strictEqual(after, before + 1, 'app1\'s lambda should run for the change to its record');
+			});
 		});
 
 		describe('API Endpoint', async () => {
 			it('Should receive 200 from \'hello-world\' lambda', async function() {
-				await bjsReq({
-					url: `${ENDPOINT}/lambda/v1/${testEnv.apps.app1.apiPath}/hello/world`,
+				const result = await bjsReq({
+					url: `${ENDPOINT.REST}/lambda/v1/${testEnv.apps.app1.apiPath}/hello/world`,
 					method: 'GET',
 				}, testEnv.apps.app1.token);
+
+				assert.strictEqual(result.res.code, 200);
+				assert.strictEqual(result.res.message, 'Hello World!');
+				assert.notEqual(result.executionId, undefined);
+			});
+
+			it('Should refuse a token given in the URL, however it is given', async function() {
+				for (const query of ['?token=a', '?token=a&token=b']) {
+					const response = await fetch(`${ENDPOINT.REST}/lambda/v1/${testEnv.apps.app1.apiPath}/hello/world${query}`);
+					const result = await response.json();
+
+					assert.strictEqual(response.status, 400, query);
+					assert.strictEqual(result.code, 'token_in_url_not_supported');
+				}
 			});
 		});
 	});

@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -13,78 +13,111 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response } from 'express';
+import { QueryParams } from '../../types/bjs-query.js';
+import { AdapterDocument, UpdatePathBody } from '../../types/datastore.js';
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
+import Route from '../route.js';
+import * as Helpers from '../../helpers/index.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
+
+import * as ACM from '../../access-control/models-access.js';
+import { invalidUpdateError } from '../../model/shared.js';
+import type { RequestWithBody } from '../../types/routes.js';
 
 /**
  * @class UpdateOne
  */
 export default class UpdateOne extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super([
-			`${schemaRoutePath}/:id`,
-			`${schemaRoutePath}/:sourceId/:id`,
-		], `UPDATE ${schema.name}`, services);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.PUT;
-		this.permissions = Route.Constants.Permissions.WRITE;
+    super(
+      [`${schemaRoutePath}/:id`, `${schemaRoutePath}/:sourceId/:id`],
+      `UPDATE ${schema.name}`,
+      services,
+      schema,
+      app,
+    );
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.PUT;
+    this.permissions = Route.Constants.Permissions.WRITE;
 
-		this.activityDescription = `UPDATE ${schema.name}`;
-		this.activityBroadcast = true;
+    this.activityDescription = `UPDATE ${schema.name}`;
+    this.activityBroadcast = true;
+  }
 
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
+  override async _validate(req: RequestWithBody<unknown>, _res: Response) {
+    const model = await this.routeModel();
 
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
+    const { validation, body } = model.validateUpdate(req.body);
+    req.body = body;
+    // BUG: req.body is now the validated array, so the messages below always report the path as undefined
+    if (!validation.isValid) {
+      const err = invalidUpdateError(this.schemaName, validation);
+      this.log(err.message, Route.LogLevel.ERR, req.context.id);
+      throw err;
+    }
 
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
-	}
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    if (!id) {
+      this.log(`${this.schemaName}: Invalid ID`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('missing_id', 'An id is required');
+    }
 
-	async _validate(req, res, token) {
-		const {validation, body} = this.model.validateUpdate(req.body);
-		req.body = body;
-		if (!validation.isValid) {
-			if (validation.isPathValid === false) {
-				this.log(`${this.schema.name}: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR, req.id);
-				throw new Helpers.Errors.RequestError(400, `${this.schema.name}: Update path is invalid: ${validation.invalidPath}`);
-			}
-			if (validation.isValueValid === false) {
-				this.log(`${this.schema.name}: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR, req.id);
-				if (validation.isMissingRequired) {
-					throw new Helpers.Errors.RequestError(
-						400,
-						`${this.schema.name}: Missing required property updating ${req.body.path}: ${validation.missingRequired}`,
-					);
-				}
+    let sourceId: string | undefined;
+    if (req.params.sourceId) {
+      sourceId = Array.isArray(req.params.sourceId) ? req.params.sourceId[0] : req.params.sourceId;
 
-				throw new Helpers.Errors.RequestError(
-					400,
-					`${this.schema.name}: Update value is invalid for path ${req.body.path}: ${validation.invalidValue}`,
-				);
-			}
-		}
+      if (!sourceId) {
+        this.log(`${this.schemaName}: Invalid source ID`, Route.LogLevel.ERR, req.context.id);
+        throw Helpers.Errors.badRequest('invalid_source_id', 'The source id is not valid');
+      }
+    }
 
-		const exists = await this.model.exists(req.params.id, req.params.sourceId);
-		if (!exists) {
-			this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.id);
-			throw new Helpers.Errors.RequestError(400, `invalid_id`);
-		}
+    if (!model.isValidId(id)) {
+      this.log(`${this.schemaName}: Invalid ID: ${id}`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
+    }
 
-		return true;
-	}
+    const exists = await model.exists(id, sourceId);
+    if (!exists) {
+      this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', id);
+    }
 
-	_exec(req, res, validate) {
-		return this.model.updateByPath(req.body, req.params.id, req.params.sourceId, null);
-	}
-};
+    const objectId = model.createId(id);
+
+    const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
+    const rxsScoped = await ACM.find(model, findParams, req.context.ac);
+    let scopedEntity: AdapterDocument | null;
+    try {
+      scopedEntity = await Helpers.streamFirst<AdapterDocument>(rxsScoped);
+    } catch (_err) {
+      scopedEntity = null;
+    }
+    // One outside the caller's policies is answered as one that doesn't exist
+    if (!scopedEntity) {
+      this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', id);
+    }
+
+    return {
+      id,
+      sourceId,
+    };
+  }
+
+  override async _exec(
+    req: RequestWithBody<unknown>,
+    _res: Response,
+    validate: { id: string; sourceId: string | undefined },
+  ) {
+    // _validate replaced the body with the validated updates
+    return (await this.routeModel()).updateByPath(req.body as UpdatePathBody[], validate.id, validate.sourceId);
+  }
+}

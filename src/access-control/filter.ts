@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -15,444 +13,444 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-
-import Sugar from 'sugar';
 import { ObjectId } from 'bson';
 
-import accessControlHelpers from './helpers';
+import Sugar from '../helpers/sugar.js';
 
-import PolicyEnv from './env'
+import AccessControlHelpers, { CombineEnvGroups } from './helpers.js';
 
-import * as Helpers from '../helpers';
-import Model from '../model';
+import Env, { ACEnv, ACPolicyEnvCombined, PolicyEnv } from './env.js';
+
+import * as Helpers from '../helpers/index.js';
+import Logging from '../helpers/logging.js';
+import Model from '../model/index.js';
+
+import { ApplicablePolicyConfig } from './index.js';
+
+import { PolicyQuery } from '../model/core/policy.js';
+
+import type { RequestWithBody } from '../types/routes.js';
+
+function isObjectId(value: unknown): value is ObjectId {
+  return value?.constructor?.name === 'ObjectId';
+}
+
+type AccessControlScalar = string | number | boolean | Date | ObjectId;
+type AccessControlValue = AccessControlScalar | AccessControlScalar[] | null;
+
+function isAccessControlScalar(value: unknown): value is AccessControlScalar {
+  return value instanceof Date || isObjectId(value) || ['string', 'number', 'boolean'].includes(typeof value);
+}
+
+function isAccessControlValue(value: unknown): value is AccessControlValue {
+  if (value === null) return true;
+  if (isAccessControlScalar(value)) return true;
+  return Array.isArray(value) && value.every((item: unknown) => isAccessControlScalar(item));
+}
 
 /**
  * @class Filter
  */
-class Filter {
-	logicalOperator: string[];
-	arrayOperators: string[];
-	manipulationVerbs: string[];
-
-	constructor() {
-		this.logicalOperator = [
-			'@and',
-			'@or',
-			'$and',
-			'$or',
-		];
-
-		this.arrayOperators = [
-			'@in',
-			'@nin',
-			'$in',
-			'$nin',
-		];
-
-		this.manipulationVerbs = [
-			'PUT',
-			// 'POST', // SKIPPING POST FOR NOW
-			'DELETE',
-		];
-	}
-
-	async addAccessControlPolicyQuery(req, tokenPolicies) {
-		await Object.keys(tokenPolicies).reduce(async (prev, key) => {
-			await prev;
-			await tokenPolicies[key].query.reduce(async (prev, q) => {
-				await prev;
-				await this.addAccessControlPolicyRuleQuery(req, q, 'accessControlQuery', tokenPolicies[key].env);
-			}, Promise.resolve());
-		}, Promise.resolve());
-	}
-
-	async addAccessControlPolicyRuleQuery(req, policyQuery, str, env: any = null) {
-		const translatedQuery = await this.__convertPrefixToQueryPrefix(policyQuery);
-		if (!req[str]) {
-			req[str] = {};
-		}
-
-		if (translatedQuery === null || Object.values(req[str]).length > 0) return req[str];
-
-		await Object.keys(translatedQuery).reduce(async (prev, key) => {
-			await prev;
-
-			if (!Object.keys(translatedQuery[key]).length) return;
-			if (req[str][key] && Array.isArray(req[str][key]) && Array.isArray(translatedQuery[key])) {
-				await translatedQuery[key].reduce(async (prev, elem) => {
-					await prev;
-
-					const elementExist = req[str][key].findIndex((el) => {
-						return JSON.stringify(el) === JSON.stringify(elem);
-					});
-
-					if (elementExist !== -1) return;
-					req[str][key].push(elem);
-				}, Promise.resolve());
-
-				return;
-			}
-
-			if (req[str][key] && !Array.isArray(req[str][key]) && !Array.isArray(translatedQuery[key])) {
-				Object.keys(req[str][key]).forEach((k) => {
-					if (!this.arrayOperators.includes(k)) return;
-
-					req[str][key][k] = req[str][key][k].concat(translatedQuery[key][k]).filter((v, idx, arr) => arr.indexOf(v) === idx);
-				});
-
-				return;
-			}
-
-			if (req.authApp && req.authApp.id && Object.keys(env).length > 0) {
-				await this.__substituteEnvVariables(translatedQuery[key], env, req.authApp.id, req.authUser);
-			}
-
-			req[str][key] = translatedQuery[key];
-		}, Promise.resolve());
-	}
-
-	async __substituteEnvVariables(obj, env, appId, authUser) {
-		for await (const key of Object.keys(obj)) {
-			const envKey = await this.__findEnvString(obj[key]);
-			if (!envKey) continue;
-
-			const output = await PolicyEnv.getQueryEnvironmentVar(envKey, env, appId, authUser);
-			obj[key] = await this.__substituteEnvString(obj[key], output);
-		}
-	}
-
-	async __findEnvString(input) {
-		if (input && typeof input === 'string' && input.includes('env.')) {
-			return input;
-		}
-
-		if (input && typeof input === 'object') {
-			for (const key of Object.keys(input)) {
-				const result = await this.__findEnvString(input[key]);
-				if (result !== false) {
-					return result;
-				}
-			}
-		}
-		return false;
-	}
-
-	async __substituteEnvString(input, newValue) {
-		if (input && typeof input === 'string') {
-			if (input.startsWith('env.')) {
-				return newValue;
-			} else {
-				return input;
-			}
-		}
-
-		if (input && typeof input === 'object') {
-			for (const key of Object.keys(input)) {
-				input[key] = await this.__substituteEnvString(input[key], newValue);
-			}
-		}
-		return input;
-	}
-
-	async applyAccessControlPolicyQuery(req) {
-		let passed = true;
-		const accessControlQuery = req.accessControlQuery;
-		if (!accessControlQuery || Object.keys(accessControlQuery).length < 1) return passed;
-
-		const reqQuery = (req.body.query)? req.body.query : null;
-		const isOriginalQueryEmpty = await this._checkOriginalQueryIsEmpty(reqQuery);
-		if (isOriginalQueryEmpty) {
-			req.body.query = accessControlQuery;
-			return passed;
-		}
-
-		if (reqQuery === accessControlQuery) return passed;
-
-		let deepQueryObj = {};
-		deepQueryObj = await this._getDeepQueryObj(reqQuery, deepQueryObj);
-
-		for await (const key of Object.keys(accessControlQuery)) {
-			if (!passed) continue;
-
-			if (Array.isArray(accessControlQuery[key]) && this.logicalOperator.includes(key)) {
-				passed = this.__crossCheckAccessControlMatchLogicalOperation(reqQuery, accessControlQuery, key);
-				continue;
-			}
-
-			if (Array.isArray(accessControlQuery[key]) && !this.logicalOperator.includes(key)) {
-				// TODO throw an error for invalid logical operation
-				passed = false;
-				continue;
-			}
-
-			passed = this.__addAccessControlQueryPropertyToOriginalQuery(deepQueryObj, accessControlQuery, key);
-			req.body.query = deepQueryObj;
-		}
-
-		return passed;
-	}
-
-	// TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
-	async evaluateManipulationActions(req, collection) {
-		const coreSchema = await accessControlHelpers.cacheCoreSchema();
-		const coreSchemNames = coreSchema.map((c) => Sugar.String.singularize(c.name));
-		const isCoreSchema = coreSchemNames.includes(collection);
-
-		const verb = req.method;
-		if (!this.manipulationVerbs.includes(verb)) return true;
-
-		const appId = req.authApp.id;
-		const appShortId = Helpers.shortId(appId);
-		const body = (Array.isArray(req.body)) ? req.body : [req.body];
-		let query = (req.body.query) ? req.body.query : {};
-		const baseURL = req.url.replace(/\?.*/, '');
-		const id = (baseURL) ? baseURL.split('/').pop() : undefined;
-		let passed = true;
-
-		if (isCoreSchema) {
-			collection = Sugar.String.capitalize(collection);
-		} else {
-			collection = `${appShortId}-${collection}`;
-		}
-
-		for await (const update of body) {
-			if (id && ObjectId.isValid(id)) {
-				query._id = id;
-			} else if (update.id && ObjectId.isValid(update.id)) {
-				query._id = update.id;
-			}
-
-			if (query._id && typeof query._id !== 'object') {
-				query._id = await Model[collection].createId(query._id);
-			}
-
-			const parsedQuery = await Model[collection].parseQuery(query, {}, Model[collection].flatSchemaData);
-			query = {...query, ...parsedQuery};
-			const res = await Model[collection].count(query);
-			if (!res) {
-				passed = false;
-				delete query._id;
-				return passed;
-			}
-		}
-
-		delete req.body.query; // Deleting it for manipulation verbs
-		return passed;
-	}
-
-	__crossCheckAccessControlMatchLogicalOperation(originalQuery, accessControlQuery, key) {
-		let modifiedQuery = false;
-		const accessControlQueryLogicalArr = accessControlQuery[key];
-		if (!accessControlQueryLogicalArr) return modifiedQuery;
-
-		const originalQueryLogicalArr = originalQuery[key];
-		if (!originalQueryLogicalArr) {
-			modifiedQuery = this.__prioritiseAccessControlQuery(accessControlQueryLogicalArr, originalQuery);
-
-			if (!modifiedQuery) {
-				originalQuery[key] = accessControlQuery[key];
-				modifiedQuery = true;
-			}
-
-			return modifiedQuery;
-			// or modify query and return different results
-			// originalQuery[key] = accessControlQueryLogicalArr;
-		}
-
-		const originalQueryKeys = originalQueryLogicalArr.reduce((arr, obj) => {
-			Object.keys(obj).forEach((key) => arr.push(key));
-
-			return arr;
-		}, []);
-
-		accessControlQueryLogicalArr.forEach((accessControlObj) => {
-			Object.keys(accessControlObj).forEach((aKey) => {
-				if (originalQueryKeys.includes(aKey)) {
-					const keyIndex = originalQuery[key].findIndex((obj) => Object.keys(obj).some((i) => i === aKey));
-					if (JSON.stringify(originalQuery[key][keyIndex][aKey]) !== JSON.stringify(accessControlObj[aKey])) {
-						modifiedQuery = true;
-					}
-
-					// We can change the query to return the data that a user can access
-					// originalQuery[key][keyIndex] = {
-					// 	[aKey]: accessControlObj[aKey],
-					// };
-
-					// TODO should prompt the user to tell them that they do not have access to these property or send empty array
-					return;
-				}
-
-				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
-				originalQuery[key].push(accessControlObj);
-			});
-		});
-
-		Object.keys(accessControlQuery).forEach((acKey) => {
-			if (acKey === key) return;
-
-			if (originalQueryKeys.includes(acKey)) {
-				const keyIndex = originalQuery[key].findIndex((orgKeyObj) => Object.keys(orgKeyObj).some((orgKey) => orgKey == acKey));
-
-				if (JSON.stringify(originalQuery[key][keyIndex]) !== accessControlQuery[acKey]) {
-					modifiedQuery = true;
-				}
-
-				// We can change the query to return the data that a user can access
-				// originalQuery[key][keyIndex] = {
-				// [acKey]: accessControlQuery[acKey],
-				// };
-
-				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
-			}
-		});
-
-		return modifiedQuery;
-	}
-
-	__addAccessControlQueryPropertyToOriginalQuery(originalQuery, accessControlQuery, key) {
-		const originalQueryObj = originalQuery[key];
-		const accessControlQueryObj = accessControlQuery[key];
-		let operandKey: string | null = null;
-
-		if (!originalQueryObj) {
-			originalQuery[key] = accessControlQueryObj;
-			return true;
-		}
-
-		this.logicalOperator.forEach((operator) => {
-			if (!originalQuery[operator]) return;
-
-			originalQuery[operator].forEach((obj) => {
-				Object.keys(obj).forEach((objKey) => {
-					if (objKey === key) {
-						operandKey = operator;
-					}
-				});
-			});
-		});
-
-		if (!originalQueryObj && operandKey && accessControlQueryObj) {
-			const originalKeyIndex = originalQuery[operandKey].findIndex((obj) => Object.keys(obj).some((i) => i === key));
-			if (JSON.stringify(accessControlQueryObj) !== JSON.stringify(originalQuery[operandKey][originalKeyIndex])) {
-				// TODO needs to give the option to return an error at the minute it returns zero results
-				return true;
-			} else {
-				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
-			}
-
-			return false;
-		}
-
-		if ((!originalQueryObj && !operandKey)) {
-			// TODO maybe prompt the user as well to tell them that access control policies modified their query
-			originalQuery[key] = accessControlQueryObj;
-			return false;
-		}
-
-		const [accessControlOperator] = Object.keys(accessControlQueryObj);
-		const [lhs] = Object.values(originalQueryObj);
-		const rhs = accessControlQueryObj[accessControlOperator];
-		const evaluation = accessControlHelpers.evaluateOperation(lhs, rhs, accessControlOperator);
-		return evaluation;
-	}
-
-	__prioritiseAccessControlQuery(accessControlLogicalArr, originalQuery) {
-		let modifiedQuery = false;
-		const originalQueryKeys = this.__getQueryKeys(originalQuery);
-
-		const accessControlQueryKeys = accessControlLogicalArr.reduce((arr, obj) => {
-			Object.keys(obj).forEach((key) => {
-				arr.push(key);
-			});
-
-			return arr;
-		}, [])
-			.filter((v, idx, arr) => arr.indexOf(v) === idx);
-
-		originalQueryKeys.forEach((key) => {
-			if (accessControlQueryKeys.includes(key)) {
-				// TODO prompt the user that one of the property doesn't match their access control policies or return different results that expected
-				const keyIndex = accessControlLogicalArr.findIndex((obj) => Object.keys(obj).some((i) => i === key));
-				if (JSON.stringify(accessControlLogicalArr[keyIndex][key]) !== JSON.stringify(originalQuery[key])) {
-					modifiedQuery = true;
-					delete originalQuery[key];
-				}
-			}
-		});
-
-		return modifiedQuery;
-	}
-
-	__convertPrefixToQueryPrefix(obj) {
-		if (typeof obj !== 'object' || obj === null || ObjectId.isValid(obj)) {
-			return obj;
-		}
-
-		if (Array.isArray(obj)) {
-			return obj.map(this.__convertPrefixToQueryPrefix.bind(this));
-		}
-
-		return Object.keys(obj).reduce((acc, key) => {
-			const newKey = key.replace(/@/g, '$');
-			acc[newKey] = this.__convertPrefixToQueryPrefix(obj[key]);
-			return acc;
-		}, {});
-	}
-
-	__getQueryKeys(query, baseKey?: string) {
-		return Object.keys(query).reduce((arr: string[], key) => {
-			if (key === '__crPath') return arr;
-
-			if (!baseKey) {
-				arr.push(key);
-			} else {
-				arr.push(`${baseKey}-${key}`);
-			}
-
-			if (Array.isArray(query[key])) {
-				query[key].forEach((elem) => {
-					arr = arr.concat(this.__getQueryKeys(elem, key));
-				});
-			}
-
-			return arr;
-		}, []);
-	}
-
-	async _getDeepQueryObj(queryObj, newObj = {}) {
-		if (!queryObj) return newObj;
-
-		for await (const key of Object.keys(queryObj)) {
-			if ((Array.isArray(queryObj[key]) && queryObj[key].length < 1) || key.includes('crPath')) continue;
-
-			if (Array.isArray(queryObj[key]) && queryObj[key].length > 0) {
-				for await (const item of queryObj[key]) {
-					newObj = await this._getDeepQueryObj(item, newObj);
-				}
-				continue;
-			}
-
-			newObj[key] = queryObj[key];
-		}
-
-		return newObj;
-	}
-
-	async _checkOriginalQueryIsEmpty(query) {
-		let isEmpty = true;
-		if (!query) return isEmpty;
-
-		for await (const key of Object.keys(query)) {
-			if (Array.isArray(query[key]) && query[key].length > 0) {
-				isEmpty = await this._checkOriginalQueryIsEmpty(query[key]);
-			}
-
-			if (!Array.isArray(query[key]) && query[key]) {
-				isEmpty = false;
-			}
-		}
-
-		return isEmpty;
-	}
+// A policy query referring to an #env value that isn't set, which can't be applied
+export class UnresolvedEnvError extends Error {
+  constructor(reference: string) {
+    super(`unresolved_policy_env: ${reference}`);
+    this.name = 'UnresolvedEnvError';
+  }
+}
+
+// The value an #env reference in a policy query stands for. A reference to a value that isn't set is refused, rather
+// than left undefined, which a datastore reads as matching every entity that lacks the field.
+const resolveQueryValue = async (value: unknown, envVars: ACPolicyEnvCombined) => {
+  const resolved = await Env.getEnvValue(value, envVars);
+  if (resolved === undefined && typeof value === 'string' && value.startsWith(PolicyEnv.strPrefix)) {
+    throw new UnresolvedEnvError(value);
+  }
+  return resolved;
+};
+
+export class Filter {
+  static queryOperators: { [index: string]: string } = {
+    '@eq': '$eq',
+    '@not': '$not',
+    '@gt': '$gt',
+    '@lt': '$lt',
+    '@gte': '$gte',
+    '@lte': '$lte',
+    '@gtDate': '$gtDate',
+    '@gteDate': '$gteDate',
+    '@ltDate': '$ltDate',
+    '@lteDate': '$lteDate',
+    '@rex': '$rex',
+    '@rexi': '$rexi',
+    '@in': '$in',
+    '@nin': '$nin',
+    '@exists': '$exists',
+    '@inProp': '$inProp',
+    '@elMatch': '$elMatch',
+  };
+  static logicalOperator = ['@and', '@or', '$and', '$or'];
+  arrayOperators: string[];
+  manipulationVerbs: string[];
+
+  _queryAccess = ['%FULL_ACCESS%', '%APP_SCHEMA%', '%CORE_SCHEMA%'];
+
+  constructor() {
+    this.arrayOperators = ['@in', '@nin', '$in', '$nin'];
+
+    this.manipulationVerbs = [
+      'PUT',
+      // 'POST', // SKIPPING POST FOR NOW
+      'DELETE',
+    ];
+  }
+
+  // This function will now take in policies, modifiy their queries and return back the list.
+  async buildApplicablePoliciesQuery(policies: ApplicablePolicyConfig[], reqEnv: ACEnv) {
+    const output: ApplicablePolicyConfig[] = [];
+
+    for await (const policy of policies) {
+      if (!policy.config.query) {
+        continue;
+      }
+
+      const p = Object.assign({}, policy);
+      const env = CombineEnvGroups(policy, reqEnv);
+      try {
+        p.config.query = await this.buildPolicyQuery(policy.config.query, env);
+      } catch (err: unknown) {
+        // A config whose query can't be built grants nothing
+        if (!(err instanceof UnresolvedEnvError)) throw err;
+        Logging.logWarn(`Policy ${policy.name} not applied: ${err.message}`);
+        continue;
+      }
+      output.push(p);
+    }
+
+    return output;
+  }
+
+  /**
+   * Walk over a query object and replace any env variables with their values.
+   */
+  async buildPolicyQuery(
+    policyQuery: PolicyQuery | null | undefined,
+    envVars: ACPolicyEnvCombined,
+    stripAccessKeys = true,
+  ) {
+    if (!policyQuery) return null;
+
+    // Change @ prefixes over to $ for mongo queries.
+    // ? This should really be handled by the mongo adapter and internally we should use the @ prefix.
+    const translatedQuery = Filter.convertQueryPrefixOperators(policyQuery);
+    const output: PolicyQuery = {};
+    const outputRecord = output as Record<string, unknown>;
+
+    for await (const key of Object.keys(translatedQuery)) {
+      const val = translatedQuery[key] as unknown;
+      if (stripAccessKeys && key === 'access' && typeof val === 'string' && this._queryAccess.includes(val)) continue;
+
+      if (typeof val === 'string') {
+        outputRecord[key] = await resolveQueryValue(val, envVars);
+        continue;
+      }
+      if (typeof val !== 'object' || val === null) {
+        outputRecord[key] = val;
+        continue;
+      }
+      if (Object.keys(val).length < 1) continue;
+
+      if (Filter.logicalOperator.includes(key)) {
+        if (!Array.isArray(val)) continue;
+        for (const queryObj of val as unknown[]) {
+          if (typeof queryObj !== 'object' || Array.isArray(queryObj)) {
+            throw new Error(`Invalid query object for logical operator ${key}: ${JSON.stringify(queryObj)}`);
+          }
+
+          // Recursively build the query for each object in the logical operator array.
+          const builtQuery = await this.buildPolicyQuery(queryObj as PolicyQuery | null, envVars, stripAccessKeys);
+          if (builtQuery) {
+            const existing = outputRecord[key];
+            if (!Array.isArray(existing)) outputRecord[key] = [];
+            (outputRecord[key] as unknown[]).push(builtQuery);
+          }
+        }
+        continue;
+      }
+
+      if (outputRecord[key]) {
+        if (Array.isArray(outputRecord[key]) && Array.isArray(val)) {
+          for await (const elem of val as unknown[]) {
+            const elementExist = (outputRecord[key] as unknown[]).findIndex(
+              (el) => JSON.stringify(el) === JSON.stringify(elem),
+            );
+
+            if (elementExist !== -1) continue;
+            (outputRecord[key] as unknown[]).push(elem);
+          }
+
+          continue;
+        } else if (!Array.isArray(outputRecord[key]) && !Array.isArray(val)) {
+          const outputByKey = outputRecord[key] as Record<string, unknown>;
+          const valRecord = val as Record<string, unknown>;
+
+          Object.keys(outputByKey).forEach((k) => {
+            if (this.arrayOperators.includes(k)) {
+              const existing = outputByKey[k];
+              const next = valRecord[k];
+              if (Array.isArray(existing) && Array.isArray(next)) {
+                outputByKey[k] = existing.concat(next).filter((v: unknown, idx, arr) => arr.indexOf(v) === idx);
+              }
+            } else {
+              outputByKey[k] = valRecord[k];
+            }
+          });
+
+          continue;
+        }
+      }
+
+      if (typeof val === 'string') {
+        outputRecord[key] = await resolveQueryValue(val, envVars);
+        continue;
+      }
+
+      const operator = Object.keys(val)[0];
+      const value = (val as Record<string, unknown>)[operator];
+
+      // if (!Filter.queryOperators[operator]) continue;
+
+      outputRecord[key] = {};
+      (outputRecord[key] as Record<string, unknown>)[operator] = await resolveQueryValue(value, envVars);
+    }
+
+    return output;
+  }
+
+  /**
+   * Function is used to evaluate a query against an entity, ensuring that the query isn't going to filter out this entity.
+   * The function will return true if it selects the entity, false if it doesn't.
+   */
+  evaluateQueryAgainstEntity(query: PolicyQuery, entity: { [index: string]: unknown }, partialPass?: boolean): boolean {
+    const flattened = Helpers.flattenedObject(entity);
+    return this.__evaluateQueryAgainstEntity(query, flattened, partialPass, entity);
+  }
+
+  __evaluateQueryAgainstEntity(
+    query: PolicyQuery,
+    flatEntity: { [index: string]: unknown },
+    partialPass?: boolean,
+    testEntity?: { [index: string]: unknown },
+  ): boolean {
+    if (!flatEntity) return false;
+    const queryRecord = query as Record<string, unknown>;
+
+    // TODO: Object will need to be flatterned.
+    if (queryRecord['access'] && queryRecord['access'] === '%FULL_ACCESS%') return true;
+
+    const results: Array<boolean> = [];
+
+    for (const key of Object.keys(queryRecord)) {
+      if (Filter.logicalOperator.includes(key)) {
+        const innerPartialPass = key === '@or' || key === '$or' ? true : false;
+
+        const innerResults: Array<boolean> = [];
+        // TODO: Add check as this is expected to be an array.
+        const nestedQuery = queryRecord[key];
+        if (!Array.isArray(nestedQuery)) continue;
+        for (const queryObj of nestedQuery as unknown[]) {
+          if (typeof queryObj !== 'object' || queryObj === null) continue;
+          // Each branch is a whole query, its fields AND'd as MongoDB does; the OR is across branches
+          innerResults.push(this.__evaluateQueryAgainstEntity(queryObj as PolicyQuery, flatEntity, false, testEntity));
+        }
+
+        if (innerPartialPass) {
+          results.push(innerResults.some((r) => r));
+        } else {
+          results.push(innerResults.length > 0 ? innerResults.every((r) => r) : false);
+        }
+
+        continue;
+      }
+
+      const queryField = queryRecord[key];
+      if (typeof queryField !== 'object' || queryField === null || Array.isArray(queryField)) continue;
+
+      const fieldResults: boolean[] = [];
+
+      for (const operator of Object.keys(queryField)) {
+        let evaluationRes = false;
+
+        // if (!Filter.queryOperators[operator]) {
+        // 	throw new Error(`Invalid policy condition operator: ${operator}`);
+        // }
+
+        // * We don't need to perform a env replacment here as the query should have already
+        // * gone through the query builder which will have replaced the values.
+        const lhs = this.__getValueByPath(flatEntity, key);
+        const rhs = (queryField as Record<string, unknown>)[operator];
+
+        // ? Maybe throw an error for incomplete operation sides, instead of just failing this operator.
+        if (lhs !== undefined && rhs !== undefined && isAccessControlValue(lhs) && isAccessControlValue(rhs)) {
+          evaluationRes = AccessControlHelpers.evaluateOperation(lhs, rhs, operator);
+        }
+
+        fieldResults.push(evaluationRes);
+      }
+
+      // The condition defaults are treated as AND by default.
+      results.push(partialPass ? fieldResults.some((r) => r) : fieldResults.every((r) => r));
+    }
+
+    if (partialPass) return results.some((r) => r);
+
+    return results.length > 0 ? results.every((r) => r) : false;
+  }
+
+  /**
+   * Get path value from a flattened object
+   * @param {Object} flattenedObj
+   * @param {string} targetPath
+   */
+  __getValueByPath(flattenedObj: { [index: string]: unknown }, targetPath: string) {
+    if (targetPath in flattenedObj) {
+      return flattenedObj[targetPath];
+    }
+
+    const pattern = /\.\d/;
+    const keys = Object.keys(flattenedObj);
+    let value: unknown = null;
+
+    for (const key of keys) {
+      const modifiedKey = key.replace(/^\d+\.|\.\d+/g, '');
+      if (modifiedKey === targetPath && pattern.test(key)) {
+        value = value && Array.isArray(value) ? [...value, flattenedObj[key]] : [flattenedObj[key]];
+      }
+      if (key === targetPath) value = flattenedObj[key];
+    }
+
+    return value;
+  }
+
+  // TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
+  // TODO: This function needs a refactor, expecting the AC to be already applied to the queiries.
+  async evaluateManipulationActions(req: RequestWithBody<{ query?: Record<string, unknown> }>, collection: string) {
+    const coreSchema = await AccessControlHelpers.cacheCoreSchema();
+    const coreSchemNames = coreSchema.map((c) => Sugar.String.singularize(c.name));
+    const isCoreSchema = coreSchemNames.includes(collection);
+
+    const verb = req.method;
+    if (!this.manipulationVerbs.includes(verb)) return true;
+
+    if (!req.context.authApp) {
+      throw new Error('No auth app found in request context');
+    }
+
+    const appId = req.context.authApp.id;
+    // const appShortId = Helpers.shortId(appId);
+    const body: unknown[] = Array.isArray(req.body) ? req.body : [req.body];
+    let query: Record<string, unknown> = req.body.query ? req.body.query : {};
+    // const baseURL = req.url.replace(/\?.*/, '');
+    // const id = (baseURL) ? baseURL.split('/').pop() : undefined;
+    let passed = true;
+
+    const model = isCoreSchema ? Model.getCoreModelByName(collection) : await Model.getAppModel(appId, collection);
+
+    // ! This looks weird
+    for await (const _update of body) {
+      if (query._id && typeof query._id !== 'object') {
+        query._id = await model.createId(query._id as string);
+      }
+
+      const parsedQuery = await model.parseQuery(query, {}, model.flatSchemaData);
+      query = { ...query, ...parsedQuery };
+      const res = await model.count(query);
+      if (!res) {
+        passed = false;
+        delete query._id;
+        return passed;
+      }
+    }
+
+    delete req.body.query; // Deleting it for manipulation verbs
+    return passed;
+  }
+
+  mergeQueryFilters(
+    baseFilter: PolicyQuery | null | undefined,
+    additionalFilter: PolicyQuery | null | undefined,
+    operator = '$and',
+  ): PolicyQuery {
+    if (!baseFilter || !additionalFilter) {
+      throw new Error('Both baseFilter and additionalFilter must be provided.');
+    }
+    if (operator !== '$and' && operator !== '$or') {
+      throw new Error("Operator must be either '$and' or '$or'.");
+    }
+
+    if (operator === '$or') {
+      if (Object.keys(baseFilter).length < 1 || Object.keys(additionalFilter).length < 1) {
+        return {};
+      }
+    } else {
+      if (Object.keys(baseFilter).length < 1) return additionalFilter;
+      if (Object.keys(additionalFilter).length < 1) return baseFilter;
+    }
+
+    const newQuery: Record<string, unknown[]> = { [operator]: [] };
+
+    // A filter of only the operator is spread into the new one. A filter with other keys too is kept whole, so they
+    // still apply.
+    if (baseFilter[operator] && Object.keys(baseFilter).length === 1) {
+      newQuery[operator] = [...(baseFilter[operator] as unknown[])];
+    } else {
+      newQuery[operator].push(baseFilter);
+    }
+
+    if (additionalFilter[operator] && Object.keys(additionalFilter).length === 1) {
+      newQuery[operator] = [...newQuery[operator], ...(additionalFilter[operator] as unknown[])];
+    } else {
+      newQuery[operator].push(additionalFilter);
+    }
+
+    return newQuery;
+  }
+
+  // A function for merging a request query with an access control query. The Access control query will take priority.
+  mergeQueryFiltersWithAccessControl(
+    reqQuery: PolicyQuery | null | undefined,
+    accessControlQuery: PolicyQuery | null | undefined,
+  ) {
+    return this.mergeQueryFilters(reqQuery, accessControlQuery, '$and');
+  }
+
+  /**
+   * Queries are prefixed with @ to avoid conflicts with mongo operators. This function will convert the @ to $.
+   *
+   * @todo This functionality should really happen in the mongo adpater. All queries within buttress should be
+   * referenced using the @ prefix.
+   */
+  static convertQueryPrefixOperators(query: Record<string, unknown>): Record<string, unknown>;
+  static convertQueryPrefixOperators(query: unknown): unknown;
+  static convertQueryPrefixOperators(query: unknown): unknown {
+    if (typeof query !== 'object' || query === null) {
+      return query;
+    }
+
+    // ! Shouldn't be referencing ObjectId's outside of the adapters.
+    if (isObjectId(query)) {
+      return query;
+    }
+
+    if (Array.isArray(query)) {
+      return query.map((item: unknown) => Filter.convertQueryPrefixOperators(item));
+    }
+
+    return Object.keys(query).reduce((acc: Record<string, unknown>, key) => {
+      const newKey = key.replace(/@/g, '$');
+      acc[newKey] = Filter.convertQueryPrefixOperators((query as Record<string, unknown>)[key]);
+      return acc;
+    }, {});
+  }
 }
 export default new Filter();

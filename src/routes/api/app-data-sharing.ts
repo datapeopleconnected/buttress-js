@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -15,14 +13,40 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
+import { Request, Response } from 'express';
 
-import Datastore from '../../datastore';
-import DatastoreFactory from '../../datastore/adapter-factory';
+import Route from '../route.js';
+import {
+  CoreBulkUpdate,
+  CoreCount,
+  CoreGetList,
+  CoreGetOne,
+  CoreRouteConfig,
+  CoreSearch,
+  CoreUpdateByPath,
+} from '../core-routes.js';
+import Model from '../../model/index.js';
+import { invalidEntityError } from '../../model/shared.js';
+import * as Helpers from '../../helpers/index.js';
 
-import ButtressAdapater from '../../datastore/adapters/buttress';
+import Datastore from '../../datastore/index.js';
+import DatastoreFactory from '../../datastore/adapter-factory.js';
+
+import ButtressAdapater from '../../datastore/adapters/buttress.js';
+import TokenSchemaModel, { Token } from '../../model/core/token.js';
+import AppDataSharingSchemaModel, { AppDataSharing, AppDataSharingAddBody } from '../../model/core/app-data-sharing.js';
+import { Services } from '../../bootstrap.js';
+import type { DataShareActivatedMessage } from '../../services/nrp.js';
+import { UpdatePathBody } from '../../types/datastore.js';
+import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
+import { dataSharingDestinationProblem, remoteAppUrlsOf } from '../../helpers/egress.js';
+
+// What the activate route (ActivateAppDataSharing) responds with. A remote whose side of the agreement is already
+// active responds `true` instead, which has no `status` so is treated as not activated.
+interface DataSharingActivationResult {
+  status: boolean;
+  token: string;
+}
 
 /**
  * The data sharing agreement registration process should be as follows:
@@ -38,44 +62,52 @@ import ButtressAdapater from '../../datastore/adapters/buttress';
  * @param {string} dataSharingTokenId
  * @return {object} dataSharing
  */
-const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
-	// Create new token
-	const newToken = Model.getModel('Token').createTokenString();
+const activateDataSharing = async (
+  dataSharing: AppDataSharing,
+  dataSharingTokenId: string,
+  models: { agreements: AppDataSharingSchemaModel; tokens: TokenSchemaModel },
+) => {
+  // Create new token
+  const newToken = Model.getCoreModel(TokenSchemaModel).createTokenString();
 
-	let connectionString = Helpers.DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
+  let connectionString = Helpers.DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
 
-	// Create datastore, this will be used to activate the data sharing agreement.
-	const buttressAdapter = DatastoreFactory.create(connectionString);
-	await buttressAdapter.connect();
+  // Create datastore, this will be used to activate the data sharing agreement.
+  const buttressAdapter = DatastoreFactory.create(connectionString);
+  await buttressAdapter.connect();
 
-	if (buttressAdapter instanceof ButtressAdapater === false) {
-		throw new Error('Expected a Buttress Adapter but got something else');
-	}
+  if (buttressAdapter instanceof ButtressAdapater === false) {
+    throw new Error('Expected a Buttress Adapter but got something else');
+  }
 
-	// Send a request to the remote app to activate the data sharing agreement.
-	const activationResult = await buttressAdapter.activateDataSharing(dataSharing.remoteApp.token, newToken);
-	if (!activationResult || !activationResult.status) return dataSharing;
+  // Send a request to the remote app to activate the data sharing agreement.
+  // @buttress/api doesn't type the response
+  const activationResult = (await buttressAdapter.activateDataSharing(
+    dataSharing.remoteApp.token,
+    newToken,
+  )) as DataSharingActivationResult | null;
+  if (!activationResult || !activationResult.status) return dataSharing;
 
-	// Flag our data sharing agreement as active & update the remote app token with the new one.
-	await Model.getModel('AppDataSharing').activate(dataSharing.id, activationResult.token);
-	dataSharing.remoteApp.token = activationResult.token;
+  // Flag our data sharing agreement as active & update the remote app token with the new one.
+  await models.agreements.activate(dataSharing.id, activationResult.token);
+  dataSharing.remoteApp.token = activationResult.token;
 
-	// Update our data sharing agreement token with the new value.
-	await Model.getModel('Token').update({'id': dataSharingTokenId}, {$set: {'value': newToken}});
+  // Update our data sharing agreement token with the new value.
+  await models.tokens.updateById(dataSharingTokenId, { $set: { value: newToken } });
 
-	// Rebuild the connection string with the new token
-	connectionString = Helpers.DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
+  // Rebuild the connection string with the new token
+  connectionString = Helpers.DataSharing.createDataSharingConnectionString(dataSharing.remoteApp);
 
-	// Destroy the current adapter and re-open it again with the new token
-	await buttressAdapter.close();
+  // Destroy the current adapter and re-open it again with the new token
+  await buttressAdapter.close();
 
-	// Establish a connection using the datastore manager so it's ready for any future requests.
-	// TOOD: Handle errors with the new token here.
-	const datastore = Datastore.createInstance({connectionString});
-	await datastore.connect();
+  // Establish a connection using the datastore manager so it's ready for any future requests.
+  // TOOD: Handle errors with the new token here.
+  const datastore = Datastore.createInstance({ connectionString });
+  await datastore.connect();
 
-	dataSharing.active = true;
-	return dataSharing;
+  dataSharing.active = true;
+  return dataSharing;
 };
 
 /**
@@ -92,211 +124,156 @@ const activateDataSharing = async (dataSharing, dataSharingTokenId) => {
  * 3. App2 will set it's data sharing agreement property `active` to false, shutdown connections and clean up schema/routes (Optional)
  */
 
-const routes: (typeof Route)[] = [];
+const routes: CoreRouteClass[] = [];
+
+// The operator doesn't let agreements connect there
+const destinationRefused = (problem: string) =>
+  Helpers.Errors.badRequest(
+    `data_sharing_${problem}`,
+    "The agreement's remote app is at a destination that isn't allowed",
+  );
+
+// Why a system-only route reaches every app
+const SYSTEM_ONLY = 'the route takes only system tokens';
 
 /**
  * @class GetAppDataSharing
  */
-class GetAppDataSharing extends Route {
-	constructor(services) {
-		super('app-data-sharing/:id', 'GET APP DATA SHARING', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.READ;
-	}
-
-	async _validate(req, res, token) {
-		const id = req.params.id;
-		if (!id) {
-			this.log(`[${this.name}] Missing required app data sharing id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_app_data_sharing_id`));
-		}
-		if (!Datastore.getInstance('core').ID.isValid(id)) {
-			this.log(`[${this.name}] Invalid app data sharing id`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_app_data_sharing_id`));
-		}
-
-		const appDataSharing = await this.model.findById(id);
-		if (!appDataSharing) {
-			this.log(`[${this.name}] Cannot find a app data sharing with id ${id}`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `app_data_sharing_does_not_exist`));
-		}
-
-		return appDataSharing;
-	}
-
-	_exec(req, res, AppDataSharing) {
-		return AppDataSharing;
-	}
+class GetAppDataSharing extends CoreGetOne<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing/:id',
+    name: 'GET APP DATA SHARING',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.READ,
+  };
 }
 routes.push(GetAppDataSharing);
 
 /**
-* @class AddDataSharing
-*/
+ * @class AddDataSharing
+ */
 class AddDataSharing extends Route {
-	constructor(services) {
-		super('app-data-sharing', 'ADD APP DATA SHARING', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.ADD;
-	}
+  constructor(services: Services) {
+    super(
+      'app-data-sharing',
+      'ADD APP DATA SHARING',
+      services,
+      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.POST;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.ADD;
+  }
 
-	async _validate(req, res, token) {
-		if (!req.authApp) {
-			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
-		}
+  override async _validate(req: RequestWithBody<AppDataSharingAddBody>, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
+    }
 
-		const validation = this.model.validate(req.body);
-		if (!validation.isValid) {
-			if (validation.missing.length > 0) {
-				this.log(`${this.schema.name}: Missing field: ${validation.missing[0]}`, Route.LogLevel.ERR, req.id);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Missing field: ${validation.missing[0]}`));
-			}
-			if (validation.invalid.length > 0) {
-				this.log(`${this.schema.name}: Invalid value: ${validation.invalid[0]}`, Route.LogLevel.ERR, req.id);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Invalid value: ${validation.invalid[0]}`));
-			}
+    const validation = Model.getCoreModel(AppDataSharingSchemaModel).validate(req.body);
+    if (!validation.isValid) {
+      const err = invalidEntityError(this.schemaName, validation);
+      this.log(err.message, Route.LogLevel.ERR, req.context.id);
+      return Promise.reject(err);
+    }
 
-			this.log(`${this.schema.name}: Unhandled Error`, Route.LogLevel.ERR, req.id);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `${this.schema.name}: Unhandled error.`));
-		}
+    // If we're not super then set the appId to be the current appId
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM || !req.body.appId) {
+      // ! This line is kind of werid.
+      req.body.appId = req.context.token?._appId;
+    }
 
-		// If we're not super then set the appId to be the current appId
-		if (token.type !== Model.getModel('Token').Constants.Type.SYSTEM || !req.body.appId) {
-			req.body.appId = token._appId;
-		}
+    if (!req.body.policyConfig) {
+      this.log(`[${this.name}] Policy Config is required when creating a data sharing agreement`, Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('missing_policy'));
+    }
 
-		if (!req.body.policyConfig) {
-			this.log(`[${this.name}] Policy Config is required when creating a data sharing agreement`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_policy`));
-		}
+    // Only to hosts the operator allows, when they've set a list
+    const destination = await dataSharingDestinationProblem([req.body.remoteApp?.endpoint, req.body.remoteApp?.ws]);
+    if (destination) return Promise.reject(destinationRefused(destination));
 
-		const result = await this.model.isDuplicate(req.body);
-		if (result === true) {
-			this.log(`${this.schema.name}: Duplicate entity`, Route.LogLevel.ERR, req.id);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `duplicate`));
-		}
+    const result = await this.unscopedModel(
+      AppDataSharingSchemaModel,
+      'isDuplicate compares the body, app included',
+    ).isDuplicate(req.body);
+    if (result === true) {
+      this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
+      return Promise.reject(Helpers.Errors.badRequest('duplicate'));
+    }
 
-		// TODO: Should check the policy config instead.
-		// const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.dataSharing.local);
-		// if (!policyCheck.passed) {
-		// 	this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-		// 	return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_policy_property`));
-		// }
+    // TODO: Should check the policy config instead.
+    // const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.dataSharing.local);
+    // if (!policyCheck.passed) {
+    // 	this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
+    // 	return Promise.reject(Helpers.Errors.badRequest('invalid_policy_property'));
+    // }
 
-		return true;
-	}
+    return true;
+  }
 
-	async _exec(req, res, validate) {
-		const result = await this.model.add(req.body);
-		let dataSharing = (result.dataSharing) ? result.dataSharing : result;
-		this.log(`Added App Data Sharing ${dataSharing.id}`);
+  override async _exec(req: RequestWithBody<AppDataSharingAddBody>, _res: Response, _validate: boolean) {
+    // The app _validate settled on: the caller's, or one a system token names
+    const { dataSharing, token } = await this.scoped(req, AppDataSharingSchemaModel).add(req.body, {
+      _appId: req.body.appId,
+    });
+    // let dataSharing = (result.dataSharing) ? result.dataSharing : result;
+    this.log(`Added App Data Sharing ${dataSharing.id}`);
 
-		dataSharing = Object.assign(dataSharing, {
-			registrationToken: result.token.value,
-		});
+    if (dataSharing.remoteApp.token) {
+      this.log(`Activating data sharing agreement ${dataSharing.id}`);
+      return await activateDataSharing(dataSharing, token.id, {
+        agreements: await this.scoped(req, AppDataSharingSchemaModel).owned(dataSharing.id),
+        tokens: await this.scoped(req, TokenSchemaModel).owned(token.id),
+      });
+    }
 
-		// skip if we don't have a registration token
-		if (!dataSharing.remoteApp.token) return dataSharing;
-
-		return await activateDataSharing(dataSharing, result.token.id);
-	}
+    return Object.assign(dataSharing, {
+      registrationToken: token.value,
+    });
+  }
 }
 routes.push(AddDataSharing);
 
 /**
  * @class UpdateAppDataSharing
  */
-class UpdateAppDataSharing extends Route {
-	constructor(services) {
-		super('app-data-sharing/:dataSharingId', 'UPDATE APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
+class UpdateAppDataSharing extends CoreUpdateByPath<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing/:dataSharingId',
+    name: 'UPDATE APP DATA SHARING AGREEMENT',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+    idParam: 'dataSharingId',
+  };
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
-	}
-
-	async _validate(req, res, token) {
-		const exists = await this.model.exists(req.params.dataSharingId);
-		if (!exists) {
-			this.log('ERROR: Invalid App Data Sharing ID', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-		}
-
-		const {validation, body} = this.model.validateUpdate(req.body);
-		req.body = body;
-		if (!validation.isValid) {
-			if (validation.isPathValid === false) {
-				this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`));
-			}
-			if (validation.isValueValid === false) {
-				this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`));
-			}
-		}
-
-		return true;
-	}
-
-	async _exec(req, res, validate) {
-		// TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-		return this.model.updateByPath(req.body, req.params.dataSharingId, null, 'AppDataSharing');
-	}
+  // The partner it would reach has to be one the operator allows
+  protected override async updateProblem(_req: Request, updates: UpdatePathBody[]) {
+    const destination = await dataSharingDestinationProblem(remoteAppUrlsOf(updates));
+    return destination ? destinationRefused(destination) : null;
+  }
 }
 routes.push(UpdateAppDataSharing);
 
 /**
  * @class BulkUpdateAppDataSharing
  */
-class BulkUpdateAppDataSharing extends Route {
-	constructor(services) {
-		super('app-data-sharing/bulk/update', 'BULK UPDATE APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
+class BulkUpdateAppDataSharing extends CoreBulkUpdate<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing/bulk/update',
+    name: 'BULK UPDATE APP DATA SHARING AGREEMENT',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.WRITE,
+  };
 
-		this.activityVisibility = Model.getModel('Activity').Constants.Visibility.PRIVATE;
-		this.activityBroadcast = true;
-	}
-
-	async _validate(req, res, token) {
-		for await (const item of req.body) {
-			const exists = await this.model.exists(item.id);
-			if (!exists) {
-				this.log('ERROR: Invalid App Data Sharing ID', Route.LogLevel.ERR);
-				return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-			}
-
-			const {validation, body} = this.model.validateUpdate(item.body);
-			item.body = body;
-			if (!validation.isValid) {
-				if (validation.isPathValid === false) {
-					this.log(`ERROR: Update path is invalid: ${validation.invalidPath}`, Route.LogLevel.ERR);
-					return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update path is invalid: ${validation.invalidPath}`));
-				}
-				if (validation.isValueValid === false) {
-					this.log(`ERROR: Update value is invalid: ${validation.invalidValue}`, Route.LogLevel.ERR);
-					return Promise.reject(new Helpers.Errors.RequestError(400, `ERROR: Update value is invalid: ${validation.invalidValue}`));
-				}
-			}
-		}
-
-		return true;
-	}
-
-	async _exec(req, res, validate) {
-		for await (const item of req.body) {
-			// TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-			await this.model.updateByPath(item.body, item.id, null, 'AppDataSharing');
-		}
-
-		return true;
-	}
+  // The partner it would reach has to be one the operator allows
+  protected override async updateProblem(_req: Request, updates: UpdatePathBody[]) {
+    const destination = await dataSharingDestinationProblem(remoteAppUrlsOf(updates));
+    return destination ? destinationRefused(destination) : null;
+  }
 }
 routes.push(BulkUpdateAppDataSharing);
 
@@ -304,45 +281,66 @@ routes.push(BulkUpdateAppDataSharing);
  * @class UpdateAppDataSharingPolicy
  */
 class UpdateAppDataSharingPolicy extends Route {
-	constructor(services) {
-		super('app-data-sharing/:dataSharingId/policy', 'UPDATE APP DATA SHARING AGREEMENT POLICY', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
+  constructor(services: Services) {
+    super(
+      'app-data-sharing/:dataSharingId/policy',
+      'UPDATE APP DATA SHARING AGREEMENT POLICY',
+      services,
+      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.PUT;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.WRITE;
+  }
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			if (!req.authApp) {
-				this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `no_authenticated_app`));
-			}
+  override _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
+    return new Promise<{ appId: string }>((resolve, reject) => {
+      if (!req.context.authApp) {
+        this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+        return reject(Helpers.Errors.internal('no_authenticated_app'));
+      }
 
-			if (!req.params.dataSharingId) {
-				this.log('ERROR: No Data Sharing Id', Route.LogLevel.ERR);
-				return reject(new Helpers.Errors.RequestError(400, `missing_data_sharing_id`));
-			}
+      const appId = req.context.authApp.id;
 
-			// Lookup
-			this.model.exists(req.params.dataSharingId, null, {
-				'_appId': req.authApp.id,
-			})
-				.then((res) => {
-					if (res !== true) {
-						this.log(`${this.schema.name}: unknown data sharing`, Route.LogLevel.ERR, req.id);
-						return reject(new Helpers.Errors.RequestError(400, `unknown_data_sharing`));
-					}
+      if (!req.params.dataSharingId) {
+        this.log('ERROR: No Data Sharing Id', Route.LogLevel.ERR);
+        return reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
+      }
 
-					resolve(true);
-				});
-		});
-	}
+      const dataSharingId = req.params.dataSharingId;
+      if (!Model.getCoreModel(AppDataSharingSchemaModel).isValidId(dataSharingId)) {
+        return reject(Helpers.Errors.badRequest('invalid_id', 'The id is not valid'));
+      }
 
-	_exec(req, res, validate) {
-		// TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-		return this.model.updatePolicy(req.authApp.id, req.params.dataSharingId, req.body)
-			.then(() => true);
-	}
+      // Lookup
+      // The caller's app's agreement, which a system token names too
+      this.scoped(req, AppDataSharingSchemaModel)
+        .findOne({ id: dataSharingId, _appId: appId })
+        .then((res) => {
+          if (!res) {
+            this.log(`${this.schemaName}: unknown data sharing`, Route.LogLevel.ERR, req.context.id);
+            return reject(Helpers.Errors.entityNotFound('appDataSharing', dataSharingId));
+          }
+
+          resolve({
+            appId: appId,
+          });
+        })
+        .catch(reject);
+    });
+  }
+
+  override _exec(
+    req: RequestWithBody<unknown, { dataSharingId: string }>,
+    _res: Response,
+    validate: { appId: string },
+  ) {
+    // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
+    return this.scoped(req, AppDataSharingSchemaModel)
+      .owned(req.params.dataSharingId)
+      .then((agreements) => agreements.updatePolicy(validate.appId, req.params.dataSharingId, 'local', req.body))
+      .then(() => true);
+  }
 }
 routes.push(UpdateAppDataSharingPolicy);
 
@@ -353,57 +351,89 @@ routes.push(UpdateAppDataSharingPolicy);
  *   not by a end user.
  */
 class ActivateAppDataSharing extends Route {
-	constructor(services) {
-		super('app-data-sharing/activate', 'POST Activate App Data Sharing', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.POST;
-		this.authType = Route.Constants.Type.DATASHARING;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
+  constructor(services: Services) {
+    super(
+      'app-data-sharing/activate',
+      'POST Activate App Data Sharing',
+      services,
+      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.POST;
+    this.authType = Route.Constants.Type.DATASHARING;
+    this.permissions = Route.Constants.Permissions.WRITE;
+  }
 
-	async _validate(req, res, token) {
-		if (!req.authApp) {
-			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
-		}
+  override async _validate(req: RequestWithBody<{ newToken: string }>, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
+    }
 
-		if (token.type !== Model.getModel('Token').Constants.Type.DATA_SHARING) {
-			this.log(`ERROR: invalid token type, type was ${token.type}`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(401, `invalid_token_type`));
-		}
+    if (!req.context.token) {
+      this.log('ERROR: No authenticated token', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_token'));
+    }
 
-		if (!req.body.newToken) {
-			this.log('ERROR: missing remote data sharing token', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_token`));
-		}
+    const token = req.context.token;
 
-		return this.model.findById(token._appDataSharingId)
-			.then((dataSharing) => {
-				if (!dataSharing) {
-					this.log(`ERROR: Unable to find dataSharing with token ${token.id}`, Route.LogLevel.ERR, req.id);
-					throw new Helpers.Errors.RequestError(500, `no_datasharing`);
-				}
+    if (token.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.DATA_SHARING) {
+      this.log(`ERROR: invalid token type, type was ${token.type}`, Route.LogLevel.ERR);
+      return Promise.reject(
+        Helpers.Errors.forbidden('invalid_token_type', "Only a partner's data sharing token can activate an agreement"),
+      );
+    }
 
-				return dataSharing;
-			});
-	}
+    if (!req.body.newToken) {
+      this.log('ERROR: missing remote data sharing token', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('missing_data_token'));
+    }
 
-	async _exec(req, res, dataSharing) {
-		if (dataSharing.active) return true;
+    // The token's app is the agreement's
+    return this.scoped(req, AppDataSharingSchemaModel)
+      .findById(token._appDataSharingId)
+      .then((dataSharing) => {
+        if (!dataSharing) {
+          this.log(`ERROR: Unable to find dataSharing with token ${token.id}`, Route.LogLevel.ERR, req.context.id);
+          throw Helpers.Errors.internal('no_datasharing');
+        }
 
-		const newLocalToken = Model.getModel('Token').createTokenString();
+        // The partner completes the handshake once. An agreement that has been active, and so has the partner's
+        // token, was deactivated by this app, and only this app can reactivate it.
+        if (!dataSharing.active && dataSharing.remoteApp?.token) {
+          this.log(`ERROR: Partner tried to activate deactivated agreement ${dataSharing.id}`, Route.LogLevel.ERR);
+          throw Helpers.Errors.forbidden('data_sharing_inactive', 'The data sharing agreement is not active');
+        }
 
-		const {newToken} = req.body;
-		await this.model.activate(dataSharing.id, newToken);
+        return {
+          token,
+          dataSharing,
+        };
+      });
+  }
 
-		await Model.getModel('Token').update({
-			'id': req.token.id,
-		}, {$set: {'value': newLocalToken}});
+  override async _exec(
+    req: RequestWithBody<{ newToken: string }>,
+    res: Response,
+    { token, dataSharing }: { token: Token; dataSharing: AppDataSharing },
+  ): Promise<DataSharingActivationResult | true> {
+    if (dataSharing.active) return true;
 
-		return {
-			status: true,
-			token: newLocalToken,
-		};
-	}
+    const newLocalToken = Model.getCoreModel(TokenSchemaModel).createTokenString();
+
+    const { newToken } = req.body;
+    await (await this.scoped(req, AppDataSharingSchemaModel).owned(dataSharing.id)).activate(dataSharing.id, newToken);
+
+    await (
+      await this.scoped(req, TokenSchemaModel).owned(token.id.toString())
+    ).updateById(token.id.toString(), {
+      $set: { value: newLocalToken },
+    });
+
+    return {
+      status: true,
+      token: newLocalToken,
+    };
+  }
 }
 routes.push(ActivateAppDataSharing);
 
@@ -414,39 +444,41 @@ routes.push(ActivateAppDataSharing);
  *  flow as the activate endpoint and cycle tokens.
  */
 class ReactivateAppDataSharing extends Route {
-	constructor(services) {
-		super('app-data-sharing/reactivate/:dataSharingId', 'UPDATE Reactivate App Data Sharing', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
+  constructor(services: Services) {
+    super(
+      'app-data-sharing/reactivate/:dataSharingId',
+      'UPDATE Reactivate App Data Sharing',
+      services,
+      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.PUT;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.WRITE;
+  }
 
-	async _validate(req, res, token) {
-		const dataSharingId = req.params.dataSharingId;
-		if (!req.authApp) {
-			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
-		}
+  override async _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
+    const dataSharingId = req.params.dataSharingId;
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
+    }
 
-		if (!req.params.dataSharingId) {
-			this.log('ERROR: missing data sharing id', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_id`));
-		}
+    if (!req.params.dataSharingId) {
+      this.log('ERROR: missing data sharing id', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
+    }
 
-		const exists = await this.model.findById(dataSharingId);
+    const exists = await this.scoped(req, AppDataSharingSchemaModel).findByIdOrFail(dataSharingId);
 
-		if (!exists) {
-			this.log(`ERROR: Unable to find dataSharing with token ${token.id}`, Route.LogLevel.ERR, req.id);
-			return Promise.reject(new Helpers.Errors.RequestError(500, `no_datasharing`));
-		}
+    return exists;
+  }
 
-		return exists;
-	}
-
-	_exec(req, res, dataSharing) {
-		return this.model.deactivate(dataSharing.id)
-			.then(() => true);
-	}
+  override _exec(req: Request, _res: Response, dataSharing: AppDataSharing) {
+    return this.scoped(req, AppDataSharingSchemaModel)
+      .owned(dataSharing.id)
+      .then((agreements) => agreements.activate(dataSharing.id))
+      .then(() => true);
+  }
 }
 routes.push(ReactivateAppDataSharing);
 
@@ -454,187 +486,121 @@ routes.push(ReactivateAppDataSharing);
  * @class DeactivateAppDataSharing
  */
 class DeactivateAppDataSharing extends Route {
-	constructor(services) {
-		super('app-data-sharing/deactivate/:dataSharingId', 'UPDATE Deactivate App Data Sharing', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.PUT;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
+  constructor(services: Services) {
+    super(
+      'app-data-sharing/deactivate/:dataSharingId',
+      'UPDATE Deactivate App Data Sharing',
+      services,
+      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.PUT;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.WRITE;
+  }
 
-	async _validate(req, res, token) {
-		const dataSharingId = req.params.dataSharingId;
-		if (!req.authApp) {
-			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
-		}
+  override async _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
+    const dataSharingId = req.params.dataSharingId;
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
+    }
 
-		if (!req.params.dataSharingId) {
-			this.log('ERROR: missing data sharing id', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_id`));
-		}
+    if (!req.params.dataSharingId) {
+      this.log('ERROR: missing data sharing id', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
+    }
 
-		const exists = await this.model.findById(dataSharingId);
+    const exists = await this.scoped(req, AppDataSharingSchemaModel).findByIdOrFail(dataSharingId);
 
-		if (!exists) {
-			this.log(`ERROR: Unable to find dataSharing with token ${token.id}`, Route.LogLevel.ERR, req.id);
-			return Promise.reject(new Helpers.Errors.RequestError(500, `no_datasharing`));
-		}
+    return exists;
+  }
 
-		return exists;
-	}
-
-	_exec(req, res, dataSharing) {
-		return this.model.deactivate(dataSharing.id)
-			.then(() => true);
-	}
+  override _exec(req: Request, res: Response, dataSharing: AppDataSharing) {
+    return this.scoped(req, AppDataSharingSchemaModel)
+      .owned(dataSharing.id)
+      .then((agreements) => agreements.deactivate(dataSharing.id))
+      .then(() => true);
+  }
 }
 routes.push(DeactivateAppDataSharing);
 
 class StatusAppDataSharing extends Route {
-	constructor(services) {
-		super('app-data-sharing/:dataSharingId/status', 'GET App Data Sharing Status', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.READ;
-	}
+  constructor(services: Services) {
+    super(
+      'app-data-sharing/:dataSharingId/status',
+      'GET App Data Sharing Status',
+      services,
+      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.READ;
+  }
 
-	async _validate(req, res, token) {
-		const dataSharingId = req.params.dataSharingId;
-		if (!req.authApp) {
-			this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(500, `no_authenticated_app`));
-		}
+  override async _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
+    const dataSharingId = req.params.dataSharingId;
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.internal('no_authenticated_app'));
+    }
 
-		if (!req.params.dataSharingId) {
-			this.log('ERROR: missing data sharing id', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_data_id`));
-		}
+    if (!req.params.dataSharingId) {
+      this.log('ERROR: missing data sharing id', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
+    }
 
-		const exists = await this.model.findById(dataSharingId);
+    const exists = await this.scoped(req, AppDataSharingSchemaModel).findByIdOrFail(dataSharingId);
 
-		if (!exists) {
-			this.log(`ERROR: Unable to find dataSharing with token ${token.id}`, Route.LogLevel.ERR, req.id);
-			return Promise.reject(new Helpers.Errors.RequestError(500, `no_datasharing`));
-		}
+    return exists;
+  }
 
-		return exists;
-	}
-
-	async _exec(req, res, token) {
-		return {
-			connected: false,
-		};
-	}
+  override async _exec(_req: Request, _res: Response) {
+    return {
+      connected: false,
+    };
+  }
 }
 routes.push(StatusAppDataSharing);
 
 /**
  * @class GetAllAppDataSharing
  */
-class GetAllAppDataSharing extends Route {
-	constructor(services) {
-		super('app-data-sharing', 'APP DATA SHARING AGREEMENT LIST', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.GET;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
-
-	async _validate() {
-		return true;
-	}
-
-	_exec() {
-		return this.model.findAll();
-	}
+class GetAllAppDataSharing extends CoreGetList<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing',
+    name: 'APP DATA SHARING AGREEMENT LIST',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.LIST,
+  };
 }
 routes.push(GetAllAppDataSharing);
 
 /**
  * @class SearchAppDataSharingAgreement
  */
-class SearchAppDataSharingAgreement extends Route {
-	constructor(services) {
-		super('app-data-sharing', 'SEARCH APP DATA SHARING AGREEMENT LIST', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.LIST;
-	}
-
-	async _validate(req, res, token) {
-		const result: {
-			query: any,
-			skip: number,
-			limit: number,
-			sort: any,
-			project: any,
-		} = {
-			query: {
-				$and: [],
-			},
-			skip: (req.body && req.body.skip) ? parseInt(req.body.skip) : 0,
-			limit: (req.body && req.body.limit) ? parseInt(req.body.limit) : 0,
-			sort: (req.body && req.body.sort) ? req.body.sort : {},
-			project: (req.body && req.body.project)? req.body.project : false,
-		};
-
-		if (isNaN(result.skip)) throw new Helpers.Errors.RequestError(400, `invalid_value_skip`);
-		if (isNaN(result.limit)) throw new Helpers.Errors.RequestError(400, `invalid_value_limit`);
-
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			result.query.$and.push(req.body.query);
-		}
-
-		result.query = this.model.parseQuery(result.query, {}, this.model.flatSchemaData);
-		return result;
-	}
-
-	_exec(req, res, validate) {
-		return this.model.find(validate.query, {},
-			validate.limit, validate.skip, validate.sort, validate.project);
-	}
+class SearchAppDataSharingAgreement extends CoreSearch<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing',
+    name: 'SEARCH APP DATA SHARING AGREEMENT LIST',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.LIST,
+  };
 }
 routes.push(SearchAppDataSharingAgreement);
 
 /**
  * @class AppDataSharingAgreementCount
  */
-class AppDataSharingAgreementCount extends Route {
-	constructor(services) {
-		super('app-data-sharing/count', 'COUNT APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.SEARCH;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.SEARCH;
-
-		this.activityBroadcast = false;
-	}
-
-	async _validate(req, res, token) {
-		const result = {
-			query: {},
-		};
-
-		let query: any = {};
-
-		if (!query.$and) {
-			query.$and = [];
-		}
-
-		// TODO: Validate this input against the schema, schema properties should be tagged with what can be queried
-		if (req.body && req.body.query) {
-			query.$and.push(req.body.query);
-		} else if (req.body && !req.body.query) {
-			query.$and.push(req.body);
-		}
-
-		query = this.model.parseQuery(query, {}, this.model.flatSchemaData);
-		result.query = query;
-		return result;
-	}
-
-	_exec(req, res, validateResult) {
-		return this.model.count(validateResult.query);
-	}
+class AppDataSharingAgreementCount extends CoreCount<AppDataSharingSchemaModel> {
+  static override config: CoreRouteConfig = {
+    path: 'app-data-sharing/count',
+    name: 'COUNT APP DATA SHARING AGREEMENT',
+    model: AppDataSharingSchemaModel,
+    authType: Route.Constants.Type.APP,
+    permissions: Route.Constants.Permissions.SEARCH,
+  };
 }
 routes.push(AppDataSharingAgreementCount);
 
@@ -642,44 +608,52 @@ routes.push(AppDataSharingAgreementCount);
  * @class DeleteDataSharingAgreement
  */
 class DeleteDataSharingAgreement extends Route {
-	constructor(services) {
-		super('app-data-sharing/:id', 'DELETE APP DATA SHARING AGREEMENT', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.APP;
-		this.permissions = Route.Constants.Permissions.DELETE;
+  constructor(services: Services) {
+    super(
+      'app-data-sharing/:id',
+      'DELETE APP DATA SHARING AGREEMENT',
+      services,
+      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.DEL;
+    this.authType = Route.Constants.Type.APP;
+    this.permissions = Route.Constants.Permissions.DELETE;
 
-		this.activityBroadcast = false;
-	}
+    this.activityBroadcast = false;
+  }
 
-	async _validate(req, res, token) {
-		if (!req.params.id) {
-			this.log(`[${this.name}] Missing required App Data Sharing ID`, Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `missing_required_id`));
-		}
+  override async _validate(req: RequestWithBody<unknown, { id: string }>, _res: Response) {
+    if (!req.params.id) {
+      this.log(`[${this.name}] Missing required App Data Sharing ID`, Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
+    }
 
-		const appDataSharing = await this.model.findById(req.params.id);
-		if (!appDataSharing) {
-			this.log('ERROR: Invalid App Data Sharing ID', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `invalid_id`));
-		}
+    const appDataSharing = await this.scoped(req, AppDataSharingSchemaModel).findByIdOrFail(req.params.id);
 
-		const appDataSharingToken = await Model.getModel('Token').findById(appDataSharing._tokenId);
-		if (!appDataSharingToken) {
-			this.log('ERROR: Could not fetch Data Sharing token', Route.LogLevel.ERR);
-			return Promise.reject(new Helpers.Errors.RequestError(400, `could_not_fetch_data_sharing_token`));
-		}
+    const appDataSharingToken = await this.scoped(req, TokenSchemaModel).findById(appDataSharing._tokenId);
+    if (!appDataSharingToken) {
+      this.log('ERROR: Could not fetch Data Sharing token', Route.LogLevel.ERR);
+      return Promise.reject(
+        Helpers.Errors.notFound('not_found', "The agreement's token was not found", { schema: 'token' }),
+      );
+    }
 
-		return {
-			appDataSharing,
-			token: appDataSharingToken,
-		};
-	}
+    return {
+      appDataSharing,
+      token: appDataSharingToken,
+    };
+  }
 
-	async _exec(req, res, validate) {
-		await this.model.rm(validate.appDataSharing.id);
-		await Model.getModel('Token').rm(validate.token.id);
-		return true;
-	}
+  override async _exec(req: Request, res: Response, validate: { appDataSharing: AppDataSharing; token: Token }) {
+    await this.scoped(req, AppDataSharingSchemaModel).rm(validate.appDataSharing.id);
+    await this.scoped(req, TokenSchemaModel).rm(validate.token.id);
+    // The Socket primary closes its connection to the partner
+    this._notify(
+      'dataShare:deactivated',
+      JSON.stringify({ appDataSharingId: validate.appDataSharing.id } satisfies DataShareActivatedMessage),
+    );
+    return true;
+  }
 }
 routes.push(DeleteDataSharingAgreement);
 
@@ -687,32 +661,51 @@ routes.push(DeleteDataSharingAgreement);
  * @class DeleteAppPolicies
  */
 class DeleteAllDataSharingAgreement extends Route {
-	constructor(services) {
-		super('app-data-sharing', 'DELETE ALL DATA SHARING', services, Model.getModel('AppDataSharing'));
-		this.verb = Route.Constants.Verbs.DEL;
-		this.authType = Route.Constants.Type.SYSTEM;
-		this.permissions = Route.Constants.Permissions.WRITE;
-	}
+  constructor(services: Services) {
+    super(
+      'app-data-sharing',
+      'DELETE ALL DATA SHARING',
+      services,
+      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.DEL;
+    this.authType = Route.Constants.Type.SYSTEM;
+    this.permissions = Route.Constants.Permissions.WRITE;
+  }
 
-	async _validate(req) {
-		const dsFind = await this.model.find({}, {}, 0, 0, {}, {id: 1, _tokenId: 1});
+  override async _validate(_req: Request, _res: Response) {
+    const dsFind = await this.unscopedModel(AppDataSharingSchemaModel, SYSTEM_ONLY).find(
+      {},
+      {},
+      0,
+      0,
+      {},
+      { id: 1, _tokenId: 1 },
+    );
 
-		return (await Helpers.streamAll(dsFind)).reduce((arr, ds) => {
-			arr.dsIds.push(ds.id);
-			arr.tokenIds.push(ds._tokenId);
-			return arr;	
-		}, {
-			dsIds: [],
-			tokenIds: [],
-		});
-	}
+    return (await Helpers.streamAll<AppDataSharing>(dsFind)).reduce(
+      (arr: { dsIds: string[]; tokenIds: string[] }, ds) => {
+        arr.dsIds.push(ds.id);
+        arr.tokenIds.push(ds._tokenId);
+        return arr;
+      },
+      {
+        dsIds: [],
+        tokenIds: [],
+      },
+    );
+  }
 
-	async _exec(req, res, validate) {
-		await this.model.rmBulk(validate.dsIds);
-		await Model.getModel('Token').rmBulk(validate.tokenIds);
+  override async _exec(req: Request, res: Response, validate: { dsIds: string[]; tokenIds: string[] }) {
+    await this.unscopedModel(AppDataSharingSchemaModel, SYSTEM_ONLY).rmBulk(validate.dsIds);
+    await this.unscopedModel(TokenSchemaModel, SYSTEM_ONLY).rmBulk(validate.tokenIds);
+    // The Socket primary closes their connections to partners
+    for (const appDataSharingId of validate.dsIds) {
+      this._notify('dataShare:deactivated', JSON.stringify({ appDataSharingId } satisfies DataShareActivatedMessage));
+    }
 
-		return true;
-	}
+    return true;
+  }
 }
 routes.push(DeleteAllDataSharingAgreement);
 

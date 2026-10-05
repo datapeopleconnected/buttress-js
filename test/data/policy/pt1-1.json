@@ -1,0 +1,44 @@
+{
+  "name": "pt1-1",
+  "version": "1",
+  "selection": {
+    "role": {
+      "@eq": "test1"
+    }
+  },
+  "config": [
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "car"
+      ],
+      "query": {
+        "access": "%FULL_ACCESS%"
+      },
+      "projection": {
+        "keys": [
+          "name"
+        ]
+      }
+    },
+    {
+      "verbs": [
+        "GET"
+      ],
+      "schema": [
+        "car"
+      ],
+      "query": {
+        "name": "Car 0"
+      },
+      "projection": {
+        "keys": [
+          "name",
+          "color"
+        ]
+      }
+    }
+  ]
+}

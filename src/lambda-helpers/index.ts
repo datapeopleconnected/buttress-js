@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -15,31 +13,39 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import fs from 'fs';
+import fs from 'node:fs';
+import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const require = createRequire(import.meta.url);
 
 // ? Why are we dynamically loading classes from the filesystem?
 
-const getClassesList = (dirName) => {
-	let files: NodeRequire[] = [];
-	const items = fs.readdirSync(dirName, {withFileTypes: true});
-	for (const item of items) {
-		if (item.isDirectory()) {
-			files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
-		} else {
-			files.push(require(`${dirName}/${item.name}`));
-		}
-	}
+const getClassesList = (dirName: string): Record<string, unknown>[] => {
+  let files: Record<string, unknown>[] = [];
+  const items = fs.readdirSync(dirName, { withFileTypes: true });
+  for (const item of items) {
+    if (item.isDirectory()) {
+      files = [...files, ...getClassesList(`${dirName}/${item.name}`)];
+    } else {
+      files.push(require(`${dirName}/${item.name}`) as Record<string, unknown>);
+    }
+  }
 
-	return files;
+  return files;
 };
 
 const classes = getClassesList(__dirname);
-const lambdaAPI = classes.reduce((obj, file) => {
-	if (Object.keys(file).length < 1) return obj;
+const lambdaAPI = classes.reduce<Record<string, unknown>>((obj, file) => {
+  if (Object.keys(file).length < 1) return obj;
 
-	const [className] = Object.keys(file);
-	obj[className] = file[className];
-	return obj;
+  const [className] = Object.keys(file);
+  obj[className] = file[className];
+  return obj;
 }, {});
 
 export default lambdaAPI;

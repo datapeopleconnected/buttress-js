@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -13,71 +13,96 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import { Response, Request } from 'express';
+import { QueryParams } from '../../types/bjs-query.js';
+import type { RequestWithBody } from '../../types/routes.js';
+import type { AdapterDocument } from '../../types/datastore.js';
 
-import Route from '../route';
-import Model from '../../model';
-import * as Helpers from '../../helpers';
-import Schema from '../../schema';
+import Route from '../route.js';
+import * as Helpers from '../../helpers/index.js';
+
+import { Schema, modelToRoute } from '../../helpers/schema.js';
+
+import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
+
+import * as ACM from '../../access-control/models-access.js';
 
 /**
  * @class DeleteMany
  */
 export default class DeleteMany extends Route {
-	constructor(schema, appShort, services) {
-		const schemaRoutePath = Schema.modelToRoute(schema.name);
+  constructor(schema: Schema, app: App, services: Services) {
+    const schemaRoutePath = modelToRoute(schema.name);
 
-		super(`${schemaRoutePath}/bulk/delete`, `BULK DELETE ${schema.name}`, services);
-		this.__configureSchemaRoute();
-		this.verb = Route.Constants.Verbs.POST;
-		this.permissions = Route.Constants.Permissions.DELETE;
+    super(`${schemaRoutePath}/bulk/delete`, `BULK DELETE ${schema.name}`, services, schema, app);
+    this.__configureSchemaRoute();
+    this.verb = Route.Constants.Verbs.POST;
+    this.permissions = Route.Constants.Permissions.DELETE;
 
-		this.activityDescription = `BULK DELETE ${schema.name}`;
-		this.activityBroadcast = true;
+    this.activityDescription = `BULK DELETE ${schema.name}`;
+    this.activityBroadcast = true;
+  }
 
-		let schemaCollection = schema.name;
-		if (appShort) {
-			schemaCollection = `${appShort}-${schema.name}`;
-		}
+  override async _validate(req: RequestWithBody<string[]>, _res: Response) {
+    const model = await this.routeModel();
+    let ids: string[] = req.body;
 
-		// Fetch model
-		this.schema = new Schema(schema);
-		this.model = Model[schemaCollection];
+    if (!ids) {
+      this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('array_required', 'Expected a list of ids');
+    }
+    if (!ids.length) {
+      this.log(`ERROR: No ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.badRequest('array_required', 'Expected a list of ids');
+    }
 
-		if (!this.model) {
-			throw new Helpers.Errors.RouteMissingModel(`${this.name} missing model ${schemaCollection}`);
-		}
-	}
+    try {
+      ids = ids.map((id) => model.createId(id));
+    } catch (_err) {
+      throw Helpers.Errors.badRequest('invalid_id', 'The ids are not all valid');
+    }
 
-	_validate(req, res, token) {
-		return new Promise((resolve, reject) => {
-			let ids = req.body;
+    // if (this._ids.length > 600) {
+    //   this.log('ERROR: No more than 300 company IDs are supported', Route.LogLevel.ERR);
+    //   reject({statusCode: 400, message: 'ERROR: No more than 300 company IDs are supported'});
+    //   return;
+    // }
 
-			if (!ids) {
-				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
-				return reject(new Helpers.Errors.RequestError(400, `Requires ids`));
-			}
-			if (!ids.length) {
-				this.log(`ERROR: No ${this.schema.name} IDs provided`, Route.LogLevel.ERR, req.id);
-				return reject(new Helpers.Errors.RequestError(400, `Expecting array of ids`));
-			}
+    const findParams: QueryParams<{ id: unknown }> = { query: { id: { $in: ids } } };
+    const rxsScoped = await ACM.find(model, findParams, req.context.ac);
+    const scopedEntities = await Helpers.streamAll<{ id: { toString(): string } }>(rxsScoped);
+    const scopedIds = new Set(scopedEntities.map((entity) => entity.id.toString()));
+    // One outside the caller's policies is answered as one that doesn't exist
+    const missing = ids.find((id) => !scopedIds.has(id.toString()));
+    if (missing !== undefined) {
+      this.log(`ERROR: Invalid ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', missing);
+    }
 
-			try {
-				ids = ids.map((id) => this.model.createId(id));
-			} catch (err) {
-				return reject(new Helpers.Errors.RequestError(400, `All ids must be string of 12 bytes or a string of 24 hex characters`));
-			}
+    return { ids, found: scopedEntities as AdapterDocument[] };
+  }
 
-			// if (this._ids.length > 600) {
-			//   this.log('ERROR: No more than 300 company IDs are supported', Route.LogLevel.ERR);
-			//   reject({statusCode: 400, message: 'ERROR: No more than 300 company IDs are supported'});
-			//   return;
-			// }
-			resolve(ids);
-		});
-	}
+  override async _exec(req: Request, _res: Response, { ids, found }: { ids: string[]; found: AdapterDocument[] }) {
+    await this._keepEntitiesBeingDeleted(req, ids, found);
+    // A partner's record, found through a collection's remotes, is removed from its source
+    const sourceIds = new Map(found.map((entity) => [String(entity.id), entity.sourceId as string | undefined]));
+    await (
+      await this.routeModel()
+    ).rmBulk(
+      ids,
+      ids.map((id) => sourceIds.get(String(id))),
+    );
+    return ids;
+  }
 
-	_exec(req, res, ids) {
-		return this.model.rmBulk(ids)
-			.then(() => true);
-	}
-};
+  // Clients expect `true` in the response, but other clients need the deleted ids to apply the broadcast.
+  override async _respond(req: Request, res: Response, _ids: unknown) {
+    return super._respond(req, res, true);
+  }
+
+  override async _broadcast(req: Request, res: Response, ids: unknown, path: string, isSuper = false) {
+    const deleted = [...new Set((ids as unknown[]).map((id) => String(id)))].map((id) => ({ id }));
+    return super._broadcast(req, res, deleted, path, isSuper);
+  }
+}

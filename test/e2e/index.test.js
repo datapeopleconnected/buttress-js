@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,10 +14,27 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-require('./rest/schema.test.js');
-require('./rest/data-sharing.test.js');
+import sourceMapSupport from 'source-map-support'
+sourceMapSupport.install();
 
-require('./sock/realtime.test.js');
+import './rest/core/secureStore.test.js';
+import './rest/core/token.test.js';
+import './rest/core/user.test.js';
+import './rest/core/tenant-scoping.test.js';
 
-require('./lambda/lambda.test.js');
+import './rest/schema.test.js';
+import './rest/data-sharing.test.js';
+import './rest/policy.test.js';
+import './rest/delete-all.test.js';
+import './rest/error-contract.test.js';
+
+import './spr/processing.test.js';
+import './spr/cache.test.js';
+
+import './sock/realtime.test.js';
+import './sock/data-sharing.test.js';
+
+import './lambda/lambda.test.js';
+
+import './perf/io-budgets.test.js';
 

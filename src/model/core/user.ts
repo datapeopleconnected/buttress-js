@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -15,340 +13,435 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 
-import Logging from '../../helpers/logging';
-// import * as Shared from '../shared';
-import * as Helpers from '../../helpers';
+import Logging from '../../helpers/logging.js';
+import * as Helpers from '../../helpers/index.js';
+import { Schema } from '../../helpers/schema.js';
+import TokenSchemaModel, { PolicyProperties, Token } from './token.js';
+import { Services } from '../../bootstrap.js';
 
-import StandardModel from '../type/standard';
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type User = {
+  id: string;
+  auth: Array<UserAuth>;
+  _appId: string;
+};
+
+export interface UserAuth {
+  app: string;
+  appId: string;
+  username: string;
+  password: string;
+  profileUrl: string;
+  images: {
+    profile: string;
+    banner: string;
+  };
+  email: string;
+  locale: string;
+  token: string;
+  tokenSecret: string;
+  refreshToken: string;
+  extras: string;
+}
+
+// An auth entry as posted to the API, add stores the images from profileImgUrl and bannerImgUrl
+export type UserAuthBody = {
+  app?: string;
+  appId?: string | null;
+  username?: string;
+  password?: string;
+  profileUrl?: string;
+  profileImgUrl?: string;
+  bannerImgUrl?: string;
+  email?: string;
+  locale?: string;
+  token?: string;
+  tokenSecret?: string;
+  refreshToken?: string;
+  extras?: string;
+};
+
+// A user as posted to the API, with an optional token to create for them
+export type UserAddBody = {
+  id?: string;
+  auth: UserAuthBody[];
+  token?: {
+    domains?: string[];
+    policyProperties?: PolicyProperties;
+  };
+};
+
+// A user's details from an auth app, see updateAppInfo
+type UserAppInfo = {
+  username: string;
+  profileUrl: string;
+  profileImgUrl: string;
+  bannerImgUrl: string;
+  email: string;
+  token: string;
+  tokenSecret: string;
+  refreshToken: string;
+};
+
+type UserWithTokens = User & {
+  tokens: Array<{
+    id: string;
+    value: string;
+    policyProperties: Token['policyProperties'];
+  }>;
+};
 
 /**
  * Constants
-*/
+ */
 const apps = ['google', 'facebook', 'twitter', 'linkedin', 'microsoft'];
 const App = {
-	GOOGLE: apps[0],
-	FACEBOOK: apps[1],
-	TWITTER: apps[2],
-	LINKEDIN: apps[3],
-	MICROSOFT: apps[4],
+  GOOGLE: apps[0],
+  FACEBOOK: apps[1],
+  TWITTER: apps[2],
+  LINKEDIN: apps[3],
+  MICROSOFT: apps[4],
 };
 
-export default class UserSchemaModel extends StandardModel {
-	constructor(services) {
-		const schema = UserSchemaModel.Schema;
-		super(schema, null, services);
-	}
+export default class UserSchemaModel extends StandardModel<User> {
+  static override name = 'User';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
-	static get Constants() {
-		return {
-			App: App,
-		};
-	}
-	get Constants() {
-		return UserSchemaModel.Constants;
-	}
+  constructor(services: Services) {
+    const schema = UserSchemaModel.Schema;
+    super(schema, null, services);
+  }
 
-	static get Schema() {
-		return {
-			name: 'users',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				auth: {
-					__type: 'array',
-					__required: true,
-					__allowUpdate: true,
-					__schema: {
-						app: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-						appId: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-						username: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-						password: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-						profileUrl: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-						images: {
-							profile: {
-								__type: 'string',
-								__default: '',
-								__allowUpdate: true,
-							},
-							banner: {
-								__type: 'string',
-								__default: '',
-								__allowUpdate: true,
-							},
-						},
-						email: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-						locale: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-						token: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-						tokenSecret: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-						refreshToken: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-						extras: {
-							__type: 'string',
-							__default: '',
-							__allowUpdate: true,
-						},
-					},
-				},
-				_appId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-			},
-		};
-	}
+  static get Constants() {
+    return {
+      App: App,
+    };
+  }
+  get Constants() {
+    return UserSchemaModel.Constants;
+  }
 
-	// Pre-lambda user addition
-	// /**
-	//  * @param {Object} body - body passed through from a POST request
-	//  * @param {Object} auth - OPTIONAL authentication details for a user token
-	//  * @return {Promise} - returns a promise that is fulfilled when the database request is completed
-	//  */
-	// async add(body, auth) {
-	// 	const userBody = {
-	// 		auth: [{
-	// 			app: body.app,
-	// 			appId: body.id,
-	// 			username: body.username,
-	// 			password: body.password,
-	// 			profileUrl: body.profileUrl,
-	// 			images: {
-	// 				profile: body.profileImgUrl,
-	// 				banner: body.bannerImgUrl,
-	// 			},
-	// 			email: body.email,
-	// 			token: body.token,
-	// 			tokenSecret: body.tokenSecret,
-	// 			refreshToken: body.refreshToken,
-	// 		}],
-	// 	};
+  static get Schema(): Schema {
+    return {
+      name: 'users',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        auth: {
+          __type: 'array',
+          __required: true,
+          __allowUpdate: true,
+          __schema: {
+            app: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+            },
+            appId: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+            },
+            username: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+            },
+            // Never given back (D-24)
+            password: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+              __private: true,
+            },
+            profileUrl: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+            },
+            images: {
+              profile: {
+                __type: 'string',
+                __default: '',
+                __allowUpdate: true,
+              },
+              banner: {
+                __type: 'string',
+                __default: '',
+                __allowUpdate: true,
+              },
+            },
+            email: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+            },
+            locale: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+            },
+            token: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+            },
+            tokenSecret: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+            },
+            refreshToken: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+            },
+            extras: {
+              __type: 'string',
+              __default: '',
+              __allowUpdate: true,
+            },
+          },
+        },
+        _appId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+      },
+    };
+  }
 
-	// 	const rxsUser = await super.add(userBody, {
-	// 		_appId: this.__modelManager.authApp.id,
-	// 		_appMetadata: [{
-	// 			appId: this.__modelManager.authApp.id,
-	// 			policyProperties: (body.policyProperties) ? body.policyProperties : null,
-	// 		}],
-	// 	});
-	// 	const user = await Helpers.streamFirst(rxsUser);
+  // Pre-lambda user addition
+  // /**
+  //  * @param {Object} body - body passed through from a POST request
+  //  * @param {Object} auth - OPTIONAL authentication details for a user token
+  //  * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+  //  */
+  // async add(body, auth) {
+  // 	const userBody = {
+  // 		auth: [{
+  // 			app: body.app,
+  // 			appId: body.id,
+  // 			username: body.username,
+  // 			password: body.password,
+  // 			profileUrl: body.profileUrl,
+  // 			images: {
+  // 				profile: body.profileImgUrl,
+  // 				banner: body.bannerImgUrl,
+  // 			},
+  // 			email: body.email,
+  // 			token: body.token,
+  // 			tokenSecret: body.tokenSecret,
+  // 			refreshToken: body.refreshToken,
+  // 		}],
+  // 	};
 
-	// 	user.tokens = [];
+  // 	const rxsUser = await super.add(userBody, {
+  // 		_appId: this.__modelManager.authApp.id,
+  // 		_appMetadata: [{
+  // 			appId: this.__modelManager.authApp.id,
+  // 			policyProperties: (body.policyProperties) ? body.policyProperties : null,
+  // 		}],
+  // 	});
+  // 	const user = await Helpers.streamFirst(rxsUser);
 
-	// 	if (!auth) {
-	// 		return user;
-	// 	}
+  // 	user.tokens = [];
 
-	// 	const rxsToken = await this.__modelManager.Token.add(auth, {
-	// 		_appId: this.__modelManager.authApp.id,
-	// 		_userId: user.id,
-	// 	});
-	// 	const token = await Helpers.streamFirst(rxsToken);
+  // 	if (!auth) {
+  // 		return user;
+  // 	}
 
-	// 	this.__nrp.emit('app-routes:bust-cache', {});
+  // 	const rxsToken = await this.__modelManager.Token.add(auth, {
+  // 		_appId: this.__modelManager.authApp.id,
+  // 		_userId: user.id,
+  // 	});
+  // 	const token = await Helpers.streamFirst(rxsToken);
 
-	// 	if (token) {
-	// 		user.tokens.push({
-	// 			value: token.value,
-	// 		});
-	// 	}
+  // 	this.__nrp.emit('app-routes:bust-cache', {});
 
-	// 	return user;
-	// }
+  // 	if (token) {
+  // 		user.tokens.push({
+  // 			value: token.value,
+  // 		});
+  // 	}
 
-	/**
-	 * @param {Object} body - body passed through from a POST request
-	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
-	 */
-	async add(body, internals?: any) {
-		const userBody: {
-			id: string,
-			auth: Array<{
-				app: string,
-				appId: string,
-				username: string,
-				password: string,
-				profileUrl: string,
-				images: {
-					profile: string,
-					banner: string,
-				},
-				email: string,
-				token: string,
-				tokenSecret: string,
-				refreshToken: string,
-			}>
-		}= {
-			id: (body.id) ? this.createId(body.id) : this.createId(),
-			auth: [],
-		};
-		body.auth.forEach((item) => {
-			userBody.auth.push({
-				app: item.app,
-				appId: (item.appId) ? item.appId : null,
-				username: item.username,
-				password: item.password,
-				profileUrl: item.profileUrl,
-				images: {
-					profile: item.profileImgUrl,
-					banner: item.bannerImgUrl,
-				},
-				email: item.email,
-				token: item.token,
-				tokenSecret: item.tokenSecret,
-				refreshToken: item.refreshToken,
-			});
-		});
+  // 	return user;
+  // }
 
-		const rxsUser = await super.add(userBody, {
-			_appId: internals._appId,
-		});
-		const user: any = await Helpers.streamFirst(rxsUser);
+  /**
+   * @param {Object} body - body passed through from a POST request
+   * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+   */
+  /**
+   * A user as AddUser takes one, which add stores as `Schema` reads it: each auth entry's fields are text, and its
+   * images are given as `profileImgUrl` and `bannerImgUrl`. The token to create for them is checked by the route.
+   */
+  static get AddSchema(): Schema {
+    const text = { __type: 'string', __allowUpdate: true } as const;
+    return {
+      name: 'users',
+      type: 'collection',
+      core: true,
+      properties: {
+        id: { __type: 'id', __allowUpdate: false },
+        auth: {
+          __type: 'array',
+          __required: true,
+          __allowUpdate: true,
+          __schema: Object.fromEntries(
+            [
+              'app',
+              'appId',
+              'username',
+              'password',
+              'profileUrl',
+              'profileImgUrl',
+              'bannerImgUrl',
+              'email',
+              'locale',
+              'token',
+              'tokenSecret',
+              'refreshToken',
+              'extras',
+            ].map((field) => [field, text]),
+          ),
+        },
+      },
+    };
+  }
 
-		user.tokens = [];
+  override async add(body: UserAddBody, internals: { _appId: string }): Promise<UserWithTokens> {
+    // Stored as the schema reads it, with its defaults for what's left out
+    const userBody = {
+      id: body.id ? this.createId(body.id) : this.createId(),
+      auth: body.auth.map(({ profileImgUrl, bannerImgUrl, ...item }) => ({
+        ...item,
+        // The id the auth app has for the user, which finding them matches, or none
+        appId: item.appId ? item.appId : null,
+        images: { profile: profileImgUrl, banner: bannerImgUrl },
+      })),
+    };
 
-		const tokenBody = body.token;
-		if (tokenBody && tokenBody.domains && tokenBody.policyProperties) {
-			const userToken = {
-				type: this.__modelManager.Token.Constants.Type.USER,
-				permissions: [{route: '*', permission: '*'}],
-				domains: tokenBody.domains,
-				policyProperties: tokenBody.policyProperties,
-			};
+    const rxsUser = await super.add(userBody, {
+      _appId: internals._appId,
+    });
+    const user = (await Helpers.streamFirst<User>(rxsUser)) as UserWithTokens;
 
-			const rxsToken = await this.__modelManager.Token.add(userToken, {
-				_appId: internals._appId,
-				_userId: user.id,
-			});
-			const token: any = await Helpers.streamFirst(rxsToken);
+    user.tokens = [];
 
-			if (token) {
-				user.tokens.push({
-					value: token.value,
-					policyProperties: token.policyProperties,
-				});
-			}
-		}
+    const tokenBody = body.token;
+    if (tokenBody && tokenBody.domains && tokenBody.policyProperties) {
+      const userToken = {
+        type: TokenSchemaModel.Constants.Type.USER,
+        permissions: [{ route: '*', permission: '*' }],
+        domains: tokenBody.domains,
+        policyProperties: tokenBody.policyProperties,
+      };
 
-		this.__nrp?.emit('app-routes:bust-cache', '{}');
+      const rxsToken = await this.__modelManager.getCoreModel(TokenSchemaModel).add(userToken, {
+        _appId: internals._appId,
+        _userId: user.id,
+      });
+      const token = await Helpers.streamFirst<Token>(rxsToken);
 
-		return user;
-	}
+      if (token) {
+        user.tokens.push({
+          id: token.id,
+          value: token.value,
+          policyProperties: token.policyProperties,
+        });
+      }
+    }
 
-	// addAuth(auth) {
-	// 	Logging.log(`addAuth: ${auth.app}`, Logging.Constants.LogLevel.INFO);
-	// 	const existing = this.auth.find((a) => a.app === auth.app && a.id == auth.id); // eslint-disable-line eqeqeq
-	// 	if (existing) {
-	// 		Logging.log(`present: ${auth.app}:${auth.id}`, Logging.Constants.LogLevel.DEBUG);
-	// 		return Promise.resolve(this);
-	// 	}
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
 
-	// 	Logging.log(`not present: ${auth.app}:${auth.id}`, Logging.Constants.LogLevel.DEBUG);
-	// 	this.auth.push(new this.__modelManager.Appauth({
-	// 		app: auth.app,
-	// 		appId: auth.id,
-	// 		username: auth.username,
-	// 		profileUrl: auth.profileUrl,
-	// 		images: {
-	// 			profile: auth.profileImgUrl,
-	// 			banner: auth.bannerImgUrl,
-	// 		},
-	// 		email: auth.email,
-	// 		token: auth.token,
-	// 		tokenSecret: auth.tokenSecret,
-	// 		refreshToken: auth.refreshToken,
-	// 	}));
+    return user;
+  }
 
-	// 	return this.save();
-	// }
+  // addAuth(auth) {
+  // 	Logging.log(`addAuth: ${auth.app}`, Logging.Constants.LogLevel.INFO);
+  // 	const existing = this.auth.find((a) => a.app === auth.app && a.id == auth.id); // eslint-disable-line eqeqeq
+  // 	if (existing) {
+  // 		Logging.log(`present: ${auth.app}:${auth.id}`, Logging.Constants.LogLevel.DEBUG);
+  // 		return Promise.resolve(this);
+  // 	}
 
-	/**
-	 * @param {object} user - user object of which the token is being updated
-	 * @param {object} app - app object of which the token is being updated
-	 * @param {Object} updated - updated app information passed through from a PUT request
-	 * @return {Promise} - returns a promise that is fulfilled when the database request is completed
-	 */
-	updateAppInfo(user, app, updated) {
-		const authIdx = user.auth.findIndex((a) => a.app === app);
-		if (authIdx === -1) {
-			Logging.log(`Unable to find Appauth for ${app}`, Logging.Constants.LogLevel.DEBUG);
-			return Promise.resolve(false);
-		}
+  // 	Logging.log(`not present: ${auth.app}:${auth.id}`, Logging.Constants.LogLevel.DEBUG);
+  // 	this.auth.push(new this.__modelManager.Appauth({
+  // 		app: auth.app,
+  // 		appId: auth.id,
+  // 		username: auth.username,
+  // 		profileUrl: auth.profileUrl,
+  // 		images: {
+  // 			profile: auth.profileImgUrl,
+  // 			banner: auth.bannerImgUrl,
+  // 		},
+  // 		email: auth.email,
+  // 		token: auth.token,
+  // 		tokenSecret: auth.tokenSecret,
+  // 		refreshToken: auth.refreshToken,
+  // 	}));
 
-		const auth = user.auth[authIdx];
-		auth.username = updated.username;
-		auth.profileUrl = updated.profileUrl;
-		auth.images.profile = updated.profileImgUrl;
-		auth.images.banner = updated.bannerImgUrl;
-		auth.email = updated.email;
-		auth.token = updated.token;
-		auth.tokenSecret = updated.tokenSecret;
-		auth.refreshToken = updated.refreshToken;
+  // 	return this.save();
+  // }
 
-		const update = {};
-		update[`auth.${authIdx}`] = auth;
-		return super.updateById(user.id, update).then(() => true);
-	}
+  /**
+   * @param {object} user - user object of which the token is being updated
+   * @param {object} app - app object of which the token is being updated
+   * @param {Object} updated - updated app information passed through from a PUT request
+   * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+   */
+  updateAppInfo(user: User, app: string, updated: UserAppInfo) {
+    const authIdx = user.auth.findIndex((a) => a.app === app);
+    if (authIdx === -1) {
+      Logging.log(`Unable to find Appauth for ${app}`, Logging.Constants.LogLevel.DEBUG);
+      return Promise.resolve(false);
+    }
 
-	/**
-	 * @param {string} username - username to check for
-	 * @return {Promise} - resolves to a User object or null
-	 */
-	getByUsername(username) {
-		return super.findOne({username: username}, {id: 1});
-	}
+    const auth = user.auth[authIdx];
+    auth.username = updated.username;
+    auth.profileUrl = updated.profileUrl;
+    auth.images.profile = updated.profileImgUrl;
+    auth.images.banner = updated.bannerImgUrl;
+    auth.email = updated.email;
+    auth.token = updated.token;
+    auth.tokenSecret = updated.tokenSecret;
+    auth.refreshToken = updated.refreshToken;
 
-	/**
-	 * @param {string} authAppName - Name of the authenticating App (facebook|twitter|google) that owns the user
-	 * @param {string} authAppUserId - Id of the user in the authenticating App
-	 * @param {string} appId - Buttress App Id of the user
-	 * @return {Promise} - resolves to an array of Apps
-	 */
-	getByAuthAppId(authAppName, authAppUserId, appId = undefined) {
-		return super.findOne({
-			'auth.app': authAppName,
-			'auth.appId': authAppUserId,
-			...(appId) ? {_appId: this.createId(appId)} : {},
-		});
-	}
+    const update: Record<string, UserAuth> = {};
+    update[`auth.${authIdx}`] = auth;
+    return super.updateById(user.id, update).then(() => true);
+  }
+
+  /**
+   * @param {string} username - username to check for
+   * @return {Promise} - resolves to a User object or null
+   */
+  getByUsername(username: string) {
+    return super.findOne({ username: username }, { id: 1 });
+  }
+
+  /**
+   * @param {string} authAppName - Name of the authenticating App (facebook|twitter|google) that owns the user
+   * @param {string} authAppUserId - Id of the user in the authenticating App
+   * @param {string} appId - Buttress App Id of the user
+   * @return {Promise} - resolves to an array of Apps
+   */
+  getByAuthAppId(authAppName: string, authAppUserId: string, appId?: string) {
+    return super.findOne({
+      'auth.app': authAppName,
+      'auth.appId': authAppUserId,
+      ...(appId ? { _appId: this.createId(appId) } : {}),
+    });
+  }
+
+  override rm(userId: string) {
+    return super.rm(userId);
+  }
 }

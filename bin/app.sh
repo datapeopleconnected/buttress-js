@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Buttress - The federated real-time open data platform
-# Copyright (C) 2016-2024 Data People Connected LTD.
+# Copyright (C) 2016-2026 Data People Connected LTD.
 # <https://www.dpc-ltd.com/>
 # 
 # This file is part of Buttress.
@@ -14,6 +14,14 @@
 # You should have received a copy of the GNU Affero General Public Licence along with
 # this program. If not, see <http://www.gnu.org/licenses/>.
 
+if [ -z "$SSH_AUTH_SOCK" ]; then
+    eval "$(ssh-agent -s)"
+
+    if [ -f /root/.ssh/id_buttress ]; then
+        ssh-add /root/.ssh/id_buttress
+    fi
+fi
+
 cd $( dirname -- "$0"; )
 
 FILE="../dist/bin/app.js"
@@ -22,4 +30,4 @@ if [ ! -f "$FILE" ]; then
 	exit;
 fi
 
-node $FILE
+exec node $FILE

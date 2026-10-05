@@ -5,25 +5,98 @@ on:
     branches:
       - main
       - develop
+    # Release tags, e.g. v3.0.0-6. The docker job publishes the tested build as dpcltd/buttress:3.0.0-6.
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
   pull_request:
 
 permissions:
   contents: read
 
+# A new push to a PR cancels its older run. Pushes to main/develop and release tags always run to completion,
+# since the docker job only publishes after the tests pass.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  unit-tests:
+  # Git gives every snapshot of the files a tree hash. A PR run tests the PR merged into its base, and merging it
+  # (merge, squash or rebase, with the base unchanged) creates a commit with that same tree. So every run whose
+  # tests pass records its tree as a tested-<tree> artifact, and a push whose tree has already passed skips the
+  # tests and goes straight to the docker job. The same goes for a release tag on a commit main already tested.
+  gate:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      tree: ${{ steps.lookup.outputs.tree }}
+      tested: ${{ steps.lookup.outputs.tested }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Look for a passing run of the same tree
+      id: lookup
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        tree=$(git rev-parse 'HEAD^{tree}')
+        echo "tree=$tree" >> "$GITHUB_OUTPUT"
+        tested=false
+        if [ "$GITHUB_EVENT_NAME" = push ]; then
+          # Only trust records from this repository's own runs. Fork PRs run their own copy of this workflow.
+          run=$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=tested-$tree" --jq '
+            [.artifacts[] | select(.expired | not)
+              | select(.workflow_run.head_repository_id == .workflow_run.repository_id)][0].workflow_run.id // empty')
+          if [ -n "$run" ]; then
+            tested=true
+            echo "::notice::Tree $tree already passed in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run, skipping the tests"
+          fi
+        fi
+        echo "tested=$tested" >> "$GITHUB_OUTPUT"
+
+  check:
+    needs: gate
+    if: needs.gate.outputs.tested != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+
+    - name: Install dependencies
+      run: npm ci
+
+    # Typecheck, lint, formatting and licence headers.
+    - name: Check
+      run: npm run check
+
+  unit-tests:
+    needs: gate
+    if: needs.gate.outputs.tested != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       MOCHA_UNIT_TIMEOUT: 10000
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
-        node-version: '24'
+        node-version-file: .nvmrc
         cache: npm
 
     - name: Install dependencies
@@ -32,11 +105,25 @@ jobs:
     - name: Build
       run: npm run build
 
-    - name: Run Unit Tests
-      run: npm run test:unit
+    # Runs the unit tests once under c8, so a failing test fails the job and the coverage report comes free.
+    # Coverage is report-only for now (no --check-coverage). Once planned test additions raise it, add
+    # thresholds to .c8rc.json so this job fails on regression.
+    - name: Run Unit Tests with Coverage
+      run: npm run coverage:unit
+
+    - name: Upload coverage report
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: coverage-report
+        path: coverage/
+        retention-days: 14
 
   e2e-tests:
+    needs: gate
+    if: needs.gate.outputs.tested != 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       MOCHA_E2E_TIMEOUT: 20000
 
@@ -51,7 +138,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redis:
-        image: redis:latest
+        image: redis:8
         ports:
           - 6380:6379
         options: >-
@@ -62,12 +149,12 @@ jobs:
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
-        node-version: '24'
+        node-version-file: .nvmrc
         cache: npm
 
     - name: Install dependencies
@@ -89,3 +176,67 @@ jobs:
         BUTTRESS_REDIS_URL: redis://localhost:6380
         BUTTRESS_SOCK_URL: http://localhost:8010
       run: npm run test:e2e
+
+  # Builds the image once the tests pass. PRs only build it, which catches a broken Dockerfile before merge.
+  # Pushes publish it to Docker Hub:
+  #   develop     -> develop, sha-<short>
+  #   main        -> latest, sha-<short>
+  #   tag v1.2.3  -> 1.2.3
+  docker:
+    needs: [gate, check, unit-tests, e2e-tests]
+    # Also runs when the gate skipped the tests, but not when anything failed.
+    if: ${{ !cancelled() && !failure() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PUBLISH: ${{ github.event_name == 'push' && github.repository == 'datapeopleconnected/buttress-js' }}
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    # The tests passed on this tree, so later pushes of it can skip them (see the gate job).
+    - name: Record the tested tree
+      if: needs.gate.outputs.tested != 'true'
+      run: echo "$GITHUB_SHA" > tested-commit.txt
+
+    - name: Upload the tested tree record
+      if: needs.gate.outputs.tested != 'true'
+      uses: actions/upload-artifact@v7
+      with:
+        name: tested-${{ needs.gate.outputs.tree }}
+        path: tested-commit.txt
+        retention-days: 30
+
+    - name: Compute tags and labels
+      id: meta
+      uses: docker/metadata-action@v6
+      with:
+        images: dpcltd/buttress
+        flavor: latest=false
+        tags: |
+          type=raw,value=develop,enable=${{ github.ref == 'refs/heads/develop' }}
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+          type=sha,enable=${{ github.event_name == 'push' && github.ref_type == 'branch' }}
+          type=semver,pattern={{version}}
+          type=ref,event=pr
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v4
+
+    - name: Log in to Docker Hub
+      if: env.PUBLISH == 'true'
+      uses: docker/login-action@v4
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build and push image
+      uses: docker/build-push-action@v7
+      with:
+        context: .
+        push: ${{ env.PUBLISH == 'true' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max

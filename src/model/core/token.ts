@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -16,233 +14,322 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Crypto from 'crypto';
-// import * as Shared from '../shared';
-import Logging from '../../helpers/logging';
+import Crypto from 'node:crypto';
 
-import StandardModel from '../type/standard';
+import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
+import type { AdapterQuery } from '../../types/datastore.js';
+import * as Helpers from '../../helpers/index.js';
+import { PolicyCache } from '../../services/policy-cache.js';
+
+import { Schema } from '../../helpers/schema.js';
+import { Services } from '../../bootstrap.js';
 
 /**
  * Constants
-*/
+ */
 const type = ['system', 'app', 'user', 'dataSharing', 'lambda'];
 const Type = {
-	SYSTEM: type[0],
-	APP: type[1],
-	USER: type[2],
-	DATA_SHARING: type[3],
-	LAMBDA: type[4],
+  SYSTEM: type[0],
+  APP: type[1],
+  USER: type[2],
+  DATA_SHARING: type[3],
+  LAMBDA: type[4],
 };
 
-class TokenSchemaModel extends StandardModel {
-	constructor(services) {
-		const schema = TokenSchemaModel.Schema;
-		super(schema, null, services);
-	}
+export type PolicyProperty = string | number;
+export type PolicyProperties = Record<string, PolicyProperty | PolicyProperty[]> | null;
 
-	static get Constants() {
-		return {
-			Type: Type,
-		};
-	}
-	get Constants() {
-		return TokenSchemaModel.Constants;
-	}
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type Token = {
+  id: string;
+  type: string;
+  value: string;
+  domains: string[];
+  permissions: { route: string; permission: string }[];
+  tags: string[];
+  policyProperties: PolicyProperties;
+  _appId: string;
+  _lambdaId: string;
+  _userId: string;
+  _entityId: string;
+  _appDataSharingId: string;
+};
 
-	static get Schema() {
-		return {
-			name: 'tokens',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				type: {
-					__type: 'string',
-					__default: 'user',
-					__enum: type,
-					__allowUpdate: true,
-				},
-				value: {
-					__type: 'string',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				domains: {
-					__type: 'array',
-					__required: true,
-					__allowUpdate: true,
-				},
-				permissions: {
-					__type: 'array',
-					__required: true,
-					__allowUpdate: true,
-					__schema: {
-						route: {
-							__type: 'string',
-							__required: true,
-							__allowUpdate: true,
-						},
-						permission: {
-							__type: 'string',
-							__required: true,
-							__allowUpdate: true,
-						},
-					},
-				},
-				tags: {
-					__type: 'array',
-					__itemtype: 'string',
-					__required: true,
-					__allowUpdate: true,
-				},
-				policyProperties: {
-					__type: 'object',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				_appId: {
-					__type: 'id',
-					__default: null,
-					__required: true,
-					__allowUpdate: false,
-				},
-				_lambdaId: {
-					__type: 'id',
-					__default: null,
-					__required: true,
-					__allowUpdate: false,
-				},
-				_userId: {
-					__type: 'id',
-					__default: null,
-					__required: true,
-					__allowUpdate: false,
-				},
-				_entityId: {
-					__type: 'id',
-					__default: null,
-					__required: true,
-					__allowUpdate: false,
-				},
-				_appDataSharingId: {
-					__type: 'id',
-					__default: null,
-					__required: true,
-					__allowUpdate: false,
-				},
-			},
-		};
-	}
+// The ids add stores on the new token
+type TokenAddInternals = {
+  _appId?: string;
+  _lambdaId?: string;
+  _userId?: string;
+  _appDataSharingId?: string;
+};
 
-	/**
-	 * @return {string} - cryptographically secure token string
-	 */
-	createTokenString() {
-		const length = 36;
-		const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-		const mask = 0x3d;
-		let string = '';
+class TokenSchemaModel extends StandardModel<Token> {
+  static override name = 'Token';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
-		const bytes = Crypto.randomBytes(length);
-		for (let x = 0; x < bytes.length; x++) {
-			const byte = bytes[x];
-			string += chars[byte & mask];
-		}
+  __policyCache: PolicyCache;
 
-		return string;
-	}
+  constructor(services: Services) {
+    const schema = TokenSchemaModel.Schema;
+    super(schema, null, services);
 
-	/*
-		* @param {Object} body - body passed through from a POST request
-		* @return {Promise} - returns a promise that is fulfilled when the database request is completed
-		*/
-	add(body, internals) {
-		body.value = this.createTokenString();
-		return super.add(body, internals);
-	}
+    this.__policyCache = this.__services.get('policyCache') as PolicyCache;
+    if (!this.__policyCache) throw new Error('Unable to find policyCache in services');
+  }
 
-	/**
-	 * @param {String} userId - DB id for the user
-	 * @param {String} appId - DB id for the app
-	 * @return {Promise} - resolves to an array of Tokens
-	 */
-	findUserAuthTokens(userId, appId) {
-		return this.find({
-			_appId: this.createId(appId),
-			_userId: this.createId(userId),
-		});
-	}
+  static get Constants() {
+    return {
+      Type: Type,
+    };
+  }
+  get Constants() {
+    return TokenSchemaModel.Constants;
+  }
 
-	findByValue(value) {
-		return this.findOne({
-			value: value,
-		});
-	}
+  static get Schema(): Schema {
+    return {
+      name: 'tokens',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        type: {
+          __type: 'string',
+          __default: 'user',
+          __enum: type,
+          __allowUpdate: true,
+        },
+        // Looked up by value on every request a cached token doesn't answer (D-14, D-25)
+        value: {
+          __type: 'string',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+          __unique: true,
+        },
+        domains: {
+          __type: 'array',
+          __required: true,
+          __allowUpdate: true,
+        },
+        permissions: {
+          __type: 'array',
+          __required: true,
+          __allowUpdate: true,
+          __schema: {
+            route: {
+              __type: 'string',
+              __required: true,
+              __allowUpdate: true,
+            },
+            permission: {
+              __type: 'string',
+              __required: true,
+              __allowUpdate: true,
+            },
+          },
+        },
+        tags: {
+          __type: 'array',
+          __itemtype: 'string',
+          __required: true,
+          __allowUpdate: true,
+        },
+        policyProperties: {
+          __type: 'object',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        _appId: {
+          __type: 'id',
+          __default: null,
+          __required: true,
+          __allowUpdate: false,
+        },
+        _lambdaId: {
+          __type: 'id',
+          __default: null,
+          __required: true,
+          __allowUpdate: false,
+        },
+        _userId: {
+          __type: 'id',
+          __default: null,
+          __required: true,
+          __allowUpdate: false,
+        },
+        _entityId: {
+          __type: 'id',
+          __default: null,
+          __required: true,
+          __allowUpdate: false,
+        },
+        _appDataSharingId: {
+          __type: 'id',
+          __default: null,
+          __required: true,
+          __allowUpdate: false,
+        },
+      },
+    };
+  }
 
-	/**
-	 * @param {String} tokenId - id of the token
-	 * @param {Object} policyProperties - Policy properties
-	 * @return {Promise} - resolves after updating token policy properties
-	 */
-	async setPolicyPropertiesById(tokenId, policyProperties) {
-		if (policyProperties.query) {
-			delete policyProperties.query; // What is this line for??
-		}
+  /**
+   * @return {string} - cryptographically secure token string
+   */
+  createTokenString() {
+    const length = 36;
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const mask = 0x3d;
+    let string = '';
 
-		await super.update({
-			'id': this.createId(tokenId),
-		}, {$set: {'policyProperties': policyProperties}});
+    const bytes = Crypto.randomBytes(length);
+    for (let x = 0; x < bytes.length; x++) {
+      const byte = bytes[x];
+      string += chars[byte & mask];
+    }
 
-		this.__nrp?.emit('app-routes:bust-cache', '{}');
-	}
+    return string;
+  }
 
-	/**
-	 * @param {String} token - token object
-	 * @param {Object} policyProperties - Policy properties
-	 * @return {Promise} - resolves to an array of Apps
-	 */
-	async updatePolicyPropertiesById(token, policyProperties) {
-		if (policyProperties.query) {
-			delete policyProperties.query; // Again, what is this line for??
-		}
+  /*
+   * @param {Object} body - body passed through from a POST request
+   * @return {Promise} - returns a promise that is fulfilled when the database request is completed
+   */
+  override add(body: Partial<Token>, internals?: TokenAddInternals) {
+    body.value = this.createTokenString();
+    return super.add(body, internals);
+  }
 
-		const tokenPolicy = (token.policyProperties || {});
-		const policy = Object.keys(policyProperties).reduce((obj, key) => {
-			obj[key] = policyProperties[key];
-			return obj;
-		}, []);
+  /**
+   * @param {String} userId - DB id for the user
+   * @param {String} appId - DB id for the app
+   * @return {Promise} - resolves to an array of Tokens
+   */
+  findUserAuthTokens(userId: string, appId: string) {
+    return this.find({
+      _appId: this.createId(appId),
+      _userId: this.createId(userId),
+    });
+  }
 
-		await super.update({
-			'id': this.createId(token.id),
-		}, {
-			$set: {
-				'policyProperties': {
-					...tokenPolicy,
-					...policy,
-				},
-			},
-		});
+  findByValue(value: string) {
+    return this.findOne({
+      value: value,
+    });
+  }
 
-		this.__nrp?.emit('app-routes:bust-cache', '{}');
-	}
+  /**
+   * @param {String} tokenId - id of the token
+   * @param {Object} policyProperties - Policy properties
+   * @return {Promise} - resolves after updating token policy properties
+   */
+  async setPolicyPropertiesById(tokenId: string, policyProperties: Record<string, unknown>) {
+    if (policyProperties.query) {
+      delete policyProperties.query; // What is this line for??
+    }
 
-	/**
-	 * @param {String} tokenId - tokenId
-	 * @return {Promise}
-	 */
-	async clearPolicyPropertiesById(tokenId) {
-		await super.update({
-			'id': this.createId(tokenId),
-		}, {
-			$set: {
-				'policyProperties': {},
-			},
-		});
+    await super.updateById(this.createId(tokenId), { $set: { policyProperties: policyProperties } });
 
-		this.__nrp?.emit('app-routes:bust-cache', '{}');
-	}
+    await this.__refreshTokenPolicies(tokenId);
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+  }
+
+  /**
+   * @param {String} token - token object
+   * @param {Object} policyProperties - Policy properties
+   * @return {Promise} - resolves to an array of Apps
+   */
+  async updatePolicyProperties(token: Token, policyProperties: Record<string, unknown>) {
+    if (policyProperties.query) {
+      delete policyProperties.query; // Again, what is this line for??
+    }
+
+    const tokenPolicy = token.policyProperties || {};
+    // The accumulator's an array, but only string keys are set on it, so it spreads like an object
+    const policy = Object.keys(policyProperties).reduce(
+      (obj: Record<string, unknown>, key) => {
+        obj[key] = policyProperties[key];
+        return obj;
+      },
+      [] as unknown as Record<string, unknown>,
+    );
+
+    await super.updateById(this.createId(token.id), {
+      $set: {
+        policyProperties: {
+          ...tokenPolicy,
+          ...policy,
+        },
+      },
+    });
+
+    await this.__refreshTokenPolicies(token.id.toString());
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+  }
+
+  /**
+   * @param {String} tokenId - tokenId
+   * @return {Promise}
+   */
+  async clearPolicyPropertiesById(tokenId: string) {
+    await super.updateById(this.createId(tokenId), {
+      $set: {
+        policyProperties: {},
+      },
+    });
+
+    await this.__refreshTokenPolicies(tokenId);
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+  }
+
+  // A token whose policy properties changed has its policies worked out again at once, so realtime stops (or starts)
+  // sending it activity by them. It's marked stale first, so REST works them out again if that fails.
+  private async __refreshTokenPolicies(tokenId: string) {
+    await this.__policyCache.setTokenIdAsStale(tokenId);
+    await this.__policyCache.reselectToken(tokenId);
+  }
+
+  // REST caches tokens in memory (routes/tokens.ts) and only reloads on a miss, so every delete has to bust that
+  // cache or the deleted token keeps working on REST. Sockets already open with a deleted token would keep receiving
+  // activity, so the Socket processes are told which tokens went (token:deleted) and close them.
+  override async rm(id: string) {
+    const result = await super.rm(id);
+    this.__announceDeleted([id]);
+    return result;
+  }
+
+  override async rmBulk(ids: string[]) {
+    const result = await super.rmBulk(ids);
+    this.__announceDeleted(ids);
+    return result;
+  }
+
+  override async rmAll(query?: AdapterQuery) {
+    // Deleted tokens can't be found, so the ones the query matches are looked up first.
+    const matched = await Helpers.streamAll<Token>(await this.find({ ...query }));
+    const result = await super.rmAll(query);
+    this.__announceDeleted(matched.map((token) => token.id));
+    return result;
+  }
+
+  // A token's value can be changed in place (data-sharing activation does), and the old value would otherwise keep
+  // working on REST from the cache.
+  override async updateById(id: string, query: AdapterQuery) {
+    const result = await super.updateById(id, query);
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+    return result;
+  }
+
+  __announceDeleted(ids: unknown[]) {
+    this.__nrp?.emit('app-routes:bust-cache', '{}');
+
+    const tokenIds = ids.map((id) => String(id));
+    if (tokenIds.length > 0) this.__nrp?.emit('token:deleted', JSON.stringify({ tokenIds }));
+  }
 }
 
 /**

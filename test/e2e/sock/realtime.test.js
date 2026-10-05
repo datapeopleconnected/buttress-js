@@ -1,6 +1,6 @@
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -14,21 +14,27 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-const {io} = require('socket.io-client');
-const {describe, it, before, after} = require('mocha');
-const assert = require('assert');
-const fetch = require('cross-fetch');
+import { io } from 'socket.io-client';
+import { describe, it, before, after } from 'mocha';
+import assert from 'assert';
 
-const Config = require('node-env-obj')();
+import {
+	bjsReq,
+	createApp,
+	updateSchema,
+	extractPolicyPropertyListFromPolicies,
+	ENDPOINT,
+} from '../../helpers.js';
 
-const {createApp, updateSchema, bjsReq} = require('../../helpers');
+import BootstrapSPR from '../../../dist/bootstrap-spr.js';
+import BootstrapRest from '../../../dist/bootstrap-rest.js';
+import BootstrapSocket from '../../../dist/bootstrap-socket.js';
+import { runStep, startSocketProcess, stopSocketProcess } from '../helpers.js';
 
-const {default: BootstrapRest} = require('../../../dist/bootstrap-rest');
-const {default: BootstrapSocket} = require('../../../dist/bootstrap-socket');
-
-const ENDPOINT = `https://test.local.buttressjs.com`;
+import PolicyTestData from '../../data/policy/index.js';
 
 let REST_PROCESS = null;
+let SPR_PROCESS = null;
 let SOCK_PROCESS = null;
 
 const testEnv = {
@@ -36,16 +42,29 @@ const testEnv = {
 	socket: null,
 };
 
-// This suite of tests will run against the REST API and will
-// test the cababiliy of data sharing between different apps.
 describe('Realtime', async () => {
-	before(async function() {
-		this.timeout(20000);
-		REST_PROCESS = new BootstrapRest();
-		await REST_PROCESS.init();
+	const TestPolicies = [
+		PolicyTestData['admin-access'],
+	];
 
-		SOCK_PROCESS = new BootstrapSocket();
-		await SOCK_PROCESS.init();
+	const PolicyPropertyList = extractPolicyPropertyListFromPolicies(TestPolicies);
+
+	before(async function () {
+		this.timeout(60000);
+		await runStep('init REST process', async () => {
+			REST_PROCESS = new BootstrapRest();
+			await REST_PROCESS.init();
+		}, 'Realtime setup');
+
+		await runStep('init SPR process', async () => {
+			SPR_PROCESS = new BootstrapSPR();
+			await SPR_PROCESS.init();
+		}, 'Realtime setup');
+
+		await runStep('init SOCK process', async () => {
+			SOCK_PROCESS = new BootstrapSocket();
+			await SOCK_PROCESS.init();
+		}, 'Realtime setup');
 
 		// Creating test data.
 		const carsSchema = {
@@ -62,28 +81,33 @@ describe('Realtime', async () => {
 		};
 
 		// Create an app
-		testEnv.apps.app1 = await createApp(ENDPOINT, 'Test SOCK 1', 'test-sock-1');
-		testEnv.apps.app1.schema = await updateSchema(ENDPOINT, [carsSchema], testEnv.apps.app1.token);
+		testEnv.apps.app1 = await runStep('create app1', async () =>
+			createApp(ENDPOINT.REST, 'Test SOCK 1', 'test-sock-1', PolicyPropertyList)
+		, 'Realtime setup');
+		testEnv.apps.app1.schema = await runStep('update app1 schema', async () =>
+			updateSchema(ENDPOINT.REST, [carsSchema], testEnv.apps.app1.token)
+		, 'Realtime setup');
 
-		// Add a 'few' cars
-		await bjsReq({
-			url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car/bulk/add`,
-			method: 'POST',
-			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify(new Array(5000).fill(0).map(() => ({name: `name-${Math.floor(Math.random()*100)}`}))),
-		}, testEnv.apps.app1.token);
+		// Hack - Pause for a second to allow the schema to be created.
+		await new Promise((resolve) => setTimeout(resolve, 100));
 	});
 
-	after(async function() {
+	after(async function () {
 		if (testEnv.socket) testEnv.socket.disconnect();
-		await REST_PROCESS.clean();
-		await SOCK_PROCESS.clean();
+		if (REST_PROCESS) await REST_PROCESS.clean();
+		if (SPR_PROCESS) await SPR_PROCESS.clean();
+		if (SOCK_PROCESS) await SOCK_PROCESS.clean();
 	});
 
 	describe('Connections', () => {
 		let socket = null;
-		it('Should be able to connect to Buttress using socket.io', function(done) {
-			socket = io(ENDPOINT);
+		it('Should be able to connect to Buttress using socket.io', function (done) {
+			socket = io(ENDPOINT.SOCK, {
+				auth: {
+					token: testEnv.apps.app1.token,
+				},
+				forceNew: true,
+			});
 
 			socket.once('connect', () => {
 				assert.equal(socket.connected, true);
@@ -91,7 +115,7 @@ describe('Realtime', async () => {
 			});
 		});
 
-		it('Should close down the socket.io connection', function(done) {
+		it('Should close down the socket.io connection', function (done) {
 			socket.once('disconnect', () => {
 				assert.equal(socket.id, undefined);
 				done();
@@ -99,11 +123,33 @@ describe('Realtime', async () => {
 
 			socket.disconnect();
 		});
+
+		it('Should refuse a token that is not a string', async function () {
+			// A query object would otherwise be used in the token lookup and find whichever token Mongo returns first.
+			for (const token of [{ $ne: null }, { $regex: '.' }, [testEnv.apps.app1.token], 42]) {
+				const namespace = `${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`;
+				const refused = io(namespace, { auth: { token }, forceNew: true, reconnection: false });
+
+				const error = await new Promise((resolve, reject) => {
+					refused.once('connect_error', resolve);
+					refused.once('connect', () => reject(new Error(`Connected with ${JSON.stringify(token)}`)));
+				}).finally(() => refused.close());
+
+				assert.strictEqual(error.message, 'invalid-token');
+			}
+		});
 	});
 
 	describe('db-activity', async () => {
-		it('Should be able to connect to Buttress using the app token', function(done) {
-			testEnv.socket = io(`${ENDPOINT}/${testEnv.apps.app1.apiPath}?token=${testEnv.apps.app1.token}`);
+		it('Should be able to connect to Buttress using the app token', function (done) {
+			this.timeout(20000);
+			// TODO: Slowness due to the bulk add, this needs to be addressed.
+			testEnv.socket = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, {
+				auth: {
+					token: testEnv.apps.app1.token,
+				},
+				forceNew: true,
+			});
 
 			testEnv.socket.once('connect', () => {
 				assert.equal(testEnv.socket.connected, true);
@@ -111,33 +157,108 @@ describe('Realtime', async () => {
 			});
 		});
 
-		it('Should make a POST request to buttress and see a realtime activity generated', async () => {
-			const name = `name-${Math.floor(Math.random()*100)}`;
-			let cars = null;
-			const listener = new Promise((resolve) => {
-				testEnv.socket.once('db-activity', (ev) => {
-					assert.equal(typeof ev.data, 'object');
-					assert.equal(ev.data.verb, 'post');
-					assert.equal(ev.data.schemaName, 'car');
-					assert.equal(ev.data.response.name, name);
-					assert.equal(typeof ev.data.response.id, 'string');
-					assert.equal(cars[0].id, ev.data.response.id);
-					assert.equal(typeof ev.sequence, 'number');
-					resolve();
-				});
+			it('Should include clientSessionId in the db-activity payload when provided', function (done) {
+				this.timeout(20000);
+
+				(async () => {
+					const clientSessionId = '11111111-1111-4111-8111-111111111111';
+					const name = `name-${Math.floor(Math.random() * 100)}`;
+					let cars = null;
+					const listener = new Promise((resolve) => {
+						testEnv.socket.once('db-activity', async (ev) => {
+							assert.equal(typeof ev.data, 'object');
+							assert.equal(ev.data.clientSessionId, clientSessionId);
+							assert.equal(ev.data.verb, 'post');
+							assert.equal(ev.data.schemaName, 'car');
+							assert.equal(ev.data.response.name, name);
+							assert.equal(typeof ev.data.response.id, 'string');
+							assert.equal(cars[0].id, ev.data.response.id);
+
+							const time = new Date(ev.time);
+							assert(time instanceof Date);
+							assert(!isNaN(time.getTime()));
+
+							resolve();
+						});
+					});
+
+					cars = await bjsReq({
+						url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+							'x-client-session-id': clientSessionId,
+						},
+						body: JSON.stringify({ name }),
+					}, testEnv.apps.app1.token);
+
+					assert.equal(cars.length, 1);
+					assert.equal(cars[0].name, name);
+
+					await listener;
+
+					done();
+				})();
 			});
 
-			cars = await bjsReq({
-				url: `${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car`,
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({name}),
-			}, testEnv.apps.app1.token);
+			it('Should reject an invalid clientSessionId header value', async function () {
+				this.timeout(20000);
 
-			assert.equal(cars.length, 1);
-			assert.equal(cars[0].name, name);
+				await assert.rejects(
+					bjsReq(
+						{
+							url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+								'x-client-session-id': '11111111-1111-1111-8111-111111111111',
+							},
+							body: JSON.stringify({ name: `name-${Math.floor(Math.random() * 100)}` }),
+						},
+						testEnv.apps.app1.token,
+					),
+					(error) => error.code === 400 && error.body?.code === 'invalid_client_session_id',
+				);
+			});
 
-			await listener;
+		it('Should make a POST request to buttress and see a realtime activity generated', function (done) {
+			this.timeout(20000);
+
+			(async () => {
+				const name = `name-${Math.floor(Math.random() * 100)}`;
+				let cars = null;
+				const listener = new Promise((resolve) => {
+					testEnv.socket.once('db-activity', async (ev) => {
+						assert.equal(typeof ev.data, 'object');
+						assert.equal(ev.data.clientSessionId, null);
+						assert.equal(ev.data.verb, 'post');
+						assert.equal(ev.data.schemaName, 'car');
+						assert.equal(ev.data.response.name, name);
+						assert.equal(typeof ev.data.response.id, 'string');
+						assert.equal(cars[0].id, ev.data.response.id);
+
+						const time = new Date(ev.time);
+						assert(time instanceof Date);
+						assert(!isNaN(time.getTime()));
+
+						resolve();
+					});
+				});
+
+				cars = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ name }),
+				}, testEnv.apps.app1.token);
+
+				assert.equal(cars.length, 1);
+				assert.equal(cars[0].name, name);
+
+				await listener;
+
+				done();
+			})();
 		});
 
 		// TODO: event clear-local-db
@@ -145,10 +266,58 @@ describe('Realtime', async () => {
 		// TODO: event db-disconnect-room
 	});
 
-	describe('Rooms', async () => {
-		// TODO: Super token
-		// TODO: App Token
-		// TODO: Policy driven rooms
+	describe('db-activity with several socket workers', async () => {
+		let sockProcess = null;
+		let socket = null;
+
+		before(async function () {
+			this.timeout(30000);
+			// Its workers share the socket.io adapter with this suite's Socket process, so there are three workers.
+			sockProcess = await runStep('start SOCK process with 2 workers', async () => startSocketProcess({ workers: 2 }),
+				'Realtime setup');
+		});
+
+		after(async function () {
+			this.timeout(20000);
+			if (socket) socket.close();
+			if (sockProcess) await stopSocketProcess(sockProcess.child);
+		});
+
+		it('Should deliver each activity to a client once', async function () {
+			this.timeout(20000);
+
+			socket = io(`${sockProcess.url}/${testEnv.apps.app1.apiPath}`, {
+				auth: {
+					token: testEnv.apps.app1.token,
+				},
+				forceNew: true,
+			});
+			await new Promise((resolve, reject) => {
+				socket.once('connect', resolve);
+				socket.once('connect_error', reject);
+			});
+
+			const name = `workers-${Math.floor(Math.random() * 100)}`;
+			const received = [];
+			socket.on('db-activity', (ev) => received.push(ev));
+
+			const firstActivity = new Promise((resolve) => socket.once('db-activity', resolve));
+
+			const cars = await bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ name }),
+			}, testEnv.apps.app1.token);
+			assert.equal(cars.length, 1);
+
+			await firstActivity;
+			// Give any copies from the other workers time to arrive
+			await new Promise((resolve) => setTimeout(resolve, 1000));
+
+			const activities = received.filter((ev) => ev.data.response?.id === cars[0].id);
+			assert.equal(activities.length, 1, `Received ${activities.length} db-activity events for one POST`);
+		});
 	});
 
 	// This set of tests will test the functionality of tracking the state of a request.
@@ -156,13 +325,18 @@ describe('Realtime', async () => {
 		let req = null;
 		let deferedBJSRequestStatusPromise = null;
 		it('Should make a request to /cars, responce should contain a x-bjs-request-id header', async () => {
-			req = await fetch(`${ENDPOINT}/${testEnv.apps.app1.apiPath}/api/v1/car?token=${Config.testToken}`);
-			if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${ENDPOINT}`);
+			req = await fetch(`${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`, {
+				headers: {
+					'Content-Type': 'application/json',
+					'Authorization': `Bearer ${testEnv.apps.app1.token}`,
+				},
+			});
+			if (req.status !== 200) throw new Error(`Received non-200 (${req.status}) from POST ${ENDPOINT.REST}`);
 			assert(req.headers.get('x-bjs-request-id'));
 		});
 
 		it('Should handle a message from the user and subscribe them to a request room', async () => {
-			testEnv.socket.emit('bjs-request-subscribe', {id: req.headers.get('x-bjs-request-id')});
+			testEnv.socket.emit('bjs-request-subscribe', { id: req.headers.get('x-bjs-request-id') });
 
 			deferedBJSRequestStatusPromise = new Promise((resolve) => {
 				testEnv.socket.once('bjs-request-status', (data) => {

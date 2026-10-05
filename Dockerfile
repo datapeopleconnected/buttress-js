@@ -1,17 +1,35 @@
 # syntax=docker/dockerfile:1
-FROM node:18-bullseye-slim
-
-WORKDIR /code
+FROM node:24-bookworm-slim AS builder
 
 ENV APP_TYPE=all
 
-WORKDIR /code
+ENV BUTTRESS_APP_PATH=/opt/buttress
+
+RUN apt-get update && apt-get install -y unzip && apt-get clean
+
+WORKDIR /opt/buttress
+
 COPY . .
 
-RUN ls -la
-
-COPY package.json package.json
-RUN npm install
+RUN npm ci
 RUN npm run build
 
+# Production stage
+FROM node:24-bookworm-slim
+
+RUN apt-get update && apt-get install -y git openssh-client tini && apt-get clean
+
+COPY --from=builder /opt/buttress/bin /opt/buttress/bin
+COPY --from=builder /opt/buttress/node_modules /opt/buttress/node_modules
+COPY --from=builder /opt/buttress/dist /opt/buttress/dist
+COPY --from=builder /opt/buttress/LICENSE /opt/buttress/LICENSE
+COPY --from=builder /opt/buttress/package.json /opt/buttress/package.json
+
+RUN mkdir -p /opt/buttress/app_data
+
+WORKDIR /opt/buttress
+
+# tini runs as PID 1, passing signals on to the command (buttress.sh by default) and reaping orphaned
+# processes. docker-entrypoint.sh is the node image's own entrypoint.
+ENTRYPOINT ["/usr/bin/tini", "--", "docker-entrypoint.sh"]
 CMD ["./bin/buttress.sh"]

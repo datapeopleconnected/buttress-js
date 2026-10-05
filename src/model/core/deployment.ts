@@ -1,8 +1,6 @@
-'use strict';
-
 /**
  * Buttress - The federated real-time open data platform
- * Copyright (C) 2016-2024 Data People Connected LTD.
+ * Copyright (C) 2016-2026 Data People Connected LTD.
  * <https://www.dpc-ltd.com/>
  *
  * This file is part of Buttress.
@@ -15,73 +13,95 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import StandardModel from '../type/standard';
-import * as Helpers from '../../helpers';
+import StandardModel from '../type/standard.js';
+import { TenantKey } from '../type/tenant-scoped.js';
 
-class DeploymentSchemaModel extends StandardModel {
-	constructor(services) {
-		const schema = DeploymentSchemaModel.Schema;
-		super(schema, null, services);
-	}
+import { Schema } from '../../helpers/schema.js';
+import * as Helpers from '../../helpers/index.js';
+import { Services } from '../../bootstrap.js';
 
-	static get Schema() {
-		return {
-			name: 'deployment',
-			type: 'collection',
-			extends: [],
-			core: true,
-			properties: {
-				lambdaId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-				hash: {
-					__type: 'string',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				branch: {
-					__type: 'string',
-					__default: null,
-					__required: true,
-					__allowUpdate: true,
-				},
-				deployedAt: {
-					__type: 'date',
-					__default: 'now',
-					__required: true,
-					__allowUpdate: true,
-				},
-				_appId: {
-					__type: 'id',
-					__required: true,
-					__allowUpdate: false,
-				},
-			},
-		};
-	}
+// A type rather than an interface, so it's assignable to AdapterDocument
+export type Deployment = {
+  id: string;
+  lambdaId: string;
+  hash: string;
+  branch: string;
+  deployedAt: Date;
+  _appId: string;
+};
 
-	/**
-	 * @param {Object} body - body passed through from a POST request
-	 * @param {string} appId - the appId the deployment blongs to
-	 * @return {Promise} - fulfilled with lambda Object when the database request is completed
-	 */
-	async add(body, appId) {
-		const deploymentBody = {
-			lambdaId: (body.lambdaId) ? body.lambdaId : null,
-			hash: (body.hash) ? body.hash : null,
-			branch: (body.branch) ? body.branch : null,
-		};
+// A deployment as passed to add
+export type DeploymentAddBody = {
+  lambdaId?: string | null;
+  hash?: string | null;
+  branch?: string | null;
+  // When it was deployed, now when it isn't given
+  deployedAt?: Date;
+};
 
-		const rxsDeployment = await super.add(deploymentBody, {
-			_appId: appId,
-		});
-		const deployment = await Helpers.streamFirst(rxsDeployment);
+class DeploymentSchemaModel extends StandardModel<Deployment> {
+  static override name = 'Deployment';
+  // Each row names the app it belongs to
+  static TenantKey: TenantKey = '_appId';
 
-		return deployment;
-	}
+  constructor(services: Services) {
+    const schema = DeploymentSchemaModel.Schema;
+    super(schema, null, services);
+  }
+
+  static get Schema(): Schema {
+    return {
+      name: 'deployment',
+      type: 'collection',
+      extends: [],
+      core: true,
+      properties: {
+        lambdaId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+        hash: {
+          __type: 'string',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        branch: {
+          __type: 'string',
+          __default: null,
+          __required: true,
+          __allowUpdate: true,
+        },
+        deployedAt: {
+          __type: 'date',
+          __default: 'now',
+          __required: true,
+          __allowUpdate: true,
+        },
+        _appId: {
+          __type: 'id',
+          __required: true,
+          __allowUpdate: false,
+        },
+      },
+    };
+  }
+
+  /**
+   * @param {Object} body - body passed through from a POST request
+   * @param {string} appId - the appId the deployment blongs to
+   * @return {Promise} - fulfilled with lambda Object when the database request is completed
+   */
+  override async add(body: DeploymentAddBody, internals: { _appId: string }) {
+    // Stored as the schema reads it, deployed now unless it says when
+    const rxsDeployment = await super.add(body, {
+      _appId: internals._appId,
+    });
+    const deployment = (await Helpers.streamFirst(rxsDeployment)) as Deployment;
+
+    return deployment;
+  }
 }
 
 /**
