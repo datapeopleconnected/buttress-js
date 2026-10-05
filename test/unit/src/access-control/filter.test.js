@@ -162,6 +162,19 @@ describe('access-control/filter:buildPolicyQuery env references that are not set
     });
   });
 
+  // Every operator was dropped but the first, so a range kept only its first bound
+  it("keeps every operator a field is given, each with its env read", async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ age: { '@gte': 18, '@lt': 65 } }, env), {
+      age: { $gte: 18, $lt: 65 },
+    });
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ ownerId: { '@ne': 'x', '@in': ['#env.ownerId'] } }, env), {
+      ownerId: { $ne: 'x', $in: ['#env.ownerId'] },
+    });
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ ownerId: { '@exists': true, '@eq': '#env.ownerId' } }, env), {
+      ownerId: { $exists: true, $eq: 'owner-1' },
+    });
+  });
+
   it('reads the env in a query of @nor, as in @and and @or', async () => {
     assert.deepStrictEqual(await Filter.buildPolicyQuery({ '@nor': [{ ownerId: '#env.ownerId' }] }, env), {
       $nor: [{ ownerId: 'owner-1' }],

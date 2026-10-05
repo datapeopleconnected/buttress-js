@@ -99,11 +99,13 @@ export class Filter {
         continue;
       }
 
-      const operator = Object.keys(val)[0];
-      const value = (val as Record<string, unknown>)[operator];
-
-      outputRecord[key] = {};
-      (outputRecord[key] as Record<string, unknown>)[operator] = await resolveQueryValue(value, envVars);
+      // Every operator the field is given, each with its value read with the env; only the first was kept, so a range
+      // lost its upper bound
+      const conditions: Record<string, unknown> = {};
+      for (const [operator, value] of Object.entries(val as Record<string, unknown>)) {
+        conditions[operator] = await resolveQueryValue(value, envVars);
+      }
+      outputRecord[key] = conditions;
     }
 
     return output;
