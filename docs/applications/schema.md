@@ -258,24 +258,26 @@ property a value to equal, or an object of operators; the operators can be writt
 
 | Operator | Matches a property that |
 | :- | :- |
-| `$eq`, a bare value | equals the value; an object of fields is compared whole, as MongoDB compares it (`{"address": {"city": "Leeds"}}` matches only an `address` of exactly that), so use a path to reach inside one (`{"address.city": "Leeds"}`) |
+| `$eq`, a bare value | equals the value; an object of fields is compared whole, as MongoDB compares it (`{"address": {"city": "Leeds"}}` matches only an `address` of exactly that), so use a path to reach inside one (`{"address.city": "Leeds"}`), and so is a list (`{"tags": ["a", "b"]}` matches a `tags` of exactly that list, `{"tags": []}` only an empty one) |
 | `$ne` (`$not`) | doesn't equal it |
 | `$gt`, `$gte`, `$lt`, `$lte`, and `$gtDate`, `$gteDate`, `$ltDate`, `$lteDate` | is after or before it |
 | `$in`, `$nin`, `$all` | is one of a list, none of it, or holds all of it; the value must be a list |
 | `$exists` | is there, or isn't |
 | `$rex`, `$rexi` (`$regex`) | matches a pattern, with case or without |
 | `$inProp` | contains the text |
-| `$elMatch` (`$elemMatch`) | is a list with an item that matches a query, or a value that passes operators |
+| `$elMatch` (`$elemMatch`) | is a list with an item that matches a query, its own `$or`, `$and` and `$nor` included, or a value that passes operators |
 
 `$and`, `$or` and `$nor` take a list of queries. A query naming an operator Buttress doesn't know, or a name with an
 operator's prefix where a property goes, is refused with a 400, `unknown_operator`, naming the property and the
 operator (`$where`, `$expr` and other MongoDB operators included); one giving an operator a value it can't take,
 such as `$in` without a list or a pattern that isn't one, with a 400, `invalid_value`. Earlier releases sent both on,
-and the request failed with a 500.
+and the request failed with a 500, as it did for a list given as a value; and they read an empty list given as a value
+as matching every entity.
 
 A property's value is read as described in [How Values Are Read](#how-values-are-read). A schema with `strict: true`
 refuses a search on a path it doesn't define with a 400, `unknown_path`; a path beneath a property typed `object`, an
-array's items (`tags.0`, `lines.sku`) and `id` and `sourceId` are paths it defines.
+array's items (`tags.0`, `lines.sku`) and `id` and `sourceId` are paths it defines. A path naming `__proto__` is
+refused the same way, whatever the schema.
 
 ## Managing Schemas
 Schemas can be updated, extended, or deleted using the ButtressJS API. The `Schema` class provides methods for merging, validating, and encoding schemas.

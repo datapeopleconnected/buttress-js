@@ -58,7 +58,17 @@ problem:
 
 An issue's `code` is `required`, `type`, `enum`, `unknown_path` or `immutable` (a property that doesn't allow
 updates); a schema refused when it's saved, `invalid_schema`, also uses `invalid_name`; `expected` is the type, the listed values or the
-missing key, and `received` the type of what was given. The value itself isn't repeated.
+missing key, and `received` the type of what was given. The value itself isn't repeated. A policy refused when it's
+saved, `invalid_policy`, also uses `unknown_operator`, whose `received` is the operator's name, and `type` for an
+operand an operator can't take, whose `expected` is `array`, `string`, `pattern` or `object`.
+
+## Queries
+
+A search's query is refused with `400 unknown_operator`, `details: {path, received}`, for an operator Buttress doesn't
+know; with `400 invalid_value`, `details: {path, expected}`, for a value that can't be read as its property's type or
+an operand an operator can't take (`array`, `string`, `pattern` or `object`); and with `400 unknown_path`,
+`details: {path}`, for a path a [strict](../applications/schema.md#schema-structure) schema doesn't define, or one
+naming `__proto__`. See [Searching](../applications/schema.md#searching).
 
 ## Ids
 
@@ -100,3 +110,6 @@ Statuses changed where the same condition was answered differently in different 
 - A query naming an operator Buttress doesn't know is `400 unknown_operator`, with `details: {path, received}`, and
   one giving an operator a value it can't take is `400 invalid_value`; both were `500 internal_error`. See
   [Searching](../applications/schema.md#searching).
+- A request through a policy saved by an earlier release, whose query its schema can't read, is answered as the
+  token's other policies allow, or `403 access_denied` when none does; it was `400 invalid_value` or
+  `500 internal_error`. See [Policy](../applications/policy.md).

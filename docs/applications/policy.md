@@ -77,9 +77,10 @@ relying on that selects fewer tokens now.
 
 ## Conditions
 
-A config's `condition` must hold for the config to apply. Each key is resolved through the env, as a query's
-`#env.` values are, and so is each criterion's value; a key or value that resolves to nothing fails. A condition
-reads **value OP key**, the other way round to a query:
+A config's `condition` must hold for the config to apply; a config without one, or with a `null` one, applies (earlier
+releases refused a config that left the `condition` key out, except in realtime). Each key is resolved through the
+env, as a query's `#env.` values are, and so is each criterion's value; a key or value that resolves to nothing fails.
+A condition reads **value OP key**, the other way round to a query:
 
 ```json
 { "#env.date.now": { "@ltDate": "2025-01-01" } }
@@ -91,6 +92,34 @@ them (`$eq`, `$or`). A policy naming an operator Buttress doesn't know is refuse
 that grants nothing through that config's condition or query, and the token's other policies still apply (earlier
 releases failed the request). The date operators (`@gtDate`, `@gteDate`, `@ltDate`, `@lteDate`)
 read both sides as dates, written as `2025-01-31`, `31/01/2025` or a time of day such as `09:00`.
+
+## Queries
+
+A config's `query` says which entities it reads, as a [search's query](schema.md#searching) does, with its `#env.`
+values read from the env; `{"access": "%FULL_ACCESS%"}` reads every entity. Every operator a property is given
+applies, so `{"age": {"@gte": 18, "@lt": 65}}` reads ages from 18 up to 65. Earlier releases applied only the first
+operator a property was given, so that policy read every age from 18 up.
+
+A token whose policies give it several configs for a schema reads what they read together: each entity once, with
+every property of each config whose query reads it, and a list's `skip`, `limit` and `sort` hold for the whole list. A
+count counts each entity once. Configs with the same query read every property either one does, and all of them if
+either has no `projection`. Earlier releases read each config's query on its own, so an entity two configs read came
+back once for each, each copy with that config's properties, `skip` and `limit` held for each config rather than the
+list, and a count with `actualCount` added the configs' counts up; a config with no `projection` that shared a query
+with one that had one was narrowed to that one's properties.
+
+## Realtime
+
+A token connected over a socket is sent a change to an entity once, with what its policies let it read of it, when
+they'd let a REST read reach that entity: the configs that let it read the schema, with the same conditions, queries
+and `limit`. Earlier releases sent a copy for each policy, and each config, that read the entity, and read some queries
+differently from a REST read: text without its case, and bare values not at all.
+
+## Limit
+
+A policy with a `limit` grants nothing once the limit has passed. Buttress then removes the policy, and takes off the
+token the policy properties its selection took it by: each key the selection needs, and those of each `@or` branch
+that holds for the token, but not those of a branch that doesn't.
 
 ## Listing and Removing
 
