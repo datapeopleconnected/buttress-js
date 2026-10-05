@@ -257,8 +257,9 @@ export default class MongodbAdapter extends AbstractAdapter {
     if (this.__connection) return this.__connection;
 
     const uri = withOptions(this.uri, this.options);
-    // Remove the pathname as we'll selected the db using the client method
-    const connectionString = uri.href.replace(uri.pathname, '');
+    // The database is selected with db() below, so the client is given the connection string without its path
+    uri.pathname = '';
+    const connectionString = uri.href;
 
     // Command monitoring costs something per command, so it's only on while I/O is being counted (the budget tests).
     if (IOStats.isEnabled()) {

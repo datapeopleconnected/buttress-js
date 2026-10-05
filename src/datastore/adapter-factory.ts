@@ -27,7 +27,10 @@ export default class Datastore {
   static create(connectionString: string, optsString?: string) {
     const uri = new URL(connectionString);
 
-    if (!uri.pathname) {
+    // A connection string without a path gets the default database. So does a MongoDB one whose path is just '/', as
+    // MongoDB's docs give options without a database (host/?authSource=admin). A Buttress one's path is the partner
+    // app's api path, so a bare '/' is left there.
+    if (!uri.pathname || (uri.protocol === 'mongodb:' && uri.pathname === '/')) {
       uri.pathname = `${Config.app.code}-${Config.env}`;
     }
 

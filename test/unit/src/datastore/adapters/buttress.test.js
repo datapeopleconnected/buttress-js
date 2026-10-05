@@ -21,6 +21,7 @@ import { Readable } from 'node:stream';
 import sinon from 'sinon';
 
 import ButtressAdapter from '../../../../../dist/datastore/adapters/buttress.js';
+import DatastoreFactory from '../../../../../dist/datastore/adapter-factory.js';
 
 // An adapter that talks to a fake remote collection, without connecting to anything
 function createAdapter(collection) {
@@ -113,5 +114,12 @@ describe('datastore/adapters/buttress:connect', () => {
     await assert.rejects(adapter.connect());
 
     assert.strictEqual(partner.attempts, 1);
+  });
+
+  // Data sharing connects to butt://<endpoint>/<apiPath>?token=..., and an agreement's apiPath can be empty
+  it("keeps a bare '/' as the path, the partner app's api path, rather than giving it the default database", () => {
+    const adapter = DatastoreFactory.create('butt://localhost:8000/?token=t');
+
+    assert.strictEqual(adapter.uri.pathname, '/');
   });
 });

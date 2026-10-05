@@ -20,12 +20,15 @@ import sinon from 'sinon';
 
 import { ObjectId } from 'bson';
 import { MongoClient } from 'mongodb';
+import createConfig from '@dpc/node-env-obj';
 
 import MongodbAdapter, { applyUpdateOps, mergeUpdateOps } from '../../../../../dist/datastore/adapters/mongodb.js';
 import { Datastore } from '../../../../../dist/datastore/index.js';
 import IOStats from '../../../../../dist/helpers/io-stats.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
 import { isObjectId } from '../../../../../dist/datastore/adapters/object-id.js';
+
+const Config = createConfig();
 
 const ID = '507f1f77bcf86cd799439011';
 
@@ -883,5 +886,34 @@ describe('datastore/adapters/MongodbAdapter: connect', () => {
 
     assert.strictEqual(client.options.monitorCommands, true);
     assert.strictEqual(client.options.maxPoolSize, 10);
+  });
+
+  it('connects to a host whose name starts with the database name', async () => {
+    const db = await connect('mongodb://buttress-mongo:27017/buttress');
+
+    assert.deepStrictEqual(client.options.hosts.map(String), ['buttress-mongo:27017']);
+    assert.strictEqual(db.databaseName, 'buttress');
+  });
+
+  it('connects as a user whose name starts with the database name', async () => {
+    const db = await connect('mongodb://buttress:secret@localhost:27017/buttress');
+
+    assert.strictEqual(client.options.credentials.username, 'buttress');
+    assert.strictEqual(db.databaseName, 'buttress');
+  });
+
+  it('selects the default database for a connection string that names none, ending in a slash or not', async () => {
+    for (const connectionString of ['mongodb://localhost:27017', 'mongodb://localhost:27017/']) {
+      const db = await connect(connectionString);
+
+      assert.strictEqual(db.databaseName, `${Config.app.code}-${Config.env}`, connectionString);
+    }
+  });
+
+  it("reads the options of a connection string written host/?options, MongoDB's form without a database", async () => {
+    const db = await connect('mongodb://bjs:secret@localhost:27017/?authSource=accounts');
+
+    assert.strictEqual(client.options.credentials.source, 'accounts');
+    assert.strictEqual(db.databaseName, `${Config.app.code}-${Config.env}`);
   });
 });
