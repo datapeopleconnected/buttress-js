@@ -17,6 +17,9 @@
       repo: 'https://github.com/datapeopleconnected/buttress-js',
       loadSidebar: true,
       subMaxLevel: 2,
+      // Resolve a page's links from its own folder, as GitHub does. The sidebar's links start with / because they
+      // would otherwise resolve against whichever page is open.
+      relativePath: true,
       alias: {
         '/.*/_sidebar.md': '/_sidebar.md'
       }
