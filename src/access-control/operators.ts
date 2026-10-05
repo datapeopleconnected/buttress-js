@@ -128,15 +128,42 @@ export const isValueOperators = (value: unknown): value is Record<string, unknow
     (key) => (key.startsWith('$') || key.startsWith('@')) && !Object.hasOwn(LOGICAL_ALIASES, key),
   );
 
-// Text JavaScript reads as a pattern
+// The escapes JavaScript and MongoDB's PCRE read alike: a class (\d, \s, \w and their capitals), a word boundary (\b,
+// \B), a control character (\f, \n, \r, \t, \cX), a character by its two hex digits (\xhh), a backreference by number,
+// and any other character that isn't a letter or digit, as itself
+const SHARED_ESCAPE = /^(?:[dDsSwWbBfnrt]|c[A-Za-z]|x[0-9A-Fa-f]{2}|[0-9]+|[^A-Za-z0-9])/;
+// A backreference by name, which both read alike where the pattern names a group
+const NAMED_BACKREFERENCE = /^k<[A-Za-z_$][\w$]*>/;
+// PCRE's largest repeat
+const MAX_REPEAT = 65535;
+
+// Whether a pattern JavaScript reads uses what MongoDB reads differently, or refuses: an escape PCRE gives another
+// meaning (\A, \Z, \Q…\E, \p{…}, \v, \x{…}, \u…), a POSIX class ([:alpha:]), or a repeat past PCRE's largest
+const readsDifferently = (pattern: string) => {
+  if (/\[:[A-Za-z]+:\]/.test(pattern)) return true;
+  const repeats = [...pattern.matchAll(/\{(\d+)(?:,(\d*))?\}/g)];
+  if (repeats.some(([, min, max]) => Number(min) > MAX_REPEAT || Number(max ?? 0) > MAX_REPEAT)) return true;
+
+  const namesGroups = /\(\?<[A-Za-z_$]/.test(pattern);
+  for (let idx = 0; idx < pattern.length; idx++) {
+    if (pattern[idx] !== '\\') continue;
+    const rest = pattern.slice(idx + 1);
+    const escape = SHARED_ESCAPE.exec(rest) ?? (namesGroups ? NAMED_BACKREFERENCE.exec(rest) : null);
+    if (!escape) return true;
+    idx += escape[0].length;
+  }
+  return false;
+};
+
+// Text JavaScript reads as a pattern, and MongoDB reads as the same pattern, so a search and realtime match alike
 export const isPattern = (value: unknown) => {
   if (typeof value !== 'string') return false;
   try {
     new RegExp(value);
-    return true;
   } catch (_err) {
     return false;
   }
+  return !readsDifferently(value);
 };
 
 /**

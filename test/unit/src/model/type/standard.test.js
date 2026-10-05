@@ -178,6 +178,17 @@ describe('model/type/StandardModel:parseQuery operators', () => {
     [{ name: { $all: 'x' } }, 'name', 'array'],
     [{ name: { $rex: '(' } }, 'name', 'pattern'],
     [{ name: { $rexi: 5 } }, 'name', 'pattern'],
+    // Patterns MongoDB reads differently from JavaScript, or refuses
+    [{ name: { $rex: '(?i)abc' } }, 'name', 'pattern'],
+    [{ name: { $rex: '\\Aabc' } }, 'name', 'pattern'],
+    [{ name: { $rex: 'abc\\Z' } }, 'name', 'pattern'],
+    [{ name: { $rex: '\\Qa.b\\E' } }, 'name', 'pattern'],
+    [{ name: { $rex: '\\p{L}' } }, 'name', 'pattern'],
+    [{ name: { $rex: '[[:alpha:]]' } }, 'name', 'pattern'],
+    [{ name: { $rex: '\\u0041' } }, 'name', 'pattern'],
+    [{ name: { $rex: '\\v' } }, 'name', 'pattern'],
+    [{ name: { $rexi: '\\x{41}' } }, 'name', 'pattern'],
+    [{ name: { $regex: 'a{70000}' } }, 'name', 'pattern'],
     [{ name: { $inProp: 5 } }, 'name', 'string'],
     [{ tags: { $elMatch: 'x' } }, 'tags', 'object'],
     [{ $or: { name: 'x' } }, '$or', 'array'],
@@ -187,6 +198,21 @@ describe('model/type/StandardModel:parseQuery operators', () => {
       assert.throws(() => createModel().parseQuery(query), { status: 400, code: 'invalid_value', details: { path, expected } });
     });
   }
+
+  it('takes a pattern JavaScript and MongoDB read alike', () => {
+    for (const pattern of [
+      '^a\\.b$',
+      '\\d{3}-\\w+\\s\\S',
+      'a\\-b\\/c\\\\d',
+      '[a-z]+\\b',
+      '(?:ab)+',
+      '(?<year>\\d{4})-\\k<year>',
+      '\\x41\\cJ\\t',
+      'a{2,65535}',
+    ]) {
+      assert.deepStrictEqual(createModel().parseQuery({ name: { $rex: pattern } }), { name: { $rex: pattern } }, pattern);
+    }
+  });
 
   it('compares an object of fields whole, as MongoDB does', () => {
     assert.deepStrictEqual(createModel().parseQuery({ address: { city: 'Leeds' } }), {

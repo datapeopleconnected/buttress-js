@@ -73,6 +73,10 @@ const QUERIES = [
   { name: { $rex: '^a' } },
   { name: { $rexi: '^a' } },
   { name: { $inProp: 'd' } },
+  // Escapes JavaScript and MongoDB read alike
+  { name: { $rex: '^\\x41\\w' } },
+  { name: { $rexi: '^a\\w{2}$' } },
+  { name: { $rex: 'a\\b' } },
   { count: 3 },
   { count: { $gt: 3 } },
   { count: { $gte: 3 } },

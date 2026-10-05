@@ -274,6 +274,14 @@ such as `$in` without a list or a pattern that isn't one, with a 400, `invalid_v
 and the request failed with a 500, as it did for a list given as a value; and they read an empty list given as a value
 as matching every entity.
 
+A pattern, for `$rex`, `$rexi` or `$regex`, is a JavaScript regular expression that MongoDB reads the same way, so a
+search and realtime match it alike. One that isn't is refused with a 400, `invalid_value`, expecting a `pattern`:
+inline flags such as `(?i)` (use `$rexi` to ignore case); an escaped letter other than the classes `\d`, `\s` and `\w`
+(and `\D`, `\S`, `\W`), `\b`, `\B`, `\f`, `\n`, `\r`, `\t`, `\cX`, `\xhh` and `\k<name>`, such as `\A`, `\Z`, `\Q…\E`,
+`\p{…}`, `\v`, `\x{…}` or `\u…`; a POSIX class such as `[[:alpha:]]`; and a repeat of more than 65535. Earlier releases
+sent them on to MongoDB, which took inline flags, read the others its own way where realtime read them as
+JavaScript does, and refused some with a 500.
+
 A property's value is read as described in [How Values Are Read](#how-values-are-read). A schema with `strict: true`
 refuses a search on a path it doesn't define with a 400, `unknown_path`; a path beneath a property typed `object`, an
 array's items (`tags.0`, `lines.sku`) and `id` and `sourceId` are paths it defines. A path naming `__proto__` is

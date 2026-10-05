@@ -463,12 +463,15 @@ describe('Schema', async () => {
 		it('Should refuse a search giving an operator a value it can\'t take, with 400', async () => {
 			await assert.rejects(() => searchNames({name: {$in: 'Rex-Case-Car'}}), refusal('invalid_value', {path: 'name', expected: 'array'}));
 			await assert.rejects(() => searchNames({name: {$rex: '('}}), refusal('invalid_value', {path: 'name', expected: 'pattern'}));
+			// Patterns MongoDB reads differently from JavaScript, or refuses
+			await assert.rejects(() => searchNames({name: {$rex: '\\u0041'}}), refusal('invalid_value', {path: 'name', expected: 'pattern'}));
+			await assert.rejects(() => searchNames({name: {$rex: '\\ARex'}}), refusal('invalid_value', {path: 'name', expected: 'pattern'}));
 		});
 
 		it('Should fail a search that MongoDB refuses while streaming, and keep serving requests', async () => {
-			// A pattern JavaScript reads and MongoDB doesn't: MongoDB only rejects it once the cursor runs, after the route
-			// has its stream.
-			await assert.rejects(() => searchNames({name: {$rex: '\\u0041'}}), (err) => {
+			// A pattern JavaScript reads and MongoDB doesn't (a lookbehind of no fixed length): MongoDB only rejects it once
+			// the cursor runs, after the route has its stream.
+			await assert.rejects(() => searchNames({name: {$rex: '(?<=R+)ex'}}), (err) => {
 				assert.strictEqual(err.code, 500);
 				assert.deepStrictEqual(err.body, { code: 'internal_error', message: 'Internal server error' });
 				return true;

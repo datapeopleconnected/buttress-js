@@ -183,6 +183,12 @@ describe('access-control/policy-definition:checkPolicyConfig operands', () => {
     );
   });
 
+  it('refuses a pattern MongoDB reads differently from JavaScript', () => {
+    assert.deepStrictEqual(checkPolicyConfig([{ ...valid(), query: { name: { '@rex': '\\Aadmin' } } }]), [
+      { path: 'config.0.query.name', code: 'type', expected: 'pattern' },
+    ]);
+  });
+
   it('checks the operands an update writes to a config', () => {
     assert.deepStrictEqual(checkPolicyConfigUpdate({ path: 'config.0.query', value: { tags: { '@in': 'x' } } }), [
       { path: 'config.0.query.tags', code: 'type', expected: 'array' },
