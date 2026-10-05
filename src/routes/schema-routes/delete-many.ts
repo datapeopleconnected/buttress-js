@@ -27,6 +27,7 @@ import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
+import { pickWriteTarget, WriteTarget } from './write-target.js';
 
 /**
  * @class DeleteMany
@@ -70,28 +71,38 @@ export default class DeleteMany extends Route {
     // }
 
     const findParams: QueryParams<{ id: unknown }> = { query: { id: { $in: ids } } };
-    const rxsScoped = await ACM.find(model, findParams, req.context.ac);
-    const scopedEntities = await Helpers.streamAll<{ id: { toString(): string } }>(rxsScoped);
-    const scopedIds = new Set(scopedEntities.map((entity) => entity.id.toString()));
+    const scopedEntities = await Helpers.streamAll<AdapterDocument>(await ACM.find(model, findParams, req.context.ac));
+
+    // Each id's record within the caller's policies, in whichever source has it, which it's removed from
+    const request = { appId: this._dataApp(req).id ?? '', schemaName: this.schemaName ?? 'entity' };
+    const targets = ids.map((id) =>
+      pickWriteTarget(
+        model,
+        scopedEntities.filter((entity) => String(entity.id) === String(id)),
+        { ...request, id: String(id) },
+      ),
+    );
     // One outside the caller's policies is answered as one that doesn't exist
-    const missing = ids.find((id) => !scopedIds.has(id.toString()));
+    const missing = ids.find((_id, idx) => !targets[idx]);
     if (missing !== undefined) {
       this.log(`ERROR: Invalid ${this.schemaName} IDs provided`, Route.LogLevel.ERR, req.context.id);
       throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', missing);
     }
 
-    return { ids, found: scopedEntities as AdapterDocument[] };
+    return { ids, targets: targets as WriteTarget[] };
   }
 
-  override async _exec(req: Request, _res: Response, { ids, found }: { ids: string[]; found: AdapterDocument[] }) {
-    await this._keepEntitiesBeingDeleted(req, ids, found);
-    // A partner's record, found through a collection's remotes, is removed from its source
-    const sourceIds = new Map(found.map((entity) => [String(entity.id), entity.sourceId as string | undefined]));
+  override async _exec(req: Request, _res: Response, { ids, targets }: { ids: string[]; targets: WriteTarget[] }) {
+    await this._keepEntitiesBeingDeleted(
+      req,
+      ids,
+      targets.map((target) => target.entity),
+    );
     await (
       await this.routeModel()
     ).rmBulk(
       ids,
-      ids.map((id) => sourceIds.get(String(id))),
+      targets.map((target) => target.via),
     );
     return ids;
   }

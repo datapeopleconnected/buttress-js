@@ -18,6 +18,7 @@ import { Readable } from 'node:stream';
 
 import ObjectIdHelper from '../dist/datastore/adapters/object-id.js';
 import StandardModel from '../dist/model/type/standard.js';
+import RemoteCombinedModel from '../dist/model/type/remote-combined.js';
 
 // Evaluates a query as StandardModel.parseQuery leaves it, in MongoDB's language. An operator it doesn't know throws,
 // so a test never passes against a query nothing understood.
@@ -184,3 +185,36 @@ export function createSchemaModel(schema, rows = []) {
 
 // An id for a test row
 export const newId = () => ObjectIdHelper.new();
+
+// The app a federated schema model's collection belongs to
+export const FEDERATED_APP_ID = ObjectIdHelper.new();
+
+/**
+ * A real collection with remotes (RemoteCombinedModel) over datastores in memory: the app's own rows, and each
+ * partner's, read through an agreement. Its routes for creates come from `routes`, a map of source to agreement.
+ * @param {object} schema - the collection's schema, as for createSchemaModel
+ * @param {object[]} ownRows - the app's own rows
+ * @param {object} partners - each agreement's id, and the rows its partner holds
+ * @param {object} [routes] - the agreement reads have learnt reaches each source, by source
+ * @return {{ model: RemoteCombinedModel, datastores: object }} - the datastores by agreement, `local` for the app's own
+ */
+export function createFederatedSchemaModel(schema, ownRows, partners, routes = {}) {
+  const services = new Map([
+    ['nrp', { on: async () => () => {}, emit: () => {} }],
+    ['modelManager', {}],
+    ['sdsRouting', { inform: () => {}, get: async (appId, sourceId) => routes[sourceId] }],
+  ]);
+  const local = createSchemaModel(schema, ownRows);
+  const model = new RemoteCombinedModel(local.model.schemaData, { id: FEDERATED_APP_ID }, services);
+  model._localModel = local.model;
+
+  const datastores = { local: local.datastore };
+  model._remoteModels = Object.entries(partners).map(([dataSharingId, rows]) => {
+    const partner = createSchemaModel(schema, rows);
+    partner.model.dataSharingId = dataSharingId;
+    datastores[dataSharingId] = partner.datastore;
+    return partner.model;
+  });
+
+  return { model, datastores };
+}

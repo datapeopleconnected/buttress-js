@@ -312,6 +312,18 @@ describe('Data Sharing', async () => {
 			assert.strictEqual(onApp1.name, 'A dark red car');
 		});
 
+		it('Should update one of App1\'s cars from App2 by its id alone', async function() {
+			const [red] = testEnv.cars;
+			await app2Cars(`/${red.id}`, {
+				method: 'PUT',
+				body: JSON.stringify({path: 'name', value: 'A deep red car'}),
+			});
+			red.name = 'A deep red car';
+
+			const onApp1 = (await app1Cars()).find((car) => car.id === red.id);
+			assert.strictEqual(onApp1.name, 'A deep red car');
+		});
+
 		it('Should delete one of App1\'s cars from App2 by its id', async function() {
 			await createCar(testEnv.apps.app1, 'A scrap car');
 			const scrap = testEnv.cars.at(-1);

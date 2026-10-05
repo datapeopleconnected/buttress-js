@@ -61,8 +61,8 @@ describe('model/type/RemoteCombinedModel', () => {
   });
 
   // App b's collection reads app a's records through agreement-1. Each routing service shares one Redis, as the
-  // processes and workers of an instance do.
-  describe('routing to a partner', () => {
+  // processes and workers of an instance do. Only a create, which has no record to read first, goes by these routes.
+  describe('routing a create to a partner', () => {
     const routings = [];
     afterEach(() => routings.splice(0).forEach((routing) => routing.clean()));
 
@@ -87,7 +87,7 @@ describe('model/type/RemoteCombinedModel', () => {
         {
           dataSharingId: 'agreement-1',
           find: async () => Readable.from(partnerCars),
-          updateByPath: async (body, id) => ({ agreement: 'agreement-1', id, body }),
+          add: async (body) => ({ agreement: 'agreement-1', body }),
         },
       ];
       return model;
@@ -103,16 +103,83 @@ describe('model/type/RemoteCombinedModel', () => {
       assert.strictEqual(await routing.get('app-b', 'app-a'), 'agreement-1');
     });
 
-    it('updates a partner record that another process read', async () => {
+    it('creates a record at a partner that another process read', async () => {
       const redis = createRedis();
       const reader = createFederatedModel(createRouting(redis), [{ id: 'car-1', sourceId: 'app-a' }]);
       await (await reader.find({})).toArray();
       await waitForRoutesStored();
 
       const writer = createFederatedModel(createRouting(redis), []);
-      const result = await writer.updateByPath([{ path: 'name', value: 'renamed' }], 'car-1', 'app-a');
+      const result = await writer.add({ name: 'new', sourceId: 'app-a' });
 
-      assert.deepStrictEqual(result, { agreement: 'agreement-1', id: 'car-1', body: [{ path: 'name', value: 'renamed' }] });
+      assert.deepStrictEqual(result, { agreement: 'agreement-1', body: { name: 'new', sourceId: 'app-a' } });
+    });
+  });
+
+  // App b reads its own records and two partners'. agreement-1's partner names app-c, agreement-2's app, as the source
+  // of its record, and the route reads learnt for app-c leads to agreement-2.
+  describe("writing to a record it read", () => {
+    const createWritingModel = () => {
+      const written = [];
+      const source = (name, cars) => ({
+        dataSharingId: name,
+        find: async () => Readable.from(cars),
+        exists: async (id) => written.push([name, 'exists', id]) > 0,
+        updateByPath: async (body, id) => written.push([name, 'updateByPath', id]),
+        rm: async (id) => written.push([name, 'rm', id]),
+      });
+      const model = Object.create(RemoteCombinedModel.prototype);
+      model.app = { id: 'app-b' };
+      model._sdsRouting = { inform: () => {}, get: async () => 'agreement-2' };
+      model._unreachable = new Set();
+      model._localModel = source('local', [{ id: 'car-b', sourceId: null }]);
+      model._remoteModels = [
+        source('agreement-1', [{ id: 'car-1', sourceId: 'app-c' }]),
+        source('agreement-2', [{ id: 'car-2', sourceId: 'app-c' }]),
+      ];
+      return { model, written };
+    };
+
+    it('tells where each record it read came from, whatever source the record names', async () => {
+      const { model } = createWritingModel();
+
+      const cars = await (await model.find({})).toArray();
+
+      assert.deepStrictEqual(
+        cars.map((car) => [car.id, model.sourceOf(car)]),
+        [
+          ['car-1', 'agreement-1'],
+          ['car-2', 'agreement-2'],
+          ['car-b', null],
+        ],
+      );
+      assert.strictEqual(model.sourceOf({ id: 'car-1', sourceId: 'app-c' }), undefined);
+    });
+
+    it('writes through the agreement a record was read through, not the route its source leads to', async () => {
+      const { model, written } = createWritingModel();
+      const cars = await (await model.find({})).toArray();
+      const car = cars.find((c) => c.id === 'car-1');
+
+      await model.exists(car.id, model.sourceOf(car));
+      await model.updateByPath([{ path: 'name', value: 'renamed' }], car.id, model.sourceOf(car));
+      await model.rm(car.id, model.sourceOf(car));
+
+      assert.deepStrictEqual(written, [
+        ['agreement-1', 'exists', 'car-1'],
+        ['agreement-1', 'updateByPath', 'car-1'],
+        ['agreement-1', 'rm', 'car-1'],
+      ]);
+    });
+
+    it("writes the app's own record locally", async () => {
+      const { model, written } = createWritingModel();
+      const cars = await (await model.find({})).toArray();
+      const own = cars.find((c) => c.id === 'car-b');
+
+      await model.updateByPath([{ path: 'name', value: 'renamed' }], own.id, model.sourceOf(own));
+
+      assert.deepStrictEqual(written, [['local', 'updateByPath', 'car-b']]);
     });
   });
 
@@ -160,10 +227,10 @@ describe('model/type/RemoteCombinedModel', () => {
       return { model, removed };
     };
 
-    it("removes a partner's record from the partner", async () => {
+    it("removes a partner's record from the partner it was read through", async () => {
       const { model, removed } = createRemovingModel();
 
-      await model.rm('car-1', 'app-a');
+      await model.rm('car-1', 'agreement-1');
 
       assert.deepStrictEqual(removed, [['agreement-1', 'car-1']]);
     });
@@ -268,7 +335,7 @@ describe('model/type/RemoteCombinedModel', () => {
     it("refuses a write to the partner's record as unavailable", async () => {
       const model = await createModel(createPartner('agreement-1'));
 
-      await assert.rejects(() => model.updateByPath([{ path: 'name', value: 'x' }], 'car-a', 'app-a'), { status: 503, code: 'data_sharing_partner_unavailable' });
+      await assert.rejects(() => model.updateByPath([{ path: 'name', value: 'x' }], 'car-a', 'agreement-1'), { status: 503, code: 'data_sharing_partner_unavailable' });
       await model.destroy();
     });
 
@@ -316,10 +383,10 @@ describe('model/type/RemoteCombinedModel', () => {
       return { model, removed };
     };
 
-    it('removes each record from its source', async () => {
+    it('removes each record from where it was read', async () => {
       const { model, removed } = createBulkModel();
 
-      await model.rmBulk(['own-1', 'a-1', 'c-1', 'a-2'], [undefined, 'app-a', 'app-c', 'app-a']);
+      await model.rmBulk(['own-1', 'a-1', 'c-1', 'a-2'], [undefined, 'agreement-1', 'agreement-2', 'agreement-1']);
 
       assert.deepStrictEqual(removed.sort(), [
         ['agreement-1', 'rmBulk', ['a-1', 'a-2']],

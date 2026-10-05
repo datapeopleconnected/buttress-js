@@ -127,12 +127,19 @@ Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" â€
   instance via a `butt://`/`butts://` connection string
   ([src/datastore/adapters/buttress.ts](../src/datastore/adapters/buttress.ts)), built from the DSA's
   `remoteApp` details (`Helpers.DataSharing.createDataSharingConnectionString`). Reads go to the local
-  model and every remote, merged by `SortedStreams`. A partner's record carries its `sourceId` (the app it
-  came from), and a write to it names it (`PUT <schema>/:sourceId/:id`; the delete routes take the
-  found records'). A delete of every record also goes through each DSA, for the partner's policy to
-  scope. Which DSA reaches a source is learnt from reads by `SourceDataSharingRouting`
-  ([src/services/source-ds-routing.ts](../src/services/source-ds-routing.ts)) and kept in Redis
-  (`sds-route:<appId>-<sourceId>` under `Config.redis.scope`), so every process and the next start share it.
+  model and every remote, merged by `SortedStreams`, and the model notes which DSA each record came through as it
+  arrives (`sourceOf`, kept by the record object, so it's never returned). A partner's record carries its
+  `sourceId` (the app it came from), but the partner gives that, so a write never goes by it (D-20): the
+  update and delete routes read the record within the caller's policies across every source, and write through
+  the DSA it was read through (`pickWriteTarget`,
+  [src/routes/schema-routes/write-target.ts](../src/routes/schema-routes/write-target.ts)). When more than one
+  source has the id (one entity's parts), `PUT <schema>/:sourceId/:id` picks one by the source it names, or else
+  it's the app's own; with neither it's a 409 `ambiguous_source`. The write's activity carries the DSA
+  (`dataShareId`, a bulk update's `dataShareIds`), for the SPR to find the record there. A delete of every record
+  also goes through each DSA, for the partner's policy to scope. A create has nothing to read first, so it still
+  goes by the source it names, through the DSA reads learnt reaches it, by `SourceDataSharingRouting`
+  ([src/services/source-ds-routing.ts](../src/services/source-ds-routing.ts)), kept in Redis
+  (`sds-route:<appId>-<sourceId>` under `Config.redis.scope`).
   A partner that can't be reached when the model is built is left out of its sources, and tried again on a new
   connection (1 s doubling to 60 s) until it is. Meanwhile reads give the rest, a write to its records is a 503, and
   `GET app/schema` gives the collection without the partner's properties. The consumer is a live proxy: it

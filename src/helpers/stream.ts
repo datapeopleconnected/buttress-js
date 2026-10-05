@@ -31,6 +31,12 @@ interface QueuedChunk<T> {
  */
 export type ChunkSentEvent<T> = QueuedChunk<T>;
 
+/**
+ * Payload of the `chunkReceived` event, emitted as a source's chunk arrives, before it's queued, so a listener knows
+ * which source gave a chunk before anything can read it.
+ */
+export type ChunkReceivedEvent<T> = QueuedChunk<T>;
+
 export class SortedStreams<T = unknown> extends Readable {
   private _sources: SourceHolder[];
 
@@ -151,6 +157,7 @@ export class SortedStreams<T = unknown> extends Readable {
 
   // Source event handlers
   _handleSourceChunk(chunk: T, sourceIdx: number) {
+    this.emit('chunkReceived', { chunk, sourceIdx } satisfies ChunkReceivedEvent<T>);
     this._enqueue({ chunk, sourceIdx });
     this._sources[sourceIdx].queued++;
 

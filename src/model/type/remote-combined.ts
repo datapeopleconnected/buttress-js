@@ -26,7 +26,7 @@ import { Schema } from '../../helpers/schema.js';
 import { Services } from '../../bootstrap.js';
 import { Datastore } from '../../datastore/index.js';
 import ButtressAdapter from '../../datastore/adapters/buttress.js';
-import { ChunkSentEvent } from '../../helpers/stream.js';
+import { ChunkReceivedEvent, ChunkSentEvent } from '../../helpers/stream.js';
 import { AdapterDocument, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
 import Logging from '../../helpers/logging.js';
 
@@ -34,13 +34,24 @@ import Logging from '../../helpers/logging.js';
 const REMOTE_RETRY_FIRST_MS = 1000;
 const REMOTE_RETRY_MOST_MS = 60000;
 
+// A partner a read or write needs can't be reached
+export const partnerUnavailable = () =>
+  Helpers.Errors.unavailable('data_sharing_partner_unavailable', 'A data sharing partner is unavailable');
+
+// Where each record a federated collection read came from: null for the app's own, or the id of the agreement it was
+// read through. It's kept by the record object, so it's never part of what's returned.
+const servedThrough = new WeakMap<object, string | null>();
+const noteSource = (record: unknown, via: string | null) => {
+  if (record && typeof record === 'object') servedThrough.set(record, via);
+};
+
 /**
+ * A collection with `remotes`: the app's own records and each partner's, read together. A write to a partner's record
+ * goes through the agreement the record was read through, which the writing route finds with its own read (sourceOf),
+ * and never by the sourceId the record names, as a partner gives that. A create has nothing to read first, so it still
+ * goes by the source it names, through the routes reads learn (SourceDataSharingRouting).
  * @class RemoteCombinedModel
  */
-
-// A partner a read or write needs can't be reached
-const partnerUnavailable = () =>
-  Helpers.Errors.unavailable('data_sharing_partner_unavailable', 'A data sharing partner is unavailable');
 export default class RemoteCombinedModel extends StandardModel {
   override app: App;
 
@@ -194,6 +205,8 @@ export default class RemoteCombinedModel extends StandardModel {
     return this._localModel;
   }
 
+  // The model for a source a request names, through the route reads learnt for it. Only for a create, and for finding
+  // an entity by a source an activity names.
   async _getTargetModel(sourceId?: string | null) {
     if (!sourceId || sourceId === this.app.id.toString()) return this.localModel;
 
@@ -201,6 +214,28 @@ export default class RemoteCombinedModel extends StandardModel {
     if (dataSharingId) return this._remoteModelThrough(dataSharingId);
 
     throw new Error(`Unable to resolve target model for sourceId: ${sourceId}`);
+  }
+
+  // The model for the agreement a record was read through (sourceOf), or the app's own for none
+  _modelThrough(via?: string | null) {
+    return via ? this._remoteModelThrough(via) : this.localModel;
+  }
+
+  /**
+   * Where a record this collection read came from, as the read found it rather than as the record says.
+   * @param {unknown} record - one this collection's find gave
+   * @return {string|null|undefined} - the agreement it was read through, null for the app's own, or undefined for a
+   * record the collection didn't read
+   */
+  sourceOf(record: unknown) {
+    return record && typeof record === 'object' ? servedThrough.get(record) : undefined;
+  }
+
+  /**
+   * @return {boolean} - whether a partner the collection reads couldn't be reached, so its records were left out
+   */
+  hasUnreachablePartner() {
+    return this._unreachable.size > 0;
   }
 
   _remoteModelThrough(dataSharingId: string) {
@@ -238,20 +273,20 @@ export default class RemoteCombinedModel extends StandardModel {
   /**
    * @param {object} body
    * @param {string} id
-   * @param {string} sourceId
+   * @param {string} via - the agreement the record was read through (sourceOf), none for the app's own
    * @return {promise}
    */
-  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, sourceId?: string | null) {
-    return (await this._getTargetModel(sourceId)).updateByPath(body, id);
+  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, via?: string | null) {
+    return this._modelThrough(via).updateByPath(body, id);
   }
 
   /**
    * @param {string} id
-   * @param {string} sourceId
+   * @param {string} via - the agreement the record was read through (sourceOf), none for the app's own
    * @return {Boolean}
    */
-  override async exists(id: string, sourceId?: string | null) {
-    return (await this._getTargetModel(sourceId)).exists(id);
+  override async exists(id: string, via?: string | null) {
+    return this._modelThrough(via).exists(id);
   }
 
   /**
@@ -278,32 +313,27 @@ export default class RemoteCombinedModel extends StandardModel {
 
   /**
    * @param {string} id
-   * @param {string} sourceId - the source of a partner's record, none for the app's own
+   * @param {string} via - the agreement the record was read through (sourceOf), none for the app's own
    * @return {Promise}
    */
-  override async rm(id: string, sourceId?: string | null) {
-    return (await this._getTargetModel(sourceId)).rm(id);
+  override async rm(id: string, via?: string | null) {
+    return this._modelThrough(via).rm(id);
   }
 
   /**
-   * Removes each record from its source. Every source is found before any record is removed.
+   * Removes each record from where it was read. Every source is found before any record is removed.
    * @param {array} ids
-   * @param {array} sourceIds - the source of each record, none for the app's own
+   * @param {array} vias - the agreement each record was read through (sourceOf), none for the app's own
    * @return {Promise}
    */
-  override async rmBulk(ids: string[], sourceIds: (string | null | undefined)[] = []) {
+  override async rmBulk(ids: string[], vias: (string | null | undefined)[] = []) {
     const bySource = new Map<string | null, string[]>();
     ids.forEach((id, idx) => {
-      const sourceId = sourceIds[idx] ?? null;
-      bySource.set(sourceId, [...(bySource.get(sourceId) ?? []), id]);
+      const via = vias[idx] ?? null;
+      bySource.set(via, [...(bySource.get(via) ?? []), id]);
     });
 
-    const removals = await Promise.all(
-      [...bySource].map(async ([sourceId, idsOfSource]) => ({
-        model: await this._getTargetModel(sourceId),
-        ids: idsOfSource,
-      })),
-    );
+    const removals = [...bySource].map(([via, idsOfSource]) => ({ model: this._modelThrough(via), ids: idsOfSource }));
     for (const removal of removals) {
       await removal.model.rmBulk(removal.ids);
     }
@@ -326,6 +356,8 @@ export default class RemoteCombinedModel extends StandardModel {
   }
 
   /**
+   * A record by the source it names, through the route reads learnt for it. One a write went through, or a partner
+   * relayed, is found through its agreement with findSharedById.
    * @param {string} id
    * @param {string} sourceId
    * @return {Promise}
@@ -387,8 +419,13 @@ export default class RemoteCombinedModel extends StandardModel {
       skip,
     );
 
-    // When a chunk is sent, we'll inform the routing service of the sourceId.
-    // We're always expecting the first source to be the local model.
+    // The first source is the local model, then each partner. Where each record came from is noted as it arrives,
+    // before anything can read it, so a write to it goes back where it was read (sourceOf).
+    combinedStream.on('chunkReceived', ({ chunk, sourceIdx }: ChunkReceivedEvent<AdapterDocument>) =>
+      noteSource(chunk, sourceIdx > 0 ? remotes[sourceIdx - 1].dataSharingId.toString() : null),
+    );
+
+    // A partner's record that's sent teaches the route to the source it names, for a create (_getTargetModel)
     combinedStream.on('chunkSent', (data: ChunkSentEvent<AdapterDocument>) => {
       return data.sourceIdx > 0
         ? this._sdsRouting.inform(
@@ -416,7 +453,11 @@ export default class RemoteCombinedModel extends StandardModel {
 
     const combinedStream = new Helpers.Stream.SortedStreams<AdapterDocument>(sources);
 
-    // When a chunk is sent, we'll inform the routing service of the sourceId.
+    combinedStream.on('chunkReceived', ({ chunk, sourceIdx }: ChunkReceivedEvent<AdapterDocument>) =>
+      noteSource(chunk, remotes[sourceIdx].dataSharingId.toString()),
+    );
+
+    // A sent record teaches the route to the source it names, for a create (_getTargetModel)
     combinedStream.on('chunkSent', (data: ChunkSentEvent<AdapterDocument>) =>
       this._sdsRouting.inform(
         this.app.id.toString(),

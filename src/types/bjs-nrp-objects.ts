@@ -36,9 +36,12 @@ export interface RESTActivity {
   // The entities a delete removed, as they were, for the SPR to check the delete against policies. Only the scoped
   // copy has them, and the SPR takes them off before sending the activity on.
   deletedEntities?: Record<string, unknown>[];
-  // The agreement a partner's activity was relayed in through, where the SPR looks its entity up. The SPR takes it off
-  // before sending the activity on.
+  // The agreement a partner's activity was relayed in through, or a write to a partner's record went through, where the
+  // SPR looks its entity up. The SPR takes it off before sending the activity on.
   dataShareId?: string;
+  // A bulk update's agreement for each entity it changed, in the order of its response, null for the app's own. The
+  // SPR takes it off too.
+  dataShareIds?: (string | null)[];
 }
 
 export interface SPRActivity {

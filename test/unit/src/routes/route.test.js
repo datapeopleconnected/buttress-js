@@ -463,6 +463,33 @@ describe('routes/Route:_broadcast', () => {
     assert.strictEqual(scopedActivity.response, true);
   });
 
+  it('names the agreement a write to a partner\'s record went through, on both activities, for the SPR to find it', () => {
+    const nrp = createNrpFake();
+    const route = createRoute({ nrp });
+    route.activityBroadcast = true;
+    route.verb = Route.Constants.Verbs.PUT;
+    const req = createReq({ method: 'PUT', path: '/api/v1/car/car-1', params: { id: 'car-1' } });
+    req.context.dataShareId = 'agreement-1';
+
+    route._broadcast(req, createRes(), [{ type: 'scalar', path: 'name', value: 'x' }], '/car/car-1', true);
+    route._broadcast(req, createRes(), [{ type: 'scalar', path: 'name', value: 'x' }], '/car/car-1');
+
+    const activities = nrp.emit.getCalls().map((call) => JSON.parse(call.args[1]));
+    assert.deepStrictEqual(activities.map((activity) => activity.dataShareId), ['agreement-1', 'agreement-1']);
+  });
+
+  it("leaves the agreement off an activity for the app's own records", () => {
+    const nrp = createNrpFake();
+    const route = createRoute({ nrp });
+    route.activityBroadcast = true;
+    route.verb = Route.Constants.Verbs.POST;
+
+    route._broadcast(createReq(), createRes(), { name: 'test' }, '/car');
+
+    const activity = JSON.parse(nrp.emit.firstCall.args[1]);
+    assert.deepStrictEqual(['dataShareId' in activity, 'dataShareIds' in activity], [false, false]);
+  });
+
   // A super or system token can call an app's schema routes, and the data it changes is that app's.
   it("names an app route's own app on the activity and the entity's sourceId, whoever's token it is", () => {
     const nrp = createNrpFake();

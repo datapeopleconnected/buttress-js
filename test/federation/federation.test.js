@@ -163,6 +163,20 @@ describe('Federation', function () {
       assert.strictEqual(await nameOnA(env.cars[1].id), 'renamed after restart');
     });
 
+    it("updates one of the partner's cars by its id alone (D-20)", async () => {
+      const res = await fromB('PUT', `car/${env.cars[4].id}`, { path: 'name', value: 'renamed by its id' });
+      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+      assert.strictEqual(await nameOnA(env.cars[4].id), 'renamed by its id');
+    });
+
+    it("updates one of the partner's cars once the routes reads taught are gone (D-20)", async () => {
+      await b.forgetDataSharingRoutes();
+      await b.restart(['rest']);
+      const res = await fromB('PUT', partnerCar(env.cars[5]), { path: 'name', value: 'renamed with no route' });
+      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+      assert.strictEqual(await nameOnA(env.cars[5].id), 'renamed with no route');
+    });
+
     it("deletes one of the partner's cars", async () => {
       const res = await fromB('DELETE', `car/${env.cars[11].id}`);
       assert.strictEqual(res.status, 200, JSON.stringify(res.body));

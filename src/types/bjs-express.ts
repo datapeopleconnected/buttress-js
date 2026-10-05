@@ -46,6 +46,10 @@ export interface RequestContext {
   changeOwners?: Map<string, string>;
   // The entities a delete removed, as they were stored (see Route._keepEntitiesBeingDeleted).
   deletedEntities?: Record<string, unknown>[];
+  // The agreement a write to a partner's record went through, for the SPR to find the record there; for a bulk
+  // update, one for each entity it applied, in order, null for the app's own.
+  dataShareId?: string;
+  dataShareIds?: (string | null)[];
   isPluginPath: boolean;
   ac: {
     policyConfigs: parsedPolicyConfig[];
