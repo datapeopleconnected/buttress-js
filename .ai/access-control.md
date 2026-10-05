@@ -15,11 +15,12 @@ See [docs/applications/policy.md](../docs/applications/policy.md) for the policy
 
 Backs both paths with Redis-cached policy state, all keys namespaced under `Config.redis.scope`:
 
-- `token:<id>:policies` — set of policy ids applicable to a token. `'STALE'` is a sentinel member meaning
-  "force a rehydrate" (written by `setTokenIdAsStale`, e.g. after `Token.setPolicyPropertiesById`).
+- `token:<id>:policies:<version>` (`tokenPoliciesKey`) — set of policy ids applicable to a token, as selected by
+  `SELECTION_RULES_VERSION`'s rules. `'STALE'` is a sentinel member meaning "force a rehydrate" (written by
+  `setTokenIdAsStale`, e.g. after `Token.setPolicyPropertiesById`).
 - `policies` (hash) — policy id → serialized `Policy` document, populated lazily via `getPolicies()`.
-- `policy:<id>:tokens` / `connected-tokens` (sorted set, score = expiry epoch) — which tokens are
-  currently connected to a socket and which policies apply to them; used by SPR to know who to notify.
+- `policy:<id>:tokens:<version>` (`policyTokensKey`) / `connected-tokens` (sorted set, score = expiry epoch) — which
+  tokens are currently connected to a socket and which policies apply to them; used by SPR to know who to notify.
   `connected-token:<id>:sockets` holds each connected token's socket ids (`worker:socket:connection` /
   `disconnect` send `{tokenId, socketId}`), so a token stays connected until its last socket closes. Each Socket
   process publishes `worker:socket:heartbeat` with the tokens it has sockets for every 15 minutes, which renews
@@ -27,10 +28,13 @@ Backs both paths with Redis-cached policy state, all keys namespaced under `Conf
   connection changes and the expiry sweep run one at a time in the SPR primary.
 - `policy:propertyIndex:<key>` — reverse index from a policy-selection property name to token ids, used
   by `invalidatePolicyAndTokensBySelection()` to mark affected tokens stale when a policy changes.
-- `policy:selectionRules` — the `SELECTION_RULES_VERSION` the cached `token:<id>:policies` sets were selected by. The
-  primary REST main process swaps it at start-up (`markStaleIfSelectionRulesChanged`); when it differed, every cached
-  token is marked stale before requests are served and then reselected in the background (`reselectTokens`). Bump
-  the version whenever `AccessControlPolicyMatch.selects` changes what it selects.
+- The two keys above carry `SELECTION_RULES_VERSION`, so instances on other selection rules, as in a rolling deploy,
+  never use each other's sets (earlier releases' keys have no version); a token with none cached under this version
+  is worked out by these rules on its next request. `policy:selectionRules` holds the version last started on: the
+  primary REST main process swaps it at start-up, and when it differed, `tokensCachedByOtherRules` finds the tokens
+  cached under other versions and they're reselected in the background (`reselectTokens`), for realtime's links. Bump
+  the version whenever `AccessControlPolicyMatch.selects` changes what it selects. Not covered: while versions
+  overlap, a token or policy changed through an instance on other rules marks only that version's sets stale.
 - `app:<appId>:schema:<schemaName>` (+ `%ALL%` / `%APP_SCHEMA%` wildcard variants; `%CORE_SCHEMA%` is written but not read) — index
   used by SPR's `getPoliciesByRestActivity()` to find candidate policies for an incoming activity without
   scanning every policy.

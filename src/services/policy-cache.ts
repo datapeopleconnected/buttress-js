@@ -37,10 +37,15 @@ import { RESTActivity } from '../types/bjs-nrp-objects.js';
 export const CONNECTED_TOKEN_TTL_SECONDS = 1 * 3600;
 export const CONNECTED_TOKEN_HEARTBEAT_MS = (CONNECTED_TOKEN_TTL_SECONDS * 1000) / 4;
 
-// The rules by which a selection selects a token, see AccessControlPolicyMatch.selects. Changed when they change, so the
-// policies cached for each token are worked out again (reselectIfSelectionRulesChanged). 2: every key, exactly (D-32,
-// D-35), and @and/@or.
+// The rules by which a selection selects a token, see AccessControlPolicyMatch.selects. Changed when they change: the
+// policies cached for each token, and each policy's tokens, are kept under keys with the version in them, so an
+// instance never uses what an instance on other rules cached, as in a rolling deploy. 2: every key, exactly (D-32,
+// D-35), and @and/@or; earlier releases' keys have no version.
 export const SELECTION_RULES_VERSION = '2';
+
+// The key of the policies a token is selected for, and of the tokens a policy selects, by SELECTION_RULES_VERSION's rules
+export const tokenPoliciesKey = (tokenId: string) => `token:${tokenId}:policies:${SELECTION_RULES_VERSION}`;
+export const policyTokensKey = (policyId: string) => `policy:${policyId}:tokens:${SELECTION_RULES_VERSION}`;
 
 export class PolicyCache {
   private _redisClient: RedisClientType;
@@ -123,7 +128,7 @@ export class PolicyCache {
     Logging.logSilly(`Marking token as stale: ${tokenId}`);
 
     // Mark the cache as stale, to force requests to the cache to get fresh copies whilst we clean up.
-    await this._redisClient.sAdd(this._prefix(`token:${tokenId}:policies`), 'STALE');
+    await this._redisClient.sAdd(this._prefix(tokenPoliciesKey(tokenId)), 'STALE');
   }
 
   async clearPolicyById(policyId: string) {
@@ -131,7 +136,7 @@ export class PolicyCache {
   }
 
   async getPoliciesByToken(token: Token): Promise<Policy[]> {
-    const policyIds = await this._redisClient.sMembers(this._prefix(`token:${token.id}:policies`));
+    const policyIds = await this._redisClient.sMembers(this._prefix(tokenPoliciesKey(String(token.id))));
 
     // If the tokens are marked as stale, we're in the process of cleaning them up. we'll miss the cache and get fresh data.
     const isStale = policyIds.includes('STALE');
@@ -158,30 +163,30 @@ export class PolicyCache {
     );
     const policies = AccessControlPolicyMatch.getTokenPolicies(appPolicies, tokenState);
     const tokenId = tokenState.id.toString();
-    const tokenPoliciesKey = this._prefix(`token:${tokenId}:policies`);
+    const policiesKey = this._prefix(tokenPoliciesKey(tokenId));
 
     // Requests read the token's policies meanwhile, so they're changed without ever being partly there: the policies are
     // cached and linked to the token first, then the token's set is swapped for the new one in one step, and only then
     // are links to policies it no longer has removed
-    const oldPolicyIds = (await this._redisClient.sMembers(tokenPoliciesKey)).filter((id) => id !== 'STALE');
+    const oldPolicyIds = (await this._redisClient.sMembers(policiesKey)).filter((id) => id !== 'STALE');
     const newPolicyIds = policies.map((policy) => policy.id.toString());
 
     await policies.reduce(async (prev, policy) => {
       await prev;
       await this.addPolicy(policy);
-      await this._redisClient.sAdd(this._prefix(`policy:${policy.id}:tokens`), tokenId);
+      await this._redisClient.sAdd(this._prefix(policyTokensKey(String(policy.id))), tokenId);
     }, Promise.resolve());
 
     if (newPolicyIds.length > 0) {
-      const nextKey = `${tokenPoliciesKey}:next:${Math.random().toString(36).slice(2)}`;
+      const nextKey = `${policiesKey}:next:${Math.random().toString(36).slice(2)}`;
       await this._redisClient.sAdd(nextKey, newPolicyIds);
-      await this._redisClient.rename(nextKey, tokenPoliciesKey);
+      await this._redisClient.rename(nextKey, policiesKey);
     } else {
-      await this._redisClient.del(tokenPoliciesKey);
+      await this._redisClient.del(policiesKey);
     }
 
     for (const policyId of oldPolicyIds.filter((id) => !newPolicyIds.includes(id))) {
-      await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
+      await this._redisClient.sRem(this._prefix(policyTokensKey(policyId)), tokenId);
     }
 
     // Index the token's policy properties, which adds and removes only what changed
@@ -342,11 +347,11 @@ export class PolicyCache {
     }
     await this._redisClient.hDel(this._prefix(`policies`), policyId);
 
-    const tokenIds = await this._redisClient.sMembers(this._prefix(`policy:${policyId}:tokens`));
+    const tokenIds = await this._redisClient.sMembers(this._prefix(policyTokensKey(policyId)));
     for (const tokenId of tokenIds) {
-      await this._redisClient.sRem(this._prefix(`token:${tokenId}:policies`), policyId);
+      await this._redisClient.sRem(this._prefix(tokenPoliciesKey(tokenId)), policyId);
     }
-    await this._redisClient.del(this._prefix(`policy:${policyId}:tokens`));
+    await this._redisClient.del(this._prefix(policyTokensKey(policyId)));
 
     return tokenIds;
   }
@@ -355,18 +360,18 @@ export class PolicyCache {
     Logging.logSilly(`Clearing policies for token: ${tokenId}`);
 
     // Remove the token from all policy tokens
-    const policyIds = await this._redisClient.sMembers(this._prefix(`token:${tokenId}:policies`));
+    const policyIds = await this._redisClient.sMembers(this._prefix(tokenPoliciesKey(tokenId)));
     if (policyIds.length > 0) {
       await policyIds.reduce(async (prev, policyId) => {
         await prev;
         if (policyId === 'STALE') return;
 
-        await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
+        await this._redisClient.sRem(this._prefix(policyTokensKey(policyId)), tokenId);
       }, Promise.resolve());
     }
 
     // Clear out old policies for the token
-    await this._redisClient.del(this._prefix(`token:${tokenId}:policies`));
+    await this._redisClient.del(this._prefix(tokenPoliciesKey(tokenId)));
 
     // Clear out the indexed properties for the token
     await this.removeIndexedTokenPolicyProperties(tokenId);
@@ -378,8 +383,8 @@ export class PolicyCache {
     }
 
     Logging.logSilly(`Connecting token ${tokenId} to policy ${policyId}`);
-    await this._redisClient.sAdd(this._prefix(`token:${tokenId}:policies`), policyId);
-    await this._redisClient.sAdd(this._prefix(`policy:${policyId}:tokens`), tokenId);
+    await this._redisClient.sAdd(this._prefix(tokenPoliciesKey(tokenId)), policyId);
+    await this._redisClient.sAdd(this._prefix(policyTokensKey(policyId)), tokenId);
   }
 
   async disconnectTokenFromPolicy(tokenId: string, policyId: string) {
@@ -388,8 +393,8 @@ export class PolicyCache {
     }
 
     Logging.logSilly(`Disconnecting token ${tokenId} from policy ${policyId}`);
-    await this._redisClient.sRem(this._prefix(`token:${tokenId}:policies`), policyId);
-    await this._redisClient.sRem(this._prefix(`policy:${policyId}:tokens`), tokenId);
+    await this._redisClient.sRem(this._prefix(tokenPoliciesKey(tokenId)), policyId);
+    await this._redisClient.sRem(this._prefix(policyTokensKey(policyId)), tokenId);
   }
 
   async getConnectedTokenIdsByPolicyId(policyId: string) {
@@ -406,7 +411,7 @@ export class PolicyCache {
     const now = Math.floor(Date.now() / 1000);
 
     const linked = await Promise.all(
-      policyIds.map((policyId) => this._redisClient.sMembers(this._prefix(`policy:${policyId}:tokens`))),
+      policyIds.map((policyId) => this._redisClient.sMembers(this._prefix(policyTokensKey(policyId)))),
     );
     const tokenIds = [...new Set(linked.flat())];
     const scores =
@@ -466,29 +471,33 @@ export class PolicyCache {
   }
 
   /**
-   * Marks the policies cached for every token stale if they were selected by other rules than
-   * SELECTION_RULES_VERSION's, once across every process sharing this Redis, so a request works them out again. A
-   * token's cached policies are used as they are (getPoliciesByToken), so a policy the old rules gave it would otherwise
-   * stay. Gives the tokens marked, for reselectTokens to correct the links realtime sends activity by.
+   * The tokens whose policies were cached by other rules than SELECTION_RULES_VERSION's (an earlier release's keys have
+   * no version), once across every process sharing this Redis: the first to start on these rules gets them, and the
+   * rest none. A request works out a token's policies by these rules when they have none cached, so this is for
+   * reselectTokens to make the links realtime sends activity by, for tokens that are connected.
    * @return {Promise<string[]>}
    */
-  async markStaleIfSelectionRulesChanged(): Promise<string[]> {
+  async tokensCachedByOtherRules(): Promise<string[]> {
     const previous = await this._redisClient.set(this._prefix('policy:selectionRules'), SELECTION_RULES_VERSION, {
       GET: true,
     });
     if (previous === SELECTION_RULES_VERSION) return [];
 
+    // `token:<id>:policies`, or `token:<id>:policies:<version>`, but not a set being swapped in
     const prefix = this._prefix('token:');
-    const tokenIds: string[] = [];
-    for await (const keys of this._redisClient.scanIterator({ MATCH: `${prefix}*:policies`, COUNT: 1000 })) {
-      tokenIds.push(...keys.map((key) => key.slice(prefix.length, -':policies'.length)));
+    const cached = /^([^:]+):policies(?::([^:]+))?$/;
+    const tokenIds = new Set<string>();
+    for await (const keys of this._redisClient.scanIterator({ MATCH: `${prefix}*:policies*`, COUNT: 1000 })) {
+      for (const key of keys) {
+        const match = cached.exec(key.slice(prefix.length));
+        if (match && match[2] !== SELECTION_RULES_VERSION) tokenIds.add(match[1]);
+      }
     }
     Logging.log(
-      `Selection rules changed (${previous ?? 'none'} to ${SELECTION_RULES_VERSION}), reselecting ${tokenIds.length} tokens`,
+      `Selection rules changed (${previous ?? 'none'} to ${SELECTION_RULES_VERSION}), reselecting ${tokenIds.size} tokens`,
     );
 
-    await Promise.all(tokenIds.map((tokenId) => this.setTokenIdAsStale(tokenId)));
-    return tokenIds;
+    return [...tokenIds];
   }
 
   /**

@@ -22,6 +22,10 @@ import { io } from 'socket.io-client';
 import { describe, it, before, after } from 'mocha';
 
 import NRP from '../../../dist/services/nrp.js';
+import {
+  policyTokensKey as policyTokensKeyFor,
+  tokenPoliciesKey as tokenPoliciesKeyFor,
+} from '../../../dist/services/policy-cache.js';
 
 import Config from '../../config.js';
 
@@ -243,7 +247,7 @@ describe('Cache', async () => {
       const [token] = testEnv.users['cache-test-1'].tokens;
 
       const connectedTokensKey = `${Config.redis.scope}connected-tokens`;
-      const tokenPoliciesKey = `${Config.redis.scope}token:${token.id}:policies`;
+      const tokenPoliciesKey = `${Config.redis.scope}${tokenPoliciesKeyFor(token.id)}`;
 
       // Make sure the token is not connected nor cached yet.
       assert.strictEqual(await REDIS_CLIENT.zScore(connectedTokensKey, token.id), null);
@@ -266,7 +270,7 @@ describe('Cache', async () => {
         assert.strictEqual(await REDIS_CLIENT.hExists(`${Config.redis.scope}policies`, policyId), 1, `Policy ${policyId} should be cached`);
 
         assert.strictEqual(
-          await REDIS_CLIENT.exists(`${Config.redis.scope}policy:${policyId}:tokens`),
+          await REDIS_CLIENT.exists(`${Config.redis.scope}${policyTokensKeyFor(policyId)}`),
           1, `Policy ${policyId} should be cached`);
       }
     });
@@ -275,7 +279,7 @@ describe('Cache', async () => {
       const [token] = testEnv.users['cache-test-1'].tokens;
 
       // Check that the current token cache isn't already stale
-      const tokenPoliciesKey = `${Config.redis.scope}token:${token.id}:policies`;
+      const tokenPoliciesKey = `${Config.redis.scope}${tokenPoliciesKeyFor(token.id)}`;
       const policyIdsBefore = await REDIS_CLIENT.sMembers(tokenPoliciesKey);
       assert(policyIdsBefore.length > 0, 'Token should have policies cached');
 
@@ -291,7 +295,7 @@ describe('Cache', async () => {
       assert(!policyIdsAfter.includes('STALE'), 'Token policies should be worked out again, not left STALE');
       assert.notDeepStrictEqual(policyIdsAfter.sort(), policyIdsBefore.sort(), 'Token policies should follow its new properties');
       for (const policyId of policyIdsBefore.filter((id) => !policyIdsAfter.includes(id))) {
-        const tokenIds = await REDIS_CLIENT.sMembers(`${Config.redis.scope}policy:${policyId}:tokens`);
+        const tokenIds = await REDIS_CLIENT.sMembers(`${Config.redis.scope}${policyTokensKeyFor(policyId)}`);
         assert(!tokenIds.includes(token.id), `Policy ${policyId} should no longer list the token`);
       }
 
@@ -348,7 +352,7 @@ describe('Cache', async () => {
       await new Promise((resolve) => setTimeout(resolve, 100));
 
       // The user token should now have a stale flag as the policy selection is a close match to it's properties.
-      const tokenPoliciesKey = `${Config.redis.scope}token:${token.id}:policies`;
+      const tokenPoliciesKey = `${Config.redis.scope}${tokenPoliciesKeyFor(token.id)}`;
       const policyIds = await REDIS_CLIENT.sMembers(tokenPoliciesKey);
       assert(policyIds.includes('STALE'), 'Token should have been marked as STALE');
 
@@ -369,14 +373,14 @@ describe('Cache', async () => {
       const [token] = testEnv.users['cache-test-1'].tokens;
 
       // verify that the token:id:policies cache exists
-      const tokenPoliciesKey = `${Config.redis.scope}token:${token.id}:policies`;
+      const tokenPoliciesKey = `${Config.redis.scope}${tokenPoliciesKeyFor(token.id)}`;
       assert.strictEqual(await REDIS_CLIENT.exists(tokenPoliciesKey), 1, 'Token policies cache should exist');
 
       // verify that the policy:id:tokens cache contains the token
       const initalPolicyIds = await REDIS_CLIENT.sMembers(tokenPoliciesKey);
       assert(initalPolicyIds.length > 0, 'Token should have policies cached');
       for (const policyId of initalPolicyIds) {
-        assert.strictEqual(await REDIS_CLIENT.sIsMember(`${Config.redis.scope}policy:${policyId}:tokens`, token.id), 1, `Policy ${policyId} should have the token cached`);
+        assert.strictEqual(await REDIS_CLIENT.sIsMember(`${Config.redis.scope}${policyTokensKeyFor(policyId)}`, token.id), 1, `Policy ${policyId} should have the token cached`);
       }
 
       const propertyIndex = `cacheTest`;
@@ -406,7 +410,7 @@ describe('Cache', async () => {
 
       // verify that the previous policy properties cache has been cleared
       for (const policyId of initalPolicyIds) {
-        assert.strictEqual(await REDIS_CLIENT.sIsMember(`${Config.redis.scope}policy:${policyId}:tokens`, token.id), 0, `Policy ${policyId} should no longer have the token cached`);
+        assert.strictEqual(await REDIS_CLIENT.sIsMember(`${Config.redis.scope}${policyTokensKeyFor(policyId)}`, token.id), 0, `Policy ${policyId} should no longer have the token cached`);
 
         // verify that the token:id:policies cache has been cleared
         assert.strictEqual(await REDIS_CLIENT.sIsMember(tokenPoliciesKey, policyId), 0, `Token should no longer have policy ${policyId} cached`);
