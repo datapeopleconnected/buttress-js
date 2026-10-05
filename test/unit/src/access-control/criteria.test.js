@@ -71,6 +71,8 @@ describe('access-control/criteria:matchCriterion', () => {
     ['ab', '@inProp', '.', false],
     [[{ n: 1 }, { n: 2 }], '@elMatch', { n: 2 }, true],
     ['admin', '@like', 'admin', false],
+    ['admin', 'constructor', 'admin', false],
+    ['admin', '__proto__', 'admin', false],
   ];
 
   for (const [value, operator, operand, holds] of rows) {

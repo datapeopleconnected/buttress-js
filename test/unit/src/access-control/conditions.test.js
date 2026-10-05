@@ -175,7 +175,8 @@ describe('access-control/conditions:filterPoliciesByPolicyConditions', () => {
     assert.strictEqual(result.length, 0);
   });
 
-  it('should throw on invalid operator', async () => {
+  // A policy's other configs, and the token's other policies, still apply
+  it("fails a condition with an operator it doesn't know, rather than failing the request", async () => {
     const policies = [
       {
         id: 'p1', name: 'test', appId: 'app1', env: { location: 'UK' },
@@ -186,10 +187,7 @@ describe('access-control/conditions:filterPoliciesByPolicyConditions', () => {
       },
     ];
 
-    await assert.rejects(
-      () => AccessControlConditions.filterPoliciesByPolicyConditions(policies, emptyEnv),
-      { message: /Invalid policy condition operator/ },
-    );
+    assert.deepStrictEqual(await AccessControlConditions.filterPoliciesByPolicyConditions(policies, emptyEnv), []);
   });
 
   it('should handle nested @and within @or', async () => {
@@ -227,46 +225,6 @@ describe('access-control/conditions:filterPoliciesByPolicyConditions', () => {
     const result = await AccessControlConditions.filterPoliciesByPolicyConditions(policies, emptyEnv);
     assert.strictEqual(result.length, 1);
     assert.strictEqual(result[0].name, 'pass');
-  });
-});
-
-describe('access-control/conditions:isPolicyDateTimeBased', () => {
-  it('should return the date field name when key is "date" with end range operator', async () => {
-    const condition = { date: { '@gt': '2025-01-01' } };
-    const result = await AccessControlConditions.isPolicyDateTimeBased(condition);
-    assert.strictEqual(result, 'date');
-  });
-
-  it('should return the time field name when key is "time" with end range operator', async () => {
-    const condition = { time: { '@gt': '14:00' } };
-    const result = await AccessControlConditions.isPolicyDateTimeBased(condition);
-    assert.strictEqual(result, 'time');
-  });
-
-  it('should return false for non-date/time conditions', async () => {
-    const condition = { '#env.role': { '@eq': 'admin' } };
-    const result = await AccessControlConditions.isPolicyDateTimeBased(condition);
-    assert.strictEqual(result, false);
-  });
-
-  it('should return false for conditions without end range operators (@eq is not an end range)', async () => {
-    const condition = { date: { '@eq': '2025-01-01' } };
-    const result = await AccessControlConditions.isPolicyDateTimeBased(condition);
-    assert.strictEqual(result, false);
-  });
-
-  it('should return false when operator is @lte (not in conditionEndRange)', async () => {
-    const condition = { date: { '@lte': '2025-01-01' } };
-    const result = await AccessControlConditions.isPolicyDateTimeBased(condition);
-    assert.strictEqual(result, false);
-  });
-});
-
-describe('access-control/conditions:isPolicyQueryBasedCondition', () => {
-  it('should return false when no schema names match', async () => {
-    const condition = { '#env.role': { '@eq': 'admin' } };
-    const result = await AccessControlConditions.isPolicyQueryBasedCondition(condition, ['user', 'car']);
-    assert.strictEqual(result, undefined);
   });
 });
 
@@ -323,6 +281,22 @@ describe('access-control/conditions: comparisons', () => {
     assert(await holds({ '#env.date.now': { '@ltDate': '2025-05-31T23:00:00.000Z' } }));
     assert(await holds({ '#env.date.now': { '@ltDate': '31/05/2025' } }));
     assert(!(await holds({ '#env.date.now': { '@ltDate': 'not a date' } })));
+  });
+
+  it("takes an operator's $ name as its @ name", async () => {
+    assert(await holds({ '#env.location': { $eq: 'UK' } }, { location: 'UK' }));
+    assert(await holds({ '#env.level': { $gt: 3 } }, { level: 2 }));
+    assert(!(await holds({ '#env.location': { $eq: 'uk' } }, { location: 'UK' })));
+  });
+
+  it('takes $and and $or as @and and @or', async () => {
+    const either = { $or: [{ '#env.role': { '@eq': 'admin' } }, { '#env.role': { '@eq': 'owner' } }] };
+    const both = { $and: [{ '#env.role': { '@eq': 'owner' } }, { '#env.location': { '@eq': 'UK' } }] };
+
+    assert(await holds(either, { role: 'owner' }));
+    assert(!(await holds(either, { role: 'user' })));
+    assert(await holds(both, { role: 'owner', location: 'UK' }));
+    assert(!(await holds(both, { role: 'owner', location: 'FR' })));
   });
 
   it('fails a key that resolves to nothing', async () => {

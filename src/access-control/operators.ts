@@ -80,17 +80,31 @@ const DSL_ALIASES: Record<string, OperatorAlias> = {
   $elemMatch: { operator: '$elemMatch' },
 };
 
+// A lookup that has only the names given it, so a name such as `constructor` isn't found on Object.prototype
+const lookup = <T>(entries: [string, T][]): Record<string, T> =>
+  Object.assign(Object.create(null) as Record<string, T>, Object.fromEntries(entries));
+
 /**
  * Every name an operator is given by, `$op` and the policy language's `@op`, and what it is for MongoDB.
  */
-export const ALIASES: Record<string, OperatorAlias> = Object.fromEntries(
-  Object.entries(DSL_ALIASES).flatMap(([name, alias]) => [
+export const ALIASES: Record<string, OperatorAlias> = lookup(
+  Object.entries(DSL_ALIASES).flatMap(([name, alias]): [string, OperatorAlias][] => [
     [name, alias],
     [`@${name.slice(1)}`, alias],
   ]),
 );
 
 export const LOGICAL_OPERATORS = ['$and', '$or', '$nor'] as const;
+
+/**
+ * Every name a logical operator is given by, `$op` and the policy language's `@op`, and what it is for MongoDB.
+ */
+export const LOGICAL_ALIASES: Record<string, (typeof LOGICAL_OPERATORS)[number]> = lookup(
+  LOGICAL_OPERATORS.flatMap((operator): [string, (typeof LOGICAL_OPERATORS)[number]][] => [
+    [operator, operator],
+    [`@${operator.slice(1)}`, operator],
+  ]),
+);
 
 // An object of fields: not a list, a date or an id
 export const isPlainObject = (value: unknown): value is Record<string, unknown> =>

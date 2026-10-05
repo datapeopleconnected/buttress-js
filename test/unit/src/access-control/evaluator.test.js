@@ -116,6 +116,13 @@ describe('access-control/evaluator:evaluate', () => {
     assert.deepStrictEqual(grants.map((grant) => grant.query), [{ owner: 'u1' }]);
   });
 
+  it("grants through a token's other policies when one's condition has an operator nothing knows", async () => {
+    const broken = policy('broken', { condition: { '#env.appId': { '@like': 'app1' } } });
+    const grants = await evaluate([broken, policy('fine', {})], context());
+
+    assert.deepStrictEqual(grants.map((grant) => grant.policies), [['fine#0']]);
+  });
+
   it("reads the policy's and the config's env", async () => {
     const [grant] = await evaluate(
       [policy('p', { query: { team: { '@eq': '#env.team' } }, env: { team: 'red' } }, { env: { team: 'blue' } })],

@@ -77,7 +77,9 @@ reads **value OP key**, the other way round to a query:
 ```
 
 holds when 2025-01-01 is before now. `@and` and `@or` take a list of conditions, which all, or any one, must hold.
-Values are compared as a selection compares them. The date operators (`@gtDate`, `@gteDate`, `@ltDate`, `@lteDate`)
+Values are compared as a selection compares them. An operator, `@and` and `@or` can also be written as a query writes
+them (`$eq`, `$or`); a condition naming an operator Buttress doesn't know doesn't hold, so its config grants nothing
+and the token's other policies still apply (earlier releases failed the request). The date operators (`@gtDate`, `@gteDate`, `@ltDate`, `@lteDate`)
 read both sides as dates, written as `2025-01-31`, `31/01/2025` or a time of day such as `09:00`.
 
 ## Listing and Removing

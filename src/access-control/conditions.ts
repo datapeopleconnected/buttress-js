@@ -15,44 +15,17 @@
  */
 import { CombineEnvGroups } from './helpers.js';
 import { matchCriterion } from './criteria.js';
+import { ALIASES, LOGICAL_ALIASES } from './operators.js';
+import Logging from '../helpers/logging.js';
 import Env, { ACEnv, ACPolicyEnvCombined } from './env.js';
 
 import { ApplicablePolicyConfig } from './index.js';
 import { PolicyCondition } from '../model/core/policy.js';
 
-// A condition against another schema: `{'@identifier': {<field>: {<operator>: <value>}}}`
-type SchemaQueryCondition = { '@identifier': Record<string, Record<string, unknown>> };
-
 /**
  * @class Conditoins
  */
 export class Conditions {
-  static queryOperator = [
-    '@eq',
-    '@not',
-    '@gt',
-    '@lt',
-    '@gte',
-    '@lte',
-    '@gtDate',
-    '@gteDate',
-    '@ltDate',
-    '@lteDate',
-    '@rex',
-    '@rexi',
-    '@in',
-    '@nin',
-    '@exists',
-    '@inProp',
-    '@elMatch',
-  ];
-  static conditionKeys = ['@location', '@date', '@time'];
-  static logicalOperator = ['@and', '@or'];
-  static conditionEndRange = ['@gt', '@gte', '@gtDate', '@gteDate'];
-
-  static envStr: string = 'env.';
-  static conditionQueryRegex = new RegExp('query.');
-
   async filterPoliciesByPolicyConditions(userPolicies: ApplicablePolicyConfig[], reqEnv: ACEnv) {
     const output: ApplicablePolicyConfig[] = [];
 
@@ -79,8 +52,10 @@ export class Conditions {
     const results: Array<boolean> = [];
 
     for await (const key of Object.keys(conditionRecord)) {
-      if (Conditions.logicalOperator.includes(key)) {
-        const innerPartialPass = key === '@or' || key === '$or' ? true : false;
+      // @and and @or (or $and and $or) take a list of conditions, which all, or any one, must hold
+      const logical = LOGICAL_ALIASES[key];
+      if (logical === '$and' || logical === '$or') {
+        const innerPartialPass = logical === '$or';
 
         const innerResults: Array<boolean> = [];
         // TODO: Add check as this is expected to be an array.
@@ -129,46 +104,6 @@ export class Conditions {
     return results.every((r) => r);
   }
 
-  // __buildDbConditionQuery(envVariables, conditions, varSchemaKey, query = {}) {
-  // 	Object.keys(conditions).forEach((key) => {
-  // 		const value = conditions[key];
-  // 		const queryKey = key.replace(`${varSchemaKey}.`, '');
-  // 		if (query[queryKey]) {
-  // 			query[queryKey] = value;
-  // 		}
-
-  // 		if (!Array.isArray(value) && typeof value === 'object') {
-  // 			this.__buildDbConditionQuery(envVariables, value, varSchemaKey, query);
-  // 		} else {
-  // 			const envQueryKeys = value.replace(Conditions.envStr, '').split('.');
-  // 			envQueryKeys.reduce((res, key) => {
-  // 				res = res[key];
-  // 				if (query[key]) {
-  // 					// TODO FIX THE KEY IN THE QUERY
-  // 					query[key]['@eq'] = res;
-  // 				}
-
-  // 				return res;
-  // 			}, envVariables);
-  // 		}
-  // 	});
-  // }
-
-  // async __getDbConditionQueryResult(query: any, schemaName: string, shortId?: string) {
-  // 	const collection = (shortId) ? `${shortId}-${schemaName}` : schemaName;
-  // 	let model = Model.getModel(collection);
-
-  // 	// If we're unable to find the model on the app then check if we're targeting a core schema.
-  // 	if (model === undefined) model = Model.getCoreModel(schemaName);
-
-  // 	// If model is still not defined then there is no hope.
-  // 	if (model === undefined) throw new Error(`Unable to find model for schema: ${schemaName}`);
-
-  // 	const convertedQuery: any = await Filter.buildPolicyQuery(query, {});
-  // 	query = model.parseQuery(convertedQuery, {}, model.flatSchemaData);
-  // 	return await model.count(query) > 0;
-  // }
-
   /**
    * Whether one criterion of a condition, `{<key>: {<operator>: <value>}}`, holds. It reads `value OP key` (D-33):
    * `{'#env.date.now': {'@ltDate': '2025-01-01'}}` holds when 2025-01-01 is before now. Both sides are resolved
@@ -181,8 +116,10 @@ export class Conditions {
     conditionObj: Record<string, unknown>,
     key: string,
   ) {
-    if (!Conditions.queryOperator.includes(operator)) {
-      throw new Error(`Invalid policy condition operator: ${operator}`);
+    // An operator nothing knows fails the condition, so the config grants nothing, and the token's others still apply
+    if (!Object.hasOwn(ALIASES, operator)) {
+      Logging.logWarn(`A policy condition names an operator nothing knows, so it fails: ${operator}`);
+      return false;
     }
 
     const conditionEntry = conditionObj[key] as Record<string, unknown>;
@@ -192,62 +129,6 @@ export class Conditions {
     if (value === undefined || keyValue === undefined) return false;
 
     return matchCriterion(value, operator, keyValue);
-  }
-
-  async isPolicyDateTimeBased(conditions: PolicyCondition, pass = false): Promise<string | boolean | undefined> {
-    let res: boolean | string = false;
-    for await (const key of Object.keys(conditions)) {
-      if (Array.isArray(conditions[key])) {
-        if (Conditions.logicalOperator.includes(key)) {
-          for await (const item of conditions[key] as PolicyCondition[]) {
-            return await this.isPolicyDateTimeBased(item, pass);
-          }
-        } else {
-          // TODO throw an error
-        }
-      }
-
-      if ((key === 'date' || pass || key === 'time' || pass) && typeof conditions[key] === 'object') {
-        const isDateTimeCondition = Object.keys(conditions[key] as object).some((cKey) =>
-          Conditions.conditionEndRange.includes(cKey),
-        );
-        if (isDateTimeCondition) {
-          res = key.replace(`${Conditions.envStr}`, '');
-          return res;
-        }
-
-        return await this.isPolicyDateTimeBased(conditions[key] as PolicyCondition, true);
-      }
-
-      return res;
-    }
-  }
-
-  async isPolicyQueryBasedCondition(
-    condition: PolicyCondition,
-    schemaNames: string[],
-  ): Promise<Record<string, unknown> | undefined> {
-    for await (const key of Object.keys(condition)) {
-      if (Array.isArray(condition[key])) {
-        if (Conditions.logicalOperator.includes(key)) {
-          for await (const item of condition[key] as PolicyCondition[]) {
-            return await this.isPolicyQueryBasedCondition(item, schemaNames);
-          }
-        } else {
-          // TODO throw an error
-        }
-      }
-
-      const schemaQuery = schemaNames.find((n) => key.includes(n));
-
-      if (schemaQuery) {
-        const [identifier] = Object.keys((condition[key] as SchemaQueryCondition)['@identifier']);
-        return {
-          name: schemaQuery,
-          [identifier]: Object.values((condition[key] as SchemaQueryCondition)['@identifier'][identifier]).pop(),
-        };
-      }
-    }
   }
 }
 

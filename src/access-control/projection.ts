@@ -21,6 +21,7 @@ import { PolicyProjection } from '../model/core/policy.js';
 import type { FlattenedSchema, Schema } from '../types/schema.js';
 
 import { PolicyError } from './index.js';
+import { LOGICAL_ALIASES } from './operators.js';
 import type { Grant } from './evaluator.js';
 import type { RequestWithBody } from '../types/routes.js';
 
@@ -96,12 +97,9 @@ const resetUnprojected = (
  * @class Projection
  */
 class Projection {
-  private logicalOperator: string[];
   private _ignoredQueryKeys: string[];
 
   constructor() {
-    this.logicalOperator = ['$and', '$or', '$nor'];
-
     this._ignoredQueryKeys = ['__crPath', 'project', 'id'];
   }
 
@@ -249,7 +247,7 @@ class Projection {
   // The properties a query names, within its logical operators too; an id and the request's own keys aren't properties
   __queryFields(query: RequestBody): string[] {
     return Object.entries(query).flatMap(([key, value]) => {
-      if (this.logicalOperator.includes(key)) {
+      if (Object.hasOwn(LOGICAL_ALIASES, key)) {
         return Array.isArray(value)
           ? value.flatMap((part) => (isPlainObject(part) ? this.__queryFields(part) : []))
           : [];

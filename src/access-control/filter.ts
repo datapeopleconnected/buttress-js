@@ -14,22 +14,15 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Sugar from '../helpers/sugar.js';
-
-import AccessControlHelpers from './helpers.js';
-
 import Env, { ACPolicyEnvCombined, PolicyEnv } from './env.js';
 
 import * as Helpers from '../helpers/index.js';
 import Logging from '../helpers/logging.js';
-import Model from '../model/index.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
-import { asQueried, matchQuery } from './operators.js';
+import { asQueried, LOGICAL_ALIASES, matchQuery } from './operators.js';
 import { isObjectId } from '../datastore/adapters/object-id.js';
 import type StandardModel from '../model/type/standard.js';
-
-import type { RequestWithBody } from '../types/routes.js';
 
 /**
  * @class Filter
@@ -56,40 +49,7 @@ const resolveQueryValue = async (value: unknown, envVars: ACPolicyEnvCombined) =
 export type QueryModel = Pick<StandardModel<unknown>, 'parseQuery' | 'flatSchemaData' | 'schemaData'>;
 
 export class Filter {
-  static queryOperators: { [index: string]: string } = {
-    '@eq': '$eq',
-    '@not': '$not',
-    '@gt': '$gt',
-    '@lt': '$lt',
-    '@gte': '$gte',
-    '@lte': '$lte',
-    '@gtDate': '$gtDate',
-    '@gteDate': '$gteDate',
-    '@ltDate': '$ltDate',
-    '@lteDate': '$lteDate',
-    '@rex': '$rex',
-    '@rexi': '$rexi',
-    '@in': '$in',
-    '@nin': '$nin',
-    '@exists': '$exists',
-    '@inProp': '$inProp',
-    '@elMatch': '$elMatch',
-  };
-  static logicalOperator = ['@and', '@or', '$and', '$or'];
-  arrayOperators: string[];
-  manipulationVerbs: string[];
-
   _queryAccess = ['%FULL_ACCESS%', '%APP_SCHEMA%', '%CORE_SCHEMA%'];
-
-  constructor() {
-    this.arrayOperators = ['@in', '@nin', '$in', '$nin'];
-
-    this.manipulationVerbs = [
-      'PUT',
-      // 'POST', // SKIPPING POST FOR NOW
-      'DELETE',
-    ];
-  }
 
   /**
    * Walk over a query object and replace any env variables with their values.
@@ -121,7 +81,7 @@ export class Filter {
       }
       if (Object.keys(val).length < 1) continue;
 
-      if (Filter.logicalOperator.includes(key)) {
+      if (Object.hasOwn(LOGICAL_ALIASES, key)) {
         if (!Array.isArray(val)) continue;
         for (const queryObj of val as unknown[]) {
           if (typeof queryObj !== 'object' || Array.isArray(queryObj)) {
@@ -139,47 +99,8 @@ export class Filter {
         continue;
       }
 
-      if (outputRecord[key]) {
-        if (Array.isArray(outputRecord[key]) && Array.isArray(val)) {
-          for await (const elem of val as unknown[]) {
-            const elementExist = (outputRecord[key] as unknown[]).findIndex(
-              (el) => JSON.stringify(el) === JSON.stringify(elem),
-            );
-
-            if (elementExist !== -1) continue;
-            (outputRecord[key] as unknown[]).push(elem);
-          }
-
-          continue;
-        } else if (!Array.isArray(outputRecord[key]) && !Array.isArray(val)) {
-          const outputByKey = outputRecord[key] as Record<string, unknown>;
-          const valRecord = val as Record<string, unknown>;
-
-          Object.keys(outputByKey).forEach((k) => {
-            if (this.arrayOperators.includes(k)) {
-              const existing = outputByKey[k];
-              const next = valRecord[k];
-              if (Array.isArray(existing) && Array.isArray(next)) {
-                outputByKey[k] = existing.concat(next).filter((v: unknown, idx, arr) => arr.indexOf(v) === idx);
-              }
-            } else {
-              outputByKey[k] = valRecord[k];
-            }
-          });
-
-          continue;
-        }
-      }
-
-      if (typeof val === 'string') {
-        outputRecord[key] = await resolveQueryValue(val, envVars);
-        continue;
-      }
-
       const operator = Object.keys(val)[0];
       const value = (val as Record<string, unknown>)[operator];
-
-      // if (!Filter.queryOperators[operator]) continue;
 
       outputRecord[key] = {};
       (outputRecord[key] as Record<string, unknown>)[operator] = await resolveQueryValue(value, envVars);
@@ -216,50 +137,6 @@ export class Filter {
       return false;
     }
     return matchQuery(parsed, asQueried(entity, model.flatSchemaData));
-  }
-
-  // TODO needs to be removed and added to the adapters - TEMPORARY HACK!!
-  // TODO: This function needs a refactor, expecting the AC to be already applied to the queiries.
-  async evaluateManipulationActions(req: RequestWithBody<{ query?: Record<string, unknown> }>, collection: string) {
-    const coreSchema = await AccessControlHelpers.cacheCoreSchema();
-    const coreSchemNames = coreSchema.map((c) => Sugar.String.singularize(c.name));
-    const isCoreSchema = coreSchemNames.includes(collection);
-
-    const verb = req.method;
-    if (!this.manipulationVerbs.includes(verb)) return true;
-
-    if (!req.context.authApp) {
-      throw new Error('No auth app found in request context');
-    }
-
-    const appId = req.context.authApp.id;
-    // const appShortId = Helpers.shortId(appId);
-    const body: unknown[] = Array.isArray(req.body) ? req.body : [req.body];
-    let query: Record<string, unknown> = req.body.query ? req.body.query : {};
-    // const baseURL = req.url.replace(/\?.*/, '');
-    // const id = (baseURL) ? baseURL.split('/').pop() : undefined;
-    let passed = true;
-
-    const model = isCoreSchema ? Model.getCoreModelByName(collection) : await Model.getAppModel(appId, collection);
-
-    // ! This looks weird
-    for await (const _update of body) {
-      if (query._id && typeof query._id !== 'object') {
-        query._id = await model.createId(query._id as string);
-      }
-
-      const parsedQuery = await model.parseQuery(query, {}, model.flatSchemaData);
-      query = { ...query, ...parsedQuery };
-      const res = await model.count(query);
-      if (!res) {
-        passed = false;
-        delete query._id;
-        return passed;
-      }
-    }
-
-    delete req.body.query; // Deleting it for manipulation verbs
-    return passed;
   }
 
   mergeQueryFilters(

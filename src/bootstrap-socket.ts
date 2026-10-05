@@ -147,8 +147,6 @@ export default class BootstrapSocket extends Bootstrap {
 
   isPrimary: boolean;
 
-  logicalOperator: string[];
-
   private _socketExpressServer: http.Server | null;
 
   private _mainServer: net.Server | null;
@@ -171,8 +169,6 @@ export default class BootstrapSocket extends Bootstrap {
     // A map that holds reference to sockets which have subscribed to a request
     // the map keys will expire after 5 minutes.
     this._requestSockets = new Helpers.ExpireMap(5 * 60 * 1000);
-
-    this.logicalOperator = ['$or', '$and'];
   }
 
   override async init() {

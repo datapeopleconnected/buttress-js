@@ -155,6 +155,19 @@ describe('access-control/filter:buildPolicyQuery env references that are not set
     }
   });
 
+  // The operator names are looked up as names, not as Object.prototype's properties
+  it('reads a field named after one of an object\'s own properties as a field', async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ constructor: { '@eq': '#env.ownerId' } }, env), {
+      constructor: { $eq: 'owner-1' },
+    });
+  });
+
+  it('reads the env in a query of @nor, as in @and and @or', async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ '@nor': [{ ownerId: '#env.ownerId' }] }, env), {
+      $nor: [{ ownerId: 'owner-1' }],
+    });
+  });
+
   it('builds a query whose #env references are set, even to null', async () => {
     assert.deepStrictEqual(await Filter.buildPolicyQuery({ ownerId: '#env.ownerId' }, env), { ownerId: 'owner-1' });
     assert.deepStrictEqual(await Filter.buildPolicyQuery({ userId: { '@eq': '#env.user' } }, env), {
