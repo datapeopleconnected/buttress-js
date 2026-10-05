@@ -392,9 +392,10 @@ class AccessControl {
     })) as Token | null;
     if (!stored) return;
 
-    // The policy matched on its selection and the token's policy properties, see AccessControlPolicyMatch
-    const policySelectionKeys = AccessControlPolicyMatch.selectionKeys(policy.selection ?? {});
+    // The properties the policy's selection took the token by, see AccessControlPolicyMatch: not those of an @or branch
+    // that didn't
     const tokenPolicyProps = { ...(stored.policyProperties ?? {}) };
+    const policySelectionKeys = AccessControlPolicyMatch.selectedKeys(policy.selection ?? {}, tokenPolicyProps);
     policySelectionKeys.forEach((key) => {
       delete tokenPolicyProps[key];
     });

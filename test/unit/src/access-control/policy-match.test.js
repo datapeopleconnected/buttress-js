@@ -321,6 +321,21 @@ describe('access-control/policy-match:selectionKeys', () => {
   });
 });
 
+// The properties a policy took a token by, which its limit takes off the token
+describe('access-control/policy-match:selectedKeys', () => {
+  const selection = { a: { '@eq': 1 }, '@or': [{ b: { '@eq': 2 } }, { '@and': [{ c: { '@eq': 3 } }, { d: { '@gt': 0 } }] }] };
+
+  it('lists the keys a selection needs, and those of each @or branch that holds for the properties', () => {
+    assert.deepStrictEqual(PolicyMatch.selectedKeys(selection, { a: 1, b: 2, c: 3, d: 1 }).sort(), ['a', 'b', 'c', 'd']);
+    assert.deepStrictEqual(PolicyMatch.selectedKeys(selection, { a: 1, b: 2, c: 9, d: 1 }).sort(), ['a', 'b']);
+    assert.deepStrictEqual(PolicyMatch.selectedKeys(selection, { a: 1, b: 9, c: 3, d: 1 }).sort(), ['a', 'c', 'd']);
+  });
+
+  it("leaves out an @or branch's keys when none of its branches hold", () => {
+    assert.deepStrictEqual(PolicyMatch.selectedKeys(selection, { a: 1, b: 9, c: 9 }), ['a']);
+  });
+});
+
 describe('access-control/policy-match:getTokenPolicies dataSharing token', () => {
   it('should match a dataSharing token with correct #tokenType and id', () => {
     const policies = [{ selection: { '#tokenType': { '@eq': 'DATA_SHARING' }, id: { '@eq': 'share123' } } }];
