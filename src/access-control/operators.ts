@@ -243,6 +243,43 @@ const matchOperators = (values: unknown[], operators: Record<string, unknown>): 
     }
   });
 
+/**
+ * Whether an object a Buttress query gives a property is its operators: one of its keys is an operator's name, `$op`
+ * or `@op`. An object without one is a value, compared whole as MongoDB compares it.
+ */
+export const hasOperatorNames = (value: unknown): value is Record<string, unknown> =>
+  isPlainObject(value) && Object.keys(value).some((key) => key.startsWith('$') || key.startsWith('@'));
+
+/**
+ * The first operator a Buttress query names that the registry doesn't know, with the property it's given, or null. A
+ * name with an operator's prefix in a property's place must be a logical operator; its path is its own name.
+ * @param {object} query
+ * @return {object|null} - `{path, operator}`
+ */
+export function findUnknownOperator(query: Record<string, unknown>): { path: string; operator: string } | null {
+  for (const [key, condition] of Object.entries(query)) {
+    if (Object.hasOwn(LOGICAL_ALIASES, key)) {
+      for (const part of Array.isArray(condition) ? condition : []) {
+        const found = isPlainObject(part) ? findUnknownOperator(part) : null;
+        if (found) return found;
+      }
+      continue;
+    }
+    if (key.startsWith('$') || key.startsWith('@')) return { path: key, operator: key };
+    if (!hasOperatorNames(condition)) continue;
+
+    for (const [operator, operand] of Object.entries(condition)) {
+      if (!Object.hasOwn(ALIASES, operator)) return { path: key, operator };
+      if (ALIASES[operator].operator !== '$elemMatch' || !isPlainObject(operand)) continue;
+
+      // An item's query, or the operators a value must pass
+      const found = hasOperatorNames(operand) ? findUnknownOperator({ [key]: operand }) : findUnknownOperator(operand);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 // An object of operators in a Buttress query: every key an operator's name, `$op` or `@op`
 const isButtressOperators = (value: unknown): value is Record<string, unknown> =>
   isPlainObject(value) &&

@@ -20,7 +20,7 @@ import * as Helpers from '../helpers/index.js';
 import Logging from '../helpers/logging.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
-import { asQueried, LOGICAL_ALIASES, matchQuery, toMongoQuery } from './operators.js';
+import { asQueried, findUnknownOperator, LOGICAL_ALIASES, matchQuery, toMongoQuery } from './operators.js';
 import { isObjectId } from '../datastore/adapters/object-id.js';
 import type StandardModel from '../model/type/standard.js';
 
@@ -32,6 +32,14 @@ export class UnresolvedEnvError extends Error {
   constructor(reference: string) {
     super(`unresolved_policy_env: ${reference}`);
     this.name = 'UnresolvedEnvError';
+  }
+}
+
+// A policy query naming an operator nothing knows, which can't be applied
+export class UnknownOperatorError extends Error {
+  constructor(operator: string, path: string) {
+    super(`unknown_policy_operator: ${operator} at ${path}`);
+    this.name = 'UnknownOperatorError';
   }
 }
 
@@ -107,6 +115,10 @@ export class Filter {
       }
       outputRecord[key] = conditions;
     }
+
+    // A query naming an operator nothing knows can't be applied (R3 step 7)
+    const unknown = findUnknownOperator(outputRecord);
+    if (unknown) throw new UnknownOperatorError(unknown.operator, unknown.path);
 
     return output;
   }

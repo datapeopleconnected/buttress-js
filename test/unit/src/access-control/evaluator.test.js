@@ -123,6 +123,13 @@ describe('access-control/evaluator:evaluate', () => {
     assert.deepStrictEqual(grants.map((grant) => grant.policies), [['fine#0']]);
   });
 
+  it("grants nothing through a config whose query names an operator nothing knows, rather than failing the request", async () => {
+    const broken = policy('broken', { query: { name: { '@foo': 'x' } } });
+    const grants = await evaluate([broken, policy('fine', {})], context());
+
+    assert.deepStrictEqual(grants.map((grant) => grant.policies), [['fine#0']]);
+  });
+
   it("reads the policy's and the config's env", async () => {
     const [grant] = await evaluate(
       [policy('p', { query: { team: { '@eq': '#env.team' } }, env: { team: 'red' } }, { env: { team: 'blue' } })],

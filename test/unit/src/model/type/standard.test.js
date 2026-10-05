@@ -151,6 +151,68 @@ describe('model/type/StandardModel:parseQuery values', () => {
   }
 });
 
+// A query names only operators Buttress knows, with operands it can take; anything else is refused with a 400, where
+// MongoDB refused it with a 500 or Buttress sent it on as another operator (R3 step 7)
+describe('model/type/StandardModel:parseQuery operators', () => {
+  for (const [query, path, received] of [
+    [{ name: { $foo: 'x' } }, 'name', '$foo'],
+    [{ name: { '@foo': 'x' } }, 'name', '@foo'],
+    [{ name: { $regx: '^a' } }, 'name', '$regx'],
+    [{ name: { $eq: 'x', city: 'y' } }, 'name', 'city'],
+    [{ $where: 'this.a' }, '$where', '$where'],
+    [{ $or: [{ name: { $foo: 1 } }] }, 'name', '$foo'],
+    [{ scores: { $elMatch: { $foo: 1 } } }, 'scores', '$foo'],
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 unknown_operator`, () => {
+      assert.throws(() => createModel().parseQuery(query), {
+        status: 400,
+        code: 'unknown_operator',
+        details: { path, received },
+      });
+    });
+  }
+
+  for (const [query, path, expected] of [
+    [{ name: { $in: 'x' } }, 'name', 'array'],
+    [{ name: { $nin: 'x' } }, 'name', 'array'],
+    [{ name: { $all: 'x' } }, 'name', 'array'],
+    [{ name: { $rex: '(' } }, 'name', 'pattern'],
+    [{ name: { $rexi: 5 } }, 'name', 'pattern'],
+    [{ name: { $inProp: 5 } }, 'name', 'string'],
+    [{ tags: { $elMatch: 'x' } }, 'tags', 'object'],
+    [{ $or: { name: 'x' } }, '$or', 'array'],
+    [{ $and: ['x'] }, '$and', 'array'],
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 invalid_value`, () => {
+      assert.throws(() => createModel().parseQuery(query), { status: 400, code: 'invalid_value', details: { path, expected } });
+    });
+  }
+
+  it('compares an object of fields whole, as MongoDB does', () => {
+    assert.deepStrictEqual(createModel().parseQuery({ address: { city: 'Leeds' } }), {
+      address: { $eq: { city: 'Leeds' } },
+    });
+  });
+
+  it('compares a date given as the value', () => {
+    const at = new Date('2025-01-01T00:00:00.000Z');
+    assert.deepStrictEqual(createModel().parseQuery({ at }), { at: { $eq: at } });
+  });
+
+  it('takes @and, @or and @nor as $and, $or and $nor', () => {
+    assert.deepStrictEqual(createModel().parseQuery({ '@or': [{ name: 'a' }], '@nor': [{ name: 'b' }] }), {
+      $or: [{ name: { $eq: 'a' } }],
+      $nor: [{ name: { $eq: 'b' } }],
+    });
+  });
+
+  it("gives the operators in an $elMatch on a list of values their $ names", () => {
+    assert.deepStrictEqual(createModel().parseQuery({ scores: { $elMatch: { '@gt': 3 } } }), {
+      scores: { $elMatch: { $gt: 3 } },
+    });
+  });
+});
+
 describe('model/type/StandardModel:parseQuery', () => {
   it('turns a direct value compare into $eq', () => {
     const model = createModel();

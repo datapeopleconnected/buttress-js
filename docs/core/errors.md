@@ -25,7 +25,7 @@ Each code is always answered with the same status.
 
 | Status | Means | Codes include |
 | --- | --- | --- |
-| 400 | The request is malformed or refused by the schema | `invalid_body`, `invalid_id`, `missing_id`, `missing_field`, `invalid_value`, `invalid_update`, `duplicate_id`, `unknown_path`, `invalid_schema`, `invalid_policy`, `apiPath_not_supported`, `token_in_url_not_supported` |
+| 400 | The request is malformed or refused by the schema | `invalid_body`, `invalid_id`, `missing_id`, `missing_field`, `invalid_value`, `invalid_update`, `duplicate_id`, `unknown_path`, `unknown_operator`, `invalid_schema`, `invalid_policy`, `apiPath_not_supported`, `token_in_url_not_supported` |
 | 401 | No token, or one that isn't valid: unknown, revoked, or its app or user has gone | `missing_token`, `invalid_token`, `app_not_found` |
 | 403 | The token is valid, but not allowed to do this | `insufficient_authority`, `access_denied`, `property_access_denied`, `data_sharing_inactive`, `origin_not_allowed` |
 | 404 | What the request names can't be found, or no route takes the request | `not_found`, `unknown_route`, `unknown_schema`, `unknown_lambda_endpoint` |
@@ -97,3 +97,6 @@ Statuses changed where the same condition was answered differently in different 
   internal_error`.
 - A value that can't be read as its property's type is `400 invalid_value`, in a body, an update or a query; see
   [How Values Are Read](../applications/schema.md#how-values-are-read).
+- A query naming an operator Buttress doesn't know is `400 unknown_operator`, with `details: {path, received}`, and
+  one giving an operator a value it can't take is `400 invalid_value`; both were `500 internal_error`. See
+  [Searching](../applications/schema.md#searching).

@@ -118,6 +118,10 @@ const QUERIES = [
   { 'address.city': 'Leeds' },
   { 'address.city': { $rexi: 'LEE' } },
   { 'address.city': null },
+  // An object of fields, compared whole
+  { address: { city: 'Leeds' } },
+  { meta: { level: 2 } },
+  { meta: {} },
   { $or: [{ name: 'Ada' }, { count: 10 }] },
   { $and: [{ active: true }, { count: { $lt: 3.5 } }] },
   { $nor: [{ name: 'Ada' }, { name: 'bob' }] },

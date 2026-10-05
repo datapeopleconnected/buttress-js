@@ -441,9 +441,34 @@ describe('Schema', async () => {
 			assert.deepStrictEqual(await searchNames({name: {$rexi: '^rex-case'}}), ['Rex-Case-Car']);
 		});
 
+		const refusal = (code, details) => (err) => {
+			assert.strictEqual(err.code, 400);
+			assert.strictEqual(err.body.code, code);
+			assert.deepStrictEqual(err.body.details, details);
+			return true;
+		};
+
+		it('Should refuse a search naming an operator Buttress doesn\'t know, with 400', async () => {
+			await assert.rejects(() => searchNames({name: {$foo: 'x'}}), refusal('unknown_operator', {path: 'name', received: '$foo'}));
+			await assert.rejects(() => searchNames({name: {'@foo': 'x'}}), refusal('unknown_operator', {path: 'name', received: '@foo'}));
+			await assert.rejects(() => searchNames({$where: 'this.name'}), refusal('unknown_operator', {path: '$where', received: '$where'}));
+			await assert.rejects(() => bjsReq({
+				url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/count`,
+				method: 'SEARCH',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({query: {name: {$regx: '^R'}}}),
+			}, testEnv.apps.app1.token), refusal('unknown_operator', {path: 'name', received: '$regx'}));
+		});
+
+		it('Should refuse a search giving an operator a value it can\'t take, with 400', async () => {
+			await assert.rejects(() => searchNames({name: {$in: 'Rex-Case-Car'}}), refusal('invalid_value', {path: 'name', expected: 'array'}));
+			await assert.rejects(() => searchNames({name: {$rex: '('}}), refusal('invalid_value', {path: 'name', expected: 'pattern'}));
+		});
+
 		it('Should fail a search that MongoDB refuses while streaming, and keep serving requests', async () => {
-			// MongoDB only rejects a non-array $in once the cursor runs, after the route has its stream.
-			await assert.rejects(() => searchNames({name: {$in: 'Rex-Case-Car'}}), (err) => {
+			// A pattern JavaScript reads and MongoDB doesn't: MongoDB only rejects it once the cursor runs, after the route
+			// has its stream.
+			await assert.rejects(() => searchNames({name: {$rex: '\\u0041'}}), (err) => {
 				assert.strictEqual(err.code, 500);
 				assert.deepStrictEqual(err.body, { code: 'internal_error', message: 'Internal server error' });
 				return true;

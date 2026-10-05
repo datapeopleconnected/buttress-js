@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import Sugar from '../../helpers/sugar.js';
-import { ALIASES } from '../../access-control/operators.js';
+import { ALIASES, hasOperatorNames, isPlainObject, LOGICAL_ALIASES } from '../../access-control/operators.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import { decode, isDecodeError } from '../../helpers/codecs.js';
@@ -41,6 +41,27 @@ const invalidQueryValue = (property: string, type: string) =>
     path: property,
     expected: type,
   });
+
+// A query names an operator Buttress doesn't know: refused, rather than sent on for MongoDB to refuse (R3 step 7)
+const unknownQueryOperator = (path: string, operator: string) =>
+  Helpers.Errors.badRequest('unknown_operator', `The query names an operator Buttress doesn't know: ${operator}`, {
+    path,
+    received: operator,
+  });
+
+// An operator in its `$` name: `@op` is `$op`
+const operatorName = (operator: string) => (operator.startsWith('@') ? `$${operator.slice(1)}` : operator);
+
+// Text JavaScript reads as a pattern
+const isPattern = (value: unknown) => {
+  if (typeof value !== 'string') return false;
+  try {
+    new RegExp(value);
+    return true;
+  } catch (_err) {
+    return false;
+  }
+};
 
 // A query after parseQuery: a Buttress query, its operators in their `$` names and its values read as their
 // properties' types. The MongoDB adapter gives it MongoDB's names (toMongoQuery).
@@ -180,36 +201,37 @@ export default class StandardModel<TDocument = AdapterDocument> {
     let output: Record<string, unknown> = {};
 
     for (const property in query) {
-      if (!{}.hasOwnProperty.call(query, property)) continue;
+      if (!Object.hasOwn(query, property)) continue;
       if (property === '__crPath') continue;
       const command = query[property];
 
-      if (property === '$or' && Array.isArray(command)) {
+      // @and, @or and @nor, or their $ names, take a list of queries
+      if (Object.hasOwn(LOGICAL_ALIASES, property)) {
+        if (!Array.isArray(command) || !command.every(isPlainObject)) throw invalidQueryValue(property, 'array');
         if (command.length > 0) {
-          output['$or'] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
+          output[LOGICAL_ALIASES[property]] = command.map((q) => this.parseQuery(q, envFlat, schemaFlat));
         }
-      } else if ((property === '$and' || property === '$nor') && Array.isArray(command)) {
-        if (command.length > 0) {
-          output[property] = (command as Record<string, unknown>[]).map((q) => this.parseQuery(q, envFlat, schemaFlat));
-        }
-      } else if (
-        typeof command === 'object' &&
-        command !== null &&
-        !Array.isArray(command) &&
-        !this.isValidId(command)
-      ) {
-        const operators = command as Record<string, unknown>;
-        for (const operator in operators) {
-          if (!{}.hasOwnProperty.call(operators, operator)) continue;
+        continue;
+      }
+      // Any other operator's name in a property's place names no property
+      if (property.startsWith('$') || property.startsWith('@')) throw unknownQueryOperator(property, property);
 
-          // An operator keeps its Buttress name, `@op` given as `$op`: the query stays a Buttress query, and only the
-          // MongoDB adapter gives it MongoDB's names (toMongoQuery). One the registry doesn't know is passed on.
-          const name =
-            Object.hasOwn(ALIASES, operator) && operator.startsWith('@') ? `$${operator.slice(1)}` : operator;
-          output = this.parseQueryProperty(property, name, operators[operator], output, envFlat, schemaFlat);
+      if (hasOperatorNames(command)) {
+        // An operator keeps its Buttress name, in its `$` form: the query stays a Buttress query, and only the MongoDB
+        // adapter gives it MongoDB's names (toMongoQuery). Every key must be one the registry knows.
+        for (const operator of Object.keys(command)) {
+          if (!Object.hasOwn(ALIASES, operator)) throw unknownQueryOperator(property, operator);
+          output = this.parseQueryProperty(
+            property,
+            operatorName(operator),
+            command[operator],
+            output,
+            envFlat,
+            schemaFlat,
+          );
         }
       } else {
-        // Direct compare; a list is the whole value, as MongoDB compares one
+        // A value, compared whole as MongoDB compares it: a list, an object of fields, a date
         output = this.parseQueryProperty(property, '$eq', command, output, envFlat, schemaFlat);
       }
     }
@@ -224,6 +246,16 @@ export default class StandardModel<TDocument = AdapterDocument> {
    * @param {unknown} operand
    * @return {unknown}
    */
+  // Operators given as a value's conditions, each one the registry knows, in its `$` name
+  __parseOperators(property: string, operators: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(operators).map(([operator, operand]) => {
+        if (!Object.hasOwn(ALIASES, operator)) throw unknownQueryOperator(property, operator);
+        return [operatorName(operator), operand];
+      }),
+    );
+  }
+
   __decodeOperand(property: string, type: string, operand: unknown): unknown {
     if (Array.isArray(operand)) return operand.map((item) => this.__decodeOperand(property, type, item));
     if (operand === null || operand === undefined) return operand;
@@ -272,8 +304,22 @@ export default class StandardModel<TDocument = AdapterDocument> {
     // What the operator is for MongoDB, which says how its operand is read
     const mongoOperator = Object.hasOwn(ALIASES, operator) ? ALIASES[operator].operator : operator;
 
-    if (mongoOperator === '$elemMatch' && propSchema && propSchema.__schema) {
-      operand = this.parseQuery(operand as Record<string, unknown>, envFlat, propSchema.__schema);
+    // An operand MongoDB couldn't take is refused, rather than failing the request when MongoDB reads it
+    if (['$in', '$nin', '$all'].includes(mongoOperator) && !Array.isArray(operand)) {
+      throw invalidQueryValue(property, 'array');
+    }
+    if (mongoOperator === '$regex') {
+      // $inProp looks for text, the others for a pattern
+      if (operator === '$inProp' && typeof operand !== 'string') throw invalidQueryValue(property, 'string');
+      if (operator !== '$inProp' && !isPattern(operand)) throw invalidQueryValue(property, 'pattern');
+    }
+
+    if (mongoOperator === '$elemMatch') {
+      if (!isPlainObject(operand)) throw invalidQueryValue(property, 'object');
+      // The operators a value of the list must pass, or a query an item must match, read against the items' schema
+      operand = hasOperatorNames(operand)
+        ? this.__parseOperators(property, operand)
+        : this.parseQuery(operand, envFlat, propSchema?.__schema ?? {});
     } else if (propSchema) {
       const itemSchema = propSchema.__schema;
       if (propSchema.__type === 'array' && itemSchema && typeof operand === 'object' && operand !== null) {
