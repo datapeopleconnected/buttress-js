@@ -63,7 +63,7 @@ export default class Buttress extends AbstractAdapter {
   // Set by setCollection, which is called before any of the collection methods
   declare collection: ButtressCollection;
 
-  constructor(uri: URL, options: unknown, connection: typeof ButtressAPI | null = null) {
+  constructor(uri: URL, options?: URLSearchParams, connection: typeof ButtressAPI | null = null) {
     super(uri, options, connection);
 
     this.__connection = ButtressAPI.new();

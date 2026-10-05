@@ -36,7 +36,9 @@ export type AdapterFindResult = Stream.Readable | Promise<Stream.Readable>;
 
 export default class AbstractAdapter {
   uri: URL;
-  options?: unknown;
+  // The datastore's options, given as a query string: BUTTRESS_DATASTORE_OPTIONS for the primary datastore. Only the
+  // MongoDB adapter reads them.
+  options?: URLSearchParams;
   requiresFormalSchema: boolean;
   protected __connection?: unknown;
   collection?: unknown;
@@ -44,7 +46,7 @@ export default class AbstractAdapter {
   // Set on remote adapters by RemoteCombinedModel, not read by any adapter yet.
   declare returnPausedStream?: boolean;
 
-  constructor(uri: URL, options: unknown, connection?: unknown) {
+  constructor(uri: URL, options?: URLSearchParams, connection?: unknown) {
     this.uri = uri;
     this.options = options;
 

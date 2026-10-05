@@ -29,7 +29,7 @@ The table below lists commonly used runtime parameters.
 | BUTTRESS_SOCK_LISTEN_PORT | int | 8010 | Socket process listen port |
 | BUTTRESS_TRUST_PROXY | int/boolean/string | 1 | Express `trust proxy` for the REST process: the number of proxy hops to trust, TRUE/FALSE, or a comma-separated list of proxy addresses/subnets. Set FALSE if clients reach Buttress directly, or they can set their own IP with `X-Forwarded-For`. Policies see the IP it gives as `#env.ipAddress` |
 | BUTTRESS_DATASTORE_CONNECTION_STRING | string | mongodb://localhost:27017 | Datastore connection string |
-| BUTTRESS_DATASTORE_OPTIONS | string | appName=%BUTTRESS_APP_CODE%&maxPoolSize=100 | |
+| BUTTRESS_DATASTORE_OPTIONS | string | appName=%BUTTRESS_APP_CODE%&maxPoolSize=100 | MongoDB connection options, as a query string, e.g. `authSource=admin&tls=true`. They're added to those in the connection string; an option set in both keeps the connection string's value |
 | BUTTRESS_REDIS_URL | string | redis://localhost:6379 | Redis connection URL |
 | BUTTRESS_REST_APP | string | primary | |
 | BUTTRESS_SOCKET_APP | string | primary | |

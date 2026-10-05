@@ -19,7 +19,6 @@ import {
   BSON,
   ObjectId,
   MongoClient,
-  MongoClientOptions,
   Db,
   Collection,
   CommandStartedEvent,
@@ -230,10 +229,22 @@ export const applyUpdateOps = (doc: UpdateContainer, ops: UpdateOp[]) => {
   }
 };
 
+/**
+ * The connection string with the datastore's options added to its query, where the driver reads them as it does the
+ * connection string's own. An option the connection string sets already keeps its value there, as the driver refuses
+ * one given twice. Names are compared ignoring case, as the driver compares them.
+ */
+const withOptions = (uri: URL, options?: URLSearchParams) => {
+  const merged = new URL(uri);
+  const own = new Set([...merged.searchParams.keys()].map((name) => name.toLowerCase()));
+  for (const [name, value] of options ?? []) {
+    if (!own.has(name.toLowerCase())) merged.searchParams.append(name, value);
+  }
+  return merged;
+};
+
 export default class MongodbAdapter extends AbstractAdapter {
   private _client?: MongoClient;
-
-  declare options?: MongoClientOptions;
 
   declare protected __connection?: Db;
 
@@ -245,12 +256,13 @@ export default class MongodbAdapter extends AbstractAdapter {
   override async connect() {
     if (this.__connection) return this.__connection;
 
+    const uri = withOptions(this.uri, this.options);
     // Remove the pathname as we'll selected the db using the client method
-    const connectionString = this.uri.href.replace(this.uri.pathname, '');
+    const connectionString = uri.href.replace(uri.pathname, '');
 
     // Command monitoring costs something per command, so it's only on while I/O is being counted (the budget tests).
     if (IOStats.isEnabled()) {
-      this._client = await MongoClient.connect(connectionString, { ...this.options, monitorCommands: true });
+      this._client = await MongoClient.connect(connectionString, { monitorCommands: true });
       this._client.on('commandStarted', (event: CommandStartedEvent) => {
         const target: unknown = event.command[event.commandName];
         // Commands like getMore don't name the collection first, but in `collection`
@@ -261,7 +273,7 @@ export default class MongodbAdapter extends AbstractAdapter {
         );
       });
     } else {
-      this._client = await MongoClient.connect(connectionString, this.options || {});
+      this._client = await MongoClient.connect(connectionString);
     }
 
     this.__connection = this._client.db(this.uri.pathname.replace(/\//g, ''));

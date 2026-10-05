@@ -118,6 +118,12 @@ Adding a new backing store means adding a new adapter here and a new `case` in `
 nothing else in the model layer needs to change, since `StandardModel` only calls generic `adapter.*`
 methods.
 
+The factory also gives the adapter the datastore's options query string as `URLSearchParams`
+(`Config.datastore.options`, i.e. `BUTTRESS_DATASTORE_OPTIONS`, for the primary datastore; an app's own datastore and
+data-sharing partners get none). Only the MongoDB adapter uses them: `connect()` adds each option the connection
+string doesn't set to its query, so the driver parses them as it does the connection string's own (typed, unknown
+names refused). An option in both keeps the connection string's value, since the driver refuses one given twice.
+
 The contract is typed on [AbstractAdapter](../src/datastore/abstract-adapter.ts), with the shared shapes
 in [src/types/datastore.ts](../src/types/datastore.ts). Adapters return untyped documents
 (`AdapterDocument`); `StandardModel<TDocument>` casts them to its document type (`findById` →

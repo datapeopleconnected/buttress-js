@@ -14,12 +14,16 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
+import sinon from 'sinon';
 
 import { ObjectId } from 'bson';
+import { MongoClient } from 'mongodb';
 
 import MongodbAdapter, { applyUpdateOps, mergeUpdateOps } from '../../../../../dist/datastore/adapters/mongodb.js';
+import { Datastore } from '../../../../../dist/datastore/index.js';
+import IOStats from '../../../../../dist/helpers/io-stats.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
 import { isObjectId } from '../../../../../dist/datastore/adapters/object-id.js';
 
@@ -838,5 +842,46 @@ describe('datastore/adapters/MongodbAdapter: unique properties', () => {
     const refused = await adapter._undoFailedAdd({ writeErrors: [{ index: 0, code: 11000, errmsg: duplicate.errmsg }] }, [{ _id: new ObjectId(ID) }]);
     assert.strictEqual(refused.status, 400);
     assert.deepStrictEqual(refused.details, { path: 'code' });
+  });
+});
+
+describe('datastore/adapters/MongodbAdapter: connect', () => {
+  // The client MongoClient.connect makes from what it's given, without connecting to anything
+  let client;
+  beforeEach(() => {
+    sinon.stub(MongoClient, 'connect').callsFake(async (url, options) => (client = new MongoClient(url, options)));
+  });
+  afterEach(() => {
+    sinon.restore();
+    IOStats.disable();
+  });
+
+  // As each process makes its primary datastore from Config.datastore
+  const connect = (connectionString, options) => new Datastore({ connectionString, options }).connect();
+
+  it('applies the datastore options (BUTTRESS_DATASTORE_OPTIONS) to the client, on the named database', async () => {
+    const db = await connect('mongodb://localhost:27017/buttress', 'appName=bjs&maxPoolSize=10&replicaSet=rs0&tls=true');
+
+    assert.strictEqual(client.options.appName, 'bjs');
+    assert.strictEqual(client.options.maxPoolSize, 10);
+    assert.strictEqual(client.options.replicaSet, 'rs0');
+    assert.strictEqual(client.options.tls, true);
+    assert.strictEqual(db.databaseName, 'buttress');
+  });
+
+  it('keeps the value of an option the connection string sets too, as the driver refuses one given twice', async () => {
+    await connect('mongodb://localhost:27017/buttress?maxPoolSize=5', 'appName=bjs&maxPoolSize=10');
+
+    assert.strictEqual(client.options.maxPoolSize, 5);
+    assert.strictEqual(client.options.appName, 'bjs');
+  });
+
+  it('keeps command monitoring on while I/O is counted', async () => {
+    IOStats.enable();
+
+    await connect('mongodb://localhost:27017/buttress', 'maxPoolSize=10');
+
+    assert.strictEqual(client.options.monitorCommands, true);
+    assert.strictEqual(client.options.maxPoolSize, 10);
   });
 });
