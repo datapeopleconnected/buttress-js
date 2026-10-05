@@ -41,6 +41,7 @@ export type LambdaExecution = {
   nextCronExpression: string | null;
   _appId: string;
   _tokenId: string;
+  _callerTokenId?: string | null;
   metadata: Array<{
     key: string | null;
     value: string | null;
@@ -160,6 +161,11 @@ class LambdaExecutionSchemaModel extends StandardModel<LambdaExecution> {
           __required: true,
           __allowUpdate: false,
         },
+        _callerTokenId: {
+          __type: 'id',
+          __required: false,
+          __allowUpdate: false,
+        },
         metadata: {
           __type: 'array',
           __allowUpdate: true,
@@ -199,19 +205,23 @@ class LambdaExecutionSchemaModel extends StandardModel<LambdaExecution> {
    * @param {string} tokenId - the tokenId that should be used to exeucte the lambda
    * @return {Promise} - fulfilled with lambda execution Object when the database request is completed
    */
-  // The execution's app, and the token it was run with, if any
+  // The execution's app, the token it was run with, if any, and the token of whoever called it, if any
   override async add(
     body: LambdaExecutionAddBody,
-    internals: { _appId: string; _tokenId?: string | null },
+    internals: { _appId: string; _tokenId?: string | null; _callerTokenId?: string | null },
   ): Promise<LambdaExecution> {
-    const { _appId: appId, _tokenId: tokenId } = internals;
+    const { _appId: appId, _tokenId: tokenId, _callerTokenId: callerTokenId } = internals;
 
     if (!appId) throw new Error('appId is required to create a lambda execution');
 
-    const stored: { _appId: string; _tokenId?: string } = {
+    const stored: { _appId: string; _tokenId?: string; _callerTokenId?: string } = {
       _appId: this.__modelManager.getCoreModel(AppSchemaModel).createId(appId),
     };
     if (tokenId) stored._tokenId = this.__modelManager.getCoreModel(TokenSchemaModel).createId(tokenId);
+
+    if (callerTokenId) {
+      stored._callerTokenId = this.__modelManager.getCoreModel(TokenSchemaModel).createId(callerTokenId);
+    }
 
     // Stored as the schema reads it, pending, with its defaults for what's left out
     const rxsExecution = await super.add(body, stored);

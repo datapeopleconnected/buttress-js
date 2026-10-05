@@ -37,6 +37,8 @@ export interface RequestContext {
   authUser: User | null;
   authApp: App | null;
   token: Token | null;
+  // The token a lambda endpoint was called with, which the lambda runs as only when its endpoint uses the caller's token
+  callerToken: Token | null;
   clientSessionId: string | null;
   apiPath?: string;
   pathSpec?: string;

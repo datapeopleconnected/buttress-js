@@ -420,6 +420,7 @@ export default class LambdaRunner {
       }
     }
 
+    const caller = await this._executionCaller(execution);
     const apiPath = app.apiPath;
     // const appAllowList = app.allowList;
     const trigger = this._executionTrigger(lambda, execution, type);
@@ -468,6 +469,9 @@ export default class LambdaRunner {
           metadata: lambda.metadata,
           lambdaToken: lambdaToken.value,
           userId: executionUserId,
+          // Who called the lambda: the owner of the token its endpoint was called with, null without one
+          callerType: caller?.type ?? null,
+          callerId: caller?.id ?? null,
           appApiPath: apiPath,
           fileName: ownCode?.name,
           entryPoint: lambda.git.entryPoint,
@@ -593,6 +597,23 @@ export default class LambdaRunner {
 
       return Promise.reject(failure);
     }
+  }
+
+  /**
+   * Who called an execution's lambda: the owner of the token it was called with, which its type says: a user, a lambda or
+   * an app. None for an execution without a caller's token, one whose token has gone since, or a type with no owner here.
+   */
+  async _executionCaller(execution: LambdaExecution): Promise<{ type: 'user' | 'lambda' | 'app'; id: string } | null> {
+    if (!execution._callerTokenId) return null;
+
+    const token = (await Model.getCoreModel(TokenSchemaModel).findById(execution._callerTokenId)) as Token | null;
+    if (!token) return null;
+
+    const { USER, LAMBDA, APP } = TokenSchemaModel.Constants.Type;
+    if (token.type === USER && token._userId) return { type: 'user', id: String(token._userId) };
+    if (token.type === LAMBDA && token._lambdaId) return { type: 'lambda', id: String(token._lambdaId) };
+    if (token.type === APP && token._appId) return { type: 'app', id: String(token._appId) };
+    return null;
   }
 
   /**

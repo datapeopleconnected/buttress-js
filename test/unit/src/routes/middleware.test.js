@@ -26,6 +26,11 @@ import IOStats from '../../../../dist/helpers/io-stats.js';
 import * as Helpers from '../../../../dist/helpers/errors.js';
 import Model from '../../../../dist/model/index.js';
 import TokenSchemaModel from '../../../../dist/model/core/token.js';
+import AppSchemaModel from '../../../../dist/model/core/app.js';
+import LambdaSchemaModel from '../../../../dist/model/core/lambda.js';
+import UserSchemaModel from '../../../../dist/model/core/user.js';
+import AppDataSharingSchemaModel from '../../../../dist/model/core/app-data-sharing.js';
+import AdminRoutes from '../../../../dist/routes/admin-routes.js';
 
 function createMiddleware() {
   return new RoutesMiddleware({}, {});
@@ -338,5 +343,60 @@ describe('routes/RoutesMiddleware:_configCrossDomain', () => {
 
     assertRefused(next, 401, 'missing_token');
     assert.ok(res.status.notCalled);
+  });
+});
+
+describe('routes/RoutesMiddleware:_authenticateToken a lambda endpoint call', () => {
+  const app = { id: 'app-1', apiPath: 'test' };
+  const lambdaToken = { id: 'lambda-token', _appId: 'app-1', _lambdaId: 'lambda-1', type: 'lambda' };
+  const callerToken = { id: 'caller-token', _appId: 'app-1', type: 'app' };
+
+  // The context the request has once it's authenticated, for a call with `provided` as its token
+  async function authenticate({ type = 'PRIVATE', useCallerToken, provided = callerToken }) {
+    const lambda = {
+      id: 'lambda-1', _appId: 'app-1', type,
+      trigger: [{ type: 'API_ENDPOINT', apiEndpoint: { url: 'hello', method: 'GET', useCallerToken } }],
+    };
+    const models = new Map([
+      [AppSchemaModel, { findOne: async () => app, findById: async () => app }],
+      [LambdaSchemaModel, { findOne: async () => lambda }],
+      [TokenSchemaModel, { findOne: async () => lambdaToken }],
+      [UserSchemaModel, { findById: async () => null }],
+      [AppDataSharingSchemaModel, { findById: async () => null }],
+    ]);
+    sinon.stub(Model, 'getCoreModel').callsFake((model) => models.get(model));
+    sinon.stub(AdminRoutes, 'checkAdminCall').resolves({});
+    const middleware = createMiddleware();
+    sinon.stub(middleware, '_getProvidedToken').resolves(provided);
+    const req = {
+      url: '/lambda/v1/test/hello', method: 'GET', query: {}, headers: {},
+      context: { id: 'req-1', timings: {}, authLambda: null, authApp: null, token: null, callerToken: null },
+    };
+
+    const next = sinon.stub();
+    await middleware._authenticateToken(req, createRes(), next);
+    assert.deepStrictEqual(next.firstCall.args, [], 'the request is let through');
+    return req.context;
+  }
+
+  it("runs a call to an endpoint that uses the caller's token with the caller's, which is also the caller", async () => {
+    const context = await authenticate({ useCallerToken: true });
+
+    assert.strictEqual(context.token, callerToken);
+    assert.strictEqual(context.callerToken, callerToken);
+  });
+
+  it("runs a call to an endpoint that doesn't with the lambda's token, keeping the caller's apart", async () => {
+    const context = await authenticate({ useCallerToken: false });
+
+    assert.strictEqual(context.token, lambdaToken);
+    assert.strictEqual(context.callerToken, callerToken);
+  });
+
+  it("has no caller for a call to a PUBLIC endpoint that doesn't use the caller's token, whatever it sends", async () => {
+    const context = await authenticate({ type: 'PUBLIC', useCallerToken: false });
+
+    assert.strictEqual(context.token, lambdaToken);
+    assert.strictEqual(context.callerToken, null);
   });
 });

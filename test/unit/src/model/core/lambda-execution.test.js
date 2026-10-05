@@ -25,6 +25,7 @@ import { createSchemaModel } from '../../../../schema-model.js';
 describe('model/core/LambdaExecutionSchemaModel: what an execution is stored as', () => {
   const APP_ID = '6abd05000000000000000001';
   const TOKEN_ID = '6abd02000000000000000001';
+  const CALLER_TOKEN_ID = '6abd02000000000000000009';
   const LAMBDA_ID = '6abd03000000000000000001';
   const DEPLOYMENT_ID = '6abd06000000000000000001';
 
@@ -75,8 +76,41 @@ describe('model/core/LambdaExecutionSchemaModel: what an execution is stored as'
         metadata: [{ key: 'HEADERS', value: '{}' }],
         _appId: APP_ID,
         _tokenId: TOKEN_ID,
+        _callerTokenId: null,
       },
     ]);
+  });
+
+  it("stores the token of the execution's caller, which is not the one it runs with", async () => {
+    const { model, datastore } = createModel();
+
+    await model.add(
+      { lambdaId: LAMBDA_ID, deploymentId: DEPLOYMENT_ID },
+      { _appId: APP_ID, _tokenId: null, _callerTokenId: CALLER_TOKEN_ID },
+    );
+
+    assert.strictEqual(datastore.rows[0]._callerTokenId, CALLER_TOKEN_ID);
+    assert.strictEqual(datastore.rows[0]._tokenId, null);
+  });
+
+  it('stores no caller for an execution that was not called by a token', async () => {
+    const { model, datastore } = createModel();
+
+    await model.add({ lambdaId: LAMBDA_ID, deploymentId: DEPLOYMENT_ID }, { _appId: APP_ID, _callerTokenId: null });
+
+    assert.strictEqual(datastore.rows[0]._callerTokenId, null);
+  });
+
+  it("takes the caller from the internals only, not from the execution's body", async () => {
+    const { model, datastore } = createModel();
+
+    await model.add(
+      { lambdaId: LAMBDA_ID, deploymentId: DEPLOYMENT_ID, _callerTokenId: CALLER_TOKEN_ID, _tokenId: CALLER_TOKEN_ID },
+      { _appId: APP_ID },
+    );
+
+    assert.strictEqual(datastore.rows[0]._callerTokenId, null);
+    assert.strictEqual(datastore.rows[0]._tokenId, null);
   });
 
   it('stores an execution without a trigger type as a CRON one, its default', async () => {

@@ -76,6 +76,13 @@ Execution (`execute()`), per invocation:
    (pre-configured `@buttress/api` client pointed at this Buttress instance, authenticated as the
    the lambda's own token), `lambdaInfo`, `lambdaData`/`lambdaQuery`/`lambdaRequestHeaders` (the triggering
    request, for `API_ENDPOINT`), `lambdaExecution`.
+   `lambdaInfo.callerType` and `lambdaInfo.callerId` say who called an API endpoint: the owner of the token it was
+   called with, from the execution's `_callerTokenId`, which the token's type names (`user`: its user, `lambda`: its
+   lambda, `app`: its app). Never the token's id or value. Both are `null` when the token isn't of the lambda's own
+   app, has gone since, or is of another type, for a CRON or PATH_MUTATION execution, and for a PUBLIC endpoint that
+   doesn't use the caller's token, which never reads the caller's token. For any other endpoint they're set whether or
+   not it uses the caller's token. A token that has gone since doesn't stop the run.
+   Unlike `_tokenId` (the token the execution runs as), they never change who the lambda acts as.
    An `API_ENDPOINT` trigger with `useCallerToken` runs as its caller, but the caller's token never enters the
    isolate: the runner keeps it on `lambdaHelpers.caller`, and the lambda's default `appToken` is the placeholder
    `BUTTRESS_CALLER`. The host `_fetch` replaces that placeholder in the `Authorization` header of a request to

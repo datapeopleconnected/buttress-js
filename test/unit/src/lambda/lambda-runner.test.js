@@ -1120,7 +1120,10 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
   async function given(trigger, execution, callerTokenType = 'app') {
     const { runner, nrp } = createRunner();
     await runner.init();
-    const callerToken = { id: 'caller-token', value: 'caller-token-value', type: callerTokenType, _userId: 'user-1' };
+    const callerToken = {
+      id: 'caller-token', value: 'caller-token-value', type: callerTokenType,
+      _userId: 'user-1', _lambdaId: 'lambda-2', _appId: 'app-1',
+    };
     stubModel(
       new Map([
         [SecureStoreSchemaModel, { findOne: async () => null }],
@@ -1130,6 +1133,8 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
         [TokenSchemaModel, {
           createId: (v) => v,
           find: async (query) => Readable.from([query._id ? callerToken : { value: 'lambda-token' }]),
+          // The caller's token, unless it has been deleted since the call was queued
+          findById: async (id) => (id === 'caller-token' ? callerToken : null),
         }],
         [LambdaExecutionSchemaModel, {
           ...fakeExecutionModel({ updateById: sinon.stub().resolves() }),
@@ -1143,7 +1148,7 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
       runner._context.evalSync(`
         globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
         globalThis['lambda_lambda-1'] = class {
-          async execute() { lambda.setResult({ userId: lambdaInfo.userId, userToken: lambdaInfo.userToken ?? null, appToken: buttressOptions.appToken, headers: lambda.req.headers }); }
+          async execute() { lambda.setResult({ userId: lambdaInfo.userId, callerType: lambdaInfo.callerType, callerId: lambdaInfo.callerId, info: lambdaInfo, execution: lambdaExecution, userToken: lambdaInfo.userToken ?? null, appToken: buttressOptions.appToken, headers: lambda.req.headers }); }
         };
       `);
     });
@@ -1189,6 +1194,74 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
     assert.strictEqual(seen.hostCaller.token, 'caller-token-value');
     const { hostCaller, ...inIsolate } = seen;
     assert.ok(!JSON.stringify(inIsolate).includes('caller-token-value'));
+  });
+
+  it("tells a lambda who called it by the owner of the token, whatever type it is", async function () {
+    this.timeout(10000);
+    const trigger = { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } };
+    const owners = [];
+    for (const type of ['user', 'lambda', 'app']) {
+      const seen = await given(trigger, { _callerTokenId: 'caller-token' }, type);
+      owners.push([seen.callerType, seen.callerId]);
+      sinon.restore();
+    }
+
+    assert.deepStrictEqual(owners, [['user', 'user-1'], ['lambda', 'lambda-2'], ['app', 'app-1']]);
+  });
+
+  it("tells a lambda who called it when it runs as the caller too", async function () {
+    this.timeout(10000);
+    const seen = await given(
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: true } },
+      { _tokenId: 'caller-token', _callerTokenId: 'caller-token' },
+      'user',
+    );
+
+    assert.deepStrictEqual([seen.callerType, seen.callerId], ['user', 'user-1']);
+  });
+
+  it("gives a lambda who called it, never the token's id or value, when it doesn't run as the caller", async function () {
+    this.timeout(10000);
+    const seen = await given(
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } },
+      { _callerTokenId: 'caller-token' },
+      'user',
+    );
+
+    assert.strictEqual(seen.hostCaller, null);
+    assert.strictEqual(seen.appToken, 'lambda-token');
+    const everything = JSON.stringify({ info: seen.info, execution: seen.execution });
+    assert.ok(!everything.includes('caller-token'));
+    assert.ok(!('_callerTokenId' in seen.execution));
+  });
+
+  it("has no caller to tell a lambda that wasn't called by a token of its app", async function () {
+    this.timeout(10000);
+    const seen = await given({ type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } }, {});
+
+    assert.deepStrictEqual([seen.callerType, seen.callerId], [null, null]);
+  });
+
+  it("has no caller to tell a lambda when the token that called it has no owner of a type it knows", async function () {
+    this.timeout(10000);
+    const seen = await given(
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } },
+      { _callerTokenId: 'caller-token' },
+      'system',
+    );
+
+    assert.deepStrictEqual([seen.callerType, seen.callerId], [null, null]);
+  });
+
+  it("still runs a lambda whose caller's token has been deleted since it was queued, with no caller to tell it", async function () {
+    this.timeout(10000);
+    const seen = await given(
+      { type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: false } },
+      { _callerTokenId: 'deleted-token' },
+      'user',
+    );
+
+    assert.deepStrictEqual([seen.callerType, seen.callerId], [null, null]);
   });
 
   it("has no user to tell an endpoint that doesn't use the caller's token", async function () {
