@@ -675,6 +675,99 @@ describe('bootstrap-spr:_handleIncomingMessage a policy evaluated as REST evalua
   });
 });
 
+// A token gets one activity for an entity, with what all its policies let it read (R5), and tokens that may read the
+// same of it are sent it in one message
+describe('bootstrap-spr:_handleIncomingMessage one activity per token', () => {
+  const APP_ID = new ObjectId().toString();
+  const owner = { id: new ObjectId() };
+  const tokens = {
+    a: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+    b: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+    c: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+  };
+  const car = { id: new ObjectId(), name: 'car', secret: 'hidden', userId: owner.id };
+  const renamed = { type: 'scalar', path: 'name', value: 'renamed' };
+  const changed = { type: 'scalar', path: 'secret', value: 'changed' };
+
+  const policy = (id, query, keys) => ({
+    id,
+    name: id,
+    _appId: APP_ID,
+    env: null,
+    config: [{ verbs: ['GET'], schema: ['car'], query, projection: keys ? { keys } : null, condition: null }],
+  });
+  const everything = { access: '%FULL_ACCESS%' };
+  const owned = { userId: { '@eq': '#env.user.id' } };
+
+  afterEach(() => sinon.restore());
+
+  async function relay(policies, connections) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const emitted = [];
+    spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
+    spr._policyCache = {
+      getPoliciesByRestActivity: async () => policies,
+      getConnectedTokenIdsByPolicyId: async (policyId) => connections[policyId].map((token) => token.id.toString()),
+    };
+    sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
+    const reads = [];
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      const docs = modelClass === TokenSchemaModel ? Object.values(tokens) : [owner];
+      return {
+        createId: (id) => new ObjectId(id),
+        findOne: async (query) => {
+          reads.push(modelClass.name);
+          return docs.find((doc) => doc.id.equals(query._id)) || null;
+        },
+      };
+    });
+
+    await spr._handleIncomingMessage({
+      broadcast: true,
+      path: `/car/${car.id}`,
+      pathSpec: 'car/:id',
+      verb: 'put',
+      params: { id: car.id.toString() },
+      response: [renamed, changed],
+      appAPIPath: 'test-app',
+      appId: APP_ID,
+      isSuper: false,
+      isCoreSchema: false,
+      schemaName: 'car',
+    });
+
+    const received = (token) => emitted.filter((e) => e.tokens.includes(token.id.toString())).map((e) => e.activity.response);
+    return { emitted, reads, received };
+  }
+
+  it('sends a token one activity for all its policies, with what each lets it read', async () => {
+    const names = policy('names', everything, ['name']);
+    const secrets = policy('secrets', everything, ['secret']);
+    const { received } = await relay([names, secrets], { names: [tokens.a, tokens.b], secrets: [tokens.a] });
+
+    assert.deepStrictEqual(received(tokens.a), [[renamed, changed]]);
+    assert.deepStrictEqual(received(tokens.b), [[renamed]]);
+  });
+
+  it('sends the tokens that may read the same of an activity one message between them', async () => {
+    const all = policy('all', everything);
+    const own = policy('own', owned);
+    const { emitted } = await relay([all, own], { all: [tokens.a, tokens.b], own: [tokens.c] });
+
+    assert.strictEqual(emitted.length, 1);
+    assert.deepStrictEqual(emitted[0].tokens.sort(), [tokens.a, tokens.b, tokens.c].map((t) => t.id.toString()).sort());
+  });
+
+  it("reads a token's user once for an activity, however many of its policies refer to it", async () => {
+    const own = policy('own', owned, ['name']);
+    const ownSecrets = policy('own-secrets', owned, ['secret']);
+    const { reads, received } = await relay([own, ownSecrets], { own: [tokens.a], 'own-secrets': [tokens.a] });
+
+    assert.deepStrictEqual(received(tokens.a), [[renamed, changed]]);
+    assert.deepStrictEqual(reads, ['Token', 'User']);
+  });
+});
+
 // Activities for one entity are relayed in the order they arrive, though each is handled as it arrives; one that fails
 // is logged and doesn't stop the next.
 describe('bootstrap-spr:_handleIncomingMessage order', () => {

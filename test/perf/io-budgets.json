@@ -66,7 +66,7 @@
     "POST /car, 2 sockets on admin-access + 2 on env-user-query": {
       "mongo": { "find": 7 },
       "redis": { "HMGET": 1, "SMEMBERS": 6, "ZRANGE": 3, "ZSCORE": 5 },
-      "nrp": { "spr:activity": 3 }
+      "nrp": { "spr:activity": 2 }
     }
   }
 }
