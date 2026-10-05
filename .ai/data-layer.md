@@ -44,15 +44,21 @@ Key things to know:
   as they are), values decoded as their properties' types (`__decodeOperand`, D-2). They refuse an operator the
   registry ([src/access-control/operators.ts](../src/access-control/operators.ts) `ALIASES`) doesn't know, or any
   other operator-prefixed name in a property's place, with 400 `unknown_operator` `{path, received}`; an operand
-  MongoDB couldn't take (`$in` without a list, a pattern that isn't one…) with 400 `invalid_value`; and, for a schema
-  with `strict: true`, a path it doesn't define (`isQueryPath` in update-paths.ts) with 400 `unknown_path`. An object
-  without operator names is a value, compared whole (`$eq`), as MongoDB compares one.
+  MongoDB couldn't take (`$in` without a list, a pattern that isn't one…; `operandProblem` in operators.ts, which a
+  policy's query is checked by when it's saved) with 400 `invalid_value`; and, for a schema with `strict: true`, a
+  path it doesn't define (`isQueryPath` in update-paths.ts) with 400 `unknown_path`, as for a path naming `__proto__`
+  whatever the schema. A query's and a schema's names are read as their own properties, never Object.prototype's. An
+  object without operator names is a value, compared whole (`$eq`), as MongoDB compares one. An `$elMatch` of
+  operators only (`{$gt: 1}`, `isValueOperators`) tests a list's values; any other is a query on its items, its own
+  `$or`/`$and`/`$nor` included.
 - **Only the MongoDB adapter makes MongoDB's query**, in `MongodbAdapter._query`: `toMongoQuery()` (the registry's
   translation: `$rexi`→`$regex` + `$options: 'i'`, `$not`→`$ne`, `$gtDate`→`$gt`, `$inProp`→escaped `$regex`,
   `$elMatch`→`$elemMatch`, `@and`→`$and`), then the id conversion. The Buttress adapter forwards the Buttress query
   as it is, so a partner checks it as its own client's. In-memory matching (`matchQuery`, realtime's and
-  `models-access`'s) runs on `toMongoQuery`'s output, as it decides as MongoDB does. Don't put MongoDB-only names into
-  a parsed query, and don't translate before the adapter.
+  `models-access`'s) runs on `toMongoQuery`'s output, as it decides as MongoDB does, missing fields included (a
+  document without the field reads as null, an array's items that aren't documents are passed over); the e2e oracle
+  (`test/e2e/access-control/operators.test.js`) checks it against MongoDB itself, so add a row there for any new
+  case. Don't put MongoDB-only names into a parsed query, and don't translate before the adapter.
   This is the layer that both REST query params and Access Control query injection go through; `models-access`
   re-parses the combined query with `checkPaths: false`, as the route already checked the client's part.
 - `updateByPath()` implements Buttress's **path-based PUT** semantics (`{path, value}` updates), used for

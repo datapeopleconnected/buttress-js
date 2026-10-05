@@ -53,10 +53,16 @@ after token authentication. Flow:
      the config is for the verb and schema (`filterPolicyConfigs`; `grantsVerb()` treats `QUERY` and `SEARCH` as one
      verb, so a config listing either grants both methods), the schema exists, its `condition` holds
      (`AccessControlConditions.filterPoliciesByPolicyConditions`, with the request env; a config without a
-     condition applies), and its `query`'s `#env.` values are set (`Filter.buildPolicyQuery`; an unset one drops
-     the config). Each check that leaves nothing refuses with its `PolicyError`. A grant is
-     `{policies, appId, config, query, projection}`: the query with its env read and access keys dropped (`{}`
-     reads every entity), and the properties it reads (null for every one).
+     condition applies), and its `query` can be built (`Filter.buildPolicyQuery`; an `#env.` value that isn't set,
+     an operator nothing knows, or a logical operator not given a list of queries drops the config). Each check
+     that leaves nothing refuses with its `PolicyError`. A grant is `{policies, appId, config, query, projection}`:
+     the query with its env read and access keys dropped (`{}` reads every entity), and the properties it reads
+     (null for every one).
+   - `__readableGrants` parses each grant's query against the app's model, as `models-access` will read it, and
+     leaves out one the schema can't read (an operand an operator can't take, from a policy saved before
+     `checkPolicyConfig` checked operands), logging it; none left is 403 `access_denied`. It runs before merging,
+     so a dropped query doesn't take a query OR'd with it along. Core schemas skip it: their rows aren't read
+     through policies' queries (D-21).
    - `Projection.filterGrantsByRequest` keeps the grants the request's reads and writes can go through: a read
      may only query properties a grant reads (at any depth of `$and`/`$or`/`$nor`), an update's paths must be
      within them (else 403 `property_access_denied`), a create's other properties get their defaults.
@@ -72,8 +78,15 @@ after token authentication. Flow:
    it to the error handler (see [routing.md](routing.md#errors-srchelperserrorsts)). **Default is deny, not
    allow.**
 6. If the token has any policy with a `limit` (expiry) within one week, schedules a one-shot cleanup
-   (`_queuePolicyLimitDeleteEvent`) that strips the token's matching `policyProperties` and deletes the
-   policy when it expires.
+   (`_queuePolicyLimitDeleteEvent`) that strips the policy properties its selection took the token by
+   (`AccessControlPolicyMatch.selectedKeys`: the keys it needs, within `@and` too, and those of each `@or` branch
+   that holds for the token) and deletes the policy when it expires.
+
+Policies are checked when they're saved (`checkPolicyConfig` in
+[policy-definition.ts](../src/access-control/policy-definition.ts)), so the drops above are for policies saved before:
+an operator nothing knows, an operand an operator can't take (`operandProblem` in operators.ts, the rule
+`StandardModel.parseQuery` refuses a search's operands by), a logical operator not given a list of one or more
+queries, and a condition criterion that isn't an object of one or more operators.
 
 `AccessControlEnv.generateRequestGlobalEnvs(req, appId, user)` builds the `env` object that policy
 `query`/`condition` values can reference via dotted paths (e.g. `env.userId`) — read
@@ -100,8 +113,9 @@ route sends it along as it was, in `deletedEntities` (`Route._keepEntitiesBeingD
 for system tokens (`isSuper`) too: sent whole, it would clear entities that still exist.
 
 Each entity activity goes through a `KeyedQueue` keyed by app, schema and entity, so an entity's activities are
-relayed in the order they arrive (other entities' alongside), and one that fails is logged. Then
-`__handleEntityActivity`:
+relayed in the order they arrive (other entities' alongside), and one that fails is logged. A bulk activity's
+entities each take their place in their queue as it arrives, chained so they're still handled one after another; a
+later activity for one of them can't overtake it. Then `__handleEntityActivity`:
 
 1. Drops `broadcast: false` activities; sends the `isSuper` copy whole to every system token (one find, no entity
    read).
@@ -114,8 +128,9 @@ relayed in the order they arrive (other entities' alongside), and one that fails
    that token's user; the tokens and their users are read in one find each (`__constructTokenEnvs`). Other
    policies are evaluated once, with the app's env.
 5. `__readingFor` evaluates a policy and checks which grants' queries read the entity
-   (`Filter.evaluateQueryAgainstEntity`); the entity is read once, when first needed. A token may read the
-   union of what its policies' reading grants let it (`addReading`).
+   (`Filter.evaluateQueryAgainstEntity`, which reads nothing for a query the schema can't read); the entity is read
+   once, when first needed. A policy that fails to be evaluated is logged and reads nothing, and the token's other
+   policies still apply. A token may read the union of what its policies' reading grants let it (`addReading`).
 6. `__relay` groups tokens that may read the same, trims the activity's `response` to those properties
    (`Projection.projectActivityResponse`, which understands PUT diffs and sends nothing when none are visible), and
    re-emits it as `spr:activity` (`DataShareSocketSharePayload`, up to 1000 token ids a message), which Socket
