@@ -213,6 +213,30 @@ describe('access-control/AccessControl:__getOutcome', () => {
     );
   });
 
+  it('rejects a search sorted by a property the remaining policies hide', async () => {
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+    const tokenPolicies = [
+      {
+        id: 'p1',
+        name: 'names',
+        priority: 1,
+        env: null,
+        config: [{ verbs: ['SEARCH'], schema: ['user'], query: {}, projection: { keys: ['name'] }, condition: null }],
+      },
+    ];
+    const req = createReq({ method: 'SEARCH', body: { query: {}, sort: { email: -1 } } });
+
+    await assert.rejects(
+      () => instance.__getOutcome(tokenPolicies, req, 'user', 'app1'),
+      (err) => {
+        assert.ok(err instanceof PolicyError);
+        assert.strictEqual(err.status, 403);
+        assert.strictEqual(err.code, 'property_access_denied');
+        return true;
+      },
+    );
+  });
+
   it('merges the queries of two otherwise-equivalent matching policies with $or', async () => {
     const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
     const tokenPolicies = [

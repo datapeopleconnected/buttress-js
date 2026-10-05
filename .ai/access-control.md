@@ -68,7 +68,8 @@ after token authentication. Flow:
      so a dropped query doesn't take a query OR'd with it along. Core schemas skip it: their rows aren't read
      through policies' queries (D-21).
    - `Projection.filterGrantsByRequest` keeps the grants the request's reads and writes can go through: a read
-     may only query properties a grant reads (at any depth of `$and`/`$or`/`$nor`), an update's paths must be
+     may only query (at any depth of `$and`/`$or`/`$nor`) or sort by properties a grant reads, as a sort's order
+     would show the property, an update's paths must be
      within them (else 403 `property_access_denied`), a create's other properties get their defaults.
    - `mergeGrants` merges without changing what they give together: the same query unions properties (every
      property if one reads all), and grants reading every property OR their queries. The result goes on

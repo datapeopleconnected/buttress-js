@@ -235,11 +235,15 @@ class Projection {
     return [{ ...result, value: projectValue(result.value, childKeys) }];
   }
 
-  // Whether a read's query names only properties the projection keys let through, at any depth of its $and, $or and $nor
+  // Whether a read's query names only properties the projection keys let through, at any depth of its $and, $or and $nor,
+  // and so does its sort, as the order of what it reads would show a property it sorts by
   __checkProjectionPath(requestBody: RequestBody, projectionKeys: string[]) {
     const query = requestBody.query ? (requestBody.query as RequestBody) : requestBody;
+    const sortKeys = isPlainObject(requestBody.sort)
+      ? Object.keys(requestBody.sort).filter((key) => !this._ignoredQueryKeys.includes(key))
+      : [];
 
-    return this.__queryFields(query).every((key) =>
+    return [...this.__queryFields(query), ...sortKeys].every((key) =>
       projectionKeys.some((projectionKey) => isWithin(key, projectionKey)),
     );
   }

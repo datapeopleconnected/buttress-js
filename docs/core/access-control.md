@@ -40,8 +40,8 @@ the SPR pipeline and the cache, not the policy.
 5. Remaining `query` blocks resolve into a concrete datastore query fragment, their `#env.` values read from the
    request. A config whose query can't be applied (an `#env.` value that isn't set, an operator Buttress doesn't
    know, or a query the schema can't read) drops out, and the token's other configs still apply.
-6. `projection` blocks resolve into field-level restrictions; if resolving projections leaves no applicable
-   policy, the request is denied.
+6. `projection` blocks resolve into field-level restrictions: a read may only query or sort by the properties a
+   projection lets through; if resolving projections leaves no applicable policy, the request is denied.
 7. Surviving configs are merged where that doesn't change what they give together (the same query reads every
    property either config does; configs that read every property have their queries OR'd together) and handed to
    the route handler, which reads the rest in one query per data source: each entity comes once, with the

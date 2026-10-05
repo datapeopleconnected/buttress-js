@@ -100,6 +100,10 @@ values read from the env; `{"access": "%FULL_ACCESS%"}` reads every entity. Ever
 applies, so `{"age": {"@gte": 18, "@lt": 65}}` reads ages from 18 up to 65. Earlier releases applied only the first
 operator a property was given, so that policy read every age from 18 up.
 
+A config with a `projection` reads only those properties, and a read may query or sort by only them through it: the
+order of a search sorted by a property would show it. A search sorting by a property no config of the token's reads is
+refused with a 403, `property_access_denied`; earlier releases sorted by it.
+
 A token whose policies give it several configs for a schema reads what they read together: each entity once, with
 every property of each config whose query reads it, and a list's `skip`, `limit` and `sort` hold for the whole list. A
 count counts each entity once. Configs with the same query read every property either one does, and all of them if

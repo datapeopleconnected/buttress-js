@@ -66,6 +66,28 @@ describe('access-control/projection:filterGrantsByRequest', () => {
     assert.strictEqual(result.length, 0);
   });
 
+  // The order of a read sorted by a property would show it, so a grant that hides a property doesn't let a read sorted by
+  // it through
+  it('should reject a read sorted by a key not in the projection', async () => {
+    const policies = [{
+      id: 'p1', name: 'test', appId: 'app1', env: null,
+      config: { verbs: ['SEARCH'], schema: ['user'], query: {}, projection: { keys: ['name'] }, condition: null },
+    }];
+
+    const req = { method: 'SEARCH', body: { query: {}, sort: { age: -1 } } };
+    assert.strictEqual((await AccessControlProjection.filterGrantsByRequest(req, policies, schema)).length, 0);
+  });
+
+  it('should pass a read sorted by projected keys, or by id', async () => {
+    const policies = [{
+      id: 'p1', name: 'test', appId: 'app1', env: null,
+      config: { verbs: ['SEARCH'], schema: ['user'], query: {}, projection: { keys: ['name'] }, condition: null },
+    }];
+
+    const req = { method: 'SEARCH', body: { query: {}, sort: { name: 1, id: -1 } } };
+    assert.strictEqual((await AccessControlProjection.filterGrantsByRequest(req, policies, schema)).length, 1);
+  });
+
   it('should pass POST when body keys are within projection', async () => {
     const policies = [{
       id: 'p1', name: 'test', appId: 'app1', env: null,

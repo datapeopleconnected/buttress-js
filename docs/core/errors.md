@@ -113,3 +113,5 @@ Statuses changed where the same condition was answered differently in different 
 - A request through a policy saved by an earlier release, whose query its schema can't read, is answered as the
   token's other policies allow, or `403 access_denied` when none does; it was `400 invalid_value` or
   `500 internal_error`. See [Policy](../applications/policy.md).
+- A search sorted by a property none of the token's policies lets it read is `403 property_access_denied`; it was
+  answered, sorted by it. See [Policy](../applications/policy.md#queries).
