@@ -161,20 +161,6 @@ describe('access-control/filter:buildPolicyQuery env references that are not set
       userId: { $eq: null },
     });
   });
-
-  it("drops a policy config whose query can't be built, keeping the others", async () => {
-    const config = (query) => ({ id: 'p', name: 'p', env: null, appId: 'app-1', config: { query } });
-
-    const built = await Filter.buildApplicablePoliciesQuery(
-      [config({ ownerId: '#env.user.id' }), config({ ownerId: '#env.ownerId' })],
-      env,
-    );
-
-    assert.deepStrictEqual(
-      built.map((p) => p.config.query),
-      [{ ownerId: 'owner-1' }],
-    );
-  });
 });
 
 describe('access-control/filter:mergeQueryFiltersWithAccessControl', () => {

@@ -20,7 +20,8 @@ import * as Helpers from '../helpers/index.js';
 import { PolicyProjection } from '../model/core/policy.js';
 import type { FlattenedSchema, Schema } from '../types/schema.js';
 
-import { ApplicablePolicyConfig, PolicyError } from './index.js';
+import { PolicyError } from './index.js';
+import type { Grant } from './evaluator.js';
 import type { RequestWithBody } from '../types/routes.js';
 
 type RequestBody = Record<string, unknown>;
@@ -104,18 +105,20 @@ class Projection {
     this._ignoredQueryKeys = ['__crPath', 'project', 'id'];
   }
 
-  async filterPoliciesByPolicyProjection(req: Request, applicablePolicies: ApplicablePolicyConfig[], schema: Schema) {
-    const output: ApplicablePolicyConfig[] = [];
+  /**
+   * The grants a request can go through, as far as properties go: a read only by properties a grant reads, an update
+   * only of paths within them, and an entity to create with the others given their defaults. A grant that restricts
+   * properties and doesn't let a read through is left out; an update it doesn't let through is refused.
+   */
+  async filterGrantsByRequest(req: Request, grants: Grant[], schema: Schema): Promise<Grant[]> {
+    const output: Grant[] = [];
 
-    for await (const policy of applicablePolicies) {
-      if (!policy.config.projection) {
-        output.push(policy);
-      } else {
-        const result = await this.__applyPolicyProjection(req, policy.config.projection, schema);
-        if (result !== false) {
-          policy.config.projection = result;
-          output.push(policy);
-        }
+    for (const grant of grants) {
+      if (
+        !grant.config.projection ||
+        (await this.__applyPolicyProjection(req, grant.config.projection, schema)) !== false
+      ) {
+        output.push(grant);
       }
     }
 

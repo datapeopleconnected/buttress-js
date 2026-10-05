@@ -264,6 +264,36 @@ describe('access-control/AccessControl:__getOutcome', () => {
   });
 });
 
+describe('access-control/AccessControl:__getOutcome merging (BUG-17)', () => {
+  const policy = (name, config) => ({
+    id: `id-${name}`,
+    name,
+    priority: 1,
+    env: null,
+    config: [{ verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null, ...config }],
+  });
+
+  it("doesn't narrow a policy that reads every property by one with the same query that reads some", async () => {
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+    const tokenPolicies = [policy('names', { projection: { keys: ['name'] } }), policy('everything', {})];
+
+    const outcome = await instance.__getOutcome(tokenPolicies, createReq(), 'user', 'app1');
+
+    assert.strictEqual(outcome.length, 1);
+    assert.ok(!outcome[0].projection, `projected ${JSON.stringify(outcome[0].projection)}`);
+  });
+
+  it('merges policies whatever other verbs their configs are for', async () => {
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+    const tokenPolicies = [policy('a', { query: { a: 1 } }), policy('b', { query: { b: 2 }, verbs: ['GET', 'SEARCH'] })];
+
+    const outcome = await instance.__getOutcome(tokenPolicies, createReq(), 'user', 'app1');
+
+    assert.strictEqual(outcome.length, 1);
+    assert.deepStrictEqual(outcome[0].query, { $or: [{ a: 1 }, { b: 2 }] });
+  });
+});
+
 describe('access-control/AccessControl:accessControlPolicyMiddleware', () => {
   it("refuses a token whose app no longer exists, rather than failing the request", async () => {
     sinon.stub(Model, 'getCoreModel').callsFake((model) => {

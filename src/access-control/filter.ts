@@ -16,15 +16,13 @@
 
 import Sugar from '../helpers/sugar.js';
 
-import AccessControlHelpers, { CombineEnvGroups } from './helpers.js';
+import AccessControlHelpers from './helpers.js';
 
-import Env, { ACEnv, ACPolicyEnvCombined, PolicyEnv } from './env.js';
+import Env, { ACPolicyEnvCombined, PolicyEnv } from './env.js';
 
 import * as Helpers from '../helpers/index.js';
 import Logging from '../helpers/logging.js';
 import Model from '../model/index.js';
-
-import { ApplicablePolicyConfig } from './index.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
 import { asQueried, matchQuery } from './operators.js';
@@ -91,31 +89,6 @@ export class Filter {
       // 'POST', // SKIPPING POST FOR NOW
       'DELETE',
     ];
-  }
-
-  // This function will now take in policies, modifiy their queries and return back the list.
-  async buildApplicablePoliciesQuery(policies: ApplicablePolicyConfig[], reqEnv: ACEnv) {
-    const output: ApplicablePolicyConfig[] = [];
-
-    for await (const policy of policies) {
-      if (!policy.config.query) {
-        continue;
-      }
-
-      const p = Object.assign({}, policy);
-      const env = CombineEnvGroups(policy, reqEnv);
-      try {
-        p.config.query = await this.buildPolicyQuery(policy.config.query, env);
-      } catch (err: unknown) {
-        // A config whose query can't be built grants nothing
-        if (!(err instanceof UnresolvedEnvError)) throw err;
-        Logging.logWarn(`Policy ${policy.name} not applied: ${err.message}`);
-        continue;
-      }
-      output.push(p);
-    }
-
-    return output;
   }
 
   /**
