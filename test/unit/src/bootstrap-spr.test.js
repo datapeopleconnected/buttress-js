@@ -30,6 +30,19 @@ import Logging from '../../../dist/helpers/logging.js';
 // An app's cars, which a policy's query is read against as REST reads it, through parseQuery
 const carModel = realQueryParser({ Schema: { name: 'car', type: 'collection', properties: {} } });
 
+// The policy cache's look at the connected tokens of several policies, from a fake's look at one policy's
+const withConnections = (policyCache) => ({
+  ...policyCache,
+  getConnectedTokenIdsByPolicyIds: async (policyIds) =>
+    new Map(
+      await Promise.all(policyIds.map(async (policyId) => [policyId, await policyCache.getConnectedTokenIdsByPolicyId(policyId)])),
+    ),
+});
+
+// A fake core model's find: by a list of ids, as the SPR reads the tokens and users a policy refers to, or by type
+const findDocs = (docs, query) =>
+  docs.filter((doc) => (query._id?.$in ? query._id.$in.some((id) => doc.id.equals(id)) : doc.type === query.type));
+
 describe('bootstrap-spr:class', () => {
 	it(`should create an instance of the BootstrapSocketPolicyRouter class`, () => {
 		const boostrapSPR = new BootstrapSocketPolicyRouter();
@@ -85,7 +98,7 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 	const findIn = (docs) => ({
 		...carModel,
 		createId: (id) => new ObjectId(id),
-		find: async (query) => docs.filter((doc) => doc.type === query.type),
+		find: async (query) => findDocs(docs, query),
 		findOne: async (query) => docs.find((doc) => doc.id.equals(query._id)) || null,
 		// Like MongodbAdapter.findById, this resolves to null when there's no such document.
 		findById: async (id) => docs.find((d) => d.id.toString() === id.toString()) ?? null,
@@ -105,10 +118,10 @@ describe('bootstrap-spr:_handleIncomingMessage bulk activity', () => {
 
 		const emitted = [];
 		spr.__nrp = { emit: (event, json) => emitted.push({ event, ...JSON.parse(json) }) };
-		spr._policyCache = {
+		spr._policyCache = withConnections({
 			getPoliciesByRestActivity: async () => policies,
 			getConnectedTokenIdsByPolicyId: async (policyId) => (connections[policyId] || []).map((t) => t.id.toString()),
-		};
+		});
 
 		sinon.stub(Model, 'getAppModel').resolves(findIn(storedCars));
 		sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
@@ -402,10 +415,10 @@ describe('bootstrap-spr:_handleIncomingMessage projection', () => {
 		const spr = new BootstrapSocketPolicyRouter();
 		const emitted = [];
 		spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
-		spr._policyCache = {
+		spr._policyCache = withConnections({
 			getPoliciesByRestActivity: async () => [namePolicy(keys)],
 			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
-		};
+		});
 		sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
 
 		await spr._handleIncomingMessage({
@@ -514,15 +527,16 @@ describe('bootstrap-spr:_handleIncomingMessage conditions and queries', () => {
 		const spr = new BootstrapSocketPolicyRouter();
 		const emitted = [];
 		spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
-		spr._policyCache = {
+		spr._policyCache = withConnections({
 			getPoliciesByRestActivity: async () => policies,
 			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
-		};
+		});
 		sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
 		sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
 			const docs = modelClass === TokenSchemaModel ? [token] : [user];
 			return {
 				createId: (id) => new ObjectId(id),
+				find: async (query) => findDocs(docs, query),
 				findOne: async (query) => docs.find((doc) => doc.id.equals(query._id)) || null,
 			};
 		});
@@ -611,10 +625,10 @@ describe('bootstrap-spr:_handleIncomingMessage a policy evaluated as REST evalua
     const spr = new BootstrapSocketPolicyRouter();
     const emitted = [];
     spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
-    spr._policyCache = {
+    spr._policyCache = withConnections({
       getPoliciesByRestActivity: async () => [relayed],
       getConnectedTokenIdsByPolicyId: async () => Object.values(tokens).map((token) => token.id.toString()),
-    };
+    });
     sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
     // The token and user reads the SPR makes to evaluate a policy for each token
     const reads = [];
@@ -622,6 +636,10 @@ describe('bootstrap-spr:_handleIncomingMessage a policy evaluated as REST evalua
       const docs = modelClass === TokenSchemaModel ? Object.values(tokens) : [owner, someoneElse];
       return {
         createId: (id) => new ObjectId(id),
+        find: async (query) => {
+          reads.push(modelClass.name);
+          return findDocs(docs, query);
+        },
         findOne: async (query) => {
           reads.push(modelClass.name);
           return docs.find((doc) => doc.id.equals(query._id)) || null;
@@ -705,16 +723,20 @@ describe('bootstrap-spr:_handleIncomingMessage one activity per token', () => {
     const spr = new BootstrapSocketPolicyRouter();
     const emitted = [];
     spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
-    spr._policyCache = {
+    spr._policyCache = withConnections({
       getPoliciesByRestActivity: async () => policies,
       getConnectedTokenIdsByPolicyId: async (policyId) => connections[policyId].map((token) => token.id.toString()),
-    };
+    });
     sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
     const reads = [];
     sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
       const docs = modelClass === TokenSchemaModel ? Object.values(tokens) : [owner];
       return {
         createId: (id) => new ObjectId(id),
+        find: async (query) => {
+          reads.push(modelClass.name);
+          return findDocs(docs, query);
+        },
         findOne: async (query) => {
           reads.push(modelClass.name);
           return docs.find((doc) => doc.id.equals(query._id)) || null;
@@ -768,6 +790,99 @@ describe('bootstrap-spr:_handleIncomingMessage one activity per token', () => {
   });
 });
 
+// What an activity costs the SPR (BUG-14): no entity is read for the system tokens' copy, or when no token is connected
+// to a policy for the schema, and the tokens and users the policies refer to are read in one look each.
+describe('bootstrap-spr:_handleIncomingMessage the work an activity takes', () => {
+  const APP_ID = new ObjectId().toString();
+  const owner = { id: new ObjectId() };
+  const systemToken = { id: new ObjectId(), type: 'system' };
+  const tokens = {
+    a: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+    b: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+  };
+  const car = { id: new ObjectId(), name: 'car', userId: owner.id };
+  const policy = (id, query) => ({
+    id,
+    name: id,
+    _appId: APP_ID,
+    env: null,
+    config: [{ verbs: ['GET'], schema: ['car'], query, condition: null }],
+  });
+
+  afterEach(() => sinon.restore());
+
+  async function relay(overrides, policies, connections) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const emitted = [];
+    spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
+    spr._policyCache = withConnections({
+      getPoliciesByRestActivity: async () => policies,
+      getConnectedTokenIdsByPolicyId: async (policyId) => (connections[policyId] ?? []).map((token) => token.id.toString()),
+    });
+    let entityReads = 0;
+    sinon.stub(Model, 'getAppModel').resolves({
+      ...carModel,
+      findById: async () => {
+        entityReads++;
+        return car;
+      },
+    });
+    const reads = [];
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      const docs = modelClass === TokenSchemaModel ? [systemToken, ...Object.values(tokens)] : [owner];
+      return {
+        createId: (id) => new ObjectId(id),
+        find: async (query) => {
+          reads.push(modelClass.name);
+          return findDocs(docs, query);
+        },
+        findOne: async (query) => {
+          reads.push(modelClass.name);
+          return docs.find((doc) => doc.id.equals(query._id)) || null;
+        },
+      };
+    });
+
+    await spr._handleIncomingMessage({
+      broadcast: true,
+      path: `/car/${car.id}`,
+      pathSpec: 'car/:id',
+      verb: 'put',
+      params: { id: car.id.toString() },
+      response: [{ type: 'scalar', path: 'name', value: 'renamed' }],
+      appAPIPath: 'test-app',
+      appId: APP_ID,
+      isSuper: false,
+      isCoreSchema: false,
+      schemaName: 'car',
+      ...overrides,
+    });
+    return { emitted, entityReads, reads };
+  }
+
+  it("reads no entity for the system tokens' copy of an activity", async () => {
+    const { emitted, entityReads } = await relay({ isSuper: true }, [], {});
+
+    assert.strictEqual(entityReads, 0);
+    assert.deepStrictEqual(emitted.map((e) => e.tokens), [[systemToken.id.toString()]]);
+  });
+
+  it('reads no entity when no token is connected to a policy for the schema', async () => {
+    const { emitted, entityReads } = await relay({}, [policy('all', { access: '%FULL_ACCESS%' })], {});
+
+    assert.strictEqual(entityReads, 0);
+    assert.deepStrictEqual(emitted, []);
+  });
+
+  it('reads the tokens and the users that policies refer to in one look each', async () => {
+    const own = policy('own', { userId: { '@eq': '#env.user.id' } });
+    const { emitted, reads } = await relay({}, [own], { own: [tokens.a, tokens.b] });
+
+    assert.deepStrictEqual(reads, ['Token', 'User']);
+    assert.deepStrictEqual(emitted.map((e) => e.tokens.length), [2]);
+  });
+});
+
 // Activities for one entity are relayed in the order they arrive, though each is handled as it arrives; one that fails
 // is logged and doesn't stop the next.
 describe('bootstrap-spr:_handleIncomingMessage order', () => {
@@ -802,10 +917,10 @@ describe('bootstrap-spr:_handleIncomingMessage order', () => {
     const spr = new BootstrapSocketPolicyRouter();
     const relayed = [];
     spr.__nrp = { emit: (event, json) => relayed.push(JSON.parse(json).activity.response[0].value) };
-    spr._policyCache = {
+    spr._policyCache = withConnections({
       getPoliciesByRestActivity: async () => [policy],
       getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
-    };
+    });
     let reads = 0;
     sinon.stub(Model, 'getAppModel').resolves({
       ...carModel,
@@ -940,7 +1055,7 @@ describe('bootstrap-spr: activities not to broadcast', () => {
     const spr = new BootstrapSocketPolicyRouter();
     const emitted = [];
     spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
-    spr._policyCache = { getPoliciesByRestActivity: async () => [] };
+    spr._policyCache = withConnections({ getPoliciesByRestActivity: async () => [] });
     sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => ({ id: 'car-1' }) });
     sinon.stub(Model, 'getCoreModel').returns({ find: async () => [{ id: 'system-token', type: 'system' }] });
 
@@ -961,7 +1076,7 @@ describe('bootstrap-spr: core schema activity', () => {
     const spr = new BootstrapSocketPolicyRouter();
     const emitted = [];
     spr.__nrp = { emit: (event, json) => emitted.push({ event, ...JSON.parse(json) }) };
-    spr._policyCache = { getPoliciesByRestActivity: sinon.stub().resolves([]), getConnectedTokenIdsByPolicyId: async () => [] };
+    spr._policyCache = withConnections({ getPoliciesByRestActivity: sinon.stub().resolves([]), getConnectedTokenIdsByPolicyId: async () => [] });
     const systemToken = { id: new ObjectId(), type: 'system' };
     sinon.stub(Model, 'getCoreModel').returns({ find: async () => [systemToken] });
     const user = { id: new ObjectId().toString() };
@@ -1015,10 +1130,10 @@ describe('bootstrap-spr:_handleIncomingMessage a collection with remotes', () =>
 		const spr = new BootstrapSocketPolicyRouter();
 		const emitted = [];
 		spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
-		spr._policyCache = {
+		spr._policyCache = withConnections({
 			getPoliciesByRestActivity: async () => [policy],
 			getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
-		};
+		});
 		sinon.stub(Model, 'getAppModel').resolves(federatedCars());
 		sinon.stub(Model, 'getCoreModel').returns({ createId: (id) => new ObjectId(id), findOne: async () => token });
 

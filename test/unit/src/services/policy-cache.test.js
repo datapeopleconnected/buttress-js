@@ -146,6 +146,11 @@ const Redis = {
     return score !== undefined ? score : null;
   },
 
+  async zmScore(key, members) {
+    const zset = this._data.get(key);
+    return members.map((member) => (zset?.get(member) !== undefined ? zset.get(member) : null));
+  },
+
   async zRangeByScore(key, min, max) {
     const zset = this._data.get(key);
     if (!zset) return [];
@@ -366,7 +371,41 @@ describe('services/policy-cache', () => {
     });
   });
 
+  // The Redis commands the cache sends while `fn` runs, by name
+  const commandsDuring = async (fn) => {
+    const commands = [];
+    const originals = {};
+    for (const name of Object.keys(Redis).filter((key) => typeof Redis[key] === 'function' && key !== 'reset')) {
+      originals[name] = Redis[name];
+      Redis[name] = async (...args) => {
+        commands.push(name);
+        return originals[name].apply(Redis, args);
+      };
+    }
+    try {
+      await fn();
+    } finally {
+      Object.assign(Redis, originals);
+    }
+    return commands;
+  };
+
   describe('getPoliciesByRestActivity', () => {
+    it("reads the ids of the policies for the schema, %ALL% and %APP_SCHEMA% in one SUNION", async () => {
+      await Redis.sAdd(K('app:app1:schema:user'), 'p1');
+      await Redis.sAdd(K('app:app1:schema:%APP_SCHEMA%'), 'p2');
+      await Redis.hSet(K('policies'), 'p1', JSON.stringify(policy1));
+      await Redis.hSet(K('policies'), 'p2', JSON.stringify(policy2));
+
+      let found;
+      const commands = await commandsDuring(async () => {
+        found = await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'user' });
+      });
+
+      assert.deepStrictEqual(found.map((policy) => policy.id).sort(), ['p1', 'p2']);
+      assert.deepStrictEqual(commands, ['sUnion', 'hmGet']);
+    });
+
     it('should return empty array when no policies match', async () => {
       const result = await cache.getPoliciesByRestActivity({ appId: 'app1', schemaName: 'unknown' });
       assert.deepStrictEqual(result, []);
@@ -716,6 +755,35 @@ describe('services/policy-cache', () => {
       await cache.invalidatePolicyAndTokensBySelection('p1');
 
       assert.strictEqual(JSON.parse(await Redis.hGet(K('policies'), 'p1')).name, 'admin-policy');
+    });
+  });
+
+  describe('getConnectedTokenIdsByPolicyIds', () => {
+    it("gives each policy's connected tokens, looking at when they stop being connected in one ZMSCORE", async () => {
+      await Redis.sAdd(K('policy:p1:tokens'), ['tok1', 'tok2']);
+      await Redis.sAdd(K('policy:p2:tokens'), ['tok2', 'tok3']);
+      await cache.addConnectedToken('tok1');
+      await cache.addConnectedToken('tok2');
+      // tok3 was connected, and its connection has run out
+      await Redis.zAdd(K('connected-tokens'), [{ score: 1, value: 'tok3' }]);
+
+      let connected;
+      const commands = await commandsDuring(async () => {
+        connected = await cache.getConnectedTokenIdsByPolicyIds(['p1', 'p2', 'p3']);
+      });
+
+      assert.deepStrictEqual([...connected], [['p1', ['tok1', 'tok2']], ['p2', ['tok2']], ['p3', []]]);
+      assert.deepStrictEqual(commands, ['sMembers', 'sMembers', 'sMembers', 'zmScore']);
+    });
+
+    it('looks at no connections when the policies have no tokens', async () => {
+      let connected;
+      const commands = await commandsDuring(async () => {
+        connected = await cache.getConnectedTokenIdsByPolicyIds(['p1']);
+      });
+
+      assert.deepStrictEqual([...connected], [['p1', []]]);
+      assert.deepStrictEqual(commands, ['sMembers']);
     });
   });
 

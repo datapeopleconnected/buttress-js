@@ -7,7 +7,7 @@
 | Node.js | >= 24.15 |
 | TypeScript (build-time) | ^5.8 |
 | MongoDB | Compatible with project datastore usage |
-| Redis | Compatible with `@redis/client` ^5.6 |
+| Redis | 6.2 or later (the SPR uses `ZMSCORE`), with `@redis/client` ^5.6 |
 
 ## Process Dependencies
 

@@ -194,18 +194,12 @@ export class PolicyCache {
     // Only app schemas' activity is routed: the SPR doesn't send core entities over sockets
     const schemaWildCard = '%APP_SCHEMA%';
 
-    // The following code is stupid but will be refactored later.
-    const direct = await this._redisClient.sMembers(
-      this._prefix(`app:${activity.appId}:schema:${activity.schemaName}`),
+    // The policies for the schema itself, for every schema, and for every app schema, in one look
+    const policyIds = await this._redisClient.sUnion(
+      [activity.schemaName, '%ALL%', schemaWildCard].map((schema) =>
+        this._prefix(`app:${activity.appId}:schema:${schema}`),
+      ),
     );
-
-    const allWildcard = await this._redisClient.sMembers(this._prefix(`app:${activity.appId}:schema:%ALL%`));
-
-    const typedWildcard = await this._redisClient.sMembers(
-      this._prefix(`app:${activity.appId}:schema:${schemaWildCard}`),
-    );
-
-    const policyIds = [...new Set(direct.concat(allWildcard).concat(typedWildcard))];
 
     if (policyIds.length < 1) return [];
 
@@ -399,22 +393,34 @@ export class PolicyCache {
   }
 
   async getConnectedTokenIdsByPolicyId(policyId: string) {
+    return (await this.getConnectedTokenIdsByPolicyIds([policyId])).get(policyId) ?? [];
+  }
+
+  /**
+   * The tokens each policy is linked to that are connected now, by policy: a look at each policy's tokens, then one at
+   * when every token they name stops being connected (ZMSCORE, Redis 6.2 or later).
+   * @param {string[]} policyIds
+   * @return {Promise<Map<string, string[]>>}
+   */
+  async getConnectedTokenIdsByPolicyIds(policyIds: string[]): Promise<Map<string, string[]>> {
     const now = Math.floor(Date.now() / 1000);
 
-    const tokenIds = await this._redisClient.sMembers(this._prefix(`policy:${policyId}:tokens`));
-    const connectedTokens = await this._redisClient.zRange(this._prefix(`connected-tokens`), 0, -1);
-    Logging.log(`Policy Tokens: ${JSON.stringify(tokenIds)} in ${JSON.stringify(connectedTokens.join(', '))}`);
+    const linked = await Promise.all(
+      policyIds.map((policyId) => this._redisClient.sMembers(this._prefix(`policy:${policyId}:tokens`))),
+    );
+    const tokenIds = [...new Set(linked.flat())];
+    const scores =
+      tokenIds.length > 0 ? await this._redisClient.zmScore(this._prefix(`connected-tokens`), tokenIds) : [];
+    const connected = new Set(
+      tokenIds.filter((_tokenId, idx) => {
+        const score = scores[idx];
+        return score !== null && score !== undefined && !isNaN(score) && score > now;
+      }),
+    );
 
-    const connectedPolicyTokens: string[] = [];
-    for await (const tokenId of tokenIds) {
-      const score = await this._redisClient.zScore(this._prefix(`connected-tokens`), tokenId);
-
-      if (score !== null && !isNaN(score) && score > now) {
-        connectedPolicyTokens.push(tokenId);
-      }
-    }
-
-    return connectedPolicyTokens;
+    return new Map(
+      policyIds.map((policyId, idx) => [policyId, linked[idx].filter((tokenId) => connected.has(tokenId))]),
+    );
   }
 
   /**

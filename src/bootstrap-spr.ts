@@ -392,44 +392,14 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       return;
     }
 
-    let entity: AdapterDocument | null = null;
-    const activityParams = activity.params as Record<string, unknown>;
-    const activityResponse =
-      typeof activity.response === 'object' && activity.response !== null
-        ? (activity.response as Record<string, unknown>)
-        : {};
-    const entityId = activityParams.id ? activityParams.id : activityResponse.id;
-
-    // The entity's model, whose schema a policy's query is read against, as REST reads it
-    const appModel = entityId ? await Model.getAppModel<StandardModel>(activity.appId, activity.schemaName) : null;
-    if (entityId && !appModel) {
-      Logging.logWarn(
-        `Unable to broadcast entity, can not find ${activity.schemaName} for ${activity.appId} in the database`,
-      );
-      return;
-    }
-
-    if (entityId && activity.verb === 'delete') {
-      entity = deletedEntities?.find((deleted) => String(deleted.id) === String(entityId)) ?? null;
-    } else if (entityId && appModel) {
-      // A partner's change comes in through an agreement, and its entity is where that agreement reads. Anything else
-      // is found by its source, which is the app itself unless it names a partner.
-      const sourceId = activityParams.sourceId ?? activityResponse.sourceId;
-      entity =
-        dataShareId && appModel instanceof RemoteCombinedModel
-          ? await appModel.findSharedById(String(entityId), dataShareId)
-          : await appModel.findById(entityId as string, typeof sourceId === 'string' ? sourceId : null);
-      // TODO: Entity needs to be flatterned for processing.
-    }
-
     // Not even system tokens get an activity marked not to broadcast
     if (activity.broadcast === false) {
       Logging.logSilly('Skipping message broadcast, broadcast is disabled');
       return;
     }
 
+    // System tokens get every activity whole, so their copy reads no entity
     if (activity.isSuper) {
-      // TODO: Super tokens could be cached in redis, app tokens could be also be cached.
       const tokenModel = Model.getCoreModel(TokenSchemaModel);
       const systemTokens = await tokenModel.find({ type: 'system' });
 
@@ -446,59 +416,114 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       return;
     }
 
-    const policies = await this._policyCache.getPoliciesByRestActivity(activity);
-    if (policies.length < 1) {
+    // The policies that can let a token read the schema now, each with the configs that can, and whether one of them
+    // refers to the token's user
+    const candidates = (await this._policyCache.getPoliciesByRestActivity(activity)).flatMap((policy) => {
+      if (isPolicyExpired(policy)) return [];
+      const configs = filterPolicyConfigs(policy, activity.schemaName, activity.verb, false, true);
+      if (configs.length < 1) return [];
+      return [{ policy: { ...policy, config: configs }, perToken: configs.some((c) => dependsOnToken(policy, c)) }];
+    });
+    if (candidates.length < 1) {
       Logging.logSilly('Skipping message broadcast, no relevant policies found');
       return;
     }
 
-    // Each policy is evaluated as REST evaluates it, for reading the activity's schema. One whose configs refer to the
-    // token's user is evaluated for each token connected to it, with that token's user, read once for the activity; the
-    // rest once, for every token connected to them. A token then gets one activity, with what all its policies let it
-    // read, and the tokens that may read the same of it are sent it together.
-    Logging.logSilly(`Found ${policies.length} policies for event`);
-    const reads = new Map<string, Reading>();
-    const tokenEnvs = new Map<string, Promise<ACEnv>>();
-    const envOf = (tokenId: string) => {
-      if (!tokenEnvs.has(tokenId)) tokenEnvs.set(tokenId, this.__constructTokenEnv(tokenId, activity.appId));
-      return tokenEnvs.get(tokenId) as Promise<ACEnv>;
+    // Only the policies a connected token holds are evaluated, and nothing is read for the others
+    const connected = await this._policyCache.getConnectedTokenIdsByPolicyIds(
+      candidates.map(({ policy }) => policy.id),
+    );
+    const reached = candidates.filter(({ policy }) => (connected.get(policy.id) ?? []).length > 0);
+    if (reached.length < 1) {
+      Logging.logSilly('Skipping message broadcast, no token connected for its policies');
+      return;
+    }
+
+    const activityParams = activity.params as Record<string, unknown>;
+    const activityResponse =
+      typeof activity.response === 'object' && activity.response !== null
+        ? (activity.response as Record<string, unknown>)
+        : {};
+    const entityId = activityParams.id ? activityParams.id : activityResponse.id;
+
+    // The entity's model, whose schema a policy's query is read against, as REST reads it
+    const appModel = entityId ? await Model.getAppModel<StandardModel>(activity.appId, activity.schemaName) : null;
+    if (entityId && !appModel) {
+      Logging.logWarn(
+        `Unable to broadcast entity, can not find ${activity.schemaName} for ${activity.appId} in the database`,
+      );
+      return;
+    }
+
+    // The entity is read once, when a policy that holds for a token first needs it
+    let entityRead: Promise<AdapterDocument | null> | undefined;
+    const entity = () => {
+      entityRead ??= this.__readEntity(activity, entityId, appModel, deletedEntities, dataShareId);
+      return entityRead;
     };
 
-    for (const policy of policies) {
-      // A policy whose limit has run out grants nothing, so no token's env is read for it
-      if (isPolicyExpired(policy)) continue;
+    // Each policy is evaluated as REST evaluates it, for reading the activity's schema. One whose configs refer to the
+    // token's user is evaluated for each token connected to it, with that token's user (the tokens and their users are
+    // read in one look each); the rest once, for every token connected to them. A token then gets one activity, with
+    // what all its policies let it read, and the tokens that may read the same of it are sent it together.
+    Logging.logSilly(`Found ${reached.length} policies with connected tokens for event`);
+    const perTokenIds = [
+      ...new Set(reached.filter(({ perToken }) => perToken).flatMap(({ policy }) => connected.get(policy.id) ?? [])),
+    ];
+    const tokenEnvs = await this.__constructTokenEnvs(perTokenIds, activity.appId);
+    const appEnv = AccessControlEnv.generateRequestGlobalEnvs(null, activity.appId, null);
 
-      const configs = filterPolicyConfigs(policy, activity.schemaName, activity.verb, false, true);
-      if (configs.length < 1) continue;
-      const readable = { ...policy, config: configs };
-
+    const reads = new Map<string, Reading>();
+    for (const { policy, perToken } of reached) {
+      const tokenIds = connected.get(policy.id) ?? [];
       Logging.logSilly(
-        `_handleIncomingMessage::start policy:${policy.name}, configs:${configs.length}`,
+        `_handleIncomingMessage::start policy:${policy.name}, configs:${policy.config.length}, tokens:${tokenIds.length}`,
         `${activityMetadata.id}-${policy.id}`,
       );
 
-      if (configs.some((config) => dependsOnToken(policy, config))) {
-        const tokenIds = await this._policyCache.getConnectedTokenIdsByPolicyId(policy.id);
+      if (perToken) {
         for (const tokenId of tokenIds) {
-          const env = await envOf(tokenId);
+          const env = tokenEnvs.get(tokenId) ?? appEnv;
           addReading(
             reads,
             tokenId,
-            await this.__readingFor(readable, activity, entity, appModel, env, activityMetadata),
+            await this.__readingFor(policy, activity, entity, appModel, env, activityMetadata),
           );
         }
         continue;
       }
 
-      const env = AccessControlEnv.generateRequestGlobalEnvs(null, activity.appId, null);
-      const reading = await this.__readingFor(readable, activity, entity, appModel, env, activityMetadata);
-      if (!reading) continue;
-      for (const tokenId of await this._policyCache.getConnectedTokenIdsByPolicyId(policy.id)) {
-        addReading(reads, tokenId, reading);
-      }
+      const reading = await this.__readingFor(policy, activity, entity, appModel, appEnv, activityMetadata);
+      for (const tokenId of tokenIds) addReading(reads, tokenId, reading);
     }
 
     this.__relay(activity, reads);
+  }
+
+  // The entity an activity is about: a deleted one as the delete sent it, a partner's where its agreement reads, and
+  // anything else by its source, which is the app itself unless it names a partner
+  private async __readEntity(
+    activity: RESTActivity,
+    entityId: unknown,
+    model: StandardModel | null,
+    deletedEntities: RESTActivity['deletedEntities'],
+    dataShareId: RESTActivity['dataShareId'],
+  ): Promise<AdapterDocument | null> {
+    if (!entityId) return null;
+    if (activity.verb === 'delete') {
+      return deletedEntities?.find((deleted) => String(deleted.id) === String(entityId)) ?? null;
+    }
+    if (!model) return null;
+
+    const params = activity.params as Record<string, unknown>;
+    const response =
+      typeof activity.response === 'object' && activity.response !== null
+        ? (activity.response as Record<string, unknown>)
+        : {};
+    const sourceId = params.sourceId ?? response.sourceId;
+    return dataShareId && model instanceof RemoteCombinedModel
+      ? await model.findSharedById(String(entityId), dataShareId)
+      : await model.findById(entityId as string, typeof sourceId === 'string' ? sourceId : null);
   }
 
   /**
@@ -525,22 +550,38 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     }
   }
 
-  private async __constructTokenEnv(tokenId: string, appId: string): Promise<ACEnv> {
+  /**
+   * The env each token's policies are read with, its user's: the tokens are read in one look, and their users in
+   * another. A token that has gone gets the app's.
+   */
+  private async __constructTokenEnvs(tokenIds: string[], appId: string): Promise<Map<string, ACEnv>> {
+    const envs = new Map<string, ACEnv>();
+    if (tokenIds.length < 1) return envs;
+
     const tokenModel = Model.getCoreModel(TokenSchemaModel);
     const userModel = Model.getCoreModel(UserSchemaModel);
 
-    const token = (await tokenModel.findOne({ _id: tokenModel.createId(tokenId) })) as Token;
-    if (!token) {
-      Logging.logWarn(`Token not found: ${tokenId}`);
-      return AccessControlEnv.generateRequestGlobalEnvs(null, appId, null);
+    const tokens = new Map<string, Token>();
+    const foundTokens = await tokenModel.find({ _id: { $in: tokenIds.map((id) => tokenModel.createId(id)) } });
+    for await (const token of foundTokens as AsyncIterable<Token>) tokens.set(String(token.id), token);
+
+    const userIds = [
+      ...new Set([...tokens.values()].flatMap((token) => (token._userId ? [String(token._userId)] : []))),
+    ];
+    const users = new Map<string, User>();
+    if (userIds.length > 0) {
+      const foundUsers = await userModel.find({ _id: { $in: userIds.map((id) => userModel.createId(id)) } });
+      for await (const user of foundUsers as AsyncIterable<User>) users.set(String(user.id), user);
     }
 
-    let user: User | null = null;
-    if (token._userId) {
-      user = (await userModel.findOne({ _id: userModel.createId(token._userId) })) as User;
+    for (const tokenId of tokenIds) {
+      const token = tokens.get(tokenId);
+      if (!token) Logging.logWarn(`Token not found: ${tokenId}`);
+      const user = token?._userId ? (users.get(String(token._userId)) ?? null) : null;
+      envs.set(tokenId, AccessControlEnv.generateRequestGlobalEnvs(null, appId, user));
     }
 
-    return AccessControlEnv.generateRequestGlobalEnvs(null, appId, user);
+    return envs;
   }
 
   /**
@@ -551,7 +592,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
   private async __readingFor(
     policy: Policy,
     activity: RESTActivity,
-    entity: Record<string, unknown> | null,
+    entityOf: () => Promise<Record<string, unknown> | null>,
     model: StandardModel | null,
     env: ACEnv,
     activityMetadata: ActivityMetadata,
@@ -581,6 +622,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       return null;
     }
 
+    const entity = await entityOf();
     if (!entity && activity.verb === 'delete') {
       // A delete of every entity, which no policy limited, names none, so there's nothing to check a query against, and
       // the delete goes to every token the policy reaches.
