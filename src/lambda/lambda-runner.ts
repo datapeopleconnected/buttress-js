@@ -166,6 +166,13 @@ export default class LambdaRunner {
       TIMEOUT: timeout * 1000,
       // How many apps' contexts a runner keeps
       APP_CONTEXTS: 32,
+      // The isolate's memory limit in MB, which is isolated-vm's default of 128 until set
+      MEMORY_LIMIT: undefined as number | undefined,
+      // How much of its heap limit the isolate can have in use when a lambda starts before it's replaced with a new one, as
+      // a heap that fills ends the lambda running in it and the isolate with it. At the default limit (131 MB of heap)
+      // loading a new app's context takes up to 12 MB at its peak, so 60% leaves 52 MB for that and the lambda's own
+      // memory, and is only reached once contexts have piled up.
+      HEAP_RECYCLE_THRESHOLD: 0.6,
     };
   }
 
@@ -180,6 +187,7 @@ export default class LambdaRunner {
   _createIsolate() {
     this._isolate = new ivm.Isolate({
       inspector: false,
+      memoryLimit: LambdaRunner.Constants.MEMORY_LIMIT,
       onCatastrophicError: () => {
         Logging.logError(
           'v8 has lost all control over the isolate, and all resources in use are totally unrecoverable',
@@ -226,6 +234,44 @@ export default class LambdaRunner {
     ({ context: this._context, jail: this._jail, registeredBundles: this._registeredBundles } = appContext);
   }
 
+  // Disposes the isolate, which stops whatever is still running in it, and starts a new one
+  _replaceIsolate() {
+    if (this._isolate && !this._isolate.isDisposed) this._isolate.dispose();
+    this._createIsolate();
+  }
+
+  /**
+   * Starts a new isolate if the runner's was disposed, as a lambda that runs it out of memory leaves it. Until it's replaced
+   * every lambda fails on it, cron lambdas included, and only restarting the process would help.
+   */
+  _replaceDisposedIsolate() {
+    if (!this._isolate?.isDisposed) return;
+
+    Logging.logError(`[${this.name}] The isolate was disposed, starting a new one`);
+    this._createIsolate();
+  }
+
+  /**
+   * Starts a new isolate if more than Constants.HEAP_RECYCLE_THRESHOLD of the heap limit is in use, before a lambda can fill
+   * the rest and be ended with the isolate. Contexts and bundles are made again as lambdas need them. All of the isolate
+   * goes, not the least recently used context: a released context only frees its memory once the isolate next collects
+   * garbage, and the compiled bundles of lambdas since deleted belong to the isolate rather than a context.
+   */
+  _recycleFullIsolate() {
+    if (!this._isolate) return;
+
+    // The heap and the memory outside it, such as ArrayBuffers, count against the same limit
+    const { used_heap_size, externally_allocated_size, heap_size_limit } = this._isolate.getHeapStatisticsSync();
+    const used = used_heap_size + externally_allocated_size;
+    if (used <= heap_size_limit * LambdaRunner.Constants.HEAP_RECYCLE_THRESHOLD) return;
+
+    const mb = (bytes: number) => Math.round(bytes / (1024 * 1024));
+    Logging.log(
+      `[${this.name}] The isolate has ${mb(used)} MB of its ${mb(heap_size_limit)} MB heap in use, starting a new one`,
+    );
+    this._replaceIsolate();
+  }
+
   /**
    * Runs a lambda's script for at most Constants.TIMEOUT. isolated-vm's timeout only stops code that runs without
    * awaiting, so when the time is up the isolate is disposed, which stops whatever is still running in it, and the
@@ -249,8 +295,7 @@ export default class LambdaRunner {
       if (!(err instanceof LambdaTimeoutError) && !isolateTimedOut) throw err;
 
       Logging.logError(`[${this.name}] Lambda execution timed out after ${timeout}ms, starting a new isolate`);
-      this._isolate?.dispose();
-      this._createIsolate();
+      this._replaceIsolate();
       throw new LambdaTimeoutError();
     } finally {
       clearTimeout(timer);
@@ -310,6 +355,10 @@ export default class LambdaRunner {
         new Error(`Missing reqId for API_ENDPOINT lambda ${lambda.name}, execution ${execution.id}`),
       );
     }
+
+    // Nothing is running in the isolate, as the runner takes one lambda at a time (see `working`), so it can be replaced
+    this._replaceDisposedIsolate();
+    this._recycleFullIsolate();
 
     // The app's own context, apart from other apps' lambdas
     this._useAppContext(String(app.id));
@@ -511,6 +560,9 @@ export default class LambdaRunner {
       }
     } catch (err: unknown) {
       Logging.logDebug(err);
+      // A lambda that ran the isolate out of memory has left it disposed. The next lambda gets a new one rather than failing
+      // on it too, and this one stays an error without being run again, as it may have had side effects by now.
+      this._replaceDisposedIsolate();
       const failure = new LambdaExecutionFailedError(
         `Failed to execute script for lambda:${lambda.name} - ${Helpers.getThrownErrorMessage(err)}`,
       );

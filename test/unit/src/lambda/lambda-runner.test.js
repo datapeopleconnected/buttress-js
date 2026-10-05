@@ -978,7 +978,11 @@ module.exports = Lambda;
 describe('lambda/LambdaRunner:execute', () => {
   it('reports the error to the API caller waiting on the result when the lambda fails to load', async () => {
     const { runner, nrp } = createRunner();
-    runner._isolate = {};
+    // An isolate with room in its heap, which is all execute() asks of it before it loads the lambda
+    runner._isolate = {
+      isDisposed: false,
+      getHeapStatisticsSync: () => ({ used_heap_size: 0, externally_allocated_size: 0, heap_size_limit: 1000 }),
+    };
     runner._context = {};
     runner._jail = { setSync: sinon.spy() };
     sinon.stub(runner, '_useAppContext');
@@ -1434,5 +1438,295 @@ describe('lambda/LambdaRunner:_useAppContext', () => {
     runner._useAppContext('app-3');
     assert.deepStrictEqual([...runner._appContexts.keys()], ['app-1', 'app-3']);
     runner._isolate.dispose();
+  });
+});
+
+describe('lambda/LambdaRunner:execute isolate memory', () => {
+  let savedPaths;
+  let tmpDir;
+  let runners;
+
+  beforeEach(() => {
+    savedPaths = { ...Config.paths.lambda };
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-memory-'));
+    Config.paths.lambda.bundles = path.join(tmpDir, 'bundles');
+    Config.paths.lambda.plugins = path.join(tmpDir, 'plugins');
+    fs.mkdirSync(Config.paths.lambda.bundles);
+    fs.mkdirSync(Config.paths.lambda.plugins);
+    fs.writeFileSync(
+      path.join(Config.paths.lambda.bundles, 'buttress_stub.js'),
+      'globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };',
+    );
+    ['log', 'logError'].forEach((level) => sinon.stub(Logging, level));
+    runners = [];
+  });
+
+  afterEach(() => {
+    runners.forEach((runner) => {
+      if (!runner._isolate.isDisposed) runner._isolate.dispose();
+    });
+    Object.assign(Config.paths.lambda, savedPaths);
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // How much of its heap limit an isolate has in use, as the heap alone and with the memory outside it
+  function heapUse(isolate) {
+    const { used_heap_size, externally_allocated_size, heap_size_limit } = isolate.getHeapStatisticsSync();
+    return {
+      heap: used_heap_size / heap_size_limit,
+      all: (used_heap_size + externally_allocated_size) / heap_size_limit,
+    };
+  }
+
+  // A runner whose isolate has `memoryLimit` MB, and whose lambdas are the bundles written to the bundles folder. Tests only
+  // allocate in small steps, up to a limit of their own, so an isolate that isn't stopped can't run away with the memory.
+  async function createMemoryRunner({ memoryLimit = 32 } = {}) {
+    // The runner's constants, which a test can change as it goes
+    const constants = LambdaRunner.Constants;
+    const limits = { MEMORY_LIMIT: memoryLimit, HEAP_RECYCLE_THRESHOLD: constants.HEAP_RECYCLE_THRESHOLD };
+    sinon.stub(LambdaRunner, 'Constants').get(() => ({ ...constants, ...limits }));
+    const { runner, nrp } = createRunner();
+    await runner.init();
+    runners.push(runner);
+
+    // The lambda and execution the runner is handed when told to execute one, for tests that go through its messages
+    const handled = { lambda: null, execution: null };
+    const updateById = sinon.stub().resolves();
+    stubModel(
+      new Map([
+        [SecureStoreSchemaModel, { findOne: async () => null }],
+        [AppSchemaModel, { createId: (v) => v, findById: async () => ({ id: 'app-1', apiPath: 'app-1' }) }],
+        [LambdaSchemaModel, { createId: (v) => v, findById: async () => handled.lambda }],
+        [TokenSchemaModel, { createId: (v) => v, find: async () => Readable.from([{ value: 'lambda-token' }]) }],
+        [LambdaExecutionSchemaModel, {
+          ...fakeExecutionModel({ updateById }),
+          findOne: async () => handled.execution,
+          findById: async (id) => ({ id, status: 'RUNNING', metadata: [] }),
+        }],
+      ]),
+    );
+    sinon.stub(runner, 'bundleLambdaModules').resolves();
+    sinon.stub(runner, '_getLambdaModulesName').callsFake((lambda) => [
+      { name: 'buttress_stub', packageName: 'buttress_stub' },
+      { name: `lambda_${lambda.id}` },
+    ]);
+    // Lets a test take over loading a lambda's modules into the isolate
+    const hooks = { register: null };
+    const registerModules = runner._registerLambdaModules.bind(runner);
+    sinon.stub(runner, '_registerLambdaModules').callsFake((modules) =>
+      hooks.register ? hooks.register() : registerModules(modules));
+
+    let runs = 0;
+    // Runs a new lambda as an app. `entry` is what its entry point does, and `load` runs as its module is loaded into the
+    // app's context. Gives what the API caller was told: `res` of a lambda that ran, or `err` of one that didn't.
+    const run = async (entry, { appId = 'app-1', load = '' } = {}) => {
+      const id = `l${++runs}`;
+      fs.writeFileSync(
+        path.join(Config.paths.lambda.bundles, `lambda_${id}.js`),
+        `${load}\nglobalThis['lambda_${id}'] = class { async execute() { ${entry} } };`,
+      );
+      const lambda = {
+        id, name: id, trigger: [],
+        git: { url: 'git@example.com:x.git', hash: 'HEAD', entryFile: 'index.js', entryPoint: 'execute' },
+      };
+      const execution = { id: `exec-${id}`, lambdaId: id, deploymentId: 'd', metadata: [] };
+
+      nrp.emit.resetHistory();
+      let thrown;
+      await runner.execute(lambda, execution, { id: appId, apiPath: appId }, 'API_ENDPOINT', { reqId: 'r' })
+        .catch((err) => { thrown = err; });
+      const result = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+      // With no result, it failed before it could be answered
+      return result ? JSON.parse(result.args[1]) : { code: 0, err: thrown?.message };
+    };
+    return { runner, nrp, hooks, limits, handled, run, updateById };
+  }
+
+  it('starts a new isolate when a lambda runs the old one out of memory, so the next lambda runs', async function () {
+    this.timeout(10000);
+    const { runner, hooks, run, updateById } = await createMemoryRunner({ memoryLimit: 8 });
+    const first = runner._isolate;
+    // Fills the isolate in small steps, as loading module after module into new contexts did. The loop stops short, with an
+    // error that isn't the isolate's, if it's never disposed.
+    hooks.register = async () => {
+      for (let step = 0; step < 400; step++) {
+        runner._context.evalSync('(globalThis.kept ||= []).push(new Array(12500).fill(1));');
+      }
+      throw new Error('the isolate was never run out of memory');
+    };
+
+    const failed = await run('lambda.setResult({ ran: true });');
+
+    assert.strictEqual(failed.code, 400);
+    assert.match(failed.err, /memory limit/);
+    // The failure stays an error, and the lambda isn't run again: it may have had side effects by the time it failed
+    const statuses = updateById.getCalls().map((call) => call.args[1].$set?.status).filter(Boolean);
+    assert.deepStrictEqual(statuses, ['RUNNING', 'ERROR']);
+    assert.ok(first.isDisposed);
+    assert.notStrictEqual(runner._isolate, first);
+    assert.strictEqual(runner._isolate.isDisposed, false);
+    assert.ok(Logging.logError.calledWithMatch(/isolate was disposed/i));
+
+    hooks.register = null;
+    const next = await run('lambda.setResult({ ran: true });');
+    assert.strictEqual(next.code, 200, next.err);
+    assert.deepStrictEqual(next.res, { ran: true });
+  });
+
+  it('starts a new isolate if the one it has was disposed between lambdas', async function () {
+    this.timeout(10000);
+    const { runner, run } = await createMemoryRunner();
+    const first = runner._isolate;
+    first.dispose();
+
+    const result = await run('lambda.setResult({ ran: true });');
+
+    assert.strictEqual(result.code, 200, result.err);
+    assert.deepStrictEqual(result.res, { ran: true });
+    assert.notStrictEqual(runner._isolate, first);
+    assert.ok(Logging.logError.calledWithMatch(/isolate was disposed/i));
+  });
+
+  it('starts a new isolate before a lambda when most of its heap is in use', async function () {
+    this.timeout(10000);
+    const { runner, limits, run } = await createMemoryRunner({ memoryLimit: 32 });
+    const first = runner._isolate;
+    // The app's context holds about 24 MB of a 35 MB heap
+    const loaded = await run('lambda.setResult({ ran: true });', {
+      load: 'globalThis.kept = Array.from({ length: 300 }, () => new Array(10000).fill(1));',
+    });
+    assert.strictEqual(loaded.code, 200, loaded.err);
+    const inUse = heapUse(first).all;
+    assert.ok(inUse > limits.HEAP_RECYCLE_THRESHOLD && inUse < 1, `${inUse} of the heap is in use`);
+
+    const next = await run('lambda.setResult({ kept: typeof globalThis.kept });');
+
+    assert.strictEqual(next.code, 200, next.err);
+    assert.deepStrictEqual(next.res, { kept: 'undefined' });
+    assert.ok(first.isDisposed);
+    assert.notStrictEqual(runner._isolate, first);
+    assert.ok(Logging.log.calledWithMatch(/heap in use, starting a new one/));
+  });
+
+  it("keeps the isolate, and what an app's lambdas loaded into it, while its heap has room", async function () {
+    this.timeout(10000);
+    const { runner, run } = await createMemoryRunner({ memoryLimit: 32 });
+    const first = runner._isolate;
+    await run('lambda.setResult({ ran: true });', {
+      load: 'globalThis.kept = Array.from({ length: 100 }, () => new Array(10000).fill(1));',
+    });
+
+    const next = await run('lambda.setResult({ kept: typeof globalThis.kept });');
+
+    assert.deepStrictEqual(next.res, { kept: 'object' });
+    assert.strictEqual(runner._isolate, first);
+    assert.strictEqual(first.isDisposed, false);
+  });
+
+  // The threshold is set either side of what the isolate really has in use, as an isolate's statistics can't be stubbed
+  it('keeps an isolate whose heap use is under the threshold', async function () {
+    this.timeout(10000);
+    const { runner, limits, run } = await createMemoryRunner();
+    const first = runner._isolate;
+    limits.HEAP_RECYCLE_THRESHOLD = heapUse(first).all + 0.1;
+
+    const result = await run('lambda.setResult({ ran: true });');
+
+    assert.strictEqual(result.code, 200, result.err);
+    assert.strictEqual(runner._isolate, first);
+  });
+
+  it('replaces an isolate whose heap use is over the threshold', async function () {
+    this.timeout(10000);
+    const { runner, limits, run } = await createMemoryRunner();
+    const first = runner._isolate;
+    limits.HEAP_RECYCLE_THRESHOLD = heapUse(first).all / 2;
+
+    const result = await run('lambda.setResult({ ran: true });');
+
+    assert.strictEqual(result.code, 200, result.err);
+    assert.notStrictEqual(runner._isolate, first);
+  });
+
+  it('counts memory outside the heap, which also counts against the isolate limit', async function () {
+    this.timeout(10000);
+    const { runner, limits, run } = await createMemoryRunner();
+    const first = runner._isolate;
+    await run('lambda.setResult({ ran: true });', { load: 'globalThis.buffer = new ArrayBuffer(4 * 1024 * 1024);' });
+    // About 4 MB of a 35 MB heap limit is outside the heap
+    const use = heapUse(first);
+    assert.ok(use.all - use.heap > 0.1, `${use.all} of the limit is in use, ${use.heap} of it in the heap`);
+    // The heap alone is under the threshold, and with the memory outside it the isolate is over it
+    limits.HEAP_RECYCLE_THRESHOLD = (use.heap + use.all) / 2;
+
+    const next = await run('lambda.setResult({ ran: true });');
+
+    assert.strictEqual(next.code, 200, next.err);
+    assert.notStrictEqual(runner._isolate, first);
+  });
+
+  it('cycles through more apps than fit in the heap without a lambda failing', async function () {
+    this.timeout(30000);
+    const { runner, run } = await createMemoryRunner({ memoryLimit: 32 });
+    const createIsolate = sinon.spy(runner, '_createIsolate');
+    // An app's context holds about 2 MB, so these 40 are more than twice the heap
+    const load = 'globalThis.kept = Array.from({ length: 25 }, () => new Array(10000).fill(1));';
+
+    const failures = [];
+    for (let app = 1; app <= 40; app++) {
+      const result = await run('lambda.setResult({ ran: true });', { appId: `app-${app}`, load });
+      if (result.code !== 200) failures.push({ app, err: result.err });
+    }
+
+    assert.deepStrictEqual(failures, []);
+    assert.ok(createIsolate.callCount >= 2, `${createIsolate.callCount} new isolates`);
+  });
+
+  it("doesn't replace the isolate while a lambda is running in it", async function () {
+    this.timeout(10000);
+    const { runner, nrp, hooks, limits, handled } = await createMemoryRunner();
+    runner._subscribeToLambdaManager();
+    const first = runner._isolate;
+    handled.lambda = {
+      id: 'lambda-1', _appId: 'app-1', name: 'held', trigger: [],
+      git: { url: 'git@example.com:x.git', hash: 'HEAD', entryFile: 'index.js', entryPoint: 'execute' },
+    };
+    handled.execution = {
+      id: 'exec-1', lambdaId: 'lambda-1', deploymentId: 'd', status: 'PENDING',
+      metadata: [{ key: 'REQ_ID', value: 'req-1' }],
+    };
+    // The lambda runs until the test lets it finish, with nothing loaded into the isolate
+    hooks.register = async () => {};
+    const running = [];
+    sinon.stub(runner, '_runLambdaScript').callsFake(() => new Promise((resolve) => running.push(resolve)));
+
+    const until = async (condition) => {
+      for (let turn = 0; turn < 500 && !condition(); turn++) await new Promise((resolve) => setImmediate(resolve));
+      assert.ok(condition(), 'timed out waiting');
+    };
+    const finished = () => nrp.emit.getCalls().filter((call) => call.args[0] === 'lambda:worker:finished').length;
+    const offer = (executionId) => nrp._listeners['lambda:worker:execute'](
+      JSON.stringify({ workerId: runner.id, lambdaId: 'lambda-1', lambdaType: 'API_ENDPOINT', executionId }),
+    );
+
+    offer('exec-1');
+    await until(() => running.length === 1);
+    // The heap is full by now, so the next lambda would start in a new isolate
+    limits.HEAP_RECYCLE_THRESHOLD = 0;
+    offer('exec-2');
+
+    assert.ok(nrp.emit.calledWith('lambda:worker:overloaded'));
+    assert.strictEqual(runner._isolate, first);
+    assert.strictEqual(first.isDisposed, false);
+
+    running[0]();
+    await until(() => finished() === 1);
+    offer('exec-3');
+    await until(() => running.length === 2);
+
+    assert.notStrictEqual(runner._isolate, first);
+    assert.ok(first.isDisposed);
+    running[1]();
+    await until(() => finished() === 2);
   });
 });

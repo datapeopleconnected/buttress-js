@@ -70,6 +70,8 @@ Execution (`execute()`), per invocation:
    context (`_useAppContext()`: one context per app, least recently used let go past 32), tracked in that
    context's `_registeredBundles` so a module is registered once per context. Compiled scripts are kept in
    `_compiledBundles` and shared by the contexts; a lambda's older builds are released when a new one loads.
+   Before that, `execute()` makes sure the isolate can take the lambda, see
+   [Replacing the isolate](#replacing-the-isolate).
 3. Injects everything the lambda code needs as `ivm.ExternalCopy` globals: `buttressOptions`
    (pre-configured `@buttress/api` client pointed at this Buttress instance, authenticated as the
    the lambda's own token), `lambdaInfo`, `lambdaData`/`lambdaQuery`/`lambdaRequestHeaders` (the triggering
@@ -99,8 +101,44 @@ but is commented out of the active `execute()` path — currently unused/dead un
 ## Key invariant
 
 One `isolated-vm` `Isolate` exists per `LambdaRunner` (i.e. per worker process), with a `Context` per app,
-reused across every execution of that app's lambdas on that worker; a run that times out disposes the isolate
-and the runner starts a new one. A `LambdaRunner` has a `working` boolean guard — if it's `true` it declines
-new work (`lambda:worker:overloaded`) rather than running two lambdas concurrently in the same isolate. Don't
-assume executions of one app's lambdas on the same worker are isolated from each other beyond what
-`Buttress.clean()` does at the start of the wrapper script.
+reused across every execution of that app's lambdas on that worker. A `LambdaRunner` has a `working` boolean
+guard — if it's `true` it declines new work (`lambda:worker:overloaded`) rather than running two lambdas
+concurrently in the same isolate. Don't assume executions of one app's lambdas on the same worker are isolated
+from each other beyond what `Buttress.clean()` does at the start of the wrapper script.
+
+## Replacing the isolate
+
+The isolate has isolated-vm's default memory limit (128 MB, reported as a `heap_size_limit` of 131 MB;
+`Constants.MEMORY_LIMIT` is unset), and a heap that fills ends the lambda running in it and disposes the isolate.
+Loading a new app's context takes up to 12 MB at its peak with the real `@buttress/api` and `sugar` bundles, and
+about 4-5 MB of it stays once garbage is collected, more with a lambda's own code and shared modules. The 32
+contexts `Constants.APP_CONTEXTS` allows therefore don't fit (a measured run with only those two bundles lost the
+isolate at the 29th), and the compiled bundles of deleted lambdas stay in `_compiledBundles` for as long as the
+isolate lives (`_releaseCompiledLambda()` only lets go of other builds of the same lambda id).
+Before this was handled, an isolate disposed for its memory left every later lambda on the worker failing with
+`Isolated is disposed` (isolated-vm's spelling), cron lambdas included, until the process restarted.
+
+`_replaceIsolate()` disposes the isolate, which stops whatever is still running in it, and calls
+`_createIsolate()`. Contexts and bundles are made again as lambdas need them, about 100 ms for the first app's
+bundles. It happens when:
+
+- **A run times out**, in `_runLambdaScript()`: disposing is what stops code still running after an `await`.
+- **The isolate has been disposed** (`_replaceDisposedIsolate()`), as a lambda or a module load that runs it out of
+  memory leaves it. `execute()`'s catch block replaces it, so the next lambda gets a working one, and `execute()`
+  checks again as it starts, for anything that disposed it between lambdas. The failing execution stays an error,
+  answered to an API caller like any other, and is never run again: the lambda may have had side effects.
+- **The heap is mostly full** (`_recycleFullIsolate()`), checked as `execute()` starts. If the isolate's
+  `used_heap_size` plus `externally_allocated_size` (memory outside the heap, which counts against the same limit)
+  is more than `Constants.HEAP_RECYCLE_THRESHOLD` (0.6) of its `heap_size_limit`, it's replaced before the lambda
+  starts rather than failing it partway. All of the isolate goes, not the least recently used context: a released
+  context only frees its memory once the isolate next collects garbage, and the compiled bundles belong to the
+  isolate rather than a context. 60% (79 MB at the default limit) leaves 52 MB, enough for the next app's context
+  and the lambda's own memory, with `used_heap_size` counting up to 10 MB of garbage not yet collected.
+
+Both checks happen with no lambda running in the isolate: `working` is set before `handleLambdaExecutionMessage()`
+starts and cleared only once `execute()` has finished, and that is the only place `execute()` is called from, so a
+second lambda can't reach it meanwhile (`lambda:worker:execute` is declined as overloaded instead).
+
+This doesn't help against a lambda that allocates in a tight loop, which can outrun isolated-vm's check of the
+limit. The isolate may then be lost to V8 altogether, and `onCatastrophicError` in `_createIsolate()` aborts the
+worker process. Growth in steps, as loading modules into new contexts is, is stopped cleanly.
