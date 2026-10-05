@@ -46,6 +46,8 @@ export interface OperatorAlias {
   options?: string;
   // The operand as MongoDB takes it
   operand?: (operand: unknown) => unknown;
+  // Compares dates. A query reads them by the property's type; the policy language, which has no schema, by this
+  date?: true;
 }
 
 // Text matched as it is, rather than as a pattern
@@ -60,10 +62,10 @@ const DSL_ALIASES: Record<string, OperatorAlias> = {
   $gte: { operator: '$gte' },
   $lt: { operator: '$lt' },
   $lte: { operator: '$lte' },
-  $gtDate: { operator: '$gt' },
-  $gteDate: { operator: '$gte' },
-  $ltDate: { operator: '$lt' },
-  $lteDate: { operator: '$lte' },
+  $gtDate: { operator: '$gt', date: true },
+  $gteDate: { operator: '$gte', date: true },
+  $ltDate: { operator: '$lt', date: true },
+  $lteDate: { operator: '$lte', date: true },
   $in: { operator: '$in' },
   $nin: { operator: '$nin' },
   $all: { operator: '$all' },
@@ -91,7 +93,7 @@ export const ALIASES: Record<string, OperatorAlias> = Object.fromEntries(
 export const LOGICAL_OPERATORS = ['$and', '$or', '$nor'] as const;
 
 // An object of fields: not a list, a date or an id
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   value !== null &&
   typeof value === 'object' &&
   (Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null);

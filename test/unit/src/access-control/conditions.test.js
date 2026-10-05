@@ -290,3 +290,42 @@ describe('access-control/conditions: @or branches', () => {
     }
   });
 });
+
+// A condition reads `value OP key` (D-33), and compares as a query does (D-32)
+describe('access-control/conditions: comparisons', () => {
+  const policy = (condition) => ({ id: 'p1', name: 'p1', env: null, appId: 'app1', config: { condition } });
+  const env = (extra) => ({ date: { now: '2025-06-01T00:00:00.000Z' }, user: null, appId: 'app1', ...extra });
+  const holds = async (condition, extra = {}) =>
+    (await AccessControlConditions.filterPoliciesByPolicyConditions([policy(condition)], env(extra))).length === 1;
+
+  it('compares text exactly', async () => {
+    assert(await holds({ '#env.location': { '@eq': 'UK' } }, { location: 'UK' }));
+    assert(!(await holds({ '#env.location': { '@eq': 'uk' } }, { location: 'UK' })));
+    assert(await holds({ '#env.location': { '@not': 'uk' } }, { location: 'UK' }));
+  });
+
+  it('compares values within their type, so 5 is not "5"', async () => {
+    assert(!(await holds({ '#env.level': { '@eq': 5 } }, { level: '5' })));
+    assert(await holds({ '#env.level': { '@eq': 5 } }, { level: 5 }));
+  });
+
+  it('reads the value against the key: the condition holds when the value is greater than the key', async () => {
+    assert(await holds({ '#env.level': { '@gt': 3 } }, { level: 2 }));
+    assert(!(await holds({ '#env.level': { '@gt': 3 } }, { level: 5 })));
+  });
+
+  it('reads @in as the value being one of the list the key holds', async () => {
+    assert(await holds({ '#env.roles': { '@in': 'admin' } }, { roles: ['user', 'admin'] }));
+    assert(!(await holds({ '#env.roles': { '@in': 'Admin' } }, { roles: ['user', 'admin'] })));
+  });
+
+  it('compares dates as dates, read as the policy language reads them, and fails a date it cannot read', async () => {
+    assert(await holds({ '#env.date.now': { '@ltDate': '2025-05-31T23:00:00.000Z' } }));
+    assert(await holds({ '#env.date.now': { '@ltDate': '31/05/2025' } }));
+    assert(!(await holds({ '#env.date.now': { '@ltDate': 'not a date' } })));
+  });
+
+  it('fails a key that resolves to nothing', async () => {
+    assert(!(await holds({ '#env.missing': { '@eq': 'x' } })));
+  });
+});

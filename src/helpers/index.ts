@@ -438,13 +438,8 @@ export const checkAppPolicyProperty = async (
       res.errMessage = 'Policy property value not listed';
     }
 
-    // Text is compared without case; anything else only matches a listed value of its own type
-    const isListed = (value: unknown) =>
-      appPolicyPropertiesValues.some((val) =>
-        typeof val === 'string' && typeof value === 'string'
-          ? val.toUpperCase() === value.toUpperCase()
-          : val === value,
-      );
+    // Only a value exactly as the app lists it (D-34)
+    const isListed = (value: unknown) => appPolicyPropertiesValues.some((val) => val === value);
     // An array, as an operator like @in takes, is listed when every value in it is
     const values = Array.isArray(equalValue) ? equalValue : [equalValue];
     if (equalValue !== undefined && (values.length < 1 || !values.every(isListed))) {
@@ -454,6 +449,40 @@ export const checkAppPolicyProperty = async (
   }
 
   return res;
+};
+
+/**
+ * Whether a policy's selection names only properties and values `appPolicyList` lists, each key checked as
+ * checkAppPolicyProperty checks it. `@and` and `@or` must hold a list of one or more selections, each checked the same
+ * way. A selection with no keys names nothing, and passes.
+ * @param {object} appPolicyList - the app's policy property list
+ * @param {object} selection
+ * @return {Promise<{passed: boolean, errMessage: string}>}
+ */
+export const checkPolicySelection = async (
+  appPolicyList: Record<string, PolicyPropertyValue | PolicyPropertyValue[]> | null | undefined,
+  selection: Record<string, unknown>,
+): Promise<{ passed: boolean; errMessage: string }> => {
+  for (const [key, criteria] of Object.entries(selection)) {
+    if (key === '@and' || key === '@or') {
+      const isSelection = (branch: unknown) =>
+        typeof branch === 'object' && branch !== null && !Array.isArray(branch) && Object.keys(branch).length > 0;
+      if (!Array.isArray(criteria) || criteria.length < 1 || !criteria.every(isSelection)) {
+        return { passed: false, errMessage: `${key} takes a list of selections` };
+      }
+
+      for (const branch of criteria as Record<string, unknown>[]) {
+        const res = await checkPolicySelection(appPolicyList, branch);
+        if (!res.passed) return res;
+      }
+      continue;
+    }
+
+    const res = await checkAppPolicyProperty(appPolicyList, { [key]: criteria });
+    if (!res.passed) return res;
+  }
+
+  return { passed: true, errMessage: '' };
 };
 
 export const compareByProps = (

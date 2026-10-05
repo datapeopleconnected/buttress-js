@@ -455,35 +455,39 @@ export class PolicyCache {
   }
 
   private async _markTokensSelectableByPolicy(policy: Policy, skipTokenIds: string[]) {
-    if (!policy.selection) return;
+    const selection = policy.selection;
+    if (!selection) return;
 
-    // ! We're asuming that the selection is just a simple object here and doesn't contain $and or $or.
-    const policySelectionProperties = Object.keys(policy.selection);
-    if (policySelectionProperties.length < 1) return;
-
-    // A token matches a selection if ANY one of its properties satisfies its criterion (see
-    // AccessControlPolicyMatch.__checkPolicySelection, which does matches.some(...), not every(...)).
-    // So the tokens that could now be affected are the UNION of each property's candidates, not the
-    // intersection - a token doesn't need every selected property indexed to match.
+    // A selection selects a token only if every key holds and the token has each one (D-35, see
+    // AccessControlPolicyMatch.selects), so the candidates are the tokens indexed under every top-level key: the
+    // INTERSECTION. A selection of only @and/@or has no such key; a token it selects has at least one of the properties
+    // it names, so its candidates are the UNION of those. Either way a superset, as each candidate is selected again.
     //
-    // For a plain equality criterion we can narrow the candidates to only tokens whose indexed value
-    // actually matches, via the value-qualified index. Everything else (@not, ranges, dates, @rex, or
-    // an array rhs) falls back to the broad "has this property at all" index, same as before.
-    const propertyIndexKeys = policySelectionProperties.map((prop) => {
-      const criterion = policy.selection?.[prop];
-      const [operator] = Object.keys(criterion ?? {});
-      const rhs = criterion?.[operator];
+    // A key with a plain @eq narrows to the tokens indexed under its value. The value index is upper-cased, so it holds
+    // the tokens of every case of the value; selection compares exactly (D-32), so that's still a superset. Anything
+    // else (@not, ranges, dates, @rex, a list) uses the broad "has this property at all" index.
+    const topLevelKeys = Object.keys(selection).filter((key) => key !== '@and' && key !== '@or');
+    const namedKeys = topLevelKeys.length > 0 ? topLevelKeys : AccessControlPolicyMatch.selectionKeys(selection);
+    if (namedKeys.length < 1) return;
 
-      if ((operator === '@eq' || operator === '$eq') && rhs !== null && rhs !== undefined) {
+    const propertyIndexKeys = namedKeys.map((prop) => {
+      const criteria = topLevelKeys.length > 0 ? selection[prop] : null;
+      const rhs = criteria && !Array.isArray(criteria) ? (criteria['@eq'] ?? criteria['$eq']) : undefined;
+
+      if (typeof rhs === 'string' || typeof rhs === 'number') {
         return this._prefix(`policy:propertyIndex:${prop}:${this._normalisePropertyValue(rhs)}`);
       }
 
       return this._prefix(`policy:propertyIndex:${prop}`);
     });
 
-    const tokenIds = (await this._redisClient.sUnion(propertyIndexKeys)).filter((id) => !skipTokenIds.includes(id));
+    const candidates =
+      topLevelKeys.length > 0
+        ? await this._redisClient.sInter(propertyIndexKeys)
+        : await this._redisClient.sUnion(propertyIndexKeys);
+    const tokenIds = candidates.filter((id) => !skipTokenIds.includes(id));
     if (tokenIds.length < 1) {
-      Logging.logSilly(`No tokens found for policy properties: ${JSON.stringify(policySelectionProperties)}`);
+      Logging.logSilly(`No tokens found for policy properties: ${JSON.stringify(namedKeys)}`);
       return;
     }
 
@@ -493,7 +497,7 @@ export class PolicyCache {
     await Promise.all(tokenIds.map((tokenId) => this.setTokenIdAsStale(tokenId)));
   }
 
-  // Matches the case-insensitive comparison AccessControlHelpers.evaluateOperation uses for @eq/@not.
+  // Values are indexed upper-cased, so an index entry holds every case of a value; see _markTokensSelectableByPolicy
   private _normalisePropertyValue(value: PolicyProperty): string {
     return value.toString().toUpperCase();
   }

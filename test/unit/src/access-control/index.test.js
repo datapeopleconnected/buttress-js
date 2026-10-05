@@ -342,6 +342,34 @@ describe('access-control/AccessControl:_queuePolicyLimitDeleteEvent', () => {
     assert.strictEqual(instance._queuedLimitedPolicy.length, 2);
   });
 
+  it("removes every property an expiring policy's selection names, within @and and @or too", async () => {
+    const clock = sinon.useFakeTimers(new Date('2025-06-01T00:00:00.000Z'));
+    const instance = createInstance();
+    instance._nrp = { emit: sinon.spy() };
+
+    const setPolicyPropertiesById = sinon.stub().resolves();
+    const findOne = sinon.stub().resolves({ id: 'token-1', policyProperties: { role: 'admin', team: 'red', grade: 3 } });
+    stubModelWith(
+      new Map([
+        [PolicySchemaModel, { rm: sinon.stub().resolves() }],
+        [TokenSchemaModel, { setPolicyPropertiesById, findOne, createId: (v) => v }],
+      ]),
+    );
+
+    const policy = {
+      id: 'policy-2',
+      name: 'expiring-or',
+      limit: new Date('2025-06-03T00:00:00.000Z'),
+      selection: { '@or': [{ role: { '@eq': 'admin' } }, { '@and': [{ team: { '@eq': 'red' } }] }] },
+    };
+
+    instance._queuePolicyLimitDeleteEvent([policy], { id: 'token-1' }, 'app1');
+    await clock.tickAsync(2 * 24 * 60 * 60 * 1000 + 1000);
+
+    assert.deepStrictEqual(setPolicyPropertiesById.firstCall.args[1], { grade: 3 });
+    clock.restore();
+  });
+
   it('queues and then removes an expiring policy, busting the policy cache', async () => {
     const clock = sinon.useFakeTimers(new Date('2025-06-01T00:00:00.000Z'));
     const instance = createInstance();

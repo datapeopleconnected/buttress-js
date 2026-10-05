@@ -14,10 +14,14 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import AccessControlHelpers from './helpers.js';
+import { matchCriterion } from './criteria.js';
+import { isPlainObject } from './operators.js';
 
 import { Policy, PolicySelection } from '../model/core/policy.js';
-import { Token } from '../model/core/token.js';
+import { PolicyProperties, Token } from '../model/core/token.js';
+
+// A selection's keys that hold a list of selections: all of them must select a token, or any one
+const LOGICAL_KEYS = ['@and', '@or'];
 
 /**
  * @class PolicyMatch
@@ -40,43 +44,59 @@ class PolicyMatch {
   __checkPolicySelection(p: Policy, token?: Token): boolean {
     const selection = p.selection;
 
-    if (!token || selection === null) return false;
+    if (!token || !selection) return false;
 
     if (token.type === 'dataSharing') {
-      const eq = (part: PolicySelection[string] | undefined, value: string) =>
-        part && part['@eq'] && part['@eq'].toString() === value.toString();
-      // eq() can be falsy without being false, the caller only checks for truthiness
-      return (eq(selection['#tokenType'], 'DATA_SHARING') as boolean) && (eq(selection['id'], token.id) as boolean);
+      const eq = (part: unknown, value: string) => isPlainObject(part) && matchCriterion(value, '@eq', part['@eq']);
+      return eq(selection['#tokenType'], 'DATA_SHARING') && eq(selection['id'], String(token.id));
     }
 
     if (!token.policyProperties) return false;
 
-    const policyProperties = token.policyProperties;
-    const matches = Object.keys(selection)
-      .reduce((arr: boolean[], key) => {
-        if (!(key in policyProperties)) return arr;
-        const [selectionCriterionKey] = Object.keys(selection[key]);
-        let [rhs] = Object.values(selection[key]);
-        let lhs = policyProperties[key];
-        lhs = !Array.isArray(lhs) ? [lhs] : lhs;
-        if (typeof rhs === 'string') rhs = rhs.toUpperCase();
+    return this.selects(selection, token.policyProperties);
+  }
 
-        lhs = lhs.map((s) => {
-          if (typeof s === 'string') s = s.toUpperCase();
-          return s;
-        });
+  /**
+   * Whether a selection selects a token by its policy properties (D-35): every key of the selection holds, each a
+   * property the token has whose value passes every criterion given for it, as a query's field would (D-32).
+   * `@and` and `@or` take a list of selections, which all, or any one, must select the token. A selection with no
+   * keys, and an `@and` or `@or` with no selections, select nothing.
+   * @param {PolicySelection} selection
+   * @param {PolicyProperties} properties - the token's
+   * @return {boolean}
+   */
+  selects(selection: PolicySelection, properties: NonNullable<PolicyProperties>): boolean {
+    const entries = Object.entries(selection);
 
-        const selectionMatches = lhs.reduce((acc: Array<boolean>, val) => {
-          acc.push(AccessControlHelpers.evaluateOperation(val, rhs, selectionCriterionKey));
-          return acc;
-        }, []);
-        arr.push(...selectionMatches);
+    return (
+      entries.length > 0 &&
+      entries.every(([key, criteria]) => {
+        if (LOGICAL_KEYS.includes(key)) {
+          if (!Array.isArray(criteria) || criteria.length < 1) return false;
+          const holds = (branch: unknown) =>
+            isPlainObject(branch) && this.selects(branch as PolicySelection, properties);
+          return key === '@and' ? criteria.every(holds) : criteria.some(holds);
+        }
 
-        return arr;
-      }, [])
-      .flat();
+        if (!Object.hasOwn(properties, key) || !isPlainObject(criteria)) return false;
+        const operators = Object.entries(criteria);
+        return operators.length > 0 && operators.every(([op, operand]) => matchCriterion(properties[key], op, operand));
+      })
+    );
+  }
 
-    return matches.length > 0 ? matches.some((v) => v) : false;
+  /**
+   * Every policy property a selection names, within its `@and` and `@or` too.
+   * @param {PolicySelection} selection
+   * @return {string[]}
+   */
+  selectionKeys(selection: PolicySelection): string[] {
+    const keys = Object.entries(selection).flatMap(([key, criteria]) => {
+      if (!LOGICAL_KEYS.includes(key)) return [key];
+      if (!Array.isArray(criteria)) return [];
+      return criteria.flatMap((branch) => (isPlainObject(branch) ? this.selectionKeys(branch as PolicySelection) : []));
+    });
+    return [...new Set(keys)];
   }
 }
 export default new PolicyMatch();

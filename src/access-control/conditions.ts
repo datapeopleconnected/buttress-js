@@ -13,7 +13,8 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
-import AccessControlHelpers, { AccessControlValue, CombineEnvGroups } from './helpers.js';
+import { CombineEnvGroups } from './helpers.js';
+import { matchCriterion } from './criteria.js';
 import Env, { ACEnv, ACPolicyEnvCombined } from './env.js';
 
 import { ApplicablePolicyConfig } from './index.js';
@@ -179,35 +180,29 @@ export class Conditions {
   // 	return await model.count(query) > 0;
   // }
 
+  /**
+   * Whether one criterion of a condition, `{<key>: {<operator>: <value>}}`, holds. It reads `value OP key` (D-33):
+   * `{'#env.date.now': {'@ltDate': '2025-01-01'}}` holds when 2025-01-01 is before now. Both sides are resolved
+   * through the env, and compared as a query compares a field holding the value with the key's value as its operand
+   * (D-32). A side that resolves to nothing fails.
+   */
   async __checkConditionQuery(
     envVariables: ACPolicyEnvCombined | null,
     operator: string,
     conditionObj: Record<string, unknown>,
     key: string,
   ) {
-    let evaluationRes = false;
-
     if (!Conditions.queryOperator.includes(operator)) {
       throw new Error(`Invalid policy condition operator: ${operator}`);
     }
 
     const conditionEntry = conditionObj[key] as Record<string, unknown>;
-    const lhs = await Env.getEnvValue(conditionEntry[operator], envVariables);
-    const rhs = await Env.getEnvValue(key, envVariables);
+    const value = await Env.getEnvValue(conditionEntry[operator], envVariables);
+    const keyValue = await Env.getEnvValue(key, envVariables);
 
-    if (lhs === undefined || rhs === undefined) {
-      // TODO throw an error for incomplete operation sides
-      return evaluationRes;
-    }
+    if (value === undefined || keyValue === undefined) return false;
 
-    // Not narrowed as the query filter does, evaluateOperation gets whatever the env values resolved to
-    evaluationRes = AccessControlHelpers.evaluateOperation(
-      lhs as AccessControlValue,
-      rhs as AccessControlValue,
-      operator,
-    );
-
-    return evaluationRes;
+    return matchCriterion(value, operator, keyValue);
   }
 
   async isPolicyDateTimeBased(conditions: PolicyCondition, pass = false): Promise<string | boolean | undefined> {

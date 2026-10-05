@@ -31,6 +31,55 @@ that isn't of its type is refused with a 400, `invalid_value`, naming it, with e
 a `priority` that isn't a number, say, or a `limit` that isn't a date. Earlier releases stored such values as they
 were given.
 
+## Selection
+
+A policy's `selection` says which tokens it applies to, by their policy properties. Each key names a policy property
+and gives the criteria its value must pass, `{"<@op>": <value>}`, as a query gives a field's:
+
+```json
+{
+  "role": { "@eq": "ACCOUNTANT" },
+  "grade": { "@gte": 2, "@lt": 5 }
+}
+```
+
+A token is selected only when **every** key holds, and it has each property the selection names: the selection above
+doesn't select a token without a `grade`, and `{"role": {"@not": "ADMIN"}}` doesn't select a token without a `role`.
+Values are compared as a query compares them: exactly, so `"admin"` isn't `"ADMIN"`, and only with values of their
+own type, so `1` isn't `"1"`. A property holding a list passes when one of its values does. `@exists` reads whether
+the token has the property.
+
+`@and` and `@or` take a list of selections, which all, or any one, must select the token:
+
+```json
+{
+  "@or": [
+    { "role": { "@eq": "EDITOR" } },
+    { "@and": [{ "team": { "@eq": "BLUE" } }, { "grade": { "@eq": 2 } }] }
+  ]
+}
+```
+
+A selection is refused with `invalid_policy_selection` when it names a property the app's policy property list
+doesn't, a value it doesn't list, or an `@and` or `@or` that isn't a list of one or more selections. A token's
+policy properties must be values the list holds as they're written. Earlier releases selected a token when any one
+key held, skipped keys the token didn't have, and ignored the case of text, both here and in the list; a policy
+relying on that selects fewer tokens now.
+
+## Conditions
+
+A config's `condition` must hold for the config to apply. Each key is resolved through the env, as a query's
+`#env.` values are, and so is each criterion's value; a key or value that resolves to nothing fails. A condition
+reads **value OP key**, the other way round to a query:
+
+```json
+{ "#env.date.now": { "@ltDate": "2025-01-01" } }
+```
+
+holds when 2025-01-01 is before now. `@and` and `@or` take a list of conditions, which all, or any one, must hold.
+Values are compared as a selection compares them. The date operators (`@gtDate`, `@gteDate`, `@ltDate`, `@lteDate`)
+read both sides as dates, written as `2025-01-31`, `31/01/2025` or a time of day such as `09:00`.
+
 ## Listing and Removing
 
 `GET /api/v1/policy` lists the app's policies; `?ids=a,b` lists only those of them. Earlier releases checked the ids

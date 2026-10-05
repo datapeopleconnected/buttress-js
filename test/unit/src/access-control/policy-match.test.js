@@ -54,11 +54,16 @@ describe('access-control/policy-match:getTokenPolicies policyProperties value ty
     assert.deepStrictEqual(result, policies);
   });
 
-  it('should match case-insensitively for string values', () => {
+  it('compares text exactly, as a query does (D-32)', () => {
     const policies = [{ selection: { role: { '@eq': 'ADMIN' } } }];
-    const token = { policyProperties: { role: 'admin' } };
-    const result = PolicyMatch.getTokenPolicies(policies, token);
-    assert.deepStrictEqual(result, policies);
+    assert.strictEqual(PolicyMatch.getTokenPolicies(policies, { policyProperties: { role: 'admin' } }).length, 0);
+    assert.strictEqual(PolicyMatch.getTokenPolicies(policies, { policyProperties: { role: 'ADMIN' } }).length, 1);
+  });
+
+  it('compares values within their type, so 1 is not "1"', () => {
+    const policies = [{ selection: { level: { '@eq': 1 } } }];
+    assert.strictEqual(PolicyMatch.getTokenPolicies(policies, { policyProperties: { level: '1' } }).length, 0);
+    assert.strictEqual(PolicyMatch.getTokenPolicies(policies, { policyProperties: { level: 1 } }).length, 1);
   });
 
   it('should return empty array when policy property does not exist on token', () => {
@@ -179,9 +184,21 @@ describe('access-control/policy-match:getTokenPolicies Operations', () => {
     assert.strictEqual(PolicyMatch.getTokenPolicies(policies, token).length, 1);
   });
 
-  it('should match using @in operator (selection values must be uppercase since lhs is uppercased)', () => {
+  it('should match using @in operator', () => {
+    const policies = [{ selection: { role: { '@in': ['admin', 'moderator'] } } }];
+    const token = { policyProperties: { role: 'admin' } };
+    assert.strictEqual(PolicyMatch.getTokenPolicies(policies, token).length, 1);
+  });
+
+  it('should not match with @in when the value is listed in another case', () => {
     const policies = [{ selection: { role: { '@in': ['ADMIN', 'MODERATOR'] } } }];
     const token = { policyProperties: { role: 'admin' } };
+    assert.strictEqual(PolicyMatch.getTokenPolicies(policies, token).length, 0);
+  });
+
+  it('should match a token property list with @in when one of its values is listed', () => {
+    const policies = [{ selection: { role: { '@in': ['admin', 'moderator'] } } }];
+    const token = { policyProperties: { role: ['user', 'moderator'] } };
     assert.strictEqual(PolicyMatch.getTokenPolicies(policies, token).length, 1);
   });
 
@@ -192,27 +209,115 @@ describe('access-control/policy-match:getTokenPolicies Operations', () => {
   });
 
   it('should match using @nin operator', () => {
-    const policies = [{ selection: { role: { '@nin': ['USER', 'GUEST'] } } }];
+    const policies = [{ selection: { role: { '@nin': ['user', 'guest'] } } }];
     const token = { policyProperties: { role: 'admin' } };
     assert.strictEqual(PolicyMatch.getTokenPolicies(policies, token).length, 1);
   });
 
   it('should not match with @nin when value is in the array', () => {
-    const policies = [{ selection: { role: { '@nin': ['ADMIN', 'GUEST'] } } }];
+    const policies = [{ selection: { role: { '@nin': ['admin', 'guest'] } } }];
     const token = { policyProperties: { role: 'admin' } };
     assert.strictEqual(PolicyMatch.getTokenPolicies(policies, token).length, 0);
   });
 
-  it('should match using @exists operator', () => {
-    const policies = [{ selection: { features: { '@exists': 'premium' } } }];
-    const token = { policyProperties: { features: 'premium,standard' } };
+  it('should match using @exists operator, which reads whether the token has the property', () => {
+    const policies = [{ selection: { features: { '@exists': true } } }];
+    const token = { policyProperties: { features: 'standard' } };
     assert.strictEqual(PolicyMatch.getTokenPolicies(policies, token).length, 1);
   });
 
-  it('should not match with @exists when value is not contained', () => {
-    const policies = [{ selection: { features: { '@exists': 'premium' } } }];
-    const token = { policyProperties: { features: 'standard' } };
+  it('should not match with @exists false, as a selection only selects a token having each key it names', () => {
+    const policies = [{ selection: { role: { '@eq': 'admin' }, features: { '@exists': false } } }];
+    const token = { policyProperties: { role: 'admin' } };
     assert.strictEqual(PolicyMatch.getTokenPolicies(policies, token).length, 0);
+  });
+
+  it('needs every operator of a key to hold', () => {
+    const policies = [{ selection: { age: { '@gte': 18, '@lt': 65 } } }];
+    assert.strictEqual(PolicyMatch.getTokenPolicies(policies, { policyProperties: { age: 30 } }).length, 1);
+    assert.strictEqual(PolicyMatch.getTokenPolicies(policies, { policyProperties: { age: 70 } }).length, 0);
+  });
+
+  it('should not match an operator it does not know', () => {
+    const policies = [{ selection: { role: { '@like': 'admin' } } }];
+    const token = { policyProperties: { role: 'admin' } };
+    assert.strictEqual(PolicyMatch.getTokenPolicies(policies, token).length, 0);
+  });
+});
+
+// D-35: a token is selected when every key of the selection holds for it, and only if it has each key named
+describe('access-control/policy-match:getTokenPolicies selection with several keys', () => {
+  const token = { policyProperties: { a: 1, b: 2, c: 3, d: 4 } };
+  const select = (selection) => PolicyMatch.getTokenPolicies([{ selection }], token).length === 1;
+
+  it('selects a token that matches every key', () => {
+    assert(select({ a: { '@eq': 1 }, b: { '@eq': 2 } }));
+    assert(select({ b: { '@eq': 2 }, c: { '@eq': 3 } }));
+  });
+
+  it("doesn't select a token that lacks one of the keys", () => {
+    assert(!select({ a: { '@eq': 1 }, b: { '@eq': 2 }, e: { '@eq': 5 } }));
+  });
+
+  it("doesn't select a token that fails one of the keys", () => {
+    assert(!select({ a: { '@eq': 1 }, b: { '@not': 2 } }));
+    assert(!select({ a: { '@eq': 1 }, b: { '@eq': 3 } }));
+  });
+
+  it("doesn't select a token through a negation of a key it lacks", () => {
+    assert(!select({ a: { '@eq': 1 }, role: { '@not': 'admin' } }));
+    assert(!select({ a: { '@eq': 1 }, role: { '@nin': ['admin'] } }));
+  });
+
+  it('selects nothing with an empty selection', () => {
+    assert(!select({}));
+  });
+});
+
+describe('access-control/policy-match:getTokenPolicies selection with @and and @or', () => {
+  const token = { policyProperties: { a: 1, b: 2, c: 3, d: 4 } };
+  const select = (selection) => PolicyMatch.getTokenPolicies([{ selection }], token).length === 1;
+
+  it('selects a token through @or when one branch holds', () => {
+    assert(select({ '@or': [{ a: { '@eq': 9 } }, { b: { '@eq': 2 } }] }));
+  });
+
+  it("doesn't select a token through @or when no branch holds", () => {
+    assert(!select({ '@or': [{ a: { '@eq': 9 } }, { e: { '@eq': 5 } }] }));
+  });
+
+  it('needs every key of an @or branch, and the token to have each of them', () => {
+    assert(!select({ '@or': [{ a: { '@eq': 1 }, e: { '@eq': 5 } }, { b: { '@eq': 9 } }] }));
+    assert(!select({ '@or': [{ a: { '@eq': 1 }, role: { '@not': 'admin' } }] }));
+    assert(select({ '@or': [{ a: { '@eq': 1 }, b: { '@eq': 2 } }, { e: { '@eq': 5 } }] }));
+  });
+
+  it('needs every branch of @and to hold', () => {
+    assert(select({ '@and': [{ a: { '@eq': 1 } }, { b: { '@eq': 2 } }] }));
+    assert(!select({ '@and': [{ a: { '@eq': 1 } }, { b: { '@eq': 9 } }] }));
+  });
+
+  it('needs the keys beside an @or to hold as well', () => {
+    assert(select({ a: { '@eq': 1 }, '@or': [{ b: { '@eq': 9 } }, { c: { '@eq': 3 } }] }));
+    assert(!select({ a: { '@eq': 9 }, '@or': [{ b: { '@eq': 2 } }, { c: { '@eq': 3 } }] }));
+  });
+
+  it('nests @and within @or', () => {
+    assert(select({ '@or': [{ '@and': [{ a: { '@eq': 1 } }, { d: { '@eq': 4 } }] }, { e: { '@eq': 5 } }] }));
+  });
+
+  it('selects nothing through an @and or @or that has no branches, or that is not a list', () => {
+    assert(!select({ '@or': [] }));
+    assert(!select({ '@and': [] }));
+    assert(!select({ '@or': { a: { '@eq': 1 } } }));
+    assert(!select({ '@or': [{}] }));
+  });
+});
+
+describe('access-control/policy-match:selectionKeys', () => {
+  it('lists every property a selection names, within @and and @or too', () => {
+    const selection = { a: { '@eq': 1 }, '@or': [{ b: { '@eq': 2 } }, { '@and': [{ c: { '@eq': 3 } }, { a: { '@gt': 0 } }] }] };
+    assert.deepStrictEqual(PolicyMatch.selectionKeys(selection).sort(), ['a', 'b', 'c']);
   });
 });
 

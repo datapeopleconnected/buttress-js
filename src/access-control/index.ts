@@ -33,6 +33,7 @@ import AccessControlConditions from './conditions.js';
 import AccessControlFilter from './filter.js';
 import AccessControlEnv from './env.js';
 import AccessControlProjection from './projection.js';
+import AccessControlPolicyMatch from './policy-match.js';
 import AccessControlHelpers, { filterPolicyConfigs, isPolicyExpired, policyLimit } from './helpers.js';
 import { PolicyCache } from '../services/policy-cache.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
@@ -652,7 +653,7 @@ class AccessControl {
     if (!stored) return;
 
     // The policy matched on its selection and the token's policy properties, see AccessControlPolicyMatch
-    const policySelectionKeys = Object.keys(policy.selection ?? {});
+    const policySelectionKeys = AccessControlPolicyMatch.selectionKeys(policy.selection ?? {});
     const tokenPolicyProps = { ...(stored.policyProperties ?? {}) };
     policySelectionKeys.forEach((key) => {
       delete tokenPolicyProps[key];

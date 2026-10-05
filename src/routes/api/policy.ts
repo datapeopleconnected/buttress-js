@@ -194,7 +194,7 @@ const newPolicyProblem = async (app: App, policy: PolicyAddBody) => {
     return Helpers.Errors.badRequest('missing_field');
   }
 
-  const policyCheck = await Helpers.checkAppPolicyProperty(app.policyPropertiesList, policy.selection);
+  const policyCheck = await Helpers.checkPolicySelection(app.policyPropertiesList, policy.selection);
   if (!policyCheck.passed) return Helpers.Errors.badRequest('invalid_policy_selection');
 
   if (!policy.version) return Helpers.Errors.badRequest('invalid_policy_no_version');

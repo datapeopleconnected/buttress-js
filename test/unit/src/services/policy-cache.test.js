@@ -184,6 +184,7 @@ const Redis = {
     this._data.delete(key);
     return existed ? 1 : 0;
   },
+
 };
 
 function mockModel(findResult) {
@@ -624,10 +625,9 @@ describe('services/policy-cache', () => {
       assert(!userPolicies.includes('STALE'), 'user-tok should not be marked stale');
     });
 
-    it('should mark a token stale if ANY selected property matches, not requiring all of them', async () => {
-      // roleOnly-tok only has `role`, deptOnly-tok only has `dept` - neither has both properties that
-      // the policy selects on, but the real match is an OR across selection keys, so both should
-      // still be invalidated.
+    // D-35: a selection selects a token only if every key holds and the token has each one
+    it('should mark only the tokens that have every selected property, as a selection needs them all', async () => {
+      await cache.indexTokenPolicyProperties('both-tok', { role: 'admin', dept: 'eng' });
       await cache.indexTokenPolicyProperties('roleOnly-tok', { role: 'admin' });
       await cache.indexTokenPolicyProperties('deptOnly-tok', { dept: 'eng' });
 
@@ -639,10 +639,43 @@ describe('services/policy-cache', () => {
       cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(multiKeyPolicy) }));
       await cache.invalidatePolicyAndTokensBySelection('p3');
 
-      const rolePolicies = await Redis.sMembers(K('token:roleOnly-tok:policies'));
-      const deptPolicies = await Redis.sMembers(K('token:deptOnly-tok:policies'));
-      assert(rolePolicies.includes('STALE'), 'roleOnly-tok should be marked stale');
-      assert(deptPolicies.includes('STALE'), 'deptOnly-tok should be marked stale');
+      assert((await Redis.sMembers(K('token:both-tok:policies'))).includes('STALE'), 'both-tok should be marked stale');
+      assert(!(await Redis.sMembers(K('token:roleOnly-tok:policies'))).includes('STALE'), 'roleOnly-tok lacks dept');
+      assert(!(await Redis.sMembers(K('token:deptOnly-tok:policies'))).includes('STALE'), 'deptOnly-tok lacks role');
+    });
+
+    it('should mark the tokens having any property an @or names, when the selection has no other keys', async () => {
+      await cache.indexTokenPolicyProperties('role-tok', { role: 'admin' });
+      await cache.indexTokenPolicyProperties('dept-tok', { dept: 'eng' });
+      await cache.indexTokenPolicyProperties('other-tok', { team: 'x' });
+
+      const orPolicy = {
+        id: 'p5', name: 'or-policy', _appId: 'app1', priority: 1,
+        selection: { '@or': [{ role: { '@eq': 'admin' } }, { '@and': [{ dept: { '@eq': 'eng' } }] }] },
+        config: [{ verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null }],
+      };
+      cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(orPolicy) }));
+      await cache.invalidatePolicyAndTokensBySelection('p5');
+
+      assert((await Redis.sMembers(K('token:role-tok:policies'))).includes('STALE'));
+      assert((await Redis.sMembers(K('token:dept-tok:policies'))).includes('STALE'));
+      assert(!(await Redis.sMembers(K('token:other-tok:policies'))).includes('STALE'));
+    });
+
+    it('should narrow an @or selection by the keys beside it', async () => {
+      await cache.indexTokenPolicyProperties('admin-tok', { role: 'admin', dept: 'eng' });
+      await cache.indexTokenPolicyProperties('user-tok', { role: 'user', dept: 'eng' });
+
+      const mixedPolicy = {
+        id: 'p6', name: 'mixed-policy', _appId: 'app1', priority: 1,
+        selection: { role: { '@eq': 'admin' }, '@or': [{ dept: { '@eq': 'eng' } }, { team: { '@eq': 'x' } }] },
+        config: [{ verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null }],
+      };
+      cache = new PolicyCache(Redis, mockModelManager({ Policy: mockModel(mixedPolicy) }));
+      await cache.invalidatePolicyAndTokensBySelection('p6');
+
+      assert((await Redis.sMembers(K('token:admin-tok:policies'))).includes('STALE'));
+      assert(!(await Redis.sMembers(K('token:user-tok:policies'))).includes('STALE'));
     });
 
     it('should fall back to the broad key index for operators other than @eq', async () => {

@@ -35,8 +35,12 @@ export interface PolicyEnv {
   [key: string]: string | PolicyEnvQuery;
 }
 
+// The criteria a policy property's value must pass, `{<@op>: <operand>}`
+export type PolicyCriteria = Record<string, unknown>;
+
+// Each key a policy property and its criteria, or `@and`/`@or` and a list of selections (see AccessControlPolicyMatch)
 export interface PolicySelection {
-  [key: string]: { [key: string]: string };
+  [key: string]: PolicyCriteria | PolicySelection[];
 }
 
 export interface PolicyQuery {

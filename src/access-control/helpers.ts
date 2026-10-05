@@ -14,10 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { ObjectId } from 'bson';
-
-import Sugar from '../helpers/sugar.js';
-
 import Model from '../model/index.js';
 import Logging from '../helpers/logging.js';
 
@@ -26,26 +22,6 @@ import { ACEnv, ACPolicyEnvCombined } from './env.js';
 
 import { Policy, PolicyConfig } from '../model/core/policy.js';
 import { Schema } from '../helpers/schema.js';
-
-function isObjectId(value: unknown): value is ObjectId {
-  return value?.constructor?.name === 'ObjectId';
-}
-
-type AccessControlScalar = string | number | boolean | Date | ObjectId;
-export type AccessControlValue = AccessControlScalar | AccessControlScalar[] | null;
-
-function toComparableValue(value: AccessControlScalar): number | string {
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === 'boolean') return Number(value);
-  if (isObjectId(value)) return value.toString();
-  return value;
-}
-
-function toDateComparableValue(value: AccessControlValue): string | number | Date | null {
-  if (value === null || Array.isArray(value) || typeof value === 'boolean') return null;
-  if (isObjectId(value)) return value.toString();
-  return value;
-}
 
 export function CombineEnvGroups(policy: ApplicablePolicyConfig, reqEnv: ACEnv): ACPolicyEnvCombined {
   let env: ACPolicyEnvCombined = { ...reqEnv };
@@ -70,164 +46,6 @@ class Helpers {
     Logging.logSilly(`Refreshed core cache got ${this.__coreSchema.length} schema`);
     return this.__coreSchema;
   }
-
-  evaluateOperation(lhs: AccessControlValue, rhs: AccessControlValue, operator: string): boolean {
-    let passed = false;
-
-    if (rhs === null || lhs === null) {
-      // If either are null then we'll just fail the check, with the exeption being if we're checking for null.
-      if (rhs === null && lhs === null && (operator === '$eq' || operator === '@eq')) return true;
-
-      return false;
-    }
-
-    switch (operator) {
-      case '$eq':
-      case '@eq':
-        {
-          passed = lhs.toString().toUpperCase() === rhs.toString().toUpperCase();
-        }
-        break;
-      case '$not':
-      case '@not':
-        {
-          passed = lhs.toString().toUpperCase() !== rhs.toString().toUpperCase();
-        }
-        break;
-      case '$gt':
-      case '@gt':
-        {
-          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
-          passed = toComparableValue(lhs) > toComparableValue(rhs);
-        }
-        break;
-      case '$lt':
-      case '@lt':
-        {
-          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
-          passed = toComparableValue(lhs) < toComparableValue(rhs);
-        }
-        break;
-      case '$gte':
-      case '@gte':
-        {
-          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
-          passed = toComparableValue(lhs) >= toComparableValue(rhs);
-        }
-        break;
-      case '$lte':
-      case '@lte':
-        {
-          if (Array.isArray(lhs) || Array.isArray(rhs)) return false;
-          passed = toComparableValue(lhs) <= toComparableValue(rhs);
-        }
-        break;
-      case '$gtDate':
-      case '@gtDate':
-        {
-          const lhsDate = wrangleDateType(lhs);
-          const rhsDate = toDateComparableValue(rhs);
-          if (!lhsDate) return false;
-          if (!rhsDate) return false;
-          passed = Sugar.Date.isAfter(lhsDate, rhsDate);
-        }
-        break;
-      case '$gteDate':
-      case '@gteDate':
-        {
-          const lhsDate = wrangleDateType(lhs);
-          const rhsDate = toDateComparableValue(rhs);
-          if (!lhsDate) return false;
-          if (!rhsDate) return false;
-          passed = Sugar.Date.isAfter(lhsDate, rhsDate) || Sugar.Date.is(lhsDate, rhsDate);
-        }
-        break;
-      case '$ltDate':
-      case '@ltDate':
-        {
-          const lhsDate = wrangleDateType(lhs);
-          const rhsDate = toDateComparableValue(rhs);
-          if (!lhsDate) return false;
-          if (!rhsDate) return false;
-          passed = Sugar.Date.isBefore(lhsDate, rhsDate);
-        }
-        break;
-      case '$lteDate':
-      case '@lteDate':
-        {
-          const lhsDate = wrangleDateType(lhs);
-          const rhsDate = toDateComparableValue(rhs);
-          if (!lhsDate) return false;
-          if (!rhsDate) return false;
-          passed = Sugar.Date.isBefore(lhsDate, rhsDate) || Sugar.Date.is(lhsDate, rhsDate);
-        }
-        break;
-      case '$rex':
-      case '@rex':
-        {
-          const regex = new RegExp(rhs.toString());
-          passed = regex.test(lhs.toString());
-        }
-        break;
-      case '$rexi':
-      case '@rexi':
-        {
-          const regex = new RegExp(rhs.toString(), 'i');
-          passed = regex.test(lhs.toString());
-        }
-        break;
-      case '$in':
-      case '@in':
-        {
-          if (!Array.isArray(rhs)) return false;
-
-          if (Array.isArray(lhs)) {
-            passed = lhs.every((i) => {
-              return rhs.some((j) => j.toString() === i.toString());
-            });
-          } else {
-            passed = Boolean(lhs) && rhs.some((i) => i.toString() === lhs.toString());
-          }
-        }
-        break;
-      case '$nin':
-      case '@nin':
-        {
-          if (!Array.isArray(rhs)) return false;
-
-          if (Array.isArray(lhs)) {
-            passed = lhs.every((i) => !rhs.some((j) => j.toString() === i.toString()));
-          } else {
-            passed = Boolean(lhs) && !rhs.some((i) => i.toString() === lhs.toString());
-          }
-        }
-        break;
-      case '$exists':
-      case '@exists':
-        {
-          if (Array.isArray(lhs)) {
-            passed = lhs.includes(rhs as AccessControlScalar);
-          } else {
-            passed = lhs.toString().includes(rhs.toString());
-          }
-        }
-        break;
-      default:
-    }
-
-    return passed;
-  }
-}
-
-// Wrangle the type over to a sugar date
-function wrangleDateType(val: unknown): Date | null | undefined {
-  if (val === null) return null;
-  if (val === undefined) return undefined;
-  if (typeof val === 'string') {
-    return Sugar.Date.create(val);
-  }
-
-  return val as Date;
 }
 
 export default new Helpers();
