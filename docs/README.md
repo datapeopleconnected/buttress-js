@@ -1,8 +1,9 @@
-# ButtressJS
-The federated real-time open data platform.
+# Buttress
+
+The digital spine designed to unlock interoperability, strengthen infrastructure and deliver real-world impact.
 
 ## What it is
-ButtressJS is an open-source platform designed to enable federated, real-time data sharing and management. It provides a robust framework for building scalable, data-driven applications with a focus on collaboration and security.
+Buttress is an open source platform for federated, real-time data sharing and management. It provides a robust framework for building scalable, data-driven applications with a focus on collaboration and security.
 
 ## Start Here
 
@@ -35,4 +36,4 @@ Join the discussion and stay updated:
 * [GitHub Discussions](https://github.com/datapeopleconnected/buttress-js/discussions)
 
 ## License
-ButtressJS is licensed under the AGPL-3.0. See the [LICENSE](https://github.com/datapeopleconnected/buttress-js/blob/main/LICENSE) file for details.
+Buttress is licensed under the AGPL-3.0. See the [LICENSE](https://github.com/datapeopleconnected/buttress-js/blob/main/LICENSE) file for details.

@@ -2,18 +2,259 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>ButtressJS</title>
-  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1" />
-  <meta name="description" content="Documentation for ButtressJS, the federated, real-time, multi-tenant data platform.">
+  <title>Buttress</title>
+  <meta name="description" content="Documentation for Buttress, the open source federated data platform.">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0">
-  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css">
-  <link rel="stylesheet" href="//cdn.jsdelivr.net/npm/docsify-darklight-theme@latest/dist/style.min.css" title="docsify-darklight-theme" type="text/css"/>
+  <meta name="color-scheme" content="light dark">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4.13.1/lib/themes/vue.css">
+  <style>
+    /* The brand, as on the instance landing page (src/static/index.html), over docsify's vue theme. Light or dark
+       follows the reader's system setting. */
+    :root {
+      --page: #ebebeb;
+      --text: #222222;
+      --muted: #5c5c5c;
+      --panel: #222222;
+      --on-panel: #ebebeb;
+      --on-panel-muted: #a6a6a6;
+      --led: #5fd4dc;
+      --led-soft: #afe9ed;
+      --rule: rgba(34, 34, 34, 0.16);
+      --tint: rgba(34, 34, 34, 0.06);
+      /* docsify's accent: links, the active page in the sidebar, the GitHub corner */
+      --theme-color: var(--text);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --page: #141415;
+        --text: #ebebeb;
+        --muted: #a6a6a6;
+        --panel: #262628;
+        --rule: rgba(235, 235, 235, 0.14);
+        --tint: rgba(235, 235, 235, 0.06);
+      }
+    }
+
+    body,
+    .sidebar {
+      background-color: var(--page);
+      color: var(--text);
+      font-family: Inter, 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    }
+
+    ::selection {
+      background-color: var(--led);
+      color: #222222;
+    }
+
+    a:focus-visible,
+    button:focus-visible {
+      outline: 2px solid var(--led);
+      outline-offset: 3px;
+    }
+
+    .progress {
+      background-color: var(--led);
+    }
+
+    .github-corner svg {
+      color: var(--page);
+    }
+
+    /* The logo heads the sidebar, as it heads the landing page */
+    .sidebar {
+      border-right-color: var(--rule);
+    }
+
+    .sidebar > h1 {
+      margin: 0 0 1.5rem;
+      padding: 0 15px;
+      line-height: 0;
+      text-align: left;
+    }
+
+    .sidebar > h1 img {
+      width: 180px;
+      height: auto;
+    }
+
+    .sidebar ul li a {
+      color: var(--muted);
+    }
+
+    .sidebar ul li a:hover,
+    .sidebar ul li.active > a {
+      color: var(--text);
+    }
+
+    .sidebar-toggle,
+    body.close .sidebar-toggle {
+      background-color: var(--page);
+    }
+
+    @media screen and (max-width: 768px) {
+      .sidebar-toggle {
+        background-color: transparent;
+      }
+    }
+
+    .markdown-section h1,
+    .markdown-section h2,
+    .markdown-section h3 {
+      letter-spacing: -0.01em;
+    }
+
+    .markdown-section h1,
+    .markdown-section h2,
+    .markdown-section h3,
+    .markdown-section h4,
+    .markdown-section strong,
+    .anchor span {
+      color: var(--text);
+    }
+
+    .markdown-section a {
+      font-weight: 500;
+      text-decoration: underline;
+      text-decoration-thickness: 1px;
+      text-underline-offset: 0.18em;
+    }
+
+    .markdown-section a:hover {
+      color: var(--muted);
+    }
+
+    .markdown-section a.anchor {
+      text-decoration: none;
+    }
+
+    .markdown-section em,
+    .markdown-section h6 {
+      color: var(--muted);
+    }
+
+    .markdown-section blockquote {
+      border-left-color: var(--text);
+      color: var(--muted);
+    }
+
+    .markdown-section hr,
+    .markdown-section iframe,
+    .markdown-section output,
+    .markdown-section td,
+    .markdown-section th,
+    .markdown-section tr,
+    kbd {
+      border-color: var(--rule);
+    }
+
+    .markdown-section th {
+      font-weight: 600;
+    }
+
+    .markdown-section tr:nth-child(2n) {
+      background-color: var(--tint);
+    }
+
+    .markdown-section code {
+      background-color: var(--tint);
+      color: var(--text);
+    }
+
+    /* Code blocks and important notes (!>) are the brand's dark panels, in both modes */
+    .markdown-section pre,
+    .markdown-section pre > code {
+      background-color: var(--panel);
+      color: var(--on-panel);
+    }
+
+    .markdown-section pre::after {
+      color: var(--on-panel-muted);
+    }
+
+    .markdown-section pre .token.comment,
+    .markdown-section pre .token.prolog,
+    .markdown-section pre .token.doctype,
+    .markdown-section pre .token.cdata,
+    .markdown-section pre .token.punctuation,
+    .markdown-section pre .token.operator {
+      color: var(--on-panel-muted);
+    }
+
+    .markdown-section pre .token.property,
+    .markdown-section pre .token.tag,
+    .markdown-section pre .token.attr-name,
+    .markdown-section pre .token.selector,
+    .markdown-section pre .token.variable,
+    .markdown-section pre .token.placeholder {
+      color: var(--on-panel);
+    }
+
+    .markdown-section pre .token.string,
+    .markdown-section pre .token.attr-value,
+    .markdown-section pre .token.url,
+    .markdown-section pre .token.entity,
+    .markdown-section pre .token.regex {
+      color: var(--led);
+    }
+
+    .markdown-section pre .token.number,
+    .markdown-section pre .token.boolean,
+    .markdown-section pre .token.keyword,
+    .markdown-section pre .token.function,
+    .markdown-section pre .token.atrule,
+    .markdown-section pre .token.statement,
+    .markdown-section pre .token.control,
+    .markdown-section pre .token.directive,
+    .markdown-section pre .token.unit,
+    .markdown-section pre .token.important {
+      color: var(--led-soft);
+    }
+
+    .markdown-section p.tip {
+      background-color: var(--panel);
+      border-left-color: var(--led);
+      color: var(--on-panel);
+    }
+
+    .markdown-section p.tip::before {
+      background-color: var(--led);
+      color: #222222;
+      font-family: inherit;
+    }
+
+    .markdown-section p.tip a,
+    .markdown-section p.tip em,
+    .markdown-section p.tip strong {
+      color: var(--on-panel);
+    }
+
+    .markdown-section p.tip code {
+      background-color: rgba(235, 235, 235, 0.12);
+      color: var(--on-panel);
+    }
+
+    /* Tips (?>) */
+    .markdown-section p.warn {
+      background: var(--tint);
+      border-left: 4px solid var(--rule);
+    }
+  </style>
 </head>
 <body>
   <div id="app"></div>
   <script>
     window.$docsify = {
-      name: 'ButtressJS',
+      // The logo files are copies of brand/buttress-logo*.svg, since GitHub Pages only serves docs/
+      name:
+        '<picture>' +
+        '<source srcset="_media/buttress-logo-inverted.svg" media="(prefers-color-scheme: dark)">' +
+        '<img src="_media/buttress-logo.svg" alt="Buttress">' +
+        '</picture>',
       repo: 'https://github.com/datapeopleconnected/buttress-js',
       loadSidebar: true,
       subMaxLevel: 2,
@@ -25,8 +266,6 @@
       }
     }
   </script>
-  <!-- Docsify v4 -->
-  <script src="//cdn.jsdelivr.net/npm/docsify@4"></script>
-  <script src="//cdn.jsdelivr.net/npm/docsify-darklight-theme@latest/dist/index.min.js" type="text/javascript"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify@4.13.1/lib/docsify.min.js"></script>
 </body>
 </html>
