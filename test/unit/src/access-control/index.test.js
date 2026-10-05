@@ -25,6 +25,7 @@ import PolicySchemaModel from '../../../../dist/model/core/policy.js';
 import AppSchemaModel from '../../../../dist/model/core/app.js';
 import { isPolicyExpired } from '../../../../dist/access-control/helpers.js';
 import Logging from '../../../../dist/helpers/logging.js';
+import { createSchemaModel } from '../../../schema-model.js';
 
 // Only the instance is exported (module-level singleton); grab the class off it so each
 // test gets a fresh, unshared instance instead of mutating shared access-control state.
@@ -291,6 +292,51 @@ describe('access-control/AccessControl:__getOutcome merging (BUG-17)', () => {
 
     assert.strictEqual(outcome.length, 1);
     assert.deepStrictEqual(outcome[0].query, { $or: [{ a: 1 }, { b: 2 }] });
+  });
+});
+
+// A policy whose query can't be read for the schema, saved before its query was checked, grants nothing, as in realtime,
+// and the token's other policies still apply
+describe("access-control/AccessControl:__getOutcome a policy query that can't be read", () => {
+  const policy = (name, query) => ({
+    id: `id-${name}`,
+    name,
+    priority: 1,
+    env: null,
+    config: [{ verbs: ['GET'], schema: ['user'], query, projection: null, condition: null }],
+  });
+  const withModel = () => {
+    const { model } = createSchemaModel(userSchema);
+    sinon.stub(Model, 'getAppModel').resolves(model);
+  };
+
+  it("leaves out a policy whose query can't be read, logging it, and grants through the token's others", async () => {
+    withModel();
+    const logged = sinon.stub(Logging, 'logWarn');
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+    const tokenPolicies = [policy('broken', { name: { '@in': 'a' } }), policy('fine', { name: 'b' })];
+
+    const outcome = await instance.__getOutcome(tokenPolicies, createReq(), 'user', 'app1');
+
+    assert.deepStrictEqual(outcome.map((config) => config.policies), [['fine#0']]);
+    assert.ok(logged.calledWithMatch(/broken#0/), String(logged.args));
+  });
+
+  it("refuses with 403 when no policy's query can be read", async () => {
+    withModel();
+    sinon.stub(Logging, 'logWarn');
+    const instance = createInstance({ coreSchema: [], schemas: { app1: [userSchema] } });
+
+    await assert.rejects(
+      () => instance.__getOutcome([policy('broken', { name: { '@rex': '(' } })], createReq(), 'user', 'app1'),
+      (err) => {
+        assert.ok(err instanceof PolicyError);
+        assert.strictEqual(err.status, 403);
+        assert.strictEqual(err.code, 'access_denied');
+        assert.match(err.message, /query can not be applied to user/);
+        return true;
+      },
+    );
   });
 });
 

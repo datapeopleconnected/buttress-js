@@ -24,7 +24,9 @@ problem in `details.issues`, when a config would grant nothing or fail when it's
 `condition` or `env` is an object. Earlier releases saved a config without a query, and it granted nothing. A
 config's query or condition naming an operator Buttress doesn't know is one of those problems, an issue with code
 `unknown_operator`; a selection naming one is refused with `invalid_policy_selection`. Earlier releases saved them,
-and a request through such a query failed.
+and a request through such a query failed. A config already stored whose query can't be read for its schema, such as
+one giving `@in` a value that isn't a list, grants nothing, and the token's other policies still apply; earlier
+releases failed the request.
 
 `QUERY` grants [searches](schema.md#searching). `SEARCH`, its name in earlier releases, is the same verb: a config
 listing either grants requests made with either method, so existing policies don't need changing.

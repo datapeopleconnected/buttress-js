@@ -19,8 +19,10 @@ import { Request, Response, NextFunction } from 'express';
 import NodeRedisPubsub, { AppSchemaUpdatedMessage } from '../services/nrp.js';
 
 import Sugar from '../helpers/sugar.js';
+import { getThrownErrorMessage } from '../helpers/index.js';
 import { ApiError, ApiErrorDetails } from '../helpers/errors.js';
 import Model from '../model/index.js';
+import type StandardModel from '../model/type/standard.js';
 import Logging from '../helpers/logging.js';
 import * as Schema from '../helpers/schema.js';
 
@@ -28,7 +30,7 @@ import PolicySchemaModel, { Policy, PolicyConfig, PolicyEnv } from '../model/cor
 import TokenSchemaModel, { Token } from '../model/core/token.js';
 
 import AccessControlEnv from './env.js';
-import { evaluate, mergeGrants } from './evaluator.js';
+import { evaluate, Grant, mergeGrants } from './evaluator.js';
 import AccessControlProjection from './projection.js';
 import AccessControlPolicyMatch from './policy-match.js';
 import AccessControlHelpers, { isPolicyExpired, policyLimit } from './helpers.js';
@@ -238,9 +240,35 @@ class AccessControl {
   }
 
   /**
+   * The grants whose queries the app's schema can read, as the routes read them. One that can't be, such as a policy
+   * saved before its query's operands were checked, is left out and logged, rather than failing the request; it's
+   * left out before grants are merged, so it doesn't take another policy's query with it.
+   * @param {Grant[]} grants
+   * @param {string} appId
+   * @param {string} schemaName
+   * @return {Promise<Grant[]>}
+   */
+  async __readableGrants(grants: Grant[], appId: string, schemaName: string): Promise<Grant[]> {
+    const model = await Model.getAppModel<StandardModel>(appId, schemaName);
+    if (!model) return grants;
+
+    return grants.filter((grant) => {
+      try {
+        model.parseQuery(grant.query as Record<string, unknown>, {}, model.flatSchemaData, false);
+        return true;
+      } catch (err: unknown) {
+        Logging.logWarn(
+          `Policy ${grant.policies.join(', ')} not applied to ${schemaName}: ${getThrownErrorMessage(err)}`,
+        );
+        return false;
+      }
+    });
+  }
+
+  /**
    * The policy configs a request goes through, as the routes apply them (REST's side of the evaluator): the grants the
-   * token's policies give on the schema for the request's verb, less those the request reads by or writes properties
-   * of that they don't let through, merged.
+   * token's policies give on the schema for the request's verb whose queries the schema can read, less those the
+   * request reads by or writes properties of that they don't let through, merged.
    */
   async __getOutcome(
     tokenPolicies: Policy[],
@@ -261,17 +289,30 @@ class AccessControl {
     const schemaCombined = [...this._coreSchema, ...(this._schemas[appId] ?? [])];
     const schema = schemaCombined.find((s) => s.name === schemaName || Sugar.String.singularize(s.name) === schemaName);
 
+    const isCoreSchema = this._coreSchemaNames.some((n) => n === schemaName);
     const grants = await evaluate(tokenPolicies, {
       schemaName,
       schema: schema ?? null,
-      isCoreSchema: this._coreSchemaNames.some((n) => n === schemaName),
+      isCoreSchema,
       verb: req.method,
       appId,
       env: AccessControlEnv.generateRequestGlobalEnvs(req, appId, req.context.authUser),
     });
 
-    // evaluate refuses a schema the app hasn't got
-    const permitted = await AccessControlProjection.filterGrantsByRequest(req, grants, schema!);
+    // evaluate refuses a schema the app hasn't got, so the schema is there from here on. A grant whose query can't be
+    // read for it grants nothing, as in realtime, and the token's others still apply; a core schema's rows aren't read
+    // through policies' queries (D-21)
+    const readable = isCoreSchema ? grants : await this.__readableGrants(grants, appId, schema!.name);
+    if (readable.length < 1) {
+      throw new PolicyError(
+        403,
+        'access_denied',
+        `Access control policy query can not be applied to ${schemaName}`,
+        '_accessControlPolicy:query-not-resolved',
+      );
+    }
+
+    const permitted = await AccessControlProjection.filterGrantsByRequest(req, readable, schema!);
     if (permitted.length < 1) {
       throw new PolicyError(
         403,
