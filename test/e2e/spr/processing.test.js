@@ -16,6 +16,7 @@
 
 import fs from 'node:fs';
 import assert from 'node:assert';
+import { randomUUID } from 'node:crypto';
 
 import { io } from 'socket.io-client';
 import { describe, it, before, after } from 'mocha';
@@ -421,36 +422,30 @@ describe('Processing', async () => {
 			await futurePromise;
 		});
 
-			it('Should preserve clientSessionId from REST to SPR', async function () {
-				this.timeout(5000);
-				const name = `name-${Math.floor(Math.random() * 100)}`;
-				const clientSessionId = '11111111-1111-4111-8111-111111111111';
+		it('Should preserve clientSessionId from REST to SPR', async function () {
+			this.timeout(5000);
+			// A name no other car has. The SPR can still be relaying the car the test before posted, and a name-<0-99>
+			// name would let that car's activity be taken for this one's.
+			const name = `client-session-${randomUUID()}`;
+			const clientSessionId = '11111111-1111-4111-8111-111111111111';
 
-				let restResolve = null;
-				let sprResolve = null;
-				const restPromise = new Promise((resolve) => (restResolve = resolve));
-				const sprPromise = new Promise((resolve) => (sprResolve = resolve));
+			// REST publishes the activity twice, for system tokens (isSuper) and for the policies, and the SPR relays
+			// both, in no set order. The car's copies are kept until both have come through on each channel.
+			const rest = [];
+			const spr = [];
+			let resolve = null;
+			const arrived = new Promise((r) => resolve = r);
+			const hasBoth = (activities) => activities.some((a) => a.isSuper) && activities.some((a) => !a.isSuper);
+			const keep = (activities, activity) => {
+				if (activity.appAPIPath !== testEnv.apps.app1.apiPath || activity.response?.name !== name) return;
+				activities.push(activity);
+				if (hasBoth(rest) && hasBoth(spr)) resolve();
+			};
 
-				const restSubscription = await NRP_INSTANCE.subscribe('rest:activity', async (dataRaw) => {
-					const data = JSON.parse(dataRaw);
-					if (data.appAPIPath !== testEnv.apps.app1.apiPath) return;
-					if (data.response?.name !== name) return;
+			const restSubscription = await NRP_INSTANCE.subscribe('rest:activity', (data) => keep(rest, JSON.parse(data)));
+			const sprSubscription = await NRP_INSTANCE.subscribe('spr:activity', (data) => keep(spr, JSON.parse(data).activity));
 
-					await restSubscription();
-					assert.equal(data.clientSessionId, clientSessionId);
-					restResolve();
-				});
-
-				const sprSubscription = await NRP_INSTANCE.subscribe('spr:activity', async (dataRaw) => {
-					const data = JSON.parse(dataRaw);
-					if (data.activity.appAPIPath !== testEnv.apps.app1.apiPath) return;
-					if (data.activity.response?.name !== name) return;
-
-					await sprSubscription();
-					assert.equal(data.activity.clientSessionId, clientSessionId);
-					sprResolve();
-				});
-
+			try {
 				await bjsReq({
 					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
 					method: 'POST',
@@ -461,9 +456,15 @@ describe('Processing', async () => {
 					body: JSON.stringify({ name, userId: testEnv.users.basic1.id }),
 				}, testEnv.apps.app1.token);
 
-				await restPromise;
-				await sprPromise;
-			});
+				await arrived;
+			} finally {
+				await restSubscription();
+				await sprSubscription();
+			}
+
+			// Checked here, not in the handlers: NRP only logs a handler's failed assertion, so the test would time out
+			for (const activity of [...rest, ...spr]) assert.equal(activity.clientSessionId, clientSessionId);
+		});
 
 		it('Should generate a `spr:activity` event after a REST post', async function () {
 			const name = `name-${Math.floor(Math.random() * 100)}`;
