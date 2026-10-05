@@ -31,7 +31,8 @@ User-facing product docs (policy/lambda/schema JSON shapes, deployment guides) l
 npm run build          # tsc + copy non-.ts assets, src/ -> dist/ (required before running or unit-testing)
 npm run lint            # eslint ./src
 npm run format           # prettier --check ./src
-npm run check            # tsc --noEmit && lint && format && licence-check — full pre-PR gate
+npm run check            # tsc --noEmit && lint && format && licence-check && docs:check — full pre-PR gate
+npm run docs:check       # every link and image in docs/ resolves as docsify resolves it (run after editing docs/)
 npm run test             # build + test:unit + test:e2e (needs MongoDB + Redis reachable)
 npm run test:unit        # mocha over test/unit/**/* (imports compiled dist/, run build first)
 npm run bench            # measure dist/'s REST performance; bench:compare -- a.json b.json compares two runs

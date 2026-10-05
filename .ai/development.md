@@ -30,7 +30,9 @@ npm run format:fix
 npm run lint:staged      # eslint --fix + prettier --write on staged src files only (run by the hook)
 npm run licence-check    # ./scripts/licence-check — every src file (except html/json/md/sh) must
                           # contain the AGPL header block from scripts/licencing_header.txt
-npm run check            # tsc --noEmit && lint && format && licence-check — the full pre-PR gate
+npm run docs:check       # scripts/docs-check.mjs — every link and image in docs/ reaches a page, heading or
+                          # file in docs/, resolved as docsify resolves it (see Docs site below)
+npm run check            # tsc --noEmit && lint && format && licence-check && docs:check — the full pre-PR gate
 ```
 
 The pre-commit hook ([.githooks/pre-commit](../.githooks/pre-commit), enabled by the `prepare` script
@@ -180,3 +182,8 @@ CI publishes `dpcltd/buttress:develop` on push to `develop` and `dpcltd/buttress
 (published to https://datapeopleconnected.github.io/buttress-js/). It's a good source for the JSON
 shapes of policies/lambdas/schemas/secure-store, but doesn't cover internals — that's what the other
 files in [.ai/](.) are for.
+
+GitHub Pages serves `main:/docs`, so doc changes on develop go live with a release. Links in a page are relative to
+that page, as on GitHub (`relativePath: true` in [docs/index.html](../docs/index.html)). Links in `_sidebar.md`
+start with `/`, since it's shown on every page. `npm run docs:check` resolves every link and image the way docsify
+does and fails on any that doesn't reach a page, heading or file in docs/; it doesn't fetch other sites.

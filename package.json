@@ -12,6 +12,7 @@
   "main": "deploy/app.js",
   "scripts": {
     "docs": "npx docsify serve ./docs",
+    "docs:check": "node scripts/docs-check.mjs",
     "test": "npm run build && npm run test:unit && npm run test:e2e",
     "test:unit": "NODE_ENV=test mocha --timeout ${MOCHA_UNIT_TIMEOUT:-2000} --recursive --parallel test/unit/**/*",
     "test:e2e": "NODE_ENV=test node test/before-e2e.js && echo \"Running BJS in Install Mode.\" && NODE_ENV=test INSTALL_MODE=true ./bin/app.sh && echo \"Install Complete.\\n\"&& NODE_ENV=test TEST_ENV=e2e mocha --timeout ${MOCHA_E2E_TIMEOUT:-2000} --recursive --bail --no-node-snapshot test/e2e/index.test.js",
@@ -36,7 +37,7 @@
     "coverage:istanbul": "npm run build && node test/istanbul/run.mjs",
     "start": "bin/buttress.sh",
     "licence-check": "./scripts/licence-check",
-    "check": "tsc --noEmit && npm run lint && npm run format && npm run licence-check",
+    "check": "tsc --noEmit && npm run lint && npm run format && npm run licence-check && npm run docs:check",
     "docker:build": "docker build -t buttress .",
     "docker:build-token": "npm run docker:build -- --build-arg NPM_TOKEN=${NPM_TOKEN}",
     "docker:run": "docker-compose -f .docker/docker-compose.yml up",
