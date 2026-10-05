@@ -27,15 +27,19 @@ import { Schema } from '../types/schema.js';
 
 /**
  * The policy engine: what a token's policies grant on one schema for one verb (R5). REST evaluates them for a request,
- * and applies the grants to its query and to what it reads and writes.
+ * and applies the grants to its query and to what it reads and writes; realtime evaluates them for an activity, and
+ * tells a token about the entity when a grant reads it.
  */
 
 export interface EvaluationContext {
   schemaName: string;
-  // The app's schema by that name, or null if it has none
-  schema: Schema | null;
+  // The app's schema by that name, or null if it has none; left out when the caller knows it has (an activity comes
+  // from a write to it)
+  schema?: Schema | null;
   isCoreSchema: boolean;
   verb: string;
+  // Configs that let the token read the schema, whatever the verb, as realtime tells a token what it can read
+  reads?: boolean;
   appId: string;
   // The env a config's condition and query are read with, its policy's and its own env added
   env: ACEnv;
@@ -82,7 +86,7 @@ export async function evaluate(policies: Policy[], context: EvaluationContext): 
   }
 
   let applicable: ApplicablePolicyConfig[] = live.flatMap((policy) =>
-    filterPolicyConfigs(policy, schemaName, verb, context.isCoreSchema).map((config, idx) => ({
+    filterPolicyConfigs(policy, schemaName, verb, context.isCoreSchema, context.reads === true).map((config, idx) => ({
       id: policy.id,
       name: `${policy.name}#${idx}`,
       env: policy.env,
@@ -97,7 +101,7 @@ export async function evaluate(policies: Policy[], context: EvaluationContext): 
     );
   }
 
-  if (!context.schema) {
+  if (context.schema === null) {
     throw new PolicyError(
       404,
       'unknown_schema',
@@ -146,6 +150,45 @@ export async function evaluate(policies: Policy[], context: EvaluationContext): 
   }
 
   return grants;
+}
+
+const ENV_PREFIX = '#env.';
+
+// The env references in a value: its strings, and its objects' keys, that start with #env.
+const envReferences = (value: unknown): string[] => {
+  if (typeof value === 'string') return value.startsWith(ENV_PREFIX) ? [value] : [];
+  if (Array.isArray(value)) return value.flatMap(envReferences);
+  if (value && typeof value === 'object') {
+    return Object.entries(value).flatMap(([key, item]) => [...envReferences(key), ...envReferences(item)]);
+  }
+  return [];
+};
+
+/**
+ * Whether a config is read differently for each token: its query or condition refers to the token's user, directly
+ * or through the policy's or the config's env (the config's read over the policy's, as CombineEnvGroups reads them),
+ * an env lookup's query included. Realtime evaluates such a config for each token, and the rest once.
+ * @param {object} policy - its env
+ * @param {PolicyConfig} config
+ * @return {boolean}
+ */
+export function dependsOnToken(
+  policy: Pick<Policy, 'env'>,
+  config: Pick<PolicyConfig, 'query' | 'condition' | 'env'>,
+): boolean {
+  const env: Record<string, unknown> = { ...(policy.env ?? {}), ...(config.env ?? {}) };
+  const followed = new Set<string>();
+
+  const refersToUser = (reference: string): boolean => {
+    const [root] = reference.slice(ENV_PREFIX.length).split('.');
+    if (!Object.hasOwn(env, root)) return root === 'user';
+    if (followed.has(root)) return false;
+
+    followed.add(root);
+    return envReferences(env[root]).some(refersToUser);
+  };
+
+  return [...envReferences(config.query), ...envReferences(config.condition)].some(refersToUser);
 }
 
 const sameQuery = (a: PolicyQuery, b: PolicyQuery) => JSON.stringify(a) === JSON.stringify(b);

@@ -17,7 +17,7 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import { filterPolicyConfigs, CombineEnvGroups, findPatternOccurrences, patternExists, containsTokenLevelRef } from '../../../../dist/access-control/helpers.js';
+import { filterPolicyConfigs, CombineEnvGroups } from '../../../../dist/access-control/helpers.js';
 
 describe('access-control/helpers:CombineEnvGroups', () => {
   it('should combine req env with policy env and config env', () => {
@@ -229,120 +229,5 @@ describe('access-control/helpers:filterPolicyConfigs', () => {
       const result = filterPolicyConfigs(policy, 'user', 'DELETE', true, true);
       assert.strictEqual(result.length, 0);
     });
-  });
-});
-
-describe('access-control/helpers:findPatternOccurrences', () => {
-  it('should find pattern in value strings', () => {
-    const obj = { name: '#env.user.id' };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 1);
-    assert.strictEqual(result[0].type, 'value');
-    assert.strictEqual(result[0].value, '#env.user.id');
-  });
-
-  it('should find pattern in keys', () => {
-    const obj = { '#env.user.id': 'value' };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 1);
-    assert.strictEqual(result[0].type, 'key');
-  });
-
-  it('should find nested pattern occurrences', () => {
-    const obj = { query: { userId: '#env.user.id' } };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 1);
-    assert.deepStrictEqual(result[0].path, ['query', 'userId']);
-  });
-
-  it('should find occurrences in arrays', () => {
-    const obj = { rules: ['#env.role', '#env.location'] };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 2);
-  });
-
-  it('should return empty array when no pattern matches', () => {
-    const obj = { name: 'hello' };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 0);
-  });
-
-  it('should handle nested objects', () => {
-    const obj = { a: { b: { c: '#env.deeply.nested' } } };
-    const result = findPatternOccurrences(obj, '#env\\.');
-    assert.strictEqual(result.length, 1);
-    assert.deepStrictEqual(result[0].path, ['a', 'b', 'c']);
-  });
-});
-
-describe('access-control/helpers:patternExists', () => {
-  it('should return true when pattern exists in value', () => {
-    const obj = { userId: '#env.user.id' };
-    assert.strictEqual(patternExists(obj, '#env\\.'), true);
-  });
-
-  it('should return true when pattern exists in key', () => {
-    const obj = { '#env.role': 'admin' };
-    assert.strictEqual(patternExists(obj, '#env\\.'), true);
-  });
-
-  it('should return true for deeply nested pattern', () => {
-    const obj = { a: { b: { c: '#env.deep' } } };
-    assert.strictEqual(patternExists(obj, '#env\\.'), true);
-  });
-
-  it('should return false when pattern does not exist', () => {
-    const obj = { name: 'hello' };
-    assert.strictEqual(patternExists(obj, '#env\\.'), false);
-  });
-
-  it('should return true when pattern exists in array', () => {
-    const obj = { list: ['#env.item1', 'plain'] };
-    assert.strictEqual(patternExists(obj, '#env\\.'), true);
-  });
-});
-
-describe('access-control/helpers:containsTokenLevelRef', () => {
-  it('should return all false when no user token refs exist', () => {
-    const policy = {
-      id: 'p1',
-      name: 'test',
-      appId: 'app1',
-      env: null,
-      config: {
-        env: null,
-        query: { userId: '#env.date' },
-        condition: { date: { '@gt': '#env.date.now' } },
-        verbs: ['GET'],
-        schema: ['user'],
-        projection: null,
-      },
-    };
-
-    const result = containsTokenLevelRef(policy);
-    assert.strictEqual(result.env, false);
-    assert.strictEqual(result.configEnv, false);
-    assert.strictEqual(result.query, false);
-    assert.strictEqual(result.condition, false);
-  });
-
-  it('should detect user token ref in query', () => {
-    const policy = {
-      id: 'p1',
-      name: 'test',
-      appId: 'app1',
-      env: null,
-      config: {
-        env: null,
-        query: { userId: '#env.user.id' },
-        condition: null,
-        verbs: ['GET'],
-        schema: ['user'],
-        projection: null,
-      },
-    };
-
-    const result = containsTokenLevelRef(policy);
-    assert.strictEqual(result.query, true);
   });
 });

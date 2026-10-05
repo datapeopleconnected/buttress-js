@@ -17,7 +17,7 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import { evaluate, mergeGrants } from '../../../../dist/access-control/evaluator.js';
+import { dependsOnToken, evaluate, mergeGrants } from '../../../../dist/access-control/evaluator.js';
 import { PolicyError } from '../../../../dist/access-control/index.js';
 
 const userSchema = {
@@ -127,6 +127,68 @@ describe('access-control/evaluator:evaluate', () => {
   it('takes a projection with no keys as no restriction', async () => {
     const [grant] = await evaluate([policy('p', { projection: { keys: [] } })], context());
     assert.strictEqual(grant.projection, null);
+  });
+});
+
+describe('access-control/evaluator:evaluate for realtime', () => {
+  it('grants each config that lets the token read the schema, whatever the verb, when asked about reads', async () => {
+    const grants = await evaluate(
+      [policy('searcher', { verbs: ['SEARCH'] }), policy('poster', { verbs: ['POST'] })],
+      context({ verb: 'PUT', reads: true }),
+    );
+    assert.deepStrictEqual(grants.map((grant) => grant.policies), [['searcher#0']]);
+  });
+
+  it("doesn't check the schema when it's left out, as an activity comes from a write to it", async () => {
+    const { schema: _schema, ...withoutSchema } = context();
+    assert.strictEqual((await evaluate([policy('p', {})], withoutSchema)).length, 1);
+  });
+
+  it('applies a config with no condition, as one whose condition is null', async () => {
+    const withoutCondition = { ...policy('p', {}), config: [{ verbs: ['GET'], schema: ['user'], query: {} }] };
+    assert.strictEqual((await evaluate([withoutCondition], context())).length, 1);
+  });
+});
+
+// Whether a config is read differently for each token, so realtime evaluates it for each connected token
+describe('access-control/evaluator:dependsOnToken', () => {
+  const depends = (policyEnv, config) =>
+    dependsOnToken({ env: policyEnv }, { verbs: ['GET'], schema: ['car'], query: {}, condition: null, env: null, ...config });
+
+  it("is true for a query or condition that refers to the token's user", () => {
+    assert.strictEqual(depends(null, { query: { owner: { '@eq': '#env.user.id' } } }), true);
+    assert.strictEqual(depends(null, { query: { $or: [{ owner: { '@in': ['#env.user.id'] } }] } }), true);
+    assert.strictEqual(depends(null, { condition: { '#env.user.role': { '@eq': 'admin' } } }), true);
+    assert.strictEqual(depends(null, { condition: { '@or': [{ '#env.appId': { '@eq': '#env.user.appId' } }] } }), true);
+  });
+
+  it("is true for an env value that refers to the user, the config's env read over the policy's", () => {
+    assert.strictEqual(depends({ userId: '#env.user.id' }, { query: { owner: { '@eq': '#env.userId' } } }), true);
+    assert.strictEqual(depends({ userId: 'static' }, { env: { userId: '#env.user.id' }, query: { owner: '#env.userId' } }), true);
+    assert.strictEqual(depends({ userId: '#env.user.id' }, { env: { userId: 'static' }, query: { owner: '#env.userId' } }), false);
+    assert.strictEqual(depends({ a: '#env.b', b: '#env.user.id' }, { query: { owner: '#env.a' } }), true);
+  });
+
+  it('is true for an env lookup whose query refers to the user', () => {
+    const companies = { collection: 'company', query: { ownerId: { '@eq': '#env.user.id' } }, output: { key: 'id', type: 'id' }, type: 'array' };
+    assert.strictEqual(depends({ companies }, { query: { companyId: { '@in': '#env.companies' } } }), true);
+  });
+
+  it('is false for references to the app, the date, static env values, or none', () => {
+    assert.strictEqual(depends(null, { query: { app: '#env.appId' }, condition: { '#env.date.now': { '@gtDate': '2025-01-01' } } }), false);
+    assert.strictEqual(depends({ team: 'red' }, { query: { team: '#env.team' } }), false);
+    assert.strictEqual(depends(null, { query: { access: '%FULL_ACCESS%' } }), false);
+    // A name that starts with "user" isn't the user
+    assert.strictEqual(depends({ userType: 'staff' }, { query: { type: '#env.userType' } }), false);
+  });
+
+  it("is false for an env value that refers to the user but isn't used", () => {
+    assert.strictEqual(depends({ userId: '#env.user.id' }, { query: { access: '%FULL_ACCESS%' } }), false);
+  });
+
+  it('follows an env that defines the user itself, and env values that refer to each other', () => {
+    assert.strictEqual(depends({ user: { id: 'static' } }, { query: { owner: '#env.user.id' } }), false);
+    assert.strictEqual(depends({ a: '#env.b', b: '#env.a' }, { query: { owner: '#env.a' } }), false);
   });
 });
 

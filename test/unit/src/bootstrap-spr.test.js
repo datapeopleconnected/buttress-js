@@ -586,6 +586,94 @@ describe('bootstrap-spr:_handleIncomingMessage conditions and queries', () => {
 	});
 });
 
+// A policy's configs are evaluated together, as REST evaluates them (R5): a token gets one activity for a policy, with
+// the properties of each config that reads the entity, and a policy is evaluated for each token only when a config's
+// query or condition refers to the token's user.
+describe('bootstrap-spr:_handleIncomingMessage a policy evaluated as REST evaluates it', () => {
+  const APP_ID = new ObjectId().toString();
+  const owner = { id: new ObjectId() };
+  const someoneElse = { id: new ObjectId() };
+  const tokens = {
+    owner: { id: new ObjectId(), type: 'user', _userId: owner.id.toString() },
+    other: { id: new ObjectId(), type: 'user', _userId: someoneElse.id.toString() },
+  };
+  const car = { id: new ObjectId(), name: 'car', secret: 'hidden', userId: owner.id };
+  const renamed = { type: 'scalar', path: 'name', value: 'renamed' };
+  const changed = { type: 'scalar', path: 'secret', value: 'changed' };
+
+  const config = (query, keys) => ({ verbs: ['GET'], schema: ['car'], query, projection: keys ? { keys } : null, condition: null });
+  const policy = (configs, env = null) => ({ id: 'policy', name: 'policy', _appId: APP_ID, env, config: configs });
+
+  afterEach(() => sinon.restore());
+
+  async function relay(relayed) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const emitted = [];
+    spr.__nrp = { emit: (event, json) => emitted.push(JSON.parse(json)) };
+    spr._policyCache = {
+      getPoliciesByRestActivity: async () => [relayed],
+      getConnectedTokenIdsByPolicyId: async () => Object.values(tokens).map((token) => token.id.toString()),
+    };
+    sinon.stub(Model, 'getAppModel').resolves({ ...carModel, findById: async () => car });
+    // The token and user reads the SPR makes to evaluate a policy for each token
+    const reads = [];
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      const docs = modelClass === TokenSchemaModel ? Object.values(tokens) : [owner, someoneElse];
+      return {
+        createId: (id) => new ObjectId(id),
+        findOne: async (query) => {
+          reads.push(modelClass.name);
+          return docs.find((doc) => doc.id.equals(query._id)) || null;
+        },
+      };
+    });
+
+    await spr._handleIncomingMessage({
+      broadcast: true,
+      path: `/car/${car.id}`,
+      pathSpec: 'car/:id',
+      verb: 'put',
+      params: { id: car.id.toString() },
+      response: [renamed, changed],
+      appAPIPath: 'test-app',
+      appId: APP_ID,
+      isSuper: false,
+      isCoreSchema: false,
+      schemaName: 'car',
+    });
+
+    const received = (token) => emitted.filter((e) => e.tokens.includes(token.id.toString())).map((e) => e.activity.response);
+    return { emitted, reads, owner: received(tokens.owner), other: received(tokens.other) };
+  }
+
+  it("sends a token one activity for a policy's configs that read the entity, with the properties of each", async () => {
+    const both = policy([config({ access: '%FULL_ACCESS%' }, ['name']), config({ name: { '@eq': 'car' } }, ['secret'])]);
+    const { owner: ownerGot, other } = await relay(both);
+
+    assert.deepStrictEqual(ownerGot, [[renamed, changed]]);
+    assert.deepStrictEqual(other, [[renamed, changed]]);
+  });
+
+  it("evaluates every config of a policy for each token when one refers to the token's user", async () => {
+    const ownersSecret = policy([
+      config({ access: '%FULL_ACCESS%' }, ['name']),
+      config({ userId: { '@eq': '#env.user.id' } }, ['secret']),
+    ]);
+    const { owner: ownerGot, other } = await relay(ownersSecret);
+
+    assert.deepStrictEqual(ownerGot, [[renamed, changed]]);
+    assert.deepStrictEqual(other, [[renamed]]);
+  });
+
+  it("evaluates a policy once when only an env value it doesn't use refers to the user", async () => {
+    const { emitted, reads } = await relay(policy([config({ access: '%FULL_ACCESS%' })], { userId: '#env.user.id' }));
+
+    assert.strictEqual(emitted.length, 1);
+    assert.deepStrictEqual(emitted[0].tokens.sort(), Object.values(tokens).map((token) => token.id.toString()).sort());
+    assert.deepStrictEqual(reads, []);
+  });
+});
+
 describe('bootstrap-spr: deleted tokens', () => {
   it('takes a deleted token off the list of connected tokens', async () => {
     const spr = new BootstrapSocketPolicyRouter();

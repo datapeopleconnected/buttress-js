@@ -26,17 +26,12 @@ import * as Helpers from './helpers/index.js';
 import IOStats from './helpers/io-stats.js';
 import Logging from './helpers/logging.js';
 
-import { ApplicablePolicyConfig } from './access-control/index.js';
-import {
-  CombineEnvGroups,
-  containsTokenLevelRef,
-  filterPolicyConfigs,
-  isPolicyExpired,
-} from './access-control/helpers.js';
-import AccessControlEnv, { ACEnv, ACPolicyEnvCombined } from './access-control/env.js';
-import AccessControlFilters, { UnresolvedEnvError } from './access-control/filter.js';
-import AccessControlConditions from './access-control/conditions.js';
+import { PolicyError } from './access-control/index.js';
+import { filterPolicyConfigs, isPolicyExpired } from './access-control/helpers.js';
+import AccessControlEnv, { ACEnv } from './access-control/env.js';
+import AccessControlFilters from './access-control/filter.js';
 import AccessControlProjection from './access-control/projection.js';
+import { dependsOnToken, evaluate, Grant } from './access-control/evaluator.js';
 
 import Datastore from './datastore/index.js';
 import { Datastore as DatastoreInstance } from './datastore/index.js';
@@ -421,94 +416,36 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       return;
     }
 
-    // Loop over each policy and asses if the event can be broadcast to that grouping. If a policy contains token specific data
-    // then we need to check each token against the policy Query / Condition.
+    // Each policy is evaluated as REST evaluates it, for reading the activity's schema. One whose configs refer to the
+    // token's user is evaluated for each token connected to it, with that token's user; the rest once, and sent to every
+    // token connected to the policy. A token gets one activity for a policy, with what its configs let it read.
     Logging.logSilly(`Found ${policies.length} policies for event`);
     for (const policy of policies) {
-      // A policy whose limit has run out grants nothing, as on REST
+      // A policy whose limit has run out grants nothing, so no token's env is read for it
       if (isPolicyExpired(policy)) continue;
 
-      // Narrow down the configs to ones that match on the schema & verbs of the activity.
       const configs = filterPolicyConfigs(policy, activity.schemaName, activity.verb, false, true);
+      if (configs.length < 1) continue;
+      const readable = { ...policy, config: configs };
 
-      for (const config of configs) {
-        const applicablePolicy: ApplicablePolicyConfig = {
-          id: policy.id,
-          name: policy.name,
-          appId: policy._appId,
-          env: policy.env,
-          config,
-        };
+      Logging.logSilly(
+        `_handleIncomingMessage::start policy:${policy.name}, configs:${configs.length}`,
+        `${activityMetadata.id}-${policy.id}`,
+      );
 
-        Logging.logSilly(
-          `_handleIncomingMessage::start policy:${policy.name}, verbs:${config.verbs}, schema: ${config.schema}`,
-          `${activityMetadata.id}-${policy.id}`,
-        );
-
-        // We're going to check the parts of the policy to see if there is anything that's token specific.
-        // If so then we'll do the policy checks based on the token.
-        const tokenLevelAssesment = containsTokenLevelRef(applicablePolicy);
-        if (
-          tokenLevelAssesment.env ||
-          tokenLevelAssesment.configEnv ||
-          tokenLevelAssesment.condition ||
-          tokenLevelAssesment.query
-        ) {
-          const tokenIds = await this._policyCache.getConnectedTokenIdsByPolicyId(applicablePolicy.id);
-
-          // const tokenModel = Model.getCoreModel(TokenSchemaModel);
-          // const userModel = Model.getCoreModel(UserSchemaModel);
-
-          for await (const tokenId of tokenIds) {
-            const env = CombineEnvGroups(applicablePolicy, await this.__constructTokenEnv(tokenId, activity.appId));
-            const broadcastActivity = await this.__checkActivityAgainstApplicablePolicy(
-              applicablePolicy,
-              activity,
-              entity,
-              appModel,
-              env,
-              activityMetadata,
-            );
-
-            // If we have a broadcast activity then we need to send it to the token.
-            if (broadcastActivity) {
-              await this.__broadcastDataByToken(tokenId, broadcastActivity);
-              Logging.logTimer(
-                `_handleIncomingMessage::end-token`,
-                activityMetadata.timer,
-                Logging.Constants.LogLevel.SILLY,
-                `${activityMetadata.id}-${applicablePolicy.id}`,
-              );
-            }
-          }
-
-          continue;
+      if (configs.some((config) => dependsOnToken(policy, config))) {
+        const tokenIds = await this._policyCache.getConnectedTokenIdsByPolicyId(policy.id);
+        for (const tokenId of tokenIds) {
+          const env = await this.__constructTokenEnv(tokenId, activity.appId);
+          const relayed = await this.__activityForPolicy(readable, activity, entity, appModel, env, activityMetadata);
+          if (relayed) await this.__broadcastDataByToken(tokenId, relayed);
         }
-
-        // Check the policy against the activity and broadcast to all policy tokens.
-        const env = CombineEnvGroups(
-          applicablePolicy,
-          AccessControlEnv.generateRequestGlobalEnvs(null, activity.appId, null),
-        );
-        const broadcastActivity = await this.__checkActivityAgainstApplicablePolicy(
-          applicablePolicy,
-          activity,
-          entity,
-          appModel,
-          env,
-          activityMetadata,
-        );
-
-        if (broadcastActivity) {
-          await this.__broadcastDataByPolicyId(applicablePolicy.id, broadcastActivity);
-          Logging.logTimer(
-            `_handleIncomingMessage::end`,
-            activityMetadata.timer,
-            Logging.Constants.LogLevel.SILLY,
-            `${activityMetadata.id}-${applicablePolicy.id}`,
-          );
-        }
+        continue;
       }
+
+      const env = AccessControlEnv.generateRequestGlobalEnvs(null, activity.appId, null);
+      const relayed = await this.__activityForPolicy(readable, activity, entity, appModel, env, activityMetadata);
+      if (relayed) await this.__broadcastDataByPolicyId(policy.id, relayed);
     }
   }
 
@@ -530,35 +467,49 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     return AccessControlEnv.generateRequestGlobalEnvs(null, appId, user);
   }
 
-  private async __checkActivityAgainstApplicablePolicy(
-    applicablePolicy: ApplicablePolicyConfig,
+  /**
+   * The activity a policy lets a token have, or false: the policy is evaluated with the token's env (or the app's), and
+   * the activity goes when a grant reads the entity, with the properties of each grant that does. A delete of every
+   * entity, which names none, goes when the policy grants a read at all.
+   */
+  private async __activityForPolicy(
+    policy: Policy,
     activity: RESTActivity,
     entity: Record<string, unknown> | null,
     model: StandardModel | null,
-    env: ACPolicyEnvCombined,
+    env: ACEnv,
     activityMetadata: ActivityMetadata,
   ): Promise<false | RESTActivity> {
-    // As on REST, the config's condition must hold before its query is checked
-    if (!(await AccessControlConditions.passesPolicyCondition(applicablePolicy, env))) {
+    const logEnd = (reason: string) =>
       Logging.logTimer(
-        `_handleIncomingMessage::end-condition-not-fulfilled`,
+        `_handleIncomingMessage::end-${reason}`,
         activityMetadata.timer,
         Logging.Constants.LogLevel.SILLY,
-        `${activityMetadata.id}-${applicablePolicy.id}`,
+        `${activityMetadata.id}-${policy.id}`,
       );
+
+    let grants: Grant[];
+    try {
+      grants = await evaluate([policy], {
+        schemaName: activity.schemaName,
+        isCoreSchema: false,
+        verb: activity.verb.toUpperCase(),
+        reads: true,
+        appId: activity.appId,
+        env,
+      });
+    } catch (err: unknown) {
+      // The policy grants this token nothing here: a condition doesn't hold, or a query's env value isn't set
+      if (!(err instanceof PolicyError)) throw err;
+      logEnd(`not-granted ${err.message}`);
       return false;
     }
 
     if (!entity && activity.verb === 'delete') {
-      // A delete of every entity, which no policy limited, names none, so there's nothing to check the query against, and
-      // the delete goes to every token the policy reaches. The caller sends it, once to each token.
+      // A delete of every entity, which no policy limited, names none, so there's nothing to check a query against, and
+      // the delete goes to every token the policy reaches.
       if (!(activity.params as Record<string, unknown>)?.id) {
-        Logging.logTimer(
-          `_handleIncomingMessage::end-no-entity-deletion`,
-          activityMetadata.timer,
-          Logging.Constants.LogLevel.SILLY,
-          `${activityMetadata.id}-${applicablePolicy.id}`,
-        );
+        logEnd('no-entity-deletion');
         return activity;
       }
 
@@ -573,60 +524,27 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
       return false;
     }
 
-    // As on REST, the query's access keys are dropped, and a query left empty reads every entity
-    let query: Awaited<ReturnType<typeof AccessControlFilters.buildPolicyQuery>>;
-    try {
-      query = await AccessControlFilters.buildPolicyQuery(applicablePolicy.config.query, env);
-    } catch (err: unknown) {
-      // A query referring to an env value that isn't set reads nothing
-      if (err instanceof UnresolvedEnvError) return false;
-      throw err;
-    }
-
-    // ? How does this work if it's a core schema?
-    const readsEntity = (q: NonNullable<typeof query>) =>
-      Object.keys(q).length === 0 || AccessControlFilters.evaluateQueryAgainstEntity(q, entity, model);
-    const broadcast = query ? readsEntity(query) : false;
-    if (!broadcast && activity.verb === 'post') {
-      Logging.logTimer(
-        `_handleIncomingMessage::end-falsy-evaluateRoomQueryOperation-post entityId: ${entity?.id}`,
-        activityMetadata.timer,
-        Logging.Constants.LogLevel.SILLY,
-        `${activityMetadata.id}-${applicablePolicy.id}`,
-      );
-      return false;
-    }
-
-    if (!broadcast) {
-      // ! This is a bit werid, need to be more explicit on what the case is here.
-      // activity.verb = 'delete';
-      // this.__broadcastDataByPolicyId(applicablePolicy.id, activity);
-      Logging.logTimer(
-        `_handleIncomingMessage::end-falsy-evaluateRoomQueryOperation-delete`,
-        activityMetadata.timer,
-        Logging.Constants.LogLevel.SILLY,
-        `${activityMetadata.id}-${applicablePolicy.id}`,
-      );
+    // The grants whose query reads the entity, as a REST query would (D-31); a query left empty reads every entity
+    const reading = grants.filter(
+      (grant) =>
+        Object.keys(grant.query).length < 1 ||
+        AccessControlFilters.evaluateQueryAgainstEntity(grant.query, entity, model),
+    );
+    if (reading.length < 1) {
+      logEnd(`not-read entityId: ${String(entity.id)}`);
       return false;
     }
 
     const broadcastActivity = JSON.parse(JSON.stringify(activity)) as RESTActivity;
 
-    // The token only gets what the policy's projection lets it read, as on REST.
-    const projectionKeys = AccessControlProjection.getProjectionKeys(applicablePolicy.config.projection);
-    if (projectionKeys.length > 0) {
-      const response = AccessControlProjection.projectActivityResponse(
-        activity.verb,
-        activity.response,
-        projectionKeys,
-      );
+    // The token only gets what the grants that read the entity let it read, as on REST
+    const keys = reading.some((grant) => !grant.projection)
+      ? null
+      : [...new Set(reading.flatMap((grant) => grant.projection ?? []))];
+    if (keys) {
+      const response = AccessControlProjection.projectActivityResponse(activity.verb, activity.response, keys);
       if (response === null) {
-        Logging.logTimer(
-          `_handleIncomingMessage::end-nothing-projected`,
-          activityMetadata.timer,
-          Logging.Constants.LogLevel.SILLY,
-          `${activityMetadata.id}-${applicablePolicy.id}`,
-        );
+        logEnd('nothing-projected');
         return false;
       }
       broadcastActivity.response = response;
