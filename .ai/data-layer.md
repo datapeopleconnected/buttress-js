@@ -38,11 +38,23 @@ Key things to know:
   `adapter.updateSchema()`. **All actual DB work is delegated to `this.adapter`** — `StandardModel`
   itself has no MongoDB-specific code; `find`, `findOne`, `add`, `update`, `rm`, `count`, etc. are thin
   pass-throughs to the adapter (see Datastore adapters below).
-- `parseQuery()` / `parseQueryProperty()` translate Buttress's REST query DSL into MongoDB operators:
-  `$not`→`$ne`, `$elMatch`→`$elemMatch`, `$gtDate`/`$ltDate`/`$gteDate`/`$lteDate`→`$gt`/`$lt`/`$gte`/`$lte`,
-  `$rex`/`$rexi`→`$regex` (with `i` flag for `$rexi`), `$inProp`→`$regex`. It also auto-converts string
-  operands to `ObjectId`s for properties whose schema type is `id`, and to `Date` for `__type: 'date'`.
-  This is the layer that both REST query params and Access Control query injection go through.
+- **A Buttress query and a MongoDB query are kept apart.** `parseQuery()` / `parseQueryProperty()` check a
+  Buttress query (the DSL clients send and partners are sent) and read its values, and give back a **Buttress
+  query**: operators in their own `$` names (`@op` as `$op`; `$rexi`, `$not`, `$gtDate`, `$inProp`, `$elMatch` stay
+  as they are), values decoded as their properties' types (`__decodeOperand`, D-2). They refuse an operator the
+  registry ([src/access-control/operators.ts](../src/access-control/operators.ts) `ALIASES`) doesn't know, or any
+  other operator-prefixed name in a property's place, with 400 `unknown_operator` `{path, received}`; an operand
+  MongoDB couldn't take (`$in` without a list, a pattern that isn't one…) with 400 `invalid_value`; and, for a schema
+  with `strict: true`, a path it doesn't define (`isQueryPath` in update-paths.ts) with 400 `unknown_path`. An object
+  without operator names is a value, compared whole (`$eq`), as MongoDB compares one.
+- **Only the MongoDB adapter makes MongoDB's query**, in `MongodbAdapter._query`: `toMongoQuery()` (the registry's
+  translation: `$rexi`→`$regex` + `$options: 'i'`, `$not`→`$ne`, `$gtDate`→`$gt`, `$inProp`→escaped `$regex`,
+  `$elMatch`→`$elemMatch`, `@and`→`$and`), then the id conversion. The Buttress adapter forwards the Buttress query
+  as it is, so a partner checks it as its own client's. In-memory matching (`matchQuery`, realtime's and
+  `models-access`'s) runs on `toMongoQuery`'s output, as it decides as MongoDB does. Don't put MongoDB-only names into
+  a parsed query, and don't translate before the adapter.
+  This is the layer that both REST query params and Access Control query injection go through; `models-access`
+  re-parses the combined query with `checkPaths: false`, as the route already checked the client's part.
 - `updateByPath()` implements Buttress's **path-based PUT** semantics (`{path, value}` updates), used for
   partial/vector updates (`vector-add`, `vector-rm`, `scalar-increment`). `resolveUpdatePath()` in
   [src/model/update-paths.ts](../src/model/update-paths.ts) walks a path's segments against the flattened schema
