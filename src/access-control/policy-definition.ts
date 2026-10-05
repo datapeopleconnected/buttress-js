@@ -16,6 +16,7 @@
 
 import type { ValidationIssue } from '../helpers/schema.js';
 import { describeType } from '../helpers/schema.js';
+import { ALIASES, findUnknownOperator, LOGICAL_ALIASES } from './operators.js';
 
 // The verbs a config can grant: a request's method, or all of them
 const VERBS = ['GET', 'QUERY', 'SEARCH', 'POST', 'PUT', 'DELETE', '%ALL%'];
@@ -29,6 +30,36 @@ const isStringList = (value: unknown): value is string[] =>
 // An optional field that, given, must be an object
 const checkOptionalObject = (value: unknown, path: string): ValidationIssue[] =>
   value === undefined || value === null || isPlainObject(value) ? [] : [{ path, code: 'type', expected: 'object' }];
+
+// The operator a query names that nothing knows, at its property's path (R3 step 7)
+const queryOperatorIssues = (query: Record<string, unknown>, path: string): ValidationIssue[] => {
+  const unknown = findUnknownOperator(query);
+  return unknown ? [{ path: `${path}.${unknown.path}`, code: 'unknown_operator', received: unknown.operator }] : [];
+};
+
+// The operators a condition names that nothing knows. A key names an env value, with operators for it, or is @and
+// or @or (or $and or $or) with a list of conditions; any other name with an operator's prefix isn't one a condition
+// takes
+const conditionOperatorIssues = (condition: unknown, path: string): ValidationIssue[] => {
+  if (!isPlainObject(condition)) return [];
+
+  return Object.entries(condition).flatMap(([key, value]): ValidationIssue[] => {
+    const logical = Object.hasOwn(LOGICAL_ALIASES, key) ? LOGICAL_ALIASES[key] : undefined;
+    if (logical === '$and' || logical === '$or') {
+      return Array.isArray(value)
+        ? value.flatMap((part, idx) => conditionOperatorIssues(part, `${path}.${key}.${idx}`))
+        : [];
+    }
+    if (key.startsWith('@') || key.startsWith('$')) return [{ path, code: 'unknown_operator', received: key }];
+    if (!isPlainObject(value)) return [];
+
+    return Object.keys(value).flatMap((operator) =>
+      Object.hasOwn(ALIASES, operator)
+        ? []
+        : [{ path: `${path}.${key}`, code: 'unknown_operator', received: operator }],
+    );
+  });
+};
 
 /**
  * The problems with one field of a config.
@@ -51,7 +82,7 @@ const checkField = (field: string, value: unknown, path: string): ValidationIssu
       return isStringList(value) ? [] : [{ path, code: 'type', expected: 'array' }];
     // A config without a query grants nothing
     case 'query':
-      return isPlainObject(value) ? [] : [{ path, code: 'required' }];
+      return isPlainObject(value) ? queryOperatorIssues(value, path) : [{ path, code: 'required' }];
     case 'projection':
       if (value === undefined || value === null) return [];
       if (!isPlainObject(value)) return [{ path, code: 'type', expected: 'object' }];
@@ -61,6 +92,7 @@ const checkField = (field: string, value: unknown, path: string): ValidationIssu
         ? []
         : [{ path, code: 'type', expected: 'array' }];
     case 'condition':
+      return [...checkOptionalObject(value, path), ...conditionOperatorIssues(value, path)];
     case 'env':
       return checkOptionalObject(value, path);
     default:

@@ -141,6 +141,32 @@ describe('Policy selection', async () => {
 		}
 	});
 
+	// R3 step 7: refused when it's saved, rather than granting nothing, or failing, when it's evaluated
+	it('Should refuse a policy naming an operator Buttress doesn\'t know', async () => {
+		const refusedWith = (code, issues) => (err) => {
+			assert.strictEqual(err.code, 400);
+			assert.strictEqual(err.body?.code, code);
+			if (issues) assert.deepStrictEqual(err.body.details.issues, issues);
+			return true;
+		};
+		const query = { ...policy('policy-selection-bad-query', { role: { '@eq': 'ADMIN' } }) };
+		query.config = [{ ...query.config[0], query: { name: { '@foo': 'x' } } }];
+		await assert.rejects(createPolicy(ENDPOINT.REST, query, env.app.token), refusedWith('invalid_policy', [
+			{ path: 'config.0.query.name', code: 'unknown_operator', received: '@foo' },
+		]));
+
+		const condition = { ...policy('policy-selection-bad-condition', { role: { '@eq': 'ADMIN' } }) };
+		condition.config = [{ ...condition.config[0], condition: { '#env.appId': { '@like': 'x' } } }];
+		await assert.rejects(createPolicy(ENDPOINT.REST, condition, env.app.token), refusedWith('invalid_policy', [
+			{ path: 'config.0.condition.#env.appId', code: 'unknown_operator', received: '@like' },
+		]));
+
+		await assert.rejects(
+			createPolicy(ENDPOINT.REST, policy('policy-selection-bad-selection', { role: { '@like': 'ADMIN' } }), env.app.token),
+			refusedWith('invalid_policy_selection'),
+		);
+	});
+
 	it("Should refuse a token's policy property listed in another case (D-34)", async () => {
 		await assert.rejects(
 			createPolicyUser(ENDPOINT.REST, env.app, 'policy-selection-viewer-lower', { role: 'viewer' }),

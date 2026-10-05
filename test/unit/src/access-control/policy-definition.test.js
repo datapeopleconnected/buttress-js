@@ -61,6 +61,50 @@ describe('access-control/policy-definition:checkPolicyConfig', () => {
   });
 });
 
+// A policy naming an operator nothing knows is refused when it's saved, rather than granting nothing, or failing,
+// when it's evaluated (R3 step 7)
+describe('access-control/policy-definition:checkPolicyConfig operators', () => {
+  it('takes the operators the registry knows, in a query and in a condition, in their @ and $ names', () => {
+    assert.deepStrictEqual(
+      checkPolicyConfig([
+        { ...valid(), query: { age: { '@gte': 18, $lt: 65 }, '@or': [{ name: { '@rexi': 'a' } }], address: { city: 'x' } } },
+        { ...valid(), condition: { '@or': [{ '#env.appId': { '@eq': 'x' } }, { '#env.date.now': { $gtDate: '2025-01-01' } }] } },
+      ]),
+      [],
+    );
+  });
+
+  it('refuses a query naming an operator nothing knows', () => {
+    assert.deepStrictEqual(checkPolicyConfig([{ ...valid(), query: { name: { '@foo': 'x' } } }]), [
+      { path: 'config.0.query.name', code: 'unknown_operator', received: '@foo' },
+    ]);
+    assert.deepStrictEqual(checkPolicyConfig([{ ...valid(), query: { '@or': [{ name: { $regx: 'a' } }] } }]), [
+      { path: 'config.0.query.name', code: 'unknown_operator', received: '$regx' },
+    ]);
+  });
+
+  it('refuses a condition naming an operator nothing knows, or a list conditions don\'t take', () => {
+    assert.deepStrictEqual(checkPolicyConfig([{ ...valid(), condition: { '#env.appId': { '@like': 'x' } } }]), [
+      { path: 'config.0.condition.#env.appId', code: 'unknown_operator', received: '@like' },
+    ]);
+    assert.deepStrictEqual(checkPolicyConfig([{ ...valid(), condition: { '@nor': [{ '#env.appId': { '@eq': 'x' } }] } }]), [
+      { path: 'config.0.condition', code: 'unknown_operator', received: '@nor' },
+    ]);
+    assert.deepStrictEqual(checkPolicyConfig([{ ...valid(), condition: { '@and': [{ '#env.appId': { $foo: 'x' } }] } }]), [
+      { path: 'config.0.condition.@and.0.#env.appId', code: 'unknown_operator', received: '$foo' },
+    ]);
+  });
+
+  it('checks the operators an update writes to a config', () => {
+    assert.deepStrictEqual(checkPolicyConfigUpdate({ path: 'config.0.query', value: { name: { '@foo': 'x' } } }), [
+      { path: 'config.0.query.name', code: 'unknown_operator', received: '@foo' },
+    ]);
+    assert.deepStrictEqual(checkPolicyConfigUpdate({ path: 'config.0', value: { ...valid(), condition: { '#env.x': { '@like': 1 } } } }), [
+      { path: 'config.0.condition.#env.x', code: 'unknown_operator', received: '@like' },
+    ]);
+  });
+});
+
 describe('access-control/policy-definition:checkPolicyConfigUpdate', () => {
   it('checks the configs, one config or one field of a config, that an update writes', () => {
     assert.deepStrictEqual(checkPolicyConfigUpdate({ path: 'config', value: [valid()] }), []);

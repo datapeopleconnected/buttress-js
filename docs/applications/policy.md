@@ -21,7 +21,10 @@ A policy is checked when it's added, synced or updated, and refused with a 400, 
 problem in `details.issues`, when a config would grant nothing or fail when it's evaluated. Each config needs
 `verbs`, a list of `GET`, `QUERY`, `POST`, `PUT`, `DELETE` or `%ALL%`; `schema`, a list of schema names; and a
 `query` object (`{"access": "%FULL_ACCESS%"}` for every entity). A `projection` is `{"keys": [...]}`, and a
-`condition` or `env` is an object. Earlier releases saved a config without a query, and it granted nothing.
+`condition` or `env` is an object. Earlier releases saved a config without a query, and it granted nothing. A
+config's query or condition naming an operator Buttress doesn't know is one of those problems, an issue with code
+`unknown_operator`; a selection naming one is refused with `invalid_policy_selection`. Earlier releases saved them,
+and a request through such a query failed.
 
 `QUERY` grants [searches](schema.md#searching). `SEARCH`, its name in earlier releases, is the same verb: a config
 listing either grants requests made with either method, so existing policies don't need changing.
@@ -78,8 +81,9 @@ reads **value OP key**, the other way round to a query:
 
 holds when 2025-01-01 is before now. `@and` and `@or` take a list of conditions, which all, or any one, must hold.
 Values are compared as a selection compares them. An operator, `@and` and `@or` can also be written as a query writes
-them (`$eq`, `$or`); a condition naming an operator Buttress doesn't know doesn't hold, so its config grants nothing
-and the token's other policies still apply (earlier releases failed the request). The date operators (`@gtDate`, `@gteDate`, `@ltDate`, `@lteDate`)
+them (`$eq`, `$or`). A policy naming an operator Buttress doesn't know is refused when it's saved; one stored before
+that grants nothing through that config's condition or query, and the token's other policies still apply (earlier
+releases failed the request). The date operators (`@gtDate`, `@gteDate`, `@ltDate`, `@lteDate`)
 read both sides as dates, written as `2025-01-31`, `31/01/2025` or a time of day such as `09:00`.
 
 ## Listing and Removing

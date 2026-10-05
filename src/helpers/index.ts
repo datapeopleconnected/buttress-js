@@ -20,6 +20,7 @@ import * as DataSharingHelpers from './data-sharing.js';
 
 import Datastore from '../datastore/index.js';
 import { isObjectId } from '../datastore/adapters/object-id.js';
+import { ALIASES, isPlainObject } from '../access-control/operators.js';
 import { Properties, FlattenedSchema, FlattenedSchemaProperty } from '../types/schema.js';
 
 export const DataSharing = DataSharingHelpers;
@@ -476,6 +477,11 @@ export const checkPolicySelection = async (
         if (!res.passed) return res;
       }
       continue;
+    }
+
+    // A criterion names only operators Buttress knows (R3 step 7)
+    if (isPlainObject(criteria) && Object.keys(criteria).some((operator) => !Object.hasOwn(ALIASES, operator))) {
+      return { passed: false, errMessage: 'Policy selection names an operator Buttress does not know' };
     }
 
     const res = await checkAppPolicyProperty(appPolicyList, { [key]: criteria });

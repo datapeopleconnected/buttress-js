@@ -134,6 +134,12 @@ describe('helpers.checkPolicySelection', () => {
 		}
 	});
 
+	it('refuses a criterion naming an operator nothing knows, even for a listed value', async () => {
+		assert.strictEqual(await check({ role: { '@like': 'admin' } }), false);
+		assert.strictEqual(await check({ '@or': [{ role: { '@eq': 'admin' } }, { team: { $foo: 'a' } }] }), false);
+		assert.strictEqual(await check({ role: { $eq: 'admin' }, team: { '@in': ['a', 'b'] } }), true);
+	});
+
 	it('takes a selection with no keys, as before, which selects nothing', async () => {
 		assert.strictEqual(await check({}), true);
 	});
