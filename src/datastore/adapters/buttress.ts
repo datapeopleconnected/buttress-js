@@ -53,7 +53,7 @@ interface ButtressCollection {
   count(query: unknown): Promise<unknown>;
 }
 
-export default class Buttress extends AbstractAdapter {
+export default class Buttress extends AbstractAdapter<URL> {
   init: boolean;
   initPendingResolve: ((value?: unknown) => void)[];
   collectionName?: string;

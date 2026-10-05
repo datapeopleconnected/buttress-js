@@ -118,6 +118,19 @@ Adding a new backing store means adding a new adapter here and a new `case` in `
 nothing else in the model layer needs to change, since `StandardModel` only calls generic `adapter.*`
 methods.
 
+The adapter gets the connection string parsed, as `adapter.uri`. A `mongodb:` one is read as the driver reads it,
+as a `ConnectionString` from `mongodb-connection-string-url`, because a `URL` can't hold a replica set's seed list
+with each host's port (`h1:27017,h2:27017`, `new URL` takes everything after the first colon as the port). It's read
+loosely (`looseValidation`), as a URL reads one, so what parsed as a URL still does: trimmed, with special characters
+in its user info percent-encoded rather than refused, and its scheme in any case. The driver checks the string it's
+given. A `ConnectionString` has the `URL` API, with the list in `hosts` and a placeholder in `host`. The other schemes
+are plain `URL`s. Each adapter names the form it takes, `AbstractAdapter<TUri>` (`MongodbAdapter` takes a
+`ConnectionString`, `Buttress` a `URL`), so the shared contract doesn't depend on any one datastore; a bare
+`AbstractAdapter`, as a model holds one, is any adapter. `adapter.redactedUri` is the connection string without
+credentials, for logs; the MongoDB adapter's lists every host. A connection string without a path gets the path
+`<app code>-<env>`, the default database, as does a MongoDB one whose path is just `/`. A Buttress one keeps a bare
+`/`, as its path is the partner app's api path.
+
 The factory also gives the adapter the datastore's options query string as `URLSearchParams`
 (`Config.datastore.options`, i.e. `BUTTRESS_DATASTORE_OPTIONS`, for the primary datastore; an app's own datastore and
 data-sharing partners get none). Only the MongoDB adapter uses them: `connect()` adds each option the connection

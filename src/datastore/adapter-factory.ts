@@ -14,6 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { ConnectionString } from 'mongodb-connection-string-url';
+
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
@@ -25,21 +27,31 @@ import Empty from './adapters/empty.js';
 
 export default class Datastore {
   static create(connectionString: string, optsString?: string) {
-    const uri = new URL(connectionString);
+    const options = new URLSearchParams(optsString);
+    const defaultDatabase = `${Config.app.code}-${Config.env}`;
 
-    // A connection string without a path gets the default database. So does a MongoDB one whose path is just '/', as
-    // MongoDB's docs give options without a database (host/?authSource=admin). A Buttress one's path is the partner
-    // app's api path, so a bare '/' is left there.
-    if (!uri.pathname || (uri.protocol === 'mongodb:' && uri.pathname === '/')) {
-      uri.pathname = `${Config.app.code}-${Config.env}`;
+    // A MongoDB connection string is read as the driver reads it. A URL can't hold a replica set's seed list with each
+    // host's port (h1:27017,h2:27017), since it takes everything after the first host's colon as the port. It's read
+    // loosely, as a URL reads one: without the spaces an env file can leave around it, with special characters in its
+    // user info percent-encoded rather than refused, and its scheme in any case. The driver checks what it's given.
+    const trimmed = connectionString.trim();
+    if (/^mongodb:/i.test(trimmed)) {
+      const uri = new ConnectionString(trimmed, { looseValidation: true });
+      // One that names no database gets the default, whether it ends in '/' or not (MongoDB's docs give options without
+      // a database as host/?authSource=admin): the driver's reading gives both the path '/'.
+      if (uri.pathname === '/') uri.pathname = defaultDatabase;
+
+      return new MongoDB(uri, options);
     }
 
-    const options = new URLSearchParams(optsString);
+    const uri = new URL(connectionString);
+
+    // A connection string without a path gets the default database. A Buttress one's path is the partner app's api
+    // path, so a bare '/' is left there.
+    if (!uri.pathname) uri.pathname = defaultDatabase;
 
     const Adapter = (() => {
       switch (uri.protocol) {
-        case 'mongodb:':
-          return MongoDB;
         case 'butt:':
         case 'butts:':
           return Buttress;

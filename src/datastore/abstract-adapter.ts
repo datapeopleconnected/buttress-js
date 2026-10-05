@@ -14,9 +14,9 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import Stream from 'node:stream';
-import { URL } from 'node:url';
 
 import { Errors } from '../helpers/index.js';
+import { redactUrl } from '../helpers/redact.js';
 
 import type {
   AdapterAddModifier,
@@ -34,8 +34,12 @@ import type StandardModel from '../model/type/standard.js';
  */
 export type AdapterFindResult = Stream.Readable | Promise<Stream.Readable>;
 
-export default class AbstractAdapter {
-  uri: URL;
+/**
+ * An adapter to a datastore. TUri is the form the datastore factory reads its connection string into, which only the
+ * adapter knows: a URL for most. As a bare type, AbstractAdapter is any adapter.
+ */
+export default class AbstractAdapter<TUri = unknown> {
+  uri: TUri;
   // The datastore's options, given as a query string: BUTTRESS_DATASTORE_OPTIONS for the primary datastore. Only the
   // MongoDB adapter reads them.
   options?: URLSearchParams;
@@ -46,7 +50,7 @@ export default class AbstractAdapter {
   // Set on remote adapters by RemoteCombinedModel, not read by any adapter yet.
   declare returnPausedStream?: boolean;
 
-  constructor(uri: URL, options?: URLSearchParams, connection?: unknown) {
+  constructor(uri: TUri, options?: URLSearchParams, connection?: unknown) {
     this.uri = uri;
     this.options = options;
 
@@ -57,6 +61,13 @@ export default class AbstractAdapter {
     this.collection = null;
   }
 
+  /**
+   * The connection string without the credentials it can carry, for logs.
+   */
+  get redactedUri() {
+    return redactUrl(this.uri);
+  }
+
   async connect(): Promise<unknown> {
     throw new Errors.NotYetImplemented('connect');
   }
@@ -65,7 +76,7 @@ export default class AbstractAdapter {
     throw new Errors.NotYetImplemented('close');
   }
 
-  cloneAdapterConnection(): AbstractAdapter {
+  cloneAdapterConnection(): AbstractAdapter<TUri> {
     throw new Errors.NotYetImplemented('cloneAdapterConnection');
   }
 

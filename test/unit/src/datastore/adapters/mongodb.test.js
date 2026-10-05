@@ -25,6 +25,7 @@ import createConfig from '@dpc/node-env-obj';
 import MongodbAdapter, { applyUpdateOps, mergeUpdateOps } from '../../../../../dist/datastore/adapters/mongodb.js';
 import { Datastore } from '../../../../../dist/datastore/index.js';
 import IOStats from '../../../../../dist/helpers/io-stats.js';
+import Logging from '../../../../../dist/helpers/logging.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
 import { isObjectId } from '../../../../../dist/datastore/adapters/object-id.js';
 
@@ -915,5 +916,65 @@ describe('datastore/adapters/MongodbAdapter: connect', () => {
 
     assert.strictEqual(client.options.credentials.source, 'accounts');
     assert.strictEqual(db.databaseName, `${Config.app.code}-${Config.env}`);
+  });
+
+  it("connects with the spaces, or a CRLF line ending's \\r, that an env file can leave around a connection string", async () => {
+    for (const connectionString of ['mongodb://localhost:27017 ', ' mongodb://localhost:27017', 'mongodb://localhost:27017\r']) {
+      const db = await connect(connectionString);
+
+      assert.deepStrictEqual(client.options.hosts.map(String), ['localhost:27017'], JSON.stringify(connectionString));
+      assert.strictEqual(db.databaseName, `${Config.app.code}-${Config.env}`, JSON.stringify(connectionString));
+    }
+  });
+
+  it("reads special characters a password doesn't percent-encode, and a scheme in capitals, as a URL reads them", async () => {
+    await connect('mongodb://bjs:pa:ss[1]@localhost:27017/buttress');
+    assert.strictEqual(client.options.credentials.password, 'pa:ss[1]');
+
+    const db = await connect('MONGODB://localhost:27017/buttress');
+    assert.deepStrictEqual(client.options.hosts.map(String), ['localhost:27017']);
+    assert.strictEqual(db.databaseName, 'buttress');
+  });
+
+  it("connects to every host of a replica set's seed list, written as MongoDB writes it, with each host's port", async () => {
+    const db = await connect('mongodb://h1:27017,h2:27017,h3:27017/buttress?replicaSet=rs0');
+
+    assert.deepStrictEqual(client.options.hosts.map(String), ['h1:27017', 'h2:27017', 'h3:27017']);
+    assert.strictEqual(client.options.replicaSet, 'rs0');
+    assert.strictEqual(db.databaseName, 'buttress');
+  });
+
+  it('connects to every host of a seed list that gives only some of them a port, or none', async () => {
+    const seedLists = {
+      'mongodb://h1:27018,h2/buttress': ['h1:27018', 'h2:27017'],
+      'mongodb://h1,h2:27018/buttress': ['h1:27017', 'h2:27018'],
+      'mongodb://h1,h2/buttress': ['h1:27017', 'h2:27017'],
+    };
+    for (const [connectionString, hosts] of Object.entries(seedLists)) {
+      const db = await connect(connectionString);
+
+      assert.deepStrictEqual(client.options.hosts.map(String), hosts, connectionString);
+      assert.strictEqual(db.databaseName, 'buttress', connectionString);
+    }
+  });
+
+  it('applies the datastore options to a seed list that names no database, on the default database', async () => {
+    const db = await connect('mongodb://bjs:secret@h1:27017,h2:27017/?authSource=accounts', 'replicaSet=rs0');
+
+    assert.deepStrictEqual(client.options.hosts.map(String), ['h1:27017', 'h2:27017']);
+    assert.strictEqual(client.options.replicaSet, 'rs0');
+    assert.strictEqual(client.options.credentials.username, 'bjs');
+    assert.strictEqual(client.options.credentials.source, 'accounts');
+    assert.strictEqual(db.databaseName, `${Config.app.code}-${Config.env}`);
+  });
+
+  it('logs every host of a seed list it connects to, without the credentials', async () => {
+    const logSilly = sinon.spy(Logging, 'logSilly');
+
+    await connect('mongodb://bjs:secret@h1:27017,h2:27017/buttress?replicaSet=rs0');
+
+    const logged = logSilly.args.map(([message]) => String(message));
+    assert.ok(logged.includes('Attempting to connect to datastore mongodb://h1:27017,h2:27017/buttress'), logged.join('\n'));
+    assert.ok(!logged.some((message) => message.includes('secret')), logged.join('\n'));
   });
 });

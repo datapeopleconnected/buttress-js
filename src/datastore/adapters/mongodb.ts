@@ -29,6 +29,7 @@ import {
   Sort,
   UpdateFilter,
 } from 'mongodb';
+import type { ConnectionString } from 'mongodb-connection-string-url';
 
 import * as Helpers from '../../helpers/index.js';
 import IOStats from '../../helpers/io-stats.js';
@@ -234,8 +235,8 @@ export const applyUpdateOps = (doc: UpdateContainer, ops: UpdateOp[]) => {
  * connection string's own. An option the connection string sets already keeps its value there, as the driver refuses
  * one given twice. Names are compared ignoring case, as the driver compares them.
  */
-const withOptions = (uri: URL, options?: URLSearchParams) => {
-  const merged = new URL(uri);
+const withOptions = (uri: ConnectionString, options?: URLSearchParams) => {
+  const merged = uri.clone();
   const own = new Set([...merged.searchParams.keys()].map((name) => name.toLowerCase()));
   for (const [name, value] of options ?? []) {
     if (!own.has(name.toLowerCase())) merged.searchParams.append(name, value);
@@ -243,7 +244,11 @@ const withOptions = (uri: URL, options?: URLSearchParams) => {
   return merged;
 };
 
-export default class MongodbAdapter extends AbstractAdapter {
+/**
+ * The datastore factory reads a MongoDB connection string as the driver does, into a ConnectionString: a URL whose
+ * `hosts` lists every host of a replica set's seed list, which a URL can't hold (its `host` is only a placeholder).
+ */
+export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
   private _client?: MongoClient;
 
   declare protected __connection?: Db;
@@ -296,6 +301,11 @@ export default class MongodbAdapter extends AbstractAdapter {
       delete this.__connection;
       delete this._client;
     }
+  }
+
+  // With every host of a seed list, where a URL's would give the placeholder
+  override get redactedUri() {
+    return `${this.uri.protocol}//${this.uri.hosts.join(',')}${this.uri.pathname}`;
   }
 
   override cloneAdapterConnection() {
