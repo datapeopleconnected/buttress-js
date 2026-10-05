@@ -83,6 +83,13 @@ describe('access-control/policy-definition:checkPolicyConfig operators', () => {
     ]);
   });
 
+  it("takes an @elMatch whose item query has its own @or, and checks the operators in that", () => {
+    assert.deepStrictEqual(checkPolicyConfig([{ ...valid(), query: { lines: { '@elMatch': { '@or': [{ sku: 'a' }, { qty: { '@gt': 1 } }] } } } }]), []);
+    assert.deepStrictEqual(checkPolicyConfig([{ ...valid(), query: { lines: { '@elMatch': { '@or': [{ sku: { '@foo': 1 } }] } } } }]), [
+      { path: 'config.0.query.sku', code: 'unknown_operator', received: '@foo' },
+    ]);
+  });
+
   it('refuses a condition naming an operator nothing knows, or a list conditions don\'t take', () => {
     assert.deepStrictEqual(checkPolicyConfig([{ ...valid(), condition: { '#env.appId': { '@like': 'x' } } }]), [
       { path: 'config.0.condition.#env.appId', code: 'unknown_operator', received: '@like' },

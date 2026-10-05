@@ -14,7 +14,13 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import Sugar from '../../helpers/sugar.js';
-import { ALIASES, hasOperatorNames, isPlainObject, LOGICAL_ALIASES } from '../../access-control/operators.js';
+import {
+  ALIASES,
+  hasOperatorNames,
+  isPlainObject,
+  isValueOperators,
+  LOGICAL_ALIASES,
+} from '../../access-control/operators.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import { decode, isDecodeError } from '../../helpers/codecs.js';
@@ -325,9 +331,10 @@ export default class StandardModel<TDocument = AdapterDocument> {
 
     if (mongoOperator === '$elemMatch') {
       if (!isPlainObject(operand)) throw invalidQueryValue(property, 'object');
-      // The operators a value of the list must pass, or a query an item must match, read against the items' schema
-      // An item's query is checked against the items' schema, when the array has one
-      operand = hasOperatorNames(operand)
+      // The operators a value of the list must pass, or a query an item must match, its own $or, $and and $nor
+      // included, read against the items' schema. An item's query is checked against the items' schema, when the
+      // array has one
+      operand = isValueOperators(operand)
         ? this.__parseOperators(property, operand)
         : this.parseQuery(operand, envFlat, propSchema?.__schema ?? {}, checkPaths && Boolean(propSchema?.__schema));
     } else if (propSchema) {

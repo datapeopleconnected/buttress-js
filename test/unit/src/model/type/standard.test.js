@@ -211,6 +211,29 @@ describe('model/type/StandardModel:parseQuery operators', () => {
       scores: { $elMatch: { $gt: 3 } },
     });
   });
+
+  const linesSchema = {
+    ...widgetSchema,
+    properties: { ...widgetSchema.properties, lines: { __type: 'array', __schema: { sku: { __type: 'string' }, qty: { __type: 'number' } } } },
+  };
+
+  it('reads an $elMatch whose item query has its own $or or $and as a query on the items, as MongoDB does', () => {
+    const model = createModel(linesSchema);
+    assert.deepStrictEqual(model.parseQuery({ lines: { $elMatch: { $or: [{ sku: 'a' }, { qty: '2' }] } } }), {
+      lines: { $elMatch: { $or: [{ sku: { $eq: 'a' } }, { qty: { $eq: 2 } }] } },
+    });
+    assert.deepStrictEqual(model.parseQuery({ lines: { $elMatch: { sku: 'a', '@and': [{ qty: { $gt: '1' } }] } } }), {
+      lines: { $elMatch: { sku: { $eq: 'a' }, $and: [{ qty: { $gt: 1 } }] } },
+    });
+  });
+
+  it("refuses a value's operator in an $elMatch's item query, as MongoDB does", () => {
+    assert.throws(() => createModel(linesSchema).parseQuery({ lines: { $elMatch: { $gt: 1, sku: 'a' } } }), {
+      status: 400,
+      code: 'unknown_operator',
+      details: { path: '$gt', received: '$gt' },
+    });
+  });
 });
 
 // A strict schema refuses a query on a path it doesn't have, as it refuses a create giving one; any other schema

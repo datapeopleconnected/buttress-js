@@ -117,6 +117,18 @@ const isOperatorObject = (value: unknown): value is Record<string, unknown> =>
   isPlainObject(value) && Object.keys(value).length > 0 && Object.keys(value).every((key) => key.startsWith('$'));
 
 /**
+ * Whether what an $elemMatch takes is the operators a value of the list must pass (`{$gt: 1}`), rather than a query an
+ * item must match (`{sku: 'a'}`, `{$or: [...]}`): every key an operator's name, `$op` or `@op`, and none a logical
+ * operator's.
+ */
+export const isValueOperators = (value: unknown): value is Record<string, unknown> =>
+  isPlainObject(value) &&
+  Object.keys(value).length > 0 &&
+  Object.keys(value).every(
+    (key) => (key.startsWith('$') || key.startsWith('@')) && !Object.hasOwn(LOGICAL_ALIASES, key),
+  );
+
+/**
  * The values a dotted path reaches in a document, as MongoDB reaches them: through each object of an array on the way
  * (or the item a numeric segment names), and at the end an array as well as each of its items. Nothing for a path the
  * document hasn't got.
@@ -198,7 +210,7 @@ const asList = (operand: unknown): unknown[] => (Array.isArray(operand) ? operan
 
 // Whether one item of an array matches an $elemMatch: as a document, or as a value its operators test
 const itemMatches = (item: unknown, query: Record<string, unknown>) =>
-  isOperatorObject(query) ? matchOperators([item], query) : isPlainObject(item) && matchQuery(query, item);
+  isValueOperators(query) ? matchOperators([item], query) : isPlainObject(item) && matchQuery(query, item);
 
 /**
  * Whether a field's values (from `valuesAt`) pass each of an operator object's operators, all of them.
@@ -276,7 +288,7 @@ export function findUnknownOperator(query: Record<string, unknown>): { path: str
       if (ALIASES[operator].operator !== '$elemMatch' || !isPlainObject(operand)) continue;
 
       // An item's query, or the operators a value must pass
-      const found = hasOperatorNames(operand) ? findUnknownOperator({ [key]: operand }) : findUnknownOperator(operand);
+      const found = isValueOperators(operand) ? findUnknownOperator({ [key]: operand }) : findUnknownOperator(operand);
       if (found) return found;
     }
   }
@@ -303,7 +315,7 @@ const toMongoCondition = (condition: unknown): unknown => {
     }
 
     if (alias.operator === '$elemMatch' && isPlainObject(operand)) {
-      output.$elemMatch = isButtressOperators(operand) ? toMongoCondition(operand) : toMongoQuery(operand);
+      output.$elemMatch = isValueOperators(operand) ? toMongoCondition(operand) : toMongoQuery(operand);
     } else {
       output[alias.operator] = alias.operand ? alias.operand(operand) : operand;
     }

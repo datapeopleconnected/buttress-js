@@ -44,6 +44,12 @@ describe('access-control/operators:toMongoQuery', () => {
     });
   });
 
+  it("gives an $elMatch of an item query with its own @or that @or in MongoDB's terms", () => {
+    assert.deepStrictEqual(toMongoQuery({ lines: { $elMatch: { '@or': [{ sku: 'a' }, { qty: { $not: 1 } }] } } }), {
+      lines: { $elemMatch: { $or: [{ sku: 'a' }, { qty: { $ne: 1 } }] } },
+    });
+  });
+
   it('gives @and, @or and @nor as $and, $or and $nor, with the queries in them', () => {
     assert.deepStrictEqual(toMongoQuery({ '@or': [{ name: { $rex: 'a' } }], $nor: [{ '@and': [{ age: { $not: 1 } }] }] }), {
       $or: [{ name: { $regex: 'a' } }],
@@ -68,5 +74,11 @@ describe('access-control/operators:matchQuery', () => {
     assert.strictEqual(matchQuery({ tags: { $all: [] } }, { tags: ['a', 'b'] }), false);
     assert.strictEqual(matchQuery({ tags: { $all: [] } }, { tags: [] }), false);
     assert.strictEqual(matchQuery({ tags: { $all: ['a'] } }, { tags: ['a', 'b'] }), true);
+  });
+
+  it("matches an $elemMatch of an item query with its own $or by the items' fields, as MongoDB does", () => {
+    const query = { lines: { $elemMatch: { $or: [{ sku: 'a' }, { qty: 2 }] } } };
+    assert.strictEqual(matchQuery(query, { lines: [{ sku: 'b', qty: 2 }] }), true);
+    assert.strictEqual(matchQuery(query, { lines: [{ sku: 'b', qty: 3 }] }), false);
   });
 });
