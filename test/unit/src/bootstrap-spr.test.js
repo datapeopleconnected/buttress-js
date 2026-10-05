@@ -25,6 +25,7 @@ import TokenSchemaModel from '../../../dist/model/core/token.js';
 import UserSchemaModel from '../../../dist/model/core/user.js';
 import RemoteCombinedModel from '../../../dist/model/type/remote-combined.js';
 import { realQueryParser } from '../../query-parser.js';
+import Logging from '../../../dist/helpers/logging.js';
 
 // An app's cars, which a policy's query is read against as REST reads it, through parseQuery
 const carModel = realQueryParser({ Schema: { name: 'car', type: 'collection', properties: {} } });
@@ -671,6 +672,84 @@ describe('bootstrap-spr:_handleIncomingMessage a policy evaluated as REST evalua
     assert.strictEqual(emitted.length, 1);
     assert.deepStrictEqual(emitted[0].tokens.sort(), Object.values(tokens).map((token) => token.id.toString()).sort());
     assert.deepStrictEqual(reads, []);
+  });
+});
+
+// Activities for one entity are relayed in the order they arrive, though each is handled as it arrives; one that fails
+// is logged and doesn't stop the next.
+describe('bootstrap-spr:_handleIncomingMessage order', () => {
+  const APP_ID = new ObjectId().toString();
+  const car = { id: new ObjectId(), name: 'car' };
+  const token = { id: new ObjectId(), type: 'app' };
+  const policy = {
+    id: 'policy-full-access',
+    name: 'full-access',
+    _appId: APP_ID,
+    env: null,
+    config: [{ verbs: ['GET'], schema: ['car'], query: { access: '%FULL_ACCESS%' }, condition: null }],
+  };
+  const update = (name, id = car.id) => ({
+    broadcast: true,
+    path: `/car/${id}`,
+    pathSpec: 'car/:id',
+    verb: 'put',
+    params: { id: id.toString() },
+    response: [{ type: 'scalar', path: 'name', value: name }],
+    appAPIPath: 'test-app',
+    appId: APP_ID,
+    isSuper: false,
+    isCoreSchema: false,
+    schemaName: 'car',
+  });
+
+  afterEach(() => sinon.restore());
+
+  // The entity is read slowly for the first activity and at once for the others
+  function createSPR(firstRead) {
+    const spr = new BootstrapSocketPolicyRouter();
+    const relayed = [];
+    spr.__nrp = { emit: (event, json) => relayed.push(JSON.parse(json).activity.response[0].value) };
+    spr._policyCache = {
+      getPoliciesByRestActivity: async () => [policy],
+      getConnectedTokenIdsByPolicyId: async () => [token.id.toString()],
+    };
+    let reads = 0;
+    sinon.stub(Model, 'getAppModel').resolves({
+      ...carModel,
+      findById: async () => (reads++ === 0 ? firstRead() : car),
+    });
+    return { spr, relayed };
+  }
+
+  it('relays the activities for one entity in the order they arrive', async () => {
+    const { spr, relayed } = createSPR(() => new Promise((resolve) => setTimeout(() => resolve(car), 30)));
+
+    await Promise.all([spr._handleIncomingMessage(update('first')), spr._handleIncomingMessage(update('second'))]);
+
+    assert.deepStrictEqual(relayed, ['first', 'second']);
+  });
+
+  it("doesn't hold up another entity's activities", async () => {
+    const { spr, relayed } = createSPR(() => new Promise((resolve) => setTimeout(() => resolve(car), 30)));
+
+    await Promise.all([
+      spr._handleIncomingMessage(update('slow')),
+      spr._handleIncomingMessage(update('other', new ObjectId())),
+    ]);
+
+    assert.deepStrictEqual(relayed, ['other', 'slow']);
+  });
+
+  it('relays the next activity for an entity when one fails, logging the failure', async () => {
+    const { spr, relayed } = createSPR(async () => {
+      throw new Error('the datastore went away');
+    });
+    const logged = sinon.stub(Logging, 'logError');
+
+    await Promise.all([spr._handleIncomingMessage(update('failed')), spr._handleIncomingMessage(update('second'))]);
+
+    assert.deepStrictEqual(relayed, ['second']);
+    assert.ok(logged.calledWithMatch(/the datastore went away/), String(logged.args));
   });
 });
 

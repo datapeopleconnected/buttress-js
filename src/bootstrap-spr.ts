@@ -24,6 +24,7 @@ const Config = createConfig() as unknown as Config;
 import Model from './model/index.js';
 import * as Helpers from './helpers/index.js';
 import IOStats from './helpers/io-stats.js';
+import { KeyedQueue } from './helpers/keyed-queue.js';
 import Logging from './helpers/logging.js';
 
 import { PolicyError } from './access-control/index.js';
@@ -89,6 +90,11 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
   private _policyCache?: PolicyCache;
 
   private _broadcastTokenBatchSize = 1000;
+
+  // Each entity's activities, relayed one after another
+  private _entityActivities = new KeyedQueue((err, key) =>
+    Logging.logError(`Unable to relay an activity for ${key}: ${Helpers.getThrownErrorMessage(err)}`),
+  );
 
   private _shutdown = false;
 
@@ -266,10 +272,24 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     for (const tokenId of tokenIds) await this._policyCache.removeConnectedToken(tokenId);
   }
 
+  /**
+   * Handles each entity's part of an activity. An entity's activities are relayed in the order they arrive, each after
+   * the one before it is done, while other entities' go alongside; one that fails is logged, and the next still goes.
+   */
   private async _handleIncomingMessage(activity: RESTActivity) {
     for (const entityActivity of this.__splitBulkActivity(activity)) {
-      await this.__handleEntityActivity(entityActivity);
+      await this._entityActivities.push(this.__entityKey(entityActivity), () =>
+        this.__handleEntityActivity(entityActivity),
+      );
     }
+  }
+
+  // The entity an activity is for; a delete of every entity is for the collection
+  private __entityKey(activity: RESTActivity) {
+    const params = activity.params as Record<string, unknown> | undefined;
+    const response = activity.response as Record<string, unknown> | null | undefined;
+    const entityId = params?.id ?? (response && typeof response === 'object' ? response.id : undefined) ?? '';
+    return `${activity.appId}:${activity.schemaName}:${String(entityId)}`;
   }
 
   /**
