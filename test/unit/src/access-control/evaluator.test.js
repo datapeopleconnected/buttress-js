@@ -130,6 +130,17 @@ describe('access-control/evaluator:evaluate', () => {
     assert.deepStrictEqual(grants.map((grant) => grant.policies), [['fine#0']]);
   });
 
+  it("grants nothing through a config whose query has a logical operator without a list of queries", async () => {
+    for (const query of [{ '@or': { name: 'a' } }, { '@or': [] }, { '@and': ['x'] }]) {
+      const grants = await evaluate([policy('broken', { query }), policy('fine', { query: { name: 'b' } })], context());
+      assert.deepStrictEqual(grants.map((grant) => grant.policies), [['fine#0']], JSON.stringify(query));
+    }
+    await assert.rejects(
+      evaluate([policy('broken', { query: { '@or': {} } })], context()),
+      refusal(403, 'access_denied', /query can not be applied to user/),
+    );
+  });
+
   it("reads the policy's and the config's env", async () => {
     const [grant] = await evaluate(
       [policy('p', { query: { team: { '@eq': '#env.team' } }, env: { team: 'red' } }, { env: { team: 'blue' } })],

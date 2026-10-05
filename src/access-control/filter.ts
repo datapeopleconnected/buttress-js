@@ -20,7 +20,14 @@ import * as Helpers from '../helpers/index.js';
 import Logging from '../helpers/logging.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
-import { asQueried, findUnknownOperator, LOGICAL_ALIASES, matchQuery, toMongoQuery } from './operators.js';
+import {
+  asQueried,
+  findUnknownOperator,
+  isPlainObject,
+  LOGICAL_ALIASES,
+  matchQuery,
+  toMongoQuery,
+} from './operators.js';
 import { isObjectId } from '../datastore/adapters/object-id.js';
 import type StandardModel from '../model/type/standard.js';
 
@@ -40,6 +47,14 @@ export class UnknownOperatorError extends Error {
   constructor(operator: string, path: string) {
     super(`unknown_policy_operator: ${operator} at ${path}`);
     this.name = 'UnknownOperatorError';
+  }
+}
+
+// A policy query with a logical operator that isn't given a list of one or more queries, which can't be applied
+export class InvalidPolicyQueryError extends Error {
+  constructor(operator: string) {
+    super(`invalid_policy_query: ${operator} takes a list of one or more queries`);
+    this.name = 'InvalidPolicyQueryError';
   }
 }
 
@@ -79,31 +94,29 @@ export class Filter {
       const val = translatedQuery[key] as unknown;
       if (stripAccessKeys && key === 'access' && typeof val === 'string' && this._queryAccess.includes(val)) continue;
 
+      // A logical operator takes a list of one or more queries. One that hasn't been given one can't be read, so its
+      // config grants nothing, rather than the operator being dropped and the query reading every entity
+      if (Object.hasOwn(LOGICAL_ALIASES, key)) {
+        if (!Array.isArray(val) || val.length < 1 || !val.every((part) => isPlainObject(part))) {
+          throw new InvalidPolicyQueryError(key);
+        }
+
+        // Each query in the list is built as a whole query is, its env read
+        const parts: PolicyQuery[] = [];
+        for (const part of val as PolicyQuery[]) {
+          parts.push((await this.buildPolicyQuery(part, envVars, stripAccessKeys)) ?? {});
+        }
+        outputRecord[key] = parts;
+        continue;
+      }
+
       if (typeof val === 'string') {
         outputRecord[key] = await resolveQueryValue(val, envVars);
         continue;
       }
-      if (typeof val !== 'object' || val === null) {
+      // A value is compared whole, an empty object or list included, rather than dropped
+      if (typeof val !== 'object' || val === null || Object.keys(val).length < 1) {
         outputRecord[key] = val;
-        continue;
-      }
-      if (Object.keys(val).length < 1) continue;
-
-      if (Object.hasOwn(LOGICAL_ALIASES, key)) {
-        if (!Array.isArray(val)) continue;
-        for (const queryObj of val as unknown[]) {
-          if (typeof queryObj !== 'object' || Array.isArray(queryObj)) {
-            throw new Error(`Invalid query object for logical operator ${key}: ${JSON.stringify(queryObj)}`);
-          }
-
-          // Recursively build the query for each object in the logical operator array.
-          const builtQuery = await this.buildPolicyQuery(queryObj as PolicyQuery | null, envVars, stripAccessKeys);
-          if (builtQuery) {
-            const existing = outputRecord[key];
-            if (!Array.isArray(existing)) outputRecord[key] = [];
-            (outputRecord[key] as unknown[]).push(builtQuery);
-          }
-        }
         continue;
       }
 

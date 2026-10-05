@@ -15,7 +15,7 @@
  */
 
 import AccessControlConditions from './conditions.js';
-import AccessControlFilter, { UnknownOperatorError, UnresolvedEnvError } from './filter.js';
+import AccessControlFilter, { InvalidPolicyQueryError, UnknownOperatorError, UnresolvedEnvError } from './filter.js';
 import AccessControlProjection from './projection.js';
 import { CombineEnvGroups, filterPolicyConfigs, isPolicyExpired } from './helpers.js';
 import { ACEnv } from './env.js';
@@ -127,8 +127,13 @@ export async function evaluate(policies: Policy[], context: EvaluationContext): 
     try {
       query = await AccessControlFilter.buildPolicyQuery(policy.config.query, CombineEnvGroups(policy, context.env));
     } catch (err: unknown) {
-      // A config whose query can't be built grants nothing: an env value isn't set, or it names an operator nothing knows
-      if (!(err instanceof UnresolvedEnvError) && !(err instanceof UnknownOperatorError)) throw err;
+      // A config whose query can't be built grants nothing: an env value isn't set, it names an operator nothing knows,
+      // or it gives a logical operator something other than a list of queries
+      const unreadable =
+        err instanceof UnresolvedEnvError ||
+        err instanceof UnknownOperatorError ||
+        err instanceof InvalidPolicyQueryError;
+      if (!unreadable) throw err;
       Logging.logWarn(`Policy ${policy.name} not applied: ${err.message}`);
       continue;
     }

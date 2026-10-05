@@ -624,9 +624,14 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
         env,
       });
     } catch (err: unknown) {
-      // The policy grants this token nothing here: a condition doesn't hold, or a query's env value isn't set
-      if (!(err instanceof PolicyError)) throw err;
-      logEnd(`not-granted ${err.message}`);
+      // The policy grants this token nothing here: a condition doesn't hold, or a query's env value isn't set. A policy
+      // that can't be evaluated is logged, and the token's other policies still apply
+      if (!(err instanceof PolicyError)) {
+        Logging.logError(
+          `Unable to evaluate policy ${policy.name} for an activity: ${Helpers.getThrownErrorMessage(err)}`,
+        );
+      }
+      logEnd(`not-granted ${Helpers.getThrownErrorMessage(err)}`);
       return null;
     }
 

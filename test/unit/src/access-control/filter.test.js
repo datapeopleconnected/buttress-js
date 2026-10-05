@@ -189,6 +189,28 @@ describe('access-control/filter:buildPolicyQuery env references that are not set
   });
 });
 
+// A logical operator takes a list of one or more queries; a query with one that hasn't can't be read, so its config
+// grants nothing, rather than the operator being dropped and the query reading every entity
+describe('access-control/filter:buildPolicyQuery a logical operator without a list of queries', () => {
+  for (const query of [
+    { '@or': { status: 'public' } },
+    { '@or': {} },
+    { '@or': [] },
+    { '@and': ['x'] },
+    { '@or': [null] },
+    { '@nor': 'x' },
+    { status: 'public', '@or': [{ owner: 'a' }, 5] },
+  ]) {
+    it(`refuses ${JSON.stringify(query)} as a query it can't read`, async () => {
+      await assert.rejects(Filter.buildPolicyQuery(query, {}), { name: 'InvalidPolicyQueryError' });
+    });
+  }
+
+  it('keeps an empty object or list given as a value, to be compared whole, rather than dropping it', async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ owner: {}, tags: [] }, {}), { owner: {}, tags: [] });
+  });
+});
+
 describe('access-control/filter:mergeQueryFiltersWithAccessControl', () => {
   it('should merge request query with access control query using $and', () => {
     const reqQuery = { age: { $gt: 18 } };

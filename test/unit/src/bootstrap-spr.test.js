@@ -24,6 +24,7 @@ import Model from '../../../dist/model/index.js';
 import TokenSchemaModel from '../../../dist/model/core/token.js';
 import UserSchemaModel from '../../../dist/model/core/user.js';
 import RemoteCombinedModel from '../../../dist/model/type/remote-combined.js';
+import AccessControlFilter from '../../../dist/access-control/filter.js';
 import { realQueryParser } from '../../query-parser.js';
 import Logging from '../../../dist/helpers/logging.js';
 
@@ -778,6 +779,29 @@ describe('bootstrap-spr:_handleIncomingMessage one activity per token', () => {
 
     assert.strictEqual(emitted.length, 1);
     assert.deepStrictEqual(emitted[0].tokens.sort(), [tokens.a, tokens.b, tokens.c].map((t) => t.id.toString()).sort());
+  });
+
+  it("relays what a token's other policies let it read when one's query has a logical operator without a list", async () => {
+    const broken = policy('broken', { '@or': ['x'] });
+    const names = policy('names', everything, ['name']);
+    const { received } = await relay([broken, names], { broken: [tokens.a], names: [tokens.a] });
+
+    assert.deepStrictEqual(received(tokens.a), [[renamed]]);
+  });
+
+  it("logs a policy that fails to be evaluated, and relays what the token's other policies let it read", async () => {
+    const buildPolicyQuery = AccessControlFilter.buildPolicyQuery;
+    sinon.stub(AccessControlFilter, 'buildPolicyQuery').callsFake(function (query, ...rest) {
+      if (query.failing) throw new Error('the env lookup went away');
+      return buildPolicyQuery.call(this, query, ...rest);
+    });
+    const logged = sinon.stub(Logging, 'logError');
+    const failing = policy('failing', { failing: true });
+    const names = policy('names', everything, ['name']);
+    const { received } = await relay([failing, names], { failing: [tokens.a], names: [tokens.a] });
+
+    assert.deepStrictEqual(received(tokens.a), [[renamed]]);
+    assert.ok(logged.calledWithMatch(/the env lookup went away/), String(logged.args));
   });
 
   it("reads a token's user once for an activity, however many of its policies refer to it", async () => {
