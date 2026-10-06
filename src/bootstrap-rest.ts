@@ -251,10 +251,10 @@ export default class BootstrapRest extends Bootstrap {
     app.use(
       cors({
         origin: true,
-        methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,SEARCH',
+        methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,QUERY,SEARCH',
         credentials: true,
-        // So browser clients on another origin can read it.
-        exposedHeaders: [BULK_REFUSED_HEADER],
+        // So browser clients on another origin can read them.
+        exposedHeaders: [BULK_REFUSED_HEADER, 'Accept-Query', 'Deprecation'],
       }),
     );
     app.use(Express.static(`${Config.paths.appData}/public`));

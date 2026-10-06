@@ -19,7 +19,7 @@ import assert from 'assert';
 import sinon from 'sinon';
 import { Readable, PassThrough } from 'node:stream';
 
-import Route from '../../../../dist/routes/route.js';
+import Route, { routerMethods } from '../../../../dist/routes/route.js';
 import Logging from '../../../../dist/helpers/logging.js';
 import Model from '../../../../dist/model/index.js';
 import ActivitySchemaModel from '../../../../dist/model/core/activity.js';
@@ -339,15 +339,17 @@ describe('routes/Route:_logActivity', () => {
     assert.strictEqual(addLog.called, false);
   });
 
-  it('skips logging activity for SEARCH requests', () => {
-    const route = createRoute();
-    route.verb = Route.Constants.Verbs.SEARCH;
-    const addLog = sinon.stub(route, '_addLogActivity');
+  for (const verb of ['QUERY', 'SEARCH']) {
+    it(`skips logging activity for ${verb} requests`, () => {
+      const route = createRoute();
+      route.verb = Route.Constants.Verbs[verb];
+      const addLog = sinon.stub(route, '_addLogActivity');
 
-    route._logActivity(createReq(), createRes());
+      route._logActivity(createReq(), createRes());
 
-    assert.strictEqual(addLog.called, false);
-  });
+      assert.strictEqual(addLog.called, false);
+    });
+  }
 
   it('logs activity for mutating verbs when activity tracking is enabled', () => {
     const route = createRoute();
@@ -1128,3 +1130,65 @@ describe('routes/Route:scoped', () => {
   });
 });
 
+
+// QUERY is RFC 10008's name for what the drafts called SEARCH
+describe('routes/Route: QUERY and SEARCH', () => {
+  const { Verbs } = Route.Constants;
+  const reqWith = (method, contentType) => {
+    const req = createReq({ method });
+    req.get = (header) => (header.toLowerCase() === 'content-type' ? contentType : undefined);
+    return req;
+  };
+
+  it('registers a QUERY or SEARCH route for both methods, and any other for its own', () => {
+    assert.deepStrictEqual(routerMethods(Verbs.QUERY), [Verbs.QUERY, Verbs.SEARCH]);
+    assert.deepStrictEqual(routerMethods(Verbs.SEARCH), [Verbs.QUERY, Verbs.SEARCH]);
+    assert.deepStrictEqual(routerMethods(Verbs.GET), [Verbs.GET]);
+    assert.deepStrictEqual(routerMethods(Verbs.POST), [Verbs.POST]);
+  });
+
+  for (const contentType of ['application/json', 'application/json; charset=utf-8', 'Application/JSON']) {
+    it(`takes a QUERY whose body is ${contentType}, and says which bodies it takes`, () => {
+      const route = createRoute();
+      route.verb = Verbs.QUERY;
+      const res = createRes();
+
+      route._checkQueryMethod(reqWith('QUERY', contentType), res);
+
+      assert.ok(res.set.calledWith('Accept-Query', '"application/json"'));
+      assert.strictEqual(res.set.calledWith('Deprecation'), false);
+    });
+  }
+
+  for (const contentType of [undefined, 'text/plain', 'application/x-www-form-urlencoded']) {
+    it(`refuses a QUERY whose Content-Type is ${contentType ?? 'missing'}`, () => {
+      const route = createRoute();
+      route.verb = Verbs.QUERY;
+
+      assert.throws(
+        () => route._checkQueryMethod(reqWith('QUERY', contentType), createRes()),
+        (err) => err.status === 415 && err.code === 'unsupported_query_type',
+      );
+    });
+  }
+
+  it('answers a SEARCH without a Content-Type as before, but marks it deprecated', () => {
+    const route = createRoute();
+    route.verb = Verbs.QUERY;
+    const res = createRes();
+
+    route._checkQueryMethod(reqWith('SEARCH', undefined), res);
+
+    assert.ok(res.set.calledWith('Deprecation', '@1791158400'));
+  });
+
+  it('leaves other routes alone', () => {
+    const route = createRoute();
+    route.verb = Verbs.POST;
+    const res = createRes();
+
+    route._checkQueryMethod(reqWith('POST', undefined), res);
+
+    assert.strictEqual(res.set.called, false);
+  });
+});

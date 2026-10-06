@@ -36,7 +36,7 @@ export default class SearchList extends Route {
 
     super(`${schemaRoutePath}`, `SEARCH ${schema.name} LIST`, services, schema, app);
     this.__configureSchemaRoute();
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
     this.permissions = Route.Constants.Permissions.LIST;
 
     this.activityDescription = `SEARCH ${schema.name} LIST`;

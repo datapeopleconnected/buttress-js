@@ -18,7 +18,7 @@ import type { ValidationIssue } from '../helpers/schema.js';
 import { describeType } from '../helpers/schema.js';
 
 // The verbs a config can grant: a request's method, or all of them
-const VERBS = ['GET', 'SEARCH', 'POST', 'PUT', 'DELETE', '%ALL%'];
+const VERBS = ['GET', 'QUERY', 'SEARCH', 'POST', 'PUT', 'DELETE', '%ALL%'];
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);

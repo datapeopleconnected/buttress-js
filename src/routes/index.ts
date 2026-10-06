@@ -24,7 +24,7 @@ import Logging from '../helpers/logging.js';
 import * as Helpers from '../helpers/index.js';
 import AccessControl from '../access-control/index.js';
 import Model from '../model/index.js';
-import Route from './route.js';
+import Route, { routerMethods } from './route.js';
 
 import { Services } from '../bootstrap.js';
 
@@ -429,10 +429,12 @@ class Routes {
       : new (routeClass as PluginRouteClass)(null, null, this._services);
     route.paths.forEach((pathSpec) => {
       const routePath = path.join(...[Config.app.apiPrefix, pathPrefix, pathSpec]);
-      Logging.logSilly(`_initRoute:register [${route.verb.toUpperCase()}] ${routePath}`);
-      app[route.verb](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
-        req.context.pathSpec = pathSpec;
-        return route.exec(req, res, next).catch(next);
+      routerMethods(route.verb).forEach((method) => {
+        Logging.logSilly(`_initRoute:register [${method.toUpperCase()}] ${routePath}`);
+        app[method](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
+          req.context.pathSpec = pathSpec;
+          return route.exec(req, res, next).catch(next);
+        });
       });
     });
   }
@@ -457,10 +459,12 @@ class Routes {
       route.paths.forEach((pathSpec) => {
         let routePath = path.join(...[app.apiPath, Config.app.apiPrefix, pathSpec]);
         if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;
-        Logging.logSilly(`_initSchemaRoutes:register [${route.verb.toUpperCase()}] ${routePath}`);
-        express[route.verb](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
-          req.context.pathSpec = pathSpec;
-          return route.exec(req, res, next).catch(next);
+        routerMethods(route.verb).forEach((method) => {
+          Logging.logSilly(`_initSchemaRoutes:register [${method.toUpperCase()}] ${routePath}`);
+          express[method](routePath, this._preRouteMiddleware, (req: Request, res: Response, next: NextFunction) => {
+            req.context.pathSpec = pathSpec;
+            return route.exec(req, res, next).catch(next);
+          });
         });
       });
     });

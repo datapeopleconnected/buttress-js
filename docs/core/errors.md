@@ -31,7 +31,7 @@ Each code is always answered with the same status.
 | 404 | What the request names can't be found, or no route takes the request | `not_found`, `unknown_route`, `unknown_schema`, `unknown_lambda_endpoint` |
 | 405 | A lambda endpoint called with a method other than GET or POST | `method_not_allowed` |
 | 409 | The entity changed while it was being updated; try again | `update_conflict` |
-| 413, 415 | The body is too large, or in an encoding the server doesn't read | `body_too_large`, `unsupported_body_encoding` |
+| 413, 415 | The body is too large, or in an encoding or type the server doesn't read | `body_too_large`, `unsupported_body_encoding`, `unsupported_query_type` |
 | 500 | An unexpected failure on the server | `internal_error` |
 | 503 | A data sharing partner the request needs can't be reached | `data_sharing_partner_unavailable` |
 

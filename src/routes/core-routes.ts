@@ -113,7 +113,7 @@ abstract class CoreModelRoute<M extends StandardModel<DocumentOf<M>>> extends Ro
 export class CoreSearch<M extends StandardModel<DocumentOf<M>>> extends CoreModelRoute<M> {
   constructor(services: Services) {
     super(services);
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
   }
 
   override async _validate(req: RequestWithBody<SearchListBody<DocumentOf<M> & object> | undefined>, _res: Response) {
@@ -148,7 +148,7 @@ export class CoreSearch<M extends StandardModel<DocumentOf<M>>> extends CoreMode
 export class CoreCount<M extends StandardModel<DocumentOf<M>>> extends CoreModelRoute<M> {
   constructor(services: Services) {
     super(services);
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
 
     this.activityDescription = this.config.name;
     this.activityBroadcast = false;

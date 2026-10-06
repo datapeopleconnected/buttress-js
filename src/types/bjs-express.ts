@@ -72,4 +72,9 @@ declare module 'express-serve-static-core' {
   interface Request {
     context: RequestContext;
   }
+
+  // Express routes QUERY (RFC 10008) on a Node that parses it, but its types predate the method
+  interface IRouter {
+    query: IRouterMatcher<this>;
+  }
 }

@@ -68,7 +68,7 @@ class GetAppList extends Route {
 class SearchAppList extends Route {
   constructor(services: Services) {
     super('app', 'GET APP LIST', services, Model.getCoreModel(AppSchemaModel).schemaData);
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
     this.authType = Route.Constants.Type.APP;
     this.permissions = Route.Constants.Permissions.SEARCH;
   }

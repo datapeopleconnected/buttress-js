@@ -19,9 +19,12 @@ By default, requests without matching policy access are denied.
 
 A policy is checked when it's added, synced or updated, and refused with a 400, `invalid_policy`, listing each
 problem in `details.issues`, when a config would grant nothing or fail when it's evaluated. Each config needs
-`verbs`, a list of `GET`, `SEARCH`, `POST`, `PUT`, `DELETE` or `%ALL%`; `schema`, a list of schema names; and a
+`verbs`, a list of `GET`, `QUERY`, `POST`, `PUT`, `DELETE` or `%ALL%`; `schema`, a list of schema names; and a
 `query` object (`{"access": "%FULL_ACCESS%"}` for every entity). A `projection` is `{"keys": [...]}`, and a
 `condition` or `env` is an object. Earlier releases saved a config without a query, and it granted nothing.
+
+`QUERY` grants [searches](schema.md#searching). `SEARCH`, its name in earlier releases, is the same verb: a config
+listing either grants requests made with either method, so existing policies don't need changing.
 
 A policy that's added or synced is then read as the table types it, as an app's schema reads an entity, and a value
 that isn't of its type is refused with a 400, `invalid_value`, naming it, with every problem in `details.issues`:
@@ -80,7 +83,7 @@ bjs policy list-property
     },
     "config": [
       {
-        "verbs": ["GET", "SEARCH"],
+        "verbs": ["GET", "QUERY"],
         "schema": ["finance"],
         "query": {
           "salary": {

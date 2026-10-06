@@ -282,7 +282,7 @@ describe('User API', async () => {
 			const got = await bjsReq({ url: `${ENDPOINT.REST}/api/v1/user/${added.id}`, method: 'GET' }, testEnv.apps.app1.token);
 			const searched = await bjsReq({
 				url: `${ENDPOINT.REST}/api/v1/user`,
-				method: 'SEARCH',
+				method: 'QUERY',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ query: { id: added.id } }),
 			}, testEnv.apps.app1.token);
@@ -506,7 +506,7 @@ describe('User API', async () => {
 			const query = { 'auth.email': testEnv.users.user4.auth[0].email };
 			const users = await bjsReq({
 				url: `${ENDPOINT.REST}/api/v1/user`,
-				method: 'SEARCH',
+				method: 'QUERY',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ query })
 			}, testEnv.apps.app1.token);
@@ -520,7 +520,7 @@ describe('User API', async () => {
 			const query = { 'auth.email': testEnv.users.user4.auth[0].email };
 			const count = await bjsReq({
 				url: `${ENDPOINT.REST}/api/v1/user/count`,
-				method: 'SEARCH',
+				method: 'QUERY',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ query })
 			}, testEnv.apps.app1.token);

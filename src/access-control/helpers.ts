@@ -232,6 +232,23 @@ function wrangleDateType(val: unknown): Date | null | undefined {
 
 export default new Helpers();
 
+// QUERY and SEARCH, its name before RFC 10008, are one verb to a policy: either grants both
+const QUERY_VERBS = ['QUERY', 'SEARCH'];
+
+// The verbs that read a schema, so the policies granting one decide what a token sees of it
+export const READ_POLICY_VERBS = ['GET', ...QUERY_VERBS];
+
+/**
+ * Whether a policy config's `verbs` grant `verb`.
+ * @param {string[]} verbs - the config's verbs
+ * @param {string} verb - a request's method
+ * @return {boolean}
+ */
+export function grantsVerb(verbs: string[], verb: string): boolean {
+  if (verbs.includes('%ALL%') || verbs.includes(verb)) return true;
+  return QUERY_VERBS.includes(verb) && verbs.some((v) => QUERY_VERBS.includes(v));
+}
+
 export function filterPolicyConfigs(
   policy: Policy,
   schemaName: string,
@@ -242,11 +259,9 @@ export function filterPolicyConfigs(
   return policy.config.filter((c) => {
     if (!c.query || !c.verbs || !c.schema) return false;
 
-    let verbCheck = c.verbs.includes('%ALL%') || c.verbs.includes(verb);
-
-    if (verbCheckReadability) {
-      verbCheck = c.verbs.includes('%ALL%') || c.verbs.includes('GET') || c.verbs.includes('SEARCH');
-    }
+    const verbCheck = verbCheckReadability
+      ? READ_POLICY_VERBS.some((v) => grantsVerb(c.verbs, v))
+      : grantsVerb(c.verbs, verb);
 
     const schemaCheck =
       c.schema.includes('%ALL%') ||

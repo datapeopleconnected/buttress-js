@@ -47,7 +47,9 @@ describe('Core route tenant scoping', async () => {
 
 	let REST_PROCESS = null;
 
-	const search = (path, token) => bjsReq({ url: `${ENDPOINT.REST}/api/v1/${path}`, method: 'SEARCH' }, token);
+	const search = (path, token) => bjsReq({
+		url: `${ENDPOINT.REST}/api/v1/${path}`, method: 'QUERY', headers: { 'Content-Type': 'application/json' }, body: '{}',
+	}, token);
 
 	before(async function () {
 		this.timeout(60000);
@@ -315,8 +317,8 @@ describe('Core route tenant scoping', async () => {
 			})],
 			['DELETE user/:id', () => ({ url: api(`user/${testEnv.users.app2.id}`), method: 'DELETE' })],
 			// Answered as a user that doesn't exist, rather than with an empty list, which would say it's another app's
-			['SEARCH token/:userId', () => ({
-				url: api(`token/${testEnv.users.app2.id}`), method: 'SEARCH', headers: json, body: '{}',
+			['QUERY token/:userId', () => ({
+				url: api(`token/${testEnv.users.app2.id}`), method: 'QUERY', headers: json, body: '{}',
 			})],
 
 			['GET app-data-sharing/:id', () => ({ url: api(`app-data-sharing/${owned.agreement.id}`), method: 'GET' })],
@@ -369,10 +371,10 @@ describe('Core route tenant scoping', async () => {
 		const appRoutes = [
 			['GET note', () => ({ url: notes(), method: 'GET' })],
 			['GET note/:id', () => ({ url: notes(`/${owned.note.id}`), method: 'GET' })],
-			['SEARCH note', () => ({ url: notes(), method: 'SEARCH', headers: json, body: '{}' })],
-			['SEARCH note/count', () => ({ url: notes('/count'), method: 'SEARCH', headers: json, body: '{}' })],
-			['SEARCH note/bulk/load', () => ({
-				url: notes('/bulk/load'), method: 'SEARCH', headers: json, body: JSON.stringify([owned.note.id]),
+			['QUERY note', () => ({ url: notes(), method: 'QUERY', headers: json, body: '{}' })],
+			['QUERY note/count', () => ({ url: notes('/count'), method: 'QUERY', headers: json, body: '{}' })],
+			['QUERY note/bulk/load', () => ({
+				url: notes('/bulk/load'), method: 'QUERY', headers: json, body: JSON.stringify([owned.note.id]),
 			})],
 			['POST note', () => ({ url: notes(), method: 'POST', headers: json, body: JSON.stringify({ text: 'by app1' }) })],
 			['POST note/bulk/add', () => ({
@@ -530,7 +532,7 @@ describe('Core route tenant scoping', async () => {
 			for (const project of [{ secret: 1 }, { text: 1, secret: 1 }, undefined]) {
 				const notes = await bjsReq({
 					url: `${ENDPOINT.REST}/${testEnv.apps.app2.apiPath}/api/v1/note`,
-					method: 'SEARCH',
+					method: 'QUERY',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ query: {}, project }),
 				}, testEnv.users.app2Viewer.tokens[0].value);
@@ -612,7 +614,7 @@ describe('Core route tenant scoping', async () => {
 				body: JSON.stringify([{ id: owned.note.id, body: [{ path: 'secret', value: 'by writer' }] }]),
 			}, token), (err) => err instanceof BJSReqError && err.code === 403);
 
-			const [note] = await bjsReq({ url: notes(), method: 'SEARCH', headers: json, body: JSON.stringify({ query: { id: owned.note.id } }) });
+			const [note] = await bjsReq({ url: notes(), method: 'QUERY', headers: json, body: JSON.stringify({ query: { id: owned.note.id } }) });
 			assert.strictEqual(note.secret, 'app2 secret');
 		});
 
@@ -627,7 +629,7 @@ describe('Core route tenant scoping', async () => {
 			}, token);
 
 			const stored = await bjsReq({
-				url: notes(), method: 'SEARCH', headers: json,
+				url: notes(), method: 'QUERY', headers: json,
 				body: JSON.stringify({ query: { id: { $in: [one.id, ...many.map((n) => n.id)] } } }),
 			});
 			assert.strictEqual(stored.length, 2);
@@ -661,7 +663,7 @@ describe('Core route tenant scoping', async () => {
 				await assert.rejects(create(path, body), (err) => err instanceof BJSReqError && err.code === 403 && err.body.code === 'access_denied', JSON.stringify(body));
 			}
 
-			const stored = await bjsReq({ url: notes(), method: 'SEARCH', headers: json, body: JSON.stringify({ query: { text: 'outside' } }) });
+			const stored = await bjsReq({ url: notes(), method: 'QUERY', headers: json, body: JSON.stringify({ query: { text: 'outside' } }) });
 			assert.deepStrictEqual(stored, []);
 		});
 
@@ -695,7 +697,7 @@ describe('Core route tenant scoping', async () => {
 				body: JSON.stringify([{ path: 'apiPath', value: testEnv.apps.app2.apiPath }]),
 			}, testEnv.apps.app1.token), (err) => err instanceof BJSReqError && err.code === 400 && err.body.code === 'duplicate_api_path');
 
-			const [app2] = await bjsReq({ url: `${ENDPOINT.REST}/api/v1/app`, method: 'SEARCH' }, testEnv.apps.app2.token);
+			const [app2] = await bjsReq({ url: `${ENDPOINT.REST}/api/v1/app`, method: 'QUERY', headers: json, body: '{}' }, testEnv.apps.app2.token);
 			assert.strictEqual(app2.apiPath, testEnv.apps.app2.apiPath);
 		});
 	});

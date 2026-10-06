@@ -197,7 +197,7 @@ describe('Error contract', async () => {
 			400, 'invalid_value', {
 				schema: 'note', path: 'done', issues: [{ path: 'done', code: 'type', expected: 'boolean', received: 'string' }],
 			}],
-		['a search on a flag it cannot read', () => [notes(), { method: 'SEARCH', headers: json, body: JSON.stringify({ query: { done: 'banana' } }) }, appToken()],
+		['a search on a flag it cannot read', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ query: { done: 'banana' } }) }, appToken()],
 			400, 'invalid_value', { path: 'done', expected: 'boolean' }],
 		['a field a strict schema does not define', () => [`${ENDPOINT.REST}/${testEnv.apps.app.apiPath}/api/v1/crate`, post({ label: 'a', extra: 1 }), appToken()],
 			400, 'unknown_path', { schema: 'crate', path: 'extra', issues: [{ path: 'extra', code: 'unknown_path' }] }],
@@ -242,7 +242,7 @@ describe('Error contract', async () => {
 			400, 'invalid_update'],
 		["a note the caller's policy wouldn't let it read", () => [notes(), post({ text: 'not mine' }), writerToken()],
 			403, 'access_denied', { schema: 'note', index: 0 }],
-		['a search on a date it cannot read', () => [notes(), { method: 'SEARCH', headers: json, body: JSON.stringify({ query: { due: { $gtDate: 'not a date' } } }) }, appToken()],
+		['a search on a date it cannot read', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ query: { due: { $gtDate: 'not a date' } } }) }, appToken()],
 			400, 'invalid_value', { path: 'due', expected: 'date' }],
 	];
 

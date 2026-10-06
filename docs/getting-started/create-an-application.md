@@ -114,7 +114,7 @@ More policy details are available in [Policy](../applications/policy.md).
     }
   },
   "config": [{
-    "verbs": ["GET", "SEARCH", "PUT", "POST", "DELETE"],
+    "verbs": ["GET", "QUERY", "PUT", "POST", "DELETE"],
     "schema": ["%ALL%"],
     "query": {
       "access": "%FULL_ACCESS%"
@@ -170,7 +170,7 @@ Edit `policy.json` and add the following. Policy sync also expects an array.
     }
   },
   "config": [{
-    "verbs": ["GET", "SEARCH", "PUT", "POST", "DELETE"],
+    "verbs": ["GET", "QUERY", "PUT", "POST", "DELETE"],
     "schema": ["%ALL%"],
     "query": {
       "access": "%FULL_ACCESS%"

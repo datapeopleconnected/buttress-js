@@ -458,7 +458,7 @@ describe('Policy', async () => {
       await expectEventually(async () => {
         const res = await bjsReq({
           url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation`,
-          method: 'SEARCH',
+          method: 'QUERY',
           headers: {'Content-Type': 'application/json'},
         }, testEnv.users.basic1.tokens[0].value);
 
@@ -476,7 +476,7 @@ describe('Policy', async () => {
       await expectEventually(async () => {
         const res = await bjsReq({
           url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/organisation/count`,
-          method: 'SEARCH',
+          method: 'QUERY',
           headers: {'Content-Type': 'application/json'},
         }, testEnv.users.basic1.tokens[0].value);
 
@@ -748,15 +748,18 @@ describe('Policy', async () => {
       });
     });
 
+    // The subscriber's policy grants QUERY and the missing user's SEARCH: each grants the other's method too
     it('Should only return the posts on those boards, with their ids looked up through the env', async function() {
       await expectEventually(async () => {
-        for (const method of ['GET', 'SEARCH']) {
+        for (const method of ['GET', 'QUERY', 'SEARCH']) {
           const res = await userRequest(testEnv.users.envSubscriber, 'post', method);
           assert.deepStrictEqual(res.map((post) => post.content).sort(), ['One', 'Two'], method);
         }
 
-        const count = await userRequest(testEnv.users.envSubscriber, 'post/count', 'SEARCH');
-        assert.strictEqual(count, 2);
+        for (const method of ['QUERY', 'SEARCH']) {
+          const count = await userRequest(testEnv.users.envSubscriber, 'post/count', method);
+          assert.strictEqual(count, 2, method);
+        }
       });
     });
 
@@ -765,8 +768,10 @@ describe('Policy', async () => {
         const res = await userRequest(testEnv.users.envMissing, 'post', 'GET');
         assert.deepStrictEqual(res, []);
 
-        const count = await userRequest(testEnv.users.envMissing, 'post/count', 'SEARCH');
-        assert.strictEqual(count, 0);
+        for (const method of ['QUERY', 'SEARCH']) {
+          const count = await userRequest(testEnv.users.envMissing, 'post/count', method);
+          assert.strictEqual(count, 0, method);
+        }
       });
     });
   });

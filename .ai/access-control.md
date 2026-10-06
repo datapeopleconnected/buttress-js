@@ -45,7 +45,8 @@ after token authentication. Flow:
 3. `PolicyCache.getPoliciesByToken(token)` — the token's applicable policies (sorted by `priority`).
 4. `__getOutcome(tokenPolicies, req, schemaName, appId)` — the core evaluation pipeline:
    - `filterPolicyConfigs` (in [helpers.ts](../src/access-control/helpers.ts)) — narrows each policy's
-     `config[]` entries to ones matching the request verb + schema.
+     `config[]` entries to ones matching the request verb + schema. `grantsVerb()` treats `QUERY` and
+     `SEARCH` as one verb, so a config listing either grants both methods.
    - `AccessControlConditions.filterPoliciesByPolicyConditions` — evaluates `config.condition` blocks
      against a generated request environment (`AccessControlEnv.generateRequestGlobalEnvs`, see below);
      drops policies whose condition fails.

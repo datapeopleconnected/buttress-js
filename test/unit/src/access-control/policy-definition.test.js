@@ -19,7 +19,7 @@ import assert from 'assert';
 
 import { checkPolicyConfig, checkPolicyConfigUpdate } from '../../../../dist/access-control/policy-definition.js';
 
-const VERBS = ['GET', 'SEARCH', 'POST', 'PUT', 'DELETE', '%ALL%'];
+const VERBS = ['GET', 'QUERY', 'SEARCH', 'POST', 'PUT', 'DELETE', '%ALL%'];
 const valid = () => ({ verbs: ['GET', 'SEARCH'], schema: ['note'], query: { access: '%FULL_ACCESS%' } });
 
 describe('access-control/policy-definition:checkPolicyConfig', () => {

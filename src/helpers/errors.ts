@@ -83,6 +83,9 @@ export const methodNotAllowed = (code: string, message?: string, details?: ApiEr
 export const conflict = (code: string, message?: string, details?: ApiErrorDetails) =>
   new ApiError(409, code, message, details);
 
+export const unsupportedMediaType = (code: string, message?: string, details?: ApiErrorDetails) =>
+  new ApiError(415, code, message, details);
+
 export const unavailable = (code: string, message?: string, details?: ApiErrorDetails) =>
   new ApiError(503, code, message, details);
 
@@ -250,6 +253,7 @@ export default {
   entityNotFound,
   methodNotAllowed,
   conflict,
+  unsupportedMediaType,
   unavailable,
   internal,
   toApiError,

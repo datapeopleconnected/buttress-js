@@ -23,6 +23,7 @@ import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
 
 import AccessControlPolicyMatch from '../access-control/policy-match.js';
+import { READ_POLICY_VERBS } from '../access-control/helpers.js';
 
 import Model from '../model/index.js';
 import { Policy, PolicyConfig } from '../model/core/policy.js';
@@ -309,7 +310,7 @@ export class PolicyCache {
     return policy.config.reduce((acc: string[], config: PolicyConfig) => {
       for (const schema of config.schema) {
         for (const verb of config.verbs) {
-          if (verb === '%ALL%' || verb === 'GET' || verb === 'SEARCH') {
+          if (verb === '%ALL%' || READ_POLICY_VERBS.includes(verb)) {
             acc.push(`app:${policy._appId.toString()}:schema:${schema}`);
           }
         }

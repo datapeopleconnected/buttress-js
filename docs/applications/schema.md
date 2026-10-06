@@ -214,6 +214,24 @@ Ids held inside an `object` property aren't treated as ids, so they're kept exac
 
 Items are checked against the array's `__itemtype` or item `__schema`, element by element when the whole array is replaced. Objects in an array with an item `__schema` keep only the properties the item schema declares, so declare `id` in the item schema if clients give items their own ids. An item of either kind of typed array can't be `null`; to add an item of defaults to an array with an item `__schema`, send `{}`. An array with neither takes any value. An array value always replaces the whole property, so an item that is itself an array can't be appended; replace the whole array instead. To append several items, send one update per item, as an array of updates to `PUT <schema>/:id` or as items of a `bulk/update`; they're applied in order.
 
+## Searching
+
+A search sends its query in the body, with the `QUERY` method ([RFC 10008](https://www.rfc-editor.org/rfc/rfc10008)),
+which reads like `GET` but takes a body:
+
+- `QUERY <schema>` takes `{query, skip, limit, sort, project}`, each optional, and responds with the entities found.
+- `QUERY <schema>/count` takes a query, or `{query}`, and responds with the number found.
+- `QUERY <schema>/bulk/load` takes `{query: {ids: [...]}, project}` and responds with those entities.
+
+A `QUERY`'s body must be JSON, sent with `Content-Type: application/json`. Without it the request is refused with a
+415, `unsupported_query_type`. Responses carry `Accept-Query: "application/json"` to say so. A browser on another
+origin sends a preflight `OPTIONS` before a `QUERY`, as it does before a `PUT`.
+
+Earlier releases took searches with the `SEARCH` method, from the drafts that became RFC 10008. `SEARCH` is still
+answered as before, with or without a `Content-Type`, but it's deprecated: its responses carry a `Deprecation`
+header ([RFC 9745](https://www.rfc-editor.org/rfc/rfc9745)), and a later major release will drop it. Move clients
+to `QUERY`.
+
 ## Bulk Requests
 `POST <schema>/bulk/update` takes `[{id, sourceId?, body}]`, where `body` is an update or an array of them. Each item is validated and applied on its own, in order, and the response has one entry per item, in request order:
 

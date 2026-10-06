@@ -57,6 +57,9 @@ Every concrete route (core API routes, schema CRUD routes, plugin routes) extend
 `_validate(req, res)` + `_exec(req, res, validate)`. `Route.exec()` is the fixed pipeline all of them
 share:
 
+0. `_checkQueryMethod()` — only on a `QUERY` route: sets `Accept-Query`, refuses a `QUERY` without a JSON
+   `Content-Type` with a 415 `unsupported_query_type` (RFC 10008 §2), and marks a `SEARCH` with a
+   `Deprecation` header.
 1. `_authenticate()` — checks `req.context.token` exists and its `type` meets `this.authType`.
    Authority is ranked by array position in `Constants.Type` (`AuthTypeOrder = Object.values(Constants.Type)`
    = `[user, dataSharing, lambda, app, system]`), so `system` outranks `app` outranks `lambda` outranks
@@ -75,16 +78,21 @@ share:
    status, or destroys the socket if the response has started. Anything that pipes or merges find streams
    (the adapters, `models-access.find`) must pass errors on too: use `Stream.pipeline()`, or destroy the
    output with the error.
-4. `_logActivity()` — fire-and-forget `ActivitySchemaModel.add()` for non-GET/SEARCH verbs, if
+4. `_logActivity()` — fire-and-forget `ActivitySchemaModel.add()` for verbs that aren't reads (`isReadVerb()`), if
    `this.activity` (default `true`).
-5. `_boardcastData()` — for non-GET/SEARCH verbs: emits `rest:activity` twice (once as a "super"
+5. `_boardcastData()` — for verbs that aren't reads: emits `rest:activity` twice (once as a "super"
    broadcast, once as a normal one — see `_broadcast(req, res, result, path, isSuper)`), only if
    `this.activityBroadcast === true` (**opt-in per route**, default `false`); then calls
    `_checkBasedPathLambda()` to fire `rest:worker:notifyLambdaPathChange` if applicable (see
    [lambda-system.md](lambda-system.md)) — this happens regardless of `activityBroadcast`.
 
 Route flags a subclass typically sets: `verb`, `authType`, `permissions`, `activityBroadcast`,
-`activityTitle`/`activityDescription`, `redactResults`, `addSourceId`. Schema-generated routes call
+`activityTitle`/`activityDescription`, `redactResults`, `addSourceId`.
+
+**Searches are `Verbs.QUERY`** (RFC 10008), whose body is the query. `SEARCH`, the method's name in the drafts,
+is deprecated but still answered: `routerMethods(verb)` registers a `QUERY` (or `SEARCH`) route for both
+methods, in `_initRoute`/`_initSchemaRoutes`. The route names
+(`SEARCH CAR LIST`) and `Permissions.SEARCH` are labels and token permissions, not methods, and stay. Schema-generated routes call
 `__configureSchemaRoute()` which sets `core = false`, `redactResults = true`, `addSourceId = true`.
 
 **Core collections are shared by every app**, so a core route reaches them through

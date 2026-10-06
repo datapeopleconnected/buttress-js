@@ -42,7 +42,7 @@ export default class SearchCount extends Route {
 
     super(`${schemaRoutePath}/count`, `COUNT ${schema.name}`, services, schema, app);
     this.__configureSchemaRoute();
-    this.verb = Route.Constants.Verbs.SEARCH;
+    this.verb = Route.Constants.Verbs.QUERY;
     this.permissions = Route.Constants.Permissions.SEARCH;
 
     this.activityDescription = `COUNT ${schema.name}`;

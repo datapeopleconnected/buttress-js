@@ -130,7 +130,7 @@ describe('Token API', async () => {
 		it('Should search and return tokens for a specific user with a system token', async () => {
 			const tokens = await bjsReq({
 				url: `${ENDPOINT.REST}/api/v1/token/${testEnv.users.user1.id}`,
-				method: 'SEARCH',
+				method: 'QUERY',
 				headers: { 'Content-Type': 'application/json' }
 			});
 
@@ -140,7 +140,7 @@ describe('Token API', async () => {
 		it('Should search and return tokens for a specific user with an app token', async () => {
 			const tokens = await bjsReq({
 				url: `${ENDPOINT.REST}/api/v1/token/${testEnv.users.user1.id}`,
-				method: 'SEARCH',
+				method: 'QUERY',
 				headers: { 'Content-Type': 'application/json' }
 			}, testEnv.apps.app1.token);
 

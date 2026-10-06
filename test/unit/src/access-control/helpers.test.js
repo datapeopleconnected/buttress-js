@@ -472,6 +472,30 @@ describe('access-control/helpers:filterPolicyConfigs', () => {
     assert.strictEqual(result.length, 1);
   });
 
+  describe('QUERY and its old name SEARCH', () => {
+    const configFor = (verbs) => makePolicy([{ verbs, schema: ['user'], query: {}, projection: null, condition: null }]);
+
+    for (const [granted, requested] of [
+      ['QUERY', 'QUERY'],
+      ['SEARCH', 'SEARCH'],
+      ['SEARCH', 'QUERY'],
+      ['QUERY', 'SEARCH'],
+    ]) {
+      it(`should let a config granting ${granted} match a ${requested} request`, () => {
+        assert.strictEqual(filterPolicyConfigs(configFor([granted]), 'user', requested, false).length, 1);
+      });
+    }
+
+    it('should not let QUERY grant GET or POST', () => {
+      assert.strictEqual(filterPolicyConfigs(configFor(['QUERY']), 'user', 'GET', false).length, 0);
+      assert.strictEqual(filterPolicyConfigs(configFor(['QUERY']), 'user', 'POST', false).length, 0);
+    });
+
+    it('should not let GET grant QUERY', () => {
+      assert.strictEqual(filterPolicyConfigs(configFor(['GET']), 'user', 'QUERY', false).length, 0);
+    });
+  });
+
   describe('verbCheckReadability', () => {
     it('should return config when readability check matches GET', () => {
       const policy = makePolicy([
@@ -485,6 +509,15 @@ describe('access-control/helpers:filterPolicyConfigs', () => {
     it('should return config when readability check matches SEARCH', () => {
       const policy = makePolicy([
         { verbs: ['SEARCH'], schema: ['user'], query: {}, projection: null, condition: null },
+      ]);
+
+      const result = filterPolicyConfigs(policy, 'user', 'DELETE', true, true);
+      assert.strictEqual(result.length, 1);
+    });
+
+    it('should return config when readability check matches QUERY', () => {
+      const policy = makePolicy([
+        { verbs: ['QUERY'], schema: ['user'], query: {}, projection: null, condition: null },
       ]);
 
       const result = filterPolicyConfigs(policy, 'user', 'DELETE', true, true);

@@ -185,24 +185,70 @@ describe('Schema', async () => {
 				assert.strictEqual(entity.name, 'name-test');
 			});
 
-			it(`Should make a SEARCH request for car with name 'name-test'`, async () => {
-				const body = await bjsReq({
-					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
-					method: 'SEARCH',
-					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify({query: {name: `name-test`}}),
-				}, testEnv.apps.app1.token);
-				assert.strictEqual(body.length, 1);
-			});
+			// SEARCH is QUERY's name before RFC 10008, answered alike until it's dropped
+			for (const method of ['QUERY', 'SEARCH']) {
+				it(`Should make a ${method} request for car with name 'name-test'`, async () => {
+					const body = await bjsReq({
+						url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+						method,
+						headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify({query: {name: `name-test`}}),
+					}, testEnv.apps.app1.token);
+					assert.strictEqual(body.length, 1);
+				});
 
-			it('Should make a SEARCH request to get the count of the results', async () => {
-				const body = await bjsReq({
-					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/count`,
-					method: 'SEARCH',
-					headers: {'Content-Type': 'application/json'},
-					body: JSON.stringify({name: `name-test`}),
-				}, testEnv.apps.app1.token);
-				assert.strictEqual(body, 1);
+				it(`Should make a ${method} request to get the count of the results`, async () => {
+					const body = await bjsReq({
+						url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/count`,
+						method,
+						headers: {'Content-Type': 'application/json'},
+						body: JSON.stringify({name: `name-test`}),
+					}, testEnv.apps.app1.token);
+					assert.strictEqual(body, 1);
+				});
+			}
+
+			describe('QUERY', async () => {
+				const cars = () => `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`;
+				const send = (method, headers, body) => fetch(cars(), {
+					method,
+					headers: {Authorization: `Bearer ${testEnv.apps.app1.token}`, ...headers},
+					body,
+				});
+
+				it('Should say which bodies a QUERY takes', async () => {
+					const res = await send('QUERY', {'Content-Type': 'application/json'}, '{}');
+					assert.strictEqual(res.status, 200);
+					assert.strictEqual(res.headers.get('accept-query'), '"application/json"');
+					assert.strictEqual(res.headers.get('deprecation'), null);
+				});
+
+				for (const [what, headers, body] of [
+					['no Content-Type', {}, undefined],
+					['a body in another type', {'Content-Type': 'text/plain'}, 'name-test'],
+				]) {
+					it(`Should refuse a QUERY with ${what}, saying which bodies it takes`, async () => {
+						const res = await send('QUERY', headers, body);
+						assert.strictEqual(res.status, 415);
+						assert.strictEqual(res.headers.get('accept-query'), '"application/json"');
+						assert.strictEqual((await res.json()).code, 'unsupported_query_type');
+					});
+				}
+
+				it('Should answer a SEARCH without a Content-Type as before, marking it deprecated', async () => {
+					const res = await send('SEARCH', {}, undefined);
+					assert.strictEqual(res.status, 200);
+					assert.ok(Array.isArray(await res.json()));
+					assert.match(res.headers.get('deprecation') ?? '', /^@\d+$/);
+				});
+
+				it('Should allow QUERY from another origin', async () => {
+					const res = await fetch(cars(), {
+						method: 'OPTIONS',
+						headers: {'Origin': 'https://elsewhere.example', 'Access-Control-Request-Method': 'QUERY'},
+					});
+					assert.ok(res.headers.get('access-control-allow-methods')?.split(',').includes('QUERY'));
+				});
 			});
 
 			it('Should make a PUT request to get the count of the results', async () => {
@@ -269,7 +315,7 @@ describe('Schema', async () => {
 
 		const countNamed = (name) => bjsReq({
 			url: `${carsUrl()}/count`,
-			method: 'SEARCH',
+			method: 'QUERY',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({query: {name}}),
 		}, testEnv.apps.app1.token);
@@ -362,7 +408,7 @@ describe('Schema', async () => {
 	describe('Search operators', async () => {
 		const searchNames = async (query) => (await bjsReq({
 			url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
-			method: 'SEARCH',
+			method: 'QUERY',
 			headers: {'Content-Type': 'application/json'},
 			body: JSON.stringify({query}),
 		}, testEnv.apps.app1.token)).map((car) => car.name);

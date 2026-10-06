@@ -254,7 +254,7 @@ export default class AppSchemaModel extends StandardModel<App> {
             },
           },
           {
-            verbs: ['GET', 'SEARCH', 'PUT'],
+            verbs: ['GET', 'QUERY', 'PUT'],
             schema: ['app'],
             query: {
               _id: {
