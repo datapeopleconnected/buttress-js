@@ -84,7 +84,8 @@ relying on that selects fewer tokens now.
 A token's policy properties are set, updated or removed with an object (`PUT user/:id/update-policy-property/:tokenId`
 and the like), and a list is refused with a 400, `invalid_body`. Each property is stored under its name as given.
 Earlier releases failed with a 500 when an update gave a property named `length` a value that isn't a number, swallowed
-a numeric one, and dropped one named `__proto__`.
+a numeric one, and dropped one named `__proto__`. They also dropped a property named `query`: one a set or update gave,
+and the token's own whenever another of its properties was removed.
 
 ## Conditions
 

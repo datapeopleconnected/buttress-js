@@ -42,7 +42,7 @@ describe('User API', async () => {
 		}, 'User API setup');
 
 		testEnv.apps.app1 = await runStep('create app1', async () =>
-			createApp(ENDPOINT.REST, 'Test User API', 'test-user-api-1', { someProperty: [ 'value', 'newValue' ], length: [ 'a' ] })
+			createApp(ENDPOINT.REST, 'Test User API', 'test-user-api-1', { someProperty: [ 'value', 'newValue' ], length: [ 'a' ], query: [ 'reports' ] })
 		, 'User API setup');
 
 		// Create some users
@@ -491,6 +491,27 @@ describe('User API', async () => {
 			}, testEnv.apps.app1.token);
 
 			assert.strictEqual(response, true, 'Response should be true');
+		});
+
+		// A property named `query` was dropped: from an update, and, as the remove route gives the token's properties
+		// less the ones going, from the token whenever another of its properties was removed
+		it('Should keep a policy property named query when another is removed', async () => {
+			const token = testEnv.users.user1.tokens[0];
+			const change = (route, body) => bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}/${route}/${token.id}`,
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify(body)
+			}, testEnv.apps.app1.token);
+			await change('update-policy-property', { query: 'reports' });
+			await change('remove-policy-property', { length: 'a' });
+
+			const user = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}`,
+				method: 'GET',
+			}, testEnv.apps.app1.token);
+			const stored = user.tokens.find((t) => t.value === token.value).policyProperties;
+			assert.deepStrictEqual(stored, { query: 'reports' });
 		});
 	});
 

@@ -215,10 +215,6 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @return {Promise} - resolves after updating token policy properties
    */
   async setPolicyPropertiesById(tokenId: string, policyProperties: Record<string, unknown>) {
-    if (policyProperties.query) {
-      delete policyProperties.query; // What is this line for??
-    }
-
     await super.updateById(this.createId(tokenId), { $set: { policyProperties: policyProperties } });
 
     await this.__refreshTokenPolicies(tokenId);
@@ -231,13 +227,9 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @return {Promise} - resolves to an array of Apps
    */
   async updatePolicyProperties(token: Token, policyProperties: Record<string, unknown>) {
-    if (policyProperties.query) {
-      delete policyProperties.query; // Again, what is this line for??
-    }
-
     const tokenPolicy = token.policyProperties || {};
-    // Spreading copies each own name as one of the result's own, so every name is stored as given: `length` too, and
-    // `__proto__`, which JSON.parse and BSON give as an own name, never as the result's prototype
+    // Spreading copies each own name as one of the result's own, so every name is stored as given: `length` and `query`
+    // too, and `__proto__`, which JSON.parse and BSON give as an own name, never as the result's prototype
     await super.updateById(this.createId(token.id), {
       $set: {
         policyProperties: {

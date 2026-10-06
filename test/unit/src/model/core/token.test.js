@@ -139,13 +139,16 @@ describe('model/core/TokenSchemaModel:setPolicyPropertiesById', () => {
     assert.ok(nrp.emit.calledWith('app-routes:bust-cache', '{}'));
   });
 
-  it('strips a stray query key from the policy properties before saving', async () => {
+  // It was dropped, and from the object the caller gave too
+  it('stores a property named `query` as it stores any other, leaving the caller its object', async () => {
     const { model } = createModel();
+    const properties = { role: 'admin', query: 'reports' };
 
-    await model.setPolicyPropertiesById('token-1', { role: 'admin', query: { should: 'not-persist' } });
+    await model.setPolicyPropertiesById('token-1', properties);
 
     const [, update] = model.adapter.updateById.firstCall.args;
-    assert.deepStrictEqual(update.$set.policyProperties, { role: 'admin' });
+    assert.deepStrictEqual(update.$set.policyProperties, { role: 'admin', query: 'reports' });
+    assert.deepStrictEqual(properties, { role: 'admin', query: 'reports' });
   });
 });
 
@@ -209,14 +212,17 @@ describe('model/core/TokenSchemaModel:updatePolicyProperties', () => {
     assert.strictEqual({}.polluted, undefined);
   });
 
-  it('strips a stray query key from the incoming policy properties', async () => {
+  // A `query` given was dropped. The remove route gives the token's properties less the ones going, so a token lost its
+  // own `query` whenever another of its properties was removed.
+  it('keeps a property named `query`, given or kept from the token', async () => {
     const { model } = createModel();
-    const token = { id: 'token-1', policyProperties: {} };
+    const remaining = { query: 'reports' };
 
-    await model.updatePolicyProperties(token, { role: 'admin', query: { should: 'not-persist' } });
+    await model.updatePolicyProperties({ id: 'token-1', policyProperties: {} }, { role: 'admin', query: 'reports' });
+    await model.updatePolicyProperties({ id: 'token-2', policyProperties: remaining }, remaining);
 
-    const [, update] = model.adapter.updateById.firstCall.args;
-    assert.deepStrictEqual(update.$set.policyProperties, { role: 'admin' });
+    const stored = model.adapter.updateById.getCalls().map((call) => call.args[1].$set.policyProperties);
+    assert.deepStrictEqual(stored, [{ role: 'admin', query: 'reports' }, { query: 'reports' }]);
   });
 });
 
