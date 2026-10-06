@@ -120,7 +120,7 @@ export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
    */
   findById(id: string): Promise<DocumentOf<M> | null> {
     if (this.tenant === null) return this._model.findById(id);
-    return this._model.findOne({ id, ...this.clause });
+    return this._model.findOne({ id, ...this._besideId });
   }
 
   /**
@@ -165,7 +165,7 @@ export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
   }
 
   async exists(id: string): Promise<boolean> {
-    return Boolean(await this._model.exists(id, null, this.clause));
+    return Boolean(await this._model.exists(id, null, this._besideId));
   }
 
   async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string) {
@@ -227,6 +227,12 @@ export default class TenantScopedModel<M extends StandardModel<DocumentOf<M>>> {
 
   rmAll(query?: AdapterQuery) {
     return this._model.rmAll(this.scope(query));
+  }
+
+  // The clause, to go beside a condition on the id in one query object. The apps model's names `id` too, which would
+  // replace the id asked for with the tenant's own, so it goes under $and there
+  private get _besideId(): AdapterQuery {
+    return this.tenantKey === 'id' && this.tenant !== null ? { $and: [this.clause] } : this.clause;
   }
 
   private async _assertTenants(id: string) {
