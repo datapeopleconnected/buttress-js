@@ -56,7 +56,15 @@ function stubModels({ policies = [], tokens = [] }) {
   return { policyModel, tokenModel };
 }
 
-const policy = (id, name, selection, limit, appId = 'app1') => ({ id, name, selection, limit, _appId: appId, config: [] });
+const policy = (id, name, selection, limit, { appId = 'app1', transient = false } = {}) => ({
+  id,
+  name,
+  selection,
+  limit,
+  transient,
+  _appId: appId,
+  config: [],
+});
 const token = (id, policyProperties, appId = 'app1') => ({ id, type: 'user', policyProperties, _appId: appId });
 
 // The properties each token was left with, by token id
@@ -85,9 +93,9 @@ describe('access-control/PolicyExpiry:sweep', () => {
     assert.deepStrictEqual(policyModel.rm.args, [['passed']]);
   });
 
-  it('takes the property named after an expired policy off every token it selects, and nothing else', async () => {
+  it('takes the property named after an expired transient policy off every token it selects, and nothing else', async () => {
     const { policyModel, tokenModel } = stubModels({
-      policies: [policy('exam', 'examAccess', { examAccess: { '@eq': true } }, PASSED)],
+      policies: [policy('exam', 'examAccess', { examAccess: { '@eq': true } }, PASSED, { transient: true })],
       tokens: [
         token('alice', { examAccess: true, role: 'STAFF' }),
         token('bob', { examAccess: true }),
@@ -105,11 +113,11 @@ describe('access-control/PolicyExpiry:sweep', () => {
     assert.deepStrictEqual(policyModel.rm.args, [['exam']]);
   });
 
-  it("takes off no property but the one named after the policy, so a selection by a shared property leaves it", async () => {
+  it('takes off no property but the one named after a transient policy, so one it selects by too is left', async () => {
     const { policyModel, tokenModel } = stubModels({
       policies: [
         policy('staff', 'staff', { role: { '@eq': 'STAFF' } }, null),
-        policy('promo', 'promo-editors', { role: { '@eq': 'STAFF' } }, PASSED),
+        policy('promo', 'promo-editors', { role: { '@eq': 'STAFF' } }, PASSED, { transient: true }),
       ],
       tokens: [token('alice', { role: 'STAFF' }), token('bob', { role: 'STAFF', 'promo-editors': true })],
     });
@@ -120,11 +128,23 @@ describe('access-control/PolicyExpiry:sweep', () => {
     assert.deepStrictEqual(policyModel.rm.args, [['promo']]);
   });
 
+  it("leaves the property named after a policy that isn't transient", async () => {
+    const { policyModel, tokenModel } = stubModels({
+      policies: [policy('exam', 'examAccess', { examAccess: { '@eq': true } }, PASSED)],
+      tokens: [token('alice', { examAccess: true })],
+    });
+
+    await new PolicyExpiry().sweep(NOW);
+
+    assert.strictEqual(tokenModel.updatePolicyProperties.callCount, 0);
+    assert.deepStrictEqual(policyModel.rm.args, [['exam']]);
+  });
+
   it('keeps the property while another policy whose limit has not passed selects by it', async () => {
     const { policyModel, tokenModel } = stubModels({
       policies: [
-        policy('exam-1', 'examAccess', { examAccess: { '@eq': true } }, PASSED),
-        policy('exam-2', 'examAccess', { '@or': [{ examAccess: { '@eq': true } }, { role: { '@eq': 'ADMIN' } }] }, TO_COME),
+        policy('exam', 'examAccess', { examAccess: { '@eq': true } }, PASSED, { transient: true }),
+        policy('review', 'exam-review', { '@or': [{ examAccess: { '@eq': true } }, { role: { '@eq': 'ADMIN' } }] }, TO_COME),
       ],
       tokens: [token('alice', { examAccess: true })],
     });
@@ -132,14 +152,14 @@ describe('access-control/PolicyExpiry:sweep', () => {
     await new PolicyExpiry().sweep(NOW);
 
     assert.strictEqual(tokenModel.updatePolicyProperties.callCount, 0);
-    assert.deepStrictEqual(policyModel.rm.args, [['exam-1']]);
+    assert.deepStrictEqual(policyModel.rm.args, [['exam']]);
   });
 
   it('takes the property off once the other policies that select by it have expired too', async () => {
     const { policyModel, tokenModel } = stubModels({
       policies: [
-        policy('exam-1', 'examAccess', { examAccess: { '@eq': true } }, PASSED),
-        policy('exam-2', 'examAccess', { examAccess: { '@eq': true } }, PASSED),
+        policy('exam', 'examAccess', { examAccess: { '@eq': true } }, PASSED, { transient: true }),
+        policy('review', 'exam-review', { examAccess: { '@eq': true } }, PASSED),
       ],
       tokens: [token('alice', { examAccess: true, role: 'STAFF' })],
     });
@@ -148,7 +168,7 @@ describe('access-control/PolicyExpiry:sweep', () => {
 
     assert.strictEqual(tokenModel.updatePolicyProperties.callCount, 1);
     assert.deepStrictEqual(updated(tokenModel), { alice: { role: 'STAFF' } });
-    assert.deepStrictEqual(policyModel.rm.args, [['exam-1'], ['exam-2']]);
+    assert.deepStrictEqual(policyModel.rm.args, [['exam'], ['review']]);
   });
 
   it("logs a policy that can't be removed, and removes the rest", async () => {

@@ -86,4 +86,5 @@ every origin it's used from (`POST /api/v1/user/:id/token`).
 - Keep wildcard access (`%FULL_ACCESS%`, `%ALL%`) for admin-only policies, and keep those policies few and
   auditable.
 - A policy can carry a `limit` (expiry date): it grants nothing once the limit passes, and Buttress then removes it,
-  along with the property a transient policy selects its tokens by. See [Policy](../applications/policy.md#limit).
+  along with the property a transient policy (`transient: true`) selects its tokens by. See
+  [Policy](../applications/policy.md#limit).

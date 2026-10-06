@@ -166,10 +166,11 @@ whose `limit` has passed. The SPR primary sweeps at start-up and then a minute a
 (`limit: {$lte: now}`, checked again with `policyLimit`; one that isn't a date is left for its author, though
 `isPolicyExpired` takes it as passed) and, for each:
 
-- If its `selection` names a property called the policy's `name`, a transient policy (buttress-js-api's
-  `createUserTransientPolicy` gives a token `{[policy.name]: true}`), and none of the app's other policies whose limit
-  hasn't passed names that property, takes it off each of the app's tokens the selection selects
-  (`updatePolicyProperties`, as `RemoveUserPolicyProperties` does). No other property is touched. SR-DPC-001 D1: REST
+- If it's transient (`transient: true`, which buttress-js-api's `createUserTransientPolicy` sets, giving the token
+  `{[policy.name]: true}`), its `selection` names a property called the policy's `name`, and none of the app's other
+  policies whose limit hasn't passed names that property, takes it off each of the app's tokens the selection selects
+  (`updatePolicyProperties`, as `RemoveUserPolicyProperties` does). No other property is touched, and a policy that
+  isn't transient touches none. SR-DPC-001 D1: REST
   used to queue a timer per worker from a user's request in the week before the limit, which took every key the
   selection named off that one token, keys other policies selected it by included, and was lost on a restart.
 - Removes the policy (`Policy.rm`, which also takes it out of the cache).

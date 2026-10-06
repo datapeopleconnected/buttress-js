@@ -35,10 +35,10 @@ const limitPassed = (policy: Policy, now: Date) => {
 
 /**
  * Removes the policies whose limit has passed (SR-DPC-001 D1). A policy grants nothing from the moment its limit passes,
- * as every use of it checks (isPolicyExpired), so this only tidies up after it: the policy is removed, and so is the
- * policy property named after it, which is how a transient policy selects its tokens (createUserTransientPolicy in
- * buttress-js-api), from the tokens it selects. That property stays while a policy whose limit hasn't passed selects by
- * it too, and a token's other properties are never changed.
+ * as every use of it checks (isPolicyExpired), so this only tidies up after it: the policy is removed. A transient one
+ * (`transient: true`, as createUserTransientPolicy in buttress-js-api makes them) selects its tokens by a policy
+ * property named after it, which is taken off the tokens it selects too, unless a policy whose limit hasn't passed
+ * selects by it as well. No other policy property is ever changed.
  *
  * The SPR primary sweeps, so one process does. A sweep reads the policies as they're stored, so a limit moved or removed
  * before it passes is kept to, and one missed while nothing was sweeping is caught by the next sweep.
@@ -97,12 +97,13 @@ export class PolicyExpiry {
     }
   }
 
-  // Removes a policy whose limit has passed, and the property named after it from the tokens it selects, unless another
-  // of the app's policies whose limit hasn't passed names that property in its selection
+  // Removes a policy whose limit has passed, and, for a transient one, the property named after it from the tokens it
+  // selects, unless another of the app's policies whose limit hasn't passed names that property in its selection
   private async _expire(policy: Policy, now: Date) {
     const property = policy.name;
     const selection = policy.selection;
-    if (property && selection && AccessControlPolicyMatch.selectionKeys(selection).includes(property)) {
+    const transient = policy.transient === true;
+    if (transient && property && selection && AccessControlPolicyMatch.selectionKeys(selection).includes(property)) {
       if (!(await this._namedByOthers(policy, property, now))) {
         await this._removeProperty(policy._appId, selection, property);
       }

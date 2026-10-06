@@ -138,22 +138,32 @@ describe('model/core/PolicySchemaModel: what a policy is stored as', () => {
         },
       ],
       limit: null,
+      transient: false,
       _appId: APP_ID,
     };
     assert.deepStrictEqual(datastore.rows, [stored]);
     assert.deepStrictEqual(policy, stored);
   });
 
-  it('stores the version, env and limit it is given', async () => {
+  it('stores the version, env, limit and transient it is given', async () => {
     const { model, datastore } = createModel();
 
     await model.add(
-      { name: 'readers', selection: {}, config: [], version: '1.2.3', env: { a: 1 }, limit: '2030-01-01T00:00:00.000Z' },
+      {
+        name: 'readers',
+        selection: {},
+        config: [],
+        version: '1.2.3',
+        env: { a: 1 },
+        limit: '2030-01-01T00:00:00.000Z',
+        transient: true,
+      },
       { _appId: APP_ID },
     );
 
     assert.strictEqual(datastore.rows[0].version, '1.2.3');
     assert.deepStrictEqual(datastore.rows[0].env, { a: 1 });
     assert.deepStrictEqual(datastore.rows[0].limit, new Date('2030-01-01T00:00:00.000Z'));
+    assert.strictEqual(datastore.rows[0].transient, true);
   });
 });

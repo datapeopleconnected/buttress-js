@@ -16,6 +16,7 @@ By default, requests without matching policy access are denied.
 | env | object | no | Values a config's query can use |
 | config | array | yes | Access definitions (verbs, endpoints, schema, query, projection, condition) |
 | limit | date | no | Optional policy expiry |
+| transient | boolean | no | A transient policy's `limit` also takes the property named after it off the tokens it selected (see [Limit](#limit)) |
 
 A policy is checked when it's added, synced or updated, and refused with a 400, `invalid_policy`, listing each
 problem in `details.issues`, when a config would grant nothing or fail when it's evaluated. Each config needs
@@ -157,10 +158,11 @@ differently from a REST read: text without its case, and bare values not at all.
 ## Limit
 
 A policy with a `limit` grants nothing once the limit has passed, and within about a minute Buttress removes it. A
-policy that selects tokens by a property named after itself, as a transient policy does (buttress-js-api's
-`createUserTransientPolicy` gives a user's token `{"<policy name>": true}`), also has that property taken off the
-tokens it selected, unless another policy whose limit hasn't passed selects by it too. No other policy property is
-changed.
+transient policy, one with `"transient": true`, selects its tokens by a property named after itself
+(buttress-js-api's `createUserTransientPolicy` marks the policy transient and gives a user's token
+`{"<policy name>": true}`). When its limit passes, that property is also taken off the tokens it selected, unless
+another policy whose limit hasn't passed selects by it too. No other policy property is changed, and a policy that
+isn't transient leaves every token as it is.
 
 Earlier releases removed a policy only if a user's request came in during the week before its limit, and the process
 that served it was still running when the limit passed. They then took every property the selection named off that

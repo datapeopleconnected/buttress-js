@@ -75,6 +75,8 @@ export type Policy = {
   env: PolicyEnv | null;
   config: PolicyConfig[];
   limit: Date | null;
+  // A transient policy's limit also takes the policy property named after it off the tokens it selected (PolicyExpiry)
+  transient: boolean;
   _appId: string;
 };
 
@@ -87,6 +89,7 @@ export type PolicyAddBody = {
   env?: PolicyEnv | null;
   config?: Partial<PolicyConfig>[];
   limit?: string | number | Date | null;
+  transient?: boolean;
   version?: string | null;
 };
 
@@ -193,6 +196,12 @@ class PolicySchemaModel extends StandardModel<Policy> {
         limit: {
           __type: 'date',
           __default: null,
+          __required: false,
+          __allowUpdate: true,
+        },
+        transient: {
+          __type: 'boolean',
+          __default: false,
           __required: false,
           __allowUpdate: true,
         },
