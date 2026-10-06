@@ -141,15 +141,15 @@ describe('schema-routes/DeleteOne', () => {
 });
 
 describe('schema-routes/DeleteOne: a collection with remotes', () => {
-  // agreement-1's partner names app-c as its record's source, and the route reads learnt for app-c leads to agreement-2,
-  // as when a partner names another partner's app
+  // agreement-1's partner names app-c, agreement-2's partner app, as its record's source, as when a partner names
+  // another partner's app
   it("deletes a partner's record through the agreement it was read through, whatever source it names", async () => {
     const partner = [{ id: DOC_2, sourceId: 'app-c' }];
     const { model, datastores } = createFederatedSchemaModel(
       schema,
       [{ id: DOC_1 }],
       { 'agreement-1': partner, 'agreement-2': [] },
-      { 'app-c': 'agreement-2' },
+      { 'agreement-1': 'app-a', 'agreement-2': 'app-c' },
     );
     const route = createRoute(model);
     const req = { params: { id: DOC_2 }, context: { id: 'req-1', ac: { policyConfigs: [{}] } } };

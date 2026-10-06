@@ -41,7 +41,6 @@ import { Policy } from './model/core/policy.js';
 import TokenSchemaModel, { Token } from './model/core/token.js';
 
 import { PolicyCache } from './services/policy-cache.js';
-import { SourceDataSharingRouting } from './services/source-ds-routing.js';
 import type { AppSchemaUpdatedMessage, SocketConnectionMessage, SocketHeartbeatMessage } from './services/nrp.js';
 import UserSchemaModel, { User } from './model/core/user.js';
 import StandardModel from './model/type/standard.js';
@@ -137,8 +136,6 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     // Register some services.
     this.__services.set('modelManager', Model);
     this.__services.set('policyCache', new PolicyCache(this._redisClient, Model));
-    // For a collection with remotes to find a partner's entity by its source
-    this.__services.set('sdsRouting', new SourceDataSharingRouting(this._redisClient));
 
     this._policyCache = this.__services.get('policyCache') as PolicyCache;
 
@@ -168,11 +165,6 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     if (this._policyCache) {
       this._policyCache.clean();
-    }
-
-    if (this.__services.has('sdsRouting')) {
-      (this.__services.get('sdsRouting') as SourceDataSharingRouting).clean();
-      this.__services.delete('sdsRouting');
     }
 
     // Close Datastore connections

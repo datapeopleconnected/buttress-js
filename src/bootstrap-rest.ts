@@ -35,7 +35,6 @@ import { getThrownErrorMessage } from './helpers/index.js';
 import * as Schema from './helpers/schema.js';
 import type { Schema as SchemaDefinition } from './types/schema.js';
 
-import { SourceDataSharingRouting } from './services/source-ds-routing.js';
 import type { AppSchemaUpdatedMessage, AppSchemaAppliedMessage } from './services/nrp.js';
 import { SchemaChangeAcks, restProcessIdentity } from './services/schema-applied.js';
 
@@ -112,7 +111,6 @@ export default class BootstrapRest extends Bootstrap {
     const policyCache = this.__services.get('policyCache') as PolicyCache;
     if (policyCache === undefined) throw new Error('PolicyCache not found whilst trying to init BootstrapRest');
 
-    this.__services.set('sdsRouting', new SourceDataSharingRouting(redisClient));
     this.__services.set('modelManager', Model);
 
     // Call init on our singletons (this is mainly so they can setup their redis-pubsub connections)
@@ -154,12 +152,6 @@ export default class BootstrapRest extends Bootstrap {
       Logging.logSilly('Closing _redisClientRest client');
       (this.__services.get('redisClient') as RedisClientType).quit();
       this.__services.delete('redisClient');
-    }
-
-    if (this.__services.has('sdsRouting')) {
-      Logging.logSilly('Closing _sdsRouting');
-      (this.__services.get('sdsRouting') as SourceDataSharingRouting).clean();
-      this.__services.delete('sdsRouting');
     }
 
     // Destory all models

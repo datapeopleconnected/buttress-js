@@ -153,8 +153,8 @@ describe('schema-routes/UpdateOne: refusal messages', () => {
 });
 
 describe('schema-routes/UpdateOne: a collection with remotes', () => {
-  // agreement-1's partner names app-c as its record's source, and the route reads learnt for app-c leads to agreement-2,
-  // as when a partner names another partner's app
+  // agreement-1's partner names app-c, agreement-2's partner app, as its record's source, as when a partner names
+  // another partner's app
   const createFederatedRoute = () => {
     const own = [{ id: DOC_1, value: 'original' }];
     const partner = [{ id: DOC_2, sourceId: 'app-c', value: 'original' }];
@@ -162,7 +162,7 @@ describe('schema-routes/UpdateOne: a collection with remotes', () => {
       schema,
       own,
       { 'agreement-1': partner, 'agreement-2': [] },
-      { 'app-c': 'agreement-2' },
+      { 'agreement-1': 'app-a', 'agreement-2': 'app-c' },
     );
     return { route: createRoute(model), own, partner, datastores };
   };

@@ -142,11 +142,48 @@ export default class Buttress extends AbstractAdapter<URL> {
     });
   }
 
-  async activateDataSharing(registrationToken: string, newToken: string): Promise<unknown> {
+  /**
+   * Activates the agreement on the partner, telling it which app it's paired with.
+   * @param {string} registrationToken - the token the partner gave for the agreement
+   * @param {string} newToken - the token the partner is to use with this app from now on
+   * @param {string} appId - this app's id
+   * @return {Promise} - the partner's answer: its new token and, from a Buttress that gives it, its app's id
+   */
+  async activateDataSharing(registrationToken: string, newToken: string, appId?: string): Promise<unknown> {
     await this.resolveAfterInit();
     if (!this.__connection) throw new Error('Buttress connection not initialized');
     if (!this.__connection.AppDataSharing) throw new Error('Buttress AppDataSharing not initialized');
-    return await this.__connection.AppDataSharing.activate(registrationToken, newToken);
+    return await this.__connection.AppDataSharing.activate(
+      registrationToken,
+      newToken,
+      appId ? { params: { appId } } : {},
+    );
+  }
+
+  /**
+   * Asks the partner which app its agreement's token is for, for an agreement paired before pairing told each side.
+   * @return {Promise<string|null>} - the partner app's id, or null when its answer has none
+   */
+  async partnerAppId(): Promise<string | null> {
+    await this.resolveAfterInit();
+    const connection = this.__connection;
+    if (!connection?.AppDataSharing) throw new Error('Buttress AppDataSharing not initialized');
+    const token = this.uri.searchParams.get('token');
+    if (!token) throw new Error('Missing token in Buttress connection string');
+
+    // @buttress/api has no call for it, so it goes through the client's own request, as its calls do
+    const answer = (await connection.AppDataSharing._request('get', 'identity', {
+      method: '',
+      params: {},
+      token,
+      data: {},
+      body: {},
+      headers: {},
+      stream: false,
+      combineResults: true,
+    })) as { appId?: unknown } | null;
+    const appId = answer?.appId;
+    return ObjectIdHelper.isValid(appId) ? String(appId) : null;
   }
 
   override get ID() {

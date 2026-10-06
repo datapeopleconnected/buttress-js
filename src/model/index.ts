@@ -268,6 +268,7 @@ export class ModelManager {
 
         // ? Datastore shouldn't really care about the data sharing ID.
         remoteDatastore.dataSharingId = dataSharing.id;
+        remoteDatastore.partnerAppId = dataSharing.remoteApp.appId ?? null;
 
         datastores.push(remoteDatastore);
       }

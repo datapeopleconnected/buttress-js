@@ -100,9 +100,14 @@ export class Stack {
     await this._deleteRedisKeys(`${this.code}:*`);
   }
 
-  // Drops the routes to partners' records that reads taught the stack, as a Redis that lost its data would
-  async forgetDataSharingRoutes() {
-    await this._deleteRedisKeys(`${this.code}:sds-route:*`);
+  // Forgets which app each of the stack's agreements reaches, as an agreement paired before pairing recorded it has
+  async forgetPartnerApps() {
+    const mongo = await MongoClient.connect(mongoUrl, { serverSelectionTimeoutMS: 5000 });
+    try {
+      await mongo.db(this.dbName).collection('appDataSharing').updateMany({}, { $set: { 'remoteApp.appId': null } });
+    } finally {
+      await mongo.close();
+    }
   }
 
   async _deleteRedisKeys(pattern) {

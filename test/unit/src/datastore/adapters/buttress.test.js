@@ -123,3 +123,43 @@ describe('datastore/adapters/buttress:connect', () => {
     assert.strictEqual(adapter.uri.pathname, '/');
   });
 });
+
+// Each side of a pairing tells the other which app it is, and an agreement paired before asks the partner
+describe('datastore/adapters/buttress: which app a partner is', () => {
+  afterEach(() => sinon.restore());
+
+  const createConnected = (appDataSharing) => {
+    const adapter = new ButtressAdapter(new URL('butt://localhost:8000/partner?token=agreement-token'), {});
+    adapter.init = true;
+    adapter.__connection = { AppDataSharing: appDataSharing };
+    return adapter;
+  };
+
+  it("tells the partner which app it's paired with when it activates the agreement", async () => {
+    const activate = sinon.stub().resolves({ status: true, token: 'new-token' });
+    const adapter = createConnected({ activate });
+
+    await adapter.activateDataSharing('registration-token', 'new-token', '6abd05000000000000000001');
+
+    assert.deepStrictEqual(activate.firstCall.args, [
+      'registration-token',
+      'new-token',
+      { params: { appId: '6abd05000000000000000001' } },
+    ]);
+  });
+
+  it("asks the partner which app the agreement's token is for, with that token", async () => {
+    const request = sinon.stub().resolves({ appId: '6abd05000000000000000002' });
+    const adapter = createConnected({ _request: request });
+
+    assert.strictEqual(await adapter.partnerAppId(), '6abd05000000000000000002');
+    const [method, path, options] = request.firstCall.args;
+    assert.deepStrictEqual([method, path, options.token], ['get', 'identity', 'agreement-token']);
+  });
+
+  it("gives no app for an answer that doesn't name one", async () => {
+    const adapter = createConnected({ _request: sinon.stub().resolves({ appId: 'not-an-id' }) });
+
+    assert.strictEqual(await adapter.partnerAppId(), null);
+  });
+});

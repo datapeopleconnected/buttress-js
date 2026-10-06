@@ -37,6 +37,7 @@ const realValidateUpdate = (ModelClass) => (body) =>
   StandardModel.prototype.validateUpdate.call({ schemaData: ModelClass.Schema }, body);
 
 const [
+  GetAppDataSharingIdentity,
   GetAppDataSharing,
   AddDataSharing,
   UpdateAppDataSharing,
@@ -117,12 +118,39 @@ function createRoute(RouteClass, { nrp } = {}) {
   return route;
 }
 
-function createReq({ params = {}, body = {}, authApp = { id: '6abd05000000000000000001' }, token = { type: 'app' } } = {}) {
-  return { params, body, context: { id: 'req-1', authApp, token } };
+function createReq({
+  params = {},
+  query = {},
+  body = {},
+  authApp = { id: '6abd05000000000000000001' },
+  token = { type: 'app' },
+} = {}) {
+  return { params, query, body, context: { id: 'req-1', authApp, token } };
 }
 
 afterEach(() => {
   sinon.restore();
+});
+
+// A partner asks which app the agreement it holds a token for is with
+describe('routes/api/app-data-sharing:GetAppDataSharingIdentity', () => {
+  it("answers a partner's data sharing token with the app it's for", async () => {
+    stubModel();
+    const route = createRoute(GetAppDataSharingIdentity);
+    const req = createReq({ token: { type: 'dataSharing' } });
+
+    assert.deepStrictEqual(await route._exec(req, {}, await route._validate(req)), { appId: '6abd05000000000000000001' });
+  });
+
+  it('refuses any other token', async () => {
+    stubModel();
+    const route = createRoute(GetAppDataSharingIdentity);
+
+    await assert.rejects(route._validate(createReq({ token: { type: 'app' } })), {
+      status: 403,
+      code: 'invalid_token_type',
+    });
+  });
 });
 
 describe('routes/api/app-data-sharing:GetAppDataSharing', () => {
@@ -361,6 +389,33 @@ describe('routes/api/app-data-sharing:ActivateAppDataSharing', () => {
     assert.ok(tokenModel.updateById.calledWith('6abd02000000000000000001', { $set: { value: 'new-token-string' } }));
     assert.strictEqual(result.status, true);
     assert.strictEqual(result.token, 'new-token-string');
+  });
+
+  // Each side of a pairing tells the other its app, which a create naming that app goes by
+  it("records the partner's app, as pairing gives it, and answers with the app's own", async () => {
+    const agreement = { id: '6abd08000000000000000001', _appId: '6abd05000000000000000001', active: false, remoteApp: {} };
+    const { dsModel } = stubModel({ ds: { findById: async () => agreement } });
+    const route = createRoute(ActivateAppDataSharing);
+    const req = createReq({
+      token: { id: '6abd02000000000000000001', type: 'dataSharing', _appDataSharingId: agreement.id },
+      body: { newToken: 'remote-token-value' },
+      query: { appId: '6abd05000000000000000002' },
+    });
+
+    const result = await route._exec(req, {}, await route._validate(req));
+
+    assert.ok(dsModel.activate.calledWith(agreement.id, 'remote-token-value', '6abd05000000000000000002'));
+    assert.strictEqual(result.appId, '6abd05000000000000000001');
+  });
+
+  it("refuses a partner app id that isn't an id", async () => {
+    stubModel();
+    const route = createRoute(ActivateAppDataSharing);
+
+    await assert.rejects(
+      route._validate(createReq({ token: { type: 'dataSharing' }, body: { newToken: 'x' }, query: { appId: 'not-an-id' } })),
+      { status: 400, code: 'invalid_app_id' },
+    );
   });
 });
 

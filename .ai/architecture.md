@@ -65,7 +65,7 @@ what a given process actually does on startup.
 
 Bootstrap classes populate `this.__services` (a `Map<string, unknown>`) and pass it down to `Model`,
 `Routes`, `Route`, and model instances. Common keys: `nrp` (NodeRedisPubsub), `redisClient`,
-`policyCache` (`PolicyCache`), `modelManager` (the singleton `Model`), `sdsRouting` (REST and SPR). This is
+`policyCache` (`PolicyCache`), `modelManager` (the singleton `Model`). This is
 the only dependency-injection mechanism in the codebase — there's no DI container.
 
 ## Data flow (REST write → realtime delivery)
@@ -136,10 +136,11 @@ Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" �
   source has the id (one entity's parts), `PUT <schema>/:sourceId/:id` picks one by the source it names, or else
   it's the app's own; with neither it's a 409 `ambiguous_source`. The write's activity carries the DSA
   (`dataShareId`, a bulk update's `dataShareIds`), for the SPR to find the record there. A delete of every record
-  also goes through each DSA, for the partner's policy to scope. A create has nothing to read first, so it still
-  goes by the source it names, through the DSA reads learnt reaches it, by `SourceDataSharingRouting`
-  ([src/services/source-ds-routing.ts](../src/services/source-ds-routing.ts)), kept in Redis
-  (`sds-route:<appId>-<sourceId>` under `Config.redis.scope`).
+  also goes through each DSA, for the partner's policy to scope. A create has nothing to read first, so it goes
+  by the source it names: to the DSA whose `remoteApp.appId` is that app (`_createTarget`). Activation records each
+  side's app on the other's DSA (the consumer sends `?appId=` and the partner answers with its own), and a model
+  whose DSA was paired before that asks the partner when it connects (`GET app-data-sharing/identity`) and records
+  the answer. A bulk add routes each item, a source at a time, in request order. Nothing is learnt from reads.
   A partner that can't be reached when the model is built is left out of its sources, and tried again on a new
   connection (1 s doubling to 60 s) until it is. Meanwhile reads give the rest, a write to its records is a 503, and
   `GET app/schema` gives the collection without the partner's properties. The consumer is a live proxy: it

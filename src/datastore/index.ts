@@ -44,6 +44,8 @@ export class Datastore {
   private _hash?: string;
 
   dataSharingId?: string;
+  // The partner app the agreement reaches, as the agreement records it (null until known)
+  partnerAppId?: string | null;
 
   constructor(config: DatastoreConfig) {
     this._adapter = Factory.create(config.connectionString, config.options);

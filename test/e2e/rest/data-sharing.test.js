@@ -203,6 +203,22 @@ describe('Data Sharing', async () => {
 			body: JSON.stringify({car: ['READ']}),
 		}, app.token);
 
+		// Each side tells the other its app, where a create naming that app goes
+		it('Should record which app each side of the pairing is with', async () => {
+			const agreementOf = (name, app) => bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/app-data-sharing/${testEnv.agreements[name].id}`,
+				method: 'GET',
+			}, app.token);
+
+			const [app1Side, app2Side] = await Promise.all([
+				agreementOf('app1-to-app2', testEnv.apps.app1),
+				agreementOf('app2-to-app1', testEnv.apps.app2),
+			]);
+
+			assert.strictEqual(app1Side.remoteApp.appId, testEnv.apps.app2.id);
+			assert.strictEqual(app2Side.remoteApp.appId, testEnv.apps.app1.id);
+		});
+
 		it(`Should update the policy of an app's own agreement`, async () => {
 			const result = await updatePolicy(testEnv.agreements[`app1-to-app2`], testEnv.apps.app1);
 
@@ -274,6 +290,14 @@ describe('Data Sharing', async () => {
 
 			assert(result.id !== null && result.id !== undefined);
 			assert.strictEqual(result.name, 'A purple car');
+			assert((await app1Cars()).some((car) => car.id === result.id), 'the car was not created on App1');
+		});
+
+		it('Should refuse a car from App2 that names a source its collection doesn\'t read', async function() {
+			await assert.rejects(
+				app2Cars('', {method: 'POST', body: JSON.stringify({name: 'A lost car', sourceId: '5f0000000000000000000009'})}),
+				(err) => err.code === 400 && err.body.code === 'unknown_source',
+			);
 		});
 
 		const app2Cars = (urlPath, opts = {}) => bjsReq({
@@ -361,6 +385,25 @@ describe('Data Sharing', async () => {
 			const ids = scraps.map((car) => car.id);
 			assert(!(await app1Cars()).some((car) => ids.includes(car.id)), 'App1\'s car is still on App1');
 			assert(!(await app2Cars('', {method: 'GET'})).some((car) => ids.includes(car.id)), 'a car is still on App2');
+		});
+
+		it('Should create App1\'s and App2\'s own cars from App2 in one bulk add, in the order asked', async function() {
+			const created = await app2Cars('/bulk/add', {
+				method: 'POST',
+				body: JSON.stringify([
+					{name: 'Our bulk car'},
+					{name: 'A bulk car for App1', sourceId: testEnv.apps.app1.id},
+					{name: 'Our other bulk car'},
+				]),
+			});
+			testEnv.cars.push(...created);
+
+			assert.deepStrictEqual(created.map((car) => car.name), ['Our bulk car', 'A bulk car for App1', 'Our other bulk car']);
+			assert.deepStrictEqual(
+				created.map((car) => car.sourceId),
+				[testEnv.apps.app2.id, testEnv.apps.app1.id, testEnv.apps.app2.id],
+			);
+			assert((await app1Cars()).some((car) => car.id === created[1].id), 'App1\'s car is not on App1');
 		});
 	});
 

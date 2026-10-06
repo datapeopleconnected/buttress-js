@@ -177,14 +177,6 @@ describe('Federation', function () {
       assert.strictEqual(await nameOnA(env.cars[4].id), 'renamed by its id');
     });
 
-    it("updates one of the partner's cars once the routes reads taught are gone (D-20)", async () => {
-      await b.forgetDataSharingRoutes();
-      await b.restart(['rest']);
-      const res = await fromB('PUT', partnerCar(env.cars[5]), { path: 'name', value: 'renamed with no route' });
-      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
-      assert.strictEqual(await nameOnA(env.cars[5].id), 'renamed with no route');
-    });
-
     it("deletes one of the partner's cars", async () => {
       const res = await fromB('DELETE', `car/${env.cars[11].id}`);
       assert.strictEqual(res.status, 200, JSON.stringify(res.body));
@@ -198,6 +190,53 @@ describe('Federation', function () {
       assert.strictEqual(res.status, 200, JSON.stringify(res.body));
       const onA = await a.call('GET', 'fed-a/api/v1/car', { token: env.appA.token });
       assert.ok(!onA.some((car) => ids.includes(car.id)), 'a car is still on a');
+    });
+  });
+
+  // A create names the partner app it's for as its sourceId, and goes through the agreement that reaches that app
+  describe('Creating on a partner', () => {
+    const namesOnA = async () => (await a.call('GET', 'fed-a/api/v1/car', { token: env.appA.token })).map((car) => car.name);
+    const agreementOf = (stack, app, agreement) => stack.call('GET', `api/v1/app-data-sharing/${agreement.id}`, { token: app.token });
+
+    it('records which app each side is with when they pair (D-20)', async () => {
+      const [onA, onB] = await Promise.all([
+        agreementOf(a, env.appA, env.agreements.shared),
+        agreementOf(b, env.appB, env.agreements.consuming),
+      ]);
+      assert.strictEqual(onA.remoteApp.appId, env.appB.id);
+      assert.strictEqual(onB.remoteApp.appId, env.appA.id);
+    });
+
+    it('creates a car on the partner it names (D-20)', async () => {
+      const res = await fromB('POST', 'car', { name: 'made by b for a', sourceId: env.appA.id });
+      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+      assert.ok((await namesOnA()).includes('made by b for a'), 'the car is not on a');
+    });
+
+    it('creates cars on the partner and its own in one bulk add, in the order asked (D-20)', async () => {
+      const res = await fromB('POST', 'car/bulk/add', [
+        { name: "b's own bulk car" },
+        { name: 'a bulk car b made for a', sourceId: env.appA.id },
+      ]);
+      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+      assert.deepStrictEqual(
+        res.body.map((car) => [car.name, car.sourceId]),
+        [
+          ["b's own bulk car", env.appB.id],
+          ['a bulk car b made for a', env.appA.id],
+        ],
+      );
+      assert.ok((await namesOnA()).includes('a bulk car b made for a'), 'the car is not on a');
+    });
+
+    it('learns which app a pairing from before reaches by asking the partner, then creates there (D-20)', async () => {
+      await b.forgetPartnerApps();
+      await b.restart(['rest']);
+
+      const res = await fromB('POST', 'car', { name: 'made after asking', sourceId: env.appA.id });
+      assert.strictEqual(res.status, 200, JSON.stringify(res.body));
+      assert.ok((await namesOnA()).includes('made after asking'), 'the car is not on a');
+      assert.strictEqual((await agreementOf(b, env.appB, env.agreements.consuming)).remoteApp.appId, env.appA.id);
     });
   });
 

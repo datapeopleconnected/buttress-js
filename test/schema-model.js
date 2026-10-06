@@ -195,18 +195,17 @@ export const FEDERATED_APP_ID = ObjectIdHelper.new();
 
 /**
  * A real collection with remotes (RemoteCombinedModel) over datastores in memory: the app's own rows, and each
- * partner's, read through an agreement. Its routes for creates come from `routes`, a map of source to agreement.
+ * partner's, read through an agreement.
  * @param {object} schema - the collection's schema, as for createSchemaModel
  * @param {object[]} ownRows - the app's own rows
  * @param {object} partners - each agreement's id, and the rows its partner holds
- * @param {object} [routes] - the agreement reads have learnt reaches each source, by source
+ * @param {object} [partnerAppIds] - each agreement's id, and the partner app it records (none if not known)
  * @return {{ model: RemoteCombinedModel, datastores: object }} - the datastores by agreement, `local` for the app's own
  */
-export function createFederatedSchemaModel(schema, ownRows, partners, routes = {}) {
+export function createFederatedSchemaModel(schema, ownRows, partners, partnerAppIds = {}) {
   const services = new Map([
     ['nrp', { on: async () => () => {}, emit: () => {} }],
     ['modelManager', {}],
-    ['sdsRouting', { inform: () => {}, get: async (appId, sourceId) => routes[sourceId] }],
   ]);
   const local = createSchemaModel(schema, ownRows);
   const model = new RemoteCombinedModel(local.model.schemaData, { id: FEDERATED_APP_ID }, services);
@@ -219,6 +218,7 @@ export function createFederatedSchemaModel(schema, ownRows, partners, routes = {
     datastores[dataSharingId] = partner.datastore;
     return partner.model;
   });
+  model._partnerAppIds = new Map(Object.keys(partners).map((dataSharingId) => [dataSharingId, partnerAppIds[dataSharingId] ?? null]));
 
   return { model, datastores };
 }

@@ -1204,7 +1204,8 @@ describe('bootstrap-spr:_handleIncomingMessage a collection with remotes', () =>
 	const federatedCars = () => {
 		const model = Object.create(RemoteCombinedModel.prototype);
 		model.app = { id: APP_ID };
-		model._sdsRouting = { get: async (appId, sourceId) => (sourceId === PARTNER_ID ? 'ds-1' : undefined) };
+		model._partnerAppIds = new Map([['ds-1', PARTNER_ID]]);
+		model._unreachable = new Set();
 		model._localModel = { findById: async (id) => (id === ownCar.id ? ownCar : null) };
 		model._remoteModels = [{ dataSharingId: 'ds-1', findById: async (id) => (id === partnerCar.id ? partnerCar : null) }];
 		return Object.assign(model, carModel);

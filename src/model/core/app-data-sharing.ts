@@ -35,6 +35,8 @@ export type AppDataSharing = {
     ws: string;
     apiPath: string;
     token: string;
+    // The partner app's id, which each side tells the other when they pair, null until known
+    appId?: string | null;
   };
 
   _appId: string;
@@ -50,6 +52,7 @@ export type AppDataSharingAddBody = {
     ws?: string | null;
     apiPath: string;
     token: string;
+    appId?: string | null;
   };
   policyConfig?: Partial<PolicyConfig>[];
   appId?: string;
@@ -118,6 +121,14 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
             __required: true,
             __allowUpdate: true,
           },
+          // The partner app's id, where a create that names it as its sourceId goes. Pairing records it, and an agreement
+          // paired before asks the partner; its owner can also set it.
+          appId: {
+            __type: 'id',
+            __default: null,
+            __required: false,
+            __allowUpdate: true,
+          },
         },
         _appId: {
           __type: 'id',
@@ -152,6 +163,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
         ws: body.remoteApp.ws ? Helpers.trimSlashes(body.remoteApp.ws) : null,
         apiPath: Helpers.trimSlashes(body.remoteApp.apiPath),
         token: body.remoteApp.token,
+        appId: body.remoteApp.appId ? this.createId(body.remoteApp.appId) : null,
       },
 
       policyConfig: body.policyConfig ? body.policyConfig : [],
@@ -249,10 +261,11 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
   /**
    * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
    * @param {String} newToken - The new token which will be used to talk to the remote app
+   * @param {String} partnerAppId - the partner app's id, when the partner gave it
    * @return {Promise} - resolves when save operation is completed
    */
-  async activate(appDataSharingId: string, newToken: string | null = null) {
-    const update: { $set: { active: boolean; 'remoteApp.token'?: string } } = {
+  async activate(appDataSharingId: string, newToken: string | null = null, partnerAppId: string | null = null) {
+    const update: { $set: { active: boolean; 'remoteApp.token'?: string; 'remoteApp.appId'?: string } } = {
       $set: {
         active: true,
       },
@@ -261,11 +274,26 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
     if (newToken) {
       update.$set['remoteApp.token'] = newToken;
     }
+    if (partnerAppId) {
+      update.$set['remoteApp.appId'] = this.createId(partnerAppId);
+    }
 
     const result = await this.updateById(this.createId(appDataSharingId), update);
     // Once saved, as the Socket primary connects with what it reads back
     this.__nrp?.emit('dataShare:activated', JSON.stringify({ appDataSharingId: appDataSharingId }));
     return result;
+  }
+
+  /**
+   * Records the partner app's id, for an agreement paired before pairing told each side the other's
+   * @param {string} appDataSharingId
+   * @param {string} partnerAppId - the id the partner gave for its app
+   * @return {Promise} - resolves when save operation is completed
+   */
+  async recordPartnerAppId(appDataSharingId: string, partnerAppId: string) {
+    return this.updateById(this.createId(appDataSharingId), {
+      $set: { 'remoteApp.appId': this.createId(partnerAppId) },
+    });
   }
 
   /**

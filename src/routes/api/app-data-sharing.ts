@@ -33,9 +33,11 @@ import Datastore from '../../datastore/index.js';
 import DatastoreFactory from '../../datastore/adapter-factory.js';
 
 import ButtressAdapater from '../../datastore/adapters/buttress.js';
+import ObjectIdHelper from '../../datastore/adapters/object-id.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import AppDataSharingSchemaModel, { AppDataSharing, AppDataSharingAddBody } from '../../model/core/app-data-sharing.js';
 import { Services } from '../../bootstrap.js';
+import { App } from '../../model/core/app.js';
 import type { DataShareActivatedMessage } from '../../services/nrp.js';
 import { UpdatePathBody } from '../../types/datastore.js';
 import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
@@ -46,6 +48,8 @@ import { dataSharingDestinationProblem, remoteAppUrlsOf } from '../../helpers/eg
 interface DataSharingActivationResult {
   status: boolean;
   token: string;
+  // The partner's app, from a Buttress that pairs by app
+  appId?: string;
 }
 
 /**
@@ -85,12 +89,16 @@ const activateDataSharing = async (
   const activationResult = (await buttressAdapter.activateDataSharing(
     dataSharing.remoteApp.token,
     newToken,
+    String(dataSharing._appId),
   )) as DataSharingActivationResult | null;
   if (!activationResult || !activationResult.status) return dataSharing;
 
-  // Flag our data sharing agreement as active & update the remote app token with the new one.
-  await models.agreements.activate(dataSharing.id, activationResult.token);
+  // Flag our data sharing agreement as active, update the remote app token with the new one, and record the partner's
+  // app, where a create that names it goes. A partner from before pairing gave it doesn't, and is asked later.
+  const partnerAppId = ObjectIdHelper.isValid(activationResult.appId) ? String(activationResult.appId) : null;
+  await models.agreements.activate(dataSharing.id, activationResult.token, partnerAppId);
   dataSharing.remoteApp.token = activationResult.token;
+  dataSharing.remoteApp.appId = partnerAppId;
 
   // Update our data sharing agreement token with the new value.
   await models.tokens.updateById(dataSharingTokenId, { $set: { value: newToken } });
@@ -135,6 +143,43 @@ const destinationRefused = (problem: string) =>
 
 // Why a system-only route reaches every app
 const SYSTEM_ONLY = 'the route takes only system tokens';
+
+/**
+ * @class GetAppDataSharingIdentity
+ * @description Called by a partner Buttress with the token this app gave it, to learn which app the agreement pairs it
+ *   with: an agreement paired before pairing told each side the other's app asks this. It comes before
+ *   `app-data-sharing/:id`, which would take `identity` for an id.
+ */
+class GetAppDataSharingIdentity extends Route {
+  constructor(services: Services) {
+    super(
+      'app-data-sharing/identity',
+      'GET App Data Sharing Identity',
+      services,
+      Model.getCoreModel(AppDataSharingSchemaModel).schemaData,
+    );
+    this.verb = Route.Constants.Verbs.GET;
+    this.authType = Route.Constants.Type.DATASHARING;
+    this.permissions = Route.Constants.Permissions.READ;
+  }
+
+  override async _validate(req: Request, _res: Response) {
+    if (req.context.token?.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.DATA_SHARING) {
+      throw Helpers.Errors.forbidden(
+        'invalid_token_type',
+        "Only a partner's data sharing token can ask which app it's for",
+      );
+    }
+    if (!req.context.authApp) throw Helpers.Errors.internal('no_authenticated_app');
+
+    return req.context.authApp;
+  }
+
+  override async _exec(_req: Request, _res: Response, app: App) {
+    return { appId: String(app.id) };
+  }
+}
+routes.push(GetAppDataSharingIdentity);
 
 /**
  * @class GetAppDataSharing
@@ -388,6 +433,13 @@ class ActivateAppDataSharing extends Route {
       return Promise.reject(Helpers.Errors.badRequest('missing_data_token'));
     }
 
+    // The partner's app, which a Buttress that pairs by app gives, to record on the agreement
+    const partnerAppId = req.query.appId;
+    if (partnerAppId !== undefined && !ObjectIdHelper.isValid(partnerAppId)) {
+      this.log('ERROR: invalid partner app id', Route.LogLevel.ERR);
+      return Promise.reject(Helpers.Errors.badRequest('invalid_app_id', "The partner app's id is not valid"));
+    }
+
     // The token's app is the agreement's
     return this.scoped(req, AppDataSharingSchemaModel)
       .findById(token._appDataSharingId)
@@ -407,6 +459,7 @@ class ActivateAppDataSharing extends Route {
         return {
           token,
           dataSharing,
+          partnerAppId: partnerAppId === undefined ? null : String(partnerAppId),
         };
       });
   }
@@ -414,14 +467,16 @@ class ActivateAppDataSharing extends Route {
   override async _exec(
     req: RequestWithBody<{ newToken: string }>,
     res: Response,
-    { token, dataSharing }: { token: Token; dataSharing: AppDataSharing },
+    { token, dataSharing, partnerAppId }: { token: Token; dataSharing: AppDataSharing; partnerAppId: string | null },
   ): Promise<DataSharingActivationResult | true> {
     if (dataSharing.active) return true;
 
     const newLocalToken = Model.getCoreModel(TokenSchemaModel).createTokenString();
 
     const { newToken } = req.body;
-    await (await this.scoped(req, AppDataSharingSchemaModel).owned(dataSharing.id)).activate(dataSharing.id, newToken);
+    await (
+      await this.scoped(req, AppDataSharingSchemaModel).owned(dataSharing.id)
+    ).activate(dataSharing.id, newToken, partnerAppId);
 
     await (
       await this.scoped(req, TokenSchemaModel).owned(token.id.toString())
@@ -432,6 +487,8 @@ class ActivateAppDataSharing extends Route {
     return {
       status: true,
       token: newLocalToken,
+      // So the partner records which app it's paired with
+      appId: String(dataSharing._appId),
     };
   }
 }
