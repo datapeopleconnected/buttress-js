@@ -368,20 +368,15 @@ class Helpers {
         const refusal = refusedValue(data);
         if (refusal) return reject.applyIgnored(undefined, [refusal]);
 
-        if (typeof data === 'string') {
-          const url = new URL(data);
-          data = {
-            url,
-          };
-        } else if (data.url) {
-          data.url = typeof data.url === 'string' ? new URL(data.url) : data.url;
-        }
-
-        // data.url is a URL from here on, unless a request object had no url (then this line throws).
-        // Not the options or the whole URL, whose headers, body and query can carry the lambda's credentials
-        Logging.logSilly(`Lambda Fetch - [${data.options?.method}] ${redactUrl(data.url)}`);
-
         try {
+          // The url alone or a request's, refused at once if it isn't one. data.url is a URL from here on.
+          const url = typeof data === 'string' ? data : data?.url;
+          if (typeof url !== 'string' || !URL.canParse(url)) throw new Errors.CodedError('fetch_invalid_url', 400);
+          data = typeof data === 'string' ? { url: new URL(url) } : { ...data, url: new URL(url) };
+
+          // Not the options or the whole URL, whose headers, body and query can carry the lambda's credentials
+          Logging.logSilly(`Lambda Fetch - [${data.options?.method}] ${redactUrl(data.url)}`);
+
           if (
             data?.options?.body &&
             data.options.headers &&

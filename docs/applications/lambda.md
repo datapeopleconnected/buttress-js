@@ -114,3 +114,6 @@ bjs lambda list-property
   a log over it is logged as a note saying so; and a call given one rejects. Only a value that refers to the same
   objects many times over can get that big, as the lambda's own memory is no bigger. Earlier releases tried to write
   such a value out, which could stop the worker running any lambda.
+- A `fetch()` of something that isn't a URL, whether given alone or as the request's `url`, rejects at once with an
+  error whose message is `fetch_invalid_url` and code 400, which the lambda can catch. Earlier releases left that
+  `fetch()` unsettled, so the run failed after the runner's timeout as `lambda_execution_timed_out`.

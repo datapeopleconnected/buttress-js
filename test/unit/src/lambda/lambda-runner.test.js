@@ -2008,6 +2008,31 @@ describe('lambda/LambdaRunner:execute runs kept apart', () => {
     });
   });
 
+  // SR-DPC-001 R11: it was parsed before the error handling, so the lambda's fetch never settled and the run timed out
+  it("rejects a fetch of a url that isn't one at once, which the lambda can catch", async function () {
+    this.timeout(15000);
+    const { runner, run } = await createRunsRunner();
+
+    try {
+      const started = Date.now();
+      const result = await run({
+        lambdaId: 'la', appId: 'app-a',
+        lambdaBody: `
+          const outcomes = [];
+          for (const request of ['not a url', { url: 'x' }, null, {}, { url: 42 }]) {
+            outcomes.push(await fetch(request).then(() => 'sent', (err) => [err && err.message, err && err.code]));
+          }
+          lambda.setResult({ outcomes });`,
+      });
+
+      assert.deepStrictEqual(result.res.outcomes, Array(5).fill(['fetch_invalid_url', 400]));
+      assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
+      assert.deepStrictEqual(server.requests, []);
+    } finally {
+      runner._isolate.dispose();
+    }
+  });
+
   it('aborts a request a lambda leaves running when it returns, rather than answer the next run with it', async function () {
     this.timeout(10000);
     const { runner, run } = await createRunsRunner();
