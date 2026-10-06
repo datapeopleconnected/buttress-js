@@ -41,6 +41,9 @@ export type AppDataSharing = {
 
   _appId: string;
   _tokenId: string;
+  // The policy that lets the partner's token reach the app's data, made with the agreement; null for an agreement made
+  // before it was recorded
+  _policyId?: string | null;
 };
 
 // A data sharing agreement as posted to the API
@@ -140,6 +143,11 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
           __required: false,
           __allowUpdate: false,
         },
+        _policyId: {
+          __type: 'id',
+          __required: false,
+          __allowUpdate: false,
+        },
       },
     };
   }
@@ -170,6 +178,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
 
       _appId: this.createId(internals._appId),
       _tokenId: null,
+      _policyId: null,
     };
 
     const rxsToken = await this.__modelManager.getCoreModel(TokenSchemaModel).add(
@@ -183,7 +192,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
     );
     const token: Token = await Helpers.streamFirst(rxsToken);
 
-    await this.__createDataSharingPolicy(appDataSharingBody, token.id);
+    const policy = await this.__createDataSharingPolicy(appDataSharingBody, token.id);
 
     Logging.logSilly(`Emitting app-policy:bust-cache ${appDataSharingBody._appId}`);
     this.__nrp?.emit(
@@ -196,6 +205,7 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
     const rxsDataShare = await super.add(appDataSharingBody, {
       _appId: appDataSharingBody._appId,
       _tokenId: token.id,
+      _policyId: policy.id,
     });
     const dataSharing = (await Helpers.streamFirst(rxsDataShare)) as AppDataSharing;
 
@@ -221,27 +231,6 @@ export default class AppDataSharingSchemaModel extends StandardModel<AppDataShar
       },
       { _appId: body._appId },
     );
-  }
-
-  /**
-   * @param {ObjectId} appId - app id which needs to be updated
-   * @param {ObjectId} appDataSharingId - Data Sharing Id id which needs to be updated
-   * @param {String} type - data sharing type
-   * @param {Object} policy - policy object for the app
-   * @return {Promise} - resolves when save operation is completed
-   */
-  updatePolicy(appId: string, appDataSharingId: string, type: 'local' | 'remote', policy: unknown) {
-    policy = Helpers.Schema.encode(policy);
-
-    const update: { $set: Record<string, unknown> } = { $set: {} };
-
-    if (type === 'remote') {
-      update.$set['dataSharing.remoteApp'] = policy;
-    } else {
-      update.$set['dataSharing.localApp'] = policy;
-    }
-
-    return this.updateById(this.createId(appDataSharingId), update);
   }
 
   /**

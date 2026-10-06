@@ -200,7 +200,7 @@ describe('Data Sharing', async () => {
 			url: `${ENDPOINT.REST}/api/v1/app-data-sharing/${agreement.id}/policy`,
 			method: 'PUT',
 			headers: {'Content-Type': 'application/json'},
-			body: JSON.stringify({car: ['READ']}),
+			body: JSON.stringify([{verbs: ['%ALL%'], schema: ['%ALL%'], query: {access: '%FULL_ACCESS%'}}]),
 		}, app.token);
 
 		// Each side tells the other its app, where a create naming that app goes

@@ -109,4 +109,94 @@ describe('Data sharing: an agreement\'s policy', async () => {
 			env.agreements.sharer = ds;
 		});
 	});
+
+	// SR-DPC-001 C1: the route wrote the body to a field the agreement doesn't have and answered true, so the partner
+	// kept the access it had
+	describe('Changing an agreement\'s policy', async () => {
+		const updatePolicy = (ds, body, app = env.apps.sharer) => bjsReq({
+			url: `${ENDPOINT.REST}/api/v1/app-data-sharing/${ds.id}/policy`,
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		}, app.token);
+		// The names of the sharer's cars that the partner reads through its agreement
+		const sharerCarsReadByPartner = async () => (await bjsReq({
+			url: `${ENDPOINT.REST}/${env.apps.partner.apiPath}/api/v1/car`,
+			method: 'GET',
+		}, env.apps.partner.token)).filter((car) => car.sourceId === env.apps.sharer.id).map((car) => car.name).sort();
+		const onlyRed = [{ verbs: ['GET', 'QUERY'], schema: ['car'], query: { name: { '@eq': 'A red car' } } }];
+
+		before(async function() {
+			this.timeout(20000);
+
+			env.agreements.partner = await runStep('pair the partner', async () => registerDataSharing(ENDPOINT.REST,
+				agreement('partner-to-sharer', env.apps.sharer.apiPath, fullAccess, env.agreements.sharer.registrationToken),
+				env.apps.partner.token), scope);
+			assert.strictEqual(env.agreements.partner.active, true);
+
+			await runStep('partner schema', async () => updateSchema(ENDPOINT.REST, [{
+				name: 'car',
+				type: 'collection',
+				remotes: [{ name: 'partner-to-sharer', schema: 'car' }],
+			}], env.apps.partner.token), scope);
+			// Time to create the routes
+			await new Promise((r) => setTimeout(r, 500));
+		});
+
+		it('Should let the partner read the sharer\'s cars to begin with', async () => {
+			assert.deepStrictEqual(await sharerCarsReadByPartner(), ['A blue car', 'A red car']);
+		});
+
+		it('Should narrow what the partner reads to the new policy', async () => {
+			assert.strictEqual(await updatePolicy(env.agreements.sharer, onlyRed), true);
+
+			assert.deepStrictEqual(await sharerCarsReadByPartner(), ['A red car']);
+		});
+
+		it('Should keep the sharer\'s policy with the agreement\'s name and selection, holding the new config', async () => {
+			const [policy] = (await bjsReq({ url: `${ENDPOINT.REST}/api/v1/policy`, method: 'GET' }, env.apps.sharer.token))
+				.filter((p) => p.name === 'Data Sharing Policy - sharer-to-partner');
+
+			assert.deepStrictEqual(policy.config.map((c) => [c.verbs, c.schema, c.query]), [
+				[['GET', 'QUERY'], ['car'], { name: { '@eq': 'A red car' } }],
+			]);
+			assert.deepStrictEqual(policy.selection['#tokenType'], { '@eq': 'DATA_SHARING' });
+		});
+
+		it('Should widen what the partner reads again', async () => {
+			assert.strictEqual(await updatePolicy(env.agreements.sharer, fullAccess), true);
+
+			assert.deepStrictEqual(await sharerCarsReadByPartner(), ['A blue car', 'A red car']);
+		});
+
+		it('Should refuse a policy that isn\'t a list of configs, leaving the partner\'s access as it was', async () => {
+			for (const [body, path] of [
+				[{ car: ['READ'] }, 'config'],
+				[[{ verbs: 'GET,PUT', schema: ['car'], query: { access: '%FULL_ACCESS%' } }], 'config.0.verbs'],
+				[[{ verbs: ['GET'], schema: 'cars-and-vans', query: { access: '%FULL_ACCESS%' } }], 'config.0.schema'],
+			]) {
+				await assert.rejects(updatePolicy(env.agreements.sharer, body), refusedWith(400, 'invalid_policy', path), JSON.stringify(body));
+			}
+
+			assert.deepStrictEqual(await sharerCarsReadByPartner(), ['A blue car', 'A red car']);
+		});
+
+		it('Should refuse to change the policy of another app\'s agreement', async () => {
+			await assert.rejects(
+				updatePolicy(env.agreements.sharer, onlyRed, env.apps.partner),
+				refusedWith(404, 'not_found'),
+			);
+		});
+
+		it('Should refuse to change an agreement whose policy has been removed', async () => {
+			const ds = await registerDataSharing(ENDPOINT.REST,
+				agreement('sharer-unpaired', env.apps.partner.apiPath, fullAccess), env.apps.sharer.token);
+			const [policy] = (await bjsReq({ url: `${ENDPOINT.REST}/api/v1/policy`, method: 'GET' }, env.apps.sharer.token))
+				.filter((p) => p.name === 'Data Sharing Policy - sharer-unpaired');
+			await bjsReq({ url: `${ENDPOINT.REST}/api/v1/policy/${policy.id}`, method: 'DELETE' }, env.apps.sharer.token);
+
+			await assert.rejects(updatePolicy(ds, onlyRed), (err) =>
+				refusedWith(404, 'not_found')(err) && err.body.details.schema === 'policy');
+		});
+	});
 });

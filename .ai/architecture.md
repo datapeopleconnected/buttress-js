@@ -120,7 +120,10 @@ plugin registry in this repo, only the loader. Only the REST process loads plugi
 
 ## Federation / data sharing
 
-Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" — data sharing agreement):
+Two independent mechanisms, both keyed off `AppDataSharingSchemaModel` ("DSA" — data sharing agreement). What the
+partner may do is the DSA's policy, made from its `policyConfig` when it's added (selecting the DSA's `dataSharing`
+token) and recorded as its `_policyId`; `PUT app-data-sharing/:id/policy` replaces that policy's configs through
+`PolicySchemaModel.updateByPath`, which recaches it and reselects its tokens, as any policy update does.
 
 - **Datastore-level**: a schema's `remotes` field points a `RemoteCombinedModel`
   ([src/model/type/remote-combined.ts](../src/model/type/remote-combined.ts)) at a remote Buttress

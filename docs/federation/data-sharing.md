@@ -44,7 +44,16 @@ with a 400, `invalid_policy`, listing each problem in `details.issues` (their pa
 `schema` have to be lists, and a config's verbs and schemas are matched item by item. Earlier releases stored the config
 as it was given, so `verbs` or `schema` could be text, such as `"GET,PUT"` or `"cars-and-vans"`, which was matched by
 its substrings: `"cars-and-vans"` granted `car` and `van` too. A config stored like that grants nothing now, rather than
-too much, so give such an agreement a policy config of lists.
+too much, so give such an agreement a policy config of lists (see [Changing an agreement's policy](#changing-an-agreements-policy)).
+
+## Changing an agreement's policy
+
+`PUT /api/v1/app-data-sharing/:id/policy` with a list of configs, as `policyConfig` is given, replaces the configs of the
+agreement's policy, so the partner can do what they allow from its next request, realtime included. They're checked as
+`policyConfig` is, and refused with a 400, `invalid_policy` (their paths start `config`). An agreement of another app,
+or one whose policy isn't there, is a 404, `not_found`; `details.schema` is `policy` for the second, as for an agreement
+made by an earlier release, which didn't record its policy. Earlier releases answered `true` but changed nothing, so the
+partner kept the access the agreement was made with.
 
 ## Activation
 

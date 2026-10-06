@@ -16,9 +16,11 @@
 import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
+import { Readable } from 'stream';
 
 import AppDataSharingSchemaModel from '../../../../../dist/model/core/app-data-sharing.js';
 import StandardModel from '../../../../../dist/model/type/standard.js';
+import PolicySchemaModel from '../../../../../dist/model/core/policy.js';
 
 const HEX_ID = '507f1f77bcf86cd799439011';
 
@@ -58,5 +60,39 @@ describe('model/core/AppDataSharingSchemaModel: activation', () => {
       ['update', { active: false }],
       ['emit', 'dataShare:deactivated', { appDataSharingId: HEX_ID }],
     ]);
+  });
+});
+
+// SR-DPC-001 C1: the agreement didn't say which policy it made, so changing its policy couldn't find it
+describe('model/core/AppDataSharingSchemaModel: add', () => {
+  afterEach(() => sinon.restore());
+
+  it('records the policy it makes for the partner on the agreement, with the token', async () => {
+    const policies = [];
+    const tokenModel = { add: async () => Readable.from([{ id: 'token-1', value: 'reg' }]) };
+    const policyModel = {
+      add: async (body, internals) => {
+        policies.push({ body, internals });
+        return { id: 'policy-1' };
+      },
+    };
+    const modelManager = {
+      getCoreModel: (modelClass) => (modelClass === PolicySchemaModel ? policyModel : tokenModel),
+    };
+    const added = sinon.stub(StandardModel.prototype, 'add').callsFake(async (body, internals) =>
+      Readable.from([{ ...body, ...internals }]),
+    );
+    const model = new AppDataSharingSchemaModel(new Map([['nrp', { on: () => {}, emit: () => {} }], ['modelManager', modelManager]]));
+    model.adapter = { ID: { isValid: () => true, new: (v) => v ?? 'agreement-1' } };
+    const policyConfig = [{ verbs: ['GET'], schema: ['car'], query: { access: '%FULL_ACCESS%' } }];
+
+    const { dataSharing } = await model.add(
+      { name: 'share', remoteApp: { endpoint: 'https://partner.example.org', apiPath: 'partner', token: '' }, policyConfig },
+      { _appId: 'app-1' },
+    );
+
+    assert.deepStrictEqual(policies.map(({ body }) => [body.config, body.selection.id]), [[policyConfig, { '@eq': 'token-1' }]]);
+    assert.deepStrictEqual(added.firstCall.args[1], { _appId: 'app-1', _tokenId: 'token-1', _policyId: 'policy-1' });
+    assert.strictEqual(dataSharing._policyId, 'policy-1');
   });
 });

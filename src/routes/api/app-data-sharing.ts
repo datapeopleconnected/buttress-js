@@ -26,7 +26,7 @@ import {
   CoreUpdateByPath,
 } from '../core-routes.js';
 import Model from '../../model/index.js';
-import { invalidEntityError } from '../../model/shared.js';
+import { invalidEntityError, invalidUpdateError } from '../../model/shared.js';
 import * as Helpers from '../../helpers/index.js';
 
 import Datastore from '../../datastore/index.js';
@@ -36,6 +36,7 @@ import ButtressAdapater from '../../datastore/adapters/buttress.js';
 import ObjectIdHelper from '../../datastore/adapters/object-id.js';
 import TokenSchemaModel, { Token } from '../../model/core/token.js';
 import AppDataSharingSchemaModel, { AppDataSharing, AppDataSharingAddBody } from '../../model/core/app-data-sharing.js';
+import PolicySchemaModel from '../../model/core/policy.js';
 import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 import type { DataShareActivatedMessage } from '../../services/nrp.js';
@@ -329,6 +330,8 @@ routes.push(BulkUpdateAppDataSharing);
 
 /**
  * @class UpdateAppDataSharingPolicy
+ * @description Gives an agreement's partner new access: the body is the configs of the agreement's policy, as
+ *   `policyConfig` is given when the agreement is added, and replaces them.
  */
 class UpdateAppDataSharingPolicy extends Route {
   constructor(services: Services) {
@@ -343,53 +346,64 @@ class UpdateAppDataSharingPolicy extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
-    return new Promise<{ appId: string }>((resolve, reject) => {
-      if (!req.context.authApp) {
-        this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-        return reject(Helpers.Errors.internal('no_authenticated_app'));
-      }
+  override async _validate(req: RequestWithBody<unknown, { dataSharingId: string }>, _res: Response) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw Helpers.Errors.internal('no_authenticated_app');
+    }
 
-      const appId = req.context.authApp.id;
+    const appId = req.context.authApp.id;
 
-      if (!req.params.dataSharingId) {
-        this.log('ERROR: No Data Sharing Id', Route.LogLevel.ERR);
-        return reject(Helpers.Errors.badRequest('missing_id', 'An id is required'));
-      }
+    if (!req.params.dataSharingId) {
+      this.log('ERROR: No Data Sharing Id', Route.LogLevel.ERR);
+      throw Helpers.Errors.badRequest('missing_id', 'An id is required');
+    }
 
-      const dataSharingId = req.params.dataSharingId;
-      if (!Model.getCoreModel(AppDataSharingSchemaModel).isValidId(dataSharingId)) {
-        return reject(Helpers.Errors.badRequest('invalid_id', 'The id is not valid'));
-      }
+    const dataSharingId = req.params.dataSharingId;
+    if (!Model.getCoreModel(AppDataSharingSchemaModel).isValidId(dataSharingId)) {
+      throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
+    }
 
-      // Lookup
-      // The caller's app's agreement, which a system token names too
-      this.scoped(req, AppDataSharingSchemaModel)
-        .findOne({ id: dataSharingId, _appId: appId })
-        .then((res) => {
-          if (!res) {
-            this.log(`${this.schemaName}: unknown data sharing`, Route.LogLevel.ERR, req.context.id);
-            return reject(Helpers.Errors.entityNotFound('appDataSharing', dataSharingId));
-          }
-
-          resolve({
-            appId: appId,
-          });
-        })
-        .catch(reject);
+    // Checked as a policy's configs are when they're saved, and read as the policy schema reads them
+    const issues = checkPolicyConfig(req.body);
+    if (issues.length > 0) {
+      this.log(`[${this.name}] Invalid policy config for ${dataSharingId}`, Route.LogLevel.ERR);
+      throw invalidPolicy(undefined, issues);
+    }
+    const { validation, body: updates } = Model.getCoreModel(PolicySchemaModel).validateUpdate({
+      path: 'config',
+      value: req.body,
     });
+    if (!validation.isValid) throw invalidUpdateError(PolicySchemaModel.Schema.name, validation);
+
+    // The caller's app's agreement, which a system token names too
+    const agreement = await this.scoped(req, AppDataSharingSchemaModel).findOne({ id: dataSharingId, _appId: appId });
+    if (!agreement) {
+      this.log(`${this.schemaName}: unknown data sharing`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.entityNotFound('appDataSharing', dataSharingId);
+    }
+
+    // The policy made with it. An agreement made before that was recorded, or whose policy was removed, has none.
+    const policy = agreement._policyId
+      ? await this.scoped(req, PolicySchemaModel).findById(String(agreement._policyId))
+      : null;
+    if (!policy) {
+      this.log(`${this.schemaName}: no policy for data sharing ${dataSharingId}`, Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.notFound('not_found', "The agreement's policy was not found", { schema: 'policy' });
+    }
+
+    return { policyId: String(policy.id), updates };
   }
 
-  override _exec(
+  override async _exec(
     req: RequestWithBody<unknown, { dataSharingId: string }>,
     _res: Response,
-    validate: { appId: string },
+    validate: { policyId: string; updates: UpdatePathBody[] },
   ) {
-    // TODO: Handle a change to req.body.dataSharing.local and reflect the change onto the token
-    return this.scoped(req, AppDataSharingSchemaModel)
-      .owned(req.params.dataSharingId)
-      .then((agreements) => agreements.updatePolicy(validate.appId, req.params.dataSharingId, 'local', req.body))
-      .then(() => true);
+    // Through the policy model, which caches the policy again and works out its tokens' policies again, so the
+    // partner's requests and realtime go by the new configs
+    await this.scoped(req, PolicySchemaModel).updateByPath(validate.updates, validate.policyId);
+    return true;
   }
 }
 routes.push(UpdateAppDataSharingPolicy);
