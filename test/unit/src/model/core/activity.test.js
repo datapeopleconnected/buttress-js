@@ -42,6 +42,24 @@ describe('model/core/ActivitySchemaModel: request bodies', () => {
     assert.ok(stored.body.includes('https://example.com'));
   });
 
+  // SR-DPC-001 S3: add() encoded the request's body before it was read, so it was kept whole, and the route's work after
+  // it read a string
+  it('keeps no secret of a body it is added with, and leaves the request its body', async () => {
+    const added = Object.create(ActivitySchemaModel.prototype);
+    added.adapter = { add: async (body, parse) => parse(body) };
+    const body = { name: 'a', auth: [{ app: 'google', password: 'p4ss' }] };
+    const req = { body, query: {}, params: {}, context: { token: null, authUser: null, authApp: null } };
+
+    const stored = await added.add({
+      activityTitle: 'Private Activity', activityDescription: 'ADD', activityVisibility: 'private',
+      path: 'user', verb: 'post', permissions: 'add', params: {}, res: {}, req,
+    });
+
+    assert.ok(!stored.body.includes('p4ss'), stored.body);
+    assert.deepStrictEqual(JSON.parse(stored.body), { name: 'a', auth: [{ app: 'google', password: '[redacted]' }] });
+    assert.strictEqual(req.body, body);
+  });
+
   it('keeps no value an update writes to a credential or secret', () => {
     const stored = record([
       { path: 'storeData.clientSecret', value: 's3cret' },
