@@ -24,6 +24,7 @@ const { default: ButtressAPI } = ButtressExport;
 import { Schema } from '../../helpers/schema.js';
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
+import { dataSharingDestinationProblem } from '../../helpers/egress.js';
 
 import StandardModel from '../type/standard.js';
 import { TenantKey } from '../type/tenant-scoped.js';
@@ -421,6 +422,13 @@ export default class AppSchemaModel extends StandardModel<App> {
         const DSA = appDSAs.find((dsa) => dsa.name === DSAName);
         if (!DSA) continue;
         // Load DSA
+
+        // Only to a host the operator allows, when they've set a list, as the agreement's other connections are
+        const destination = await dataSharingDestinationProblem([DSA.remoteApp.endpoint]);
+        if (destination) {
+          Logging.logWarn(`Unable to merge the schema of data sharing ${DSA.id} partner: data_sharing_${destination}`);
+          continue;
+        }
 
         // TODO: Should being using an adapter via the datastore.
         const api = ButtressAPI.new();
