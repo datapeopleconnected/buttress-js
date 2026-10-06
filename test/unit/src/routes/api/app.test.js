@@ -25,6 +25,7 @@ import AppSchemaModel from '../../../../../dist/model/core/app.js';
 import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
 import { ApiError } from '../../../../../dist/helpers/errors.js';
+import Logging from '../../../../../dist/helpers/logging.js';
 
 import { realQueryParser } from '../../../../query-parser.js';
 
@@ -697,7 +698,56 @@ describe('routes/api/app:GetAppSchema ?core=', () => {
   });
 });
 
+describe("routes/api/app:GetAppSchema a stored schema that can't be read", () => {
+  const car = { name: 'car', type: 'collection', properties: {} };
+  const schemaOf = (authApp, query = {}) =>
+    createRoute(GetAppSchema)._validate({ query, context: { id: 'req-1', authApp } }, {});
+
+  for (const [label, stored] of [
+    ["isn't JSON", '[{"name": "car", '],
+    ["isn't a list", JSON.stringify(car)],
+    ['holds null', JSON.stringify([car, null])],
+  ]) {
+    it(`answers a 500 for an app whose stored schema ${label}, logging the app`, async () => {
+      const warn = sinon.stub(Logging, 'logWarn');
+
+      await assert.rejects(schemaOf({ id: 'app-2', __schema: stored }), { status: 500, code: 'internal_error' });
+      sinon.assert.calledOnceWithMatch(warn, 'app-2');
+    });
+
+    it(`answers a 500 for ?rawSchema of an app whose stored raw schema ${label}, logging the app`, async () => {
+      const warn = sinon.stub(Logging, 'logWarn');
+      const authApp = { id: 'app-2', __schema: JSON.stringify([car]), __rawSchema: stored };
+
+      await assert.rejects(schemaOf(authApp, { rawSchema: 'true' }), { status: 500, code: 'internal_error' });
+      sinon.assert.calledOnceWithMatch(warn, 'app-2');
+    });
+  }
+
+  it('gives back a stored raw schema it can read, as it was given', async () => {
+    const authApp = { id: 'app-1', __schema: '[]', __rawSchema: JSON.stringify([car]) };
+
+    assert.deepStrictEqual(await schemaOf(authApp, { rawSchema: 'true' }), [car]);
+  });
+});
+
 describe('routes/api/app:UpdateAppSchema', () => {
+  it('saves a schema that leaves its properties out, named like a local schema, with the local properties', async () => {
+    stubModel();
+    const route = createRoute(UpdateAppSchema);
+    const localSchema = [{ name: 'note', type: 'collection', properties: { text: { __type: 'string' } } }];
+    route.scoped = () => ({
+      owned: async () => ({ localSchema, mergeRemoteSchema: async (_req, schemas) => schemas }),
+    });
+
+    const { compiledSchema } = await route._validate(createReq({ body: [{ name: 'note', type: 'collection' }] }));
+
+    assert.deepStrictEqual(
+      compiledSchema.map((schema) => [schema.name, Object.keys(schema.properties)]),
+      [['note', ['text', 'id', 'sourceId']]],
+    );
+  });
+
   it('refuses a schema whose property definitions are wrong, listing each problem, before saving anything', async () => {
     const { appModel } = stubModel();
     const route = createRoute(UpdateAppSchema);

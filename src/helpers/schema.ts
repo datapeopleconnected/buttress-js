@@ -348,25 +348,31 @@ const storedSchemaProblem = (item: unknown): string | null => {
  * a schema. That's logged, naming the app, so a caller going through every app can pass over this one rather than stop
  * the apps after it getting theirs. The whole app is passed over, rather than only the item, so nothing writes back its
  * schema without it. Anything else that fails is rethrown.
+ * @param {Object} app
+ * @param {string} [field] - `__rawSchema` reads the schema as the app last gave it, rather than as it was compiled
+ * @return {Schema[]|null}
  */
-export const decodeStored = (app: { id: string; __schema: string }): Schema[] | null => {
+export const decodeStored = (
+  app: { id: string; __schema: string; __rawSchema?: string },
+  field: '__schema' | '__rawSchema' = '__schema',
+): Schema[] | null => {
+  const unreadable = (problem: string) => {
+    const what = field === '__rawSchema' ? 'stored raw schema' : 'stored schema';
+    Logging.logWarn(`Unable to read the ${what} of app ${app.id}: ${problem}`);
+    return null;
+  };
+
   let decoded: unknown;
   try {
-    decoded = decode(app.__schema);
+    decoded = decode(app[field] as string);
   } catch (err: unknown) {
     if (!(err instanceof SyntaxError)) throw err;
-    Logging.logWarn(`Unable to read the stored schema of app ${app.id}: ${err.message}`);
-    return null;
+    return unreadable(err.message);
   }
-  if (!Array.isArray(decoded)) {
-    Logging.logWarn(`Unable to read the stored schema of app ${app.id}: it isn't a list`);
-    return null;
-  }
+  if (!Array.isArray(decoded)) return unreadable("it isn't a list");
   for (const [idx, item] of decoded.entries()) {
     const problem = storedSchemaProblem(item);
-    if (!problem) continue;
-    Logging.logWarn(`Unable to read the stored schema of app ${app.id}: its item ${idx} ${problem}`);
-    return null;
+    if (problem) return unreadable(`its item ${idx} ${problem}`);
   }
 
   return decoded as Schema[];
@@ -432,7 +438,8 @@ export const merge = (schemasA: Schema[], schemasB: Schema[]): Schema[] => {
     if (!schema) {
       return schemasA.push(cS);
     }
-    schema.properties = Object.assign(schema.properties, cS.properties);
+    // A schema can leave its properties out
+    schema.properties = Object.assign(schema.properties ?? {}, cS.properties);
     schemasA[appSchemaIdx] = schema;
   });
 

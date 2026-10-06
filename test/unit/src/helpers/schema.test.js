@@ -237,6 +237,16 @@ describe('helpers.schema:decodeStored', () => {
 		sinon.assert.notCalled(warn);
 	});
 
+	it('reads the raw schema, saying so when it can\'t', () => {
+		const warn = sinon.stub(Logging, 'logWarn');
+		const raw = [{ name: 'car', type: 'collection', properties: {} }];
+		const app = { id: 'app-1', __schema: '[', __rawSchema: JSON.stringify(raw) };
+
+		assert.deepStrictEqual(Helpers.Schema.decodeStored(app, '__rawSchema'), raw);
+		assert.strictEqual(Helpers.Schema.decodeStored({ ...app, __rawSchema: '{}' }, '__rawSchema'), null);
+		sinon.assert.calledOnceWithMatch(warn, 'stored raw schema of app app-1');
+	});
+
 	it("rethrows what isn't the stored schema failing to read", () => {
 		const warn = sinon.stub(Logging, 'logWarn');
 		const __schema = {
@@ -247,5 +257,31 @@ describe('helpers.schema:decodeStored', () => {
 
 		assert.throws(() => Helpers.Schema.decodeStored({ id: 'app-1', __schema }), /not the schema/);
 		sinon.assert.notCalled(warn);
+	});
+});
+
+describe('helpers.schema:merge', () => {
+	it("adds a schema's properties to the one of its name, and the schemas it lacks", () => {
+		const merged = Helpers.Schema.merge(
+			[{ name: 'note', type: 'collection', properties: { title: { __type: 'string' } } }],
+			[
+				{ name: 'note', type: 'collection', properties: { text: { __type: 'string' } } },
+				{ name: 'person', type: 'collection', properties: {} },
+			],
+		);
+
+		assert.deepStrictEqual(merged, [
+			{ name: 'note', type: 'collection', properties: { title: { __type: 'string' }, text: { __type: 'string' } } },
+			{ name: 'person', type: 'collection', properties: {} },
+		]);
+	});
+
+	it('adds the properties to a schema of that name that leaves its properties out', () => {
+		const merged = Helpers.Schema.merge(
+			[{ name: 'note', type: 'collection' }],
+			[{ name: 'note', type: 'collection', properties: { text: { __type: 'string' } } }],
+		);
+
+		assert.deepStrictEqual(merged, [{ name: 'note', type: 'collection', properties: { text: { __type: 'string' } } }]);
 	});
 });

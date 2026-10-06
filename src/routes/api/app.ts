@@ -323,12 +323,15 @@ class GetAppSchema extends Route {
       throw Helpers.Errors.badRequest('no_authenticated_schema');
     }
 
+    // A stored schema that can't be read is logged, naming the app, and answered as the server's fault, not the
+    // request's
+    const raw = Boolean(req.query.rawSchema && req.context.authApp.__rawSchema);
+    const stored = Helpers.Schema.decodeStored(req.context.authApp, raw ? '__rawSchema' : '__schema');
+    if (!stored) throw Helpers.Errors.internal('unreadable_stored_schema');
+
     let schema: Schema[];
     try {
-      schema =
-        req.query.rawSchema && req.context.authApp.__rawSchema
-          ? Helpers.Schema.decode(req.context.authApp.__rawSchema)
-          : await Helpers.Schema.buildCollections(Helpers.Schema.decode(req.context.authApp.__schema));
+      schema = raw ? stored : await Helpers.Schema.buildCollections(stored);
     } catch (err: unknown) {
       if (err instanceof Helpers.Errors.SchemaInvalid) throw Helpers.Errors.badRequest('invalid_schema');
       else throw err;

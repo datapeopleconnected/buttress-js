@@ -433,18 +433,8 @@ export default class BootstrapRest extends Bootstrap {
       const appSchema = Schema.decodeStored(app);
       if (!appSchema) continue;
       Logging.log(`Adding ${localSchema.length} local schema for ${app.id}:${app.name}:${appSchema.length}`);
-      localSchema.forEach((cS) => {
-        const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);
-        const schema = appSchema[appSchemaIdx];
-        if (!schema) {
-          return appSchema.push(cS);
-        }
-        // A stored schema can leave its properties out
-        schema.properties = Object.assign(schema.properties ?? {}, cS.properties);
-        appSchema[appSchemaIdx] = schema;
-      });
 
-      await Model.getCoreModel(AppSchemaModel).updateSchema(app.id, appSchema);
+      await Model.getCoreModel(AppSchemaModel).updateSchema(app.id, Schema.merge(appSchema, localSchema));
     }
   }
 }
