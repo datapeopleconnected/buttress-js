@@ -138,6 +138,18 @@ function during a later run: the isolate has no timers or I/O of its own. That r
 on telling one run's code from another's, which the isolate can't. The exception is an app's own code: a later run of
 the app can call functions an earlier one left in the context, which then act for the later run.
 
+## Values a lambda gives the host
+
+`ExternalCopy` copies a value out of the isolate keeping its shared references, so a small value can stand for one that
+unfolds to far more (`let n = {}; for (...60) n = {a: n, b: n}` is 2^60 leaves), and the host writing it out
+(`JSON.stringify` of a result or log, a request body, a metadata write) would block the worker's event loop outside the
+isolate's timeout and memory limit. `src/lambda-helpers/lambda-value.ts` measures what a value would take written out in
+time linear in what it holds (`unfoldedSize`, each object walked once), and every host function checks what it's given
+before using it: `forRun()`, `_fetch` and plugins reject the call (`refusedValue`), `_setResult` makes the result an
+error, and a log over the limit is replaced by a note. The limit, `MAX_LAMBDA_VALUE_BYTES`, is 128 MB, the isolate's own
+heap, so only a value with shared references can reach it. A cycle is refused too, except in a log, which is written as
+before.
+
 ## Replacing the isolate
 
 The isolate has isolated-vm's default memory limit (128 MB, reported as a `heap_size_limit` of 131 MB;

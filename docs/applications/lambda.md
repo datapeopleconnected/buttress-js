@@ -106,3 +106,8 @@ bjs lambda list-property
   calls after that (`setResult`, logging, `updateMetadata`, `fetch`, ...) is refused. Earlier releases let that work go
   on into the worker's later runs, where it answered, logged and acted for them. Await what a lambda needs done before
   it returns.
+- A value a lambda gives the server (its result, a log, what it passes to `fetch`, `updateMetadata` or a plugin) has to
+  be one the server can write out as JSON in 128 MB: a result over that, or one that refers to itself, fails the run;
+  a log over it is logged as a note saying so; and a call given one rejects. Only a value that refers to the same
+  objects many times over can get that big, as the lambda's own memory is no bigger. Earlier releases tried to write
+  such a value out, which could stop the worker running any lambda.

@@ -1939,6 +1939,75 @@ describe('lambda/LambdaRunner:execute runs kept apart', () => {
     });
   }
 
+  // SR-DPC-001 R13: a value that refers to an object many times over unfolds to 2^60 leaves written out
+  describe('values a lambda gives the host that it could never write out', () => {
+    const shared = 'let n = {}; for (let i = 0; i < 60; i++) n = { a: n, b: n };';
+
+    it('fails the run that gives one as its result, at once', async function () {
+      this.timeout(10000);
+      const { runner, run } = await createRunsRunner();
+
+      try {
+        const started = Date.now();
+        await assert.rejects(
+          run({ lambdaId: 'la', appId: 'app-a', lambdaBody: `${shared} lambda.setResult({ n });` }),
+          /lambda result refused: The value would take more than 128 MB written out/,
+        );
+        assert.ok(Date.now() - started < 3000, `took ${Date.now() - started} ms`);
+      } finally {
+        runner._isolate.dispose();
+      }
+    });
+
+    it('fails the run whose result refers to itself, saying so', async function () {
+      this.timeout(10000);
+      const { runner, run } = await createRunsRunner();
+
+      try {
+        await assert.rejects(
+          run({ lambdaId: 'la', appId: 'app-a', lambdaBody: 'const r = {}; r.r = r; lambda.setResult(r);' }),
+          /lambda result refused: The value refers to itself/,
+        );
+      } finally {
+        runner._isolate.dispose();
+      }
+    });
+
+    it('logs a note in place of one it logs', async function () {
+      this.timeout(10000);
+      const { runner, run } = await createRunsRunner();
+
+      try {
+        const result = await run({ lambdaId: 'la', appId: 'app-a', lambdaBody: `${shared} lambda.log(n);` });
+
+        assert.strictEqual(result.res, 'success');
+        assert.deepStrictEqual(result.logs, [{ log: '[more than 128 MB left out]', type: 'log' }]);
+      } finally {
+        runner._isolate.dispose();
+      }
+    });
+
+    it('refuses one given to a host function, which the lambda can catch', async function () {
+      this.timeout(10000);
+      const { runner, run } = await createRunsRunner();
+
+      try {
+        const result = await run({
+          lambdaId: 'la', appId: 'app-a',
+          lambdaBody: `${shared}
+            const outcome = await fetch({ url: buttressOptions.buttressUrl + '/x', options: { body: n } })
+              .then(() => 'sent', (err) => String(err && err.message));
+            lambda.setResult({ outcome });`,
+        });
+
+        assert.match(result.res.outcome, /would take more than 128 MB/);
+        assert.deepStrictEqual(server.requests, []);
+      } finally {
+        runner._isolate.dispose();
+      }
+    });
+  });
+
   it('aborts a request a lambda leaves running when it returns, rather than answer the next run with it', async function () {
     this.timeout(10000);
     const { runner, run } = await createRunsRunner();

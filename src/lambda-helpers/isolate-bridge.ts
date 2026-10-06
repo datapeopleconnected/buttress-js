@@ -21,6 +21,7 @@ import ivm from 'isolated-vm';
 
 import Logging from '../helpers/logging.js';
 import LambdaRun from './lambda-run.js';
+import { LambdaValueError, MAX_LAMBDA_VALUE_BYTES, refusedValue, unfoldedSize } from './lambda-value.js';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -43,6 +44,15 @@ interface LambdaPlugin {
 
 // A lambda's log call arguments. Only the first is logged, the third and fourth go to Logging's level/id parameters.
 type LambdaLogArgs = [unknown, unknown?, string?, string?];
+
+const tooLargeToLog = (value: unknown) => {
+  try {
+    return unfoldedSize(value) > MAX_LAMBDA_VALUE_BYTES;
+  } catch (err: unknown) {
+    if (err instanceof LambdaValueError) return false;
+    throw err;
+  }
+};
 
 /**
  * IsolateBridge
@@ -134,6 +144,8 @@ class IsolateBridge {
             const run = LambdaRun.in(context, `${pluginName}_${method}`);
             if (!run) return;
             const [resolve, reject] = [run.answer(onResolve), run.answer(onReject)];
+            const refusal = refusedValue(args);
+            if (refusal) return reject.applyIgnored(undefined, [refusal]);
             try {
               const outcome = await pluginMeta.plugin[method](...args);
               resolve.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto()]);
@@ -402,6 +414,10 @@ class IsolateBridge {
       new ivm.Reference((...args: LambdaLogArgs) => {
         const run = LambdaRun.in(context, name);
         if (!run) return;
+        // What the host couldn't write out is noted in its place. What refers to itself is written as before.
+        args.forEach((arg, idx) => {
+          if (tooLargeToLog(arg)) args[idx] = `[more than ${MAX_LAMBDA_VALUE_BYTES / 1024 / 1024} MB left out]`;
+        });
         log(args);
         run.log(args[0], type);
       });

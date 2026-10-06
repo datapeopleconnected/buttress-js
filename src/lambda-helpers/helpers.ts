@@ -35,6 +35,7 @@ import IsolateBridge from './isolate-bridge.js';
 import type { IsolateCallback, IsolateJail } from './isolate-bridge.js';
 import LambdaRun from './lambda-run.js';
 import type { LambdaResult, RunCallback } from './lambda-run.js';
+import { checkLambdaValue, LambdaValueError, refusedValue } from './lambda-value.js';
 
 import createConfig from '@dpc/node-env-obj';
 import LambdaSchemaModel from '../model/core/lambda.js';
@@ -233,7 +234,11 @@ class Helpers {
     const forRun = <TData>(name: string, hostFunction: HostFunction<TData>) =>
       new ivm.Reference(async (data: TData, resolve: IsolateCallback, reject: IsolateCallback) => {
         const run = LambdaRun.in(context, name);
-        if (run) await hostFunction(data, run.answer(resolve), run.answer(reject), run);
+        if (!run) return;
+        // What the host can't take is refused before it's used (refusedValue)
+        const refusal = refusedValue(data);
+        if (refusal) return run.answer(reject).applyIgnored(undefined, [refusal]);
+        await hostFunction(data, run.answer(resolve), run.answer(reject), run);
       });
 
     jail.setSync(
@@ -254,6 +259,14 @@ class Helpers {
             err: true,
             errMessage: 'lambda result must be an object',
           };
+          return;
+        }
+
+        try {
+          checkLambdaValue(res);
+        } catch (err: unknown) {
+          if (!(err instanceof LambdaValueError)) throw err;
+          run.result = { err: true, errMessage: `lambda result refused: ${err.message}`, code: err.code };
           return;
         }
 
@@ -351,6 +364,9 @@ class Helpers {
         const run = LambdaRun.in(context, '_fetch');
         if (!run) return;
         const [callback, resolve, reject] = [onText && run.answer(onText), run.answer(onResolve), run.answer(onReject)];
+
+        const refusal = refusedValue(data);
+        if (refusal) return reject.applyIgnored(undefined, [refusal]);
 
         if (typeof data === 'string') {
           const url = new URL(data);
