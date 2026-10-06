@@ -527,10 +527,15 @@ export default class LambdaRunner {
 					try {
 						await lambdaCode[lambdaInfo.entryPoint]();
 					} catch (err) {
-						// Only an error's message crosses the isolate, so a status it was thrown with goes over as the result
-						const status = err instanceof Error ? err.httpStatus : undefined;
-						if (Number.isInteger(status) && status >= 400 && status <= 599) {
-							lambda.setResult({ err: true, errMessage: err.message, httpStatus: status });
+						// Only an error's message crosses the isolate, so what else it was thrown with goes over as the result
+						if (err instanceof Error) {
+							const details = {};
+							if (typeof err.code === 'string') details.code = err.code;
+							if (Number.isInteger(err.httpStatus) && err.httpStatus >= 400 && err.httpStatus <= 599) {
+								details.httpStatus = err.httpStatus;
+							}
+							if (typeof err.retryable === 'boolean') details.retryable = err.retryable;
+							if (Object.keys(details).length > 0) lambda.setResult({ err: true, errMessage: err.message, ...details });
 						}
 						throw err;
 					}
@@ -583,13 +588,19 @@ export default class LambdaRunner {
       await this._recordExecutionError(execution, failure.message, run.takeLogs());
 
       if (type === 'API_ENDPOINT') {
-        const errDetails = Helpers.getThrownErrorDetails(err);
+        const caught = Helpers.getThrownErrorDetails(err);
+        const thrown = run.result?.err ? Helpers.getThrownErrorDetails(run.result) : undefined;
+        const errDetails = {
+          ...caught,
+          code: caught.code ?? thrown?.code,
+          httpStatus: caught.httpStatus ?? thrown?.httpStatus,
+          retryable: caught.retryable ?? thrown?.retryable,
+        };
         const errMessage = errDetails.message;
-        const thrownStatus = run.result?.err ? run.result.httpStatus : undefined;
 
         if (data.reqId) {
           const message: ExecutionResultMessage = {
-            code: errDetails.httpStatus ?? thrownStatus ?? 400,
+            code: errDetails.httpStatus ?? 400,
             err: errMessage,
             errDetails,
             reqId: data.reqId,

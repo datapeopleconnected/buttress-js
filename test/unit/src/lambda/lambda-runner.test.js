@@ -580,6 +580,29 @@ describe('lambda/LambdaRunner:handleLambdaExecutionMessage a lambda that fails',
       assert.strictEqual((await answerFor("throw Object.assign(new Error('odd'), { httpStatus: '429' });")).code, 400);
     });
 
+    it('gives the code and whether to retry an error was thrown with', async function () {
+      this.timeout(10000);
+
+      const answer = await answerFor(
+        "throw Object.assign(new Error('busy'), { code: 'RATE_LIMITED', retryable: true, httpStatus: 503 });",
+      );
+
+      assert.strictEqual(answer.code, 503);
+      assert.deepStrictEqual(
+        { code: answer.errDetails.code, retryable: answer.errDetails.retryable, message: answer.errDetails.message },
+        { code: 'RATE_LIMITED', retryable: true, message: 'busy' },
+      );
+    });
+
+    it("leaves out a code that isn't a string, as an ErrorResult's numeric one", async function () {
+      this.timeout(10000);
+
+      const answer = await answerFor("throw Object.assign(new Error('nope'), { code: 404, httpStatus: 404 });");
+
+      assert.strictEqual(answer.code, 404);
+      assert.strictEqual(answer.errDetails.code, undefined);
+    });
+
     it("gives 400 for a thrown value that isn't an error, as a rejected fetch gives with its upstream status", async function () {
       this.timeout(10000);
 
