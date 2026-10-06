@@ -265,10 +265,14 @@ export default class Buttress extends AbstractAdapter<URL> {
 
   /**
    * @param {string} id
+   * @param {object} extra - a filter the entity must also match, which the partner checks: it's counted there beside
+   *   the id under $and, as the MongoDB adapter does, so an `id` of its own can't replace the one asked for
    * @return {Boolean}
    */
-  override async exists(id: string) {
+  override async exists(id: string, extra: AdapterQuery = {}) {
     id = this.convertBSONObjects(id);
+    if (Object.keys(extra).length > 0) return (await this.count({ $and: [{ id }, extra] })) > 0;
+
     const result = await this._resolvedApiCall('exists', () => this.collection.get(id));
     return result ? true : false;
   }

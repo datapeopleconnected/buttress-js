@@ -88,6 +88,45 @@ describe('datastore/adapters/buttress:rmAll', () => {
   });
 });
 
+describe('datastore/adapters/buttress:exists', () => {
+  const ID = '6abd00000000000000000001';
+  const OTHER = '6abd00000000000000000002';
+  const APP = '6abd0000000000000000000a';
+  const entity = { id: ID, _appId: APP };
+
+  // A partner holding the one entity, which answers a count of an $and of plain values as it would
+  const createCollection = () => ({
+    get: sinon.stub().callsFake(async (id) => (id === ID ? entity : null)),
+    count: sinon.stub().callsFake(async ({ $and: parts }) =>
+      parts.every((part) => Object.entries(part).every(([key, value]) => entity[key] === value)) ? 1 : 0,
+    ),
+  });
+
+  it('asks the partner for the entity when there is no extra filter', async () => {
+    const collection = createCollection();
+    const adapter = createAdapter(collection);
+
+    assert.deepStrictEqual([await adapter.exists(ID), await adapter.exists(OTHER)], [true, false]);
+    sinon.assert.notCalled(collection.count);
+  });
+
+  it('has the partner check an extra filter beside the id, rather than ignoring it', async () => {
+    const collection = createCollection();
+    const adapter = createAdapter(collection);
+
+    assert.deepStrictEqual([await adapter.exists(ID, { _appId: APP }), await adapter.exists(ID, { _appId: OTHER })], [true, false]);
+    sinon.assert.calledWithExactly(collection.count, { $and: [{ id: ID }, { _appId: OTHER }] });
+    sinon.assert.notCalled(collection.get);
+  });
+
+  it('keeps the id asked for when the extra filter names an id of its own, as the apps tenant clause does', async () => {
+    const collection = createCollection();
+
+    assert.strictEqual(await createAdapter(collection).exists(ID, { id: OTHER }), false);
+    sinon.assert.calledOnceWithExactly(collection.count, { $and: [{ id: ID }, { id: OTHER }] });
+  });
+});
+
 describe('datastore/adapters/buttress:connect', () => {
   let server;
   afterEach(() => new Promise((resolve) => (server ? server.close(resolve) : resolve())));
