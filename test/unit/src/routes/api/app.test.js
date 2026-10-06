@@ -549,6 +549,22 @@ describe('routes/api/app:GetAppPolicyPropertyList', () => {
 
     assert.deepStrictEqual(result, { role: ['admin'] });
   });
+
+  it('answers an api path no app has as not found, not as a server error', async () => {
+    stubModel({ app: { findOne: async () => null } });
+    const route = createRoute(GetAppPolicyPropertyList);
+    const req = createReq({
+      authApp: { id: '6abd05000000000000000001', apiPath: 'app-one' },
+      params: { apiPath: 'no-such-app' },
+      token: { type: 'system' },
+    });
+
+    await assert.rejects(async () => route._exec(req, {}, await route._validate(req)), {
+      status: 404,
+      code: 'not_found',
+      details: { schema: 'app', apiPath: 'no-such-app' },
+    });
+  });
 });
 
 describe('routes/api/app:SetAppPolicyPropertyList', () => {

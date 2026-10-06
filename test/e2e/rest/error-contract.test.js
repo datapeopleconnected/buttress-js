@@ -181,6 +181,8 @@ describe('Error contract', async () => {
 			404, 'not_found', () => ({ schema: 'secureStore', id: NOBODYS_ID })],
 		['a data sharing agreement id nothing has', () => [core(`app-data-sharing/${NOBODYS_ID}`), { method: 'GET' }, appToken()],
 			404, 'not_found'],
+		['a policy property list for an api path no app has', () => [core('app/policy-property-list/no-such-app-path'), { method: 'GET' }, Config.testToken],
+			404, 'not_found', { schema: 'app', apiPath: 'no-such-app-path' }],
 		['a note id nothing has', () => [notes(`/${NOBODYS_ID}`), { method: 'GET' }, appToken()],
 			404, 'not_found', () => ({ schema: 'note', id: NOBODYS_ID })],
 		["another app's note id", () => [notes(`/${testEnv.otherNote.id}`), { method: 'GET' }, appToken()],

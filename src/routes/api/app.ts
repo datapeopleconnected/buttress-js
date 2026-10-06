@@ -551,14 +551,19 @@ class GetAppPolicyPropertyList extends Route {
           $eq: apiPath,
         },
       });
+      if (!app) {
+        this.log('ERROR: No app has the api path', Route.LogLevel.ERR);
+        return Promise.reject(
+          Helpers.Errors.notFound('not_found', 'No app was found with that api path', { schema: 'app', apiPath }),
+        );
+      }
     }
 
     return app;
   }
 
-  override async _exec(req: Request, res: Response, app: App | null) {
-    // BUG: app is null if no app has the requested apiPath, which throws here
-    return app!.policyPropertiesList;
+  override async _exec(req: Request, res: Response, app: App) {
+    return app.policyPropertiesList;
   }
 }
 
