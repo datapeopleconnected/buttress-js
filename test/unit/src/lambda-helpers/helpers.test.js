@@ -16,10 +16,7 @@
 
 // `_createIsolateContext` wires every lambda-facing capability (fetch, crypto, email templates,
 // PDF generation, ...) as `ivm.Reference` closures meant to run inside a live isolated-vm
-// context; none of that is reachable without actually booting an isolate (which is what
-// LambdaRunner's own tests intentionally avoid for speed). The only host-side state this module
-// owns outside of that isolate boundary is the shared `lambdaResult` used by LambdaRunner.execute()
-// to read back a lambda's `setResult()` call, so that's what's covered here.
+// context, which the other tests in this folder boot. What's covered here runs in plain Node.
 
 import { describe, it } from 'mocha';
 import assert from 'assert';
@@ -27,10 +24,6 @@ import assert from 'assert';
 import LambdaHelpers, { asCaller, CALLER_TOKEN_PLACEHOLDER } from '../../../../dist/lambda-helpers/helpers.js';
 
 describe('lambda-helpers/Helpers:initial state', () => {
-  it('starts with no lambda result recorded', () => {
-    assert.strictEqual(LambdaHelpers.lambdaResult, null);
-  });
-
   it('treats 200/201/202 as the successful HTTP status codes for lambda fetch()', () => {
     assert.deepStrictEqual(LambdaHelpers.successfulHTTPScode, [200, 201, 202]);
   });

@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import fs from 'node:fs';
 import { describe, it, before, after } from 'mocha';
 import assert from 'assert';
 
@@ -306,6 +307,56 @@ describe('Lambda', async () => {
 					assert.strictEqual(response.status, 400, query);
 					assert.strictEqual(result.code, 'token_in_url_not_supported');
 				}
+			});
+
+			it('Should create a lambda \'left-running\' that leaves work running when it returns', async function() {
+				// Its code where a clone of HEAD would put it
+				const dir = `${Config.paths.lambda.code}/lambda-HEAD/test/data/lambda`;
+				fs.mkdirSync(dir, {recursive: true});
+				fs.copyFileSync(`${Config.paths.root}/test/data/lambda/left-running.cjs`, `${dir}/left-running.cjs`);
+
+				testEnv.lambdas['left-running'] = await createLambda(ENDPOINT.REST, {
+					name: 'left-running',
+					type: 'PUBLIC',
+					git: {
+						url: Config.paths.root,
+						branch: 'develop',
+						hash: 'HEAD',
+						entryFile: 'test/data/lambda/left-running.cjs',
+						entryPoint: 'execute',
+					},
+					trigger: [{
+						type: 'API_ENDPOINT',
+						apiEndpoint: {
+							method: 'GET',
+							url: 'left/running',
+							type: 'SYNC',
+						},
+					}],
+				}, {
+					domains: ['localhost'],
+					permissions: [{route: '*', permission: '*'}],
+					policyProperties: {lambda: 'TEST_ACCESS'},
+				}, testEnv.apps.app1.token);
+			});
+
+			it('Should not let work a run left running answer or log for the next run', async function() {
+				this.timeout(30000);
+				const call = (query) => bjsReq({
+					url: `${ENDPOINT.REST}/lambda/v1/${testEnv.apps.app1.apiPath}/left/running${query}`,
+					method: 'GET',
+				}, testEnv.apps.app1.token);
+
+				const first = await call('?leave=1');
+				assert.deepStrictEqual(first.res, {by: 'the first run'});
+
+				const second = await call('');
+				assert.strictEqual(second.res, 'success');
+				const execution = await getExecResult(`${ENDPOINT.REST}/api/v1/lambda-execution`, {
+					id: {$eq: second.executionId},
+					status: {$eq: 'COMPLETE'},
+				});
+				assert.deepStrictEqual(execution.logs.map((entry) => entry.log), ['logged by the second run']);
 			});
 		});
 	});

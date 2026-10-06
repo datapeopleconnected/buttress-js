@@ -14,7 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it, before, after, afterEach } from 'mocha';
+import { describe, it, before, after, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -24,6 +24,7 @@ import ivm from 'isolated-vm';
 import createConfig from '@dpc/node-env-obj';
 
 import LambdaHelpers, { CALLER_TOKEN_PLACEHOLDER } from '../../../../dist/lambda-helpers/helpers.js';
+import LambdaRun from '../../../../dist/lambda-helpers/lambda-run.js';
 
 const Config = createConfig();
 
@@ -50,6 +51,7 @@ describe('lambda-helpers/Helpers:fetch as the caller', () => {
   let tmpDir;
   let buttress;
   let elsewhere;
+  let run;
 
   const fetchFromLambda = (url, headers) =>
     context.eval(
@@ -70,8 +72,12 @@ describe('lambda-helpers/Helpers:fetch as the caller', () => {
     elsewhere = await listen();
   });
 
+  beforeEach(() => {
+    run = LambdaRun.start(context, { lambdaId: 'lambda-1', lambdaGitHash: null });
+  });
+
   afterEach(() => {
-    LambdaHelpers.caller = null;
+    run.end();
     buttress.requests.length = 0;
     elsewhere.requests.length = 0;
   });
@@ -86,7 +92,11 @@ describe('lambda-helpers/Helpers:fetch as the caller', () => {
   });
 
   const asCaller = () => {
-    LambdaHelpers.caller = { token: 'caller-token', origin: buttress.origin };
+    run = LambdaRun.start(context, {
+      lambdaId: 'lambda-1',
+      lambdaGitHash: null,
+      caller: { token: 'caller-token', origin: buttress.origin },
+    });
   };
 
   it("sends the caller's token in place of the placeholder, and drops a ?token=", async () => {

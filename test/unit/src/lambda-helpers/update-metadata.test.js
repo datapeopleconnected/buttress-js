@@ -24,6 +24,7 @@ import ivm from 'isolated-vm';
 import createConfig from '@dpc/node-env-obj';
 
 import LambdaHelpers from '../../../../dist/lambda-helpers/helpers.js';
+import LambdaRun from '../../../../dist/lambda-helpers/lambda-run.js';
 import Model from '../../../../dist/model/index.js';
 import LambdaSchemaModel from '../../../../dist/model/core/lambda.js';
 
@@ -32,6 +33,13 @@ const Config = createConfig();
 const LAMBDA_ID = '507f1f77bcf86cd799439011';
 const OTHER_LAMBDA_ID = '507f1f77bcf86cd799439012';
 
+// What a call the host doesn't answer comes to: its promise never settles
+const answered = (promise) =>
+  Promise.race([
+    promise.then(() => 'answered', () => 'answered'),
+    new Promise((resolve) => setTimeout(() => resolve('unanswered'), 100)),
+  ]);
+
 // Calls updateMetadata from inside a live isolate, as a lambda does. It only ever updates the executing lambda.
 describe('lambda-helpers/Helpers:updateMetadata', () => {
   let tmpDir;
@@ -39,6 +47,7 @@ describe('lambda-helpers/Helpers:updateMetadata', () => {
   let isolate;
   let context;
   let updateById;
+  let run;
 
   const update = (data) =>
     context.eval(`updateMetadata(${JSON.stringify(data)})`, { promise: true, copy: true, timeout: 5000 });
@@ -65,11 +74,11 @@ describe('lambda-helpers/Helpers:updateMetadata', () => {
       if (modelClass !== LambdaSchemaModel) throw new Error(`Unexpected core model ${modelClass?.name}`);
       return { createId: (v) => v, updateById };
     });
-    LambdaHelpers.lambdaId = LAMBDA_ID;
+    run = LambdaRun.start(context, { lambdaId: LAMBDA_ID, lambdaGitHash: null });
   });
 
   afterEach(() => {
-    LambdaHelpers.lambdaId = null;
+    run.end();
     sinon.restore();
   });
 
@@ -98,11 +107,22 @@ describe('lambda-helpers/Helpers:updateMetadata', () => {
     assert.strictEqual(updateById.callCount, 0);
   });
 
-  it('refuses when no lambda is executing', async () => {
-    LambdaHelpers.lambdaId = null;
+  it('refuses a call once the run has ended, leaving it unanswered', async () => {
+    run.end();
 
-    await assert.rejects(update({ id: LAMBDA_ID, idx: -1, key: 'cursor', value: 'a' }), /no_executing_lambda/);
+    assert.strictEqual(await answered(update({ idx: -1, key: 'cursor', value: 'a' })), 'unanswered');
     assert.strictEqual(updateById.callCount, 0);
+  });
+
+  it('refuses a call from a context other than the run\'s', async () => {
+    const other = await isolate.createContext();
+    await LambdaHelpers._createIsolateContext(isolate, other, other.global);
+
+    const call = other.eval(`updateMetadata({ idx: -1, key: 'cursor', value: 'a' })`, { promise: true, timeout: 5000 });
+
+    assert.strictEqual(await answered(call), 'unanswered');
+    assert.strictEqual(updateById.callCount, 0);
+    other.release();
   });
 });
 
@@ -113,6 +133,7 @@ describe('lambda-helpers/Helpers:fetch destinations', () => {
   let savedPlugins;
   let savedAllowed;
   let tmpDir;
+  let run;
 
   const fetchFromLambda = (url) =>
     context.eval(`fetch(${JSON.stringify(url)}).then(() => 'fetched', (err) => 'refused: ' + (err && err.message))`, {
@@ -127,9 +148,11 @@ describe('lambda-helpers/Helpers:fetch destinations', () => {
     isolate = new ivm.Isolate();
     context = await isolate.createContext();
     await LambdaHelpers._createIsolateContext(isolate, context, context.global);
+    run = LambdaRun.start(context, { lambdaId: LAMBDA_ID, lambdaGitHash: null });
   });
 
   after(() => {
+    run.end();
     isolate.dispose();
     Config.paths.lambda.plugins = savedPlugins;
     Config.lambda.allowedHosts = savedAllowed;

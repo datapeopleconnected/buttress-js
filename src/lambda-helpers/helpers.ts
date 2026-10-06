@@ -16,6 +16,7 @@
 import { URL } from 'node:url';
 import https from 'node:https';
 import http from 'node:http';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import ivm from 'isolated-vm';
 // import fetch from 'cross-fetch';
@@ -32,20 +33,12 @@ import { Errors } from '../helpers/index.js';
 import { isGitHash } from '../helpers/git.js';
 import IsolateBridge from './isolate-bridge.js';
 import type { IsolateCallback, IsolateJail } from './isolate-bridge.js';
+import LambdaRun from './lambda-run.js';
+import type { LambdaResult, RunCallback } from './lambda-run.js';
 
 import createConfig from '@dpc/node-env-obj';
 import LambdaSchemaModel from '../model/core/lambda.js';
 const Config = createConfig() as unknown as Config;
-
-export interface LambdaResult {
-  err?: boolean;
-  errMessage?: string;
-  redirect?: boolean;
-  code?: string;
-  httpStatus?: number;
-  retryable?: boolean;
-  [key: string]: unknown;
-}
 
 // Node's built-in fetch() has an internal bug that occasionally leaves a lambda's outbound call
 // stuck forever with no trace of it anywhere below the JS layer (no packet sent, no libuv request
@@ -66,6 +59,7 @@ function nodeHttpFetch(
   url: URL,
   options: { method?: string; headers?: Record<string, string>; body?: unknown },
   lookup?: ReturnType<typeof allowedAddressLookup>,
+  signal?: AbortSignal,
 ): Promise<NodeHttpFetchResponse> {
   return new Promise((resolve, reject) => {
     // Recompute Content-Length from the actual bytes rather than trust the caller-supplied header
@@ -91,6 +85,7 @@ function nodeHttpFetch(
         // far end in docker environments, possibly by a proxy that doesn't know a method like SEARCH or QUERY.
         agent: false,
         ...(lookup ? { lookup } : {}),
+        signal,
       },
       (res) => {
         const chunks: Buffer[] = [];
@@ -127,8 +122,9 @@ function nodeHttpFetch(
   });
 }
 
-// A host function called from the isolate, which settles the lambda's promise through resolve/reject.
-type HostFunction<TData> = (data: TData, resolve: IsolateCallback, reject: IsolateCallback) => Promise<void>;
+// A host function called from the isolate, which settles the lambda's promise through resolve/reject. It acts for the run
+// that called it.
+type HostFunction<TData> = (data: TData, resolve: RunCallback, reject: RunCallback, run: LambdaRun) => Promise<void>;
 
 // What lambdas pass to the host functions. It's untrusted and unchecked, these describe what the host expects.
 interface EmailTemplateRequest {
@@ -221,31 +217,24 @@ export const asCaller = (
 };
 
 class Helpers {
-  lambdaResult: LambdaResult | null;
-
-  // The lambda that's executing, set by the runner: its id, and the git hash whose code folder holds its email templates
-  lambdaId: string | null;
-  lambdaGitHash: string | null;
-
-  // Set by the runner for an endpoint that runs as its caller: the caller's token, which stays out of the isolate,
-  // and the origin of this Buttress instance, the only place _fetch uses it
-  caller: { token: string; origin: string } | null;
-
   successfulHTTPScode: number[];
   /**
    * Constructor for Helpers
    */
   constructor() {
-    this.lambdaResult = null;
-    this.lambdaId = null;
-    this.lambdaGitHash = null;
-    this.caller = null;
-
     this.successfulHTTPScode = [200, 201, 202];
   }
 
   async _createIsolateContext(isolate: ivm.Isolate, context: ivm.Context, jail: IsolateJail) {
     IsolateBridge.registerPlugins();
+
+    // A host function acts for the run going in this context when it's called, see LambdaRun. It answers the isolate
+    // only while that run is going, and is refused when there's none.
+    const forRun = <TData>(name: string, hostFunction: HostFunction<TData>) =>
+      new ivm.Reference(async (data: TData, resolve: IsolateCallback, reject: IsolateCallback) => {
+        const run = LambdaRun.in(context, name);
+        if (run) await hostFunction(data, run.answer(resolve), run.answer(reject), run);
+      });
 
     jail.setSync(
       'global',
@@ -257,29 +246,32 @@ class Helpers {
     jail.setSync(
       '_setResult',
       new ivm.Reference((res: unknown) => {
+        const run = LambdaRun.in(context, '_setResult');
+        if (!run) return;
+
         if (typeof res !== 'object' || Array.isArray(res)) {
-          this.lambdaResult = {
+          run.result = {
             err: true,
             errMessage: 'lambda result must be an object',
           };
           return;
         }
 
-        this.lambdaResult = res as LambdaResult | null;
+        run.result = res as LambdaResult | null;
       }),
     );
 
     jail.setSync(
       '_getEmailTemplate',
-      new ivm.Reference<HostFunction<EmailTemplateRequest>>(async (data, resolve, reject) => {
+      forRun<EmailTemplateRequest>('_getEmailTemplate', async (data, resolve, reject, run) => {
         try {
           Logging.logVerbose(`Populating email body from template ${data.emailTemplate}`);
 
-          if (!isGitHash(this.lambdaGitHash)) throw new Error('no_executing_lambda');
+          if (!isGitHash(run.lambdaGitHash)) throw new Error('no_executing_lambda');
 
           // The isolate runs the template's render function, see getEmailTemplate in isolate-bridge
           const output = lambdaMail.getEmailTemplateSource(
-            `${Config.paths.lambda.code}/lambda-${this.lambdaGitHash}`,
+            `${Config.paths.lambda.code}/lambda-${run.lambdaGitHash}`,
             String(data.emailTemplate),
           );
           return resolve.applyIgnored(undefined, [
@@ -292,7 +284,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoCreateSign',
-      new ivm.Reference<HostFunction<CreateSignRequest>>(async (data, resolve, reject) => {
+      forRun<CreateSignRequest>('_cryptoCreateSign', async (data, resolve, reject) => {
         try {
           Logging.logVerbose(`Creating crypto signature ${data.signature}`);
 
@@ -313,15 +305,14 @@ class Helpers {
     );
     jail.setSync(
       '_updateMetadata',
-      new ivm.Reference<HostFunction<UpdateMetadataRequest>>(async (data, resolve, reject) => {
+      forRun<UpdateMetadataRequest>('_updateMetadata', async (data, resolve, reject, run) => {
         try {
           Logging.logVerbose(
             `Updating metadata for ${data.id}:${data.idx} with key ${data.key} and value ${data.value}`,
           );
 
           // Only the executing lambda's metadata can be updated
-          const lambdaId = this.lambdaId;
-          if (!lambdaId) throw new Error('no_executing_lambda');
+          const lambdaId = run.lambdaId;
           if (data.id !== undefined && String(data.id) !== lambdaId) throw new Error('invalid_lambda_id');
           if (!Number.isInteger(data.idx) || data.idx < -1) throw new Error('invalid_metadata_index');
 
@@ -356,7 +347,11 @@ class Helpers {
     );
     jail.setSync(
       '_fetch',
-      new ivm.Reference<FetchHostFunction>(async (data, callback, resolve, reject) => {
+      new ivm.Reference<FetchHostFunction>(async (data, onText, onResolve, onReject) => {
+        const run = LambdaRun.in(context, '_fetch');
+        if (!run) return;
+        const [callback, resolve, reject] = [onText && run.answer(onText), run.answer(onResolve), run.answer(onReject)];
+
         if (typeof data === 'string') {
           const url = new URL(data);
           data = {
@@ -381,8 +376,8 @@ class Helpers {
 
           data.options = data.options || {};
 
-          if (this.caller) {
-            const request = asCaller(data.url as URL, data.options.headers, this.caller);
+          if (run.caller) {
+            const request = asCaller(data.url as URL, data.options.headers, run.caller);
             data.url = request.url;
             data.options.headers = request.headers;
           }
@@ -392,7 +387,13 @@ class Helpers {
           const problem = await checkDestination(data.url as URL, allowedHosts);
           if (problem) throw new Errors.CodedError(`fetch_${problem}`, 403);
 
-          const response = await nodeHttpFetch(data.url as URL, data.options, allowedAddressLookup(allowedHosts));
+          // Aborted if the run ends first
+          const response = await nodeHttpFetch(
+            data.url as URL,
+            data.options,
+            allowedAddressLookup(allowedHosts),
+            run.signal,
+          );
 
           const output: {
             ok?: boolean;
@@ -620,7 +621,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoRandomBytes',
-      new ivm.Reference<HostFunction<number>>(async (data, resolve, reject) => {
+      forRun<number>('_cryptoRandomBytes', async (data, resolve, reject) => {
         try {
           return resolve.applyIgnored(undefined, [
             new ivm.ExternalCopy(new ivm.Reference(crypto.randomBytes(data).toString('hex')).copySync()).copyInto(),
@@ -641,7 +642,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoCreateHash',
-      new ivm.Reference<HostFunction<CreateHashRequest>>(async (data, resolve, reject) => {
+      forRun<CreateHashRequest>('_cryptoCreateHash', async (data, resolve, reject) => {
         try {
           data.message = typeof data.message === 'string' ? data.message : JSON.stringify(data.message);
           const hash = crypto.createHash(data.algorithm);
@@ -657,7 +658,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoCreateCipheriv',
-      new ivm.Reference<HostFunction<EncryptRequest>>(async (data, resolve, reject) => {
+      forRun<EncryptRequest>('_cryptoCreateCipheriv', async (data, resolve, reject) => {
         try {
           const key = crypto.randomBytes(32); // 32 bytes
           const iv = crypto.randomBytes(12); // Generate random 12 bytes IV
@@ -682,7 +683,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoCreateDecipheriv',
-      new ivm.Reference<HostFunction<DecryptRequest>>(async (data, resolve, reject) => {
+      forRun<DecryptRequest>('_cryptoCreateDecipheriv', async (data, resolve, reject) => {
         try {
           const decipher = crypto.createDecipheriv(
             data.algorithm,
@@ -702,7 +703,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoEncryptWithKey',
-      new ivm.Reference<HostFunction<EncryptWithKeyRequest>>(async (data, resolve, reject) => {
+      forRun<EncryptWithKeyRequest>('_cryptoEncryptWithKey', async (data, resolve, reject) => {
         try {
           const key = Buffer.from(data.key, 'hex'); // caller-supplied, hex-encoded
           const iv = crypto.randomBytes(12); // IV must still be fresh per call — reusing an IV with a fixed key breaks GCM
@@ -722,7 +723,7 @@ class Helpers {
     );
     jail.setSync(
       '_cryptoDecryptWithKey',
-      new ivm.Reference<HostFunction<DecryptRequest>>(async (data, resolve, reject) => {
+      forRun<DecryptRequest>('_cryptoDecryptWithKey', async (data, resolve, reject) => {
         try {
           const decipher = crypto.createDecipheriv(
             data.algorithm,
@@ -742,7 +743,7 @@ class Helpers {
     );
     jail.setSync(
       '_getCodeChallenge',
-      new ivm.Reference<HostFunction<unknown>>(async (data, resolve, reject) => {
+      forRun<unknown>('_getCodeChallenge', async (data, resolve, reject) => {
         try {
           const codeVerifier = randomstring.generate(128);
           const base64Digest = crypto.createHash('sha256').update(codeVerifier).digest('base64');
@@ -762,7 +763,7 @@ class Helpers {
     );
     jail.setSync(
       '_generatePDF',
-      new ivm.Reference<HostFunction<string>>(async (htmlString, resolve, reject) => {
+      forRun<string>('_generatePDF', async (htmlString, resolve, reject) => {
         try {
           if (!htmlString) throw new Error(`Missing HTML string for pdf generation`);
           const browser = await puppeteer.launch({ headless: true });
@@ -800,9 +801,10 @@ class Helpers {
 
     jail.setSync(
       '_sleep',
-      new ivm.Reference<HostFunction<number>>(async (ms, resolve, reject) => {
+      forRun<number>('_sleep', async (ms, resolve, reject, run) => {
         try {
-          await new Promise((r) => setTimeout(r, ms));
+          // Cancelled if the run ends first
+          await sleep(ms, undefined, { signal: run.signal });
           return resolve.applyIgnored(undefined);
         } catch (err: unknown) {
           reject.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(err).copySync()).copyInto()]);
@@ -810,8 +812,8 @@ class Helpers {
       }),
     );
 
-    IsolateBridge.setupPlugins(jail);
-    IsolateBridge.setupLambdaLogs(jail);
+    IsolateBridge.setupPlugins(jail, context);
+    IsolateBridge.setupLambdaLogs(jail, context);
     IsolateBridge.createHostIsolateBridge(isolate, context);
   }
 

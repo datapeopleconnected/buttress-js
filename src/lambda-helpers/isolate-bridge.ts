@@ -20,6 +20,7 @@ const require = createRequire(import.meta.url);
 import ivm from 'isolated-vm';
 
 import Logging from '../helpers/logging.js';
+import LambdaRun from './lambda-run.js';
 
 import createConfig from '@dpc/node-env-obj';
 const Config = createConfig() as unknown as Config;
@@ -43,14 +44,6 @@ interface LambdaPlugin {
 // A lambda's log call arguments. Only the first is logged, the third and fourth go to Logging's level/id parameters.
 type LambdaLogArgs = [unknown, unknown?, string?, string?];
 
-export interface LambdaExecutionLog {
-  log: string;
-  type: string;
-}
-
-// How much of a run's logging is kept with its execution, which Mongo caps at 16 MB with everything else it holds
-const MAX_EXECUTION_LOG_BYTES = 1024 * 1024;
-
 /**
  * IsolateBridge
  * @class
@@ -64,38 +57,12 @@ class IsolateBridge {
   };
   _pluginBootstrap: string;
 
-  // What the executing lambda has logged, kept with its execution when it finishes
-  _executionLogs: LambdaExecutionLog[] = [];
-  _executionLogBytes = 0;
-  _droppedExecutionLogs = 0;
-
   /**
    * Constructor for Helpers
    */
   constructor() {
     this._plugins = {};
     this._pluginBootstrap = '';
-  }
-
-  /**
-   * Starts collecting a run's logs afresh.
-   */
-  startExecutionLogs() {
-    this._executionLogs = [];
-    this._executionLogBytes = 0;
-    this._droppedExecutionLogs = 0;
-  }
-
-  /**
-   * Gives the run's logs, with a note of how many were left out past the limit, and starts afresh.
-   */
-  takeExecutionLogs(): LambdaExecutionLog[] {
-    const logs = this._executionLogs;
-    if (this._droppedExecutionLogs > 0) {
-      logs.push({ log: `${this._droppedExecutionLogs} more log lines were left out`, type: 'warn' });
-    }
-    this.startExecutionLogs();
-    return logs;
   }
 
   registerPlugins() {
@@ -143,7 +110,7 @@ class IsolateBridge {
     Logging.log(`Registered: ${Object.keys(this._plugins).length} lambda plugins`);
   }
 
-  async setupPlugins(jail: IsolateJail) {
+  async setupPlugins(jail: IsolateJail, context: ivm.Context) {
     this._pluginBootstrap = '';
 
     for (const [pluginName, pluginMeta] of Object.entries(this._plugins)) {
@@ -162,8 +129,11 @@ class IsolateBridge {
 				`;
         jail.setSync(
           `_${pluginName}_${method}`,
-          new ivm.Reference(async (resolve: IsolateCallback, reject: IsolateCallback, ...args: unknown[]) => {
+          new ivm.Reference(async (onResolve: IsolateCallback, onReject: IsolateCallback, ...args: unknown[]) => {
             Logging.logVerbose(`${pluginName}_${method}`);
+            const run = LambdaRun.in(context, `${pluginName}_${method}`);
+            if (!run) return;
+            const [resolve, reject] = [run.answer(onResolve), run.answer(onReject)];
             try {
               const outcome = await pluginMeta.plugin[method](...args);
               resolve.applyIgnored(undefined, [new ivm.ExternalCopy(new ivm.Reference(outcome).copySync()).copyInto()]);
@@ -426,71 +396,40 @@ class IsolateBridge {
     // bootstrap.runSync(context);
   }
 
-  async setupLambdaLogs(jail: IsolateJail) {
+  // Logged by the process and kept with the execution of the run that logged it, and refused once that run has finished
+  setupLambdaLogs(jail: IsolateJail, context: ivm.Context) {
+    const lambdaLog = (name: string, type: string, log: (args: LambdaLogArgs) => void) =>
+      new ivm.Reference((...args: LambdaLogArgs) => {
+        const run = LambdaRun.in(context, name);
+        if (!run) return;
+        log(args);
+        run.log(args[0], type);
+      });
+
     jail.setSync(
       '_log',
-      new ivm.Reference((...args: LambdaLogArgs) => {
-        Logging.log(args[0], args[2], args[3]);
-        this._pushLambdaExecutionLog(args[0], 'log');
-      }),
+      lambdaLog('_log', 'log', (args) => Logging.log(args[0], args[2], args[3])),
     );
-
     jail.setSync(
       '_logDebug',
-      new ivm.Reference((...args: LambdaLogArgs) => {
-        Logging.logDebug(args[0], args[2]);
-        this._pushLambdaExecutionLog(args[0], 'debug');
-      }),
+      lambdaLog('_logDebug', 'debug', (args) => Logging.logDebug(args[0], args[2])),
     );
-
     jail.setSync(
       '_logSilly',
-      new ivm.Reference((...args: LambdaLogArgs) => {
-        Logging.logSilly(args[0], args[2]);
-        this._pushLambdaExecutionLog(args[0], 'silly');
-      }),
+      lambdaLog('_logSilly', 'silly', (args) => Logging.logSilly(args[0], args[2])),
     );
-
     jail.setSync(
       '_logVerbose',
-      new ivm.Reference((...args: LambdaLogArgs) => {
-        Logging.logVerbose(args[0], args[2]);
-        this._pushLambdaExecutionLog(args[0], 'verbose');
-      }),
+      lambdaLog('_logVerbose', 'verbose', (args) => Logging.logVerbose(args[0], args[2])),
     );
-
     jail.setSync(
       '_logWarn',
-      new ivm.Reference((...args: LambdaLogArgs) => {
-        Logging.logWarn(args[0], args[2]);
-        this._pushLambdaExecutionLog(args[0], 'warn');
-      }),
+      lambdaLog('_logWarn', 'warn', (args) => Logging.logWarn(args[0], args[2])),
     );
-
     jail.setSync(
       '_logError',
-      new ivm.Reference((...args: LambdaLogArgs) => {
-        Logging.logError(args[0], args[2]);
-        this._pushLambdaExecutionLog(args[0], 'error');
-      }),
+      lambdaLog('_logError', 'error', (args) => Logging.logError(args[0], args[2])),
     );
-  }
-
-  _pushLambdaExecutionLog(log: unknown, type: string) {
-    let text: string;
-    try {
-      text = typeof log === 'string' ? log : (JSON.stringify(log) ?? String(log));
-    } catch {
-      text = String(log);
-    }
-
-    const bytes = Buffer.byteLength(text);
-    if (this._executionLogBytes + bytes > MAX_EXECUTION_LOG_BYTES) {
-      this._droppedExecutionLogs++;
-      return;
-    }
-    this._executionLogBytes += bytes;
-    this._executionLogs.push({ log: text, type });
   }
 }
 export default new IsolateBridge();

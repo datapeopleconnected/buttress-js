@@ -84,16 +84,16 @@ Execution (`execute()`), per invocation:
    not it uses the caller's token. A token that has gone since doesn't stop the run.
    Unlike `_tokenId` (the token the execution runs as), they never change who the lambda acts as.
    An `API_ENDPOINT` trigger with `useCallerToken` runs as its caller, but the caller's token never enters the
-   isolate: the runner keeps it on `lambdaHelpers.caller`, and the lambda's default `appToken` is the placeholder
+   isolate: the runner keeps it on the run (`LambdaRun.caller`, see [Runs kept apart](#runs-kept-apart)), and the
+   lambda's default `appToken` is the placeholder
    `BUTTRESS_CALLER`. The host `_fetch` replaces that placeholder in the `Authorization` header of a request to
    this instance (origin match) with `Bearer <caller token>`, dropping a `?token=`. A call that names a token of
-   its own, e.g. `save(data, { token: lambdaInfo.lambdaToken })`, and requests to other hosts are untouched. This is per worker process, like `lambdaId`, so it relies on a runner
-   executing one lambda at a time.
+   its own, e.g. `save(data, { token: lambdaInfo.lambdaToken })`, and requests to other hosts are untouched.
 4. Runs a small wrapper script inside the isolate that does `Buttress.init(buttressOptions, true)`,
    `require()`s the bundled entry file (a shim resolving `lambdaModules` names to isolate globals),
    instantiates it, and calls `lambdaCode[entryPoint]()`.
 5. On success/failure updates `LambdaExecution.status` (`RUNNING`→`COMPLETE`/`ERROR`), in the same write
-   pushing onto its `logs` what the lambda logged (`lambda.log*`/`console.*`, collected by `IsolateBridge`, up
+   pushing onto its `logs` what the lambda logged (`lambda.log*`/`console.*`, collected by the run, up
    to 1 MB a run) and, on failure, why. A failure to record the error is only logged. For
    `API_ENDPOINT` lambdas, emits `lambda:worker:execution-result` (keyed by `reqId`) back to the REST
    process that's holding the HTTP response open — see `_queueLambdaAPIExecution` in
@@ -111,7 +111,32 @@ One `isolated-vm` `Isolate` exists per `LambdaRunner` (i.e. per worker process),
 reused across every execution of that app's lambdas on that worker. A `LambdaRunner` has a `working` boolean
 guard — if it's `true` it declines new work (`lambda:worker:overloaded`) rather than running two lambdas
 concurrently in the same isolate. Don't assume executions of one app's lambdas on the same worker are isolated
-from each other beyond what `Buttress.clean()` does at the start of the wrapper script.
+from each other beyond what `Buttress.clean()` does at the start of the wrapper script, and what
+[Runs kept apart](#runs-kept-apart) gives: globals an app's lambda sets stay in its context for the next.
+
+## Runs kept apart
+
+A lambda can return leaving work running, e.g. `sleep(50).then(() => lambda.setResult(...))`, and the context it ran in
+is kept for the app's next run (another app's lambda runs in between in the same isolate). Host functions are set on a
+context once and get no identity from the isolate when called, so what they act for is a `LambdaRun`
+([src/lambda-helpers/lambda-run.ts](../src/lambda-helpers/lambda-run.ts)) rather than state shared by every run.
+
+- `execute()` starts one (`LambdaRun.start()`) for the app's context once the lambda's tokens are resolved, just before
+  its modules load, with the lambda's id, git hash and caller. It ends in `execute()`'s `finally`, after the execution
+  is recorded and an API caller answered, so it never outlasts `working`.
+- Every host function (`IsolateBridge`'s logs and plugins, and `_setResult`, `_fetch`, `_sleep`, `_updateMetadata`, the
+  crypto ones and so on in `helpers.ts`, through `forRun()`) asks `LambdaRun.in(context, name)` for the run going in
+  the context it was set on, and acts for that run from then on: its result, logs, lambda id, git hash and caller.
+  With none (between runs, or another app's run going) the call is dropped with a warning and never answered. Only
+  `_cryptoRandomBytesSync`, which acts for no one and has to return at once, isn't bound.
+- When a run ends its `AbortSignal` cancels its `sleep()`s (`timers/promises`) and aborts its requests (the `signal` of
+  `nodeHttpFetch()`), and `run.answer()` stops passing anything back to the isolate for it: no resolve, reject or
+  `fetch` text callback. Work it started that can't be cancelled (a metadata write, a PDF) finishes, unanswered.
+
+So once a run has ended nothing calls back into its code, and its code left behind has no way to resume and call a host
+function during a later run: the isolate has no timers or I/O of its own. That rests on the host never answering it, not
+on telling one run's code from another's, which the isolate can't. The exception is an app's own code: a later run of
+the app can call functions an earlier one left in the context, which then act for the later run.
 
 ## Replacing the isolate
 

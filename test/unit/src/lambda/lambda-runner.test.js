@@ -20,6 +20,7 @@ import sinon from 'sinon';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import http from 'node:http';
 import { Readable } from 'node:stream';
 import ivm from 'isolated-vm';
 import createConfig from '@dpc/node-env-obj';
@@ -34,7 +35,7 @@ import UserSchemaModel from '../../../../dist/model/core/user.js';
 import SecureStoreSchemaModel from '../../../../dist/model/core/secure-store.js';
 import DeploymentSchemaModel from '../../../../dist/model/core/deployment.js';
 import Logging from '../../../../dist/helpers/logging.js';
-import lambdaHelpers from '../../../../dist/lambda-helpers/helpers.js';
+import LambdaRun from '../../../../dist/lambda-helpers/lambda-run.js';
 
 const Config = createConfig();
 
@@ -1162,6 +1163,8 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
     const savedApp = { protocol: Config.app.protocol, host: Config.app.host };
     Config.app.protocol = 'http';
     Config.app.host = 'buttress.test';
+    // The run the lambda's host functions act for, whose caller the host keeps
+    const runs = sinon.spy(LambdaRun, 'start');
     try {
       await runner.execute(lambda, exec, { id: 'app-1', apiPath: 'test' }, 'API_ENDPOINT', { reqId: 'req-1', headers });
     } finally {
@@ -1169,7 +1172,7 @@ describe('lambda/LambdaRunner:execute caller credentials', () => {
       runner._isolate.dispose();
     }
     const resultCall = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
-    return { ...JSON.parse(resultCall.args[1]).res, hostCaller: lambdaHelpers.caller };
+    return { ...JSON.parse(resultCall.args[1]).res, hostCaller: runs.returnValues[0].caller };
   }
 
   it("gives an endpoint that doesn't use the caller's token neither the token nor its credential headers", async function () {
@@ -1801,5 +1804,159 @@ describe('lambda/LambdaRunner:execute isolate memory', () => {
     assert.ok(first.isDisposed);
     running[1]();
     await until(() => finished() === 2);
+  });
+});
+
+// One isolate runs every lambda, and an app's context is kept between its runs, so work a lambda leaves running when it
+// returns could otherwise go on into a later run and act for it: answer its caller, log into its execution, update its
+// lambda's metadata or call this instance with its caller's token.
+describe('lambda/LambdaRunner:execute runs kept apart', () => {
+  let savedPaths;
+  let savedAllowed;
+  let savedApp;
+  let tmpDir;
+  let server;
+
+  beforeEach(async () => {
+    savedPaths = { ...Config.paths.lambda };
+    savedAllowed = Config.lambda.allowedHosts;
+    savedApp = { protocol: Config.app.protocol, host: Config.app.host };
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'buttress-lambda-runs-'));
+    Config.paths.lambda.plugins = tmpDir;
+    Config.lambda.allowedHosts = '';
+    ['log', 'logDebug', 'logWarn', 'logError'].forEach((level) => sinon.stub(Logging, level));
+
+    // This Buttress instance, which records the requests it gets. /slow answers after 300 ms.
+    server = await new Promise((resolve) => {
+      const requests = [];
+      const instance = http.createServer((req, res) => {
+        const request = { url: req.url, authorization: req.headers.authorization, closedEarly: false };
+        requests.push(request);
+        res.on('close', () => (request.closedEarly = !res.writableEnded));
+        setTimeout(() => res.end('{}'), req.url === '/slow' ? 300 : 0);
+      });
+      instance.listen(0, '127.0.0.1', () => resolve({ instance, requests, port: instance.address().port }));
+    });
+    Config.app.protocol = 'http';
+    Config.app.host = `127.0.0.1:${server.port}`;
+  });
+
+  afterEach(() => {
+    Object.assign(Config.paths.lambda, savedPaths);
+    Config.lambda.allowedHosts = savedAllowed;
+    Object.assign(Config.app, savedApp);
+    server.instance.closeAllConnections();
+    server.instance.close();
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  // A runner whose lambdas' entry points are the bodies they're run with, in its real isolate. run() gives what the API
+  // caller was answered and the logs saved with the execution.
+  async function createRunsRunner() {
+    const { runner, nrp } = createRunner();
+    await runner.init();
+    const executionUpdates = sinon.stub().resolves();
+    const lambdaUpdates = sinon.stub().resolves();
+    const callerToken = { id: 'caller-token', value: 'caller-token-value', type: 'app', _appId: 'app-b' };
+    stubModel(
+      new Map([
+        [SecureStoreSchemaModel, { findOne: async () => null }],
+        [AppSchemaModel, { createId: (v) => v }],
+        [LambdaSchemaModel, { createId: (v) => v, updateById: lambdaUpdates }],
+        [TokenSchemaModel, {
+          createId: (v) => v,
+          find: async (query) => Readable.from([query._id ? callerToken : { value: 'lambda-token' }]),
+          findById: async () => null,
+        }],
+        [LambdaExecutionSchemaModel, {
+          ...fakeExecutionModel({ updateById: executionUpdates }),
+          findById: async (id) => ({ id, status: 'RUNNING', metadata: [] }),
+        }],
+      ]),
+    );
+    sinon.stub(runner, 'bundleLambdaModules').resolves();
+    sinon.stub(runner, '_getLambdaModulesName').callsFake((lambda) => [{ name: `lambda_${lambda.id}` }]);
+    let body = '';
+    sinon.stub(runner, '_registerLambdaModules').callsFake(async ([mod]) => {
+      runner._context.evalSync(`
+        globalThis.Buttress = { clean() {}, initialised: false, init: async () => {} };
+        globalThis['${mod.name}'] = class { async execute() { ${body} } };
+      `);
+    });
+
+    let runs = 0;
+    const run = async ({ lambdaId, appId, lambdaBody, trigger = [], execution = {} }) => {
+      body = lambdaBody;
+      nrp.emit.resetHistory();
+      const lambda = {
+        id: lambdaId, name: lambdaId, trigger,
+        git: { url: 'git@example.com:x.git', hash: 'HEAD', entryFile: 'index.js', entryPoint: 'execute' },
+      };
+      const exec = { id: `exec-${++runs}`, lambdaId, deploymentId: 'd', metadata: [], ...execution };
+      await runner.execute(lambda, exec, { id: appId, apiPath: appId }, 'API_ENDPOINT', { reqId: `req-${runs}` });
+      const resultCall = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+      const completed = executionUpdates.getCalls().find((call) => call.args[0] === exec.id && call.args[1].$push);
+      return { res: JSON.parse(resultCall.args[1]).res, logs: completed.args[1].$push.logs.$each };
+    };
+    return { runner, run, lambdaUpdates };
+  }
+
+  // Work a lambda leaves running when it returns, which acts 50 ms later
+  const leftBehind = `
+    sleep(50).then(() => {
+      lambda.setResult({ by: 'the first run' });
+      lambda.log('logged by the first run');
+      updateMetadata({ idx: -1, key: 'by', value: 'the first run' });
+      fetch({ url: buttressOptions.buttressUrl + '/x', options: { headers: { Authorization: 'Bearer BUTTRESS_CALLER' } } });
+    });
+  `;
+  const laterRun = "await sleep(200); lambda.log('logged by the second run');";
+
+  for (const [name, first, second] of [
+    ["another app's", { lambdaId: 'la', appId: 'app-a' }, { lambdaId: 'lb', appId: 'app-b' }],
+    ["the same app's", { lambdaId: 'lb', appId: 'app-b' }, { lambdaId: 'lb', appId: 'app-b' }],
+  ]) {
+    it(`doesn't let work ${name} last run left running act for the next`, async function () {
+      this.timeout(10000);
+      const { runner, run, lambdaUpdates } = await createRunsRunner();
+
+      try {
+        await run({ ...first, lambdaBody: leftBehind });
+        const later = await run({
+          ...second,
+          lambdaBody: laterRun,
+          trigger: [{ type: 'API_ENDPOINT', apiEndpoint: { url: 'x', useCallerToken: true } }],
+          execution: { _tokenId: 'caller-token' },
+        });
+
+        assert.strictEqual(later.res, 'success');
+        assert.deepStrictEqual(later.logs, [{ log: 'logged by the second run', type: 'log' }]);
+        assert.ok(!lambdaUpdates.calledWith('lb'), "the first run's work shouldn't update the second lambda's metadata");
+        assert.deepStrictEqual(server.requests, []);
+      } finally {
+        runner._isolate.dispose();
+      }
+    });
+  }
+
+  it('aborts a request a lambda leaves running when it returns, rather than answer the next run with it', async function () {
+    this.timeout(10000);
+    const { runner, run } = await createRunsRunner();
+
+    try {
+      await run({
+        lambdaId: 'la', appId: 'app-a',
+        // Returns once the request has reached the instance, which is still answering it
+        lambdaBody: "fetch(buttressOptions.buttressUrl + '/slow').then(() => lambda.setResult({ by: 'app-a' })); await sleep(100);",
+      });
+      const later = await run({ lambdaId: 'la', appId: 'app-a', lambdaBody: 'await sleep(500);' });
+
+      assert.strictEqual(later.res, 'success');
+      assert.deepStrictEqual(server.requests.map(({ url, closedEarly }) => ({ url, closedEarly })), [
+        { url: '/slow', closedEarly: true },
+      ]);
+    } finally {
+      runner._isolate.dispose();
+    }
   });
 });

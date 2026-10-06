@@ -23,11 +23,19 @@ import ivm from 'isolated-vm';
 import createConfig from '@dpc/node-env-obj';
 
 import LambdaHelpers from '../../../../dist/lambda-helpers/helpers.js';
+import LambdaRun from '../../../../dist/lambda-helpers/lambda-run.js';
 
 const Config = createConfig();
 
 const HASH = '1111111111111111111111111111111111111111';
 const OTHER_HASH = '2222222222222222222222222222222222222222';
+
+// What a call the host doesn't answer comes to: its promise never settles
+const answered = (promise) =>
+  Promise.race([
+    promise.then(() => 'answered', () => 'answered'),
+    new Promise((resolve) => setTimeout(() => resolve('unanswered'), 100)),
+  ]);
 
 // Calls getEmailTemplate from inside a live isolate, as a lambda does. The template's code must run in the
 // isolate, and only templates in the executing lambda's own code folder can be used.
@@ -36,6 +44,7 @@ describe('lambda-helpers/Helpers:getEmailTemplate', () => {
   let savedPaths;
   let isolate;
   let context;
+  let run;
 
   const write = (file, content) => {
     const full = path.join(Config.paths.lambda.code, file);
@@ -76,11 +85,11 @@ describe('lambda-helpers/Helpers:getEmailTemplate', () => {
   });
 
   beforeEach(() => {
-    LambdaHelpers.lambdaGitHash = HASH;
+    run = LambdaRun.start(context, { lambdaId: 'lambda-1', lambdaGitHash: HASH });
   });
 
   afterEach(() => {
-    LambdaHelpers.lambdaGitHash = null;
+    run.end();
   });
 
   it("renders a template from the lambda's code folder with the email data", async () => {
@@ -121,12 +130,10 @@ describe('lambda-helpers/Helpers:getEmailTemplate', () => {
     }
   });
 
-  it('refuses when no lambda is executing', async () => {
-    LambdaHelpers.lambdaGitHash = null;
+  it('refuses a call once the run has ended, leaving it unanswered', async () => {
+    run.end();
 
-    await assert.rejects(
-      render({ gitHash: HASH, emailTemplate: 'templates/welcome.pug', emailData: { name: 'Ada' } }),
-      /no_executing_lambda/,
-    );
+    const call = render({ gitHash: HASH, emailTemplate: 'templates/welcome.pug', emailData: { name: 'Ada' } });
+    assert.strictEqual(await answered(call), 'unanswered');
   });
 });

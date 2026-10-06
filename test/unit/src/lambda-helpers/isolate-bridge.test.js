@@ -17,8 +17,8 @@
 // Most of IsolateBridge only makes sense once bound into a live isolated-vm context (every
 // method it exposes to lambdas is an `ivm.Reference` closure meant to be invoked from inside
 // the isolate), so it isn't practically unit-testable without spinning up a real isolate.
-// `registerPlugins()` and `_pushLambdaExecutionLog` are the two pieces of host-side logic that
-// run in plain Node and can be exercised directly.
+// `registerPlugins()` is the piece of host-side logic that runs in plain Node and can be
+// exercised directly.
 
 import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
@@ -42,20 +42,5 @@ describe('lambda-helpers/IsolateBridge:registerPlugins', () => {
 
     assert.doesNotThrow(() => IsolateBridge.registerPlugins());
     assert.deepStrictEqual(IsolateBridge._plugins, {});
-  });
-});
-
-describe('lambda-helpers/IsolateBridge:_pushLambdaExecutionLog', () => {
-  it("keeps a run's log lines, as text, until they're taken", () => {
-    IsolateBridge.startExecutionLogs();
-
-    IsolateBridge._pushLambdaExecutionLog('a log line', 'debug');
-    IsolateBridge._pushLambdaExecutionLog({ code: 7 }, 'error');
-
-    assert.deepStrictEqual(IsolateBridge.takeExecutionLogs(), [
-      { log: 'a log line', type: 'debug' },
-      { log: '{"code":7}', type: 'error' },
-    ]);
-    assert.deepStrictEqual(IsolateBridge.takeExecutionLogs(), []);
   });
 });
