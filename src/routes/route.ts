@@ -405,7 +405,7 @@ export default class Route {
         const prepared = this.redactResults
           ? Helpers.Schema.prepareSchemaResult(chunk, this.addSourceId ? this._dataApp(req).id : null)
           : chunk;
-        return Helpers.Schema.stripPrivate(prepared, this._privatePaths);
+        return this._withoutPrivate(prepared);
       });
 
       res.set('Content-Type', 'application/json');
@@ -432,7 +432,7 @@ export default class Route {
     const prepared = this.redactResults
       ? Helpers.Schema.prepareSchemaResult(result, this.addSourceId ? this._dataApp(req).id : null)
       : result;
-    res.json(Helpers.Schema.stripPrivate(prepared, this._privatePaths));
+    res.json(this._withoutPrivate(prepared));
 
     this._close(req);
 
@@ -637,23 +637,23 @@ export default class Route {
 
     if (isReadStream) {
       result.on('data', (data: unknown) =>
-        emit(this._activityResponse(Helpers.Schema.prepareSchemaResult(data, dataApp.id ?? null))),
+        emit(this._withoutPrivate(Helpers.Schema.prepareSchemaResult(data, dataApp.id ?? null))),
       );
       Logging.logTimer('_broadcast:end-stream', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
       return;
     }
 
-    emit(this._activityResponse(Helpers.Schema.prepareSchemaResult(result, dataApp.id ?? null)));
+    emit(this._withoutPrivate(Helpers.Schema.prepareSchemaResult(result, dataApp.id ?? null)));
     Logging.logTimer('_broadcast:end', req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
   }
 
   /**
-   * A result as its activity tells realtime listeners of it: without the schema's private properties, as a response is
-   * without them. An update's result is its changes, each to a path.
+   * A result without the schema's private properties, as a response gives it and its activity tells realtime listeners
+   * of it. An update's result is its changes, each to a path.
    * @param {unknown} result
    * @return {unknown}
    */
-  _activityResponse(result: unknown): unknown {
+  _withoutPrivate(result: unknown): unknown {
     if (this.verb === Route.Constants.Verbs.PUT && Array.isArray(result)) {
       return Helpers.Schema.stripPrivateChanges(result, this._privatePaths);
     }

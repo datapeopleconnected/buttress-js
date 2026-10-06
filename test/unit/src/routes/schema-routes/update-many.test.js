@@ -326,7 +326,7 @@ describe('schema-routes/UpdateMany:_broadcast', () => {
 });
 
 // SR-DPC-001 S4
-describe('schema-routes/UpdateMany:_activityResponse', () => {
+describe('schema-routes/UpdateMany:_withoutPrivate', () => {
   it("leaves each item's changes to a private property out of what realtime listeners are told", () => {
     const route = createRoute(createFakeModel([]));
     route._privatePaths = [['secret']];
@@ -340,9 +340,26 @@ describe('schema-routes/UpdateMany:_activityResponse', () => {
       },
     ];
 
-    assert.deepStrictEqual(route._activityResponse(items), [
+    assert.deepStrictEqual(route._withoutPrivate(items), [
       { id: DOC_1, results: [{ type: 'scalar', path: 'value', value: 'updated' }] },
     ]);
+  });
+});
+
+// A bulk update's response is its items' changes, stripped as its activity is
+describe('schema-routes/UpdateMany:_respond', () => {
+  it("leaves each item's changes to a private property out of the response", async () => {
+    const route = createRoute(createFakeModel([]));
+    route._privatePaths = [['secret']];
+    route.redactResults = false;
+    route._close = () => {};
+    const res = { json: sinon.spy(), set: sinon.spy(), statusCode: 200 };
+
+    await route._respond({ context: { id: 'req-1', timer: { interval: 0, lapTime: 0 }, timings: {} } }, res, [
+      { id: DOC_1, results: [{ type: 'scalar', path: 'secret', value: 'hidden' }, { type: 'scalar', path: 'value', value: 'v' }] },
+    ]);
+
+    assert.deepStrictEqual(res.json.firstCall.args[0], [{ id: DOC_1, results: [{ type: 'scalar', path: 'value', value: 'v' }] }]);
   });
 });
 

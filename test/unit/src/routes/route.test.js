@@ -139,6 +139,25 @@ describe('routes/Route:_respond private properties', () => {
     assert.deepStrictEqual(res.json.firstCall.args[0], { id: 'u1', name: 'a', auth: [{ app: 'google' }] });
   });
 
+  // A PUT's result is its changes, which were answered with what they wrote to a private property
+  it("leaves an update's change to one out of its response, and takes one out of a change above it", async () => {
+    const route = createRoute({ schema });
+    route.verb = Route.Constants.Verbs.PUT;
+    route.redactResults = false;
+    const res = createRes();
+
+    await route._respond(createReq({ method: 'PUT' }), res, [
+      { type: 'scalar', path: 'name', value: 'b' },
+      { type: 'scalar', path: 'auth.0.password', value: 'secret' },
+      { type: 'vector-add', path: 'auth', value: { app: 'github', password: 'secret' } },
+    ]);
+
+    assert.deepStrictEqual(res.json.firstCall.args[0], [
+      { type: 'scalar', path: 'name', value: 'b' },
+      { type: 'vector-add', path: 'auth', value: { app: 'github' } },
+    ]);
+  });
+
   it('leaves them out of each entity of a stream', async () => {
     const route = createRoute({ schema });
     route.addSourceId = false;
