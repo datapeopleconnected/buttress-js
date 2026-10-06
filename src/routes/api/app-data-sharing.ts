@@ -42,6 +42,7 @@ import type { DataShareActivatedMessage } from '../../services/nrp.js';
 import { UpdatePathBody } from '../../types/datastore.js';
 import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 import { dataSharingDestinationProblem, remoteAppUrlsOf } from '../../helpers/egress.js';
+import { checkPolicyConfig, invalidPolicy } from '../../access-control/policy-definition.js';
 
 // What the activate route (ActivateAppDataSharing) responds with. A remote whose side of the agreement is already
 // active responds `true` instead, which has no `status` so is treated as not activated.
@@ -235,6 +236,17 @@ class AddDataSharing extends Route {
       return Promise.reject(Helpers.Errors.badRequest('missing_policy'));
     }
 
+    // The agreement's policy is made from it, so it's checked as a policy's configs are when it's saved: verbs or a
+    // schema given as text, which the policy schema doesn't take, would be stored as it is
+    const issues = checkPolicyConfig(req.body.policyConfig).map((issue) => ({
+      ...issue,
+      path: issue.path.replace(/^config/, 'policyConfig'),
+    }));
+    if (issues.length > 0) {
+      this.log(`[${this.name}] Invalid policy config for ${req.body.name}`, Route.LogLevel.ERR);
+      return Promise.reject(invalidPolicy(req.body.name, issues));
+    }
+
     // Only to hosts the operator allows, when they've set a list
     const destination = await dataSharingDestinationProblem([req.body.remoteApp?.endpoint, req.body.remoteApp?.ws]);
     if (destination) return Promise.reject(destinationRefused(destination));
@@ -247,13 +259,6 @@ class AddDataSharing extends Route {
       this.log(`${this.schemaName}: Duplicate entity`, Route.LogLevel.ERR, req.context.id);
       return Promise.reject(Helpers.Errors.badRequest('duplicate'));
     }
-
-    // TODO: Should check the policy config instead.
-    // const policyCheck = await Helpers.checkAppPolicyProperty(req.authApp.policyPropertiesList, req.body.dataSharing.local);
-    // if (!policyCheck.passed) {
-    // 	this.log(`[${this.name}] ${policyCheck.errMessage}`, Route.LogLevel.ERR);
-    // 	return Promise.reject(Helpers.Errors.badRequest('invalid_policy_property'));
-    // }
 
     return true;
   }

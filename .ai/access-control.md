@@ -54,8 +54,9 @@ after token authentication. Flow:
 4. `__getOutcome(tokenPolicies, req, schemaName, appId)` — REST's side of the policy engine:
    - `evaluate(policies, context)` ([evaluator.ts](../src/access-control/evaluator.ts)) gives the token's
      **grants** on the schema for the verb, one per config that applies: the policy hasn't reached its `limit`,
-     the config is for the verb and schema (`filterPolicyConfigs`; `grantsVerb()` treats `QUERY` and `SEARCH` as one
-     verb, so a config listing either grants both methods), the schema exists, its `condition` holds
+     the config is for the verb and schema (`filterPolicyConfigs`, by the items of its `verbs` and `schema` lists, so a
+     config with text there grants nothing; `grantsVerb()` treats `QUERY` and `SEARCH` as one verb, so a config listing
+     either grants both methods), the schema exists, its `condition` holds
      (`AccessControlConditions.filterPoliciesByPolicyConditions`, with the request env; a config without a
      condition applies), and its `query` can be built (`Filter.buildPolicyQuery`; an `#env.` value that isn't set,
      an operator nothing knows, or a logical operator not given a list of queries drops the config). An `#env.` value

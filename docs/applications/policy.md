@@ -20,7 +20,8 @@ By default, requests without matching policy access are denied.
 A policy is checked when it's added, synced or updated, and refused with a 400, `invalid_policy`, listing each
 problem in `details.issues`, when a config would grant nothing or fail when it's evaluated. Each config needs
 `verbs`, a list of `GET`, `QUERY`, `POST`, `PUT`, `DELETE` or `%ALL%`; `schema`, a list of schema names; and a
-`query` object (`{"access": "%FULL_ACCESS%"}` for every entity). A `projection` is `{"keys": [...]}`, and a
+`query` object (`{"access": "%FULL_ACCESS%"}` for every entity). Verbs and schemas are matched item by item, and a
+config whose `verbs` or `schema` isn't a list grants nothing. A `projection` is `{"keys": [...]}`, and a
 `condition` or `env` is an object. Earlier releases saved a config without a query, and it granted nothing. A
 config's query or condition naming an operator Buttress doesn't know is one of those problems, an issue with code
 `unknown_operator`; a selection naming one is refused with `invalid_policy_selection`. An operator given an operand it

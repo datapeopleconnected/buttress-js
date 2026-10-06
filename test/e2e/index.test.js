@@ -25,6 +25,7 @@ import './rest/core/tenant-scoping.test.js';
 import './rest/schema.test.js';
 import './rest/data-sharing.test.js';
 import './rest/data-sharing-fragments.test.js';
+import './rest/data-sharing-policy.test.js';
 import './rest/policy.test.js';
 import './rest/policy-selection.test.js';
 import './rest/policy-env.test.js';

@@ -75,7 +75,9 @@ export function filterPolicyConfigs(
   verbCheckReadability: boolean = false,
 ): PolicyConfig[] {
   return policy.config.filter((c) => {
-    if (!c.query || !c.verbs || !c.schema) return false;
+    // Lists, matched by their items. Text there, which an earlier release could store for a data sharing agreement,
+    // grants nothing: it would match by its substrings
+    if (!c.query || !Array.isArray(c.verbs) || !Array.isArray(c.schema)) return false;
 
     const verbCheck = verbCheckReadability
       ? READ_POLICY_VERBS.some((v) => grantsVerb(c.verbs, v))

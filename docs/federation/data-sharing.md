@@ -38,6 +38,14 @@ left blank on the initiating side — see activation below). Internally, Buttres
 `butts://` for an `https` endpoint) connection string from `remoteApp.endpoint` + `apiPath` + `token`; that's
 also the connection string format used by a schema's `remotes` field (see below).
 
+The agreement's policy is made from `policyConfig`, so it's checked as a [policy](../applications/policy.md)'s
+`config` is when it's saved: an agreement whose config would grant nothing, or fail when it's evaluated, is refused
+with a 400, `invalid_policy`, listing each problem in `details.issues` (their paths start `policyConfig`). `verbs` and
+`schema` have to be lists, and a config's verbs and schemas are matched item by item. Earlier releases stored the config
+as it was given, so `verbs` or `schema` could be text, such as `"GET,PUT"` or `"cars-and-vans"`, which was matched by
+its substrings: `"cars-and-vans"` granted `car` and `van` too. A config stored like that grants nothing now, rather than
+too much, so give such an agreement a policy config of lists.
+
 ## Activation
 
 Both sides need to agree before an agreement goes live:

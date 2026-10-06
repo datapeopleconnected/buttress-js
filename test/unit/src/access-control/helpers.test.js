@@ -158,6 +158,29 @@ describe('access-control/helpers:filterPolicyConfigs', () => {
     assert.strictEqual(result.length, 0);
   });
 
+  // SR-DPC-001 S21: a data sharing agreement's config could be stored with text there, which matched by its substrings
+  it("should not return a config whose verbs or schema aren't lists", () => {
+    const policy = makePolicy([
+      { verbs: 'GET,PUT', schema: ['car'], query: {}, projection: null, condition: null },
+      { verbs: ['GET'], schema: 'cars-and-vans', query: {}, projection: null, condition: null },
+      { verbs: '%ALL%', schema: '%ALL%', query: {}, projection: null, condition: null },
+    ]);
+
+    for (const verb of ['GET', 'PUT']) {
+      for (const schema of ['car', 'cars', 'van', 'vans']) {
+        assert.deepStrictEqual(filterPolicyConfigs(policy, schema, verb, false), [], `${verb} ${schema}`);
+      }
+    }
+    assert.deepStrictEqual(filterPolicyConfigs(policy, 'car', 'POST', false, true), []);
+  });
+
+  it('should match the items of verbs and schema exactly', () => {
+    const policy = makePolicy([{ verbs: ['GET'], schema: ['cars-and-vans'], query: {}, projection: null, condition: null }]);
+
+    assert.strictEqual(filterPolicyConfigs(policy, 'cars-and-vans', 'GET', false).length, 1);
+    assert.strictEqual(filterPolicyConfigs(policy, 'car', 'GET', false).length, 0);
+  });
+
   it('should return multiple matching configs', () => {
     const policy = makePolicy([
       { verbs: ['GET'], schema: ['user'], query: {}, projection: null, condition: null },

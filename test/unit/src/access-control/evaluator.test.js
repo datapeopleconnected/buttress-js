@@ -80,6 +80,18 @@ describe('access-control/evaluator:evaluate', () => {
     );
   });
 
+  // SR-DPC-001 S21: a data sharing agreement's config could be stored with text there, which matched by its substrings
+  it("grants nothing through a config whose verbs or schema aren't lists, keeping the others", async () => {
+    const asText = [policy('verbs', { verbs: 'GET,PUT' }), policy('schema', { schema: 'users-and-admins' })];
+    await assert.rejects(
+      evaluate(asText, context()),
+      refusal(403, 'access_denied', /does not have any policy rules matching the request verb GET and schema user/),
+    );
+
+    const grants = await evaluate([...asText, policy('fine', {})], context());
+    assert.deepStrictEqual(grants.map((grant) => grant.policies), [['fine#0']]);
+  });
+
   it("refuses with 404 when the app has no schema by the name, once a config is for it", async () => {
     await assert.rejects(
       evaluate([policy('p', {})], context({ schema: null })),

@@ -31,9 +31,9 @@ import {
   checkPolicyConfig,
   checkPolicyConfigUpdate,
   checkUpdatedPolicyConfig,
+  invalidPolicy,
   writesIntoConfig,
 } from '../../access-control/policy-definition.js';
-import type { ValidationIssue } from '../../helpers/schema.js';
 import * as Helpers from '../../helpers/index.js';
 
 import PolicySchemaModel, { Policy, PolicyAddBody } from '../../model/core/policy.js';
@@ -210,10 +210,6 @@ const newPolicyProblem = async (app: App, policy: PolicyAddBody) => {
   const validation = validateSchemaObject(PolicySchemaModel.Schema, policy);
   return validation.isValid ? null : invalidEntityError(PolicySchemaModel.Schema.name, validation);
 };
-
-// A policy whose configs would grant nothing, or fail when they're evaluated
-const invalidPolicy = (name: string | undefined, issues: ValidationIssue[]) =>
-  Helpers.Errors.badRequest('invalid_policy', `${name ?? 'policy'}: Invalid policy config`, { issues });
 
 /**
  * The error for a request's updates to a policy that write configs that would grant nothing, or fail when they're

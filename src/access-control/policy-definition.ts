@@ -17,6 +17,7 @@
 import type { ValidationIssue } from '../helpers/schema.js';
 import type { UpdatePathBody } from '../types/datastore.js';
 import { describeType } from '../helpers/schema.js';
+import * as Errors from '../helpers/errors.js';
 import { ALIASES, hasOperatorNames, isValueOperators, LOGICAL_ALIASES, operandProblem } from './operators.js';
 
 // The verbs a config can grant: a request's method, or all of them
@@ -165,6 +166,16 @@ export function checkPolicyConfig(config: unknown): ValidationIssue[] {
   if (config.length < 1) return [{ path: 'config', code: 'required' }];
   return config.flatMap((item, idx) => checkItem(item, `config.${idx}`));
 }
+
+/**
+ * The error a policy is refused with when its configs would grant nothing, or fail when they're evaluated, with each
+ * problem in `details.issues`.
+ * @param {string} name - the policy's, if it has one
+ * @param {ValidationIssue[]} issues - checkPolicyConfig's
+ * @return {ApiError}
+ */
+export const invalidPolicy = (name: string | undefined | null, issues: ValidationIssue[]) =>
+  Errors.badRequest('invalid_policy', `${name ?? 'policy'}: Invalid policy config`, { issues });
 
 /**
  * The problems with what an update writes to a policy's configs: all of them, one (`config.N`, or `config` for one

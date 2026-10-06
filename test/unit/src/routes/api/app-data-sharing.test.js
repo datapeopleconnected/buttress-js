@@ -56,6 +56,9 @@ const [
 
 const HEX_ID = '507f1f77bcf86cd799439011';
 
+// An agreement's policy config, as a policy's configs are given
+const POLICY_CONFIG = [{ verbs: ['GET'], schema: ['car'], query: { access: '%FULL_ACCESS%' } }];
+
 function stubModel({ ds = {}, token = {} } = {}) {
   const dsModel = {
     schemaData: { name: 'appDataSharing' },
@@ -182,7 +185,7 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
       ]) {
         stubModel();
         const route = createRoute(AddDataSharing);
-        await assert.rejects(route._validate(createReq({ body: { policyConfig: {}, remoteApp } })), (err) => err.code === message, JSON.stringify(remoteApp));
+        await assert.rejects(route._validate(createReq({ body: { policyConfig: POLICY_CONFIG, remoteApp } })), (err) => err.code === message, JSON.stringify(remoteApp));
         sinon.restore();
       }
     });
@@ -209,17 +212,47 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
     await assert.rejects(route._validate(createReq({ body: {} })), { code: 'missing_policy' });
   });
 
+  // SR-DPC-001 S21: verbs or a schema given as text were stored as they were, and matched by their substrings
+  it("refuses a policy config that a policy's configs couldn't be, naming the problems", async () => {
+    for (const [config, path] of [
+      [{ verbs: 'GET,PUT', schema: ['car'] }, 'policyConfig.0.verbs'],
+      [{ verbs: ['GET'], schema: 'cars-and-vans' }, 'policyConfig.0.schema'],
+      [{ verbs: ['GET'], schema: ['car'], query: { name: { '@nope': 1 } } }, 'policyConfig.0.query.name'],
+    ]) {
+      stubModel();
+      const route = createRoute(AddDataSharing);
+      const policyConfig = [{ query: { access: '%FULL_ACCESS%' }, ...config }];
+
+      await assert.rejects(
+        route._validate(createReq({ body: { name: 'share', policyConfig } })),
+        (err) => err.status === 400 && err.code === 'invalid_policy' && err.details.issues.some((issue) => issue.path === path),
+        JSON.stringify(config),
+      );
+      sinon.restore();
+    }
+  });
+
+  it('refuses a policy config that is empty, or not a list', async () => {
+    for (const policyConfig of [[], { verbs: ['GET'], schema: ['car'], query: {} }]) {
+      stubModel();
+      const route = createRoute(AddDataSharing);
+
+      await assert.rejects(route._validate(createReq({ body: { policyConfig } })), { status: 400, code: 'invalid_policy' });
+      sinon.restore();
+    }
+  });
+
   it('rejects duplicate agreements', async () => {
     stubModel({ ds: { isDuplicate: async () => true } });
     const route = createRoute(AddDataSharing);
 
-    await assert.rejects(route._validate(createReq({ body: { policyConfig: {} } })), { code: 'duplicate' });
+    await assert.rejects(route._validate(createReq({ body: { policyConfig: POLICY_CONFIG } })), { code: 'duplicate' });
   });
 
   it('scopes appId to the token’s app when not a system token', async () => {
     stubModel();
     const route = createRoute(AddDataSharing);
-    const req = createReq({ token: { type: 'app', _appId: 'app-from-token' }, body: { policyConfig: {} } });
+    const req = createReq({ token: { type: 'app', _appId: 'app-from-token' }, body: { policyConfig: POLICY_CONFIG } });
 
     await route._validate(req);
 
@@ -230,9 +263,9 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
     const { dsModel } = stubModel();
     const route = createRoute(AddDataSharing);
 
-    const result = await route._exec(createReq({ body: { policyConfig: {} } }), {}, true);
+    const result = await route._exec(createReq({ body: { policyConfig: POLICY_CONFIG } }), {}, true);
 
-    assert.ok(dsModel.add.calledWith({ policyConfig: {} }, { _appId: '6abd05000000000000000001' }));
+    assert.ok(dsModel.add.calledWith({ policyConfig: POLICY_CONFIG }, { _appId: '6abd05000000000000000001' }));
     assert.strictEqual(result.registrationToken, 'reg-token-value');
   });
 
@@ -240,7 +273,7 @@ describe('routes/api/app-data-sharing:AddDataSharing', () => {
     const { dsModel } = stubModel();
     const route = createRoute(AddDataSharing);
 
-    await route._exec(createReq({ token: { type: 'system' }, body: { policyConfig: {}, appId: '6abd05000000000000000002' } }), {}, true);
+    await route._exec(createReq({ token: { type: 'system' }, body: { policyConfig: POLICY_CONFIG, appId: '6abd05000000000000000002' } }), {}, true);
 
     assert.ok(dsModel.add.calledWith(sinon.match.any, { _appId: '6abd05000000000000000002' }));
   });

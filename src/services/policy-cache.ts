@@ -312,6 +312,8 @@ export class PolicyCache {
   // The schema lookups that find a policy for activity: one for each schema it lets a token read
   private _lookupKeys(policy: Policy) {
     return policy.config.reduce((acc: string[], config: PolicyConfig) => {
+      // A config whose verbs or schema aren't lists grants nothing (filterPolicyConfigs)
+      if (!Array.isArray(config.schema) || !Array.isArray(config.verbs)) return acc;
       for (const schema of config.schema) {
         for (const verb of config.verbs) {
           if (verb === '%ALL%' || READ_POLICY_VERBS.includes(verb)) {

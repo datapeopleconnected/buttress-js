@@ -593,6 +593,15 @@ describe('bootstrap-spr:_handleIncomingMessage conditions and queries', () => {
 		assert.strictEqual((await relay([queryPolicy(same)])).length, 1);
 	});
 
+	// SR-DPC-001 S21: a data sharing agreement's config could be stored with text there, which matched by its substrings
+	it("doesn't relay an activity for a config whose verbs or schema aren't lists", async () => {
+		const asText = (config) => ({ ...queryPolicy({}), config: [{ ...queryPolicy({}).config[0], ...config }] });
+
+		assert.deepStrictEqual(await relay([asText({ verbs: 'GET,PUT' })]), []);
+		assert.deepStrictEqual(await relay([asText({ schema: 'cars-and-vans' })]), []);
+		assert.strictEqual((await relay([asText({ schema: ['car'] })])).length, 1);
+	});
+
 	it("checks a condition on the token's user against each token", async () => {
 		const admin = { '#env.user.role': { '@eq': 'admin' } };
 		const editor = { '#env.user.role': { '@eq': 'editor' } };

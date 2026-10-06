@@ -525,6 +525,21 @@ describe('services/policy-cache', () => {
       assert(members.includes('p1'));
     });
 
+    // SR-DPC-001 S21: text there grants nothing, so isn't looked up by its characters
+    it("should not index a config whose verbs or schema aren't lists", async () => {
+      await cache.addPolicy({
+        ...policy1,
+        config: [
+          { verbs: ['GET'], schema: 'car', query: {} },
+          { verbs: 'GET', schema: ['user'], query: {} },
+        ],
+      });
+
+      for (const schema of ['car', 'c', 'a', 'r', 'user']) {
+        assert.deepStrictEqual(await Redis.sMembers(K(`app:app1:schema:${schema}`)), [], schema);
+      }
+    });
+
     it('should not store duplicate policies', async () => {
       await cache.addPolicy(policy1);
       assert.strictEqual(await cache.addPolicy(policy1), false);
