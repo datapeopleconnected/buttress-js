@@ -47,6 +47,12 @@ if (PolicyPropertyList.grade) {
   PolicyPropertyList.grade.push(0);
 }
 
+// The selection-array user is given 'none' alongside 'array', which no policy selects by, and every value a token is
+// given has to be one the app lists (SR-DPC-001 S5)
+if (PolicyPropertyList.policySelection) {
+  PolicyPropertyList.policySelection.push('none');
+}
+
 let REST_PROCESS = null;
 
 const testEnv = {

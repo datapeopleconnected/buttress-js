@@ -427,23 +427,21 @@ export const checkAppPolicyProperty = async (
       continue;
     }
 
-    let operator: string | null = null;
-    if (typeof policyProperties[key] === 'object') {
-      [operator] = Object.keys(policyProperties[key] as object);
-    }
     // The app's list holds the allowed values for each key
     const appPolicyPropertiesValues = ([] as PolicyPropertyValue[]).concat(appPolicyList[key]);
-    const equalValue = operator ? (policyProperties[key] as Record<string, unknown>)[operator] : policyProperties[key];
-    if (equalValue === null || equalValue === undefined) {
-      res.passed = false;
-      res.errMessage = 'Policy property value not listed';
-    }
-
     // Only a value exactly as the app lists it (D-34)
     const isListed = (value: unknown) => appPolicyPropertiesValues.some((val) => val === value);
-    // An array, as an operator like @in takes, is listed when every value in it is
-    const values = Array.isArray(equalValue) ? equalValue : [equalValue];
-    if (equalValue !== undefined && (values.length < 1 || !values.every(isListed))) {
+    // An array, as given or as an operator like @in takes, is listed when every value in it is
+    const isAllowed = (operand: unknown) => {
+      if (operand === null || operand === undefined) return false;
+      const values = Array.isArray(operand) ? operand : [operand];
+      return values.length > 0 && values.every(isListed);
+    };
+
+    // An operator object gives its values by every operator it names, anything else is the value itself
+    const value = policyProperties[key];
+    const operands = isPlainObject(value) ? Object.values(value) : [value];
+    if (operands.length < 1 || !operands.every(isAllowed)) {
       res.passed = false;
       res.errMessage = 'Policy property value not listed';
     }

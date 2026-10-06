@@ -99,6 +99,28 @@ describe('helpers.checkAppPolicyProperty', () => {
 	});
 });
 
+describe('helpers.checkAppPolicyProperty, SR-DPC-001 S5', () => {
+	const list = { role: ['admin'] };
+	const check = async (properties) => (await Helpers.checkAppPolicyProperty(list, properties)).passed;
+
+	it('checks every value of an array given as the value', async () => {
+		assert.strictEqual(await check({ role: ['admin'] }), true);
+		assert.strictEqual(await check({ role: ['admin', 'superadmin'] }), false);
+		assert.strictEqual(await check({ role: [] }), false);
+	});
+
+	it('checks the values of every operator an operator object names', async () => {
+		assert.strictEqual(await check({ role: { '@eq': 'admin', '@in': ['admin'] } }), true);
+		assert.strictEqual(await check({ role: { '@eq': 'admin', '@in': ['superadmin'] } }), false);
+		assert.strictEqual(await check({ role: {} }), false);
+	});
+
+	it('refuses a null value rather than failing', async () => {
+		assert.strictEqual(await check({ role: null }), false);
+		assert.strictEqual(await check({ role: { '@eq': null } }), false);
+	});
+});
+
 describe('helpers.checkPolicySelection', () => {
 	const list = { role: ['admin', 'user'], team: ['a', 'b'] };
 	const check = async (selection) => (await Helpers.checkPolicySelection(list, selection)).passed;
