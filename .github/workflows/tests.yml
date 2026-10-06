@@ -177,13 +177,78 @@ jobs:
         BUTTRESS_SOCK_URL: http://localhost:8010
       run: npm run test:e2e
 
+  # Two instances sharing data through real agreements (test/federation), with their processes single and with two
+  # workers each. The e2e tests run one instance, in one process, so they can't cover either.
+  federation-tests:
+    needs: gate
+    if: needs.gate.outputs.tested != 'true'
+    name: federation-tests (${{ matrix.workers }} workers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        workers: [0, 2]
+
+    services:
+      mongodb:
+        image: mongo:8
+        ports:
+          - 27018:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand({ ping: 1 })' --quiet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:8
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v7
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v7
+      with:
+        node-version-file: .nvmrc
+        cache: npm
+
+    - name: Install dependencies
+      run: npm ci
+
+    # Builds dist/, then starts each stack's REST, Socket and SPR processes against the service containers. Their
+    # work folders, logs included, are kept under the runner's temp folder for the step below.
+    - name: Run Federation Tests
+      env:
+        FEDERATION_MONGO_URL: mongodb://localhost:27018
+        FEDERATION_REDIS_URL: redis://localhost:6380
+        FEDERATION_WORKERS: ${{ matrix.workers }}
+        FEDERATION_KEEP: 1
+        TMPDIR: ${{ runner.temp }}
+      run: npm run test:federation
+
+    - name: Upload the stacks' logs
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: federation-logs-${{ matrix.workers }}-workers
+        path: ${{ runner.temp }}/bjs-fed-*/logs/
+        retention-days: 14
+
   # Builds the image once the tests pass. PRs only build it, which catches a broken Dockerfile before merge.
   # Pushes publish it to Docker Hub:
   #   develop     -> develop, sha-<short>
   #   main        -> latest, sha-<short>
   #   tag v1.2.3  -> 1.2.3
   docker:
-    needs: [gate, check, unit-tests, e2e-tests]
+    needs: [gate, check, unit-tests, e2e-tests, federation-tests]
     # Also runs when the gate skipped the tests, but not when anything failed.
     if: ${{ !cancelled() && !failure() }}
     runs-on: ubuntu-latest

@@ -119,7 +119,9 @@ npm run test:federation   # boots two Buttress instances and tests data sharing 
   that fails because of a known gap names its plan item. `FEDERATION_WORKERS=2` runs the stacks with workers,
   `FEDERATION_LOG_LEVEL=silly` logs more, and each stack's logs are kept (and named) when a test fails or
   `FEDERATION_KEEP=1`. The singletons (`Model`, `Datastore`, `Config`) are why the stacks are processes, not
-  bootstraps in the mocha process as in e2e.
+  bootstraps in the mocha process as in e2e. CI runs it as the Tests workflow's `federation-tests` job, once with
+  `FEDERATION_WORKERS=0` and once with 2, keeping the stacks' work folders under the runner's temp folder and
+  uploading their logs when it fails; the docker job waits for it.
 - **Coverage:** `coverage:unit` (the CI coverage job) and `coverage` use c8, whose figures read high: it
   counts licence headers, comments and types as covered lines in any file that loads, and only counts
   branches inside functions that ran. For real numbers use `npm run coverage:istanbul` (add `-- unit` or
