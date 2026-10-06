@@ -181,6 +181,30 @@ describe('access-control/models-access:find through several grants', () => {
     assert.deepStrictEqual(projects, [{ name: 1, tag: 1, email: 1 }, false]);
   });
 
+  // As that grant alone gives it: the request's projection names none of its properties, so it gives them all
+  it("gives an entity only a restricting grant reads its properties when a grant reads every property and the request projects none of them", async () => {
+    const rows = [person('one', 1), person('two', 2)];
+    const { model, datastore } = createSchemaModel(people, rows);
+    const projects = [];
+    const find = datastore.find.bind(datastore);
+    datastore.find = (...args) => {
+      projects.push(args[5]);
+      return find(...args);
+    };
+    const named = grant({ tag: 'one' }, ['name']);
+
+    const alone = await drain(await ACM.find(model, { query: {}, project: { email: 1 } }, { policyConfigs: [named] }));
+    assert.deepStrictEqual(alone, [{ id: rows[0].id, name: 'name-1' }]);
+
+    const ac = { policyConfigs: [named, grant({ tag: 'two' })] };
+    const items = await drain(await ACM.find(model, { query: {}, sort: { tag: 1 }, project: { email: 1 } }, ac));
+    assert.deepStrictEqual(items, [
+      { id: rows[0].id, name: 'name-1' },
+      { id: rows[1].id, email: 'email-2' },
+    ]);
+    assert.deepStrictEqual(projects.at(-1), { email: 1, name: 1, tag: 1 });
+  });
+
   it("gives every property, within the request's projection, of an entity a grant reads whole", async () => {
     const rows = [person('one', 1), person('two', 2)];
     const { model } = createSchemaModel(people, rows);

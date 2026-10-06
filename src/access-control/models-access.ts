@@ -135,8 +135,9 @@ const queryFields = (query: Record<string, unknown>): string[] =>
 
 /**
  * What the find for several grants reads of each entity: every property a grant reads, or, when one reads every
- * property, what the request projects (everything if it projects nothing); and the fields the grants' queries test,
- * for them to be matched. A path within another that's read isn't named too, as MongoDB refuses both.
+ * property, what the request projects (everything if it projects nothing) and what each other grant gives of that,
+ * which is all its properties when the request names none of them; and the fields the grants' queries test, for them to
+ * be matched. A path within another that's read isn't named too, as MongoDB refuses both.
  */
 function fetchProjection(grants: { query: Record<string, unknown>; keys: string[] | null }[], requested: unknown) {
   const requestedKeys =
@@ -149,7 +150,12 @@ function fetchProjection(grants: { query: Record<string, unknown>; keys: string[
   const readsEverything = grants.some((grant) => !grant.keys);
   if (readsEverything && requestedKeys.length < 1) return false;
 
-  const read = readsEverything ? requestedKeys : grants.flatMap((grant) => grant.keys ?? []);
+  const read = readsEverything
+    ? [
+        ...requestedKeys,
+        ...grants.flatMap((grant) => (grant.keys ? Object.keys(intersectProjection(requested, grant.keys)) : [])),
+      ]
+    : grants.flatMap((grant) => grant.keys ?? []);
   const paths = [...new Set([...read, ...grants.flatMap((grant) => queryFields(grant.query))])];
   const outermost = paths.filter((path) => !paths.some((other) => other !== path && isWithin(path, other)));
   return Object.fromEntries(outermost.map((path) => [path, 1]));
