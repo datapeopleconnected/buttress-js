@@ -21,6 +21,8 @@ import sinon from 'sinon';
 import AdminRoutes from '../../../../dist/routes/admin-routes.js';
 import Model from '../../../../dist/model/index.js';
 import TokenSchemaModel from '../../../../dist/model/core/token.js';
+import PolicySchemaModel from '../../../../dist/model/core/policy.js';
+import adminPolicy from '../../../../dist/admin-policy.json' with { type: 'json' };
 import { toApiError } from '../../../../dist/helpers/errors.js';
 
 // Calls `handler` with `req`, returning the status and body it sent, or that the error handler would send for what
@@ -162,5 +164,56 @@ describe('routes/admin-routes:install-lambda failures', () => {
     assert.deepStrictEqual(res.body, { code: 'internal_error', message: 'Internal server error' });
     // Nothing was sent before it threw, so the error handler can answer
     assert.match(res.thrown.message, /connect failed/);
+  });
+});
+
+describe('routes/admin-routes:_createAdminPolicy', () => {
+  const APP = '6abd05000000000000000001';
+
+  // The policies added, and the names of the ones already stored
+  let added;
+  let stored;
+
+  beforeEach(() => {
+    added = [];
+    stored = [];
+    sinon.stub(Model, 'getCoreModel').callsFake((modelClass) => {
+      if (modelClass !== PolicySchemaModel) throw new Error(`Unexpected core model ${modelClass.name}`);
+
+      return {
+        findOne: async (q) => (stored.includes(q.name.$eq) ? { id: 'stored', name: q.name.$eq } : null),
+        add: async (policy, internals) => added.push({ policy, internals }),
+      };
+    });
+  });
+
+  afterEach(() => sinon.restore());
+
+  it('installs the admin policies on a fresh install, limiting the lambda access ones to the admin app', async () => {
+    await AdminRoutes._createAdminPolicy(APP);
+
+    assert.deepStrictEqual(added.map(({ policy }) => policy.name), ['admin-user', 'admin-lambda-access']);
+    assert.ok(added.every(({ internals }) => internals._appId === APP));
+
+    const [app, user, tokenAndUser] = added[1].policy.config;
+    assert.deepStrictEqual(app.query, { id: { '@eq': APP } });
+    assert.deepStrictEqual(user.query, { _appId: { '@eq': APP } });
+    assert.deepStrictEqual(tokenAndUser.query, [{ _appId: { '@eq': APP } }]);
+  });
+
+  it('leaves the policies it ships as they are, for the next install', async () => {
+    const before = JSON.parse(JSON.stringify(adminPolicy));
+
+    await AdminRoutes._createAdminPolicy(APP);
+
+    assert.deepStrictEqual(adminPolicy, before);
+  });
+
+  it('skips a policy that is already installed', async () => {
+    stored = ['admin-lambda-access'];
+
+    await AdminRoutes._createAdminPolicy(APP);
+
+    assert.deepStrictEqual(added.map(({ policy }) => policy.name), ['admin-user']);
   });
 });
