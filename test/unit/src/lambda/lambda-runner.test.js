@@ -543,6 +543,50 @@ describe('lambda/LambdaRunner:handleLambdaExecutionMessage a lambda that fails',
     assert.match(logs[1].log, /lambda broke/);
   });
 
+  describe('answering the API caller with the status the lambda threw', () => {
+    async function answerFor(body) {
+      const updateById = sinon.stub().resolves();
+      const { nrp } = await runFailingLambda(updateById, undefined, body);
+      const result = nrp.emit.getCalls().find((call) => call.args[0] === 'lambda:worker:execution-result');
+      const errored = updateById.getCalls().filter((call) => call.args[1].$set?.status === 'ERROR');
+      return { ...JSON.parse(result.args[1]), erroredWrites: errored.length };
+    }
+
+    it('gives the status an error was thrown with, its message, and still records the execution as errored', async function () {
+      this.timeout(10000);
+
+      const answer = await answerFor("throw Object.assign(new Error('too many guesses'), { httpStatus: 429 });");
+
+      assert.strictEqual(answer.code, 429);
+      assert.match(answer.err, /too many guesses/);
+      assert.strictEqual(answer.erroredWrites, 1);
+    });
+
+    it('gives 400 for an error thrown without a status', async function () {
+      this.timeout(10000);
+
+      assert.strictEqual((await answerFor("throw new Error('lambda broke');")).code, 400);
+    });
+
+    it("gives 400 for a status that isn't an error's", async function () {
+      this.timeout(10000);
+
+      assert.strictEqual((await answerFor("throw Object.assign(new Error('fine'), { httpStatus: 200 });")).code, 400);
+    });
+
+    it("gives 400 for a status that isn't a number", async function () {
+      this.timeout(10000);
+
+      assert.strictEqual((await answerFor("throw Object.assign(new Error('odd'), { httpStatus: '429' });")).code, 400);
+    });
+
+    it("gives 400 for a thrown value that isn't an error, as a rejected fetch gives with its upstream status", async function () {
+      this.timeout(10000);
+
+      assert.strictEqual((await answerFor("throw { message: 'upstream said no', httpStatus: 401 };")).code, 400);
+    });
+  });
+
   it('answers the API caller when the execution fails before the lambda runs', async function () {
     this.timeout(10000);
     const updateById = sinon.stub().resolves();

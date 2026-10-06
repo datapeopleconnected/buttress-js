@@ -524,7 +524,16 @@ export default class LambdaRunner {
 					lambda.req.body = lambdaData;
 					lambda.req.query = lambdaQuery;
 					lambda.req.headers = lambdaRequestHeaders;
-					await lambdaCode[lambdaInfo.entryPoint]();
+					try {
+						await lambdaCode[lambdaInfo.entryPoint]();
+					} catch (err) {
+						// Only an error's message crosses the isolate, so a status it was thrown with goes over as the result
+						const status = err instanceof Error ? err.httpStatus : undefined;
+						if (Number.isInteger(status) && status >= 400 && status <= 599) {
+							lambda.setResult({ err: true, errMessage: err.message, httpStatus: status });
+						}
+						throw err;
+					}
 				})();
 			`);
       await this._runLambdaScript(hostile);
@@ -576,10 +585,11 @@ export default class LambdaRunner {
       if (type === 'API_ENDPOINT') {
         const errDetails = Helpers.getThrownErrorDetails(err);
         const errMessage = errDetails.message;
+        const thrownStatus = run.result?.err ? run.result.httpStatus : undefined;
 
         if (data.reqId) {
           const message: ExecutionResultMessage = {
-            code: errDetails.httpStatus ?? 400,
+            code: errDetails.httpStatus ?? thrownStatus ?? 400,
             err: errMessage,
             errDetails,
             reqId: data.reqId,
