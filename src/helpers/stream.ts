@@ -14,6 +14,7 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 import { Readable, Transform } from 'node:stream';
+import { StringDecoder } from 'node:string_decoder';
 
 interface SourceHolder {
   source: Readable;
@@ -200,31 +201,44 @@ export class SortedStreams<T = unknown> extends Readable {
   }
 }
 
-export const parseJsonArrayStream = () =>
-  new Transform({
+/**
+ * Reads a JSON array as Buttress streams one, a row to a line (`[row`, `,row`... `]`), into its rows. A row can arrive
+ * split across chunks, and a character across their bytes: what follows a chunk's last newline waits for the next
+ * chunk, and the decoder keeps a character's bytes until the rest arrive. A row that doesn't parse fails the stream
+ * rather than being left out.
+ */
+export const parseJsonArrayStream = () => {
+  const decoder = new StringDecoder('utf8');
+  let pending = '';
+
+  const parseLine = (stream: Transform, line: string) => {
+    let trimmedLine = line.trim();
+    if (trimmedLine.startsWith('[')) trimmedLine = trimmedLine.slice(1);
+    if (trimmedLine.endsWith(']')) trimmedLine = trimmedLine.slice(0, -1);
+    if (trimmedLine.startsWith(',')) trimmedLine = trimmedLine.slice(1);
+    if (trimmedLine.endsWith(',')) trimmedLine = trimmedLine.slice(0, -1);
+    if (trimmedLine !== '') stream.push(JSON.parse(trimmedLine));
+  };
+
+  return new Transform({
     objectMode: true,
     transform(chunk: Buffer | string, encoding, callback) {
-      // Convert the chunk to a string and split it by newline characters
-      const lines = chunk.toString().split('\n');
-
-      // Parse each line as JSON and emit the parsed object
-      for (const line of lines) {
-        let trimmedLine = line.trim();
-        if (trimmedLine.startsWith('[')) trimmedLine = trimmedLine.slice(1);
-        if (trimmedLine.endsWith(']')) trimmedLine = trimmedLine.slice(0, -1);
-        if (trimmedLine.startsWith(',')) trimmedLine = trimmedLine.slice(1);
-        if (trimmedLine.endsWith(',')) trimmedLine = trimmedLine.slice(0, -1);
-        if (trimmedLine !== '') {
-          // TODO: replace JSON.parse with a tokenizer
-          try {
-            const obj: unknown = JSON.parse(trimmedLine);
-            this.push(obj);
-          } catch (err: unknown) {
-            console.error(err);
-          }
-        }
+      const lines = (pending + (typeof chunk === 'string' ? chunk : decoder.write(chunk))).split('\n');
+      pending = lines.pop() ?? '';
+      try {
+        for (const line of lines) parseLine(this, line);
+      } catch (err: unknown) {
+        return callback(err as Error);
       }
-
+      callback();
+    },
+    flush(callback) {
+      try {
+        parseLine(this, pending + decoder.end());
+      } catch (err: unknown) {
+        return callback(err as Error);
+      }
       callback();
     },
   });
+};
