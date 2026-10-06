@@ -17,7 +17,7 @@ import { CombineEnvGroups } from './helpers.js';
 import { matchCriterion } from './criteria.js';
 import { ALIASES, LOGICAL_ALIASES } from './operators.js';
 import Logging from '../helpers/logging.js';
-import Env, { ACEnv, ACPolicyEnvCombined } from './env.js';
+import Env, { ACEnv, ACPolicyEnvCombined, CircularEnvError } from './env.js';
 
 import { ApplicablePolicyConfig } from './index.js';
 import { PolicyCondition } from '../model/core/policy.js';
@@ -127,8 +127,17 @@ export class Conditions {
     }
 
     const conditionEntry = conditionObj[key] as Record<string, unknown>;
-    const value = await Env.getEnvValue(conditionEntry[operator], envVariables);
-    const keyValue = await Env.getEnvValue(key, envVariables);
+    let value: unknown;
+    let keyValue: unknown;
+    try {
+      value = await Env.getEnvValue(conditionEntry[operator], envVariables);
+      keyValue = await Env.getEnvValue(key, envVariables);
+    } catch (err: unknown) {
+      // An env value that refers back to itself can't be read, so the criterion fails, as one that's not set does
+      if (!(err instanceof CircularEnvError)) throw err;
+      Logging.logWarn(`A policy condition's env value can't be read, so it fails: ${err.message}`);
+      return false;
+    }
 
     if (value === undefined || keyValue === undefined) return false;
 

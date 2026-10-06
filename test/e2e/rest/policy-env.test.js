@@ -63,7 +63,7 @@ describe('Policy limit and env', async () => {
 			createApp(ENDPOINT.REST, 'Test Policy Env', 'test-policy-env')
 		, scope);
 		await runStep('allow policy properties', async () => updatePolicyPropertyList(ENDPOINT.REST, {
-			envCase: ['limit', 'lookup'],
+			envCase: ['limit', 'lookup', 'loop'],
 		}, env.app.token), scope);
 		await runStep('add the note schema', async () => updateSchema(ENDPOINT.REST, [{
 			name: 'note',
@@ -90,10 +90,21 @@ describe('Policy limit and env', async () => {
 				},
 				config: [{ verbs: ['GET'], schema: ['note'], query: { id: { '@in': '#env.noteIds' } } }],
 			}), env.app.token);
+
+			// Its env values refer to each other, so the configs reading them grant nothing, and the last grants note c
+			await createPolicy(ENDPOINT.REST, policy('policy-env-loop', {
+				selection: { envCase: { '@eq': 'loop' } },
+				env: { first: '#env.second', second: '#env.first' },
+				config: [
+					{ verbs: ['GET'], schema: ['note'], query: { text: '#env.first' } },
+					{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' }, condition: { '#env.first': { '@eq': 'a' } } },
+					{ verbs: ['GET'], schema: ['note'], query: { text: 'c' } },
+				],
+			}), env.app.token);
 		}, scope);
 
 		await runStep('create users', async () => {
-			for (const envCase of ['lookup']) {
+			for (const envCase of ['lookup', 'loop']) {
 				env.users[envCase] = await createPolicyUser(ENDPOINT.REST, env.app, `policy-env-${envCase}`, { envCase });
 			}
 		}, scope);
@@ -133,5 +144,10 @@ describe('Policy limit and env', async () => {
 	// SR-DPC-001 C11: the first #env reference in a list was left as its text, so the lookup found only note b
 	it("Should read every #env reference in a list in an env lookup's query", async () => {
 		assert.deepStrictEqual(await readNotes('lookup'), ['a', 'b']);
+	});
+
+	// SR-DPC-001 R1: an env value that referred back to itself was read until the stack overflowed, a 500
+	it('Should grant nothing through configs reading an env value that refers back to itself, and the rest still', async () => {
+		assert.deepStrictEqual(await readNotes('loop'), ['c']);
 	});
 });

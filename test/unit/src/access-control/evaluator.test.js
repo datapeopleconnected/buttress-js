@@ -150,6 +150,25 @@ describe('access-control/evaluator:evaluate', () => {
     );
   });
 
+  // SR-DPC-001 R1: an env value that referred back to itself overflowed the stack, failing the request
+  it('grants nothing through a config whose query or condition reads an env value that refers back to itself', async () => {
+    const loop = { a: '#env.b', b: '#env.a' };
+    const grants = await evaluate(
+      [
+        policy('query-loop', { query: { name: '#env.a' } }, { env: loop }),
+        policy('condition-loop', { condition: { '#env.a': { '@eq': 'x' } } }, { env: loop }),
+        policy('fine', { query: { name: 'b' } }),
+      ],
+      context(),
+    );
+    assert.deepStrictEqual(grants.map((grant) => grant.policies), [['fine#0']]);
+
+    await assert.rejects(
+      evaluate([policy('query-loop', { query: { name: '#env.a' } }, { env: loop })], context()),
+      refusal(403, 'access_denied', /query can not be applied to user/),
+    );
+  });
+
   it("reads the policy's and the config's env", async () => {
     const [grant] = await evaluate(
       [policy('p', { query: { team: { '@eq': '#env.team' } }, env: { team: 'red' } }, { env: { team: 'blue' } })],

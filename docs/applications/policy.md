@@ -110,6 +110,11 @@ An env value can look entities up, `{"collection": "<schema>", "type": "array", 
 "id", "type": "id"}}`, giving their `output.key` values. Each `#env.` value in its `query` is read, a list's included;
 earlier releases left the first `#env.` value of a list as its text, so the lookup found less than it should.
 
+An `#env.` value that refers back to itself, directly or through other env values or a lookup's query, or that takes
+more than 16 of them to read, can't be read: a config whose query or condition reads it grants nothing, and the token's
+other policies still apply. Earlier releases failed every request the policy applied to, and one referring back
+through a lookup ran the server out of memory.
+
 A config with a `projection` reads only those properties, and a read may query or sort by only them through it: the
 order of a search sorted by a property would show it. A search sorting by a property no config of the token's reads is
 refused with a 403, `property_access_denied`; earlier releases sorted by it.

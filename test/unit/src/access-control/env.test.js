@@ -109,6 +109,50 @@ describe('access-control/env:getEnvValue', () => {
   });
 });
 
+// SR-DPC-001 R1: a value that referred back to itself was read until the stack overflowed, failing every request
+describe('access-control/env:getEnvValue an env value that refers back to itself', () => {
+  const circular = (message) => (err) => {
+    assert.strictEqual(err.name, 'CircularEnvError', String(err));
+    assert.match(err.message, message);
+    return true;
+  };
+
+  it('refuses a value that refers to itself, naming it', async () => {
+    await assert.rejects(
+      AccessControlEnv.getEnvValue('#env.a', { a: '#env.a' }),
+      circular(/^circular_policy_env: #env\.a -> #env\.a$/),
+    );
+  });
+
+  it('refuses a value that refers back to itself through others, naming each', async () => {
+    await assert.rejects(
+      AccessControlEnv.getEnvValue('#env.a', { a: '#env.b', b: '#env.c', c: '#env.a' }),
+      circular(/^circular_policy_env: #env\.a -> #env\.b -> #env\.c -> #env\.a$/),
+    );
+  });
+
+  it('reads a value that takes 16 env values to read, and refuses one that takes more', async () => {
+    // v0 -> v1 -> ... -> v<n>, which holds the value
+    const chain = (n) => {
+      const env = { [`v${n}`]: 'end' };
+      for (let i = 0; i < n; i++) env[`v${i}`] = `#env.v${i + 1}`;
+      return env;
+    };
+
+    assert.strictEqual(await AccessControlEnv.getEnvValue('#env.v0', chain(15)), 'end');
+    await assert.rejects(
+      AccessControlEnv.getEnvValue('#env.v0', chain(16)),
+      circular(/#env\.v0 takes more than 16 env values to read/),
+    );
+  });
+
+  it('reads a value that two others refer to', async () => {
+    const env = { a: '#env.c', b: '#env.c', c: 'value' };
+    assert.strictEqual(await AccessControlEnv.getEnvValue('#env.a', env), 'value');
+    assert.strictEqual(await AccessControlEnv.getEnvValue('#env.b', env), 'value');
+  });
+});
+
 describe('access-control/env:__findPaths', () => {
   it('should return paths for nested object values', () => {
     const obj = { a: { b: 'value' } };
@@ -211,6 +255,29 @@ describe('access-control/env: collection lookups', () => {
     await AccessControlEnv.getEnvValue('#env.boardIds', env);
 
     assert.deepStrictEqual(queries, [{ name: { $in: ['one', 'two'] } }]);
+  });
+
+  // SR-DPC-001 R1
+  it("refuses a lookup whose query refers back to the lookup, without querying", async () => {
+    const queries = stubBoardModel([{ id: BOARD_IDS[0] }]);
+    const env = { ...envVars(), owner: '#env.boardIds' };
+    env.boardIds.query = { subscribed: { '@eq': '#env.user.id' }, owner: '#env.owner' };
+
+    await assert.rejects(AccessControlEnv.getEnvValue('#env.boardIds', env), (err) => {
+      assert.strictEqual(err.name, 'CircularEnvError', String(err));
+      assert.strictEqual(err.message, 'circular_policy_env: #env.boardIds -> #env.owner -> #env.boardIds');
+      return true;
+    });
+    assert.deepStrictEqual(queries, []);
+  });
+
+  it('reads a value its query refers to twice', async () => {
+    const queries = stubBoardModel([{ id: BOARD_IDS[0] }]);
+    const env = { ...envVars(), userId: '#env.user.id' };
+    env.boardIds.query = { '@or': [{ subscribed: '#env.userId' }, { owner: '#env.userId' }] };
+
+    assert.deepStrictEqual(await AccessControlEnv.getEnvValue('#env.boardIds', env), [BOARD_IDS[0]]);
+    assert.deepStrictEqual(queries, [{ $or: [{ subscribed: USER_ID }, { owner: USER_ID }] }]);
   });
 
   it("gives an empty array for a collection the app doesn't have", async () => {
