@@ -230,6 +230,16 @@ describe('routes/admin-routes:_createAdminPolicy', () => {
     assert.deepStrictEqual(adminPolicy, before);
   });
 
+  // A config's verbs and schema are lists: given as text, a verb or schema is matched as a substring of it (SR-DPC-001 S21)
+  it('ships its policies with every config giving its verbs and schema as lists', () => {
+    for (const policy of adminPolicy) {
+      for (const config of policy.config) {
+        assert.ok(Array.isArray(config.verbs), `${policy.name} gives verbs ${JSON.stringify(config.verbs)}`);
+        assert.ok(Array.isArray(config.schema), `${policy.name} gives schema ${JSON.stringify(config.schema)}`);
+      }
+    }
+  });
+
   it('skips a policy that is already installed', async () => {
     stored = ['admin-lambda-access'];
 
