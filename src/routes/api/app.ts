@@ -284,14 +284,14 @@ class DeleteAllApps extends Route {
 
     const systemApps = systemTokens.map((t) => t._appId.toString());
     const apps = this.unscopedModel(AppSchemaModel, SYSTEM_ONLY);
-    const appApps = await apps.find({ id: { $nin: systemApps } }, {}, 0, 0, {}, { id: 1, _tokenId: 1 });
+    // rm tells the REST workers to drop the routes of the app's api path
+    const appApps = await apps.find({ id: { $nin: systemApps } }, {}, 0, 0, {}, { id: 1, _tokenId: 1, apiPath: 1 });
 
-    for await (const app of appApps as AsyncIterable<Pick<App, 'id' | '_tokenId'>>) {
+    for await (const app of appApps as AsyncIterable<Pick<App, 'id' | '_tokenId' | 'apiPath'>>) {
       if (systemApps.includes(app.id.toString())) continue;
 
       Logging.logDebug(`Deleting app: ${app.id}`);
-      // BUG: apiPath isn't projected, so rm can't tell the REST workers which app's routes to deregister
-      await apps.rm(app as App);
+      await apps.rm(app);
     }
 
     return true;

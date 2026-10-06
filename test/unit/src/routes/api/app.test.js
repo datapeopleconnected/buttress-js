@@ -360,6 +360,22 @@ describe('routes/api/app:DeleteAllApps', () => {
     assert.ok(appModel.rm.calledWith(regularApp));
   });
 
+  it('removes each app with its api path, so the REST workers are told which routes to drop', async () => {
+    const stored = [{ id: 'regular-app', _tokenId: 'regular-token', apiPath: 'regular', name: 'Regular' }];
+    const { appModel, tokenModel } = stubModel();
+    tokenModel.find.returns(Readable.from([{ _appId: 'system-app' }], { objectMode: true }));
+    // The rows as the datastore gives them, with only the properties the projection asks for
+    appModel.find.callsFake((_query, _excludes, _limit, _skip, _sort, project) => Readable.from(
+      stored.map((row) => Object.fromEntries(Object.keys(project).map((key) => [key, row[key]]))),
+      { objectMode: true },
+    ));
+
+    const route = createRoute(DeleteAllApps);
+    await route._exec(createReq(), {}, true);
+
+    assert.deepStrictEqual(appModel.rm.firstCall.args[0], { id: 'regular-app', _tokenId: 'regular-token', apiPath: 'regular' });
+  });
+
   it('does not delete an app that belongs to a system token even if returned by the query', async () => {
     const systemAppId = 'system-app';
     const systemOwnedApp = { id: { toString: () => systemAppId } };
