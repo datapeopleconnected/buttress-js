@@ -150,12 +150,28 @@ export class ModelManager {
         datastore = Datastores.getInstance('core');
       }
 
+      // An app whose stored schema can't be read or built is left without models, rather than stopping the apps
+      // after it getting theirs. Only the stored schema is read here; anything else that fails is rethrown.
+      let decoded: Schema[];
+      try {
+        decoded = Helpers.Schema.decode(app.__schema);
+      } catch (err: unknown) {
+        if (!(err instanceof SyntaxError)) throw err;
+        Logging.logWarn(`Unable to read the stored schema of app ${app.id}: ${err.message}`);
+        continue;
+      }
+      if (!Array.isArray(decoded)) {
+        Logging.logWarn(`Unable to read the stored schema of app ${app.id}: it isn't a list`);
+        continue;
+      }
+
       let builtSchemas: Schema[];
       try {
-        builtSchemas = await Helpers.Schema.buildCollections(Helpers.Schema.decode(app.__schema));
+        builtSchemas = await Helpers.Schema.buildCollections(decoded);
       } catch (err: unknown) {
-        if (err instanceof Helpers.Errors.SchemaInvalid) continue;
-        else throw err;
+        if (!(err instanceof Helpers.Errors.SchemaInvalid)) throw err;
+        Logging.logWarn(`Unable to build the schema of app ${app.id}: ${err.message}`);
+        continue;
       }
 
       for await (const schema of builtSchemas) {
