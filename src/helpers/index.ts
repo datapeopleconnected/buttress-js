@@ -17,6 +17,7 @@ import { Readable, Transform, TransformCallback, TransformOptions } from 'node:s
 import { ObjectId } from 'bson';
 
 import * as DataSharingHelpers from './data-sharing.js';
+import { badRequest } from './errors.js';
 
 import Datastore from '../datastore/index.js';
 import { isObjectId } from '../datastore/adapters/object-id.js';
@@ -384,6 +385,19 @@ export const streamAll = <T>(stream: unknown): Promise<T[]> => {
  */
 export const isDomainList = (domains: unknown): domains is string[] =>
   Array.isArray(domains) && domains.every((domain) => typeof domain === 'string' && domain.trim() !== '');
+
+/**
+ * A search's `skip` and `limit`, each 0 when it's left out. One that isn't a number, or is below 0, is refused with
+ * 400 invalid_value_skip or invalid_value_limit, rather than reaching the datastore.
+ */
+export const searchPaging = (body: { skip?: number | string; limit?: number | string } | undefined) => {
+  // parseInt takes numbers too, it converts them to a string first
+  const skip = body?.skip ? parseInt(body.skip as string) : 0;
+  const limit = body?.limit ? parseInt(body.limit as string) : 0;
+  if (isNaN(skip) || skip < 0) throw badRequest('invalid_value_skip', 'skip must be a number of 0 or more');
+  if (isNaN(limit) || limit < 0) throw badRequest('invalid_value_limit', 'limit must be a number of 0 or more');
+  return { skip, limit };
+};
 
 export const trimSlashes = (str: string) => {
   return str ? str.replace(/^\/+|\/+$/g, '') : str;

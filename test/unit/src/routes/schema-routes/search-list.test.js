@@ -64,6 +64,24 @@ describe('schema-routes/SearchList:_validate', () => {
     await assert.rejects(() => route._validate({ body: { limit: 'abc' } }, {}), { code: 'invalid_value_limit' });
   });
 
+  it('rejects a negative skip or limit, before it reaches the datastore', async () => {
+    const route = createRoute(createFakeModel([]));
+    for (const skip of [-1, '-5']) {
+      await assert.rejects(() => route._validate({ body: { skip } }, {}), { status: 400, code: 'invalid_value_skip' });
+    }
+    for (const limit of [-1, '-5']) {
+      await assert.rejects(() => route._validate({ body: { limit } }, {}), { status: 400, code: 'invalid_value_limit' });
+    }
+  });
+
+  it('takes a skip and limit given as text', async () => {
+    const route = createRoute(createFakeModel([]));
+    const result = await route._validate({ body: { skip: '2', limit: '3' } }, {});
+
+    assert.strictEqual(result.skip, 2);
+    assert.strictEqual(result.limit, 3);
+  });
+
   it('defaults skip/limit/sort/project when the body omits them', async () => {
     const route = createRoute(createFakeModel([]));
     const result = await route._validate({ body: {} }, {});

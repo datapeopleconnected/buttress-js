@@ -121,11 +121,7 @@ export class CoreSearch<M extends StandardModel<DocumentOf<M>>> extends CoreMode
     if (Array.isArray(req.body)) throw Helpers.Errors.badRequest('invalid_body');
 
     const body = req.body ?? {};
-    // parseInt takes numbers too, it converts them to a string first
-    const skip = body.skip ? parseInt(body.skip as string) : 0;
-    const limit = body.limit ? parseInt(body.limit as string) : 0;
-    if (isNaN(skip)) throw Helpers.Errors.badRequest('invalid_value_skip');
-    if (isNaN(limit)) throw Helpers.Errors.badRequest('invalid_value_limit');
+    const { skip, limit } = Helpers.searchPaging(body);
 
     const result: QueryParams<DocumentOf<M> & object> = {
       query: this.parse(req, body.query ? [body.query] : []),

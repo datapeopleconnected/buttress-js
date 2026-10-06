@@ -248,6 +248,12 @@ describe('Error contract', async () => {
 			400, 'invalid_update'],
 		["a note the caller's policy wouldn't let it read", () => [notes(), post({ text: 'not mine' }), writerToken()],
 			403, 'access_denied', { schema: 'note', index: 0 }],
+		['a search with a negative skip', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ skip: -1 }) }, appToken()],
+			400, 'invalid_value_skip'],
+		['a search with a negative limit', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ limit: -1 }) }, appToken()],
+			400, 'invalid_value_limit'],
+		['a core search with a negative skip', () => [core('policy'), { method: 'QUERY', headers: json, body: JSON.stringify({ skip: -1 }) }, appToken()],
+			400, 'invalid_value_skip'],
 		['a search on a date it cannot read', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ query: { due: { $gtDate: 'not a date' } } }) }, appToken()],
 			400, 'invalid_value', { path: 'due', expected: 'date' }],
 	];

@@ -229,6 +229,8 @@ A search sends its query in the body, with the `QUERY` method ([RFC 10008](https
 which reads like `GET` but takes a body:
 
 - `QUERY <schema>` takes `{query, skip, limit, sort, project}`, each optional, and responds with the entities found.
+  `skip` and `limit` are numbers of 0 or more, a `limit` of 0 (or none) giving every entity found; a negative one is
+  refused with a 400, `invalid_value_skip` or `invalid_value_limit`. The core searches take them the same way.
 - `QUERY <schema>/count` takes a query, or `{query}`, and responds with the number found.
 - `QUERY <schema>/bulk/load` takes `{query: {ids: [...]}, project}` and responds with those entities.
 
