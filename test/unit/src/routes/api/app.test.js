@@ -571,6 +571,54 @@ describe('routes/api/app:SetAppPolicyPropertyList', () => {
     assert.deepStrictEqual(req.body.role.sort(), ['admin', 'user']);
   });
 
+  it('sets the list of the app a system token names, merged into that app’s list rather than its own', async () => {
+    const otherApp = { id: '6abd05000000000000000002', policyPropertiesList: { role: ['admin'] } };
+    const { appModel } = stubModel({ app: { findById: async (id) => (id === otherApp.id ? otherApp : null) } });
+    const route = createRoute(SetAppPolicyPropertyList);
+    const req = createReq({
+      params: { update: 'true', appId: otherApp.id },
+      authApp: { id: '6abd05000000000000000001', policyPropertiesList: { role: ['own'], grade: ['A'] } },
+      token: { type: 'system' },
+      body: { role: ['user'] },
+    });
+
+    const validate = await route._validate(req);
+    await route._exec(req, {}, validate);
+
+    assert.deepStrictEqual(validate, { appId: otherApp.id });
+    assert.deepStrictEqual(req.body.role.sort(), ['admin', 'user']);
+    assert.strictEqual('grade' in req.body, false);
+    assert.ok(appModel.setPolicyPropertiesList.calledOnceWith(otherApp.id));
+  });
+
+  it('refuses a system token naming an app that does not exist', async () => {
+    const { appModel } = stubModel();
+    const route = createRoute(SetAppPolicyPropertyList);
+    const req = createReq({ params: { update: 'true', appId: '6abd05000000000000000009' }, token: { type: 'system' } });
+
+    await assert.rejects(route._validate(req), { status: 404, code: 'not_found' });
+    assert.strictEqual(appModel.setPolicyPropertiesList.called, false);
+  });
+
+  it('answers a token that is not a system token naming another app as naming an unknown one', async () => {
+    const otherApp = { id: '6abd05000000000000000002', policyPropertiesList: { role: ['admin'] } };
+    stubModel({ app: { findById: async () => otherApp, findOne: async () => otherApp } });
+    const route = createRoute(SetAppPolicyPropertyList);
+
+    for (const type of ['app', 'user']) {
+      const req = createReq({ params: { update: 'true', appId: otherApp.id }, token: { type }, body: { role: ['user'] } });
+      await assert.rejects(route._validate(req), { status: 404, code: 'not_found' }, type);
+    }
+  });
+
+  it('still sets its own list for a token naming its own app', async () => {
+    stubModel();
+    const route = createRoute(SetAppPolicyPropertyList);
+    const req = createReq({ params: { update: 'false', appId: '6abd05000000000000000001' }, token: { type: 'app' } });
+
+    assert.deepStrictEqual(await route._validate(req), { appId: '6abd05000000000000000001' });
+  });
+
   it('persists the update, stripping any stray query key', async () => {
     const { appModel } = stubModel();
     const route = createRoute(SetAppPolicyPropertyList);

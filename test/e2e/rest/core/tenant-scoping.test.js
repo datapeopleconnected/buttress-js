@@ -717,6 +717,29 @@ describe('Core route tenant scoping', async () => {
 			assert.strictEqual(other.id, testEnv.users.app2.id);
 		});
 	});
+	describe('Policy property lists', () => {
+		const json = { 'Content-Type': 'application/json' };
+		const setList = (list, appId, token) => bjsReq({
+			url: `${ENDPOINT.REST}/api/v1/app/policy-property-list/true/${appId}`, method: 'PUT', headers: json, body: JSON.stringify(list),
+		}, token);
+		const getList = (apiPath, token) => bjsReq({ url: `${ENDPOINT.REST}/api/v1/app/policy-property-list/${apiPath}`, method: 'GET' }, token);
+
+		it('Should set the list of the app a system token names', async () => {
+			await setList({ grade: ['A', 'B'] }, testEnv.apps.app2.id);
+
+			const list = await getList(testEnv.apps.app2.apiPath);
+			assert.deepStrictEqual(list.grade, ['A', 'B']);
+			assert.ok(list.role.includes('ADMIN'), 'kept the lists it had');
+		});
+
+		it("Should refuse another app's token, and leave both apps' lists unchanged", async () => {
+			await assert.rejects(setList({ grade: ['C'] }, testEnv.apps.app2.id, testEnv.apps.app1.token),
+				(err) => err instanceof BJSReqError && err.code === 404 && err.body.code === 'not_found');
+
+			assert.deepStrictEqual((await getList(testEnv.apps.app2.apiPath)).grade, ['A', 'B']);
+			assert.strictEqual((await getList(testEnv.apps.app1.apiPath)).grade, undefined);
+		});
+	});
 	describe('Responses', () => {
 		it('Should answer a lookup of an id that names nothing as not found, not as a server error', async () => {
 			await assert.rejects(bjsReq({ url: `${ENDPOINT.REST}/api/v1/app/507f1f77bcf86cd799439011`, method: 'GET' }),

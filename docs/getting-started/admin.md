@@ -19,7 +19,7 @@ Recommendations:
 
 For regular operations, use app-scoped tokens and policies instead of super tokens.
 
-The core API (`/api/v1/...`) acts on the app your token belongs to, super tokens included, so to administer an app, use that app's token. A `?apiPath=` query parameter naming any other app is refused with a 400, `apiPath_not_supported`, rather than being applied to the token's own app. Routes that act on another app say so in their path: an app's schema routes (`/<apiPath>/api/v1/<schema>`) act on that app, and take only its own tokens or a system token (the super token is one); another app's token gets a 403, `insufficient_authority`. `GET app/policy-property-list/:apiPath` lets a super token read another app's list.
+The core API (`/api/v1/...`) acts on the app your token belongs to, super tokens included, so to administer an app, use that app's token. A `?apiPath=` query parameter naming any other app is refused with a 400, `apiPath_not_supported`, rather than being applied to the token's own app. Routes that act on another app say so in their path: an app's schema routes (`/<apiPath>/api/v1/<schema>`) act on that app, and take only its own tokens or a system token (the super token is one); another app's token gets a 403, `insufficient_authority`. `GET app/policy-property-list/:apiPath` lets a super token read another app's list, and `PUT app/policy-property-list/:update/:appId` set it (`:update` is `true` to merge into the list rather than replace it). Any other token naming another app there is refused.
 
 Typical flow:
 

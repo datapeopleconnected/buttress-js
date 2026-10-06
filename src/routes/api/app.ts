@@ -578,55 +578,70 @@ class SetAppPolicyPropertyList extends Route {
     this.permissions = Route.Constants.Permissions.WRITE;
   }
 
-  override _validate(req: RequestWithBody<App['policyPropertiesList']>, _res: Response) {
-    return new Promise<{ appId: string }>((resolve, reject) => {
-      if (!req.context.authApp) {
-        this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
-        return reject(Helpers.Errors.internal('no_authenticated_app'));
+  override async _validate(
+    req: RequestWithBody<App['policyPropertiesList'], { update?: string; appId?: string }>,
+    _res: Response,
+  ) {
+    if (!req.context.authApp) {
+      this.log('ERROR: No authenticated app', Route.LogLevel.ERR);
+      throw Helpers.Errors.internal('no_authenticated_app');
+    }
+
+    if (!req.body) {
+      this.log('ERROR: Missing body', Route.LogLevel.ERR);
+      throw Helpers.Errors.badRequest('no_body');
+    }
+
+    if (typeof req.body !== 'object' || (typeof req.body === 'object' && Array.isArray(req.body))) {
+      this.log('ERROR: Policy property list is invalid type', Route.LogLevel.ERR);
+      throw Helpers.Errors.badRequest('invalid_type');
+    }
+
+    const policyPropertiesList = Object.keys(req.body).filter((key) => key !== 'query');
+    const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(req.body[key]));
+    if (!validPolicyPropertiesList) {
+      this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
+      throw Helpers.Errors.badRequest('invalid_field');
+    }
+
+    // The list of the app :appId names. Only a system token can name an app other than its own, any other is answered
+    // as an unknown one
+    const appId = req.params.appId;
+    let app = req.context.authApp;
+    if (appId && appId !== app.id) {
+      const isSystem = req.context.token?.type === Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM;
+      if (!isSystem) {
+        this.log('ERROR: Cannot set the policy properties list of another app', Route.LogLevel.ERR);
+        throw Model.getCoreModel(AppSchemaModel).isValidId(appId)
+          ? Helpers.Errors.entityNotFound('app', appId)
+          : Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
       }
 
-      if (!req.body) {
-        this.log('ERROR: Missing body', Route.LogLevel.ERR);
-        return reject(Helpers.Errors.badRequest('no_body'));
-      }
+      app = await this.scoped(req, AppSchemaModel).findByIdOrFail(appId);
+    }
 
-      if (typeof req.body !== 'object' || (typeof req.body === 'object' && Array.isArray(req.body))) {
-        this.log('ERROR: Policy property list is invalid type', Route.LogLevel.ERR);
-        return reject(Helpers.Errors.badRequest('invalid_type'));
-      }
-
-      const policyPropertiesList = Object.keys(req.body).filter((key) => key !== 'query');
-      const validPolicyPropertiesList = policyPropertiesList.every((key) => Array.isArray(req.body[key]));
-      if (!validPolicyPropertiesList) {
-        this.log('ERROR: Invalid policy property list', Route.LogLevel.ERR);
-        return reject(Helpers.Errors.badRequest('invalid_field'));
-      }
-
-      const app = req.context.authApp;
-
-      if (req.params.update === 'true') {
-        const currentAppListKeys = app.policyPropertiesList !== null ? Object.keys(app.policyPropertiesList) : [];
-        Object.keys(req.body).forEach((key) => {
-          if (currentAppListKeys.includes(key)) {
-            // Each list was checked to be an array above
-            req.body[key] = (req.body[key] as Extract<App['policyPropertiesList'][string], unknown[]>)
-              .concat(app.policyPropertiesList[key])
-              .filter((v, idx, arr) => arr.indexOf(v) === idx);
-          }
-        });
-        const postedPropsList = Object.keys(req.body).reduce<App['policyPropertiesList']>((obj, key) => {
-          if (key === 'query') return obj;
-
-          obj[key] = req.body[key];
-          return obj;
-        }, {});
-        req.body = { ...app.policyPropertiesList, ...postedPropsList };
-      }
-
-      resolve({
-        appId: app.id,
+    if (req.params.update === 'true') {
+      const currentAppListKeys = app.policyPropertiesList ? Object.keys(app.policyPropertiesList) : [];
+      Object.keys(req.body).forEach((key) => {
+        if (currentAppListKeys.includes(key)) {
+          // Each list was checked to be an array above
+          req.body[key] = (req.body[key] as Extract<App['policyPropertiesList'][string], unknown[]>)
+            .concat(app.policyPropertiesList[key])
+            .filter((v, idx, arr) => arr.indexOf(v) === idx);
+        }
       });
-    });
+      const postedPropsList = Object.keys(req.body).reduce<App['policyPropertiesList']>((obj, key) => {
+        if (key === 'query') return obj;
+
+        obj[key] = req.body[key];
+        return obj;
+      }, {});
+      req.body = { ...app.policyPropertiesList, ...postedPropsList };
+    }
+
+    return {
+      appId: app.id,
+    };
   }
 
   override async _exec(req: RequestWithBody<App['policyPropertiesList']>, res: Response, { appId }: { appId: string }) {
