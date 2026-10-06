@@ -101,6 +101,9 @@ bjs lambda list-property
   It's now stored `PRIVATE`, and a lambda already stored without a type is treated as `PRIVATE`: set its `type` to
   `PUBLIC` if it should keep taking calls without a token.
 - Keep lambda git inputs pinned and auditable.
+- Deploying a lambda again takes a branch that doesn't track the repository's (as git sets one up with
+  `branch.autoSetupMerge` off), and refuses a branch the repository doesn't have with a 400, `branch_not_found`.
+  Earlier releases refused the first as `branch_not_found` and failed on the second as a server error.
 - A run ends once the promise its entry point returns has settled and the execution is recorded. Work it leaves running,
   such as a `sleep()` or `fetch()` it didn't await, stops then: its sleeps and requests are cancelled, and anything it
   calls after that (`setResult`, logging, `updateMetadata`, `fetch`, ...) is refused. Earlier releases let that work go

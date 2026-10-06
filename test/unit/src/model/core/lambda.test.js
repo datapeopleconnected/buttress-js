@@ -148,6 +148,74 @@ describe('model/core/LambdaSchemaModel:git source', () => {
     assert.strictEqual(gitIn(path.join(codeDir(), `lambda-${nextHash}`), 'rev-parse', 'HEAD'), nextHash);
     assert.strictEqual(gitIn(path.join(codeDir(), `lambda-${hash}`), 'rev-parse', 'HEAD'), hash);
   });
+
+  // A deployment of `hash` on `branch` into the checkout already deployed for `hash`, with git's config for the test
+  describe('deploying a branch to an existing checkout', () => {
+    let savedEnv;
+    let added;
+
+    beforeEach(() => {
+      savedEnv = { ...process.env };
+      added = [];
+    });
+
+    afterEach(() => {
+      process.env = savedEnv;
+    });
+
+    const deployedCheckout = async () => {
+      await model.gitFolderClone(hash, 'main', 'deployed', repo);
+      const checkout = path.join(codeDir(), `lambda-${hash}`);
+      fs.renameSync(path.join(codeDir(), 'lambda-deployed'), checkout);
+      return checkout;
+    };
+    const deploy = (branch) => {
+      const lambda = { id: 'lambda-1', _appId: 'app-1', name: 'deployed', git: { url: repo, branch: 'main', hash } };
+      const deployments = { findOne: async () => null, add: async (body) => added.push(body) };
+      const deploying = Object.assign(Object.create(model), {
+        createId: (id) => id,
+        __modelManager: { getCoreModel: () => deployments },
+      });
+      return deploying.pullLambdaCode(lambda, { branch, hash, entryFilePath: 'index.js', entryPoint: 'run' });
+    };
+
+    it("deploys a branch of the repository that the checkout doesn't set to track it", async () => {
+      gitIn(repo, 'branch', '-f', 'untracked', hash);
+      const checkout = await deployedCheckout();
+      // git prints nothing on stdout for a checkout of a branch with no upstream
+      Object.assign(process.env, {
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'branch.autoSetupMerge',
+        GIT_CONFIG_VALUE_0: 'false',
+      });
+
+      await deploy('untracked');
+
+      assert.deepStrictEqual(added.map((body) => body.branch), ['untracked']);
+      assert.strictEqual(gitIn(checkout, 'rev-parse', 'HEAD'), hash);
+    });
+
+    it('deploys a branch only in the checkout', async () => {
+      const checkout = await deployedCheckout();
+      gitIn(checkout, 'branch', '--no-track', 'local-only', hash);
+
+      await deploy('local-only');
+
+      assert.deepStrictEqual(added.map((body) => body.branch), ['local-only']);
+      assert.strictEqual(gitIn(checkout, 'rev-parse', 'HEAD'), hash);
+    });
+
+    it('refuses a branch neither the repository nor the checkout has with a 400', async () => {
+      await deployedCheckout();
+
+      await assert.rejects(deploy('missing'), (err) => {
+        assert.strictEqual(err.status, 400);
+        assert.strictEqual(err.code, 'branch_not_found');
+        return true;
+      });
+      assert.deepStrictEqual(added, []);
+    });
+  });
 });
 
 describe('model/core/LambdaSchemaModel:add', () => {
