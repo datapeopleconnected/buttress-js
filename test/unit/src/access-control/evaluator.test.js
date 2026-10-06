@@ -160,6 +160,8 @@ describe('access-control/evaluator:evaluate', () => {
       [
         policy('query-loop', { query: { name: '#env.a' } }, { env: loop }),
         policy('condition-loop', { condition: { '#env.a': { '@eq': 'x' } } }, { env: loop }),
+        policy('list-loop', { query: { name: { '@in': ['b', '#env.a'] } } }, { env: loop }),
+        policy('elMatch-loop', { query: { tags: { '@elMatch': { name: '#env.a' } } } }, { env: loop }),
         policy('fine', { query: { name: 'b' } }),
       ],
       context(),
