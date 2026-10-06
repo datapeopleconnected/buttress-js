@@ -125,6 +125,20 @@ describe('routes/api/secure-store:AddSecureStore', () => {
     assert.strictEqual(findOne.called, false);
   });
 
+  // SR-DPC-001 R9: the schema reads a number as text, but the name is looked for as it's given
+  it('refuses a name that is a number before it looks for the name', async () => {
+    const findOne = sinon.stub().resolves(null);
+    stubModel({ secureStore: { findOne } });
+    const route = createRoute(AddSecureStore);
+
+    await assert.rejects(route._validate(createReq({ body: { name: 5 } })), {
+      status: 400,
+      code: 'invalid_value',
+      details: { schema: 'secureStore', path: 'name', issues: [{ path: 'name', code: 'type', expected: 'string', received: 'number' }] },
+    });
+    assert.strictEqual(findOne.called, false);
+  });
+
   it('rejects when a secure store with the same name already exists', async () => {
     stubModel({ secureStore: { findOne: async () => ({ id: 'existing' }) } });
     const route = createRoute(AddSecureStore);
@@ -180,6 +194,50 @@ describe('routes/api/secure-store:AddManySecureStore', () => {
     const route = createRoute(AddManySecureStore);
 
     await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }, {}] })), { code: 'missing_field' });
+  });
+
+  // SR-DPC-001 R9: a name that's an object reached the lookup as a query operator
+  for (const [label, name, received] of [
+    ['an object', { $ne: null }, 'object'],
+    ['a number', 5, 'number'],
+  ]) {
+    it(`refuses an item whose name is ${label} before it looks for any name`, async () => {
+      const findOne = sinon.stub().resolves(null);
+      stubModel({ secureStore: { findOne } });
+      const route = createRoute(AddManySecureStore);
+
+      await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }, { name }] })), {
+        status: 400,
+        code: 'invalid_value',
+        details: { schema: 'secureStore', path: 'name', index: 1, issues: [{ path: 'name', code: 'type', expected: 'string', received }] },
+      });
+      assert.strictEqual(findOne.called, false);
+    });
+  }
+
+  it("refuses an item whose data isn't an object, as a single add does", async () => {
+    stubModel();
+    const route = createRoute(AddManySecureStore);
+
+    await assert.rejects(route._validate(createReq({ body: [{ name: 'a', storeData: 'x' }] })), {
+      status: 400,
+      code: 'invalid_value',
+      details: { schema: 'secureStore', path: 'storeData', index: 0, issues: [{ path: 'storeData', code: 'type', expected: 'object', received: 'string' }] },
+    });
+  });
+
+  it('rejects when an item in the batch has an empty name', async () => {
+    stubModel();
+    const route = createRoute(AddManySecureStore);
+
+    await assert.rejects(route._validate(createReq({ body: [{ name: 'a' }, { name: '' }] })), { code: 'missing_field' });
+  });
+
+  it('refuses an item that is null with a 400, not a 500', async () => {
+    stubModel();
+    const route = createRoute(AddManySecureStore);
+
+    await assert.rejects(route._validate(createReq({ body: [null] })), { status: 400, code: 'missing_field' });
   });
 
   it('rejects when an item in the batch already exists', async () => {
