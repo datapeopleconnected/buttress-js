@@ -68,6 +68,15 @@ describe('model/core/TokenSchemaModel:createTokenString', () => {
     assert.match(token, /^[A-Za-z0-9]{36}$/);
   });
 
+  it('picks its characters from all 62 letters and digits', () => {
+    const { model } = createModel();
+    const seen = new Set();
+    // 2000 tokens hold 72,000 characters, about 1,160 of each, so one never seen isn't chance
+    for (let i = 0; i < 2000; i++) for (const char of model.createTokenString()) seen.add(char);
+
+    assert.strictEqual(seen.size, 62);
+  });
+
   it('generates a different token on each call', () => {
     const { model } = createModel();
     const a = model.createTokenString();

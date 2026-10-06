@@ -55,6 +55,19 @@ interface PropertyConfig {
   __enum?: unknown[];
 }
 
+const RANDOM_STRING_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+/**
+ * A cryptographically random string of letters and digits, each picked evenly from all 62 of them.
+ * @param {number} length
+ * @return {string}
+ */
+export const randomString = (length = 36) => {
+  let str = '';
+  for (let x = 0; x < length; x++) str += RANDOM_STRING_CHARS[crypto.randomInt(RANDOM_STRING_CHARS.length)];
+  return str;
+};
+
 /* ********************************************************************************
  *
  * SCHEMA HELPERS
@@ -70,17 +83,7 @@ const __getPropDefault = (config: PropertyConfig) => {
     case 'string':
       if (config.__default !== null || config.__default !== undefined) {
         if (config.__default === 'randomString') {
-          const length = 36;
-          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-          const mask = 0x3d;
-
-          const bytes = crypto.randomBytes(length);
-          let str = '';
-          for (let x = 0; x < bytes.length; x++) {
-            const byte = bytes[x];
-            str += chars[byte & mask];
-          }
-          res = str;
+          res = randomString();
         } else {
           res = config.__default;
         }

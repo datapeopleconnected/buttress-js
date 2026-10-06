@@ -149,6 +149,15 @@ describe('model/shared: creating an entity', () => {
       assert(result.at instanceof Date && result.at.getTime() >= before);
     });
 
+    it("picks a random string default's characters from all 62 letters and digits", () => {
+      const properties = { secret: { __type: 'string', __default: 'randomString' } };
+      const seen = new Set();
+      // 2000 strings hold 72,000 characters, about 1,160 of each, so one never seen isn't chance
+      for (let i = 0; i < 2000; i++) for (const char of stored(properties, {}).secret) seen.add(char);
+
+      assert.strictEqual(seen.size, 62);
+    });
+
     it("refuses a missing value whose default isn't of its type", () => {
       const result = check({ weight: { __type: 'number', __default: 'heavy' } }, {});
 
