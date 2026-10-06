@@ -325,6 +325,27 @@ describe('schema-routes/UpdateMany:_broadcast', () => {
   });
 });
 
+// SR-DPC-001 S4
+describe('schema-routes/UpdateMany:_activityResponse', () => {
+  it("leaves each item's changes to a private property out of what realtime listeners are told", () => {
+    const route = createRoute(createFakeModel([]));
+    route._privatePaths = [['secret']];
+    const items = [
+      {
+        id: DOC_1,
+        results: [
+          { type: 'scalar', path: 'value', value: 'updated' },
+          { type: 'scalar', path: 'secret', value: 'hidden' },
+        ],
+      },
+    ];
+
+    assert.deepStrictEqual(route._activityResponse(items), [
+      { id: DOC_1, results: [{ type: 'scalar', path: 'value', value: 'updated' }] },
+    ]);
+  });
+});
+
 describe('schema-routes/UpdateMany: a collection with remotes', () => {
   afterEach(() => sinon.restore());
 

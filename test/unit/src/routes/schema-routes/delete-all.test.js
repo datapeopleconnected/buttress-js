@@ -43,6 +43,8 @@ function createFakeModel(docs) {
 function createRoute(model) {
   const route = Object.create(DeleteAll.prototype);
   route.schemaName = 'test-schema';
+  // The test schema has no private properties, as the constructor would find
+  route._privatePaths = [];
   route.routeModel = async () => model;
   return route;
 }

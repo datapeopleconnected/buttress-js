@@ -255,6 +255,34 @@ const omitPath = (value: unknown, segments: string[]): unknown => {
 export const stripPrivate = (result: unknown, privatePaths: string[][]): unknown =>
   privatePaths.reduce((value, segments) => omitPath(value, segments), result);
 
+/**
+ * An update's results, `{type, path, value}` each as updateByPath gives them, without what they'd show of the schema's
+ * `__private` properties: a result at or beneath one is left out, and one above it has it taken out of its value.
+ * What it's given isn't changed.
+ * @param {unknown[]} changes
+ * @param {string[][]} privatePaths - each private property's path, split into its segments
+ * @return {unknown[]}
+ */
+export const stripPrivateChanges = (changes: unknown[], privatePaths: string[][]): unknown[] =>
+  changes.flatMap((change) => {
+    if (!isPlainRecord(change) || typeof change.path !== 'string') return [change];
+
+    // Array indexes and the increment suffix aren't part of the property's name
+    const segments = change.path
+      .replace(/\.__increment__$/, '')
+      .split('.')
+      .filter((segment) => !/^\d+$/.test(segment));
+    const startsWith = (path: string[], prefix: string[]) =>
+      prefix.length <= path.length && prefix.every((segment, idx) => segment === path[idx]);
+
+    if (privatePaths.some((privatePath) => startsWith(segments, privatePath))) return [];
+
+    const value = privatePaths
+      .filter((privatePath) => startsWith(privatePath, segments))
+      .reduce((given, privatePath) => omitPath(given, privatePath.slice(segments.length)), change.value);
+    return [value === change.value ? change : { ...change, value }];
+  });
+
 const __getSchemaKeys = (obj: FlattenedSchema): string[] => {
   return Object.keys(obj).reduce((arr: string[], key) => {
     if (obj[key].__type === 'object') {

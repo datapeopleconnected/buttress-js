@@ -203,4 +203,14 @@ export default class UpdateMany extends Route {
 
     return super._broadcast(req, res, applied, path, isSuper);
   }
+
+  // Each item's results are an update's changes
+  override _activityResponse(result: unknown): unknown {
+    if (!Array.isArray(result)) return super._activityResponse(result);
+    return (result as { results: unknown }[]).map((item) =>
+      Array.isArray(item.results)
+        ? { ...item, results: Helpers.Schema.stripPrivateChanges(item.results, this._privatePaths) }
+        : item,
+    );
+  }
 }

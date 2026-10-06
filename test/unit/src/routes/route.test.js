@@ -448,6 +448,53 @@ describe('routes/Route:_broadcast', () => {
     assert.strictEqual(parsed.isSuper, true);
   });
 
+  // SR-DPC-001 S4: realtime listeners are told of a result as a response would show it
+  describe('without the schema\'s private properties', () => {
+    const schema = {
+      name: 'user',
+      properties: {
+        name: { __type: 'string' },
+        auth: { __type: 'array', __schema: { app: { __type: 'string' }, password: { __type: 'string', __private: true } } },
+      },
+    };
+    const broadcastOf = (verb, result) => {
+      const nrp = createNrpFake();
+      const route = createRoute({ nrp, schema });
+      route.activityBroadcast = true;
+      route.verb = verb;
+      route._broadcast(createReq(), createRes(), result, '/user', true);
+      // Each result is marked with its source as it's prepared, which these don't look at
+      const strip = ({ sourceId: _sourceId, ...rest }) => rest;
+      const { response } = JSON.parse(nrp.emit.firstCall.args[1]);
+      return Array.isArray(response) ? response.map(strip) : strip(response);
+    };
+
+    it('leaves them out of an entity added', () => {
+      const added = { id: 'u1', name: 'Ann', auth: [{ app: 'google', password: 'secret' }] };
+
+      assert.deepStrictEqual(broadcastOf(Route.Constants.Verbs.POST, added), {
+        id: 'u1',
+        name: 'Ann',
+        auth: [{ app: 'google' }],
+      });
+    });
+
+    it("leaves out an update's change to one, and takes one out of a change above it", () => {
+      const changes = [
+        { type: 'scalar', path: 'name', value: 'Bea' },
+        { type: 'scalar', path: 'auth.0.password', value: 'secret' },
+        { type: 'vector-add', path: 'auth', value: { app: 'github', password: 'secret' } },
+        { type: 'scalar', path: 'auth.1', value: { app: 'gitlab', password: 'secret' } },
+      ];
+
+      assert.deepStrictEqual(broadcastOf(Route.Constants.Verbs.PUT, changes), [
+        { type: 'scalar', path: 'name', value: 'Bea' },
+        { type: 'vector-add', path: 'auth', value: { app: 'github' } },
+        { type: 'scalar', path: 'auth.1', value: { app: 'gitlab' } },
+      ]);
+    });
+  });
+
   it('sends the entities a delete removed with the scoped activity only, for the SPR to check', () => {
     const nrp = createNrpFake();
     const route = createRoute({ nrp });
