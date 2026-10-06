@@ -616,7 +616,10 @@ describe('Processing', async () => {
 			fullAccess.stop();
 			ownCars.stop();
 
-			assert.deepStrictEqual(fullAccess.packets.map((p) => [p.verb, p.path]), ids.map((id) => ['delete', `/car/${id}`]));
+			// Each delete is a request of its own, and its activity is sent once it has answered, so the next delete's can
+			// reach the SPR first: only each entity's own activities keep their order
+			const deletes = (packets) => packets.map((p) => [p.verb, p.path]).sort(([, a], [, b]) => a.localeCompare(b));
+			assert.deepStrictEqual(deletes(fullAccess.packets), deletes(ids.map((id) => ({ verb: 'delete', path: `/car/${id}` }))));
 			assert.deepStrictEqual(ownCars.packets.map((p) => [p.verb, p.path]), [['delete', `/car/${refused.id}`]]);
 		});
 	});
