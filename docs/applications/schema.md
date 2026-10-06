@@ -223,6 +223,14 @@ Ids held inside an `object` property aren't treated as ids, so they're kept exac
 
 Items are checked against the array's `__itemtype` or item `__schema`, element by element when the whole array is replaced. Objects in an array with an item `__schema` keep only the properties the item schema declares, so declare `id` in the item schema if clients give items their own ids. An item of either kind of typed array can't be `null`; to add an item of defaults to an array with an item `__schema`, send `{}`. An array with neither takes any value. An array value always replaces the whole property, so an item that is itself an array can't be appended; replace the whole array instead. To append several items, send one update per item, as an array of updates to `PUT <schema>/:id` or as items of a `bulk/update`; they're applied in order.
 
+An item an update writes to an array with an item `__schema`, whether it's appended, set by its index, one of a whole
+array or in a `bulk/update`, is read as a create reads one: its values as their types (a `date` given as text is
+stored as a date, a `number` given as `"7"` as 7), defaults for what it leaves out, and without fields the item schema
+doesn't define or `_`-prefixed ones. That item is what's stored, what the update's result gives, what the request's
+activity records, what a `PATH_MUTATION` lambda is given, and what a write to a partner's data sends it. Earlier
+releases stored it so, but passed on the item as it was sent: the activity, the lambda and the partner got the fields
+it would drop and its values as text. A date an update gave was recorded in its activity as `{}`; it's now kept.
+
 ## Searching
 
 A search sends its query in the body, with the `QUERY` method ([RFC 10008](https://www.rfc-editor.org/rfc/rfc10008)),

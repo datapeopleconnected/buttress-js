@@ -39,7 +39,6 @@ import AbstractAdapter from '../abstract-adapter.js';
 import MongodbIds from './mongodb-ids.js';
 import { toMongoQuery } from '../../access-control/operators.js';
 import ObjectIdHelper, { isObjectId } from './object-id.js';
-import { parseDocument } from '../../model/parse-document.js';
 
 import { BjsQuery } from '../../types/bjs-query.js';
 import {
@@ -497,12 +496,8 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
       }
       case 'vector-add':
         {
-          let value: unknown = null;
-          if (schemaConfig && schemaConfig.__schema) {
-            value = parseDocument(schemaConfig.__schema, body.value).value;
-          } else {
-            value = body.value;
-          }
+          // validateUpdate gave an item of an item schema as it's stored
+          let value: unknown = body.value;
 
           if (!schemaConfig && model) {
             const entity = await model.findById(id);
@@ -555,16 +550,8 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
         break;
       case 'scalar':
         {
-          let value: unknown = null;
-          if (schemaConfig && schemaConfig.__schema && Array.isArray(body.value)) {
-            // An array value replaces the whole array (see StandardModel.updateByPath), so each element is an item.
-            const itemSchema = schemaConfig.__schema;
-            value = body.value.map((item) => parseDocument(itemSchema, item).value);
-          } else if (schemaConfig && schemaConfig.__schema) {
-            value = parseDocument(schemaConfig.__schema, body.value).value;
-          } else {
-            value = body.value;
-          }
+          // validateUpdate gave the items of an item schema as they're stored, a whole array's each one
+          const value = body.value;
 
           ops.push({
             $set: {

@@ -226,6 +226,68 @@ describe('datastore/adapters/MongodbAdapter: single-item writes to typed arrays'
 });
 
 // A null item of a typed array used to become an item of defaults (item schema) or a stored null (item type).
+// The item validateUpdate gives, read as a create reads one, is what's stored and given back, so nothing is generated
+// twice (SR-DPC-001 D2)
+describe('datastore/adapters/MongodbAdapter: array items as validated', () => {
+  const REF = '507f1f77bcf86cd799439012';
+  const logbookSchema = {
+    name: 'logbook',
+    type: 'collection',
+    extends: [],
+    properties: {
+      entries: {
+        __type: 'array',
+        __allowUpdate: true,
+        __schema: {
+          at: { __type: 'date', __default: null, __allowUpdate: true },
+          count: { __type: 'number', __default: 0, __allowUpdate: true },
+          ref: { __type: 'id', __default: null, __allowUpdate: true },
+          _key: { __type: 'string', __default: 'randomString', __allowUpdate: true },
+        },
+      },
+    },
+  };
+  const given = () => ({ at: '2026-01-02', count: '7', ref: REF, _key: 'client', extra: 'x' });
+
+  const write = async (body) => {
+    const { model, ops } = createModel(logbookSchema);
+    const { validation, body: validated } = model.validateUpdate(body);
+    assert.strictEqual(validation.isValid, true);
+    const results = await model.updateByPath(validated, ID);
+    return { validated: validated[0].value, ops, results };
+  };
+
+  const assertStored = (item, validated) => {
+    assert.deepStrictEqual(Object.keys(item), ['at', 'count', 'ref', '_key']);
+    assert.deepStrictEqual(item.at, new Date('2026-01-02'));
+    assert.strictEqual(item.count, 7);
+    assert.ok(isObjectId(item.ref) && item.ref.toHexString() === REF);
+    assert.notStrictEqual(item._key, 'client');
+    assert.strictEqual(item._key, validated._key);
+  };
+
+  it('pushes the item validated', async () => {
+    const { validated, ops, results } = await write({ path: 'entries', value: given() });
+
+    assertStored(ops[0].$push.entries, validated);
+    assert.deepStrictEqual(results, [{ type: 'vector-add', path: 'entries', value: validated }]);
+  });
+
+  it('sets the item validated by its index', async () => {
+    const { validated, ops, results } = await write({ path: 'entries.0', value: given() });
+
+    assertStored(ops[0].$set['entries.0'], validated);
+    assert.deepStrictEqual(results, [{ type: 'scalar', path: 'entries.0', value: validated }]);
+  });
+
+  it('replaces the whole array with the items validated', async () => {
+    const { validated, ops, results } = await write({ path: 'entries', value: [given(), given()] });
+
+    ops[0].$set.entries.forEach((item, idx) => assertStored(item, validated[idx]));
+    assert.deepStrictEqual(results, [{ type: 'scalar', path: 'entries', value: validated }]);
+  });
+});
+
 describe('datastore/adapters/MongodbAdapter: null items in typed arrays', () => {
   for (const [label, body, invalidValue] of [
     ['push to an item-schema array', { path: 'contacts', value: null }, 'contacts:null[null] [object]'],

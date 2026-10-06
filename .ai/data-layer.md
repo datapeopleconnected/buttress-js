@@ -107,8 +107,10 @@ which walks the flattened schema as a tree (cached per flattened schema) and giv
 invalid}`: the value to store, with defaults and each value read as its type, and every problem. It never changes the
 body. `validateSchemaObject` (the issues, plus a `strict` schema's unknown fields) and `sanitizeSchemaObject` (the
 value) in [src/model/shared.ts](../src/model/shared.ts) are both views of it, so what's checked and what's stored can't
-disagree; the Mongo adapter reads an array item an update writes through it too. A nested object (a property without
-`__type`) that's given something other than an object or null is refused.
+disagree. `validateUpdate` reads an array item an update writes through it too (`checkArrayItem` in shared.ts) and
+gives the update that item, so it's what the adapter stores (the Mongo adapter) or sends (the Buttress adapter), what
+the result gives, and what the activity and path-mutation lambdas see; `updateByPath` takes validated updates only. A
+nested object (a property without `__type`) that's given something other than an object or null is refused.
 
 Every value is read as its `__type` through one codec per type, `decode()` in
 [src/helpers/codecs.ts](../src/helpers/codecs.ts): bodies (`checkProp` in `helpers/schema.ts`),

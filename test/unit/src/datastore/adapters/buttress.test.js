@@ -22,6 +22,7 @@ import sinon from 'sinon';
 
 import ButtressAdapter from '../../../../../dist/datastore/adapters/buttress.js';
 import DatastoreFactory from '../../../../../dist/datastore/adapter-factory.js';
+import StandardModel from '../../../../../dist/model/type/standard.js';
 
 // An adapter that talks to a fake remote collection, without connecting to anything
 function createAdapter(collection) {
@@ -124,6 +125,52 @@ describe('datastore/adapters/buttress:exists', () => {
 
     assert.strictEqual(await createAdapter(collection).exists(ID, { id: OTHER }), false);
     sinon.assert.calledOnceWithExactly(collection.count, { $and: [{ id: ID }, { id: OTHER }] });
+  });
+});
+
+// A federated write sends the partner the item validateUpdate read, as the MongoDB adapter stores it (SR-DPC-001 D2)
+describe('datastore/adapters/buttress: array items an update writes', () => {
+  const ID = '6abd00000000000000000001';
+  const schema = {
+    name: 'logbook',
+    type: 'collection',
+    extends: [],
+    properties: {
+      entries: {
+        __type: 'array',
+        __allowUpdate: true,
+        __schema: {
+          at: { __type: 'date', __default: null, __allowUpdate: true },
+          count: { __type: 'number', __default: 0, __allowUpdate: true },
+          _secret: { __type: 'string', __default: 'server', __allowUpdate: true },
+        },
+      },
+    },
+  };
+
+  it('sends the partner the item as it is stored, not as it was given', async () => {
+    const collection = { update: sinon.stub().resolves([{ type: 'vector-add', path: 'entries', value: {} }]) };
+    const services = new Map([
+      ['nrp', { on: () => {}, emit: () => {} }],
+      ['modelManager', {}],
+    ]);
+    const model = new StandardModel(structuredClone(schema), null, services);
+    model.adapter = createAdapter(collection);
+
+    const { validation, body } = model.validateUpdate({
+      path: 'entries',
+      value: { at: '2026-01-02', count: '7', _secret: 'client', extra: 'x' },
+    });
+    assert.strictEqual(validation.isValid, true);
+    await model.updateByPath(body, ID);
+
+    sinon.assert.calledOnce(collection.update);
+    const [id, sent] = collection.update.firstCall.args;
+    assert.strictEqual(id, ID);
+    assert.deepStrictEqual(
+      { path: sent.path, value: sent.value },
+      { path: 'entries', value: { at: new Date('2026-01-02'), count: 7, _secret: 'server' } },
+    );
   });
 });
 

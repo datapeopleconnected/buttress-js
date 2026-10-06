@@ -150,8 +150,9 @@ const isTypedArray = (config: FlattenedSchemaProperty | false | null | undefined
   !!config && config.__type === 'array' && Boolean(config.__schema || config.__itemtype);
 
 /**
- * Checks one item of a typed array against the array's item schema or item type. The returned value is the item
- * converted to the item type, as validateProp converts values.
+ * Checks one item of a typed array against the array's item schema or item type. The returned value is the item as it's
+ * stored, as a create stores one: read through the item schema by parseDocument, its values as their types, with
+ * defaults, and without fields the schema doesn't define or `_`-prefixed ones; or converted to the item type.
  */
 const checkArrayItem = (config: FlattenedSchemaProperty, item: unknown, path: string): ArrayItemCheck => {
   if (config.__schema) {
@@ -165,7 +166,7 @@ const checkArrayItem = (config: FlattenedSchemaProperty, item: unknown, path: st
     }
 
     const validation = parseDocument(config.__schema, item, `${path}.`);
-    if (validation.issues.length < 1) return { value: item };
+    if (validation.issues.length < 1) return { value: validation.value };
 
     return {
       value: item,
@@ -268,8 +269,8 @@ export const invalidEntityError = (
 };
 
 /**
- * Checks one update against the schema, through the path it writes to. A value is converted to its type in place, and
- * a whole array's items are checked as items.
+ * Checks one update against the schema, through the path it writes to. A value is converted to its type in place, an
+ * array item replaced by the item as it's stored (checkArrayItem), and a whole array's items are checked as items.
  * @param {Object} schemaFlat - the model's flattened schema
  * @return {Function} - checks an update
  */

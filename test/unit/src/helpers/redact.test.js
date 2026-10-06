@@ -18,7 +18,7 @@ import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 
-import { redactUrl, tokenFingerprint } from '../../../../dist/helpers/redact.js';
+import { redactSecrets, redactUrl, tokenFingerprint } from '../../../../dist/helpers/redact.js';
 import Logging from '../../../../dist/helpers/logging.js';
 import RoutesTokens from '../../../../dist/routes/tokens.js';
 import Datastore from '../../../../dist/datastore/index.js';
@@ -44,6 +44,14 @@ describe('helpers/redact', () => {
       'mongodb://db.example.com:27017/buttress');
     assert.strictEqual(redactUrl(new URL('https://api.example.com/v1/items?api_key=secret#frag')), 'https://api.example.com/v1/items');
     assert.strictEqual(redactUrl('not a url'), '[url]');
+  });
+
+  it('keeps a date an update was read as, rather than an empty object, while redacting a secret beside it', () => {
+    const at = new Date('2026-01-02');
+    const redacted = redactSecrets([{ path: 'entries', value: { at, password: 'p' } }, { path: 'when', value: at }]);
+
+    assert.deepStrictEqual(redacted, [{ path: 'entries', value: { at, password: '[redacted]' } }, { path: 'when', value: at }]);
+    assert.strictEqual(JSON.stringify(redacted[1].value), '"2026-01-02T00:00:00.000Z"');
   });
 });
 

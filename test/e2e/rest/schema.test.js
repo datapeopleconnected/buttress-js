@@ -16,11 +16,15 @@
 
 import { describe, it, before, after } from 'mocha';
 import assert from 'node:assert';
+import { MongoClient, ObjectId } from 'mongodb';
 
+import Config from '../../config.js';
 import { createApp, updateSchema, ENDPOINT, bjsReq } from '../../helpers.js';
 import { runStep } from '../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
+import { shortId } from '../../../dist/helpers/index.js';
+import { isObjectId } from '../../../dist/datastore/adapters/object-id.js';
 
 let REST_PROCESS = null;
 
@@ -811,6 +815,143 @@ describe('Schema', async () => {
 			await putSpaceship([{path: 'tags', value: 'e'}, {path: 'tags.0.__remove__', value: ''}]);
 
 			assert.deepStrictEqual((await getSpaceship()).tags, ['a', 'b', 'c', 'd', 'e']);
+		});
+	});
+
+	// An item an update writes to an array with an item __schema is the item a create stores, which the request's
+	// activity records (SR-DPC-001 D2)
+	describe('Updating array items', async () => {
+		const REF = '507f1f77bcf86cd799439013';
+		let client = null;
+		let db = null;
+		let app = null;
+		let logbook = null;
+
+		// With a field the item schema doesn't define, and a `_` one, which only the server sets
+		const given = (note) => ({at: '2026-01-02', count: '7', ref: REF, note, _internal: 'client', extra: 'x'});
+		// As the schema reads it, as JSON gives it
+		const returned = (note) => ({at: '2026-01-02T00:00:00.000Z', count: 7, ref: REF, note});
+
+		const put = (body) => bjsReq({
+			url: `${ENDPOINT.REST}/${app.apiPath}/api/v1/logbook/${logbook.id}`,
+			method: 'PUT',
+			headers: {'Content-Type': 'application/json'},
+			body: JSON.stringify(body),
+		}, app.token);
+
+		// The entity's items as MongoDB holds them
+		const storedEntries = async () => {
+			const stored = await db.collection(`${shortId(app.id)}-logbook`).findOne({_id: new ObjectId(logbook.id)});
+			return stored.entries;
+		};
+
+		// Values as their types, and no field the item schema doesn't define
+		const assertStored = (item, note) => {
+			assert.deepStrictEqual(Object.keys(item), ['at', 'count', 'ref', 'note']);
+			assert.deepStrictEqual(item.at, new Date('2026-01-02'));
+			assert.strictEqual(item.count, 7);
+			assert.ok(isObjectId(item.ref), `ref is stored as ${typeof item.ref}`);
+			assert.strictEqual(item.ref.toHexString(), REF);
+			assert.strictEqual(item.note, note);
+		};
+
+		// The updates the request's activity recorded, once it's been added
+		const recordedUpdates = async (note) => {
+			for (let attempt = 0; attempt < 50; attempt++) {
+				const [activity] = await db.collection('activities').find({body: {$regex: note}}).toArray();
+				if (activity) return JSON.parse(activity.body);
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+			throw new Error(`No activity recorded ${note}`);
+		};
+
+		before(async function() {
+			client = await MongoClient.connect(Config.datastore.connectionString);
+			db = client.db(`${Config.app.code}-${Config.env}`);
+
+			app = await createApp(ENDPOINT.REST, 'Test Array Items App', 'test-array-items-app');
+			await updateSchema(ENDPOINT.REST, [{
+				name: 'logbook',
+				type: 'collection',
+				properties: {
+					name: {__type: 'string', __default: null, __allowUpdate: true},
+					entries: {
+						__type: 'array',
+						__allowUpdate: true,
+						__schema: {
+							at: {__type: 'date', __default: null, __allowUpdate: true},
+							count: {__type: 'number', __default: 0, __allowUpdate: true},
+							ref: {__type: 'id', __default: null, __allowUpdate: true},
+							note: {__type: 'string', __default: 'none', __allowUpdate: true},
+						},
+					},
+				},
+			}], app.token);
+
+			[logbook] = await bjsReq({
+				url: `${ENDPOINT.REST}/${app.apiPath}/api/v1/logbook`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify({name: 'log-1', entries: [given('d2-added')]}),
+			}, app.token);
+		});
+
+		after(async () => {
+			await client?.close();
+		});
+
+		it('Should store an item added on create as the schema reads it', async () => {
+			assert.deepStrictEqual(logbook.entries, [returned('d2-added')]);
+			assertStored((await storedEntries())[0], 'd2-added');
+		});
+
+		it('Should push an item as a create stores it, giving and recording the item stored', async () => {
+			const [{type, path, value}] = await put({path: 'entries', value: given('d2-pushed')});
+			assert.deepStrictEqual({type, path, value}, {type: 'vector-add', path: 'entries', value: returned('d2-pushed')});
+
+			assertStored((await storedEntries())[1], 'd2-pushed');
+			const [update] = await recordedUpdates('d2-pushed');
+			assert.deepStrictEqual(update.value, returned('d2-pushed'));
+		});
+
+		it('Should set an item by its index as a create stores it', async () => {
+			const [{value}] = await put({path: 'entries.0', value: given('d2-set')});
+			assert.deepStrictEqual(value, returned('d2-set'));
+
+			assertStored((await storedEntries())[0], 'd2-set');
+			const [update] = await recordedUpdates('d2-set');
+			assert.deepStrictEqual(update.value, returned('d2-set'));
+		});
+
+		it('Should replace the whole array with each item as a create stores it', async () => {
+			const [{value}] = await put({path: 'entries', value: [given('d2-whole-a'), given('d2-whole-b')]});
+			assert.deepStrictEqual(value, [returned('d2-whole-a'), returned('d2-whole-b')]);
+
+			const entries = await storedEntries();
+			assert.strictEqual(entries.length, 2);
+			assertStored(entries[0], 'd2-whole-a');
+			assertStored(entries[1], 'd2-whole-b');
+			const [update] = await recordedUpdates('d2-whole-a');
+			assert.deepStrictEqual(update.value, [returned('d2-whole-a'), returned('d2-whole-b')]);
+		});
+
+		it('Should write the items of a bulk update as a create stores them', async () => {
+			const [{results}] = await bjsReq({
+				url: `${ENDPOINT.REST}/${app.apiPath}/api/v1/logbook/bulk/update`,
+				method: 'POST',
+				headers: {'Content-Type': 'application/json'},
+				body: JSON.stringify([{
+					id: logbook.id,
+					body: [{path: 'entries', value: given('d2-bulk-pushed')}, {path: 'entries.0', value: given('d2-bulk-set')}],
+				}]),
+			}, app.token);
+			assert.deepStrictEqual(results.map((r) => r.value), [returned('d2-bulk-pushed'), returned('d2-bulk-set')]);
+
+			const entries = await storedEntries();
+			assertStored(entries[0], 'd2-bulk-set');
+			assertStored(entries[2], 'd2-bulk-pushed');
+			const [{body}] = await recordedUpdates('d2-bulk-pushed');
+			assert.deepStrictEqual(body.map((update) => update.value), [returned('d2-bulk-pushed'), returned('d2-bulk-set')]);
 		});
 	});
 
