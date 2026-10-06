@@ -277,7 +277,6 @@ class AdminRoutes {
         });
       }
 
-      // The admin-lambda-access app and user configs have `verbs` as a string rather than an array
       await Model.getCoreModel(PolicySchemaModel).add(policy as PolicyAddBody, { _appId: appId });
     }
   }
