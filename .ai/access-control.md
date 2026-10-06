@@ -85,10 +85,9 @@ after token authentication. Flow:
    projections, 404 `unknown_schema`, 401 `app_not_found` for a token outliving its app) → the middleware passes
    it to the error handler (see [routing.md](routing.md#errors-srchelperserrorsts)). **Default is deny, not
    allow.**
-6. If the token has any policy with a `limit` (expiry) within one week, schedules a one-shot cleanup
-   (`_queuePolicyLimitDeleteEvent`) that strips the policy properties its selection took the token by
-   (`AccessControlPolicyMatch.selectedKeys`: the keys it needs, within `@and` too, and those of each `@or` branch
-   that holds for the token) and deletes the policy when it expires.
+6. A policy past its `limit` grants nothing from that moment (`isPolicyExpired`, checked here, in `evaluate` and in the
+   SPR), whether or not it has been removed yet. REST schedules nothing for it: the SPR primary removes it (see
+   [Policy expiry](#policy-expiry)).
 
 Policies are checked when they're saved (`checkPolicyConfig` in
 [policy-definition.ts](../src/access-control/policy-definition.ts)), so the drops above are for policies saved before:
@@ -158,3 +157,22 @@ later activity for one of them can't overtake it. Then `__handleEntityActivity`:
 If you're debugging "REST write succeeded but nobody got a socket update," the fault is almost always
 somewhere in this SPR pipeline or in the `connected-tokens`/`policy:<id>:tokens` cache state, not in the
 REST handler.
+
+## Policy expiry
+
+`PolicyExpiry` ([src/access-control/policy-expiry.ts](../src/access-control/policy-expiry.ts)) removes the policies
+whose `limit` has passed. The SPR primary sweeps at start-up and then a minute after each sweep ends
+(`POLICY_EXPIRY_SWEEP_MS`), so one process does it. A sweep finds the policies whose `limit` has passed
+(`limit: {$lte: now}`, checked again with `policyLimit`; one that isn't a date is left for its author, though
+`isPolicyExpired` takes it as passed) and, for each:
+
+- If its `selection` names a property called the policy's `name`, a transient policy (buttress-js-api's
+  `createUserTransientPolicy` gives a token `{[policy.name]: true}`), and none of the app's other policies whose limit
+  hasn't passed names that property, takes it off each of the app's tokens the selection selects
+  (`updatePolicyProperties`, as `RemoveUserPolicyProperties` does). No other property is touched. SR-DPC-001 D1: REST
+  used to queue a timer per worker from a user's request in the week before the limit, which took every key the
+  selection named off that one token, keys other policies selected it by included, and was lost on a restart.
+- Removes the policy (`Policy.rm`, which also takes it out of the cache).
+
+One that can't be removed is logged, and the next sweep tries again. A sweep reads the policies as they're stored, so a
+limit moved or removed before it passes is kept to.

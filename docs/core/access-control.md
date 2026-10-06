@@ -85,6 +85,5 @@ every origin it's used from (`POST /api/v1/user/:id/token`).
 - Scope policy selectors to explicit roles/capabilities rather than broad matches.
 - Keep wildcard access (`%FULL_ACCESS%`, `%ALL%`) for admin-only policies, and keep those policies few and
   auditable.
-- A policy can carry a `limit` (expiry date) — Buttress automatically strips the policy properties its selection
-  took the token by from the token (for an `@or`, those of the branches that hold) and removes the policy once it
-  expires. See [Policy](../applications/policy.md#limit).
+- A policy can carry a `limit` (expiry date): it grants nothing once the limit passes, and Buttress then removes it,
+  along with the property a transient policy selects its tokens by. See [Policy](../applications/policy.md#limit).

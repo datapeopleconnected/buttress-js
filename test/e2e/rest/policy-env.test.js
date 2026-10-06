@@ -32,6 +32,7 @@ import {
 import { runStep } from '../helpers.js';
 
 import BootstrapRest from '../../../dist/bootstrap-rest.js';
+import { PolicyExpiry } from '../../../dist/access-control/policy-expiry.js';
 
 // A policy's limit and env values, as a request is checked against them
 describe('Policy limit and env', async () => {
@@ -50,6 +51,11 @@ describe('Policy limit and env', async () => {
 		url: `${ENDPOINT.REST}/${env.app.apiPath}/api/v1/note`,
 		method: 'GET',
 	}, env.users[user].tokens[0].value)).map((note) => note.text).sort();
+	// The policy properties of a user's token, as they're stored
+	const storedProperties = async (user) => (await bjsReq({
+		url: `${ENDPOINT.REST}/api/v1/user/${env.users[user].id}`,
+		method: 'GET',
+	}, env.app.token)).tokens.find((token) => token.value === env.users[user].tokens[0].value).policyProperties;
 
 	before(async function () {
 		this.timeout(60000);
@@ -64,6 +70,8 @@ describe('Policy limit and env', async () => {
 		, scope);
 		await runStep('allow policy properties', async () => updatePolicyPropertyList(ENDPOINT.REST, {
 			envCase: ['limit', 'lookup', 'loop'],
+			examAccess: [true],
+			role: ['STAFF'],
 		}, env.app.token), scope);
 		await runStep('add the note schema', async () => updateSchema(ENDPOINT.REST, [{
 			name: 'note',
@@ -138,6 +146,42 @@ describe('Policy limit and env', async () => {
 			);
 		} finally {
 			await bjsReq({ url: `${ENDPOINT.REST}/api/v1/policy/${limited.id}`, method: 'DELETE' }, env.app.token);
+		}
+	});
+
+	// SR-DPC-001 D1: when a policy's limit passed, every property its selection named was taken off the one token whose
+	// request had queued its removal, a property another policy selected the token by too, and the other tokens kept theirs
+	it('Should remove a policy whose limit has passed, and from the tokens it selected only the property named after it', async () => {
+		const passed = new Date(Date.now() - 60 * 1000).toISOString();
+		const staff = await createPolicy(ENDPOINT.REST, policy('policy-env-staff', {
+			selection: { role: { '@eq': 'STAFF' } },
+			config: [{ verbs: ['GET'], schema: ['note'], query: { text: 'a' } }],
+		}), env.app.token);
+		// A transient policy, which selects its tokens by the property named after it
+		const exam = await createPolicy(ENDPOINT.REST, policy('examAccess', {
+			selection: { examAccess: { '@eq': true } },
+			limit: passed,
+		}), env.app.token);
+		const promo = await createPolicy(ENDPOINT.REST, policy('policy-env-promo', {
+			selection: { role: { '@eq': 'STAFF' } },
+			limit: passed,
+		}), env.app.token);
+		env.users.alice = await createPolicyUser(ENDPOINT.REST, env.app, 'policy-env-alice', { examAccess: true, role: 'STAFF' });
+		env.users.bob = await createPolicyUser(ENDPOINT.REST, env.app, 'policy-env-bob', { examAccess: true });
+
+		try {
+			await new PolicyExpiry().sweep();
+
+			const policyIds = (await bjsReq({ url: `${ENDPOINT.REST}/api/v1/policy`, method: 'GET' }, env.app.token))
+				.map((stored) => stored.id);
+			assert.ok(policyIds.includes(staff.id), 'a policy with no limit stays');
+			assert.ok(!policyIds.includes(exam.id) && !policyIds.includes(promo.id), 'the policies whose limit passed go');
+
+			assert.deepStrictEqual(await storedProperties('alice'), { role: 'STAFF' });
+			assert.deepStrictEqual(await storedProperties('bob'), {});
+			assert.deepStrictEqual(await readNotes('alice'), ['a'], 'the staff policy still selects alice by role');
+		} finally {
+			await bjsReq({ url: `${ENDPOINT.REST}/api/v1/policy/${staff.id}`, method: 'DELETE' }, env.app.token);
 		}
 	});
 

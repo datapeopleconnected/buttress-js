@@ -10,7 +10,7 @@ process types** from the same source tree. Which one you get depends only on whi
 | REST | `bin/app.sh` | [src/bin/app.ts](../src/bin/app.ts) | [BootstrapRest](../src/bootstrap-rest.ts) | HTTP API: core routes + generated per-app schema CRUD routes |
 | Socket | `bin/app-socket.sh` | [src/bin/app-socket.ts](../src/bin/app-socket.ts) | [BootstrapSocket](../src/bootstrap-socket.ts) | Socket.IO realtime delivery, data-sharing sockets |
 | Lambda | `bin/app-lambda.sh` | [src/bin/app-lambda.ts](../src/bin/app-lambda.ts) | [BootstrapLambda](../src/bootstrap-lambda.ts) | Runs `LambdaManager` (primary) + `LambdaRunner` workers |
-| SPR (Socket Policy Router) | `bin/app-spr.sh` | [src/bin/app-spr.ts](../src/bin/app-spr.ts) | [BootstrapSocketPolicyRouter](../src/bootstrap-spr.ts) | Consumes REST activity, evaluates policies per connected token, decides what to broadcast |
+| SPR (Socket Policy Router) | `bin/app-spr.sh` | [src/bin/app-spr.ts](../src/bin/app-spr.ts) | [BootstrapSocketPolicyRouter](../src/bootstrap-spr.ts) | Consumes REST activity, evaluates policies per connected token, decides what to broadcast; its primary also removes policies past their `limit` ([PolicyExpiry](../src/access-control/policy-expiry.ts)) |
 
 `bin/buttress.sh` starts all four. There is no "monolith" mode — REST, Socket, Lambda and SPR are always
 separate OS processes, even in local/dev, and they only talk to each other over **Redis** (NRP pub/sub,

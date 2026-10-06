@@ -26,14 +26,13 @@ import type StandardModel from '../model/type/standard.js';
 import Logging from '../helpers/logging.js';
 import * as Schema from '../helpers/schema.js';
 
-import PolicySchemaModel, { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy.js';
+import { Policy, PolicyConfig, PolicyEnv } from '../model/core/policy.js';
 import TokenSchemaModel, { Token } from '../model/core/token.js';
 
 import AccessControlEnv from './env.js';
 import { evaluate, Grant, mergeGrants } from './evaluator.js';
 import AccessControlProjection from './projection.js';
-import AccessControlPolicyMatch from './policy-match.js';
-import AccessControlHelpers, { isPolicyExpired, policyLimit } from './helpers.js';
+import AccessControlHelpers, { isPolicyExpired } from './helpers.js';
 import { PolicyCache } from '../services/policy-cache.js';
 import LambdaSchemaModel, { Lambda } from '../model/core/lambda.js';
 import AppSchemaModel from '../model/core/app.js';
@@ -65,10 +64,6 @@ class AccessControl {
   _schemas: { [key: string]: SchemaDefinition[] };
   // _policies: {[key: string]: any};
 
-  _queuedLimitedPolicy: string[];
-
-  _oneWeekMilliseconds: number;
-
   _coreSchema: SchemaDefinition[];
   _coreSchemaNames: string[];
 
@@ -79,9 +74,6 @@ class AccessControl {
   constructor() {
     this._schemas = {};
     // this._policies = {};
-    this._queuedLimitedPolicy = [];
-
-    this._oneWeekMilliseconds = Sugar.Number.day(7);
 
     this._coreSchema = [];
     this._coreSchemaNames = [];
@@ -138,7 +130,6 @@ class AccessControl {
     // Skip if we're hitting a plugin
     if (req.context.isPluginPath) return next();
 
-    const user = req.context.authUser;
     const appId = token._appId.toString();
     const requestVerb = req.method;
     let lambdaAPICall: Lambda | null = null;
@@ -190,7 +181,7 @@ class AccessControl {
     // 	}
     // }
 
-    // A policy whose limit has run out grants nothing, whether or not it has been removed yet
+    // A policy whose limit has run out grants nothing, whether or not the SPR primary has removed it yet (PolicyExpiry)
     let tokenPolicies: Policy[] = [];
     try {
       if (!this._schemas[appId]) await this.__cacheAppSchema(appId);
@@ -209,22 +200,6 @@ class AccessControl {
         Logging.logError(err.message);
       }
       return next(err);
-    }
-
-    if (user) {
-      // const params = {
-      // 	policies: req.context.ac.policyConfigs,
-      // 	appId: appId,
-      // 	apiPath: req.context.authApp.apiPath,
-      // 	userId: user.id,
-      // 	schemaNames: [...this._coreSchema, ...this._schemas[appId]].map((s) => s.name),
-      // 	schemaName: schemaName,
-      // 	path: requestedURL,
-      // };
-      await this._queuePolicyLimitDeleteEvent(tokenPolicies, token, appId);
-      // TODO: This doesn't need to happen here, move to sock
-      // await this._checkAccessControlDBBasedQueryCondition(req, params);
-      // this._nrp?.emit('queuePolicyRoomCloseSocketEvent', JSON.stringify(params));
     }
 
     // TODO: This doesn't need to happen here, move to sock
@@ -390,61 +365,6 @@ class AccessControl {
     // 	id: id,
     // 	updatedSchema: params.schemaName,
     // }));
-  }
-
-  _queuePolicyLimitDeleteEvent(policies: Policy[], userToken: Token, appId: string) {
-    policies.forEach((p) => {
-      // A limit that isn't a date grants nothing (isPolicyExpired), but the policy is left for its author to correct
-      const limit = policyLimit(p);
-      if (!limit) return;
-
-      const nearlyExpired = limit.getTime() - Date.now();
-      if (this._oneWeekMilliseconds < nearlyExpired) return;
-      const policyId = String(p.id);
-      if (this._queuedLimitedPolicy.includes(policyId)) return;
-
-      this._queuedLimitedPolicy.push(policyId);
-      setTimeout(
-        async () => {
-          await this.__removeUserPropertiesPolicySelection(userToken, p);
-          await Model.getCoreModel(PolicySchemaModel).rm(p.id);
-
-          this._nrp?.emit(
-            'app-policy:bust-cache',
-            JSON.stringify({
-              appId,
-            }),
-          );
-
-          // this._nrp?.emit('worker:socket:updateUserSocketRooms', JSON.stringify({
-          // 	userId: Model.getCoreModel(UserSchemaModel).create(userToken._userId),
-          // 	appId,
-          // }));
-
-          this._queuedLimitedPolicy = this._queuedLimitedPolicy.filter((id) => id !== policyId);
-        },
-        Math.max(0, nearlyExpired),
-        // A removal still to come doesn't keep the process running; the policy grants nothing past its limit anyway
-      ).unref();
-    });
-  }
-
-  async __removeUserPropertiesPolicySelection(userToken: Token, policy: Policy) {
-    // The token as it's stored now, not as it was when the removal was queued, up to a week before
-    const stored = (await Model.getCoreModel(TokenSchemaModel).findOne({
-      _id: Model.getCoreModel(TokenSchemaModel).createId(String(userToken.id)),
-    })) as Token | null;
-    if (!stored) return;
-
-    // The properties the policy's selection took the token by, see AccessControlPolicyMatch: not those of an @or branch
-    // that didn't
-    const tokenPolicyProps = { ...(stored.policyProperties ?? {}) };
-    const policySelectionKeys = AccessControlPolicyMatch.selectedKeys(policy.selection ?? {}, tokenPolicyProps);
-    policySelectionKeys.forEach((key) => {
-      delete tokenPolicyProps[key];
-    });
-
-    await Model.getCoreModel(TokenSchemaModel).setPolicyPropertiesById(userToken.id.toString(), tokenPolicyProps);
   }
 
   __getInnerObjectValue(originalObj: Record<string, unknown> | null) {

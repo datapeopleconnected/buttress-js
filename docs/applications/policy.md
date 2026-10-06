@@ -155,9 +155,15 @@ differently from a REST read: text without its case, and bare values not at all.
 
 ## Limit
 
-A policy with a `limit` grants nothing once the limit has passed. Buttress then removes the policy, and takes off the
-token the policy properties its selection took it by: each key the selection needs, and those of each `@or` branch
-that holds for the token, but not those of a branch that doesn't.
+A policy with a `limit` grants nothing once the limit has passed, and within about a minute Buttress removes it. A
+policy that selects tokens by a property named after itself, as a transient policy does (buttress-js-api's
+`createUserTransientPolicy` gives a user's token `{"<policy name>": true}`), also has that property taken off the
+tokens it selected, unless another policy whose limit hasn't passed selects by it too. No other policy property is
+changed.
+
+Earlier releases removed a policy only if a user's request came in during the week before its limit, and the process
+that served it was still running when the limit passed. They then took every property the selection named off that
+user's token, a property another policy selected the token by included, and left every other token as it was.
 
 A `limit` that isn't a date is refused when a policy is added, synced or updated. A policy stored by an earlier release
 with one grants nothing, and is left for you to correct; earlier releases read it as no limit, so the policy never

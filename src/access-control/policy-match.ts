@@ -98,23 +98,5 @@ class PolicyMatch {
     });
     return [...new Set(keys)];
   }
-
-  /**
-   * The policy properties a selection takes a token by: every key it needs, within its `@and` too, and the keys of each
-   * `@or` branch that holds for the token's properties. Not those of an `@or` branch that doesn't hold.
-   * @param {PolicySelection} selection
-   * @param {PolicyProperties} properties - the token's
-   * @return {string[]}
-   */
-  selectedKeys(selection: PolicySelection, properties: NonNullable<PolicyProperties>): string[] {
-    const keys = Object.entries(selection).flatMap(([key, criteria]) => {
-      if (!LOGICAL_KEYS.includes(key)) return [key];
-      if (!Array.isArray(criteria)) return [];
-      const branches = criteria.filter((branch) => isPlainObject(branch)) as PolicySelection[];
-      const taken = key === '@or' ? branches.filter((branch) => this.selects(branch, properties)) : branches;
-      return taken.flatMap((branch) => this.selectedKeys(branch, properties));
-    });
-    return [...new Set(keys)];
-  }
 }
 export default new PolicyMatch();

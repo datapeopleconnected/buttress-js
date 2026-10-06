@@ -29,6 +29,7 @@ import Logging from './helpers/logging.js';
 
 import { PolicyError } from './access-control/index.js';
 import { filterPolicyConfigs, isPolicyExpired } from './access-control/helpers.js';
+import { PolicyExpiry } from './access-control/policy-expiry.js';
 import AccessControlEnv, { ACEnv } from './access-control/env.js';
 import AccessControlFilters from './access-control/filter.js';
 import AccessControlProjection from './access-control/projection.js';
@@ -104,6 +105,9 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
   private _policyCache?: PolicyCache;
 
+  // The primary's: removes the policies whose limit has passed
+  private _policyExpiry?: PolicyExpiry;
+
   private _broadcastTokenBatchSize = 1000;
 
   // Each entity's activities, relayed one after another
@@ -151,6 +155,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
   override async clean() {
     this._shutdown = true;
+    this._policyExpiry?.stop();
 
     await super.clean();
 
@@ -179,6 +184,9 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
       if (!this._policyCache) throw new Error('No Policy Cache');
       await this._policyCache.initProcessing();
+
+      this._policyExpiry = new PolicyExpiry();
+      this._policyExpiry.start();
     }
 
     await this.__spawnWorkers();
