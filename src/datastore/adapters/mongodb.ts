@@ -693,8 +693,10 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
 
     if (_id === null) return false;
 
-    // The extra filter carries ids as strings, as any other query does
-    return this.collection?.countDocuments(this._query({ _id, ...extra })).then((count) => count > 0);
+    // The extra filter carries ids as strings, as any other query does. It goes beside the id under $and: spread in,
+    // an `id` of its own (the apps model's tenant clause) would become `_id` and replace the one asked for
+    const filter = Object.keys(extra).length === 0 ? { _id } : { $and: [{ _id }, extra] };
+    return this.collection?.countDocuments(this._query(filter)).then((count) => count > 0);
   }
 
   /*

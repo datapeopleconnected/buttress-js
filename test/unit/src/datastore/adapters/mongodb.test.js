@@ -567,6 +567,7 @@ describe('datastore/adapters/MongodbAdapter: queries', () => {
       { name: { $regex: 'x' } },
     ]);
   });
+
 });
 
 describe('datastore/adapters/MongodbAdapter:mergeUpdateOps', () => {
@@ -788,9 +789,9 @@ describe('datastore/adapters/MongodbAdapter: exists', () => {
 
     assert.strictEqual(await adapter.exists(ID, { _appId: APP_ID }), true);
 
-    const [filter] = filters;
-    assert(isObjectId(filter._id) && filter._id.toHexString() === ID);
-    assert(isObjectId(filter._appId) && filter._appId.toHexString() === APP_ID);
+    const [{ $and: [byId, extra] }] = filters;
+    assert(isObjectId(byId._id) && byId._id.toHexString() === ID);
+    assert(isObjectId(extra._appId) && extra._appId.toHexString() === APP_ID);
   });
 
   it('converts an extra filter given with operators', async () => {
@@ -798,8 +799,29 @@ describe('datastore/adapters/MongodbAdapter: exists', () => {
 
     await adapter.exists(ID, { _appId: { $in: [APP_ID] } });
 
-    const [filter] = filters;
-    assert(isObjectId(filter._appId.$in[0]) && filter._appId.$in[0].toHexString() === APP_ID);
+    const [{ $and: [, extra] }] = filters;
+    assert(isObjectId(extra._appId.$in[0]) && extra._appId.$in[0].toHexString() === APP_ID);
+  });
+
+  it('keeps the id asked for when the extra filter names an id of its own, as the apps tenant clause does', async () => {
+    const { adapter, filters } = createAdapter();
+
+    await adapter.exists(ID, { id: APP_ID });
+
+    const [{ $and: parts }] = filters;
+    assert.deepStrictEqual(
+      parts.map((part) => part._id.toHexString()),
+      [ID, APP_ID],
+    );
+  });
+
+  it('counts by the id alone when there is no extra filter', async () => {
+    const { adapter, filters } = createAdapter();
+
+    await adapter.exists(ID);
+
+    assert.deepStrictEqual(Object.keys(filters[0]), ['_id']);
+    assert.strictEqual(filters[0]._id.toHexString(), ID);
   });
 
   it('gives false for an invalid id without counting', async () => {
