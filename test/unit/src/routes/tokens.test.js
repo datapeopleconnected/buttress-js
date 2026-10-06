@@ -28,6 +28,8 @@ describe('routes/RoutesTokens:token cache', () => {
   let stored;
   // Ticks each findAll takes, in call order, one when none is given
   let loadTicks;
+  // How many of the next findAlls fail
+  let loadFailures;
   let findAll;
   let findOne;
 
@@ -37,10 +39,15 @@ describe('routes/RoutesTokens:token cache', () => {
   beforeEach(() => {
     stored = [{ id: 't1', value: 'known-1' }, { id: 't2', value: 'known-2' }];
     loadTicks = [];
+    loadFailures = 0;
     findAll = sinon.stub().callsFake(async () => {
       const snapshot = [...stored];
       const ticks = loadTicks.shift() ?? 1;
       for (let i = 0; i < ticks; i++) await tick();
+      if (loadFailures > 0) {
+        loadFailures--;
+        throw new Error('connection lost');
+      }
       return Readable.from(snapshot, { objectMode: true });
     });
     findOne = sinon.stub().callsFake(async (query) => {
@@ -118,6 +125,34 @@ describe('routes/RoutesTokens:token cache', () => {
     await Promise.all([first, cache.loadTokens()]);
 
     assert.strictEqual(await cache._getToken(req(), 'known-1'), null);
+  });
+
+  it('still runs the reload queued behind a load that fails, and drops a token deleted meanwhile', async () => {
+    const cache = await loaded();
+    loadFailures = 1;
+
+    const first = cache.loadTokens();
+    stored = stored.filter((t) => t.value !== 'known-1');
+    const queued = cache.loadTokens();
+
+    await assert.rejects(first, /connection lost/);
+    await queued;
+    assert.strictEqual(findAll.callCount, 2);
+    assert.strictEqual(await cache._getToken(req(), 'known-1'), null);
+  });
+
+  it('queues a reload again once a reload queued behind a failed load has run', async () => {
+    const cache = await loaded();
+    loadFailures = 1;
+
+    const first = cache.loadTokens();
+    const queued = cache.loadTokens();
+    await assert.rejects(first, /connection lost/);
+    await queued;
+
+    findAll.resetHistory();
+    await Promise.all([cache.loadTokens(), cache.loadTokens()]);
+    assert.strictEqual(findAll.callCount, 2);
   });
 
   it("doesn't cache a token found by value if the cache was reloaded meanwhile", async () => {
