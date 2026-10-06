@@ -18,7 +18,9 @@ import crypto from 'node:crypto';
 import Sugar from './sugar.js';
 
 import Errors from './errors.js';
+import Logging from './logging.js';
 import { decode as decodeValue, isDecodeError } from './codecs.js';
+import { isPlainObject } from './schema-definition.js';
 
 import Plugins from '../plugins/index.js';
 import Datastore from '../datastore/index.js';
@@ -55,6 +57,19 @@ interface PropertyConfig {
   __enum?: unknown[];
 }
 
+const RANDOM_STRING_CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+/**
+ * A cryptographically random string of letters and digits, each picked evenly from all 62 of them.
+ * @param {number} length
+ * @return {string}
+ */
+export const randomString = (length = 36) => {
+  let str = '';
+  for (let x = 0; x < length; x++) str += RANDOM_STRING_CHARS[crypto.randomInt(RANDOM_STRING_CHARS.length)];
+  return str;
+};
+
 /* ********************************************************************************
  *
  * SCHEMA HELPERS
@@ -70,17 +85,7 @@ const __getPropDefault = (config: PropertyConfig) => {
     case 'string':
       if (config.__default !== null || config.__default !== undefined) {
         if (config.__default === 'randomString') {
-          const length = 36;
-          const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-          const mask = 0x3d;
-
-          const bytes = crypto.randomBytes(length);
-          let str = '';
-          for (let x = 0; x < bytes.length; x++) {
-            const byte = bytes[x];
-            str += chars[byte & mask];
-          }
-          res = str;
+          res = randomString();
         } else {
           res = config.__default;
         }
@@ -315,6 +320,64 @@ export const decode = (obj: string): Schema[] => {
   // return JSON.parse(Schema.decodeKey(JSON.stringify(obj)));
 };
 
+/**
+ * What's wrong with one of a stored schema's items, as the code that sets up an app's schemas reads it, or null when
+ * it's a schema: an object with a name and a type, whose properties, extends and remotes, if it has them, are an
+ * object, a list of names, and a remote or a list of them. Its property definitions aren't checked; those were checked
+ * when it was saved, and one saved before that is still read as it was.
+ */
+const storedSchemaProblem = (item: unknown): string | null => {
+  if (!isPlainObject(item)) return "isn't an object";
+  if (typeof item.name !== 'string' || item.name === '') return 'has no name';
+  if (typeof item.type !== 'string') return 'has no type';
+  if (item.properties !== undefined && !isPlainObject(item.properties)) return "has properties that aren't an object";
+  if (
+    item.extends !== undefined &&
+    (!Array.isArray(item.extends) || item.extends.some((name) => typeof name !== 'string'))
+  ) {
+    return "has extends that isn't a list of names";
+  }
+  if (item.remotes && !(Array.isArray(item.remotes) ? item.remotes : [item.remotes]).every(isPlainObject)) {
+    return "has remotes that aren't objects";
+  }
+  return null;
+};
+
+/**
+ * An app's stored schema, or null when it can't be read: when it isn't JSON, isn't a list, or has an item that isn't
+ * a schema. That's logged, naming the app, so a caller going through every app can pass over this one rather than stop
+ * the apps after it getting theirs. The whole app is passed over, rather than only the item, so nothing writes back its
+ * schema without it. Anything else that fails is rethrown.
+ * @param {Object} app
+ * @param {string} [field] - `__rawSchema` reads the schema as the app last gave it, rather than as it was compiled
+ * @return {Schema[]|null}
+ */
+export const decodeStored = (
+  app: { id: string; __schema: string; __rawSchema?: string },
+  field: '__schema' | '__rawSchema' = '__schema',
+): Schema[] | null => {
+  const unreadable = (problem: string) => {
+    const what = field === '__rawSchema' ? 'stored raw schema' : 'stored schema';
+    Logging.logWarn(`Unable to read the ${what} of app ${app.id}: ${problem}`);
+    return null;
+  };
+
+  let decoded: unknown;
+  try {
+    decoded = decode(app[field] as string);
+  } catch (err: unknown) {
+    if (!(err instanceof SyntaxError)) throw err;
+    return unreadable(err.message);
+  }
+  if (!Array.isArray(decoded)) return unreadable("it isn't a list");
+  for (const [idx, item] of decoded.entries()) {
+    const problem = storedSchemaProblem(item);
+    if (problem) return unreadable(`its item ${idx} ${problem}`);
+  }
+
+  return decoded as Schema[];
+};
+
 export const encodeKey = (key: string) => {
   return key.replace(/\\/g, '\\\\').replace(/\$/g, '\\u0024').replace(/\./g, '\\u002e');
 };
@@ -375,7 +438,8 @@ export const merge = (schemasA: Schema[], schemasB: Schema[]): Schema[] => {
     if (!schema) {
       return schemasA.push(cS);
     }
-    schema.properties = Object.assign(schema.properties, cS.properties);
+    // A schema can leave its properties out
+    schema.properties = Object.assign(schema.properties ?? {}, cS.properties);
     schemasA[appSchemaIdx] = schema;
   });
 

@@ -163,6 +163,10 @@ describe('Error contract', async () => {
 			404, 'unknown_lambda_endpoint'],
 		['a system token for an admin route, given in the URL', () => [`${ENDPOINT.REST}/api/v1/admin/activate/${Config.testToken}`, { method: 'GET' }],
 			400, 'token_in_url_not_supported'],
+		['an admin install with neither a token nor a body', () => [`${ENDPOINT.REST}/api/v1/admin/install-lambda`, { method: 'POST' }],
+			401, 'missing_token'],
+		['an admin install with a system token but no body', () => [`${ENDPOINT.REST}/api/v1/admin/install-lambda`, { method: 'POST' }, Config.testToken],
+			400, 'invalid_body'],
 
 		// Ids that name nothing the caller can reach, and ids that can't be one
 		['a policy id nothing has', () => [core(`policy/${NOBODYS_ID}`), { method: 'GET' }, appToken()],
@@ -181,6 +185,8 @@ describe('Error contract', async () => {
 			404, 'not_found', () => ({ schema: 'secureStore', id: NOBODYS_ID })],
 		['a data sharing agreement id nothing has', () => [core(`app-data-sharing/${NOBODYS_ID}`), { method: 'GET' }, appToken()],
 			404, 'not_found'],
+		['a policy property list for an api path no app has', () => [core('app/policy-property-list/no-such-app-path'), { method: 'GET' }, Config.testToken],
+			404, 'not_found', { schema: 'app', apiPath: 'no-such-app-path' }],
 		['a note id nothing has', () => [notes(`/${NOBODYS_ID}`), { method: 'GET' }, appToken()],
 			404, 'not_found', () => ({ schema: 'note', id: NOBODYS_ID })],
 		["another app's note id", () => [notes(`/${testEnv.otherNote.id}`), { method: 'GET' }, appToken()],
@@ -242,6 +248,12 @@ describe('Error contract', async () => {
 			400, 'invalid_update'],
 		["a note the caller's policy wouldn't let it read", () => [notes(), post({ text: 'not mine' }), writerToken()],
 			403, 'access_denied', { schema: 'note', index: 0 }],
+		['a search with a negative skip', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ skip: -1 }) }, appToken()],
+			400, 'invalid_value_skip'],
+		['a search with a negative limit', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ limit: -1 }) }, appToken()],
+			400, 'invalid_value_limit'],
+		['a core search with a negative skip', () => [core('policy'), { method: 'QUERY', headers: json, body: JSON.stringify({ skip: -1 }) }, appToken()],
+			400, 'invalid_value_skip'],
 		['a search on a date it cannot read', () => [notes(), { method: 'QUERY', headers: json, body: JSON.stringify({ query: { due: { $gtDate: 'not a date' } } }) }, appToken()],
 			400, 'invalid_value', { path: 'due', expected: 'date' }],
 	];

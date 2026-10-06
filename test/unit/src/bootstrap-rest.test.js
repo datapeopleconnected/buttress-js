@@ -20,12 +20,14 @@ import sinon from 'sinon';
 import createConfig from '@dpc/node-env-obj';
 import Express from 'express';
 import cluster from 'node:cluster';
+import { Readable } from 'node:stream';
 
 import BootstrapRest, { parseTrustProxy } from '../../../dist/bootstrap-rest.js';
 import DatastoreManager from '../../../dist/datastore/index.js';
 import Model from '../../../dist/model/index.js';
 import Plugins from '../../../dist/plugins/index.js';
 import Routes from '../../../dist/routes/index.js';
+import Logging from '../../../dist/helpers/logging.js';
 
 const Config = createConfig();
 
@@ -207,5 +209,74 @@ describe('bootstrap-rest:schema changes waited on', () => {
 		bootstrapRest.__onWorkerExit(0);
 
 		sinon.assert.calledOnce(bootstrapRest.__nrp.emit);
+	});
+});
+
+describe('bootstrap-rest:__updateAppSchema', () => {
+	afterEach(() => sinon.restore());
+
+	const app = (id, __schema) => ({ id, name: id, __schema });
+	const schema = (name) => ({ name, type: 'collection', properties: {} });
+
+	// A REST main over the apps given, with one local schema, noting the schemas it stores
+	function createMain(apps, updateSchema = sinon.stub().resolves()) {
+		const bootstrapRest = new BootstrapRest();
+		sinon.stub(bootstrapRest, '_getLocalSchemas').returns([schema('note')]);
+		sinon.stub(Model, 'getCoreModel').returns({
+			setLocalSchema: () => {},
+			findAll: async () => Readable.from(apps),
+			updateSchema,
+		});
+		return { bootstrapRest, updateSchema };
+	}
+
+	for (const [label, stored] of [
+		["isn't JSON", '[{"name": "car", '],
+		["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
+		['is null', 'null'],
+		['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+		['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
+	]) {
+		it(`should pass over an app whose stored schema ${label}, and add the local schemas to the apps after it`, async () => {
+			const warn = sinon.stub(Logging, 'logWarn');
+			const { bootstrapRest, updateSchema } = createMain([
+				app('app-1', JSON.stringify([schema('boat')])),
+				app('app-2', stored),
+				app('app-3', JSON.stringify([schema('car')])),
+			]);
+
+			await bootstrapRest.__updateAppSchema();
+
+			assert.deepStrictEqual(
+				updateSchema.args.map(([appId, schemas]) => [appId, schemas.map((s) => s.name)]),
+				[
+					['app-1', ['boat', 'note']],
+					['app-3', ['car', 'note']],
+				],
+			);
+			sinon.assert.calledOnceWithMatch(warn, 'app-2');
+		});
+	}
+
+	it(`should add a local schema's properties to an app's schema of that name that leaves its properties out`, async () => {
+		const { bootstrapRest, updateSchema } = createMain([
+			app('app-1', JSON.stringify([{ name: 'note', type: 'collection' }])),
+		]);
+		bootstrapRest._getLocalSchemas.returns([{ ...schema('note'), properties: { text: { __type: 'string' } } }]);
+
+		await bootstrapRest.__updateAppSchema();
+
+		sinon.assert.calledOnceWithExactly(updateSchema, 'app-1', [
+			{ name: 'note', type: 'collection', properties: { text: { __type: 'string' } } },
+		]);
+	});
+
+	it(`should still fail on an error that is not about the stored schema`, async () => {
+		const { bootstrapRest } = createMain(
+			[app('app-1', JSON.stringify([schema('car')]))],
+			sinon.stub().rejects(new Error('datastore went away')),
+		);
+
+		await assert.rejects(bootstrapRest.__updateAppSchema(), /datastore went away/);
 	});
 });

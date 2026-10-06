@@ -34,13 +34,14 @@ import type { RequestWithBody } from '../types/routes.js';
 type AdminLambdaKey = keyof typeof adminLambda;
 type AdminLambda = (typeof adminLambda)[AdminLambdaKey][number];
 
-// A config in admin-policy.json as _createAdminPolicy reads it. It expects an array query to hold items with a
-// `schema`, `id` and `_appId`, but they're plain queries with no `schema`, so `q.schema.includes()` throws.
+// A config in admin-policy.json as _createAdminPolicy reads it: the schemas it's for, and its query, or a list of them
+type AdminPolicyQuery = Record<string, unknown> & { id?: unknown; _appId?: unknown };
 type AdminPolicyConfig = {
-  query?: Record<string, unknown> | { schema: string[]; id?: unknown; _appId?: unknown }[];
+  schema: string[];
+  query?: AdminPolicyQuery | AdminPolicyQuery[];
 };
 
-type InstallLambdaRequest = RequestWithBody<{ installLambda?: string[]; refreshAdminToken?: unknown }>;
+type InstallLambdaRequest = RequestWithBody<{ installLambda?: string[]; refreshAdminToken?: unknown } | undefined>;
 
 type PolicyPropertiesListArray = Extract<App['policyPropertiesList'][string], unknown[]>;
 
@@ -132,8 +133,6 @@ class AdminRoutes {
       if (req.query?.token !== undefined) throw tokenInURL();
 
       const tokenValue = bearerToken(req);
-      const lambdaToInstall: string[] | undefined = req.body.installLambda;
-      const refreshAdminToken: unknown = req.body.refreshAdminToken;
       if (!tokenValue) throw missingToken();
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         value: tokenValue,
@@ -142,6 +141,10 @@ class AdminRoutes {
       if (adminToken.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
         throw Helpers.Errors.forbidden('insufficient_authority', 'Only a system token can install admin lambdas');
       }
+
+      // Read once the token is known to be allowed: a request without a body has none
+      const lambdaToInstall: string[] | undefined = req.body?.installLambda;
+      const refreshAdminToken: unknown = req.body?.refreshAdminToken;
       if (!lambdaToInstall || !Array.isArray(lambdaToInstall)) {
         throw Helpers.Errors.badRequest('invalid_body', 'installLambda must be a list of admin lambda names');
       }
@@ -241,31 +244,35 @@ class AdminRoutes {
    * @param {String} appId
    */
   async _createAdminPolicy(appId: string) {
-    for await (const policy of adminPolicy) {
+    for await (const template of adminPolicy) {
       const policyDB = await Model.getCoreModel(PolicySchemaModel).findOne({
         name: {
-          $eq: policy.name,
+          $eq: template.name,
         },
       });
 
       if (policyDB) continue;
 
+      // Filled in for the app, leaving the imported template as it is
+      const policy = structuredClone(template);
       const name = policy.name.replace(/[\s-]+/g, '_').toUpperCase();
       if (name.toUpperCase() === 'ADMIN_LAMBDA_ACCESS') {
+        // Its configs reach only the admin app: the app config's `id`, and the user and token configs' `_appId`, are
+        // `{'@eq': null}` until the app is known. The schemas are the config's, not its queries'.
         (policy.config as AdminPolicyConfig[]).forEach((conf) => {
-          if (!conf.query || !Array.isArray(conf.query)) return;
+          if (!conf.query) return;
 
-          const appQueryIdx = conf.query.findIndex((q) => q.schema.includes('app'));
-          const userQueryIdx = conf.query.findIndex((q) => q.schema.includes('user'));
-          if (appQueryIdx !== -1 && conf.query[appQueryIdx].id) {
-            conf.query[appQueryIdx].id = {
-              '@eq': appId,
-            };
-          }
-          if (userQueryIdx !== -1) {
-            conf.query[userQueryIdx]._appId = {
-              '@eq': appId,
-            };
+          for (const query of Array.isArray(conf.query) ? conf.query : [conf.query]) {
+            if (conf.schema.includes('app') && query.id) {
+              query.id = {
+                '@eq': appId,
+              };
+            }
+            if (conf.schema.includes('user') || conf.schema.includes('token')) {
+              query._appId = {
+                '@eq': appId,
+              };
+            }
           }
         });
       }

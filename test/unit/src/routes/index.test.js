@@ -19,8 +19,11 @@ import assert from 'assert';
 import sinon from 'sinon';
 import createConfig from '@dpc/node-env-obj';
 import Express from 'express';
+import { Readable } from 'node:stream';
 
 import Routes from '../../../../dist/routes/index.js';
+import Model from '../../../../dist/model/index.js';
+import Logging from '../../../../dist/helpers/logging.js';
 
 const Config = createConfig();
 
@@ -442,5 +445,57 @@ describe('routes/Routes:_handleEarlyError', () => {
     routes._handleEarlyError(new Error('boom'), {}, {}, next);
 
     assert.ok(next.calledOnceWithExactly());
+  });
+});
+
+describe('routes/Routes:initAppRoutes', () => {
+  const app = (id, __schema) => ({ id, name: id, apiPath: id, __schema });
+  const schema = (name) => ({ name, type: 'collection', extends: [], properties: {} });
+
+  // Routes over the apps given, with no data sharing agreements, noting the schema routes it would set up
+  function createAppRoutes(apps, { find = async () => Readable.from([]) } = {}) {
+    sinon.stub(Model, 'getCoreModel').returns({ findAll: async () => Readable.from(apps), find });
+    const { routes } = createRoutes();
+    const built = [];
+    sinon.stub(routes, '_initSchemaRoutes').callsFake((router, app, schema) => built.push([app.id, schema.name]));
+    return { routes, built };
+  }
+
+  for (const [label, stored] of [
+    ["isn't JSON", '[{"name": "car", '],
+    ["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
+    ['is null', 'null'],
+    ['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+    ['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
+  ]) {
+    it(`passes over an app whose stored schema ${label}, and sets up the routes of the apps after it`, async () => {
+      const warn = sinon.stub(Logging, 'logWarn');
+      const { routes, built } = createAppRoutes([
+        app('app-1', JSON.stringify([schema('boat')])),
+        app('app-2', stored),
+        app('app-3', JSON.stringify([schema('car')])),
+      ]);
+
+      await routes.initAppRoutes();
+
+      assert.deepStrictEqual(built, [
+        ['app-1', 'boat'],
+        ['app-3', 'car'],
+      ]);
+      assert.ok(routes._routerMap['app-1']);
+      assert.strictEqual(routes._routerMap['app-2'], undefined);
+      assert.ok(routes._routerMap['app-3']);
+      sinon.assert.calledOnceWithMatch(warn, 'app-2');
+    });
+  }
+
+  it('still fails on an error that is not about the stored schema', async () => {
+    const { routes } = createAppRoutes([app('app-1', JSON.stringify([schema('car')]))], {
+      find: async () => {
+        throw new Error('datastore went away');
+      },
+    });
+
+    await assert.rejects(routes.initAppRoutes(), /datastore went away/);
   });
 });

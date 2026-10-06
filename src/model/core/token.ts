@@ -14,8 +14,6 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import Crypto from 'node:crypto';
-
 import StandardModel from '../type/standard.js';
 import { TenantKey } from '../type/tenant-scoped.js';
 import type { AdapterQuery } from '../../types/datastore.js';
@@ -181,18 +179,7 @@ class TokenSchemaModel extends StandardModel<Token> {
    * @return {string} - cryptographically secure token string
    */
   createTokenString() {
-    const length = 36;
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    const mask = 0x3d;
-    let string = '';
-
-    const bytes = Crypto.randomBytes(length);
-    for (let x = 0; x < bytes.length; x++) {
-      const byte = bytes[x];
-      string += chars[byte & mask];
-    }
-
-    return string;
+    return Helpers.Schema.randomString(36);
   }
 
   /*

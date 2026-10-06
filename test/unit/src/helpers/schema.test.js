@@ -14,10 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
+import sinon from 'sinon';
 
 import * as Helpers from '../../../../dist/helpers/index.js';
+import Logging from '../../../../dist/helpers/logging.js';
 import { parseDocument } from '../../../../dist/model/parse-document.js';
 
 describe('model/parse-document:parseDocument', () => {
@@ -193,4 +195,93 @@ describe('helpers.schema:stripPrivate', () => {
     const value = user();
     assert.strictEqual(Helpers.Schema.stripPrivate(value, []), value);
   });
+});
+
+describe('helpers.schema:decodeStored', () => {
+	afterEach(() => sinon.restore());
+
+	it("gives an app's stored schema", () => {
+		const schemas = [{ name: 'car', type: 'collection', properties: {} }];
+		assert.deepStrictEqual(Helpers.Schema.decodeStored({ id: 'app-1', __schema: JSON.stringify(schemas) }), schemas);
+	});
+
+	for (const [label, stored] of [
+		["isn't JSON", '[{"name": "car", '],
+		["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
+		['is null', 'null'],
+		['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+		['holds a list', JSON.stringify([[{ name: 'car', type: 'collection', properties: {} }]])],
+		['holds a schema with no name', JSON.stringify([{ type: 'collection', properties: {} }])],
+		['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
+		["holds a schema whose properties aren't an object", JSON.stringify([{ name: 'car', type: 'collection', properties: 'name' }])],
+		["holds a schema whose extends isn't a list of names", JSON.stringify([{ name: 'car', type: 'collection', extends: [null] }])],
+		["holds a schema whose remotes aren't objects", JSON.stringify([{ name: 'car', type: 'collection', remotes: [null] }])],
+	]) {
+		it(`gives null for a stored schema that ${label}, and logs it naming the app`, () => {
+			const warn = sinon.stub(Logging, 'logWarn');
+
+			assert.strictEqual(Helpers.Schema.decodeStored({ id: 'app-2', __schema: stored }), null);
+
+			sinon.assert.calledOnceWithMatch(warn, 'app-2');
+		});
+	}
+
+	it('reads a schema that leaves out what it can, or gives one remote rather than a list', () => {
+		const schemas = [
+			{ name: 'base', type: 'template' },
+			{ name: 'car', type: 'collection', extends: ['base'], remotes: { name: 'partner', schema: 'car' } },
+		];
+		const warn = sinon.stub(Logging, 'logWarn');
+
+		assert.deepStrictEqual(Helpers.Schema.decodeStored({ id: 'app-1', __schema: JSON.stringify(schemas) }), schemas);
+		sinon.assert.notCalled(warn);
+	});
+
+	it('reads the raw schema, saying so when it can\'t', () => {
+		const warn = sinon.stub(Logging, 'logWarn');
+		const raw = [{ name: 'car', type: 'collection', properties: {} }];
+		const app = { id: 'app-1', __schema: '[', __rawSchema: JSON.stringify(raw) };
+
+		assert.deepStrictEqual(Helpers.Schema.decodeStored(app, '__rawSchema'), raw);
+		assert.strictEqual(Helpers.Schema.decodeStored({ ...app, __rawSchema: '{}' }, '__rawSchema'), null);
+		sinon.assert.calledOnceWithMatch(warn, 'stored raw schema of app app-1');
+	});
+
+	it("rethrows what isn't the stored schema failing to read", () => {
+		const warn = sinon.stub(Logging, 'logWarn');
+		const __schema = {
+			toString() {
+				throw new Error('not the schema');
+			},
+		};
+
+		assert.throws(() => Helpers.Schema.decodeStored({ id: 'app-1', __schema }), /not the schema/);
+		sinon.assert.notCalled(warn);
+	});
+});
+
+describe('helpers.schema:merge', () => {
+	it("adds a schema's properties to the one of its name, and the schemas it lacks", () => {
+		const merged = Helpers.Schema.merge(
+			[{ name: 'note', type: 'collection', properties: { title: { __type: 'string' } } }],
+			[
+				{ name: 'note', type: 'collection', properties: { text: { __type: 'string' } } },
+				{ name: 'person', type: 'collection', properties: {} },
+			],
+		);
+
+		assert.deepStrictEqual(merged, [
+			{ name: 'note', type: 'collection', properties: { title: { __type: 'string' }, text: { __type: 'string' } } },
+			{ name: 'person', type: 'collection', properties: {} },
+		]);
+	});
+
+	it('adds the properties to a schema of that name that leaves its properties out', () => {
+		const merged = Helpers.Schema.merge(
+			[{ name: 'note', type: 'collection' }],
+			[{ name: 'note', type: 'collection', properties: { text: { __type: 'string' } } }],
+		);
+
+		assert.deepStrictEqual(merged, [{ name: 'note', type: 'collection', properties: { text: { __type: 'string' } } }]);
+	});
 });

@@ -392,6 +392,52 @@ describe('access-control/AccessControl:accessControlPolicyMiddleware', () => {
   });
 });
 
+describe('access-control/AccessControl:__cacheAppSchema', () => {
+  const stubApp = (findById) =>
+    sinon.stub(Model, 'getCoreModel').callsFake((model) => {
+      if (model === AppSchemaModel) return { findById };
+      throw new Error(`Unexpected model requested in test: ${model?.name}`);
+    });
+
+  it("caches an app's collections", async () => {
+    const car = { name: 'car', type: 'collection', properties: {} };
+    const stored = JSON.stringify([car, { name: 'base', type: 'template', properties: {} }]);
+    stubApp(async (id) => ({ id, __schema: stored }));
+    const instance = createInstance();
+
+    await instance.__cacheAppSchema('app-1');
+
+    assert.deepStrictEqual(instance._schemas['app-1'], [car]);
+  });
+
+  for (const [label, stored] of [
+    ["isn't JSON", '[{"name": "car", '],
+    ["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
+    ['is null', 'null'],
+    ['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+    ['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
+  ]) {
+    it(`caches no schemas for an app whose stored schema ${label}, and logs it naming the app`, async () => {
+      const warn = sinon.stub(Logging, 'logWarn');
+      stubApp(async (id) => ({ id, __schema: stored }));
+      const instance = createInstance();
+
+      await instance.__cacheAppSchema('app-2');
+
+      assert.deepStrictEqual(instance._schemas['app-2'], []);
+      sinon.assert.calledOnceWithMatch(warn, 'app-2');
+    });
+  }
+
+  it('still fails on an error that is not about the stored schema', async () => {
+    stubApp(async () => {
+      throw new Error('datastore went away');
+    });
+
+    await assert.rejects(createInstance().__cacheAppSchema('app-1'), /datastore went away/);
+  });
+});
+
 describe('access-control/AccessControl:__getInnerObjectValue', () => {
   it('returns null unchanged', () => {
     const instance = createInstance();
