@@ -453,7 +453,15 @@ export default class AppSchemaModel extends StandardModel<App> {
           continue;
         }
 
+        // A partner that answers with something other than a list of schemas is left out, as one that's down is
+        if (!Array.isArray(remoteSchema)) {
+          Logging.logWarn(`Unable to merge the schema of data sharing ${DSA.id} partner: it didn't answer with a list`);
+          continue;
+        }
+
         remoteSchema.forEach((rs) => {
+          if (!rs || typeof rs !== 'object') return;
+
           schemaWithRemoteRef
             .filter((s) => {
               if (!s.remotes) return false;
