@@ -19,7 +19,7 @@ rounds of 3 seconds each, about a minute and a half in total. It prints a summar
 | --- | --- |
 | get-one | GET one record by id |
 | list | GET all 1,000 records, streamed |
-| search | SEARCH records by name |
+| search | QUERY records by name (SEARCH on a build from before QUERY) |
 | post | POST one record |
 | put | PUT a path update to a record |
 
