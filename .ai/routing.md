@@ -64,8 +64,9 @@ share:
    Authority is ranked by array position in `Constants.Type` (`AuthTypeOrder = Object.values(Constants.Type)`
    = `[user, dataSharing, lambda, app, system]`), so `system` outranks `app` outranks `lambda` outranks
    `dataSharing` outranks `user` — a route with `authType = Constants.Type.USER` (the default) accepts
-   any token type. There are separate `app`/`dataSharing` branches after this check that currently just
-   `resolve()` with no extra logic (marked `// NOT GOOD` in source for the `dataSharing` case) — don't
+   any token type. A route whose `authType` isn't one of those refuses every request with 500 `internal_error`
+   (`isKnownAuthType`), and `Routes` logs it as the route is set up. There are separate `app`/`dataSharing`
+   branches after this check that currently just `resolve()` with no extra logic (marked `// NOT GOOD` in source for the `dataSharing` case) — don't
    assume they enforce anything beyond the authority check above.
 2. `_validate(req, res)` then `_exec(req, res, validate)` — the only two methods subclasses must implement.
 3. `_respond()` — if `_exec` returned a `Stream.Readable`, pipes it through `JSONStringifyStream` (with

@@ -151,8 +151,13 @@ export const QUERY_MEDIA_TYPES = ['application/json'];
 // When SEARCH was deprecated in favour of QUERY, as the Deprecation header gives it (RFC 9745): 2026-10-05
 const SEARCH_DEPRECATED_AT = '@1791158400';
 
-const AuthTypeOrder = Object.values(Constants.Type);
+const AuthTypeOrder: string[] = Object.values(Constants.Type);
 const authTypeIdx = (type: string) => AuthTypeOrder.indexOf(type);
+
+// Whether a route's auth type is one of the order's. Any other would rank below every token, so a route with one
+// refuses every request rather than letting every token through.
+export const isKnownAuthType = (type: unknown): type is string =>
+  typeof type === 'string' && AuthTypeOrder.includes(type);
 
 // A valid token that can't call the route
 const insufficientAuthority = () =>
@@ -886,7 +891,12 @@ export default class Route {
         return reject(Helpers.Errors.unauthorised('missing_token', 'A token is required'));
       }
 
-      if (this.authType && authTypeIdx(req.context.token.type) < authTypeIdx(this.authType)) {
+      if (!isKnownAuthType(this.authType)) {
+        this.log(`EAUTH: UNKNOWN AUTH TYPE ${String(this.authType)}`, Logging.Constants.LogLevel.ERR, req.context.id);
+        return reject(Helpers.Errors.internal(`Route ${this.name} has an unknown auth type: ${String(this.authType)}`));
+      }
+
+      if (authTypeIdx(req.context.token.type) < authTypeIdx(this.authType)) {
         this.log(
           `EAUTH: INSUFFICIENT AUTHORITY ${req.context.token.type} is not equal to ${this.authType}`,
           Logging.Constants.LogLevel.ERR,

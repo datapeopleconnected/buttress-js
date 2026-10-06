@@ -234,6 +234,26 @@ describe('routes/Route:_authenticate', () => {
     );
   });
 
+  // An unknown auth type would rank below every token type, letting every token through (SR-DPC-001 S12)
+  for (const [label, authType] of [
+    ['an unknown auth type', 'admin'],
+    ['no auth type', undefined],
+    ['an empty auth type', ''],
+  ]) {
+    it(`refuses every token on a route with ${label}`, async () => {
+      const route = createRoute();
+      route.authType = authType;
+
+      for (const type of Object.values(Route.Constants.Type)) {
+        await assert.rejects(
+          () => route._authenticate(createReq({ token: { type } }), createRes()),
+          (err) => err.status === 500 && err.code === 'internal_error',
+          type,
+        );
+      }
+    });
+  }
+
   it('resolves for an app token, bypassing schema checks', async () => {
     const route = createRoute();
     const req = createReq({ token: { type: 'app' } });

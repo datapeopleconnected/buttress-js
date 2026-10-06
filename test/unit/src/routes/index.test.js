@@ -322,8 +322,10 @@ describe('routes/Routes:_dispatchRouters', () => {
 describe('routes/Routes:_initRoute', () => {
   class FakeRoute {
     constructor() {
+      this.name = 'widget';
       this.paths = ['/widget', '/widget/:id'];
       this.verb = 'get';
+      this.authType = 'app';
       this.exec = sinon.stub().resolves('exec-result');
     }
   }
@@ -354,6 +356,26 @@ describe('routes/Routes:_initRoute', () => {
 
     assert.strictEqual(req.context.pathSpec, '/widget');
     assert.strictEqual(next.called, false, 'next() should not be invoked when exec() resolves');
+  });
+
+  // Such a route refuses every request (SR-DPC-001 S12)
+  it('reports a route whose auth type is not a known one', () => {
+    const { routes, app } = createRoutes();
+    const logError = sinon.stub(Logging, 'logError');
+
+    routes._initRoute(app, FakeRoute, true);
+    assert.strictEqual(logError.callCount, 0);
+
+    class UnknownAuthRoute extends FakeRoute {
+      constructor() {
+        super();
+        this.authType = 'admin';
+      }
+    }
+    routes._initRoute(app, UnknownAuthRoute, true);
+
+    assert.strictEqual(logError.callCount, 1);
+    assert.match(logError.firstCall.args[0], /widget has an unknown auth type admin/);
   });
 
   it('forwards a rejected exec() to next()', async () => {

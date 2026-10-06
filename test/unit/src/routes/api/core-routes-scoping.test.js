@@ -82,6 +82,14 @@ describe('routes/api: every core route reaches core rows through the scoped mode
     assert.ok(routes.length > 90, `only ${routes.length} routes`);
   });
 
+  // A route with any other refuses every request (SR-DPC-001 S12), and the checks below go by it
+  it('gives every route a known auth type', () => {
+    const known = Object.values(Route.Constants.Type);
+    const unknown = routes.filter(({ route }) => !known.includes(route.authType)).map(({ RouteClass, route }) => `${RouteClass.name}: ${route.authType}`);
+
+    assert.deepStrictEqual(unknown, []);
+  });
+
   it('uses Model.getCoreModel() only for what touches no rows', () => {
     const uses = routes.flatMap(({ RouteClass, source }) => coreModelRowUses(source).map((use) => `${RouteClass.name}: ${use}`));
 
