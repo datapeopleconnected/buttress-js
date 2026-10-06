@@ -162,7 +162,8 @@ export class PolicyEnv {
   __setObjectValueByPath(obj: object, path: (string | number)[], value: unknown) {
     const lastKey = path.pop();
     const parent = path.reduce<DynamicRow>((current, key) => current[key] as DynamicRow, obj as DynamicRow);
-    if (parent && lastKey) {
+    // A list's first item is at 0, so the key is checked for being there rather than for being truthy
+    if (parent && lastKey !== undefined) {
       parent[lastKey] = value;
     }
   }

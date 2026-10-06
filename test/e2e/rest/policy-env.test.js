@@ -20,6 +20,7 @@ import assert from 'node:assert';
 import {
 	createApp,
 	createPolicy,
+	createPolicyUser,
 	updatePolicyPropertyList,
 	updateSchema,
 	bjsReq,
@@ -45,6 +46,10 @@ describe('Policy limit and env', async () => {
 		config: [{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }],
 		...overrides,
 	});
+	const readNotes = async (user) => (await bjsReq({
+		url: `${ENDPOINT.REST}/${env.app.apiPath}/api/v1/note`,
+		method: 'GET',
+	}, env.users[user].tokens[0].value)).map((note) => note.text).sort();
 
 	before(async function () {
 		this.timeout(60000);
@@ -58,7 +63,7 @@ describe('Policy limit and env', async () => {
 			createApp(ENDPOINT.REST, 'Test Policy Env', 'test-policy-env')
 		, scope);
 		await runStep('allow policy properties', async () => updatePolicyPropertyList(ENDPOINT.REST, {
-			envCase: ['limit'],
+			envCase: ['limit', 'lookup'],
 		}, env.app.token), scope);
 		await runStep('add the note schema', async () => updateSchema(ENDPOINT.REST, [{
 			name: 'note',
@@ -68,6 +73,30 @@ describe('Policy limit and env', async () => {
 		await runStep('add notes', async () =>
 			bjsReqPost(`${ENDPOINT.REST}/${env.app.apiPath}/api/v1/note`, [{ text: 'a' }, { text: 'b' }, { text: 'c' }], env.app.token)
 		, scope);
+
+		await runStep('create policies', async () => {
+			// Looks up the notes whose text is either env value, which a list in the lookup's query names
+			await createPolicy(ENDPOINT.REST, policy('policy-env-lookup', {
+				selection: { envCase: { '@eq': 'lookup' } },
+				env: {
+					first: 'a',
+					second: 'b',
+					noteIds: {
+						collection: 'note',
+						type: 'array',
+						query: { text: { '@in': ['#env.first', '#env.second'] } },
+						output: { key: 'id', type: 'id' },
+					},
+				},
+				config: [{ verbs: ['GET'], schema: ['note'], query: { id: { '@in': '#env.noteIds' } } }],
+			}), env.app.token);
+		}, scope);
+
+		await runStep('create users', async () => {
+			for (const envCase of ['lookup']) {
+				env.users[envCase] = await createPolicyUser(ENDPOINT.REST, env.app, `policy-env-${envCase}`, { envCase });
+			}
+		}, scope);
 	});
 
 	after(async function () {
@@ -99,5 +128,10 @@ describe('Policy limit and env', async () => {
 		} finally {
 			await bjsReq({ url: `${ENDPOINT.REST}/api/v1/policy/${limited.id}`, method: 'DELETE' }, env.app.token);
 		}
+	});
+
+	// SR-DPC-001 C11: the first #env reference in a list was left as its text, so the lookup found only note b
+	it("Should read every #env reference in a list in an env lookup's query", async () => {
+		assert.deepStrictEqual(await readNotes('lookup'), ['a', 'b']);
 	});
 });

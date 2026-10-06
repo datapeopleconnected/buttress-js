@@ -134,6 +134,14 @@ describe('access-control/env:__setObjectValueByPath', () => {
     AccessControlEnv.__setObjectValueByPath(obj, ['a', 'b'], 'new');
     assert.strictEqual(obj.a.b, 'new');
   });
+
+  // SR-DPC-001 C11: index 0 was taken as no key, so a list's first item was never set
+  it("sets a list's first item", () => {
+    const obj = { ids: ['old', 'old'] };
+    AccessControlEnv.__setObjectValueByPath(obj, ['ids', 0], 'first');
+    AccessControlEnv.__setObjectValueByPath(obj, ['ids', 1], 'second');
+    assert.deepStrictEqual(obj.ids, ['first', 'second']);
+  });
 });
 
 describe('access-control/env: collection lookups', () => {
@@ -192,6 +200,17 @@ describe('access-control/env: collection lookups', () => {
     const result = await AccessControlEnv.getEnvValue('#env.boardIds', envVars());
 
     assert.deepStrictEqual(result, []);
+  });
+
+  // SR-DPC-001 C11: the first #env reference in a list was left as its text
+  it("reads every #env reference in a list in the lookup's query, the first one included", async () => {
+    const queries = stubBoardModel([{ id: BOARD_IDS[0] }]);
+    const env = { ...envVars(), first: 'one', second: 'two' };
+    env.boardIds.query = { name: { '@in': ['#env.first', '#env.second'] } };
+
+    await AccessControlEnv.getEnvValue('#env.boardIds', env);
+
+    assert.deepStrictEqual(queries, [{ name: { $in: ['one', 'two'] } }]);
   });
 
   it("gives an empty array for a collection the app doesn't have", async () => {
