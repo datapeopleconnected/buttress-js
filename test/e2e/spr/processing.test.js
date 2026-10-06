@@ -652,6 +652,28 @@ describe('Processing', async () => {
 		});
 	});
 
+	describe("A deleted user's tokens (SR-DPC-001 S10)", () => {
+		it("Should close the socket of a token made for the user after it, as it does the first token's", async function () {
+			this.timeout(20000);
+			const user = await createPolicyUser(ENDPOINT.REST, testEnv.apps.app1, 'deleted-user-tokens', { adminAccess: true });
+			const second = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user/${user.id}/token`,
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ domains: [Config.app.host], policyProperties: { adminAccess: true } }),
+			}, testEnv.apps.app1.token);
+			const socket = io(`${ENDPOINT.SOCK}/${testEnv.apps.app1.apiPath}`, { auth: { token: second.value }, forceNew: true });
+			await new Promise((resolve) => socket.on('connect', resolve));
+			const disconnected = new Promise((resolve) => socket.on('disconnect', resolve));
+
+			await bjsReq({ url: `${ENDPOINT.REST}/api/v1/user/${user.id}`, method: 'DELETE' }, testEnv.apps.app1.token);
+			const reason = await Promise.race([disconnected, new Promise((r) => setTimeout(() => r('still connected'), 5000))]);
+			socket.close();
+
+			assert.strictEqual(reason, 'io server disconnect');
+		});
+	});
+
 	describe('Several sockets for one token', () => {
 		it("Should keep sending to a token's other sockets once one of them closes", async function () {
 			this.timeout(20000);

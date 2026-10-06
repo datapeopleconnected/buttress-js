@@ -684,29 +684,31 @@ class DeleteUser extends Route {
 
     const user = await this.scoped(req, UserSchemaModel).findByIdOrFail(id);
 
-    const userToken = await this.scoped(req, TokenSchemaModel).findOne({ _userId: user.id });
-    if (!userToken) {
+    // A user can have more than one token (CreateUserAuthToken adds them), and every one of them goes with the user
+    const userTokens = await Helpers.streamAll<Token>(
+      await this.scoped(req, TokenSchemaModel).find({ _userId: user.id }),
+    );
+    if (userTokens.length < 1) {
       this.log('ERROR: Can not find User token', Route.LogLevel.ERR);
       return Promise.reject(userTokenNotFound());
     }
 
-    if (req.context.token.value === userToken.value) {
+    const callerValue = req.context.token.value;
+    if (userTokens.some((token) => token.value === callerValue)) {
       this.log(`ERROR: A user could not delete itself`, Route.LogLevel.ERR);
       return Promise.reject(Helpers.Errors.badRequest('user_can_not_delete_itself'));
     }
 
     return {
       user,
-      token: userToken,
+      tokens: userTokens,
     };
   }
 
-  override async _exec(req: Request, res: Response, validate: { user: User; token: Token }) {
+  override async _exec(req: Request, res: Response, validate: { user: User; tokens: Token[] }) {
     await this.scoped(req, UserSchemaModel).rm(validate.user.id);
 
-    if (validate.token) {
-      await this.scoped(req, TokenSchemaModel).rm(validate.token.id);
-    }
+    await this.scoped(req, TokenSchemaModel).rmBulk(validate.tokens.map((token) => token.id));
 
     return true;
   }
