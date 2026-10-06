@@ -43,7 +43,7 @@
         }
       },
       {
-        "verbs": ["SEARCH"],
+        "verbs": ["QUERY"],
         "schema": ["token", "user"],
         "query": [
           {
