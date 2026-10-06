@@ -66,6 +66,11 @@ interface RequestSubscribeMessage {
   id: string;
 }
 
+// A request's id is an id as the datastore writes it, well within this
+const MAX_REQUEST_ID_LENGTH = 64;
+// The requests one socket can be subscribed to at once
+const MAX_REQUEST_SUBSCRIPTIONS = 100;
+
 // Set on an app namespace socket when it connects
 interface SocketData {
   type: string;
@@ -167,8 +172,10 @@ export default class BootstrapSocket extends Bootstrap {
     this._primaryDatastore = Datastore.createInstance(Config.datastore, true);
 
     // A map that holds reference to sockets which have subscribed to a request
-    // the map keys will expire after 5 minutes.
+    // the map keys will expire after 5 minutes, and are swept out then if nothing looks them up: a request that never
+    // ends, or an id no request has, would otherwise keep its socket for good.
     this._requestSockets = new Helpers.ExpireMap(5 * 60 * 1000);
+    this._requestSockets._gc();
   }
 
   override async init() {
@@ -512,17 +519,36 @@ export default class BootstrapSocket extends Bootstrap {
       Logging.log(`[${apiPath}][Global] Connected ${socket.id}`);
     }
 
+    // The requests this socket has subscribed to, which go when it does
+    const subscribed = new Set<string>();
     socket.on('bjs-request-subscribe', (data: RequestSubscribeMessage) => {
-      if (!data.id) return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} missing id`);
-      Logging.logSilly(`[${apiPath}] bjs-request-subscribe ${socket.id} ${data.id}`);
+      // A request's id is text; anything else is no request's, and as a key would never be looked up again
+      const id: unknown = data?.id;
+      if (typeof id !== 'string' || id.length < 1 || id.length > MAX_REQUEST_ID_LENGTH) {
+        return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} missing or invalid id`);
+      }
+      Logging.logSilly(`[${apiPath}] bjs-request-subscribe ${socket.id} ${id}`);
 
       // Check to see if there is already a socket subbing to this id.
-      const reqSock = this._requestSockets.get(data.id);
+      const reqSock = this._requestSockets.get(id);
       if (reqSock && socket !== reqSock)
         return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} already subscribed`);
 
-      // if the socket hasn't already been subscribed then we'll set it.
-      if (!reqSock) this._requestSockets.set(data.id, socket);
+      if (!reqSock) {
+        // Only the subscriptions still the socket's count: those that ended or expired have gone from the map
+        if (subscribed.size >= MAX_REQUEST_SUBSCRIPTIONS) {
+          for (const subscribedId of subscribed) {
+            if (this._requestSockets.get(subscribedId) !== socket) subscribed.delete(subscribedId);
+          }
+        }
+        if (subscribed.size >= MAX_REQUEST_SUBSCRIPTIONS) {
+          return Logging.logError(`[${apiPath}] bjs-request-subscribe ${socket.id} has too many subscriptions`);
+        }
+
+        // if the socket hasn't already been subscribed then we'll set it.
+        this._requestSockets.set(id, socket);
+        subscribed.add(id);
+      }
 
       socket.emit('bjs-request-subscribe-ack', data);
     });
@@ -535,6 +561,10 @@ export default class BootstrapSocket extends Bootstrap {
 
     socket.on('disconnect', () => {
       Logging.logSilly(`[${apiPath}] Disconnect ${socket.id}`);
+
+      for (const id of subscribed) {
+        if (this._requestSockets.get(id) === socket) this._requestSockets.delete(id);
+      }
 
       this.__nrp?.emit(
         'worker:socket:disconnect',

@@ -679,6 +679,8 @@ export class ExpireMap<K = unknown, V = unknown> extends Map<K, unknown> {
     this.clear();
   }
 
+  // Sweeps out what has expired every expireTime, whether or not it's looked up. The sweep doesn't keep the process
+  // alive.
   _gc() {
     this.gcTimeout = setTimeout(() => {
       for (const key of this.keys()) {
@@ -687,5 +689,6 @@ export class ExpireMap<K = unknown, V = unknown> extends Map<K, unknown> {
 
       this._gc();
     }, this.expireTime);
+    this.gcTimeout.unref();
   }
 }
