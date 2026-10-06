@@ -30,7 +30,7 @@ import { invalidEntityError, validateSchemaObject } from '../../model/shared.js'
 import Logging from '../../helpers/logging.js';
 import * as Helpers from '../../helpers/index.js';
 import TokenSchemaModel, { PolicyProperties, Token } from '../../model/core/token.js';
-import UserSchemaModel, { User, UserAddBody, UserAuth } from '../../model/core/user.js';
+import UserSchemaModel, { User, UserAddBody, UserAuth, userAlreadyExists } from '../../model/core/user.js';
 import { Services } from '../../bootstrap.js';
 import type { CoreRouteClass, RequestWithBody } from '../../types/routes.js';
 
@@ -486,10 +486,11 @@ class AddUser extends Route {
     const existingUsers: User[] = [];
     for await (const auth of req.body.auth) {
       // A user with an auth entry for the same app and the same id or email, both in that one entry. Only what the
-      // auth gives is matched, as a missing field would match every entry without one.
+      // auth gives is matched, as a missing or empty field would match every entry without one. The datastore holds
+      // to the same rule when the user is stored, for a user created since (UserSchemaModel.authKeys).
       const identifiers = [
-        auth.appId !== undefined && auth.appId !== null ? { appId: auth.appId } : null,
-        auth.email !== undefined && auth.email !== null ? { email: auth.email } : null,
+        typeof auth.appId === 'string' && auth.appId !== '' ? { appId: auth.appId } : null,
+        typeof auth.email === 'string' && auth.email !== '' ? { email: auth.email } : null,
       ].filter((identifier) => identifier !== null);
       if (identifiers.length < 1) continue;
 
@@ -506,7 +507,7 @@ class AddUser extends Route {
     if (existingUsers.length > 0) {
       this.log(`[${this.name}] A user already exists with matching auth (appId or email)`, Route.LogLevel.ERR);
       Logging.logObject(existingUsers, Logging.LogLevel.DEBUG);
-      return Promise.reject(Helpers.Errors.badRequest('user_already_exists_with_that_name'));
+      return Promise.reject(userAlreadyExists());
     }
 
     if (req.body.token && req.body.token.domains !== undefined && !Helpers.isDomainList(req.body.token.domains)) {

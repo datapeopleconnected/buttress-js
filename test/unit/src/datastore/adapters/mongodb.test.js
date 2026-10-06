@@ -534,6 +534,70 @@ describe('datastore/adapters/MongodbAdapter: one request, one write', () => {
   });
 });
 
+// A model's derived fields (StandardModel.deriveFields) are worked out from the entity as updated, in the same write
+describe('datastore/adapters/MongodbAdapter: derived fields', () => {
+  // The number of tags, worked out from the tags and kept beside them
+  function createDerivingModel(stored) {
+    const created = createModel(organisationSchema, stored);
+    Object.defineProperty(created.model, 'derivedFrom', { value: ['tags', 'notes'] });
+    created.model.deriveFields = (entity) => ({ tagCount: entity.tags?.length ?? 0, notesSeen: entity.notes !== undefined });
+    return created;
+  }
+
+  it('works them out from the entity as updated and writes them with it, if nothing it read has changed', async () => {
+    const { model, ops } = createDerivingModel({ tags: ['a'], notes: ['n'] });
+    const filters = [];
+    const updateOne = model.adapter.collection.updateOne;
+    model.adapter.collection.updateOne = async (filter, update) => {
+      filters.push(filter);
+      return updateOne(filter, update);
+    };
+
+    await update(model, [{ path: 'tags', value: 'b' }]);
+
+    assert.deepStrictEqual(ops, [{ $set: { tags: ['a', 'b'], tagCount: 2, notesSeen: true } }]);
+    const [{ _id, ...unchanged }] = filters;
+    assert.strictEqual(_id.toHexString(), ID);
+    assert.deepStrictEqual(unchanged, { tags: ['a'], notes: ['n'] });
+  });
+
+  it('works them out after every update of the request, in one write', async () => {
+    const { model, ops } = createDerivingModel({ tags: ['a', 'b'] });
+
+    await update(model, [
+      { path: 'tags.0.__remove__', value: '' },
+      { path: 'tags', value: 'c' },
+      { path: 'contacts.0.name', value: 'Alice' },
+    ]);
+
+    assert.strictEqual(ops.length, 1);
+    assert.deepStrictEqual(ops[0].$set.tags, ['b', 'c']);
+    assert.strictEqual(ops[0].$set.tagCount, 2);
+    assert.strictEqual(ops[0].$set.notesSeen, false);
+  });
+
+  it('leaves them alone for an update to other fields, which is written without reading', async () => {
+    const { model, ops } = createDerivingModel({ tags: ['a'] });
+    model.adapter.collection.findOne = async () => assert.fail('should not read the entity');
+
+    await update(model, { path: 'contacts.0.name', value: 'Alice' });
+
+    assert.deepStrictEqual(ops, [{ $set: { 'contacts.0.name': 'Alice' } }]);
+  });
+
+  it('refuses an update whose derived value another entity has, as for any unique value', async () => {
+    const { model } = createDerivingModel({ tags: ['a'] });
+    model.adapter.collection.updateOne = async () => {
+      throw Object.assign(new Error('E11000'), {
+        code: 11000,
+        errmsg: 'E11000 duplicate key error collection: test.organisations index: unique_tagCount dup key: { tagCount: 2 }',
+      });
+    };
+
+    await assert.rejects(() => update(model, { path: 'tags', value: 'b' }), { status: 400, code: 'duplicate', details: { path: 'tagCount' } });
+  });
+});
+
 // The adapter is where a Buttress query becomes MongoDB's: the model hands it the query in Buttress's terms
 describe('datastore/adapters/MongodbAdapter: queries', () => {
   function createAdapter() {
@@ -860,6 +924,7 @@ describe('datastore/adapters/MongodbAdapter: unique properties', () => {
       meta: { serial: { __type: 'number', __default: null, __unique: true } },
       label: { __type: 'string', __default: null },
       items: { __type: 'array', __schema: { sku: { __type: 'string', __unique: true } } },
+      aliases: { __type: 'array', __itemtype: 'string', __unique: true },
     },
   };
   const createAdapter = (createIndex) => {
@@ -876,6 +941,8 @@ describe('datastore/adapters/MongodbAdapter: unique properties', () => {
       [{ code: 1 }, { unique: true, name: 'unique_code', partialFilterExpression: { code: { $type: 'string' } } }],
       [{ ownerId: 1 }, { unique: true, name: 'unique_ownerId', partialFilterExpression: { ownerId: { $type: 'objectId' } } }],
       [{ 'meta.serial': 1 }, { unique: true, name: 'unique_meta.serial', partialFilterExpression: { 'meta.serial': { $type: 'number' } } }],
+      // A list's values, so no two entities share one, and an entity without any isn't indexed
+      [{ aliases: 1 }, { unique: true, name: 'unique_aliases', partialFilterExpression: { aliases: { $type: 'string' } } }],
     ]);
   });
 
@@ -886,7 +953,7 @@ describe('datastore/adapters/MongodbAdapter: unique properties', () => {
       throw Object.assign(new Error('E11000 duplicate key error'), { code: 11000 });
     }).updateSchema(schema);
 
-    assert.strictEqual(calls, 3);
+    assert.strictEqual(calls, 4);
   });
 
   it('refuses a write that repeats a unique value with 400 duplicate, naming the property', async () => {

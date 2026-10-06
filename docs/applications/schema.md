@@ -66,7 +66,7 @@ Every property is described by these keys:
 | `__schema` | For `__type: "array"` of objects — the property definitions for each array item |
 | `__timeSeries` | See [Time Series Properties](#time-series-properties) below |
 | `__private` | `true` to keep the property out of every response, though it's stored and can be set; a user's `auth[].password` is one |
-| `__unique` | `true` so no two entities have the same value: a second is refused with a 400, `duplicate`, naming the property. Entities without a value don't count. Not for a property of array items. The datastore enforces it with an index built when the collection starts; if existing values already repeat, the server logs that and carries on without it |
+| `__unique` | `true` so no two entities have the same value: a second is refused with a 400, `duplicate`, naming the property. Entities without a value don't count. On a list of values (`__itemtype`), no two entities may share any value in it, though one entity may repeat a value. Not for a property of array items. The datastore enforces it with an index built when the collection starts; if existing values already repeat, the server logs that and carries on without it |
 
 A property without `__type` is treated as a **nested object** — give it its own map of sub-properties
 directly, the same way you'd describe a top-level schema's `properties`:

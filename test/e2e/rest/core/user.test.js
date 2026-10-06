@@ -261,6 +261,55 @@ describe('User API', async () => {
 				await add([{ app: 'dup-noemail', appId: 'dup-n-1' }]);
 				assert.strictEqual(await refused([{ app: 'dup-noemail', appId: 'dup-n-2' }]), false);
 			});
+
+			it('Should add users who each have an auth entry without an id or email for the same app', async () => {
+				await add([{ app: 'dup-mixed-google', appId: 'dup-m-1' }, { app: 'dup-mixed-local', username: 'one' }]);
+				assert.strictEqual(await refused([{ app: 'dup-mixed-google', appId: 'dup-m-2' }, { app: 'dup-mixed-local', username: 'two' }]), false);
+			});
+
+			// The route's look for an existing user happens before the insert, so both requests can pass it
+			it('Should add only one of the same user created several times at once', async () => {
+				const auth = [{ app: 'dup-race', appId: 'dup-race-1', email: 'dup-race@example.com' }];
+
+				const results = await Promise.allSettled([add(auth), add(auth), add(auth), add(auth)]);
+
+				const added = results.filter((result) => result.status === 'fulfilled');
+				const failed = results.filter((result) => result.status === 'rejected').map((result) => result.reason);
+				for (const error of failed) {
+					if (!(error instanceof BJSReqError)) throw error;
+					assert.strictEqual(error.code, 400);
+					assert.strictEqual(error.body.code, 'user_already_exists_with_that_name');
+				}
+				const users = await bjsReq({ url: `${ENDPOINT.REST}/api/v1/user`, method: 'GET' }, testEnv.apps.app1.token);
+				const stored = users.filter((user) => user.auth.some((entry) => entry.app === 'dup-race'));
+				assert.strictEqual(stored.length, 1, 'The app should have one such user');
+				assert.strictEqual(added.length, 1, 'One create should succeed');
+				assert.strictEqual(added[0].value.id, stored[0].id);
+				assert.strictEqual(stored[0]._authKeys, undefined, 'The auth keys should not be given back');
+			});
+
+			it("Should refuse an update that gives a user another user's auth, and follow a user's auth as it changes", async () => {
+				const first = await add([{ app: 'dup-update', appId: 'dup-u-1', email: 'dup-u-1@example.com' }]);
+				const second = await add([{ app: 'dup-update', appId: 'dup-u-2', email: 'dup-u-2@example.com' }]);
+				const update = (id, body) => bjsReq({
+					url: `${ENDPOINT.REST}/api/v1/user/${id}`,
+					method: 'PUT',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(body),
+				}, testEnv.apps.app1.token);
+
+				await assert.rejects(() => update(second.id, [{ path: 'auth.0.email', value: 'dup-u-1@example.com' }]), (error) => {
+					assert.ok(error instanceof BJSReqError, error.message);
+					assert.strictEqual(error.code, 400);
+					assert.strictEqual(error.body.code, 'user_already_exists_with_that_name');
+					return true;
+				});
+
+				// The first user's old email and id are free once they change, and their new ones taken
+				await update(first.id, [{ path: 'auth.0.email', value: 'dup-u-3@example.com' }, { path: 'auth.0.appId', value: 'dup-u-3' }]);
+				assert.strictEqual(await refused([{ app: 'dup-update', appId: 'dup-u-4', email: 'dup-u-3@example.com' }]), true);
+				assert.strictEqual(await refused([{ app: 'dup-update', appId: 'dup-u-1', email: 'dup-u-1@example.com' }]), false);
+			});
 		});
 	});
 

@@ -398,8 +398,28 @@ export default class StandardModel<TDocument = AdapterDocument> {
       entity.updatedAt = body.updatedAt ? Sugar.Date.create(body.updatedAt as string | number | Date) : null;
     }
 
-    return Object.assign(document, entity);
+    const stored = Object.assign(document, entity);
+    return Object.assign(stored, this.deriveFields(stored));
   }
+
+  /**
+   * The top-level fields the model's derived fields are worked out from, see deriveFields. An update to any of them
+   * has the adapter work the derived fields out again, from the entity as updated, in the same write.
+   */
+  get derivedFrom(): string[] {
+    return [];
+  }
+
+  /**
+   * Fields the model works out from an entity's other fields and stores beside them, so the datastore can index them,
+   * e.g. a user's `_authKeys`. They're worked out on add, and on every update to the fields in derivedFrom.
+   * @param {AdapterDocument} _entity - as stored, with ids as strings; only derivedFrom's fields are there on update
+   * @return {AdapterDocument} the derived fields
+   */
+  deriveFields(_entity: AdapterDocument): AdapterDocument {
+    return {};
+  }
+
   // Subclasses take their own body and internals, and can resolve to other than a stream
   add(body: unknown, internals?: unknown): Promise<unknown> {
     return this.adapter.add(body, (item) => this.__parseAddBody(item, internals));

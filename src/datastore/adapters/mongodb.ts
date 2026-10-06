@@ -329,8 +329,9 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
 
   /**
    * Builds a unique index for each of the schema's `__unique` properties, but those of array items, of the values of
-   * its type. One that can't be built, as when stored values already repeat, is logged, and the collection is used
-   * without it (D-25).
+   * its type. A list of values (`__itemtype`) gets a multikey index, so no two entities share any value in it, though
+   * one entity may repeat a value; an entity with none isn't indexed. One that can't be built, as when stored values
+   * already repeat, is logged, and the collection is used without it (D-25).
    * @param {Object} schemaData
    */
   async _buildUniqueIndexes(schemaData: Schema) {
@@ -343,13 +344,14 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
     const unique = Object.entries(flat).filter(([path, config]) => config.__unique === true && !withinArray(path));
 
     for (const [path, config] of unique) {
+      const type = config.__type === 'array' ? config.__itemtype : config.__type;
       try {
         await this.collection?.createIndex(
           { [path]: 1 },
           {
             unique: true,
             name: `${UNIQUE_INDEX}${path}`,
-            partialFilterExpression: { [path]: { $type: STORED_TYPES[config.__type] ?? 'string' } },
+            partialFilterExpression: { [path]: { $type: STORED_TYPES[type ?? ''] ?? 'string' } },
           },
         );
       } catch (err: unknown) {
@@ -453,7 +455,7 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
     model?: StandardModel<unknown>,
   ) {
     const { ops, result } = await this._prepareUpdate(id, body, context, schemaConfig, model);
-    await this._applyUpdateOps(id, ops);
+    await this._applyUpdateOps(id, ops, model);
     return result;
   }
 
@@ -469,6 +471,7 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
     await this._applyUpdateOps(
       id,
       prepared.flatMap((update) => update.ops),
+      model,
     );
     return prepared.map((update) => update.result);
   }
@@ -600,29 +603,34 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
   }
 
   // The update values carry ids as strings, so they're converted to ObjectIds before they're merged or applied.
-  async _applyUpdateOps(id: string, ops: UpdateOp[]) {
+  async _applyUpdateOps(id: string, ops: UpdateOp[], model?: StandardModel<unknown>) {
     if (ops.length < 1) return;
 
     const storedOps = ops.map((op) => this._ids.toStored(op));
-    const merged = mergeUpdateOps(storedOps);
+    // The model's derived fields are worked out from the entity as updated, which has to be read for it
+    const derives = ops.some((op) => model?.derivedFrom.includes(readOp(op).path.split('.')[0]));
+    const merged = derives ? null : mergeUpdateOps(storedOps);
     if (merged) {
       await this._write(() => this.collection?.updateOne({ _id: new ObjectId(id) }, merged as UpdateFilter<Document>));
       return;
     }
 
-    await this._applyUpdateOpsInOneWrite(id, storedOps);
+    await this._applyUpdateOpsInOneWrite(id, storedOps, derives ? model : undefined);
   }
 
   /**
    * Operations on overlapping paths can't share one update document, so they're worked out on the fields they touch as
-   * read, and those fields are written back only if they haven't changed since. If they have, it tries again.
+   * read, and those fields are written back only if they haven't changed since. If they have, it tries again. With a
+   * model, its derived fields are worked out from the entity as updated and written with them.
    */
-  async _applyUpdateOpsInOneWrite(id: string, ops: UpdateOp[]) {
+  async _applyUpdateOpsInOneWrite(id: string, ops: UpdateOp[], model?: StandardModel<unknown>) {
     if (!this.collection) throw new Error('No collection');
 
     const _id = new ObjectId(id);
     const fields = [...new Set(ops.map((op) => readOp(op).path.split('.')[0]))];
-    const projection = Object.fromEntries(fields.map((field) => [field, 1]));
+    // What the derived fields are worked out from is read as well, and has to be unchanged too
+    const read = [...new Set([...fields, ...(model?.derivedFrom ?? [])])];
+    const projection = Object.fromEntries(read.map((field) => [field, 1]));
 
     for (let attempt = 0; attempt < MAX_UPDATE_ATTEMPTS; attempt++) {
       const stored = await this.collection.findOne({ _id }, { projection });
@@ -632,11 +640,15 @@ export default class MongodbAdapter extends AbstractAdapter<ConnectionString> {
       applyUpdateOps(updated, ops);
 
       const unchanged: Filter<Document> = Object.fromEntries(
-        fields.map((field) => [field, field in stored ? stored[field] : { $exists: false }]),
+        read.map((field) => [field, field in stored ? stored[field] : { $exists: false }]),
       );
-      const $set = Object.fromEntries(
-        fields.filter((field) => field in updated).map((field) => [field, updated[field]]),
-      );
+      const derived: Document = model
+        ? this._ids.toStored(model.deriveFields(this._ids.fromStored(BSON.deserialize(BSON.serialize(updated)))))
+        : {};
+      const $set: Document = {
+        ...Object.fromEntries(fields.filter((field) => field in updated).map((field) => [field, updated[field]])),
+        ...derived,
+      };
       const $unset = Object.fromEntries(fields.filter((field) => !(field in updated)).map((field) => [field, '']));
       const update: UpdateFilter<Document> = {
         ...(Object.keys($set).length > 0 ? { $set } : {}),

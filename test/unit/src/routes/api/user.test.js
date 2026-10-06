@@ -21,7 +21,7 @@ import { Readable } from 'stream';
 
 import UserRoutes from '../../../../../dist/routes/api/user.js';
 import Model from '../../../../../dist/model/index.js';
-import UserSchemaModel from '../../../../../dist/model/core/user.js';
+import UserSchemaModel, { userAlreadyExists } from '../../../../../dist/model/core/user.js';
 import TokenSchemaModel from '../../../../../dist/model/core/token.js';
 import AppSchemaModel from '../../../../../dist/model/core/app.js';
 import ActivitySchemaModel from '../../../../../dist/model/core/activity.js';
@@ -424,6 +424,29 @@ describe('routes/api/user:AddUser', () => {
     const body = { auth: [{ app: 'google', appId: 'ext-1', email: 'a@b.com' }] };
 
     await assert.rejects(route._validate(createReq({ body })), { code: 'user_already_exists_with_that_name' });
+  });
+
+  it('looks only for the id or email an auth entry gives, as an empty one would match every entry without one', async () => {
+    const findOne = sinon.stub().resolves(null);
+    stubModel({ user: { findOne } });
+    const route = createRoute(AddUser);
+    const body = { auth: [{ app: 'local', appId: '', email: '' }, { app: 'google', appId: 'ext-1', email: '' }] };
+
+    await route._validate(createReq({ body }));
+
+    assert.strictEqual(findOne.callCount, 1);
+    // Within the caller's app, which the scoped model adds again
+    assert.deepStrictEqual(findOne.firstCall.args[0].$and[0].auth, { $elemMatch: { app: 'google', $or: [{ appId: 'ext-1' }] } });
+  });
+
+  it('refuses the user when the model finds another stored with the same auth since it looked', async () => {
+    stubModel({ user: { add: sinon.stub().rejects(userAlreadyExists()) } });
+    const route = createRoute(AddUser);
+
+    await assert.rejects(route._exec(createReq({ body: { auth: [{ app: 'google', appId: 'ext-1' }] } }), {}, { appId: HEX_ID }), {
+      status: 400,
+      code: 'user_already_exists_with_that_name',
+    });
   });
 
   for (const domains of [[null], ['app.example.com', {}], null]) {

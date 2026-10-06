@@ -117,7 +117,20 @@ issue, `{path, code, expected?, received?}`, which `invalidEntityError`/`invalid
 `details.issues`. A schema with `strict: true` refuses fields it doesn't define on create. A `__private` property never
 leaves in a response (`Route._respond` strips it, `Helpers.Schema.stripPrivate`); a `__unique` one gets a unique
 partial index from the Mongo adapter's `updateSchema()` when the model starts (a failed build is logged, D-25), and a
-write that breaks it is 400 `duplicate` (`uniquePathOf` reads the index name, `unique_<path>`).
+write that breaks it is 400 `duplicate` (`uniquePathOf` reads the index name, `unique_<path>`). On a list of values
+(`__itemtype`) the index is multikey: no two entities share a value in it, one may repeat its own.
+
+A model can store **derived fields**, worked out from its other fields so the datastore can index them:
+`StandardModel.deriveFields(entity)` gives them and `derivedFrom` names the top-level fields they come from.
+`__parseAddBody` adds them on create; on an update touching a `derivedFrom` field, the Mongo adapter takes the
+read-then-write path (`_applyUpdateOpsInOneWrite`), works them out from the entity as updated and writes them in the
+same conditional write. Any other write (`updateById`, `update`) bypasses this and must set them itself. The one user
+so far is `UserSchemaModel`'s private `_authKeys` (`authKeys()`: `[appId, app, 'appId'|'email', value]` as JSON for each
+auth entry's non-empty id and email), unique so two creates of the same user at once can't both be stored: AddUser's
+look-up in `_validate` happens before the insert. A duplicate `_authKeys` becomes 400
+`user_already_exists_with_that_name` in the model, on add and on update. A unique index straight over `auth.app` +
+`auth.appId` was ruled out: an entry without an id is indexed as `null`, so two users who each have one for the same
+app would collide, and a partial filter can't leave out single array items.
 
 ## Datastore adapters
 
