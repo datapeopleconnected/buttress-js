@@ -204,4 +204,17 @@ describe('services/schema-applied: SchemaAppliedWaiter', () => {
 
     assert.strictEqual(nrp.on.callCount, 1);
   });
+
+  it('subscribes again for the next change when subscribing has failed', async () => {
+    const { nrp, deliver } = createNrp();
+    nrp.on.onFirstCall().rejects(new Error('Redis connection lost'));
+    const waiter = new SchemaAppliedWaiter(nrp);
+
+    await assert.rejects(waiter.expect('c1'), /Redis connection lost/);
+    const wait = await waiter.expect('c2');
+    deliver('app-schema:applied', { changeId: 'c2', appId: 'app-1', ...restProcessIdentity() });
+
+    assert.strictEqual(await wait(), true);
+    assert.strictEqual(nrp.on.callCount, 2);
+  });
 });
