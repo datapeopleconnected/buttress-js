@@ -234,6 +234,8 @@ describe('bootstrap-rest:__updateAppSchema', () => {
 		["isn't JSON", '[{"name": "car", '],
 		["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
 		['is null', 'null'],
+		['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+		['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
 	]) {
 		it(`should pass over an app whose stored schema ${label}, and add the local schemas to the apps after it`, async () => {
 			const warn = sinon.stub(Logging, 'logWarn');
@@ -255,6 +257,19 @@ describe('bootstrap-rest:__updateAppSchema', () => {
 			sinon.assert.calledOnceWithMatch(warn, 'app-2');
 		});
 	}
+
+	it(`should add a local schema's properties to an app's schema of that name that leaves its properties out`, async () => {
+		const { bootstrapRest, updateSchema } = createMain([
+			app('app-1', JSON.stringify([{ name: 'note', type: 'collection' }])),
+		]);
+		bootstrapRest._getLocalSchemas.returns([{ ...schema('note'), properties: { text: { __type: 'string' } } }]);
+
+		await bootstrapRest.__updateAppSchema();
+
+		sinon.assert.calledOnceWithExactly(updateSchema, 'app-1', [
+			{ name: 'note', type: 'collection', properties: { text: { __type: 'string' } } },
+		]);
+	});
 
 	it(`should still fail on an error that is not about the stored schema`, async () => {
 		const { bootstrapRest } = createMain(

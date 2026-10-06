@@ -31,7 +31,7 @@ const DEFINITION_KEYS = new Set([
   ...BOOLEAN_KEYS,
 ]);
 
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
 // A property name a body or an update path can give: not empty, without a dot, and not an operator, nor an internal,

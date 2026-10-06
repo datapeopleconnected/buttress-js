@@ -439,7 +439,8 @@ export default class BootstrapRest extends Bootstrap {
         if (!schema) {
           return appSchema.push(cS);
         }
-        schema.properties = Object.assign(schema.properties, cS.properties);
+        // A stored schema can leave its properties out
+        schema.properties = Object.assign(schema.properties ?? {}, cS.properties);
         appSchema[appSchemaIdx] = schema;
       });
 

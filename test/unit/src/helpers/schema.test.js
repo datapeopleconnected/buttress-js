@@ -209,6 +209,13 @@ describe('helpers.schema:decodeStored', () => {
 		["isn't JSON", '[{"name": "car", '],
 		["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
 		['is null', 'null'],
+		['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+		['holds a list', JSON.stringify([[{ name: 'car', type: 'collection', properties: {} }]])],
+		['holds a schema with no name', JSON.stringify([{ type: 'collection', properties: {} }])],
+		['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
+		["holds a schema whose properties aren't an object", JSON.stringify([{ name: 'car', type: 'collection', properties: 'name' }])],
+		["holds a schema whose extends isn't a list of names", JSON.stringify([{ name: 'car', type: 'collection', extends: [null] }])],
+		["holds a schema whose remotes aren't objects", JSON.stringify([{ name: 'car', type: 'collection', remotes: [null] }])],
 	]) {
 		it(`gives null for a stored schema that ${label}, and logs it naming the app`, () => {
 			const warn = sinon.stub(Logging, 'logWarn');
@@ -218,6 +225,17 @@ describe('helpers.schema:decodeStored', () => {
 			sinon.assert.calledOnceWithMatch(warn, 'app-2');
 		});
 	}
+
+	it('reads a schema that leaves out what it can, or gives one remote rather than a list', () => {
+		const schemas = [
+			{ name: 'base', type: 'template' },
+			{ name: 'car', type: 'collection', extends: ['base'], remotes: { name: 'partner', schema: 'car' } },
+		];
+		const warn = sinon.stub(Logging, 'logWarn');
+
+		assert.deepStrictEqual(Helpers.Schema.decodeStored({ id: 'app-1', __schema: JSON.stringify(schemas) }), schemas);
+		sinon.assert.notCalled(warn);
+	});
 
 	it("rethrows what isn't the stored schema failing to read", () => {
 		const warn = sinon.stub(Logging, 'logWarn');

@@ -414,6 +414,8 @@ describe('access-control/AccessControl:__cacheAppSchema', () => {
     ["isn't JSON", '[{"name": "car", '],
     ["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
     ['is null', 'null'],
+    ['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+    ['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
   ]) {
     it(`caches no schemas for an app whose stored schema ${label}, and logs it naming the app`, async () => {
       const warn = sinon.stub(Logging, 'logWarn');

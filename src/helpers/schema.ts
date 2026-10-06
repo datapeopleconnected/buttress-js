@@ -20,6 +20,7 @@ import Sugar from './sugar.js';
 import Errors from './errors.js';
 import Logging from './logging.js';
 import { decode as decodeValue, isDecodeError } from './codecs.js';
+import { isPlainObject } from './schema-definition.js';
 
 import Plugins from '../plugins/index.js';
 import Datastore from '../datastore/index.js';
@@ -320,9 +321,33 @@ export const decode = (obj: string): Schema[] => {
 };
 
 /**
- * An app's stored schema, or null when it can't be read: when it isn't JSON or isn't a list. That's logged, naming the
- * app, so a caller going through every app can pass over this one rather than stop the apps after it getting theirs.
- * Anything else that fails is rethrown.
+ * What's wrong with one of a stored schema's items, as the code that sets up an app's schemas reads it, or null when
+ * it's a schema: an object with a name and a type, whose properties, extends and remotes, if it has them, are an
+ * object, a list of names, and a remote or a list of them. Its property definitions aren't checked; those were checked
+ * when it was saved, and one saved before that is still read as it was.
+ */
+const storedSchemaProblem = (item: unknown): string | null => {
+  if (!isPlainObject(item)) return "isn't an object";
+  if (typeof item.name !== 'string' || item.name === '') return 'has no name';
+  if (typeof item.type !== 'string') return 'has no type';
+  if (item.properties !== undefined && !isPlainObject(item.properties)) return "has properties that aren't an object";
+  if (
+    item.extends !== undefined &&
+    (!Array.isArray(item.extends) || item.extends.some((name) => typeof name !== 'string'))
+  ) {
+    return "has extends that isn't a list of names";
+  }
+  if (item.remotes && !(Array.isArray(item.remotes) ? item.remotes : [item.remotes]).every(isPlainObject)) {
+    return "has remotes that aren't objects";
+  }
+  return null;
+};
+
+/**
+ * An app's stored schema, or null when it can't be read: when it isn't JSON, isn't a list, or has an item that isn't
+ * a schema. That's logged, naming the app, so a caller going through every app can pass over this one rather than stop
+ * the apps after it getting theirs. The whole app is passed over, rather than only the item, so nothing writes back its
+ * schema without it. Anything else that fails is rethrown.
  */
 export const decodeStored = (app: { id: string; __schema: string }): Schema[] | null => {
   let decoded: unknown;
@@ -335,6 +360,12 @@ export const decodeStored = (app: { id: string; __schema: string }): Schema[] | 
   }
   if (!Array.isArray(decoded)) {
     Logging.logWarn(`Unable to read the stored schema of app ${app.id}: it isn't a list`);
+    return null;
+  }
+  for (const [idx, item] of decoded.entries()) {
+    const problem = storedSchemaProblem(item);
+    if (!problem) continue;
+    Logging.logWarn(`Unable to read the stored schema of app ${app.id}: its item ${idx} ${problem}`);
     return null;
   }
 

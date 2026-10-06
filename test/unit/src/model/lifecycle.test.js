@@ -136,6 +136,8 @@ describe('model/ModelManager: initSchema', () => {
     ["isn't JSON", '[{"name": "car", '],
     ["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
     ['is null', 'null'],
+    ['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+    ['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
     ['extends a schema it lacks', JSON.stringify([schema('car', { extends: ['missing'] })])],
   ]) {
     it(`passes over an app whose stored schema ${label}, and sets up the apps after it`, async () => {

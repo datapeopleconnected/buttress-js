@@ -465,6 +465,8 @@ describe('routes/Routes:initAppRoutes', () => {
     ["isn't JSON", '[{"name": "car", '],
     ["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
     ['is null', 'null'],
+    ['holds null', JSON.stringify([{ name: 'car', type: 'collection', properties: {} }, null])],
+    ['holds a schema with no type', JSON.stringify([{ name: 'car', properties: {} }])],
   ]) {
     it(`passes over an app whose stored schema ${label}, and sets up the routes of the apps after it`, async () => {
       const warn = sinon.stub(Logging, 'logWarn');
