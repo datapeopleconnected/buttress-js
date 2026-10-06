@@ -79,15 +79,12 @@ export default class GetList extends Route {
   }
 
   override async _exec(req: Request, _res: Response, validateResult: QueryParams<object> | false) {
-    const model = await this.routeModel();
-    // if (validateResult.query === false) {
-    // 	return Promise.resolve([]);
-    // }
+    // A query that asks for zero results gets none, without being run
+    if (validateResult === false) return [];
 
+    const model = await this.routeModel();
     Logging.logTimer(`${this.name}:_exec:start`, req.context.timer, Logging.Constants.LogLevel.SILLY, req.context.id);
-    // validateResult is false for a zeroResults query, which isn't handled (see the commented out check above), so
-    // it's passed on as the query params
-    return ACM.find(model, validateResult as QueryParams<object>, req.context.ac);
+    return ACM.find(model, validateResult, req.context.ac);
     // return this.model.find(validateResult.query, {}, 0, 0, {}, validateResult.project);
   }
 }
