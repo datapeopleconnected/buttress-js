@@ -190,6 +190,33 @@ describe("access-control/evaluator:evaluate a query's list of #env values", () =
   });
 });
 
+// An $elMatch's #env values were compared as their text, in a REST read and in memory
+describe("access-control/evaluator:evaluate a query's @elMatch of #env values", () => {
+  const { model } = createSchemaModel({
+    name: 'user',
+    properties: { editors: { __type: 'array', __schema: { userId: { __type: 'string' }, role: { __type: 'string' } } } },
+  });
+
+  it('grants the @elMatch with its #env values read, which reads the entities they name, in memory too', async () => {
+    const [grant] = await evaluate(
+      [policy('editing', { query: { editors: { '@elMatch': { userId: '#env.user.id', role: { '@in': ['#env.role'] } } } } }, {
+        env: { role: 'editor' },
+      })],
+      context(),
+    );
+    assert.deepStrictEqual(grant.query, { editors: { $elMatch: { userId: 'u1', role: { $in: ['editor'] } } } });
+
+    for (const [editors, reads] of [
+      [[{ userId: 'u1', role: 'editor' }], true],
+      [[{ userId: 'u1', role: 'viewer' }, { userId: 'u2', role: 'editor' }], false],
+      [[{ userId: '#env.user.id', role: '#env.role' }], false],
+    ]) {
+      assert.strictEqual(Filter.evaluateQueryAgainstEntity(grant.query, { editors }, model), reads, JSON.stringify(editors));
+      assert.strictEqual(canCreate({ policyConfigs: [grant] }, { editors }, model), reads, JSON.stringify(editors));
+    }
+  });
+});
+
 describe('access-control/evaluator:evaluate for realtime', () => {
   it('grants each config that lets the token read the schema, whatever the verb, when asked about reads', async () => {
     const grants = await evaluate(

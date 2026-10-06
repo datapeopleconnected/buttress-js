@@ -55,16 +55,19 @@ describe('Policy query env lists', async () => {
 			createApp(ENDPOINT.REST, 'Test Policy Query Env', 'test-policy-query-env')
 		, scope);
 		await runStep('allow policy properties', async () => updatePolicyPropertyList(ENDPOINT.REST, {
-			queryEnvCase: ['list', 'unset'],
+			queryEnvCase: ['list', 'unset', 'elMatch'],
 		}, env.app.token), scope);
 		await runStep('add the note schema', async () => updateSchema(ENDPOINT.REST, [{
 			name: 'note',
 			type: 'collection',
-			properties: { text: { __type: 'string', __default: null, __required: true, __allowUpdate: true } },
+			properties: {
+				text: { __type: 'string', __default: null, __required: true, __allowUpdate: true },
+				editors: { __type: 'array', __allowUpdate: true, __schema: { userId: { __type: 'string', __default: null } } },
+			},
 		}], env.app.token), scope);
 
 		await runStep('create users', async () => {
-			for (const queryEnvCase of ['list', 'unset']) {
+			for (const queryEnvCase of ['list', 'unset', 'elMatch']) {
 				env.users[queryEnvCase] = await createPolicyUser(ENDPOINT.REST, env.app, `policy-query-env-${queryEnvCase}`, {
 					queryEnvCase,
 				});
@@ -72,6 +75,7 @@ describe('Policy query env lists', async () => {
 		}, scope);
 		await runStep('add notes', async () => bjsReqPost(notesUrl(), [
 			{ text: env.users.list.id }, { text: 'b' }, { text: 'c' },
+			{ text: 'edited', editors: [{ userId: env.users.elMatch.id }] }, { text: 'other', editors: [{ userId: 'u9' }] },
 		], env.app.token), scope);
 
 		await runStep('create policies', async () => {
@@ -85,6 +89,7 @@ describe('Policy query env lists', async () => {
 			await createPolicy(ENDPOINT.REST, policy('list', { text: { '@in': ['#env.user.id', '#env.second'] } }), env.app.token);
 			// The second item names an env value that isn't set
 			await createPolicy(ENDPOINT.REST, policy('unset', { text: { '@nin': ['#env.second', '#env.third'] } }), env.app.token);
+			await createPolicy(ENDPOINT.REST, policy('elMatch', { editors: { '@elMatch': { userId: '#env.user.id' } } }), env.app.token);
 		}, scope);
 	});
 
@@ -113,5 +118,10 @@ describe('Policy query env lists', async () => {
 			bjsReq({ url: notesUrl(), method: 'GET' }, env.users.unset.tokens[0].value),
 			(err) => err instanceof BJSReqError && err.code === 403 && err.body?.code === 'access_denied',
 		);
+	});
+
+	// The @elMatch's #env value was compared as its text, so the policy read no note
+	it("Should read the notes an @elMatch in the config's query names by its #env values", async () => {
+		assert.deepStrictEqual(await readNotes('elMatch'), ['edited']);
 	});
 });

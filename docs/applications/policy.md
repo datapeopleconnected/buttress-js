@@ -113,6 +113,12 @@ set does, rather than leaving that item out, which would let a `@nin` read more.
 `#env.` values as their text, so such a policy read less than it named, and read a list given as a value as an object
 of its items, which matched nothing.
 
+The `#env.` values of an `@elMatch` are read as well, both in the query an item must match,
+`{"editors": {"@elMatch": {"userId": "#env.user.id"}}}`, and in the operators a value must pass,
+`{"scores": {"@elMatch": {"@gte": "#env.minScore"}}}`, and one that isn't set grants nothing through its config. In an
+item's query, `access` is one of the item's fields. Earlier releases compared an `@elMatch`'s `#env.` values as their
+text.
+
 A config with a `projection` reads only those properties, and a read may query or sort by only them through it: the
 order of a search sorted by a property would show it. A search sorting by a property no config of the token's reads is
 refused with a 403, `property_access_denied`; earlier releases sorted by it.

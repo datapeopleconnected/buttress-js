@@ -21,9 +21,11 @@ import Logging from '../helpers/logging.js';
 
 import { PolicyQuery } from '../model/core/policy.js';
 import {
+  ALIASES,
   asQueried,
   findUnknownOperator,
   isPlainObject,
+  isValueOperators,
   LOGICAL_ALIASES,
   matchQuery,
   toMongoQuery,
@@ -136,6 +138,15 @@ export class Filter {
       // lost its upper bound
       const conditions: Record<string, unknown> = {};
       for (const [operator, value] of Object.entries(val as Record<string, unknown>)) {
+        // An $elMatch's object is built as findUnknownOperator reads it: the operators an item must pass, as a field's,
+        // or a query an item must match, whose `access` is an item's field rather than what a policy grants. Its
+        // #env values were left as their text
+        if (Object.hasOwn(ALIASES, operator) && ALIASES[operator].operator === '$elemMatch' && isPlainObject(value)) {
+          conditions[operator] = isValueOperators(value)
+            ? ((await this.buildPolicyQuery({ [key]: value }, envVars, false)) as Record<string, unknown>)[key]
+            : await this.buildPolicyQuery(value, envVars, false);
+          continue;
+        }
         conditions[operator] = await resolveQueryOperand(value, envVars);
       }
       outputRecord[key] = conditions;

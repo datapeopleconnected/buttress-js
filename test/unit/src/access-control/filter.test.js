@@ -233,6 +233,61 @@ describe('access-control/filter:buildPolicyQuery #env references in a list', () 
   });
 });
 
+// An $elMatch's object was passed through whole, so its #env values were compared as their text
+describe('access-control/filter:buildPolicyQuery #env references in an @elMatch', () => {
+  const env = { date: { now: '2025-06-01T00:00:00.000Z' }, user: { id: 'u1' }, appId: 'app-1', sku: 'X', min: 5 };
+
+  it("reads the #env values of the query an item must match, its lists' and logical operators' included", async () => {
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ lines: { '@elMatch': { sku: '#env.sku', qty: { '@gt': '#env.min' } } } }, env),
+      { lines: { $elMatch: { sku: 'X', qty: { $gt: 5 } } } },
+    );
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery(
+        { lines: { '@elMatch': { '@or': [{ owner: { '@in': ['#env.user.id', 'u9'] } }, { sku: '#env.sku' }] } } },
+        env,
+      ),
+      { lines: { $elMatch: { $or: [{ owner: { $in: ['u1', 'u9'] } }, { sku: 'X' }] } } },
+    );
+  });
+
+  it('reads the #env values of the operators an item must pass, a nested @elMatch\'s included', async () => {
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ scores: { '@elMatch': { '@gte': '#env.min', '@nin': ['#env.sku'] } } }, env),
+      { scores: { $elMatch: { $gte: 5, $nin: ['X'] } } },
+    );
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ grid: { '@elMatch': { '@elMatch': { '@eq': '#env.min' } } } }, env),
+      { grid: { $elMatch: { $elMatch: { $eq: 5 } } } },
+    );
+  });
+
+  // In an item's query, access is one of the item's fields, not what the policy grants
+  it("keeps an item's access field", async () => {
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ lines: { '@elMatch': { access: '%FULL_ACCESS%', sku: '#env.sku' } } }, env),
+      { lines: { $elMatch: { access: '%FULL_ACCESS%', sku: 'X' } } },
+    );
+  });
+
+  it("refuses a query when an #env value in an @elMatch isn't set, as one outside it is", async () => {
+    for (const query of [
+      { lines: { '@elMatch': { sku: '#env.misspelt' } } },
+      { lines: { '@elMatch': { owner: { '@in': ['#env.user.nickname'] } } } },
+      { scores: { '@elMatch': { '@gte': '#env.misspelt' } } },
+    ]) {
+      await assert.rejects(Filter.buildPolicyQuery(query, env), { name: 'UnresolvedEnvError' }, JSON.stringify(query));
+    }
+  });
+
+  it("refuses an @elMatch whose query has a logical operator without a list of queries", async () => {
+    await assert.rejects(
+      Filter.buildPolicyQuery({ lines: { '@elMatch': { '@or': { sku: 'X' } } } }, env),
+      { name: 'InvalidPolicyQueryError' },
+    );
+  });
+});
+
 // A logical operator takes a list of one or more queries; a query with one that hasn't can't be read, so its config
 // grants nothing, rather than the operator being dropped and the query reading every entity
 describe('access-control/filter:buildPolicyQuery a logical operator without a list of queries', () => {
