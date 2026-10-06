@@ -197,6 +197,30 @@ describe('helpers.schema:stripPrivate', () => {
   });
 });
 
+// SR-DPC-001 S18: a `_` property is internal, so no response or realtime listener is shown it
+describe('helpers.schema:prepareSchemaResult', () => {
+  it('leaves out a `_` property holding a list, as it does any other', () => {
+    const result = Helpers.Schema.prepareSchemaResult({ id: 'a1', name: 'Ann', _b: [1, 2], _c: 'x', tags: ['t'] });
+
+    assert.deepStrictEqual(result, { id: 'a1', name: 'Ann', tags: ['t'] });
+  });
+
+  it('leaves out a `_` property holding an empty value', () => {
+    const result = Helpers.Schema.prepareSchemaResult({ id: 'a1', _a: 0, _b: '', _c: false, _d: null, _e: [] });
+
+    assert.deepStrictEqual(result, { id: 'a1' });
+  });
+
+  it('leaves out a `_` property of a nested object and of the items of a list, in each of a list of results', () => {
+    const entity = () => ({ id: 'a1', profile: { name: 'Ann', _notes: ['n'] }, items: [{ name: 'i', _hidden: [3] }] });
+
+    assert.deepStrictEqual(Helpers.Schema.prepareSchemaResult([entity(), entity()]), [
+      { id: 'a1', profile: { name: 'Ann' }, items: [{ name: 'i' }] },
+      { id: 'a1', profile: { name: 'Ann' }, items: [{ name: 'i' }] },
+    ]);
+  });
+});
+
 describe('helpers.schema:decodeStored', () => {
 	afterEach(() => sinon.restore());
 

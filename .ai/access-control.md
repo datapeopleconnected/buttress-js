@@ -58,8 +58,10 @@ after token authentication. Flow:
      verb, so a config listing either grants both methods), the schema exists, its `condition` holds
      (`AccessControlConditions.filterPoliciesByPolicyConditions`, with the request env; a config without a
      condition applies), and its `query` can be built (`Filter.buildPolicyQuery`; an `#env.` value that isn't set,
-     an operator nothing knows, or a logical operator not given a list of queries drops the config). Each check
-     that leaves nothing refuses with its `PolicyError`. A grant is `{policies, appId, config, query, projection}`:
+     an operator nothing knows, or a logical operator not given a list of queries drops the config). An `#env.` value
+     that refers back to itself (`CircularEnvError`: `getEnvValue` passes on the keys it's reading, through env
+     lookups' queries too, and stops on a repeat or past 16 values) drops a config whose query or condition reads it. Each
+     check that leaves nothing refuses with its `PolicyError`. A grant is `{policies, appId, config, query, projection}`:
      the query with its env read and access keys dropped (`{}` reads every entity), and the properties it reads
      (null for every one).
    - `__readableGrants` parses each grant's query against the app's model, as `models-access` will read it, and

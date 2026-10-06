@@ -236,20 +236,13 @@ class TokenSchemaModel extends StandardModel<Token> {
     }
 
     const tokenPolicy = token.policyProperties || {};
-    // The accumulator's an array, but only string keys are set on it, so it spreads like an object
-    const policy = Object.keys(policyProperties).reduce(
-      (obj: Record<string, unknown>, key) => {
-        obj[key] = policyProperties[key];
-        return obj;
-      },
-      [] as unknown as Record<string, unknown>,
-    );
-
+    // Spreading copies each own name as one of the result's own, so every name is stored as given: `length` too, and
+    // `__proto__`, which JSON.parse and BSON give as an own name, never as the result's prototype
     await super.updateById(this.createId(token.id), {
       $set: {
         policyProperties: {
           ...tokenPolicy,
-          ...policy,
+          ...policyProperties,
         },
       },
     });

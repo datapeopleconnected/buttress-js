@@ -209,6 +209,9 @@ describe('Error contract', async () => {
 			400, 'unknown_path', { schema: 'crate', path: 'extra', issues: [{ path: 'extra', code: 'unknown_path' }] }],
 		['a schema with a misspelt property key', () => [core('app/schema'), put([{ name: 'note', type: 'collection', properties: { text: { __type: 'string', __requried: true } } }]), appToken()],
 			400, 'invalid_schema', { schema: 'note', issues: [{ path: 'text.__requried', code: 'unknown_path' }] }],
+		// SR-DPC-001 R15: it would refuse every create that left the date out
+		['a schema with a date default that is not a date', () => [core('app/schema'), put([{ name: 'note', type: 'collection', properties: { due: { __type: 'date', __default: 'garbage' } } }]), appToken()],
+			400, 'invalid_schema', { schema: 'note', issues: [{ path: 'due.__default', code: 'type', expected: 'date' }] }],
 		['a policy whose config has no query', () => [core('policy'), post({ name: 'no-query', version: '1', selection: { role: { '@eq': 'NOBODY' } }, config: [{ verbs: ['GET'], schema: ['note'] }] }), appToken()],
 			400, 'invalid_policy', { issues: [{ path: 'config.0.query', code: 'required' }] }],
 		['a policy whose priority is not a number', () => [core('policy'), post({ name: 'bad-priority', version: '1', priority: 'high', selection: { role: { '@eq': 'NOBODY' } }, config: [{ verbs: ['GET'], schema: ['note'], query: { access: '%FULL_ACCESS%' } }] }), appToken()],
@@ -229,6 +232,9 @@ describe('Error contract', async () => {
 			400, 'invalid_value', { schema: 'users', path: 'auth.0', issues: [{ path: 'auth.0', code: 'type', expected: 'object', received: 'null' }] }],
 		['a secure store whose name is not text', () => [core('secure-store'), post({ name: { $ne: null } }), appToken()],
 			400, 'invalid_value', { schema: 'secureStore', path: 'name', issues: [{ path: 'name', code: 'type', expected: 'string', received: 'object' }] }],
+		// SR-DPC-001 R9: the name was looked for as given, as a query operator
+		['a batch of secure stores whose name is not text', () => [core('secure-store/bulk/add'), post([{ name: { $ne: null } }]), appToken()],
+			400, 'invalid_value', { schema: 'secureStore', path: 'name', index: 0, issues: [{ path: 'name', code: 'type', expected: 'string', received: 'object' }] }],
 		['a note without its required text', () => [notes(), post({}), appToken()],
 			400, 'missing_field', { schema: 'note', path: 'text', issues: [{ path: 'text', code: 'required' }] }],
 		['a batch of notes whose second lacks its text', () => [notes('/bulk/add'), post([{ text: 'a' }, {}]), appToken()],

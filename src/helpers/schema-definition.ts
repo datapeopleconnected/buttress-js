@@ -14,6 +14,8 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
+import Sugar from './sugar.js';
+import { decode, isDecodeError } from './codecs.js';
 import type { ValidationIssue } from './schema.js';
 
 const PROPERTY_TYPES = ['string', 'number', 'boolean', 'date', 'id', 'uuid', 'object', 'array'];
@@ -33,6 +35,19 @@ const DEFINITION_KEYS = new Set([
 
 export const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
+
+/**
+ * The date a date property's `__default` makes: none for null, the time it's made for no default, else the date Sugar
+ * reads it as ('now', 'tomorrow', '2 days ago', '2026-01-01'...), which is an Invalid Date for one it can't read.
+ */
+export const dateDefault = (value: unknown): Date | null => {
+  if (value === null) return null;
+  if (!value) return new Date();
+  return Sugar.Date.create(value as string | number | Date);
+};
+
+// A date's default makes no date, or one the date codec takes; any other would refuse every create that leaves it out
+const isDateDefault = (value: unknown) => value === null || !isDecodeError(decode('date', dateDefault(value)));
 
 // A property name a body or an update path can give: not empty, without a dot, and not an operator, nor an internal,
 // which only the server sets, unless the schema is the server's own
@@ -72,6 +87,8 @@ const checkProperty = (definition: unknown, path: string, options: CheckOptions)
       issues.push({ path: keyPath, code: 'type', expected: 'array' });
     } else if (key === '__itemtype' && (typeof value !== 'string' || !ITEM_TYPES.includes(value))) {
       issues.push({ path: keyPath, code: 'enum', expected: ITEM_TYPES });
+    } else if (key === '__default' && definition.__type === 'date' && !isDateDefault(value)) {
+      issues.push({ path: keyPath, code: 'type', expected: 'date' });
     } else if (key === '__timeSeries' && typeof value !== 'string') {
       issues.push({ path: keyPath, code: 'type', expected: 'string' });
     } else if (key === '__schema') {
@@ -99,8 +116,8 @@ const checkProperties = (
 
 /**
  * The problems with a schema's property definitions, so a schema is refused when it's saved rather than misbehaving
- * when it's used: unknown types and keys (a misspelt `__requried`), keys of the wrong type, and names a body can't
- * give. Each issue's path is the property's, then the key.
+ * when it's used: unknown types and keys (a misspelt `__requried`), keys of the wrong type, a date's default that
+ * isn't a date, and names a body can't give. Each issue's path is the property's, then the key.
  * @param {Object} schema - a schema as an app saves it
  * @param {Object} [options]
  * @param {boolean} [options.internals] - take `_`-prefixed names, as a core model's schema has

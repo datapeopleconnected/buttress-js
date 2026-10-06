@@ -24,7 +24,7 @@ import Logging from '../helpers/logging.js';
 import * as Helpers from '../helpers/index.js';
 import AccessControl from '../access-control/index.js';
 import Model from '../model/index.js';
-import Route, { routerMethods } from './route.js';
+import Route, { isKnownAuthType, routerMethods } from './route.js';
 
 import { Services } from '../bootstrap.js';
 
@@ -431,6 +431,7 @@ class Routes {
     const route = core
       ? new (routeClass as CoreRouteClass)(this._services)
       : new (routeClass as PluginRouteClass)(null, null, this._services);
+    this._reportUnknownAuthType(route);
     route.paths.forEach((pathSpec) => {
       const routePath = path.join(...[Config.app.apiPrefix, pathPrefix, pathSpec]);
       routerMethods(route.verb).forEach((method) => {
@@ -441,6 +442,15 @@ class Routes {
         });
       });
     });
+  }
+
+  // A route whose auth type isn't a known one refuses every request (Route._authenticate), so say so as it's set up
+  _reportUnknownAuthType(route: Route) {
+    if (isKnownAuthType(route.authType)) return;
+
+    Logging.logError(
+      `Route ${route.name} has an unknown auth type ${String(route.authType)}, it refuses every request`,
+    );
   }
 
   /**
@@ -460,6 +470,7 @@ class Routes {
         throw err;
       }
 
+      this._reportUnknownAuthType(route);
       route.paths.forEach((pathSpec) => {
         let routePath = path.join(...[app.apiPath, Config.app.apiPrefix, pathSpec]);
         if (routePath.indexOf('/') !== 0) routePath = `/${routePath}`;

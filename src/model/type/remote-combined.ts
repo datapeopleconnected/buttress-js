@@ -30,6 +30,10 @@ import { ChunkReceivedEvent } from '../../helpers/stream.js';
 import { AdapterDocument, AdapterQuery, UpdatePathBody } from '../../types/datastore.js';
 import Logging from '../../helpers/logging.js';
 
+// A sort direction as MongoDB reads one: 1, -1, 'asc', 'desc', 'ascending' or 'descending', in any case, so the sources
+// merge in the order each is sorted in. Anything else is for the sources to refuse, as the MongoDB adapter does.
+const sortDirection = (value: unknown) => (/^(?:-1|desc|descending)$/i.test(String(value)) ? -1 : 1);
+
 // How long to wait before trying a partner that couldn't be reached again, doubling each time up to the most
 const REMOTE_RETRY_FIRST_MS = 1000;
 const REMOTE_RETRY_MOST_MS = 60000;
@@ -530,7 +534,7 @@ export default class RemoteCombinedModel extends StandardModel {
     project: Record<string, unknown> | null | false = null,
   ) {
     const sortMap = new Map<string, number>(
-      Object.entries(sort as Record<string, unknown>).map(([key, value]) => [key, Number(value)]),
+      Object.entries(sort ?? {}).map(([key, value]) => [key, sortDirection(value)]),
     );
     if (sortMap.size < 1) sortMap.set('id', 1);
 
@@ -601,15 +605,23 @@ export default class RemoteCombinedModel extends StandardModel {
    */
   override async count(query?: AdapterQuery) {
     // Make a call out to the local datastore and each of the remotes, and sum the results.
-    const sourceReqs: (number | Promise<number>)[] = [];
+    const counts: { source: string; count: unknown }[] = [];
 
-    sourceReqs.push(await this.localModel.count(query));
+    counts.push({ source: 'the local datastore', count: await this.localModel.count(query) });
 
     for await (const remote of this._remoteModels) {
-      sourceReqs.push(await remote.count(query));
+      counts.push({ source: `data sharing ${remote.dataSharingId}`, count: await remote.count(query) });
     }
 
-    return (await Promise.all(sourceReqs)).reduce((acc, val) => acc + val, 0);
+    // A partner's count is whatever it answers: a number given as text is read as one, and anything else is logged and
+    // left out rather than joined on as text
+    return counts.reduce((total, { source, count }) => {
+      const value = typeof count === 'string' && count.trim() !== '' ? Number(count) : count;
+      if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return total + value;
+
+      Logging.logWarn(`Left out a count of ${this.schemaData.name} from ${source} that isn't one: ${String(count)}`);
+      return total;
+    }, 0);
   }
 
   /**

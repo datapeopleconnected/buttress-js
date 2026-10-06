@@ -128,6 +128,17 @@ describe('routes/Route:_respond private properties', () => {
     });
   }
 
+  // SR-DPC-001 S18
+  it('leaves a `_` property holding a list out of a result', async () => {
+    const route = createRoute({ schema });
+    route.addSourceId = false;
+    const res = createRes();
+
+    await route._respond(createReq(), res, { ...stored(), _b: [1, 2] });
+
+    assert.deepStrictEqual(res.json.firstCall.args[0], { id: 'u1', name: 'a', auth: [{ app: 'google' }] });
+  });
+
   it('leaves them out of each entity of a stream', async () => {
     const route = createRoute({ schema });
     route.addSourceId = false;
@@ -233,6 +244,26 @@ describe('routes/Route:_authenticate', () => {
       },
     );
   });
+
+  // An unknown auth type would rank below every token type, letting every token through (SR-DPC-001 S12)
+  for (const [label, authType] of [
+    ['an unknown auth type', 'admin'],
+    ['no auth type', undefined],
+    ['an empty auth type', ''],
+  ]) {
+    it(`refuses every token on a route with ${label}`, async () => {
+      const route = createRoute();
+      route.authType = authType;
+
+      for (const type of Object.values(Route.Constants.Type)) {
+        await assert.rejects(
+          () => route._authenticate(createReq({ token: { type } }), createRes()),
+          (err) => err.status === 500 && err.code === 'internal_error',
+          type,
+        );
+      }
+    });
+  }
 
   it('resolves for an app token, bypassing schema checks', async () => {
     const route = createRoute();
@@ -433,6 +464,20 @@ describe('routes/Route:_boardcastData', () => {
 });
 
 describe('routes/Route:_broadcast', () => {
+  // SR-DPC-001 S18: a `_` list was sent as a list of nulls, its name and length showing
+  it('leaves `_` properties out of what it emits, lists included', () => {
+    const nrp = createNrpFake();
+    const route = createRoute({ nrp });
+    route.activityBroadcast = true;
+    route.verb = Route.Constants.Verbs.POST;
+
+    route._broadcast(createReq(), createRes(), { id: 'u1', name: 'test', _b: [1, 2] }, '/user', true);
+
+    const { response } = JSON.parse(nrp.emit.firstCall.args[1]);
+    assert.strictEqual('_b' in response, false);
+    assert.strictEqual(response.name, 'test');
+  });
+
   it('emits rest:activity when activityBroadcast is enabled', () => {
     const nrp = createNrpFake();
     const route = createRoute({ nrp });

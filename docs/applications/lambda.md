@@ -101,6 +101,9 @@ bjs lambda list-property
   It's now stored `PRIVATE`, and a lambda already stored without a type is treated as `PRIVATE`: set its `type` to
   `PUBLIC` if it should keep taking calls without a token.
 - Keep lambda git inputs pinned and auditable.
+- Deploying a lambda again takes a branch that doesn't track the repository's (as git sets one up with
+  `branch.autoSetupMerge` off), and refuses a branch the repository doesn't have with a 400, `branch_not_found`.
+  Earlier releases refused the first as `branch_not_found` and failed on the second as a server error.
 - A run ends once the promise its entry point returns has settled and the execution is recorded. Work it leaves running,
   such as a `sleep()` or `fetch()` it didn't await, stops then: its sleeps and requests are cancelled, and anything it
   calls after that (`setResult`, logging, `updateMetadata`, `fetch`, ...) is refused. Earlier releases let that work go
@@ -111,3 +114,6 @@ bjs lambda list-property
   a log over it is logged as a note saying so; and a call given one rejects. Only a value that refers to the same
   objects many times over can get that big, as the lambda's own memory is no bigger. Earlier releases tried to write
   such a value out, which could stop the worker running any lambda.
+- A `fetch()` of something that isn't a URL, whether given alone or as the request's `url`, rejects at once with an
+  error whose message is `fetch_invalid_url` and code 400, which the lambda can catch. Earlier releases left that
+  `fetch()` unsettled, so the run failed after the runner's timeout as `lambda_execution_timed_out`.

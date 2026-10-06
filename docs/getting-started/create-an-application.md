@@ -193,7 +193,6 @@ const AppPolicies = require('./policy.json');
     appToken: 'Your app token here',
     apiPath: 'Your app path here',
     version: 1,
-    allowUnauthorized: true, // Use only in development with local/self-signed certs
   });
 
   await Buttress.App.updateSchema(Schema);

@@ -132,7 +132,8 @@ class Logging {
         return;
       }
 
-      this.logger.log(line as winston.LogEntry);
+      // A copy, as winston colours the level of the entry it's given in place, which a second flush couldn't log
+      this.logger.log({ ...line } as winston.LogEntry);
     });
   }
   clean() {

@@ -64,8 +64,9 @@ share:
    Authority is ranked by array position in `Constants.Type` (`AuthTypeOrder = Object.values(Constants.Type)`
    = `[user, dataSharing, lambda, app, system]`), so `system` outranks `app` outranks `lambda` outranks
    `dataSharing` outranks `user` — a route with `authType = Constants.Type.USER` (the default) accepts
-   any token type. There are separate `app`/`dataSharing` branches after this check that currently just
-   `resolve()` with no extra logic (marked `// NOT GOOD` in source for the `dataSharing` case) — don't
+   any token type. A route whose `authType` isn't one of those refuses every request with 500 `internal_error`
+   (`isKnownAuthType`), and `Routes` logs it as the route is set up. There are separate `app`/`dataSharing`
+   branches after this check that currently just `resolve()` with no extra logic (marked `// NOT GOOD` in source for the `dataSharing` case) — don't
    assume they enforce anything beyond the authority check above.
 2. `_validate(req, res)` then `_exec(req, res, validate)` — the only two methods subclasses must implement.
 3. `_respond()` — if `_exec` returned a `Stream.Readable`, pipes it through `JSONStringifyStream` (with
@@ -138,7 +139,8 @@ test has it too).
 - A get-one is `findByIdOrFail` (404 `not_found`, 400 `invalid_id`), its `present(row)` hook giving what's sent
   (activity sends its `body`); a get-list lists the rows the caller reaches, only those `?ids=a,b` names where the
   route `takesIds` (policy, lambda; D-29); a delete-all is `rmAll` over them.
-- A policy-property route (`set`, `update`, `remove` or `clear`, its `policyProperties`) checks the row exists, finds
+- A policy-property route (`set`, `update`, `remove` or `clear`, its `policyProperties`) refuses a body that isn't an
+  object, but for `clear`, with 400 `invalid_body`, checks the row exists, finds
   its token with the owner's `findToken` (a lambda's by `_lambdaId`, a user's by `:tokenId`, id or value), checks
   set or merged properties against the app's list (400 `invalid_field`), then changes the token; `afterChange`
   follows (a user's sockets look at its rooms again after a remove or clear).

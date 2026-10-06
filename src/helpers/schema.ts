@@ -20,7 +20,7 @@ import Sugar from './sugar.js';
 import Errors from './errors.js';
 import Logging from './logging.js';
 import { decode as decodeValue, isDecodeError } from './codecs.js';
-import { isPlainObject } from './schema-definition.js';
+import { dateDefault, isPlainObject } from './schema-definition.js';
 
 import Plugins from '../plugins/index.js';
 import Datastore from '../datastore/index.js';
@@ -123,13 +123,7 @@ const __getPropDefault = (config: PropertyConfig) => {
       }
       break;
     case 'date':
-      if (config.__default === null) {
-        res = null;
-      } else if (config.__default) {
-        res = Sugar.Date.create(config.__default as string | number | Date);
-      } else {
-        res = new Date();
-      }
+      res = dateDefault(config.__default);
   }
   return res;
 };
@@ -188,10 +182,6 @@ const __prepareSchemaResult = (result: unknown, sourceId: string | null = null, 
   const _prepare = (chunk: unknown, path: string | null): unknown => {
     if (!chunk) return chunk;
 
-    if (path) {
-      if (path.indexOf('_') === 0) return undefined;
-    }
-
     if (typeof chunk === 'object') {
       if (Datastore.getInstance('core').ID.isValid(chunk)) return chunk;
       if (chunk instanceof Date) return chunk;
@@ -214,6 +204,11 @@ const __prepareSchemaResult = (result: unknown, sourceId: string | null = null, 
 
       for (const key in obj) {
         if (!{}.hasOwnProperty.call(obj, key)) continue;
+        // A `_` property is internal: it's left out whatever it holds, an empty value or a list included
+        if (key.startsWith('_')) {
+          delete obj[key];
+          continue;
+        }
         const value = obj[key];
         obj[key] = Array.isArray(value) ? value.map((c: unknown) => _prepare(c, key)) : _prepare(value, key);
 

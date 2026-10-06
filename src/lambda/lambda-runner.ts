@@ -422,7 +422,6 @@ export default class LambdaRunner {
       buttressUrl,
       appToken: callerToken ? CALLER_TOKEN_PLACEHOLDER : executionToken.value,
       apiPath: apiPath,
-      allowUnauthorized: true,
     };
     const lambdaModules: Record<string, string> = {};
 

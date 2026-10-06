@@ -29,7 +29,8 @@ import ButtressAdapter from '../../../../../dist/datastore/adapters/buttress.js'
 function createModel(localCount, remoteCounts) {
   const model = Object.create(RemoteCombinedModel.prototype);
   model._localModel = { count: async () => localCount };
-  model._remoteModels = remoteCounts.map((count) => ({ count: async () => count }));
+  model._remoteModels = remoteCounts.map((count, idx) => ({ dataSharingId: `agreement-${idx + 1}`, count: async () => count }));
+  model._schemaData = { name: 'car' };
   return model;
 }
 
@@ -53,6 +54,22 @@ describe('model/type/RemoteCombinedModel', () => {
 
     it('still includes remote counts when the local count is zero', async () => {
       const model = createModel(0, [7]);
+
+      const total = await model.count({});
+
+      assert.strictEqual(total, 7);
+    });
+
+    it("adds a partner's count given as text as a number", async () => {
+      const model = createModel(3, ['2', 4]);
+
+      const total = await model.count({});
+
+      assert.strictEqual(total, 9);
+    });
+
+    it("leaves out a partner's count that isn't a count", async () => {
+      const model = createModel(3, ['two', 4, null, {}, '', -1, 1.5]);
 
       const total = await model.count({});
 
@@ -368,6 +385,24 @@ describe('model/type/RemoteCombinedModel', () => {
       const page = await (await model.find({}, {}, 2, 2, { n: 1 })).toArray();
 
       assert.deepStrictEqual(page.map((car) => car.n), [3, 4]);
+    });
+
+    // Each source sorts as MongoDB does, which takes 1, -1, 'asc', 'desc', 'ascending' and 'descending' in any case
+    it('merges its sources in the direction they are sorted in, however it is given', async () => {
+      const cars = (...ns) => ns.map((n) => ({ id: `car-${n}`, n }));
+      const directions = [-1, '-1', 'desc', 'DESCENDING', 1, 'asc', 'ascending'];
+
+      for (const direction of directions) {
+        const descending = directions.indexOf(direction) < 4;
+        const model = descending
+          ? createQueryModel(cars(5, 3, 1), cars(6, 4, 2))
+          : createQueryModel(cars(1, 3, 5), cars(2, 4, 6));
+
+        const list = await (await model.find({}, {}, 0, 0, { n: direction })).toArray();
+
+        const order = descending ? [6, 5, 4, 3, 2, 1] : [1, 2, 3, 4, 5, 6];
+        assert.deepStrictEqual(list.map((car) => car.n), order, `sorted ${JSON.stringify(direction)}`);
+      }
     });
   });
 

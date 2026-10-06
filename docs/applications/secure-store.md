@@ -9,6 +9,11 @@ Secure Store provides app-scoped encrypted object storage for sensitive values u
 | name | string | yes | Secure store key name |
 | storeData | object/array | yes | Arbitrary payload |
 
+A create, one (`POST /api/v1/secure-store`) or a list of them (`POST /api/v1/secure-store/bulk/add`), refuses a `name`
+that isn't a string, or `storeData` that isn't an object, with a 400 `invalid_value` naming the property (and, in a
+list, the item's `index`), as it does a name the app already has with `already_exist`. Earlier releases took a number
+for a `name`, and checked a list less closely, taking a `name` that was an object as a query.
+
 ## CLI Commands
 
 Create keys from a JSON file:

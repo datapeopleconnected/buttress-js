@@ -78,6 +78,33 @@ describe('helpers/schema-definition:checkSchemaDefinition', () => {
     );
   });
 
+  // SR-DPC-001 R15: an Invalid Date default refused every create that left the date out
+  it("takes a date default that makes a date, and refuses one that doesn't", () => {
+    const dates = ['now', 'Now', 'today', 'tomorrow', '2 days ago', '2026-01-01', '2026-01-01T12:00:00Z', 1700000000000, '', 0, null];
+    assert.deepStrictEqual(check(Object.fromEntries(dates.map((value, i) => [`d${i}`, { __type: 'date', __default: value }]))), []);
+
+    assert.deepStrictEqual(
+      check({
+        garbage: { __type: 'date', __default: 'garbage' },
+        blank: { __type: 'date', __default: ' ' },
+        idDefault: { __type: 'date', __default: 'new' },
+        huge: { __type: 'date', __default: 1e20 },
+        later: { a: { __type: 'array', __schema: { at: { __type: 'date', __default: 'nonsense' } } } },
+      }),
+      [
+        { path: 'garbage.__default', code: 'type', expected: 'date' },
+        { path: 'blank.__default', code: 'type', expected: 'date' },
+        { path: 'idDefault.__default', code: 'type', expected: 'date' },
+        { path: 'huge.__default', code: 'type', expected: 'date' },
+        { path: 'later.a.__schema.at.__default', code: 'type', expected: 'date' },
+      ],
+    );
+  });
+
+  it("takes a default that isn't a date for a property that isn't one", () => {
+    assert.deepStrictEqual(check({ label: { __type: 'string', __default: 'garbage' } }), []);
+  });
+
   it('refuses properties that are not an object', () => {
     assert.deepStrictEqual(checkSchemaDefinition({ name: 'thing', type: 'collection', properties: [] }), [
       { path: 'properties', code: 'type', expected: 'object' },

@@ -27,7 +27,6 @@ async function main() {
 		appToken: process.env.BUTTRESS_APP_TOKEN,
 		apiPath: process.env.BUTTRESS_APP_PATH,
 		version: 1,
-		allowUnauthorized: true,
 	});
 
 	const schema = [{

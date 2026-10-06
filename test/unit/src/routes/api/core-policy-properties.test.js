@@ -89,9 +89,9 @@ describe('routes/api: token policy properties', () => {
   });
   afterEach(() => sinon.restore());
 
-  const run = async (name, params, body) => {
+  const run = async (name, params, body, ctx = context()) => {
     const route = new (routeNamed(name))(services);
-    const req = { params, body, context: context() };
+    const req = { params, body, context: ctx };
     return route._exec(req, {}, await route._validate(req, {}));
   };
   const propertiesOf = (id) => tokenRows.find((row) => row.id === id).policyProperties;
@@ -117,6 +117,50 @@ describe('routes/api: token policy properties', () => {
       }
       assert.deepStrictEqual(propertiesOf(LAMBDA_TOKEN), { role: 'member' });
     });
+  });
+
+  // SR-DPC-001 D6: an update was collected onto an array, which swallowed `length: 5`, threw a RangeError (a 500) for
+  // `length: 'a'`, and dropped `__proto__`
+  describe('property names an object has of its own', () => {
+    const listing = () => {
+      const ctx = context();
+      ctx.authApp.policyPropertiesList = JSON.parse('{"role": ["admin", "member"], "length": [5, "a"], "__proto__": ["admin"]}');
+      return ctx;
+    };
+
+    it('updates each under its name as given', async () => {
+      const update = (body) => run('UpdateLambdaPolicyProperties', { id: LAMBDA }, JSON.parse(body), listing());
+
+      assert.strictEqual(await update('{"length": 5}'), true);
+      assert.deepStrictEqual(propertiesOf(LAMBDA_TOKEN), { role: 'member', length: 5 });
+
+      assert.strictEqual(await update('{"length": "a"}'), true);
+      assert.deepStrictEqual(propertiesOf(LAMBDA_TOKEN), { role: 'member', length: 'a' });
+
+      assert.strictEqual(await update('{"__proto__": "admin"}'), true);
+      const stored = propertiesOf(LAMBDA_TOKEN);
+      assert.deepStrictEqual(Object.entries(stored), [['role', 'member'], ['length', 'a'], ['__proto__', 'admin']]);
+      assert.strictEqual(Object.getPrototypeOf(stored), Object.prototype);
+    });
+
+    it('refuses a value the app does not list for one with a 400', async () => {
+      await assert.rejects(run('UpdateLambdaPolicyProperties', { id: LAMBDA }, { length: -1 }, listing()), {
+        status: 400,
+        code: 'invalid_field',
+      });
+      assert.deepStrictEqual(propertiesOf(LAMBDA_TOKEN), { role: 'member' });
+    });
+  });
+
+  it('refuses properties given as a list with a 400', async () => {
+    for (const name of ['SetLambdaPolicyProperties', 'UpdateLambdaPolicyProperties']) {
+      await assert.rejects(run(name, { id: LAMBDA }, ['admin']), { status: 400, code: 'invalid_body' }, name);
+    }
+    await assert.rejects(run('RemoveUserPolicyProperties', { id: USER, tokenId: USER_TOKEN }, ['admin']), {
+      status: 400,
+      code: 'invalid_body',
+    });
+    assert.deepStrictEqual(propertiesOf(LAMBDA_TOKEN), { role: 'member' });
   });
 
   describe("a user's token", () => {

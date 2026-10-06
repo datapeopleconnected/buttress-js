@@ -80,6 +80,11 @@ policy properties must be values the list holds as they're written. Earlier rele
 key held, skipped keys the token didn't have, and ignored the case of text, both here and in the list; a policy
 relying on that selects fewer tokens now.
 
+A token's policy properties are set, updated or removed with an object (`PUT user/:id/update-policy-property/:tokenId`
+and the like), and a list is refused with a 400, `invalid_body`. Each property is stored under its name as given.
+Earlier releases failed with a 500 when an update gave a property named `length` a value that isn't a number, swallowed
+a numeric one, and dropped one named `__proto__`.
+
 ## Conditions
 
 A config's `condition` must hold for the config to apply; a config without one, or with a `null` one, applies (earlier
@@ -119,6 +124,15 @@ The `#env.` values of an `@elMatch` are read as well, both in the query an item 
 item's query, `access` is one of the item's fields. Earlier releases compared an `@elMatch`'s `#env.` values as their
 text.
 
+An env value can look entities up, `{"collection": "<schema>", "type": "array", "query": {...}, "output": {"key":
+"id", "type": "id"}}`, giving their `output.key` values. Each `#env.` value in its `query` is read, a list's included;
+earlier releases left the first `#env.` value of a list as its text, so the lookup found less than it should.
+
+An `#env.` value that refers back to itself, directly or through other env values or a lookup's query, or that takes
+more than 16 of them to read, can't be read: a config whose query or condition reads it grants nothing, and the token's
+other policies still apply. Earlier releases failed every request the policy applied to, and one referring back
+through a lookup ran the server out of memory.
+
 A config with a `projection` reads only those properties, and a read may query or sort by only them through it: the
 order of a search sorted by a property would show it. A search sorting by a property no config of the token's reads is
 refused with a 403, `property_access_denied`; earlier releases sorted by it.
@@ -143,6 +157,10 @@ differently from a REST read: text without its case, and bare values not at all.
 A policy with a `limit` grants nothing once the limit has passed. Buttress then removes the policy, and takes off the
 token the policy properties its selection took it by: each key the selection needs, and those of each `@or` branch
 that holds for the token, but not those of a branch that doesn't.
+
+A `limit` that isn't a date is refused when a policy is added, synced or updated. A policy stored by an earlier release
+with one grants nothing, and is left for you to correct; earlier releases read it as no limit, so the policy never
+expired.
 
 ## Listing and Removing
 
