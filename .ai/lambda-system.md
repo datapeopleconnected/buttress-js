@@ -46,9 +46,11 @@ Each worker is typed at spawn time (`LambdaType`: `API_ENDPOINT` | `PATH_MUTATIO
 `BootstrapLambda.__getLambdaWorkerType()` assigns types round-robin up to
 `Config.lambda.{apiWorkers,pathMutationWorkers,cronWorkers}`, remaining workers get `ALL`. A worker only
 picks up `lambda:worker:announce` messages matching its own type (or if it's `ALL`). The primary main hands the
-types out over NRP (`lambdaProcessWorker:worker-initiated` → `lambdaProcessMain:worker-type`) and keeps which
-worker id has which. When a worker exits, its main publishes `lambdaProcessMain:worker-exited` and the primary
-main takes the type back, so the replacement gets it.
+types out over NRP (`lambdaProcessWorker:worker-initiated` → `lambdaProcessMain:worker-type`) to the workers of
+every Lambda process on the Redis, and keeps which worker id has which. A lambda worker's `Bootstrap.id` isn't its
+cluster id, which each process numbers from 1, but `<hostname>:<pid>:<random>`; it also reports that id with
+`worker:initiated`. When a worker exits, its main publishes `lambdaProcessMain:worker-exited` with that id and the
+primary main takes the type back, so the replacement gets it.
 
 An execution of a lambda whose `executable` is `false` isn't run: `handleLambdaExecutionMessage()` records it
 as ERROR (`lambda_is_not_executable`), answers an API caller 400, and still queues a cron's next run, so turning

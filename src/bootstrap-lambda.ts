@@ -13,6 +13,9 @@
  * You should have received a copy of the GNU Affero General Public Licence along with
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
+import os from 'node:os';
+import cluster from 'node:cluster';
+import { randomBytes } from 'node:crypto';
 import morgan from 'morgan';
 import { createClient, RedisClientType } from '@redis/client';
 import { Request } from 'express';
@@ -44,6 +47,12 @@ export interface WorkerExitedMessage {
   id: string;
 }
 
+/**
+ * An id for a lambda worker that no other Lambda process's worker has, on this host or another: its host and pid, and
+ * a random part, as containers can share a hostname while numbering their pids alike.
+ */
+const lambdaWorkerId = () => `${os.hostname()}:${process.pid}:${randomBytes(4).toString('hex')}`;
+
 morgan.token('id', (req: Request) => req.context.id);
 export default class BootstrapLambda extends Bootstrap {
   routes?: Routes;
@@ -62,6 +71,10 @@ export default class BootstrapLambda extends Bootstrap {
 
   constructor() {
     super();
+
+    // The primary main hands out the types to every Lambda process's workers by the id they ask with, and each process
+    // numbers its cluster workers from 1. The worker also gives this id with worker:initiated, to give its type back.
+    if (cluster.isWorker) this.id = lambdaWorkerId();
 
     this.primaryDatastore = DatastoreManager.createInstance(Config.datastore, true);
 
