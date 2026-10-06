@@ -106,6 +106,13 @@ values read from the env; `{"access": "%FULL_ACCESS%"}` reads every entity. Ever
 applies, so `{"age": {"@gte": 18, "@lt": 65}}` reads ages from 18 up to 65. Earlier releases applied only the first
 operator a property was given, so that policy read every age from 18 up.
 
+Each `#env.` value in a list is read too, so `{"owner": {"@in": ["#env.user.id", "#env.user.altId"]}}` reads the
+entities either value names, and a list given as a value to equal, such as `{"tags": ["#env.team", "urgent"]}`, stays
+a list. A list naming an `#env.` value that isn't set grants nothing through its config, as a single value that isn't
+set does, rather than leaving that item out, which would let a `@nin` read more. Earlier releases compared a list's
+`#env.` values as their text, so such a policy read less than it named, and read a list given as a value as an object
+of its items, which matched nothing.
+
 A config with a `projection` reads only those properties, and a read may query or sort by only them through it: the
 order of a search sorted by a property would show it. A search sorting by a property no config of the token's reads is
 refused with a 403, `property_access_denied`; earlier releases sorted by it.

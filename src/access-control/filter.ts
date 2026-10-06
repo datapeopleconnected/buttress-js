@@ -68,6 +68,17 @@ const resolveQueryValue = async (value: unknown, envVars: ACPolicyEnvCombined) =
   return resolved;
 };
 
+// An operand with its #env references read: each item of a list, as an env lookup's query reads them, and a list item
+// that isn't set refuses the query as a value that isn't set does, rather than being dropped, which would let a @nin
+// read more
+const resolveQueryOperand = async (value: unknown, envVars: ACPolicyEnvCombined): Promise<unknown> => {
+  if (!Array.isArray(value)) return resolveQueryValue(value, envVars);
+
+  const items: unknown[] = [];
+  for (const item of value as unknown[]) items.push(await resolveQueryOperand(item, envVars));
+  return items;
+};
+
 // What reading a query against an entity takes of its model
 export type QueryModel = Pick<StandardModel<unknown>, 'parseQuery' | 'flatSchemaData' | 'schemaData'>;
 
@@ -110,8 +121,9 @@ export class Filter {
         continue;
       }
 
-      if (typeof val === 'string') {
-        outputRecord[key] = await resolveQueryValue(val, envVars);
+      // A list is a value to equal, kept a list with its items read, rather than read as an object of operators
+      if (typeof val === 'string' || Array.isArray(val)) {
+        outputRecord[key] = await resolveQueryOperand(val, envVars);
         continue;
       }
       // A value is compared whole, an empty object or list included, rather than dropped
@@ -124,7 +136,7 @@ export class Filter {
       // lost its upper bound
       const conditions: Record<string, unknown> = {};
       for (const [operator, value] of Object.entries(val as Record<string, unknown>)) {
-        conditions[operator] = await resolveQueryValue(value, envVars);
+        conditions[operator] = await resolveQueryOperand(value, envVars);
       }
       outputRecord[key] = conditions;
     }

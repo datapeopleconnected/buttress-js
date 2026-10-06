@@ -19,6 +19,9 @@ import assert from 'assert';
 
 import { dependsOnToken, evaluate, mergeGrants } from '../../../../dist/access-control/evaluator.js';
 import { PolicyError } from '../../../../dist/access-control/index.js';
+import Filter from '../../../../dist/access-control/filter.js';
+import { canCreate } from '../../../../dist/access-control/models-access.js';
+import { createSchemaModel } from '../../../schema-model.js';
 
 const userSchema = {
   name: 'user',
@@ -152,6 +155,38 @@ describe('access-control/evaluator:evaluate', () => {
   it('takes a projection with no keys as no restriction', async () => {
     const [grant] = await evaluate([policy('p', { projection: { keys: [] } })], context());
     assert.strictEqual(grant.projection, null);
+  });
+});
+
+// A list operand's #env items were left as their text, so the grant compared '#env.user.id' and read less than its
+// author meant, in a REST read and in the checks made in memory, by a create and in realtime
+describe("access-control/evaluator:evaluate a query's list of #env values", () => {
+  const listEnv = { ...env, user: { id: 'u1', altId: 'u2' } };
+  const { model } = createSchemaModel({ name: 'user', properties: { owner: { __type: 'string' } } });
+  const listPolicy = (query) => policy('owners', { query });
+
+  it("grants the list with its #env items read, which reads the entities they name, in memory too", async () => {
+    const [grant] = await evaluate(
+      [listPolicy({ owner: { '@in': ['#env.user.id', '#env.user.altId'] } })],
+      context({ env: listEnv }),
+    );
+    assert.deepStrictEqual(grant.query, { owner: { $in: ['u1', 'u2'] } });
+
+    for (const [owner, reads] of [['u1', true], ['u2', true], ['u3', false], ['#env.user.id', false]]) {
+      assert.strictEqual(Filter.evaluateQueryAgainstEntity(grant.query, { owner }, model), reads, owner);
+      assert.strictEqual(canCreate({ policyConfigs: [grant] }, { owner }, model), reads, owner);
+    }
+  });
+
+  it("drops a config when an #env item of its list isn't set, as a value that isn't set does", async () => {
+    const grants = await evaluate(
+      [
+        listPolicy({ owner: { '@nin': ['#env.user.id', '#env.user.nickname'] } }),
+        policy('own', { query: { owner: '#env.user.id' } }),
+      ],
+      context({ env: listEnv }),
+    );
+    assert.deepStrictEqual(grants.map((grant) => grant.query), [{ owner: 'u1' }]);
   });
 });
 

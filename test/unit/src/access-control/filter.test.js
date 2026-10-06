@@ -168,7 +168,7 @@ describe('access-control/filter:buildPolicyQuery env references that are not set
       age: { $gte: 18, $lt: 65 },
     });
     assert.deepStrictEqual(await Filter.buildPolicyQuery({ ownerId: { '@ne': 'x', '@in': ['#env.ownerId'] } }, env), {
-      ownerId: { $ne: 'x', $in: ['#env.ownerId'] },
+      ownerId: { $ne: 'x', $in: ['owner-1'] },
     });
     assert.deepStrictEqual(await Filter.buildPolicyQuery({ ownerId: { '@exists': true, '@eq': '#env.ownerId' } }, env), {
       ownerId: { $exists: true, $eq: 'owner-1' },
@@ -186,6 +186,50 @@ describe('access-control/filter:buildPolicyQuery env references that are not set
     assert.deepStrictEqual(await Filter.buildPolicyQuery({ userId: { '@eq': '#env.user' } }, env), {
       userId: { $eq: null },
     });
+  });
+});
+
+// A list operand's #env references were left as their text, so the query compared '#env.user.id' and read less than
+// its author meant
+describe('access-control/filter:buildPolicyQuery #env references in a list', () => {
+  const env = { date: { now: '2025-06-01T00:00:00.000Z' }, user: { id: 'u1', altId: 'u2' }, appId: 'app-1', team: 't1' };
+
+  it("reads each #env item of a list operand, keeping the others as they're given", async () => {
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ owner: { '@in': ['#env.user.id', '#env.user.altId', 'u3'] } }, env),
+      { owner: { $in: ['u1', 'u2', 'u3'] } },
+    );
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ owner: { '@nin': ['#env.user.id'] } }, env), {
+      owner: { $nin: ['u1'] },
+    });
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ tags: { '@all': ['#env.team', 'x'] } }, env), {
+      tags: { $all: ['t1', 'x'] },
+    });
+  });
+
+  it('reads the items of a list in a logical operator\'s queries', async () => {
+    assert.deepStrictEqual(
+      await Filter.buildPolicyQuery({ '@or': [{ owner: { '@in': ['#env.user.id'] } }, { editor: '#env.user.altId' }] }, env),
+      { $or: [{ owner: { $in: ['u1'] } }, { editor: 'u2' }] },
+    );
+  });
+
+  // A list given as a value was read as an object of operators, so ['a', 'b'] became {0: 'a', 1: 'b'}
+  it('keeps a list given as a value a list, its #env items read', async () => {
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ tags: ['a', 'b'] }, env), { tags: ['a', 'b'] });
+    assert.deepStrictEqual(await Filter.buildPolicyQuery({ tags: ['#env.team', 'b'] }, env), { tags: ['t1', 'b'] });
+  });
+
+  // As a value that isn't set does: dropping the item instead would let a @nin read more
+  it("refuses a query when an #env item of a list isn't set", async () => {
+    for (const query of [
+      { owner: { '@in': ['#env.user.id', '#env.user.nickname'] } },
+      { owner: { '@nin': ['#env.misspelt'] } },
+      { tags: ['#env.misspelt'] },
+      { '@and': [{ owner: { '@in': ['#env.user.nickname'] } }] },
+    ]) {
+      await assert.rejects(Filter.buildPolicyQuery(query, env), { name: 'UnresolvedEnvError' }, JSON.stringify(query));
+    }
   });
 });
 
