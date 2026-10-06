@@ -108,6 +108,8 @@ const QUERIES = [
   { owner: null },
   { tags: 'b' },
   { tags: { $in: ['a', 'c'] } },
+  // A list holding '.', which was read as an env path
+  { tags: { $in: ['.', 'c'] } },
   { tags: { $nin: ['b'] } },
   { tags: { $all: ['a', 'b'] } },
   { tags: { $all: [] } },

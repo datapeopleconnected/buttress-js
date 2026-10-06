@@ -423,6 +423,15 @@ describe('model/type/StandardModel:parseQuery', () => {
     const result = model.parseQuery({ name: { $eq: 'env.currentUserName' } }, { currentUserName: 'Alice' });
     assert.deepStrictEqual(result, { name: { $eq: 'Alice' } });
   });
+
+  // A list holding '.' was read as a path, and failed the request
+  it("reads only text starting env. as an env path, and only the env's own values", () => {
+    const model = createModel();
+    assert.deepStrictEqual(model.parseQuery({ name: { $in: ['.'] } }), { name: { $in: ['.'] } });
+    assert.deepStrictEqual(model.parseQuery({ name: { $nin: ['a', '.'] } }), { name: { $nin: ['a', '.'] } });
+    assert.deepStrictEqual(model.parseQuery({ name: 'a.b' }, { b: 'x' }), { name: { $eq: 'a.b' } });
+    assert.deepStrictEqual(model.parseQuery({ name: 'env.constructor' }), { name: { $eq: 'env.constructor' } });
+  });
   // The MongoDB adapter escapes it, so it's matched as the text it is (toMongoQuery)
   it("keeps $inProp's text as it is", () => {
     const model = createModel();

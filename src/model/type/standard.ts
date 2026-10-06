@@ -39,6 +39,9 @@ import { AdapterDocument, AdapterQuery, UpdatePathBody, UpdatePathContext } from
 import { isQueryPath, isUpdatePathRefusal, resolveUpdatePath } from '../update-paths.js';
 import { FlattenedSchema, FlattenedSchemaProperty } from '../../types/schema.js';
 
+// What text naming a value of the env a query is read with starts with
+const ENV_PATH = 'env.';
+
 // The types a compared query value is read as, and the operators that compare
 const QUERY_TYPES = new Set(['boolean', 'number', 'uuid', 'date', 'id']);
 const COMPARISONS = new Set(['$eq', '$ne', '$gt', '$gte', '$lt', '$lte', '$in', '$nin', '$all']);
@@ -286,18 +289,10 @@ export default class StandardModel<TDocument = AdapterDocument> {
     schemaFlat: FlattenedSchema = {},
     checkPaths: boolean = false,
   ) {
-    // Check to see if operand is a path and fetch value
-    if (operand && (operand as string).indexOf && (operand as string).indexOf('.') !== -1) {
-      const parts = (operand as string).split('.');
-      const key = parts.shift();
-
-      const path = parts.join('.');
-
-      if (key === 'env' && envFlat[path]) {
-        operand = envFlat[path];
-      } else {
-        // throw new Error(`Unable to find ${path} in schema.authFilter.env`);
-      }
+    // Text naming an env path, `env.<path>`, is the env's own value there, if it has one
+    if (typeof operand === 'string' && operand.startsWith(ENV_PATH)) {
+      const path = operand.slice(ENV_PATH.length);
+      if (Object.hasOwn(envFlat, path) && envFlat[path]) operand = envFlat[path];
     }
 
     // Convert id
