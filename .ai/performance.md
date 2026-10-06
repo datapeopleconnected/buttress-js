@@ -29,9 +29,9 @@ Budgets are exact both ways: a request doing less than its budget fails too, whi
 
 Scenarios:
 
-- **REST**: the generated schema CRUD routes (GET one, LIST, SEARCH, count, POST, bulk add, path PUT, DELETE), sent
-  with a user token under the `admin-access` policy so access control runs. Each is sent once to warm the token,
-  policy and schema caches, then measured three times; the three must match.
+- **REST**: the generated schema CRUD routes (GET one, LIST, search and count under both QUERY and SEARCH, POST,
+  bulk add, path PUT, DELETE), sent with a user token under the `admin-access` policy so access control runs. Each
+  is sent once to warm the token, policy and schema caches, then measured three times; the three must match.
 - **SPR**: one REST write fanned out to four connected sockets: two on `admin-access` (evaluated once for all its
   tokens) and two on `env-user-query`, which refers to the user, so the SPR evaluates it per connected token.
 

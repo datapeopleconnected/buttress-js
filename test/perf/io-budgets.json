@@ -11,6 +11,16 @@
       "redis": { "HMGET": 1, "SMEMBERS": 1 },
       "nrp": { "sock:worker:request-end": 1, "sock:worker:request-status": 1 }
     },
+    "QUERY /car": {
+      "mongo": { "find": 3 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": { "sock:worker:request-end": 1, "sock:worker:request-status": 1 }
+    },
+    "QUERY /car/count": {
+      "mongo": { "aggregate": 1, "find": 2 },
+      "redis": { "HMGET": 1, "SMEMBERS": 1 },
+      "nrp": {}
+    },
     "SEARCH /car": {
       "mongo": { "find": 3 },
       "redis": { "HMGET": 1, "SMEMBERS": 1 },
