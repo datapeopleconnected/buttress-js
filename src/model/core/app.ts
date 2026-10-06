@@ -430,7 +430,6 @@ export default class AppSchemaModel extends StandardModel<App> {
             buttressUrl: DSA.remoteApp.endpoint,
             apiPath: DSA.remoteApp.apiPath,
             appToken: DSA.remoteApp.token,
-            allowUnauthorized: true, // Move along, nothing to see here...
             version: 1,
             // A partner that can't be reached falls back to the local schema, so don't wait on retries
             maxRetries: 0,
