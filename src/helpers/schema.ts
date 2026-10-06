@@ -18,6 +18,7 @@ import crypto from 'node:crypto';
 import Sugar from './sugar.js';
 
 import Errors from './errors.js';
+import Logging from './logging.js';
 import { decode as decodeValue, isDecodeError } from './codecs.js';
 
 import Plugins from '../plugins/index.js';
@@ -316,6 +317,28 @@ export const encode = (obj: unknown) => {
 export const decode = (obj: string): Schema[] => {
   return JSON.parse(obj) as Schema[];
   // return JSON.parse(Schema.decodeKey(JSON.stringify(obj)));
+};
+
+/**
+ * An app's stored schema, or null when it can't be read: when it isn't JSON or isn't a list. That's logged, naming the
+ * app, so a caller going through every app can pass over this one rather than stop the apps after it getting theirs.
+ * Anything else that fails is rethrown.
+ */
+export const decodeStored = (app: { id: string; __schema: string }): Schema[] | null => {
+  let decoded: unknown;
+  try {
+    decoded = decode(app.__schema);
+  } catch (err: unknown) {
+    if (!(err instanceof SyntaxError)) throw err;
+    Logging.logWarn(`Unable to read the stored schema of app ${app.id}: ${err.message}`);
+    return null;
+  }
+  if (!Array.isArray(decoded)) {
+    Logging.logWarn(`Unable to read the stored schema of app ${app.id}: it isn't a list`);
+    return null;
+  }
+
+  return decoded as Schema[];
 };
 
 export const encodeKey = (key: string) => {

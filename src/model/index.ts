@@ -152,18 +152,8 @@ export class ModelManager {
 
       // An app whose stored schema can't be read or built is left without models, rather than stopping the apps
       // after it getting theirs. Only the stored schema is read here; anything else that fails is rethrown.
-      let decoded: Schema[];
-      try {
-        decoded = Helpers.Schema.decode(app.__schema);
-      } catch (err: unknown) {
-        if (!(err instanceof SyntaxError)) throw err;
-        Logging.logWarn(`Unable to read the stored schema of app ${app.id}: ${err.message}`);
-        continue;
-      }
-      if (!Array.isArray(decoded)) {
-        Logging.logWarn(`Unable to read the stored schema of app ${app.id}: it isn't a list`);
-        continue;
-      }
+      const decoded = Helpers.Schema.decodeStored(app);
+      if (!decoded) continue;
 
       let builtSchemas: Schema[];
       try {

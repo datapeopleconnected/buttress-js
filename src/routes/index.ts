@@ -366,6 +366,10 @@ class Routes {
     if (!app) throw new Error(`Expected app object to be passed through to _generateAppRoutes, got ${app}`);
     if (!app.__schema) return;
 
+    // An app whose stored schema can't be read gets no routes, rather than stopping the apps after it getting theirs
+    const schemas = Helpers.Schema.decodeStored(app);
+    if (!schemas) return;
+
     // Get DS agreements
     const appDSAs = await Helpers.streamAll<AppDataSharing>(
       await Model.getCoreModel(AppDataSharingSchemaModel).find({
@@ -375,7 +379,7 @@ class Routes {
 
     const appRouter = this._createRouter();
 
-    Helpers.Schema.decode(app.__schema)
+    schemas
       .filter((schema) => schema.type.indexOf('collection') === 0)
       .filter((schema) => {
         if (!schema.remotes) return true;

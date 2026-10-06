@@ -14,10 +14,12 @@
  * this program. If not, see <http://www.gnu.org/licenses/>.
  */
 
-import { describe, it } from 'mocha';
+import { describe, it, afterEach } from 'mocha';
 import assert from 'assert';
+import sinon from 'sinon';
 
 import * as Helpers from '../../../../dist/helpers/index.js';
+import Logging from '../../../../dist/helpers/logging.js';
 import { parseDocument } from '../../../../dist/model/parse-document.js';
 
 describe('model/parse-document:parseDocument', () => {
@@ -193,4 +195,39 @@ describe('helpers.schema:stripPrivate', () => {
     const value = user();
     assert.strictEqual(Helpers.Schema.stripPrivate(value, []), value);
   });
+});
+
+describe('helpers.schema:decodeStored', () => {
+	afterEach(() => sinon.restore());
+
+	it("gives an app's stored schema", () => {
+		const schemas = [{ name: 'car', type: 'collection', properties: {} }];
+		assert.deepStrictEqual(Helpers.Schema.decodeStored({ id: 'app-1', __schema: JSON.stringify(schemas) }), schemas);
+	});
+
+	for (const [label, stored] of [
+		["isn't JSON", '[{"name": "car", '],
+		["isn't a list", JSON.stringify({ name: 'car', type: 'collection' })],
+		['is null', 'null'],
+	]) {
+		it(`gives null for a stored schema that ${label}, and logs it naming the app`, () => {
+			const warn = sinon.stub(Logging, 'logWarn');
+
+			assert.strictEqual(Helpers.Schema.decodeStored({ id: 'app-2', __schema: stored }), null);
+
+			sinon.assert.calledOnceWithMatch(warn, 'app-2');
+		});
+	}
+
+	it("rethrows what isn't the stored schema failing to read", () => {
+		const warn = sinon.stub(Logging, 'logWarn');
+		const __schema = {
+			toString() {
+				throw new Error('not the schema');
+			},
+		};
+
+		assert.throws(() => Helpers.Schema.decodeStored({ id: 'app-1', __schema }), /not the schema/);
+		sinon.assert.notCalled(warn);
+	});
 });

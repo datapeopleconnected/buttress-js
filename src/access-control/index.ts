@@ -351,7 +351,9 @@ class AccessControl {
         `__cacheAppSchema::app ${appId} not found`,
       );
     }
-    this._schemas[appId] = Schema.decode(app.__schema).filter((s) => s.type.indexOf('collection') === 0);
+    // An app whose stored schema can't be read has none of its own here, rather than failing every request it makes
+    const schemas = Schema.decodeStored(app) ?? [];
+    this._schemas[appId] = schemas.filter((s) => s.type.indexOf('collection') === 0);
 
     Logging.logSilly(`Refreshed schema cache for app ${appId} got ${this._schemas[appId].length} schema`);
   }

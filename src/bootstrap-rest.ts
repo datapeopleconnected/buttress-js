@@ -429,7 +429,9 @@ export default class BootstrapRest extends Bootstrap {
 
     const rxsApps = await Model.getCoreModel(AppSchemaModel).findAll();
     for await (const app of rxsApps as AsyncIterable<App>) {
-      const appSchema = Schema.decode(app.__schema);
+      // An app whose stored schema can't be read is left as it is, rather than stopping REST starting
+      const appSchema = Schema.decodeStored(app);
+      if (!appSchema) continue;
       Logging.log(`Adding ${localSchema.length} local schema for ${app.id}:${app.name}:${appSchema.length}`);
       localSchema.forEach((cS) => {
         const appSchemaIdx = appSchema.findIndex((s) => s.name === cS.name);
