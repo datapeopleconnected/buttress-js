@@ -18,6 +18,7 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
@@ -748,6 +749,18 @@ describe('lambda/LambdaRunner:execute logs', () => {
     assert.match(first, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.match(second, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.notStrictEqual(first, second);
+  });
+
+  it('gives a lambda a hash of a message from the host', async function () {
+    this.timeout(10000);
+
+    const update = await complete(`
+      lambda.log(await lambda.cryptoCreateHash({ algorithm: 'sha256', message: 'abc' }));
+    `);
+
+    // The host hashes the message as JSON, as Snippet.Helpers.createMessageHash has always been given it
+    const expected = crypto.createHash('sha256').update(JSON.stringify('abc'), 'utf8').digest('hex');
+    assert.deepStrictEqual(update.$push.logs.$each, [{ log: expected, type: 'log' }]);
   });
 
   it('refuses a lambda more random bytes than the web crypto allows at once', async function () {

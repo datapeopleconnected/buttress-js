@@ -260,6 +260,19 @@ class IsolateBridge {
 				});
 			}
 
+			global.cryptoCreateHash = (data) => {
+				return new Promise((resolve, reject) => {
+					_cryptoCreateHash.applyIgnored(
+						undefined,
+						[
+							new ivm.ExternalCopy(data).copyInto(),
+							new ivm.Reference(resolve),
+							new ivm.Reference(reject),
+						],
+					);
+				});
+			}
+
 			global.cryptoEncryptWithKey = (data) => {
 				return new Promise((resolve, reject) => {
 					_cryptoEncryptWithKey.applyIgnored(
@@ -364,6 +377,7 @@ class IsolateBridge {
 			fetch: async (...args) => fetch(...args),
 			cryptoRandomBytes: async (...args) => cryptoRandomBytes(...args),
 			cryptoCreateSign: async (...args) => cryptoCreateSign(...args),
+			cryptoCreateHash: async (...args) => cryptoCreateHash(...args),
 			cryptoEncryptWithKey: async (...args) => cryptoEncryptWithKey(...args),
 			cryptoDecryptWithKey: async (...args) => cryptoDecryptWithKey(...args),
 			getEmailTemplate: async(...args) => getEmailTemplate(...args),
