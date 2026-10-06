@@ -22,6 +22,7 @@ import * as Helpers from '../helpers/index.js';
 import StandardModel from '../model/type/standard.js';
 import { DocumentOf } from '../model/type/tenant-scoped.js';
 import { invalidUpdateError } from '../model/shared.js';
+import { isPlainObject } from '../helpers/schema-definition.js';
 import ActivitySchemaModel from '../model/core/activity.js';
 import TokenSchemaModel, { Token } from '../model/core/token.js';
 import { Services } from '../bootstrap.js';
@@ -380,6 +381,12 @@ export abstract class CoreTokenPolicyProperties<M extends StandardModel<Document
     if (!req.body) {
       this.log('ERROR: No data has been posted', Route.LogLevel.ERR);
       throw Helpers.Errors.badRequest('missing_field');
+    }
+
+    // Properties are named values, which a list isn't
+    if (this.change !== 'clear' && !isPlainObject(req.body)) {
+      this.log(`[${this.name}] The policy properties are not an object`, Route.LogLevel.ERR);
+      throw Helpers.Errors.badRequest('invalid_body', 'The policy properties must be an object');
     }
 
     const id = this.idOf(req);

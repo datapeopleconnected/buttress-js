@@ -139,7 +139,8 @@ test has it too).
 - A get-one is `findByIdOrFail` (404 `not_found`, 400 `invalid_id`), its `present(row)` hook giving what's sent
   (activity sends its `body`); a get-list lists the rows the caller reaches, only those `?ids=a,b` names where the
   route `takesIds` (policy, lambda; D-29); a delete-all is `rmAll` over them.
-- A policy-property route (`set`, `update`, `remove` or `clear`, its `policyProperties`) checks the row exists, finds
+- A policy-property route (`set`, `update`, `remove` or `clear`, its `policyProperties`) refuses a body that isn't an
+  object, but for `clear`, with 400 `invalid_body`, checks the row exists, finds
   its token with the owner's `findToken` (a lambda's by `_lambdaId`, a user's by `:tokenId`, id or value), checks
   set or merged properties against the app's list (400 `invalid_field`), then changes the token; `afterChange`
   follows (a user's sockets look at its rooms again after a remove or clear).

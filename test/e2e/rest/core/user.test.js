@@ -42,7 +42,7 @@ describe('User API', async () => {
 		}, 'User API setup');
 
 		testEnv.apps.app1 = await runStep('create app1', async () =>
-			createApp(ENDPOINT.REST, 'Test User API', 'test-user-api-1', { someProperty: [ 'value', 'newValue' ] })
+			createApp(ENDPOINT.REST, 'Test User API', 'test-user-api-1', { someProperty: [ 'value', 'newValue' ], length: [ 'a' ] })
 		, 'User API setup');
 
 		// Create some users
@@ -394,6 +394,25 @@ describe('User API', async () => {
 			}, testEnv.apps.app1.token);
 
 			assert.strictEqual(response, true, 'Response should be true');
+		});
+
+		// SR-DPC-001 D6: updates were collected onto an array, so `length: 'a'` threw a RangeError, a 500
+		it('Should update a policy property named length', async () => {
+			const token = testEnv.users.user1.tokens[0];
+			const response = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}/update-policy-property/${token.id}`,
+				method: 'PUT',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ length: 'a' })
+			}, testEnv.apps.app1.token);
+			assert.strictEqual(response, true, 'Response should be true');
+
+			const user = await bjsReq({
+				url: `${ENDPOINT.REST}/api/v1/user/${testEnv.users.user1.id}`,
+				method: 'GET',
+			}, testEnv.apps.app1.token);
+			const stored = user.tokens.find((t) => t.value === token.value).policyProperties;
+			assert.deepStrictEqual(stored, { someProperty: 'newValue', length: 'a' });
 		});
 
 		it('Should not update the policy properties if the policy property doesn\'t exist', async () => {

@@ -80,6 +80,11 @@ policy properties must be values the list holds as they're written. Earlier rele
 key held, skipped keys the token didn't have, and ignored the case of text, both here and in the list; a policy
 relying on that selects fewer tokens now.
 
+A token's policy properties are set, updated or removed with an object (`PUT user/:id/update-policy-property/:tokenId`
+and the like), and a list is refused with a 400, `invalid_body`. Each property is stored under its name as given.
+Earlier releases failed with a 500 when an update gave a property named `length` a value that isn't a number, swallowed
+a numeric one, and dropped one named `__proto__`.
+
 ## Conditions
 
 A config's `condition` must hold for the config to apply; a config without one, or with a `null` one, applies (earlier

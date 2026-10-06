@@ -175,6 +175,40 @@ describe('model/core/TokenSchemaModel:updatePolicyProperties', () => {
     assert.deepStrictEqual(update.$set.policyProperties, { role: 'admin' });
   });
 
+  // SR-DPC-001 D6: they were collected onto an array, which took `length` as its own and dropped `__proto__`
+  it('stores every property under its name as given, `length` and `__proto__` included', async () => {
+    const { model } = createModel();
+    const token = { id: 'token-1', policyProperties: { role: 'user' } };
+
+    await model.updatePolicyProperties(token, JSON.parse('{"length": 5, "__proto__": "admin", "constructor": "x"}'));
+
+    const [, update] = model.adapter.updateById.firstCall.args;
+    const stored = update.$set.policyProperties;
+    assert.deepStrictEqual(Object.entries(stored), [['role', 'user'], ['length', 5], ['__proto__', 'admin'], ['constructor', 'x']]);
+    assert.strictEqual(Object.getPrototypeOf(stored), Object.prototype);
+  });
+
+  it("doesn't throw for a `length` that isn't a valid array length", async () => {
+    const { model } = createModel();
+
+    await model.updatePolicyProperties({ id: 'token-1', policyProperties: {} }, { length: 'a' });
+
+    const [, update] = model.adapter.updateById.firstCall.args;
+    assert.deepStrictEqual(update.$set.policyProperties, { length: 'a' });
+  });
+
+  it('gives a `__proto__` object no way to the prototype of what it stores, or of any object', async () => {
+    const { model } = createModel();
+
+    await model.updatePolicyProperties({ id: 'token-1', policyProperties: {} }, JSON.parse('{"__proto__": {"polluted": true}}'));
+
+    const [, update] = model.adapter.updateById.firstCall.args;
+    const stored = update.$set.policyProperties;
+    assert.deepStrictEqual(Object.getOwnPropertyDescriptor(stored, '__proto__').value, { polluted: true });
+    assert.strictEqual(stored.polluted, undefined);
+    assert.strictEqual({}.polluted, undefined);
+  });
+
   it('strips a stray query key from the incoming policy properties', async () => {
     const { model } = createModel();
     const token = { id: 'token-1', policyProperties: {} };
