@@ -327,6 +327,31 @@ describe('routes/api/user:CreateUserAuthToken', () => {
     });
   });
 
+  // SR-DPC-001 S14: the caller gives the token's domains and policy properties, and nothing else
+  it('makes the token from its domains and policy properties alone', async () => {
+    stubModel({ user: { findOne: async () => ({ id: '6abd01000000000000000001' }) } });
+    const route = createRoute(CreateUserAuthToken);
+    const body = {
+      id: '6abd02000000000000000009',
+      type: 'system',
+      value: 'chosen-value',
+      permissions: [{ route: 'app', permission: '*' }],
+      tags: ['chosen'],
+      _appId: '6abd05000000000000000009',
+      domains: ['app.example.com'],
+      policyProperties: {},
+    };
+
+    const validate = await route._validate(createReq({ params: { id: '6abd01000000000000000001' }, body }));
+
+    assert.deepStrictEqual(validate.token, {
+      type: 'user',
+      permissions: [{ route: '*', permission: '*' }],
+      domains: ['app.example.com'],
+      policyProperties: {},
+    });
+  });
+
   it('adds a token scoped to the app and user, then busts the route cache', async () => {
     // _exec() converts appId/user.id via the real Datastore ObjectId adapter (not routed through
     // Model.getCoreModel), so these need to look like real 24-char hex ids.
@@ -334,13 +359,15 @@ describe('routes/api/user:CreateUserAuthToken', () => {
     const nrp = { emit: sinon.spy() };
     const route = createRoute(CreateUserAuthToken, { nrp });
 
+    const token = { type: 'user', permissions: [{ route: '*', permission: '*' }], domains: ['*'], policyProperties: {} };
     const result = await route._exec(
-      createReq({ body: { policyProperties: {}, domains: ['*'] } }),
+      createReq({ body: { id: HEX_ID, policyProperties: {}, domains: ['*'] } }),
       {},
-      { appId: HEX_ID, user: { id: HEX_ID } },
+      { appId: HEX_ID, user: { id: HEX_ID }, token },
     );
 
     assert.ok(tokenModel.add.calledOnce);
+    assert.strictEqual(tokenModel.add.firstCall.args[0], token);
     assert.strictEqual(result.value, 'token-value');
     assert.ok(nrp.emit.calledWith('app-routes:bust-cache', '{}'));
   });

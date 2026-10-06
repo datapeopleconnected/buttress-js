@@ -326,8 +326,6 @@ class CreateUserAuthToken extends Route {
       return Promise.reject(Helpers.Errors.badRequest('invalid_domains'));
     }
 
-    req.body.type = Model.getCoreModel(TokenSchemaModel).Constants.Type.USER;
-
     if (!req.params.id) {
       this.log(`[${this.name}] Missing required field (id)`, Route.LogLevel.ERR);
       return Promise.reject(Helpers.Errors.badRequest('missing_field'));
@@ -344,14 +342,24 @@ class CreateUserAuthToken extends Route {
       return Promise.reject(Helpers.Errors.badRequest('invalid_policy_property'));
     }
 
+    // Only the domains and policy properties come from the caller; the rest is set here, as a user's
+    // token made with the user is
+    const token: Partial<Token> = {
+      type: Model.getCoreModel(TokenSchemaModel).Constants.Type.USER,
+      permissions: [{ route: '*', permission: '*' }],
+      domains: req.body.domains,
+      policyProperties: req.body.policyProperties,
+    };
+
     return Promise.resolve({
       appId: req.context.authApp.id,
       user,
+      token,
     });
   }
 
-  override async _exec(req: RequestWithBody<Partial<Token>>, res: Response, validate: { appId: string; user: User }) {
-    const rxsToken = await this.scoped(req, TokenSchemaModel).add(req.body, {
+  override async _exec(req: Request, res: Response, validate: { appId: string; user: User; token: Partial<Token> }) {
+    const rxsToken = await this.scoped(req, TokenSchemaModel).add(validate.token, {
       _appId: validate.appId,
       _userId: validate.user.id,
     });
