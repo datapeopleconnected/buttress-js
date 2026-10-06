@@ -107,8 +107,9 @@ An array of primitives uses `__itemtype` instead:
 
 A value is read as its property's `__type` the same way wherever it's given: in a body you create, in an update,
 or in a query that compares it (`$eq`, `$ne`, `$gt`, `$gte`, `$lt`, `$lte`, `$in`, `$nin`, `$all`, and a bare
-value). A value that can't be read is refused with a 400, `invalid_value`, naming the property and the type it
-expected. `null` is always taken, as no value.
+value), the operators an `$elMatch` gives a list's values included, which read it as the list's `__itemtype`. A value
+that can't be read is refused with a 400, `invalid_value`, naming the property and the type it expected. `null` is
+always taken, as no value.
 
 | `__type` | Takes |
 | :- | :- |
@@ -124,7 +125,7 @@ expected. `null` is always taken, as no value.
 
 Earlier releases stored any other text, or any number but `1`, as `false` for a `boolean`, took any text as a
 `uuid`, and compared a query value as it was given, so `"true"` matched no `boolean` and an id that couldn't be one
-matched every entity without one.
+matched every entity without one; and `{"scores": {"$elMatch": {"$gt": "3"}}}` matched no list of numbers.
 
 ### Creating an Entity
 
@@ -270,9 +271,9 @@ property a value to equal, or an object of operators; the operators can be writt
 `$and`, `$or` and `$nor` take a list of queries. A query naming an operator Buttress doesn't know, or a name with an
 operator's prefix where a property goes, is refused with a 400, `unknown_operator`, naming the property and the
 operator (`$where`, `$expr` and other MongoDB operators included); one giving an operator a value it can't take,
-such as `$in` without a list or a pattern that isn't one, with a 400, `invalid_value`. Earlier releases sent both on,
-and the request failed with a 500, as it did for a list given as a value; and they read an empty list given as a value
-as matching every entity.
+such as `$in` without a list or a pattern that isn't one, an `$elMatch`'s own operators included, with a 400,
+`invalid_value`. Earlier releases sent both on, and the request failed with a 500, as it did for a list given as a
+value; and they read an empty list given as a value as matching every entity.
 
 A pattern, for `$rex`, `$rexi` or `$regex`, is a JavaScript regular expression that MongoDB reads the same way, so a
 search and realtime match it alike. One that isn't is refused with a 400, `invalid_value`, expecting a `pattern`:

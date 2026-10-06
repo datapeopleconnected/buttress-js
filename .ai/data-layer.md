@@ -49,8 +49,9 @@ Key things to know:
   path it doesn't define (`isQueryPath` in update-paths.ts) with 400 `unknown_path`, as for a path naming `__proto__`
   whatever the schema. A query's and a schema's names are read as their own properties, never Object.prototype's. An
   object without operator names is a value, compared whole (`$eq`), as MongoDB compares one. An `$elMatch` of
-  operators only (`{$gt: 1}`, `isValueOperators`) tests a list's values; any other is a query on its items, its own
-  `$or`/`$and`/`$nor` included.
+  operators only (`{$gt: 1}`, `isValueOperators`) tests a list's values, each operator read by `parseQueryProperty` as
+  it is on the list outside `$elMatch` (its operand checked, a comparison's decoded as the `__itemtype`); any other is
+  a query on its items, its own `$or`/`$and`/`$nor` included.
 - **Only the MongoDB adapter makes MongoDB's query**, in `MongodbAdapter._query`: `toMongoQuery()` (the registry's
   translation: `$rexi`→`$regex` + `$options: 'i'`, `$not`→`$ne`, `$gtDate`→`$gt`, `$inProp`→escaped `$regex`,
   `$elMatch`→`$elemMatch`, `@and`→`$and`), then the id conversion. The Buttress adapter forwards the Buttress query

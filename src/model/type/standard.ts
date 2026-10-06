@@ -249,22 +249,42 @@ export default class StandardModel<TDocument = AdapterDocument> {
   }
 
   /**
+   * The operators an $elMatch gives a value of a list, each one the registry knows, in its `$` name, read as the same
+   * operator given the list outside $elMatch is: its operand checked, and a comparison's read as the list's items.
+   * @param {string} property - the list
+   * @param {object} operators
+   * @return {object}
+   */
+  __parseOperators(
+    property: string,
+    operators: Record<string, unknown>,
+    envFlat: Record<string, unknown>,
+    schemaFlat: FlattenedSchema,
+    checkPaths: boolean,
+  ): Record<string, unknown> {
+    let output: Record<string, unknown> = {};
+    for (const [operator, operand] of Object.entries(operators)) {
+      if (!Object.hasOwn(ALIASES, operator)) throw unknownQueryOperator(property, operator);
+      output = this.parseQueryProperty(
+        property,
+        operatorName(operator),
+        operand,
+        output,
+        envFlat,
+        schemaFlat,
+        checkPaths,
+      );
+    }
+    return output[property] as Record<string, unknown>;
+  }
+
+  /**
    * A query value, or each of a list of them, read as `type`. Null is left, to match a property with no value.
    * @param {string} property
    * @param {string} type
    * @param {unknown} operand
    * @return {unknown}
    */
-  // Operators given as a value's conditions, each one the registry knows, in its `$` name
-  __parseOperators(property: string, operators: Record<string, unknown>): Record<string, unknown> {
-    return Object.fromEntries(
-      Object.entries(operators).map(([operator, operand]) => {
-        if (!Object.hasOwn(ALIASES, operator)) throw unknownQueryOperator(property, operator);
-        return [operatorName(operator), operand];
-      }),
-    );
-  }
-
   __decodeOperand(property: string, type: string, operand: unknown): unknown {
     if (Array.isArray(operand)) return operand.map((item) => this.__decodeOperand(property, type, item));
     if (operand === null || operand === undefined) return operand;
@@ -317,7 +337,7 @@ export default class StandardModel<TDocument = AdapterDocument> {
       // array has one
       const itemQuery = operand as Record<string, unknown>;
       operand = isValueOperators(itemQuery)
-        ? this.__parseOperators(property, itemQuery)
+        ? this.__parseOperators(property, itemQuery, envFlat, schemaFlat, checkPaths)
         : this.parseQuery(itemQuery, envFlat, propSchema?.__schema ?? {}, checkPaths && Boolean(propSchema?.__schema));
     } else if (propSchema) {
       const itemSchema = propSchema.__schema;

@@ -191,6 +191,9 @@ describe('model/type/StandardModel:parseQuery operators', () => {
     [{ name: { $regex: 'a{70000}' } }, 'name', 'pattern'],
     [{ name: { $inProp: 5 } }, 'name', 'string'],
     [{ tags: { $elMatch: 'x' } }, 'tags', 'object'],
+    // The operators in an $elMatch on a list of values, as the same operators outside it
+    [{ tags: { $elMatch: { $in: 'x' } } }, 'tags', 'array'],
+    [{ tags: { $elMatch: { '@rex': '(?i)a' } } }, 'tags', 'pattern'],
     [{ $or: { name: 'x' } }, '$or', 'array'],
     [{ $and: ['x'] }, '$and', 'array'],
   ]) {
@@ -237,6 +240,39 @@ describe('model/type/StandardModel:parseQuery operators', () => {
       scores: { $elMatch: { $gt: 3 } },
     });
   });
+
+  // As the same operators outside $elMatch read them (D-2)
+  const listsSchema = {
+    ...widgetSchema,
+    properties: {
+      ...widgetSchema.properties,
+      scores: { __type: 'array', __itemtype: 'number' },
+      ownerIds: { __type: 'array', __itemtype: 'id' },
+      dates: { __type: 'array', __itemtype: 'date' },
+    },
+  };
+
+  it("reads the operands of an $elMatch's operators on a typed list as the list's items", () => {
+    const model = createModel(listsSchema);
+    assert.deepStrictEqual(model.parseQuery({ scores: { $elMatch: { $gt: '5', '@in': ['1', 2], $exists: true } } }), {
+      scores: { $elMatch: { $gt: 5, $in: [1, 2], $exists: true } },
+    });
+    assert.deepStrictEqual(model.parseQuery({ ownerIds: { $elMatch: { $eq: HEX_ID } } }), {
+      ownerIds: { $elMatch: { $eq: { id: HEX_ID } } },
+    });
+    assert.deepStrictEqual(model.parseQuery({ dates: { $elMatch: { $gteDate: '2025-01-01' } } }), {
+      dates: { $elMatch: { $gteDate: new Date('2025-01-01') } },
+    });
+  });
+
+  for (const [query, path, expected] of [
+    [{ ownerIds: { $elMatch: { $eq: 'not-an-id' } } }, 'ownerIds', 'id'],
+    [{ scores: { $elMatch: { $lt: 'many' } } }, 'scores', 'number'],
+  ]) {
+    it(`refuses ${JSON.stringify(query)} with 400 invalid_value, as outside $elMatch`, () => {
+      assert.throws(() => createModel(listsSchema).parseQuery(query), { status: 400, code: 'invalid_value', details: { path, expected } });
+    });
+  }
 
   const linesSchema = {
     ...widgetSchema,

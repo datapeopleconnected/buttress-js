@@ -120,6 +120,8 @@ const QUERIES = [
   { scores: { $gt: 4 } },
   { scores: { $lt: 2 } },
   { scores: { $elMatch: { $gt: 3, $lt: 5 } } },
+  // Read as the list's items, as outside $elMatch
+  { scores: { $elMatch: { $gt: '3' } } },
   { 'lines.sku': 'Y' },
   { 'lines.qty': { $gte: 7 } },
   { lines: { $elMatch: { sku: 'X', qty: { $gt: 5 } } } },
@@ -192,4 +194,16 @@ describe('access-control/operators: matching as MongoDB does', () => {
       assert.deepStrictEqual(matched, expected);
     });
   }
+
+  // The text '3' read as the number the list holds, as it's read outside $elMatch, rather than compared as text
+  it("reads an $elMatch's operands on a typed list as the list's items, finding what they find outside $elMatch", async () => {
+    const find = async (query) => {
+      const parsed = toMongoQuery(model.parseQuery(query, {}, model.flatSchemaData));
+      return (await collection.find(ids.toStored(parsed)).toArray()).map((doc) => ids.fromStored(doc).id).sort();
+    };
+
+    const outside = await find({ scores: { $gt: '3' } });
+    assert.deepStrictEqual(outside, [id(1), id(3), id(4)]);
+    assert.deepStrictEqual(await find({ scores: { $elMatch: { $gt: '3' } } }), outside);
+  });
 });
