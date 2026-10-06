@@ -188,10 +188,6 @@ const __prepareSchemaResult = (result: unknown, sourceId: string | null = null, 
   const _prepare = (chunk: unknown, path: string | null): unknown => {
     if (!chunk) return chunk;
 
-    if (path) {
-      if (path.indexOf('_') === 0) return undefined;
-    }
-
     if (typeof chunk === 'object') {
       if (Datastore.getInstance('core').ID.isValid(chunk)) return chunk;
       if (chunk instanceof Date) return chunk;
@@ -214,6 +210,11 @@ const __prepareSchemaResult = (result: unknown, sourceId: string | null = null, 
 
       for (const key in obj) {
         if (!{}.hasOwnProperty.call(obj, key)) continue;
+        // A `_` property is internal: it's left out whatever it holds, an empty value or a list included
+        if (key.startsWith('_')) {
+          delete obj[key];
+          continue;
+        }
         const value = obj[key];
         obj[key] = Array.isArray(value) ? value.map((c: unknown) => _prepare(c, key)) : _prepare(value, key);
 
