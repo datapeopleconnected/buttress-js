@@ -94,7 +94,11 @@ export class Conditions {
     const conditionEntry = conditionObj[key];
     if (typeof conditionEntry !== 'object' || conditionEntry === null || Array.isArray(conditionEntry)) return false;
 
-    for await (const operator of Object.keys(conditionEntry)) {
+    // A criterion with no operator holds for nothing, as a selection's selects nothing
+    const operators = Object.keys(conditionEntry);
+    if (operators.length < 1) return false;
+
+    for await (const operator of operators) {
       results.push(await this.__checkConditionQuery(envVariables, operator, conditionObj, key));
     }
 

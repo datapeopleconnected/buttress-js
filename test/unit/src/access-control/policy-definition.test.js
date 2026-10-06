@@ -17,7 +17,12 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
-import { checkPolicyConfig, checkPolicyConfigUpdate } from '../../../../dist/access-control/policy-definition.js';
+import {
+  checkPolicyConfig,
+  checkPolicyConfigUpdate,
+  checkUpdatedPolicyConfig,
+  writesIntoConfig,
+} from '../../../../dist/access-control/policy-definition.js';
 
 const VERBS = ['GET', 'QUERY', 'SEARCH', 'POST', 'PUT', 'DELETE', '%ALL%'];
 const valid = () => ({ verbs: ['GET', 'SEARCH'], schema: ['note'], query: { access: '%FULL_ACCESS%' } });
@@ -228,5 +233,96 @@ describe('access-control/policy-definition:checkPolicyConfigUpdate', () => {
     ]);
     assert.deepStrictEqual(checkPolicyConfigUpdate({ path: 'config.2.verbs', value: ['GET'] }), []);
     assert.deepStrictEqual(checkPolicyConfigUpdate({ path: 'name', value: 'x' }), []);
+  });
+});
+
+// An update into a config by its index is checked with the configs it leaves, as the datastore writes it: one below a
+// config's field included, which the value alone can't be checked for
+describe('access-control/policy-definition:writesIntoConfig', () => {
+  it('is an update that writes into a config by its index', () => {
+    for (const path of ['config.0', 'config.0.query', 'config.0.query.status', 'config.1.verbs.0', 'config.1.verbs.0.__remove__']) {
+      assert.strictEqual(writesIntoConfig({ path, value: 'x' }), true, path);
+    }
+    for (const path of ['config', 'config.0.__remove__', 'name', 'selection.role']) {
+      assert.strictEqual(writesIntoConfig({ path, value: 'x' }), false, path);
+    }
+  });
+});
+
+describe('access-control/policy-definition:checkUpdatedPolicyConfig', () => {
+  const roles = { '@or': [{ '#env.role': { '@eq': 'admin' } }, { '#env.role': { '@eq': 'owner' } }] };
+  // As a policy is stored: each field there, with its default where it was left out
+  const stored = () => [
+    { ...valid(), endpoints: [], env: null, projection: { keys: ['name'] }, query: { status: { '@eq': 'open' } }, condition: roles },
+    { ...valid(), endpoints: [], env: null, projection: null, condition: null },
+  ];
+
+  it('checks the configs an update below a config field leaves', () => {
+    for (const [update, issue] of [
+      [{ path: 'config.0.condition.@or.1', value: { '#env.role': {} } }, { path: 'config.0.condition.@or.1.#env.role', code: 'required' }],
+      [{ path: 'config.0.condition.@or.1', value: { '#env.role': { '@like': 'x' } } }, { path: 'config.0.condition.@or.1.#env.role', code: 'unknown_operator', received: '@like' }],
+      [{ path: 'config.0.query.status', value: { '@in': 'x' } }, { path: 'config.0.query.status', code: 'type', expected: 'array' }],
+      [{ path: 'config.0.query.status', value: { '@foo': 1 } }, { path: 'config.0.query.status', code: 'unknown_operator', received: '@foo' }],
+      [{ path: 'config.0.query.@or', value: [] }, { path: 'config.0.query.@or', code: 'type', expected: 'array' }],
+      [{ path: 'config.1.verbs.0', value: 'FETCH' }, { path: 'config.1.verbs.0', code: 'enum', expected: VERBS, received: 'string' }],
+      [{ path: 'config.0.projection.keys', value: 'name' }, { path: 'config.0.projection.keys', code: 'type', expected: 'array' }],
+    ]) {
+      assert.deepStrictEqual(checkUpdatedPolicyConfig(stored(), [update]), [issue], update.path);
+    }
+  });
+
+  it('takes updates below a config field that leave configs which can grant something', () => {
+    for (const updates of [
+      [{ path: 'config.0.query.status', value: { '@in': ['open', 'shut'] } }],
+      [{ path: 'config.0.condition.@or.1', value: { '#env.role': { '@eq': 'editor' } } }],
+      [{ path: 'config.1.verbs.1', value: 'PUT' }],
+      [{ path: 'config.1.verbs.0.__remove__', value: '' }],
+      [{ path: 'name', value: 'x' }],
+    ]) {
+      assert.deepStrictEqual(checkUpdatedPolicyConfig(stored(), updates), [], JSON.stringify(updates));
+    }
+  });
+
+  it('applies the updates in turn, a config added or taken away included', () => {
+    // The second writes into the config the first adds
+    assert.deepStrictEqual(
+      checkUpdatedPolicyConfig(stored(), [{ path: 'config', value: valid() }, { path: 'config.2.query.status', value: { '@in': 'x' } }]),
+      [{ path: 'config.2.query.status', code: 'type', expected: 'array' }],
+    );
+    // With config 0 taken away there's no config 1, so the second would make one of only a query
+    assert.deepStrictEqual(
+      checkUpdatedPolicyConfig(stored(), [{ path: 'config.0.__remove__', value: '' }, { path: 'config.1.query.status', value: 'open' }]),
+      [{ path: 'config.1.verbs', code: 'required' }, { path: 'config.1.schema', code: 'required' }],
+    );
+    // The last writes over the first
+    assert.deepStrictEqual(
+      checkUpdatedPolicyConfig(stored(), [
+        { path: 'config.0.query.status', value: { '@in': 'x' } },
+        { path: 'config.0.query.status', value: { '@in': ['x'] } },
+      ]),
+      [],
+    );
+  });
+
+  it('refuses a config written past the end of the list, which leaves a null config before it', () => {
+    assert.deepStrictEqual(checkUpdatedPolicyConfig(stored(), [{ path: 'config.3', value: valid() }]), [
+      { path: 'config.2', code: 'type', expected: 'object' },
+    ]);
+    assert.deepStrictEqual(checkUpdatedPolicyConfig(stored(), [{ path: 'config.2.query', value: { access: '%FULL_ACCESS%' } }]), [
+      { path: 'config.2.verbs', code: 'required' },
+      { path: 'config.2.schema', code: 'required' },
+    ]);
+  });
+
+  it('leaves an update the datastore refuses to be refused when it is written', () => {
+    // Beneath a condition that's null, or within a verb
+    assert.deepStrictEqual(checkUpdatedPolicyConfig(stored(), [{ path: 'config.1.condition.#env.role', value: {} }]), []);
+    assert.deepStrictEqual(checkUpdatedPolicyConfig(stored(), [{ path: 'config.1.verbs.0.x', value: {} }]), []);
+  });
+
+  it('leaves the configs it is given as they are', () => {
+    const configs = stored();
+    checkUpdatedPolicyConfig(configs, [{ path: 'config.0.query.status', value: 'shut' }, { path: 'config.1.__remove__', value: '' }]);
+    assert.deepStrictEqual(configs, stored());
   });
 });

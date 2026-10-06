@@ -302,4 +302,11 @@ describe('access-control/conditions: comparisons', () => {
   it('fails a key that resolves to nothing', async () => {
     assert(!(await holds({ '#env.missing': { '@eq': 'x' } })));
   });
+
+  // As a selection's criterion with no operator selects nothing
+  it('fails a criterion with no operator, rather than letting it hold whatever the env', async () => {
+    assert(!(await holds({ '#env.role': {} }, { role: 'admin' })));
+    assert(!(await holds({ '@or': [{ '#env.role': { '@eq': 'owner' } }, { '#env.role': {} }] }, { role: 'user' })));
+    assert(!(await holds({ '@and': [{ '#env.role': {} }] }, { role: 'user' })));
+  });
 });

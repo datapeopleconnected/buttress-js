@@ -167,6 +167,48 @@ describe('Policy selection', async () => {
 		);
 	});
 
+	// An update below a config's field, or of a config past the end of the list, is checked with the configs it leaves
+	it('Should refuse a policy update that leaves a criterion with no operator, or a null config', async () => {
+		const update = (id, body) => bjsReq({
+			url: `${ENDPOINT.REST}/api/v1/policy/${id}`,
+			method: 'PUT',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify(body),
+		}, env.app.token);
+		const refusedWith = (issues) => (err) => {
+			assert.strictEqual(err.code, 400);
+			assert.strictEqual(err.body?.code, 'invalid_policy');
+			assert.deepStrictEqual(err.body.details.issues, issues);
+			return true;
+		};
+
+		// Viewers read notes only through other apps, so not at all
+		const viewers = await createPolicy(ENDPOINT.REST, {
+			...policy('policy-selection-viewers', { role: { '@eq': 'VIEWER' } }),
+			config: [{
+				verbs: ['GET'],
+				schema: ['note'],
+				query: { access: '%FULL_ACCESS%' },
+				condition: { '@or': [{ '#env.appId': { '@eq': 'another-app' } }, { '#env.appId': { '@eq': 'one-more' } }] },
+			}],
+		}, env.app.token);
+		try {
+			await assert.rejects(update(viewers.id, [{ path: 'config.0.condition.@or.1', value: { '#env.appId': {} } }]), refusedWith([
+				{ path: 'config.0.condition.@or.1.#env.appId', code: 'required' },
+			]));
+			await assert.rejects(update(viewers.id, [{ path: 'config.2', value: policy('x', {}).config[0] }]), refusedWith([
+				{ path: 'config.1', code: 'type', expected: 'object' },
+			]));
+			await assert.rejects(readNotes('viewer'), refused);
+
+			// One that leaves configs which can grant something is written
+			await update(viewers.id, [{ path: 'config.0.condition.@or.1', value: { '#env.appId': { '@eq': env.app.id } } }]);
+			assert.strictEqual((await readNotes('viewer')).length, 1);
+		} finally {
+			await bjsReq({ url: `${ENDPOINT.REST}/api/v1/policy/${viewers.id}`, method: 'DELETE' }, env.app.token);
+		}
+	});
+
 	it("Should refuse a token's policy property listed in another case (D-34)", async () => {
 		await assert.rejects(
 			createPolicyUser(ENDPOINT.REST, env.app, 'policy-selection-viewer-lower', { role: 'viewer' }),

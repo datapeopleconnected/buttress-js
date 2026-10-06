@@ -91,7 +91,15 @@ Policies are checked when they're saved (`checkPolicyConfig` in
 [policy-definition.ts](../src/access-control/policy-definition.ts)), so the drops above are for policies saved before:
 an operator nothing knows, an operand an operator can't take (`operandProblem` in operators.ts, the rule
 `StandardModel.parseQuery` refuses a search's operands by), a logical operator not given a list of one or more
-queries, and a condition criterion that isn't an object of one or more operators.
+queries, and a condition criterion that isn't an object of one or more operators (one with no operator fails when it's
+evaluated, as a selection's selects nothing).
+
+An update is checked by the value it writes (`checkPolicyConfigUpdate`), and, when one writes into a config by its
+index (`writesIntoConfig`), by the configs it leaves: the policy route reads the stored policy and
+`checkUpdatedPolicyConfig` replays the request's updates on its configs as the datastore writes them (missing documents
+made on the way, `null` items before an index past the end of a list), so a path below a config's field, which the
+schema takes as an `object` property's, and a config written past the end are checked too. A route's `updateProblem`
+gets every update a request makes to one row, from each bulk item that names it, in the order they're written.
 
 `AccessControlEnv.generateRequestGlobalEnvs(req, appId, user)` builds the `env` object that policy
 `query`/`condition` values can reference via dotted paths (e.g. `env.userId`) — read

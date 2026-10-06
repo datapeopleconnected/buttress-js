@@ -32,6 +32,11 @@ such a query failed. A config already stored whose query can't be read for its s
 value that isn't a list, grants nothing, and the token's other policies still apply; earlier releases failed the
 request.
 
+An update that writes into a config by its index, such as `config.0.query.status`, `config.0.verbs.1` or `config.2`, is
+checked with the configs it leaves: the policy's, with the request's updates written. Earlier releases didn't check an
+update below a config's field, so one could write any of the problems above, and took a config written past the end of
+the list, leaving an empty (`null`) config before it, which failed every request by a token the policy applied to.
+
 `QUERY` grants [searches](schema.md#searching). `SEARCH`, its name in earlier releases, is the same verb: a config
 listing either grants requests made with either method, so existing policies don't need changing.
 
@@ -79,7 +84,8 @@ relying on that selects fewer tokens now.
 
 A config's `condition` must hold for the config to apply; a config without one, or with a `null` one, applies (earlier
 releases refused a config that left the `condition` key out, except in realtime). Each key is resolved through the
-env, as a query's `#env.` values are, and so is each criterion's value; a key or value that resolves to nothing fails.
+env, as a query's `#env.` values are, and so is each criterion's value; a key or value that resolves to nothing fails,
+and so does a criterion with no operator, `{}`, which earlier releases let hold whatever the env.
 A condition reads **value OP key**, the other way round to a query:
 
 ```json
