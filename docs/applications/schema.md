@@ -302,6 +302,9 @@ An app's schemas are checked when they're saved (`PUT /api/v1/app/schema`), and 
 - `__required` or `__allowUpdate` that isn't `true` or `false`, an `__enum` that isn't a list, or a `__schema` on
   anything but an `array`;
 - a property name that's empty, has a dot, or starts with `_` (those are the server's) or `$`;
+- a `date`'s `__default` that doesn't read as a date, which would refuse every create that left the property out. It
+  takes a date (`"2026-01-01"`, a number of milliseconds), `"now"` or other words for one (`"today"`, `"tomorrow"`,
+  `"2 days ago"`), or `null` for none;
 - an object with definition keys but no `__type`.
 
 `PUT /api/v1/app/schema` answers once the REST workers of the process that took the request have the new schema's

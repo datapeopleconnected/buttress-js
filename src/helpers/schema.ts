@@ -20,7 +20,7 @@ import Sugar from './sugar.js';
 import Errors from './errors.js';
 import Logging from './logging.js';
 import { decode as decodeValue, isDecodeError } from './codecs.js';
-import { isPlainObject } from './schema-definition.js';
+import { dateDefault, isPlainObject } from './schema-definition.js';
 
 import Plugins from '../plugins/index.js';
 import Datastore from '../datastore/index.js';
@@ -123,13 +123,7 @@ const __getPropDefault = (config: PropertyConfig) => {
       }
       break;
     case 'date':
-      if (config.__default === null) {
-        res = null;
-      } else if (config.__default) {
-        res = Sugar.Date.create(config.__default as string | number | Date);
-      } else {
-        res = new Date();
-      }
+      res = dateDefault(config.__default);
   }
   return res;
 };
