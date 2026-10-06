@@ -27,6 +27,7 @@ import './rest/data-sharing.test.js';
 import './rest/data-sharing-fragments.test.js';
 import './rest/policy.test.js';
 import './rest/policy-selection.test.js';
+import './rest/policy-env.test.js';
 import './rest/delete-all.test.js';
 import './rest/error-contract.test.js';
 

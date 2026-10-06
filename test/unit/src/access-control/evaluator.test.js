@@ -61,6 +61,15 @@ describe('access-control/evaluator:evaluate', () => {
     await assert.rejects(evaluate([expired], context()), refusal(403, 'access_denied', /any policy associated/));
   });
 
+  // SR-DPC-001 S8: a policy stored with a limit that isn't a date granted access for ever
+  it("grants nothing through a policy whose limit isn't a date, keeping the others", async () => {
+    const mistyped = policy('mistyped', {}, { limit: '2025-13-45' });
+    await assert.rejects(evaluate([mistyped], context()), refusal(403, 'access_denied', /any policy associated/));
+
+    const grants = await evaluate([mistyped, policy('fine', {}, { limit: '2025-07-01T00:00:00.000Z' })], context());
+    assert.deepStrictEqual(grants.map((grant) => grant.policies), [['fine#0']]);
+  });
+
   it('refuses when no config is for the verb and schema', async () => {
     await assert.rejects(
       evaluate([policy('poster', { verbs: ['POST'] })], context()),

@@ -91,8 +91,8 @@ export function filterPolicyConfigs(
 }
 
 /**
- * When a policy's limit runs out, or null if it has none. A cached policy has been through JSON, so its limit can be
- * a string.
+ * When a policy's limit runs out, or null if it has none, or one that isn't a date (which isPolicyExpired takes as run
+ * out). A cached policy has been through JSON, so its limit can be a string.
  */
 export const policyLimit = (policy: { limit?: unknown }): Date | null => {
   if (!policy.limit) return null;
@@ -101,9 +101,11 @@ export const policyLimit = (policy: { limit?: unknown }): Date | null => {
 };
 
 /**
- * Whether a policy's limit has run out, so it grants nothing.
+ * Whether a policy's limit has run out, so it grants nothing. A limit that isn't a date, which saving a policy refuses,
+ * has: it was read as no limit, so a policy stored with a mistyped date granted access for ever.
  */
 export const isPolicyExpired = (policy: { limit?: unknown }, now: Date = new Date()) => {
+  if (!policy.limit) return false;
   const limit = policyLimit(policy);
-  return limit !== null && limit.getTime() <= now.getTime();
+  return limit === null || limit.getTime() <= now.getTime();
 };

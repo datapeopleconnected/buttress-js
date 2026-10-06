@@ -394,6 +394,7 @@ class AccessControl {
 
   _queuePolicyLimitDeleteEvent(policies: Policy[], userToken: Token, appId: string) {
     policies.forEach((p) => {
+      // A limit that isn't a date grants nothing (isPolicyExpired), but the policy is left for its author to correct
       const limit = policyLimit(p);
       if (!limit) return;
 

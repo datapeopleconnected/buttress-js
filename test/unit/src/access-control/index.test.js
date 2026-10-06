@@ -614,7 +614,10 @@ describe('access-control/AccessControl:_queuePolicyLimitDeleteEvent', () => {
     instance._nrp = { emit: sinon.spy() };
 
     instance._queuePolicyLimitDeleteEvent(
-      [{ id: 'policy-1', name: 'no-limit', selection: {} }],
+      [
+        { id: 'policy-1', name: 'no-limit', selection: {} },
+        { id: 'policy-2', name: 'not-a-date', limit: 'next tuesday', selection: {} },
+      ],
       { id: 'token-1', policyProperties: {} },
       'app1',
     );
@@ -632,5 +635,14 @@ describe('access-control/helpers:isPolicyExpired', () => {
     assert.strictEqual(isPolicyExpired({ limit: '2025-06-02T00:00:00.000Z' }, now), false);
     assert.strictEqual(isPolicyExpired({ limit: null }, now), false);
     assert.strictEqual(isPolicyExpired({}, now), false);
+  });
+
+  // SR-DPC-001 S8: it was read as no limit, so a mistyped date granted access for ever
+  it("is true for a limit that isn't a date", () => {
+    const now = new Date('2025-06-01T00:00:00.000Z');
+
+    assert.strictEqual(isPolicyExpired({ limit: '2025-13-45' }, now), true);
+    assert.strictEqual(isPolicyExpired({ limit: 'next tuesday' }, now), true);
+    assert.strictEqual(isPolicyExpired({ limit: new Date('not a date') }, now), true);
   });
 });

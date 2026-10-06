@@ -131,6 +131,10 @@ A policy with a `limit` grants nothing once the limit has passed. Buttress then 
 token the policy properties its selection took it by: each key the selection needs, and those of each `@or` branch
 that holds for the token, but not those of a branch that doesn't.
 
+A `limit` that isn't a date is refused when a policy is added, synced or updated. A policy stored by an earlier release
+with one grants nothing, and is left for you to correct; earlier releases read it as no limit, so the policy never
+expired.
+
 ## Listing and Removing
 
 `GET /api/v1/policy` lists the app's policies; `?ids=a,b` lists only those of them. Earlier releases checked the ids
