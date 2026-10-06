@@ -117,3 +117,10 @@ bjs lambda list-property
 - A `fetch()` of something that isn't a URL, whether given alone or as the request's `url`, rejects at once with an
   error whose message is `fetch_invalid_url` and code 400, which the lambda can catch. Earlier releases left that
   `fetch()` unsettled, so the run failed after the runner's timeout as `lambda_execution_timed_out`.
+- A `PATH_MUTATION` trigger's `paths` are matched one segment at a time: `*` stands for any one segment and a trailing
+  `*` for anything beneath, so `car.*.name` runs for a change to `car.<id>.name` but not to `car.<id>.nameplate`. A
+  change also runs the lambdas watching paths beneath it, so deleting a car runs one watching `car.*.name`, while
+  adding one runs only those watching `car` or every car (`car.*...`). A path ending `.length` runs when the array is
+  set, added to, or has an item removed, and a watched number runs when it's incremented. Earlier releases matched
+  paths as text, so `car.*.name.*` ran for a change to `car.<id>.nameplate` or `car.<id>.parts.0.name`, and missed
+  removals for a `.length` path and increments.

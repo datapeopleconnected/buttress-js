@@ -323,6 +323,66 @@ describe('lambda/LambdaManager path-mutation grouping', () => {
   });
 });
 
+describe('lambda/LambdaManager path matching', () => {
+  const manager = createManager();
+  const fires = (watched, changed) => changed.filter((path) => manager._checkMatchingPaths(path, watched, 'car'));
+
+  it('matches a watched path segment by segment, not as text the changed path contains', () => {
+    assert.deepStrictEqual(fires('car.*.name', ['car.e1.name', 'car.e1.nameplate', 'car.e1.parts.2.name']), [
+      'car.e1.name',
+    ]);
+    assert.deepStrictEqual(fires('car.e1.name.*', ['car.e1.name.first', 'car.e1.nameplate', 'car.e1.parts.2.name']), [
+      'car.e1.name.first',
+    ]);
+    assert.deepStrictEqual(fires('car.e1.name', ['car.e1.name', 'car.e11.name', 'car.e2.name']), ['car.e1.name']);
+    assert.deepStrictEqual(fires('car.*.tags.*', ['car.e1.tags.0', 'car.e1.xtags.0', 'car.e1.tagsx.0']), [
+      'car.e1.tags.0',
+    ]);
+    assert.deepStrictEqual(fires('car.*.lengthUnit', ['car.e1.lengthUnit', 'car.e1.Unit']), ['car.e1.lengthUnit']);
+  });
+
+  it("fires a watch on an array's length for a change to its length, the array, or its items being removed", () => {
+    assert.deepStrictEqual(
+      fires('car.*.tags.length', [
+        'car.e1.tags.length',
+        'car.e1.tags',
+        'car.e1.tags.0.__remove__',
+        'car.e1.tags.0',
+        'car.e1.tags.0.label',
+        'car.e1.tagsx',
+      ]),
+      ['car.e1.tags.length', 'car.e1.tags', 'car.e1.tags.0.__remove__'],
+    );
+  });
+
+  it('fires a watch on a property for an increment of it', () => {
+    assert.deepStrictEqual(fires('car.*.count', ['car.e1.count.__increment__', 'car.e1.counter.__increment__']), [
+      'car.e1.count.__increment__',
+    ]);
+  });
+
+  it('keeps firing the watches it fired before', () => {
+    const changed = ['car', 'car.e1', 'car.e2', 'car.e1.name', 'car.e1.name.first', 'car.e1.tags.0.label'];
+    assert.deepStrictEqual(fires('car', changed), ['car']);
+    assert.deepStrictEqual(fires('car.*', changed), changed);
+    assert.deepStrictEqual(fires('car.e1', changed), ['car.e1']);
+    assert.deepStrictEqual(fires('car.e1.*', changed), [
+      'car.e1',
+      'car.e1.name',
+      'car.e1.name.first',
+      'car.e1.tags.0.label',
+    ]);
+    assert.deepStrictEqual(fires('car.*.name', changed), ['car', 'car.e1', 'car.e2', 'car.e1.name']);
+    assert.deepStrictEqual(fires('car.e1.name', changed), ['car.e1', 'car.e1.name']);
+    assert.deepStrictEqual(fires('car.*.tags.*.label', changed), ['car', 'car.e1', 'car.e2', 'car.e1.tags.0.label']);
+  });
+
+  it("fires no watch on another schema's paths", () => {
+    assert.deepStrictEqual(fires('cart.*', ['car', 'car.e1.name']), []);
+    assert.strictEqual(manager._checkMatchingPaths('cart.e1.name', 'car.*', 'car'), false);
+  });
+});
+
 describe('lambda/LambdaManager path changes from other apps', () => {
   const watchesCars = (id, appId) => ({ id, gitHash: 'hash', type: 'PATH_MUTATION', appId, paths: ['car.*'] });
 

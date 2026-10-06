@@ -678,63 +678,42 @@ export default class LambdaManager {
   }
 
   /**
-   * Checking matching root paths and absolute paths
-   * @param {String} path
-   * @param {String} itemPath
+   * Whether a change to path fires a lambda watching itemPath. Both are compared segment by segment: a `*` in the
+   * watched path stands for any one segment, and a trailing `*` for any path beneath it. A change fires the paths it
+   * holds, beneath it or itself, so deleting car.e1 fires a watch on car.*.name; a change beneath a watched path only
+   * fires it through a trailing `*`. A change to the schema alone (a create) names no entity, so it fires only the
+   * schema and paths watching every entity (car.*...).
+   * @param {String} path - the changed path, e.g. car.e1.tags.0.__remove__
+   * @param {String} itemPath - the watched path, e.g. car.*.tags.length
    * @param {String} schema
    * @return {Boolean}
    */
   _checkMatchingPaths(path: string, itemPath: string, schema: string): boolean {
-    const isWildedCardRootPath = itemPath.split(`${schema}.*`).join('');
-    if (!isWildedCardRootPath || (isWildedCardRootPath !== itemPath && path === schema)) return true;
+    const changed = this._pathSegments(path);
+    const watched = this._pathSegments(itemPath);
+    if (changed[0] !== schema || watched[0] !== schema) return false;
+    if (changed.length === 1) return watched.length === 1 || watched[1] === '*';
 
-    const lambdaPathId = itemPath
-      .split(`${schema}.`)
-      .filter((v) => v)
-      .join('')
-      .split('.')
-      .shift();
-    const crPathId = path
-      .split(`${schema}.`)
-      .filter((v) => v)
-      .join('')
-      .split('.')
-      .shift();
-    if (lambdaPathId !== crPathId && lambdaPathId !== '*') return false;
-
-    // split() always returns at least one element, so pop() can't return undefined.
-    const lambdaRelativePath = itemPath.split(`${schema}.${lambdaPathId}`).pop() as string;
-    const crRelativePath = path.split(`${crPathId}`).pop() as string;
-    return this._checkMatchingRelativePaths(lambdaRelativePath, crRelativePath);
+    for (let idx = 0; idx < watched.length; idx++) {
+      if (idx === changed.length) return true;
+      if (watched[idx] === '*' && idx === watched.length - 1) return true;
+      if (watched[idx] !== '*' && watched[idx] !== changed[idx]) return false;
+    }
+    return changed.length === watched.length;
   }
 
   /**
-   * Checking matching relative paths
-   * @param {String} lambdaPath
-   * @param {String} crPath
-   * @return {Boolean}
+   * A path's segments, read as what it changes. An array's length changes with the array, so `tags.length` is
+   * `tags`; an increment changes its property; and removing an item changes the array, as the items after it move.
+   * @param {String} path
+   * @return {String[]}
    */
-  _checkMatchingRelativePaths(lambdaPath: string, crPath: string): boolean {
-    lambdaPath = lambdaPath.replace('.length', '');
-    if (lambdaPath === '*' || lambdaPath === crPath || !crPath) return true;
-    if (lambdaPath.includes('*')) {
-      const wildCardedPath = lambdaPath.split('.*').shift();
-      if (!wildCardedPath) return true;
-      if (!crPath.includes(wildCardedPath)) return false;
-      // split() always returns at least one element, so pop() can't return undefined.
-      const lambdaObservedPath = lambdaPath.split(`${wildCardedPath}.*`).pop() as string;
-      const crObservedPath = crPath.split(`${wildCardedPath}`).pop() as string;
-
-      if (!lambdaObservedPath && crObservedPath) return true;
-      if (lambdaObservedPath.includes('*')) {
-        return this._checkMatchingRelativePaths(lambdaObservedPath, crObservedPath);
-      }
-
-      const isSamePath = crObservedPath.split(lambdaObservedPath).pop();
-      if (!isSamePath) return true;
-    }
-
-    return false;
+  _pathSegments(path: string): string[] {
+    const segments = path.split('.');
+    const last = segments[segments.length - 1];
+    if (last === 'length' || last === '__increment__') return segments.slice(0, -1);
+    if (last === '__remove__' && /^[0-9]+$/.test(segments[segments.length - 2])) return segments.slice(0, -2);
+    return segments;
   }
 
   /**

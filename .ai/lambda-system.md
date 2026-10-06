@@ -28,8 +28,11 @@ Coordinates work; never executes lambda code itself. Talks to `LambdaRunner` wor
   which the lambda routes publish when a path-watching lambda is updated, redeployed or deleted, or any lambda's
   triggers change). A rebuild replaces the list once it's loaded, so path changes meanwhile still match.
   When a REST write fires `rest:worker:notifyLambdaPathChange` (see `Route._checkBasedPathLambda()` in
-  [routing.md](routing.md)), `_checkMatchingPaths()`/`_checkMatchingRelativePaths()` do wildcard path
-  matching (`schema.*`, `schema.id.field`, trailing `*`) against each cached lambda's `trigger.pathMutation.paths`.
+  [routing.md](routing.md)), `_checkMatchingPaths()` matches it segment by segment against each cached lambda's
+  `trigger.pathMutation.paths` (`schema.*`, `schema.id.field`, `*` for one segment, trailing `*` for any beneath).
+  A change fires watches on itself and beneath it (deleting `car.e1` fires `car.*.name`), but a create (`car`) only
+  `car` and `car.*...`. `_pathSegments()` reads both paths as what they change: a trailing `length` or
+  `__increment__` goes, and `tags.0.__remove__` is `tags`.
   Matches are **debounced** per lambda+change-hash (`_debounceLambdaTriggers`, 1s window,
   `_maximumRetry = 500`) before a `LambdaExecution` row is actually created — this coalesces bursts of
   writes into one execution.

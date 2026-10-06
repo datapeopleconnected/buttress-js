@@ -285,6 +285,62 @@ describe('Lambda', async () => {
 				}
 				assert.strictEqual(after, before + 1, 'app1\'s lambda should run for the change to its record');
 			});
+
+			it('Should run a lambda watching an array\'s length when an item is added to it, and when one is removed', async function() {
+				this.timeout(30000);
+
+				testEnv.lambdas['path-mutation-length'] = await createLambda(ENDPOINT.REST, {
+					name: 'path-mutation-length',
+					type: 'PUBLIC',
+					git: {
+						url: Config.paths.root,
+						branch: 'develop',
+						hash: 'HEAD',
+						entryFile: 'test/data/lambda/hello-world.cjs',
+						entryPoint: 'execute',
+					},
+					trigger: [{
+						type: 'PATH_MUTATION',
+						pathMutation: {
+							'paths': [`apps.${testEnv.apps.app1.id}.oAuth.length`],
+						},
+					}],
+				}, {
+					domains: ['localhost'],
+					permissions: [{route: '*', permission: '*'}],
+					policyProperties: {lambda: 'TEST_ACCESS'},
+				}, testEnv.apps.app1.token);
+
+				const executions = async () => (await bjsReq({
+					url: `${ENDPOINT.REST}/api/v1/lambda-execution`,
+					method: 'SEARCH',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify({query: {lambdaId: {$eq: testEnv.lambdas['path-mutation-length'].id}}}),
+				}, testEnv.apps.app1.token)).length;
+				const update = (path, value) => bjsReq({
+					url: `${ENDPOINT.REST}/api/v1/app/${testEnv.apps.app1.id}`,
+					method: 'PUT',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify([{path, value}]),
+				}, testEnv.apps.app1.token);
+				const waitForMore = async (than) => {
+					let count = than;
+					for (let attempt = 0; attempt < 16 && count === than; attempt++) {
+						await new Promise((resolve) => setTimeout(resolve, 500));
+						count = await executions();
+					}
+					return count;
+				};
+
+				const before = await executions();
+				await update('oAuth', 'GOOGLE');
+				const added = await waitForMore(before);
+				assert.strictEqual(added, before + 1, 'the lambda should run once for the item added');
+
+				await update('oAuth.0.__remove__', '');
+				const removed = await waitForMore(added);
+				assert.strictEqual(removed, added + 1, 'the lambda should run for the item removed');
+			});
 		});
 
 		describe('API Endpoint', async () => {
