@@ -41,7 +41,7 @@ type AdminPolicyConfig = {
   query?: AdminPolicyQuery | AdminPolicyQuery[];
 };
 
-type InstallLambdaRequest = RequestWithBody<{ installLambda?: string[]; refreshAdminToken?: unknown }>;
+type InstallLambdaRequest = RequestWithBody<{ installLambda?: string[]; refreshAdminToken?: unknown } | undefined>;
 
 type PolicyPropertiesListArray = Extract<App['policyPropertiesList'][string], unknown[]>;
 
@@ -133,8 +133,6 @@ class AdminRoutes {
       if (req.query?.token !== undefined) throw tokenInURL();
 
       const tokenValue = bearerToken(req);
-      const lambdaToInstall: string[] | undefined = req.body.installLambda;
-      const refreshAdminToken: unknown = req.body.refreshAdminToken;
       if (!tokenValue) throw missingToken();
       const adminToken = await Model.getCoreModel(TokenSchemaModel).findOne({
         value: tokenValue,
@@ -143,6 +141,10 @@ class AdminRoutes {
       if (adminToken.type !== Model.getCoreModel(TokenSchemaModel).Constants.Type.SYSTEM) {
         throw Helpers.Errors.forbidden('insufficient_authority', 'Only a system token can install admin lambdas');
       }
+
+      // Read once the token is known to be allowed: a request without a body has none
+      const lambdaToInstall: string[] | undefined = req.body?.installLambda;
+      const refreshAdminToken: unknown = req.body?.refreshAdminToken;
       if (!lambdaToInstall || !Array.isArray(lambdaToInstall)) {
         throw Helpers.Errors.badRequest('invalid_body', 'installLambda must be a list of admin lambda names');
       }

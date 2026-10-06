@@ -163,6 +163,10 @@ describe('Error contract', async () => {
 			404, 'unknown_lambda_endpoint'],
 		['a system token for an admin route, given in the URL', () => [`${ENDPOINT.REST}/api/v1/admin/activate/${Config.testToken}`, { method: 'GET' }],
 			400, 'token_in_url_not_supported'],
+		['an admin install with neither a token nor a body', () => [`${ENDPOINT.REST}/api/v1/admin/install-lambda`, { method: 'POST' }],
+			401, 'missing_token'],
+		['an admin install with a system token but no body', () => [`${ENDPOINT.REST}/api/v1/admin/install-lambda`, { method: 'POST' }, Config.testToken],
+			400, 'invalid_body'],
 
 		// Ids that name nothing the caller can reach, and ids that can't be one
 		['a policy id nothing has', () => [core(`policy/${NOBODYS_ID}`), { method: 'GET' }, appToken()],

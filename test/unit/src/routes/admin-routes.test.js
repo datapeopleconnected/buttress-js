@@ -119,6 +119,27 @@ describe('routes/admin-routes:token lookups', () => {
     }
   });
 
+  it('checks the token of an install without a body before reading the body', async () => {
+    const missing = await call('/api/v1/admin/install-lambda', { body: undefined });
+    const unknown = await call('/api/v1/admin/install-lambda', { headers: bearer('install-token'), body: undefined });
+
+    assert.deepStrictEqual([missing.statusCode, missing.body.code], [401, 'missing_token']);
+    assert.deepStrictEqual([unknown.statusCode, unknown.body.code], [401, 'invalid_token']);
+  });
+
+  it('refuses an install without a body from a system token with 400', async () => {
+    Model.getCoreModel.restore();
+    sinon.stub(Model, 'getCoreModel').returns({
+      Constants: TokenSchemaModel.Constants,
+      findOne: async () => ({ id: 'system-token', type: 'system' }),
+    });
+
+    const res = await call('/api/v1/admin/install-lambda', { headers: bearer('system-token'), body: undefined });
+
+    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.body.code, 'invalid_body');
+  });
+
   it('refuses a token that is not a system token with 403', async () => {
     Model.getCoreModel.restore();
     sinon.stub(Model, 'getCoreModel').returns({
