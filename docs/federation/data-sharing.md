@@ -78,6 +78,11 @@ agreements:
 Reads and writes against that collection are then combined across the local datastore and every named
 remote — see [Schema](../applications/schema.md) for the rest of the schema shape.
 
+A search's `sort` orders the combined list as it orders the app's own: each direction is `1`, `-1`, `"asc"`, `"desc"`,
+`"ascending"` or `"descending"`. A count adds up each source's, leaving out (and logging) a partner's answer that isn't
+a count. Earlier releases merged a search sorted `"desc"` or `"descending"` in ascending order, and joined a count a
+partner gave as text onto the total as text.
+
 Each record such a collection returns has a `sourceId`, the app it comes from: the app's own id for its own
 records, and the partner app's for a partner's. To change or delete a partner's record, address it by its id, as
 you would one of the app's own: `PUT <schema>/:id`, `DELETE <schema>/:id`, `POST <schema>/bulk/update` and
