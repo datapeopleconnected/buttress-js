@@ -28,6 +28,7 @@ import { App } from '../../model/core/app.js';
 import * as ACM from '../../access-control/models-access.js';
 import { invalidUpdateError } from '../../model/shared.js';
 import type { RequestWithBody } from '../../types/routes.js';
+import { pickWriteTarget } from './write-target.js';
 
 /**
  * @class UpdateOne
@@ -84,40 +85,29 @@ export default class UpdateOne extends Route {
       throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
     }
 
-    const exists = await model.exists(id, sourceId);
-    if (!exists) {
-      this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
-      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', id);
-    }
-
-    const objectId = model.createId(id);
-
-    const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
-    const rxsScoped = await ACM.find(model, findParams, req.context.ac);
-    let scopedEntity: AdapterDocument | null;
-    try {
-      scopedEntity = await Helpers.streamFirst<AdapterDocument>(rxsScoped);
-    } catch (_err) {
-      scopedEntity = null;
-    }
-    // One outside the caller's policies is answered as one that doesn't exist
-    if (!scopedEntity) {
-      this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
-      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', id);
-    }
-
-    return {
+    // The record is found within the caller's policies, in whichever source has it, and the write goes back there
+    const findParams: QueryParams<{ id: unknown }> = { query: { id: model.createId(id) }, skip: 0 };
+    const found = await Helpers.streamAll<AdapterDocument>(await ACM.find(model, findParams, req.context.ac));
+    const target = pickWriteTarget(model, found, {
+      appId: this._dataApp(req).id ?? '',
+      schemaName: this.schemaName ?? 'entity',
       id,
       sourceId,
-    };
+    });
+    // One outside the caller's policies is answered as one that doesn't exist
+    if (!target || !(await model.exists(id, target.via))) {
+      this.log('ERROR: Invalid ID', Route.LogLevel.ERR, req.context.id);
+      throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', id);
+    }
+
+    // So the SPR finds the changed record where it was changed
+    if (target.via) req.context.dataShareId = target.via;
+
+    return { id, via: target.via };
   }
 
-  override async _exec(
-    req: RequestWithBody<unknown>,
-    _res: Response,
-    validate: { id: string; sourceId: string | undefined },
-  ) {
+  override async _exec(req: RequestWithBody<unknown>, _res: Response, validate: { id: string; via: string | null }) {
     // _validate replaced the body with the validated updates
-    return (await this.routeModel()).updateByPath(req.body as UpdatePathBody[], validate.id, validate.sourceId);
+    return (await this.routeModel()).updateByPath(req.body as UpdatePathBody[], validate.id, validate.via);
   }
 }

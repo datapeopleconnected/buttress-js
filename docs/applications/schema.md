@@ -200,6 +200,12 @@ them with `"__type": "array", "__itemtype": "id"`). Ids are always strings in th
 such as `"507f1f77bcf86cd799439011"`. Send them as strings when creating, updating or querying, and they're
 returned as strings. Creating or updating an id property with a value that isn't a valid id fails validation.
 
+Every object Buttress returns also has a `sourceId`: the id of the app it comes from, which Buttress adds as it
+returns the object. For a collection with `remotes`, that's the partner app a record comes from (see
+[Federation](../federation/data-sharing.md)). A create checks a `sourceId` it's given, but doesn't store it. Earlier
+releases stored one given at the top of an entity, which then took the place of the app's own, and left out a
+property called `source`, at the top of an entity or in an array item, which is now stored like any other.
+
 Ids held inside an `object` property aren't treated as ids, so they're kept exactly as they're sent.
 
 ## Updating Array Properties

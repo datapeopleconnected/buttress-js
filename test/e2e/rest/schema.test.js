@@ -279,6 +279,21 @@ describe('Schema', async () => {
 				assert.strictEqual(body.length, 1);
 			});
 
+			it("Should give a created entity the app's own sourceId, not one the request names", async () => {
+				const [created] = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car`,
+					method: 'POST',
+					headers: {'Content-Type': 'application/json'},
+					body: JSON.stringify({name: 'name-test-source', sourceId: '5f0000000000000000000002'}),
+				}, testEnv.apps.app1.token);
+				const read = await bjsReq({
+					url: `${ENDPOINT.REST}/${testEnv.apps.app1.apiPath}/api/v1/car/${created.id}`,
+				}, testEnv.apps.app1.token);
+
+				assert.strictEqual(created.sourceId, testEnv.apps.app1.id);
+				assert.strictEqual(read.sourceId, testEnv.apps.app1.id);
+			});
+
 			// TODO: Update Many
 
 			it('Should make a DELETE request for a single Id', async () => {

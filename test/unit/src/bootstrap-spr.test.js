@@ -774,5 +774,29 @@ describe('bootstrap-spr:_handleIncomingMessage a collection with remotes', () =>
 
 		assert.strictEqual(sent.length, 1);
 	});
+
+	it("relays a change made here to a partner's entity, looking it up through the agreement the write went through", async () => {
+		const sent = await relay({ path: `/car/${partnerCar.id}`, pathSpec: 'car/:id', params: { id: partnerCar.id }, dataShareId: 'ds-1' });
+
+		assert.deepStrictEqual(sent.map((e) => e.activity.params.id), [partnerCar.id]);
+	});
+
+	it('relays each entity a bulk update changed, looking each up where it was changed', async () => {
+		const renamed = [{ type: 'scalar', path: 'name', value: 'renamed' }];
+		const sent = await relay({
+			verb: 'post',
+			path: '/car/bulk/update',
+			pathSpec: 'car/bulk/update',
+			params: {},
+			response: [
+				{ id: ownCar.id, results: renamed },
+				{ id: partnerCar.id, sourceId: PARTNER_ID, results: renamed },
+			],
+			dataShareIds: [null, 'ds-1'],
+		});
+
+		assert.deepStrictEqual(sent.map((e) => e.activity.params.id), [ownCar.id, partnerCar.id]);
+		assert.ok(sent.every((e) => e.activity.dataShareIds === undefined && e.activity.dataShareId === undefined), "the agreements aren't sent on");
+	});
 });
 

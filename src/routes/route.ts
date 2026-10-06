@@ -621,6 +621,8 @@ export default class Route {
             isCoreSchema: this.core,
             schemaName: this.schemaName || '',
             deletedEntities: isSuper ? undefined : req.context.deletedEntities,
+            dataShareId: req.context.dataShareId,
+            dataShareIds: req.context.dataShareIds,
           } satisfies RESTActivity),
         );
       } else {

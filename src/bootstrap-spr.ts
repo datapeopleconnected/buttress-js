@@ -294,7 +294,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
     const pathSpec = `${activity.pathSpec.slice(0, -bulkPath.length)}/:id`;
     const routePath = activity.path.split('/').slice(0, -2).join('/');
 
-    return activity.response.flatMap((entry): RESTActivity[] => {
+    return activity.response.flatMap((entry, idx): RESTActivity[] => {
       const item = entry as { id?: string; results?: unknown } | null;
       if (!item?.id) return [];
 
@@ -306,7 +306,9 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
       // Refused updates carry `results: null`, nothing changed for them.
       if (!Array.isArray(item.results)) return [];
-      return [{ ...entityActivity, verb: 'put', response: item.results }];
+      // An entity changed through an agreement is found there
+      const dataShareId = activity.dataShareIds?.[idx] ?? undefined;
+      return [{ ...entityActivity, verb: 'put', response: item.results, ...(dataShareId ? { dataShareId } : {}) }];
     });
   }
 
@@ -345,7 +347,7 @@ export default class BootstrapSocketPolicyRouter extends Bootstrap {
 
     // A deleted entity can't be looked up, so the entities a delete removed come with the activity, as they were. They
     // are only for checking policies against, so they're taken off before the activity is sent anywhere.
-    const { deletedEntities, dataShareId, ...activity } = incoming;
+    const { deletedEntities, dataShareId, dataShareIds: _dataShareIds, ...activity } = incoming;
 
     // Create a container that will be used to track the message event within the SPR and a timer.
     const activityMetadata: ActivityMetadata = {

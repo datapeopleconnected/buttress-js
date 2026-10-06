@@ -112,7 +112,7 @@ const parseItems = (itemSchema: FlattenedSchema, items: unknown[], path: string,
       return item;
     }
 
-    return parseObject(toTree(itemSchema), item, `${itemPath}.`, problems, true);
+    return parseObject(toTree(itemSchema), item, `${itemPath}.`, problems, false);
   });
 
 // A value given for a property, or its default, read as the property's type
@@ -168,8 +168,8 @@ const parseNested = (children: SchemaNode[], given: unknown, path: string, probl
 
 /**
  * The properties `nodes` describe, read from `body`. Fields they don't describe are left out. A `_`-prefixed property
- * is only the server's to set, so it's never read from a body nor asked for: it takes its default. An entity's or an
- * item's `source` is checked but never stored: Buttress gives it on what it returns.
+ * is only the server's to set, so it's never read from a body nor asked for: it takes its default. An entity's
+ * `sourceId` is checked but never stored: Buttress gives it on what it returns, the app that serves the entity.
  */
 const parseObject = (
   nodes: SchemaNode[],
@@ -192,7 +192,7 @@ const parseObject = (
           ? defaultOf(node.config)
           : parseProperty(node.config, raw, path, problems);
 
-    if (isEntity && node.key === 'source') continue;
+    if (isEntity && node.key === 'sourceId') continue;
     value[node.key] = parsed;
   }
 

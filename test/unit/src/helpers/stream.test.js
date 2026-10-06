@@ -72,6 +72,25 @@ describe('helpers/stream:SortedStreams', () => {
     assert.deepStrictEqual(await combined.toArray(), [3, 4]);
   });
 
+  it('tells which source gave each item as it arrives, before it can be read', async () => {
+    const sources = [createSource(), createSource()];
+    const combined = new SortedStreams(sources, (a, b) => a.n - b.n);
+    const arrived = new Map();
+    combined.on('chunkReceived', ({ chunk, sourceIdx }) => arrived.set(chunk, sourceIdx));
+    const read = [];
+    // A reader that looks each item up as it's given, as a route reading the merged records does
+    combined.on('data', (item) => read.push([item.n, arrived.get(item)]));
+    sources[0].push({ n: 1 });
+    sources[1].push({ n: 2 });
+    sources.forEach((source) => source.push(null));
+    await new Promise((resolve) => combined.once('end', resolve));
+
+    assert.deepStrictEqual(read, [
+      [1, 0],
+      [2, 1],
+    ]);
+  });
+
   it('keeps every item its sources send before it is read', async () => {
     const sources = [createSource(), createSource()];
     const combined = new SortedStreams(sources);

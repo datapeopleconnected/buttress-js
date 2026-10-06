@@ -231,8 +231,8 @@ class PolicySchemaModel extends StandardModel<Policy> {
 
     return result;
   }
-  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, sourceId: string | null = null) {
-    const policy = await super.updateByPath(body, id, sourceId);
+  override async updateByPath(body: UpdatePathBody | UpdatePathBody[], id: string, via: string | null = null) {
+    const policy = await super.updateByPath(body, id, via);
 
     await this.__policyCache.invalidatePolicyAndTokensBySelection(id.toString());
 

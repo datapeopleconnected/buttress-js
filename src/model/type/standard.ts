@@ -409,15 +409,14 @@ export default class StandardModel<TDocument = AdapterDocument> {
   /**
    * @param {object} body
    * @param {string} id
-   * @param {string} sourceId
-   * @param {string} model
+   * @param {string} via - for a federated model, the agreement the record was read through (its sourceOf)
    * @return {promise}
    */
   // TODO: Model shouldn't be being passed through this way.
   async updateByPath(
     body: UpdatePathBody | UpdatePathBody[],
     id: string,
-    _sourceId: string | null = null,
+    _via: string | null = null,
   ): Promise<unknown[]> {
     if (body instanceof Array === false) {
       body = [body];
@@ -456,11 +455,11 @@ export default class StandardModel<TDocument = AdapterDocument> {
 
   /**
    * @param {string} id
-   * @param {string} sourceId
+   * @param {string} via - for a federated model, the agreement the record was read through (its sourceOf)
    * @param {object} extra
    * @return {Promise}
    */
-  exists(id: string, _sourceId: string | null = null, extra: AdapterQuery = {}) {
+  exists(id: string, _via: string | null = null, extra: AdapterQuery = {}) {
     return this.adapter.exists(id, extra);
   }
 
@@ -481,20 +480,20 @@ export default class StandardModel<TDocument = AdapterDocument> {
 
   /**
    * @param {string} id - id to be deleted
-   * @param {string} sourceId - used by federated models
+   * @param {string} via - for a federated model, the agreement the record was read through (its sourceOf)
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
   // Takes `unknown` as App takes an entity rather than its id
-  rm(id: unknown, _sourceId: string | null = null): Promise<unknown> {
+  rm(id: unknown, _via: string | null = null): Promise<unknown> {
     return this.adapter.rm(id as string);
   }
 
   /**
    * @param {Array} ids - Array of entity ids to delete
-   * @param {Array} sourceIds - the source of each, used by federated models
+   * @param {Array} vias - for a federated model, the agreement each record was read through (its sourceOf)
    * @return {Promise} - returns a promise that is fulfilled when the database request is completed
    */
-  rmBulk(ids: string[], _sourceIds: (string | null | undefined)[] = []) {
+  rmBulk(ids: string[], _vias: (string | null | undefined)[] = []) {
     return this.adapter.rmBulk(ids);
   }
 

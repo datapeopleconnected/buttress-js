@@ -97,10 +97,19 @@ export class Stack {
       await mongo.close();
     }
 
+    await this._deleteRedisKeys(`${this.code}:*`);
+  }
+
+  // Drops the routes to partners' records that reads taught the stack, as a Redis that lost its data would
+  async forgetDataSharingRoutes() {
+    await this._deleteRedisKeys(`${this.code}:sds-route:*`);
+  }
+
+  async _deleteRedisKeys(pattern) {
     const redis = createClient({ url: redisUrl });
     await redis.connect();
     try {
-      for await (const keys of redis.scanIterator({ MATCH: `${this.code}:*`, COUNT: 500 })) {
+      for await (const keys of redis.scanIterator({ MATCH: pattern, COUNT: 500 })) {
         const batch = Array.isArray(keys) ? keys : [keys];
         if (batch.length) await redis.del(batch);
       }

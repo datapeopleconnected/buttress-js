@@ -17,6 +17,7 @@
 import { describe, it } from 'mocha';
 import assert from 'assert';
 
+import * as Helpers from '../../../../dist/helpers/index.js';
 import { invalidEntityError, sanitizeSchemaObject, validateSchemaObject } from '../../../../dist/model/shared.js';
 import { createSchemaModel } from '../../../schema-model.js';
 
@@ -61,11 +62,33 @@ describe('model/shared: creating an entity', () => {
       assert.deepStrictEqual(result, { label: 'a' });
     });
 
-    it('never stores a top-level source, though one is checked', () => {
-      const properties = { source: { __type: 'number', __default: 0 }, label: { __type: 'string' } };
+    // Buttress gives each entity it returns the app that serves it, so one a client gives isn't kept
+    it("never stores the entity's sourceId, though one is checked", () => {
+      const properties = { sourceId: { __type: 'id', __allowUpdate: false }, label: { __type: 'string' } };
 
-      assert.deepStrictEqual(stored(properties, { source: 1, label: 'a' }), { label: 'a' });
-      assert.strictEqual(check(properties, { source: 'x', label: 'a' }).isValid, false);
+      assert.deepStrictEqual(stored(properties, { sourceId: '507f1f77bcf86cd799439011', label: 'a' }), { label: 'a' });
+      assert.strictEqual(check(properties, { sourceId: 'x', label: 'a' }).isValid, false);
+    });
+
+    it("never stores a sourceId given for an app's schema, as Buttress builds it", async () => {
+      const [built] = await Helpers.Schema.build([schema({ label: { __type: 'string' } })]);
+
+      const result = sanitizeSchemaObject(built, { sourceId: '507f1f77bcf86cd799439011', label: 'a' });
+
+      assert.strictEqual('sourceId' in result, false, JSON.stringify(result));
+      assert.strictEqual(result.label, 'a');
+    });
+
+    it('stores a property called source, on the entity and in its array items', () => {
+      const properties = {
+        source: { __type: 'string' },
+        lines: { __type: 'array', __schema: { source: { __type: 'string' } } },
+      };
+
+      assert.deepStrictEqual(stored(properties, { source: 'web', lines: [{ source: 'shop' }] }), {
+        source: 'web',
+        lines: [{ source: 'shop' }],
+      });
     });
 
     it('keeps everything beneath an object property, _ keys included', () => {

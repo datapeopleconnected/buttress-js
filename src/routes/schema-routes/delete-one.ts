@@ -26,6 +26,7 @@ import { Services } from '../../bootstrap.js';
 import { App } from '../../model/core/app.js';
 
 import * as ACM from '../../access-control/models-access.js';
+import { pickWriteTarget, WriteTarget } from './write-target.js';
 
 /**
  * @class DeleteOne
@@ -58,26 +59,25 @@ export default class DeleteOne extends Route {
       throw Helpers.Errors.badRequest('invalid_id', 'The id is not valid');
     }
 
-    const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, limit: 1, skip: 0 };
-    const rxsEntity = await ACM.find(model, findParams, req.context.ac);
-    let entity: AdapterDocument | null;
-    try {
-      entity = await Helpers.streamFirst<AdapterDocument>(rxsEntity);
-    } catch (_err) {
-      entity = null;
-    }
+    // The record is found within the caller's policies, in whichever source has it, and removed from there
+    const findParams: QueryParams<{ id: unknown }> = { query: { id: objectId }, skip: 0 };
+    const found = await Helpers.streamAll<AdapterDocument>(await ACM.find(model, findParams, req.context.ac));
+    const target = pickWriteTarget(model, found, {
+      appId: this._dataApp(req).id ?? '',
+      schemaName: this.schemaName ?? 'entity',
+      id,
+    });
     // One outside the caller's policies is answered as one that doesn't exist
-    if (!entity) {
+    if (!target) {
       throw Helpers.Errors.entityNotFound(this.schemaName ?? 'entity', id);
     }
 
-    return entity;
+    return target;
   }
 
-  override async _exec(req: Request, _res: Response, entity: AdapterDocument) {
+  override async _exec(req: Request, _res: Response, { entity, via }: WriteTarget) {
     await this._keepEntitiesBeingDeleted(req, [entity.id], [entity]);
-    // A partner's record, found through a collection's remotes, is removed from its source
-    await (await this.routeModel()).rm(entity.id, entity.sourceId as string | undefined);
+    await (await this.routeModel()).rm(entity.id, via);
     return true;
   }
 }

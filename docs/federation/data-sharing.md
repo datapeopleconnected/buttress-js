@@ -70,6 +70,21 @@ agreements:
 Reads and writes against that collection are then combined across the local datastore and every named
 remote — see [Schema](../applications/schema.md) for the rest of the schema shape.
 
+Each record such a collection returns has a `sourceId`, the app it comes from: the app's own id for its own
+records, and the partner app's for a partner's. To change or delete a partner's record, address it by its id, as
+you would one of the app's own: `PUT <schema>/:id`, `DELETE <schema>/:id`, `POST <schema>/bulk/update` and
+`POST <schema>/bulk/delete`. Buttress finds the record within your policies and sends the change through the
+agreement it was read through, so a partner's record can't send a change anywhere else, whatever `sourceId` it
+names.
+
+More than one source can have a record with the same id, such as an entity whose parts several partners hold. Then a
+change goes to the app's own record, unless the request names the source with `PUT <schema>/:sourceId/:id` (or
+`sourceId` in a `bulk/update` item), and is refused with a 409 `ambiguous_source` when the app has none of its own
+and the request names no source. A create that names a partner's app as its `sourceId` is added there, once the
+collection has read one of that partner's records. Earlier releases sent a change to a partner's record by the
+`sourceId` it named, so `PUT <schema>/:id` didn't reach one, and a change could fail until the collection had read
+from that partner again.
+
 ## Realtime Federation
 
 Independent of `remotes`, an active DSA also gets the Socket process an outbound connection to the remote
