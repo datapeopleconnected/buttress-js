@@ -18,6 +18,9 @@ import { describe, it, beforeEach, afterEach } from 'mocha';
 import assert from 'assert';
 import sinon from 'sinon';
 import { ObjectId } from 'bson';
+import http from 'node:http';
+import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
 
 import BootstrapSocket, { relayedDataShareActivity } from '../../../dist/bootstrap-socket.js';
 import Logging from '../../../dist/helpers/logging.js';
@@ -26,6 +29,7 @@ import TokenSchemaModel from '../../../dist/model/core/token.js';
 import AppSchemaModel from '../../../dist/model/core/app.js';
 import AppDataSharingSchemaModel from '../../../dist/model/core/app-data-sharing.js';
 import RemoteCombinedModel from '../../../dist/model/type/remote-combined.js';
+import Datastore from '../../../dist/datastore/index.js';
 
 describe('bootstrap-socket:token authentication', () => {
   const app = { id: new ObjectId(), apiPath: 'app-one' };
@@ -607,3 +611,42 @@ describe("bootstrap-socket: relaying a partner's activity", () => {
   });
 });
 
+
+// SR-DPC-001 R10
+describe('bootstrap-socket: stopping', () => {
+  afterEach(() => sinon.restore());
+
+  it("closes this process's own sockets on every namespace, without telling every Socket process to", async () => {
+    sinon.stub(Model, 'clean').resolves();
+    sinon.stub(Datastore, 'clean').resolves();
+
+    // What socket.io's redis adapter publishes, which every Socket process on the Redis acts on
+    const published = [];
+    const redis = {
+      publish: async (channel, message) => published.push([channel, String(message)]),
+      pSubscribe: () => {},
+      subscribe: () => {},
+      pUnsubscribe: () => {},
+      unsubscribe: () => {},
+      on: () => {},
+      off: () => {},
+    };
+    const io = new Server(http.createServer());
+    io.adapter(createAdapter(redis, redis));
+
+    const closed = [];
+    for (const name of ['/', '/app-one']) {
+      const namespace = io.of(name);
+      const id = `${name} socket`;
+      namespace.sockets.set(id, { id, _onclose: () => closed.push(name), disconnect: () => closed.push(name) });
+      namespace.adapter.addAll(id, new Set([id]));
+    }
+
+    const bootstrap = new BootstrapSocket();
+    bootstrap.io = io;
+    await bootstrap.clean();
+
+    assert.deepStrictEqual(published, []);
+    assert.deepStrictEqual(closed, ['/', '/app-one']);
+  });
+});

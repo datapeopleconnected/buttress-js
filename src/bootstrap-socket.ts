@@ -24,7 +24,6 @@ import { createClient, RedisClientType } from '@redis/client';
 import { Server as sio, Socket as sioSocket, DefaultEventsMap } from 'socket.io';
 import sioClient, { Socket as sioClientSocket } from 'socket.io-client';
 import { createAdapter } from '@socket.io/redis-adapter';
-import { Emitter } from '@socket.io/redis-emitter';
 
 import Bootstrap, { LocalProcessMessage } from './bootstrap.js';
 
@@ -139,7 +138,6 @@ export default class BootstrapSocket extends Bootstrap {
   private _redisClient?: RedisClientType;
   // Renews the tokens this process has sockets open for, so the SPR keeps them connected
   private _socketHeartbeat?: NodeJS.Timeout;
-  private _redisClientEmitter?: RedisClientType;
   private _redisClientIOPub?: RedisClientType;
   private _redisClientIOSub?: RedisClientType;
 
@@ -147,7 +145,6 @@ export default class BootstrapSocket extends Bootstrap {
 
   private _requestSockets: Helpers.ExpireMap<string, AppSocket>;
 
-  emitter?: Emitter;
   io?: sio<DefaultEventsMap, DefaultEventsMap, DefaultEventsMap, SocketData>;
 
   isPrimary: boolean;
@@ -219,10 +216,10 @@ export default class BootstrapSocket extends Bootstrap {
     if (this._socketHeartbeat) clearInterval(this._socketHeartbeat);
 
     // Close down all socket.io connections / handlers. This comes before closing NRP, which the disconnect
-    // handlers publish to, and the redis clients that socket.io's adapter uses.
+    // handlers publish to, and the redis clients that socket.io's adapter uses. close() closes this process's own
+    // sockets on every namespace; disconnectSockets() would go through the redis adapter to every Socket process's.
     if (this.io) {
       Logging.logSilly('Closing socket.io');
-      this.io.disconnectSockets(true);
       await new Promise((resolve) => this.io?.close(resolve));
       this.io = undefined;
     }
@@ -236,20 +233,9 @@ export default class BootstrapSocket extends Bootstrap {
 
     Logging.logSilly('BootstrapSocket:clean');
 
-    if (this.emitter) {
-      Logging.logSilly('Closing emitter');
-      this.emitter.disconnectSockets(true);
-      this.emitter = undefined;
-    }
-
     this._requestSockets.destroy();
     // this._requestSockets = null;
 
-    if (this._redisClientEmitter) {
-      Logging.logSilly('Closing redisClientEmitter');
-      await this._redisClientEmitter.quit();
-      this._redisClientEmitter = undefined;
-    }
     if (this._redisClientIOPub) {
       Logging.logSilly('Closing redisClientIOPub');
       await this._redisClientIOPub.quit();
@@ -296,12 +282,6 @@ export default class BootstrapSocket extends Bootstrap {
   // }
 
   override async __initMain() {
-    this._redisClientEmitter = createClient({
-      url: Config.redis.url,
-    });
-    await this._redisClientEmitter.connect();
-    this.emitter = new Emitter(this._redisClientEmitter);
-
     if (this.isPrimary) {
       Logging.logVerbose(`Primary Main SOCKET`);
       await this.__registerNRPPrimaryListeners();

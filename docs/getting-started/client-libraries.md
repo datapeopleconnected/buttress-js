@@ -55,6 +55,10 @@ Typical client flow:
 
 A token can only connect to its own app's namespace; anywhere else the connection fails with the `connect_error` message `invalid-namespace`. System tokens may connect to any app's namespace. Pass `forceNew: true` when connecting to more than one namespace on the same endpoint, or socket.io reuses the first connection and its token.
 
+A Socket process that stops closes only its own clients' connections, which socket.io reconnects. Earlier releases
+also disconnected the root namespace (`/`) clients of every other Socket process sharing its Redis, with the
+`io server disconnect` reason, which socket.io doesn't reconnect by itself.
+
 ## Security Guidance
 
 - Never ship super tokens to frontend clients.
