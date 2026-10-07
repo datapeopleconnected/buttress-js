@@ -62,6 +62,8 @@ Default ports:
 - REST: `http://localhost:8080`
 - SOCK: `http://localhost:8081`
 
+Behind a TLS proxy, set `HOST_URL` to the public host (no scheme, e.g. `bjs.example.com`) and `APP_PROTOCOL=https`.
+
 ## Build Image Locally
 
 ```bash
