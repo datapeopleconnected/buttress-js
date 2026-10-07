@@ -47,7 +47,6 @@
       "title": "%BUTTRESS_APP_TITLE%",
       "description": "The federated real-time open data platform",
       "code": "%BUTTRESS_APP_CODE%",
-      "version": "2.4.0",
       "protocol": "%BUTTRESS_APP_PROTOCOL%",
       "host": "%BUTTRESS_HOST_URL%",
       "apiPrefix": "/api/v1",

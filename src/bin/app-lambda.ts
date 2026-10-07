@@ -29,6 +29,7 @@ const Config = createConfig({
 }) as unknown as Config;
 
 import Logging from '../helpers/logging.js';
+import version from '../helpers/version.js';
 import BootstrapLambda from '../bootstrap-lambda.js';
 
 Logging.init('LAMBDA');
@@ -42,14 +43,11 @@ if (cluster.isPrimary) Logging.startupMessage();
     const isMain = await app.init();
 
     if (isMain) {
-      Logging.log(
-        `${Config.app.title}:${Config.app.code} Lambda Server Main v${Config.app.version} in ${Config.env} mode.`,
-      );
+      Logging.log(`${Config.app.title}:${Config.app.code} Lambda Server Main v${version} in ${Config.env} mode.`);
       Logging.log(`Configured Main Endpoint: ${Config.app.protocol}://${Config.app.host}`);
     } else {
       Logging.log(
-        `${Config.app.title}:${Config.app.code} Lambda Server Worker v${Config.app.version} ` +
-          `in ${Config.env} mode.`,
+        `${Config.app.title}:${Config.app.code} Lambda Server Worker v${version} ` + `in ${Config.env} mode.`,
       );
     }
   } catch (err: unknown) {
