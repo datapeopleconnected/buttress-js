@@ -40,8 +40,8 @@
     "check": "tsc --noEmit && npm run lint && npm run format && npm run licence-check && npm run docs:check",
     "docker:build": "docker build -t buttress .",
     "docker:build-token": "npm run docker:build -- --build-arg NPM_TOKEN=${NPM_TOKEN}",
-    "docker:run": "docker-compose -f .docker/docker-compose.yml up",
-    "docker:run-full": "docker-compose -f .docker/docker-compose.full.yml up",
+    "docker:run": "docker compose -f .docker/docker-compose.yml up",
+    "docker:run-full": "docker compose -f .docker/docker-compose.full.yml up",
     "prepare": "[ -e .git ] && git config core.hooksPath .githooks || true",
     "nvm": "~/.nvm/nvm-exec which node | xargs -I {} bash -c 'ln -sf \"{}\" ./.nvm-node' && chmod +x ./.nvm-node"
   },
